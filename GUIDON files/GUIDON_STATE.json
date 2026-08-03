@@ -19,7 +19,7 @@
   },
   "appVersion": {
    "constant": "window.GUIDON_APP_VERSION",
-   "value": "1.4.0",
+   "value": "1.4.1",
    "buildDate": "2026-08-02",
    "surfacedIn": "Settings -> About GUIDON panel"
   },
@@ -1548,6 +1548,7 @@
   "note": "Predecessor was unit-specific (62nd EN BN / 36th EN Bde). Unclear whether guidon_31.html generalized this or removed it - flagged as open item."
  },
  "openItems": [
+  "SHIPPED (49b): v1.4.1 - the SRS bridge: G.board.noteExternalResult(id, grade) lets Quiz (demote-only: recognition never advances recall) and Mock Board (both directions: real recall, nailed caps at Know It) write through the drill scheduler. test-bridge.mjs is suite 15. Plus MOS Career Center cross-links from Profile and Transition-Career.",
   "SHIPPED (49): v1.4.0 - the icon system (G.icons, ~50 currentColor stroke icons + gi: prop on util.el, 111 sites converted) and legibility proven: test-contrast.mjs (suite 14) sweeps 24 themes at steady state; found forms primary button at 1.0:1 in every theme and the console sys line under 3:1 on four light themes - both fixed via token mixes. Train console + CYOA banner de-hardcoded to tokens.",
   "SHIPPED (48): v1.3.0 - fullscreen study (theater mode) on the Board Drill. CSS overlay is the guaranteed cross-fork layer; Fullscreen API + Android immersive bars are enhancement. G.board.enterTheater/exitTheater exposed; Android Back peels it via closeTopLayer.",
   "STANDING: overlays must lift #toast (z-index 50) above them or feedback silently vanishes.",

@@ -4058,7 +4058,7 @@ window.G = window.G || {};
      meta          keyPath "k"   -> content cache metadata / seed snapshot
    ------------------------------------------------------------------ */
 window.G = window.G || {};
-window.GUIDON_APP_VERSION = "1.4.0";
+window.GUIDON_APP_VERSION = "1.4.1";
 window.GUIDON_BUILD_DATE = "2026-08-02";
 (function () {
   "use strict";
@@ -6119,6 +6119,14 @@ window.G = window.G || {};
       stopTimer();
       const ok = chosenIdx === correctIdx;
       if (ok) sess.correct++;
+      // Bridge to the drill's SRS: a miss (including a timeout) is graded
+      // "Needs Help" on the underlying card - it becomes due right now.
+      // A correct pick deliberately writes nothing: recognition never
+      // advances a recall schedule.
+      if (!ok) {
+        const missedQ = sess.questions[sess.idx];
+        if (missedQ && missedQ.id && G.board.noteExternalResult) G.board.noteExternalResult(missedQ.id, 0);
+      }
       Array.from(card.querySelectorAll(".quiz-opt")).forEach((btn, i) => {
         btn.disabled = true;
         if (i === correctIdx) btn.classList.add("quiz-correct");
@@ -6143,6 +6151,8 @@ window.G = window.G || {};
       panel.appendChild(el("div.eyebrow", { text: "Quiz Results — " + sess.cat }));
       panel.appendChild(el("div.stat", {}, [el("span.k", { text: "Score" }), el("span.v", { text: sess.correct + "/" + sess.total + "  (" + pct + "%)" })]));
       panel.appendChild(el("p.hint", { text: newBest > (prevBest || 0) ? "🏆 New best score for this category!" : "Best for this category: " + newBest + "%" }));
+      if (sess.correct < sess.total)
+        panel.appendChild(el("p.hint", { text: "Missed questions are now due in the Board Drill — drill them to lock the recall in." }));
       const again = el("button.btn.primary", { type: "button", text: "Take Again", style: "margin-top:8px" });
       again.addEventListener("click", buildSession);
       panel.appendChild(again);
@@ -6726,6 +6736,12 @@ window.G = window.G || {};
         b.addEventListener("click", () => {
           stop();
           sess.results.push({ q: q.q, cat: q.category, score: sc.points, max: 2, id: sc.id, answer: q.a, qObj: q });
+          // Answered aloud, then self-judged - that is real recall, so it
+          // feeds the drill's schedule in both directions. "Nailed it" maps
+          // to Know It (2), not Down Cold: the top drill grade stays an
+          // explicit claim made on the card itself.
+          if (q.id && G.board.noteExternalResult)
+            G.board.noteExternalResult(q.id, sc.points >= 2 ? 2 : sc.points >= 1 ? 1 : 0);
           next();
         });
         scoreRow.appendChild(b);
@@ -7225,6 +7241,21 @@ window.G = window.G || {};
       mount.appendChild(body);
       set("drill");
     },
+  };
+
+  // Quiz and Mock Board write through to the SAME spaced-repetition records
+  // the Board Drill schedules from - one scheduler, one memory model.
+  // Direction matters: Mock Board self-scoring is real recall (answered
+  // aloud, then judged), so it can move a card both ways. A multiple-choice
+  // quiz is only recognition, so it can DEMOTE a card (a miss makes it due
+  // now) but never advance one - recognizing the right answer among four
+  // options is not evidence you can produce it at a board.
+  G.board.noteExternalResult = async function (id, gradeLevel) {
+    try {
+      const rec = schedule(await loadSrs(id), gradeLevel);
+      await saveSrs(id, rec);
+      return rec;
+    } catch (e) { return null; }
   };
 
   // ---------------- Board-date countdown (mirrors the ETS countdown pattern
@@ -11758,6 +11789,12 @@ window.G = window.G || {};
     if (profile.unit) meta.push(profile.unit);
     if (profile.mode) meta.push(profile.mode === "guest" ? "Guest Session" : profile.mode === "kiosk" ? "Kiosk Mode" : "Personal Account");
     if (meta.length) info.appendChild(el("p.hint", { text: meta.join(" · ") }));
+    if (profile.mos) {
+      const mosBtn = el("button.btn.ghost.sm", { type: "button", gi: "briefcase", giSize: 13,
+        text: "MOS Career Center: " + profile.mos, style: "margin-top:4px",
+        onclick: () => location.hash = "#/career" });
+      info.appendChild(mosBtn);
+    }
     hdr.appendChild(info);
     mount.appendChild(hdr);
 
@@ -16137,6 +16174,13 @@ window.G = window.G || {};
     const d = data(), career = d.career;
     const intro = el("div.panel");
     if (career.intro) intro.appendChild(el("p.tx-intro", { text: career.intro }));
+    // This tab is post-ETS civilian pathways. Soldiers weighing STAYING IN
+    // (reclass, shortage MOSs, warrant packets) belong in the MOS Career
+    // Center - cross-linked here per the section-7 follow-up list.
+    const stayBtn = el("button.btn.ghost.sm", { type: "button", gi: "briefcase", giSize: 13,
+      text: "Thinking of staying in? Reclass, shortage MOSs & warrant pathways →",
+      onclick: () => location.hash = "#/career" });
+    intro.appendChild(stayBtn);
     host.appendChild(intro);
 
     (career.paths || []).forEach((p) => {

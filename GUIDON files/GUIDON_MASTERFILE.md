@@ -1447,3 +1447,13 @@ New `tools/test-theater.mjs` — 14 assertions: button present and relabelling, 
 **Method note for the file:** measurement artifacts and real bugs arrive in the same list wearing the same clothes. The discipline that separated them — refuse to "fix" anything until the number reproduces at steady state — is the same one from §48's audit: verify the claim's conditions before acting on the claim.
 
 **Shipped:** v1.4.0 (Android 10400) across all forks; fourteen suites passing; releases/v1.4.0 with fresh checksums.
+
+## 56. The Bridge the Backlog Carried for Thirty-Two Sessions (session 49, overnight, v1.4.1)
+
+Session 17's team review deferred "extending 4-level SRS grading to Quiz Mode/Mock Board" as a different interaction paradigm. It sat in `deliberatelyDeferred` while the drill's scheduler matured. Tonight it shipped in ~40 minutes, and the reason it stayed small is the reason it waited: the right shape was never "extend grading INTO the quiz" — it was one write-through function, `G.board.noteExternalResult(id, grade)`, closing over the drill's own `schedule()` and `saveSrs()`. One scheduler, one store, zero duplicated math.
+
+**The design decision that matters is asymmetry.** Mock Board is genuine recall — the Soldier answers aloud, then self-judges — so it moves cards in both directions, with "Nailed it" capped at Know It (Down Cold remains an explicit claim made on the card itself). The multiple-choice quiz is recognition, not recall: it can only DEMOTE — a wrong pick or a timeout grades the card Needs Help, due now. A correct pick writes nothing, and the results screen tells the user both facts rather than leaving the coupling implicit. `test-bridge.mjs` (suite 15) pins the API semantics and drives a live quiz click through the bridge.
+
+Also closed: §7's follow-up #4 — the MOS Career Center is now cross-linked from the profile header (the MOS itself is the link) and from Transition's Career tab, which is post-ETS civilian pathways and now offers the staying-in fork (reclass, shortage MOSs, warrant packets) at the top.
+
+**Method note:** the backlog entry aged well BECAUSE it recorded the reason for deferral ("different interaction paradigm"), which is exactly the constraint the eventual design answered. Write down why a thing waits, and the wait does design work for you.

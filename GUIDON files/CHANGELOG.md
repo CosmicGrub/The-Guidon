@@ -2,6 +2,16 @@
 
 All notable changes to GUIDON will be documented in this file. Format loosely follows [Keep a Changelog](http://keepachangelog.com/).
 
+## 2026-08-03 (session 49, overnight block) - v1.4.1: Quiz/Mock Board now feed the drill's memory model
+
+**Ask (standing):** with the icon/legibility work shipped, continue the recorded follow-up backlog inside a one-hour window.
+
+**The SRS bridge** - the follow-up the state file has carried since session 17 ("extending 4-level grading to Quiz Mode/Mock Board"). `G.board.noteExternalResult(id, grade)` closes over the drill's own `schedule()`/`saveSrs()` - one scheduler, one store, no drift. Direction is deliberate: Mock Board is real recall (answered aloud, self-judged), so it moves cards both ways - Missed->Needs Help, Partial->Somewhat, Nailed->Know It (never Down Cold; the top grade stays an explicit claim made on the card). The multiple-choice quiz is only recognition, so it can DEMOTE (a miss or timeout makes the card due now) but never advance. The quiz results screen says so out loud. New test-bridge.mjs (suite 15) asserts the API semantics and drives a real quiz click through the bridge.
+
+**MOS Career Center cross-links** (section-7 follow-up #4): the profile header's MOS now links to `#/career`, and the Transition Career tab - which is post-ETS civilian pathways - offers the staying-in path (reclass, shortage MOSs, warrant packets) at the top.
+
+**Verified:** fifteen suites all passing. v1.4.1 across all forks (Android 10401); releases/v1.4.1 supersedes v1.4.0 (30 minutes old, never installed on any device - artifacts remain in git history).
+
 ## 2026-08-03 (session 49) - v1.4.0: the icon system, and legibility proven across all 24 themes
 
 **Ask:** audit the layout and replace every placeholder glyph with genuine icons - premium and dynamic without breaking any theme - and fix training scenarios that rendered dark (unreadable) regardless of theme; guarantee all text is legible under every theme.
