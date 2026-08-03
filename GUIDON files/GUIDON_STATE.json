@@ -19,10 +19,9 @@
   },
   "appVersion": {
    "constant": "window.GUIDON_APP_VERSION",
-   "value": "1.2.0",
-   "buildDate": "2026-07-26",
-   "surfacedIn": "Settings -> About GUIDON panel",
-   "note": "was 1.1.0 while every installer said 1.2.0; corrected session 44"
+   "value": "1.3.0",
+   "buildDate": "2026-08-02",
+   "surfacedIn": "Settings -> About GUIDON panel"
   },
   "handoffAt": {
    "build": "guidon-app v1.2.0",
@@ -1549,6 +1548,9 @@
   "note": "Predecessor was unit-specific (62nd EN BN / 36th EN Bde). Unclear whether guidon_31.html generalized this or removed it - flagged as open item."
  },
  "openItems": [
+  "SHIPPED (48): v1.3.0 - fullscreen study (theater mode) on the Board Drill. CSS overlay is the guaranteed cross-fork layer; Fullscreen API + Android immersive bars are enhancement. G.board.enterTheater/exitTheater exposed; Android Back peels it via closeTopLayer.",
+  "STANDING: overlays must lift #toast (z-index 50) above them or feedback silently vanishes.",
+  "STANDING: document-level listeners in re-rendered views must be wired once behind a flag, or they accumulate per visit.",
   "FIXED (47): first-visit SW reload - controllerchange on the initial clients.claim() reloaded the page under a first-time user mid-onboarding. Reload now only on genuine updates.",
   "FIXED (47): scrollhint scrollIntoView scrolled the PAGE to the active tab strip, so navigation landed mid-page. Horizontal-only now.",
   "FIXED (47): double boot render - app.start()+hashchange raced two async renders into #route and both appended. Per-render frames make a superseded render harmless. The same race was latent on rapid nav taps.",

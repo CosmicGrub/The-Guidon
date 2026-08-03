@@ -138,8 +138,28 @@ window.G = window.G || {};
     state.navDepth = 0;
   }
 
-  /** Closes a themed dialog if one is open, by the route it already supports. */
+  /* Immersive mode for fullscreen study: hide the status bar entirely while
+     the drill's theater mode is active, restore the themed bars on exit.
+     Best-effort — a web/desktop runtime simply has no StatusBar plugin. */
+  async function setImmersive(on) {
+    const sb = plugin("StatusBar");
+    if (!sb) return false;
+    try {
+      if (on) { await sb.hide(); }
+      else { await sb.show(); await applySystemBars(); }
+      return true;
+    } catch (e) { return false; }
+  }
+
+  /** Closes a themed dialog or the fullscreen study overlay, top layer first. */
   function closeTopLayer() {
+    // Fullscreen study is above everything except dialogs; Back should peel
+    // it off before it starts navigating history.
+    if (document.documentElement.classList.contains("qz-theater")) {
+      try { if (G.board && G.board.exitTheater) { G.board.exitTheater(); return true; } } catch (e) {}
+      document.documentElement.classList.remove("qz-theater");
+      return true;
+    }
     if (!document.querySelector(".gm-back")) return false;
     // G.modal listens for Escape on document in the capture phase. Reusing that
     // path keeps one tested close routine instead of poking at its internals.
@@ -187,6 +207,7 @@ window.G = window.G || {};
     isNative: () => isNative,
     platform: () => state.platform,
     applySystemBars,
+    setImmersive,
     backButtonPolicy,
     handleBack,
     navDepth: () => depth,

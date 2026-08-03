@@ -1,6 +1,6 @@
 {
   "name": "guidon-app",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
   "type": "module",
   "description": "GUIDON packaging: installable PWA bundle, standalone single file, Windows desktop app, Android app",
@@ -11,7 +11,7 @@
     "test:pdf": "node tools/test-pdf.mjs",
     "test:standalone": "node tools/test-standalone.mjs",
     "test:csp": "node tools/test-csp.mjs",
-    "test": "npm run build && npm run verify && npm run test:points && npm run test:consistency && npm run test:calendar && npm run test:leader && npm run test:privacy && npm run test:scrollhint && npm run test:a11y && npm run test:pdf && npm run test:standalone && npm run test:csp",
+    "test": "npm run build && npm run verify && npm run test:points && npm run test:consistency && npm run test:calendar && npm run test:leader && npm run test:privacy && npm run test:scrollhint && npm run test:theater && npm run test:a11y && npm run test:pdf && npm run test:standalone && npm run test:csp",
     "perf": "node tools/perf.mjs",
     "serve": "node tools/server.mjs web 8099",
     "desktop:dev": "tauri dev",
@@ -30,7 +30,8 @@
     "test:consistency": "node tools/test-consistency.mjs",
     "test:scrollhint": "node tools/test-scrollhint.mjs",
     "perf:seed": "node tools/perf-seed.mjs",
-    "test:a11y": "node tools/test-a11y-tree.mjs"
+    "test:a11y": "node tools/test-a11y-tree.mjs",
+    "test:theater": "node tools/test-theater.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",

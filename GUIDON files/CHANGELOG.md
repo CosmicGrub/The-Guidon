@@ -2,6 +2,16 @@
 
 All notable changes to GUIDON will be documented in this file. Format loosely follows [Keep a Changelog](http://keepachangelog.com/).
 
+## 2026-08-02 (session 48) - v1.3.0: fullscreen study (theater mode) for the Board Drill
+
+**Ask:** a YouTube-style fullscreen toggle on the study cards - card fills the screen, nothing else competing for attention. Build, push, deploy to every fork and the connected tablet.
+
+**Design:** the guaranteed layer is CSS - html.qz-theater turns the card wrap into a fixed overlay painted with the app's own --bg token, COVERING the topbar/nav/filters rather than hiding them. An opaque cover needs no knowledge of what is underneath, so it is correct in all 24 themes and identical on file://, hosted, Windows and Android. The Fullscreen API and Android immersive status bar (G.native.setImmersive) are progressive enhancement; where a runtime lacks them the CSS alone still delivers. The study loop stays visible - card, flip/prev/next, grade buttons, star - because it is the point, not a distraction.
+
+**Exits, all of them, one escape each:** the toggle button; Escape (document-level, wired once); system fullscreen exit (fullscreenchange sync); Android Back (closeTopLayer peels theater first); navigation (route() exits - a fixed overlay must never outlive its view). Grading advances cards WITHOUT leaving theater. One stacking bug caught pre-ship: toasts are z-index 50 vs the 800 overlay, so grade feedback would have vanished in fullscreen - lifted to 900 while theater is active.
+
+**Verified:** new test-theater.mjs, 14 assertions including a topbar hit-test, in-theater flip/grade/advance, and navigation cleanup. Twelve suites, all passing. Version 1.3.0 across app constant, package.json, Tauri, Cargo and Android (10300); releases/v1.3.0 with fresh checksums. The stale device watcher that would have installed 1.2.0 on the Fold's reconnect was killed and re-armed for 1.3.0.
+
 ## 2026-08-02 (session 47) - Production UX pass: three shipped bugs and the first-run experience
 
 **Ask:** tighten UX/UI toward production quality, with 1:1 parity across every platform fork.

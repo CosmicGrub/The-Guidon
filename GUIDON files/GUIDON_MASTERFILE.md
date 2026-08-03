@@ -1377,6 +1377,32 @@ Eleven suites passing, **zero warnings**. All forks rebuilt from the same source
 
 ---
 
+## 54. Fullscreen Study — Theater Mode for the Board Drill (session 48, v1.3.0)
+
+**Ask:** a YouTube-style fullscreen toggle on the Board Drill cards, so a card can fill the screen with nothing else competing for attention. Build, push, deploy to every fork and the connected tablet.
+
+### The design decision that keeps it 1:1 across forks
+
+The **guaranteed layer is CSS**: `html.qz-theater` turns the card wrap into a fixed overlay painted with the app's own `--bg` token, **covering** the topbar, nav and filters rather than hiding them. An opaque cover needs no knowledge of what sits underneath, so it is correct in all 24 themes and behaves identically on `file://`, hosted PWA, Windows and Android. The **Fullscreen API** (true device fullscreen) and **Android immersive bars** (`G.native.setImmersive` via the StatusBar plugin) are progressive enhancement layered on top — where a runtime lacks them, the CSS alone still delivers the feature. iOS's missing element-fullscreen therefore costs nothing.
+
+### What stays visible
+
+The study loop is the point, not a distraction: the card, flip/prev/next, the four grade buttons, and the star all remain. Everything else is under the overlay. The toggle (`⤢`/`⤡`) rides in the card's nav row, media-player style; the card grows to `clamp(340px, 66vh, 800px)` with a type bump.
+
+### The exits, all of them
+
+One escape = one full exit, from any entry point: the button · **Escape** (document-level, wired once — the drill re-renders per visit and per-render listeners would pile up) · a **system fullscreen exit** (`fullscreenchange` sync, so Esc inside true fullscreen doesn't strand the overlay) · **Android Back** (`closeTopLayer` peels theater before dialogs-then-history) · and **navigation** (`route()` exits it — a fixed overlay must never outlive the view that owns it). Grading advances cards *without* leaving theater, which is the whole workflow.
+
+One stacking subtlety caught before it shipped: toasts are `z-index: 50`, the overlay is 800 — grade feedback would have silently vanished in fullscreen. `html.qz-theater #toast { z-index: 900 }`.
+
+### Verified
+
+New `tools/test-theater.mjs` — 14 assertions: button present and relabelling, overlay covers the viewport (geometry *and* a topbar hit-test), opaque themed background, flip/grade/advance inside theater, next card unflipped, toast above overlay, Escape exits, navigation cleans up, zero console noise. **Twelve suites now, all passing.**
+
+**v1.3.0** across every version surface (app constant, package.json, Tauri, Cargo, Android 10300). `releases/v1.3.0/` with fresh checksums; the stale Fold watcher was killed before it could install the old 1.2.0 on reconnect, and re-armed for 1.3.0.
+
+---
+
 *This masterfile amends in place going forward per project convention — do not create parallel differently-named handoff files. Fold any stray file into this one and delete it.*
 
 
