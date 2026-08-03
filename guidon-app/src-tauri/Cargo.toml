@@ -1,0 +1,27 @@
+[package]
+name = "guidon"
+version = "1.2.0"
+description = "GUIDON - Army Leader Development Trainer"
+authors = ["GUIDON"]
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+# Raise the existing window instead of starting a second copy that would fight
+# over the same IndexedDB.
+tauri-plugin-single-instance = "2"
+# Remember window size/position/maximised state between runs.
+tauri-plugin-window-state = "2"
+
+# The app ships to phones and older unit laptops, so the installer is kept small
+# and the binary stripped. LTO + one codegen unit costs build time, not runtime.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

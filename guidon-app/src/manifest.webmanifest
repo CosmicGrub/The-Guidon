@@ -1,0 +1,66 @@
+{
+  "name": "GUIDON — Army Leader Development Trainer",
+  "short_name": "GUIDON",
+  "description": "Offline Army leader-development trainer for E1–E9: doctrine, board prep, the full NCOPDS ladder, promotion points, counseling forms and a spaced-repetition study drill. Works with no signal.",
+  "lang": "en-US",
+  "dir": "ltr",
+  "id": "/guidon/",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#0a0e12",
+  "theme_color": "#0a0e12",
+  "categories": ["education", "productivity", "books"],
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Board Drill",
+      "short_name": "Drill",
+      "description": "Go straight to the flashcard drill",
+      "url": "./#/board",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Progress",
+      "short_name": "Progress",
+      "description": "Board readiness and mastery by study level",
+      "url": "./#/progress",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "NCOPDS Drills",
+      "short_name": "Drills",
+      "description": "Rehearse the graded BLC/ALC assessments",
+      "url": "./#/drills",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}

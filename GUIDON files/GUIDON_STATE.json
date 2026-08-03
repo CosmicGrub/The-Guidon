@@ -1,0 +1,1665 @@
+{
+ "_meta": {
+  "purpose": "Canonical machine-readable state snapshot for the GUIDON project. Amended in place each session — do not create dated/numbered variants of this file.",
+  "reconstructed": true,
+  "reconstructionDate": "2026-07-13",
+  "reconstructionReason": "Prior handoff chat containing GUIDON_MASTERFILE.md, CHANGELOG.md, and GUIDON_STATE.json was deleted. This file was rebuilt by direct inspection of user-uploaded guidon_31.html, cross-referenced with prior Drive builds and existing project-knowledge documents.",
+  "confidence": "high for structural/content facts directly observed in source; low/UNCONFIRMED for anything requiring semantic interpretation (see openItems)",
+  "forkResolved": "2026-07-23 session 19: parallel fork from guidon_40 reconciled into guidon_47.html. Single line going forward."
+ },
+ "app": {
+  "name": "GUIDON",
+  "tagline": "Army Leader Development Trainer",
+  "metaDescription": "Offline single-file Army leader-development trainer (E1-E6): doctrine, board prep, and a unified scenario engine with text, course, and choose-your-own-adventure modes. Runs with zero setup, fully offline.",
+  "deploymentModel": "two artifacts from one source: dist/guidon-standalone.html (single file, file:// ready) and web/ (installable PWA bundle, also the payload for the Tauri desktop app and the Capacitor Android app)",
+  "androidPackaging": "Capacitor 8. APK 5.67 MB, app.guidon.trainer, minSdk 24 / targetSdk 36, fully offline. Verified on an Android 14 emulator over raw CDP. No release keystore generated.",
+  "sourceFile": {
+   "filename": "guidon-app/src/index.html",
+   "note": "Was guidon_index.html (5,133,364 bytes). guidon_86.html, referenced by older docs, does not exist on disk."
+  },
+  "appVersion": {
+   "constant": "window.GUIDON_APP_VERSION",
+   "value": "1.2.0",
+   "buildDate": "2026-07-26",
+   "surfacedIn": "Settings -> About GUIDON panel",
+   "note": "was 1.1.0 while every installer said 1.2.0; corrected session 44"
+  },
+  "handoffAt": {
+   "build": "guidon-app v1.2.0",
+   "sizeMB": 4.9,
+   "routes": 35,
+   "themes": 24,
+   "tokens": 33,
+   "boardCards": 1014,
+   "acronyms": 3629,
+   "a11y": "0 violations across 14 themes x 12 sections (session 35)",
+   "verification": "verify | points | consistency | calendar | leader | privacy | scrollhint | a11y-tree | PDF | standalone file:// | desktop CSP | Android (tablet + phone) | Android back button | Windows installer",
+   "doctrine": 336,
+   "cssClasses": 1048,
+   "mediaQueries": 46
+  },
+  "packaging": {
+   "pwa": {
+    "manifest": "real file (was a data: URI, which Chromium will not install from)",
+    "serviceWorker": "web/sw.js, cache name = content hash of built index.html",
+    "icons": "PNG 192/512 any + 192/512 maskable declared SEPARATELY + apple-touch-icon 180",
+    "storagePersist": "navigator.storage.persist() requested at boot and on appinstalled",
+    "offlineVerified": "reload with the network disabled boots the app - asserted by cutting the network"
+   },
+   "desktop": {
+    "framework": "Tauri 2 (Rust + WebView2)",
+    "installers": [
+     "GUIDON_1.2.0_x64-setup.exe (2.34 MB)",
+     "GUIDON_1.2.0_x64_en-US.msi (2.77 MB)"
+    ],
+    "resident": "27 MB",
+    "verified": "WebView2 created IndexedDB db \"guidon\" with stores kv/meta/userScenarios/attempts + a real streak:v1 write",
+    "windowState": "size/position/maximised persist across runs - verified 200,140 1100x760 -> close -> relaunch -> restored exactly",
+    "singleInstance": "second launch raises the open window instead of starting a duplicate fighting over the same IndexedDB - verified",
+    "installer": "VERIFIED end to end: silent install -> per-user %LOCALAPPDATA%\\GUIDON -> Start-menu shortcut -> correct Add/Remove entry -> launches (27 MB resident) -> silent uninstall leaves nothing behind",
+    "publisher": "set explicitly to GUIDON (previously read \"guidon\" from the crate name)",
+    "codeSigning": "NOT DONE - installer is unsigned, so SmartScreen warns on first run. Expected, not a defect. Needs an Authenticode certificate before wide distribution."
+   },
+   "android": {
+    "framework": "Capacitor 8",
+    "apk": "dist/android/GUIDON-1.2.0-debug.apk (5.67 MB)",
+    "verified": "Android 14 emulator, WebView Chrome 113: 29 routes, 0 overflow, 0 console output, native display-mode, no SW registered, DA 4856 exported (43,914 bytes)",
+    "apkDebug": "dist/android/GUIDON-1.2.0-debug.apk (6.93 MB)",
+    "apkRelease": "dist/android/GUIDON-1.2.0-release.apk (4.47 MB, signed)",
+    "aab": "dist/android/GUIDON-1.2.0-release.aab (4.34 MB, Play Store bundle)",
+    "signing": "keys/guidon-release.jks + android/keystore.properties, both git-ignored. MUST BE BACKED UP - the package name is permanently bound to this key.",
+    "minify": "R8/minify deliberately OFF - almost no app Java to shrink and a known source of release-only breakage in WebView shells",
+    "shell": "system bars follow the active theme (colour from --bg, icon contrast from WCAG relative luminance); branded splash at 11 densities + Android 12+ SplashScreen API; adaptive-icon background corrected from #fff to brand dark",
+    "backButton": "FIXED. Capacitor default did nothing: Back delivered {canGoBack:false} with history.length 33 and no default action fired. canGoBack tracks WebView document navigation, which a hash router never performs. native.js tracks its own depth: close dialog -> history.back() while depth>0 -> exitApp(). Automated as test:android:back.",
+    "verifiedForm": "two AVDs - tablet 1280px landscape and phone 412x842 portrait (1080x2400 @420dpi). 29 sections, zero overflow on both."
+   },
+   "ios": "DEFERRED at the owner's direction (session 39 part 2). Home-screen path is prepared; a native build still needs macOS + a $99/yr account."
+  },
+  "performance": {
+   "method": "tools/perf.mjs - variants with a payload removed, median of 3 cold loads, CPU-throttled",
+   "dclFullBuild": {
+    "1x": "99ms",
+    "4x": "463ms",
+    "6x": "744ms"
+   },
+   "pdfStackDeferralSaving": {
+    "1x": "22ms",
+    "4x": "81ms",
+    "6x": "113ms"
+   },
+   "seedDeferralSaving": {
+    "1x": "57ms",
+    "4x": "215ms",
+    "6x": "329ms"
+   },
+   "note": "First Contentful Paint is UNCHANGED across every variant (~130-180ms). The app already paints before the heavy scripts parse; the cost is time-to-interactive, not time-to-pixels.",
+   "done": "pdf-lib + both DA 4856 forms (896 KB) extracted to web/assets/, loaded on export only, still precached so offline export works",
+   "notDone": "GUIDON_SEED (3.26 MB) - larger win but every module reads it; needs its own dedicated session",
+   "seedTransform": {
+    "what": "build rewrites window.GUIDON_SEED from a JS object literal to JSON.parse(\"...\")",
+    "why": "V8 parses JSON with a dedicated parser faster than the full JS parser over identical bytes",
+    "measured": "6x CPU 652->558ms (-94ms, 14%); 4x 395->362ms; 1x 85->81ms",
+    "cost": "+0.11 MB raw, ZERO gzip and ZERO brotli - escaped quotes compress away",
+    "safety": "build JSON.parse-es the literal and FAILS if it is not strict JSON; test-consistency.mjs asserts 17 sections / 1014 cards / 3629 acronyms / 336 doctrine / 163 MOS / 182 scenarios",
+    "notDone": "async seed loading remains undone and is no longer worth it - this captured 29% of the theoretical 329ms for none of the risk"
+   }
+  },
+  "regulations": {
+   "AR 600-8-19": {
+    "edition": "6 March 2026, effective 6 April 2026 (ARN43646)",
+    "title": "Enlisted Promotions and Demotions",
+    "supersedes": "AR 600-8-19 dated 21 June 2024",
+    "implemented": "tables 3-2 (SGT weapons), 3-3 (SSG weapons), 3-4 (AFT score to points); category maximums; para 3-14 cutoff rule",
+    "verifiedBy": "tools/test-points.mjs - all 90 weapons rows, 41 AFT bands, caps and edge cases"
+   },
+   "AD 2026-07": {
+    "subject": "Combat Field Test",
+    "implemented": "#/fitness - 7 events, 24 MOSs, 30-min cap, phasing, Flag code C after ~Apr 2027"
+   },
+   "AD 2026-13": {
+    "subject": "rescinds AD 2025-17",
+    "implemented": "no AFT-score body composition exemption, eff 7 Jul 2026"
+   },
+   "ALARACT 102/2025": {
+    "subject": "Credentialing Assistance",
+    "implemented": "$2,000/FY, enlisted+WO eligible, ArmyIgnitED approval, eff 19 Mar 2026"
+   }
+  }
+ },
+ "driveLineage": [
+  {
+   "file": "guidon_1.html",
+   "modified": "2026-07-07T16:30:54Z",
+   "sizeBytes": 636922
+  },
+  {
+   "file": "guidon_3.html",
+   "modified": "2026-07-07T17:20:52Z",
+   "sizeBytes": 793457
+  },
+  {
+   "file": "guidon_5.html",
+   "modified": "2026-07-07T19:26:42Z",
+   "sizeBytes": 906055
+  },
+  {
+   "file": "guidon_7.html",
+   "modified": "2026-07-08T15:59:12Z",
+   "sizeBytes": 952873
+  },
+  {
+   "file": "guidon_8.html",
+   "modified": "2026-07-11T18:21:23Z",
+   "sizeBytes": 2018995
+  },
+  {
+   "file": "guidon_31.html",
+   "modified": "2026-07-13 (user upload)",
+   "sizeBytes": 4865488,
+   "note": "superseded"
+  },
+  {
+   "file": "guidon_32.html",
+   "modified": "2026-07-13",
+   "sizeBytes": 4917969,
+   "note": "adds MOS Career Center; superseded"
+  },
+  {
+   "file": "guidon_33.html",
+   "modified": "2026-07-13",
+   "sizeBytes": 4920573,
+   "note": "collapsible nav groups; superseded"
+  },
+  {
+   "file": "guidon_34.html",
+   "modified": "2026-07-13",
+   "sizeBytes": 4922932,
+   "note": "cross-device/foldable responsiveness; superseded"
+  },
+  {
+   "file": "guidon_35.html",
+   "modified": "2026-07-13",
+   "sizeBytes": 4925287,
+   "note": "device/input-mode auto-detection; superseded"
+  },
+  {
+   "file": "guidon_36.html",
+   "modified": "2026-07-13",
+   "sizeBytes": 4932719,
+   "note": "Demo Center: Guided Tour + Free Mode; superseded"
+  },
+  {
+   "file": "guidon_37.html",
+   "modified": "2026-07-13",
+   "sizeBytes": 4935103,
+   "note": "3 real rendering bugs fixed, Playwright-verified; superseded"
+  },
+  {
+   "file": "guidon_38.html",
+   "modified": "2026-07-13",
+   "sizeBytes": 4943542,
+   "note": "Board Drill rebuilt as Quizlet-style flip cards; superseded"
+  },
+  {
+   "file": "guidon_39.html",
+   "modified": "2026-07-13",
+   "sizeBytes": 4943512,
+   "note": "one a11y fix from comprehensive audit; superseded"
+  },
+  {
+   "file": "guidon_40.html",
+   "modified": "2026-07-13",
+   "sizeBytes": 4944933,
+   "note": "audit proposal implemented, 2 root-cause bugs fixed app-wide; superseded"
+  },
+  {
+   "file": "guidon_41.html",
+   "modified": "2026-07-14",
+   "sizeBytes": 4946253,
+   "note": "S Pen hover support + 90Hz smoothness audit; superseded"
+  },
+  {
+   "file": "guidon_42.html",
+   "modified": "2026-07-14",
+   "sizeBytes": 4947787,
+   "note": "pre-demo hardening: Guided Tour bug fixed, audit gaps closed; superseded"
+  },
+  {
+   "file": "guidon_43.html",
+   "modified": "2026-07-15",
+   "sizeBytes": 4948464,
+   "note": "quick full-app audit, contrast violations down 53% more; superseded"
+  },
+  {
+   "file": "guidon_44.html",
+   "modified": "2026-07-20",
+   "sizeBytes": 4942898,
+   "note": "board card audit (1031->1014), difficulty tiers, 4-level mastery grading; superseded"
+  },
+  {
+   "file": "guidon_45.html",
+   "modified": "2026-07-20",
+   "sizeBytes": 4946528,
+   "note": "grading connected to Progress (panel still silently broken); superseded"
+  },
+  {
+   "file": "guidon_46.html",
+   "modified": "2026-07-20 (this session)",
+   "sizeBytes": 4946539,
+   "note": "current source of truth — real root cause found and fixed: missing db import, Board Q Readiness panel works for the first time in the app's history"
+  },
+  {
+   "file": "guidon_47.html",
+   "modified": "2026-07-23",
+   "sizeBytes": 4949572,
+   "note": "CURRENT - branch merge: removed stale nav nth-child rule (74% of remaining contrast violations), ported --ink-* tokens + web manifest + APP_VERSION/About panel, Expert-tier spot-check (6 reclassified)"
+  },
+  {
+   "file": "guidon_48.html",
+   "modified": "2026-07-23",
+   "note": "CURRENT - fixed action-plan wipe on personal-profile creation (setSetting invalidating on unchanged values) + added missing plan regeneration in profile view"
+  },
+  {
+   "file": "guidon_50.html",
+   "modified": "2026-07-23",
+   "note": "CURRENT - board date bound to profile + countdown/date display toggle + board date now drives action-plan items"
+  },
+  {
+   "file": "guidon_52.html",
+   "modified": "2026-07-23",
+   "note": "CURRENT - prominent Account panel (rename/redo/switch/delete), optional name + anonymity, 34-entry call-sign roulette, SOLOMON placeholder retired, fixed pre-existing .ob-avatar contrast bug (2.55:1)"
+  },
+  {
+   "file": "guidon_54.html",
+   "modified": "2026-07-23",
+   "note": "CURRENT - promotion points rebuilt to AR 600-8-19 (rank-aware caps, board-score category removed, +150 BLC/ALC bonus outside cap), full PPW worksheet added, profile-side calculator reconciled"
+  },
+  {
+   "file": "guidon_56.html",
+   "modified": "2026-07-23",
+   "note": "CURRENT - AFT five-events correction, ABCP exemption rescission (AD 2026-13), new BLC Prep module at #/blc"
+  },
+  {
+   "file": "guidon_58.html",
+   "modified": "2026-07-23",
+   "note": "CURRENT - ALC Prep module at #/alc (two-phase structure, HRC seat prioritisation, NCO-C3 content, SLC forward-look), DLC elimination currency note, BLC cross-links forward"
+  },
+  {
+   "file": "guidon_60.html",
+   "modified": "2026-07-23",
+   "note": "CURRENT - SLC & Senior NCO Path module at #/slc (SLC, MLC, SMC), PME transformation caveats added to BLC and ALC modules, NCOPDS ladder complete BLC->ALC->SLC->MLC->SMC"
+  },
+  {
+   "file": "guidon_62.html",
+   "modified": "2026-07-23",
+   "note": "CURRENT - BLC module rebuilt from BLC ISAP (600-C44): 17 sections, 12-item self-check, real rubric mechanics, currency corrections, practitioner advice"
+  },
+  {
+   "file": "guidon_64.html",
+   "modified": "2026-07-23",
+   "note": "CURRENT - ALC 'From people who have been there' section (11 points), self-check 10->12, slur-free rewording of source material"
+  },
+  {
+   "file": "guidon_66.html",
+   "modified": "2026-07-23",
+   "note": "CURRENT - NCOPDS Drills (6 rehearsable assessments) + Demo Center rebuilt on ROUTES (24 stops) with per-stop callouts and presenter cheat-sheet; G.routes exposed"
+  },
+  {
+   "file": "guidon_68.html",
+   "modified": "2026-07-23",
+   "note": "CURRENT - 37 NCOPDS acronyms (dictionary 3592->3629), 15 NCO Development doctrine entries, grouped bibliography in Drills"
+  },
+  {
+   "file": "guidon_74.html",
+   "modified": "2026-07-23",
+   "note": "CURRENT - Phase1 token hardening (46->7 loose hex), Phase2 Channels & Gates, Phase3 board countdown on Home + PPW/board-date advice, Phase4 E1-E9 branding + printable readiness summary, Phase5 design-system doc"
+  },
+  {
+   "file": "guidon_76.html",
+   "modified": "2026-07-23",
+   "note": "CURRENT - themed G.modal replacing native dialogs, Quiz study-level filter, nav re-tap re-render, guest session-only action plan"
+  },
+  {
+   "file": "guidon_78.html",
+   "modified": "2026-07-23",
+   "note": "CURRENT - keyboard/AT audit: fixed unreachable skip link (first-render heading focus stranded it), added role=banner"
+  },
+  {
+   "file": "guidon_80.html",
+   "modified": "2026-07-23",
+   "note": "CURRENT - on-device self-test suite: 11 automated checks, 9 manual protocols with persisted ticks, report export"
+  },
+  {
+   "file": "guidon_82.html",
+   "modified": "2026-07-23",
+   "note": "CURRENT - Focus theme set: 10 themes designed to one brief (focus + any-brightness comfort), contrast solved numerically pre-implementation"
+  },
+  {
+   "file": "guidon_84.html",
+   "modified": "2026-07-23",
+   "note": "CURRENT - adaptability audit across 6 real viewports; fixed .segmented clipping (unreachable tabs at 344px) and Channels table overflow at 320px"
+  },
+  {
+   "file": "guidon_86.html",
+   "modified": "2026-07-23",
+   "note": "CURRENT - Share & Install panel (#/share); hosted access verified on iPhone/Android/iPad from a real https origin; QR encoder written then removed as unverifiable"
+  },
+  {
+   "file": "guidon-app/ v1.2.0",
+   "modified": "2026-07-26",
+   "note": "CURRENT - packaging: installable PWA (real manifest + service worker + real offline), PDF stack deferred (-113ms at 6x), Tauri Windows app (window-state, single-instance, installer verified), Capacitor Android (themed system bars, branded splash, FIXED back button, signed release APK+AAB). All verified on device."
+  }
+ ],
+ "appearance": {
+  "storageKey": "localStorage:guidon:appearance:v1",
+  "themes": {
+   "total": 14,
+   "default": "field-manual",
+   "list": [
+    "field-manual",
+    "night-vision",
+    "topographic",
+    "parade-rest",
+    "blackout",
+    "desert-cadence",
+    "squadron-blue",
+    "range-red",
+    "subdued",
+    "slate-focus",
+    "nautical-dusk",
+    "sepia-study",
+    "signal-amber",
+    "ink-paper"
+   ],
+   "lightThemes": [
+    "field-manual",
+    "parade-rest",
+    "desert-cadence",
+    "sepia-study",
+    "ink-paper"
+   ]
+  },
+  "motion": {
+   "total": 4,
+   "default": "rich",
+   "list": [
+    "minimal",
+    "standard",
+    "rich",
+    "cinematic"
+   ]
+  },
+  "typePairings": {
+   "total": 7,
+   "default": "command",
+   "list": [
+    "command",
+    "field",
+    "humanist",
+    "classic",
+    "readable",
+    "terminal",
+    "broadsheet"
+   ]
+  },
+  "accessibility": [
+   "highContrast",
+   "largeTargets",
+   "reduceMotion (auto with motion=minimal)",
+   "autoNight (configurable hours + theme)",
+   "textScale (compact/standard/large/xlarge)",
+   "lineSpacing (tight/normal/relaxed)",
+   "navDensity (comfortable/compact)",
+   "navLabels (on/off)"
+  ]
+ },
+ "persistence": {
+  "localStorage": [
+   "guidon:appearance:v1"
+  ],
+  "indexedDB": {
+   "dbName": "guidon",
+   "dbVersion": 1,
+   "objectStores": "UNCONFIRMED - see SCHEMA constant in source"
+  },
+  "otherPossibleKeys": [
+   "STORE_KEY",
+   "SAVE_KEY",
+   "GOAL_KEY",
+   "CHK",
+   "SIG"
+  ]
+ },
+ "content": {
+  "doctrineCorpus": {
+   "estimatedCardCount": 1014,
+   "countConfidence": "high - confirmed via direct extraction and node -e round-trip of the board.questions array (session 16), superseding the old grep-based 1992 estimate which conflated multiple data sources",
+   "categoryCount": 89,
+   "cardSchema": [
+    "id",
+    "category",
+    "q",
+    "a",
+    "source",
+    "acceptableAnswer",
+    "boardAnswer",
+    "concept",
+    "keyPoints[]",
+    "difficulty"
+   ],
+   "sampleCategories": [
+    "ACFT",
+    "ADP 1",
+    "ADP 3-0",
+    "ADP 3-28",
+    "ADP 5-0",
+    "ADP 6-0",
+    "ADP 6-22",
+    "ADP 7-0",
+    "AR 350-1",
+    "AR 600-9",
+    "AR 600-20",
+    "AR 600-52",
+    "AR 623-3",
+    "AR 670-1",
+    "ATP 6-22.1",
+    "Board Procedures",
+    "Chain of Command",
+    "Creeds",
+    "Drill and Ceremony",
+    "Equal Opportunity",
+    "FM 3-0",
+    "FM 3-11",
+    "FM 3-90",
+    "FM 7-22",
+    "Land Navigation",
+    "Leadership"
+   ]
+  },
+  "acronymsDictionary": {
+   "totalTerms": 3592,
+   "asOf": "2021 (DoD) + Army overlay",
+   "staleness": "DoD baseline is 2021-vintage; flag for refresh if accuracy-sensitive",
+   "srcTags": [
+    "army",
+    "both"
+   ]
+  },
+  "pointsCalculator": {
+   "version": "0.1.0",
+   "generatedAsOf": "2026-07",
+   "system": "Semi-Centralized (SGT / SSG)",
+   "totalMax": 800,
+   "categories": [
+    {
+     "id": "training",
+     "label": "Military Training",
+     "max": 340
+    },
+    {
+     "id": "awards",
+     "label": "Awards, Decorations & Achievements",
+     "max": 160
+    },
+    {
+     "id": "militaryEd",
+     "label": "Military Education",
+     "max": 200
+    },
+    {
+     "id": "civilianEd",
+     "label": "Civilian Education",
+     "max": 100
+    },
+    {
+     "id": "boardScore",
+     "label": "Board Score (DA Form 3356)",
+     "max": 150
+    }
+   ],
+   "disclaimer": "PRACTICE ESTIMATE ONLY, not an official calculator"
+  },
+  "resilienceModule": {
+   "title": "Holistic Health & Resilience",
+   "asOf": "Jul 2026",
+   "basedOn": "Army H2F framework (FM 7-22, 2020) + MRT curriculum (UPenn Positive Psychology Center)",
+   "domains": [
+    "Physical",
+    "Nutritional",
+    "Mental",
+    "Spiritual",
+    "Sleep",
+    "Social"
+   ],
+   "disclaimer": "Educational content, not clinical mental health treatment"
+  },
+  "transitionModule": {
+   "title": "Transition & ETS Readiness",
+   "asOf": "Jul 2026",
+   "milestoneRange": "730 days before ETS through 90 days after ETS",
+   "keyFeatures": [
+    "SFL-TAP timeline",
+    "BDD claim window (180-90 days pre-ETS)",
+    "DD-214 block-by-block reference",
+    "IDES/LDES explainer",
+    "federal hiring / veterans preference codes",
+    "GI Bill",
+    "SkillBridge",
+    "VR&E",
+    "SDVOSB",
+    "30+ category resource directory"
+   ],
+   "disclaimer": "Educational study aid, not official VA/DoD/legal guidance"
+  },
+  "pdfExport": {
+   "feature": "DA Form 4856 (Developmental Counseling Form) fill and export",
+   "engine": "vendored pdf-lib (Apache-2.0)",
+   "fontsBundled": [
+    "Courier family",
+    "Helvetica family",
+    "Times family",
+    "Symbol",
+    "ZapfDingbats"
+   ]
+  },
+  "careerModule": {
+   "title": "MOS Career Center",
+   "addedSession": 3,
+   "addedDate": "2026-07-13",
+   "route": "#/career",
+   "navLabel": "MOS",
+   "mosCount": 163,
+   "cmfCount": 27,
+   "woFeederCount": 26,
+   "sections": [
+    "MOS lookup (datalist-autocompleted, profile-MOS-prefilled)",
+    "Army-wide reclassification policy (three-gate rule, governing regs, application MOSs, involuntary/MAR2, ARNG/USAR, systems/POCs, timing)",
+    "FY26 shortage/growth snapshot + SRB explainer",
+    "NCOES/promotion ladder (grade-based E1-E9)",
+    "Warrant officer feeder pathways",
+    "Civilian certifications/transferable skills by CMF (illustrative, CMF-level not per-MOS)"
+   ],
+   "sourceMaterial": "user-supplied research doc: 'Full Enlisted MOS List & Reclassification Reference (2026)'",
+   "dataLocation": "window.GUIDON_SEED.career, exposed via store.career()",
+   "verified": "node --check on all inline scripts passes; career.mos.length===163 and career.cmfs.length===27 confirmed via eval() round-trip; acronyms.terms.length===3592 confirmed unchanged",
+   "knownLimitations": [
+    "civilian certs are CMF-level not per-MOS",
+    "FY26 shortage/SRB figures are a perishable point-in-time snapshot needing periodic refresh",
+    "WO-feeder matching logic is substring-based, spot-check before extending",
+    "not yet cross-linked from Profile view or Transition module's civilian-career sub-tab"
+   ]
+  },
+  "navConsolidation": {
+   "addedSession": 4,
+   "addedDate": "2026-07-13",
+   "reason": "User flagged 18 flat sidebar items as visually noisy from a screenshot of the live app.",
+   "structure": "Home (standalone) + 5 collapsible groups: Board Prep (Train/Board/Doctrine/Terms), Study & Skills (Learn/Forms/Write), Leadership (Counsel/Develop/Risk), Career & Life (MOS/Money/Health/ETS/Resources), Account (Progress/Author/Settings)",
+   "behavior": "Only the group containing the active route auto-expands (on boot and on every route change); others collapse to a header with a chevron toggle. Group-open state is in-memory only (not persisted across reloads) — deliberate scope-limiting choice this session.",
+   "implementation": "New NAV_GROUPS array + navButton()/renderNav() functions replace the old flat ROUTES.forEach nav-building loop in buildShell(). No routes/hashes/render functions changed.",
+   "verified": "node --check on all inline scripts passes",
+   "knownCosmeticFollowUp": "Pre-existing .nav button:nth-child(N) CSS rules (opacity tweaks for old group boundaries) now target different DOM positions since nav structure changed — low-risk, purely cosmetic."
+  },
+  "responsivenessPass": {
+   "addedSession": 5,
+   "addedDate": "2026-07-13",
+   "reason": "User asked for cross-device layout compatibility, specifically PC<->mobile switching and the Galaxy Z Fold 5 (344px cover screen folded; ~717-840px near-square inner display unfolded).",
+   "changes": [
+    "Added env(safe-area-inset-*) padding to .topbar, .main, and all 3 .nav layout tiers (previously 0 occurrences in file)",
+    "Added new 600-859px 'foldable/small-tablet' breakpoint with a compact 96px icon-forward side-rail, filling the previous gap between the mobile bottom-rail (<860px) and full desktop sidebar (>=860px)"
+   ],
+   "auditedNoChangeNeeded": [
+    "100vh/100dvh fallback on #app already present from earlier session",
+    "no element-level fixed min-width outside its own breakpoint guard - all wide width values are either breakpoint thresholds or max-width caps",
+    "no JS canvas/chart width caching - layout is 100% CSS grid/flex, fold/unfold resizes correctly with zero JS changes"
+   ],
+   "explicitlyOutOfScope": "Native fold-segment/hinge-aware APIs (env(fold-*)) - not yet standardized/broadly supported; current fix is viewport-width-based media queries, which works today and degrades gracefully",
+   "verified": "node --check on all inline scripts passes (JS untouched); brace-balance confirmed clean across all 3 inline style blocks"
+  },
+  "deviceModeDetection": {
+   "addedSession": 6,
+   "addedDate": "2026-07-13",
+   "reason": "User asked to make the app as fluid/flexible as possible and let UI/UX adapt to device/mode, not just screen width.",
+   "preservedExistingSystems": [
+    "data-text-scale system (compact/standard/large/xlarge) left untouched - it's a deliberate accessibility control, not a viewport-fluid-type target",
+    "pre-existing 768px 'Fold 5 unfolded/tablet' breakpoint block (predates this conversation) confirmed non-conflicting with session 5's 600-859px sidebar tier"
+   ],
+   "newAutoDetection": [
+    "@media (pointer: coarse) -> auto-applies same 48px tap targets as manual large-targets toggle",
+    "@media (hover: none) -> neutralizes transform/shadow hover-lift ghosting on touch (click/panel/card/hotspot/idp-suggest-chip/readiness-tile/topbar-search-btn); focus-visible untouched",
+    "@media (prefers-contrast: more) -> auto-applies same boost as manual hc toggle",
+    "@media (prefers-reduced-transparency: reduce) -> auto-applies same solid-fill as manual reduce-transparency toggle"
+   ],
+   "pattern": "Mirrors the app's existing prefers-reduced-motion + manual reduceMotion dual-trigger convention; all manual toggles remain fully functional, these are additive OS-signal equivalents",
+   "auditedNoChangeNeeded": "Grid components (.score-grid, .idp-var-grid, .readiness-grid, etc.) already use repeat(auto-fit,minmax(Npx,1fr)), which responds to true available width (sidebar-subtracted) not viewport width - container queries would have been redundant",
+   "verified": "node --check on all inline scripts passes; brace-balance confirmed clean across all 3 inline style blocks"
+  },
+  "demoCenter": {
+   "addedSession": 7,
+   "addedDate": "2026-07-13",
+   "reason": "User asked for a complete end-to-end wired demo covering every section, with a choice between guided demos and free exploration, for personal use and showcasing to others.",
+   "priorState": "Kiosk Mode already had a 9-stop guided walkthrough with progress dots and Prev/Next, but incomplete section coverage and no free-exploration option.",
+   "changes": [
+    "Guided Tour expanded from 9 to 19 stops - one per real ROUTES entry, ordered to match the sidebar nav groups",
+    "New Free Mode: drops into real app at Home for self-directed exploring, with a persistent topbar 'DEMO MODE' badge + one-tap Exit (new G.kioskBadge module: show()/hide()/checkOnBoot())",
+    "#/kiosk now opens on a Guided Tour vs Free Mode picker instead of jumping straight into the walkthrough",
+    "finishKiosk() now sets location.hash='#/kiosk' so picking Kiosk mode during onboarding actually surfaces the picker, instead of landing on Home with just an action-plan stub",
+    "Onboarding kiosk mode-card copy updated to describe both options"
+   ],
+   "stateHandling": "guided-vs-free choice stored in sessionStorage (key: guidon-demo-mode), not the profile record - deliberately session-local so a reload mid-demo keeps the badge, but a fresh kiosk entry always re-asks",
+   "verified": "node --check on all inline scripts passes; brace-balance clean across all 3 inline style blocks; structural grep confirmed 19 tour stops and all new functions present",
+   "knownFollowUp": "Settings included as 19th tour stop for completeness but is arguably not showcase-worthy on its own - revisit if tour feels padded"
+  },
+  "renderingBugFixesSession8": {
+   "addedSession": 8,
+   "addedDate": "2026-07-13",
+   "trigger": "User-shared phone screenshot (Train screen, Kiosk Mode, ~360px Android phone) showing topbar overlap and a stray element in the mobile bottom nav.",
+   "toolingUsed": "Playwright 1.56 + pre-installed Chromium binary (/opt/pw-browsers/chromium-1194/chrome-linux/chrome), driven via bash_tool + Python. Not a named tool-belt entry but fully functional - the correct way to verify layout/rendering questions rather than reading CSS in isolation.",
+   "bugsFixed": [
+    "Topbar name-overwrite (pre-existing): 3 code paths wrote full display name into profile icon button's textContent, overflowing past viewport edge. Fixed with dedicated #topbar-username element (own max-width/ellipsis, hidden <480px); profile button now always icon-only.",
+    "Brand title overflow (pre-existing): 'GUIDON' h1 rendered ~58px wider than container, overlapping the status chip. Root cause: unclassed flex-item wrapper div defaults to min-width:auto, which silently blocks any descendant max-width/ellipsis. Fixed with '.topbar .brand > div { min-width: 0; }'.",
+    "Collapsible nav-group headers leaking into mobile bottom rail (introduced session 4): group header toggle buttons rendered inline in the horizontal phone nav, unlike real bottom-tab-bar conventions. Fixed by branching renderNav(): flat list <600px, collapsible groups only >=600px, with a matchMedia change-listener for live resize/fold handling."
+   ],
+   "verification": "Screenshotted via headless Chromium across 6 viewports (344/390/412/717/860/1280px) x all 18 sections in Kiosk Mode (108 combinations). Scripted overflow scan (document.documentElement.scrollWidth - window.innerWidth) found zero horizontal overflow. getBoundingClientRect()/getComputedStyle() confirmed each specific fix actually resolved the reported issue.",
+   "openQuestion": "Neither pre-existing bug was caught during earlier CSS-review-based responsiveness sessions (session 5, 6) - those relied on node --check/brace-balance, which only catch syntax errors, not layout bugs. Future responsiveness work should default to a Playwright verification step."
+  },
+  "quizletFlipCards": {
+   "addedSession": 9,
+   "addedDate": "2026-07-13",
+   "reason": "User asked to convert the study-cards section (Board Drill) into a Quizlet-style card system - responsive, dynamic, with matching polish.",
+   "scope": "Board Drill tab only (#/board, default tab) - Quiz (multiple-choice) and Mock Board tabs, and the underlying SM-2-lite SRS engine, were deliberately left untouched.",
+   "changes": [
+    "True 3D flip card (perspective + rotateY) replaces the old click-to-reveal-below pattern; all existing back content (Acceptable Answer, By-the-Book answer, key points, cross-links) preserved",
+    "Deck-progress bar, shuffle button, star/bookmark (persisted on the same per-card SRS record) with a Starred filter chip",
+    "Prev/Flip/Next browsing row independent of grading",
+    "Keyboard shortcuts scoped to the card container: Space/Enter flip, arrows browse, G/1 and R/2 grade once flipped",
+    "Responsive via clamp() for card height and prompt font size",
+    "Motion-aware: reuses existing data-motion=minimal/.reduce-motion convention to swap faces instead of rotating",
+    "Theme-agnostic: all new CSS uses existing theme tokens, works across all 14 themes with no extra per-theme work"
+   ],
+   "verification": "Playwright-driven interactive test: scripted click-to-flip, star-toggle, grade-Got-it (confirmed new card + flip reset), and Space/Arrow keyboard shortcuts - all confirmed working with zero console errors. Overflow scan re-run against #/board across 6 viewport widths (344-1280px): zero overflow.",
+   "newDataField": "srs object gains an optional .starred boolean, saved via the existing saveSrs()/loadSrs() functions - no new store or schema needed"
+  },
+  "comprehensiveAudit": {
+   "addedSession": 10,
+   "addedDate": "2026-07-13",
+   "reason": "User asked for a comprehensive proposal of further improvements, backed by an actual PC+mobile audit.",
+   "deliverable": "GUIDON_AUDIT_PROPOSAL.md - a standalone one-time audit document, NOT one of the 3 canonical handoff files, saved alongside them",
+   "methodology": "axe-core 4.12.1 (installed via npm) injected into the live app via Playwright, WCAG 2.0/2.1 A+AA rules, across 8 of 19 sections. Also re-ran the session 8/9 overflow+console-error sweep (zero issues) and measured load performance via the Navigation Timing API.",
+   "criticalFindings": [
+    "12 unlabeled checkboxes + 2 unlabeled selects (Settings, Board Drill)",
+    "79 color-contrast failures across 8 sections in at least one theme",
+    "2 nested-interactive violations on the new flip card (session 9 regression)"
+   ],
+   "fixedThisSession": "nested-interactive violation on .qz-card - removed redundant role='button' since keyboard flip already lived on the cardWrap container. Re-verified via axe-core: zero nested-interactive violations remaining on #/board.",
+   "deliberatelyNotFixed": "unlabeled controls and color-contrast findings are documented as proposal items, not silently patched - contrast especially needs a per-theme design pass since --text-dim/--text-mute tokens are shared across dozens of components and a global change risks new regressions elsewhere",
+   "otherFlagged": [
+    "~4.94MB eager-parsed GUIDON_SEED as a performance risk on older/budget Android devices (not measurable on this fast test machine)",
+    "no web app manifest for Add-to-Home-Screen installability polish"
+   ]
+  },
+  "auditImplementation": {
+   "addedSession": 11,
+   "addedDate": "2026-07-13",
+   "reason": "User asked to implement the session-10 audit proposal's recommendations, in priority order.",
+   "criticalFixed": "All 12 unlabeled checkboxes (3 separate toggle-builder functions: toggle(), toggleRow(), standalone reduceMotion checkbox) + 2 unlabeled selects (Board Drill, Quiz mode categories) + onboarding tier-filter select - all given proper aria-label",
+   "rootCause1": "Static <meta name='color-scheme' content='dark'> silently forced dark-mode native form-control rendering even in the 5 light themes, causing white-on-light text bugs (e.g. readiness tiles). Fixed with html{color-scheme:dark} / html.light{color-scheme:light} CSS override, which wins over the meta tag and applies from first paint via the existing synchronous pre-paint bootstrap.",
+   "rootCause2": "Hardcoded #1a1206 dark ink on .btn.primary and ~8 other amber-background components assumed --amber is always a light accent - false for 8/14 themes including the default. Computed real WCAG contrast (not luminance heuristic - corrected after it was wrong for 3 themes) per theme, added a --btn-ink CSS var per theme, repointed all 8+ call sites (including 2 from this session's own earlier work: .qz-nav-flip, #demo-mode-badge button).",
+   "otherContrastFixes": [
+    "nav-group-header opacity multiplier removed (session 4's own regression, affected 13/14 themes)",
+    "topbar subtitle text-mute->text-dim",
+    "desert-cadence's own text-dim token darkened",
+    "nav active-item and home urgency-count text switched from raw accent color to color-mix() blend with --text"
+   ],
+   "measuredImprovement": "Color-contrast violations on Home: 67 (start of session, all 14 themes) -> 0 in 13/14 themes, 2 remaining in desert-cadence only",
+   "nestedInteractiveFixed": "Both instances: qz-card (session 10) and a newly-found second instance - the home 'board cards due' panel had role=button wrapping a real separately-clickable Start Drill button; removed redundant outer role/handlers",
+   "sweepExtended": "Extended axe-core sweep from original 8-section sample to all 18 sections x 14 themes (252 combos) per the proposal's own recommendation - found 443 contrast + 297 other violations before this session's fixes, concentrated in Risk (unlabeled worksheet fields), Money/Author (unlabeled selects), Train (card/tag/chip contrast in some themes). Fixed the highest-leverage systemic issues; did not exhaustively chase every remaining scattered instance in one sitting.",
+   "verified": "node --check passes; brace-balance clean; final sanity sweep across all 18 sections: zero overflow, zero console/page errors"
+  },
+  "deviceVerificationTabS9FE": {
+   "addedSession": 12,
+   "addedDate": "2026-07-13",
+   "reason": "User shared a screenshot of a specific device (Samsung device-info screen: SM-X518U) and asked to ensure compatibility/flexibility/fluidity for it.",
+   "researchedSpecs": {
+    "device": "Samsung Galaxy Tab S9 FE 5G (SM-X518U)",
+    "display": "10.9 inch, 2304x1440 physical resolution",
+    "os": "Android 13 (One UI 5.1)",
+    "chipset": "Exynos 1380",
+    "computedCssViewport": "~1152x720 landscape, ~720x1152 portrait (DPR=2, standard for this pixel-density class of Samsung tablet)"
+   },
+   "verificationMethod": "Playwright with matching Android 13/SM-X518U user agent, is_mobile+has_touch emulation, tested at the exact computed CSS viewport in both orientations across all 18 sections",
+   "result": "Zero horizontal overflow, zero console/page errors in either orientation. Landscape (1152px) correctly lands in the >=860px desktop sidebar tier; portrait (720px) correctly lands in the 600-859px foldable/tablet compact sidebar tier (session 5) - both appropriate for the device's actual 10.9-inch size. Confirmed session 6's pointer/hover auto-detection engages correctly on this real hardware profile (pointer:coarse and hover:none both true, nav buttons auto-receive 48px sizing).",
+   "codeChanges": "None - the existing responsive/device-mode work (sessions 5, 6, 9, 11) already generalizes correctly to this specific device without modification",
+   "sourceFileUnchanged": "guidon_40.html remains the current build; no new build number was created this session"
+  },
+  "spenOptimizationSession13": {
+   "addedSession": 13,
+   "addedDate": "2026-07-14",
+   "reason": "User asked to optimize for the Tab S9 FE specifically and use its maximum capacity/capabilities.",
+   "researchedCapabilities": "S Pen included, pressure+tilt sensitive, genuine hover-above-glass detection; 90Hz adaptive refresh display; Samsung DeX exists but cannot output to external monitor (USB-C is USB 2.0, no video-out)",
+   "decisionNotToBuild": "No dedicated DeX desktop-mode layout - DeX can't drive an external display on this model, so the existing >=860px sidebar tier already covers windowed/DeX use adequately",
+   "spenHoverFeature": "Added JS Pointer Events detection (pointerType==='pen') on the Board Drill flip card - CSS (hover:hover)/(pointer:fine) media queries only describe a device's PRIMARY pointer (touch, on this tablet), so they structurally cannot detect the bundled S Pen's real hover capability. pointerenter/pointerleave now toggle the same lift-and-glow class mouse :hover gets, scoped strictly to pointerType 'pen' (verified touch does not trigger it), and correctly stops once a card is flipped.",
+   "ninetyHzAudit": "Confirmed the flip card's transition already animates only transform (fully GPU-compositable) - correct for 90Hz smoothness, no changes needed; this was built correctly in session 9 without this device specifically in mind",
+   "verified": "node --check passes; brace-balance clean; full 18-section sanity sweep at real 1152x720 viewport: zero overflow/errors; S Pen hover logic verified via dispatched PointerEvents covering hover-in, hover-out, touch-non-triggering, and post-flip states"
+  },
+  "preDemoHardeningSession14": {
+   "addedSession": 14,
+   "addedDate": "2026-07-14",
+   "reason": "User asked to audit for remaining gaps and harden components ahead of a same-day showcase to other people, without breaking anything built so far.",
+   "realBugFixed": "Guided Tour lost its position on back-navigation: opening a stop and pressing back reset the tour to step 1 instead of resuming, because renderKioskMode rebuilds fresh on every #/kiosk visit and step position lived only in a local variable. Fixed by persisting current step to sessionStorage (key: guidon-demo-step), mirroring the existing mode-choice persistence pattern from session 7. Cleared on mode-switch, tour-end, and fresh kiosk re-entry.",
+   "auditGapsClosed": [
+    "Risk Assessment worksheet: 5 unlabeled text/date inputs + 8 unlabeled selects fixed (same disconnected-label pattern as Settings)",
+    "Money page: 5 unlabeled calculator inputs fixed (match-capture, compound-growth projector, 50/30/20 allocator)",
+    "Author page: 1 unlabeled select fixed",
+    "Board Drill flip card: scrollable answer region made keyboard-focusable (tabindex=0 + role=region)"
+   ],
+   "nonContrastResult": "Zero non-contrast WCAG A/AA violations anywhere - verified across full 18-section x 14-theme matrix (252 combinations)",
+   "contrastFixes": [
+    ".hint (used app-wide for helper text) bumped from --text-mute to --text-dim - fails 4.5:1 in 12 of 14 themes otherwise",
+    "nav button text given a color-mix() contrast margin - Develop/Risk icons sat at ~4.5:1 by flat math but failed axe's stricter anti-aliased-pixel sampling"
+   ],
+   "contrastResult": "Total contrast violations across full 252-combination matrix: 443 -> 221. Remainder are scattered 1-6-count near-misses across several themes/pages, logged as follow-up rather than exhaustively chased same-day.",
+   "confirmedNotBroken": "Full Personal Account onboarding path (name->role->mood->focus areas->generated action plan->save) tested end-to-end via script - completes cleanly, zero errors. One suspected bug (validation toast) was a test-timing artifact, not a real issue - confirmed working on recheck.",
+   "verified": "node --check passes; brace-balance clean; full regression sweep across 4 viewports x 18 sections: zero overflow/errors; complete 19-stop Guided Tour walkthrough with back-navigation tested at every stop"
+  },
+  "quickAuditSession15": {
+   "addedSession": 15,
+   "addedDate": "2026-07-15",
+   "reason": "User asked for a quick audit/look-over of the whole app, fix/harden/polish everything, deliver a post-audit report + updated build.",
+   "rootCauseFound": "Repeated pattern of raw accent colors used as text, or blended only 65% toward base text color - safe-looking against the themes originally tested but insufficient across all 14. Strengthened to 40% blend weight across 14 call sites: Train difficulty/competency badges, search-filter chips, danger buttons, nav active-state, nav base text color.",
+   "verification": "Verified empirically against axe-core (not just recomputed by hand) since flat-color math and axe's anti-aliased-pixel sampling don't always agree (established in session 14)",
+   "measuredResult": "Contrast violations across full 252-combination matrix: 221 -> 104 this session (77% cumulative reduction from original 443 across sessions 11/14/15). Non-contrast violations remain at zero.",
+   "remaining": "~104 minor near-misses concentrated in 3 warm-toned themes (desert-cadence, sepia-study, field-manual) - not chased further given the 'quick audit' scope and diminishing returns per fix",
+   "reconfirmedWorking": "19-stop Guided Tour walkthrough (incl. session 14's back-navigation resume fix), Board Drill flip/star/keyboard shortcuts, zero layout overflow/console errors across 4 viewports x 18 sections",
+   "deliverable": "GUIDON_POST_AUDIT_REPORT.md - concise before/after summary, shorter than session 10's full GUIDON_AUDIT_PROPOSAL.md to match this request's 'quick' scope"
+  },
+  "boardCardAuditSession16": {
+   "addedSession": 16,
+   "addedDate": "2026-07-20",
+   "reason": "User asked to audit all 1031 board cards for duplicates, split into beginner/intermediate/expert(by-the-book) study levels, and upgrade grading to a 3-5 level mastery system with a bookmark deck.",
+   "duplicateAudit": {
+    "method": "exact-match + fuzzy-match (Python SequenceMatcher, 0.82 threshold) across all question text, then manual verification of every candidate against actual answer content before removing anything",
+    "result": "17 confirmed true duplicates removed (1031 -> 1014); several high-similarity pairs (e.g. ADP 3-0 vs ADP 6-0) were confirmed as legitimately different and correctly kept",
+    "dataQualityIssuesFoundBeyondDuplication": "one removed pair had outright conflicting answers to the identical question (three types of developmental counseling); one was mislabeled 'seven principles' while listing six",
+    "fullTable": "GUIDON_BOARD_CARD_AUDIT.md"
+   },
+   "difficultyTiers": {
+    "priorState": "no card had a difficulty field before this pass - a difficulty filter seen in an earlier screenshot belonged to the Train/scenario browser, not Board Drill",
+    "method": "transparent heuristic (category type, answer length, key-point count, question phrasing) applied to all 1014 cards - not hand-graded individually, documented as heuristic-based not authoritative",
+    "distribution": {
+     "beginner": 324,
+     "intermediate": 597,
+     "expert": 93
+    },
+    "expertBehavior": "Expert-tier cards flip to show the By-the-Book verbatim answer FIRST, ahead of the paraphrase-friendly Acceptable Answer; Beginner/Intermediate keep paraphrase-first order. Front face shows a colored tier badge before flipping.",
+    "uiAddition": "Level filter added next to the existing Category filter in Board Drill toolbar"
+   },
+   "gradingRebuild": {
+    "priorState": "binary Got-it/Review-again, schedule() took a boolean",
+    "newState": "4-level grade (0 Needs Help / 1 Somewhat / 2 Know It / 3 Down Cold), schedule() takes 0-3 with distinct ease/interval curves per level; accepts legacy boolean too (true->2, false->0) for backward compatibility",
+    "uiChanges": "card back's 2 buttons -> 4 color-coded grid buttons; swipe gesture now maps to the 2 most common outcomes (right=Know It, left=Needs Help); keyboard shortcuts changed from G/R to plain 1-4 number keys"
+   },
+   "bookmarkDeck": "Existing star system (session 9) already did what was asked - relabeled filter chip to '⭐ My Bookmarks' to make the personal-deck framing explicit rather than building a second system",
+   "verified": "node -e round-trip confirms 1014 questions load correctly with correct difficulty distribution; acronyms (3592 terms) confirmed untouched; node --check passes; brace-balance clean; full regression sweep across 4 viewports x 18 sections: zero overflow/errors; axe-core on flipped card: zero violations; all 4 grade buttons, 1-4 keyboard shortcuts, difficulty filter, and bookmark filter each individually tested end-to-end via script",
+   "deliverable": "GUIDON_BOARD_CARD_AUDIT.md - duplicate table + difficulty distribution + methodology"
+  },
+  "teamReviewSession17": {
+   "addedSession": 17,
+   "addedDate": "2026-07-20",
+   "reason": "User asked for a multi-angle team review of the app, a read-through of the handoff docs, strong recommendations, then full implementation with hardening/polish.",
+   "finding1_gradingWasIsland": "Session 16's 4-level grading + difficulty tiers only ever surfaced as a live session tally on Board Drill itself - Progress tab had zero connection. Added a 'Board Drill Mastery' panel to Progress: per study level (beginner/intermediate/expert), share of graded cards that are Know-It-or-better vs still-needs-work, computed from each card's lastGrade + difficulty fields.",
+   "finding2_preExistingDormantBug": {
+    "description": "Progress had a hard early-return hiding ALL card-progress content (including the pre-existing per-category 'Board Q Readiness' panel) unless the user had completed >=1 Train scenario - someone who only drills Board Drill flashcards saw a blank page regardless of actual progress",
+    "verifiedPreExisting": "Reproduced the identical gap against guidon_43.html (yesterday's build, before any session 17 changes) before writing a fix - confirmed not introduced this session",
+    "fix": "Removed the blanket early return; downstream sections (trend chart, action plan) already individually guard on their own data so nothing else needed to change"
+   },
+   "finding3_navPersistence": "Nav sidebar group open/closed state (flagged since session 4, never fixed) now persists via localStorage - restored on load, saved on every manual toggle",
+   "deliberatelyDeferred": [
+    "Lazy-loading the ~5MB embedded seed object - real architectural surgery, deserves its own dedicated session",
+    "Extending 4-level SRS grading to Quiz Mode/Mock Board - different interaction paradigm (multiple-choice testing), a difficulty filter there would be a reasonable smaller follow-up instead",
+    "Web app manifest for installability - still valid, still not urgent"
+   ],
+   "verified": "node --check passes; brace-balance clean; full regression sweep across 18 sections: zero overflow/errors; Guided Tour spot-checked; new mastery-panel logic confirmed sound via direct IndexedDB inspection of lastGrade/difficulty fields; nav-group persistence verified via localStorage",
+   "deliverable": "GUIDON_TEAM_REVIEW.md"
+  },
+  "branchMergeSession19": {
+   "addedSession": 19,
+   "addedDate": "2026-07-23",
+   "forkDiscovered": "Project forked at guidon_40. Two chats each ran their own sessions 13-14 producing different guidon_41/42 files. Both independently did the Risk/Money/Author label fixes and qz-back-scroll fix - duplicated effort. Other branch advanced further (sessions 15-18) so guidon_46 was adopted as base.",
+   "realBugCarriedByBase": "Stale .nav button:nth-child(4/11/16/17) rule, orphaned by the session-4 nav reorg, was dimming the Career and Author nav buttons and .nav-group-header elements to opacity 0.72. Measured: 37 of 50 remaining contrast violations (74%), worst ratio 2.93:1. Removed.",
+   "portedForward": [
+    "--ink-* text-safe accent tokens (60/40 color-mix toward --text)",
+    "inline data: web app manifest (closes open item #5)",
+    "APP_VERSION constant + Settings About panel"
+   ],
+   "contrastResult": "50 -> 0 across field-manual/desert-cadence/sepia-study x 8 sections",
+   "expertTierSpotCheck": {
+    "reviewed": 93,
+    "reclassified": 6,
+    "heuristicFailureMode": "over-weights category - treats LOAC/UCMJ/Financial Readiness/Supply & Property as inherently expert, mis-tiering simple definitional questions inside them",
+    "newDistribution": {
+     "beginner": 327,
+     "intermediate": 600,
+     "expert": 87,
+     "total": 1014
+    },
+    "posture": "conservative - nothing deleted, only 6 unambiguous acronym-expansion/basic-recall cards retiered"
+   },
+   "dedupRescanRejected": "A looser token-normalized re-scan reported 84 clusters / 204 cards. NOT TRUSTWORTHY and NOT acted on - it clustered on sentence template not meaning (grouped General Order 1/2/3, Class 1/2/3 leak, and all 'difference between X and Y' cards). Session 16's 0.82 threshold + hand-verification was correct. One genuine residual cluster (~5 cards on Commander's Intent) reported for human review.",
+   "falseNegativesCaught": "Two of this session's own checks were wrong, caught before acting: Progress Mastery panel is correctly gated on graded data; nav persistence writes guidon-nav-open-groups on toggle. Both fine."
+  },
+  "onboardingProfileAuditSession20": {
+   "addedSession": 20,
+   "addedDate": "2026-07-23",
+   "verifiedIntact": [
+    "onboarding modal on fresh profile",
+    "3 modes: Personal/Guest/Kiosk",
+    "5-screen flow Mode->1/4->2/4->3/4->4/4->summary",
+    "rank picker + RANK_TO_TIER mapping (SGT->E5, SSG->E6)",
+    "displayName composed as rank + last name",
+    "IndexedDB persistence surviving reload without re-prompt",
+    "topbar username",
+    "settings userName sync",
+    "MOS pre-fill into Career Center",
+    "Home greeting + action plan surface",
+    "isGuest() accuracy across modes"
+   ],
+   "bug": "Every new PERSONAL profile lost its action plan at creation. setSetting() clears actionPlan when etsDate/tierFilter/retirementSystem change; the onboarding save handler calls setSetting on all three immediately after building the plan, so invalidation fired on unchanged values. Guest/Kiosk unaffected (never call setSetting).",
+   "bisectMethod": "Hooked G.db.put to log every profile-key write: saveProfile wrote plan:6, then setSetting overwrote plan:0 twice. Summary screen's own '6 items built from your answers' text proved the generator was healthy, isolating the fault to the save path.",
+   "fix1": "Invalidate actionPlan only when the incoming value actually differs from the stored one.",
+   "fix2": "renderProfileView never regenerated an empty plan despite the comment claiming it would; added real regeneration, which also self-heals profiles already saved empty.",
+   "verifiedAfter": "db.put trace shows plan:6 on all three writes; final saved plan 6. Modes: Personal 6 / Guest 0 (by design) / Kiosk 3. Contrast 0, console clean, no overflow.",
+   "instrumentErrors": "Two more this session (offsetParent null for position:fixed; click selector matching a text-containing wrapper; 4-iteration loop for a 5-screen flow). Project running total: 5 occasions where the test, not the app, was wrong."
+  },
+  "boardDateSession21": {
+   "addedSession": 21,
+   "addedDate": "2026-07-23",
+   "alreadyExisted": "board-date input + countdown banner on Board Prep, stored in global settings",
+   "added": [
+    "boardDateDisplay setting (countdown|date) with in-banner toggle",
+    "boardDate + boardDateDisplay synced into the profile record; countdown reads profile-first, settings-fallback",
+    "G.profile.cached() synchronous accessor (countdown renders synchronously, cannot await mid-draw)",
+    "board date now drives action-plan items, scaled by proximity"
+   ],
+   "planScaling": {
+    "<=7d": "Mock Board today + drill weakest + final uniform/packet/DA 3355 checks (2 high-priority items)",
+    "<=30d": "daily Board Cards + weekly Mock Board + recheck promotion points",
+    ">30d": "build the daily-habit item"
+   },
+   "whyPlanWiring": "Wiring boardDate into the profile-sync hook made it inherit plan-invalidation, but generateActionPlan never read boardDate - so changing the date wiped a good plan and rebuilt an identical one. Resolved by making the board date actually drive the plan rather than special-casing the invalidation away. Display-mode changes are cosmetic and never invalidate.",
+   "verified": "Set date 45 days out, toggled both directions, reloaded - mode and date persisted to profile and survived reload. Plan 6->8 items at 5 and 20 days out, 7 at 120. Contrast 0, console clean, no overflow, all three onboarding modes intact.",
+   "processNote": "An early grep for board-date code matched inside the embedded 3,592-term acronym dictionary and dumped thousands of lines - repeat of a session-14 mistake. Anchored narrow patterns are mandatory when grepping this file."
+  },
+  "accountMgmtSession22": {
+   "addedSession": 22,
+   "addedDate": "2026-07-23",
+   "priorState": "Two small ghost links at the BOTTOM of the profile view; 'Switch account / mode' actually deleted the profile - misleading label on a destructive action.",
+   "accountPanel": {
+    "placement": "top of profile view, bordered, full-size labelled buttons",
+    "actions": {
+     "Rename": "identity only, action plan preserved (verified 6->6); blank => anonymous",
+     "Redo my setup": "re-runs onboarding on same account for shifting priorities",
+     "Switch account or mode": "genuine fresh start at mode picker; confirm states what is cleared",
+     "Delete profile": "visually separated, double-confirmed; dismissing 2nd confirm verified to abort"
+    },
+    "signpost": "'Manage account' button added in Settings -> About, pointing to #/profile"
+   },
+   "anonymity": "Name is optional and anonymity is a first-class outcome - blank gives a rank-only profile (e.g. 'SPC'), flagged anonymous and labelled as such. Rank/tier drive all guidance so no real name is ever needed. Matters on shared or unit-issued devices.",
+   "callsignRoulette": {
+    "count": 34,
+    "noImmediateRepeat": true,
+    "curation": "Affectionate not cutting. Snuffy/Joe are the classic generic-Soldier stand-ins (GI Joe = Government Issue Joe); Schmuckatelli/Snafu same joke other eras; Dogface the self-appointed WWII infantry nickname. Excluded terms that mock new or failing Soldiers (Cherry, Boot, Bolo) and cruder barracks acronyms.",
+    "researched": "web search confirmed Snuffy/Joe/Schmuckatelli/Snafu/Dogface usage"
+   },
+   "placeholderRetired": "SOLOMON -> 'e.g. SNUFFY - or leave blank' (also advertises that blank is allowed)",
+   "preExistingBugFound": ".ob-avatar hardcoded color:#000 on an --amber fill = 2.55:1 on field-manual and other deep-accent themes. Same class as the session-11 button-ink bug. Repointed to --btn-ink. Found only because #/profile was added to the a11y sweep - it had never been audited.",
+   "instinctVsEvidence": "First assumption was that the new red Delete button caused the 3 new violations. axe named .ob-avatar instead. Checking the selector before fixing prevented a wrong fix.",
+   "verified": "All 3 name paths (blank/dice/typed) correct; rename, rename-to-anonymous, cancelled rename, and delete double-confirm guard all verified live; 0 a11y violations on Profile+Settings across 4 themes (was 3); 0 across the 3-theme x 8-section sweep; console clean; no overflow; all three onboarding modes intact."
+  },
+  "pointsRebuildSession23": {
+   "addedSession": 23,
+   "addedDate": "2026-07-23",
+   "sourcingDoc": "GUIDON_PROMOTION_RESEARCH.md",
+   "reg": "AR 600-8-19, current edition effective 6 April 2026",
+   "rankAwareCaps": {
+    "SGT": {
+     "training": 280,
+     "awards": 145,
+     "milEd": 240,
+     "civEd": 135
+    },
+    "SSG": {
+     "training": 230,
+     "awards": 165,
+     "milEd": 245,
+     "civEd": 160
+    },
+    "total": 800
+   },
+   "removed": "Board-score / leadership points category - no longer exists in the semi-centralized system (SSG = Yes/No validation vote, SGT = admin points only)",
+   "added": "+150 BLC (SGT) / ALC (SSG) graduate bonus, modelled OUTSIDE the 800 ceiling",
+   "modes": [
+    "Quick estimate (4 category inputs)",
+    "Full PPW (line-by-line worksheet)"
+   ],
+   "honestyBoundaries": [
+    "Weapon points interpolated between the two published anchors (23 and 40 hits), labelled an estimate - unverified table rows not fabricated",
+    "Civilian semester-hour rate never verified, so taken as direct entry from the Soldier's PPW rather than a guessed formula",
+    "AFT takes POINTS not raw score, with explicit warning that score/5 is wrong (500 = 80 pts not 100) - IPPS-A does the conversion",
+    "NO per-MOS cutoff numbers shipped - perishable monthly, would be wrong within 30 days; app explains mechanism and 24/798 codes instead"
+   ],
+   "bugFound": "A second, older points calculator in the profile view still read the outdated seed - the app would have given two different answers for the same Soldier. Seed corrected, board-score category dropped, labelled as SGT caps, and given a link to the rank-aware worksheet.",
+   "verification": "Arithmetic hand-checked, not just rendering: 40/40 hits + 120 AFT maxes training at 280 SGT / 230 SSG; 20 combat-zone months caps to 30 SGT but 40 SSG; 500 correspondence hours caps to 90; quick-mode over-entry clamps; BLC bonus lands outside the ceiling (280 subtotal -> 430 total). 0 a11y violations across 3 themes x 9 sections, console clean, no overflow."
+  },
+  "session24": {
+   "addedSession": 24,
+   "addedDate": "2026-07-23",
+   "corpusScale": {
+    "distinctPublications": 299,
+    "totalMentions": 7245,
+    "legacyMarkers": {
+     "ACFT": 212,
+     "AFT": 103,
+     "ADRP": 14,
+     "APFT": 56,
+     "SSD": 20
+    }
+   },
+   "doctrineCorrections": [
+    {
+     "card": "acft-events",
+     "was": "six events of the ACFT incl. Standing Power Throw",
+     "now": "five events of the AFT, max 500, 60/event floor",
+     "basis": "AFT replaced ACFT 1 June 2025; SPT removed",
+     "note": "App previously contradicted itself - another card already said the SPT was removed"
+    },
+    {
+     "card": "ar6009-3",
+     "was": "465+ with min 80/event exempts from taping (x4 instances)",
+     "now": "No AFT-score exemption exists; AD 2026-13 rescinded AD 2025-17",
+     "basis": "effective 7 July 2026"
+    }
+   ],
+   "deliberatelyNotChanged": "~212 remaining ACFT references. Many are legitimately historical. Bulk find-and-replace across a 7,245-mention corpus without reading each in context would inject more errors than it removed.",
+   "blcModule": {
+    "route": "#/blc",
+    "navGroup": "Leadership",
+    "audience": "E-4 promotable and Corporals",
+    "sections": [
+     "What BLC actually is",
+     "Before you go - the unglamorous half",
+     "The academic load",
+     "Leadership evaluation - what cadre are actually watching",
+     "Sharpen the sword",
+     "If you are a Corporal",
+     "After BLC"
+    ],
+    "selfCheck": {
+     "items": 10,
+     "persistedTo": "IndexedDB kv guidon:blc:checks:v1",
+     "survivesReload": true
+    },
+    "crossLinks": [
+     "#/board",
+     "#/counsel",
+     "#/write",
+     "#/doctrine"
+    ],
+    "caveat": "States plainly that course length and packing lists vary by NCO Academy - confirm with S-1"
+   },
+   "verification": "BLC loads, 7 sections expand, self-check persists (5/10 after reload), appears in Leadership nav; both corrected fitness cards confirmed at runtime; 0 a11y violations across 3 themes x 9 sections; console clean; no overflow at 360px."
+  },
+  "alcModuleSession25": {
+   "addedSession": 25,
+   "addedDate": "2026-07-23",
+   "route": "#/alc",
+   "navGroup": "Leadership",
+   "source": "Official ALC & SLC NCO Common Core Competencies course descriptions supplied by Chris, plus public doctrinal research",
+   "opsec": "Public doctrinal / published course information only - nothing unit-specific or sensitive",
+   "keyStructuralFact": "ALC is TWO courses: Phase I = branch-immaterial NCO-C3 common core (typically virtual), Phase II = MOS-specific technical track (resident). Phase I gates Phase II. Length ~2-55 weeks by track.",
+   "hrcSeatPriority": [
+    "SSG who completed technical track",
+    "all other SSG",
+    "promotable SGT who completed technical track",
+    "all other SGT (date of rank within each tier)"
+   ],
+   "practicalRead": "Completing the MOS technical track early moves you up an entire HRC priority tier",
+   "nco_c3_content": [
+    "Leadership Requirements Model, holistic approach",
+    "written and oral communications",
+    "critical thinking / creative ideas / complex problem solving",
+    "servant leadership",
+    "mission command philosophy",
+    "persuasive essay",
+    "military briefing",
+    "MDMP",
+    "outcome: train, lead, conduct operations at squad level"
+   ],
+   "slcForwardLook": [
+    "be-know-do model",
+    "innovative approaches to leadership and training",
+    "management techniques",
+    "mission command SYSTEMS analysed",
+    "analytical essay",
+    "platoon training and leader development plans",
+    "pin-on gate for MSG"
+   ],
+   "doctrineCurrency": "Army eliminated the DLC I-VI requirement for resident NCO PME effective 1 October 2024 (DLC, formerly SSD, had gated PME attendance since 2010). Stated in-module because Soldiers are still being told they need DLC II before ALC. Closes a session-24 open item.",
+   "selfCheck": {
+    "items": 10,
+    "key": "guidon:alc:checks:v1",
+    "verifiedIndependentOf": "guidon:blc:checks:v1"
+   },
+   "verification": "7 sections load and expand; SLC content confirmed; MDMP coverage confirmed; self-check persists (4/10) and is independent of BLC (0/10); both in Leadership nav; 0 a11y across 3 themes x 9 sections; console clean; no overflow at 360px.",
+   "testArtefact": "Initial check reported the DLC note missing - it was present, the test had only expanded a different section. Confirmed by source inspection. Sixth instance of the verify-the-verifier rule."
+  },
+  "slcModuleSession26": {
+   "addedSession": 26,
+   "addedDate": "2026-07-23",
+   "route": "#/slc",
+   "navGroup": "Leadership",
+   "pmeTransformation": {
+    "status": "IN EXECUTION per senior enlisted leadership, not proposed",
+    "BLC": "lengthened, reporting ranges 5-6 weeks, new land navigation content",
+    "ALC_SLC": "both shortened - SOURCES DISAGREE (~3 weeks vs 'more than a week' reduction); module states the disagreement rather than picking one",
+    "MLC": "expanded 15 to 21 days",
+    "SMC_resident": "unchanged 10 months",
+    "SMC_DL": "18-24 months down to ~12 months",
+    "allSGM": "72-hour warfighting exercise at Fort Bliss",
+    "throughLine": "warfighting focus; non-warfighting requirements deliberately stripped"
+   },
+   "consequence": "Session 24's BLC module and session 25's ALC module had already gone stale on course length - both caveated in this pass rather than left to mislead",
+   "sections": [
+    "Read this first - PME is actively changing",
+    "What SLC actually is",
+    "SLC NCO-C3",
+    "The writing is the thing that catches people",
+    "Platoon training & leader development plans",
+    "Sharpen the sword",
+    "Master Leader Course (MLC)",
+    "Sergeants Major Course (SMC)"
+   ],
+   "slcFacts": [
+    "third NCOPDS course",
+    "branch-specific",
+    "SSG(P) and SFC",
+    "platoon/company scope",
+    "aimed at eventual 1SG duties",
+    "pin-on requirement for MSG",
+    "NCO-C3 uses be-know-do model vs ALC's LRM",
+    "analytical essay",
+    "platoon training and leader development plans",
+    "APA format required at some academies"
+   ],
+   "mlcFacts": [
+    "branch-immaterial, SFC and MSG",
+    "tactical to operational/strategic transition",
+    "expanded 15 to 21 days",
+    "MDMP NEWLY INTRODUCED - was not previously part of MLC",
+    "three-day ~24 academic hour warfighting capstone",
+    "capstone applies MDMP steps 1-3 (receipt of mission, mission analysis, COA development) in a 1SG context",
+    "revised curriculum adds explicit 1SG responsibilities on graduate recommendation",
+    "graduation standards include body composition and passing AFT"
+   ],
+   "smcFacts": [
+    "resident 10 months",
+    "DL reducing to ~12 months from 18-24",
+    "72-hour warfighting exercise at Fort Bliss ORMTC",
+    "MLC is eligibility requirement; SGM-A completion is pin-on for SGM",
+    "MSGs serving in next higher graded position may be conditionally promoted on completing Term 1 Phase 1"
+   ],
+   "selfCheck": {
+    "items": 10,
+    "key": "guidon:slc:checks:v1",
+    "verifiedIndependentOf": [
+     "guidon:blc:checks:v1",
+     "guidon:alc:checks:v1"
+    ]
+   },
+   "ladderComplete": "BLC -> ALC -> SLC -> MLC -> SMC, cross-linked both directions in-app",
+   "testArtefact": "A check reported SLC not loading - the heading is CSS-uppercased and the probe was case-sensitive. Confirmed via textContent vs innerText. Seventh instance of the verify-the-verifier rule."
+  },
+  "blcIsapRebuild": {
+   "addedSession": "26b",
+   "addedDate": "2026-07-23",
+   "source": "BLC Individual Student Assessment Plan, NCOLCoE, course 600-C44, October 2020 (uploaded by Chris)",
+   "growth": {
+    "charsBefore": 12894,
+    "charsAfter": 25949,
+    "sectionsBefore": 7,
+    "sectionsAfter": 17,
+    "selfCheckBefore": 10,
+    "selfCheckAfter": 12
+   },
+   "keyMechanicsEncoded": {
+    "sixGpaAssessments": [
+     "1009S information brief",
+     "1009W compare-and-contrast (followership vs servant leadership)",
+     "1009W informative essay",
+     "Conduct Individual Training",
+     "Conduct Physical Training",
+     "Conduct Squad Drill"
+    ],
+    "lateSubmission": "zero without prior coordination",
+    "1009A": "6 attributes x 4 modules x 25 = 600 max; 480 gates Commandant's List / Superior Academic Achievement; two 'Did Not Meet' in Part II f-k forces Failed to Achieve Course Standards",
+    "honours": {
+     "DHG": 40,
+     "DLA": 40,
+     "CommandantsList": 20,
+     "HonorGrad": 5,
+     "WritingAward": 5,
+     "IronSoldier": 5,
+     "disqualifier": "any negative counseling disqualifies from all six"
+    },
+    "1009S": "10 min +/-2, /100, 70+ GO, NOT a Q&A - clock stops when briefer asks for questions",
+    "essays": {
+     "compareContrast": "250-750 words",
+     "informative": "750-1250 words, five-paragraph, graphic organizer submitted"
+    },
+    "writingRubric": "Purpose (Advanced = main point in top 2%), Analysis (Advanced ~80% analysis/20% summary), Syntax, Concision, Accuracy; 50%+ similarity triggers plagiarism review",
+    "practicalRubrics": {
+     "individualTraining": "30 min +/-2, 25 steps, -4 each",
+     "PT": "hard-copy DA Form 2977 required, each step all-or-nothing",
+     "squadDrill": "TC 3-21.5, 20 steps, -5 each"
+    },
+    "reassessment": "max two per enrollment, capped at 70%, removes honours eligibility; fail or need a third = recommended dismissal",
+    "disenrollment": "disciplinary/motivational bars further NCOPDS six months; re-enrollees start course from beginning",
+    "sharpEssay": "disclosure triggers an UNRESTRICTED report"
+   },
+   "currencyCorrections": [
+    "ISAP grader rubric still lists SPT and Leg Tuck - LTK replaced by Plank 2022, SPT dropped when AFT replaced ACFT 1 Jun 2025; current five events MDL/HRP/SDC/Plank/2MR",
+    "SSD I / DLC I prerequisites eliminated for resident NCO PME 1 Oct 2024",
+    "Army Directive 2020-06 protections quoted throughout expired 31 Mar 2022",
+    "ABCP: no AFT-score exemption; AD 2026-13 rescinded AD 2025-17 effective 7 Jul 2026",
+    "BLC being lengthened with land navigation under the PME transformation"
+   ],
+   "practitionerAdvice": "Folded in as its own section, deliberately kept in original register. Key: DLA carries more weight than C-List or DHG; follow the rubric and answer what it asks; ask the instructor; be creative (cadre have seen it all); PT hard and speak up; slow the PRT cadence (it is graded); volunteer for a leadership role; be a team player; save the resources.",
+   "testArtefact": "8th instance, and nearly caused a WRONG FIX. Pre-compaction sweep reported 2 night-vision contrast violations on #/home; non-reproducible in isolation. Cause: 150ms settle against transition: color 0.15s - axe sampled mid-transition. Identical sweep at 400ms settle: 0 violations. LESSON: settle longer than the longest CSS transition before sampling colour.",
+   "verification": "17 sections load/expand; all ISAP probes confirmed at runtime; self-check persists 6/12 across reload; 0 a11y violations across 8 themes x 10 sections; console clean; no overflow at 360px."
+  },
+  "alcPractitionerAdvice": {
+   "addedSession": 27,
+   "addedDate": "2026-07-23",
+   "section": "From people who have been there (11 points)",
+   "sources": "NCOs who completed ALC plus a former ALC instructor",
+   "leadItem": "Classroom participation is GRADED - most under-appreciated line on the scoresheet; now also a self-check item",
+   "selfCheckGrowth": "10 -> 12 items (participation habit; AFT score feeding Presence)",
+   "keyPoints": [
+    "instructors watch outside graded events, including how you treat your study group",
+    "AFT score feeds Presence rating on the 1009A which flows to DA Form 1059 - controllable before arrival",
+    "cheating or plagiarism = dropped",
+    "write how you actually speak - an NCO was marked down for 'labyrinth' and 'purview'; SGL said stop googling vocabulary",
+    "0630 formation to ~1800 release; open-bay billeting and shared showers common; use the scheduled study block",
+    "former instructor's warning: coasting and competing look identical from the inside - people are surprised at graduation",
+    "three archetypes incl. peers who undercut others; sniping is visible to cadre and costs the sniper",
+    "slide-polishing culture is real; meet the standard quickly, do not let it eat analysis time"
+   ],
+   "correction": "Source said '1059A'; corrected - 1009A is the assessment form, DA Form 1059 is the Academic Evaluation Report it feeds",
+   "editorialDecision": "Source used a disability slur and a crude sexual jibe. Observations kept, language reworded - this app gets shown to units. The section states plainly that it has been reworded so it is not mistaken for verbatim quotation. Nothing substantive softened.",
+   "verification": "10 sections; 13 content probes confirmed; automated slur check clean; self-check persists 5/12 and independent of BLC 0/12; 0 a11y across 8 themes x 10 sections at 400ms settle; console clean; no overflow at 360px."
+  },
+  "drillsAndDemoRebuild": {
+   "addedSession": 28,
+   "addedDate": "2026-07-23",
+   "drills": {
+    "route": "#/drills",
+    "navGroup": "Leadership",
+    "count": 6,
+    "sources": "BLC ISAP (600-C44) rubrics, TC 3-21.5, ATP 7-22.02",
+    "items": [
+     "Squad Drill sequence - 20 graded steps, recall trainer, -5/step",
+     "PRT session builder - both sessions block-by-block; hard-copy DA 2977 + risk brief are scored steps; all-or-nothing",
+     "Information brief rehearsal - live timer colour-coding the 8:00-12:00 window + all 17 1009S rubric lines with point values",
+     "Essay word-count & rubric - live count vs actual ranges (250-750, 750-1250, 2 pages) + five writing standards",
+     "Conduct Individual Training - 25 steps checklist, -4 each",
+     "MDMP step trainer - seven steps, drilled on what each produces"
+    ]
+   },
+   "demoCenter": {
+    "problem": "DEMO_STEPS was a hand-maintained 19-stop list that never gained BLC, ALC or SLC - the three newest modules were invisible in the tour used to showcase the app",
+    "fix": "Derived from ROUTES; 24 stops verified; closes a long-standing open item",
+    "added": [
+     "per-stop 'Show them:' callouts - the old tour said what a section IS but never what to point at",
+     "presenter cheat-sheet on the mode picker, all 24 sections tappable (Free Mode has no view of its own)"
+    ],
+    "bugFound": "First ROUTES-derived version produced an EMPTY DEMO_STEPS and threw 'Cannot read properties of undefined (reading title)' on every render. ROUTES is scoped inside the app-shell IIFE and invisible to the profile module where kiosk lives; the typeof guard failed silently to an empty array rather than erroring loudly. Fixed by exposing G.routes as single source of truth; card renderer hardened against out-of-range index."
+   },
+   "verification": "G.routes 26 routes; 24 tour stops; cheat-sheet 24 rows with BLC/ALC/SLC/Drills present; tour renders with callouts; all six drills open with every interaction confirmed (PRT tab switch, essay standards, 25 CIT checkboxes, MDMP advance+reveal, squad reveal, brief timer); 0 a11y across 5 themes x 10 sections; console clean; no overflow at 360px.",
+   "instrumentErrors": "9th and 10th: case-sensitive check against CSS-uppercased counter; location.hash set to current page does not re-render so the drill menu never returned; innerText missed content textContent found. All confirmed against the DOM before touching code."
+  },
+  "ncopdsGlossary": {
+   "addedSession": 29,
+   "addedDate": "2026-07-23",
+   "gapAnalysis": "67 candidates checked against existing dictionary: 37 missing, 30 already present. Only missing added.",
+   "dictionary": {
+    "before": 3592,
+    "after": 3629,
+    "advertisedCountUpdated": true
+   },
+   "acronymsAdded": [
+    "ISAP",
+    "NCOLCoE",
+    "USANCOA",
+    "NCOA",
+    "RTI",
+    "SGL",
+    "ALA",
+    "NCO-C3",
+    "DHG",
+    "DLG",
+    "SGM-A",
+    "EPS",
+    "DLC",
+    "PPW",
+    "PSL",
+    "STAB",
+    "OML",
+    "CES",
+    "PEBD",
+    "MBF",
+    "ASBS",
+    "ATIS",
+    "iPERMS",
+    "WHtR",
+    "2MR",
+    "SPT",
+    "CIT",
+    "FD1",
+    "MMD",
+    "RD",
+    "TR",
+    "1009A",
+    "1009S",
+    "1009W",
+    "DA 1059",
+    "DA 2977",
+    "DA 4856"
+   ],
+   "currencyInline": "SPT flagged as removed when AFT replaced ACFT; DLC flagged as eliminated as a PME prerequisite 1 Oct 2024",
+   "doctrineEntries": {
+    "count": 15,
+    "topic": "NCO Development",
+    "titles": [
+     "The NCOPDS ladder",
+     "NCO Common Core Competencies (NCO-C3)",
+     "DA Form 1059 outcomes",
+     "The 1009A - attributes and competencies",
+     "Academy honours and their promotion points",
+     "The five Army writing standards",
+     "Reassessment and dismissal",
+     "The information brief",
+     "Conducting physical training",
+     "Squad drill and the squad leader's inspection",
+     "Military Decision-Making Process",
+     "Servant leadership and followership",
+     "The be-know-do model",
+     "ATRRS, IPPS-A, iPERMS and ATIS",
+     "DLC no longer gates resident PME"
+    ]
+   },
+   "bibliography": {
+    "location": "NCOPDS Drills module",
+    "groups": [
+     "Course and assessment",
+     "Promotion",
+     "Leadership and development",
+     "Operations and planning",
+     "Drill, fitness and standards",
+     "Writing and administration"
+    ],
+    "framing": "Opens by telling the reader to go read the source rather than taking the app's word for it"
+   },
+   "verification": "3,629 terms with advertised count matching; all new acronyms resolve; 15 doctrine entries reachable; live search confirmed for a new acronym (ISAP) and a new doctrine entry (NCOPDS); bibliography renders with every reference; 0 a11y across 4 themes x 10 sections; console clean; no overflow at 360px.",
+   "standingRuleRefined": "Two night-vision violations reappeared at a 400ms settle - past the 0.15s nav transition that explained them in session 28. Did NOT dismiss as the known artefact: retested at 1500ms (0 violations) and matrix-wide with a settle after EACH THEME CHANGE (0). A theme switch triggers colour transitions across the whole UI, so the settle must follow the theme change, not only navigation."
+  },
+  "fivePhaseShip": {
+   "addedSession": 30,
+   "addedDate": "2026-07-23",
+   "phase1": {
+    "audited": 331,
+    "legitimateInTokenBlocks": 283,
+    "looseBefore": 46,
+    "converted": 16,
+    "looseAfter": 7,
+    "rationale": "Every recent contrast bug traced to hardcoded values bypassing the token system; fixing before a design handoff prevents them resurfacing per-theme"
+   },
+   "phase2": {
+    "route": "#/channels",
+    "navGroup": "Career & Life",
+    "content": [
+     "9 need/who/note channel rows",
+     "PME + TIG/TIS gate table",
+     "5 systems and what each decides",
+     "the cut-off rule",
+     "recruiter is NOT a promotion channel"
+    ]
+   },
+   "phase3": {
+    "boardCountdownOnHome": "required exposing G.renderBoardCountdown across the module boundary, same class as G.routes; renderer self-draws the set-date row so profiles without a date lose nothing",
+    "ppwAdvice": "scales with proximity - within 7d points locked/verify IPPS-A; within 30d awards+correspondence only realistic movers; beyond that biggest category gap"
+   },
+   "phase4": {
+    "branding": "E1-E6 to E1-E9 on the TWO branding strings only",
+    "deliberatelyUnchanged": "AAM board card wording is correct doctrine; the rank filter key (7 occurrences) is FUNCTIONAL IDP data whose change would silently break goal targeting for existing profiles",
+    "printableSummary": "name/MOS/tier, board date + days out, cards graded, Know-It+ percentage, full action plan, Soldier and counselor signature blocks; built at print time, nothing stored"
+   },
+   "phase5": {
+    "doc": "GUIDON_DESIGN_SYSTEM.md",
+    "contents": [
+     "33 tokens grouped by purpose with usage rules",
+     "14 themes + light-class gotcha",
+     "21 media conditions + consolidation recommendation",
+     "component inventory",
+     "5 architecture constraints incl. silent-failure of cross-module typeof guards",
+     "verification standard with both timing rules",
+     "honest design-debt table"
+    ]
+   },
+   "verification": "node --check clean; 4 style blocks brace-balanced; 0 a11y across 14 themes x 12 sections; console clean at error and warning; backwards compat confirmed live."
+  },
+  "backlogCleared": {
+   "addedSession": 31,
+   "addedDate": "2026-07-23",
+   "completed": [
+    "Themed G.modal (focus trap, Escape/Enter, aria-modal, danger variant) replacing native prompt/confirm in all three Account dialogs",
+    "Quiz study-level filter - 1014 to 87 on Expert, defaults to All so existing behaviour unchanged",
+    "Nav re-tap re-renders - matching hash previously meant route() never fired and sub-views stuck open",
+    "Guest session-only action plan - 4 items in cache, never written to IndexedDB"
+   ],
+   "mistakeRecorded": "Difficulty filter first landed in the WRONG renderer (Board Drill, which already had one) because both declare catSel and I matched the first. The typeof guard made it fail SILENTLY - no error, no filter, no signal. Second time a defensive typeof guard converted a real bug into a silent no-op (first: Demo Center empty tour).",
+   "blocked": {
+    "weaponHitCountTables": "have 2 published anchors and interpolate; real rows need the actual AR tables - inventing intermediates would be worse than a labelled estimate",
+    "civilianEdRate": "never verified; worksheet takes the figure from the Soldier's own PPW rather than applying a guessed rate",
+    "combatFieldTest": "sources disagreed 21 vs 24 designated MOSs - not shipping a number I cannot stand behind",
+    "cardReviews": "content judgment on someone's study material; my automated attempt produced false positives",
+    "lazyLoad5MB": "genuine architectural change deserving a dedicated session with its own regression budget"
+   },
+   "verification": "node --check clean; 0 a11y across 14 themes x 12 sections; console clean; guest plan present but unpersisted; quiz filter narrows correctly; nav re-tap returns to drill menu; themed dialog focus-trapped with Escape close and profile unchanged after cancel; no native dialog fires."
+  },
+  "keyboardAudit": {
+   "addedSession": 33,
+   "addedDate": "2026-07-23",
+   "alreadyCorrect": [
+    "one main, one nav, lang=en, single h1",
+    "skip link hidden OFF-SCREEN (left:-999px) not display:none",
+    ":focus-visible styles present",
+    "two aria-live=polite regions",
+    "no heading-level skips in any section",
+    "focusable non-semantic element correctly has role=button"
+   ],
+   "bugFound": "Skip link was unreachable by forward tabbing. The router focuses the view heading after every render (correct SPA practice for announcing navigation) INCLUDING the initial one, dropping focus inside <main> before the first Tab press and stranding everything before it in the DOM. A skip link that cannot be tabbed to is decorative.",
+   "fix": "_firstRouteDone flag suppresses heading focus on first render only. Skip link is now first tab stop on load; navigation still announces headings. Both halves verified.",
+   "alsoAdded": "role=banner on topbar - landmark nav now offers banner/navigation/main",
+   "methodNote": "Nearly mis-diagnosed twice: first a genuine artefact (offsetParent null on position:fixed), then an ASSUMPTION that the second failure was also an artefact. Only reloading WITHOUT navigating reproduced the real bug. Past instrument errors are not a licence to dismiss new evidence.",
+   "grepMistake": "An early grep flooded output with the 3,629-term acronym dictionary - 3rd occurrence after sessions 14 and 21. Anchored patterns only in this file.",
+   "verification": "node --check clean; 0 a11y across 14 themes x 12 sections; console clean; skip link reachable and functional; SPA heading announcement preserved; all three landmarks present."
+  },
+  "selfTestSuite": {
+   "addedSession": 34,
+   "addedDate": "2026-07-23",
+   "route": "#/selftest",
+   "navGroup": "Account",
+   "rationale": "Playwright cannot reach the real device. TalkBack, S Pen hover, airplane-mode offline, print and sunlight legibility all need the Galaxy Tab itself.",
+   "automatedChecks": [
+    "module integrity (12 G.* modules)",
+    "route health",
+    "storage round-trip",
+    "content integrity",
+    "no external requests",
+    "screen-reader landmarks",
+    "skip link genuinely first focusable",
+    "heading hierarchy",
+    "contrast sample (real luminance)",
+    "no horizontal overflow",
+    "input mode (informational)"
+   ],
+   "automatedResult": "11/11 passing, lowest sampled contrast 4.63:1",
+   "manualChecks": [
+    "TalkBack (5 specific confirmations)",
+    "keyboard-only",
+    "S Pen hover (must not fire on touch)",
+    "airplane mode + full restart",
+    "rotation and split view",
+    "outdoor legibility across 5 light themes",
+    "print output",
+    "force-stop persistence",
+    "Demo Center dry run"
+   ],
+   "persistence": "Manual ticks persist to IndexedDB key guidon:selftest:v1; verified 3/9 across reload",
+   "export": "Plain-text report: build, full UA, viewport/DPR, theme, automated lines, confirmed vs outstanding. Clipboard with printable-window fallback.",
+   "statedLimits": "Suite ends by stating plainly it CANNOT prove screen-reader usability - it checks structure only, which is necessary but not sufficient. TalkBack is first in the manual list for that reason. A test suite that overstates coverage is worse than none.",
+   "verification": "Loads and appears in nav; 11/11 automated; 9 manual persist across reload; export correct; 0 a11y across 14 themes x 12 sections including the new section; console clean."
+  },
+  "focusThemeSet": {
+   "addedSession": 35,
+   "addedDate": "2026-07-23",
+   "group": "Focus",
+   "count": 10,
+   "totalThemesNow": 24,
+   "brief": "Promote focus, comfortable at any ambient brightness",
+   "principles": [
+    "never pure #000 (halation, worse with astigmatism) or #fff (glare)",
+    "low chroma, ONE restrained accent per theme - multiple accents are noise, noise is the enemy of focus",
+    "small surface-to-surface steps so panels do not glare, while text contrast stays high (the two are independent)",
+    "--glow-amber: none across the set - glow fights readability",
+    "body text held at 12.7-14:1 (AAA), roughly double the AA requirement"
+   ],
+   "method": "Palettes solved numerically BEFORE writing CSS: script computed WCAG luminance ratios and iteratively tightened --text-dim until it cleared 4.5:1 against BOTH --bg and --panel. One accent returned 4.36:1 and was darkened pre-ship.",
+   "themes": {
+    "dim": [
+     "Graphite Calm",
+     "Umber Lamp",
+     "Pine Dusk"
+    ],
+    "mid": [
+     "Slate Quiet",
+     "Clay Warm",
+     "Harbor Mid"
+    ],
+    "bright": [
+     "Parchment Read",
+     "Bone Neutral",
+     "Overcast",
+     "Sandstone Sun"
+    ]
+   },
+   "measured": {
+    "textOnBg": "12.66-13.98",
+    "dimOnBg": "6.14-8.09",
+    "dimOnPanel": "6.64-7.43",
+    "btnInk": "4.64-7.92"
+   },
+   "verification": "0 a11y violations across 10 new themes x 10 sections; all 10 in picker under Focus; apply, persist across reload, correct light class on both dark and light members; node --check and brace-balance clean; console clean.",
+   "buildTrap": "Injecting CSS at the last </style> landed it INSIDE a JavaScript string - the print-summary code emits a literal </style>. A <style>...</style> regex hit the same trap. Fixed by mapping <script> spans first and choosing a </style> outside them. In a single-file app, markup-shaped strings live inside the JS.",
+   "countCaution": "Now 24 themes. The design handoff names 14 as a maintenance liability. These ten were built to one coherent brief; the right follow-up is retiring weaker originals, not accumulating."
+  },
+  "adaptabilityAudit": {
+   "addedSession": 36,
+   "addedDate": "2026-07-23",
+   "viewports": {
+    "ZFold5 folded": "344x882",
+    "ZFold5 unfolded": "673x841 (nearly square)",
+    "TabS9FE portrait": "720x1152",
+    "TabS9FE landscape": "1152x720",
+    "phone": "360x780",
+    "small phone": "320x700"
+   },
+   "quizCardFinding": "Already adaptable - verified not assumed. Scales 284x322 to 888x480, consistent 42-52% of viewport height. Flipped to the longest card in the corpus (ucmj-2, 1911 chars) with NO clipping at any viewport; .qz-back-scroll correctly overflow-y:auto and scrollable. Nothing needed changing.",
+   "bugsFixed": [
+    {
+     "what": ".segmented had overflow:hidden",
+     "impact": "trailing tab buttons UNREACHABLE at 344px and on small phones - 570px strip in a 306px container",
+     "fix": "overflow-x:auto + max-width:100% + scroll-snap + hidden scrollbar. Scroll not wrap, because wrapping destroys the pill shape a segmented control depends on."
+    },
+    {
+     "what": "Channels gate table exceeded viewport at 320px",
+     "impact": "5-column table wider than the narrowest supported screen; my own bug from session 30",
+     "fix": "below 420px rows stack into blocks with column names as data-label prefixes"
+    }
+   ],
+   "result": "0 layout issues across 6 viewports x 16 sections, down from 5",
+   "sweepChecks": [
+    "page-level horizontal overflow",
+    "any element wider than the viewport",
+    "horizontally clipped text in elements without a scroll affordance"
+   ],
+   "verification": "0 a11y at ZFold unfolded across 4 themes x 4 sections including two Focus themes; node --check and brace-balance clean; console clean at every viewport."
+  },
+  "hostedAccess": {
+   "addedSession": 37,
+   "addedDate": "2026-07-23",
+   "route": "#/share",
+   "navGroup": "Account",
+   "hostingVerified": "Served from a real https origin under iPhone 15 Pro (Safari UA), Pixel 8 (Chrome UA) and iPad. All three: IndexedDB read/write OK, board renders, manifest present, service workers supported, ZERO external requests, zero overflow, console clean.",
+   "transferSize": {
+    "raw": "4.89 MB",
+    "gzip": "1.47 MB",
+    "ratio": "31%",
+    "note": "measured, not estimated; embedded JSON compresses very well"
+   },
+   "iosGotcha": "Safari deletes a site's stored data after ~7 days without a visit. A Soldier studying from a plain Safari tab can lose card grades, board date and action plan. Adding to Home Screen makes storage persistent - the panel says do it BEFORE starting, with exact steps, and notes it must be Safari not Chrome or an in-app browser.",
+   "privacyNote": "Panel states plainly that the server can see who fetched it - a normal access log, not study data, but worth knowing before posting a link to a formation.",
+   "qrEncoderRemoved": "A full QR encoder (Reed-Solomon over GF(256), byte mode, v1-10) was implemented in-app since no CDN is permitted, then verified by DECODING ITS OWN OUTPUT with OpenCV. It failed all four test strings. REMOVED rather than shipped - an unscannable QR failing in front of a formation is worse than none. Module retains a comment on what was tried and why it is gone. Panel points at the copy button instead.",
+   "verification": "Share panel loads on both mobile profiles from a real HTTPS origin, shows live URL, carries the 7-day warning, copy button present; 0 a11y violations; zero overflow; zero external requests; console clean."
+  }
+ },
+ "versionMarkers": {
+  "note": "No single APP_VERSION constant isolated. These are content-level asOf/version stamps found in various data objects.",
+  "contentVersionStringsSeen": [
+   "v0.36.0",
+   "v0.42.0",
+   "v0.42.1",
+   "v0.43.0",
+   "v0.43.1",
+   "v0.44.0"
+  ],
+  "pointsModuleVersion": "0.1.0",
+  "resilienceModuleAsOf": "Jul 2026",
+  "transitionModuleAsOf": "Jul 2026",
+  "acronymsAsOf": "2021 (DoD) + Army overlay",
+  "recommendation": "Introduce one explicit APP_VERSION constant going forward"
+ },
+ "priorLineage": {
+  "predecessorApp": "62nd Engineer Battalion NCO Promotion Board Prep",
+  "predecessorPackage": "com.rugged62en.boardprep",
+  "predecessorVersionCode": 60007,
+  "predecessorBuild": "APK v13 / HTML v8",
+  "predecessorCardCount": 344,
+  "predecessorDeckCount": 23,
+  "predecessorThemeCount": 12,
+  "note": "Predecessor was unit-specific (62nd EN BN / 36th EN Bde). Unclear whether guidon_31.html generalized this or removed it - flagged as open item."
+ },
+ "openItems": [
+  "NOTE: NVDA 2026.1.1 is installed at C:/Program Files/NVDA and RESTORED to normal use - synth=oneCore, default INFO logging, start/exit sounds on. It is not running. To repeat the speech-capture work, set synth=silence and loggingLevel=DEBUG in %APPDATA%/nvda/nvda.ini, then use tools/nvda-walk.mjs.",
+  "FIXED (46): #/forms rendered its title as bare text in a div, so the router found no h1/h2 to focus and navigating to Forms announced NOTHING in a screen reader. Every automated check passed it.",
+  "CLOSED (46): flows 2 (Board Drill card) and 3 (DA 4856) walked with NVDA. Both read well - \"Answer revealed.\", \"Marked known. Next card.\", and the flipped card announces with region/list structure and named grade buttons.",
+  "STANDING: every view must contain an h1 or h2 for the router to focus. test-a11y-tree.mjs now asserts this across all 35 sections.",
+  "STANDING: the view container is #route (id=route, class=view). There is NO #view element - selectors built on it match nothing and fail silently.",
+  "STANDING: NVDA logs Python-repr style and uses DOUBLE quotes for strings containing an apostrophe. A single-quote-only parser corrupts them.",
+  "STANDING: .nav buttons include COLLAPSIBLE GROUP HEADERS that expand a group rather than navigate. Drive navigation by location.hash, not by matching nav button text.",
+  "NOTE (46): Windows toast notifications were disabled during the walk (HKCU PushNotifications ToastEnabled) and RESTORED afterwards.",
+  "FIXED (45): #route carried aria-live=polite while BEING the whole view container, so every navigation read the entire page aloud in NVDA. The worst accessibility defect in the app - invisible to axe-core AND to the accessibility-tree audit, which counted the region existence as a PASS.",
+  "CLOSED (45): NVDA 2026.1.1 installed (signature-verified NV Access Limited), configured with the silence synthesizer + DEBUG logging so speech is captured from the NVDA log with no audio. tools/nvda-drive.ps1 drives the desktop app and extracts the transcript.",
+  "OPEN (45): flows 2 and 3 (Board Drill card flip, DA 4856 export) were NOT walked with NVDA - Windows notifications from the agent own tooling repeatedly stole focus mid-run. Walk them by hand with audio on; about five minutes.",
+  "STANDING: a live region must announce a STATUS, never contain a view. test-a11y-tree.mjs now fails any live region containing a heading, over 400 chars, or with more than three children.",
+  "STANDING: presence is not correctness. The a11y test reported \"2 live regions present\" as a PASS while one of them WAS the defect.",
+  "CLOSED (44): the screen-reader gap flagged hardest in section 37 is now NARROWED, not closed. tools/test-a11y-tree.mjs reads the computed accessibility tree via CDP - the data AT actually consumes - across all 35 sections.",
+  "CLOSED (44): controls with context-free names. 8x \"Open section\", 18x \"Load into grader\", 2x \"Compact\" all fixed; visible text kept as a prefix of the accessible name so WCAG 2.5.3 label-in-name still holds.",
+  "CLOSED (44): GUIDON_APP_VERSION said 1.1.0 while all installers said 1.2.0.",
+  "CLOSED (44): GUIDON_PROJECT_MAP.md refreshed from live figures (was 26 routes / 290 doctrine / ~918 classes / a build file that no longer exists).",
+  "STILL OPEN: testing with a REAL screen reader and a real user. The AX-tree audit reads what AT is handed and asserts it is usable; it cannot tell you whether the experience is. NVDA/JAWS are not installed here.",
+  "STANDING: CDP wraps AX properties in an AXValue - read .value twice or every numeric property silently becomes NaN.",
+  "STANDING: Chromium exposes <input type=\"date\"> under role \"Date\", not textbox, and generates unrenameable internal spin buttons. Audit the input; ignore its parts.",
+  "CLOSED (43): the seed parse cost - the longest-deferred item in the project. Solved with a build-time JSON.parse transform rather than the async refactor everyone kept deferring. 94ms at 6x CPU, zero compressed cost.",
+  "CLOSED (43): the .segmented tab strip had no scroll affordance at 412px (flagged in session 45). Fixed with a theme-agnostic mask driven by measured geometry, suppressed under high contrast.",
+  "STANDING: a performance measurement must carry a correctness flag beside it. The first seed run showed 37% faster because the variant had silently stopped booting.",
+  "STANDING: when an item has been deferred more than twice for the same reason, question the APPROACH rather than the schedule. The seed was never the problem; the async refactor was.",
+  "NOTE: GUIDON_PROJECT_MAP.md says 290 doctrine entries; the real count is 336. Stale, along with its 26-route and guidon_86.html figures.",
+  "CLOSED (42): the ACFT contextual audit. Sections 28 and 46 deferred it on method grounds; walking the parsed seed and classifying by claim shape found real self-contradictions on live policy, not naming drift.",
+  "CLOSED (42): three cards claimed a live 465 taping exemption while another correctly documented its rescission (AD 2026-13, 7 Jul 2026). The app answered the same question two ways.",
+  "CLOSED (42): six-event teaching, the 360 minimum, an impossible scenario premise (302 vs a 360 floor), and a counselling bullet template with the wrong standard.",
+  "CLOSED (42): #11 freshness surfacing - #/currency shows what edition each policy area is built on, computes its age at render time, and names who to ask.",
+  "STANDING: run tools/test-consistency.mjs after any fitness or promotion content change. It asserts current-standard claims are current while deliberately allowing historical framing.",
+  "STANDING: when a contextual audit is blocked by the method, change the method. A regex over raw text cannot classify these; walking the parsed seed can.",
+  "NOTE (42): the consistency test was wrong three times before the corpus was - \"Single-Leg Tuck\" and the Climbing Drill \"Leg Tuck\" are both current FM 7-22 exercises, unrelated to the removed ACFT event.",
+  "CLOSED (41): Career Calendar (#/calendar) - the dated spine, incl. the 24-month weapons-qual rule and the 26th/1-Oct anchors.",
+  "CLOSED (41): Enlisted Marketplace (#/assignments) - YMAV, YMAEAT, KDA, preferencing. States up front that it is principally SSG-MSG.",
+  "CLOSED (41): Leader mode (#/leader) - squad roster, counselling cadence, overdue surfacing.",
+  "FIXED (41): PRIVACY REGRESSION introduced by the roster - backup exportAll() dumped the whole kv store including other people’s data. Now excluded by default (PRIVATE_PREFIXES); includePrivate is opt-in and flagged in the payload. Guarded by tools/test-privacy.mjs.",
+  "STANDING: any new kv key holding data about OTHER people must be added to PRIVATE_PREFIXES in backup.js. The default must stay exclude.",
+  "OPEN: #9 per-MOS credentialing pathway not done - needs Army COOL data the app does not have and should not invent. CMF-level mapping remains the coverage.",
+  "OPEN: the squad roster deliberately does not survive a device change, because it is excluded from backups. Accepted trade-off; re-enter on a new device.",
+  "CLOSED (40): weapons qualification tables are now the REAL AR 600-8-19 tables 3-2/3-3, not an interpolation. The old anchors were right but the curve between them is not linear, so the estimated middle rows were wrong.",
+  "CLOSED (40): AFT score-to-points is now table 3-4. The previous in-app hint claiming a 500 is worth 80 points was wrong - it is 120.",
+  "CLOSED (40): the \"21 or 24 combat MOSs\" contradiction. AFT combat standard = 21; CFT = those 21 plus 12D, 89D, 89E = 24. Two different tests.",
+  "CLOSED (40): Combat Field Test content existed nowhere in the app. Now #/fitness.",
+  "CLOSED (40): Continuation Pay window corrected to 7 years (eff 1 Jan 2026) in both places it appeared.",
+  "OPEN (measured, deliberately not bulk-fixed): 221 ACFT references, 46 already flagged historical, 175 not. A regex cannot separate a current-standard claim from a historical one; needs a contextual pass. #/fitness is now the authoritative home for current standards.",
+  "OPEN: civilian-education per-semester-hour rate still unverified - AR 600-8-19 para 3-18 says transcripts determine it; the PPW still takes a direct entry.",
+  "STANDING: Python open(...,\"w\") on Windows rewrites the file to CRLF and breaks the build anchor. Use newline=\"\".",
+  "STANDING: derive counts from the artifact, never hard-code them in tests. Three test files each carried a literal \"29 routes\".",
+  "STANDING: obtain regulations from armypubs content search + local PDF parse. Search snippets got two AR 600-8-19 changes materially wrong.",
+  "CLOSED (39.2): the Windows installer is now actually tested - install, Start-menu shortcut, launch, uninstall, no leftovers.",
+  "CLOSED (39.2): Android portrait verified on a phone AVD at a real 412x842 viewport.",
+  "CLOSED (39.2): Android release signing exists. keys/guidon-release.jks - BACK IT UP.",
+  "FIXED (39.2): the Android Back button did nothing. See packaging.android.backButton. Section 44 had reasoned its way to \"Capacitor default is correct\" and recorded it as settled - it was wrong.",
+  "STANDING: reasoning about a platform is not evidence about a platform. Test on the device.",
+  "STANDING: never pipe a background build through `| tail -N` - it masks the real error AND replaces the build exit code with tail's. Reported Gradle BUILD FAILED as exit 0 twice.",
+  "STANDING: the Tauri window-state plugin saves on graceful close, not on kill. Stop-Process -Force writes no state file and looks like a plugin bug.",
+  "STANDING: file() in android/app/build.gradle resolves from the app module, not the project root. Use rootProject.file().",
+  "OPEN: Windows code signing not done - SmartScreen warns on the unsigned installer. Authenticode cert (~$200-400/yr) needed before wide distribution.",
+  "OPEN: the .segmented tab strip clips at 412px with no affordance that more tabs exist. Section 41 chose scroll-not-wrap deliberately; a scroll hint would help but .segmented is shared across 24 themes.",
+  "OPEN: release APKs disable WebView debugging, so the release build was verified by install+launch rather than scripted CDP assertions.",
+  "CLOSED (session 39): service worker. It was not merely unadded - registerSW() early-returned on GUIDON_SINGLEFILE, always true, so a hosted copy had NO offline capability at all.",
+  "CLOSED (session 39): installability. Manifest is a real file with PNG + separately-declared maskable icons and an apple-touch-icon.",
+  "CLOSED (session 39): the iOS ~7-day IndexedDB eviction is now MITIGATED via storage.persist(), not merely warned about.",
+  "CLOSED (session 39): a single APP_VERSION exists - 1.2.0.",
+  "CORRECTION: the app has 29 routes, not 26. GUIDON_PROJECT_MAP.md is stale and also names guidon_86.html, which does not exist on disk.",
+  "Sideload the APK on the actual Tab S9 FE - an emulator has neither S Pen hover (sec 17) nor the 90Hz panel.",
+  "Android portrait not verified on-device (emulator rotation did not take effect); the browser harness covers 720x1152.",
+  "No Android release keystore generated - a credential the owner should create before any Play Store path.",
+  "STANDING: Playwright connectOverCDP cannot attach to Android WebView. Use tools/cdp.mjs (raw DevTools Protocol to the page target).",
+  "STANDING: Java .properties treats backslash as an escape - sdk.dir must use forward slashes, or Gradle fails with a bare \"Invalid file path\" naming no path.",
+  "STANDING: Git Bash rewrites path-shaped arguments (a \"#/board\" argv became \"#C:/Program Files/Git/board\"). Set hashes inside evaluated JS, not via shell args.",
+  "Deferring GUIDON_SEED (3.26 MB) would save ~329ms DCL at 6x throttle - measured, not estimated. Still needs its own dedicated session.",
+  "OPTIONAL: a service worker would make a hosted copy work offline after first load. Not added - the file:// copy already works offline and a SW adds cache-invalidation complexity.",
+  "If a QR is wanted in-app, use a verified encoder library vendored into the file - the hand-rolled one failed OpenCV round-trip and was removed.",
+  "THEME COUNT: now 24. Recommend retiring weaker originals rather than accumulating - every component must clear contrast in every theme. The Focus set is the coherent core.",
+  "Screen-reader testing with an ACTUAL screen reader (NVDA/JAWS/VoiceOver) still not done - this session covered keyboard and structure only, which is the part automatable",
+  "STANDING: avoid defensive typeof guards across module boundaries - they convert real bugs into silent no-ops (2 occurrences: Demo Center empty tour, quiz filter in wrong renderer)",
+  "HANDOFF READY: GUIDON_DESIGN_SYSTEM.md is the entry point for a designer. Read it before touching CSS.",
+  "STANDING (refined): a11y sweeps must settle after each THEME CHANGE as well as after navigation - a theme switch triggers colour transitions across the whole UI",
+  "STANDING: a11y sweeps must settle longer than the longest CSS transition (currently 0.15s on nav) before sampling colour - 150ms produced phantom violations",
+  "PERISHABLE: PME course lengths are actively changing - re-verify BLC/ALC/SLC/MLC lengths before each demo or board cycle",
+  "Scoped follow-up: audit the ~212 remaining ACFT references in context and convert the ones that are current-standard claims (leave historical/comparative ones)",
+  "Verify whether the Combat Field Test (annual, 30-min, designated combat MOSs) should be added - sources disagreed on whether 21 or 24 MOSs are designated",
+  "Verify the full AR 600-8-19 weapon hit-count tables (3-7 SGT / 3-8 SSG) and replace the interpolation with real rows",
+  "Verify the civilian-education per-semester-hour rate and replace the direct-entry field with a computed one",
+  "TEST COVERAGE: derive audit section lists from ROUTES rather than hand-maintaining them - #/profile and #/kiosk were silently excluded from a11y sweeps for many sessions",
+  "Consider capturing board date during onboarding for personal profiles, so it is set from day one",
+  "HUMAN REVIEW: ~5 overlapping Commander's Intent cards (mc-004, mc-10, adp60-2, adp60-7, bq-mc-02) - genuine residual duplication, needs a person's judgment not an algorithm",
+  "Remaining ~87 Expert-tier cards beyond the 6 reclassified could use a fuller human pass - the category-over-weighting failure mode is now documented",
+  "Lazy-load the ~5MB embedded seed data - deferred across many sessions, needs its own dedicated session",
+  "Acronyms dictionary is on a DoD-2021 baseline - refresh pass",
+  "MOS Career Center: FY26 shortage/SRB snapshot is perishable (~6mo) - establish refresh cadence before each board cycle",
+  "MOS Career Center: civilian-cert mapping is CMF-level, not per-MOS; not yet cross-linked from Profile or Transition",
+  "Reconcile guidon-theme-proposals.html (5 themes) against the live app (14 themes) - proposals doc is stale",
+  "STANDING: capture console 'warning' output by default in every test harness, not just 'error'",
+  "STANDING: when a result is surprising, verify the verifier before hypothesizing about the code (3 occurrences to date)",
+  "PROCESS: the fork happened because two chats worked from the same base concurrently - keep one active build line, or diff explicitly before merging"
+ ],
+ "canonicalFiles": {
+  "policy": "Exactly three files: CHANGELOG.md, GUIDON_MASTERFILE.md, GUIDON_STATE.json in /mnt/user-data/outputs, mirrored to docs/ in the repo. Every session amends these in place. Never create new handoff file names.",
+  "files": [
+   "CHANGELOG.md",
+   "GUIDON_MASTERFILE.md",
+   "GUIDON_STATE.json"
+  ],
+  "durabilityRule": "Every time these 3 files are amended, they must ALSO be uploaded to the user's Google Drive and added/updated in this project's knowledge section - not left only in chat outputs, since the user's chats frequently hit max length and get deleted.",
+  "driveUploadReality": "The 3 canonical docs upload to Drive successfully (verified). Only the ~5MB guidon_N.html builds cannot - the tool requires whole-file content as a literal parameter. Grab HTML builds from the outputs pane.",
+  "designSystem": "GUIDON_DESIGN_SYSTEM.md - added session 30, fourth canonical document, written for a design handoff",
+  "designHandoff": "GUIDON_DESIGN_HANDOFF.md - added session 32. Entry point for Claude Design: context, constraints, landmines, do-not-change list, verification standard, priority order. Pairs with GUIDON_DESIGN_SYSTEM.md (token/component reference). Read the handoff first, then the system doc.",
+  "projectMap": "GUIDON_PROJECT_MAP.md - added session 38. One-page orientation: index of every document, feature summary by nav group, and ASCII wiring diagrams (module map, profile/board-date data flow, storage split, theme system). Read before the masterfile for the 10,000-foot view.",
+  "deploy": "GUIDON_DEPLOY.md - written session 39. Build, package, host, and the verification standard. The project map had referenced this file for several sessions; it had never actually been created.",
+  "note2026_07_26": "Canonical docs now live in the local project folder (Z:/APPLICATION Development_APP Creation/GUIDON files), which is durable on disk - unlike the chat-outputs situation the durabilityRule was written for. Drive upload is still worth doing as a backup."
+ }
+}

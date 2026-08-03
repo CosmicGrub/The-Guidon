@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand dark. Used for the splash background and the adaptive-icon
+         backdrop so the launcher mask never exposes white behind the mark. -->
+    <color name="brandDark">#0a0e12</color>
+    <color name="brandAmber">#ffb020</color>
+    <color name="colorPrimary">#0a0e12</color>
+    <color name="colorPrimaryDark">#0a0e12</color>
+    <color name="colorAccent">#ffb020</color>
+</resources>

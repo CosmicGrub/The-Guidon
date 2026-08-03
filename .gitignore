@@ -1,0 +1,32 @@
+# ============================================================================
+# SIGNING MATERIAL — never in this repository, private or not.
+# The Android release keystore is a credential: the package name is permanently
+# bound to it, and anyone holding it can sign updates as this app. A leaked
+# password file is the same failure. Belt-and-braces here at the root, in
+# addition to guidon-app/.gitignore, so a future re-layout cannot expose them.
+# ============================================================================
+**/keys/
+**/keystore.properties
+*.jks
+*.keystore
+*.pfx
+*.p12
+
+# Local session/tool state, not project source
+.claude/
+
+# Dependencies and build output (rebuilt by `npm install` / `npm run build`)
+**/node_modules/
+guidon-app/web/
+guidon-app/dist/
+guidon-app/src-tauri/target/
+guidon-app/android/build/
+guidon-app/android/app/build/
+guidon-app/android/.gradle/
+guidon-app/android/local.properties
+guidon-app/android/capacitor-cordova-android-plugins/build/
+
+# OS noise
+Thumbs.db
+Desktop.ini
+.DS_Store

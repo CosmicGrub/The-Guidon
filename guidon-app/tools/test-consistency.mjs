@@ -1,0 +1,144 @@
+/**
+ * Corpus consistency: does the app contradict itself, or teach a superseded
+ * standard as current?
+ *
+ * This exists because it did. A structured walk of the parsed seed - rather
+ * than a regex over the raw file - found board cards that:
+ *   - answered "a 465 exempts you from taping" while another card correctly
+ *     explained that AD 2026-13 rescinded exactly that, on 7 July 2026
+ *   - taught six AFT events including the Standing Power Throw and Leg Tuck,
+ *     both of which are gone
+ *   - gave 360 as the minimum passing score, which was the six-event maths
+ *   - built a scenario on "302, two points below the 360 minimum", where 302
+ *     is now a passing score
+ *
+ * Two sessions had declined to touch these on the grounds that a bulk find and
+ * replace would do more harm than good. That was right about the method and
+ * wrong about the conclusion: walking the parsed object and classifying by
+ * claim shape found the real errors in one pass. This locks that in.
+ *
+ * The rule these assertions encode: a statement of the CURRENT standard must be
+ * current. Historical framing ("the ACFT had six events", "the SPT was
+ * dropped") is fine and deliberately still allowed.
+ */
+import { chromium } from "playwright";
+import { serve } from "./server.mjs";
+
+let fails = 0;
+const ok = (m) => console.log("  PASS  " + m);
+const bad = (m) => { fails++; console.log("  FAIL  " + m); };
+
+const { server, url } = await serve("web");
+const browser = await chromium.launch();
+const page = await (await browser.newContext()).newPage();
+await page.goto(url, { waitUntil: "load" });
+await page.waitForTimeout(900);
+
+const findings = await page.evaluate(() => {
+  const hits = [];
+  (function walk(node, path) {
+    if (typeof node === "string") { hits.push({ path, text: node }); return; }
+    if (Array.isArray(node)) return node.forEach((v, i) => walk(v, path + "[" + i + "]"));
+    if (node && typeof node === "object") for (const k of Object.keys(node)) walk(node[k], path + "." + k);
+  })(window.GUIDON_SEED, "seed");
+
+  /* Present tense, no historical marker nearby = a claim about today. */
+  const HISTORICAL = /was dropped|were dropped|was removed|were removed|was replaced|were replaced|replaced the ACFT|replaced the Leg Tuck|succeeded the ACFT|had replaced|former|had six|old ACFT|superseded|formerly|no longer|rescinded|is gone|are both gone|used to|previously|until 2025|teaching the old/i;
+  const isHistorical = (t) => HISTORICAL.test(t);
+
+  const checks = {
+    // A currently-valid taping exemption for a high AFT score. Rescinded 7 Jul 2026.
+    liveExemptionClaim: hits.filter(h =>
+      /465\s*\+?\s*(?:with|grants|exempt)|grants an exemption from height\/weight|exempt(?:s|ion) from .*tape/i.test(h.text)
+      && !isHistorical(h.text)),
+    // Six events taught as the current test.
+    sixEventsAsCurrent: hits.filter(h =>
+      /(?:six|6)\s+(?:AFT|ACFT)?\s*events|all six events|pass all 6 events/i.test(h.text)
+      && !isHistorical(h.text)),
+    // 360 as the current minimum (that is 6 x 60; the AFT is 5 x 60 = 300).
+    threeSixtyAsCurrent: hits.filter(h =>
+      /(?:minimum|passing).{0,40}\b360\b|\b360\b.{0,30}(?:minimum|passing|total)/i.test(h.text)
+      && !isHistorical(h.text)),
+    // Standing Power Throw or Leg Tuck presented as a current TEST EVENT.
+    //
+    // This one took three passes to state correctly, and the corrections were
+    // all to the check rather than the content:
+    //   "Single-Leg Tuck" is an FM 7-22 hip stability drill exercise, and
+    //   "Leg Tuck" is a current exercise in the FM 7-22 Climbing Drill. Both
+    //   are correct and current; neither is the removed ACFT event.
+    // So the phrase alone proves nothing - it only matters alongside the other
+    // test events. "Standing Power Throw" needs no such qualifier: it existed
+    // only as an ACFT event.
+    removedEventsAsCurrent: hits.filter(h => {
+      if (isHistorical(h.text)) return false;
+      if (/Standing Power Throw/i.test(h.text)) return true;
+      const legTuck = /(?<!-)\bLeg Tuck\b|\bLTK\b/i.test(h.text);
+      const testContext = /\bMDL\b|\bSDC\b|\b2MR\b|Sprint-Drag|Deadlift|Two-Mile|\bACFT\b|\bAFT\b|events? (?:in|administered)/i.test(h.text);
+      return legTuck && testContext;
+    }),
+  };
+  return Object.fromEntries(Object.entries(checks).map(([k, v]) =>
+    [k, v.slice(0, 4).map(x => ({ p: x.path.slice(0, 58), t: x.text.replace(/\s+/g, " ").slice(0, 130) }))]
+      .concat()));
+});
+
+const LABELS = {
+  liveExemptionClaim: "no card claims a live 465 taping exemption (rescinded 7 Jul 2026)",
+  sixEventsAsCurrent: "no card teaches six events as the current test",
+  threeSixtyAsCurrent: "no card gives 360 as the current minimum (it is 300 / 350)",
+  removedEventsAsCurrent: "no card lists the Standing Power Throw or Leg Tuck as current",
+};
+
+for (const [key, label] of Object.entries(LABELS)) {
+  const f = findings[key] || [];
+  if (f.length === 0) ok(label);
+  else {
+    bad(`${label} — ${f.length} offending value(s)`);
+    f.forEach(x => console.log(`         [${x.p}] ${x.t}`));
+  }
+}
+
+/* Seed integrity.
+   The build rewrites the seed from a JS object literal into JSON.parse("...")
+   for a measured ~94ms faster boot at 6x CPU. That transform is only safe if it
+   is lossless, so the shape and the content counts are asserted here rather
+   than trusted. A silently truncated seed would still boot. */
+const seed = await page.evaluate(() => {
+  const S = window.GUIDON_SEED;
+  return {
+    isObject: !!S && typeof S === "object",
+    topKeys: Object.keys(S || {}).length,
+    board: (S.board && S.board.questions || []).length,
+    acronyms: (S.acronyms && S.acronyms.terms || []).length,
+    doctrine: (S.doctrine && S.doctrine.entries || []).length,
+    career: (S.career && S.career.mos || []).length,
+    scenarios: (S.scenarios && S.scenarios.scenarios || []).length,
+  };
+});
+seed.isObject ? ok("GUIDON_SEED parsed to an object") : bad("GUIDON_SEED is not an object");
+seed.topKeys === 17 ? ok("seed has all 17 top-level sections") : bad(`expected 17 top-level keys, got ${seed.topKeys}`);
+seed.board === 1014 ? ok("1,014 board cards intact") : bad(`board cards: ${seed.board}, expected 1014`);
+seed.acronyms === 3629 ? ok("3,629 acronym terms intact") : bad(`acronyms: ${seed.acronyms}, expected 3629`);
+seed.doctrine === 336 ? ok("336 doctrine entries intact") : bad(`doctrine: ${seed.doctrine}, expected 336`);
+seed.career === 163 ? ok("163 MOS entries intact") : bad(`MOS: ${seed.career}, expected 163`);
+seed.scenarios === 182 ? ok("182 scenarios intact") : bad(`scenarios: ${seed.scenarios}, expected 182`);
+
+/* The positive half: the corrected facts must actually be present. */
+const present = await page.evaluate(() => {
+  const s = JSON.stringify(window.GUIDON_SEED);
+  return {
+    aftGeneral: /300 overall|300 total|minimum total \(general\)/i.test(s),
+    aftCombat: /350 overall|350 \(combat/i.test(s),
+    rescission: /2026-13/.test(s),
+    fiveEvents: /five events|5 events/i.test(s),
+  };
+});
+present.aftGeneral ? ok("the 300 general standard appears in the corpus") : bad("300 general standard missing");
+present.aftCombat ? ok("the 350 combat standard appears in the corpus") : bad("350 combat standard missing");
+present.rescission ? ok("AD 2026-13 rescission is documented") : bad("AD 2026-13 not referenced");
+present.fiveEvents ? ok("the five-event AFT is described") : bad("five-event AFT not described");
+
+await browser.close();
+server.close();
+console.log("\n" + (fails ? `CONSISTENCY: ${fails} FAILURE(S)` : "CONSISTENCY: all passed"));
+process.exit(fails ? 1 : 0);

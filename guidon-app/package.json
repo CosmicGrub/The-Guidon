@@ -1,0 +1,46 @@
+{
+  "name": "guidon-app",
+  "version": "1.2.0",
+  "private": true,
+  "type": "module",
+  "description": "GUIDON packaging: installable PWA bundle, standalone single file, Windows desktop app, Android app",
+  "scripts": {
+    "icons": "node tools/make-icons.mjs web/icons",
+    "build": "node tools/build.mjs",
+    "verify": "node tools/verify.mjs web",
+    "test:pdf": "node tools/test-pdf.mjs",
+    "test:standalone": "node tools/test-standalone.mjs",
+    "test:csp": "node tools/test-csp.mjs",
+    "test": "npm run build && npm run verify && npm run test:points && npm run test:consistency && npm run test:calendar && npm run test:leader && npm run test:privacy && npm run test:scrollhint && npm run test:a11y && npm run test:pdf && npm run test:standalone && npm run test:csp",
+    "perf": "node tools/perf.mjs",
+    "serve": "node tools/server.mjs web 8099",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "npm run build && tauri build",
+    "android:sync": "npm run build && cap sync android",
+    "android:debug": "npm run android:sync && cd android && gradlew assembleDebug",
+    "android:release": "npm run android:sync && cd android && gradlew assembleRelease bundleRelease",
+    "test:android": "node tools/test-android.mjs",
+    "_note": "test:android* need a running device/emulator + adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>",
+    "test:android:back": "node tools/test-android-back.mjs",
+    "splash": "node tools/make-splash.mjs",
+    "test:points": "node tools/test-points.mjs",
+    "test:calendar": "node tools/test-calendar.mjs",
+    "test:leader": "node tools/test-leader.mjs",
+    "test:privacy": "node tools/test-privacy.mjs",
+    "test:consistency": "node tools/test-consistency.mjs",
+    "test:scrollhint": "node tools/test-scrollhint.mjs",
+    "perf:seed": "node tools/perf-seed.mjs",
+    "test:a11y": "node tools/test-a11y-tree.mjs"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
+    "playwright": "1.62.0"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/cli": "^8.4.2",
+    "@capacitor/core": "^8.4.2",
+    "@capacitor/status-bar": "^8.0.3"
+  }
+}

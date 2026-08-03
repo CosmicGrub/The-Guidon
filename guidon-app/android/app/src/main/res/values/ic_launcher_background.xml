@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- Was #fff, which showed white behind the mark once the launcher applied
+       its adaptive mask. The icon art is dark-backed, so this matches it. -->
+  <color name="ic_launcher_background">#0a0e12</color>
+</resources>

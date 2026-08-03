@@ -1,0 +1,11 @@
+node_modules/
+dist/
+web/
+android/build/
+android/app/build/
+android/.gradle/
+android/local.properties
+src-tauri/target/
+# Signing material must never be committed.
+keys/
+android/keystore.properties
