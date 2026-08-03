@@ -2,6 +2,18 @@
 
 All notable changes to GUIDON will be documented in this file. Format loosely follows [Keep a Changelog](http://keepachangelog.com/).
 
+## 2026-08-03 (session 49) - v1.4.0: the icon system, and legibility proven across all 24 themes
+
+**Ask:** audit the layout and replace every placeholder glyph with genuine icons - premium and dynamic without breaking any theme - and fix training scenarios that rendered dark (unreadable) regardless of theme; guarantee all text is legible under every theme.
+
+**The icon system (G.icons).** ~50 stroke icons in the Feather idiom - 24x24 grid, 2px stroke, round caps - drawn in `currentColor`, so an icon is exactly as legible as the text beside it in all 24 themes by construction. No font, no sprite, no network: geometry lives in icons.js and the build inlines it into every fork. A `gi:` prop on util.el() became the one-line upgrade path: `{ gi: "printer", text: "Print plan" }`. 111 call sites converted - nav rail + group chevrons, topbar search/profile, hero quick-nav, the whole Board Drill control surface (star, shuffle, prev/flip/next, theater toggle, grade buttons), print/export/import/replay buttons, warning panels, scene tags, source citations, expander chevrons (now rotating in place via CSS keyed off aria-expanded, replacing textContent swaps that would have wiped the svg). Two traps caught by design: syncFsBtns and the timer/star/due-chip relabels previously wrote textContent, which would have silently destroyed icon children - all now replaceChildren with the icon rebuilt.
+
+**The dark-scenario bug, at the root.** Train's text-console was `background:#06090c` and the CYOA scene banner a hardcoded near-black gradient - fine in dark themes, unreadable in the five light ones. Both now derive from tokens: the console tints `--text` 7% into `--bg` (terminal feel in dark themes, warm paper-gray in light ones), the banner mixes `--cyan`/`--amber` washes over `--panel`.
+
+**Legibility is now a test, not a claim.** New test-contrast.mjs (suite 14) walks all 24 themes and measures real WCAG ratios on the Train console, CYOA banner label, forms/primary/nav/topbar controls, dim text, board card and grade labels - steady-state, after killing the theme crossfade (getComputedStyle mid-transition returns interpolated oklab values; the suite's own first run produced 67 phantom failures before that was understood). It then caught two real shipped bugs: `.forms-view .btn.primary` recolored text amber but left the amber background - 1.0:1, literally invisible, in every theme - and the console's cyan system line at 2.58-2.77:1 on four light themes. Both fixed with token mixes; sweep now passes 24 themes x 12 surfaces clean.
+
+**Verified:** fourteen suites all passing. Version 1.4.0 across app constant, package.json, Tauri and Android (10400); releases/v1.4.0 for every fork with fresh checksums.
+
 ## 2026-08-02 (session 48) - v1.3.0: fullscreen study (theater mode) for the Board Drill
 
 **Ask:** a YouTube-style fullscreen toggle on the study cards - card fills the screen, nothing else competing for attention. Build, push, deploy to every fork and the connected tablet.

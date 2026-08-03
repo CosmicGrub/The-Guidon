@@ -1433,3 +1433,17 @@ New `tools/test-theater.mjs` — 14 assertions: button present and relabelling, 
 4. Not yet cross-linked from the Profile view or the existing Transition/ETS module's "career" sub-tab (which covers post-ETS civilian career paths, not in-service MOS/reclass) — a future session could add a "View your MOS Career Center" link from either.
 
 ---
+
+## 55. The Icon System, and Legibility as a Test (session 49, v1.4.0)
+
+**Ask:** replace every placeholder glyph with genuine icons — premium and dynamic, breaking none of the 24 themes — and fix training scenarios rendering dark regardless of theme; make "all text legible in every theme" true and provable.
+
+**G.icons — theme-proof by construction.** ~50 Feather-idiom stroke icons (24×24 grid, 2px stroke, round caps) drawn in `currentColor`: an icon is exactly as legible as the text next to it, in every theme, with zero per-theme work. Geometry lives in `app-modules/icons.js`; the build inlines it into every fork. The retirement path for the dingbat era (◧ ◎ ⚑ ⎙ ↺ ⇩ …) was a `gi:` prop on `util.el()` — `{ gi: "printer", text: "Print plan" }` — so 111 call sites converted without reshaping any of them: nav rail + group chevrons, topbar, hero quick-nav, the whole Board Drill control surface, print/export/import/replay, warnings, scene tags, citations, expanders (which now rotate in place via CSS keyed off `aria-expanded`, replacing textContent ▸/▾ swaps that would have wiped the svg). The traps: `syncFsBtns`, the timer/star/due-chip relabels — every dynamic `textContent` write on an icon-bearing control became `replaceChildren` with the icon rebuilt. Accessible names live on the OWNING control (`aria-label`), never the picture (`aria-hidden` on every svg) — the a11y-tree suite holds that line.
+
+**The dark-scenario root cause** was two hardcoded surfaces: the Train text-console (`#06090c`) and the CYOA scene banner (near-black gradient). Both are token-derived now — console tints `--text` 7% into `--bg`; banner mixes `--cyan`/`--amber` washes over `--panel`.
+
+**Legibility became suite 14 (test-contrast.mjs)** — all 24 themes × the surfaces that matter (console, banner label, forms/primary/nav/topbar controls, dim text, board card, grade labels), measured as real WCAG ratios at steady state. Its own first run was the lesson: 67 failures, nearly all phantoms, because the app crossfades colors on theme change and `getComputedStyle` returns the mid-transition interpolated value (serialized as oklab). Transitions killed, the suite then found two REAL shipped bugs no eye had caught: `.forms-view .btn.primary` — amber text over the amber background the override forgot to remove, 1.0:1, invisible in all 24 themes — and the console's cyan system line at 2.58–2.77:1 on four light themes. Token mixes fixed both; the sweep passes clean.
+
+**Method note for the file:** measurement artifacts and real bugs arrive in the same list wearing the same clothes. The discipline that separated them — refuse to "fix" anything until the number reproduces at steady state — is the same one from §48's audit: verify the claim's conditions before acting on the claim.
+
+**Shipped:** v1.4.0 (Android 10400) across all forks; fourteen suites passing; releases/v1.4.0 with fresh checksums.

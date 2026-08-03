@@ -22,14 +22,14 @@ section shows how old each policy area is and who to confirm it with, because
 
 | Fork | Get it | Built from |
 |---|---|---|
-| **Windows (PC)** | [`releases/v1.3.0/GUIDON_1.3.0_x64-setup.exe`](releases/v1.3.0/) — per-user installer, no admin. MSI alongside for managed deployment. | [`guidon-app/src-tauri/`](guidon-app/src-tauri/) (Tauri 2, ~2.4 MB) |
-| **Android** | [`releases/v1.3.0/GUIDON-1.3.0-release.apk`](releases/v1.3.0/) — signed, sideloadable. AAB alongside for a future Play listing. | [`guidon-app/android/`](guidon-app/android/) (Capacitor 8) |
+| **Windows (PC)** | [`releases/v1.4.0/GUIDON_1.4.0_x64-setup.exe`](releases/v1.4.0/) — per-user installer, no admin. MSI alongside for managed deployment. | [`guidon-app/src-tauri/`](guidon-app/src-tauri/) (Tauri 2, ~2.4 MB) |
+| **Android** | [`releases/v1.4.0/GUIDON-1.4.0-release.apk`](releases/v1.4.0/) — signed, sideloadable. AAB alongside for a future Play listing. | [`guidon-app/android/`](guidon-app/android/) (Capacitor 8) |
 | **Web / PWA** | Host the built `web/` bundle on any static server — installs as an app on Android, Windows and iOS, works offline after first load. | [`guidon-app/src/`](guidon-app/src/) + service worker |
-| **Single file** | [`releases/v1.3.0/GUIDON-1.3.0-standalone.html`](releases/v1.3.0/) — open from disk, no server, no network, no install. | same source, build variant |
+| **Single file** | [`releases/v1.4.0/GUIDON-1.4.0-standalone.html`](releases/v1.4.0/) — open from disk, no server, no network, no install. | same source, build variant |
 | iOS/macOS | On the backburner by design. Safari → Add to Home Screen covers Apple devices via the web fork today; a native build needs a Mac. | — |
 
 All forks are the same app from the same `src/index.html` — one content fix
-lands everywhere on the next build. Checksums: [`releases/v1.3.0/SHA256SUMS.txt`](releases/v1.3.0/SHA256SUMS.txt).
+lands everywhere on the next build. Checksums: [`releases/v1.4.0/SHA256SUMS.txt`](releases/v1.4.0/SHA256SUMS.txt).
 
 ## Repository layout
 
@@ -45,7 +45,7 @@ lands everywhere on the next build. Checksums: [`releases/v1.3.0/SHA256SUMS.txt`
 cd guidon-app
 npm install
 npm run build     # -> dist/guidon-standalone.html and web/
-npm test          # eleven verification suites
+npm test          # fourteen verification suites
 ```
 
 Full build, packaging, hosting and signing instructions:
@@ -63,7 +63,7 @@ Full build, packaging, hosting and signing instructions:
 
 ## Status
 
-v1.3.0 · verified by eleven automated suites (build, promotion-point tables vs
+v1.4.0 · verified by fourteen automated suites (build, promotion-point tables vs
 the regulation, corpus consistency, accessibility tree, DA 4856 PDF, standalone
 `file://`, desktop CSP, and more) plus NVDA screen-reader walks of the core
 flows. Built and tested on Windows, Android 14 (emulator + device), and six

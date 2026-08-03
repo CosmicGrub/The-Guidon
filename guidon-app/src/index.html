@@ -310,11 +310,18 @@ html.high-contrast .segmented[data-scroll] { -webkit-mask-image: none; mask-imag
 .feedback .src { display:block; margin-top:6px; font-family: var(--font-mono); font-size: 0.786rem; color: var(--text-mute); }
 
 /* ---------- Engine: TEXT (console) ---------- */
-.mode-text .console { background: #06090c; border:1px solid var(--line); border-radius: var(--radius);
+/* Token-derived, not hardcoded. This was background:#06090c — near-black in
+   every theme — while the prompt text and the choices RENDERED INSIDE IT used
+   var(--text), which is dark in the five light themes: dark-on-black,
+   unreadable. A slight text-tint of the theme background keeps the "screen"
+   flavor while every theme's own contrast guarantees apply. */
+.mode-text .console { background: color-mix(in srgb, var(--text) 7%, var(--bg)); border:1px solid var(--line); border-radius: var(--radius);
   padding: 14px; font-family: var(--font-mono); font-size: 13.5px; line-height: 1.6; }
-.mode-text .console .sys { color: var(--cyan); }
+/* Cyan mixed toward --text: pure --cyan measured 2.58–2.77:1 against the
+   console tint on the light themes (test-contrast, steady-state). */
+.mode-text .console .sys { color: color-mix(in srgb, var(--cyan) 55%, var(--text)); }
 .mode-text .console .prompt { color: var(--text); white-space: pre-wrap; }
-.mode-text .console .caret { color: var(--amber); }
+.mode-text .console .caret { color: color-mix(in srgb, var(--amber) 55%, var(--text)); }
 .mode-text .choice { display:block; width:100%; text-align:left; margin:6px 0; background: transparent;
   border:1px dashed var(--line-2); color: var(--text); font-family: var(--font-mono); font-size: 0.929rem;
   padding:9px 12px; border-radius: var(--radius-sm); cursor:pointer; }
@@ -334,8 +341,8 @@ html.high-contrast .segmented[data-scroll] { -webkit-mask-image: none; mask-imag
 /* ---------- Engine: CYOA (scene) ---------- */
 .mode-cyoa .scene-banner { height: 120px; border-radius: var(--radius); border:1px solid var(--line-2);
   background:
-    repeating-linear-gradient(45deg, rgba(255,176,32,.04) 0 12px, transparent 12px 24px),
-    linear-gradient(120deg, #0f1a22, #142230);
+    repeating-linear-gradient(45deg, color-mix(in srgb, var(--amber) 5%, transparent) 0 12px, transparent 12px 24px),
+    linear-gradient(120deg, color-mix(in srgb, var(--cyan) 14%, var(--panel)), color-mix(in srgb, var(--amber) 10%, var(--panel)));
   display:flex; align-items:center; justify-content:center; position: relative; overflow:hidden; margin-bottom: 12px; }
 .mode-cyoa .scene-banner .emoji { font-size: 54px; filter: drop-shadow(0 0 12px rgba(0,0,0,.6)); }
 .mode-cyoa .scene-banner .label { position:absolute; bottom:8px; left:12px; font-family: var(--font-mono);
@@ -680,7 +687,10 @@ html[data-motion="minimal"] .qz-card { height: auto; min-height: clamp(260px, 40
 .form-card .form-title { font-family: var(--font-head); font-weight: 700; margin: 2px 0 4px; }
 .forms-view .btn.ghost { opacity: .8; }
 .forms-view .form-body { margin-top: 12px; }
-.forms-view .btn.primary { border-color: var(--amber); color: var(--amber); }
+/* Ghost restyle of primaries in the forms list. The original rule recolored
+   the text amber but left .btn.primary's amber BACKGROUND in place — amber on
+   amber, 1.0:1, in every theme (caught by test-contrast). */
+.forms-view .btn.primary { background: transparent; border-color: var(--amber); color: color-mix(in srgb, var(--amber) 78%, var(--text)); }
 
 /* Guided blocks */
 .blk { border-left: 2px solid var(--line-2); padding: 8px 0 8px 12px; margin: 8px 0; }
@@ -1344,6 +1354,31 @@ select.in { appearance:none; }
    collapsible .nav-group-header elements now provide the visual hierarchy this
    used to approximate, so no replacement rule is needed. */
 
+
+/* ===== Inline icon system (G.icons) ===== */
+/* Stroke icons drawn in currentColor — they inherit the text color of
+   whatever button or label they sit in, so every theme (and high-contrast
+   mode) keeps them legible with zero per-theme work. .gi is stamped on every
+   svg the icon factory produces. */
+.gi { flex: none; vertical-align: -3px; }
+.nav button .ico, .nav-group-header .ico {
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.btn .gi { vertical-align: -3px; margin-right: 2px; }
+.topbar-search-btn, .topbar-profile-btn, .qz-nav-btn, .qz-star-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.qz-grade-ico { display: flex; align-items: center; justify-content: center; }
+/* Starred = filled star. The outline is the resting state. */
+.qz-star-btn.starred .gi { fill: currentColor; }
+.qz-flip-hint .gi { vertical-align: -2px; margin-right: 2px; }
+/* Expander chevrons rotate in place (CSS, keyed off aria-expanded) instead of
+   the old textContent ▸/▾ swap — which would have wiped the svg anyway. */
+.skill-chev, .res-domain-chev, .res-dskill-chev, .res-skill-chev { display: inline-flex; }
+.skill-chev .gi, .res-domain-chev .gi, .res-dskill-chev .gi, .res-skill-chev .gi { transition: transform .18s ease; }
+[aria-expanded="true"] .skill-chev .gi, [aria-expanded="true"] .res-domain-chev .gi,
+[aria-expanded="true"] .res-dskill-chev .gi, [aria-expanded="true"] .res-skill-chev .gi { transform: rotate(90deg); }
+.cpdf-close { display: inline-flex; align-items: center; justify-content: center; }
 
 /* ===== Focus visibility — keyboard navigation a11y ===== */
 /* Prefer :focus-visible over :focus for interactive non-input elements */
@@ -3755,6 +3790,7 @@ window.G = window.G || {};
       for (const k in attrs) {
         if (k === "html") node.innerHTML = attrs[k];
         else if (k === "text") node.textContent = attrs[k];
+        else if (k === "gi" || k === "giSize") continue; // leading-icon shorthand, applied below
         else if (k.charCodeAt(0) === 111 && k.charCodeAt(1) === 110 && typeof attrs[k] === "function") // "on…"
           node.addEventListener(k.slice(2).toLowerCase(), attrs[k]);
         else if (attrs[k] != null) node.setAttribute(k, attrs[k]);
@@ -3767,6 +3803,16 @@ window.G = window.G || {};
         if (c == null) continue;
         node.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
       }
+    }
+    // Leading-icon shorthand: { gi: "printer" } prepends a G.icons stroke svg
+    // ahead of the text/children -- the one-line upgrade that retired the
+    // dingbat era without reshaping every call site. A space is slipped in
+    // when text follows directly, so labels never hug the icon.
+    if (attrs && attrs.gi && util.icon) {
+      node.prepend(util.icon(attrs.gi, attrs.giSize || 16));
+      const nxt = node.childNodes[1];
+      if (nxt && nxt.nodeType === 3 && nxt.nodeValue && nxt.nodeValue.charCodeAt(0) !== 32)
+        node.insertBefore(document.createTextNode(" "), nxt);
     }
     return node;
   };
@@ -3846,7 +3892,7 @@ window.G = window.G || {};
 
   // Convenience: a standard "Print / Save as PDF" button wired to printView.
   util.printButton = function (title, getHost, opts) {
-    const b = util.el("button.btn.ghost.sm.no-print", { type: "button", text: "⎙ Print / Save as PDF", "aria-label": "Print or save this page as PDF" });
+    const b = util.el("button.btn.ghost.sm.no-print", { type: "button", gi: "printer", giSize: 14, text: "Print / Save as PDF", "aria-label": "Print or save this page as PDF" });
     b.addEventListener("click", () => { try { util.printView(title, (typeof getHost === "function" ? getHost() : getHost), opts); } catch (e) {} });
     return b;
   };
@@ -4012,7 +4058,7 @@ window.G = window.G || {};
      meta          keyPath "k"   -> content cache metadata / seed snapshot
    ------------------------------------------------------------------ */
 window.G = window.G || {};
-window.GUIDON_APP_VERSION = "1.3.0";
+window.GUIDON_APP_VERSION = "1.4.0";
 window.GUIDON_BUILD_DATE = "2026-08-02";
 (function () {
   "use strict";
@@ -5027,11 +5073,11 @@ window.G = window.G || {};
       el("div.title", {}, [
         el("div.eyebrow", { text: sc.difficulty || "Scenario" }),
         el("h2", { text: sc.title }),
-        el("div.engine-scene-tag", { text: "▚ " + (sc.scene || "") }),
+        el("div.engine-scene-tag", { gi: "map", giSize: 13, text: (sc.scene || "") }),
       ]),
       progBar,
       seg,
-      el("button.btn.ghost.sm", { text: "✕ Exit", onclick: () => sess.onExit && sess.onExit() }),
+      el("button.btn.ghost.sm", { gi: "x", giSize: 13, text: "Exit", onclick: () => sess.onExit && sess.onExit() }),
     ]);
     return head;
   }
@@ -5140,7 +5186,7 @@ window.G = window.G || {};
     } else {
       consoleEl = root.querySelector(".console");
     }
-    consoleEl.appendChild(el("div.sys", { text: "▚ " + (node.beat || sess.sc.scene || "SCENARIO") }));
+    consoleEl.appendChild(el("div.sys", { gi: "map", giSize: 12, text: (node.beat || sess.sc.scene || "SCENARIO") }));
     if (node.prompt) consoleEl.appendChild(el("div.prompt", { text: node.prompt }));
     renderDialogue(consoleEl, node.dialogue);
     const letters = "ABCDEFGH";
@@ -5301,13 +5347,13 @@ window.G = window.G || {};
 
     // Action buttons
     const acts = el("div.outcome-actions");
-    const replay = el("button.btn.primary", { type: "button", text: "↻ Retake module" });
+    const replay = el("button.btn.primary", { type: "button", gi: "rotate-ccw", giSize: 13, text: "Retake module" });
     replay.addEventListener("click", () => {
       const fresh = newSession(sess.sc, "training", sess.container, sess.onExit);
       render(fresh);
     });
     acts.appendChild(replay);
-    const exit = el("button.btn.ghost", { type: "button", text: "✕ Exit" });
+    const exit = el("button.btn.ghost", { type: "button", gi: "x", giSize: 13, text: "Exit" });
     exit.addEventListener("click", () => sess.onExit && sess.onExit());
     acts.appendChild(exit);
     root.appendChild(acts);
@@ -5438,13 +5484,13 @@ window.G = window.G || {};
     }
 
     root.appendChild(el("div.btn-row.no-print", { style: "justify-content:center;margin-top:16px" }, [
-      el("button.btn.primary", { text: "↻ Replay", onclick: () => restart(sess, sess.mode) }),
+      el("button.btn.primary", { gi: "rotate-ccw", giSize: 13, text: "Replay", onclick: () => restart(sess, sess.mode) }),
       el("button.btn", { text: "Try Another Mode", onclick: () => {
         const modes = sess.sc.renderModes || ["text", "course", "cyoa"];
         const next = modes[(modes.indexOf(sess.mode) + 1) % modes.length];
         restart(sess, next);
       } }),
-      el("button.btn.ghost", { text: "🖨 Print / Save", onclick: () => printAAR(sess, node, grade, total) }),
+      el("button.btn.ghost", { gi: "printer", giSize: 14, text: "Print / Save", onclick: () => printAAR(sess, node, grade, total) }),
       el("button.btn.ghost", { text: "Done", onclick: () => sess.onExit && sess.onExit() }),
     ]));
     sess.container.appendChild(root);
@@ -5548,9 +5594,9 @@ window.G = window.G || {};
 
     const dueChip = el("button.due-chip", { text: "…", title: "Show only cards due for review today", type: "button" });
     const leechChip = el("button.due-chip.leech-chip", { text: "…", title: "Show only cards missed 4+ times (leeches)", type: "button" });
-    const starChip = el("button.due-chip.star-chip", { text: "⭐ My Bookmarks", title: "Show only cards you've starred — your personal deck", type: "button" });
+    const starChip = el("button.due-chip.star-chip", { gi: "star", giSize: 13, text: "My Bookmarks", title: "Show only cards you've starred — your personal deck", type: "button" });
     const shuffleBtn = el("button.btn.ghost.sm.qz-shuffle-btn", { type: "button", title: "Reshuffle this deck", "aria-label": "Shuffle deck" }, [
-      el("span", { "aria-hidden": "true", text: "🔀" }), document.createTextNode(" Shuffle"),
+      el("span", { "aria-hidden": "true" }, [G.util.icon("shuffle", 15, "🔀")]), document.createTextNode(" Shuffle"),
     ]);
     const tally = el("div.stat", {}, [el("span.k", { text: "This session" }), el("span.v", { text: "—" })]);
     const cardWrap = el("div.qz-wrap", { tabIndex: "0" });
@@ -5566,7 +5612,7 @@ window.G = window.G || {};
     const syncFsBtns = () => {
       document.querySelectorAll(".qz-fs-btn").forEach((b) => {
         const on = theaterOn();
-        b.textContent = on ? "⤡" : "⤢";
+        b.replaceChildren(G.util.icon(on ? "minimize-2" : "maximize-2", 18, on ? "⤡" : "⤢"));
         b.setAttribute("aria-label", on ? "Exit fullscreen study" : "Fullscreen study");
         b.title = on ? "Exit fullscreen (Esc)" : "Fullscreen study — just the card, nothing else";
       });
@@ -5646,7 +5692,7 @@ window.G = window.G || {};
         .map((x) => x.q);
       idx = 0; seen = 0; recalled = 0; flipped = false;
       if (!dueOnlyMode && dueCount > 0 && idx === 0 && seen === 0) {
-        dueChip.textContent = "⏰ " + dueCount + " due — tap to drill these first";
+        dueChip.replaceChildren(G.util.icon("clock", 13), document.createTextNode(" " + dueCount + " due — tap to drill these first"));
       }
       draw();
     }
@@ -5656,11 +5702,11 @@ window.G = window.G || {};
       const scroll = el("div.qz-back-scroll", { tabindex: "0", role: "region", "aria-label": "Answer content, scrollable" });
 
       const acceptBox = el("div.bq-answer-block.bq-acceptable");
-      acceptBox.appendChild(el("div.bq-answer-label", { text: "✓ Acceptable Answer (board passes)" }));
+      acceptBox.appendChild(el("div.bq-answer-label", { gi: "check", giSize: 13, text: "Acceptable Answer (board passes)" }));
       acceptBox.appendChild(el("p.bq-answer-text", { text: q.acceptableAnswer || q.a }));
 
       const bookBox = el("div.bq-answer-block.bq-bybook");
-      bookBox.appendChild(el("div.bq-answer-label", { text: "★ By the Book (verbatim doctrine)" }));
+      bookBox.appendChild(el("div.bq-answer-label", { gi: "star", giSize: 13, text: "By the Book (verbatim doctrine)" }));
       bookBox.appendChild(el("p.bq-answer-text", { text: q.boardAnswer || q.a }));
       if (q.source) bookBox.appendChild(el("span.src", { text: "Source: " + q.source }));
 
@@ -5683,11 +5729,11 @@ window.G = window.G || {};
       const crossLinks = [];
       const pubRef = (q.source || "").split(",")[0].split("(")[0].trim();
       if (pubRef && store.doctrine(pubRef).length) {
-        crossLinks.push(el("button.btn.ghost.sm", { text: "▤ Related doctrine (" + pubRef + ") →",
+        crossLinks.push(el("button.btn.ghost.sm", { gi: "book", giSize: 13, text: "Related doctrine (" + pubRef + ") →",
           onclick: (e) => { e.stopPropagation(); if (G.views) G.views._doctrineSeed = pubRef; location.hash = "#/doctrine"; } }));
       }
       if (q.relatedScenarioId && G.engine) {
-        crossLinks.push(el("button.btn.ghost.sm", { text: "▶ Practice scenario →",
+        crossLinks.push(el("button.btn.ghost.sm", { gi: "play", giSize: 13, text: "Practice scenario →",
           onclick: (e) => { e.stopPropagation(); G.engine._pending = q.relatedScenarioId; location.hash = "#/train"; } }));
       }
       if (crossLinks.length) {
@@ -5699,14 +5745,14 @@ window.G = window.G || {};
 
       const gradeRow = el("div.qz-grade-row");
       const GRADE_DEFS = [
-        { grade: 0, cls: "qz-grade-0", ico: "🆘", label: "Needs Help" },
-        { grade: 1, cls: "qz-grade-1", ico: "📖", label: "Somewhat" },
-        { grade: 2, cls: "qz-grade-2", ico: "✓", label: "Know It" },
-        { grade: 3, cls: "qz-grade-3", ico: "🏆", label: "Down Cold" },
+        { grade: 0, cls: "qz-grade-0", ico: "life-buoy", label: "Needs Help" },
+        { grade: 1, cls: "qz-grade-1", ico: "book-open", label: "Somewhat" },
+        { grade: 2, cls: "qz-grade-2", ico: "check", label: "Know It" },
+        { grade: 3, cls: "qz-grade-3", ico: "award", label: "Down Cold" },
       ];
       GRADE_DEFS.forEach((g) => {
         const b = el("button.btn.qz-grade-btn." + g.cls, { type: "button" }, [
-          el("span.qz-grade-ico", { "aria-hidden": "true", text: g.ico }),
+          el("span.qz-grade-ico", { "aria-hidden": "true" }, [G.util.icon(g.ico, 17)]),
           el("span.qz-grade-label", { text: g.label }),
         ]);
         b.addEventListener("click", (e) => { e.stopPropagation(); grade(q, g.grade); });
@@ -5745,9 +5791,9 @@ window.G = window.G || {};
         const dm = diffMap[q.difficulty];
         if (dm) front.appendChild(el("div.qz-diff-badge.qz-diff-" + q.difficulty, { text: dm[0] + " " + dm[1] }));
       }
-      if ((s.misses || 0) >= 4) front.appendChild(el("div.leech-badge", { text: "🔴 LEECH — missed " + s.misses + "× " }));
+      if ((s.misses || 0) >= 4) front.appendChild(el("div.leech-badge", { gi: "alert-triangle", giSize: 12, text: "LEECH — missed " + s.misses + "× " }));
       front.appendChild(el("div.qz-prompt", { text: q.q }));
-      front.appendChild(el("div.qz-flip-hint", { "aria-hidden": "true", text: "⤾ Tap card, or press Space, to flip" }));
+      front.appendChild(el("div.qz-flip-hint", { "aria-hidden": "true" }, [G.util.icon("rotate-ccw", 13, "⤾"), document.createTextNode(" Tap card, or press Space, to flip")]));
 
       const back = buildBackContent(q);
 
@@ -5755,14 +5801,14 @@ window.G = window.G || {};
         type: "button",
         "aria-label": s.starred ? "Remove star" : "Star this card",
         "aria-pressed": String(!!s.starred),
-        text: s.starred ? "★" : "☆",
       });
+      starBtn.appendChild(G.util.icon("star", 20, s.starred ? "★" : "☆"));
       starBtn.classList.toggle("starred", !!s.starred);
       starBtn.addEventListener("click", async (e) => {
         e.stopPropagation();
         s.starred = !s.starred;
         await saveSrs(q.id, s);
-        starBtn.textContent = s.starred ? "★" : "☆";
+        starBtn.replaceChildren(G.util.icon("star", 20, s.starred ? "★" : "☆"));
         starBtn.classList.toggle("starred", s.starred);
         starBtn.setAttribute("aria-pressed", String(s.starred));
         // Reveal the "My Bookmarks" filter the moment the first card gets
@@ -5802,17 +5848,17 @@ window.G = window.G || {};
       // "browse the stack" behavior (grading via swipe/buttons still works
       // once a card is flipped; these arrows just move without grading).
       const navRow = el("div.qz-nav-row");
-      const prevBtn = el("button.qz-nav-btn", { type: "button", "aria-label": "Previous card", text: "‹" });
-      const flipBtn = el("button.qz-nav-btn.qz-nav-flip", { type: "button", "aria-label": "Flip card", text: "⤾" });
-      const nextBtn = el("button.qz-nav-btn", { type: "button", "aria-label": "Next card", text: "›" });
+      const prevBtn = el("button.qz-nav-btn", { type: "button", "aria-label": "Previous card" }, [G.util.icon("chevron-left", 20, "‹")]);
+      const flipBtn = el("button.qz-nav-btn.qz-nav-flip", { type: "button", "aria-label": "Flip card" }, [G.util.icon("rotate-ccw", 18, "⤾")]);
+      const nextBtn = el("button.qz-nav-btn", { type: "button", "aria-label": "Next card" }, [G.util.icon("chevron-right", 20, "›")]);
       prevBtn.addEventListener("click", () => { idx = (idx - 1 + queue.length) % queue.length; draw(); });
       flipBtn.addEventListener("click", () => doFlip());
       nextBtn.addEventListener("click", () => { idx = (idx + 1) % queue.length; draw(); });
       const fsOn = document.documentElement.classList.contains("qz-theater");
       const fsBtn = el("button.qz-nav-btn.qz-fs-btn", { type: "button",
         "aria-label": fsOn ? "Exit fullscreen study" : "Fullscreen study",
-        title: fsOn ? "Exit fullscreen (Esc)" : "Fullscreen study — just the card, nothing else",
-        text: fsOn ? "⤡" : "⤢" });
+        title: fsOn ? "Exit fullscreen (Esc)" : "Fullscreen study — just the card, nothing else", });
+      fsBtn.appendChild(G.util.icon(fsOn ? "minimize-2" : "maximize-2", 18, fsOn ? "⤤" : "⤢"));
       fsBtn.addEventListener("click", () => {
         document.documentElement.classList.contains("qz-theater")
           ? G.board.exitTheater()
@@ -5986,10 +6032,10 @@ window.G = window.G || {};
     diffSel.addEventListener("change", () => { try { catSel.dispatchEvent(new Event("change")); } catch(e){} });
 
     let timedMode = await db.getSetting(QUIZ_TIMER_KEY, false);
-    const timerBtn = el("button.btn.sm.ghost", { type: "button", text: "⏱ Timer: " + (timedMode ? "On (20s)" : "Off"), "aria-pressed": String(timedMode) });
+    const timerBtn = el("button.btn.sm.ghost", { type: "button", gi: "clock", giSize: 14, text: "Timer: " + (timedMode ? "On (20s)" : "Off"), "aria-pressed": String(timedMode) });
     timerBtn.addEventListener("click", async () => {
       timedMode = !timedMode;
-      timerBtn.textContent = "⏱ Timer: " + (timedMode ? "On (20s)" : "Off");
+      timerBtn.replaceChildren(G.util.icon("clock", 14), document.createTextNode(" Timer: " + (timedMode ? "On (20s)" : "Off")));
       timerBtn.setAttribute("aria-pressed", String(timedMode));
       await db.setSetting(QUIZ_TIMER_KEY, timedMode);
     });
@@ -6610,7 +6656,7 @@ window.G = window.G || {};
       cRow.appendChild(chips);
       panel.appendChild(cRow);
 
-      const start = el("button.btn.primary.mb-start", { type: "button", text: "▶ Begin board" });
+      const start = el("button.btn.primary.mb-start", { type: "button", gi: "play", giSize: 14, text: "Begin board" });
       start.addEventListener("click", () => {
         const pool = sess.cats ? bank.filter((q) => sess.cats.indexOf(q.category) >= 0) : bank.slice();
         if (!pool.length) { util.toast && util.toast("No questions in those categories"); return; }
@@ -6670,7 +6716,7 @@ window.G = window.G || {};
       const answerWrap = el("div.mb-answer", { hidden: "hidden" });
       answerWrap.appendChild(el("div.mb-a-label", { text: "Doctrinal answer" }));
       answerWrap.appendChild(el("div.mb-a", { text: q.a }));
-      if (q.source) answerWrap.appendChild(el("div.mb-a-src", { text: "◈ " + q.source }));
+      if (q.source) answerWrap.appendChild(el("div.mb-a-src", { gi: "book-open", giSize: 12, text: q.source }));
       panel.appendChild(answerWrap);
 
       const scoreRow = el("div.mb-score-row", { hidden: "hidden" });
@@ -6824,9 +6870,9 @@ window.G = window.G || {};
       }
 
       const actions = el("div.mb-actions");
-      const again = el("button.btn.primary", { type: "button", text: "↺ New board" });
+      const again = el("button.btn.primary", { type: "button", gi: "rotate-ccw", giSize: 13, text: "New board" });
       again.addEventListener("click", () => { sess.phase = "setup"; sess.results = []; draw(); });
-      const printBtn = el("button.btn", { type: "button", text: "⎙ Print scorecard" });
+      const printBtn = el("button.btn", { type: "button", gi: "printer", giSize: 14, text: "Print scorecard" });
       printBtn.addEventListener("click", () => printScorecard(pct, label, total, max, byCat, weak));
       actions.appendChild(again); actions.appendChild(printBtn);
       panel.appendChild(actions);
@@ -6920,7 +6966,7 @@ window.G = window.G || {};
       el("span.v", { style: dueNow ? "color:var(--amber)" : "", text: dueNow ? dueNow + " questions" : "None — you're current" }),
     ]));
     if (dueNow) {
-      header.appendChild(el("button.btn.sm", { style: "margin-top:8px", text: "▶ Drill " + dueNow + " Due Now",
+      header.appendChild(el("button.btn.sm", { style: "margin-top:8px", gi: "play", giSize: 13, text: "Drill " + dueNow + " Due Now",
         onclick: () => { G.board._filterCat = null; G.board.render(mount.parentElement || mount); } }));
     }
     mount.appendChild(header);
@@ -7085,14 +7131,14 @@ window.G = window.G || {};
 
         // Acceptable answer
         const accBox = el("div.bq-answer-block.bq-acceptable");
-        accBox.appendChild(el("div.bq-answer-label", { text: "✓ Acceptable Answer" }));
+        accBox.appendChild(el("div.bq-answer-label", { gi: "check", giSize: 13, text: "Acceptable Answer" }));
         accBox.appendChild(el("p.bq-answer-text", { text: item.acceptable }));
         card.appendChild(accBox);
 
         // By-the-book
         if (item.byBook !== item.acceptable) {
           const bookBox = el("div.bq-answer-block.bq-bybook");
-          bookBox.appendChild(el("div.bq-answer-label", { text: "★ By the Book" }));
+          bookBox.appendChild(el("div.bq-answer-label", { gi: "star", giSize: 13, text: "By the Book" }));
           bookBox.appendChild(el("p.bq-answer-text", { text: item.byBook }));
           if (item.source) bookBox.appendChild(el("span.src", { text: "Source: " + item.source }));
           card.appendChild(bookBox);
@@ -7791,7 +7837,7 @@ window.G = window.G || {};
             const totalDue = Object.values(catStats).reduce((s,c) => s+c.due, 0);
             if (totalDue > 0) {
               const dueRow = el("div.bq-due-row");
-              dueRow.appendChild(el("span.bq-due-badge", { text: "⏰ " + totalDue + " cards due for review" }));
+              dueRow.appendChild(el("span.bq-due-badge", { gi: "clock", giSize: 13, text: totalDue + " cards due for review" }));
               const drillBtn = el("button.btn.sm", { text: "Drill now →", type: "button" });
               drillBtn.addEventListener("click", () => location.hash = "#/board");
               dueRow.appendChild(drillBtn);
@@ -7853,7 +7899,7 @@ window.G = window.G || {};
         el("div.eyebrow", { text: "Board Prep" }),
         el("h3", { text: "Board Readiness Score" }),
         el("p.hint", { text: "Your per-category flashcard recall rates and a composite Board Readiness Score live in the Board module under the Readiness tab." }),
-        el("button.btn.sm", { text: "Open Board → Readiness ★", onclick: () => {
+        el("button.btn.sm", { gi: "layers", giSize: 13, text: "Open Board → Readiness", onclick: () => {
           location.hash = "#/board";
           setTimeout(() => { G.board && G.board._openReadiness && G.board._openReadiness(); }, 100);
         } }),
@@ -7863,7 +7909,7 @@ window.G = window.G || {};
 
       // action bar: print + reset
       mount.appendChild(el("div.btn-row", { style: "margin-top:14px" }, [
-        el("button.btn.sm", { text: "🖨 Print Report", onclick: () => printProgress(p) }),
+        el("button.btn.sm", { gi: "printer", giSize: 14, text: "Print Report", onclick: () => printProgress(p) }),
         el("button.btn.ghost.sm", { text: "Reset all progress", onclick: async () => {
           if (confirm("Reset all recorded attempts and readiness? This cannot be undone.")) {
             await store.resetProgress();
@@ -8069,7 +8115,7 @@ window.G = window.G || {};
       card.setAttribute("data-node", id);
       const head = el("div.mini-row", { style: "justify-content:space-between" }, [
         el("span.node-id", { text: id }),
-        el("button.btn.ghost.sm", { text: "✕ node", onclick: () => {
+        el("button.btn.ghost.sm", { gi: "x", giSize: 13, text: "node", onclick: () => {
           if (Object.keys(model.nodes).length <= 1) { util.toast("A scenario needs at least one node."); return; }
           delete model.nodes[id];
           if (model.start === id) model.start = Object.keys(model.nodes)[0];
@@ -8289,8 +8335,8 @@ window.G = window.G || {};
 
       mount.appendChild(el("div.btn-row", {}, [
         el("button.btn.primary", { text: "＋ New Scenario", onclick: () => openEditor(mount, null, back) }),
-        el("button.btn", { text: "⇪ Import JSON", onclick: () => fileInput.click() }),
-        el("button.btn.ghost.sm", { text: "⇩ Export All", onclick: () => {
+        el("button.btn", { gi: "upload", giSize: 14, text: "Import JSON", onclick: () => fileInput.click() }),
+        el("button.btn.ghost.sm", { gi: "download", giSize: 14, text: "Export All", onclick: () => {
           const all = store.userScenarios();
           if (!all.length) { util.toast("No authored scenarios to export."); return; }
           util.download("guidon-authored-" + new Date().toISOString().slice(0,10) + ".json", JSON.stringify(all, null, 2));
@@ -8310,7 +8356,7 @@ window.G = window.G || {};
           el("div.btn-row", { style: "margin-top:10px" }, [
             el("button.btn.sm", { text: "Edit", onclick: () => openEditor(mount, sc, back) }),
             el("button.btn.sm.ghost", { text: "Export", onclick: () => util.download(sc.id + ".json", JSON.stringify(sc, null, 2)) }),
-            el("button.btn.sm", { text: "▶ Test", onclick: () => {
+            el("button.btn.sm", { gi: "play", giSize: 13, text: "Test", onclick: () => {
               const player = el("div"); mount.style.display = "none";
               document.getElementById("route").appendChild(player);
               G.engine.run(sc.id, null, player, () => { player.remove(); mount.style.display = ""; });
@@ -8544,7 +8590,7 @@ window.G = window.G || {};
     mount.appendChild(el("p.hint", { text: (course.summary || "") + "  ·  Source: " + (course.source || "") }));
 
     mount.appendChild(el("div.btn-row.no-print", {}, [
-      el("button.btn.sm.ghost", { text: "🖨 Print study sheet", onclick: () => printCourse(course) }),
+      el("button.btn.sm.ghost", { gi: "printer", giSize: 14, text: "Print study sheet", onclick: () => printCourse(course) }),
     ]));
 
     (course.lessons || []).forEach((lesson, i) => {
@@ -8995,7 +9041,7 @@ window.G = window.G || {};
           const list = await loadAll(); list.push(rec); await saveAll(list);
           util.toast("Worksheet saved."); refreshSaved();
         } }),
-        el("button.btn.ghost", { text: "🖨 Print / Save", onclick: () => {
+        el("button.btn.ghost", { gi: "printer", giSize: 14, text: "Print / Save", onclick: () => {
           const { hi, who } = highestLikelihood();
           const band = hi != null ? BANDS[riskBand(model.valueIdx, hi)] : "—";
           const rows = AGGRESSORS.map((a) => "<tr><td>" + esc(a) + "</td><td style='text-align:right'>" + (model.likelihood[a] != null ? LEVELS[model.likelihood[a]] : "—") + "</td></tr>").join("");
@@ -9745,7 +9791,7 @@ window.G = window.G || {};
       const card = el("div.panel.skill-card");
       const head = el("button.skill-head", { type: "button", "aria-expanded": "false" });
       head.appendChild(el("span.skill-name", { text: sk.name || "Skill" }));
-      head.appendChild(el("span.skill-chev", { text: "▸" }));
+      head.appendChild(el("span.skill-chev", { "aria-hidden": "true", gi: "chevron-right", giSize: 14 }));
       const bodyWrap = el("div.skill-body", { hidden: "hidden" });
       if (sk.body) bodyWrap.appendChild(el("p.skill-lead", { text: sk.body }));
       if (Array.isArray(sk.points)) {
@@ -9753,11 +9799,11 @@ window.G = window.G || {};
         sk.points.forEach((p) => ul.appendChild(el("li", { text: p })));
         bodyWrap.appendChild(ul);
       }
-      if (sk.ref) bodyWrap.appendChild(el("div.skill-ref", { text: "◈ " + sk.ref }));
+      if (sk.ref) bodyWrap.appendChild(el("div.skill-ref", { gi: "book-open", giSize: 12, text: sk.ref }));
       head.addEventListener("click", () => {
         const open = bodyWrap.hasAttribute("hidden");
-        if (open) { bodyWrap.removeAttribute("hidden"); head.setAttribute("aria-expanded", "true"); (head.querySelector(".skill-chev") || {}).textContent = "▾"; }
-        else { bodyWrap.setAttribute("hidden", "hidden"); head.setAttribute("aria-expanded", "false"); (head.querySelector(".skill-chev") || {}).textContent = "▸"; }
+        if (open) { bodyWrap.removeAttribute("hidden"); head.setAttribute("aria-expanded", "true"); }
+        else { bodyWrap.setAttribute("hidden", "hidden"); head.setAttribute("aria-expanded", "false"); }
       });
       card.appendChild(head); card.appendChild(bodyWrap);
       wrap.appendChild(card);
@@ -9783,7 +9829,7 @@ window.G = window.G || {};
       util.asArray(sc.competency).forEach((c) => meta.appendChild(el("span.chip." + util.competencyClass(c), { text: c })));
       card.appendChild(meta);
       if (sc.scene) card.appendChild(el("div.drill-scene", { text: sc.scene }));
-      const go = el("button.btn.primary", { type: "button", text: "▶ Start role-play" });
+      const go = el("button.btn.primary", { type: "button", gi: "play", giSize: 14, text: "Start role-play" });
       go.addEventListener("click", () => launchDrill(sc, host));
       card.appendChild(go);
       list.appendChild(card);
@@ -9829,7 +9875,7 @@ window.G = window.G || {};
       form.appendChild(row);
     });
     const actions = el("div.poa-actions");
-    const printBtn = el("button.btn.primary", { type: "button", text: "⎙ Print plan" });
+    const printBtn = el("button.btn.primary", { type: "button", gi: "printer", giSize: 14, text: "Print plan" });
     printBtn.addEventListener("click", () => printPOA(d));
     const clearBtn = el("button.btn", { type: "button", text: "Clear" });
     clearBtn.addEventListener("click", () => { d.poaFields.forEach((f) => { poa[f.id] = ""; }); persistPOA(); render(document.getElementById("route") || host, "poa"); });
@@ -9896,7 +9942,7 @@ window.G = window.G || {};
     const card = el("div.panel.skill-card");
     const head = el("button.skill-head", { type: "button", "aria-expanded": "false" });
     head.appendChild(el("span.skill-name", { text: e.title }));
-    head.appendChild(el("span.skill-chev", { text: "▸" }));
+    head.appendChild(el("span.skill-chev", { "aria-hidden": "true", gi: "chevron-right", giSize: 14 }));
     const body = el("div.skill-body", { hidden: "hidden" });
     function section(label, txt) {
       if (!txt) return;
@@ -9910,7 +9956,7 @@ window.G = window.G || {};
     section("Plan of action", e.plan);
     section("Leader responsibilities", e.leader);
     if (e.remarks) section("Remarks", e.remarks);
-    if (e.ref) body.appendChild(el("div.skill-ref", { text: "◈ " + e.ref }));
+    if (e.ref) body.appendChild(el("div.skill-ref", { gi: "book-open", giSize: 12, text: e.ref }));
     if (G.counselpdf && G.pdf456 && G.pdf456.available()) {
       const fillBtn = el("button.btn.primary", { type: "button", text: "Fill this as a DA 4856 (PDF)", style: "margin-top:10px" });
       fillBtn.addEventListener("click", (ev) => { ev.stopPropagation(); G.counselpdf.open(e); });
@@ -9918,8 +9964,8 @@ window.G = window.G || {};
     }
     head.addEventListener("click", () => {
       const open = body.hasAttribute("hidden");
-      if (open) { body.removeAttribute("hidden"); head.setAttribute("aria-expanded", "true"); (head.querySelector(".skill-chev")||{}).textContent = "▾"; }
-      else { body.setAttribute("hidden", "hidden"); head.setAttribute("aria-expanded", "false"); (head.querySelector(".skill-chev")||{}).textContent = "▸"; }
+      if (open) { body.removeAttribute("hidden"); head.setAttribute("aria-expanded", "true"); }
+      else { body.setAttribute("hidden", "hidden"); head.setAttribute("aria-expanded", "false"); }
     });
     card.appendChild(head); card.appendChild(body);
     return card;
@@ -10244,7 +10290,7 @@ window.G = window.G || {};
       modeToggle.appendChild(b);
     });
     head.appendChild(modeToggle);
-    var close = el("button.cpdf-close", { type: "button", "aria-label": "Close", text: "✕" });
+    var close = el("button.cpdf-close", { type: "button", "aria-label": "Close", gi: "x", giSize: 16 });
     head.appendChild(close);
     modal.appendChild(head);
 
@@ -10743,7 +10789,7 @@ window.G = window.G || {};
       const meta = el("div.idp-goal-meta");
       if (g.domain) meta.appendChild(el("span.chip", { text: g.domain }));
       if (g.competency) meta.appendChild(el("span.chip." + util.competencyClass(g.competency), { text: g.competency }));
-      if (g.target) meta.appendChild(el("span.chip", { text: "▸ " + g.target }));
+      if (g.target) meta.appendChild(el("span.chip", { gi: "target", giSize: 12, text: g.target }));
       card.appendChild(meta);
       const ctl = el("div.idp-goal-ctl");
       const sel = el("select");
@@ -10761,7 +10807,7 @@ window.G = window.G || {};
     const actions = el("div.idp-actions");
     const exportBtn = el("button.btn", { type: "button", text: "⭳ Export IDP" });
     exportBtn.addEventListener("click", exportGoals);
-    const printBtn = el("button.btn", { type: "button", text: "⎙ Print IDP (DA 7906 format)" });
+    const printBtn = el("button.btn", { type: "button", gi: "printer", giSize: 14, text: "Print IDP (DA 7906 format)" });
     printBtn.addEventListener("click", () => printGoals(d));
     actions.appendChild(exportBtn); actions.appendChild(printBtn);
     host.appendChild(actions);
@@ -11760,7 +11806,7 @@ window.G = window.G || {};
       renderPlanSection(high, "High priority");
       renderPlanSection(med, "This week");
 
-      const refreshBtn = el("button.btn.ghost.sm", { text: "↺ Regenerate plan", type:"button", style:"margin-top:10px" });
+      const refreshBtn = el("button.btn.ghost.sm", { gi: "rotate-ccw", giSize: 13, text: "Regenerate plan", type:"button", style:"margin-top:10px" });
       refreshBtn.addEventListener("click", async () => {
         const newPlan = generateActionPlan(profile);
         profile.actionPlan = newPlan;
@@ -11770,7 +11816,7 @@ window.G = window.G || {};
       planPanel.appendChild(refreshBtn);
 
       // ── Print / Export action plan ─────────────────────────────────────────
-      const printBtn = el("button.btn.ghost.sm", { text: "⎙ Print plan", type:"button", style:"margin-top:6px;margin-left:8px" });
+      const printBtn = el("button.btn.ghost.sm", { gi: "printer", giSize: 14, text: "Print plan", type:"button", style:"margin-top:6px;margin-left:8px" });
       printBtn.addEventListener("click", () => {
         const name = profile.displayName || "Soldier";
         const mos  = profile.mos  ? "MOS " + profile.mos  : "";
@@ -11817,7 +11863,7 @@ window.G = window.G || {};
     actPanel.appendChild(el("div.eyebrow", { text: "Account" }));
 
     if (profile.mode !== "guest") {
-      const editBtn = el("button.btn.sm", { text: "✎ Edit profile", type:"button" });
+      const editBtn = el("button.btn.sm", { gi: "pencil", giSize: 13, text: "Edit profile", type:"button" });
       editBtn.addEventListener("click", async () => {
         renderOnboarding(mount, async p => { await renderProfileView(mount); });
       });
@@ -11926,13 +11972,13 @@ window.G = window.G || {};
 
       const guidedCard = el("button.panel.ob-mode-card", { type: "button", style: "text-align:left;cursor:pointer" });
       guidedCard.appendChild(el("div.eyebrow", { text: "Guided Tour" }));
-      guidedCard.appendChild(el("h3", { text: "▶ Step through every section" }));
+      guidedCard.appendChild(el("h3", { gi: "play", giSize: 14, text: "Step through every section" }));
       guidedCard.appendChild(el("p.hint", { text: `A narrated walk through all ${DEMO_STEPS.length} sections, in order, with a short explanation at each stop. Best for a first look or a hands-off showcase.` }));
       guidedCard.addEventListener("click", () => { setMode("guided"); });
 
       const freeCard = el("button.panel.ob-mode-card", { type: "button", style: "text-align:left;cursor:pointer" });
       freeCard.appendChild(el("div.eyebrow", { text: "Free Mode" }));
-      freeCard.appendChild(el("h3", { text: "🖐 Explore on your own" }));
+      freeCard.appendChild(el("h3", { gi: "compass", giSize: 14, text: "Explore on your own" }));
       freeCard.appendChild(el("p.hint", { text: "Drop straight into the app and click around at your own pace. A small Demo Mode badge stays on screen so it's obvious you're in a walk-through, with one tap to exit." }));
       freeCard.addEventListener("click", () => { setMode("free"); });
 
@@ -12031,7 +12077,7 @@ window.G = window.G || {};
           nextBtn.addEventListener("click", () => { current++; persistStep(); renderTracker(); renderKioskCard(current); });
           btnRow.appendChild(nextBtn);
         } else {
-          const doneBtn = el("button.btn.ghost", { text: "✓ End tour", type: "button" });
+          const doneBtn = el("button.btn.ghost", { gi: "check", giSize: 13, text: "End tour", type: "button" });
           doneBtn.addEventListener("click", () => { try { sessionStorage.removeItem(STORAGE_STEP_KEY); } catch (e) {} location.hash = "#/home"; });
           btnRow.appendChild(doneBtn);
         }
@@ -14069,7 +14115,7 @@ window.G = window.G || {};
     panel.appendChild(el("p.hint", { text: "GUIDON stores everything on this device only. Export a backup file to move your profile, IDP goals, counseling drafts, promotion-point estimates, and study progress to another device — or to keep them safe across reinstalls." }));
 
     var row = el("div.backup-actions");
-    var exportBtn = el("button.btn.sm", { type: "button", text: "⬇ Export backup" });
+    var exportBtn = el("button.btn.sm", { type: "button", gi: "download", giSize: 14, text: "Export backup" });
     exportBtn.addEventListener("click", function () {
       if (G.util.busyButton) {
         G.util.busyButton(exportBtn, downloadAll, { busy: "Exporting…", done: "Backup downloaded" });
@@ -14081,7 +14127,7 @@ window.G = window.G || {};
 
     // hidden file input for import
     var fileIn = el("input", { type: "file", accept: "application/json,.json", style: "display:none" });
-    var importBtn = el("button.btn.ghost.sm", { type: "button", text: "⬆ Import backup", style: "margin-left:8px" });
+    var importBtn = el("button.btn.ghost.sm", { type: "button", gi: "upload", giSize: 14, text: "Import backup", style: "margin-left:8px" });
     importBtn.addEventListener("click", function () { fileIn.click(); });
     var status = el("div.backup-status hint");
 
@@ -15584,7 +15630,7 @@ window.G = window.G || {};
       const head = el("button.res-domain-head", { type: "button", "aria-expanded": "false" });
       head.style.color = "color-mix(in srgb, " + (CLRS[dom.color] || CLRS.amber) + " 40%, var(--text))";
       const nameEl = el("span.res-domain-name", { text: dom.name });
-      const chev = el("span.res-domain-chev", { text: "▸" });
+      const chev = el("span.res-domain-chev", { "aria-hidden": "true", gi: "chevron-right", giSize: 14 });
       const badge = el("span.res-domain-badge", { text: (dom.skills || []).length + " skills" });
       head.appendChild(nameEl);
       head.appendChild(badge);
@@ -15602,7 +15648,7 @@ window.G = window.G || {};
         const skCard = el("div.res-domain-skill");
         const skHead = el("button.res-dskill-head", { type: "button", "aria-expanded": "false" });
         skHead.appendChild(el("span.res-dskill-name", { text: sk.name || "Skill" }));
-        skHead.appendChild(el("span.res-dskill-chev", { text: "▸" }));
+        skHead.appendChild(el("span.res-dskill-chev", { "aria-hidden": "true", gi: "chevron-right", giSize: 14 }));
         const skBody = el("div.res-dskill-body", { hidden: "hidden" });
         if (sk.body) skBody.appendChild(el("p.res-dskill-text", { text: sk.body }));
         skHead.addEventListener("click", () => {
@@ -15610,11 +15656,11 @@ window.G = window.G || {};
           if (open) {
             skBody.removeAttribute("hidden");
             skHead.setAttribute("aria-expanded", "true");
-            (skHead.querySelector(".res-dskill-chev") || {}).textContent = "▾";
+           
           } else {
             skBody.setAttribute("hidden", "hidden");
             skHead.setAttribute("aria-expanded", "false");
-            (skHead.querySelector(".res-dskill-chev") || {}).textContent = "▸";
+           
           }
         });
         skCard.appendChild(skHead);
@@ -15629,11 +15675,9 @@ window.G = window.G || {};
         if (open) {
           skillsWrap.removeAttribute("hidden");
           head.setAttribute("aria-expanded", "true");
-          chev.textContent = "▾";
         } else {
           skillsWrap.setAttribute("hidden", "hidden");
           head.setAttribute("aria-expanded", "false");
-          chev.textContent = "▸";
         }
       });
 
@@ -15737,7 +15781,7 @@ window.G = window.G || {};
       const head = el("button.res-skill-head", { type: "button", "aria-expanded": "false" });
       head.appendChild(el("span.res-skill-name", { text: sk.name }));
       if (sk.domain) head.appendChild(el("span.chip", { text: sk.domain }));
-      head.appendChild(el("span.res-skill-chev", { text: "▸" }));
+      head.appendChild(el("span.res-skill-chev", { "aria-hidden": "true", gi: "chevron-right", giSize: 14 }));
       const body = el("div.res-skill-body", { hidden: "hidden" });
       if (sk.body) body.appendChild(el("p.res-skill-d", { text: sk.body }));
       if (Array.isArray(sk.points) && sk.points.length) {
@@ -15745,17 +15789,17 @@ window.G = window.G || {};
         sk.points.forEach((p) => ul.appendChild(el("li", { text: p })));
         body.appendChild(ul);
       }
-      if (sk.ref) body.appendChild(el("div.skill-ref", { text: "◈ " + sk.ref }));
+      if (sk.ref) body.appendChild(el("div.skill-ref", { gi: "book-open", giSize: 12, text: sk.ref }));
       head.addEventListener("click", () => {
         const open = body.hasAttribute("hidden");
         if (open) {
           body.removeAttribute("hidden");
           head.setAttribute("aria-expanded", "true");
-          (head.querySelector(".res-skill-chev") || {}).textContent = "▾";
+         
         } else {
           body.setAttribute("hidden", "hidden");
           head.setAttribute("aria-expanded", "false");
-          (head.querySelector(".res-skill-chev") || {}).textContent = "▸";
+         
         }
       });
       card.appendChild(head);
@@ -15772,7 +15816,7 @@ window.G = window.G || {};
 
     // Crisis line banner — always first and prominent
     const crisis = el("div.res-crisis-banner");
-    crisis.appendChild(el("div.res-crisis-h", { text: "⚠  In crisis? Call or text NOW." }));
+    crisis.appendChild(el("div.res-crisis-h", { gi: "alert-triangle", giSize: 15, text: "In crisis? Call or text NOW." }));
     const phoneRow = el("div.res-crisis-line");
     phoneRow.appendChild(document.createTextNode("Veterans & Military Crisis Line: "));
     phoneRow.appendChild(el("a.res-crisis-tel", { href: "tel:988", text: "988" }));
@@ -16043,7 +16087,7 @@ window.G = window.G || {};
 
     if (bdd.warning) {
       const warn = el("div.panel.tx-warn-panel");
-      warn.appendChild(el("span.tx-warn-ico", { text: "⚠" }));
+      warn.appendChild(el("span.tx-warn-ico", { "aria-hidden": "true", gi: "alert-triangle", giSize: 15 }));
       warn.appendChild(el("span", { text: bdd.warning }));
       host.appendChild(warn);
     }
@@ -16082,7 +16126,7 @@ window.G = window.G || {};
     }
     if (dd.upgradePath) {
       host.appendChild(el("div.panel.tx-warn-panel", {}, [
-        el("span.tx-warn-ico", { text: "⚖" }),
+        el("span.tx-warn-ico", { "aria-hidden": "true", gi: "scale", giSize: 15 }),
         el("span", { text: "DISCHARGE UPGRADE: " + dd.upgradePath }),
       ]));
     }
@@ -16716,7 +16760,7 @@ window.G = window.G || {};
           // Urgent action line
           if (isRed) {
             etsBanner.appendChild(el("div.ets-action", { style:"color:var(--red)",
-              text: "⚠ Final sprint — confirm separation orders, submit VA rated disabilities, out-process by checklist." }));
+              gi: "alert-triangle", giSize: 14, text: "Final sprint — confirm separation orders, submit VA rated disabilities, out-process by checklist." }));
           } else if (isAmber) {
             const bddDays = daysOut - 90;
             const bddMsg = bddDays > 0
@@ -16766,15 +16810,20 @@ window.G = window.G || {};
       el("h2", { text: greeting }),
       el("p", { text: "Work through real leadership situations, drill for your board, and study doctrine — all offline. Your choices build a readiness picture mapped to the Army Leadership Requirements Model." }),
       el("div.btn-row", { role:"group", "aria-label":"Quick navigation" }, [
-        el("button.btn.primary", { text: "▶ Train", onclick: () => location.hash = "#/train" }),
-        el("button.btn", { text: "★ Board Prep", onclick: () => {
+        el("button.btn.primary", { onclick: () => location.hash = "#/train" },
+          [G.util.icon("target", 16), document.createTextNode(" Train")]),
+        el("button.btn", { onclick: () => {
           location.hash = "#/board";
           setTimeout(() => { G.board && G.board._openReadiness && G.board._openReadiness(); }, 150);
-        } }),
-        el("button.btn", { text: "✍ Write", onclick: () => location.hash = "#/write" }),
-        el("button.btn", { text: "₵ Money", onclick: () => location.hash = "#/money" }),
-        el("button.btn.ghost", { text: "▤ Doctrine", onclick: () => location.hash = "#/doctrine" }),
-        el("button.btn.ghost", { text: "⌕ Search", onclick: () => location.hash = "#/search" }),
+        } }, [G.util.icon("layers", 16), document.createTextNode(" Board Prep")]),
+        el("button.btn", { onclick: () => location.hash = "#/write" },
+          [G.util.icon("pencil", 16), document.createTextNode(" Write")]),
+        el("button.btn", { onclick: () => location.hash = "#/money" },
+          [G.util.icon("dollar-sign", 16), document.createTextNode(" Money")]),
+        el("button.btn.ghost", { onclick: () => location.hash = "#/doctrine" },
+          [G.util.icon("book", 16), document.createTextNode(" Doctrine")]),
+        el("button.btn.ghost", { onclick: () => location.hash = "#/search" },
+          [G.util.icon("search", 16), document.createTextNode(" Search")]),
       ]),
     ]);
     mount.appendChild(hero);
@@ -17477,7 +17526,7 @@ window.G = window.G || {};
               btn.classList.add("active");
               drawSummary(t);
             } }, [
-            el("span.tsb-name", {}, [el("span", { text: t.name }), el("span.tsb-check", { text: "✓" })]),
+            el("span.tsb-name", {}, [el("span", { text: t.name }), el("span.tsb-check", { "aria-hidden": "true", gi: "check", giSize: 13 })]),
             dots, el("span.tsb-blurb", { text: t.blurb }),
           ]);
           btn.setAttribute("aria-pressed", cur.theme === t.id ? "true" : "false");
@@ -17657,11 +17706,11 @@ window.G = window.G || {};
       } catch (e) { util.toast("Import failed: " + e.message); }
     });
     dataPanel.appendChild(el("div.btn-row", { style: "margin-top:8px" }, [
-      el("button.btn.sm", { text: "⇩ Export progress", onclick: async () => {
+      el("button.btn.sm", { gi: "download", giSize: 14, text: "Export progress", onclick: async () => {
         const data = await store.exportProgress();
         util.download("guidon-progress-" + new Date().toISOString().slice(0, 10) + ".json", JSON.stringify(data, null, 2));
       } }),
-      el("button.btn.sm.ghost", { text: "⇪ Import progress", onclick: () => importInput.click() }),
+      el("button.btn.sm.ghost", { gi: "upload", giSize: 14, text: "Import progress", onclick: () => importInput.click() }),
     ]));
     dataPanel.appendChild(importInput);
     dataPanel.appendChild(el("p.hint", { text: "Export a JSON backup of your settings and recorded attempts, or restore one on another device. (Authored scenarios are exported individually from the Authoring Studio.)" }));
@@ -17925,41 +17974,41 @@ window.G = window.G || {};
   const util = G.util, store = G.store, el = util.el;
 
   const ROUTES = [
-    { hash: "#/home", label: "Home", ico: "◧", render: (m) => G.views.home(m) },
-    { hash: "#/train", label: "Train", ico: "◎", render: (m) => G.views.train(m) },
-    { hash: "#/learn", label: "Learn", ico: "◈", render: (m) => G.learn.render(m) },
-    { hash: "#/forms", label: "Forms", ico: "⚑", render: (m) => G.forms.render(m) },
-    { hash: "#/counsel", label: "Counsel", ico: "☎", render: (m) => G.counsel.render(m) },
-    { hash: "#/develop", label: "Develop", ico: "▲", render: (m) => G.idp.render(m) },
-    { hash: "#/blc", label: "BLC Prep", ico: "⚒", render: (m) => G.blc.render(m) },
-    { hash: "#/alc", label: "ALC Prep", ico: "▲", render: (m) => G.alc.render(m) },
-    { hash: "#/slc", label: "SLC & Beyond", ico: "★", render: (m) => G.slc.render(m) },
-    { hash: "#/drills", label: "NCOPDS Drills", ico: "⚔", render: (m) => G.drills.render(m) },
-    { hash: "#/channels", label: "Channels", ico: "☎", render: (m) => G.channels.render(m) },
-    { hash: "#/career", label: "MOS", ico: "⚙", render: (m) => G.career.render(m) },
-    { hash: "#/write", label: "Write", ico: "✍", render: (m) => G.writing.render(m) },
-    { hash: "#/money", label: "Money", ico: "₵", render: (m) => G.finance.render(m) },
-    { hash: "#/health", label: "Health", ico: "⊕", render: (m) => G.resilience.render(m) },
-    { hash: "#/fitness", label: "Fitness", ico: "◆", render: (m) => G.fitness.render(m) },
-    { hash: "#/records", label: "Records", ico: "▤", render: (m) => G.records.render(m) },
-    { hash: "#/calendar", label: "Calendar", ico: "◴", render: (m) => G.calendar.render(m) },
-    { hash: "#/assignments", label: "Assignments", ico: "⇄", render: (m) => G.assignments.render(m) },
-    { hash: "#/leader", label: "Squad", ico: "⚇", render: (m) => G.leader.render(m) },
-    { hash: "#/currency", label: "Currency", ico: "◑", render: (m) => G.currency.render(m) },
-    { hash: "#/transition", label: "ETS", ico: "⇢", render: (m) => G.transition.render(m) },
-    { hash: "#/resources", label: "Resources", ico: "🧭", render: (m) => G.resources.render(m) },
-    { hash: "#/doctrine", label: "Doctrine", ico: "▤", render: (m) => G.views.doctrine(m) },
-    { hash: "#/dictionary", label: "Terms", ico: "☰", render: (m) => G.dictionary.render(m) },
-    { hash: "#/board", label: "Board", ico: "★", render: (m) => G.board.render(m) },
-    { hash: "#/risk", label: "Risk", ico: "!", render: (m) => G.risk.render(m) },
-    { hash: "#/progress", label: "Progress", ico: "▦", render: (m) => G.progress.render(m) },
-    { hash: "#/author", label: "Author", ico: "✎", render: (m) => G.author.render(m) },
-    { hash: "#/share", label: "Share & Install", ico: "⌗", render: (m) => G.share.render(m) },
-    { hash: "#/selftest", label: "Self-Test", ico: "✓", render: (m) => G.selftest.render(m) },
-    { hash: "#/settings", label: "Settings", ico: "⚙", render: (m) => G.views.settings(m) },
-    { hash: "#/search",   label: "Search",   ico: "⌕", render: (m) => G.views.search(m) },
-    { hash: "#/profile",  label: "Profile",  ico: "👤", render: (m) => G.profile.render(m) },
-    { hash: "#/kiosk",    label: "Kiosk",    ico: "📺", render: (m) => G.profile.renderKiosk(m) },
+    { hash: "#/home", label: "Home", ico: "home", render: (m) => G.views.home(m) },
+    { hash: "#/train", label: "Train", ico: "target", render: (m) => G.views.train(m) },
+    { hash: "#/learn", label: "Learn", ico: "graduation-cap", render: (m) => G.learn.render(m) },
+    { hash: "#/forms", label: "Forms", ico: "file-text", render: (m) => G.forms.render(m) },
+    { hash: "#/counsel", label: "Counsel", ico: "message-circle", render: (m) => G.counsel.render(m) },
+    { hash: "#/develop", label: "Develop", ico: "trending-up", render: (m) => G.idp.render(m) },
+    { hash: "#/blc", label: "BLC Prep", ico: "shield", render: (m) => G.blc.render(m) },
+    { hash: "#/alc", label: "ALC Prep", ico: "award", render: (m) => G.alc.render(m) },
+    { hash: "#/slc", label: "SLC & Beyond", ico: "star", render: (m) => G.slc.render(m) },
+    { hash: "#/drills", label: "NCOPDS Drills", ico: "crosshair", render: (m) => G.drills.render(m) },
+    { hash: "#/channels", label: "Channels", ico: "phone", render: (m) => G.channels.render(m) },
+    { hash: "#/career", label: "MOS", ico: "briefcase", render: (m) => G.career.render(m) },
+    { hash: "#/write", label: "Write", ico: "pencil", render: (m) => G.writing.render(m) },
+    { hash: "#/money", label: "Money", ico: "dollar-sign", render: (m) => G.finance.render(m) },
+    { hash: "#/health", label: "Health", ico: "heart", render: (m) => G.resilience.render(m) },
+    { hash: "#/fitness", label: "Fitness", ico: "activity", render: (m) => G.fitness.render(m) },
+    { hash: "#/records", label: "Records", ico: "clipboard-check", render: (m) => G.records.render(m) },
+    { hash: "#/calendar", label: "Calendar", ico: "calendar", render: (m) => G.calendar.render(m) },
+    { hash: "#/assignments", label: "Assignments", ico: "map", render: (m) => G.assignments.render(m) },
+    { hash: "#/leader", label: "Squad", ico: "users", render: (m) => G.leader.render(m) },
+    { hash: "#/currency", label: "Currency", ico: "history", render: (m) => G.currency.render(m) },
+    { hash: "#/transition", label: "ETS", ico: "send", render: (m) => G.transition.render(m) },
+    { hash: "#/resources", label: "Resources", ico: "compass", render: (m) => G.resources.render(m) },
+    { hash: "#/doctrine", label: "Doctrine", ico: "book", render: (m) => G.views.doctrine(m) },
+    { hash: "#/dictionary", label: "Terms", ico: "book-open", render: (m) => G.dictionary.render(m) },
+    { hash: "#/board", label: "Board", ico: "layers", render: (m) => G.board.render(m) },
+    { hash: "#/risk", label: "Risk", ico: "alert-triangle", render: (m) => G.risk.render(m) },
+    { hash: "#/progress", label: "Progress", ico: "bar-chart", render: (m) => G.progress.render(m) },
+    { hash: "#/author", label: "Author", ico: "plus-square", render: (m) => G.author.render(m) },
+    { hash: "#/share", label: "Share & Install", ico: "download", render: (m) => G.share.render(m) },
+    { hash: "#/selftest", label: "Self-Test", ico: "check-circle", render: (m) => G.selftest.render(m) },
+    { hash: "#/settings", label: "Settings", ico: "sliders", render: (m) => G.views.settings(m) },
+    { hash: "#/search",   label: "Search",   ico: "search", render: (m) => G.views.search(m) },
+    { hash: "#/profile",  label: "Profile",  ico: "user", render: (m) => G.profile.render(m) },
+    { hash: "#/kiosk",    label: "Kiosk",    ico: "monitor", render: (m) => G.profile.renderKiosk(m) },
   ];
   // Exposed so modules outside this IIFE (e.g. the Demo Center) can derive
   // their own lists from the single source of truth rather than duplicating it.
@@ -18010,8 +18059,8 @@ window.G = window.G || {};
     const searchBtn = el("button.topbar-search-btn", {
       "aria-label": "Search GUIDON",
       title: "Search everything (press /)",
-      text: "⌕",
     });
+    searchBtn.appendChild(G.util.icon("search", 19, "⌕"));
     searchBtn.addEventListener("click", () => {
       location.hash = "#/search";
       setTimeout(() => { const inp = document.querySelector(".search-box input"); if (inp) inp.focus(); }, 150);
@@ -18028,8 +18077,8 @@ window.G = window.G || {};
       id: "topbar-greeting",
       "aria-label": "Profile / Account",
       title: "Account & profile",
-      text: "👤",
     });
+    profileBtn.appendChild(G.util.icon("user", 19, "👤"));
     profileBtn.addEventListener("click", () => location.hash = "#/profile");
     topbar.appendChild(profileBtn);
 
@@ -18080,7 +18129,7 @@ window.G = window.G || {};
         if (location.hash === r.hash) { try { route(); } catch (e) {} }
         else location.hash = r.hash;
       },
-    }, [el("span.ico", { "aria-hidden": "true", text: r.ico }), document.createTextNode(r.label)]);
+    }, [el("span.ico", { "aria-hidden": "true" }, [G.util.icon(r.ico, 18)]), document.createTextNode(r.label)]);
   }
 
   // Below 600px there's no side-rail — it's the horizontal bottom tab bar.
@@ -18113,7 +18162,7 @@ window.G = window.G || {};
           renderNav();
         },
       }, [
-        el("span.ico", { "aria-hidden": "true", text: isOpen ? "▾" : "▸" }),
+        el("span.ico", { "aria-hidden": "true" }, [G.util.icon(isOpen ? "chevron-down" : "chevron-right", 14, isOpen ? "▾" : "▸")]),
         document.createTextNode(g.label),
       ]);
       navEl.appendChild(header);
