@@ -456,15 +456,26 @@ html.qz-theater { overflow: hidden; }
 html.qz-theater .qz-wrap {
   position: fixed; inset: 0; z-index: 800;
   background: var(--bg);
-  display: flex; flex-direction: column; justify-content: center;
-  padding: clamp(10px, 2.5vw, 36px);
-  padding-top: max(clamp(10px, 2.5vw, 36px), env(safe-area-inset-top));
-  padding-bottom: max(clamp(10px, 2.5vw, 36px), env(safe-area-inset-bottom));
+  display: flex; flex-direction: column;
+  padding: clamp(8px, 1.6vw, 22px);
+  padding-top: max(clamp(8px, 1.6vw, 22px), env(safe-area-inset-top));
+  padding-bottom: max(clamp(8px, 1.6vw, 22px), env(safe-area-inset-bottom));
   overflow-y: auto;
 }
-html.qz-theater .qz-scene { max-width: 920px; width: 100%; margin: 0 auto; }
-html.qz-theater .qz-card { height: clamp(340px, 66vh, 800px); }
-html.qz-theater .qz-face { padding: clamp(20px, 4vw, 44px); font-size: 1.12em; }
+/* The card takes ALL leftover height via flex, not a vh clamp. The first cut
+   used max-width:920px + height:66vh, which on a landscape tablet left a
+   third of the screen as empty margin — dead bands above and below, wide
+   gutters either side (seen on the Tab S9 FE, 1152x720). Flex adapts to any
+   orientation with no per-viewport tuning: progress bar and nav row keep
+   their natural height, the card absorbs everything else. */
+html.qz-theater .qz-scene {
+  flex: 1 1 auto; min-height: 0;
+  width: 100%; max-width: 1500px; margin: 0 auto;
+  display: flex;
+}
+html.qz-theater .qz-card { height: auto; flex: 1 1 auto; min-height: 280px; }
+html.qz-theater .qz-face { padding: clamp(20px, 3vw, 44px); font-size: 1.12em; }
+html.qz-theater .qz-nav-row { margin-top: 10px; }
 /* Toasts ("Deck reshuffled", grade feedback) are z-index 50 and would vanish
    under the 800 overlay — lift them only while theater is active. */
 html.qz-theater #toast { z-index: 900; }
