@@ -2,6 +2,24 @@
 
 All notable changes to GUIDON will be documented in this file. Format loosely follows [Keep a Changelog](http://keepachangelog.com/).
 
+## 2026-08-02 (session 47) - Production UX pass: three shipped bugs and the first-run experience
+
+**Ask:** tighten UX/UI toward production quality, with 1:1 parity across every platform fork.
+
+A 48-shot screenshot matrix (14 sections x 3 real viewports) drove the pass, and its own failures exposed two shipped bugs before any review happened:
+
+1. **First-visit reload.** The service worker's clients.claim() fired controllerchange ~2s after a hosted first load and pwa.js reloaded the page - right as a first-time user tapped an onboarding card. Reload now applies only to genuine updates, never the first claim.
+2. **Navigation landed mid-page.** Session 49's scrollhint called scrollIntoView() on the active tab, which scrolls every ancestor INCLUDING THE PAGE to reach a strip low in the view - so arriving at Settings landed halfway down. Now horizontal-only via the strip's own scrollLeft.
+3. **Home rendered twice at boot.** app.start() sets the default hash AND calls route(); the hash-set fires a second route(); two async renders interleave and both append. Latent on rapid nav taps too. Fix: every render gets its own frame, so a superseded render appends into a detached node. Verified on boot and a 10ms double-nav.
+
+**First-run experience rewritten from evidence.** A new user's Home led with a bare mm/dd/yyyy SET strip, then "1014 board cards due for review - large backlog" in red (a card with no SRS record is "due", so day one = the whole deck), then a red ACTION REQUIRED alert - all before the hero. Now: hero first; a never-graded deck reads "1,014 board cards ready to study - start with 20 and the schedule builds itself"; the training panel is neutral until someone has actually started; role=alert became role=status; and "Welcome back, KIOSK MODE." no longer greets placeholder names.
+
+**Settings halved.** The 24-theme wall is now one summary row (current theme + Change theme) expanding on demand - verified collapsed/expand/switch/summary-tracking. The tier filter label no longer contradicts E1-E9 branding (display only; the functional key untouched).
+
+**Housekeeping:** C: hit 0 bytes free mid-pass - my two emulator AVDs (9.9 GB) plus a still-running headless qemu holding RAM images. Deleted and killed; ~10 GB recovered; device testing lives on the real Fold 5 and Tab S9 FE now.
+
+**Verified:** eleven suites, zero warnings. All forks rebuilt from the same source; parity proven per-fork by the standalone file://, web, and desktop-CSP suites.
+
 ## 2026-08-01 (session 46) - Flows 2 and 3 walked with NVDA
 
 **Ask:** walk flows 2 and 3 with the screen reader and report back.

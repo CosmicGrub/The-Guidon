@@ -90,8 +90,16 @@ window.G = window.G || {};
       navigator.serviceWorker.ready.then(() => { state.swActive = true; notify(); });
     }).catch((e) => console.warn("SW registration failed:", e));
 
+    // Reload ONLY when an update replaces an existing controller — never on the
+    // first claim. On a first visit the worker installs, activates and calls
+    // clients.claim() a second or two after load, which fires controllerchange;
+    // reloading there restarted the page underneath a brand-new user right as
+    // they were tapping an onboarding card. (Found when a UX screenshot script
+    // died with "execution context destroyed" at exactly that moment.)
+    let hadController = !!navigator.serviceWorker.controller;
     let reloading = false;
     navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (!hadController) { hadController = true; return; }   // first claim: no reload
       if (reloading) return;
       reloading = true;
       location.reload();

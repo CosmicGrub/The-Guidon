@@ -47,9 +47,17 @@ window.G = window.G || {};
     update(elm);
     // If a non-first tab is active on render, bring it into view so the user
     // can see where they are rather than an apparently-unrelated strip.
+    //
+    // HORIZONTAL ONLY, by adjusting the strip's own scrollLeft — never
+    // scrollIntoView(). scrollIntoView scrolls every ancestor, including the
+    // page: with an active strip low in a view (Settings' forms-mode strip),
+    // navigating to that section auto-scrolled the whole page down to it, so
+    // arriving at Settings landed mid-page with the heading off-screen. That
+    // shipped in v1.2.0 before being caught by a screenshot audit.
     const active = elm.querySelector("button.active");
-    if (active && active.scrollIntoView) {
-      try { active.scrollIntoView({ block: "nearest", inline: "nearest" }); } catch (e) {}
+    if (active) {
+      const target = active.offsetLeft - (elm.clientWidth - active.offsetWidth) / 2;
+      elm.scrollLeft = Math.max(0, Math.min(target, elm.scrollWidth - elm.clientWidth));
     }
   }
 

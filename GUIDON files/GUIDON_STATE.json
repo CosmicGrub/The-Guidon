@@ -1549,6 +1549,14 @@
   "note": "Predecessor was unit-specific (62nd EN BN / 36th EN Bde). Unclear whether guidon_31.html generalized this or removed it - flagged as open item."
  },
  "openItems": [
+  "FIXED (47): first-visit SW reload - controllerchange on the initial clients.claim() reloaded the page under a first-time user mid-onboarding. Reload now only on genuine updates.",
+  "FIXED (47): scrollhint scrollIntoView scrolled the PAGE to the active tab strip, so navigation landed mid-page. Horizontal-only now.",
+  "FIXED (47): double boot render - app.start()+hashchange raced two async renders into #route and both appended. Per-render frames make a superseded render harmless. The same race was latent on rapid nav taps.",
+  "FIXED (47): first-run tone - fresh decks are invitations not backlogs, training panel neutral until started, role=alert -> role=status, no more \"Welcome back, KIOSK MODE.\"",
+  "CLOSED (47): the 24-theme Settings wall - collapsed to a summary row with on-demand picker. Verified switching still works.",
+  "STANDING: never scrollIntoView() inside a view render - it scrolls every ancestor including the page. Adjust the local container scrollLeft/scrollTop instead.",
+  "STANDING: async view renders must never share a container across route() calls - the per-render frame in route() is the guard.",
+  "NOTE (47): emulator AVDs deleted (~10 GB); a prior-session headless qemu was still running and holding RAM images. Device testing is on the real Fold 5 / Tab S9 FE.",
   "NOTE: NVDA 2026.1.1 is installed at C:/Program Files/NVDA and RESTORED to normal use - synth=oneCore, default INFO logging, start/exit sounds on. It is not running. To repeat the speech-capture work, set synth=silence and loggingLevel=DEBUG in %APPDATA%/nvda/nvda.ini, then use tools/nvda-walk.mjs.",
   "FIXED (46): #/forms rendered its title as bare text in a div, so the router found no h1/h2 to focus and navigating to Forms announced NOTHING in a screen reader. Every automated check passed it.",
   "CLOSED (46): flows 2 (Board Drill card) and 3 (DA 4856) walked with NVDA. Both read well - \"Answer revealed.\", \"Marked known. Next card.\", and the flipped card announces with region/list structure and named grade buttons.",

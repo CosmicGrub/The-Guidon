@@ -16550,11 +16550,6 @@ window.G = window.G || {};
   // ---------------- HOME ----------------
   views.home = async function (mount) {
     util.clear(mount);
-    // Board countdown on Home (session 30). The date already drives the action
-    // plan; showing it on the screen people open first is where it earns its
-    // keep. Backwards compatible: the renderer draws its own "set a date" row
-    // when no date exists, so profiles without one lose nothing.
-    try { if (typeof G.renderBoardCountdown === "function") mount.appendChild(G.renderBoardCountdown()); } catch (e) {}
     const p = await store.getProgress();
 
     // ── ETS countdown + milestone alerts ────────────────────────────────────
@@ -16638,7 +16633,10 @@ window.G = window.G || {};
     // ── Profile greeting ─────────────────────────────────────────────────────
     let profileData = null;
     try { if (G.profile) profileData = await G.profile.current(); } catch(e) {}
-    const greeting = profileData && profileData.displayName && profileData.displayName !== "GUEST"
+    // Never greet by displayName unless it is a real name: guest and kiosk
+    // profiles carry placeholder names, and "Welcome back, KIOSK MODE." reads
+    // like the machine talking to itself. (Caught in an NVDA transcript.)
+    const greeting = profileData && profileData.displayName && !/^(GUEST|KIOSK)/i.test(profileData.displayName)
       ? "Welcome back, " + profileData.displayName + "."
       : "Train the decision, not just the answer.";
     const subText = profileData && profileData.mos
@@ -16662,6 +16660,12 @@ window.G = window.G || {};
       ]),
     ]);
     mount.appendChild(hero);
+
+    // Board countdown BELOW the hero, not above it. It used to be the first
+    // element on Home, which meant a new user's very first sight of the app
+    // was a bare, unexplained mm/dd/yyyy input. The date still earns its place
+    // on Home — after the app has introduced itself.
+    try { if (typeof G.renderBoardCountdown === "function") mount.appendChild(G.renderBoardCountdown()); } catch (e) {}
 
     // ── "My Readiness" cross-module dashboard strip ──────────────────────────
     try {
@@ -16760,11 +16764,21 @@ window.G = window.G || {};
       const trainingScs = G.store.scenarios ? G.store.scenarios().filter((s) => s.defaultMode === "training") : [];
       const incomplete = trainingScs.filter((s) => !completions[s.id] || completions[s.id].bestPct < 80);
       if (incomplete.length) {
-        const alert = el("div.card.tr-alert-home", { style: "margin-top:12px", role:"alert" }, [
-          el("div.tr-mandatory-badge", { text: "ACTION REQUIRED" }),
-          el("div", { text: incomplete.length + " mandatory training module" + (incomplete.length > 1 ? "s" : "") + " not yet completed at 80%:" }),
-          el("ul.tr-alert-list", {}, incomplete.map((s) => el("li", { text: s.title }))),
-          el("button.btn.sm", { text: "Go to Mandatory Training →", onclick: () => { views._trainFilter = "training"; location.hash = "#/train"; } }),
+        // Tone scales with history. Someone mid-way through with stragglers
+        // gets the loud treatment; someone who has never opened a module gets
+        // an introduction, because on day one EVERY module is "incomplete" and
+        // greeting a brand-new user with a red ACTION REQUIRED alert was the
+        // app scolding them for not having used it yet.
+        // role="status", not "alert": an alert interrupts a screen reader on
+        // every single Home visit, which this does not warrant.
+        const started = trainingScs.some((sc) => completions[sc.id]);
+        const alert = el("div.card" + (started ? ".tr-alert-home" : ""), { style: "margin-top:12px", role: "status" }, [
+          el("div.tr-mandatory-badge", { text: started ? "MANDATORY TRAINING" : "UNIT TRAINING" }),
+          el("div", { text: started
+            ? incomplete.length + " module" + (incomplete.length > 1 ? "s" : "") + " still below the 80% standard:"
+            : incomplete.length + " training module" + (incomplete.length > 1 ? "s are" : " is") + " available — each checks off at 80%." }),
+          started ? el("ul.tr-alert-list", {}, incomplete.map((s) => el("li", { text: s.title }))) : null,
+          el("button.btn.sm", { text: started ? "Finish the set →" : "See the modules →", onclick: () => { views._trainFilter = "training"; location.hash = "#/train"; } }),
         ]);
         mount.appendChild(alert);
       }
@@ -16776,28 +16790,39 @@ window.G = window.G || {};
       if (allQs.length && G.db) {
         const now = Date.now();
         const dueQs = [];
+        let graded = 0;   // cards with any SRS record at all
         for (const q of allQs) {
           const r = await G.db.get("kv", "srs:" + q.id).catch(() => null);
+          if (r && r.v) graded++;
           const s = (r && r.v) || { due: 0 };
           if ((s.due || 0) <= now) dueQs.push(q);
         }
         if (dueQs.length >= 3) {
-          const urgency = dueQs.length >= 20 ? "red" : dueQs.length >= 10 ? "amber" : "green";
+          // A card with no SRS record has never been studied, so on day one the
+          // ENTIRE deck is technically "due" — and this panel used to open a
+          // brand-new user's Home with "1014 board cards due for review, large
+          // backlog" in red. A deck you have never touched is not a backlog.
+          const fresh = graded === 0;
+          const urgency = fresh ? "green" : dueQs.length >= 20 ? "red" : dueQs.length >= 10 ? "amber" : "green";
           const urgeBorder = { red: "var(--red)", amber: "var(--amber)", green: "var(--green)" }[urgency];
           const urgeText = { red: "color-mix(in srgb, var(--red) 40%, var(--text))", amber: "color-mix(in srgb, var(--amber) 40%, var(--text))", green: "color-mix(in srgb, var(--green) 40%, var(--text))" }[urgency];
           const srsPanel = el("div.card.click.srs-home-panel", {
             style: "margin-top:12px; border-left:4px solid " + urgeBorder,
-            "aria-label": dueQs.length + " board questions due for review",
+            "aria-label": fresh ? allQs.length + " board questions ready to study" : dueQs.length + " board questions due for review",
           });
           const srsRow = el("div.srs-home-row");
-          srsRow.appendChild(el("span.srs-home-ico", { text: "⏰" }));
+          srsRow.appendChild(el("span.srs-home-ico", { text: fresh ? "★" : "⏰" }));
           const srsInfo = el("div.srs-home-info");
           srsInfo.appendChild(el("div.srs-home-count", {
             style: "color:" + urgeText,
-            text: dueQs.length + " board cards due for review"
+            text: fresh
+              ? allQs.length.toLocaleString() + " board cards ready to study"
+              : dueQs.length + " board cards due for review"
           }));
           srsInfo.appendChild(el("div.srs-home-sub", {
-            text: dueQs.length >= 20
+            text: fresh
+              ? "Start with 20 — grade yourself honestly and the schedule builds itself."
+              : dueQs.length >= 20
               ? "Large backlog — tackle 20 cards today to stay current."
               : dueQs.length >= 10
               ? "Solid session — work through these to keep your schedule."
@@ -17292,11 +17317,37 @@ window.G = window.G || {};
       const apPanel = el("div.panel");
       apPanel.appendChild(el("label", { text: "Theme" }));
 
+      // Collapsed by default: the always-open 24-theme wall made Settings the
+      // longest page in the app. The summary shows what is active; the wall
+      // appears only when someone actually wants to change it.
+      const curThemeMeta = G.theme.THEMES.find((t) => t.id === cur.theme) || { name: cur.theme, swatches: [] };
+      const tsRow = el("div", { style: "display:flex;align-items:center;gap:10px;margin:8px 0;flex-wrap:wrap" });
+      const tsDots = el("div.theme-swatch-row");
+      const drawSummary = (t) => {
+        util.clear(tsDots);
+        (t.swatches || []).forEach((hex) => tsDots.appendChild(el("div.theme-swatch-dot", { style: "background:" + hex })));
+        tsName.textContent = t.name || t.id;
+      };
+      const tsName = el("span", { style: "flex:1;font-family:var(--font-head)" });
+      tsRow.appendChild(tsDots); tsRow.appendChild(tsName);
+      const tsToggle = el("button.btn.sm.ghost", { type: "button", text: "Change theme ▾", "aria-expanded": "false" });
+      tsRow.appendChild(tsToggle);
+      apPanel.appendChild(tsRow);
+      const themeWrap = el("div", { style: "display:none" });
+      apPanel.appendChild(themeWrap);
+      tsToggle.addEventListener("click", () => {
+        const open = themeWrap.style.display !== "none";
+        themeWrap.style.display = open ? "none" : "";
+        tsToggle.textContent = open ? "Change theme ▾" : "Hide theme picker ▴";
+        tsToggle.setAttribute("aria-expanded", String(!open));
+      });
+      drawSummary(curThemeMeta);
+
       // group themes: Standard, Focus, High-contrast
       const groups = {};
       G.theme.THEMES.forEach((t) => { (groups[t.group] = groups[t.group] || []).push(t); });
       Object.keys(groups).forEach((gname) => {
-        apPanel.appendChild(el("p.hint", { text: gname, style: "margin:10px 0 2px;text-transform:uppercase;letter-spacing:.08em;font-size:.66rem;color:var(--text-mute)" }));
+        themeWrap.appendChild(el("p.hint", { text: gname, style: "margin:10px 0 2px;text-transform:uppercase;letter-spacing:.08em;font-size:.66rem;color:var(--text-mute)" }));
         const chips = el("div.theme-swatch-chips");
         groups[gname].forEach((t) => {
           const dots = el("div.theme-swatch-row");
@@ -17306,6 +17357,7 @@ window.G = window.G || {};
               await G.theme.set("theme", t.id);
               apPanel.querySelectorAll(".theme-swatch-btn").forEach((x) => x.classList.remove("active"));
               btn.classList.add("active");
+              drawSummary(t);
             } }, [
             el("span.tsb-name", {}, [el("span", { text: t.name }), el("span.tsb-check", { text: "✓" })]),
             dots, el("span.tsb-blurb", { text: t.blurb }),
@@ -17313,7 +17365,7 @@ window.G = window.G || {};
           btn.setAttribute("aria-pressed", cur.theme === t.id ? "true" : "false");
           chips.appendChild(btn);
         });
-        apPanel.appendChild(chips);
+        themeWrap.appendChild(chips);
       });
 
       // helper for a grid of option buttons bound to a setter
@@ -17411,7 +17463,7 @@ window.G = window.G || {};
     const tierPanel = el("div.panel", { style: "margin-top:12px" });
     tierPanel.appendChild(el("label", { text: "Focus tier (filters scenarios, doctrine, board questions)" }));
     const tierSel = el("select", { "aria-label": "Focus tier — filters scenarios, doctrine, board questions" });
-    [["all", "All ranks (E1–E6)"], ["E1", "E1"], ["E2", "E2"], ["E3", "E3"], ["E4", "E4 / SPC"], ["E5", "E5 / SGT"], ["E6", "E6 / SSG"]].forEach(([v, lbl]) =>
+    [["all", "All ranks"], ["E1", "E1"], ["E2", "E2"], ["E3", "E3"], ["E4", "E4 / SPC"], ["E5", "E5 / SGT"], ["E6", "E6 / SSG"]].forEach(([v, lbl]) =>
       tierSel.appendChild(el("option", { value: v, text: lbl, selected: s.tierFilter === v ? "selected" : null })));
     tierSel.addEventListener("change", () => store.setSetting("tierFilter", tierSel.value));
     tierPanel.appendChild(tierSel);
@@ -18019,10 +18071,19 @@ window.G = window.G || {};
     const main = document.querySelector(".main");
     if (main) main.scrollTop = 0;
     util.clear(routeEl);
+    // Every render gets its OWN frame inside #route, so a superseded render can
+    // only ever append into a detached node. Without this, two quick route()
+    // calls (boot sets the default hash AND calls route(), so the hashchange
+    // fires a second one; rapid nav taps do the same) interleave their async
+    // renders: the second clears the first's early output, then BOTH keep
+    // appending, and Home boots with every panel duplicated. Found when the
+    // accessibility sweep flagged two of every Home control at boot.
+    const frame = el("div");
+    routeEl.appendChild(frame);
     // render() may be sync or async; handle both, and catch async rejections
     // that a plain try/catch would miss (home/progress/board are async views).
     Promise.resolve()
-      .then(() => r.render(routeEl))
+      .then(() => r.render(frame))
       .catch((e) => {
         console.error(e);
         util.clear(routeEl);
@@ -19216,9 +19277,17 @@ window.G = window.G || {};
     update(elm);
     // If a non-first tab is active on render, bring it into view so the user
     // can see where they are rather than an apparently-unrelated strip.
+    //
+    // HORIZONTAL ONLY, by adjusting the strip's own scrollLeft — never
+    // scrollIntoView(). scrollIntoView scrolls every ancestor, including the
+    // page: with an active strip low in a view (Settings' forms-mode strip),
+    // navigating to that section auto-scrolled the whole page down to it, so
+    // arriving at Settings landed mid-page with the heading off-screen. That
+    // shipped in v1.2.0 before being caught by a screenshot audit.
     const active = elm.querySelector("button.active");
-    if (active && active.scrollIntoView) {
-      try { active.scrollIntoView({ block: "nearest", inline: "nearest" }); } catch (e) {}
+    if (active) {
+      const target = active.offsetLeft - (elm.clientWidth - active.offsetWidth) / 2;
+      elm.scrollLeft = Math.max(0, Math.min(target, elm.scrollWidth - elm.clientWidth));
     }
   }
 

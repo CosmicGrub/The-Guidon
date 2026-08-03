@@ -1340,6 +1340,43 @@ It also produced four false alarms, every one of them a fault in the instrument.
 
 ---
 
+## 53. Production UX Pass — Three Shipped Bugs and the First-Run Experience (session 47)
+
+**Ask:** tighten UX/UI toward production quality, with 1:1 parity across every platform fork.
+
+Method: no guessing — a 48-shot screenshot matrix (14 sections × 3 real viewports × app states), reviewed against the friction points already on record. The matrix paid for itself immediately: **its own failures exposed two shipped bugs, and a screenshot exposed a third.**
+
+### Three real bugs, all shipped in v1.2.0
+
+1. **First-visit reload.** On a hosted first visit the service worker activates ~2s after load, `clients.claim()` fires `controllerchange`, and `pwa.js` reloaded the page — right as a first-time user tapped an onboarding card. Found because the screenshot script died with *"execution context destroyed"* at exactly that moment. Reload now applies only when an update replaces an existing controller, never the first claim.
+
+2. **Navigation landed mid-page.** Settings' screenshot arrived scrolled halfway down. `route()` *does* reset scroll — the culprit was §49's scrollhint calling `scrollIntoView()` on the active tab, which scrolls **every ancestor including the page** to reach a strip low in the view. Verify-the-verifier, in reverse: my own feature, caught by my own audit. Now horizontal-only via the strip's `scrollLeft`.
+
+3. **Home rendered twice at boot.** The a11y sweep flagged two of every Home control. `app.start()` sets the default hash *and* calls `route()`; the hash-set fires `hashchange` → second `route()`; two **async** renders interleave — the second's `clear()` wipes the first's early output, then both keep appending. The same race fires on rapid nav taps between async views, so it was latent everywhere. Fix: every render gets its own frame inside `#route`, so a superseded render appends only into a detached node. Verified against both the boot path and a 10ms double-nav.
+
+### First-run experience, rewritten from evidence
+
+The screenshot of a brand-new user's Home was damning: the **first element on the page was a bare `mm/dd/yyyy SET` strip** with no context, followed by an alarm-red **"1014 board cards due for review — large backlog"** (a card with no SRS record is "due", so day one = the entire deck), and a red **ACTION REQUIRED** alert about incomplete mandatory training — *all before the app had introduced itself.* The app scolded new users for not having used it yet.
+
+- Hero first; the board-date row moved below it.
+- A never-graded deck is an **invitation**: *"1,014 board cards ready to study — start with 20 and the schedule builds itself"*, green, star icon. Urgency copy returns only once real grading history exists.
+- The training panel scales with history: never-started → neutral *"UNIT TRAINING — 8 modules available, each checks off at 80%"*; started-with-stragglers keeps the loud treatment. `role="alert"` → `role="status"` either way — an alert interrupts a screen reader on every Home visit.
+- *"Welcome back, KIOSK MODE."* — the greeting now excludes placeholder profile names.
+
+### Settings, half the length
+
+The 24-theme wall (name + four swatches + blurb, always rendered) made Settings the longest page in the app. It is now a **single summary row** — current theme's swatches + name + "Change theme ▾" — expanding to the full grouped picker on demand. Verified end-to-end: collapsed by default, 24 themes on expand, switching works, summary tracks the choice. Also: the tier filter no longer displays "(E1–E6)" against the E1–E9 branding — display copy only; §35's load-bearing filter key untouched.
+
+### Housekeeping forced mid-session
+
+C: hit **0 bytes free** mid-pass. Cause: my two emulator AVDs (9.9 GB) — plus a headless qemu from a prior session **still running and holding RAM images**. Both AVDs deleted (device testing moved to the real Fold 5 and Tab S9 FE), process killed, ~10 GB recovered.
+
+### State
+
+Eleven suites passing, **zero warnings**. All forks rebuilt from the same source and re-verified; parity is structural, and proven per-fork by the standalone/`file://`, web, and desktop-CSP suites.
+
+---
+
 *This masterfile amends in place going forward per project convention — do not create parallel differently-named handoff files. Fold any stray file into this one and delete it.*
 
 
