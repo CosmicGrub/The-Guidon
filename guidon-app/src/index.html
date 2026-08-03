@@ -1928,6 +1928,13 @@ mark.dict-hi {
   width: 100%;
   max-width: 560px;
   padding: 20px 16px 40px;
+  /* Same fix as .main's nav-rail clearance: the fixed 40px bottom padding
+     was enough on most phones but not against a translucent 3-button nav
+     bar (confirmed on a Z Fold 5 cover screen — the last onboarding card's
+     body text sat behind it, only reachable by scrolling with no cue that
+     more was there). Additive, not max() — this needs both the visual
+     breathing room AND the system-bar clearance, not whichever is bigger. */
+  padding-bottom: calc(40px + env(safe-area-inset-bottom));
   margin: 0 auto;
 }
 
@@ -4065,7 +4072,7 @@ window.G = window.G || {};
      meta          keyPath "k"   -> content cache metadata / seed snapshot
    ------------------------------------------------------------------ */
 window.G = window.G || {};
-window.GUIDON_APP_VERSION = "1.4.2";
+window.GUIDON_APP_VERSION = "1.4.3";
 window.GUIDON_BUILD_DATE = "2026-08-02";
 (function () {
   "use strict";

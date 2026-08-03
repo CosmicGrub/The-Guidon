@@ -1471,3 +1471,13 @@ The ask was concrete: photograph the app running on the actual Tab S9 FE and Gal
 **What held up without changes:** the flashcard, star toggle, all four icon-bearing grade buttons, and the full prev/flip/next/fullscreen nav row — the exact UI [[icon-system-legibility|§55's icon work]] touched most — rendered cleanly at the Fold's 344px extreme. That is the real proof the icon system is theme- and viewport-proof by construction, not merely proof against Playwright's synthetic widths.
 
 **Shipped:** v1.4.2 (Android 10402); sixteen suites, 179 assertions, all passing; releases/v1.4.2 supersedes v1.4.1; reinstalled on both physical devices via adb.
+
+## 58. The Second Half of the Same Screenshot (session 50, continued, v1.4.3)
+
+§57's audit found the topbar bug and closed. But the very first screenshot taken that session — before Guest Session was even tapped — had shown something else: the onboarding screen's third mode card, its description text sitting partway behind the Fold's translucent system nav bar. That observation got set aside while chasing the topbar and tab-strip questions, then picked back up once those closed out, rather than dropped.
+
+Worth being precise about severity here, because this one is NOT the same class of bug as §57's. Scrolling reveals all three onboarding cards in full — nothing is actually unreachable. The defect is narrower: the first thing a new user sees has no visual cue that scrolling helps, and a card ending mid-sentence behind a system bar reads as broken on a first glance even though it isn't. That distinction is why it got its own smaller fix rather than being folded into the topbar's — a genuine access bug and a discoverability rough edge call for different levels of urgency, and conflating them would have overstated one or understated the other.
+
+Root cause was almost identical in shape to §57's, though: `.ob-wrap` had a fixed 40px bottom padding, sized for visual breathing room and never intended to also clear a translucent system bar. `.main` and the nav rail had already solved exactly this — `padding-bottom: calc(Npx + env(safe-area-inset-bottom))`, additive rather than `max()`, because the view needs BOTH the margin and the clearance, not whichever is larger. Applying an established idiom rather than inventing a new one kept this a one-line fix.
+
+**Shipped:** v1.4.3 (Android 10403); sixteen suites still passing; releases/v1.4.3 supersedes v1.4.2; reinstalled on both devices.

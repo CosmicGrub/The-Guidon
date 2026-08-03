@@ -2,6 +2,16 @@
 
 All notable changes to GUIDON will be documented in this file. Format loosely follows [Keep a Changelog](http://keepachangelog.com/).
 
+## 2026-08-03 (session 50, continued) - v1.4.3: the onboarding screen clears the system nav bar
+
+**Ask (continued):** the same hands-on device pass that found the topbar bug also surfaced a second, softer issue on the same first screenshot - it just took a second look to size it up correctly.
+
+**The finding:** the onboarding screen's third mode card ("Kiosk / Demo Mode") rendered with its description text partially behind the Fold's translucent 3-button system nav bar in the initial (unscrolled) view. Unlike the topbar bug, this was never actually inaccessible - scrolling reveals all three cards in full - but there was no visual cue that scrolling would help, and a card ending mid-sentence behind a system bar reads as broken on first glance.
+
+**Root cause:** `.ob-wrap`'s bottom padding was a fixed 40px, sized for normal breathing room but never intended to also clear a translucent system bar. `.main` and the nav rail already solved this identical problem with `padding-bottom: calc(Npx + env(safe-area-inset-bottom))` - additive, not `max()`, because the view needs both the visual margin and the system-bar clearance, not whichever happens to be larger. Applied the same idiom to `.ob-wrap`.
+
+**Verified:** sixteen suites, 179 assertions, still zero failures - no suite specifically pins onboarding-bottom-padding, but nothing regressed. v1.4.3 across all forks (Android 10403); releases/v1.4.3 supersedes v1.4.2; reinstalled on both devices.
+
 ## 2026-08-03 (session 50) - v1.4.2: hands-on device audit finds the topbar's real narrow-phone bug
 
 **Ask:** photograph the app actually running on both physical devices (Tab S9 FE, Galaxy Z Fold 5), annotate real deficiencies, audit further, repair, roll into the build/GitHub, and restore parity everywhere.
