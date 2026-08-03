@@ -2925,6 +2925,13 @@ html.light .theme-swatch-dot { border-color:rgba(0,0,0,.12); }
 #topbar-username:empty { display: none; }
 @media (max-width: 480px) {
   #topbar-username { display: none; } /* icon-only profile button on phones — no room for a name badge */
+  /* On a Z Fold 5's cover screen (~344px) this budget was still too tight even
+     with the username gone: the "Online" chip alone (~100px+) forced the
+     GUIDON wordmark itself down to "GUI…" — the brand, not a subtitle,
+     reading as broken. Confirmed on the real device. The status dot is
+     reassurance, not information the app depends on being visible; the brand
+     name is not optional at any width. */
+  .status-chip { display: none; }
 }
 .topbar-profile-btn {
   flex-shrink: 0; width: 38px; height: 38px; display: grid; place-items: center;
@@ -4058,7 +4065,7 @@ window.G = window.G || {};
      meta          keyPath "k"   -> content cache metadata / seed snapshot
    ------------------------------------------------------------------ */
 window.G = window.G || {};
-window.GUIDON_APP_VERSION = "1.4.1";
+window.GUIDON_APP_VERSION = "1.4.2";
 window.GUIDON_BUILD_DATE = "2026-08-02";
 (function () {
   "use strict";

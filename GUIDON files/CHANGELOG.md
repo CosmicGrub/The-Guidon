@@ -2,6 +2,20 @@
 
 All notable changes to GUIDON will be documented in this file. Format loosely follows [Keep a Changelog](http://keepachangelog.com/).
 
+## 2026-08-03 (session 50) - v1.4.2: hands-on device audit finds the topbar's real narrow-phone bug
+
+**Ask:** photograph the app actually running on both physical devices (Tab S9 FE, Galaxy Z Fold 5), annotate real deficiencies, audit further, repair, roll into the build/GitHub, and restore parity everywhere.
+
+**Method:** launched GUIDON on both devices via adb, drove it with real taps/swipes (uiautomator dumps for exact element bounds rather than guessing pixel coordinates from screenshots), and read back screenshots at each step - Home, Board Prep, the flashcard, the grade buttons - on the Tab's 2304px landscape and the Fold's 344px folded cover screen, the narrowest real viewport this app runs on.
+
+**One real, confirmed bug:** the topbar wordmark truncated to "GUI..." and "LEADER D..." on the Fold's cover screen. The accessible name was correct (screen readers heard "GUIDON" in full) - this was pure CSS clipping, caused by the fixed-width "Online" status chip leaving too little room once combined with the search/profile buttons. `#topbar-username` already had a `max-width:480px` hide rule for exactly this phone-chrome budget problem; the status chip did not. Fixed by extending that same rule. Verified at 344/360/412/481/1440px with a new suite, test-responsive.mjs (16) - the wordmark never clips, the chip disappears exactly at the breakpoint and nowhere else.
+
+**One false alarm caught before it became a wasted "fix":** the Board Prep tab strip appeared to hard-clip "MOCK BOARD" with no indication more tabs existed. Zooming into the screenshot pixel-for-pixel showed a genuine soft fade already applying - a prior session (§41) had solved exactly this on exactly this device, down to a code comment naming the 344px Z Fold scenario, and test-scrollhint.mjs already pins it. No change made. Worth recording: a screenshot glanced at quickly can look like a hard clip when it is actually a working, subtle affordance - zoom in before "fixing" what already works.
+
+**Confirmed clean on real hardware:** the flashcard, star toggle, all four grade buttons, and the full nav row (prev/flip/next/fullscreen) render correctly at the Fold's extreme 344px width - the icon system from v1.4.0 holds up under the narrowest real device this app targets, not just Playwright's synthetic viewports.
+
+**Verified:** sixteen suites, 179 assertions, zero failures. v1.4.2 across all forks (Android 10402); releases/v1.4.2 supersedes v1.4.1. Reinstalled on both the Tab and the Fold via adb.
+
 ## 2026-08-03 (session 49, overnight block) - v1.4.1: Quiz/Mock Board now feed the drill's memory model
 
 **Ask (standing):** with the icon/legibility work shipped, continue the recorded follow-up backlog inside a one-hour window.
