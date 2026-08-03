@@ -10,6 +10,8 @@ All notable changes to GUIDON will be documented in this file. Format loosely fo
 
 **Exits, all of them, one escape each:** the toggle button; Escape (document-level, wired once); system fullscreen exit (fullscreenchange sync); Android Back (closeTopLayer peels theater first); navigation (route() exits - a fixed overlay must never outlive its view). Grading advances cards WITHOUT leaving theater. One stacking bug caught pre-ship: toasts are z-index 50 vs the 800 overlay, so grade feedback would have vanished in fullscreen - lifted to 900 while theater is active.
 
+**Sizing refined on the real tablet:** the first cut capped the card at 920px x 66vh, which on the Tab S9 FE in landscape left a third of the screen as empty margin. The card now flex-fills all leftover height - measured coverage went from 70%x65% to 97%x83% landscape, 97%x91% portrait, 96%x89% phone - with no per-viewport tuning.
+
 **Verified:** new test-theater.mjs, 14 assertions including a topbar hit-test, in-theater flip/grade/advance, and navigation cleanup. Twelve suites, all passing. Version 1.3.0 across app constant, package.json, Tauri, Cargo and Android (10300); releases/v1.3.0 with fresh checksums. The stale device watcher that would have installed 1.2.0 on the Fold's reconnect was killed and re-armed for 1.3.0.
 
 ## 2026-08-02 (session 47) - Production UX pass: three shipped bugs and the first-run experience
