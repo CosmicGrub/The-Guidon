@@ -1,0 +1,6 @@
+6b1d0cc9b0caf674bae5583ae183472a2292acbdea2ff43b59af0f9495a743ce *GUIDON-1.4.4-portable.exe
+61c1d2d510e8ac01a6bfe350b77200d188de5527001995c76efde445cfabda85 *GUIDON-1.4.4-release.aab
+8dee3d7f83ab06ebd113e91accbb769178421c3a8df58bf75cd5f2a54f404e4a *GUIDON-1.4.4-release.apk
+381dfba7ab89323979beb3bb775dce4781f084a55112ba3e1c07df2ddac2fbd0 *GUIDON-1.4.4-standalone.html
+4439bb6c69de26772ce6dbce1f11560b7f8fbae60e974a525209c7881300c559 *GUIDON_1.4.4_x64-setup.exe
+3de61def910c91cd4c93aa928318ce4a26c4d7c7fedae8288c9835e7fd8d7a90 *GUIDON_1.4.4_x64_en-US.msi

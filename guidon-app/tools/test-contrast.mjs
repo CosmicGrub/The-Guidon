@@ -82,6 +82,26 @@ const BOARD_SAMPLES = [
   [".qz-front", 4.5, "board card front"],
   [".qz-grade-label", 4.5, "grade button label"],
 ];
+// Search and Settings were never swept before a 49-agent audit (session 51)
+// found nine genuine sub-AA failures here: TYPE_COLOR search-chip labels and
+// the .fin-h section heading used raw --cyan/--violet/--red/--amber as direct
+// text color instead of the codebase's own --ink-* blend (built specifically
+// for this problem, but these two spots never got migrated to it), plus a
+// literal rgba(255,176,32,...) active-chip background that assumed "amber"
+// is always orange - wrong in squadron-blue, which reassigns --amber to blue.
+const SEARCH_SAMPLES = [
+  // TYPES order in views.search is [all, scenario, board, doctrine, lesson, resource] -
+  // .search-filters renders them as consecutive sibling buttons in that order.
+  [".search-filters .search-chip:nth-of-type(1)", 4.5, "search filter chip (All, active)"],
+  [".search-filters .search-chip:nth-of-type(2)", 4.5, "search filter chip (Scenarios)"],
+  [".search-filters .search-chip:nth-of-type(3)", 4.5, "search filter chip (Board Q)"],
+  [".search-filters .search-chip:nth-of-type(4)", 4.5, "search filter chip (Doctrine)"],
+  [".search-filters .search-chip:nth-of-type(5)", 4.5, "search filter chip (Lessons)"],
+  [".search-filters .search-chip:nth-of-type(6)", 4.5, "search filter chip (Resources)"],
+];
+const SETTINGS_SAMPLES = [
+  [".fin-h", 3.0, "section heading (.fin-h)"],
+];
 
 const measure = (samples) => page.evaluate((samples) => {
   const lum = (r, g, b) => {
@@ -122,7 +142,18 @@ const measure = (samples) => page.evaluate((samples) => {
       }
       if (candidates.length && cs.backgroundImage !== "none") break; // gradient covers what's behind
     }
-    candidates.push(acc || [255, 255, 255, 1]);
+    // BUG (found while auditing #/settings, session 51): this used to always
+    // push a manufactured white fallback here, even when the gradient-stop
+    // walk above already found the real background. For light text on a
+    // gradient-only dark panel (no solid backgroundColor anywhere in the
+    // chain - true of most of this app's panels), that meant checking
+    // near-white text against a bogus near-white "background" alongside the
+    // real (correctly high-contrast) dark gradient stops, and worst() always
+    // keeps the lowest ratio - so it silently reported ~1:1 failures for
+    // combinations that were actually fine. Only fall back to assumed-white
+    // when the walk found NOTHING real at all.
+    if (acc) candidates.push(acc);
+    if (!candidates.length) candidates.push([255, 255, 255, 1]);
     return candidates;
   };
   const ratio = (fg, bg) => {
@@ -185,8 +216,42 @@ boardProblems.length === 0
   ? ok("24 themes x board card + grade labels all meet contrast minimums")
   : bad(boardProblems.length + " board contrast problems; first: " + boardProblems[0]);
 
-if (problems.length || formsProblems.length || boardProblems.length) {
-  for (const p of [...problems, ...formsProblems, ...boardProblems].slice(0, 40)) console.log("        " + p);
+// Search view sweep
+await page.evaluate(() => { location.hash = "#/search"; });
+await page.waitForTimeout(900);
+const searchProblems = [];
+for (const theme of THEMES) {
+  await page.evaluate((t) => document.documentElement.setAttribute("data-theme", t), theme);
+  await page.waitForTimeout(30);
+  const rows = await measure(SEARCH_SAMPLES);
+  for (const r of rows) {
+    if (r.missing) searchProblems.push(`${theme}: ${r.label} — ${r.missing}`);
+    else if (r.ratio < r.min) searchProblems.push(`${theme}: ${r.label} ${r.ratio}:1 < ${r.min}:1`);
+  }
+}
+searchProblems.length === 0
+  ? ok("24 themes x 6 search filter chips all meet contrast minimums")
+  : bad(searchProblems.length + " search contrast problems; first: " + searchProblems[0]);
+
+// Settings view sweep
+await page.evaluate(() => { location.hash = "#/settings"; });
+await page.waitForTimeout(900);
+const settingsProblems = [];
+for (const theme of THEMES) {
+  await page.evaluate((t) => document.documentElement.setAttribute("data-theme", t), theme);
+  await page.waitForTimeout(30);
+  const rows = await measure(SETTINGS_SAMPLES);
+  for (const r of rows) {
+    if (r.missing) settingsProblems.push(`${theme}: ${r.label} — ${r.missing}`);
+    else if (r.ratio < r.min) settingsProblems.push(`${theme}: ${r.label} ${r.ratio}:1 < ${r.min}:1`);
+  }
+}
+settingsProblems.length === 0
+  ? ok("24 themes x .fin-h section heading meet contrast minimums")
+  : bad(settingsProblems.length + " settings contrast problems; first: " + settingsProblems[0]);
+
+if (problems.length || formsProblems.length || boardProblems.length || searchProblems.length || settingsProblems.length) {
+  for (const p of [...problems, ...formsProblems, ...boardProblems, ...searchProblems, ...settingsProblems].slice(0, 40)) console.log("        " + p);
 }
 
 noise.length === 0 ? ok("no page errors during sweep") : bad(noise.length + " page errors; first: " + noise[0]);

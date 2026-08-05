@@ -73,35 +73,41 @@ await page.evaluate(() => {
 });
 await page.waitForTimeout(700);
 
+// Spy on the bridge itself rather than counting total SRS keys. Counting was
+// tautological: "count went up" (a real write) and "count stayed flat"
+// (rationalized as "already recorded this id") both set sawWrong = true, so
+// the check passed whether or not noteExternalResult was actually invoked.
+// A future regression that stops the quiz-miss call site firing entirely
+// (e.g. missedQ.id coming back undefined) would still print PASS. Recording
+// every real call and asserting on the recorded (id, grade) pairs instead
+// means "the bridge fired" and "a wrong click happened" can't drift apart.
 const quiz = await page.evaluate(async () => {
-  const srsCount = async () => (await G.db.all("kv")).filter((r) => r.k && r.k.indexOf("srs:") === 0).length;
-  const before = await srsCount();
-  let sawWrong = false, sawCorrectNoWrite = false;
-  for (let round = 0; round < 12 && !(sawWrong && sawCorrectNoWrite); round++) {
+  const calls = [];
+  const real = G.board.noteExternalResult;
+  G.board.noteExternalResult = async (id, grade) => { calls.push({ id, grade }); return real(id, grade); };
+  let sawWrongWithCall = false, sawCorrectNoCall = false;
+  for (let round = 0; round < 12 && !(sawWrongWithCall && sawCorrectNoCall); round++) {
     const opts = [...document.querySelectorAll(".quiz-opt")];
     if (!opts.length) break;
-    const preClick = await srsCount();
+    const callsBefore = calls.length;
     opts[0].click();
     await new Promise((r) => setTimeout(r, 250));
     const wrong = opts[0].classList.contains("quiz-wrong");
-    const after = await srsCount();
-    if (wrong) {
-      sawWrong = after === preClick + 1 || after === preClick; // may hit an id already recorded above
-      if (after < preClick) sawWrong = false;
-    } else {
-      if (after === preClick) sawCorrectNoWrite = true;
-    }
+    const firedThisRound = calls.length > callsBefore;
+    if (wrong && firedThisRound && calls[calls.length - 1].grade === 0) sawWrongWithCall = true;
+    if (!wrong && !firedThisRound) sawCorrectNoCall = true;
     const next = [...document.querySelectorAll("button")].find((b) => /next|see results/i.test(b.textContent) && !b.disabled);
     if (next) next.click();
     await new Promise((r) => setTimeout(r, 350));
   }
-  return { before, after: await srsCount(), sawWrong, sawCorrectNoWrite };
+  G.board.noteExternalResult = real;
+  return { calls, sawWrong: sawWrongWithCall, sawCorrectNoWrite: sawCorrectNoCall };
 });
 quiz.sawWrong
-  ? ok("quiz: a wrong click wrote an SRS record through the bridge")
-  : bad("quiz: no wrong answer observed writing a record in 10 rounds: " + JSON.stringify(quiz));
+  ? ok("quiz: a wrong click called noteExternalResult(id, 0) - the bridge actually fired")
+  : bad("quiz: no wrong-click round observed calling the bridge in 12 rounds: " + JSON.stringify(quiz));
 quiz.sawCorrectNoWrite
-  ? ok("quiz: a correct click wrote nothing (recognition never advances recall)")
+  ? ok("quiz: a correct click called the bridge zero times (recognition never advances recall)")
   : console.log("  NOTE  no correct-click round observed this run (random options) — demote-only asserted above");
 
 noise.length === 0 ? ok("no page errors") : bad(noise.length + " page errors; first: " + noise[0]);

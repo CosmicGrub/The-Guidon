@@ -55,9 +55,14 @@ for (const w of [344, 360, 412]) {
   s.h1Text === "GUIDON"
     ? ok(`${w}px: brand text is "GUIDON" (not truncated in the DOM)`)
     : bad(`${w}px: brand text is ${JSON.stringify(s.h1Text)}`);
-  !s.truncated
+  // Strict === false, not !s.truncated - if the .brand h1 selector ever stops
+  // matching, s.truncated is null and !null is true, which would silently
+  // report a PASS for a wordmark that was never found at all. The h1Text
+  // assertion above already catches a missing selector, but this one should
+  // fail loudly on its own rather than lean on that.
+  s.truncated === false
     ? ok(`${w}px: wordmark renders in full (scrollWidth <= clientWidth)`)
-    : bad(`${w}px: wordmark visually clipped - regression of the Fold cover-screen bug`);
+    : bad(`${w}px: wordmark visually clipped or selector missing (truncated=${s.truncated}) - regression of the Fold cover-screen bug`);
   s.chipVisible === false
     ? ok(`${w}px: status chip hidden, freeing room for the brand`)
     : bad(`${w}px: status chip still visible, expected hidden below 480px`);
@@ -71,9 +76,9 @@ for (const w of [344, 360, 412]) {
   s.chipVisible === true
     ? ok("481px: status chip visible again just above the breakpoint")
     : bad("481px: status chip unexpectedly hidden - breakpoint too wide");
-  !s.truncated
+  s.truncated === false
     ? ok("481px: wordmark still renders in full")
-    : bad("481px: wordmark clipped");
+    : bad(`481px: wordmark clipped or selector missing (truncated=${s.truncated})`);
 }
 
 // Desktop: chip present, plenty of room.
