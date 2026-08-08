@@ -370,7 +370,7 @@ html.high-contrast .segmented[data-scroll] { -webkit-mask-image: none; mask-imag
 
 /* ---------- Empty / toast ---------- */
 .empty { text-align:center; color: var(--text-dim); padding: 40px 12px; font-family: var(--font-mono); }
-#toast { position: fixed; left:50%; bottom: 84px; transform: translateX(-50%) translateY(20px);
+#toast { position: fixed; left:50%; bottom: calc(84px + env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(20px);
   background: var(--panel); border:1px solid var(--amber); color: var(--text); padding:10px 16px;
   border-radius: var(--radius-sm); box-shadow: var(--shadow); font-size: 0.929rem; opacity:0; pointer-events:none;
   transition: all .25s; z-index: 50; max-width: 90vw; }
@@ -467,6 +467,8 @@ html.qz-theater .qz-wrap {
   padding: clamp(8px, 1.6vw, 22px);
   padding-top: max(clamp(8px, 1.6vw, 22px), env(safe-area-inset-top));
   padding-bottom: max(clamp(8px, 1.6vw, 22px), env(safe-area-inset-bottom));
+  padding-left: max(clamp(8px, 1.6vw, 22px), env(safe-area-inset-left));
+  padding-right: max(clamp(8px, 1.6vw, 22px), env(safe-area-inset-right));
   overflow-y: auto;
 }
 /* The card takes ALL leftover height via flex, not a vh clamp. The first cut
@@ -3296,7 +3298,24 @@ html.reduce-transparency .nav-pill.active { background:var(--panel-2); }
    state) — same tap-target sizing as the manual "large targets" toggle. */
 @media (pointer: coarse) {
   .nav button { min-height:48px; padding-top:10px; padding-bottom:10px; }
-  .btn, .segmented button, .choice-btn, .topbar-profile-btn { min-height:48px; }
+  /* Session-52 responsive audit: this list used to be a strict subset of the
+     @media(max-width:640px) list below, so a touch-capable device wider than
+     640px (a tablet or unfolded foldable in landscape, a touchscreen laptop)
+     got zero enforced minimum on everything except the handful of classes
+     named here. Aligned to the same comprehensive set both rules now share,
+     plus every additional class the audit found uncovered by EITHER rule. */
+  .btn, .segmented button, .choice-btn, .topbar-profile-btn, .tab, .grade-btn,
+  .cpdf-modebtn, .cpdf-sigbtn, .fin-calc-row input, select,
+  input[type="text"], input[type="number"], input[type="date"],
+  button.chip, .ob-rank-btn, .topbar-search-btn,
+  .res-domain-head, .nav-group-header, .tabBtn, .due-chip, .qz-star-btn,
+  .appearance-opt, .cpdf-close, .res-copy-btn, .example-chip, .copybtn,
+  .mb-cat-chip, .mb-score-btn { min-height:48px; }
+  /* !important: a later, unconditional (non-media-scoped) .topbar-search-btn
+     rule sets width:38px and wins this specificity tie on source order alone -
+     an accessibility-mandated minimum should not be silently defeated by
+     unrelated component styling added later in the cascade. */
+  .topbar-search-btn, .topbar-profile-btn { width:44px !important; }
   .toggle { transform:scale(1.15); transform-origin:left center; }
 }
 
@@ -3353,7 +3372,7 @@ html.focus-mode .status-chip { opacity:.5; }
 .ex-sec-body { font-size:.84rem; color:var(--text-dim); line-height:1.55; white-space:pre-wrap; }
 
 /* v0.44.0 — DA 4856 guided filler (counselpdf) */
-.cpdf-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;z-index:9000;overflow-y:auto;padding:24px 12px}
+.cpdf-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;z-index:9000;overflow-y:auto;padding:24px 12px;padding-top:max(24px,env(safe-area-inset-top))}
 .cpdf-modal{background:var(--panel);border:1px solid var(--border);border-radius:10px;max-width:720px;width:100%;box-shadow:var(--shadow);margin:auto}
 .cpdf-head{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);border-radius:10px 10px 0 0}
 .cpdf-title{margin:0;font-family:var(--font-head);font-size:1rem;flex:1}
@@ -3467,7 +3486,11 @@ html.focus-mode .status-chip { opacity:.5; }
   .btn, .nav button, .tab, .segmented button, .choice-btn, .grade-btn,
   .idp-suggest-chip, .cpdf-modebtn, .cpdf-sigbtn, .fin-calc-row input,
   select, input[type="text"], input[type="number"], input[type="date"],
-  .topbar-profile-btn, button.chip, .ob-rank-btn { min-height: 44px; }
+  .topbar-profile-btn, button.chip, .ob-rank-btn,
+  .res-domain-head, .nav-group-header, .tabBtn, .due-chip, .qz-star-btn,
+  .appearance-opt, .cpdf-close, .res-copy-btn, .example-chip, .copybtn,
+  .mb-cat-chip, .mb-score-btn { min-height: 44px; }
+  .topbar-profile-btn { width: 44px; }
   /* tap-friendly spacing so adjacent controls don't collide */
   .tabbar { gap: 4px; flex-wrap: wrap; }
   .idp-actions, .fin-calc-actions, .cpdf-actions { gap: 8px; flex-wrap: wrap; }
@@ -3476,7 +3499,7 @@ html.focus-mode .status-chip { opacity:.5; }
   table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   /* modals: never taller than the viewport; scroll inside */
   .cpdf-modal { max-height: 92vh; overflow-y: auto; width: 96vw; }
-  .cpdf-backdrop { padding: 8px; }
+  .cpdf-backdrop { padding: 8px; padding-top: max(8px, env(safe-area-inset-top)); }
   /* dashboards stack cleanly */
   .idp-dash-groups, .idp-var-grid { grid-template-columns: 1fr; }
   /* keep the readable line-length from getting cramped */
@@ -4101,7 +4124,7 @@ window.G = window.G || {};
      meta          keyPath "k"   -> content cache metadata / seed snapshot
    ------------------------------------------------------------------ */
 window.G = window.G || {};
-window.GUIDON_APP_VERSION = "1.4.5";
+window.GUIDON_APP_VERSION = "1.4.6";
 window.GUIDON_BUILD_DATE = "2026-08-02";
 (function () {
   "use strict";
@@ -12078,7 +12101,7 @@ window.G = window.G || {};
       panel.appendChild(el("p.hint", { text:"All " + DEMO_STEPS.length + " sections, each with the single detail worth pointing at. Tap a row to jump straight there." }));
       DEMO_STEPS.forEach((s) => {
         const row = el("button", { type:"button",
-          style:"width:100%;text-align:left;background:none;border:none;border-top:1px solid var(--line);cursor:pointer;padding:8px 0;color:inherit;font:inherit" });
+          style:"width:100%;text-align:left;background:none;border:none;border-top:1px solid var(--line);cursor:pointer;padding:8px 0;color:inherit;font:inherit;min-height:44px;display:flex;flex-direction:column;justify-content:center" });
         row.appendChild(el("div.ob-plan-cat", { text: s.title }));
         if (s.watch) row.appendChild(el("div.hint", { text: s.watch, style:"margin:2px 0 0" }));
         row.addEventListener("click", () => { location.hash = s.route; });
@@ -12603,7 +12626,7 @@ window.G = window.G || {};
     SECTIONS.forEach((s) => {
       const panel = el("div.panel", { style:"margin-bottom:10px" });
       const head = el("button", { type:"button", "aria-expanded":"false",
-        style:"width:100%;text-align:left;background:none;border:none;cursor:pointer;padding:0;color:inherit;font:inherit" });
+        style:"width:100%;text-align:left;background:none;border:none;cursor:pointer;padding:0;color:inherit;font:inherit;min-height:44px;display:flex;align-items:center" });
       head.appendChild(el("div.eyebrow", { text: s.icon + "  " + s.title }));
       const bodyWrap = el("div", { style:"display:none" });
       bodyWrap.appendChild(el("p.hint", { text: s.body, style:"margin-top:4px" }));
@@ -12812,7 +12835,7 @@ window.G = window.G || {};
     SECTIONS.forEach((s) => {
       const panel = el("div.panel", { style:"margin-bottom:10px" });
       const head = el("button", { type:"button", "aria-expanded":"false",
-        style:"width:100%;text-align:left;background:none;border:none;cursor:pointer;padding:0;color:inherit;font:inherit" });
+        style:"width:100%;text-align:left;background:none;border:none;cursor:pointer;padding:0;color:inherit;font:inherit;min-height:44px;display:flex;align-items:center" });
       head.appendChild(el("div.eyebrow", { text: s.icon + "  " + s.title }));
       const bodyWrap = el("div", { style:"display:none" });
       bodyWrap.appendChild(el("p.hint", { text: s.body, style:"margin-top:4px" }));
@@ -13017,7 +13040,7 @@ window.G = window.G || {};
     SECTIONS.forEach((s) => {
       const panel = el("div.panel", { style:"margin-bottom:10px" });
       const head = el("button", { type:"button", "aria-expanded":"false",
-        style:"width:100%;text-align:left;background:none;border:none;cursor:pointer;padding:0;color:inherit;font:inherit" });
+        style:"width:100%;text-align:left;background:none;border:none;cursor:pointer;padding:0;color:inherit;font:inherit;min-height:44px;display:flex;align-items:center" });
       head.appendChild(el("div.eyebrow", { text: s.icon + "  " + s.title }));
       const bodyWrap = el("div", { style:"display:none" });
       bodyWrap.appendChild(el("p.hint", { text: s.body, style:"margin-top:4px" }));
