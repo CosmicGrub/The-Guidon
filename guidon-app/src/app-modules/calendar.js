@@ -154,9 +154,9 @@ window.G = window.G || {};
       rows.forEach(function (r) {
         const u = urgency(r.days);
         const card = el("div.card", { style: "margin-top:8px;border-left:3px solid " + u.c });
-        const head = el("div", { style: "display:flex;justify-content:space-between;gap:8px;align-items:baseline;flex-wrap:wrap" });
-        head.appendChild(el("span.k", { text: r.label }));
-        head.appendChild(el("span.v", { text: u.word }));
+        const head = el("div", { style: "display:flex;justify-content:space-between;gap:8px;align-items:baseline" });
+        head.appendChild(el("span.k", { text: r.label, style: "min-width:0;flex:1 1 auto" }));
+        head.appendChild(el("span.v", { text: u.word, style: "flex:0 0 auto;white-space:nowrap" }));
         card.appendChild(head);
         card.appendChild(el("div.hint", { text: fmt(r.when) + " — " + r.note }));
         if (r.link) {

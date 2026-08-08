@@ -115,44 +115,78 @@ const measure = (samples) => page.evaluate((samples) => {
     if (m) return [+m[1] * 255, +m[2] * 255, +m[3] * 255, m[4] === undefined ? 1 : +m[4]];
     return null;
   };
+  const over = (top, bottom) => {
+    const a = top[3];
+    return [top[0]*a+bottom[0]*(1-a), top[1]*a+bottom[1]*(1-a), top[2]*a+bottom[2]*(1-a), a+bottom[3]*(1-a)];
+  };
   const bgOf = (el) => {
-    // Every plausible backdrop for the element's text: gradient color stops
-    // (backgroundColor is transparent for gradients — the .btn.primary lesson)
-    // plus the first opaque composited backgroundColor up the ancestor chain.
-    // The caller checks against ALL candidates and keeps the worst ratio.
+    // Every plausible backdrop for the element's text, properly "over"-
+    // composited: any translucent layer nearer the element gets blended
+    // ONTO whatever's found further out (a gradient's color stops, or a
+    // solid opaque backgroundColor) before being trusted as a candidate -
+    // never used with its own alpha ignored. The caller checks against ALL
+    // candidates and keeps the worst ratio.
+    //
+    // BUG #1 (found while auditing #/settings, session 51): this used to
+    // always push a manufactured white fallback, even when the gradient-stop
+    // walk above already found the real background - so near-white text on
+    // a correctly high-contrast dark gradient panel got checked against a
+    // bogus near-white "background" too, and worst() always keeps the lowest
+    // ratio, so it silently reported ~1:1 failures that were actually fine.
+    //
+    // BUG #2 (found auditing session 51's broader sweep, via .res-crisis-h
+    // reporting an impossible flat 1.00 ratio on all 24 themes regardless of
+    // that theme's actual --red value): this broke out of the walk the
+    // instant it found gradient stops, WITHOUT compositing a still-pending
+    // translucent nearer-ancestor backgroundColor (e.g. a low-opacity accent
+    // wash) against those stops first - then separately pushed that raw,
+    // un-composited translucent color as if it were opaque. A translucent
+    // wash's raw RGB channels can be far more saturated than what actually
+    // renders once blended with what's behind it, manufacturing a phantom
+    // "background" that doesn't reflect the real pixels.
+    //
+    // BUG #3 (found immediately after fixing #2, via .brand .mark reporting
+    // ~1.5 on several themes where its OWN solid backgroundColor resolves the
+    // walk on the very first iteration): the fix for #2 tracked resolution
+    // via a separate boolean and only pushed the accumulated color when
+    // resolution did NOT happen - meaning the one specific case of "resolved
+    // via a fully-opaque solid backgroundColor" pushed nothing at all,
+    // silently falling through to the plain white default. Now: acc is
+    // always pushed if it holds anything, using it directly when already
+    // fully opaque and compositing over white only for the genuinely
+    // unresolved (ran out of ancestors mid-translucent) case.
     const candidates = [];
     let acc = null;
     for (let n = el; n; n = n.parentElement) {
       const cs = getComputedStyle(n);
       if (cs.backgroundImage && cs.backgroundImage !== "none") {
-        const stops = cs.backgroundImage.match(/rgba?\([^)]+\)|color\(srgb [^)]+\)/g) || [];
-        for (const st of stops) {
-          const c = parse(st);
-          if (c && c[3] >= 0.5) candidates.push(c); // ignore near-transparent washes
+        // Only substantial/opaque paint counts as "this gradient IS the
+        // background" (e.g. .panel's cream-to-tan surface). A body-level
+        // decorative glow like radial-gradient(..., rgba(56,214,224,.06),
+        // transparent 60%) is NOT that - treating a 6%-alpha stop as if it
+        // were solid manufactures a phantom saturated backdrop (caught via
+        // the forms-primary-button probe reporting ~1:1 on nearly every
+        // theme, impossible for an already-fixed, working element). Ignore
+        // low-alpha stops and fall through to this same element's own
+        // backgroundColor - the real base paint such a glow sits on top of.
+        const stops = (cs.backgroundImage.match(/rgba?\([^)]+\)|color\(srgb [^)]+\)/g) || [])
+          .map(parse).filter((c) => c && c[3] >= 0.5);
+        if (stops.length) {
+          for (const c of stops) {
+            const stopOpaque = [c[0], c[1], c[2], 1];
+            candidates.push(acc ? over(acc, stopOpaque) : stopOpaque);
+          }
+          acc = null; // gradient is opaque paint; resolves everything behind it
+          break;
         }
       }
       const c = parse(cs.backgroundColor);
       if (c && c[3] > 0) {
-        if (!acc) acc = c;
-        else {
-          const a = acc[3];
-          acc = [acc[0] * a + c[0] * (1 - a), acc[1] * a + c[1] * (1 - a), acc[2] * a + c[2] * (1 - a), a + c[3] * (1 - a)];
-        }
-        if (acc[3] >= 0.999) break;
+        acc = acc ? over(acc, c) : c;
+        if (acc[3] >= 0.999) break; // fully opaque - acc IS the resolved background
       }
-      if (candidates.length && cs.backgroundImage !== "none") break; // gradient covers what's behind
     }
-    // BUG (found while auditing #/settings, session 51): this used to always
-    // push a manufactured white fallback here, even when the gradient-stop
-    // walk above already found the real background. For light text on a
-    // gradient-only dark panel (no solid backgroundColor anywhere in the
-    // chain - true of most of this app's panels), that meant checking
-    // near-white text against a bogus near-white "background" alongside the
-    // real (correctly high-contrast) dark gradient stops, and worst() always
-    // keeps the lowest ratio - so it silently reported ~1:1 failures for
-    // combinations that were actually fine. Only fall back to assumed-white
-    // when the walk found NOTHING real at all.
-    if (acc) candidates.push(acc);
+    if (acc) candidates.push(acc[3] >= 0.999 ? acc : over(acc, [255, 255, 255, 1]));
     if (!candidates.length) candidates.push([255, 255, 255, 1]);
     return candidates;
   };

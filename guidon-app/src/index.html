@@ -162,7 +162,7 @@ a:hover { text-decoration: underline; }
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand .mark { width: 30px; height: 30px; display: grid; place-items: center;
   border: 1px solid var(--amber); border-radius: var(--radius-sm);
-  color: var(--amber); font-family: var(--font-head); font-weight: 700; box-shadow: var(--glow-amber); }
+  color: var(--text); font-family: var(--font-head); font-weight: 700; box-shadow: var(--glow-amber); }
 /* DEDUPED: .brand h1 — merged below */
 
 .brand small { color: var(--text-dim); font-family: var(--font-mono); font-size: .625rem; letter-spacing: .12em; }
@@ -338,7 +338,7 @@ html.high-contrast .segmented[data-scroll] { -webkit-mask-image: none; mask-imag
   border:1px dashed var(--line-2); color: var(--text); font-family: var(--font-mono); font-size: 0.929rem;
   padding:9px 12px; border-radius: var(--radius-sm); cursor:pointer; }
 .mode-text .choice:hover { border-color: var(--amber); color: var(--amber); background: rgba(255,176,32,.04); }
-.mode-text .choice b { color: var(--amber); margin-right: 8px; }
+.mode-text .choice b { color: var(--text); margin-right: 8px; }
 
 /* ---------- Engine: COURSE (slides) ---------- */
 .mode-course .slide { background: linear-gradient(180deg, var(--panel), var(--panel-2)); border:1px solid var(--line);
@@ -382,7 +382,7 @@ html.high-contrast .segmented[data-scroll] { -webkit-mask-image: none; mask-imag
 
 /* ---------- Empty / toast ---------- */
 .empty { text-align:center; color: var(--text-dim); padding: 40px 12px; font-family: var(--font-mono); }
-#toast { position: fixed; left:50%; bottom: 84px; transform: translateX(-50%) translateY(20px);
+#toast { position: fixed; left:50%; bottom: calc(84px + env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(20px);
   background: var(--panel); border:1px solid var(--amber); color: var(--text); padding:10px 16px;
   border-radius: var(--radius-sm); box-shadow: var(--shadow); font-size: 0.929rem; opacity:0; pointer-events:none;
   transition: all .25s; z-index: 50; max-width: 90vw; }
@@ -420,15 +420,15 @@ html.high-contrast .segmented[data-scroll] { -webkit-mask-image: none; mask-imag
 
 html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after {
   animation-duration: .001ms !important; animation-iteration-count: 1 !important;
-  transition-duration: .001ms !important; scroll-behavior: auto !important;
+  transition-duration: .001ms !important; scroll-behavior: auto !important; animation-delay: 0s !important;
 }
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+  *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; animation-delay: 0s !important; }
 }
 
 /* ---- Recommended-next card ---- */
 .reco { border: 1px solid var(--amber); box-shadow: var(--glow-amber); }
-.reco .eyebrow { color: var(--amber); }
+.reco .eyebrow { color: var(--text); }
 
 /* ---- Board: SRS due chip ---- */
 .due-chip { font-family: var(--font-mono); font-size: .69rem; color: var(--btn-ink, #1a1206);
@@ -479,6 +479,8 @@ html.qz-theater .qz-wrap {
   padding: clamp(8px, 1.6vw, 22px);
   padding-top: max(clamp(8px, 1.6vw, 22px), env(safe-area-inset-top));
   padding-bottom: max(clamp(8px, 1.6vw, 22px), env(safe-area-inset-bottom));
+  padding-left: max(clamp(8px, 1.6vw, 22px), env(safe-area-inset-left));
+  padding-right: max(clamp(8px, 1.6vw, 22px), env(safe-area-inset-right));
   overflow-y: auto;
 }
 /* The card takes ALL leftover height via flex, not a vh clamp. The first cut
@@ -566,7 +568,7 @@ html[data-motion="cinematic"] { --qz-flip-dur: .95s; --qz-flip-ease: cubic-bezie
 }
 .qz-diff-beginner { color: var(--green); border-color: color-mix(in srgb, var(--green) 45%, var(--line-2)); }
 .qz-diff-intermediate { color: color-mix(in srgb, var(--amber) 50%, var(--text)); border-color: color-mix(in srgb, var(--amber) 45%, var(--line-2)); }
-.qz-diff-expert { color: var(--red); border-color: color-mix(in srgb, var(--red) 45%, var(--line-2)); }
+.qz-diff-expert { color: var(--ink-red); border-color: color-mix(in srgb, var(--red) 45%, var(--line-2)); }
 .qz-star-btn {
   position: absolute; top: 10px; right: 10px; z-index: 2;
   width: 36px; height: 36px; display: grid; place-items: center;
@@ -656,7 +658,7 @@ html[data-motion="minimal"] .qz-card { height: auto; min-height: clamp(260px, 40
 .author-tabs { margin: 8px 0 14px; }
 .node-editor { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; margin-bottom: 10px; background: var(--panel); }
 .node-editor.is-start { border-color: var(--green); }
-.node-editor .node-id { font-family: var(--font-mono); font-size: .75rem; color: var(--cyan); }
+.node-editor .node-id { font-family: var(--font-mono); font-size: .75rem; color: var(--text); }
 .node-editor.is-start .node-id::after { content: " ● START"; color: var(--green); }
 .choice-editor { border-left: 3px solid var(--line-2); padding: 8px 10px; margin: 8px 0; background: var(--bg); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
 .score-inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px,1fr)); gap: 6px; margin-top: 6px; }
@@ -677,7 +679,7 @@ html[data-motion="minimal"] .qz-card { height: auto; min-height: clamp(260px, 40
 .map-node:hover { border-color: var(--amber); }
 .map-node.start { border-color: var(--green); }
 .map-node.end { border-color: var(--cyan); border-style: dashed; }
-.map-node .mn-id { font-family: var(--font-mono); font-size: .625rem; color: var(--cyan); }
+.map-node .mn-id { font-family: var(--font-mono); font-size: .625rem; color: var(--text); }
 .map-node .mn-prompt { color: var(--text-dim); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
 /* ---- Print: isolate a target for AAR / doctrine printing ---- */
@@ -694,7 +696,7 @@ html[data-motion="minimal"] .qz-card { height: auto; min-height: clamp(260px, 40
 .print-only { display: none; }
 
 /* ===== Forms Trainer (v0.7) ===== */
-.forms-view .section-title.sub { font-size: .875rem; color: var(--cyan); margin-top: 18px; }
+.forms-view .section-title.sub { font-size: .875rem; color: var(--text); margin-top: 18px; }
 .form-card .form-num { font-family: var(--font-mono, monospace); font-size: .75rem; color: color-mix(in srgb, var(--amber) 40%, var(--text)); letter-spacing: .04em; }
 .form-card .form-title { font-family: var(--font-head); font-weight: 700; margin: 2px 0 4px; }
 .forms-view .btn.ghost { opacity: .8; }
@@ -887,9 +889,9 @@ select.in { appearance:none; }
 .domain-card.acc-violet { border-top-color:var(--violet); }
 .domain-head { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
 .domain-ico { font-size:1.2rem; }
-.domain-card.acc-cyan .domain-ico { color:var(--cyan); }
+.domain-card.acc-cyan .domain-ico { color:var(--ink-cyan); }
 .domain-card.acc-amber .domain-ico { color:var(--amber); }
-.domain-card.acc-violet .domain-ico { color:var(--violet); }
+.domain-card.acc-violet .domain-ico { color:var(--ink-violet); }
 .domain-name { font-family:var(--font-head); font-weight:700; font-size:1.05rem; }
 .domain-body { color:var(--text-dim); font-size:.9rem; margin:0 0 8px; line-height:1.45; }
 .domain-ex { margin:0; padding-left:18px; display:flex; flex-direction:column; gap:5px; }
@@ -1021,7 +1023,7 @@ select.in { appearance:none; }
 .wr-anat { background:var(--bg-2); border:1px solid var(--line); border-left:3px solid var(--amber); border-radius:var(--radius-sm); padding:10px 12px; }
 .wr-anat-part { font-family:var(--font-head); font-weight:700; color:var(--text); font-size:.95rem; margin-bottom:4px; }
 .wr-anat-d { color:var(--text-dim); font-size:.84rem; line-height:1.4; }
-.wr-grader-h { font-family:var(--font-head); font-weight:700; color:var(--cyan); font-size:.92rem;
+.wr-grader-h { font-family:var(--font-head); font-weight:700; color:var(--text); font-size:.92rem;
   text-transform:uppercase; letter-spacing:.05em; margin-bottom:10px; }
 .wr-bullet-input { width:100%; background:var(--bg-2); border:1px solid var(--line-2); color:var(--text);
   border-radius:var(--radius-sm); padding:11px 12px; font-family:var(--font-body); font-size:1rem; resize:vertical; line-height:1.4; }
@@ -1051,7 +1053,7 @@ select.in { appearance:none; }
 .wr-ex.bad { border-left:3px solid var(--red); }
 .wr-ex-tag { font-family:var(--font-mono); font-size:.66rem; letter-spacing:.08em; padding:2px 7px; border-radius:10px; }
 .wr-ex.good .wr-ex-tag { color:var(--green); border:1px solid var(--green); }
-.wr-ex.bad .wr-ex-tag { color:var(--red); border:1px solid var(--red); }
+.wr-ex.bad .wr-ex-tag { color:var(--ink-red); border:1px solid var(--red); }
 .wr-ex-text { color:var(--text); margin:7px 0 5px; line-height:1.4; font-size:.92rem; }
 .wr-ex-why { color:var(--text-mute); font-size:.8rem; line-height:1.4; margin-bottom:8px; }
 .wr-tips ul, .wr-rules-list { margin:0; padding-left:18px; display:flex; flex-direction:column; gap:6px; }
@@ -1122,8 +1124,8 @@ select.in { appearance:none; }
 .fin-out-cell.oc-total { border-color:var(--cyan); }
 .fin-out-k     { font-size:.74rem; color:var(--text-mute); text-transform:uppercase; letter-spacing:.04em; }
 .fin-out-v     { font-family:var(--font-head); font-size:1.1rem; font-weight:700; color:var(--text); }
-.fin-out-cell.oc-you   .fin-out-v { color:var(--amber); }
-.fin-out-cell.oc-total .fin-out-v { color:var(--cyan); }
+.fin-out-cell.oc-you   .fin-out-v { color:var(--ink-amber); }
+.fin-out-cell.oc-total .fin-out-v { color:var(--ink-cyan); }
 .fin-warn { background:rgba(255,93,93,.08); border-left:3px solid var(--red);
             border-radius:0 var(--radius-sm) var(--radius-sm) 0;
             padding:9px 12px; color:var(--red); font-size:.86rem; line-height:1.4; }
@@ -1135,7 +1137,7 @@ select.in { appearance:none; }
 .fin-proj-out      { margin-top:8px; }
 .fin-proj-big      { display:flex; align-items:baseline; gap:10px; margin-bottom:8px; flex-wrap:wrap; }
 .fin-proj-label    { color:var(--text-dim); font-size:.88rem; }
-.fin-proj-num      { font-family:var(--font-head); font-size:2rem; font-weight:700; color:var(--cyan); }
+.fin-proj-num      { font-family:var(--font-head); font-size:2rem; font-weight:700; color:var(--text); }
 .fin-proj-breakdown { display:flex; flex-direction:column; gap:5px; margin-bottom:10px; }
 .fin-proj-part     { display:flex; justify-content:space-between; align-items:center;
                      font-size:.86rem; color:var(--text-dim); }
@@ -1216,7 +1218,7 @@ select.in { appearance:none; }
 /* Crisis banner */
 .res-crisis-banner { background:rgba(255,93,93,.08); border:1px solid rgba(255,93,93,.3);
                      border-radius:var(--radius-sm); padding:14px 16px; }
-.res-crisis-h    { font-family:var(--font-head); font-weight:700; color:var(--red); font-size:1rem; margin-bottom:7px; }
+.res-crisis-h    { font-family:var(--font-head); font-weight:700; color:color-mix(in srgb, var(--red) 40%, var(--text) 60%); font-size:1rem; margin-bottom:7px; }
 .res-crisis-line { font-family:var(--font-mono); color:var(--text); font-size:.95rem; margin-bottom:4px; }
 .res-crisis-sub  { color:var(--text-dim); font-size:.82rem; line-height:1.4; margin:8px 0 0; }
 /* Resource cards */
@@ -1227,7 +1229,7 @@ select.in { appearance:none; }
 .res-type-badge    { font-family:var(--font-mono); font-size:.66rem; letter-spacing:.07em;
                      padding:2px 7px; border-radius:10px; border:1px solid currentColor; }
 .res-resource-name { font-family:var(--font-head); font-weight:700; color:var(--text); font-size:.92rem; }
-.res-contact       { font-family:var(--font-mono); font-size:.82rem; color:var(--amber); margin-bottom:6px; }
+.res-contact       { font-family:var(--font-mono); font-size:.82rem; color:var(--text); margin-bottom:6px; }
 .res-resource-d    { color:var(--text-dim); font-size:.83rem; line-height:1.4; margin:0 0 6px; }
 .res-when          { font-size:.8rem; line-height:1.35; }
 .res-when-label    { color:var(--cyan); font-weight:600; }
@@ -1332,7 +1334,7 @@ select.in { appearance:none; }
 .tx-ms-label   { color:var(--text-dim); font-size:.85rem; }
 .tx-items      { margin:0; padding-left:18px; display:flex; flex-direction:column; gap:5px; }
 .tx-items li   { color:var(--text); font-size:.86rem; line-height:1.4; }
-.tx-items li.tx-urgent { color:var(--red); font-weight:600; }
+.tx-items li.tx-urgent { color:color-mix(in srgb, var(--red) 40%, var(--text) 60%); font-weight:600; }
 .tx-elig       { background:rgba(56,214,224,.07); border-left:3px solid var(--cyan);
                  border-radius:0 var(--radius-sm) var(--radius-sm) 0; padding:9px 12px; margin:10px 0; }
 .tx-elig-label { font-family:var(--font-mono); font-size:.68rem; color:var(--cyan);
@@ -3249,7 +3251,7 @@ html[data-motion="cinematic"] .grid > .card:nth-child(n+5){ animation-delay:.2s 
 @keyframes cardIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
 @media (prefers-reduced-motion: reduce){
   html[data-motion="cinematic"] *,html[data-motion="cinematic"] *::before,html[data-motion="cinematic"] *::after{
-    animation-duration:.001ms!important;transition-duration:.001ms!important}
+    animation-duration:.001ms!important;transition-duration:.001ms!important;animation-delay:0s!important}
 }
 
 /* ---- TEXT SCALE (global rem multiplier on <body> font-size) ---- */
@@ -3264,7 +3266,16 @@ html[data-line-spacing="normal"] body  { line-height:1.5; }
 html[data-line-spacing="relaxed"] body { line-height:1.72; }
 
 /* ---- HIGH CONTRAST (theme-independent boost) ---- */
-html.hc { --line:var(--text-mute); --line-2:var(--text-dim); --border:var(--text-mute); }
+html.hc { --line:var(--text-mute) !important; --line-2:var(--text-dim) !important; --border:var(--text-mute) !important; }
+/* Session-53 deep-UX audit (findings #12/#13): blackout compresses its entire
+   palette into near-black + dark red, so even --text-mute (the hc boost
+   target) barely lifts off blackout's own near-black panel/bg (2.63-2.70:1,
+   still under the 3:1 non-text floor) -- this is a color-value problem
+   specific to blackout, not the cascade-order bug the rule above fixes for
+   every other theme. Route blackout's hc-boosted border through the lighter
+   --text-dim instead: already part of the theme's own palette, >=5.6:1
+   against both --panel and --bg. */
+html.hc[data-theme="blackout"] { --line:var(--text-dim) !important; --border:var(--text-dim) !important; }
 html.hc .panel, html.hc .card { border-width:2px; }
 html.hc .text-dim, html.hc .hint, html.hc small { color:var(--text-dim); }
 html.hc .nav button.active { outline:2px solid var(--amber); outline-offset:-2px; }
@@ -3308,7 +3319,24 @@ html.reduce-transparency .nav-pill.active { background:var(--panel-2); }
    state) — same tap-target sizing as the manual "large targets" toggle. */
 @media (pointer: coarse) {
   .nav button { min-height:48px; padding-top:10px; padding-bottom:10px; }
-  .btn, .segmented button, .choice-btn, .topbar-profile-btn { min-height:48px; }
+  /* Session-52 responsive audit: this list used to be a strict subset of the
+     @media(max-width:640px) list below, so a touch-capable device wider than
+     640px (a tablet or unfolded foldable in landscape, a touchscreen laptop)
+     got zero enforced minimum on everything except the handful of classes
+     named here. Aligned to the same comprehensive set both rules now share,
+     plus every additional class the audit found uncovered by EITHER rule. */
+  .btn, .segmented button, .choice-btn, .topbar-profile-btn, .tab, .grade-btn,
+  .cpdf-modebtn, .cpdf-sigbtn, .fin-calc-row input, select,
+  input[type="text"], input[type="number"], input[type="date"],
+  button.chip, .ob-rank-btn, .topbar-search-btn,
+  .res-domain-head, .nav-group-header, .tabBtn, .due-chip, .qz-star-btn,
+  .appearance-opt, .cpdf-close, .res-copy-btn, .example-chip, .copybtn,
+  .mb-cat-chip, .mb-score-btn { min-height:48px; }
+  /* !important: a later, unconditional (non-media-scoped) .topbar-search-btn
+     rule sets width:38px and wins this specificity tie on source order alone -
+     an accessibility-mandated minimum should not be silently defeated by
+     unrelated component styling added later in the cascade. */
+  .topbar-search-btn, .topbar-profile-btn { width:44px !important; }
   .toggle { transform:scale(1.15); transform-origin:left center; }
 }
 
@@ -3365,7 +3393,7 @@ html.focus-mode .status-chip { opacity:.5; }
 .ex-sec-body { font-size:.84rem; color:var(--text-dim); line-height:1.55; white-space:pre-wrap; }
 
 /* v0.44.0 — DA 4856 guided filler (counselpdf) */
-.cpdf-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;z-index:9000;overflow-y:auto;padding:24px 12px}
+.cpdf-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;z-index:9000;overflow-y:auto;padding:24px 12px;padding-top:max(24px,env(safe-area-inset-top))}
 .cpdf-modal{background:var(--panel);border:1px solid var(--border);border-radius:10px;max-width:720px;width:100%;box-shadow:var(--shadow);margin:auto}
 .cpdf-head{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);border-radius:10px 10px 0 0}
 .cpdf-title{margin:0;font-family:var(--font-head);font-size:1rem;flex:1}
@@ -3464,7 +3492,7 @@ html.focus-mode .status-chip { opacity:.5; }
 @media (prefers-reduced-motion: reduce){.idp-dash-fill,.idp-dash-mini-fill{transition:none}}
 
 /* ── Finance 2026 limits quick-reference (v0.49) ── */
-.fin-limits{margin:12px 0}
+.fin-limits,.fin-match,.fin-calc{margin:12px 0}
 .fin-limits-tbl{width:100%;border-collapse:collapse;font-size:.85rem;margin:6px 0}
 .fin-limits-tbl td{border:1px solid var(--line,#c9bd9e);padding:7px 10px;vertical-align:top}
 .fin-lim-label{width:62%}
@@ -3479,7 +3507,11 @@ html.focus-mode .status-chip { opacity:.5; }
   .btn, .nav button, .tab, .segmented button, .choice-btn, .grade-btn,
   .idp-suggest-chip, .cpdf-modebtn, .cpdf-sigbtn, .fin-calc-row input,
   select, input[type="text"], input[type="number"], input[type="date"],
-  .topbar-profile-btn, button.chip, .ob-rank-btn { min-height: 44px; }
+  .topbar-profile-btn, button.chip, .ob-rank-btn,
+  .res-domain-head, .nav-group-header, .tabBtn, .due-chip, .qz-star-btn,
+  .appearance-opt, .cpdf-close, .res-copy-btn, .example-chip, .copybtn,
+  .mb-cat-chip, .mb-score-btn { min-height: 44px; }
+  .topbar-profile-btn { width: 44px; }
   /* tap-friendly spacing so adjacent controls don't collide */
   .tabbar { gap: 4px; flex-wrap: wrap; }
   .idp-actions, .fin-calc-actions, .cpdf-actions { gap: 8px; flex-wrap: wrap; }
@@ -3488,7 +3520,7 @@ html.focus-mode .status-chip { opacity:.5; }
   table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   /* modals: never taller than the viewport; scroll inside */
   .cpdf-modal { max-height: 92vh; overflow-y: auto; width: 96vw; }
-  .cpdf-backdrop { padding: 8px; }
+  .cpdf-backdrop { padding: 8px; padding-top: max(8px, env(safe-area-inset-top)); }
   /* dashboards stack cleanly */
   .idp-dash-groups, .idp-var-grid { grid-template-columns: 1fr; }
   /* keep the readable line-length from getting cramped */
@@ -4113,7 +4145,7 @@ window.G = window.G || {};
      meta          keyPath "k"   -> content cache metadata / seed snapshot
    ------------------------------------------------------------------ */
 window.G = window.G || {};
-window.GUIDON_APP_VERSION = "1.4.9";
+window.GUIDON_APP_VERSION = "1.4.10";
 window.GUIDON_BUILD_DATE = "2026-08-02";
 (function () {
   "use strict";
@@ -7443,6 +7475,13 @@ window.G = window.G || {};
     const AXES = ["Leads","Develops","Achieves","Character","Presence","Intellect"];
     const N = AXES.length;
     const size = 260, cx = size/2, cy = size/2, maxR = 92;
+    // Session-53 deep-UX audit: diagonal axis labels (Develops/Achieves/Presence/
+    // Intellect) clipped against the SVG viewBox — their text-anchor start/end
+    // placement pushed label text past the 0..260 horizontal bounds at every
+    // percentage value. Pulling the label ring in (was maxR+22) and widening the
+    // viewBox horizontally (VB_PAD_X extra room each side) gives every label
+    // full room to render without changing the hexagon/grid geometry itself.
+    const LABEL_R = maxR + 14, VB_PAD_X = 60;
     const angleFor = (i) => (Math.PI * 2 * i / N) - Math.PI/2;
     const pointFor = (i, r) => {
       const a = angleFor(i);
@@ -7467,7 +7506,7 @@ window.G = window.G || {};
     const dataPoly = dataPts.map((p) => p.join(",")).join(" ");
     // Axis labels
     const labels = AXES.map((axis, i) => {
-      const [lx, ly] = pointFor(i, maxR + 22);
+      const [lx, ly] = pointFor(i, LABEL_R);
       const anchor = Math.abs(Math.cos(angleFor(i))) < 0.3 ? "middle" : (Math.cos(angleFor(i)) > 0 ? "start" : "end");
       const pct = (dims[axis] && dims[axis].pct) || 0;
       return '<text x="'+lx+'" y="'+ly+'" text-anchor="'+anchor+'" font-size="11" fill="var(--text-dim)" font-family="inherit">'+
@@ -7477,7 +7516,7 @@ window.G = window.G || {};
     const dots = dataPts.map((p) =>
       '<circle cx="'+p[0]+'" cy="'+p[1]+'" r="3.5" fill="var(--cyan)" stroke="var(--bg,#0a0e14)" stroke-width="1.5"/>'
     ).join("");
-    const svg = '<svg viewBox="0 0 '+size+' '+(size+18)+'" width="100%" style="max-width:340px;display:block;margin:0 auto" role="img" aria-label="Leadership Requirements Model radar chart showing balance across six dimensions">'+
+    const svg = '<svg viewBox="'+(-VB_PAD_X)+' 0 '+(size+VB_PAD_X*2)+' '+(size+18)+'" width="100%" style="max-width:340px;display:block;margin:0 auto" role="img" aria-label="Leadership Requirements Model radar chart showing balance across six dimensions">'+
       rings + spokes +
       '<polygon points="'+dataPoly+'" fill="rgba(0,212,255,0.16)" stroke="var(--cyan)" stroke-width="2"/>' +
       dots + labels +
@@ -7748,7 +7787,7 @@ window.G = window.G || {};
       } catch(e) { /* non-fatal */ }
 
       // competencies
-      mount.appendChild(el("div.section-title", {}, [el("h2", { text: "Competencies — what a leader DOES" }), el("div.rule")]));
+      mount.appendChild(el("div.section-title", {}, [el("h2", { text: "Competencies — what a leader DOES" }), el("div.rule")]));
       const compPanel = el("div.panel");
       COMPS.forEach((c) => compPanel.appendChild(barRow(c, p.dims[c].pct, p.dims[c].score, CLS[c])));
       mount.appendChild(compPanel);
@@ -10619,7 +10658,7 @@ window.G = window.G || {};
     host.appendChild(legend);
 
     if (!d.roadmap.length) return;
-    host.appendChild(el("h3.idp-sub", { text: "Rank roadmap — what 'good' looks like" }));
+    host.appendChild(el("h3.idp-sub", { text: "Rank roadmap — what 'good' looks like" }));
     const picker = el("div.grade-picker");
     if (!roadmapGrade) roadmapGrade = d.roadmap[0].grade;
     d.roadmap.forEach((r) => {
@@ -12090,7 +12129,7 @@ window.G = window.G || {};
       panel.appendChild(el("p.hint", { text:"All " + DEMO_STEPS.length + " sections, each with the single detail worth pointing at. Tap a row to jump straight there." }));
       DEMO_STEPS.forEach((s) => {
         const row = el("button", { type:"button",
-          style:"width:100%;text-align:left;background:none;border:none;border-top:1px solid var(--line);cursor:pointer;padding:8px 0;color:inherit;font:inherit" });
+          style:"width:100%;text-align:left;background:none;border:none;border-top:1px solid var(--line);cursor:pointer;padding:8px 0;color:inherit;font:inherit;min-height:44px;display:flex;flex-direction:column;justify-content:center" });
         row.appendChild(el("div.ob-plan-cat", { text: s.title }));
         if (s.watch) row.appendChild(el("div.hint", { text: s.watch, style:"margin:2px 0 0" }));
         row.addEventListener("click", () => { location.hash = s.route; });
@@ -12615,7 +12654,7 @@ window.G = window.G || {};
     SECTIONS.forEach((s) => {
       const panel = el("div.panel", { style:"margin-bottom:10px" });
       const head = el("button", { type:"button", "aria-expanded":"false",
-        style:"width:100%;text-align:left;background:none;border:none;cursor:pointer;padding:0;color:inherit;font:inherit" });
+        style:"width:100%;text-align:left;background:none;border:none;cursor:pointer;padding:0;color:inherit;font:inherit;min-height:44px;display:flex;align-items:center" });
       head.appendChild(el("div.eyebrow", { text: s.icon + "  " + s.title }));
       const bodyWrap = el("div", { style:"display:none" });
       bodyWrap.appendChild(el("p.hint", { text: s.body, style:"margin-top:4px" }));
@@ -12824,7 +12863,7 @@ window.G = window.G || {};
     SECTIONS.forEach((s) => {
       const panel = el("div.panel", { style:"margin-bottom:10px" });
       const head = el("button", { type:"button", "aria-expanded":"false",
-        style:"width:100%;text-align:left;background:none;border:none;cursor:pointer;padding:0;color:inherit;font:inherit" });
+        style:"width:100%;text-align:left;background:none;border:none;cursor:pointer;padding:0;color:inherit;font:inherit;min-height:44px;display:flex;align-items:center" });
       head.appendChild(el("div.eyebrow", { text: s.icon + "  " + s.title }));
       const bodyWrap = el("div", { style:"display:none" });
       bodyWrap.appendChild(el("p.hint", { text: s.body, style:"margin-top:4px" }));
@@ -12842,7 +12881,7 @@ window.G = window.G || {};
 
     const links = el("div.panel", { style:"margin-top:10px" });
     links.appendChild(el("div.eyebrow", { text:"Work it here" }));
-    [["NCOPDS Drills \u2014 brief timer, essay rubric, MDMP","#/drills"],
+    [["NCOPDS Drills \u2014 timer, rubric, MDMP","#/drills"],
      ["BLC Prep \u2014 the gate before this","#/blc"],
      ["SLC & Beyond \u2014 the next gate","#/slc"],
      ["Board Drill \u2014 MDMP, mission command, LRM","#/board"],
@@ -13029,7 +13068,7 @@ window.G = window.G || {};
     SECTIONS.forEach((s) => {
       const panel = el("div.panel", { style:"margin-bottom:10px" });
       const head = el("button", { type:"button", "aria-expanded":"false",
-        style:"width:100%;text-align:left;background:none;border:none;cursor:pointer;padding:0;color:inherit;font:inherit" });
+        style:"width:100%;text-align:left;background:none;border:none;cursor:pointer;padding:0;color:inherit;font:inherit;min-height:44px;display:flex;align-items:center" });
       head.appendChild(el("div.eyebrow", { text: s.icon + "  " + s.title }));
       const bodyWrap = el("div", { style:"display:none" });
       bodyWrap.appendChild(el("p.hint", { text: s.body, style:"margin-top:4px" }));
@@ -17568,7 +17607,7 @@ window.G = window.G || {};
       // Signpost to account controls. Settings is where people instinctively look
       // for "change my name / start over", but those actions live with the profile
       // they act on — so point there rather than duplicating the controls.
-      const acctLink = el("button.btn.sm", { type: "button", text: "\u{1F464} Manage account \u2014 rename, switch, or delete",
+      const acctLink = el("button.btn.sm", { type: "button", text: "\u{1F464} Manage account \u2014 rename, switch, or\u00A0delete",
         style: "margin-top:10px" });
       acctLink.addEventListener("click", () => { location.hash = "#/profile"; });
       pn.appendChild(acctLink);

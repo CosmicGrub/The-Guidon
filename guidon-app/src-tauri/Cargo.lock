@@ -1395,7 +1395,7 @@ dependencies = [
 
 [[package]]
 name = "guidon"
-version = "1.3.0"
+version = "1.4.7"
 dependencies = [
  "tauri",
  "tauri-build",
