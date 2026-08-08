@@ -1,6 +1,6 @@
 {
   "name": "guidon-app",
-  "version": "1.4.7",
+  "version": "1.4.10",
   "private": true,
   "type": "module",
   "description": "GUIDON packaging: installable PWA bundle, standalone single file, Windows desktop app, Android app",
@@ -34,11 +34,13 @@
     "test:theater": "node tools/test-theater.mjs",
     "test:flip": "node tools/test-flip.mjs",
     "test:contrast": "node tools/test-contrast.mjs",
+    "test:contrast-full": "node tools/test-contrast-full.mjs",
     "test:bridge": "node tools/test-bridge.mjs",
     "test:responsive": "node tools/test-responsive.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",
+    "axe-core": "^4.12.1",
     "playwright": "1.62.0"
   },
   "dependencies": {

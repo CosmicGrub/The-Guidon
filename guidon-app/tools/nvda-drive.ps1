@@ -11,7 +11,9 @@
 param(
   [string]$Keys = "",          # semicolon-separated: TAB, ENTER, SPACE, DOWN, F6, "text"
   [string]$Label = "step",
-  [int]$SettleMs = 900
+  [int]$SettleMs = 900,
+  [string]$ProcessName = "guidon"   # installed build's exe stem; portable builds are named
+                                     # GUIDON-<version>-portable, pass that instead
 )
 
 Add-Type @"
@@ -23,6 +25,7 @@ public class W {
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern int GetWindowTextLength(IntPtr h);
   [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr h, System.Text.StringBuilder s, int n);
+  [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
 }
 "@
 Add-Type -AssemblyName System.Windows.Forms
@@ -52,8 +55,15 @@ function Get-SpeechSince([int]$from) {
 }
 
 function Focus-Guidon {
-  $p = Get-Process guidon -ErrorAction SilentlyContinue | Select-Object -First 1
+  $p = Get-Process $ProcessName -ErrorAction SilentlyContinue | Select-Object -First 1
   if (-not $p) { Write-Output "!! GUIDON not running"; return $false }
+  # A background/non-interactive process (this script, launched by automation
+  # rather than a live foreground shell) cannot normally steal focus at all -
+  # Windows silently no-ops SetForegroundWindow for it. Tapping ALT first
+  # gives this process the "recent input" state SetForegroundWindow requires
+  # to succeed; without it every call below returns true but does nothing.
+  [W]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero)   # ALT down
+  [W]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero)   # ALT up
   [W]::ShowWindow($p.MainWindowHandle, 9) | Out-Null   # SW_RESTORE
   [W]::SetForegroundWindow($p.MainWindowHandle) | Out-Null
   Start-Sleep -Milliseconds 700
