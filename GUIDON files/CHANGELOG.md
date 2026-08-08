@@ -2,6 +2,28 @@
 
 All notable changes to GUIDON will be documented in this file. Format loosely follows [Keep a Changelog](http://keepachangelog.com/).
 
+## 2026-08-08 (session 53) - v1.4.7: 16 findings from a 44-agent deep UX/config-combo audit, batched into one release
+
+**Ask (continued):** keep auditing responsiveness and UX with tools/skills, but this time batch every fix instead of shipping per-finding, and build every fork exactly once at the end.
+
+**Method:** a 44-agent workflow swept visual layout quality (overlap, misalignment, spacing, orphan text), configuration combinations (high-contrast x theme, reduced-motion x the in-app Motion setting), desktop-specific behavior, and animation/motion consistency beyond the card flip - 35 candidates checked, 16 confirmed, each independently re-verified by its own verify-phase agent before landing here.
+
+**Five orphan-text widows, one fix pattern.** `#/develop`'s "...LOOKS *LIKE*", `#/transition`'s "...Career *Focus*", `#/progress`'s "...leader *DOES*", and `#/settings`'s "...or *DELETE*" all stranded a single word on its own line at 390px - four fixed with a non-breaking space, the fifth (`#/alc`'s NCOPDS Drills card) with the audit's own suggested trim since an nbsp alone wouldn't have closed the wrap.
+
+**One CSS oversight, three viewports, five sibling panels.** `#/money`'s BRS & TSP tab: `.fin-limits{margin:12px 0}` was the only one of three panel variants with an explicit margin, so two of four panel-to-panel joins sat flush at 0px while the other two had 12px - reproduced identically at 390/834/1440px. Fixed by extending the margin to `.fin-match`/`.fin-calc` too.
+
+**A flex-wrap bug found twice by the audit, a third time by not stopping at two.** `#/calendar` and `#/currency` both pair a title with a status badge in a wrapping flex row; a long title pushed the *whole badge* onto its own line instead of just the title text. Same shape, same fix on both - and a quick grep for the identical inline-style pattern elsewhere turned up an unflagged third instance in `leader.js`'s overdue-soldier list, fixed the same way. Fix: stop the container wrapping as a whole, let the title wrap its own text (`flex:1 1 auto;min-width:0`), pin the badge (`flex:0 0 auto;white-space:nowrap`).
+
+**One out-of-taxonomy finding, kept anyway.** `#/progress`'s LRM Balance radar chart clips 4 of 6 axis labels at every viewport ("Develops" -> "Develo") - outside the audit's 5 requested categories but real and high-visibility. Root cause: diagonal-axis label positions ran past the SVG's own viewBox. Fixed by pulling the label ring in and widening the viewBox horizontally, without touching the hexagon geometry.
+
+**The high-contrast finding was two different bugs wearing the same symptom.** Ten themes had §61's exact cascade-order bug (`html.hc{--border:var(--text-mute)}` losing a same-specificity tie to a later-declared theme block) - fixed with `!important`, since this rule's whole job is to win unconditionally. Blackout looked identical (still <3:1 after that fix) but was never subject to the cascade bug - it's a color problem: even `--text-mute` barely lifts off blackout's own near-black surfaces. Routed blackout's boosted border through `--text-dim` instead (>=5.6:1), scoped so the other ten themes' fix is untouched.
+
+**Reduced-motion zeroed durations but left delays standing.** The Train grid's staggered card entrance kept its `animation-delay` (.05-.2s per item) even under `prefers-reduced-motion:reduce`, so cards still popped in sequence on every search keystroke. Fixed by adding `animation-delay:0s !important` to all three reduced-motion rules (OS-level, manual toggle, cinematic echo).
+
+**Verification needed a second pass twice.** The first high-contrast check silently never applied the theme (an un-awaited `G.theme.set()` raced a `page.reload()`); the first settings-widow check used an arbitrary pixel threshold that failed an already-correct case. Both diagnosed the same way as every session since v1.4.4: an unexpected result means the tool first, the app second - checked, not assumed.
+
+**Verified:** sixteen suites passing, plus a dedicated 16-check Playwright pass covering every finding. v1.4.7 across all forks (Android 10407); releases/v1.4.7 supersedes v1.4.6.
+
 ## 2026-08-08 (session 52) - v1.4.6: responsive/orientation audit across every layout, device format, and rotation
 
 **Ask:** a broader UX/UI pass - cleaner and more responsive across all layouts, device formats, configurations, and orientations.

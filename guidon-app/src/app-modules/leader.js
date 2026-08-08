@@ -115,9 +115,9 @@ window.G = window.G || {};
       flagged.sort(function (a, b) { return b.worst.over - a.worst.over; });
       flagged.forEach(function (x) {
         const c = el("div.card", { style: "margin-top:8px;border-left:3px solid " + (x.worst.over > 30 ? "var(--red)" : "var(--amber)") });
-        const head = el("div", { style: "display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap" });
-        head.appendChild(el("span.k", { text: (x.sol.rank ? x.sol.rank + " " : "") + (x.sol.name || "(unnamed)") }));
-        head.appendChild(el("span.v", { text: x.count + (x.count === 1 ? " item" : " items") }));
+        const head = el("div", { style: "display:flex;justify-content:space-between;gap:8px;align-items:baseline" });
+        head.appendChild(el("span.k", { text: (x.sol.rank ? x.sol.rank + " " : "") + (x.sol.name || "(unnamed)"), style: "min-width:0;flex:1 1 auto" }));
+        head.appendChild(el("span.v", { text: x.count + (x.count === 1 ? " item" : " items"), style: "flex:0 0 auto;white-space:nowrap" }));
         c.appendChild(head);
         c.appendChild(el("div.hint", { text: x.worst.label }));
         if (x.worst.f.link) {
