@@ -96,6 +96,18 @@ html, body { margin: 0; height: 100%; }
    html.light synchronously before first paint, so this override applies
    from the very first frame — no flash. */
 html { color-scheme: dark; }
+/* Same root cause as the color-scheme note above, one layer deeper: browser
+   UA stylesheets give <button> its own explicit `color` (not `inherit`), so
+   any custom button that doesn't set its own color (e.g. .ob-mode-card, a
+   <button class="panel..."> used purely for layout/click semantics) silently
+   falls back to the UA default text color instead of the app's per-theme
+   --text token. Found via the first full 24-theme x 35-route axe-core sweep
+   (tools/test-contrast-full.mjs): 60 of 84 violations were exactly this,
+   all on the Kiosk mode-picker cards. Scoped to color only (not the usual
+   `font: inherit` pair) — every styled button in this app already sets its
+   own explicit font, and touching font UA-wide is a layout risk this fix
+   doesn't need to take on. */
+button { color: inherit; }
 /* Text-safe accent variants (ported from the parallel branch, session 19 merge).
    Raw --amber/--green/--red/--cyan/--violet are tuned to work as BACKGROUNDS or
    borders, not as body text. Measured via axe-core, several components using them
@@ -1007,7 +1019,7 @@ select.in { appearance:none; }
 .wr-intro { color:var(--text-dim); margin:0 0 10px; line-height:1.5; }
 .wr-anatomy-chips { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; }
 .wr-anat { background:var(--bg-2); border:1px solid var(--line); border-left:3px solid var(--amber); border-radius:var(--radius-sm); padding:10px 12px; }
-.wr-anat-part { font-family:var(--font-head); font-weight:700; color:var(--amber); font-size:.95rem; margin-bottom:4px; }
+.wr-anat-part { font-family:var(--font-head); font-weight:700; color:var(--text); font-size:.95rem; margin-bottom:4px; }
 .wr-anat-d { color:var(--text-dim); font-size:.84rem; line-height:1.4; }
 .wr-grader-h { font-family:var(--font-head); font-weight:700; color:var(--cyan); font-size:.92rem;
   text-transform:uppercase; letter-spacing:.05em; margin-bottom:10px; }
@@ -1090,7 +1102,7 @@ select.in { appearance:none; }
 /* match table */
 
 .fin-match-tbl { width:100%; border-collapse:collapse; font-size:.88rem; margin:8px 0; }
-.fin-match-tbl th { background:var(--bg-3,#1a1f2e); color:var(--amber); font-family:var(--font-head);
+.fin-match-tbl th { background:var(--bg-3,#1a1f2e); color:var(--text); font-family:var(--font-head);
                     font-weight:700; text-align:left; padding:7px 10px; border-bottom:1px solid var(--line-2); }
 .fin-match-tbl td { padding:6px 10px; border-bottom:1px solid var(--line); color:var(--text); }
 .fin-match-tbl tr.fin-row-hl td { background:rgba(74,222,128,.07); color:var(--green); font-weight:600; }
@@ -3612,7 +3624,7 @@ html.focus-mode .status-chip { opacity:.5; }
 /* Resources directory (new top-level tab) */
 .res-card{margin:6px 0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel-2,rgba(127,127,127,.04))}
 .res-name{font-weight:600;font-size:14px}
-.res-url{font-size:12px;color:var(--cyan,#4ecdc4);margin:2px 0}
+.res-url{font-size:12px;color:var(--text-dim);margin:2px 0}
 .res-d{font-size:13px;color:var(--text-dim)}
 
 /* Resume Example (Write module tab) */
@@ -4101,7 +4113,7 @@ window.G = window.G || {};
      meta          keyPath "k"   -> content cache metadata / seed snapshot
    ------------------------------------------------------------------ */
 window.G = window.G || {};
-window.GUIDON_APP_VERSION = "1.4.4";
+window.GUIDON_APP_VERSION = "1.4.5";
 window.GUIDON_BUILD_DATE = "2026-08-02";
 (function () {
   "use strict";
@@ -6014,7 +6026,7 @@ window.G = window.G || {};
     mount.appendChild(cardWrap);
     mount.appendChild(el("div.btn-row.no-print", { style: "margin-top:12px" }, [
       el("button.btn.ghost.sm", { text: "Reset drill schedule", onclick: async () => {
-        if (!confirm("Reset spaced-repetition schedule for all board questions?")) return;
+        if (!(await G.modal.confirm("Reset spaced-repetition schedule for all board questions?"))) return;
         for (const q of all) await db.del("kv", srsKey(q.id));
         util.toast("Schedule reset.");
         build();
@@ -7985,7 +7997,7 @@ window.G = window.G || {};
       mount.appendChild(el("div.btn-row", { style: "margin-top:14px" }, [
         el("button.btn.sm", { gi: "printer", giSize: 14, text: "Print Report", onclick: () => printProgress(p) }),
         el("button.btn.ghost.sm", { text: "Reset all progress", onclick: async () => {
-          if (confirm("Reset all recorded attempts and readiness? This cannot be undone.")) {
+          if (await G.modal.confirm("Reset all recorded attempts and readiness? This cannot be undone.", { danger: true })) {
             await store.resetProgress();
             util.toast("Progress reset.");
             G.progress.render(mount);
@@ -8436,7 +8448,7 @@ window.G = window.G || {};
               G.engine.run(sc.id, null, player, () => { player.remove(); mount.style.display = ""; });
             } }),
             el("button.btn.sm.ghost", { text: "Delete", onclick: async () => {
-              if (confirm("Delete scenario \"" + sc.title + "\"?")) { await store.deleteUserScenario(sc.id); util.toast("Deleted."); back(); }
+              if (await G.modal.confirm("Delete scenario \"" + sc.title + "\"?", { danger: true })) { await store.deleteUserScenario(sc.id); util.toast("Deleted."); back(); }
             } }),
           ]),
         ]));
@@ -14221,18 +14233,20 @@ window.G = window.G || {};
         catch (e) { status.textContent = "That file couldn't be read as JSON."; status.className = "backup-status hint err"; return; }
         var sum = obj && obj.summary ? obj.summary : null;
         var msg = "Import this backup?" + (sum ? "\n\nIt contains: " + (sum.kv || 0) + " saved items, " + (sum.userScenarios || 0) + " authored scenarios, " + (sum.attempts || 0) + " quiz attempts." : "") + "\n\nYour existing data will be kept; matching items will be overwritten by the backup.";
-        if (!window.confirm(msg)) { fileIn.value = ""; return; }
-        importAll(obj, { merge: true }).then(function (res) {
-          var r = res.restored;
-          status.textContent = "Restored " + r.kv + " items, " + r.userScenarios + " scenarios, " + r.attempts + " attempts. Reloading…";
-          status.className = "backup-status hint ok";
-          if (G.util.announce) G.util.announce("Backup restored.");
-          setTimeout(function () { location.reload(); }, 1200);
-        }).catch(function (e) {
-          status.textContent = "Import failed: " + (e && e.message ? e.message : "unknown error");
-          status.className = "backup-status hint err";
+        G.modal.confirm(msg, { title: "Import backup" }).then(function (ok) {
+          if (!ok) { fileIn.value = ""; return; }
+          importAll(obj, { merge: true }).then(function (res) {
+            var r = res.restored;
+            status.textContent = "Restored " + r.kv + " items, " + r.userScenarios + " scenarios, " + r.attempts + " attempts. Reloading…";
+            status.className = "backup-status hint ok";
+            if (G.util.announce) G.util.announce("Backup restored.");
+            setTimeout(function () { location.reload(); }, 1200);
+          }).catch(function (e) {
+            status.textContent = "Import failed: " + (e && e.message ? e.message : "unknown error");
+            status.className = "backup-status hint err";
+          });
+          fileIn.value = "";
         });
-        fileIn.value = "";
       };
       reader.readAsText(f);
     });
@@ -14589,7 +14603,7 @@ window.G = window.G || {};
       if (hist.length > 0) {
         const clr = el("button.btn.ghost.sm", { text: "Clear history", style: "margin-top:8px" });
         clr.onclick = async () => {
-          if (!confirm("Clear bullet history?")) return;
+          if (!(await G.modal.confirm("Clear bullet history?"))) return;
           try { await G.db.setSetting(HISTORY_KEY, []); } catch (e) {}
           try { if (G.util.announce) G.util.announce("Bullet history cleared."); } catch (e) {}
           renderHistory();
@@ -15158,8 +15172,8 @@ window.G = window.G || {};
     addRangeBtn.addEventListener("click", () => { rangeData.push({ job: "", city: "", range: "", specific: "" }); drawRangeRows(); });
     rangePanel.appendChild(addRangeBtn);
     const clearRangeBtn = el("button.btn.ghost.sm", { type: "button", text: "Clear all" });
-    clearRangeBtn.addEventListener("click", () => {
-      if (!confirm("Clear all salary range research rows?")) return;
+    clearRangeBtn.addEventListener("click", async () => {
+      if (!(await G.modal.confirm("Clear all salary range research rows?"))) return;
       rangeData = [{ job: "", city: "", range: "", specific: "" }];
       persistSalNeg(); drawRangeRows();
       try { if (G.util.announce) G.util.announce("Salary range research cleared."); } catch (e) {}
@@ -15208,8 +15222,8 @@ window.G = window.G || {};
     addSkillsBtn.addEventListener("click", () => { skillsData.push({ posting: "", candidate: "" }); drawSkillsRows(); });
     skillsPanel.appendChild(addSkillsBtn);
     const clearSkillsBtn = el("button.btn.ghost.sm", { type: "button", text: "Clear all" });
-    clearSkillsBtn.addEventListener("click", () => {
-      if (!confirm("Clear all skills comparison rows?")) return;
+    clearSkillsBtn.addEventListener("click", async () => {
+      if (!(await G.modal.confirm("Clear all skills comparison rows?"))) return;
       skillsData = [{ posting: "", candidate: "" }];
       persistSalNeg(); drawSkillsRows();
       try { if (G.util.announce) G.util.announce("Skills comparison chart cleared."); } catch (e) {}
@@ -15241,8 +15255,8 @@ window.G = window.G || {};
         checkPanel.appendChild(catBox);
       });
       const clearCheckBtn = el("button.btn.ghost.sm", { type: "button", text: "Clear all" });
-      clearCheckBtn.addEventListener("click", () => {
-        if (!confirm("Clear all checklist selections?")) return;
+      clearCheckBtn.addEventListener("click", async () => {
+        if (!(await G.modal.confirm("Clear all checklist selections?"))) return;
         Object.keys(checklistData).forEach((k) => delete checklistData[k]);
         checkPanel.querySelectorAll("select").forEach((s) => { s.value = ""; });
         persistSalNeg();
