@@ -2,6 +2,27 @@
 
 All notable changes to GUIDON will be documented in this file. Format loosely follows [Keep a Changelog](http://keepachangelog.com/).
 
+## 2026-08-08 (session 53, continued) - v1.4.8: board-card fact-check finds real stale figures, corrects one internal contradiction
+
+**Ask:** refresh and fact-check the board-drill study cards for accuracy, then push.
+
+**Method:** pattern-scanned all 1,014 board cards for risk indicators (dollar amounts, embedded years, explicit currency claims, transition language, specific regulation citations), then personally verified every flagged candidate against live sources rather than trust the pattern match alone — most flags turned out to be correctly-dated doctrine citations or timeless content, exactly as expected; a handful were real.
+
+**Two officeholder facts checked, both correct.** The Secretary of Defense (Pete Hegseth, since 25 Jan 2025) and Sergeant Major of the Army (Michael R. Weimer, 17th SMA, since 4 Aug 2023) cards were both already accurate — these are the highest-embarrassment-if-wrong facts in the corpus, worth confirming even when they check out.
+
+**Three real stale figures found and fixed, cross-verified across multiple independent sources each:**
+- **BAS rate**: two cards said "~$460/month as of 2024" — the actual 2026 rate is $476.95/month (effective 1 Jan 2026, a real annual COLA adjustment). Fixed both, kept the existing "verify current rate" hedge since BAS changes yearly by design.
+- **SGLI premium**: found in *four* places (two board cards, one of which had the figure buried in a longer `boardAnswer` field a first read missed; a curriculum lesson) — and the two board cards didn't even agree with each other ($29/month vs $30/month) before checking either against reality. Current verified rate: $0.065/$1,000/month + mandatory $1 TSGLI = ~$33.50/month at max ($500K) coverage. Fixed all four consistently.
+- **AR 670-1 edition date**: two cards said "the current edition as of 2015" — verified current edition is dated 26 January 2021 (multiple independent sources against the official armypubs.army.mil citation; third-party sites' "AR 670-1 2026" titles were SEO-year branding, not an actual newer official date). Fixed both.
+
+**One policy area found genuinely out of date: tattoo placement rules.** Two cards described the pre-revision policy (hands limited to one ring tattoo only). Current policy — verified across multiple independent sources — additionally authorizes one tattoo per hand up to 1 inch, one on the back of the neck up to 2 inches, and one behind each ear up to 1 inch; head/face/neck-above-collar remain prohibited. Updated both cards with the fuller current picture and an explicit "this area has been revised more than once, verify at your board" hedge, since it evidently keeps changing.
+
+**One thing checked and left alone because it was already right**: the ponytail-length card initially looked suspect against one search result ("not authorized in dress uniform"), but a direct fetch of the actual source article showed that caveat described a since-superseded interim policy — the current rule (ponytails in all authorized uniforms) matches what the card already said. Not every suspicious lead is a bug.
+
+**One dollar figure checked and confirmed still current, left alone**: Hostile Fire Pay / Imminent Danger Pay at $225/month — there's a *proposed* increase to $450/$15-per-day reported in the press, but it hadn't taken effect as of this session, so the card's existing figure is still correct.
+
+**Verified:** full 27-suite `npm test` (0 fail), plus a dedicated re-scan confirming zero stale figures remain from any of the fixes (an earlier shell-escaping artifact briefly suggested otherwise — caught and re-verified with a proper script before trusting it, not after). v1.4.8 across index.html/package.json/tauri.conf.json/Android (versionCode 10408).
+
 ## 2026-08-08 (session 53, continued) - v1.4.7: three research-backed checks — one real fix, two honest non-fixes
 
 **Ask (continued):** the remaining items from the systematic open-items list — civilian-education per-semester-hour rate, the 2021-DoD-baseline acronyms dictionary, and the MOS Career Center's FY26 shortage/SRB data.
