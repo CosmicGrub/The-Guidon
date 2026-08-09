@@ -123,7 +123,7 @@ window.G = window.G || {};
         box.addEventListener("change", function () {
           saved[id] = box.checked; refresh(); persist();
         });
-        const lab = el("label", { htmlFor: id, text: label, style: "cursor:pointer" });
+        const lab = el("label", { "for": id, text: label, style: "cursor:pointer" });
         row.appendChild(box); row.appendChild(lab);
         p.appendChild(row);
       });

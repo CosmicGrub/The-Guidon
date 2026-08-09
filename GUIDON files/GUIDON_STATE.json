@@ -19,7 +19,7 @@
   },
   "appVersion": {
    "constant": "window.GUIDON_APP_VERSION",
-   "value": "1.4.11",
+   "value": "1.4.12",
    "buildDate": "2026-08-09",
    "surfacedIn": "Settings -> About GUIDON panel"
   },
@@ -1678,6 +1678,7 @@
   "Reconcile guidon-theme-proposals.html (5 themes) against the live app (14 themes) - proposals doc is stale",
   "SHIPPED: v1.4.11 - four commits that landed on main after v1.4.10 without a version bump (backup/restore data-loss fix, lint-patterns.mjs regression guard, PRIVACY.md, run-parallel.mjs; a Home hero-card consolidation; an SFC+ centralized-board explainer in Board Prep > Points; opt-in Android local notifications for Reminders via src/notify.js) are now reflected in versionCode 10411 and this file. Notifications were verified hands-on on both real test devices (Fold, Tab S9 FE): real Android permission dialog, POST_NOTIFICATIONS granted=true via dumpsys, a real AlarmManager RTC entry (TimedNotificationPublisher) at the reminder's date, Reason=alarm_cancelled logged on removal. Both devices' installed base.apk were pulled post-merge and their bundled index.html/sw.js hash-compared byte-for-byte against a fresh main build - both matched exactly.",
   "OPEN: PRIVACY.md exists and is grounded in the actual CSP/privacy test coverage, but is not yet hosted at a public URL - required before any Play Store submission.",
+  "SHIPPED: v1.4.12 - a 4-agent audit (motion/gesture, content staleness, UX polish, tech debt) synthesized a 3-week roadmap; this ships week 1 plus Quiz-mode motion (asked for separately). Fixed: Records Readiness checklist's htmlFor-vs-for binding (P0, all 23 rows were untappable via label text); SGLI premium stale AGAIN one day after v1.4.8/v1.4.9 'verified' it against an already-year-stale rate (real rate $26.00/month effective 1 Jul 2025, not $33.50); AR 670-1 beard-waiver card missing the 2025 policy overhaul (12-month cap, O-5 ETP, DA Form 3349-SG); Home's bare Board Date row now matches the hero card's panel treatment; full 24-theme x 35-route contrast sweep wired into npm test by default (found and fixed one real violation, .tag.leads in desert-cadence, 4.46:1). Added: real enter/exit motion to the confirm dialog and PDF-filler modal (previously instant pop-in/out, now shared via one .modaltrap-open class across both mechanisms); Quiz mode entrance/correct-pulse/wrong-shake/exit-advance motion, reduced-motion checked directly in JS (data-motion + matchMedia) rather than trusted from a CSS variable that lies about actual duration under reduced motion. Repo hygiene: .gitignore rules for tools/_*.mjs scratch scripts and the contrast-full-sweep-raw.json report (root .gitignore, not guidon-app/ - the report lives outside that directory).",
   "STANDING: capture console 'warning' output by default in every test harness, not just 'error'",
   "STANDING: when a result is surprising, verify the verifier before hypothesizing about the code (3 occurrences to date)",
   "PROCESS: the fork happened because two chats worked from the same base concurrently - keep one active build line, or diff explicitly before merging"

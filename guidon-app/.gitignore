@@ -9,3 +9,9 @@ src-tauri/target/
 # Signing material must never be committed.
 keys/
 android/keystore.properties
+
+# Scratch tooling: underscore-prefixed tools/*.mjs are throwaway probes/debug
+# helpers that should never accumulate uncommitted in the tree. (The
+# contrast-full-sweep-raw.json report this suite regenerates lives at the
+# repo root under "GUIDON files/", not here -- ignored in the root .gitignore.)
+tools/_*.mjs
