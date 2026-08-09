@@ -231,10 +231,11 @@ async function main() {
   //    must come after the app's own modules.
   const pdfDefer = await readFile("src/pdf-defer.js", "utf8");
   const native = await readFile("src/native.js", "utf8");
+  const notify = await readFile("src/notify.js", "utf8");
   web = sub(
     web,
     bodyClose,
-    `</script>\n<script>\n${pdfDefer}\n</script>\n<script>\n${native}\n</script>\n<script>\n${pwa}\n</script>\n</body>\n</html>`,
+    `</script>\n<script>\n${pdfDefer}\n</script>\n<script>\n${native}\n</script>\n<script>\n${notify}\n</script>\n<script>\n${pwa}\n</script>\n</body>\n</html>`,
     "document terminator"
   );
 
