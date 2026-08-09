@@ -7,6 +7,27 @@
   "confidence": "high for structural/content facts directly observed in source; low/UNCONFIRMED for anything requiring semantic interpretation (see openItems)",
   "forkResolved": "2026-07-23 session 19: parallel fork from guidon_40 reconciled into guidon_47.html. Single line going forward."
  },
+ "perishableContent": {
+  "_note": "Structured review-date tracking for the two openItems already flagged as perishable ('PME course lengths...' and 'MOS Career Center: FY26 shortage/SRB snapshot...'), added v1.4.12 so a future session can check nextReviewDue against the current date instead of only refreshing when a session happens to circle back on its own. Add new entries here as more perishable content is identified, rather than leaving it implicit in prose-only openItems notes.",
+  "entries": [
+   {
+    "topic": "PME course lengths (BLC/ALC/SLC/MLC)",
+    "why": "Course lengths/formats are actively changing as Army PME modernizes; a stale length is a concrete wrong-answer risk for board prep.",
+    "lastVerified": null,
+    "lastVerifiedNote": "No specific verification event on record for this exact figure set - flagged PERISHABLE historically without a tracked check date. Treat as due now until a real check establishes a baseline.",
+    "nextReviewDue": "2026-08-09",
+    "cadenceMonths": 3
+   },
+   {
+    "topic": "MOS Career Center FY26 shortage/SRB snapshot",
+    "why": "Explicitly perishable point-in-time data (shortage MOS list, SRB figures, EXORD/MILPER citations) with an established ~6-month shelf life tied to the board/incentive cycle.",
+    "lastVerified": "2026-08-09",
+    "lastVerifiedNote": "Session 53 refresh (see openItems 'SHIPPED, MOSTLY VERIFIED-ALREADY (53)'): HQDA EXORD 117-26 and SRB MILPER 26-241 confirmed real and current; one SRB per-award-vs-lifetime-cap conflation found and fixed.",
+    "nextReviewDue": "2027-02-09",
+    "cadenceMonths": 6
+   }
+  ]
+ },
  "app": {
   "name": "GUIDON",
   "tagline": "Army Leader Development Trainer",
@@ -19,7 +40,7 @@
   },
   "appVersion": {
    "constant": "window.GUIDON_APP_VERSION",
-   "value": "1.4.12",
+   "value": "1.4.13",
    "buildDate": "2026-08-09",
    "surfacedIn": "Settings -> About GUIDON panel"
   },
@@ -1662,7 +1683,7 @@
   "HANDOFF READY: GUIDON_DESIGN_SYSTEM.md is the entry point for a designer. Read it before touching CSS.",
   "STANDING (refined): a11y sweeps must settle after each THEME CHANGE as well as after navigation - a theme switch triggers colour transitions across the whole UI",
   "STANDING: a11y sweeps must settle longer than the longest CSS transition (currently 0.15s on nav) before sampling colour - 150ms produced phantom violations",
-  "PERISHABLE: PME course lengths are actively changing - re-verify BLC/ALC/SLC/MLC lengths before each demo or board cycle",
+  "PERISHABLE: PME course lengths are actively changing - re-verify BLC/ALC/SLC/MLC lengths before each demo or board cycle. Now tracked with a real nextReviewDue in perishableContent.entries (v1.4.12) rather than only this prose note.",
   "Scoped follow-up: audit the ~212 remaining ACFT references in context and convert the ones that are current-standard claims (leave historical/comparative ones)",
   "Verify whether the Combat Field Test (annual, 30-min, designated combat MOSs) should be added - sources disagreed on whether 21 or 24 MOSs are designated",
   "Verify the full AR 600-8-19 weapon hit-count tables (3-7 SGT / 3-8 SSG) and replace the interpolation with real rows",
@@ -1673,12 +1694,13 @@
   "Remaining ~87 Expert-tier cards beyond the 6 reclassified could use a fuller human pass - the category-over-weighting failure mode is now documented",
   "Lazy-load the ~5MB embedded seed data - deferred across many sessions, needs its own dedicated session",
   "Acronyms dictionary is on a DoD-2021 baseline - refresh pass",
-  "MOS Career Center: FY26 shortage/SRB snapshot is perishable (~6mo) - establish refresh cadence before each board cycle",
+  "MOS Career Center: FY26 shortage/SRB snapshot is perishable (~6mo) - establish refresh cadence before each board cycle. Now tracked with a real lastVerified/nextReviewDue in perishableContent.entries (v1.4.12) rather than only this prose note.",
   "MOS Career Center: civilian-cert mapping is CMF-level, not per-MOS; not yet cross-linked from Profile or Transition",
   "Reconcile guidon-theme-proposals.html (5 themes) against the live app (14 themes) - proposals doc is stale",
   "SHIPPED: v1.4.11 - four commits that landed on main after v1.4.10 without a version bump (backup/restore data-loss fix, lint-patterns.mjs regression guard, PRIVACY.md, run-parallel.mjs; a Home hero-card consolidation; an SFC+ centralized-board explainer in Board Prep > Points; opt-in Android local notifications for Reminders via src/notify.js) are now reflected in versionCode 10411 and this file. Notifications were verified hands-on on both real test devices (Fold, Tab S9 FE): real Android permission dialog, POST_NOTIFICATIONS granted=true via dumpsys, a real AlarmManager RTC entry (TimedNotificationPublisher) at the reminder's date, Reason=alarm_cancelled logged on removal. Both devices' installed base.apk were pulled post-merge and their bundled index.html/sw.js hash-compared byte-for-byte against a fresh main build - both matched exactly.",
   "OPEN: PRIVACY.md exists and is grounded in the actual CSP/privacy test coverage, but is not yet hosted at a public URL - required before any Play Store submission.",
   "SHIPPED: v1.4.12 - a 4-agent audit (motion/gesture, content staleness, UX polish, tech debt) synthesized a 3-week roadmap; this ships week 1 plus Quiz-mode motion (asked for separately). Fixed: Records Readiness checklist's htmlFor-vs-for binding (P0, all 23 rows were untappable via label text); SGLI premium stale AGAIN one day after v1.4.8/v1.4.9 'verified' it against an already-year-stale rate (real rate $26.00/month effective 1 Jul 2025, not $33.50); AR 670-1 beard-waiver card missing the 2025 policy overhaul (12-month cap, O-5 ETP, DA Form 3349-SG); Home's bare Board Date row now matches the hero card's panel treatment; full 24-theme x 35-route contrast sweep wired into npm test by default (found and fixed one real violation, .tag.leads in desert-cadence, 4.46:1). Added: real enter/exit motion to the confirm dialog and PDF-filler modal (previously instant pop-in/out, now shared via one .modaltrap-open class across both mechanisms); Quiz mode entrance/correct-pulse/wrong-shake/exit-advance motion, reduced-motion checked directly in JS (data-motion + matchMedia) rather than trusted from a CSS variable that lies about actual duration under reduced motion. Repo hygiene: .gitignore rules for tools/_*.mjs scratch scripts and the contrast-full-sweep-raw.json report (root .gitignore, not guidon-app/ - the report lives outside that directory).",
+  "SHIPPED: v1.4.13 - roadmap week 2 (motion system: fill-bar transform:scaleX() conversion for 7 named components, nav-accordion real expand/collapse motion sharing the existing chevron-rotation token, a small --dur-base/--ease-standard motion-token pair, an 8px swipe dead-zone on Board Drill card drag), tab-strip unification (Risk Management migrated onto the shared .tabbar/util.tabBtn(), retiring .tab-row/.tabBtn/.tab-host as dead code), Board Drill's instructional hint trimmed to first-visit-only (localStorage flag), and structured review-date tracking added for perishable content (see perishableContent.entries). NOTE: unifying the tab strips introduced a real page-level horizontal overflow regression on #/money at 1152px width (a nowrap flex row's min-content width pushed .main past its grid track) - caught by verify.mjs's own responsive sweep on the next full npm test run, root-caused via git stash bisect against the last commit, fixed with width:0;min-width:100% on .tabbar. Re-swept clean (27/27) before shipping.",
   "STANDING: capture console 'warning' output by default in every test harness, not just 'error'",
   "STANDING: when a result is surprising, verify the verifier before hypothesizing about the code (3 occurrences to date)",
   "PROCESS: the fork happened because two chats worked from the same base concurrently - keep one active build line, or diff explicitly before merging"
