@@ -16945,27 +16945,100 @@ window.G = window.G || {};
       ? "MOS " + profileData.mos + (profileData.unit ? " · " + profileData.unit : "") + " · Army Leader Development"
       : "Army Leader Development · E1–E9";
 
-    const hero = el("div.panel", {}, [
+    // ── "Today's Plan" hero card ─────────────────────────────────────────────
+    // Consolidates what used to be four separate things scattered across the
+    // whole scroll: the plain greeting, the readiness-snapshot panel, a
+    // board-cards-due count computed TWICE independently (once for a
+    // dashboard tile, once for a standalone "Due Today" panel — both removed
+    // below, replaced by the single loop here), and the recommended-next
+    // scenario card that used to sit at the very bottom of the page. One
+    // due-count computation, one place to see where you stand, one clear
+    // next action, all in the first screenful.
+    const hero = el("div.panel", { style: "border-left:3px solid var(--amber)" }, [
       el("div.eyebrow", { text: subText }),
       el("h2", { text: greeting }),
       el("p", { text: "Work through real leadership situations, drill for your board, and study doctrine — all offline. Your choices build a readiness picture mapped to the Army Leadership Requirements Model." }),
-      el("div.btn-row", { role:"group", "aria-label":"Quick navigation" }, [
-        el("button.btn.primary", { onclick: () => location.hash = "#/train" },
-          [G.util.icon("target", 16), document.createTextNode(" Train")]),
-        el("button.btn", { onclick: () => {
-          location.hash = "#/board";
-          setTimeout(() => { G.board && G.board._openReadiness && G.board._openReadiness(); }, 150);
-        } }, [G.util.icon("layers", 16), document.createTextNode(" Board Prep")]),
-        el("button.btn", { onclick: () => location.hash = "#/write" },
-          [G.util.icon("pencil", 16), document.createTextNode(" Write")]),
-        el("button.btn", { onclick: () => location.hash = "#/money" },
-          [G.util.icon("dollar-sign", 16), document.createTextNode(" Money")]),
-        el("button.btn.ghost", { onclick: () => location.hash = "#/doctrine" },
-          [G.util.icon("book", 16), document.createTextNode(" Doctrine")]),
-        el("button.btn.ghost", { onclick: () => location.hash = "#/search" },
-          [G.util.icon("search", 16), document.createTextNode(" Search")]),
-      ]),
     ]);
+
+    hero.appendChild(el("div.stat", { style: "margin-top:12px" }, [
+      el("span.k", { text: "Promotable Readiness" }),
+      el("span.v", { text: p.readinessLabel }),
+    ]));
+    hero.appendChild(el("div.bar", {}, [el("span", { style: "width:" + p.competencyReadiness + "%" })]));
+    hero.appendChild(el("div.stat", { style: "margin-top:8px" }, [
+      el("span.k", { text: "Scenarios completed" }),
+      el("span.v", { text: p.completedCount + " / " + p.totalScenarios }),
+    ]));
+
+    // Due-count: the ONE computation now, not two. A card with no SRS record
+    // has never been studied, so on day one the entire deck is technically
+    // "due" — a deck you have never touched is not a backlog, so a fresh
+    // (never-graded) deck gets an inviting tone instead of a red alarm.
+    try {
+      const allQs = (G.store && G.store.boardQuestions && G.store.boardQuestions()) || [];
+      if (allQs.length && G.db) {
+        const now = Date.now();
+        let dueCount = 0, graded = 0;
+        for (const q of allQs) {
+          const r = await G.db.get("kv", "srs:" + q.id).catch(() => null);
+          if (r && r.v) graded++;
+          const s = (r && r.v) || { due: 0 };
+          if ((s.due || 0) <= now) dueCount++;
+        }
+        const fresh = graded === 0;
+        if (fresh || dueCount >= 3) {
+          const urgency = fresh ? "green" : dueCount >= 20 ? "red" : dueCount >= 10 ? "amber" : "green";
+          const urgeText = { red: "color-mix(in srgb, var(--red) 40%, var(--text))", amber: "color-mix(in srgb, var(--amber) 40%, var(--text))", green: "color-mix(in srgb, var(--green) 40%, var(--text))" }[urgency];
+          hero.appendChild(el("div.card.click", {
+            style: "margin-top:12px; display:flex; align-items:center; justify-content:space-between; gap:10px",
+            role: "button", tabindex: "0",
+            "aria-label": fresh ? allQs.length + " board questions ready to study" : dueCount + " board questions due for review",
+            onclick: () => location.hash = "#/board",
+            onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") location.hash = "#/board"; },
+          }, [
+            el("span", { style: "color:" + urgeText, text: fresh
+              ? allQs.length.toLocaleString() + " board cards ready to study"
+              : dueCount + " board cards due for review" }),
+            el("button.btn.sm.primary", { text: "Drill →", tabindex: "-1" }),
+          ]));
+        }
+      }
+    } catch (e) { /* due-count non-fatal */ }
+
+    // Recommended next — pulled up from the bottom of the page. The single
+    // most useful line on Home deserves to be seen, not scrolled to.
+    try {
+      const rec = await store.recommendNext();
+      if (rec && rec.scenario) {
+        const s = rec.scenario;
+        hero.appendChild(el("div.card.click", { style: "margin-top:10px", role: "button", tabindex: "0",
+          onclick: () => { views._pending = s.id; location.hash = "#/train"; },
+          onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { views._pending = s.id; location.hash = "#/train"; } } }, [
+          el("div.eyebrow", { text: (rec.isReplay ? "Sharpen up" : "Recommended next") }),
+          el("h3", { text: s.title }),
+          el("p.hint", { text: rec.reason + " " + (s.summary || "") }),
+          el("div", {}, [
+            ...(s.tier || []).map((t) => el("span.tag.tier", { text: t })),
+            ...(s.competency || []).map((c) => el("span.tag " + util.competencyClass(c), { text: c })),
+          ]),
+        ]));
+      }
+    } catch (e) { /* recommendation non-fatal */ }
+
+    hero.appendChild(el("div.btn-row", { style: "margin-top:12px", role:"group", "aria-label":"Quick navigation" }, [
+      el("button.btn", { onclick: () => {
+        location.hash = "#/board";
+        setTimeout(() => { G.board && G.board._openReadiness && G.board._openReadiness(); }, 150);
+      } }, [G.util.icon("layers", 16), document.createTextNode(" Board Prep")]),
+      el("button.btn", { onclick: () => location.hash = "#/write" },
+        [G.util.icon("pencil", 16), document.createTextNode(" Write")]),
+      el("button.btn", { onclick: () => location.hash = "#/money" },
+        [G.util.icon("dollar-sign", 16), document.createTextNode(" Money")]),
+      el("button.btn.ghost", { onclick: () => location.hash = "#/doctrine" },
+        [G.util.icon("book", 16), document.createTextNode(" Doctrine")]),
+      el("button.btn.ghost", { onclick: () => location.hash = "#/search" },
+        [G.util.icon("search", 16), document.createTextNode(" Search")]),
+    ]));
     mount.appendChild(hero);
 
     // Board countdown BELOW the hero, not above it. It used to be the first
@@ -16978,24 +17051,7 @@ window.G = window.G || {};
     try {
       const tiles = [];
 
-      // 1) Board SRS due
-      try {
-        const bq = store.boardQuestions ? store.boardQuestions() : {};
-        const qs = bq.questions || bq || [];
-        let due = 0;
-        const now = Date.now();
-        for (let i = 0; i < qs.length; i++) {
-          const srs = await G.db.getSetting("srs:" + qs[i].id, null);
-          if (srs && srs.due != null && srs.due <= now) due++;
-        }
-        tiles.push({
-          label: "Board cards due", value: String(due),
-          sub: due === 0 ? "All caught up" : "Tap to drill",
-          hash: "#/board", tone: due >= 20 ? "red" : due >= 10 ? "amber" : "green",
-        });
-      } catch (e) {}
-
-      // 2) IDP goals in progress
+      // 1) IDP goals in progress
       try {
         const goals = await G.db.getSetting("idp:goals", []);
         const gArr = Array.isArray(goals) ? goals : [];
@@ -17007,7 +17063,7 @@ window.G = window.G || {};
         });
       } catch (e) {}
 
-      // 3) Promotion-point estimate (from profile)
+      // 2) Promotion-point estimate (from profile)
       try {
         const rules = store.pointsRules ? store.pointsRules() : null;
         const pp = profileData && profileData.promoPoints;
@@ -17021,7 +17077,7 @@ window.G = window.G || {};
         }
       } catch (e) {}
 
-      // 4) Training completion
+      // 3) Training completion
       try {
         const comps = store.trainingCompletions ? store.trainingCompletions() : {};
         const trainScs = store.scenarios ? store.scenarios().filter((s) => s.defaultMode === "training") : [];
@@ -17091,77 +17147,10 @@ window.G = window.G || {};
       }
     } catch (e) {}
 
-    // ── Board SRS "Due Today" panel ──────────────────────────────────────────
-    try {
-      const allQs = (G.store && G.store.boardQuestions && G.store.boardQuestions()) || [];
-      if (allQs.length && G.db) {
-        const now = Date.now();
-        const dueQs = [];
-        let graded = 0;   // cards with any SRS record at all
-        for (const q of allQs) {
-          const r = await G.db.get("kv", "srs:" + q.id).catch(() => null);
-          if (r && r.v) graded++;
-          const s = (r && r.v) || { due: 0 };
-          if ((s.due || 0) <= now) dueQs.push(q);
-        }
-        if (dueQs.length >= 3) {
-          // A card with no SRS record has never been studied, so on day one the
-          // ENTIRE deck is technically "due" — and this panel used to open a
-          // brand-new user's Home with "1014 board cards due for review, large
-          // backlog" in red. A deck you have never touched is not a backlog.
-          const fresh = graded === 0;
-          const urgency = fresh ? "green" : dueQs.length >= 20 ? "red" : dueQs.length >= 10 ? "amber" : "green";
-          const urgeBorder = { red: "var(--red)", amber: "var(--amber)", green: "var(--green)" }[urgency];
-          const urgeText = { red: "color-mix(in srgb, var(--red) 40%, var(--text))", amber: "color-mix(in srgb, var(--amber) 40%, var(--text))", green: "color-mix(in srgb, var(--green) 40%, var(--text))" }[urgency];
-          const srsPanel = el("div.card.click.srs-home-panel", {
-            style: "margin-top:12px; border-left:4px solid " + urgeBorder,
-            "aria-label": fresh ? allQs.length + " board questions ready to study" : dueQs.length + " board questions due for review",
-          });
-          const srsRow = el("div.srs-home-row");
-          srsRow.appendChild(el("span.srs-home-ico", { text: fresh ? "★" : "⏰" }));
-          const srsInfo = el("div.srs-home-info");
-          srsInfo.appendChild(el("div.srs-home-count", {
-            style: "color:" + urgeText,
-            text: fresh
-              ? allQs.length.toLocaleString() + " board cards ready to study"
-              : dueQs.length + " board cards due for review"
-          }));
-          srsInfo.appendChild(el("div.srs-home-sub", {
-            text: fresh
-              ? "Start with 20 — grade yourself honestly and the schedule builds itself."
-              : dueQs.length >= 20
-              ? "Large backlog — tackle 20 cards today to stay current."
-              : dueQs.length >= 10
-              ? "Solid session — work through these to keep your schedule."
-              : "Quick review — about " + Math.ceil(dueQs.length * 0.75) + " minutes."
-          }));
-          srsRow.appendChild(srsInfo);
-          srsRow.appendChild(el("button.btn.sm.primary", {
-            text: "Start drill →",
-            onclick: (e) => { e.stopPropagation(); location.hash = "#/board"; }
-          }));
-          srsPanel.appendChild(srsRow);
-          mount.appendChild(srsPanel);
-        }
-      }
-    } catch(e) { /* SRS panel non-fatal */ }
-
-        // readiness snapshot
-    const snap = el("div.panel", { style: "margin-top:12px" }, [
-      el("div.stat", {}, [
-        el("span.k", { text: "Promotable Readiness" }),
-        el("span.v", { text: p.readinessLabel }),
-      ]),
-      el("div.bar", {}, [el("span", { style: "width:" + p.competencyReadiness + "%" })]),
-      el("div.stat", { style: "margin-top:10px" }, [
-        el("span.k", { text: "Scenarios completed" }),
-        el("span.v", { text: p.completedCount + " / " + p.totalScenarios }),
-      ]),
-    ]);
-    mount.appendChild(snap);
-
-    // three competency mini-bars
-    const mini = el("div.grid", { style: "margin-top:12px" });
+    // three competency mini-bars — kept as detail beneath the hero's headline
+    // readiness stat, not a second independent readiness signal.
+    mount.appendChild(el("div.eyebrow", { text: "Competency detail", style: "margin-top:12px" }));
+    const mini = el("div.grid", { style: "margin-top:8px" });
     [["Leads", ""], ["Develops", "green"], ["Achieves", "violet"], ["Character", "amber"], ["Presence", "cyan"], ["Intellect", "violet"]].forEach(([c, cls]) => {
       mini.appendChild(el("div.card", {}, [
         el("div.stat", {}, [el("span.k", { text: c }), el("span.v", { text: p.dims[c].pct + "%" })]),
@@ -17218,25 +17207,6 @@ window.G = window.G || {};
         mount.appendChild(chartPanel);
       }
     } catch(e) {}
-
-    // recommended next scenario
-    try {
-      const rec = await store.recommendNext();
-      if (rec && rec.scenario) {
-        const s = rec.scenario;
-        mount.appendChild(el("div.card.click.reco", { style: "margin-top:12px", role: "button", tabindex: "0",
-          onclick: () => { views._pending = s.id; location.hash = "#/train"; },
-          onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { views._pending = s.id; location.hash = "#/train"; } } }, [
-          el("div.eyebrow", { text: (rec.isReplay ? "Sharpen up" : "Recommended next") }),
-          el("h3", { text: s.title }),
-          el("p.hint", { text: rec.reason + " " + (s.summary || "") }),
-          el("div", {}, [
-            ...(s.tier || []).map((t) => el("span.tag.tier", { text: t })),
-            ...(s.competency || []).map((c) => el("span.tag " + util.competencyClass(c), { text: c })),
-          ]),
-        ]));
-      }
-    } catch (e) { }
 
     mount.appendChild(el("div.card", { style: "margin-top:12px" }, [
       el("div.eyebrow", { text: "Heads-up" }),
