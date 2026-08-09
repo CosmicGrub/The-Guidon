@@ -6356,8 +6356,9 @@ window.G = window.G || {};
                 credMos:0, credProf:0, credPers:0, clepHours:0, dlpt:false,
                 qTraining:0, qAwards:0, qMilEd:0, qCivEd:0, pmeGrad:false };
 
-    mount.appendChild(el("div.feedback.warn", { text:
-      "Practice estimate only \u2014 your official total is the PPW in IPPS-A. Verify with your S-1." }));
+    const topWarn = el("div.feedback.warn", { text:
+      "Practice estimate only \u2014 your official total is the PPW in IPPS-A. Verify with your S-1." });
+    mount.appendChild(topWarn);
 
     // rank + mode switches
     const ctl = el("div.panel", { style:"margin-bottom:10px" });
@@ -6366,9 +6367,11 @@ window.G = window.G || {};
     const modeRow = el("div.segmented", { style:"margin:6px 0" });
     ctl.appendChild(el("label", { text:"Competing for", style:"margin:0" }));
     ctl.appendChild(rankRow);
-    ctl.appendChild(el("label", { text:"Worksheet", style:"margin:8px 0 0" }));
+    const modeLabel = el("label", { text:"Worksheet", style:"margin:8px 0 0" });
+    ctl.appendChild(modeLabel);
     ctl.appendChild(modeRow);
-    ctl.appendChild(el("p.hint", { text:"Category maximums are different for SGT and SSG \u2014 the same Soldier scores two different totals. This is the detail most calculators get wrong." }));
+    const modeHint = el("p.hint", { text:"Category maximums are different for SGT and SSG \u2014 the same Soldier scores two different totals. This is the detail most calculators get wrong." });
+    ctl.appendChild(modeHint);
     mount.appendChild(ctl);
 
     const body  = el("div");
@@ -6574,8 +6577,65 @@ window.G = window.G || {};
         text:"Cutoff scores are published monthly by HQDA per MOS and are set by manning \u2014 not by your score. A cutoff of 24 means everyone eligible promotes; 798 means no promotions that month. Check the current number for your MOS with your S-1." }));
     }
 
+    // — Centralized boards (SFC and above) have no point total to
+    // calculate — a DA board ranks complete files into an Order of Merit
+    // List instead. This is an explainer, not a worksheet, so it lives in the
+    // same rank switch but skips the calculator entirely.
+    function buildCentralizedBody() {
+      body.appendChild(el("div.eyebrow", { text: "SFC, MSG/1SG, and SGM/CSM (E-7 to E-9)" }));
+      body.appendChild(el("p.hint", { text:
+        "At SFC and above, promotion drops the point system entirely. A DA centralized board reviews your complete file and ranks everyone eligible into an Order of Merit List (OML) — there is no score to calculate here, so this page explains the process instead of estimating a total." }));
+
+      const cmp = el("div.panel", { style:"margin-top:10px" });
+      cmp.appendChild(el("div.eyebrow", { text:"How this differs from SGT/SSG" }));
+      [
+        ["Mechanism", "Points + monthly cutoff score", "Merit-ranked Order of Merit List (OML)"],
+        ["Who decides", "Local board recommends; HRC publishes a monthly cutoff by MOS — you promote once your points clear it", "A DA board ranks every eligible file best-to-least-qualified; HRC works down that list against vacancies"],
+        ["\u201cScore\u201d", "Cumulative points (training, PME, awards, fitness test)", "No point total — a standing/sequence number on the OML"],
+      ].forEach(([k, sgt, sfc]) => {
+        cmp.appendChild(el("div.card", { style:"margin-top:6px" }, [
+          el("div.k", { text: k }),
+          el("div.hint", { style:"margin-top:2px", text: "SGT/SSG: " + sgt }),
+          el("div.hint", { style:"margin-top:2px", text: "SFC+: " + sfc }),
+        ]));
+      });
+      body.appendChild(cmp);
+
+      const photo = el("div.feedback", { style:"margin-top:10px;border-left:3px solid var(--amber)" });
+      photo.appendChild(el("div", { style:"font-weight:700", text:"\u25c9 Your DA Photo is NOT in the board file" }));
+      photo.appendChild(el("p.hint", { style:"margin-top:6px", text:
+        "Since August 2020 the Army removed DA Photos — along with race, ethnicity, and gender data — from centralized selection-board review Army-wide, specifically to reduce bias. You still need a current DA Photo on file for your permanent record (required within 60 days of pinning SSG, updated on a 5-year cycle) — it just is not part of what the board sees." }));
+      body.appendChild(photo);
+
+      const file = el("div.panel", { style:"margin-top:10px" });
+      file.appendChild(el("div.eyebrow", { text:"What's reportedly in your file" }));
+      file.appendChild(el("ul", { style:"margin:8px 0 0 18px" }, [
+        "Your ERB (Enlisted Record Brief) \u2014 not \u201cORB,\u201d that's the officer version \u2014 pulled live from IPPS-A",
+        "Your last several NCOERs, most recent first",
+        "Awards and decorations, in order of precedence",
+        "Military and civilian education completions",
+        "Academic Evaluation Reports",
+        "Any derogatory or disciplinary information on file",
+        "An optional letter to the board president, if you choose to submit one",
+      ].map((t) => el("li", { text: t, style:"margin:4px 0" }))));
+      file.appendChild(el("p.hint", { style:"margin-top:8px", text:
+        "This list is reported consistently across multiple sources but was not independently verified against regulation text for this build — check your own file in MyBoardFile rather than relying on it alone." }));
+      body.appendChild(file);
+
+      const mbf = el("div.card", { style:"margin-top:10px" });
+      mbf.appendChild(el("div.k", { text:"Check your own file" }));
+      mbf.appendChild(el("p.hint", { style:"margin-top:4px", text:
+        "MyBoardFile (mbf.hrc.army.mil) mirrors the exact tool voting board members use, pulling live IPPS-A data. You can log in year-round — not just during a board window — and see your own Candidate Information Card." }));
+      body.appendChild(mbf);
+
+      body.appendChild(el("p.hint", { style:"margin-top:10px", text:
+        "This is an overview to help you understand the process — not a substitute for reviewing your own file in MyBoardFile or talking to your career counselor." }));
+    }
+
     function buildBody() {
       util.clear(body);
+      util.clear(outWrap);
+      if (rank === "SFC") { buildCentralizedBody(); return; }
       const r = PPW[rank];
       if (mode === "quick") {
         body.appendChild(el("p.hint", { text:"Enter the points you already know from each category \u2014 fastest if you have your PPW in front of you." }));
@@ -6656,8 +6716,18 @@ window.G = window.G || {};
       util.clear(rankRow); util.clear(modeRow);
       segBtn(rankRow, "SGT (E-5)", rank==="SGT", () => { rank="SGT"; rebuildSwitches(); buildBody(); });
       segBtn(rankRow, "SSG (E-6)", rank==="SSG", () => { rank="SSG"; rebuildSwitches(); buildBody(); });
-      segBtn(modeRow, "Quick estimate", mode==="quick", () => { mode="quick"; rebuildSwitches(); buildBody(); });
-      segBtn(modeRow, "Full PPW", mode==="ppw",   () => { mode="ppw";   rebuildSwitches(); buildBody(); });
+      segBtn(rankRow, "SFC+ (centralized)", rank==="SFC", () => { rank="SFC"; rebuildSwitches(); buildBody(); });
+      const isCentral = rank === "SFC";
+      modeLabel.style.display = isCentral ? "none" : "";
+      modeRow.style.display = isCentral ? "none" : "";
+      modeHint.style.display = isCentral ? "none" : "";
+      topWarn.textContent = isCentral
+        ? "Overview only \u2014 verify your own file in MyBoardFile and check current guidance with your career counselor."
+        : "Practice estimate only \u2014 your official total is the PPW in IPPS-A. Verify with your S-1.";
+      if (!isCentral) {
+        segBtn(modeRow, "Quick estimate", mode==="quick", () => { mode="quick"; rebuildSwitches(); buildBody(); });
+        segBtn(modeRow, "Full PPW", mode==="ppw",   () => { mode="ppw";   rebuildSwitches(); buildBody(); });
+      }
     }
     rebuildSwitches();
     buildBody();
