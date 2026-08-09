@@ -1,0 +1,221 @@
+/**
+ * Static pattern lint for GUIDON's three most-repeated bug shapes (full
+ * history in GUIDON_MASTERFILE.md, roughly sessions 52-62 - v1.4.0's
+ * legibility pass, v1.4.4's 49-agent audit, the follow-up 122-agent sweep).
+ * Pure regex/string checks against src/index.html - no browser, no build,
+ * runs in milliseconds. Wired in as the FIRST step of `npm test` so a bad
+ * pattern fails fast, before any Playwright suite even spins up a browser.
+ */
+import { readFile } from "node:fs/promises";
+
+const FILE = "src/index.html";
+const html = await readFile(FILE, "utf-8");
+const lineOf = (idx) => html.slice(0, idx).split("\n").length;
+
+let fails = 0;
+const ok = (m) => console.log("  PASS  " + m);
+const bad = (m) => { fails++; console.log("  FAIL  " + m); };
+
+console.log("lint-patterns: static regression guard for 3 repeat bug shapes\n");
+
+/* ======================================================================
+   (a) Raw accent custom properties (var(--cyan), var(--violet), var(--red),
+   var(--green), var(--amber)) used directly as a text `color:` value,
+   instead of this project's --ink-* color-mix tokens (or plain var(--text)
+   where no color-coding is needed). This exact shape has shipped 28+ times
+   across sessions.
+
+   The negative lookbehind below is the whole trick: it matches bare
+   `color:` but not `background-color:`, `border-color:`, `outline-color:`,
+   etc. - anything preceded by a word character or hyphen is excluded, so
+   only the literal text-color property counts. Gradients and box-shadow
+   never use the `color:` keyword at all, so they need no separate carve-out.
+
+   BASELINE, not zero-tolerance: the same contrast sweeps that named this
+   bug shape also established most raw-accent-as-text usages already in
+   this file are NOT bugs - they were individually verified against all 24
+   themes and deliberately left alone (one sweep checked 186 candidates and
+   confirmed only 18 as real; an earlier one found nine out of a much
+   larger set). Mass-converting all of them to --ink-* would itself be
+   risky, since --ink-* blends at a different ratio (60/40) than most of
+   these hand-tuned spots and nobody has re-verified that swap across every
+   theme. So this check is a regression guard: it fails only when the count
+   goes UP from the last audited baseline, meaning someone added a NEW raw
+   usage without running it past the contrast checker. Known limitation: a
+   1-for-1 swap (one fixed, one new one added elsewhere) keeps the count
+   flat and slips through - a real gap in any static check standing in for
+   a 24-theme render sweep, documented rather than pretended away.
+   ====================================================================== */
+{
+  const styleStart = html.indexOf("<style>");
+  const styleEnd = html.indexOf("</style>", styleStart);
+  if (styleStart === -1 || styleEnd === -1) {
+    bad("(a) could not locate the main <style> block to scan");
+  } else {
+    const css = html.slice(styleStart, styleEnd);
+    const RAW_COLOR = /(?<![\w-])color\s*:\s*var\(--(cyan|violet|red|green|amber)\)/g;
+    const hits = [...css.matchAll(RAW_COLOR)];
+    const BASELINE = 115; // audited count as of 2026-08-08; see comment above
+    if (hits.length > BASELINE) {
+      bad(`(a) raw accent color used as text: ${hits.length} found, baseline is ${BASELINE} (+${hits.length - BASELINE} new)`);
+      console.log("         first matches (compare against a diff to find the new one(s)):");
+      for (const h of hits.slice(0, 15)) {
+        console.log(`         line ${lineOf(styleStart + h.index)}: ${h[0]}`);
+      }
+    } else {
+      const note = hits.length < BASELINE ? `, ${BASELINE - hits.length} below baseline - consider lowering BASELINE to lock in the cleanup` : "";
+      ok(`(a) raw accent color used as text: ${hits.length} (baseline ${BASELINE}${note})`);
+    }
+  }
+}
+
+/* ======================================================================
+   (b) The two touch-target media queries - "@media (pointer: coarse)"
+   (bumps controls to 48px for any touchscreen) and "@media (max-width:
+   640px)" (guarantees the WCAG 2.5.5 / Apple HIG 44px minimum on narrow
+   viewports) - silently drifting apart in which selectors they cover. A
+   touch-capable device wider than 640px (tablet, an unfolded foldable in
+   landscape) only benefits from the first list; a narrow phone with a
+   mouse/trackpad only benefits from the second. When a new touch target is
+   added to one list and not the other, it silently loses its minimum size
+   on half the device matrix - exactly the shape a prior session's comment
+   at the pointer:coarse block already documents having happened once.
+
+   Both blocks are located structurally (brace-matched, not by exact
+   whitespace) and, within each, every rule that sets `min-height` is
+   unioned into that media condition's selector set - not just the single
+   biggest rule - so a same-block companion rule (like `.nav button`'s own
+   min-height declaration inside the pointer:coarse block) is still
+   counted. Among several `@media (max-width: 640px)` blocks in the file
+   (most are small, one-off overrides), the one with the largest min-height
+   rule is treated as "the" comprehensive touch-target block for that
+   condition - the small ones are unrelated, targeted overrides, not part
+   of the shared list this check compares.
+   ====================================================================== */
+{
+  function extractBraceBlock(text, openBraceIdx) {
+    let depth = 0;
+    for (let i = openBraceIdx; i < text.length; i++) {
+      if (text[i] === "{") depth++;
+      else if (text[i] === "}") { depth--; if (depth === 0) return text.slice(openBraceIdx + 1, i); }
+    }
+    return null;
+  }
+  function findMediaBlocks(text, conditionRe) {
+    const out = [];
+    const re = new RegExp(conditionRe.source, "g");
+    let m;
+    while ((m = re.exec(text))) {
+      const braceIdx = text.indexOf("{", m.index);
+      if (braceIdx === -1) continue;
+      const body = extractBraceBlock(text, braceIdx);
+      if (body != null) out.push({ line: lineOf(m.index), body });
+    }
+    return out;
+  }
+  function minHeightSelectorsIn(rawBody) {
+    // Strip /* ... */ comments first - otherwise a comment sitting between
+    // two rules (commas and all) gets swallowed into the next "selector"
+    // by the brace-delimited rule regex below and pollutes the set.
+    const body = rawBody.replace(/\/\*[\s\S]*?\*\//g, " ");
+    const set = new Set();
+    let maxLen = 0;
+    const ruleRe = /([^{}]+)\{([^{}]*)\}/g;
+    let m;
+    while ((m = ruleRe.exec(body))) {
+      const [, selPart, decls] = m;
+      if (!/min-height\s*:/.test(decls)) continue;
+      const sels = selPart.split(",").map((s) => s.trim()).filter(Boolean);
+      sels.forEach((s) => set.add(s));
+      if (sels.length > maxLen) maxLen = sels.length;
+    }
+    return { set, maxLen };
+  }
+  function comprehensiveTouchTargetSet(text, conditionRe) {
+    const blocks = findMediaBlocks(text, conditionRe);
+    let best = null;
+    for (const b of blocks) {
+      const r = minHeightSelectorsIn(b.body);
+      if (r.set.size === 0) continue;
+      if (!best || r.maxLen > best.maxLen) best = { ...r, line: b.line };
+    }
+    return best;
+  }
+
+  const pointerBest = comprehensiveTouchTargetSet(html, /@media\s*\(\s*pointer:\s*coarse\s*\)\s*/);
+  const widthBest = comprehensiveTouchTargetSet(html, /@media\s*\(\s*max-width:\s*640px\s*\)\s*/);
+
+  if (!pointerBest || !widthBest) {
+    bad("(b) could not locate one or both touch-target media blocks");
+  } else {
+    // Documented exceptions: each of these two already gets 44px touch
+    // sizing through a DIFFERENT rule than the shared comprehensive list,
+    // so their absence from one list is not the "zero enforced minimum"
+    // gap this check exists to catch.
+    //  - .topbar-search-btn: needs min-width/width/height pinned too (it's
+    //    a fixed square icon button), so it has its own dedicated
+    //    `@media (max-width:640px){ .topbar-search-btn{...44px} }` rule
+    //    instead of living in the shared list.
+    //  - .idp-suggest-chip: already carries an unconditional
+    //    `min-height:44px` in its base (non-media) rule, so every device -
+    //    touch or not - gets at least the WCAG 2.5.5 minimum regardless of
+    //    which media list names it.
+    const KNOWN_EXCEPTIONS = new Set([".topbar-search-btn", ".idp-suggest-chip"]);
+
+    const onlyInPointer = [...pointerBest.set].filter((s) => !widthBest.set.has(s) && !KNOWN_EXCEPTIONS.has(s));
+    const onlyInWidth = [...widthBest.set].filter((s) => !pointerBest.set.has(s) && !KNOWN_EXCEPTIONS.has(s));
+
+    if (onlyInPointer.length || onlyInWidth.length) {
+      bad(`(b) touch-target media queries have drifted apart (pointer:coarse @ line ${pointerBest.line}, max-width:640px @ line ${widthBest.line})`);
+      if (onlyInPointer.length) console.log("         only in pointer:coarse: " + onlyInPointer.join(", "));
+      if (onlyInWidth.length) console.log("         only in max-width:640px: " + onlyInWidth.join(", "));
+    } else {
+      ok(`(b) touch-target media queries in sync (${pointerBest.set.size} selectors @ line ${pointerBest.line} vs ${widthBest.set.size} @ line ${widthBest.line}; ${KNOWN_EXCEPTIONS.size} documented exception(s) excluded)`);
+    }
+  }
+}
+
+/* ======================================================================
+   (c) The old broken title+badge flex-wrap pattern: an inline `style:`
+   string combining `justify-content:space-between` with `flex-wrap:wrap`
+   on a container holding two children, WITHOUT the fix that keeps them
+   from colliding once the row wraps - one child needs flex:1 1 auto /
+   min-width:0 (grows, can shrink all the way to nothing so long text
+   ellipsizes instead of pushing) and the other needs flex:0 0 auto /
+   white-space:nowrap (stays its natural width, never wraps its own text).
+   Space-between + wrap without that pairing crowds or overlaps the
+   title/badge the moment the row gets tight.
+
+   Every `style:`/`style=` string in the file is scanned for the two
+   telltale declarations; when both are present, the next ~700 characters
+   of source are checked for the fixed-child pairing. That window covers
+   the two child elements that immediately follow the container in this
+   codebase's `el(tag, attrs, [children])` builder pattern without being
+   so wide it accidentally picks up an unrelated flex rule from further
+   down the file.
+   ====================================================================== */
+{
+  const STYLE_STR = /style\s*[:=]\s*(["'`])((?:(?!\1)[\s\S])*)\1/g;
+  const hasSpaceBetween = (s) => /justify-content\s*:\s*space-between/.test(s);
+  const hasFlexWrap = (s) => /flex-wrap\s*:\s*wrap/.test(s);
+  const hasGrowChild = (s) => /flex\s*:\s*1\s+1\s+auto/.test(s) || /min-width\s*:\s*0\b/.test(s);
+  const hasFixedChild = (s) => /flex\s*:\s*0\s+0\s+auto/.test(s) || /white-space\s*:\s*nowrap/.test(s);
+
+  let flagged = 0;
+  let m;
+  while ((m = STYLE_STR.exec(html))) {
+    const styleContent = m[2];
+    if (!hasSpaceBetween(styleContent) || !hasFlexWrap(styleContent)) continue;
+    const windowEnd = Math.min(html.length, m.index + m[0].length + 700);
+    const ahead = html.slice(m.index + m[0].length, windowEnd);
+    if (!(hasGrowChild(ahead) && hasFixedChild(ahead))) {
+      flagged++;
+      bad(`(c) space-between+flex-wrap without the fixed child pairing at line ${lineOf(m.index)}`);
+      console.log("         " + m[0].slice(0, 140));
+    }
+  }
+  if (flagged === 0) ok("(c) title+badge flex-wrap pattern: 0 unpaired occurrences");
+}
+
+console.log("\n" + (fails ? `LINT-PATTERNS: ${fails} FAILURE(S)` : "LINT-PATTERNS: all passed"));
+process.exit(fails ? 1 : 0);

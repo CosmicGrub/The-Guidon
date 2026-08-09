@@ -17604,6 +17604,7 @@ window.G = window.G || {};
       pn.appendChild(el("div.fin-h", { text: "About GUIDON" }));
       pn.appendChild(el("p.hint", { text: "Version " + (window.GUIDON_APP_VERSION || "unknown") + " \u00b7 Built " + (window.GUIDON_BUILD_DATE || "unknown") }));
       pn.appendChild(el("p.hint", { text: "Fully offline single-file app \u00b7 No account, no network calls, all data stays on this device." }));
+      pn.appendChild(el("p.hint", { text: "Privacy Policy: GUIDON collects nothing and transmits nothing \u2014 see PRIVACY.md for the full policy." }));
       // Signpost to account controls. Settings is where people instinctively look
       // for "change my name / start over", but those actions live with the profile
       // they act on — so point there rather than duplicating the controls.
@@ -17840,20 +17841,21 @@ window.G = window.G || {};
       const f = importInput.files[0]; if (!f) return;
       try {
         const obj = JSON.parse(await f.text());
-        const n = await store.importProgress(obj);
-        util.toast("Imported " + n + " attempt(s).");
+        const res = await G.backup.importAll(obj, { merge: true });
+        const r = res.restored;
+        util.toast("Imported " + r.kv + " item(s), " + r.userScenarios + " scenario(s), " + r.attempts + " attempt(s).");
         views.settings(mount);
       } catch (e) { util.toast("Import failed: " + e.message); }
     });
     dataPanel.appendChild(el("div.btn-row", { style: "margin-top:8px" }, [
       el("button.btn.sm", { gi: "download", giSize: 14, text: "Export progress", onclick: async () => {
-        const data = await store.exportProgress();
-        util.download("guidon-progress-" + new Date().toISOString().slice(0, 10) + ".json", JSON.stringify(data, null, 2));
+        const data = await G.backup.exportAll();
+        util.download("guidon-backup-" + new Date().toISOString().slice(0, 10) + ".json", JSON.stringify(data, null, 2));
       } }),
       el("button.btn.sm.ghost", { gi: "upload", giSize: 14, text: "Import progress", onclick: () => importInput.click() }),
     ]));
     dataPanel.appendChild(importInput);
-    dataPanel.appendChild(el("p.hint", { text: "Export a JSON backup of your settings and recorded attempts, or restore one on another device. (Authored scenarios are exported individually from the Authoring Studio.)" }));
+    dataPanel.appendChild(el("p.hint", { text: "Export a full JSON backup — profile, IDP goals, counseling drafts, promotion-point estimates, SRS scheduling, authored scenarios, and recorded attempts — or restore one on another device." }));
     mount.appendChild(dataPanel);
 
     // about
