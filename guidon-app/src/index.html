@@ -14480,7 +14480,7 @@ window.G = window.G || {};
   async function renderEditor(host) {
     util.clear(host);
     host.appendChild(el("h3.rem-h", { text: "Reminders" }));
-    host.appendChild(el("p.hint", { text: "Set key dates and GUIDON will surface anything due on your home screen. Stored offline on this device only — no notifications are sent." }));
+    host.appendChild(el("p.hint", { text: "Set key dates and GUIDON will surface anything due on your home screen. Stored offline on this device only. Turn on Notifications in Settings if you'd like a local reminder on the day, too." }));
 
     var listMount = el("div.rem-list-mount");
     host.appendChild(listMount);
@@ -14501,7 +14501,7 @@ window.G = window.G || {};
         main.appendChild(el("div.rem-item-when", { text: r.date + " · " + whenText(r.daysUntil) + (r.note ? " · " + r.note : "") }));
         row.appendChild(main);
         var del = el("button.btn.ghost.sm", { type: "button", text: "Remove", "aria-label": "Remove reminder " + r.label });
-        del.addEventListener("click", async function () { await remove(r.id); try { if (G.util.announce) G.util.announce("Reminder removed."); } catch (e) {} redraw(); });
+        del.addEventListener("click", async function () { try { if (G.notify) await G.notify.cancelForReminder(r.id); } catch (e) {} await remove(r.id); try { if (G.util.announce) G.util.announce("Reminder removed."); } catch (e) {} redraw(); });
         row.appendChild(del);
         listMount.appendChild(row);
       });
@@ -14521,7 +14521,8 @@ window.G = window.G || {};
       var kind = kindSel.value;
       var def = KINDS.filter(function (k) { return k.id === kind; })[0];
       var label = (labelIn.value || "").trim() || (def ? def.label : "Reminder");
-      await add({ kind: kind, label: label, date: dv, note: (noteIn.value || "").trim() });
+      var updated = await add({ kind: kind, label: label, date: dv, note: (noteIn.value || "").trim() });
+      try { if (G.notify) await G.notify.scheduleForReminder(updated[updated.length - 1]); } catch (e) {}
       labelIn.value = ""; noteIn.value = ""; dateIn.value = "";
       try { if (G.util.announce) G.util.announce("Reminder added for " + label + "."); } catch (e) {}
       redraw();
@@ -17788,6 +17789,40 @@ window.G = window.G || {};
       iface.appendChild(optGrid(views4, (o)=> (s2.defaultView||"home")===o.id, (o)=>store.setSetting("defaultView", o.id)));
       iface.appendChild(toggle("Auto night theme", "autoNight", "Switch to a dark theme automatically during evening/night hours (uses your device clock; fully offline)."));
       mount.appendChild(iface);
+
+      // ---- NOTIFICATIONS panel: Android-only, hidden entirely on web/Tauri
+      // since G.notify.supported() is false there -- no point showing a toggle
+      // that can never do anything. The permission prompt fires from THIS
+      // toggle alone, never at launch. */
+      if (G.notify && G.notify.supported()) {
+        const notif = el("div.panel", { style: "margin-top:12px" });
+        notif.appendChild(el("label", { text: "Notifications" }));
+        const notifInput = el("input", { type: "checkbox", "aria-label": "Reminder notifications" });
+        notifInput.checked = !!s2.notifyReminders;
+        const notifStatus = el("p.hint", { style: "margin-top:6px" });
+        notifInput.addEventListener("change", async () => {
+          if (notifInput.checked) {
+            const perm = await G.notify.requestPermission();
+            if (perm !== "granted") {
+              notifInput.checked = false;
+              notifStatus.textContent = "Permission was not granted " + String.fromCharCode(8212) + " enable notifications for GUIDON in your device's system settings, then try again.";
+              return;
+            }
+            await store.setSetting("notifyReminders", true);
+            await G.notify.syncAll();
+            notifStatus.textContent = "On " + String.fromCharCode(8212) + " you'll get a local notification the morning a reminder is due. Nothing leaves this device.";
+          } else {
+            await store.setSetting("notifyReminders", false);
+            notifStatus.textContent = "Off " + String.fromCharCode(8212) + " GUIDON will still show reminders on Home, just without a notification.";
+          }
+        });
+        notif.appendChild(el("div", { style: "margin:12px 0" }, [
+          el("div.switch", {}, [el("label.toggle", { style: "margin:0" }, [notifInput, el("span.track")]), el("span", { text: "Reminder notifications" })]),
+          el("p.hint", { text: "Local only " + String.fromCharCode(8212) + " no network, no push service. Scheduled on this device from the dates you set in Reminders." }),
+        ]));
+        notif.appendChild(notifStatus);
+        mount.appendChild(notif);
+      }
     }
 
     // default mode
