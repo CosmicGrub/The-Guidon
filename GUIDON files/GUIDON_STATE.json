@@ -13,9 +13,9 @@
    {
     "topic": "PME course lengths (BLC/ALC/SLC/MLC)",
     "why": "Course lengths/formats are actively changing as Army PME modernizes; a stale length is a concrete wrong-answer risk for board prep.",
-    "lastVerified": null,
-    "lastVerifiedNote": "No specific verification event on record for this exact figure set - flagged PERISHABLE historically without a tracked check date. Treat as due now until a real check establishes a baseline.",
-    "nextReviewDue": "2026-08-09",
+    "lastVerified": "2026-08-09",
+    "lastVerifiedNote": "Roadmap week-5 item, first real baseline (previously null). Confirmed via live search (Military.com, Army.mil, DVIDS) that BLC's real current transition is 23 days (legacy) to 29 days (piloted with the Army National Guard spring 2026, force-wide fielding later in 2026) - not the '~4 to 6 weeks' figure the doctrine card had, and not the unrelated '22 days' a different card had. Confirmed MLC's 2-to-3-week expansion is accurate and its Active-Duty IOC date (14 July 2026) has now passed, so card language was changed from future-tense 'targeted for' to 'began'. Also found and fixed a separate, larger issue while researching this: SSD/DLC (the online NCOES prerequisite) was being taught as a live, current requirement in 8 places (doctrine, a board Q&A, two scenario nodes, an IDP goal template, an IDP self-dev variation, a board-packet checklist) despite the Army eliminating it as a prerequisite effective 1 October 2024 - one other card already had this fact correct, the rest didn't. All corrected.",
+    "nextReviewDue": "2026-11-09",
     "cadenceMonths": 3
    },
    {
@@ -39,6 +39,14 @@
     "why": "The fitness-test lineage has two distinct transition dates (Leg Tuck to Plank, 1 Apr 2022, within the ACFT itself; Standing Power Throw dropped and AFT succeeded the ACFT, 1 Jun 2025) that are easy to conflate into one date - and several cards had done exactly that.",
     "lastVerified": "2026-08-09",
     "lastVerifiedNote": "Roadmap week-4 item. Extracted and classified all 104 GUIDON_SEED string hits containing 'ACFT' (most are id/category labels, not claims - only ~27 are substantive text). Confirmed via live search (Army Times/Military.com on the Apr 2022 Leg Tuck->Plank swap; Task & Purpose/Military.com/Stars and Stripes on the 2025 Standing Power Throw removal) that two dates were being conflated in board.questions[67].boardAnswer and board.questions[382].a, both corrected to state both dates separately. Also fixed: a duplicated citation in questions[199].boardAnswer, two bar-to-reenlistment lists (questions[59], questions[311]) that named APFT/ACFT as disqualifying-failure history without naming the current AFT, acronyms.terms[3592] (APFT definition stopped its lineage at 'superseded by the ACFT' without continuing to the AFT), and one knowledge-check distractor using ACFT where AFT reads more consistently with current terminology. The four highest-risk claim shapes (live taping exemption, six-events-as-current, 360-as-minimum, removed-events-as-current) were already covered by tools/test-consistency.mjs from an earlier session and were clean before this pass.",
+    "nextReviewDue": "2027-02-09",
+    "cadenceMonths": 6
+   },
+   {
+    "topic": "Civilian-education per-semester-hour promotion-point rate (AR 600-8-19 3-18 / DA PAM 600-25)",
+    "why": "Genuinely disputed across available sources, not just unverified - re-check periodically in case a primary source (e.g. the api.army.mil-hosted DA PAM 600-25 CMF smartbooks, currently blocked on fetch) becomes accessible, or the ambiguity resolves in newer guidance.",
+    "lastVerified": "2026-08-09",
+    "lastVerifiedNote": "Roadmap week-5 item. Reproduced the app's own long-standing 'sources disagree (1 vs. 2 points seen cited)' hedge independently: one search thread says 2 points/semester-hour ('updated from 1'), sourced only to SEO aggregators whose own point caps (135/160) contradict this app's 100-point cap; another says 1 point/hour is standard DA PAM 600-25 guidance. Two recent (through Mar 2026) api.army.mil DA PAM 600-25 CMF smartbook PDFs looked like real primary sources but both returned HTTP 403 on fetch. Conclusion: the PPW's existing direct-entry field with its honest hedge was already correct design, not a gap - left unchanged. Did find and fix a real bug the research surfaced: a board-prep scenario stated a specific '1.5 points per hour' rate as verified fact with an AR 600-8-19 citation, matching neither disputed candidate value (reads as an invented average) - removed the specific-rate claim from both the scenario's feedback and outcome text.",
     "nextReviewDue": "2027-02-09",
     "cadenceMonths": 6
    }
@@ -1664,7 +1672,7 @@
   "CLOSED (40): Combat Field Test content existed nowhere in the app. Now #/fitness.",
   "CLOSED (40): Continuation Pay window corrected to 7 years (eff 1 Jan 2026) in both places it appeared.",
   "CLOSED (roadmap week 4, 2026-08-09): the contextual pass this entry called for. The '221/175' figures above were stale (measured differently, possibly pre-dating content changes) - a structured walk of the parsed seed found 104 actual 'ACFT' string hits, only ~27 of them substantive claims (the rest are id/category labels). Found and fixed a real conflated-date contradiction plus four smaller precision gaps; see perishableContent entry 'ACFT/AFT test-history references' above for the full list. #/fitness remains the authoritative home for current standards.",
-  "OPEN: civilian-education per-semester-hour rate still unverified - AR 600-8-19 para 3-18 says transcripts determine it; the PPW still takes a direct entry.",
+  "CLOSED (roadmap week 5, 2026-08-09): researched, not resolved - the rate is genuinely disputed across sources, not just unverified. The PPW's existing direct-entry field with its honest hedge was already correct and was left unchanged. Did find and fix a real bug the research surfaced: a board-prep scenario cited a specific, unfounded '1.5 points per hour' rate as verified fact. See the perishableContent 'Civilian-education per-semester-hour promotion-point rate' entry above for the full research trail.",
   "STANDING: Python open(...,\"w\") on Windows rewrites the file to CRLF and breaks the build anchor. Use newline=\"\".",
   "STANDING: derive counts from the artifact, never hard-code them in tests. Three test files each carried a literal \"29 routes\".",
   "STANDING: obtain regulations from armypubs content search + local PDF parse. Search snippets got two AR 600-8-19 changes materially wrong.",
@@ -1677,7 +1685,7 @@
   "STANDING: the Tauri window-state plugin saves on graceful close, not on kill. Stop-Process -Force writes no state file and looks like a plugin bug.",
   "STANDING: file() in android/app/build.gradle resolves from the app module, not the project root. Use rootProject.file().",
   "OPEN: Windows code signing not done - SmartScreen warns on the unsigned installer. Authenticode cert (~$200-400/yr) needed before wide distribution.",
-  "OPEN: the .segmented tab strip clips at 412px with no affordance that more tabs exist. Section 41 chose scroll-not-wrap deliberately; a scroll hint would help but .segmented is shared across 24 themes.",
+  "CLOSED (stale bookkeeping, found 2026-08-09 while scoping roadmap week 5): this was already fixed - tools/test-scrollhint.mjs (added a prior session, per its own header comment citing '§41') asserts the exact scroll-affordance fade this entry called for, and it passes as part of npm test. Left OPEN in this log only because nothing had gone back to mark it CLOSED.",
   "OPEN: release APKs disable WebView debugging, so the release build was verified by install+launch rather than scripted CDP assertions.",
   "CLOSED (session 39): service worker. It was not merely unadded - registerSW() early-returned on GUIDON_SINGLEFILE, always true, so a hosted copy had NO offline capability at all.",
   "CLOSED (session 39): installability. Manifest is a real file with PNG + separately-declared maskable icons and an apple-touch-icon.",
@@ -1703,7 +1711,7 @@
   "Scoped follow-up: audit the ~212 remaining ACFT references in context and convert the ones that are current-standard claims (leave historical/comparative ones)",
   "Verify whether the Combat Field Test (annual, 30-min, designated combat MOSs) should be added - sources disagreed on whether 21 or 24 MOSs are designated",
   "Verify the full AR 600-8-19 weapon hit-count tables (3-7 SGT / 3-8 SSG) and replace the interpolation with real rows",
-  "Verify the civilian-education per-semester-hour rate and replace the direct-entry field with a computed one",
+  "SUPERSEDED (roadmap week 5, 2026-08-09): investigated - the rate is genuinely disputed across available sources (not just unverified), so replacing the direct-entry field with a computed one is no longer the recommended fix. See the perishableContent entry 'Civilian-education per-semester-hour promotion-point rate' (near the top of this file) for the research trail and what was actually changed instead.",
   "TEST COVERAGE: derive audit section lists from ROUTES rather than hand-maintaining them - #/profile and #/kiosk were silently excluded from a11y sweeps for many sessions",
   "Consider capturing board date during onboarding for personal profiles, so it is set from day one",
   "HUMAN REVIEW: ~5 overlapping Commander's Intent cards (mc-004, mc-10, adp60-2, adp60-7, bq-mc-02) - genuine residual duplication, needs a person's judgment not an algorithm",
