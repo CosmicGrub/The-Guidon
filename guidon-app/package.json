@@ -1,6 +1,6 @@
 {
   "name": "guidon-app",
-  "version": "1.4.14",
+  "version": "1.4.15",
   "private": true,
   "type": "module",
   "description": "GUIDON packaging: installable PWA bundle, standalone single file, Windows desktop app, Android app",

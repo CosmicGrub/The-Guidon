@@ -134,10 +134,9 @@ Ignoring either produces violations that do not exist and invites "fixing" worki
 | Item | Detail |
 |---|---|
 | 24 themes | Every component must clear contrast in all of them |
-| 21 media conditions | Should consolidate to a named scale |
-| Screen-reader testing | Never done. Automated tooling catches roughly a third of real issues |
+| Screen-reader testing | Never done with a real AT/user. Automated tooling catches roughly a third of real issues |
 
-**Closed since this table last needed updating** — kept here so a reader doesn't have to rediscover them: near-zero motion (§5, 3 → 7 keyframes plus a real transition-token system); native `prompt()`/`confirm()` (`modal.js`'s `G.modal.confirm`/`G.modal.prompt` replaced every call site app-wide, and picked up real enter/exit motion of its own); `guidon-theme-proposals.html` (the file no longer exists in the repo — nothing left to reconcile).
+**Closed since this table last needed updating** — kept here so a reader doesn't have to rediscover them: near-zero motion (§5, 3 → 7 keyframes plus a real transition-token system); native `prompt()`/`confirm()` (`modal.js`'s `G.modal.confirm`/`G.modal.prompt` replaced every call site app-wide, and picked up real enter/exit motion of its own); `guidon-theme-proposals.html` (the file no longer exists in the repo — nothing left to reconcile); 21 ad-hoc media conditions (consolidated to an 8-value canonical scale — see the doc comment above the first width-based `@media` rule in `src/index.html`, near line 396 — with `tools/lint-patterns.mjs` check (d) enforcing it going forward).
 
 ---
 

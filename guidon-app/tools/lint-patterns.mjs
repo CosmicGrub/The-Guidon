@@ -217,5 +217,47 @@ console.log("lint-patterns: static regression guard for 3 repeat bug shapes\n");
   if (flagged === 0) ok("(c) title+badge flex-wrap pattern: 0 unpaired occurrences");
 }
 
+/* ======================================================================
+   (d) Width-based @media breakpoints drifting off the canonical scale.
+   Before Week 4 (2026-08-09), 12 distinct pixel values had accumulated
+   across 26 width-based media rules — most were legitimate, deliberately
+   spaced device tiers, but two (540px, 560px) were orphaned one-off values
+   with no device rationale, independently eyeballed by different feature
+   additions and drifting from the dominant 640px touch-target boundary.
+   Consolidated to 8 canonical values (see the doc comment above the first
+   width-based @media rule in src/index.html, near line 396) and locked in
+   here: any new max-width/min-width pixel value outside that set fails,
+   so the next stray "some-number-in-the-500s" doesn't silently reopen the
+   same drift.
+
+   `prefers-*`, `hover`, `pointer`, and `print` are feature queries, not
+   layout breakpoints, and are intentionally out of scope.
+   ====================================================================== */
+{
+  const CANONICAL = new Set([420, 480, 600, 640, 768, 859, 860, 1024, 1200]);
+  // Not anchored to a literal "@media" prefix: compound conditions like
+  // "@media (min-width: 600px) and (max-width: 859px)" put the second
+  // clause after "and (", not "@media (", so anchoring would silently
+  // skip it. This parenthesized min/max-width-in-px shape is distinctive
+  // enough to media queries that matching it anywhere in the CSS is safe.
+  const WIDTH_QUERY = /\(\s*(min-width|max-width)\s*:\s*(\d+)px\s*\)/g;
+  const offenders = [];
+  const seen = new Set();
+  let m;
+  while ((m = WIDTH_QUERY.exec(html))) {
+    const px = Number(m[2]);
+    if (!CANONICAL.has(px)) {
+      const key = m.index;
+      if (!seen.has(key)) { seen.add(key); offenders.push({ line: lineOf(m.index), px, kind: m[1] }); }
+    }
+  }
+  if (offenders.length) {
+    bad(`(d) ${offenders.length} width breakpoint(s) off the canonical scale`);
+    for (const o of offenders) console.log(`         line ${o.line}: ${o.kind}: ${o.px}px`);
+  } else {
+    ok(`(d) all width breakpoints on the canonical scale (${[...CANONICAL].join(", ")})`);
+  }
+}
+
 console.log("\n" + (fails ? `LINT-PATTERNS: ${fails} FAILURE(S)` : "LINT-PATTERNS: all passed"));
 process.exit(fails ? 1 : 0);

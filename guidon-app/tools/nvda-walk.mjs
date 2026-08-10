@@ -62,12 +62,24 @@ if($p){ [F]::ShowWindow($p.MainWindowHandle,9) | Out-Null; [F]::SetForegroundWin
 
 const steps = [];
 async function step(label, fn, settle = 1800) {
+  // Re-assert foreground before EVERY step, not just once at the top of the
+  // walk. A single grab at startup was not enough: on a real, shared
+  // desktop, anything else that steals focus mid-walk (another app's
+  // window, an editor, a notification) goes completely undetected - NVDA
+  // silently follows the new foreground window and the transcript fills
+  // with THAT window's content instead of erroring. Found the hard way: a
+  // walk's "generate the DA 4856" step came back reading a code editor's
+  // git-history UI, not the app, because focus had drifted several steps
+  // earlier and nothing re-checked it.
+  const fg = String(foreground()).trim();
+  const fgOk = /^focused: .*GUIDON/i.test(fg);
   const before = logLines().length;
   await fn();
   await new Promise((r) => setTimeout(r, settle));
   const said = speechSince(before);
-  steps.push({ label, said });
-  const block = [`===== ${label} =====`,
+  steps.push({ label, said, foregroundFailed: !fgOk });
+  const warn = fgOk ? [] : [`  !! foreground check failed before this step (${fg || "no output"}) - speech below may belong to another window`];
+  const block = [`===== ${label} =====`, ...warn,
     ...(said.length ? said.map((s, i) => `  ${String(i + 1).padStart(2)}. ${s}`) : ["  (nothing announced)"]), ""];
   appendFileSync(OUT, block.join("\n") + "\n", "utf8");
   console.log(block.join("\n"));
@@ -156,8 +168,17 @@ server.close();
 
 console.log("\n================ SUMMARY ================");
 let silent = 0;
+let untrustworthy = 0;
 for (const s of steps) {
-  if (!s.said.length) { silent++; console.log(`  SILENT  ${s.label}`); }
-  else console.log(`  spoke ${String(s.said.length).padStart(2)}  ${s.label}`);
+  const flag = s.foregroundFailed ? "  [UNTRUSTED - foreground drifted]" : "";
+  if (s.foregroundFailed) untrustworthy++;
+  if (!s.said.length) { silent++; console.log(`  SILENT  ${s.label}${flag}`); }
+  else console.log(`  spoke ${String(s.said.length).padStart(2)}  ${s.label}${flag}`);
+}
+if (untrustworthy) {
+  console.log(`\n!! ${untrustworthy}/${steps.length} step(s) had a failed foreground check - do not treat their`);
+  console.log("   results (silent OR spoken) as real findings. Re-run on a desktop with nothing");
+  console.log("   else competing for focus, or run interactively so a human can confirm the target");
+  console.log("   window stays frontmost throughout.");
 }
 console.log(`\n${steps.length - silent}/${steps.length} steps produced speech. Transcript: ${OUT}`);
