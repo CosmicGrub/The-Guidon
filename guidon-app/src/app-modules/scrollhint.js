@@ -23,7 +23,13 @@ window.G = window.G || {};
 (function () {
   "use strict";
 
-  const SEL = ".segmented";
+  // .segmented was the original target (§41); nav.nav (the mobile bottom-tab
+  // rail, which packs up to ~32 destinations into one unlabelled horizontal
+  // strip below 600px) and .tabbar (the shared sub-tab component used by
+  // Board Prep, Develop, and - per its own code comment - "every other
+  // tabbed feature") have the identical overflow-with-no-affordance gap.
+  // Same geometry-driven mechanism, same mask, just a wider selector.
+  const SEL = ".segmented, nav.nav, .tabbar";
   const EDGE = 2;                 // px tolerance for "scrolled to the end"
 
   function update(elm) {
