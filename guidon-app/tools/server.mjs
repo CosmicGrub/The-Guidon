@@ -2,6 +2,7 @@
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { join, extname, normalize } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -46,7 +47,12 @@ export function serve(root, port = 0) {
   });
 }
 
-if (import.meta.url === `file://${process.argv[1].replace(/\\/g, "/")}`) {
+// A hand-built `file://${path}` string never matches import.meta.url on
+// Windows: the real URL has a third slash (file:///C:/...) and percent-
+// encodes spaces/special characters, neither of which a plain string
+// concat + backslash swap produces. pathToFileURL() builds the same kind
+// of URL import.meta.url actually is, so the comparison works cross-platform.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const root = process.argv[2] || "web";
   const port = Number(process.argv[3] || 8099);
   serve(root, port).then(({ url }) => console.log("serving", root, "at", url));

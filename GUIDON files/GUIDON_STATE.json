@@ -25,6 +25,14 @@
     "lastVerifiedNote": "Session 53 refresh (see openItems 'SHIPPED, MOSTLY VERIFIED-ALREADY (53)'): HQDA EXORD 117-26 and SRB MILPER 26-241 confirmed real and current; one SRB per-award-vs-lifetime-cap conflation found and fixed.",
     "nextReviewDue": "2027-02-09",
     "cadenceMonths": 6
+   },
+   {
+    "topic": "coc-1 'Department of War' informal-rebrand note",
+    "why": "The Sep 2025 executive order authorizing 'Secretary of War'/'Department of War' as secondary, non-statutory titles also directed the Secretary to submit a recommendation within 60 days on the legislative/executive path to a permanent statutory rename - Congress could act on that at any time, which would make this card's hedge (secondary title, DoD remains the legal name) itself out of date rather than just stale.",
+    "lastVerified": "2026-08-09",
+    "lastVerifiedNote": "Roadmap week-3 item: confirmed via live search (whitehouse.gov fact sheet + military.com legal-analysis piece) that the Sep 2025 EO authorizes the secondary titles without changing the statutory name; added one sentence to coc-1's a/acceptableAnswer/boardAnswer/keyPoints fields plus an incidental 2025->2026 'as of' normalization across the same four fields.",
+    "nextReviewDue": "2026-11-09",
+    "cadenceMonths": 3
    }
   ]
  },

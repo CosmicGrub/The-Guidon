@@ -1,6 +1,6 @@
 {
   "name": "guidon-app",
-  "version": "1.4.13",
+  "version": "1.4.14",
   "private": true,
   "type": "module",
   "description": "GUIDON packaging: installable PWA bundle, standalone single file, Windows desktop app, Android app",
@@ -20,6 +20,7 @@
     "android:sync": "npm run build && cap sync android",
     "android:debug": "npm run android:sync && cd android && gradlew assembleDebug",
     "android:release": "npm run android:sync && cd android && gradlew assembleRelease bundleRelease",
+    "android:verify-release": "node tools/verify-release-apk.mjs",
     "test:android": "node tools/test-android.mjs",
     "_note": "test:android* need a running device/emulator + adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>",
     "test:android:back": "node tools/test-android-back.mjs",
