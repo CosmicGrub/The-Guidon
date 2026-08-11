@@ -35,9 +35,16 @@ await page.waitForTimeout(900);
 const booted = await page.evaluate(() => ({
   heading: (document.querySelector("#view h2, main h2") || {}).textContent,
   dateInputs: document.querySelectorAll('input[type="date"]').length,
+  // Derived from the artifact itself, not hardcoded — ETS moved off this
+  // list (week 8) to read from the profile/settings ETS date instead of
+  // asking for it a second time, so TRACKED's own length is the only
+  // correct source for "how many editable date fields should exist."
+  trackedCount: (window.G.calendar && window.G.calendar.TRACKED || []).length,
 }));
 booted.heading === "Career Calendar" ? ok("Career Calendar renders") : bad("heading was " + booted.heading);
-booted.dateInputs >= 7 ? ok(`${booted.dateInputs} tracked date fields`) : bad("only " + booted.dateInputs + " date inputs");
+booted.dateInputs >= booted.trackedCount
+  ? ok(`${booted.dateInputs} tracked date fields`)
+  : bad(`only ${booted.dateInputs} date inputs, expected >= ${booted.trackedCount} (TRACKED.length)`);
 
 /* The fixed anchors nobody enters must always be present. */
 const anchors = await page.evaluate(() => document.body.textContent || "");

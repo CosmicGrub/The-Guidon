@@ -71,6 +71,18 @@ window.G = window.G || {};
   ];
 
   const TOTAL = GROUPS.reduce(function (n, g) { return n + g.items.length; }, 0);
+  // Every id this exact GROUPS shape can produce, right now. Persisted
+  // checks are keyed positionally ("rec-"+groupIndex+"-"+itemIndex), so a
+  // future reorder/resize of GROUPS would otherwise leave stale IndexedDB
+  // keys that either silently apply an old checkmark to a now-different
+  // item, or inflate the "done" count past TOTAL with no clamp - the exact
+  // "persist without validating against the current shape" class of bug
+  // this app's own backup-import path was hardened against elsewhere.
+  const VALID_IDS = (function () {
+    const s = {};
+    GROUPS.forEach(function (g, gi) { g.items.forEach(function (_, ii) { s["rec-" + gi + "-" + ii] = true; }); });
+    return s;
+  })();
 
   async function render(mount) {
     util.clear(mount);
@@ -102,9 +114,13 @@ window.G = window.G || {};
 
     function refresh() {
       var done = 0;
-      Object.keys(saved).forEach(function (k) { if (saved[k]) done++; });
+      // Only count keys that still name a real checklist item today - a
+      // stale key from a prior GROUPS shape (orphaned by a reorder/resize)
+      // is silently ignored here rather than misapplied or counted.
+      Object.keys(saved).forEach(function (k) { if (VALID_IDS[k] && saved[k]) done++; });
+      done = Math.min(done, TOTAL);
       progText.textContent = done + " of " + TOTAL + " confirmed";
-      fill.style.width = (TOTAL ? Math.round((done / TOTAL) * 100) : 0) + "%";
+      fill.style.width = (TOTAL ? Math.min(100, Math.round((done / TOTAL) * 100)) : 0) + "%";
     }
 
     async function persist() {

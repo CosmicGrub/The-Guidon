@@ -191,17 +191,30 @@ window.G = window.G || {};
           const lab = el("div.k", { text: f.label });
           const inp = el("input.ob-input", { type: "date", value: sol[f.key] || "",
             "aria-label": f.label + " for roster entry " + (idx + 1), style: "width:100%;margin-top:4px" });
-          inp.addEventListener("change", function () { sol[f.key] = inp.value; persist(); buildSummary(); });
           row.appendChild(lab); row.appendChild(inp);
-          const d = parseDate(sol[f.key]);
-          if (d) {
-            const since = daysSince(d), over = since - f.days;
-            row.appendChild(el("div.hint", { text: over > 0
-              ? since + " days ago - " + over + " days past the " + f.days + "-day mark. " + f.note
-              : since + " days ago. Next due in " + (-over) + " days." }));
-          } else {
-            row.appendChild(el("div.hint", { text: f.note }));
+          const hintEl = el("div.hint");
+          // Was computed once at render time and never touched again - the
+          // change handler below only called buildSummary(), so after
+          // editing a date the summary panel above correctly reflected the
+          // new overdue status but THIS field's own hint text (right under
+          // the input the user just edited) kept showing the stale value
+          // until some unrelated action forced a full buildList() rebuild.
+          // A visible contradiction between the summary and its own detail
+          // card, right after the edit that caused it.
+          function refreshHint() {
+            const d = parseDate(sol[f.key]);
+            if (d) {
+              const since = daysSince(d), over = since - f.days;
+              hintEl.textContent = over > 0
+                ? since + " days ago - " + over + " days past the " + f.days + "-day mark. " + f.note
+                : since + " days ago. Next due in " + (-over) + " days.";
+            } else {
+              hintEl.textContent = f.note;
+            }
           }
+          refreshHint();
+          inp.addEventListener("change", function () { sol[f.key] = inp.value; persist(); buildSummary(); refreshHint(); });
+          row.appendChild(hintEl);
           card.appendChild(row);
         });
         list.appendChild(card);

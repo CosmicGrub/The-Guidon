@@ -48,14 +48,16 @@ await page.evaluate(() => {
 await page.waitForTimeout(1100);
 await page.addScriptTag({ content: axeSrc });
 
-const ROUTES = await page.evaluate(() => (window.G && G.__ROUTE_HASHES__) || null);
-// Fallback: hashes hand-synced with src/index.html's ROUTES array if the app
-// doesn't expose them (kept in one place, asserted against below).
-const HASHES = ROUTES || ["#/home","#/train","#/learn","#/forms","#/counsel","#/develop","#/blc","#/alc",
-  "#/slc","#/drills","#/channels","#/career","#/write","#/money","#/health","#/fitness","#/records",
-  "#/calendar","#/assignments","#/leader","#/currency","#/transition","#/resources","#/doctrine",
-  "#/dictionary","#/board","#/risk","#/progress","#/author","#/share","#/selftest","#/settings",
-  "#/search","#/profile","#/kiosk"];
+// Derived live from the app's own ROUTES array (window.G.routes, same
+// source test-a11y-tree.mjs and test-csp.mjs already use) rather than a
+// hand-synced hardcoded list - a prior version of this file tried to read
+// a window.G.__ROUTE_HASHES__ global that was never actually assigned
+// anywhere in the app, so it always silently fell back to a stale 35-hash
+// snapshot missing #/privacy (added after that snapshot was written) -
+// meaning that route was never actually contrast-checked. Same bug class
+// as #/profile and #/kiosk once being silently excluded from the a11y
+// sweep, just recurring here undetected in a different suite.
+const HASHES = await page.evaluate(() => window.G.routes.map((r) => r.hash));
 
 const violations = [];
 let combosRun = 0;

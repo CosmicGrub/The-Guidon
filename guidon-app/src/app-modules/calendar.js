@@ -38,16 +38,31 @@ window.G = window.G || {};
     { key: "ncoer", label: "Last NCOER thru-date", months: 12,
       consequence: "A missing or late evaluation is a gap in the record a board will see. Chase it before the rating period closes, not after.",
       link: "#/records" },
-    { key: "acftProfile", label: "Physical profile expires", months: 0,
+    // future:true - this is the expiration date itself (like ETS below used
+    // to be), not a "last done" date to add months to. Without it, the
+    // generic "reference-only, no due date" guard a few lines down in
+    // buildUpcoming() silently dropped this row from "What is next" even
+    // after `due` had already been computed correctly - a Soldier could
+    // fill this in, watch it persist, and it would just never show up in
+    // the one panel the whole page exists to provide.
+    { key: "acftProfile", label: "Physical profile expires", months: 0, future: true,
       consequence: "A temporary profile that lapses without a retest can remove you from the recommended list.",
       link: "#/fitness" },
     { key: "tos", label: "Arrived at current duty station", months: 0,
       consequence: "Time on station is one of the factors that makes you a mover in the Enlisted Marketplace.",
       link: "#/assignments" },
-    { key: "ets", label: "ETS date", months: 0, future: true,
-      consequence: "The BDD window for a VA claim is 180 to 90 days before separation. Miss it and you file after, which takes longer.",
-      link: "#/transition" },
   ];
+  // ETS is handled like board date below (read from the profile/settings,
+  // not asked for a second time here) - it used to be a TRACKED entry with
+  // its own input, which contradicted this module's own header comment and
+  // let it silently drift out of sync with the ETS date Home/Transition
+  // actually use. ETS_CONSEQUENCE/ETS_LINK are kept as named constants so
+  // the copy lives in one place, not duplicated between the two blocks that
+  // now reference it (the profile-sourced row below, and the legacy-data
+  // fallback path for anyone who already saved one directly in Calendar
+  // before this fix, whose input is intentionally NOT re-added here).
+  const ETS_CONSEQUENCE = "The BDD window for a VA claim is 180 to 90 days before separation. Miss it and you file after, which takes longer.";
+  const ETS_LINK = "#/transition";
 
   // Shared with leader.js as util.parseISODate() - see its definition in
   // src/index.html for why this delegates rather than building the Date
@@ -135,12 +150,29 @@ window.G = window.G || {};
       });
 
       // Board date comes from the profile rather than being asked for again.
+      let prof = null;
       try {
-        const prof = (G.profile && G.profile.cached) ? G.profile.cached() : null;
+        prof = (G.profile && G.profile.cached) ? G.profile.cached() : null;
         const bd = prof && parseDate(prof.boardDate);
         if (bd) rows.push({ label: "Promotion board", when: bd, days: daysBetween(today, bd),
           note: "Your Records Readiness checks should be complete well before this, not the week of.", link: "#/records" });
       } catch (e) { /* profile is optional */ }
+
+      // ETS, same treatment as board date just above (profile first, then
+      // the app-wide settings copy the two-way sync keeps in step with it -
+      // same precedence board.js's own Readiness panel uses for board
+      // date). Previously ETS was a separate TRACKED field asked for again
+      // right here, so it could silently disagree with the ETS date Home
+      // and Transition's own countdown banners actually use. Falls back to
+      // whatever was already saved directly in Calendar before this fix, so
+      // existing entries stay visible even with no profile ETS set.
+      try {
+        const settings = (G.store && G.store.settings) ? G.store.settings() : {};
+        const etsRaw = (prof && prof.etsDate) || (settings && settings.etsDate) || saved.ets;
+        const ed = parseDate(etsRaw);
+        if (ed) rows.push({ label: "ETS date", when: ed, days: daysBetween(today, ed),
+          note: ETS_CONSEQUENCE, link: ETS_LINK });
+      } catch (e) { /* profile/settings are optional */ }
 
       if (!rows.length) {
         upcoming.appendChild(el("p.hint", { text:

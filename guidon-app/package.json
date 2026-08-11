@@ -1,6 +1,6 @@
 {
   "name": "guidon-app",
-  "version": "1.4.18",
+  "version": "1.4.19",
   "private": true,
   "type": "module",
   "description": "GUIDON packaging: installable PWA bundle, standalone single file, Windows desktop app, Android app",
@@ -12,7 +12,7 @@
     "test:standalone": "node tools/test-standalone.mjs",
     "test:csp": "node tools/test-csp.mjs",
     "lint:patterns": "node tools/lint-patterns.mjs",
-    "test": "npm run lint:patterns && npm run build && npm run verify && node tools/run-parallel.mjs test:points test:consistency test:calendar test:leader test:privacy test:scrollhint test:theater test:flip test:a11y test:pdf test:standalone test:bridge test:contrast-full test:responsive test:csp",
+    "test": "npm run lint:patterns && npm run build && npm run verify && node tools/run-parallel.mjs test:points test:consistency test:calendar test:leader test:privacy test:scrollhint test:theater test:flip test:a11y test:pdf test:standalone test:bridge test:contrast-full test:responsive test:csp test:discoverability",
     "perf": "node tools/perf.mjs",
     "serve": "node tools/server.mjs web 8099",
     "desktop:dev": "tauri dev",
@@ -38,7 +38,8 @@
     "test:contrast": "node tools/test-contrast.mjs",
     "test:contrast-full": "node tools/test-contrast-full.mjs",
     "test:bridge": "node tools/test-bridge.mjs",
-    "test:responsive": "node tools/test-responsive.mjs"
+    "test:responsive": "node tools/test-responsive.mjs",
+    "test:discoverability": "node tools/test-discoverability.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",
