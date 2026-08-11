@@ -11,9 +11,17 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
-        <!-- The web layer paints its own status/navigation bar colours to match
-             whichever of the app's 24 themes is active (see src/native.js).
-             Transparent system bars let it do that seamlessly. -->
+        <!-- Status bar: src/native.js reads the app's active theme and calls
+             the Capacitor StatusBar plugin to match the bar colour to it.
+             That call is a documented no-op on Android 15+ (OS-enforced
+             edge-to-edge); the app's own CSS safe-area insets keep content
+             clear of the bar either way. Transparent here avoids a flash of
+             the wrong colour before the plugin call lands on Android 14 and
+             earlier, where it still works.
+             Navigation bar: nothing in the app themes it - no
+             NavigationBar-capable Capacitor plugin is installed. Transparent
+             is only this style's static default; it is never kept in sync
+             with theme changes the way the status bar is. -->
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>

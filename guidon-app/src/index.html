@@ -3196,6 +3196,16 @@ html.reduce-motion .nav-group-body, html[data-motion="minimal"] .nav-group-body 
   .nav-divider { width: auto; height: 1px; align-self: stretch; margin: 6px 6px; }
   .main { padding: 20px 18px 36px; padding-bottom: calc(36px + env(safe-area-inset-bottom)); }
   .view { max-width: 100%; }
+  /* "Side rail density" / "Show rail labels" were desktop-only (>=860px) -
+     silent no-ops for the entire 600-859px range this tier exists for
+     (the comment above names the Z Fold5 unfolded as the exact device
+     this was built for), with no indication in the settings UI that they
+     only worked on wider screens. Same compact/labels-off treatment as
+     the desktop tier below, scaled to this tier's own smaller baseline. */
+  html[data-nav-density="compact"] .nav button { padding: 5px 3px; font-size: .56rem; }
+  html[data-nav-density="compact"] .nav .ico { font-size: .92rem; }
+  html[data-nav-labels="off"] .nav button { font-size: 0; padding-top: 10px; padding-bottom: 10px; }
+  html[data-nav-labels="off"] .nav .ico { font-size: 1.25rem; }
 }
 
 /* ---- Desktop: fixed left side-rail (≥ 860px) ---- */
@@ -3437,8 +3447,17 @@ html.dyslexia-spacing p, html.dyslexia-spacing li { line-height:1.75; max-width:
 
 /* ---- REDUCE TRANSPARENCY (solid fills instead of color-mix tints) ---- */
 html.reduce-transparency .nav button.active { background:var(--panel-2); }
-html.reduce-transparency .badge.accent,
-html.reduce-transparency .nav-pill.active { background:var(--panel-2); }
+/* .badge.accent and .nav-pill.active don't exist anywhere in the app (grep
+   across the whole file turns up nothing but these two rules) - the
+   setting's own hint promises "solid fills instead of tinted overlays,"
+   but the ~140+ real translucent surfaces in the app (feedback/warning
+   panels foremost among them - rgba(...) backgrounds used on nearly every
+   view) were untouched by either of this rule's two selectors. .feedback
+   is the single most pervasive one, so it's the highest-impact real fix. */
+html.reduce-transparency .feedback { background:var(--panel-2); }
+html.reduce-transparency .feedback.good { background:color-mix(in srgb, var(--green) 12%, var(--panel-2)); }
+html.reduce-transparency .feedback.bad { background:color-mix(in srgb, var(--red) 12%, var(--panel-2)); }
+html.reduce-transparency .feedback.warn { background:color-mix(in srgb, var(--amber) 12%, var(--panel-2)); }
 
 /* ======================================================================
    DEVICE / INPUT-MODE AUTO-DETECTION
@@ -3507,7 +3526,10 @@ html.reduce-transparency .nav-pill.active { background:var(--panel-2); }
    manual toggle. */
 @media (prefers-reduced-transparency: reduce) {
   .nav button.active { background:var(--panel-2); }
-  .badge.accent, .nav-pill.active { background:var(--panel-2); }
+  .feedback { background:var(--panel-2); }
+  .feedback.good { background:color-mix(in srgb, var(--green) 12%, var(--panel-2)); }
+  .feedback.bad { background:color-mix(in srgb, var(--red) 12%, var(--panel-2)); }
+  .feedback.warn { background:color-mix(in srgb, var(--amber) 12%, var(--panel-2)); }
 }
 
 /* ---- NAV DENSITY + LABELS (desktop side rail) ---- */
@@ -4329,12 +4351,48 @@ window.G = window.G || {};
     return wrap;
   };
 
+  // Single source of truth for "how urgent is this ETS countdown" colour,
+  // shared by Home's ETS banner and the Transition tab's ETS banner so the
+  // same profile etsDate can never render a contradicting red/amber/green
+  // depending which screen it's viewed on. Thresholds match the app's own
+  // published ETS milestones (BDD hard deadline at 90 days out, the final
+  // separation-orders window at 30) rather than being picked independently
+  // per screen.
+  util.etsUrgency = function (daysOut) {
+    if (daysOut <= 30) return { color: "var(--red)", level: "red" };
+    if (daysOut <= 90) return { color: "var(--amber)", level: "amber" };
+    return { color: "var(--green)", level: "green" };
+  };
+
   // Simple skeleton block (n shimmer rows) for loading states.
   util.skeleton = function (n) {
     var wrap = util.el("div.skeleton-wrap", { "aria-hidden": "true" });
     for (var i = 0; i < (n || 3); i++) wrap.appendChild(util.el("div.skeleton-row"));
     return wrap;
   };
+
+  // ── Flush-on-background registry ──────────────────────────────────────
+  // A debounced save (Settings, Forms Trainer autosave, Bullet Builder
+  // history, the finance widgets) can be sitting in its setTimeout window
+  // when Android — or any mobile browser tab — backgrounds or kills the
+  // page; there is no guarantee that timer ever gets to fire. Any module
+  // with a debounced write registers a zero-arg flush callback here, keyed
+  // by a stable string. Registering the same key again REPLACES the old
+  // callback rather than stacking a second one, so a view that re-renders
+  // on every visit (most of them do) never pins a closure onto an element
+  // that's already been detached from the page. visibilitychange (the tab
+  // going to background — Android's kill signal comes after this, not
+  // before) and pagehide (full navigation away) both run every registered
+  // flush immediately, so nothing waiting on a debounce timer is lost.
+  var _flushCbs = new Map();
+  util.onFlush = function (key, fn) { _flushCbs.set(key, fn); };
+  function _flushAllPending() {
+    _flushCbs.forEach(function (fn) { try { fn(); } catch (e) {} });
+  }
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "hidden") _flushAllPending();
+  });
+  window.addEventListener("pagehide", _flushAllPending);
 
   G.util = util;
 })();
@@ -4528,6 +4586,12 @@ window.G = window.G || {};
     if (_settingsDebounce) clearTimeout(_settingsDebounce);
     _settingsDebounce = setTimeout(() => { db.setSetting("settings", s); _settingsDebounce = null; }, 300);
   }
+  util.onFlush("settings", () => {
+    if (!_settingsDebounce) return;
+    clearTimeout(_settingsDebounce);
+    _settingsDebounce = null;
+    db.setSetting("settings", state.settings);
+  });
 
   const state = {
     settings: Object.assign({}, DEFAULT_SETTINGS),
@@ -5945,9 +6009,42 @@ window.G = window.G || {};
         b.title = on ? "Exit fullscreen (Esc)" : "Fullscreen study — just the card, nothing else";
       });
     };
+    // html.qz-theater turns .qz-wrap into a fixed full-screen overlay, but
+    // that is CSS only — every control behind it (sidebar nav, tabbar, the
+    // rest of #main) stays in the tab order and the accessibility tree, so
+    // Tab and a screen reader's swipe gesture could both still reach it.
+    // Capacitor also swallows onShowCustomView, so requestFullscreen() above
+    // frequently never truly engages either — this trap is the guaranteed
+    // layer, not a belt-and-suspenders extra. inert marks the whole rest of
+    // the page unfocusable and AT-unreachable in one call, on every browser
+    // this app ships to; older WebViews that don't recognise the attribute
+    // simply ignore it (a no-op, not an error), same as any unknown attribute.
+    let theaterInertEls = [];
+    let theaterReturnFocus = null;
+    function trapTheaterFocus(root) {
+      theaterInertEls = [];
+      let node = root;
+      while (node && node !== document.body && node.parentElement) {
+        const parent = node.parentElement;
+        Array.from(parent.children).forEach((sib) => {
+          if (sib !== node && !sib.hasAttribute("inert")) {
+            sib.setAttribute("inert", "");
+            theaterInertEls.push(sib);
+          }
+        });
+        node = parent;
+      }
+    }
+    function releaseTheaterFocus() {
+      theaterInertEls.forEach((n) => n.removeAttribute("inert"));
+      theaterInertEls = [];
+    }
     G.board.enterTheater = function (focusEl) {
       document.documentElement.classList.add("qz-theater");
-      const target = focusEl || document.querySelector(".qz-wrap");
+      const wrap = document.querySelector(".qz-wrap");
+      const target = focusEl || wrap;
+      theaterReturnFocus = document.activeElement;
+      if (wrap) trapTheaterFocus(wrap);
       // True fullscreen where the runtime allows it; failure is fine.
       try { if (target && target.requestFullscreen) target.requestFullscreen().catch(() => {}); } catch (e) {}
       try { if (G.native && G.native.setImmersive) G.native.setImmersive(true); } catch (e) {}
@@ -5960,6 +6057,10 @@ window.G = window.G || {};
       document.documentElement.classList.remove("qz-theater");
       try { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); } catch (e) {}
       try { if (G.native && G.native.setImmersive) G.native.setImmersive(false); } catch (e) {}
+      releaseTheaterFocus();
+      const back = theaterReturnFocus;
+      theaterReturnFocus = null;
+      if (back && back.focus && document.contains(back)) back.focus();
       if (util.announce) util.announce("Exited fullscreen study.");
       syncFsBtns();
     };
@@ -6975,6 +7076,18 @@ window.G = window.G || {};
       util.clear(outWrap);
       if (rank === "SFC") { buildCentralizedBody(); return; }
       const r = PPW[rank];
+      // Category caps differ by rank (e.g. training: 280 for SGT, 230 for
+      // SSG) - num()'s own input listener already re-clamps on EDIT (see
+      // its comment there), but nothing re-clamped an ALREADY-entered
+      // value when the caps themselves changed via a rank switch. A value
+      // entered at SGT's cap stayed in v[key] unchanged after switching to
+      // SSG, so the input box (still showing the old number), its own
+      // "Max N" hint (now showing the new, lower cap), and the calculated
+      // subtotal below (correctly clamped at calc time) could all visibly
+      // disagree right after a rank switch. Same fix shape as the weapon-
+      // type reclamp a few lines below (wpnHits vs. wt.maxHits).
+      [["qTraining","training"],["qAwards","awards"],["qMilEd","milEd"],["qCivEd","civEd"],["awards","awards"],["civDirect","civEd"]]
+        .forEach(([key, capKey]) => { const cap = r.caps[capKey]; if (v[key] > cap) v[key] = cap; });
       if (mode === "quick") {
         body.appendChild(el("p.hint", { text:"Enter the points you already know from each category \u2014 fastest if you have your PPW in front of you." }));
         body.appendChild(num("Military training (weapons + AFT)", "qTraining", 0, r.caps.training, 5, "Max " + r.caps.training + " for " + r.label));
@@ -7092,12 +7205,28 @@ window.G = window.G || {};
       idx: 0,
       revealed: false,
       remaining: 0,
+      // cfg.rubric ships real weights (knowledge 40 / bearing 25 /
+      // communication 20 / appearance 15) but nothing ever read them -
+      // "Board Ready" was 100% knowledge self-scores, 60% of the shipped
+      // rubric silently unused. The quiz itself can only measure
+      // knowledge; the other three dimensions need the Soldier's own
+      // self-rating (a practice-mode norm, matching this tool's own
+      // "verify with your S-1"-style disclaimers throughout).
+      selfRating: { bearing: 3, communication: 3, appearance: 3 }, // 1-5, defaults to a neutral middle
+      historySaved: false,
       timer: null,
       results: [],          // { q, cat, score } per answered question
     };
 
     const scaleById = {};
     util.asArray(cfg.answerScale).forEach((s) => { scaleById[s.id] = s; });
+    // The per-question scoring denominator used to be a literal `2`
+    // instead of derived from this same scaleById lookup - harmless only
+    // because the shipped scale's top value happens to be 2. Deriving it
+    // for real means a future content edit to the point values can't
+    // silently miscalculate every Mock Board percentage with nothing to
+    // catch it.
+    const scaleMaxPts = Math.max(0, ...util.asArray(cfg.answerScale).map((s) => s.points || 0)) || 2;
 
     function stop() { if (sess.timer) { clearInterval(sess.timer); sess.timer = null; } }
 
@@ -7230,7 +7359,7 @@ window.G = window.G || {};
         b.title = sc.d || "";
         b.addEventListener("click", () => {
           stop();
-          sess.results.push({ q: q.q, cat: q.category, score: sc.points, max: 2, id: sc.id, answer: q.a, qObj: q });
+          sess.results.push({ q: q.q, cat: q.category, score: sc.points, max: scaleMaxPts, id: sc.id, answer: q.a, qObj: q });
           // Answered aloud, then self-judged - that is real recall, so it
           // feeds the drill's schedule in both directions. "Nailed it" maps
           // to Know It (2), not Down Cold: the top drill grade stays an
@@ -7297,24 +7426,49 @@ window.G = window.G || {};
       stop();
       const total = sess.results.reduce((s, r) => s + r.score, 0);
       const max = sess.results.reduce((s, r) => s + r.max, 0) || 1;
-      const pct = Math.round((total / max) * 100);
+      const knowledgePct = Math.round((total / max) * 100);
+
+      // Blend the quiz's own knowledge score with the Soldier's self-rating
+      // on the three dimensions the quiz has no way to measure, using
+      // cfg.rubric's real shipped weights (knowledge 40 / bearing 25 /
+      // communication 20 / appearance 15) - previously "Board Ready" was
+      // 100% knowledgePct, silently ignoring the other 60%.
+      const rubricById = {};
+      util.asArray(cfg.rubric).forEach((r) => { rubricById[r.id] = r; });
+      const dimPct = { knowledge: knowledgePct,
+        bearing: Math.round((sess.selfRating.bearing / 5) * 100),
+        communication: Math.round((sess.selfRating.communication / 5) * 100),
+        appearance: Math.round((sess.selfRating.appearance / 5) * 100) };
+      const hasRubric = Object.keys(rubricById).length > 0;
+      const pct = hasRubric
+        ? Math.round(Object.keys(rubricById).reduce((s, id) => s + (dimPct[id] || 0) * ((rubricById[id].weight || 0) / 100), 0))
+        : knowledgePct; // no rubric shipped for this config - fall back to knowledge-only, unchanged from before
       const label = pct >= 85 ? "Board Ready" : pct >= 70 ? "Strong" : pct >= 50 ? "Developing" : "Needs Work";
 
       // Persist this board to local history so the Soldier can see improvement over time.
       // Stored offline in kv under a single rolling key (last 20 boards). No PII beyond scores.
-      const MB_HIST_KEY = "board:mockHistory:v1";
-      const histEntry = { ts: Date.now(), pct: pct, total: total, max: max, count: sess.results.length, label: label };
-      let mbHistory = [];
-      (async () => {
-        try {
-          const r = await db.get("kv", MB_HIST_KEY);
-          mbHistory = (r && r.v) || [];
-          mbHistory.push(histEntry);
-          if (mbHistory.length > 20) mbHistory = mbHistory.slice(-20);
-          await db.put("kv", { k: MB_HIST_KEY, v: mbHistory });
-          renderHistory();
-        } catch (e) { /* offline-safe: history is a nice-to-have */ }
-      })();
+      // Guarded to fire once per completed session, not once per redraw -
+      // adjusting a self-rating slider below calls draw() again, which
+      // re-enters this function.
+      if (!sess.historySaved) {
+        sess.historySaved = true;
+        const MB_HIST_KEY = "board:mockHistory:v1";
+        const histEntry = { ts: Date.now(), pct: pct, total: total, max: max, count: sess.results.length, label: label };
+        (async () => {
+          try {
+            const r = await db.get("kv", MB_HIST_KEY);
+            let h = (r && r.v) || [];
+            h.push(histEntry);
+            if (h.length > 20) h = h.slice(-20);
+            await db.put("kv", { k: MB_HIST_KEY, v: h });
+            // Cached on sess (not a local closure var) so a later redraw
+            // triggered by moving a self-rating slider - which re-enters
+            // this whole function - can still show it without re-fetching.
+            sess.mbHistory = h;
+            renderHistory();
+          } catch (e) { /* offline-safe: history is a nice-to-have */ }
+        })();
+      }
 
       const panel = el("div.panel.mb-done");
       panel.appendChild(el("h3.mb-h", { text: "After-Action Review" }));
@@ -7325,6 +7479,36 @@ window.G = window.G || {};
       scoreBig.appendChild(el("span.mb-biglabel", { text: label }));
       scoreBig.appendChild(el("span.mb-bigsub", { text: total + " / " + max + " points · " + sess.results.length + " questions" }));
       panel.appendChild(scoreBig);
+
+      if (hasRubric) {
+        const rub = el("div.mb-cat-h", { text: "Board rubric (knowledge from this quiz; the rest is your own self-rating)" });
+        panel.appendChild(rub);
+        const rubWrap = el("div.mb-cat-breakdown");
+        Object.keys(rubricById).forEach((id) => {
+          const r = rubricById[id];
+          const row = el("div.mb-cat-row");
+          row.appendChild(el("span.mb-cat-name", { text: r.name + " (" + r.weight + "%)" }));
+          const track = el("div.mb-cat-track");
+          const p = dimPct[id] || 0;
+          const bar = el("div.mb-cat-bar" + (p < 50 ? ".low" : p < 70 ? ".mid" : ".hi")); bar.style.width = p + "%"; track.appendChild(bar);
+          row.appendChild(track);
+          row.appendChild(el("span.mb-cat-pct", { text: p + "%" }));
+          rubWrap.appendChild(row);
+        });
+        panel.appendChild(rubWrap);
+
+        const rateWrap = el("div.mb-setup", { style: "margin-top:10px" });
+        ["bearing", "communication", "appearance"].forEach((id) => {
+          if (!rubricById[id]) return;
+          const row = el("div.mb-row");
+          row.appendChild(el("label.mb-label", { text: "Self-rate: " + rubricById[id].name + " (" + sess.selfRating[id] + "/5)" }));
+          const slider = el("input", { type: "range", min: "1", max: "5", step: "1", value: String(sess.selfRating[id]), "aria-label": "Self-rate " + rubricById[id].name });
+          slider.addEventListener("input", () => { sess.selfRating[id] = parseInt(slider.value, 10) || 3; draw(); });
+          row.appendChild(slider);
+          rateWrap.appendChild(row);
+        });
+        panel.appendChild(rateWrap);
+      }
 
       // per-category breakdown
       const byCat = {};
@@ -7356,8 +7540,9 @@ window.G = window.G || {};
 
       panel.appendChild(histMount);
       function renderHistory() {
+        const mbHistory = sess.mbHistory || [];
         util.clear(histMount);
-        if (!mbHistory || mbHistory.length < 2) return; // need at least 2 boards to show a trend
+        if (mbHistory.length < 2) return; // need at least 2 boards to show a trend
         const prev = mbHistory[mbHistory.length - 2];
         const delta = pct - prev.pct;
         const trendTxt = delta > 0 ? ("▲ +" + delta + "% since last board") : delta < 0 ? ("▼ " + delta + "% since last board") : "→ same as last board";
@@ -7379,6 +7564,13 @@ window.G = window.G || {};
         wrap.appendChild(el("div.mb-history-sub", { text: recent.length + " of last " + mbHistory.length + " boards · stored offline on this device" }));
         histMount.appendChild(wrap);
       }
+      // Called unconditionally (not just from inside the historySaved-
+      // guarded fetch above) so a redraw triggered by moving a
+      // self-rating slider still shows the history sparkline immediately,
+      // using whatever sess.mbHistory already has cached from the first
+      // load, instead of going blank until a slider happens to be moved
+      // again after some future async resolution that will never come.
+      renderHistory();
 
       const actions = el("div.mb-actions");
       const again = el("button.btn.primary", { type: "button", gi: "rotate-ccw", giSize: 13, text: "New board" });
@@ -8016,7 +8208,12 @@ window.G = window.G || {};
     const trRows = trainingScs.map((s) => {
       const c = completions[s.id];
       const passed = c && c.bestPct >= 80;
-      return `<tr><td>${s.title}</td><td style="color:${passed ? "green" : c ? "orange" : "#666"}">${passed ? "PASS" : c ? c.bestPct + "%" : "—"}</td></tr>`;
+      // s.title is free text on any authored/imported scenario - unescaped
+      // here, unlike the Personal Action Plan and Board Readiness Summary
+      // prints (both already fixed for this exact stored-XSS pattern), a
+      // script/event-handler payload in a scenario's title would execute
+      // the next time anyone opens Progress and clicks Print Report.
+      return `<tr><td>${util.esc(s.title)}</td><td style="color:${passed ? "green" : c ? "orange" : "#666"}">${passed ? "PASS" : c ? c.bestPct + "%" : "—"}</td></tr>`;
     }).join("");
     const html = `
       <h2 style="margin:0 0 4px">GUIDON Readiness Report</h2>
@@ -9045,10 +9242,24 @@ window.G = window.G || {};
       fileInput.addEventListener("change", async () => {
         const f = fileInput.files[0]; if (!f) return;
         try {
-          const sc = JSON.parse(await f.text());
-          const v = validate(sc);
-          if (!v.ok) { util.toast("Import failed — invalid scenario."); return; }
-          await store.saveUserScenario(sc); util.toast("Imported: " + sc.title); back();
+          const parsed = JSON.parse(await f.text());
+          // "Export All" (below) writes an ARRAY of every authored
+          // scenario - this handler previously only ever accepted a
+          // single scenario object, so a Soldier who used Export All as
+          // their save-point got a silent, unexplained "Import failed"
+          // the moment they tried to read it back in. Accepting both
+          // shapes here makes Import JSON the true inverse of both export
+          // paths, not just the single-scenario one.
+          const list = Array.isArray(parsed) ? parsed : [parsed];
+          let imported = 0, rejected = 0;
+          for (const sc of list) {
+            const v = validate(sc);
+            if (!v.ok) { rejected++; continue; }
+            await store.saveUserScenario(sc); imported++;
+          }
+          if (!imported) { util.toast("Import failed — no valid scenario(s) found."); return; }
+          util.toast("Imported " + imported + " scenario(s)." + (rejected ? " (" + rejected + " skipped as invalid.)" : ""));
+          back();
         } catch (e) { util.toast("Import failed: " + e.message); }
       });
 
@@ -9818,20 +10029,33 @@ window.G = window.G || {};
   var SAVE_KEY = "forms:saved";
   var state = { tab: "guided", ex: false, drafts: {} };
   var _autoSaveTimer = null;
+  var _pendingAutoSave = null; // {formId, values} still waiting out the debounce window
+  function doAutoSave(formId, values) {
+    var title = (state._currentForm && state._currentForm.title) || formId;
+    // upsert into saved list
+    readSaved(function (arr) {
+      var existing = arr.findIndex(function (x) { return x.formId === formId; });
+      var entry = { formId: formId, title: title, ts: new Date().toISOString(), values: values };
+      if (existing >= 0) arr[existing] = entry; else arr.push(entry);
+      writeSaved(arr);
+    });
+  }
   function scheduleAutoSave(formId, values) {
     if (_autoSaveTimer) clearTimeout(_autoSaveTimer);
+    _pendingAutoSave = { formId: formId, values: values };
     _autoSaveTimer = setTimeout(function () {
       _autoSaveTimer = null;
-      var title = (state._currentForm && state._currentForm.title) || formId;
-      // upsert into saved list
-      readSaved(function (arr) {
-        var existing = arr.findIndex(function (x) { return x.formId === formId; });
-        var entry = { formId: formId, title: title, ts: new Date().toISOString(), values: values };
-        if (existing >= 0) arr[existing] = entry; else arr.push(entry);
-        writeSaved(arr);
-      });
+      _pendingAutoSave = null;
+      doAutoSave(formId, values);
     }, 1500);
   } // ex = prefill-example toggle; drafts keyed by formId
+  U.onFlush("forms:autosave", function () {
+    if (!_autoSaveTimer) return;
+    clearTimeout(_autoSaveTimer);
+    _autoSaveTimer = null;
+    var p = _pendingAutoSave; _pendingAutoSave = null;
+    if (p) doAutoSave(p.formId, p.values);
+  });
 
   function data() { return (G.store && G.store.forms && G.store.forms()) || { forms: [], libraries: {}, tables: {}, categories: [] }; }
   function formById(id) { return (data().forms || []).filter(function (f) { return f.id === id; })[0] || null; }
@@ -9941,7 +10165,12 @@ window.G = window.G || {};
         formResultsWrap.appendChild(grid);
       });
     }
-    formSearch.addEventListener("input", drawFormList);
+    // Only 34 forms total, so a render cap isn't warranted here (unlike
+    // Train/Counseling Examples), but every keystroke still did a full
+    // synchronous rebuild with no debounce at all - matched the same
+    // 120ms debounce Doctrine/Dictionary/Train/Counseling Examples use.
+    var formSearchDeb;
+    formSearch.addEventListener("input", function () { clearTimeout(formSearchDeb); formSearchDeb = setTimeout(drawFormList, 120); });
     drawFormList();
 
     // saved drafts
@@ -10683,6 +10912,10 @@ window.G = window.G || {};
   let activeTab = "skills";
   // ---- 4) COUNSELING EXAMPLES (imported DA 4856 library) ----
   var _exFilter = "";
+  // Same debounce+cap pattern Doctrine/Dictionary/Train use for
+  // comparably-sized lists - this search had neither, so every keystroke
+  // fully rebuilt every matching example's accordion card synchronously.
+  var EXAMPLES_CAP = 30;
   function renderExamples(host) {
     const d = data();
     const list = (d.examples || []);
@@ -10701,15 +10934,19 @@ window.G = window.G || {};
           : el("div.empty", { text: "No examples match \"" + _exFilter + "\"." }));
         return;
       }
+      if (shown.length > EXAMPLES_CAP) {
+        results.appendChild(el("p.hint", { text: "Showing first " + EXAMPLES_CAP + " of " + shown.length + " results — narrow your search to see the rest." }));
+      }
       // group by category
       const groups = {};
-      shown.forEach((e) => { (groups[e.category] = groups[e.category] || []).push(e); });
+      shown.slice(0, EXAMPLES_CAP).forEach((e) => { (groups[e.category] = groups[e.category] || []).push(e); });
       Object.keys(groups).sort().forEach((cat) => {
         results.appendChild(el("p.hint", { text: cat + " · " + groups[cat].length, style: "margin:14px 0 4px;text-transform:uppercase;letter-spacing:.06em;font-size:.68rem;color:var(--text-mute)" }));
         groups[cat].forEach((e) => results.appendChild(exampleCard(e)));
       });
     }
-    search.addEventListener("input", () => { _exFilter = search.value; draw(); });
+    var exDeb;
+    search.addEventListener("input", () => { _exFilter = search.value; clearTimeout(exDeb); exDeb = setTimeout(draw, 120); });
     host.appendChild(el("div.doc-search", {}, [search]));
     host.appendChild(results);
     draw();
@@ -14851,6 +15088,19 @@ window.G = window.G || {};
         const hover = window.matchMedia("(hover: hover)").matches;
         return { ok:true, detail: "pointer:" + (fine ? "fine" : "coarse") + " \u00b7 hover:" + (hover ? "yes" : "no") +
           " \u00b7 touch points:" + (navigator.maxTouchPoints || 0) + "  (informational \u2014 use the S Pen manual check)" };
+      } },
+    { id:"statusbar", name:"Status bar theming",
+      why:"Android 15+ makes StatusBar.setBackgroundColor() a documented no-op (OS-enforced edge-to-edge, no opt-out on API 36). This is a known platform limit, not something GUIDON can force \u2014 the app's own CSS safe-area insets keep content clear of the bar regardless of whether its colour follows the theme.",
+      run: async () => {
+        if (!G.native || !G.native.isNative()) return { ok:true, detail:"Not a native build \u2014 no system status bar to theme" };
+        const m = navigator.userAgent.match(/Android (\d+)/);
+        const ver = m ? +m[1] : null;
+        if (ver != null && ver >= 15) {
+          return { ok:true, detail:"Android " + ver + " \u2014 bar-colour sync is a known no-op here; safe-area CSS still keeps content clear of the bar" };
+        }
+        const applied = G.native.state.applied > 0;
+        return { ok: applied, detail: (ver != null ? "Android " + ver + " \u2014 " : "") +
+          (applied ? "bar colour synced (" + G.native.state.lastBarColor + ")" : "bar colour sync did not run") };
       } }
   ];
 
@@ -15385,8 +15635,15 @@ window.G = window.G || {};
   async function save(list) {
     try { await db.put("kv", { k: KEY, v: list }); return true; } catch (e) { return false; }
   }
+  // Storage-level cap - distinct from the editor's own CAP=25 a bit further
+  // down, which only limits how many rows are RENDERED at once. syncAll()
+  // (notify.js) re-schedules the FULL stored list on every native boot, so
+  // that's what actually needed a bound; a real account has been observed
+  // at ~250 reminders with no cap at all previously.
+  var MAX_REMINDERS = 300;
   async function add(entry) {
     var list = await load();
+    if (list.length >= MAX_REMINDERS) return null;
     list.push({ id: uid(), kind: entry.kind || "other", label: entry.label || "Reminder", date: entry.date || "", note: entry.note || "" });
     await save(list);
     return list;
@@ -15521,6 +15778,7 @@ window.G = window.G || {};
       var def = KINDS.filter(function (k) { return k.id === kind; })[0];
       var label = (labelIn.value || "").trim() || (def ? def.label : "Reminder");
       var updated = await add({ kind: kind, label: label, date: dv, note: (noteIn.value || "").trim() });
+      if (!updated) { try { util.toast && util.toast("You've reached the " + MAX_REMINDERS + "-reminder limit — remove an old one first."); } catch (e) {} return; }
       try { if (G.notify) await G.notify.scheduleForReminder(updated[updated.length - 1]); } catch (e) {}
       labelIn.value = ""; noteIn.value = ""; dateIn.value = "";
       try { if (G.util.announce) G.util.announce("Reminder added for " + label + "."); } catch (e) {}
@@ -15538,6 +15796,7 @@ window.G = window.G || {};
 
   G.reminders = {
     KINDS: KINDS,
+    MAX: MAX_REMINDERS,
     load: load, add: add, remove: remove, bucket: bucket,
     renderStrip: renderStrip, renderEditor: renderEditor,
     _daysUntil: daysUntil, // exported for tests
@@ -15724,16 +15983,23 @@ window.G = window.G || {};
 
     // Save to history when user pauses typing with a real bullet (score > 0)
     let histDebounce = null;
+    function flushHist() {
+      if (!histDebounce) return;
+      clearTimeout(histDebounce);
+      histDebounce = null;
+      const text = ta.value.trim();
+      if (text.split(/\s+/).length >= 5) {
+        const r = gradeBullet(text, cfg);
+        if (r.score > 0) saveToHistory(text, r.score, r.band);
+      }
+    }
     ta.addEventListener("input", () => {
       clearTimeout(histDebounce);
-      histDebounce = setTimeout(() => {
-        const text = ta.value.trim();
-        if (text.split(/\s+/).length >= 5) {
-          const r = gradeBullet(text, cfg);
-          if (r.score > 0) saveToHistory(text, r.score, r.band);
-        }
-      }, 2000);
+      histDebounce = setTimeout(flushHist, 2000);
     });
+    // Keyed so a re-render (a fresh visit to this tab) replaces the previous
+    // instance's callback instead of stacking one bound to a detached <ta>.
+    util.onFlush("writing:bulletHistory", flushHist);
     renderHistory();
 
     host.appendChild(grip);
@@ -16460,7 +16726,13 @@ window.G = window.G || {};
       const addBtn = el("button.btn.primary", { type: "button", text: "Remind me" });
       addBtn.addEventListener("click", async () => {
         if (!dateIn.value) { try { util.toast && util.toast("Pick a date first."); } catch (e) {} return; }
-        await G.reminders.add({ kind: "negotiation", label: (labelIn.value || "").trim() || "Follow up on salary negotiation", date: dateIn.value });
+        const updated = await G.reminders.add({ kind: "negotiation", label: (labelIn.value || "").trim() || "Follow up on salary negotiation", date: dateIn.value });
+        if (!updated) { try { util.toast && util.toast("You've reached the " + G.reminders.MAX + "-reminder limit — remove an old one first."); } catch (e) {} return; }
+        // The Reminders editor's own add handler schedules the native
+        // notification for the reminder it just added - this quick-add
+        // saved to storage but never did, so no alarm was ever armed
+        // until (if ever) the next cold boot's syncAll() caught it.
+        try { if (G.notify) await G.notify.scheduleForReminder(updated[updated.length - 1]); } catch (e) {}
         try { if (G.util.announce) G.util.announce("Reminder set."); } catch (e) {}
         dateIn.value = ""; labelIn.value = "";
       });
@@ -16471,17 +16743,26 @@ window.G = window.G || {};
 
     // Debounced single persist across all interactive widgets above.
     let _persistTimer = null;
+    async function doPersistSalNeg() {
+      await saveSalNeg({
+        salaryRange: rangeData,
+        skillsComparison: skillsData,
+        jobOfferChecklist: (typeof _checklistDataRef !== "undefined") ? _checklistDataRef : (saved.jobOfferChecklist || {}),
+        negotiationPlanner: (typeof _planDataRef !== "undefined") ? _planDataRef : (saved.negotiationPlanner || {}),
+      });
+    }
     function persistSalNeg() {
       clearTimeout(_persistTimer);
-      _persistTimer = setTimeout(async () => {
-        await saveSalNeg({
-          salaryRange: rangeData,
-          skillsComparison: skillsData,
-          jobOfferChecklist: (typeof _checklistDataRef !== "undefined") ? _checklistDataRef : (saved.jobOfferChecklist || {}),
-          negotiationPlanner: (typeof _planDataRef !== "undefined") ? _planDataRef : (saved.negotiationPlanner || {}),
-        });
-      }, 200);
+      _persistTimer = setTimeout(() => { _persistTimer = null; doPersistSalNeg(); }, 200);
     }
+    // Keyed so a re-render (a fresh visit to this tab) replaces the previous
+    // instance's callback instead of stacking one bound to stale data refs.
+    util.onFlush("finance:salNeg", () => {
+      if (!_persistTimer) return;
+      clearTimeout(_persistTimer);
+      _persistTimer = null;
+      doPersistSalNeg();
+    });
   }
 
     let activeTab = "brs";
@@ -17245,10 +17526,13 @@ window.G = window.G || {};
       const today = new Date(); today.setHours(0,0,0,0);
       const ets = new Date(etsDate + "T00:00:00");
       const daysOut = Math.round((ets - today) / 86400000);
+      // Shared with Home's own ETS banner via util.etsUrgency() so the two
+      // screens never disagree on colour for the same profile etsDate.
+      const urgencyColor = util.etsUrgency(daysOut).color;
       const banner = el("div.tx-countdown-banner");
-      banner.style.borderColor = daysOut <= 30 ? "var(--red)" : daysOut <= 90 ? "var(--amber)" : "var(--green)";
+      banner.style.borderColor = urgencyColor;
       const daysEl = el("span.tx-countdown-days", { text: Math.abs(daysOut) });
-      daysEl.style.color = daysOut <= 30 ? "var(--red)" : daysOut <= 90 ? "var(--amber)" : "var(--green)";
+      daysEl.style.color = urgencyColor;
       const label = daysOut >= 0 ? " days until ETS" : " days since ETS";
       banner.appendChild(daysEl);
       banner.appendChild(el("span.tx-countdown-label", { text: label }));
@@ -17551,7 +17835,11 @@ window.G = window.G || {};
       const addBtn = el("button.btn.primary", { type: "button", text: "Remind me" });
       addBtn.addEventListener("click", async () => {
         if (!dateIn.value) { try { util.toast && util.toast("Pick a date first."); } catch (e) {} return; }
-        await G.reminders.add({ kind: "usajobs", label: (labelIn.value || "").trim() || "USAJOBS application closes", date: dateIn.value });
+        const updated = await G.reminders.add({ kind: "usajobs", label: (labelIn.value || "").trim() || "USAJOBS application closes", date: dateIn.value });
+        if (!updated) { try { util.toast && util.toast("You've reached the " + G.reminders.MAX + "-reminder limit — remove an old one first."); } catch (e) {} return; }
+        // Same fix as the salary-negotiation quick-add a few thousand
+        // lines up: G.reminders.add() alone never schedules anything.
+        try { if (G.notify) await G.notify.scheduleForReminder(updated[updated.length - 1]); } catch (e) {}
         try { if (G.util.announce) G.util.announce("Reminder set."); } catch (e) {}
         dateIn.value = ""; labelIn.value = "";
       });
@@ -17919,7 +18207,20 @@ window.G = window.G || {};
 
         count.textContent = "Showing " + Math.min(hits.length, CAP) + " of " + hits.length + (q || activeCat ? " matches" : " resources");
         if (!hits.length) {
-          results.appendChild(el("div.empty", { text: "No resources match. Try a different term or clear the filter." }));
+          // Previously a fixed string that never echoed what was actually
+          // typed or filtered - the search box already has a debounce/cap
+          // (unlike Train/Counseling Examples/Forms Trainer, which didn't),
+          // this was only the empty-state message itself lagging behind
+          // the pattern Dictionary/Doctrine/Definitions/Train already use.
+          const activeCatName = activeCat ? (cats.find((c) => c.id === activeCat) || {}).name : null;
+          const emptyMsg = q && activeCatName
+            ? "No " + activeCatName + " resources match “" + search.value.trim() + "”. Try a different term or clear the category filter."
+            : q
+            ? "No resources match “" + search.value.trim() + "”. Try a different term or clear the search."
+            : activeCatName
+            ? "No resources in " + activeCatName + ". Clear the filter to see more."
+            : "No resources match. Try a different term or clear the filter.";
+          results.appendChild(el("div.empty", { text: emptyMsg }));
           return;
         }
         const frag = document.createDocumentFragment();
@@ -17983,10 +18284,12 @@ window.G = window.G || {};
         const ets = new Date(s.etsDate + "T00:00:00");
         const daysOut = Math.round((ets - today) / 86400000);
         if (daysOut >= 0) {
-          // Urgency tier
-          const isRed    = daysOut <= 45;
-          const isAmber  = daysOut <= 120;
-          const bannerColor = isRed ? "var(--red)" : isAmber ? "var(--amber)" : "var(--green)";
+          // Urgency tier — shared with the Transition tab's own banner via
+          // util.etsUrgency() so the two screens never disagree on colour.
+          const urgency = util.etsUrgency(daysOut);
+          const isRed = urgency.level === "red";
+          const isAmber = urgency.level === "amber";
+          const bannerColor = urgency.color;
           const etsBanner = el("div.panel.ets-banner", { style: "border-left:4px solid "+bannerColor });
 
           // Header row
@@ -18452,6 +18755,11 @@ window.G = window.G || {};
       diffChipBar.appendChild(chip);
     });
 
+    // Same debounce+cap pattern Doctrine (120ms, CAP=150) and Dictionary
+    // (120ms, CAP=120) already use for comparably-sized lists - Train had
+    // neither, so every keystroke rebuilt up to all 182 rich, multi-element
+    // scenario cards synchronously on the main thread.
+    const TRAIN_CAP = 60;
     function buildGrid() {
       const q = (searchInput.value || "").trim().toLowerCase();
       const modeFiltered = activeFilter === "training"
@@ -18494,14 +18802,14 @@ window.G = window.G || {};
       // Result count line
       if (q || activeComp || activeDiff) {
         gridWrap.appendChild(el("div.search-header", {}, [
-          el("span.search-count", { text: filtered.length + " scenario" + (filtered.length===1?"":"s") }),
+          el("span.search-count", { text: filtered.length + " scenario" + (filtered.length===1?"":"s") + (filtered.length > TRAIN_CAP ? " (showing first " + TRAIN_CAP + ")" : "") }),
           (q ? el("span.search-breakdown", { text: " · " + q }) : null),
           (activeComp ? el("span.search-breakdown", { text: " · " + activeComp }) : null),
           (activeDiff ? el("span.search-breakdown", { text: " · " + activeDiff }) : null),
         ].filter(Boolean)));
       }
       const grid = el("div.grid");
-      filtered.forEach((sc) => {
+      filtered.slice(0, TRAIN_CAP).forEach((sc) => {
         const isTraining = sc.defaultMode === "training";
         const primaryComp = (sc.competency || [])[0] || "";
         const compColor = COMP_COLORS[primaryComp] || "var(--text-dim)";
@@ -18548,7 +18856,8 @@ window.G = window.G || {};
       gridWrap.appendChild(grid);
     }
 
-    searchInput.addEventListener("input", buildGrid);
+    let trainSearchDeb;
+    searchInput.addEventListener("input", () => { clearTimeout(trainSearchDeb); trainSearchDeb = setTimeout(buildGrid, 120); });
     listWrap.appendChild(searchInput);
 
     filterDefs.forEach(([key, label]) => {
@@ -18925,6 +19234,31 @@ window.G = window.G || {};
       iface.appendChild(el("p.hint", { text: "Default landing view", style:"margin-top:8px" }));
       iface.appendChild(optGrid(views4, (o)=> (s2.defaultView||"home")===o.id, (o)=>store.setSetting("defaultView", o.id)));
       iface.appendChild(toggle("Auto night theme", "autoNight", "Switch to a dark theme automatically during evening/night hours (uses your device clock; fully offline)."));
+      // autoNightTheme/autoNightStart/autoNightEnd were fully functional in
+      // the scheduling logic and round-tripped through backup export/
+      // import, but had no input control anywhere in this UI - every
+      // Soldier was permanently stuck with the coded defaults
+      // (Night Vision, 20:00-06:00) with no way to change either.
+      const nightThemes = G.theme.THEMES.filter((t) => t.kind === "dark");
+      const nightSel = el("select", { "aria-label": "Night theme" });
+      nightThemes.forEach((t) => nightSel.appendChild(el("option", { value: t.id, text: t.name, selected: (s2.autoNightTheme || "night-vision") === t.id ? "selected" : null })));
+      nightSel.addEventListener("change", () => store.setSetting("autoNightTheme", nightSel.value));
+      const hourLabel = (h) => String(h).padStart(2, "0") + ":00";
+      function hourSelect(label, settingKey, dflt) {
+        const sel = el("select", { "aria-label": label });
+        for (let h = 0; h < 24; h++) sel.appendChild(el("option", { value: String(h), text: hourLabel(h), selected: (typeof s2[settingKey] === "number" ? s2[settingKey] : dflt) === h ? "selected" : null }));
+        sel.addEventListener("change", () => store.setSetting(settingKey, +sel.value));
+        return sel;
+      }
+      const startSel = hourSelect("Auto-night start hour", "autoNightStart", 20);
+      const endSel = hourSelect("Auto-night end hour", "autoNightEnd", 6);
+      iface.appendChild(el("div", { style: "margin-top:8px" }, [
+        el("label", { text: "Night theme", style: "margin:0 0 4px;display:block" }), nightSel,
+      ]));
+      iface.appendChild(el("div.mini-row", { style: "margin-top:8px" }, [
+        el("label", { text: "From", style: "margin:0" }), startSel,
+        el("label", { text: "to", style: "margin:0" }), endSel,
+      ]));
       mount.appendChild(iface);
 
       // ---- NOTIFICATIONS panel: Android-only, hidden entirely on web/Tauri
@@ -18950,6 +19284,10 @@ window.G = window.G || {};
             notifStatus.textContent = "On " + String.fromCharCode(8212) + " you'll get a local notification the morning a reminder is due. Nothing leaves this device.";
           } else {
             await store.setSetting("notifyReminders", false);
+            // Previously only cleared the flag - anything already
+            // scheduled in the OS notification queue kept firing on its
+            // date regardless, contradicting the "Off" copy below.
+            try { if (G.notify) await G.notify.cancelAll(); } catch (e) {}
             notifStatus.textContent = "Off " + String.fromCharCode(8212) + " GUIDON will still show reminders on Home, just without a notification.";
           }
         });

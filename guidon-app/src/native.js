@@ -69,6 +69,22 @@ window.G = window.G || {};
 
   /* --------------------------------------------------------- status bar */
 
+  /* Android 15 (API 35) made edge-to-edge mandatory and turned
+     StatusBar.setOverlaysWebView()/setBackgroundColor() into documented
+     no-ops (they still resolve, they just no longer move a pixel); the
+     API-35 opt-out (windowOptOutEdgeToEdgeEnforcement) was itself removed on
+     API 36, which is what this app targets, so there is no flag to flip our
+     way back. The Capacitor status-bar plugin has no fixed release yet
+     (tracked upstream: ionic-team/capacitor-plugins#2517) - this is a
+     platform gap, not a GUIDON bug. Two things keep this from being a real
+     regression: the app's CSS already prepares for edge-to-edge on its own
+     (viewport-fit=cover + env(safe-area-inset-*) throughout), so content
+     never sits under the bar even when the bar itself won't recolour; and
+     setStyle() (icon/text contrast, not a background paint) is a separate,
+     still-functional call, so the bar's icons keep readable contrast even
+     when its fill colour doesn't follow the theme. The calls below are left
+     in as-is rather than version-gated: they're genuinely harmless no-ops on
+     API 35+ and still do real work on API 34 and earlier, and on iOS. */
   async function applySystemBars() {
     const sb = plugin("StatusBar");
     if (!sb) return null;
@@ -153,18 +169,25 @@ window.G = window.G || {};
 
   /** Closes a themed dialog or the fullscreen study overlay, top layer first. */
   function closeTopLayer() {
-    // Fullscreen study is above everything except dialogs; Back should peel
-    // it off before it starts navigating history.
+    // A themed dialog (.gm-back) renders above fullscreen study when both are
+    // open - e.g. a confirm prompt raised from inside theater mode - so Back
+    // must check for one FIRST. Checking theater first (as this used to)
+    // closed the overlay underneath a still-open, visually topmost dialog.
+    if (document.querySelector(".gm-back")) {
+      // G.modal listens for Escape on document in the capture phase. Reusing
+      // that path keeps one tested close routine instead of poking at its
+      // internals.
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+      return true;
+    }
+    // Fullscreen study is next; Back should peel it off before it starts
+    // navigating history.
     if (document.documentElement.classList.contains("qz-theater")) {
       try { if (G.board && G.board.exitTheater) { G.board.exitTheater(); return true; } } catch (e) {}
       document.documentElement.classList.remove("qz-theater");
       return true;
     }
-    if (!document.querySelector(".gm-back")) return false;
-    // G.modal listens for Escape on document in the capture phase. Reusing that
-    // path keeps one tested close routine instead of poking at its internals.
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
-    return true;
+    return false;
   }
 
   function handleBack() {

@@ -92,6 +92,21 @@ window.G = window.G || {};
     } catch (e) {}
   }
 
+  // The inverse of syncAll(): cancels every currently-scheduled reminder
+  // notification. Settings' own toggle previously had no way to do this at
+  // all when turned off - it only cleared the notifyReminders flag, so
+  // anything already armed in the OS notification queue kept firing on its
+  // scheduled date regardless, directly contradicting the on-screen copy
+  // telling the Soldier notifications are off.
+  async function cancelAll() {
+    if (!plugin()) return false;
+    try {
+      const list = (G.reminders && (await G.reminders.load())) || [];
+      for (const r of list) { await cancelForReminder(r.id); }
+      return true;
+    } catch (e) { return false; }
+  }
+
   if (isNative) {
     // Long enough that the rest of boot (theme, seed, router) is settled
     // first; this is a background resync, not something on the critical path.
@@ -105,6 +120,7 @@ window.G = window.G || {};
     scheduleForReminder,
     cancelForReminder,
     syncAll,
+    cancelAll,
     _notifId: notifId, // exported for tests
   };
 })();
