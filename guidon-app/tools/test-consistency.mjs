@@ -120,7 +120,10 @@ seed.topKeys === 17 ? ok("seed has all 17 top-level sections") : bad(`expected 1
 seed.board === 1014 ? ok("1,014 board cards intact") : bad(`board cards: ${seed.board}, expected 1014`);
 seed.acronyms === 3629 ? ok("3,629 acronym terms intact") : bad(`acronyms: ${seed.acronyms}, expected 3629`);
 seed.doctrine === 336 ? ok("336 doctrine entries intact") : bad(`doctrine: ${seed.doctrine}, expected 336`);
-seed.career === 163 ? ok("163 MOS entries intact") : bad(`MOS: ${seed.career}, expected 163`);
+// 164 as of v1.4.20: task #104 added a real 46T (Visual Information
+// Equipment Operator-Maintainer) entry, previously mentioned only in a
+// note/array with no MOS-list entry of its own.
+seed.career === 164 ? ok("164 MOS entries intact") : bad(`MOS: ${seed.career}, expected 164`);
 seed.scenarios === 182 ? ok("182 scenarios intact") : bad(`scenarios: ${seed.scenarios}, expected 182`);
 
 /* The positive half: the corrected facts must actually be present. */
