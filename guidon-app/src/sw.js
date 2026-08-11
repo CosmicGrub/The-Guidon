@@ -27,22 +27,43 @@ const PRECACHE = [
   "./assets/da4856.js",
 ];
 
+// The one entry the fetch handler's navigation path depends on cache-first
+// (see "req.mode === navigate" below) - if this specifically didn't cache,
+// the install must not be accepted as successful.
+const CRITICAL = ["./index.html"];
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
     (async () => {
       const cache = await caches.open(CACHE);
+      let criticalOk = true;
       // Individually, so one missing optional icon cannot fail the whole install
-      // and leave the app with no offline capability at all.
+      // and leave the app with no offline capability at all - but track the
+      // one entry that actually matters (index.html) separately: this used
+      // to swallow that failure the same as an icon's, so install() could
+      // report success on a transient network blip while the critical shell
+      // silently never made it into the cache.
       await Promise.all(
         PRECACHE.map(async (url) => {
           try {
             const res = await fetch(new Request(url, { cache: "reload" }));
-            if (res.ok) await cache.put(url, res);
+            if (res.ok) { await cache.put(url, res); }
+            else if (CRITICAL.includes(url)) { criticalOk = false; }
           } catch (e) {
-            /* non-fatal: shell still caches */
+            if (CRITICAL.includes(url)) criticalOk = false;
+            /* non-fatal for everything else: shell still caches */
           }
         })
       );
+      if (!criticalOk) {
+        // Don't accept this install. Failing here (rather than resolving)
+        // means the browser treats install as failed: this cache generation
+        // is discarded and any previously-working service worker (and its
+        // cache) stays active and serving in the meantime - strictly safer
+        // than silently accepting an incomplete new generation.
+        try { await caches.delete(CACHE); } catch (e) {}
+        throw new Error("GUIDON SW install: critical precache entry failed (" + CRITICAL.join(",") + ")");
+      }
       // Deliberately NOT skipWaiting() here. The page decides when to activate a
       // new version, so a Soldier mid-drill is never swapped out from under.
     })()

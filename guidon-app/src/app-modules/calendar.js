@@ -49,13 +49,11 @@ window.G = window.G || {};
       link: "#/transition" },
   ];
 
-  function parseDate(s) {
-    if (!s) return null;
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
-    if (!m) return null;
-    const d = new Date(+m[1], +m[2] - 1, +m[3]);
-    return isNaN(d.getTime()) ? null : d;
-  }
+  // Shared with leader.js as util.parseISODate() - see its definition in
+  // src/index.html for why this delegates rather than building the Date
+  // itself (the multi-argument Date constructor this used to use directly
+  // triggers JS's legacy 2-digit-year rule for year values 0-99).
+  function parseDate(s) { return util.parseISODate(s); }
   function addMonths(d, n) {
     const x = new Date(d.getTime());
     x.setMonth(x.getMonth() + n);

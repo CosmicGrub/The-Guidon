@@ -24,6 +24,81 @@ r.classList.toggle("hc",!!a.highContrast);
 r.classList.toggle("large-targets",!!a.largeTargets);
 }catch(e){}})();
 </script>
+<script>
+/* GUIDON global crash safety net — registered as early as possible, before
+   the ~18,000-line app bundle even starts parsing, so it's active for the
+   widest possible window including failures during the app's own boot.
+
+   Two failure classes this exists for, both previously silent:
+   (1) a throw during boot (buildShell()/wireStatus()/renderOnboarding(), none
+       of which were wrapped) left a blank #app with nothing to catch it,
+       since buildShell() clears #app before appending anything.
+   (2) an exception NOT inside a view's own render() call — an onclick
+       handler, a setTimeout callback, anything outside route()'s existing
+       per-view catch — was console-only: invisible to the user, no report
+       generated, no way to recover short of guessing to reload.
+
+   Deliberately does NOT take over the screen for every error anywhere,
+   forever — that would turn a minor bug in one rarely-used feature into
+   what looks like a total outage. It only shows the fallback when the
+   shell genuinely never rendered (the boot-time case); otherwise it just
+   logs, so an already-working app keeps working around a background error
+   the same way it always did. app.start()'s own crash boundary (later in
+   this file) is the deliberate, unconditional trigger for boot failures
+   specifically — this is the broader net for everything else. */
+(function () {
+  "use strict";
+  var LOG_CAP = 20;
+  window.__guidonErrorLog = [];
+  function record(context, err) {
+    try {
+      var entry = {
+        time: new Date().toISOString(),
+        context: context,
+        message: err && err.message != null ? String(err.message) : String(err),
+        stack: err && err.stack ? String(err.stack).slice(0, 800) : null,
+      };
+      window.__guidonErrorLog.push(entry);
+      if (window.__guidonErrorLog.length > LOG_CAP) window.__guidonErrorLog.shift();
+    } catch (e2) {}
+  }
+  function shellRendered() {
+    var app = document.getElementById("app");
+    // buildShell() appends a real topbar/nav/main as its first content; the
+    // only pre-JS markup is the empty <div id="app">, so any child at all
+    // means the shell got at least that far.
+    return !!(app && app.children && app.children.length > 0);
+  }
+  window.__guidonShowCrashFallback = function () {
+    var app = document.getElementById("app");
+    if (!app) return; // body not parsed yet - nothing to swap into
+    while (app.firstChild) app.removeChild(app.firstChild);
+    var box = document.createElement("div");
+    box.style.cssText = "max-width:420px;margin:15vh auto;padding:24px;text-align:center;font-family:system-ui,-apple-system,sans-serif;color:#ccc;";
+    var h = document.createElement("h1");
+    h.textContent = "Something went wrong";
+    h.style.cssText = "font-size:1.2rem;margin-bottom:8px;";
+    var p = document.createElement("p");
+    p.textContent = "GUIDON hit an unexpected error and couldn't finish loading. Nothing is saved to storage during a failed load, so your data is safe. Reloading usually fixes this.";
+    p.style.cssText = "font-size:.9rem;opacity:.8;margin-bottom:16px;line-height:1.5;";
+    var btn = document.createElement("button");
+    btn.textContent = "Reload GUIDON";
+    btn.type = "button";
+    btn.style.cssText = "padding:10px 20px;font-size:.9rem;cursor:pointer;border-radius:6px;border:1px solid #666;background:#333;color:#eee;";
+    btn.addEventListener("click", function () { location.reload(); });
+    box.appendChild(h); box.appendChild(p); box.appendChild(btn);
+    app.appendChild(box);
+  };
+  window.addEventListener("error", function (e) {
+    record("window.onerror", e.error || e.message);
+    if (!shellRendered()) window.__guidonShowCrashFallback();
+  });
+  window.addEventListener("unhandledrejection", function (e) {
+    record("unhandledrejection", e.reason);
+    if (!shellRendered()) window.__guidonShowCrashFallback();
+  });
+})();
+</script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>GUIDON — Army Leader Development Trainer</title>
@@ -3847,6 +3922,19 @@ html[data-theme="sandstone-sun"] {
 </style>
 </head>
 <body>
+<!-- The #app placeholder below already covers "JS is still loading" and
+     "JS is disabled forever" with one message that's accurate either way,
+     and has done so since this project's first commit. This <noscript>
+     block is a belt-and-suspenders addition for the specific case where
+     JS is deliberately disabled: some browsers/extensions hide non-noscript
+     content or announce noscript blocks distinctly to assistive tech, so
+     it's worth having the explicit, unambiguous signal too. -->
+<noscript>
+  <div style="max-width:900px;margin:40px auto;padding:0 16px;font-family:sans-serif">
+    <h2>GUIDON requires JavaScript</h2>
+    <p style="color:#9fb0bd">This is an offline, single-file trainer that runs entirely in your browser — nothing is sent anywhere, but it does need JavaScript enabled to run at all. Enable JavaScript for this page and reload.</p>
+  </div>
+</noscript>
 <div id="app">
   <div class="view" style="max-width:900px;margin:40px auto;padding:0 16px">
     <h2 style="font-family:sans-serif">Loading GUIDON...</h2>
@@ -3956,6 +4044,24 @@ window.G = window.G || {};
   };
 
   util.clear = function (node) { while (node && node.firstChild) node.removeChild(node.firstChild); return node; };
+
+  // Parses a "YYYY-MM-DD" date string safely. leader.js and calendar.js each
+  // used to have their own copy-pasted parseDate() built on
+  // `new Date(+m[1], +m[2]-1, +m[3])` - the multi-argument constructor -
+  // which triggers JS's legacy 2-digit-year rule for year values 0-99 (e.g.
+  // "0050-06-15" silently became 1950-06-15), producing confidently wrong
+  // overdue-days math with no validation error. The ISO string form below
+  // (already used elsewhere in this file, e.g. the board-date countdown)
+  // does not carry that quirk. Also rejects implausible years outright,
+  // since a genuine date for this app's fields (weapons qual, counseling,
+  // reminders) is never legitimately pre-1900.
+  util.parseISODate = function (s) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || "");
+    if (!m) return null;
+    if (+m[1] < 1900) return null;
+    const d = new Date(s + "T00:00:00");
+    return isNaN(d.getTime()) ? null : d;
+  };
 
   util.toast = function (msg, ms) {
     let t = document.getElementById("toast");
@@ -4211,6 +4317,11 @@ window.G = window.G || {};
      meta          keyPath "k"   -> content cache metadata / seed snapshot
    ------------------------------------------------------------------ */
 window.G = window.G || {};
+// Placeholder values only - tools/build.mjs always overwrites both from
+// package.json's version + the real build timestamp (see "app version +
+// build date" in build.mjs). Don't hand-edit these expecting it to ship;
+// running against this raw src/index.html directly (e.g. tools/server.mjs)
+// is the only case where these literals are actually what's shown.
 window.GUIDON_APP_VERSION = "1.4.13";
 window.GUIDON_BUILD_DATE = "2026-08-09";
 (function () {
@@ -6487,6 +6598,12 @@ window.G = window.G || {};
       inp.addEventListener("input", () => {
         let n = parseFloat(inp.value); if (isNaN(n)) n = 0;
         n = Math.max(min, Math.min(max, n)); v[key] = n;
+        // Write the clamped value back into the box itself, not just the
+        // score total: previously an out-of-range number (e.g. 999999999999
+        // for a 40-max field) stayed visibly in the input forever while the
+        // total silently used 40 - the field disagreed with what was
+        // actually being scored, with no indication a clamp had happened.
+        if (inp.value !== String(n)) inp.value = String(n);
         (st.querySelector(".v")||{}).textContent = String(n); draw();
       });
       c.appendChild(st); c.appendChild(inp);
@@ -7861,7 +7978,10 @@ window.G = window.G || {};
   G.progress = {    async render(mount) {
       util.clear(mount);
       const p = await store.getProgress();
-      mount.appendChild(el("div.section-title", {}, [el("h2", { text: "Readiness" }), el("div.rule")]));
+      // "Progress", matching the nav label - not "Readiness", which is
+      // already a distinct sub-tab name inside Board Prep (a records-
+      // readiness checklist, an unrelated feature) and would collide.
+      mount.appendChild(el("div.section-title", {}, [el("h2", { text: "Progress" }), el("div.rule")]));
 
       // headline
       const headline = el("div.panel", {}, [
@@ -11340,6 +11460,73 @@ window.G = window.G || {};
 
   const PROFILE_KEY   = "guidon:profile:v1";
 
+  // Per-route one-line descriptions ("what this section is for"), DERIVED
+  // FROM ROUTES rather than hand-maintained (a previous hand-written list
+  // had silently fallen three sections behind - BLC, ALC and SLC were all
+  // missing). Originally authored only for the Guided Tour (renderKioskMode
+  // below), which is why it lives in profile.js - but it's the same content
+  // a nav-item hover tooltip needs, so it's hoisted to module scope and
+  // exposed on G here (nav.nav's own IIFE, much further down the file, is a
+  // separate closure and can only reach this via the shared G object -
+  // this assignment runs at module-load time, well before navButton() is
+  // ever called during app.start(), so G.demoNotes is always populated by
+  // the time anything needs it).
+  const DEMO_NOTES = {
+    "#/home":      { d:"Home dashboard — readiness snapshot, board countdown, mandatory-training tracker and your action plan in one view.",
+                     w:"Watch the board-date banner: tap it to switch between a live countdown and a plain date." },
+    "#/train":     { d:"Leadership scenarios in Text, Course or Adventure mode. Every decision maps to an ADP 6-22 competency.",
+                     w:"Filter by competency and difficulty — the chips above the list drive the whole catalogue." },
+    "#/board":     { d:"1,014 deduplicated board cards with 3D flip, spaced repetition and four-level mastery grading.",
+                     w:"Two things to show here: the Level filter (beginner/intermediate/expert) and the Points tab — a rank-aware PPW calculator." },
+    "#/blc":       { d:"BLC preparation built from the actual Individual Student Assessment Plan — the document that defines how BLC is graded.",
+                     w:"Open 'How the honours actually work' — real point values, and the fact that any negative counseling disqualifies you." },
+    "#/alc":       { d:"ALC preparation: the two-phase structure, HRC seat prioritisation, and the NCO-C3 common core.",
+                     w:"'Getting a seat' explains why finishing your technical track early moves you up an entire priority tier." },
+    "#/slc":       { d:"SLC and the senior gates above it — MLC and the Sergeants Major Course.",
+                     w:"Opens with a PME-transformation warning: course lengths are actively changing and sources disagree." },
+    "#/drills":    { d:"Rehearsable versions of what BLC and ALC actually grade — squad drill, PRT, brief timer, essay rubric, MDMP.",
+                     w:"Start the brief rehearsal timer: it colour-codes the 8:00–12:00 acceptable window in real time." },
+    "#/doctrine":  { d:"Doctrine entries cross-referenced to ADP, FM, TC and AR sources, searchable by topic.",
+                     w:"Search any publication number to see everything in the corpus that cites it." },
+    "#/dictionary":{ d:"3,592-term Army and DoD acronym dictionary — instant lookup, fully offline.",
+                     w:"Type a partial acronym; results narrow as you type with no network call." },
+    "#/learn":     { d:"Structured study paths that build toward board readiness, competency by competency.",
+                     w:"Paths adapt to the tier on your profile." },
+    "#/forms":     { d:"Interactive replica DA forms — 4856, 638, 31, NCOER support and more, fillable and exportable.",
+                     w:"Fill a DA 4856 and export it — the PDF is generated on-device." },
+    "#/write":     { d:"Guided writing help for counseling statements, award narratives and other leader writing.",
+                     w:"Pairs with the essay rubric in NCOPDS Drills." },
+    "#/counsel":   { d:"Counseling skill-builder with the four-stage process and a DA 4856 walkthrough.",
+                     w:"The four-stage process is a recurring board question." },
+    "#/develop":   { d:"Individual Development Plan builder tied to ADP 6-22 competencies.",
+                     w:"Plans persist per profile." },
+    "#/risk":      { d:"Composite risk management worksheet — build and reason through a real assessment.",
+                     w:"The DA 2977 is a scored requirement at BLC before you lead a single PT session." },
+    "#/career":    { d:"163 MOS codes with ASVAB and OPAT data, FY26 shortage status, reclassification and warrant-officer feeder paths.",
+                     w:"Shortage and SRB data is explicitly perishable — the app says so rather than pretending otherwise." },
+    "#/money":     { d:"Financial readiness — BRS, TSP, SGLI, allowances and board-relevant money topics.",
+                     w:"Every calculator input is labelled for screen readers." },
+    "#/health":    { d:"H2F wellness across six domains, plus crisis resources.",
+                     w:"Crisis resources are reachable in one tap from anywhere in this section." },
+    "#/transition":{ d:"ETS timeline with VA BDD milestones and the SFL-TAP checklist.",
+                     w:"Milestones shift with the ETS date on your profile." },
+    "#/resources": { d:"Curated directory of career, education and life resources.",
+                     w:"Everything here works offline — no dead links to a network you do not have." },
+    "#/progress":  { d:"Competency map, scenario history, board-readiness score and Board Drill mastery by study level.",
+                     w:"The mastery panel breaks out beginner, intermediate and expert separately." },
+    "#/author":    { d:"Build your own scenarios, cards and reference material.",
+                     w:"Custom content persists alongside the built-in corpus." },
+    "#/settings":  { d:"14 themes, accessibility controls, About panel and account management.",
+                     w:"Account controls — rename, redo setup, switch or delete — live at the top of the profile screen." },
+    "#/currency":  { d:"Content freshness tracker — flags perishable facts (PME lengths, pay rates, shortage data) that are due for re-verification. Not related to money.",
+                     w:"" },
+    "#/channels":  { d:"Who to see for what, and the requirements (\"gates\") that block each rank.",
+                     w:"" },
+    "#/privacy":   { d:"What GUIDON stores, where, and why it never leaves your device.",
+                     w:"" },
+  };
+  G.demoNotes = DEMO_NOTES;
+
   // ── Rank-to-curriculum mapping (shown during onboarding summary) ─────────
   const RANK_CURRICULUM_MAP = {
     'E1': [
@@ -12349,56 +12536,9 @@ window.G = window.G || {};
     // Tour stops are DERIVED FROM ROUTES, not hand-maintained. The previous
     // hand-written list had silently fallen three sections behind — BLC, ALC
     // and SLC were all missing from the tour that is used to showcase the app.
-    // Deriving means a new route cannot be forgotten again; the map below only
-    // supplies the narration and the "what to watch for" callout per stop.
-    const DEMO_NOTES = {
-      "#/home":      { d:"Home dashboard — readiness snapshot, board countdown, mandatory-training tracker and your action plan in one view.",
-                       w:"Watch the board-date banner: tap it to switch between a live countdown and a plain date." },
-      "#/train":     { d:"Leadership scenarios in Text, Course or Adventure mode. Every decision maps to an ADP 6-22 competency.",
-                       w:"Filter by competency and difficulty — the chips above the list drive the whole catalogue." },
-      "#/board":     { d:"1,014 deduplicated board cards with 3D flip, spaced repetition and four-level mastery grading.",
-                       w:"Two things to show here: the Level filter (beginner/intermediate/expert) and the Points tab — a rank-aware PPW calculator." },
-      "#/blc":       { d:"BLC preparation built from the actual Individual Student Assessment Plan — the document that defines how BLC is graded.",
-                       w:"Open 'How the honours actually work' — real point values, and the fact that any negative counseling disqualifies you." },
-      "#/alc":       { d:"ALC preparation: the two-phase structure, HRC seat prioritisation, and the NCO-C3 common core.",
-                       w:"'Getting a seat' explains why finishing your technical track early moves you up an entire priority tier." },
-      "#/slc":       { d:"SLC and the senior gates above it — MLC and the Sergeants Major Course.",
-                       w:"Opens with a PME-transformation warning: course lengths are actively changing and sources disagree." },
-      "#/drills":    { d:"Rehearsable versions of what BLC and ALC actually grade — squad drill, PRT, brief timer, essay rubric, MDMP.",
-                       w:"Start the brief rehearsal timer: it colour-codes the 8:00–12:00 acceptable window in real time." },
-      "#/doctrine":  { d:"Doctrine entries cross-referenced to ADP, FM, TC and AR sources, searchable by topic.",
-                       w:"Search any publication number to see everything in the corpus that cites it." },
-      "#/dictionary":{ d:"3,592-term Army and DoD acronym dictionary — instant lookup, fully offline.",
-                       w:"Type a partial acronym; results narrow as you type with no network call." },
-      "#/learn":     { d:"Structured study paths that build toward board readiness, competency by competency.",
-                       w:"Paths adapt to the tier on your profile." },
-      "#/forms":     { d:"Interactive replica DA forms — 4856, 638, 31, NCOER support and more, fillable and exportable.",
-                       w:"Fill a DA 4856 and export it — the PDF is generated on-device." },
-      "#/write":     { d:"Guided writing help for counseling statements, award narratives and other leader writing.",
-                       w:"Pairs with the essay rubric in NCOPDS Drills." },
-      "#/counsel":   { d:"Counseling skill-builder with the four-stage process and a DA 4856 walkthrough.",
-                       w:"The four-stage process is a recurring board question." },
-      "#/develop":   { d:"Individual Development Plan builder tied to ADP 6-22 competencies.",
-                       w:"Plans persist per profile." },
-      "#/risk":      { d:"Composite risk management worksheet — build and reason through a real assessment.",
-                       w:"The DA 2977 is a scored requirement at BLC before you lead a single PT session." },
-      "#/career":    { d:"163 MOS codes with ASVAB and OPAT data, FY26 shortage status, reclassification and warrant-officer feeder paths.",
-                       w:"Shortage and SRB data is explicitly perishable — the app says so rather than pretending otherwise." },
-      "#/money":     { d:"Financial readiness — BRS, TSP, SGLI, allowances and board-relevant money topics.",
-                       w:"Every calculator input is labelled for screen readers." },
-      "#/health":    { d:"H2F wellness across six domains, plus crisis resources.",
-                       w:"Crisis resources are reachable in one tap from anywhere in this section." },
-      "#/transition":{ d:"ETS timeline with VA BDD milestones and the SFL-TAP checklist.",
-                       w:"Milestones shift with the ETS date on your profile." },
-      "#/resources": { d:"Curated directory of career, education and life resources.",
-                       w:"Everything here works offline — no dead links to a network you do not have." },
-      "#/progress":  { d:"Competency map, scenario history, board-readiness score and Board Drill mastery by study level.",
-                       w:"The mastery panel breaks out beginner, intermediate and expert separately." },
-      "#/author":    { d:"Build your own scenarios, cards and reference material.",
-                       w:"Custom content persists alongside the built-in corpus." },
-      "#/settings":  { d:"14 themes, accessibility controls, About panel and account management.",
-                       w:"Account controls — rename, redo setup, switch or delete — live at the top of the profile screen." }
-    };
+    // Deriving means a new route cannot be forgotten again. DEMO_NOTES itself
+    // now lives at module scope (top of this file) so navButton() can reuse
+    // the same descriptions as hover tooltips — see the comment there.
     const DEMO_STEPS = ((G.routes) || [])
       .filter(r => r.hash !== "#/kiosk" && r.hash !== "#/profile")
       .map(r => {
@@ -13914,7 +14054,11 @@ window.G = window.G || {};
 
   async function render(mount) {
     util.clear(mount);
-    mount.appendChild(el("div.section-title", {}, [ el("h2", { text:"Channels & Gates" }), el("div.rule") ]));
+    // "Channels", matching the nav label - "Channels & Gates" was noticeably
+    // longer than sibling nav labels in the same group, risking wrap/overflow
+    // on the mobile bottom bar; the "gates" half is still explained in the
+    // very next line's hint text below.
+    mount.appendChild(el("div.section-title", {}, [ el("h2", { text:"Channels" }), el("div.rule") ]));
     mount.appendChild(el("p.hint", { text:
       "Who to see for what, and the requirements that gate each rank. The most common reason a promotion stalls is not policy \u2014 it is knocking on the wrong door, or missing a system deadline nobody mentioned." }));
 
@@ -14249,9 +14393,9 @@ window.G = window.G || {};
 
   async function render(mount) {
     util.clear(mount);
-    mount.appendChild(el("div.section-title", {}, [ el("h2", { text:"Self-Test" }), el("div.rule") ]));
+    mount.appendChild(el("div.section-title", {}, [ el("h2", { text:"Diagnostics" }), el("div.rule") ]));
     mount.appendChild(el("p.hint", { text:
-      "Run this on the device you actually use. The automated checks below run in this browser right now; the manual protocol covers what no automated tool can reach \u2014 TalkBack, S Pen hover, genuine airplane-mode offline, print, and sunlight legibility." }));
+      "Device and accessibility checks, not a knowledge quiz. Run this on the device you actually use. The automated checks below run in this browser right now; the manual protocol covers what no automated tool can reach \u2014 TalkBack, S Pen hover, genuine airplane-mode offline, print, and sunlight legibility." }));
 
     let saved = {};
     try { const r = await G.db.get("kv", KEY); saved = (r && r.v) || {}; } catch (e) {}
@@ -14557,12 +14701,29 @@ window.G = window.G || {};
       throw new Error("This file isn't a GUIDON backup (unexpected format).");
     }
     var restored = { kv: 0, userScenarios: 0, attempts: 0 };
+    var skipped = { kv: 0 };
 
     // kv entries are {k, v}
     if (Array.isArray(obj.stores.kv)) {
       for (var i = 0; i < obj.stores.kv.length; i++) {
         var row = obj.stores.kv[i];
-        if (row && row.k != null) { try { await G.db.put("kv", { k: row.k, v: row.v }); restored.kv++; } catch (e) {} }
+        if (!row || row.k == null) continue;
+        // guidon:profile:v1 gates the app's entire "does this user need
+        // onboarding" check (needsOnboarding() reads !p.onboardingComplete).
+        // Previously any row shape was accepted here - a malformed entry
+        // (a hand-edited file, a corrupted download, an export from an
+        // incompatible version) silently overwrote a valid profile, and the
+        // importer's own automatic post-import reload then dropped the user
+        // straight into full onboarding, discarding rank/board date/action
+        // plan, with only a generic "Restored N items" message - no
+        // indication identity data specifically was among what got
+        // replaced or that it happened because the row was malformed.
+        if (row.k === "guidon:profile:v1") {
+          var pv = row.v;
+          var pvOk = pv && typeof pv === "object" && typeof pv.onboardingComplete === "boolean" && typeof pv.mode === "string";
+          if (!pvOk) { skipped.kv++; continue; }
+        }
+        try { await G.db.put("kv", { k: row.k, v: row.v }); restored.kv++; } catch (e) {}
       }
     }
     if (Array.isArray(obj.stores.userScenarios)) {
@@ -14577,7 +14738,7 @@ window.G = window.G || {};
         if (at && at.id != null) { try { await G.db.put("attempts", at); restored.attempts++; } catch (e) {} }
       }
     }
-    return { restored: restored, merged: merge };
+    return { restored: restored, skipped: skipped, merged: merge };
   }
 
   function renderControls(host) {
@@ -14611,12 +14772,20 @@ window.G = window.G || {};
         try { obj = JSON.parse(reader.result); }
         catch (e) { status.textContent = "That file couldn't be read as JSON."; status.className = "backup-status hint err"; return; }
         var sum = obj && obj.summary ? obj.summary : null;
-        var msg = "Import this backup?" + (sum ? "\n\nIt contains: " + (sum.kv || 0) + " saved items, " + (sum.userScenarios || 0) + " authored scenarios, " + (sum.attempts || 0) + " quiz attempts." : "") + "\n\nYour existing data will be kept; matching items will be overwritten by the backup.";
+        // Warn explicitly when the incoming file would replace identity
+        // data - previously this said only "matching items will be
+        // overwritten," which is true but doesn't flag that your name,
+        // rank, and board date are among what "matching items" covers.
+        var hasProfileRow = !!(obj && obj.stores && Array.isArray(obj.stores.kv) &&
+          obj.stores.kv.some(function (row) { return row && row.k === "guidon:profile:v1"; }));
+        var msg = "Import this backup?" + (sum ? "\n\nIt contains: " + (sum.kv || 0) + " saved items, " + (sum.userScenarios || 0) + " authored scenarios, " + (sum.attempts || 0) + " quiz attempts." : "") + "\n\nYour existing data will be kept; matching items will be overwritten by the backup." + (hasProfileRow ? " This includes your name, rank, and board date." : "");
         G.modal.confirm(msg, { title: "Import backup" }).then(function (ok) {
           if (!ok) { fileIn.value = ""; return; }
           importAll(obj, { merge: true }).then(function (res) {
-            var r = res.restored;
-            status.textContent = "Restored " + r.kv + " items, " + r.userScenarios + " scenarios, " + r.attempts + " attempts. Reloading…";
+            var r = res.restored, sk = res.skipped;
+            status.textContent = "Restored " + r.kv + " items, " + r.userScenarios + " scenarios, " + r.attempts + " attempts." +
+              (sk && sk.kv ? " " + sk.kv + " item(s) skipped (malformed profile entry rejected — your existing profile was kept)." : "") +
+              " Reloading…";
             status.className = "backup-status hint ok";
             if (G.util.announce) G.util.announce("Backup restored.");
             setTimeout(function () { location.reload(); }, 1200);
@@ -14755,16 +14924,27 @@ window.G = window.G || {};
     var listMount = el("div.rem-list-mount");
     host.appendChild(listMount);
 
+    // Previously a single flat, unbroken list (overdue/soon/later distinguished
+    // only by sort order, no section headers) with no cap - at real volume
+    // (~250 reminders measured) this became a ~42-screen scroll with no way
+    // to tell, mid-scroll, whether you'd crossed from "overdue" into "later".
+    // CAP keeps the initial render short; expanded persists across redraw()
+    // (e.g. after removing an item) so removing something doesn't collapse
+    // a view the user deliberately expanded, but resets on a fresh visit to
+    // this view (renderEditor() runs again on navigation).
+    var CAP = 25;
+    var expanded = false;
     async function redraw() {
       util.clear(listMount);
       var list = await load();
       var b = bucket(list);
-      var all = b.overdue.concat(b.soon, b.later);
-      if (!all.length) {
+      var totalCount = b.overdue.length + b.soon.length + b.later.length;
+      if (!totalCount) {
         listMount.appendChild(el("div.empty", { text: "No reminders yet. Add one below." }));
         return;
       }
-      all.forEach(function (r) {
+      var shown = 0;
+      function renderRow(r) {
         var row = el("div.rem-item" + (r.daysUntil < 0 ? ".overdue" : ""));
         var main = el("div.rem-item-main");
         main.appendChild(el("div.rem-item-label", { text: r.label }));
@@ -14774,7 +14954,24 @@ window.G = window.G || {};
         del.addEventListener("click", async function () { try { if (G.notify) await G.notify.cancelForReminder(r.id); } catch (e) {} await remove(r.id); try { if (G.util.announce) G.util.announce("Reminder removed."); } catch (e) {} redraw(); });
         row.appendChild(del);
         listMount.appendChild(row);
-      });
+      }
+      function renderSection(label, items) {
+        if (!items.length || (!expanded && shown >= CAP)) return;
+        listMount.appendChild(el("div.eyebrow", { text: label + " (" + items.length + ")", style: "margin-top:10px" }));
+        items.forEach(function (r) {
+          if (!expanded && shown >= CAP) return;
+          renderRow(r); shown++;
+        });
+      }
+      renderSection("Overdue", b.overdue);
+      renderSection("Next 14 days", b.soon);
+      renderSection("Later", b.later);
+      if (!expanded && totalCount > CAP) {
+        var more = el("button.btn.sm.ghost", { type: "button",
+          text: "Show all " + totalCount + " (" + (totalCount - CAP) + " more)", style: "margin-top:8px" });
+        more.addEventListener("click", function () { expanded = true; redraw(); });
+        listMount.appendChild(more);
+      }
     }
 
     // Add form
@@ -17906,6 +18103,58 @@ window.G = window.G || {};
     draw();
   };
 
+  // ---------------- PRIVACY POLICY ----------------
+  // Settings' About panel used to say "see PRIVACY.md for the full policy"
+  // as plain, non-interactive text - and no PRIVACY.md was ever bundled
+  // into the shipped app (it lived only in the project's own docs folder),
+  // so a real user had no way to actually read it. Embedded here instead,
+  // matching this app's own "one file, no external dependencies" design -
+  // an external file reference can never be reachable from a single-file
+  // app anyway. Content mirrors GUIDON files/PRIVACY.md; the Play Store
+  // hosting/submission note at the end of that file is deliberately
+  // omitted here since it's an internal publishing TODO, not user content.
+  views.privacy = function (mount) {
+    util.clear(mount);
+    mount.appendChild(el("div.section-title", {}, [ el("h2", { text: "Privacy Policy" }), el("div.rule") ]));
+    mount.appendChild(el("p.hint", { text: "Last updated August 8, 2026. Applies to every version of GUIDON — standalone, PWA, desktop, and Android — since they all run from the same source." }));
+    const SECTIONS = [
+      { h: "The short version", p: ["GUIDON does not collect, transmit, sell, or share any personal data, because GUIDON has no server to send it to. There is no account, no sign-in, no analytics, no advertising, and no network connection of any kind between the app and anyone — including the developer. Everything GUIDON knows about you stays in storage on your own device, under your control, until you delete it."] },
+      { h: "What GUIDON is", p: ["GUIDON is an offline, single-user reference and study tool for enlisted Soldiers preparing for promotion boards. It runs entirely client-side — there is no backend server, no cloud sync, and no remote database. The app's content-security policy blocks it from making any outbound network request, verified automatically before every release."] },
+      { h: "Data GUIDON stores, and where", p: [
+        "Everything below is stored only on your device — never on a server, because no server exists.",
+        "Storage locations: an on-device database (IndexedDB) holding your profile, saved answers, quiz/board-drill history, and progress; plus a small amount of on-device browser storage (localStorage) for interface preferences like your selected theme.",
+        "Profile information you enter: name, rank, MOS, ETS date, target board date, study weak points, and readiness answers.",
+        "Practice and progress data: quiz attempts, Mock Board results, streaks, and scenario progress, generated as you use the app.",
+        "Squad roster (optional, leader-facing only): if you use the roster feature, you may enter the names, ranks, and counseling dates of Soldiers you lead. This is the one place GUIDON stores information about people other than you, so it gets extra protection — see below.",
+      ] },
+      { h: "The squad roster gets extra protection", p: [
+        "If you export a backup of your GUIDON data, the squad roster is excluded by default. Your own profile, progress, and drill history are included; roster entries about other people are not.",
+        "Including the roster in a backup requires a separate, explicit opt-in action — it is never bundled in by accident. This default-exclude behavior is checked automatically before every release.",
+      ] },
+      { h: "Backups are yours, not ours", p: ["GUIDON can generate a backup file (JSON) of your data on request. This file is created locally in your browser and saved to your device. GUIDON does not upload it anywhere; the developer never sees it. What you do with that file afterward is entirely your choice."] },
+      { h: "No accounts, no analytics, no ads, no third parties", p: [
+        "No sign-up, login, or account system of any kind — the “profile” in GUIDON is just a local save file.",
+        "No analytics, usage tracking, advertising, ad SDKs, crash-reporting, or telemetry of any kind.",
+        "No third-party code that phones home, and no tracking cookies.",
+      ] },
+      { h: "Why the Android app lists an “Internet” permission", p: ["The Android build declares the standard INTERNET permission because its embedded WebView component needs it to serve the app's own interface to itself over your device's internal loopback connection — the same mechanism every WebView-based app uses. It is not used, and cannot be used under the app's security policy, to send data to any external server."] },
+      { h: "Deleting your data", p: [
+        "Delete your profile from inside the app: Settings → Manage account → Delete erases your name, rank, MOS, action plan, and readiness answers immediately.",
+        "Delete everything: uninstalling the app or clearing site data for GUIDON in your browser permanently erases the on-device database and all locally stored preferences — a complete, permanent deletion with no server-side copy anywhere.",
+      ] },
+      { h: "Security", p: ["Because GUIDON never transmits your data, there is no “in transit” exposure to secure — your data simply never leaves the device. On-device storage security is provided by your operating system and browser, the same as any other locally stored app data."] },
+      { h: "Children's privacy", p: ["GUIDON is a professional reference tool built for enlisted U.S. Army Soldiers and is not directed at children. It does not knowingly collect data from anyone, of any age, because it does not collect data at all."] },
+      { h: "Changes to this policy", p: ["If GUIDON's data handling ever changes, this policy will be updated first, and the “Last updated” date above will change accordingly. As of that date, GUIDON collects nothing and transmits nothing."] },
+      { h: "Contact", p: ["Questions, requests, or concerns about this policy or GUIDON's data handling: ctsolomon95@gmail.com"] },
+    ];
+    SECTIONS.forEach(function (s) {
+      const panel = el("div.panel", { style: "margin-bottom:12px" });
+      panel.appendChild(el("h3", { text: s.h, style: "margin-top:0" }));
+      s.p.forEach(function (para) { panel.appendChild(el("p.hint", { text: para, style: "margin-top:8px" })); });
+      mount.appendChild(panel);
+    });
+  };
+
   // ---------------- SETTINGS ----------------
   views.settings = function (mount) {
     util.clear(mount);
@@ -17915,7 +18164,14 @@ window.G = window.G || {};
       pn.appendChild(el("div.fin-h", { text: "About GUIDON" }));
       pn.appendChild(el("p.hint", { text: "Version " + (window.GUIDON_APP_VERSION || "unknown") + " \u00b7 Built " + (window.GUIDON_BUILD_DATE || "unknown") }));
       pn.appendChild(el("p.hint", { text: "Fully offline single-file app \u00b7 No account, no network calls, all data stays on this device." }));
-      pn.appendChild(el("p.hint", { text: "Privacy Policy: GUIDON collects nothing and transmits nothing \u2014 see PRIVACY.md for the full policy." }));
+      pn.appendChild(el("p.hint", { text: "Privacy Policy: GUIDON collects nothing and transmits nothing." }));
+      // Was plain, non-interactive text pointing at a PRIVACY.md that was
+      // never bundled into the shipped app - no real user could ever reach
+      // it. Reads the full policy in-app instead (#/privacy), matching how
+      // "Manage account" below signposts elsewhere rather than duplicating.
+      const privacyLink = el("button.btn.sm.ghost", { type: "button", gi: "shield", giSize: 14, text: "Read the full policy", style: "margin-top:6px" });
+      privacyLink.addEventListener("click", () => { location.hash = "#/privacy"; });
+      pn.appendChild(privacyLink);
       // Signpost to account controls. Settings is where people instinctively look
       // for "change my name / start over", but those actions live with the profile
       // they act on — so point there rather than duplicating the controls.
@@ -18187,8 +18443,9 @@ window.G = window.G || {};
       try {
         const obj = JSON.parse(await f.text());
         const res = await G.backup.importAll(obj, { merge: true });
-        const r = res.restored;
-        util.toast("Imported " + r.kv + " item(s), " + r.userScenarios + " scenario(s), " + r.attempts + " attempt(s).");
+        const r = res.restored, sk = res.skipped;
+        util.toast("Imported " + r.kv + " item(s), " + r.userScenarios + " scenario(s), " + r.attempts + " attempt(s)." +
+          (sk && sk.kv ? " " + sk.kv + " skipped (malformed profile rejected)." : ""));
         views.settings(mount);
       } catch (e) { util.toast("Import failed: " + e.message); }
     });
@@ -18203,10 +18460,64 @@ window.G = window.G || {};
     dataPanel.appendChild(el("p.hint", { text: "Export a full JSON backup — profile, IDP goals, counseling drafts, promotion-point estimates, SRS scheduling, authored scenarios, and recorded attempts — or restore one on another device." }));
     mount.appendChild(dataPanel);
 
+    // help / guided tour — the tour itself already exists (one-line
+    // descriptions of every section, derived from ROUTES) and works for any
+    // profile mode (#/kiosk's mode picker reads a plain session flag, not
+    // the actual profile), but was only reachable by choosing "Kiosk / Demo
+    // Mode" at onboarding - a Personal Account user had no way to see it,
+    // ever, unless they knew to type the URL directly.
+    const helpPanel = el("div.panel", { style: "margin-top:12px" });
+    helpPanel.appendChild(el("label", { text: "Help" }));
+    const tourBtn = el("button.btn.sm", { type: "button", gi: "compass", giSize: 14, text: "Take a tour", style: "margin-top:8px" });
+    tourBtn.addEventListener("click", () => { location.hash = "#/kiosk"; });
+    helpPanel.appendChild(tourBtn);
+    helpPanel.appendChild(el("p.hint", { text: "A guided, one-line walkthrough of every section — the same tour offered during setup, available any time.", style: "margin-top:8px" }));
+    mount.appendChild(helpPanel);
+
+    // feedback / bug report — there was previously no way to report a bug or
+    // send feedback from inside the app at all. A hosted feedback form would
+    // be its own network dependency in an app whose entire pitch is "no
+    // account, no network calls" (see the About panel above), so this stays
+    // a plain mailto: link instead: it opens whatever mail app is already
+    // configured on the device with a draft pre-filled, and sends nothing
+    // itself. Same address the Privacy Policy already lists as the contact
+    // for this app (#/privacy), reused rather than inventing a second one.
+    const fbPanel = el("div.panel", { style: "margin-top:12px" });
+    fbPanel.appendChild(el("label", { text: "Feedback & Bug Reports" }));
+    const fbBtn = el("button.btn.sm", { type: "button", gi: "message-circle", giSize: 14, text: "Report a bug or send feedback", style: "margin-top:8px" });
+    fbBtn.addEventListener("click", () => {
+      const theme = (G.theme && G.theme.current().theme) || document.documentElement.getAttribute("data-theme") || "unknown";
+      const subject = "GUIDON feedback (v" + (window.GUIDON_APP_VERSION || "unknown") + ")";
+      // Same fields Diagnostics' own "Copy report" includes (see selftest.js)
+      // trimmed to what actually helps triage a bug: build, device, viewport,
+      // theme. Nothing here is collected or transmitted by GUIDON itself —
+      // it only fills a draft the person can read, edit or discard before
+      // their own mail app sends it.
+      const body = [
+        "Describe what happened below. Everything under the line is filled in automatically to help track it down — edit or delete anything you'd rather not send.",
+        "",
+        "",
+        "---",
+        "GUIDON v" + (window.GUIDON_APP_VERSION || "unknown") + " · built " + (window.GUIDON_BUILD_DATE || "unknown"),
+        "Device: " + navigator.userAgent,
+        "Viewport: " + window.innerWidth + "×" + window.innerHeight + " · DPR " + (window.devicePixelRatio || 1),
+        "Theme: " + theme,
+      ].join("\n");
+      location.href = "mailto:ctsolomon95@gmail.com?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
+    });
+    fbPanel.appendChild(fbBtn);
+    fbPanel.appendChild(el("p.hint", { text: "Opens your device's email app with a draft addressed and pre-filled with your build and device info — nothing is sent until you do. GUIDON has no server to phone home to; this is a plain mailto: link, the same as tapping an email address anywhere else.", style: "margin-top:8px" }));
+    mount.appendChild(fbPanel);
+
     // about
     mount.appendChild(el("div.panel", { style: "margin-top:12px" }, [
       el("div.eyebrow", { text: "About & Disclaimer" }),
-      el("p.hint", { text: "GUIDON v" + ((G.store && G.store.settings && G.store.settings().version) || "0.21") + " — an offline study aid for Army leader development. It is not an official U.S. Army or DoD product, awards no real promotion points, and does not connect to IPPS-A or any Army system. Army doctrine is a public-domain U.S. Government work; entries are source-cited and dated. Verify anything policy-related against the current regulation, MILPER, or your chain before acting on it." }),
+      // Reuse GUIDON_APP_VERSION (now build-time-injected, see tools/build.mjs)
+      // rather than G.store.settings().version, which nothing ever sets - this
+      // read always fell through to a hardcoded "0.21" literal that showed a
+      // SECOND, different, wrong version number on the same Settings screen
+      // as the correct one in the About GUIDON panel above.
+      el("p.hint", { text: "GUIDON v" + (window.GUIDON_APP_VERSION || "unknown") + " — an offline study aid for Army leader development. It is not an official U.S. Army or DoD product, awards no real promotion points, and does not connect to IPPS-A or any Army system. Army doctrine is a public-domain U.S. Government work; entries are source-cited and dated. Verify anything policy-related against the current regulation, MILPER, or your chain before acting on it." }),
       el("p.hint", { text: "Install: on Android (Chrome) use ⋮ → 'Add to Home screen'. On desktop, use the install icon in the address bar. Works fully offline after first load." }),
     ]));
   };
@@ -18481,7 +18792,12 @@ window.G = window.G || {};
     { hash: "#/calendar", label: "Calendar", ico: "calendar", render: (m) => G.calendar.render(m) },
     { hash: "#/assignments", label: "Assignments", ico: "map", render: (m) => G.assignments.render(m) },
     { hash: "#/leader", label: "Squad", ico: "users", render: (m) => G.leader.render(m) },
-    { hash: "#/currency", label: "Currency", ico: "history", render: (m) => G.currency.render(m) },
+    // Was "Currency" - read next to "Money" in the same Account nav group,
+    // that's a strong misread risk ("currency" as in up-to-dateness, not
+    // money) with nothing in the label itself to disambiguate. "Freshness"
+    // doesn't collide with anything and still matches the page's own
+    // heading ("How current is this?") in spirit.
+    { hash: "#/currency", label: "Freshness", ico: "history", render: (m) => G.currency.render(m) },
     { hash: "#/transition", label: "ETS", ico: "send", render: (m) => G.transition.render(m) },
     { hash: "#/resources", label: "Resources", ico: "compass", render: (m) => G.resources.render(m) },
     { hash: "#/doctrine", label: "Doctrine", ico: "book", render: (m) => G.views.doctrine(m) },
@@ -18491,11 +18807,16 @@ window.G = window.G || {};
     { hash: "#/progress", label: "Progress", ico: "bar-chart", render: (m) => G.progress.render(m) },
     { hash: "#/author", label: "Author", ico: "plus-square", render: (m) => G.author.render(m) },
     { hash: "#/share", label: "Share & Install", ico: "download", render: (m) => G.share.render(m) },
-    { hash: "#/selftest", label: "Self-Test", ico: "check-circle", render: (m) => G.selftest.render(m) },
+    // Was "Self-Test" - read next to Train/Board/Learn, that name reads as a
+    // knowledge self-quiz. It's actually a QA/accessibility diagnostic
+    // checklist (screen-reader checks, device report export) - "Diagnostics"
+    // doesn't invite that confusion.
+    { hash: "#/selftest", label: "Diagnostics", ico: "check-circle", render: (m) => G.selftest.render(m) },
     { hash: "#/settings", label: "Settings", ico: "sliders", render: (m) => G.views.settings(m) },
     { hash: "#/search",   label: "Search",   ico: "search", render: (m) => G.views.search(m) },
     { hash: "#/profile",  label: "Profile",  ico: "user", render: (m) => G.profile.render(m) },
     { hash: "#/kiosk",    label: "Kiosk",    ico: "monitor", render: (m) => G.profile.renderKiosk(m) },
+    { hash: "#/privacy",  label: "Privacy",  ico: "shield", render: (m) => G.views.privacy(m) },
   ];
   // Exposed so modules outside this IIFE (e.g. the Demo Center) can derive
   // their own lists from the single source of truth rather than duplicating it.
@@ -18601,14 +18922,23 @@ window.G = window.G || {};
     app.appendChild(el("div#toast", { role: "status", "aria-live": "polite" }));
   }
 
-  const NAV_HIDDEN = new Set(["#/search", "#/profile", "#/kiosk"]);
+  const NAV_HIDDEN = new Set(["#/search", "#/profile", "#/kiosk", "#/privacy"]);
 
   function navButton(hash) {
     const r = ROUTES.find((x) => x.hash === hash);
     if (!r || NAV_HIDDEN.has(r.hash)) return null;
+    // title gives desktop hover a one-line "what this section is for"
+    // preview before committing to the tap - previously nav buttons had
+    // only aria-label (identical to the visible text, no extra info), while
+    // the topbar's search/profile buttons already got a real title. Reuses
+    // G.demoNotes (see profile.js, where it's also the Guided Tour's
+    // narration) rather than authoring separate tooltip copy that would
+    // just drift out of sync with it.
+    const note = G.demoNotes && G.demoNotes[r.hash];
     return el("button", {
       "data-hash": r.hash,
       "aria-label": r.label,
+      title: note ? note.d : undefined,
       onclick: () => {
         // Re-tapping the section you are already in previously did nothing,
         // because the hash never changed and route() never fired — leaving a
@@ -18822,6 +19152,16 @@ window.G = window.G || {};
 
   const app = {
     async start() {
+      // Real top-level crash boundary around the WHOLE boot sequence, not
+      // just store.init() below (which already had its own narrower
+      // try/catch that deliberately lets the app continue after a
+      // non-fatal init issue - preserved as-is). buildShell() clears #app
+      // before appending anything, so a throw anywhere in here previously
+      // left a blank screen with nothing to catch it - renderOnboarding()
+      // in particular was called completely unwrapped. Converges on the
+      // same fallback UI the global window.onerror/unhandledrejection
+      // safety net (top of <head>) uses for anything outside this.
+      try {
       buildShell();
       wireStatus();
       window.addEventListener("hashchange", route);
@@ -18909,6 +19249,11 @@ window.G = window.G || {};
           route();
           // After shell renders, show onboarding modal
           requestAnimationFrame(() => {
+            // requestAnimationFrame's callback runs on a later frame, outside
+            // start()'s own try/catch above (a synchronous try/catch can't
+            // catch a throw in a callback that fires after it has already
+            // returned) - renderOnboarding() was completely unwrapped.
+            try {
             const overlay = document.createElement("div");
             overlay.className = "ob-overlay";
             overlay.id = "ob-overlay";
@@ -18921,6 +19266,13 @@ window.G = window.G || {};
               // Re-render current view to pick up profile
               route();
             });
+            } catch (e) {
+              console.error("renderOnboarding() failed:", e);
+              try { window.__guidonErrorLog && window.__guidonErrorLog.push({ time: new Date().toISOString(), context: "renderOnboarding()", message: e && e.message != null ? String(e.message) : String(e), stack: e && e.stack ? String(e.stack).slice(0, 800) : null }); } catch (e2) {}
+              const stuck = document.getElementById("ob-overlay");
+              if (stuck) stuck.remove(); // don't leave a half-built overlay blocking the app underneath
+              if (window.__guidonShowCrashFallback) window.__guidonShowCrashFallback();
+            }
           });
           return;
         }
@@ -18935,6 +19287,11 @@ window.G = window.G || {};
       }
       if (!location.hash) { const dv=(store.settings&&store.settings().defaultView)||"home"; location.hash="#/"+dv; }
       route();
+      } catch (e) {
+        console.error("app.start() failed:", e);
+        try { window.__guidonErrorLog && window.__guidonErrorLog.push({ time: new Date().toISOString(), context: "app.start()", message: e && e.message != null ? String(e.message) : String(e), stack: e && e.stack ? String(e.stack).slice(0, 800) : null }); } catch (e2) {}
+        if (window.__guidonShowCrashFallback) window.__guidonShowCrashFallback();
+      }
     },
   };
 

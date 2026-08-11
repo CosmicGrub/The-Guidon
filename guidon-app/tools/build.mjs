@@ -132,10 +132,30 @@ html[data-display-mode="standalone"] .main {
 `;
 
 async function main() {
-  const src = await readFile(SRC, "utf8");
+  let src = await readFile(SRC, "utf8");
   const pwa = await readFile(PWA, "utf8");
   await mkdir(WEB, { recursive: true });
   await mkdir(DIST, { recursive: true });
+
+  /* ---------------- app version + build date (both builds) ----------------
+     GUIDON_APP_VERSION/GUIDON_BUILD_DATE used to be hand-maintained literals
+     that nothing rewrote at build time - the exact same bug class shipped
+     once before (see GUIDON_STATE.json "CLOSED (44)": app version said
+     1.1.0 while all installers said 1.2.0) and recurred (it was found
+     showing 1.4.13 while the actual shipped version was 1.4.16, three
+     releases stale). Inject both from package.json + the real build
+     timestamp instead, so they cannot drift again. */
+  const pkg = JSON.parse(await readFile("package.json", "utf8"));
+  const buildDate = new Date().toISOString().slice(0, 10);
+  const versionAnchor = /window\.GUIDON_APP_VERSION = "[^"]*";\nwindow\.GUIDON_BUILD_DATE = "[^"]*";/;
+  const versionMatch = src.match(versionAnchor);
+  if (!versionMatch) throw new Error("build: GUIDON_APP_VERSION/GUIDON_BUILD_DATE anchor not found");
+  src = sub(
+    src,
+    versionMatch[0],
+    `window.GUIDON_APP_VERSION = "${pkg.version}";\nwindow.GUIDON_BUILD_DATE = "${buildDate}";`,
+    "app version/build date"
+  );
 
   /* ---------------- locate the anchors we rely on ---------------- */
   const manifestLink = src.match(/<link rel="manifest" href="data:application\/manifest\+json,[^"]*"\s*\/?>/);

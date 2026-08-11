@@ -44,12 +44,11 @@ window.G = window.G || {};
     const n = new Date();
     return new Date(n.getFullYear(), n.getMonth(), n.getDate());
   }
-  function parseDate(s) {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || "");
-    if (!m) return null;
-    const d = new Date(+m[1], +m[2] - 1, +m[3]);
-    return isNaN(d.getTime()) ? null : d;
-  }
+  // Shared with calendar.js as util.parseISODate() - see its definition in
+  // src/index.html for why this delegates rather than building the Date
+  // itself (the multi-argument Date constructor this used to use directly
+  // triggers JS's legacy 2-digit-year rule for year values 0-99).
+  function parseDate(s) { return util.parseISODate(s); }
   function daysSince(d) { return Math.round((todayMid().getTime() - d.getTime()) / DAY); }
 
   /** Returns the overdue items for one Soldier, worst first. */
@@ -113,25 +112,60 @@ window.G = window.G || {};
         return;
       }
       flagged.sort(function (a, b) { return b.worst.over - a.worst.over; });
-      flagged.forEach(function (x) {
-        const c = el("div.card", { style: "margin-top:8px;border-left:3px solid " + (x.worst.over > 30 ? "var(--red)" : "var(--amber)") });
-        const head = el("div", { style: "display:flex;justify-content:space-between;gap:8px;align-items:baseline" });
-        head.appendChild(el("span.k", { text: (x.sol.rank ? x.sol.rank + " " : "") + (x.sol.name || "(unnamed)"), style: "min-width:0;flex:1 1 auto" }));
-        head.appendChild(el("span.v", { text: x.count + (x.count === 1 ? " item" : " items"), style: "flex:0 0 auto;white-space:nowrap" }));
-        c.appendChild(head);
-        c.appendChild(el("div.hint", { text: x.worst.label }));
-        if (x.worst.f.link) {
-          const b = el("button.btn.sm.ghost", { type: "button", text: "Open " + x.worst.f.link.replace("#/", ""), style: "margin-top:6px" });
-          b.addEventListener("click", function () { location.hash = x.worst.f.link; });
-          c.appendChild(b);
+      // "Needs attention" is meant to be an at-a-glance triage list, not a
+      // second copy of the full roster - at real unit scale (~400 Soldiers)
+      // it previously printed every single flagged entry (379 cards in the
+      // measured case), exactly as long as the full roster below it and
+      // defeating the whole point of a quick-scan summary. Show the worst
+      // SUMMARY_CAP by days-overdue, with an explicit "show all" expander
+      // rather than a silent truncation.
+      const SUMMARY_CAP = 15;
+      let expanded = false;
+      function renderFlagged() {
+        Array.prototype.slice.call(summary.querySelectorAll(".card, .lead-more")).forEach(function (n) { n.remove(); });
+        const shown = expanded ? flagged : flagged.slice(0, SUMMARY_CAP);
+        shown.forEach(function (x) {
+          const c = el("div.card", { style: "margin-top:8px;border-left:3px solid " + (x.worst.over > 30 ? "var(--red)" : "var(--amber)") });
+          const head = el("div", { style: "display:flex;justify-content:space-between;gap:8px;align-items:baseline" });
+          head.appendChild(el("span.k", { text: (x.sol.rank ? x.sol.rank + " " : "") + (x.sol.name || "(unnamed)"), style: "min-width:0;flex:1 1 auto" }));
+          head.appendChild(el("span.v", { text: x.count + (x.count === 1 ? " item" : " items"), style: "flex:0 0 auto;white-space:nowrap" }));
+          c.appendChild(head);
+          c.appendChild(el("div.hint", { text: x.worst.label }));
+          if (x.worst.f.link) {
+            const b = el("button.btn.sm.ghost", { type: "button", text: "Open " + x.worst.f.link.replace("#/", ""), style: "margin-top:6px" });
+            b.addEventListener("click", function () { location.hash = x.worst.f.link; });
+            c.appendChild(b);
+          }
+          summary.appendChild(c);
+        });
+        if (!expanded && flagged.length > SUMMARY_CAP) {
+          const more = el("button.btn.sm.ghost.lead-more", { type: "button",
+            text: "Show all " + flagged.length + " (" + (flagged.length - SUMMARY_CAP) + " more)", style: "margin-top:8px" });
+          more.addEventListener("click", function () { expanded = true; renderFlagged(); });
+          summary.appendChild(more);
         }
-        summary.appendChild(c);
-      });
+      }
+      renderFlagged();
     }
 
+    let filterTerm = "";
     function buildList() {
       util.clear(list);
-      roster.forEach(function (sol, idx) {
+      // Filter by rank/initials substring, preserving each entry's REAL
+      // index in `roster` (not its position in the filtered subset) - the
+      // Remove button and every field's change handler below index into
+      // the full roster array by that index, so filtering first without
+      // tracking the real index would edit/remove the wrong entry.
+      const term = filterTerm.trim().toLowerCase();
+      const visible = term
+        ? roster.map(function (sol, idx) { return { sol: sol, idx: idx }; })
+                .filter(function (x) { return ((x.sol.rank || "") + " " + (x.sol.name || "")).toLowerCase().indexOf(term) !== -1; })
+        : roster.map(function (sol, idx) { return { sol: sol, idx: idx }; });
+      if (term && !visible.length) {
+        list.appendChild(el("p.hint", { text: "No roster entries match “" + filterTerm.trim() + "”." }));
+      }
+      visible.forEach(function (entry) {
+        const sol = entry.sol, idx = entry.idx;
         const card = el("div.panel", { style: "margin-bottom:10px" });
         const head = el("div", { style: "display:flex;gap:8px;align-items:center;flex-wrap:wrap" });
         const rankIn = el("input.ob-input", { type: "text", value: sol.rank || "", placeholder: "Rank",
@@ -190,6 +224,17 @@ window.G = window.G || {};
       roster = []; await persist(); buildSummary(); buildList();
     });
     controls.appendChild(addBtn); controls.appendChild(clrBtn);
+
+    // Simple text filter for the full roster below - not needed at a
+    // handful of entries, but a unit tracking a large number of Soldiers
+    // had no way to jump to one without scrolling a list as long as the
+    // page itself. Filters by rank or initials substring.
+    const filterRow = el("div", { style: "margin-top:8px" });
+    const filterInp = el("input.ob-input", { type: "search", placeholder: "Filter by rank or initials…",
+      "aria-label": "Filter roster by rank or initials" });
+    filterInp.addEventListener("input", function () { filterTerm = filterInp.value; buildList(); });
+    filterRow.appendChild(filterInp);
+    controls.appendChild(filterRow);
 
     mount.appendChild(summary);
     mount.appendChild(controls);
