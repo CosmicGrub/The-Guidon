@@ -4,7 +4,7 @@
   "description": "Offline Army leader-development trainer for E1–E9: doctrine, board prep, the full NCOPDS ladder, promotion points, counseling forms and a spaced-repetition study drill. Works with no signal.",
   "lang": "en-US",
   "dir": "ltr",
-  "id": "/guidon/",
+  "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

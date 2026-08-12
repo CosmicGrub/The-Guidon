@@ -1,6 +1,6 @@
 {
   "name": "guidon-app",
-  "version": "1.4.21",
+  "version": "1.4.22",
   "private": true,
   "type": "module",
   "description": "GUIDON packaging: installable PWA bundle, standalone single file, Windows desktop app, Android app",
@@ -12,10 +12,10 @@
     "test:standalone": "node tools/test-standalone.mjs",
     "test:csp": "node tools/test-csp.mjs",
     "lint:patterns": "node tools/lint-patterns.mjs",
-    "test": "npm run lint:patterns && npm run build && npm run verify && node tools/run-parallel.mjs test:points test:consistency test:calendar test:leader test:privacy test:scrollhint test:theater test:flip test:a11y test:pdf test:standalone test:bridge test:contrast-full test:responsive test:csp test:discoverability",
+    "test": "npm run lint:patterns && npm run build && npm run verify && node tools/run-parallel.mjs test:points test:consistency test:calendar test:leader test:privacy test:scrollhint test:theater test:flip test:a11y test:pdf test:standalone test:bridge test:contrast-full test:responsive test:csp test:discoverability test:mockboard test:idp test:reminders test:finance test:salneg test:career test:author",
     "perf": "node tools/perf.mjs",
     "serve": "node tools/server.mjs web 8099",
-    "desktop:dev": "tauri dev",
+    "desktop:dev": "npm run build && tauri dev",
     "desktop:build": "npm run build && tauri build",
     "android:sync": "npm run build && cap sync android",
     "android:debug": "npm run android:sync && cd android && gradlew assembleDebug",
@@ -39,7 +39,14 @@
     "test:contrast-full": "node tools/test-contrast-full.mjs",
     "test:bridge": "node tools/test-bridge.mjs",
     "test:responsive": "node tools/test-responsive.mjs",
-    "test:discoverability": "node tools/test-discoverability.mjs"
+    "test:discoverability": "node tools/test-discoverability.mjs",
+    "test:mockboard": "node tools/test-mockboard.mjs",
+    "test:idp": "node tools/test-idp.mjs",
+    "test:reminders": "node tools/test-reminders.mjs",
+    "test:finance": "node tools/test-finance.mjs",
+    "test:salneg": "node tools/test-salneg.mjs",
+    "test:career": "node tools/test-career.mjs",
+    "test:author": "node tools/test-author.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",

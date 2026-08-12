@@ -83,12 +83,26 @@ window.G = window.G || {};
     return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
   }
 
-  /** red under 14 days, amber under 45, otherwise calm. */
+  /** red under 14 days, amber under 45, otherwise calm. Used for every date
+      on this page EXCEPT board date and ETS, which have their own shared
+      colour scale (util.boardUrgency / util.etsUrgency) that Home, Transition
+      and Board Prep's own countdown banners also use - this generic scale
+      used to apply to those two as well, which meant the same boardDate/
+      etsDate could show a contradicting colour depending which screen you
+      were looking at, even after the underlying VALUE was already fixed to
+      come from the same profile field. */
   function urgency(days) {
     if (days < 0) return { c: "var(--red)", word: "OVERDUE" };
     if (days <= 14) return { c: "var(--red)", word: days + " days" };
     if (days <= 45) return { c: "var(--amber)", word: days + " days" };
     return { c: "var(--green)", word: days + " days" };
+  }
+  function sharedUrgency(days, fn) {
+    // Negative days (overdue) still resolves correctly through fn's own
+    // <= thresholds without special-casing - a negative number is <= any
+    // positive cutoff, so it always lands on "red" the same way util.
+    // etsUrgency/util.boardUrgency already treat a passed date elsewhere.
+    return { c: fn(days).color, word: days < 0 ? "OVERDUE" : days + " days" };
   }
 
   /* Fixed recurring anchors nobody sets, and everybody forgets. */
@@ -149,13 +163,19 @@ window.G = window.G || {};
         rows.push({ label: a.label, when: a.when, days: daysBetween(today, a.when), note: a.note, link: null });
       });
 
-      // Board date comes from the profile rather than being asked for again.
+      // Board date comes from the profile rather than being asked for again -
+      // profile first, then the app-wide settings copy (same precedence
+      // renderBoardCountdown itself uses), so a guest/kiosk session (no
+      // profile.boardDate) still surfaces a board date that was only ever
+      // set via Settings, instead of this row just silently never appearing.
       let prof = null;
       try {
         prof = (G.profile && G.profile.cached) ? G.profile.cached() : null;
-        const bd = prof && parseDate(prof.boardDate);
+        const settings = (G.store && G.store.settings) ? G.store.settings() : {};
+        const bd = parseDate((prof && prof.boardDate) || (settings && settings.boardDate));
         if (bd) rows.push({ label: "Promotion board", when: bd, days: daysBetween(today, bd),
-          note: "Your Records Readiness checks should be complete well before this, not the week of.", link: "#/records" });
+          note: "Your Records Readiness checks should be complete well before this, not the week of.", link: "#/records",
+          urgencyFn: util.boardUrgency });
       } catch (e) { /* profile is optional */ }
 
       // ETS, same treatment as board date just above (profile first, then
@@ -171,7 +191,7 @@ window.G = window.G || {};
         const etsRaw = (prof && prof.etsDate) || (settings && settings.etsDate) || saved.ets;
         const ed = parseDate(etsRaw);
         if (ed) rows.push({ label: "ETS date", when: ed, days: daysBetween(today, ed),
-          note: ETS_CONSEQUENCE, link: ETS_LINK });
+          note: ETS_CONSEQUENCE, link: ETS_LINK, urgencyFn: util.etsUrgency });
       } catch (e) { /* profile/settings are optional */ }
 
       if (!rows.length) {
@@ -182,7 +202,7 @@ window.G = window.G || {};
 
       rows.sort(function (a, b) { return a.days - b.days; });
       rows.forEach(function (r) {
-        const u = urgency(r.days);
+        const u = r.urgencyFn ? sharedUrgency(r.days, r.urgencyFn) : urgency(r.days);
         const card = el("div.card", { style: "margin-top:8px;border-left:3px solid " + u.c });
         const head = el("div", { style: "display:flex;justify-content:space-between;gap:8px;align-items:baseline" });
         head.appendChild(el("span.k", { text: r.label, style: "min-width:0;flex:1 1 auto" }));

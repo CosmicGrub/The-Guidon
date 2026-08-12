@@ -14,7 +14,7 @@ src/pwa.js          install / offline / storage-durability (G.pwa)      web only
 src/pdf-defer.js    on-demand loader for the DA 4856 stack (G.pdfAssets) web only
 src/native.js       Android shell: system bars, Back button (G.native)   web only
 src/sw.js           service worker template (version injected at build)
-tools/              build + six verification suites
+tools/              build + 23 verification suites (see package.json's "test" script)
 web/                BUILD OUTPUT - installable bundle (do not hand-edit)
 dist/               shippable artifacts
 src-tauri/          Windows desktop app
@@ -33,7 +33,7 @@ module injected after the shell is still defined in time.
 ```bash
 npm install
 npm run build     # -> web/ and dist/guidon-standalone.html
-npm test          # build + verify + pdf + standalone + csp
+npm test          # lint + build + verify + full suite battery (23 suites, see package.json)
 ```
 
 Device suites (`test:android`, `test:android:back`) need a running device or

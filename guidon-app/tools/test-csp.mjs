@@ -1,11 +1,21 @@
 /**
- * The Tauri desktop shell injects a Content-Security-Policy that the browser
- * builds never run under. A CSP that silently blocks an inline handler, a blob
- * download or an embedded font would break the desktop app in ways that
- * "it compiled" does not catch.
+ * The web/PWA build has no CSP of its own baked in (no <meta> tag, no header
+ * from tools/server.mjs) - some self-hosters apply one anyway, and a CSP that
+ * silently blocks an inline handler, a blob download or an embedded font
+ * would break the app in ways that "it built" does not catch. This serves
+ * the real bundle under a plausible strict policy and fails on any violation.
  *
- * This serves the real bundle with the exact policy from tauri.conf.json and
- * fails on any violation.
+ * NOT the Tauri desktop shell's policy - src-tauri/tauri.conf.json ships with
+ * no security.csp at all. Tauri v2 auto-injects a per-load nonce into any
+ * style-src it's given, and once a nonce is present CSP2+ browsers ignore
+ * 'unsafe-inline' in that directive entirely (correct CSP-spec behavior, not
+ * a Tauri bug) - confirmed via a real compiled build + WebView2 devtools:
+ * every one of GUIDON's ~460 JS-applied inline style="" attributes was
+ * silently blocked, breaking nearly all dynamic styling. There is no
+ * documented way to opt style-src out of that injection while keeping the
+ * rest of a custom policy, so the desktop build ships without a CSP rather
+ * than a broken one - it only ever loads its own bundled local assets
+ * (verified zero external requests), so the real-world exposure is low.
  */
 import { chromium } from "playwright";
 import { createServer } from "node:http";
@@ -13,7 +23,6 @@ import { readFile, stat } from "node:fs/promises";
 import { join, extname, normalize } from "node:path";
 import { declaredRoutes } from "./declared-routes.mjs";
 
-/* Kept byte-identical to app.security.csp in src-tauri/tauri.conf.json. */
 const CSP = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline' 'unsafe-eval'",

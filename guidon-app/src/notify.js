@@ -54,9 +54,20 @@ window.G = window.G || {};
   // Schedules one notification for 09:00 local on the reminder's date.
   // Silently no-ops if unsupported, the reminder has no date, or that date
   // has already passed — callers don't need to guard any of that themselves.
+  // Also no-ops when the Soldier has turned "Reminder notifications" off —
+  // previously only syncAll() checked s.notifyReminders, so turning the
+  // Settings toggle off cancelled everything already queued but did nothing
+  // to stop a reminder added AFTER that point (the Reminders editor's own
+  // add button, the salary-negotiation quick-add, the USAJOBS quick-add all
+  // called this directly) from still arming a real native notification,
+  // directly contradicting the toggle's own "Off" copy.
   async function scheduleForReminder(r) {
     const p = plugin();
     if (!p || !r || !r.date) return false;
+    try {
+      const s = (G.store && G.store.settings && G.store.settings()) || {};
+      if (!s.notifyReminders) return false;
+    } catch (e) { return false; }
     try {
       const when = new Date(r.date + "T09:00:00");
       if (isNaN(when.getTime()) || when.getTime() <= Date.now()) return false;
