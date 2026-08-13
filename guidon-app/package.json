@@ -1,6 +1,6 @@
 {
   "name": "guidon-app",
-  "version": "1.4.22",
+  "version": "1.4.23",
   "private": true,
   "type": "module",
   "description": "GUIDON packaging: installable PWA bundle, standalone single file, Windows desktop app, Android app",
@@ -12,7 +12,7 @@
     "test:standalone": "node tools/test-standalone.mjs",
     "test:csp": "node tools/test-csp.mjs",
     "lint:patterns": "node tools/lint-patterns.mjs",
-    "test": "npm run lint:patterns && npm run build && npm run verify && node tools/run-parallel.mjs test:points test:consistency test:calendar test:leader test:privacy test:scrollhint test:theater test:flip test:a11y test:pdf test:standalone test:bridge test:contrast-full test:responsive test:csp test:discoverability test:mockboard test:idp test:reminders test:finance test:salneg test:career test:author",
+    "test": "npm run lint:patterns && npm run build && npm run verify && node tools/run-parallel.mjs test:points test:consistency test:calendar test:leader test:privacy test:scrollhint test:theater test:flip test:a11y test:pdf test:standalone test:bridge test:contrast-full test:responsive test:csp test:discoverability test:mockboard test:idp test:reminders test:finance test:salneg test:career test:author test:onboarding test:backup-roundtrip test:selftest test:print-paths test:search-views test:records test:ppw test:native-download",
     "perf": "node tools/perf.mjs",
     "serve": "node tools/server.mjs web 8099",
     "desktop:dev": "npm run build && tauri dev",
@@ -46,7 +46,15 @@
     "test:finance": "node tools/test-finance.mjs",
     "test:salneg": "node tools/test-salneg.mjs",
     "test:career": "node tools/test-career.mjs",
-    "test:author": "node tools/test-author.mjs"
+    "test:author": "node tools/test-author.mjs",
+    "test:onboarding": "node tools/test-onboarding.mjs",
+    "test:backup-roundtrip": "node tools/test-backup-roundtrip.mjs",
+    "test:selftest": "node tools/test-selftest.mjs",
+    "test:print-paths": "node tools/test-print-paths.mjs",
+    "test:search-views": "node tools/test-search-views.mjs",
+    "test:records": "node tools/test-records.mjs",
+    "test:ppw": "node tools/test-ppw.mjs",
+    "test:native-download": "node tools/test-native-download.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",
@@ -57,8 +65,10 @@
     "@capacitor/android": "^8.4.2",
     "@capacitor/app": "^8.1.1",
     "@capacitor/cli": "^8.4.2",
-    "@capacitor/local-notifications": "^8.2.1",
     "@capacitor/core": "^8.4.2",
+    "@capacitor/filesystem": "^8.1.2",
+    "@capacitor/local-notifications": "^8.2.1",
+    "@capacitor/share": "^8.0.1",
     "@capacitor/status-bar": "^8.0.3"
   }
 }

@@ -1,0 +1,120 @@
+/**
+ * PPW / Promotion Points calculator (#/board's "Points" tab, renderPoints):
+ * the generic route sweep never switches rank after entering a value, so
+ * the #120 regression - category caps differ by rank (SGT training max 280,
+ * SSG max 230), and an already-entered value used to stay in place,
+ * unclamped, after a rank switch changed the cap underneath it, so the
+ * input box, its own "Max N" hint, and the calculated total could all
+ * visibly disagree - had no interactive coverage. This drives a real rank
+ * switch through the real UI and checks the input box itself, not just the
+ * calculated total (which was already correctly clamped at calc time even
+ * before this was fixed).
+ */
+import { chromium } from "playwright";
+import { serve } from "./server.mjs";
+
+let fails = 0;
+const ok = (m) => console.log("  PASS  " + m);
+const bad = (m) => { fails++; console.log("  FAIL  " + m); };
+
+const { server, url } = await serve("web");
+const browser = await chromium.launch();
+const page = await (await browser.newContext()).newPage();
+const noise = [];
+page.on("console", (m) => { if (m.type() === "error") noise.push(m.text()); });
+page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
+
+await page.goto(url, { waitUntil: "load" });
+await page.waitForTimeout(700);
+const guestCard = page.locator(".ob-mode-card", { hasText: /guest session/i }).first();
+await guestCard.waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
+if (await guestCard.count()) {
+  await guestCard.click();
+  await page.locator("#ob-overlay").waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
+}
+await page.waitForTimeout(300);
+
+await page.evaluate(() => { location.hash = "#/board"; });
+await page.waitForTimeout(500);
+await page.locator("button", { hasText: /^Points$/ }).click();
+await page.waitForTimeout(400);
+
+const defaultRankActive = await page.evaluate(() => {
+  const b = Array.from(document.querySelectorAll("button")).find((x) => x.textContent.trim() === "SGT (E-5)");
+  return b ? b.classList.contains("active") : null;
+});
+defaultRankActive === true ? ok("PPW defaults to SGT (E-5), Quick estimate mode") : bad("SGT button not active by default: " + defaultRankActive);
+
+const trainingInput = page.locator('input[aria-label="Military training (weapons + AFT)"]');
+await trainingInput.waitFor({ state: "visible", timeout: 5000 });
+const hintBeforeSwitch = await page.evaluate(() => {
+  const inp = document.querySelector('input[aria-label="Military training (weapons + AFT)"]');
+  return inp?.closest(".card")?.querySelector(".hint")?.textContent || "";
+});
+/Max 280/.test(hintBeforeSwitch) ? ok("Training field's hint shows SGT's real cap (Max 280)") : bad("hint before switch: " + hintBeforeSwitch);
+
+// Enter SGT's max (280) - valid at SGT, but exceeds SSG's 230 cap.
+await trainingInput.fill("280");
+await trainingInput.dispatchEvent("input");
+await page.waitForTimeout(200);
+const valueAtSgtMax = await trainingInput.inputValue();
+valueAtSgtMax === "280" ? ok("Training input accepts 280 (valid at SGT's own cap, no reclamp needed yet)") : bad("value after entering 280: " + valueAtSgtMax);
+const statAtSgtMax = await page.evaluate(() => {
+  const inp = document.querySelector('input[aria-label="Military training (weapons + AFT)"]');
+  return inp?.closest(".card")?.querySelector(".stat .v")?.textContent || "";
+});
+statAtSgtMax === "280" ? ok("The stat display next to the input also reads 280") : bad("stat display before switch: " + statAtSgtMax);
+
+// Switch rank to SSG (cap drops to 230) - the actual #120 regression.
+await page.locator("button", { hasText: /^SSG \(E-6\)$/ }).click();
+await page.waitForTimeout(300);
+const trainingInputAfterSwitch = page.locator('input[aria-label="Military training (weapons + AFT)"]');
+const valueAfterSwitch = await trainingInputAfterSwitch.inputValue();
+valueAfterSwitch === "230" ? ok("Switching to SSG reclamps the input box's own displayed value from 280 down to 230 (#120)") : bad("training input value after switching to SSG: " + valueAfterSwitch);
+
+const statAfterSwitch = await page.evaluate(() => {
+  const inp = document.querySelector('input[aria-label="Military training (weapons + AFT)"]');
+  return inp?.closest(".card")?.querySelector(".stat .v")?.textContent || "";
+});
+statAfterSwitch === "230" ? ok("The stat display next to the input also updates to 230, agreeing with the input box") : bad("stat display after switch: " + statAfterSwitch);
+
+const hintAfterSwitch = await page.evaluate(() => {
+  const inp = document.querySelector('input[aria-label="Military training (weapons + AFT)"]');
+  return inp?.closest(".card")?.querySelector(".hint")?.textContent || "";
+});
+/Max 230/.test(hintAfterSwitch) ? ok("The 'Max N' hint updates to SSG's real cap (Max 230), agreeing with the input and stat") : bad("hint after switch: " + hintAfterSwitch);
+
+// Switch back to SGT: the reclamped value (230) is not restored to 280 -
+// the app clamps in place, it doesn't remember the original entry.
+await page.locator("button", { hasText: /^SGT \(E-5\)$/ }).click();
+await page.waitForTimeout(300);
+const valueBackAtSgt = await page.locator('input[aria-label="Military training (weapons + AFT)"]').inputValue();
+valueBackAtSgt === "230" ? ok("Switching back to SGT leaves the value at 230 (clamped in place, not restored to the original 280)") : bad("value after switching back to SGT: " + valueBackAtSgt);
+
+// ---- Full PPW mode: same reclamp applies to a different field with the
+// opposite cap direction (SSG's awards cap 165 > SGT's 145) ----
+await page.locator("button", { hasText: /^Full PPW$/ }).click();
+await page.waitForTimeout(300);
+await page.locator("button", { hasText: /^SSG \(E-6\)$/ }).click();
+await page.waitForTimeout(300);
+const awardsInput = page.locator('input[aria-label="Points from permanent awards/decorations"]');
+await awardsInput.waitFor({ state: "visible", timeout: 5000 });
+await awardsInput.fill("165");
+await awardsInput.dispatchEvent("input");
+await page.waitForTimeout(200);
+const awardsAtSsg = await awardsInput.inputValue();
+awardsAtSsg === "165" ? ok("Full PPW's Awards field accepts 165 (valid at SSG's own cap)") : bad("awards value at SSG: " + awardsAtSsg);
+
+await page.locator("button", { hasText: /^SGT \(E-5\)$/ }).click();
+await page.waitForTimeout(300);
+const awardsAfterSwitchToSgt = await page.locator('input[aria-label="Points from permanent awards/decorations"]').inputValue();
+awardsAfterSwitchToSgt === "145" ? ok("Switching to SGT reclamps the Awards field from 165 down to SGT's 145 cap (#120, second field)") : bad("awards value after switching to SGT: " + awardsAfterSwitchToSgt);
+
+const relevantNoise = noise.filter((n) => !/favicon/.test(n));
+relevantNoise.length === 0 ? ok("no console errors/warnings") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));
+
+await browser.close();
+await server.close();
+
+console.log(fails ? `\n${fails} FAILURE(S)` : "\nPPW: all passed");
+process.exit(fails ? 1 : 0);

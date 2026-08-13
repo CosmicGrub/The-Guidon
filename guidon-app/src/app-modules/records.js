@@ -94,7 +94,11 @@ window.G = window.G || {};
       " checks across the systems that actually generate your promotion points." }));
 
     let saved = {};
-    try { const r = await G.db.get("kv", KEY); saved = (r && r.v) || {}; } catch (e) { /* offline-safe */ }
+    try {
+      const r = await G.db.get("kv", KEY);
+      const v = r && r.v;
+      saved = (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
+    } catch (e) { /* offline-safe */ }
 
     const warn = el("div.panel", { style: "margin:10px 0;border-left:3px solid var(--red)" });
     warn.appendChild(el("div.eyebrow", { text: "The rule that costs people a cycle" }));

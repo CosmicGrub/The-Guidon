@@ -215,6 +215,49 @@ listText = await page.evaluate(() => document.body.textContent || "");
   : bad("list after hand-authored import: " + listText.slice(0, 300));
 fs.unlinkSync(importTmpPath);
 
+// ---- Map tab: node boxes render, are keyboard-operable, and route back to
+// the exact node clicked (regression coverage for #186's fix - map-node
+// boxes used to be plain unfocusable divs with an onclick and nothing else) ----
+const qaCard = page.locator(".card", { hasText: "QA Test Scenario" });
+await qaCard.locator("button", { hasText: /^Edit$/ }).click();
+await page.waitForTimeout(300);
+await page.locator(".author-tabs button", { hasText: /^Map$/ }).click();
+await page.waitForTimeout(300);
+
+const mapNodeCount = await page.evaluate(() => document.querySelectorAll(".map-node").length);
+mapNodeCount === 2 ? ok("Map tab renders one box per node (2 for QA Test Scenario)") : bad("map-node count: " + mapNodeCount);
+
+const connectorCount = await page.evaluate(() => document.querySelectorAll(".node-map svg path").length);
+connectorCount >= 1 ? ok("Map tab draws a connector line for the real choice->goto link") : bad("no connector path drawn between linked nodes");
+
+const mapNodeAttrs = await page.evaluate(() => {
+  const n = document.querySelector(".map-node");
+  return n ? { role: n.getAttribute("role"), tabindex: n.getAttribute("tabindex"), ariaLabel: n.getAttribute("aria-label") } : null;
+});
+mapNodeAttrs?.role === "button" && mapNodeAttrs?.tabindex === "0" && !!mapNodeAttrs?.ariaLabel
+  ? ok("map-node boxes carry role=button, tabindex=0, and a descriptive aria-label")
+  : bad("map-node accessibility attrs: " + JSON.stringify(mapNodeAttrs));
+
+// Tab to a map-node and activate it with Enter - must land on the Guided
+// tab, scrolled to that specific node (not just "some" node).
+const targetNodeId = await page.evaluate(() => document.querySelector(".map-node .mn-id")?.textContent?.split(" ")[0] || "");
+await page.evaluate(() => document.body.focus());
+let tabbedToMapNode = false;
+for (let i = 0; i < 15; i++) {
+  await page.keyboard.press("Tab");
+  tabbedToMapNode = await page.evaluate(() => !!document.activeElement?.classList.contains("map-node"));
+  if (tabbedToMapNode) break;
+}
+tabbedToMapNode ? ok("A map-node is reachable via sequential Tab navigation") : bad("could not Tab to a map-node");
+await page.keyboard.press("Enter");
+await page.waitForTimeout(300);
+const backOnGuidedForNode = targetNodeId ? await page.evaluate((id) => !!document.querySelector('[data-node="' + id + '"]'), targetNodeId) : false;
+backOnGuidedForNode ? ok("Enter on a focused map-node switches to Guided and lands on that exact node (" + targetNodeId + ")") : bad("did not land on the expected node " + targetNodeId + " after Enter");
+
+// back to the scenario list before the next section
+await page.locator("button", { hasText: /^Cancel$/ }).click();
+await page.waitForTimeout(300);
+
 // ---- copy-a-built-in-as-template path ----
 const seedSel = page.locator('select[aria-label="Copy a built-in scenario as a template"]');
 const seedOptions = await seedSel.locator("option").count();

@@ -14,7 +14,7 @@ src/pwa.js          install / offline / storage-durability (G.pwa)      web only
 src/pdf-defer.js    on-demand loader for the DA 4856 stack (G.pdfAssets) web only
 src/native.js       Android shell: system bars, Back button (G.native)   web only
 src/sw.js           service worker template (version injected at build)
-tools/              build + 23 verification suites (see package.json's "test" script)
+tools/              build + 31 verification suites (see package.json's "test" script)
 web/                BUILD OUTPUT - installable bundle (do not hand-edit)
 dist/               shippable artifacts
 src-tauri/          Windows desktop app

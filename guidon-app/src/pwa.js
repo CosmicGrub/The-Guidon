@@ -306,6 +306,12 @@ window.G = window.G || {};
     onChange: (fn) => { listeners.push(fn); return () => { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); }; },
     isInstalled: () => state.installed,
     isInstallable: () => !!state.deferredPrompt,
+    // Tauri desktop or Capacitor Android, detected above - exposed so other
+    // modules (share.js's "Share & Install" panel) can tell whether they're
+    // running inside an already-installed native shell instead of assuming
+    // every visit is a browser tab that might still need hosting/PWA-install
+    // instructions.
+    isNative: () => isNative,
   };
 })();
 // END pwa.js
