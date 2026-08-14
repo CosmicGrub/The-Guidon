@@ -55,7 +55,7 @@ console.log("lint-patterns: static regression guard for 3 repeat bug shapes\n");
     const css = html.slice(styleStart, styleEnd);
     const RAW_COLOR = /(?<![\w-])color\s*:\s*var\(--(cyan|violet|red|green|amber)\)/g;
     const hits = [...css.matchAll(RAW_COLOR)];
-    const BASELINE = 115; // audited count as of 2026-08-08; see comment above
+    const BASELINE = 113; // audited count as of 2026-08-13 (task #225: 4 --amber-dim text uses moved to --ink-amber, net -2 after other w13 edits); see comment above
     if (hits.length > BASELINE) {
       bad(`(a) raw accent color used as text: ${hits.length} found, baseline is ${BASELINE} (+${hits.length - BASELINE} new)`);
       console.log("         first matches (compare against a diff to find the new one(s)):");

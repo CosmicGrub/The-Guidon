@@ -42,7 +42,17 @@ window.G = window.G || {};
   /* Native shells (Tauri desktop, Capacitor Android) already ship every asset
      locally and manage their own update channel, so service-worker caching and
      the browser install prompt are both meaningless there. Detected rather than
-     assumed, and exposed so the UI can tell the truth about what it is. */
+     assumed, and exposed so the UI can tell the truth about what it is.
+
+     Deliberately broader than G.native.isNative() (src/native.js), which
+     checks Capacitor specifically - that file gates Capacitor-only plugin
+     calls (status bar, back button, native file save) that don't exist on
+     Tauri, so it can't use this OR-of-both-platforms check. This one
+     answers "is this installed at all, regardless of which shell" for
+     PWA-chrome/install-prompt decisions that apply the same way to both
+     platforms. Two intentionally different questions living in two files
+     for two different reasons, not an accidental duplicate (task #251) -
+     see G.native.isNative()'s own comment for the mirror of this note. */
   const isNative = !!(window.__TAURI_INTERNALS__ || window.__TAURI__ || window.Capacitor);
   const listeners = [];
   const notify = () => listeners.forEach((fn) => { try { fn(state); } catch (e) {} });

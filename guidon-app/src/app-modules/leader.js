@@ -149,6 +149,16 @@ window.G = window.G || {};
     }
 
     let filterTerm = "";
+    // Each roster card below renders 2 text inputs, 4 date inputs, and 4
+    // computed hint strings with their own change listeners - at real unit
+    // scale (buildSummary's own comment above measured ~400 Soldiers) that
+    // is 400 full card rebuilds on every keystroke into the filter box,
+    // with no debounce to collapse a fast typist's keystrokes into one
+    // rebuild and no cap to bound a single rebuild's size (task #231).
+    // Same CAP value and "show all N (M more)" expander shape as
+    // buildSummary's own SUMMARY_CAP just above - one file, one pattern.
+    const LIST_CAP = 25;
+    let listExpanded = false;
     function buildList() {
       util.clear(list);
       // Filter by rank/initials substring, preserving each entry's REAL
@@ -163,8 +173,10 @@ window.G = window.G || {};
         : roster.map(function (sol, idx) { return { sol: sol, idx: idx }; });
       if (term && !visible.length) {
         list.appendChild(el("p.hint", { text: "No roster entries match “" + filterTerm.trim() + "”." }));
+        return;
       }
-      visible.forEach(function (entry) {
+      const shown = listExpanded ? visible : visible.slice(0, LIST_CAP);
+      shown.forEach(function (entry) {
         const sol = entry.sol, idx = entry.idx;
         const card = el("div.panel", { style: "margin-bottom:10px" });
         const head = el("div", { style: "display:flex;gap:8px;align-items:center;flex-wrap:wrap" });
@@ -219,6 +231,12 @@ window.G = window.G || {};
         });
         list.appendChild(card);
       });
+      if (!listExpanded && visible.length > LIST_CAP) {
+        const more = el("button.btn.sm.ghost", { type: "button",
+          text: "Show all " + visible.length + " (" + (visible.length - LIST_CAP) + " more)", style: "margin-top:8px" });
+        more.addEventListener("click", function () { listExpanded = true; buildList(); });
+        list.appendChild(more);
+      }
     }
 
     const controls = el("div.panel", { style: "margin-bottom:10px" });
@@ -245,7 +263,13 @@ window.G = window.G || {};
     const filterRow = el("div", { style: "margin-top:8px" });
     const filterInp = el("input.ob-input", { type: "search", placeholder: "Filter by rank or initials…",
       "aria-label": "Filter roster by rank or initials" });
-    filterInp.addEventListener("input", function () { filterTerm = filterInp.value; buildList(); });
+    let filterDeb;
+    filterInp.addEventListener("input", function () {
+      filterTerm = filterInp.value;
+      listExpanded = false; // a new search starts capped again, same as a fresh visit to this view
+      clearTimeout(filterDeb);
+      filterDeb = setTimeout(buildList, 120);
+    });
     filterRow.appendChild(filterInp);
     controls.appendChild(filterRow);
 

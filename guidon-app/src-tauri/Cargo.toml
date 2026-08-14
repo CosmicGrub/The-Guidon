@@ -1,6 +1,6 @@
 [package]
 name = "guidon"
-version = "1.4.23"
+version = "1.4.24"
 description = "GUIDON - Army Leader Development Trainer"
 authors = ["GUIDON"]
 edition = "2021"
@@ -16,6 +16,40 @@ tauri = { version = "2", features = [] }
 tauri-plugin-single-instance = "2"
 # Remember window size/position/maximised state between runs.
 tauri-plugin-window-state = "2"
+
+# ---------------------------------------------------------------------------
+# Tracked, unfixed transitive advisories (checked 2026-08-13, task #245/#246)
+#
+# cargo-audit isn't part of this project's toolchain, so these are reviewed
+# by hand against the desktop build's real target rather than gated in CI.
+# Re-check both groups the next time src-tauri's dependency tree moves.
+#
+# 1) glib/gtk-rs GTK3 bindings (glib 0.18.5, gtk, and their *-sys crates) —
+#    RUSTSEC-2024-0429 (unsound Iterator/DoubleEndedIterator impl on
+#    glib::VariantStrIter, no patched version exists upstream) and
+#    RUSTSEC-2024-0415 (gtk-rs GTK3 bindings themselves are unmaintained).
+#    Pulled in transitively as Tauri's Linux windowing backend. Confirmed via
+#    `cargo tree -p glib --target x86_64-pc-windows-msvc` (prints nothing —
+#    the crate doesn't even resolve for this target) vs.
+#    `--target x86_64-unknown-linux-gnu` (resolves normally): this project
+#    only ships a Windows desktop build (no Linux target in CI or in
+#    tauri.conf.json), so neither advisory's code ever compiles into, let
+#    alone runs in, the shipped binary. No action possible from this
+#    project's Cargo.toml either way — the crate is chosen by Tauri itself,
+#    conditionally per target, not something GUIDON depends on directly.
+#
+# 2) unic-* crates (unic-char-property, unic-char-range, unic-common,
+#    unic-ucd-ident, unic-ucd-version) — RUSTSEC-2025-0100/-0083/-0104/-0098
+#    ("unmaintained", not an active exploit). Unlike glib/gtk above, these
+#    DO resolve on the real Windows target: `cargo tree -p unic-ucd-ident
+#    --target x86_64-pc-windows-msvc -i` traces them through
+#    urlpattern -> tauri-utils -> tauri (Tauri's own core dependency chain),
+#    not anything GUIDON's Cargo.toml references. Not directly fixable from
+#    here — would need Tauri (or urlpattern upstream) to move off the
+#    unmaintained rust-unic project onto a maintained Unicode-data crate.
+#    Low practical risk (informational "unmaintained" status, not a known
+#    vulnerability) but tracked here so it isn't mistaken for an oversight.
+# ---------------------------------------------------------------------------
 
 # The app ships to phones and older unit laptops, so the installer is kept small
 # and the binary stripped. LTO + one codegen unit costs build time, not runtime.

@@ -23,6 +23,18 @@ window.G = window.G || {};
   "use strict";
 
   const Cap = window.Capacitor;
+  // Capacitor/Android ONLY - deliberately narrower than G.pwa.isNative()
+  // (src/pwa.js), which answers "is this ANY native shell, Tauri desktop OR
+  // Capacitor Android" for install-prompt/PWA-chrome decisions that apply
+  // equally to both platforms. This predicate exists separately because
+  // everything in this file (status-bar theming, the Android hardware Back
+  // button, util.download()'s Filesystem+Share native-save path in
+  // src/index.html) calls Capacitor-only plugin APIs that don't exist - and
+  // would throw or silently no-op - on the Tauri desktop build. Use
+  // G.native.isNative() specifically when you're about to touch a
+  // Capacitor plugin; use G.pwa.isNative() for "is this installed at all,
+  // regardless of which shell" (task #251 - these are two intentionally
+  // different questions, not an accidental duplicate).
   const isNative = !!(Cap && (Cap.isNativePlatform ? Cap.isNativePlatform() : Cap.isNative));
   const state = { platform: isNative ? (Cap.getPlatform ? Cap.getPlatform() : "unknown") : "web",
                   lastBarColor: null, applied: 0 };

@@ -1,6 +1,6 @@
 {
   "name": "guidon-app",
-  "version": "1.4.23",
+  "version": "1.4.24",
   "private": true,
   "type": "module",
   "description": "GUIDON packaging: installable PWA bundle, standalone single file, Windows desktop app, Android app",
@@ -12,7 +12,7 @@
     "test:standalone": "node tools/test-standalone.mjs",
     "test:csp": "node tools/test-csp.mjs",
     "lint:patterns": "node tools/lint-patterns.mjs",
-    "test": "npm run lint:patterns && npm run build && npm run verify && node tools/run-parallel.mjs test:points test:consistency test:calendar test:leader test:privacy test:scrollhint test:theater test:flip test:a11y test:pdf test:standalone test:bridge test:contrast-full test:responsive test:csp test:discoverability test:mockboard test:idp test:reminders test:finance test:salneg test:career test:author test:onboarding test:backup-roundtrip test:selftest test:print-paths test:search-views test:records test:ppw test:native-download",
+    "test": "npm run lint:patterns && npm run build && npm run verify && node tools/run-parallel.mjs test:points test:consistency test:calendar test:leader test:privacy test:scrollhint test:theater test:flip test:a11y test:pdf test:standalone test:bridge test:contrast-full test:responsive test:csp test:discoverability test:mockboard test:idp test:reminders test:finance test:salneg test:career test:author test:onboarding test:backup-roundtrip test:selftest test:print-paths test:search-views test:records test:ppw test:native-download test:print-native test:native-unit test:train test:forms test:settings-toggles test:misc-routes test:consistency-extended test:baseline-coverage",
     "perf": "node tools/perf.mjs",
     "serve": "node tools/server.mjs web 8099",
     "desktop:dev": "npm run build && tauri dev",
@@ -54,18 +54,26 @@
     "test:search-views": "node tools/test-search-views.mjs",
     "test:records": "node tools/test-records.mjs",
     "test:ppw": "node tools/test-ppw.mjs",
-    "test:native-download": "node tools/test-native-download.mjs"
+    "test:native-download": "node tools/test-native-download.mjs",
+    "test:print-native": "node tools/test-print-native.mjs",
+    "test:native-unit": "node tools/test-native-unit.mjs",
+    "test:train": "node tools/test-train.mjs",
+    "test:forms": "node tools/test-forms.mjs",
+    "test:settings-toggles": "node tools/test-settings-toggles.mjs",
+    "test:misc-routes": "node tools/test-misc-routes.mjs",
+    "test:consistency-extended": "node tools/test-consistency-extended.mjs",
+    "test:baseline-coverage": "node tools/test-baseline-coverage.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",
-    "axe-core": "^4.12.1",
-    "playwright": "1.62.0"
+    "axe-core": "^4.13.0",
+    "playwright": "1.62.1"
   },
   "dependencies": {
-    "@capacitor/android": "^8.4.2",
+    "@capacitor/android": "^8.5.0",
     "@capacitor/app": "^8.1.1",
-    "@capacitor/cli": "^8.4.2",
-    "@capacitor/core": "^8.4.2",
+    "@capacitor/cli": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
     "@capacitor/filesystem": "^8.1.2",
     "@capacitor/local-notifications": "^8.2.1",
     "@capacitor/share": "^8.0.1",

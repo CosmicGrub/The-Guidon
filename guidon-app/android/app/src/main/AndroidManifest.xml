@@ -38,4 +38,10 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Board Drill grading (index.html) and Quiz answer feedback call
+         navigator.vibrate() for haptic feedback. `if (navigator.vibrate)` is
+         truthy even without this permission — WebView silently swallows the
+         resulting SecurityException, so every haptic buzz was a no-op on the
+         shipped APK without it (task #204). -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 </manifest>
