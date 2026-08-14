@@ -18,8 +18,8 @@ android {
         applicationId "app.guidon.trainer"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 10424
-        versionName "1.4.24"
+        versionCode 10425
+        versionName "1.4.25"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
