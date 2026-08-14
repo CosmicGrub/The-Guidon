@@ -20,17 +20,18 @@
  * not guessed. See the comment above each block for the exact source lines
  * that justify the assertion.
  *
- * One real finding surfaced while reading the source and is called out in
- * its block rather than silently worked around: #/drills loads a kv row
- * ("guidon:drills:v1") at the top of render() using the exact same
- * "load into `saved`, key checkbox state off saved['c'+i]" comment BLC/ALC/
- * SLC use - but drills.js never reads `saved` again anywhere, and none of
- * its checklists (Conduct Individual Training, the 1009S brief rubric) ever
- * write back to it. Unlike its BLC/ALC/SLC siblings, which persist for
- * real, Drills' checklist state is purely in-memory and resets on every
- * re-render. The block below tests and documents the REAL (ephemeral)
- * behavior rather than asserting the persistence that BLC/ALC/SLC have but
- * Drills does not.
+ * One real finding surfaced while reading the source, and has since been
+ * fixed: #/drills loads a kv row ("guidon:drills:v1") at the top of render()
+ * using the exact same "load into `saved`, key checkbox state off saved['c'+
+ * i]" pattern BLC/ALC/SLC use, but drills.js used to never read `saved`
+ * again anywhere, and neither of its checklists (Conduct Individual
+ * Training, the 1009S brief rubric) wrote back to it - unlike its BLC/ALC/
+ * SLC siblings, which persist for real, Drills' checklist state was purely
+ * in-memory and reset on every re-render. drills.js now wires both
+ * checklists into the same read-modify-write pattern (saved["cit"+n] /
+ * saved["brf"+n], then G.db.put("kv", {k: KEY, v: saved}) on each change),
+ * so the block below asserts real persistence across a route re-render, the
+ * same way selfCheckTest() does for BLC/ALC/SLC.
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
@@ -176,14 +177,18 @@ await selfCheckTest("#/slc", "SLC & Senior NCO Path", "guidon:slc:checks:v1", 10
 
 /* ========================================================================
  * #/drills (G.drills, src/index.html ~15169-15600)
- * NOT a persisted checklist (see the top-of-file finding). Real, in-memory
- * interaction: opening "Conduct Individual Training" (citDrill(), 25 steps,
- * ~15492-15511) and checking/unchecking boxes updates a live "N / 25" tally
- * via closure state (`done += cb.checked ? 1 : -1`). This also verifies the
- * documented lack of persistence: leaving the route and reopening the same
- * drill resets the tally to 0, unlike BLC/ALC/SLC above.
+ * Two persisted checklists now share the kv row "guidon:drills:v1", the
+ * same read-modify-write pattern selfCheckTest() exercises above for
+ * BLC/ALC/SLC: Conduct Individual Training (citDrill(), 25 steps, keyed
+ * saved["cit"+n], tally "N / 25", ~15492-15511) and the 1009S brief rubric
+ * (briefDrill(), 17 items with point values from BRIEF_RUBRIC - the first
+ * two are both 5 points - keyed saved["brf"+n], tally "N / 100",
+ * ~15423-15440). Each checkbox's change handler updates `saved`, awaits
+ * G.db.put("kv", {k: KEY, v: saved}), then updates the live tally.
  * ======================================================================== */
-console.log("\n-- #/drills: Conduct Individual Training checklist - live tally, no persistence --");
+const DRILLS_KEY = "guidon:drills:v1";
+console.log(`\n-- #/drills: Conduct Individual Training checklist (kv "${DRILLS_KEY}") --`);
+await page.evaluate((k) => window.G.db.put("kv", { k, v: {} }), DRILLS_KEY);
 await goto("#/drills");
 const drillsHeading = await page.evaluate(() => (document.querySelector("h2") || {}).textContent === "NCOPDS Drills");
 drillsHeading ? ok("#/drills view renders") : bad("#/drills h2 mismatch");
@@ -204,16 +209,66 @@ await page.waitForTimeout(200);
 const citAfterUncheck = await page.evaluate(() => (document.querySelector(".stat .v") || {}).textContent || "");
 citAfterUncheck === "1 / 25" ? ok("unchecking one step decrements the tally to '1 / 25'") : bad("CIT tally after uncheck: " + JSON.stringify(citAfterUncheck));
 
-// Leave the route entirely and come back: real, verified behavior is that
-// nothing was persisted - the tally resets, unlike BLC/ALC/SLC.
+const citPersisted = await page.evaluate(async (k) => {
+  const r = await window.G.db.get("kv", k);
+  return !!(r && r.v && r.v.cit0 === false && r.v.cit1 === true);
+}, DRILLS_KEY);
+citPersisted
+  ? ok(`CIT checkbox state persists to kv "${DRILLS_KEY}" (cit0: false, cit1: true)`)
+  : bad(`CIT checklist did NOT persist to kv "${DRILLS_KEY}"`);
+
+// Survives a fresh re-render (not just retained in the live DOM node): leave
+// the route entirely, come back, and reopen the same drill.
 await goto("#/home");
 await goto("#/drills");
 await page.locator("button", { hasText: /Conduct Individual Training/ }).click();
 await page.waitForTimeout(300);
 const citAfterRerender = await page.evaluate(() => (document.querySelector(".stat .v") || {}).textContent || "");
-citAfterRerender === "0 / 25"
-  ? ok("CIT tally resets to '0 / 25' after leaving and re-entering the route (confirmed: no persistence)")
-  : bad("CIT tally survived a re-render unexpectedly: " + JSON.stringify(citAfterRerender) + " (if this now says persistence exists, the top-of-file finding is stale)");
+citAfterRerender === "1 / 25"
+  ? ok("CIT tally survives leaving and re-entering the route ('1 / 25')")
+  : bad("CIT tally after re-render: " + JSON.stringify(citAfterRerender));
+const citBoxesAfterRerender = await page.evaluate(() => {
+  const boxes = [...document.querySelectorAll('input[type="checkbox"]')];
+  return [!!(boxes[0] && boxes[0].checked), !!(boxes[1] && boxes[1].checked)];
+});
+citBoxesAfterRerender[0] === false && citBoxesAfterRerender[1] === true
+  ? ok("CIT checkbox checked-state survives re-render (step 1 unchecked, step 2 checked)")
+  : bad("CIT checkbox states after re-render: " + JSON.stringify(citBoxesAfterRerender));
+
+console.log(`\n-- #/drills: 1009S brief rubric checklist (kv "${DRILLS_KEY}") --`);
+await page.locator("button", { hasText: /All drills/ }).click();
+await page.waitForTimeout(200);
+await page.locator("button", { hasText: /Information brief rehearsal/ }).click();
+await page.waitForTimeout(300);
+const brfInitial = await page.evaluate(() => (document.querySelector(".stat .v") || {}).textContent || "");
+brfInitial === "0 / 100" ? ok("Brief rubric starts at '0 / 100'") : bad("Brief rubric initial tally: " + JSON.stringify(brfInitial));
+
+await page.locator('input[type="checkbox"]').nth(0).check();
+await page.waitForTimeout(200);
+const brfAfterOne = await page.evaluate(() => (document.querySelector(".stat .v") || {}).textContent || "");
+brfAfterOne === "5 / 100" ? ok("checking the first rubric item (5 points) updates the tally to '5 / 100'") : bad("Brief rubric tally after one check: " + JSON.stringify(brfAfterOne));
+
+const brfPersisted = await page.evaluate(async (k) => {
+  const r = await window.G.db.get("kv", k);
+  return !!(r && r.v && r.v.brf0 === true);
+}, DRILLS_KEY);
+brfPersisted
+  ? ok(`brief rubric checkbox persists to kv "${DRILLS_KEY}" (brf0: true)`)
+  : bad(`brief rubric item did NOT persist to kv "${DRILLS_KEY}"`);
+
+await goto("#/home");
+await goto("#/drills");
+await page.locator("button", { hasText: /Information brief rehearsal/ }).click();
+await page.waitForTimeout(300);
+const brfAfterRerender = await page.evaluate(() => (document.querySelector(".stat .v") || {}).textContent || "");
+brfAfterRerender === "5 / 100"
+  ? ok("Brief rubric tally survives leaving and re-entering the route ('5 / 100')")
+  : bad("Brief rubric tally after re-render: " + JSON.stringify(brfAfterRerender));
+const brfBoxChecked = await page.locator('input[type="checkbox"]').first().isChecked();
+brfBoxChecked ? ok("brief rubric checkbox checked-state survives re-render") : bad("brief rubric checkbox did not survive re-render");
+
+// cleanup so this route's state doesn't bleed into anything else
+await page.evaluate((k) => window.G.db.put("kv", { k, v: {} }), DRILLS_KEY);
 
 /* ========================================================================
  * #/channels (G.channels, src/index.html ~15602-15757)
