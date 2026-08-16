@@ -5000,7 +5000,18 @@ window.G = window.G || {};
       try { await db.ready(); } catch (e) { db.installMemoryFallback(); }
       if (db._backend === "memory") util.toast("Storage limited — progress won't persist this session.");
       const savedSettings = await db.getSetting("settings", null);
-      if (savedSettings) state.settings = Object.assign({}, DEFAULT_SETTINGS, savedSettings);
+      if (savedSettings) {
+        // Self-healing log (Diagnostics self-repair item 1): this merge
+        // already silently repairs a settings row missing a field
+        // DEFAULT_SETTINGS expects (old backup, hand edit, schema grew since
+        // last save) - this only makes that already-happening repair
+        // visible instead of leaving zero trace.
+        const missingSettings = Object.keys(DEFAULT_SETTINGS).filter((k) => !(k in savedSettings));
+        state.settings = Object.assign({}, DEFAULT_SETTINGS, savedSettings);
+        if (missingSettings.length && G.selfheal) {
+          G.selfheal.log("settings-backfill", missingSettings.join(","), missingSettings.length + " field(s) backfilled from defaults: " + missingSettings.join(", "));
+        }
+      }
       await migrateLegacyLocalStorage();
       await loadContent();
       state.userScenarios = (await db.allUserScenarios()) || [];
@@ -13282,6 +13293,14 @@ window.G = window.G || {};
       // must NOT be merged into a truthy default object or a deleted
       // profile would silently look "already onboarded" on next boot.
       if (!r || !r.v) return r ? r.v : null;
+      // Self-healing log (item 1): same silent-repair pattern as
+      // store.init()'s settings merge above - a saved profile missing a
+      // field DEFAULT_PROFILE expects gets backfilled every load; this
+      // makes that visible in Diagnostics instead of leaving no trace.
+      const missingProfile = Object.keys(DEFAULT_PROFILE).filter((k) => !(k in r.v));
+      if (missingProfile.length && G.selfheal) {
+        G.selfheal.log("profile-backfill", missingProfile.join(","), missingProfile.length + " field(s) backfilled from defaults: " + missingProfile.join(", "));
+      }
       return Object.assign({}, DEFAULT_PROFILE, r.v);
     }
     catch(e) { return null; }
@@ -16128,6 +16147,50 @@ window.G = window.G || {};
 })();
 // END modal.js
 
+/* ==== js/selfheal.js ==== */
+/* GUIDON \u2014 selfheal.js : self-healing audit log (G.selfheal)
+   store.init()'s settings merge, loadProfile()'s profile merge, and
+   backup.js's importAll() reject-and-discard branches already repair or
+   reject corrupted data on every boot/import - they always have. The gap
+   was never the repair logic, it's that none of it left a trace. This is
+   a small, capped, append-only log of exactly that already-happening
+   behavior, surfaced in Diagnostics (Diagnostics self-repair item 1).
+*/
+window.G = window.G || {};
+(function () {
+  "use strict";
+  var KEY = "guidon:selfheal:v1";
+  var CAP = 200;
+
+  async function log(kind, key, detail) {
+    try {
+      var r = await G.db.get("kv", KEY);
+      var list = (r && Array.isArray(r.v)) ? r.v.slice() : [];
+      list.push({ at: new Date().toISOString(), kind: kind, key: key || null, detail: detail || "" });
+      if (list.length > CAP) list = list.slice(list.length - CAP);
+      await G.db.put("kv", { k: KEY, v: list });
+    } catch (e) { /* logging must never block the repair it describes */ }
+  }
+
+  async function recent(n) {
+    try {
+      var r = await G.db.get("kv", KEY);
+      var list = (r && Array.isArray(r.v)) ? r.v : [];
+      return list.slice(-(n || list.length)).reverse();
+    } catch (e) { return []; }
+  }
+
+  async function count() {
+    try {
+      var r = await G.db.get("kv", KEY);
+      return (r && Array.isArray(r.v)) ? r.v.length : 0;
+    } catch (e) { return 0; }
+  }
+
+  G.selfheal = { log: log, recent: recent, count: count };
+})();
+// END selfheal.js
+
 /* ==== js/selftest.js ==== */
 /* GUIDON — selftest.js : on-device test suite (G.selftest)
    Playwright cannot reach a real Galaxy Tab: TalkBack, S Pen hover, genuine
@@ -16141,6 +16204,61 @@ window.G = window.G || {};
   "use strict";
   const util = G.util, el = util.el;
   const KEY = "guidon:selftest:v1";
+
+  // Session-scoped repair history (item 2 of the Diagnostics self-repair
+  // shortlist) - NOT the durable trail (G.selfheal.log already persists
+  // that); this is only what the CURRENT page session needs to render the
+  // Copy Report's REPAIRS section.
+  let lastRepairs = [];
+
+  // Runs repairFn, then re-verifies with the SAME predicate the failing
+  // check itself used - never trusts repairFn's own return value as proof
+  // of success. Every repair action in this module goes through this one
+  // path, so every repair gets an honest, re-checked before/after pair in
+  // the report rather than an assumed one.
+  async function logRepair(name, repairFn, verifyFn) {
+    const before = await verifyFn();
+    await repairFn();
+    const after = await verifyFn();
+    const entry = { ts: new Date().toISOString(), name: name, before: before, after: after, verified: !!(after && after.ok) };
+    lastRepairs.push(entry);
+    if (G.selfheal) {
+      G.selfheal.log("repair", name, (entry.verified ? "repaired \u2192 now \u2713" : "repair attempted \u2192 still \u2715") +
+        (after && after.detail ? " (" + after.detail + ")" : ""));
+    }
+    return entry;
+  }
+
+  // Status bar theming's pass/fail predicate, extracted out of the AUTO
+  // entry below so the Fix button (item 5) can re-run the exact same check
+  // the automated pass used, rather than a second hand-written copy that
+  // could quietly drift out of sync with it.
+  async function checkStatusbar() {
+    if (!G.native || !G.native.isNative()) {
+      const dbg = G.native && G.native._debug;
+      if (!dbg) return { ok:false, detail:"G.native._debug not exposed \u2014 cannot verify the bar-colour decision logic off-device" };
+      const raw = dbg.token("--bg", "#0a0e12");
+      const rgb = dbg.parseColor(raw);
+      const validRgb = Array.isArray(rgb) && rgb.length === 3 && rgb.every((v) => typeof v === "number" && v >= 0 && v <= 255 && !isNaN(v));
+      if (!validRgb) return { ok:false, detail:"parseColor(" + JSON.stringify(raw) + ") did not resolve to a valid [r,g,b] triple: " + JSON.stringify(rgb) };
+      const hex = dbg.toHex(rgb);
+      const validHex = /^#[0-9a-f]{6}$/i.test(hex);
+      const lum = dbg.luminance(rgb);
+      const validLum = typeof lum === "number" && lum >= 0 && lum <= 1;
+      const ok = validHex && validLum;
+      return { ok, detail: ok
+        ? "Off-device: --bg=" + raw + " \u2192 " + hex + ", luminance " + lum.toFixed(3) + " (decision logic verified; no real device to paint)"
+        : "Off-device decision logic broken \u2014 hex:" + hex + " (valid:" + validHex + ") luminance:" + lum + " (valid:" + validLum + ")" };
+    }
+    const m = navigator.userAgent.match(/Android (\d+)/);
+    const ver = m ? +m[1] : null;
+    if (ver != null && ver >= 15) {
+      return { ok:true, detail:"Android " + ver + " \u2014 bar-colour sync is a known no-op here; safe-area CSS still keeps content clear of the bar" };
+    }
+    const applied = G.native.state.applied > 0;
+    return { ok: applied, detail: (ver != null ? "Android " + ver + " \u2014 " : "") +
+      (applied ? "bar colour synced (" + G.native.state.lastBarColor + ")" : "bar colour sync did not run") };
+  }
 
   // ── Automated checks — each returns {ok, detail} or throws ────────────────
   const AUTO = [
@@ -16261,42 +16379,16 @@ window.G = window.G || {};
       } },
     { id:"statusbar", name:"Status bar theming",
       why:"Android 15+ makes StatusBar.setBackgroundColor() a documented no-op (OS-enforced edge-to-edge, no opt-out on API 36). This is a known platform limit, not something GUIDON can force \u2014 the app's own CSS safe-area insets keep content clear of the bar regardless of whether its colour follows the theme.",
+      run: checkStatusbar },
+    { id:"kvscan", name:"Data validity scan",
+      why:"KV_VALIDATORS (backup.js) normally only run when restoring a backup file - a row corrupted outside that path (a stray devtools edit, a storage bug, an interrupted write) is otherwise invisible until whatever reads it breaks. This applies the exact same validators to every row already sitting in this device's IndexedDB, right now.",
       run: async () => {
-        // Off-device (every automated/browser run \u2014 the ONLY environment
-        // this suite's own tests ever actually execute in) there is no real
-        // status bar to paint, but the DECISION logic that would paint it
-        // (resolve --bg, parse it, compute luminance, pick a light/dark icon
-        // style \u2014 all pure and platform-independent, native.js's own
-        // G.native._debug) is exercised for real here instead of an
-        // unconditional {ok:true}. That unconditional pass was a false-
-        // coverage trap: this check reported green on every single
-        // automated run no matter how broken the underlying logic got,
-        // because "not a native build" always short-circuited straight to a
-        // hollow pass before touching any of the app's own code (task #238).
-        if (!G.native || !G.native.isNative()) {
-          const dbg = G.native && G.native._debug;
-          if (!dbg) return { ok:false, detail:"G.native._debug not exposed \u2014 cannot verify the bar-colour decision logic off-device" };
-          const raw = dbg.token("--bg", "#0a0e12");
-          const rgb = dbg.parseColor(raw);
-          const validRgb = Array.isArray(rgb) && rgb.length === 3 && rgb.every((v) => typeof v === "number" && v >= 0 && v <= 255 && !isNaN(v));
-          if (!validRgb) return { ok:false, detail:"parseColor(" + JSON.stringify(raw) + ") did not resolve to a valid [r,g,b] triple: " + JSON.stringify(rgb) };
-          const hex = dbg.toHex(rgb);
-          const validHex = /^#[0-9a-f]{6}$/i.test(hex);
-          const lum = dbg.luminance(rgb);
-          const validLum = typeof lum === "number" && lum >= 0 && lum <= 1;
-          const ok = validHex && validLum;
-          return { ok, detail: ok
-            ? "Off-device: --bg=" + raw + " \u2192 " + hex + ", luminance " + lum.toFixed(3) + " (decision logic verified; no real device to paint)"
-            : "Off-device decision logic broken \u2014 hex:" + hex + " (valid:" + validHex + ") luminance:" + lum + " (valid:" + validLum + ")" };
-        }
-        const m = navigator.userAgent.match(/Android (\d+)/);
-        const ver = m ? +m[1] : null;
-        if (ver != null && ver >= 15) {
-          return { ok:true, detail:"Android " + ver + " \u2014 bar-colour sync is a known no-op here; safe-area CSS still keeps content clear of the bar" };
-        }
-        const applied = G.native.state.applied > 0;
-        return { ok: applied, detail: (ver != null ? "Android " + ver + " \u2014 " : "") +
-          (applied ? "bar colour synced (" + G.native.state.lastBarColor + ")" : "bar colour sync did not run") };
+        if (!G.backup || !G.backup.validateKvRow) return { ok:false, detail:"G.backup.validateKvRow not exposed \u2014 cannot run the scan" };
+        let rows;
+        try { rows = await G.db.all("kv"); }
+        catch (e) { return { ok:false, detail:"Could not read the kv store: " + (e && e.message ? e.message : String(e)) }; }
+        const bad = rows.filter((r) => r && r.k != null && !G.backup.validateKvRow(r));
+        return { ok: !bad.length, detail: bad.length ? "Corrupted row(s): " + bad.map((x) => x.k).join(", ") : "All " + rows.length + " row(s) valid" };
       } }
   ];
 
@@ -16358,10 +16450,37 @@ window.G = window.G || {};
         if (r.ok) pass++; else fail++;
         lines.push((r.ok ? "PASS" : "FAIL") + "  " + c.name + " \u2014 " + r.detail);
         const row = el("div.card", { style:"margin:6px 0;border-left:3px solid " + (r.ok ? "var(--green)" : "var(--red)") });
-        row.appendChild(el("div.ob-plan-cat", { text: (r.ok ? "\u2713 " : "\u2715 ") + c.name }));
-        row.appendChild(el("div.hint", { text: r.detail }));
+        const catEl = el("div.ob-plan-cat", { text: (r.ok ? "\u2713 " : "\u2715 ") + c.name });
+        const detailEl = el("div.hint", { text: r.detail });
+        row.appendChild(catEl);
+        row.appendChild(detailEl);
         row.appendChild(el("div.hint", { text: c.why, style:"opacity:.72;margin-top:3px" }));
         results.appendChild(row);
+        // Item 5: the only repair action wired to an automated check today.
+        // Gated on the check having actually failed AND the repair function
+        // existing at all (a non-native/browser run has no real
+        // applySystemBars() to call) - never offered as a false promise of
+        // a fix it can't make.
+        if (c.id === "statusbar" && !r.ok && G.native && typeof G.native.applySystemBars === "function") {
+          const fixBtn = el("button.btn.sm", { type:"button", text:"Fix: re-sync status bar", style:"margin-top:6px" });
+          fixBtn.addEventListener("click", async () => {
+            fixBtn.disabled = true; fixBtn.textContent = "Fixing\u2026";
+            const entry = await logRepair("statusbar-resync", () => G.native.applySystemBars(), checkStatusbar);
+            catEl.textContent = (entry.verified ? "\u2713 " : "\u2715 ") + c.name;
+            detailEl.textContent = entry.after && entry.after.detail ? entry.after.detail : r.detail;
+            row.style.borderLeftColor = entry.verified ? "var(--green)" : "var(--red)";
+            if (entry.verified) {
+              pass++; fail--;
+              (summary.querySelector(".k")||{}).textContent = fail ? fail + " failing" : "All passing";
+              (summary.querySelector(".v")||{}).textContent = pass + " / " + AUTO.length;
+              util.toast && util.toast("Status bar re-synced.");
+            } else {
+              util.toast && util.toast("Re-sync attempted \u2014 still not applied. See detail above.");
+            }
+            fixBtn.remove();
+          });
+          row.appendChild(fixBtn);
+        }
       }
       (summary.querySelector(".k")||{}).textContent = fail ? fail + " failing" : "All passing";
       (summary.querySelector(".v")||{}).textContent = pass + " / " + AUTO.length;
@@ -16401,6 +16520,34 @@ window.G = window.G || {};
     refreshM();
     mount.appendChild(man);
 
+    // ---- self-healing log (item 1) ----
+    const heal = el("div.panel", { style:"margin-bottom:10px" });
+    heal.appendChild(el("div.eyebrow", { text:"Self-healing" }));
+    heal.appendChild(el("p.hint", { text:"GUIDON already repairs small problems automatically \u2014 a saved setting or profile missing a field it expects gets backfilled from a known-safe default on every load, and a malformed row in a restored backup gets rejected rather than written. This is that repair history, made visible instead of silent." }));
+    const healCount = await (G.selfheal ? G.selfheal.count() : Promise.resolve(0));
+    heal.appendChild(el("div.stat", {}, [ el("span.k", { text: healCount ? healCount + " repair(s) since install" : "No repairs recorded on this device" }), el("span.v", { text:"\u2014" }) ]));
+    if (healCount) {
+      const healToggle = el("button.btn.sm.ghost", { type:"button", text:"Show recent entries", style:"margin-top:6px" });
+      const healList = el("div", { style:"display:none;margin-top:8px" });
+      healToggle.addEventListener("click", async () => {
+        if (healList.style.display !== "none") { healList.style.display = "none"; healToggle.textContent = "Show recent entries"; return; }
+        util.clear(healList);
+        const entries = await G.selfheal.recent(20);
+        entries.forEach((e) => {
+          const row = el("div.card", { style:"margin:6px 0" });
+          row.appendChild(el("div.ob-plan-cat", { text: e.kind + (e.key ? " \u00b7 " + e.key : "") }));
+          row.appendChild(el("div.hint", { text: new Date(e.at).toLocaleString() }));
+          row.appendChild(el("div.hint", { text: e.detail, style:"margin-top:3px" }));
+          healList.appendChild(row);
+        });
+        healList.style.display = "";
+        healToggle.textContent = "Hide entries";
+      });
+      heal.appendChild(healToggle);
+      heal.appendChild(healList);
+    }
+    mount.appendChild(heal);
+
     // ---- export ----
     const ex = el("div.panel");
     // was "Export a report" - the only action here is Copy report (a
@@ -16413,6 +16560,17 @@ window.G = window.G || {};
     copyBtn.addEventListener("click", async () => {
       const done = MANUAL.filter(m => saved["m_" + m.id]);
       const todo = MANUAL.filter(m => !saved["m_" + m.id]);
+      // Item 2: REPAIRS is only ever built from lastRepairs, whose entries
+      // are only ever pushed by logRepair() after a real re-verified
+      // before/after pair - never from a repair's own self-reported success.
+      const repairLines = lastRepairs.length ? [
+        "REPAIRS (" + lastRepairs.length + ")",
+        lastRepairs.map(r => "  [" + r.ts + "] " + r.name + ": was " + (r.before && r.before.ok ? "\u2713" : "\u2715") +
+          (r.before && r.before.detail ? " (" + r.before.detail + ")" : "") +
+          " \u2192 repaired \u2192 now " + (r.verified ? "\u2713" : "\u2715, repair did not resolve it") +
+          (r.after && r.after.detail ? " (" + r.after.detail + ")" : "")).join("\n"),
+        "",
+      ] : [];
       const txt = [
         "GUIDON SELF-TEST REPORT",
         "Generated: " + new Date().toLocaleString(),
@@ -16426,6 +16584,7 @@ window.G = window.G || {};
         lastRun ? ("  Run at " + lastRun.when + " on view " + lastRun.view + "\n  " + lastRun.lines.join("\n  "))
                 : "  Not run in this session.",
         "",
+        ...repairLines,
         "MANUAL \u2014 CONFIRMED (" + done.length + ")",
         done.length ? done.map(m => "  [x] " + m.name).join("\n") : "  none",
         "",
@@ -16644,6 +16803,117 @@ window.G = window.G || {};
     return false;
   }
 
+  // Content-checks for other known kv keys beyond the profile row (added
+  // alongside it) - previously only guidon:profile:v1 was validated at
+  // all; every other kv row, however malformed, was written straight to
+  // IndexedDB on nothing more than a null-key check, despite this exact
+  // function's own comment above already having identified WHY that's
+  // risky for one key. A downstream reader trusting the wrong shape here
+  // (e.g. IDP's own goals.forEach, or the streak widget's s.count) is
+  // exactly the class of bug a hand-edited or corrupted backup file can
+  // trigger. Each check is deliberately basic (type/shape only, matching
+  // what each key's own real reader actually expects) rather than a full
+  // schema - this is a trust-boundary guard against garbage, not a
+  // second copy of business-logic validation.
+  var KV_VALIDATORS = {
+    // Array.isArray alone let a hand-edited backup through with null,
+    // string, or number elements sitting inside an otherwise-valid array.
+    // Every real reader of this key (the Builder tab's dashboard tally,
+    // its goal-card list, the DA 7906 print export) unconditionally reads
+    // g.status/g.domain/g.goal off each element with zero null-guard, so
+    // one bad element crashed the whole IDP module the next time it
+    // opened - "type/shape only" here means each element is a real
+    // object carrying the one field every consumer treats as mandatory.
+    "idp:goals": function (v) { return Array.isArray(v) && v.every(function (g) { return g && typeof g === "object" && typeof g.goal === "string"; }); },
+    "streak:v1": function (v) { return v && typeof v === "object" && typeof v.count === "number" && typeof v.longestCount === "number"; },
+    "guidon:calendar:v1": function (v) { return v && typeof v === "object" && !Array.isArray(v); },
+    // A string/number/array row would otherwise reach db.put() untouched -
+    // the boot-time load (store.js, "settings" -> DEFAULT_SETTINGS merge)
+    // uses Object.assign({}, DEFAULT_SETTINGS, savedSettings), and
+    // Object.assign on a string source copies its characters in as
+    // numeric-keyed properties rather than leaving the target alone, so a
+    // malformed row doesn't fail loud, it corrupts settings with junk
+    // keys. Same "plain object, not array" shape check as calendar above;
+    // real per-field validation stays with DEFAULT_SETTINGS's own merge.
+    "settings": function (v) { return v && typeof v === "object" && !Array.isArray(v); },
+    // reminders.js's own load() already coerces a non-array to [] as of
+    // this same pass, but validating at import time gives a real
+    // "skipped" count instead of silently discarding the row's data via
+    // that fallback with no indication anything was wrong.
+    "reminders:v1": function (v) { return Array.isArray(v); },
+    "finance:salaryNeg:v1": function (v) { return v && typeof v === "object" && !Array.isArray(v); },
+    // forms:saved stores its array under `.value`, not the `.v` every
+    // other kv row uses (see forms.js's own writeSaved/loadSaved) - a
+    // pre-existing inconsistency in this one key's own module, not
+    // something to silently paper over here. Per-element check matches
+    // idp:goals above - forms.js's own doAutoSave (arr.findIndex reading
+    // x.formId) and the saved-drafts delete handler (cur.filter reading
+    // x.sid) both read .formId/.sid off every element with no null-guard,
+    // the same unconditional-property-read pattern that made idp:goals's
+    // per-element check necessary rather than optional here too.
+    "forms:saved": function (row) { return row && Array.isArray(row.value) && row.value.every(function (x) { return x && typeof x === "object" && typeof x.formId === "string"; }); },
+    // The six PME/records checklist modules (BLC/ALC/SLC/Drills/
+    // Diagnostics/Records) all store the identical shape - a plain object
+    // mapping a fixed set of checklist ids to booleans - and all six read
+    // sites were hardened to the same "plain object, not array" coercion
+    // this same pass. Registering all six here rather than one shared
+    // helper keeps each key's validator visible/greppable on its own line.
+    "guidon:blc:checks:v1": function (v) { return v && typeof v === "object" && !Array.isArray(v); },
+    "guidon:alc:checks:v1": function (v) { return v && typeof v === "object" && !Array.isArray(v); },
+    "guidon:slc:checks:v1": function (v) { return v && typeof v === "object" && !Array.isArray(v); },
+    "guidon:drills:v1": function (v) { return v && typeof v === "object" && !Array.isArray(v); },
+    "guidon:selftest:v1": function (v) { return v && typeof v === "object" && !Array.isArray(v); },
+    // New in this pass (Diagnostics self-repair item 1): guidon:selfheal:v1
+    // is G.selfheal's own audit-log array, capped at 200 entries.
+    "guidon:selfheal:v1": function (v) { return Array.isArray(v); },
+    "guidon:records:checks:v1": function (v) { return v && typeof v === "object" && !Array.isArray(v); },
+    // getSetting/setSetting are thin wrappers over this same "kv" store
+    // (db.getSetting -> db.get("kv", k)), so every key below round-trips
+    // through this same backup validation even though its own module
+    // never calls db.get("kv", ...) directly.
+    "progress:weeklyGoal:v1": function (v) { return v && typeof v === "object" && !Array.isArray(v) && typeof v.target === "number" && Array.isArray(v.log); },
+    "resilience:practiceLog:v1": function (v) { return Array.isArray(v); },
+    "writing:bulletHistory:v1": function (v) { return Array.isArray(v); },
+    "board:mockHistory:v1": function (v) { return Array.isArray(v); },
+    "risk:all": function (v) { return Array.isArray(v); },
+  };
+  // Exact-string-keyed KV_VALIDATORS above can never validate a
+  // dynamically-keyed family like "srs:<questionId>" - one row per board
+  // question ever graded (1,000+), no single literal key to register.
+  // This is a small, separate prefix-matching pass for exactly that case.
+  // The real crash-defense for srs: rows lives at the read site
+  // (board.js's own loadSrs(), hardened this same pass); this only adds
+  // an earlier, visible "skipped" count instead of a silent later
+  // self-heal to a fresh record.
+  var KV_PREFIX_VALIDATORS = [
+    { prefix: "srs:", test: function (v) { return v && typeof v === "object" && !Array.isArray(v); } },
+    // boardQuiz:best:<category>[:<level>] - one row per category/level
+    // combo ever quizzed, same "no single literal key" problem as srs:.
+    // The read site (drawResults(), hardened this same pass) already
+    // treats anything non-numeric as 0 via Math.max's own NaN behavior,
+    // so this only turns that silent self-heal into a visible "skipped".
+    { prefix: "boardQuiz:best:", test: function (v) { return typeof v === "number" && !isNaN(v); } },
+  ];
+  function prefixValidatorFor(key) {
+    for (var pi = 0; pi < KV_PREFIX_VALIDATORS.length; pi++) {
+      if (key.indexOf(KV_PREFIX_VALIDATORS[pi].prefix) === 0) return KV_PREFIX_VALIDATORS[pi].test;
+    }
+    return null;
+  }
+
+  // Shared row-level validator (item 3 of the Diagnostics self-repair
+  // shortlist): used by importAll() below AND by Diagnostics' live "Data
+  // validity scan" (selftest.js) to check rows already sitting in
+  // IndexedDB, not just rows arriving from a backup file - both call sites
+  // need to agree on exactly the same rules, so this is the one place they
+  // both read from.
+  function validateKvRow(row) {
+    if (!row || row.k == null) return true;
+    var validator = KV_VALIDATORS[row.k] || prefixValidatorFor(row.k);
+    if (!validator) return true;
+    return !!validator(row.k === "forms:saved" ? row : row.v);
+  }
+
   async function exportAll(opts) {
     opts = opts || {};
     var payload = { schema: SCHEMA, exportedAt: new Date().toISOString(), stores: {} };
@@ -16700,101 +16970,6 @@ window.G = window.G || {};
     var restored = { kv: 0, userScenarios: 0, attempts: 0 };
     var skipped = { kv: 0, userScenarios: 0 };
 
-    // Content-checks for other known kv keys beyond the profile row (added
-    // alongside it) - previously only guidon:profile:v1 was validated at
-    // all; every other kv row, however malformed, was written straight to
-    // IndexedDB on nothing more than a null-key check, despite this exact
-    // function's own comment above already having identified WHY that's
-    // risky for one key. A downstream reader trusting the wrong shape here
-    // (e.g. IDP's own goals.forEach, or the streak widget's s.count) is
-    // exactly the class of bug a hand-edited or corrupted backup file can
-    // trigger. Each check is deliberately basic (type/shape only, matching
-    // what each key's own real reader actually expects) rather than a full
-    // schema - this is a trust-boundary guard against garbage, not a
-    // second copy of business-logic validation.
-    var KV_VALIDATORS = {
-      // Array.isArray alone let a hand-edited backup through with null,
-      // string, or number elements sitting inside an otherwise-valid array.
-      // Every real reader of this key (the Builder tab's dashboard tally,
-      // its goal-card list, the DA 7906 print export) unconditionally reads
-      // g.status/g.domain/g.goal off each element with zero null-guard, so
-      // one bad element crashed the whole IDP module the next time it
-      // opened - "type/shape only" here means each element is a real
-      // object carrying the one field every consumer treats as mandatory.
-      "idp:goals": function (v) { return Array.isArray(v) && v.every(function (g) { return g && typeof g === "object" && typeof g.goal === "string"; }); },
-      "streak:v1": function (v) { return v && typeof v === "object" && typeof v.count === "number" && typeof v.longestCount === "number"; },
-      "guidon:calendar:v1": function (v) { return v && typeof v === "object" && !Array.isArray(v); },
-      // A string/number/array row would otherwise reach db.put() untouched -
-      // the boot-time load (store.js, "settings" -> DEFAULT_SETTINGS merge)
-      // uses Object.assign({}, DEFAULT_SETTINGS, savedSettings), and
-      // Object.assign on a string source copies its characters in as
-      // numeric-keyed properties rather than leaving the target alone, so a
-      // malformed row doesn't fail loud, it corrupts settings with junk
-      // keys. Same "plain object, not array" shape check as calendar above;
-      // real per-field validation stays with DEFAULT_SETTINGS's own merge.
-      "settings": function (v) { return v && typeof v === "object" && !Array.isArray(v); },
-      // reminders.js's own load() already coerces a non-array to [] as of
-      // this same pass, but validating at import time gives a real
-      // "skipped" count instead of silently discarding the row's data via
-      // that fallback with no indication anything was wrong.
-      "reminders:v1": function (v) { return Array.isArray(v); },
-      "finance:salaryNeg:v1": function (v) { return v && typeof v === "object" && !Array.isArray(v); },
-      // forms:saved stores its array under `.value`, not the `.v` every
-      // other kv row uses (see forms.js's own writeSaved/loadSaved) - a
-      // pre-existing inconsistency in this one key's own module, not
-      // something to silently paper over here. Per-element check matches
-      // idp:goals above - forms.js's own doAutoSave (arr.findIndex reading
-      // x.formId) and the saved-drafts delete handler (cur.filter reading
-      // x.sid) both read .formId/.sid off every element with no null-guard,
-      // the same unconditional-property-read pattern that made idp:goals's
-      // per-element check necessary rather than optional here too.
-      "forms:saved": function (row) { return row && Array.isArray(row.value) && row.value.every(function (x) { return x && typeof x === "object" && typeof x.formId === "string"; }); },
-      // The six PME/records checklist modules (BLC/ALC/SLC/Drills/
-      // Diagnostics/Records) all store the identical shape - a plain object
-      // mapping a fixed set of checklist ids to booleans - and all six read
-      // sites were hardened to the same "plain object, not array" coercion
-      // this same pass. Registering all six here rather than one shared
-      // helper keeps each key's validator visible/greppable on its own line.
-      "guidon:blc:checks:v1": function (v) { return v && typeof v === "object" && !Array.isArray(v); },
-      "guidon:alc:checks:v1": function (v) { return v && typeof v === "object" && !Array.isArray(v); },
-      "guidon:slc:checks:v1": function (v) { return v && typeof v === "object" && !Array.isArray(v); },
-      "guidon:drills:v1": function (v) { return v && typeof v === "object" && !Array.isArray(v); },
-      "guidon:selftest:v1": function (v) { return v && typeof v === "object" && !Array.isArray(v); },
-      "guidon:records:checks:v1": function (v) { return v && typeof v === "object" && !Array.isArray(v); },
-      // getSetting/setSetting are thin wrappers over this same "kv" store
-      // (db.getSetting -> db.get("kv", k)), so every key below round-trips
-      // through this same backup validation even though its own module
-      // never calls db.get("kv", ...) directly.
-      "progress:weeklyGoal:v1": function (v) { return v && typeof v === "object" && !Array.isArray(v) && typeof v.target === "number" && Array.isArray(v.log); },
-      "resilience:practiceLog:v1": function (v) { return Array.isArray(v); },
-      "writing:bulletHistory:v1": function (v) { return Array.isArray(v); },
-      "board:mockHistory:v1": function (v) { return Array.isArray(v); },
-      "risk:all": function (v) { return Array.isArray(v); },
-    };
-    // Exact-string-keyed KV_VALIDATORS above can never validate a
-    // dynamically-keyed family like "srs:<questionId>" - one row per board
-    // question ever graded (1,000+), no single literal key to register.
-    // This is a small, separate prefix-matching pass for exactly that case.
-    // The real crash-defense for srs: rows lives at the read site
-    // (board.js's own loadSrs(), hardened this same pass); this only adds
-    // an earlier, visible "skipped" count instead of a silent later
-    // self-heal to a fresh record.
-    var KV_PREFIX_VALIDATORS = [
-      { prefix: "srs:", test: function (v) { return v && typeof v === "object" && !Array.isArray(v); } },
-      // boardQuiz:best:<category>[:<level>] - one row per category/level
-      // combo ever quizzed, same "no single literal key" problem as srs:.
-      // The read site (drawResults(), hardened this same pass) already
-      // treats anything non-numeric as 0 via Math.max's own NaN behavior,
-      // so this only turns that silent self-heal into a visible "skipped".
-      { prefix: "boardQuiz:best:", test: function (v) { return typeof v === "number" && !isNaN(v); } },
-    ];
-    function prefixValidatorFor(key) {
-      for (var pi = 0; pi < KV_PREFIX_VALIDATORS.length; pi++) {
-        if (key.indexOf(KV_PREFIX_VALIDATORS[pi].prefix) === 0) return KV_PREFIX_VALIDATORS[pi].test;
-      }
-      return null;
-    }
-
     // kv entries are {k, v} (forms:saved is the one exception - see above).
     // Validation still runs per row below; only the WRITE moves out of the
     // loop - one db.putMany() transaction for the whole store instead of
@@ -16820,10 +16995,15 @@ window.G = window.G || {};
         if (row.k === "guidon:profile:v1") {
           var pv = row.v;
           var pvOk = pv && typeof pv === "object" && typeof pv.onboardingComplete === "boolean" && typeof pv.mode === "string";
-          if (!pvOk) { skipped.kv++; continue; }
-        } else {
-          var validator = KV_VALIDATORS[row.k] || prefixValidatorFor(row.k);
-          if (validator && !validator(row.k === "forms:saved" ? row : row.v)) { skipped.kv++; continue; }
+          if (!pvOk) {
+            skipped.kv++;
+            if (G.selfheal) G.selfheal.log("kv-reject", row.k, "malformed profile row rejected during backup import (missing onboardingComplete/mode) - existing profile kept");
+            continue;
+          }
+        } else if (!validateKvRow(row)) {
+          skipped.kv++;
+          if (G.selfheal) G.selfheal.log("kv-reject", row.k, "row failed validation during backup import, discarded");
+          continue;
         }
         // Preserve the row's OWN original shape (not a reconstructed
         // {k, v}) - forms:saved's real payload lives under .value, and
@@ -16910,6 +17090,7 @@ window.G = window.G || {};
           if (!ok) { fileIn.value = ""; return; }
           importAll(obj, { merge: true }).then(function (res) {
             var r = res.restored, sk = res.skipped;
+            if (G.selfheal) G.selfheal.log("backup-import", null, "restored " + r.kv + " kv/" + r.userScenarios + " scenarios/" + r.attempts + " attempts, skipped " + (sk.kv || 0) + " kv row(s)");
             status.textContent = "Restored " + r.kv + " items, " + r.userScenarios + " scenarios, " + r.attempts + " attempts." +
               (sk && sk.kv ? " " + sk.kv + " item(s) skipped (malformed profile entry rejected — your existing profile was kept)." : "") +
               " Reloading…";
@@ -16933,7 +17114,7 @@ window.G = window.G || {};
     host.appendChild(panel);
   }
 
-  G.backup = { exportAll: exportAll, downloadAll: downloadAll, importAll: importAll, renderControls: renderControls };
+  G.backup = { exportAll: exportAll, downloadAll: downloadAll, importAll: importAll, renderControls: renderControls, validateKvRow: validateKvRow };
 })();
 // END backup.js
 

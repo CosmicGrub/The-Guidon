@@ -69,6 +69,15 @@ const storageCheckOk = await page.evaluate(() => {
 });
 storageCheckOk === true ? ok("'Storage round-trip' check reports pass (✓) - a real IndexedDB write/read actually happened") : bad("Storage round-trip check result: " + storageCheckOk);
 
+// Diagnostics self-repair item 3: "Data validity scan" reuses backup.js's
+// own KV_VALIDATORS against live IndexedDB (via G.backup.validateKvRow).
+const kvscanCheckOk = await page.evaluate(() => {
+  const cards = Array.from(document.querySelectorAll(".panel .card"));
+  const c = cards.find((x) => /Data validity scan/.test(x.textContent));
+  return c ? /^✓/.test(c.querySelector(".ob-plan-cat")?.textContent || "") : null;
+});
+kvscanCheckOk === true ? ok("'Data validity scan' check reports pass (✓) on a clean profile") : bad("Data validity scan check result: " + kvscanCheckOk);
+
 const runBtnRelabeled = await page.evaluate(() => (document.querySelector("button.btn.primary.sm") || {}).textContent || "");
 /Run again/.test(runBtnRelabeled) ? ok("Run button relabels to 'Run again' after completion") : bad("run button text after run: " + runBtnRelabeled);
 
@@ -110,6 +119,81 @@ const mstatAfterClear = await page.evaluate(() => (document.querySelectorAll(".s
 /^0 \//.test(mstatAfterClear) ? ok("Manual-confirmed count resets to 0 after confirming Clear manual ticks") : bad("manual stat after clear: " + mstatAfterClear);
 const cbAfterClear = await page.locator('.panel input[type="checkbox"]').first().isChecked();
 !cbAfterClear ? ok("The previously-ticked checkbox is unchecked after clearing") : bad("checkbox still checked after Clear manual ticks");
+
+// ---- Diagnostics self-repair item 1: Self-healing panel renders ----
+const healPanelText = await page.evaluate(() => document.body.textContent || "");
+/Self-healing/.test(healPanelText) && /(No repairs recorded|repair\(s\) since install)/.test(healPanelText)
+  ? ok("Self-healing panel renders with a repair-count summary")
+  : bad("Self-healing panel missing or malformed");
+
+// ---- Diagnostics self-repair item 5: Status bar resync Fix button ----
+// Mirrors task #238's own parseColor() monkey-patch technique (see
+// test-native-unit.mjs) to force a real, provable failure off-device, then
+// confirms the Fix button re-verifies with the SAME predicate rather than
+// assuming success (item 2's mandate) - in both the "still broken" and
+// "now healthy" directions.
+async function statusbarCatText() {
+  return page.evaluate(() => {
+    const cats = Array.from(document.querySelectorAll(".ob-plan-cat"));
+    const cat = cats.find((n) => /status bar theming/i.test(n.textContent || ""));
+    return cat ? cat.textContent : null;
+  });
+}
+await page.evaluate(() => {
+  const dbg = window.G.native._debug;
+  window.__origParseColor = dbg.parseColor;
+  dbg.parseColor = () => ["not", "a", "number"];
+});
+// The primary run button's label toggles between "Run automated checks"
+// and "Run again" depending on whether a run already happened THIS
+// render() pass - Clear manual ticks (above) re-rendered the view, which
+// reset it back to its unrun label. Locate it by its stable class instead.
+await page.locator("button.btn.primary.sm").click();
+await page.waitForTimeout(400);
+const fixBtn = page.locator("button", { hasText: /Fix: re-sync status bar/ });
+(await fixBtn.count()) > 0
+  ? ok("Fix button appears once 'Status bar theming' genuinely fails")
+  : bad("Fix button did not appear after forcing a real failure");
+
+// Click Fix while STILL broken: the repair is attempted, but the
+// underlying decision logic is still broken, so it must honestly report
+// still-failing rather than a false success.
+await fixBtn.click();
+await page.waitForTimeout(300);
+const stillBrokenText = await statusbarCatText();
+stillBrokenText && stillBrokenText.indexOf("✕") !== -1
+  ? ok("Fix button re-verifies rather than assuming success - still reports ✕ while the underlying check is still broken")
+  : bad("Fix button falsely reported success while parseColor was still broken: " + stillBrokenText);
+(await page.locator("button", { hasText: /Fix: re-sync status bar/ }).count()) === 0
+  ? ok("Fix button removes itself after use, whether or not the repair succeeded")
+  : bad("Fix button still present after being clicked");
+
+// Re-break, regenerate a fresh failing card + Fix button, then restore
+// parseColor BEFORE clicking Fix this time - the underlying condition is
+// now healthy, so the repair's own re-verification should genuinely pass.
+await page.evaluate(() => { window.G.native._debug.parseColor = () => ["not", "a", "number"]; });
+// The primary run button's label toggles between "Run automated checks"
+// and "Run again" depending on whether a run already happened THIS
+// render() pass - Clear manual ticks (above) re-rendered the view, which
+// reset it back to its unrun label. Locate it by its stable class instead.
+await page.locator("button.btn.primary.sm").click();
+await page.waitForTimeout(400);
+await page.evaluate(() => { window.G.native._debug.parseColor = window.__origParseColor; delete window.__origParseColor; });
+await page.locator("button", { hasText: /Fix: re-sync status bar/ }).click();
+await page.waitForTimeout(300);
+const nowFixedText = await statusbarCatText();
+nowFixedText && nowFixedText.indexOf("✓") !== -1
+  ? ok("Fix button flips the card to a real, re-verified ✓ once the underlying check actually passes")
+  : bad("Fix button did not flip to pass even though the underlying check was healthy: " + nowFixedText);
+
+// The repair must have gone through logRepair()'s real before/after
+// capture, not a hardcoded success - confirm it surfaces in Copy report.
+await page.locator("button", { hasText: /Copy report/ }).click();
+await page.waitForTimeout(300);
+const repairClipboard = await page.evaluate(() => navigator.clipboard.readText());
+/REPAIRS \(\d+\)/.test(repairClipboard) && /statusbar-resync/.test(repairClipboard)
+  ? ok("Copy report's REPAIRS section reflects the logged statusbar-resync repair")
+  : bad("REPAIRS section missing or incomplete in clipboard report: " + repairClipboard.slice(0, 500));
 
 const relevantNoise = noise.filter((n) => !/favicon/.test(n));
 relevantNoise.length === 0 ? ok("no console errors/warnings") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));
