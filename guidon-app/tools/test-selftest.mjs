@@ -164,9 +164,16 @@ const stillBrokenText = await statusbarCatText();
 stillBrokenText && stillBrokenText.indexOf("✕") !== -1
   ? ok("Fix button re-verifies rather than assuming success - still reports ✕ while the underlying check is still broken")
   : bad("Fix button falsely reported success while parseColor was still broken: " + stillBrokenText);
-(await page.locator("button", { hasText: /Fix: re-sync status bar/ }).count()) === 0
-  ? ok("Fix button removes itself after use, whether or not the repair succeeded")
-  : bad("Fix button still present after being clicked");
+// Audit finding (accessibility): a failed repair used to unconditionally
+// remove its own retry control - now it stays, re-enabled, so a keyboard
+// user never loses their only way to try again.
+const fixBtnAfterFailure = page.locator("button", { hasText: /Fix: re-sync status bar/ });
+(await fixBtnAfterFailure.count()) === 1
+  ? ok("Fix button stays available (re-enabled) for retry after a failed repair, instead of removing its own only retry control")
+  : bad("Fix button was removed after a failed repair, with no way to retry");
+(await fixBtnAfterFailure.isDisabled())
+  ? bad("Fix button is still disabled after a failed repair - a keyboard user has no way to retry")
+  : ok("Fix button re-enables itself after a failed repair");
 
 // Re-break, regenerate a fresh failing card + Fix button, then restore
 // parseColor BEFORE clicking Fix this time - the underlying condition is
