@@ -55,7 +55,7 @@ console.log("lint-patterns: static regression guard for 3 repeat bug shapes\n");
     const css = html.slice(styleStart, styleEnd);
     const RAW_COLOR = /(?<![\w-])color\s*:\s*var\(--(cyan|violet|red|green|amber)\)/g;
     const hits = [...css.matchAll(RAW_COLOR)];
-    const BASELINE = 113; // audited count as of 2026-08-13 (task #225: 4 --amber-dim text uses moved to --ink-amber, net -2 after other w13 edits); see comment above
+    const BASELINE = 115; // audited count as of 2026-08-15 (rank/MOS upgrade #1: added .roadmap-mechanism summary {color:var(--cyan)}, a small mono-font disclosure label matching the .mode-course .kc-label/.qz-front .kc-label treatment already audited above; re-verified via a fresh test:contrast-full run - 36 routes x 24 themes = 864 combinations, 0 violations); previously 114 earlier the same day (Board Drill upgrade #3), 113 as of 2026-08-13 (task #225); see comment above
     if (hits.length > BASELINE) {
       bad(`(a) raw accent color used as text: ${hits.length} found, baseline is ${BASELINE} (+${hits.length - BASELINE} new)`);
       console.log("         first matches (compare against a diff to find the new one(s)):");
