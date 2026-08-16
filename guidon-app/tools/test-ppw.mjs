@@ -110,6 +110,33 @@ await page.waitForTimeout(300);
 const awardsAfterSwitchToSgt = await page.locator('input[aria-label="Points from permanent awards/decorations"]').inputValue();
 awardsAfterSwitchToSgt === "145" ? ok("Switching to SGT reclamps the Awards field from 165 down to SGT's 145 cap (#120, second field)") : bad("awards value after switching to SGT: " + awardsAfterSwitchToSgt);
 
+// ---- Audit finding (new-features): Full PPW is the app's own stated
+// "single source of truth" calculator but had zero persistence - every
+// field reset on navigation. Enter a distinguishing value, wait for the
+// debounced save, then leave the view entirely (destroying renderPoints()'s
+// whole closure, including its in-memory `v` object) and come back - if the
+// value is still there, it can only have come from a fresh IndexedDB read,
+// not surviving JS memory.
+const CZ_MONTHS = "7";
+const czInput = page.locator('input[aria-label="Months of combat-zone service"]');
+await czInput.waitFor({ state: "visible", timeout: 5000 });
+await czInput.fill(CZ_MONTHS);
+await czInput.dispatchEvent("input");
+await page.waitForTimeout(500); // clears the 300ms debounce
+
+await page.evaluate(() => { location.hash = "#/home"; });
+await page.waitForTimeout(300);
+await page.evaluate(() => { location.hash = "#/board"; });
+await page.waitForTimeout(400);
+await page.locator("button", { hasText: /^Points$/ }).click();
+await page.waitForTimeout(300);
+await page.locator("button", { hasText: /^Full PPW$/ }).click();
+await page.waitForTimeout(300);
+const czAfterRerender = await page.locator('input[aria-label="Months of combat-zone service"]').inputValue();
+czAfterRerender === CZ_MONTHS
+  ? ok("Full PPW worksheet field survives leaving and re-entering the view (persisted to IndexedDB, not just in-memory)")
+  : bad("combat-zone months after re-render: expected " + CZ_MONTHS + ", got " + czAfterRerender);
+
 const relevantNoise = noise.filter((n) => !/favicon/.test(n));
 relevantNoise.length === 0 ? ok("no console errors/warnings") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));
 

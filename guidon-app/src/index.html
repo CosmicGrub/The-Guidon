@@ -7310,6 +7310,30 @@ window.G = window.G || {};
                 pmeHonor:0, rsr:false, civDirect:0, degree:false,
                 credMos:0, credProf:0, credPers:0, clepHours:0, dlpt:false,
                 qTraining:0, qAwards:0, qMilEd:0, qCivEd:0, pmeGrad:false };
+    // Audit finding (new-features): the Full PPW worksheet is the app's own
+    // stated "single source of truth" calculator (Profile's quick-estimate
+    // explicitly defers to it) but had zero persistence - every field reset
+    // on navigation. Persisted rank-independent (these are raw facts - months
+    // in a combat zone, awards, etc. - the "Competing for" toggle only
+    // changes how they're SCORED, not what they are). Loaded once here;
+    // saved debounced (same shape as profile.promoPoints's own fix) below.
+    const PPW_KEY = "guidon:ppw:v1";
+    try {
+      const savedPPW = await G.db.get("kv", PPW_KEY);
+      if (savedPPW && savedPPW.v && typeof savedPPW.v === "object" && !Array.isArray(savedPPW.v)) Object.assign(v, savedPPW.v);
+    } catch (e) {}
+    let _ppwSaveTimer = null;
+    function doPersistPPW() { try { G.db.put("kv", { k: PPW_KEY, v: v }); } catch (e) {} }
+    function persistPPWDebounced() {
+      clearTimeout(_ppwSaveTimer);
+      _ppwSaveTimer = setTimeout(() => { _ppwSaveTimer = null; doPersistPPW(); }, 300);
+    }
+    util.onFlush("ppw", () => {
+      if (!_ppwSaveTimer) return;
+      clearTimeout(_ppwSaveTimer);
+      _ppwSaveTimer = null;
+      doPersistPPW();
+    });
 
     const topWarn = el("div.feedback.warn", { text:
       "Practice estimate only \u2014 your official total is the PPW in IPPS-A. Verify with your S-1." });
@@ -7348,6 +7372,7 @@ window.G = window.G || {};
         // actually being scored, with no indication a clamp had happened.
         if (inp.value !== String(n)) inp.value = String(n);
         (st.querySelector(".v")||{}).textContent = String(n); draw();
+        persistPPWDebounced();
       });
       c.appendChild(st); c.appendChild(inp);
       if (note) c.appendChild(el("p.hint", { text: note, style:"margin-top:6px" }));
@@ -7359,7 +7384,7 @@ window.G = window.G || {};
       const row = el("div", { style:"display:flex;gap:8px;align-items:center" });
       const box = el("input", { type:"checkbox", id: id, "aria-label": label });
       box.checked = !!v[key];
-      box.addEventListener("change", () => { v[key] = box.checked; draw(); });
+      box.addEventListener("change", () => { v[key] = box.checked; draw(); persistPPWDebounced(); });
       row.appendChild(box); row.appendChild(el("label", { text: label, for: id, style:"margin:0" }));
       c.appendChild(row);
       if (note) c.appendChild(el("p.hint", { text: note, style:"margin-top:6px" }));
@@ -17059,6 +17084,10 @@ window.G = window.G || {};
     "writing:bulletHistory:v1": function (v) { return Array.isArray(v); },
     "board:mockHistory:v1": function (v) { return Array.isArray(v); },
     "risk:all": function (v) { return Array.isArray(v); },
+    // Audit finding (new-features): Full PPW worksheet now persists its raw
+    // inputs here - a plain object, shape-only check (the reader's own
+    // Object.assign onto a fully-defaulted object tolerates a partial row).
+    "guidon:ppw:v1": function (v) { return v && typeof v === "object" && !Array.isArray(v); },
     // Audit finding (security-privacy): leader.js's own header flags this
     // key as holding OTHER people's data (excluded from backup.js's own
     // export via PRIVATE_PREFIXES already) - but content-validation is a
@@ -21211,7 +21240,30 @@ window.G = window.G || {};
     const tierSel = el("select", { "aria-label": "Focus tier — filters scenarios, doctrine, board questions" });
     [["all", "All ranks"], ["E1", "E1"], ["E2", "E2"], ["E3", "E3"], ["E4", "E4 / SPC"], ["E5", "E5 / SGT"], ["E6", "E6 / SSG"], ["E7", "E7 / SFC"], ["E8", "E8 / MSG"], ["E9", "E9 / SGM"]].forEach(([v, lbl]) =>
       tierSel.appendChild(el("option", { value: v, text: lbl, selected: s.tierFilter === v ? "selected" : null })));
-    tierSel.addEventListener("change", () => store.setSetting("tierFilter", tierSel.value));
+    tierSel.addEventListener("change", async () => {
+      const newVal = tierSel.value;
+      // Audit finding (ux-consistency): this control is labeled only as a
+      // content filter, but app.start()'s bidirectional settings<->profile
+      // sync also overwrites the Soldier's saved profile.tier and silently
+      // clears the current action plan when it does - the sync itself
+      // stays intact (career.js/idp.js's "You Are Here" features and
+      // onboarding all depend on it), but this manual entry point now
+      // discloses the consequence and confirms before it happens, matching
+      // the app's established G.modal.confirm({danger:true}) pattern.
+      let willChangeProfile = false;
+      try {
+        const p = G.profile && G.profile.current ? await G.profile.current() : null;
+        willChangeProfile = !!(p && !p.guestSession && p.tier !== newVal);
+      } catch (e) {}
+      if (willChangeProfile) {
+        const ok = await G.modal.confirm(
+          "Changing your Focus tier also updates your saved rank (used across the app for “You Are Here” highlights) and clears your current action plan, since it's built around your rank. Continue?",
+          { title: "Focus tier also updates your rank", okText: "Continue", danger: true }
+        );
+        if (!ok) { tierSel.value = s.tierFilter || "all"; return; }
+      }
+      store.setSetting("tierFilter", newVal);
+    });
     tierPanel.appendChild(tierSel);
     mount.appendChild(tierPanel);
 
