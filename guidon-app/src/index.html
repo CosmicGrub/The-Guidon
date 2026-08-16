@@ -5275,6 +5275,11 @@ window.G = window.G || {};
     },
   };
 
+  // Diagnostics self-repair item 7 needs the actual default values (not
+  // just their keys) to offer a safe one-click reset for a corrupted
+  // settings row - exposed here rather than duplicated, so it can never
+  // drift out of sync with what this module's own merge already trusts.
+  store.DEFAULT_SETTINGS = DEFAULT_SETTINGS;
   G.store = store;
 })();
 
@@ -16389,6 +16394,22 @@ window.G = window.G || {};
         catch (e) { return { ok:false, detail:"Could not read the kv store: " + (e && e.message ? e.message : String(e)) }; }
         const bad = rows.filter((r) => r && r.k != null && !G.backup.validateKvRow(r));
         return { ok: !bad.length, detail: bad.length ? "Corrupted row(s): " + bad.map((x) => x.k).join(", ") : "All " + rows.length + " row(s) valid" };
+      } },
+    { id:"swfresh", name:"Service worker freshness",
+      why:"pwa.js's own update flow only offers a reload if you see and act on its toast before it disappears \u2014 dismiss or miss it, and there was previously no way to ask again. This checks whether a newer build is already downloaded and waiting to activate.",
+      run: async () => {
+        if (G.pwa && G.pwa.isNative && G.pwa.isNative()) {
+          return { ok:true, detail:"No service worker on this platform \u2014 the native build ships every file locally." };
+        }
+        if (!("serviceWorker" in navigator)) {
+          return { ok:true, detail:"Service workers are not available in this browser (e.g. file:// or an unsupported browser)." };
+        }
+        let reg;
+        try { reg = await navigator.serviceWorker.getRegistration(); }
+        catch (e) { return { ok:false, detail:"Could not read the service-worker registration: " + (e && e.message ? e.message : String(e)) }; }
+        if (!reg) return { ok:true, detail:"No service worker registered yet." };
+        const waiting = !!reg.waiting || !!(G.pwa && G.pwa.state && G.pwa.state.swWaiting);
+        return { ok:!waiting, detail: waiting ? "A newer build has been downloaded and is waiting to activate." : "Running the latest downloaded build." };
       } }
   ];
 
@@ -16480,6 +16501,103 @@ window.G = window.G || {};
             fixBtn.remove();
           });
           row.appendChild(fixBtn);
+        }
+        // Item 6: this repair ends in a full page reload (pwa.js's own
+        // already-tested controllerchange listener performs it once the
+        // new worker takes control) \u2014 there is no "after" state to show
+        // in THIS session, so it is logged directly rather than routed
+        // through logRepair()'s synchronous before/after pair, which
+        // assumes the page stays put.
+        if (c.id === "swfresh" && !r.ok) {
+          const swFixBtn = el("button.btn.sm", { type:"button", text:"Fix: update to latest build", style:"margin-top:6px" });
+          swFixBtn.addEventListener("click", async () => {
+            swFixBtn.disabled = true; swFixBtn.textContent = "Updating\u2026";
+            if (G.selfheal) G.selfheal.log("repair", "sw-update", "applying a waiting service-worker update; page will reload");
+            if (G.pwa && G.pwa.applyUpdate) G.pwa.applyUpdate();
+            else location.reload();
+          });
+          row.appendChild(swFixBtn);
+        }
+        // Items 7 (safe-auto-repair) and 8 (confirm-then-repair) share one
+        // review surface on the kvscan card: config-shaped rows carrying no
+        // Soldier-authored content reset to a known default with a single
+        // click and no confirm; everything else may hold something a
+        // Soldier typed, so it only ever offers a named, confirm-gated
+        // quarantine \u2014 mirroring the app's existing
+        // G.modal.confirm({danger:true}) pattern rather than a new one.
+        if (c.id === "kvscan" && !r.ok && G.backup && G.backup.validateKvRow) {
+          const CONFIG_DEFAULTS = {
+            "settings": (G.store && G.store.DEFAULT_SETTINGS) || null,
+            "streak:v1": { count:0, longestCount:0 },
+            "guidon:calendar:v1": {},
+            "guidon:blc:checks:v1": {},
+            "guidon:alc:checks:v1": {},
+            "guidon:slc:checks:v1": {},
+            "guidon:drills:v1": {},
+            "guidon:records:checks:v1": {},
+            "guidon:selftest:v1": {},
+            "guidon:selfheal:v1": [],
+          };
+          const reviewBtn = el("button.btn.sm", { type:"button", text:"Review & repair", style:"margin-top:6px" });
+          const reviewPanel = el("div", { style:"display:none;margin-top:8px" });
+          async function renderReview() {
+            util.clear(reviewPanel);
+            let rows;
+            try { rows = await G.db.all("kv"); }
+            catch (e) { reviewPanel.appendChild(el("div.hint", { text:"Could not read the kv store." })); return; }
+            const bad = rows.filter((row) => row && row.k != null && !G.backup.validateKvRow(row));
+            if (!bad.length) { reviewPanel.appendChild(el("div.hint", { text:"No corrupted rows remain." })); return; }
+            bad.forEach((badRow) => {
+              const hasDefault = Object.prototype.hasOwnProperty.call(CONFIG_DEFAULTS, badRow.k) && CONFIG_DEFAULTS[badRow.k] != null;
+              const item = el("div.card", { style:"margin:6px 0" });
+              item.appendChild(el("div.ob-plan-cat", { text: badRow.k }));
+              item.appendChild(el("div.hint", { text: hasDefault
+                ? "Internal setting/checklist data, not something you typed \u2014 safe to reset to a known-good default."
+                : "May hold something you entered. Repairing this discards the unreadable entry; there is no safe default to fall back to." }));
+              const actBtn = el("button.btn.sm" + (hasDefault ? "" : ".ghost"), { type:"button", text: hasDefault ? "Reset to default" : "Quarantine this entry" });
+              actBtn.addEventListener("click", async () => {
+                if (hasDefault) {
+                  actBtn.disabled = true;
+                  await logRepair("kv-default-rewrite:" + badRow.k,
+                    () => G.db.put("kv", { k: badRow.k, v: CONFIG_DEFAULTS[badRow.k] }),
+                    async () => { const fresh = await G.db.get("kv", badRow.k); return { ok: G.backup.validateKvRow({ k: badRow.k, v: fresh && fresh.v }), detail: "re-validated after rewrite" }; });
+                } else {
+                  let preview = "";
+                  try { preview = JSON.stringify(badRow.v).slice(0, 160); } catch (e) { preview = String(badRow.v).slice(0, 160); }
+                  const msg = "This will permanently delete 1 unreadable entry under " + badRow.k + ": " + preview +
+                    ". This cannot be undone unless you have a backup. Consider exporting a backup from Settings \u2192 Backup & restore first.";
+                  const okToDelete = await G.modal.confirm(msg, { title:"Quarantine malformed entry?", okText:"Delete this entry", danger:true });
+                  if (!okToDelete) return;
+                  actBtn.disabled = true;
+                  await logRepair("kv-quarantine:" + badRow.k,
+                    () => G.db.del("kv", badRow.k),
+                    async () => { const fresh = await G.db.get("kv", badRow.k); return { ok: !fresh, detail: fresh ? "row still present" : "row removed" }; });
+                }
+                await renderReview();
+                const fresh2 = await c.run();
+                catEl.textContent = (fresh2.ok ? "\u2713 " : "\u2715 ") + c.name;
+                detailEl.textContent = fresh2.detail;
+                row.style.borderLeftColor = fresh2.ok ? "var(--green)" : "var(--red)";
+                if (fresh2.ok !== r.ok) {
+                  if (fresh2.ok) { pass++; fail--; } else { pass--; fail++; }
+                  (summary.querySelector(".k")||{}).textContent = fail ? fail + " failing" : "All passing";
+                  (summary.querySelector(".v")||{}).textContent = pass + " / " + AUTO.length;
+                  r = fresh2;
+                }
+              });
+              item.appendChild(actBtn);
+              reviewPanel.appendChild(item);
+            });
+          }
+          let reviewOpen = false;
+          reviewBtn.addEventListener("click", async () => {
+            reviewOpen = !reviewOpen;
+            reviewPanel.style.display = reviewOpen ? "" : "none";
+            reviewBtn.textContent = reviewOpen ? "Hide review" : "Review & repair";
+            if (reviewOpen) await renderReview();
+          });
+          row.appendChild(reviewBtn);
+          row.appendChild(reviewPanel);
         }
       }
       (summary.querySelector(".k")||{}).textContent = fail ? fail + " failing" : "All passing";
@@ -17085,7 +17203,28 @@ window.G = window.G || {};
         // rank, and board date are among what "matching items" covers.
         var hasProfileRow = !!(obj && obj.stores && Array.isArray(obj.stores.kv) &&
           obj.stores.kv.some(function (row) { return row && row.k === "guidon:profile:v1"; }));
-        var msg = "Import this backup?" + (sum ? "\n\nIt contains: " + (sum.kv || 0) + " saved items, " + (sum.userScenarios || 0) + " authored scenarios, " + (sum.attempts || 0) + " quiz attempts." : "") + "\n\nYour existing data will be kept; matching items will be overwritten by the backup." + (hasProfileRow ? " This includes your name, rank, and board date." : "");
+        // Diagnostics self-repair item 9: run the SAME validation
+        // importAll() itself will run, but BEFORE the confirm rather than
+        // after - previously a Soldier committed to "yes, restore" before
+        // knowing the file was corrupted, and rejected rows were folded
+        // into one generic "N item(s) skipped" count with no names. This
+        // reuses validateKvRow() unmodified, so the preview and the real
+        // outcome can never disagree.
+        var kvRejected = [];
+        if (obj && obj.stores && Array.isArray(obj.stores.kv)) {
+          obj.stores.kv.forEach(function (row) {
+            if (!row || row.k == null) return;
+            if (row.k === "guidon:profile:v1") {
+              var pv = row.v;
+              var pvOk = pv && typeof pv === "object" && typeof pv.onboardingComplete === "boolean" && typeof pv.mode === "string";
+              if (!pvOk) kvRejected.push(row.k);
+            } else if (!validateKvRow(row)) {
+              kvRejected.push(row.k);
+            }
+          });
+        }
+        var msg = "Import this backup?" + (sum ? "\n\nIt contains: " + (sum.kv || 0) + " saved items, " + (sum.userScenarios || 0) + " authored scenarios, " + (sum.attempts || 0) + " quiz attempts." : "") + "\n\nYour existing data will be kept; matching items will be overwritten by the backup." + (hasProfileRow ? " This includes your name, rank, and board date." : "") +
+          (kvRejected.length ? "\n\n" + kvRejected.length + " item(s) in this file are corrupted and will be skipped: " + kvRejected.slice(0, 8).join(", ") + (kvRejected.length > 8 ? ", \u2026" : "") + "." : "");
         G.modal.confirm(msg, { title: "Import backup" }).then(function (ok) {
           if (!ok) { fileIn.value = ""; return; }
           importAll(obj, { merge: true }).then(function (res) {
