@@ -89,3 +89,21 @@ both are tested.
 - **Reasoning about a platform is not evidence about a platform.** The Android
   Back button was documented as "Capacitor's default is correct here" and was in
   fact doing nothing at all. A device settled it in one test.
+- **The Android build needs a JDK 21+, not whatever `JAVA_HOME` happens to be.**
+  AGP 8.13.0 at this project's `compileSdk` (36) resolves a Java toolchain
+  requiring a JDK 21+ *compiler* — a requirement that isn't declared anywhere
+  in this repo's own `.gradle` files, it falls out of AGP/Capacitor's own
+  defaults. An older default `JAVA_HOME` (17 is a common one to have around
+  for other work) fails with a Gradle error that names `languageVersion=21`
+  but never says where to find one. `npm run android:debug`/`android:release`
+  now auto-detect a JDK 21+ via `tools/android-gradle.mjs` — it checks
+  `JAVA_HOME`, then falls back to Android Studio's bundled JBR (which is
+  always JDK 21+). Point `GUIDON_ANDROID_JAVA_HOME` at a specific JDK if
+  neither applies on your machine.
+- **`npm run android:*` cannot just shell out to `gradlew` on Windows.** It
+  used to run the plain string `cd android && gradlew assembleDebug`, which
+  npm hands to `cmd.exe` there — and that failed with `'gradlew' is not
+  recognized as an internal or external command`, even with
+  `android/gradlew.bat` sitting right in the cwd. `tools/android-gradle.mjs`
+  spawns the wrapper by its real per-platform name (`gradlew.bat` on Windows,
+  `./gradlew` elsewhere) directly instead of trusting a shell to resolve it.
