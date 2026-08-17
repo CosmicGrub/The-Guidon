@@ -95,6 +95,46 @@ const progressWithStaleKey = await page.evaluate(() => (document.querySelector("
 // documented "if (VALID_IDS[k] && saved[k])" check).
 progressWithStaleKey === "2 of 23 confirmed" ? ok("Orphaned key (rec-99-99) is silently ignored, not counted or crashing (VALID_IDS guard)") : bad("progress with stale key present: " + progressWithStaleKey);
 
+// ---- "Remind me before the cutoff" (audit finding #11, ux-consistency):
+// the one date-sensitive fact this checklist page can't let a Soldier tick
+// off from memory - a one-click reminder for the next 26th-of-month
+// promotion cutoff, reusing Reminders' own pre-existing "promopoints" kind. ----
+const cutoffPanelText = await page.evaluate(() => {
+  const eyebrow = [...document.querySelectorAll(".eyebrow")].find((n) => /Remind me before the cutoff/i.test(n.textContent || ""));
+  return eyebrow ? eyebrow.closest(".panel").textContent : null;
+});
+cutoffPanelText ? ok("The 'Remind me before the cutoff' panel renders") : bad("cutoff reminder panel not found");
+/\d{4}/.test(cutoffPanelText || "") ? ok("It names a real cutoff date, not a placeholder") : bad("panel text: " + cutoffPanelText);
+
+const remindBefore = await page.evaluate(async () => (await window.G.reminders.load()).length);
+await page.evaluate(() => {
+  const eyebrow = [...document.querySelectorAll(".eyebrow")].find((n) => /Remind me before the cutoff/i.test(n.textContent || ""));
+  const panel = eyebrow && eyebrow.closest(".panel");
+  const btn = panel && [...panel.querySelectorAll("button")].find((b) => b.textContent.trim() === "Remind me");
+  if (btn) btn.click();
+});
+await page.waitForTimeout(300);
+const remindAfter = await page.evaluate(async () => {
+  const list = await window.G.reminders.load();
+  return { count: list.length, last: list[list.length - 1] };
+});
+remindAfter.count === remindBefore + 1
+  ? ok("Clicking 'Remind me' adds exactly one reminder")
+  : bad(`reminder count ${remindBefore} -> ${remindAfter.count}, expected +1`);
+remindAfter.last && remindAfter.last.kind === "promopoints" && remindAfter.last.label === "Records Readiness cutoff" && remindAfter.last.date
+  ? ok(`The reminder reuses Reminders' existing 'promopoints' kind and carries a real date (${remindAfter.last.date})`)
+  : bad("reminder shape: " + JSON.stringify(remindAfter.last));
+const btnAfter = await page.evaluate(() => {
+  const eyebrow = [...document.querySelectorAll(".eyebrow")].find((n) => /Remind me before the cutoff/i.test(n.textContent || ""));
+  const panel = eyebrow && eyebrow.closest(".panel");
+  const btn = panel && [...panel.querySelectorAll("button")].find((b) => /Reminder set/.test(b.textContent));
+  return btn ? { text: btn.textContent, disabled: btn.disabled } : null;
+});
+btnAfter && btnAfter.disabled
+  ? ok("The button confirms success in place (disabled, reads 'Reminder set')")
+  : bad("button state after click: " + JSON.stringify(btnAfter));
+if (remindAfter.last) await page.evaluate((id) => window.G.reminders.remove(id), remindAfter.last.id);
+
 // cleanup
 await page.evaluate(() => window.G.db.put("kv", { k: "guidon:records:checks:v1", v: {} }));
 

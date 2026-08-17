@@ -23,6 +23,29 @@ window.G = window.G || {};
 
   const KEY = "guidon:records:checks:v1";
 
+  // Promotion month cut-off: BLC/ALC graduation must be a matter of record by
+  // the 26th calendar day of the board month (AR 600-8-19 para 3-17a) - the
+  // same date "The clock" group below warns about and calendar.js's own
+  // fixedAnchors() computes. Duplicated rather than read off G.calendar:
+  // four lines, and this module has no business depending on calendar.js's
+  // internal shape (or its load order) just to get one date.
+  function nextCutoff() {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    let cut = new Date(today.getFullYear(), today.getMonth(), 26);
+    if (cut.getTime() < today.getTime()) cut = new Date(today.getFullYear(), today.getMonth() + 1, 26);
+    return cut;
+  }
+  function fmt(d) {
+    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  }
+  // "YYYY-MM-DD" in LOCAL time for G.reminders.add() - not d.toISOString(),
+  // which converts to UTC first and can silently roll the date a day either
+  // direction depending on the Soldier's timezone.
+  function isoLocal(d) {
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+
   /* Grouped because the fix path differs per group - different system, different
      office, different lead time. Ordered by how often each one actually bites. */
   const GROUPS = [
@@ -149,6 +172,34 @@ window.G = window.G || {};
       });
       mount.appendChild(p);
     });
+
+    // Audit finding (ux-consistency): "The clock" group above states the one
+    // checklist item this page can't just let a Soldier tick off from memory
+    // - "I know my board month and the cutoff date that goes with it" still
+    // requires independently remembering that date. Reuses the exact
+    // G.reminders.add() + G.notify.scheduleForReminder() one-click pattern
+    // this build already ships in three other places (Calendar's per-row
+    // "Remind me", and the two Money-tab quick-adds), and Reminders' own
+    // existing "promopoints" kind ("Recompute promo points... against the
+    // current cutoff") - a pre-existing, exact semantic match, not a new one.
+    if (G.reminders && G.reminders.add) {
+      const cutoff = nextCutoff();
+      const rem = el("div.panel", { style: "margin-bottom:10px;border-left:3px solid var(--amber)" });
+      rem.appendChild(el("div.eyebrow", { text: "Remind me before the cutoff" }));
+      rem.appendChild(el("p.hint", { text:
+        "Your next promotion month cut-off is " + fmt(cutoff) + " — anything that has to count for that month must be a matter of record by then, not after." }));
+      const rb = el("button.btn.sm.ghost", { type: "button", text: "Remind me" });
+      rb.addEventListener("click", async function () {
+        const updated = await G.reminders.add({ kind: "promopoints", label: "Records Readiness cutoff", date: isoLocal(cutoff) });
+        if (!updated) { try { util.toast && util.toast("You've reached the " + G.reminders.MAX + "-reminder limit — remove an old one first."); } catch (e) {} return; }
+        try { if (G.notify) await G.notify.scheduleForReminder(updated[updated.length - 1]); } catch (e) {}
+        try { if (util.announce) util.announce("Reminder set for " + fmt(cutoff) + "."); } catch (e) {}
+        rb.disabled = true;
+        rb.textContent = "Reminder set";
+      });
+      rem.appendChild(rb);
+      mount.appendChild(rem);
+    }
 
     const next = el("div.panel");
     next.appendChild(el("div.eyebrow", { text: "When something is wrong" }));

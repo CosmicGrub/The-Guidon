@@ -82,6 +82,17 @@ window.G = window.G || {};
   function fmt(d) {
     return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
   }
+  // Formats a local Date as "YYYY-MM-DD" for G.reminders.add()'s date field
+  // (and every <input type=date>.value on this page). NOT d.toISOString() -
+  // every `when` this module hands to this function was built from a local
+  // midnight Date (parseDate()/addMonths(), or `new Date(y,m,d)` in
+  // fixedAnchors()), and toISOString() converts to UTC first, which can
+  // silently roll the date a day in either direction depending on the
+  // Soldier's timezone - the exact "ms subtraction between two LOCAL dates"
+  // bug class this file's daysBetween() comment above already warns about.
+  function isoLocal(d) {
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
 
   /** red under 14 days, amber under 45, otherwise calm. Used for every date
       on this page EXCEPT board date and ETS, which have their own shared
@@ -154,9 +165,14 @@ window.G = window.G || {};
         // date from which the next due date is derived.
         const due = t.future || !t.months ? d : addMonths(d, t.months);
         if (!t.future && !t.months) return;      // reference-only, no due date
+        // Reuses Reminders' own existing "weapons"/"acft" kinds (its editor's
+        // dropdown, KINDS in reminders.js) where one genuinely matches this
+        // row; G.reminders.add() already falls back to "other" for anything
+        // else, so there is no need to invent a new kind per TRACKED entry.
+        const remKind = t.key === "wpnQual" ? "weapons" : t.key === "aft" ? "acft" : "other";
         rows.push({ label: t.label.replace(/^Last /, "").replace(/^Arrived at /, ""),
                     when: due, days: daysBetween(today, due),
-                    note: t.consequence, link: t.link });
+                    note: t.consequence, link: t.link, remKind: remKind });
       });
 
       fixedAnchors(today).forEach(function (a) {
@@ -175,7 +191,7 @@ window.G = window.G || {};
         const bd = parseDate((prof && prof.boardDate) || (settings && settings.boardDate));
         if (bd) rows.push({ label: "Promotion board", when: bd, days: daysBetween(today, bd),
           note: "Your Records Readiness checks should be complete well before this, not the week of.", link: "#/records",
-          urgencyFn: util.boardUrgency });
+          urgencyFn: util.boardUrgency, remKind: "board" });
       } catch (e) { /* profile is optional */ }
 
       // ETS, same treatment as board date just above (profile first, then
@@ -209,11 +225,37 @@ window.G = window.G || {};
         head.appendChild(el("span.v", { text: u.word, style: "flex:0 0 auto;white-space:nowrap" }));
         card.appendChild(head);
         card.appendChild(el("div.hint", { text: fmt(r.when) + " — " + r.note }));
+        const btnRow = el("div", { style: "display:flex;gap:6px;flex-wrap:wrap;margin-top:6px" });
         if (r.link) {
-          const b = el("button.btn.sm.ghost", { type: "button", text: "Open", style: "margin-top:6px" });
+          const b = el("button.btn.sm.ghost", { type: "button", text: "Open" });
           b.addEventListener("click", function () { location.hash = r.link; });
-          card.appendChild(b);
+          btnRow.appendChild(b);
         }
+        // Audit finding (ux-consistency): the two Money-tab quick-adds
+        // (salary-negotiation follow-up, USAJOBS closing date) already let a
+        // Soldier turn a date into a native reminder in one click - every
+        // date on the single screen whose whole purpose is "the dates that
+        // cost you something when they lapse" had no such button at all.
+        // Unlike those two, this page already computed the date (r.when),
+        // so there's nothing to ask for; the reminder fires ON that
+        // computed due date - honest with what the app actually knows,
+        // rather than guessing a lead time this build has no basis for.
+        if (G.reminders && G.reminders.add) {
+          const rb = el("button.btn.sm.ghost", { type: "button", text: "Remind me" });
+          rb.addEventListener("click", async function () {
+            const updated = await G.reminders.add({ kind: r.remKind || "other", label: r.label, date: isoLocal(r.when) });
+            if (!updated) { try { util.toast && util.toast("You've reached the " + G.reminders.MAX + "-reminder limit — remove an old one first."); } catch (e) {} return; }
+            // Same fix as the Money-tab quick-adds: add() alone never
+            // schedules the native notification, syncAll() would only ever
+            // catch it on the next cold boot.
+            try { if (G.notify) await G.notify.scheduleForReminder(updated[updated.length - 1]); } catch (e) {}
+            try { if (util.announce) util.announce("Reminder set for " + fmt(r.when) + "."); } catch (e) {}
+            rb.disabled = true;
+            rb.textContent = "Reminder set";
+          });
+          btnRow.appendChild(rb);
+        }
+        if (btnRow.childNodes.length) card.appendChild(btnRow);
         upcoming.appendChild(card);
       });
     }
