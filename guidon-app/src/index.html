@@ -15938,8 +15938,9 @@ window.G = window.G || {};
     let saved = {};
     // (r && r.v) || {} only guards a missing value - a truthy non-object
     // (from a hand-edited/corrupted backup) passed through untouched, and
-    // this view's own checkbox handler does saved["c"+i] = box.checked, a
-    // property WRITE that throws under strict mode on a primitive.
+    // this view's checkbox handlers do saved["cit"+n] / saved["brf"+n] =
+    // box.checked, a property WRITE that throws under strict mode on a
+    // primitive.
     try { const r = await G.db.get("kv", KEY); const v = r && r.v; saved = (v && typeof v === "object" && !Array.isArray(v)) ? v : {}; } catch (e) {}
     const stage = el("div");
 
@@ -16062,16 +16063,19 @@ window.G = window.G || {};
 
       const rub = el("div.panel", { style:"margin-top:10px" });
       rub.appendChild(el("div.eyebrow", { text:"Score yourself \u2014 the real 1009S rubric (100 points, 70 to pass)" }));
-      let total = 0;
-      const tally = el("div.stat", {}, [ el("span.k", { text:"Self-score" }), el("span.v", { text:"0 / 100" }) ]);
+      let total = BRIEF_RUBRIC.reduce((sum, [, pts], n) => sum + (saved["brf" + n] ? pts : 0), 0);
+      const tally = el("div.stat", {}, [ el("span.k", { text:"Self-score" }), el("span.v", { text: total + " / 100" }) ]);
       rub.appendChild(tally);
       BRIEF_RUBRIC.forEach(([label, pts], n) => {
         const r2 = el("div", { style:"display:flex;gap:8px;align-items:flex-start;margin:5px 0" });
         const id = "brf-" + n;
         const cb = el("input", { type:"checkbox", id:id, "aria-label": label + " (" + pts + " points)" });
-        cb.addEventListener("change", () => {
+        cb.checked = !!saved["brf" + n];
+        cb.addEventListener("change", async () => {
+          saved["brf" + n] = cb.checked;
           total += cb.checked ? pts : -pts;
           (tally.querySelector(".v")||{}).textContent = total + " / 100";
+          try { await G.db.put("kv", { k: KEY, v: saved }); } catch (e) {}
         });
         r2.appendChild(cb);
         r2.appendChild(el("label", { text: label + "  (" + pts + ")", for:id, style:"margin:0;font-weight:400" }));
@@ -16134,16 +16138,21 @@ window.G = window.G || {};
       p.appendChild(el("div.eyebrow", { text:"Conduct Individual Training \u2014 25 steps" }));
       p.appendChild(el("div.feedback.warn", { text:
         "30 minutes \u00b1 2 on a Skill Level 1 task. \u22124 points per step executed incorrectly \u2014 miss eight and you are below 70." }));
-      const tally = el("div.stat", {}, [ el("span.k", { text:"Steps checked" }), el("span.v", { text:"0 / 25" }) ]);
+      let done = CIT.filter((_, n) => saved["cit" + n]).length, lastG = "";
+      const tally = el("div.stat", {}, [ el("span.k", { text:"Steps checked" }), el("span.v", { text: done + " / 25" }) ]);
       p.appendChild(tally);
-      let done = 0, lastG = "";
       CIT.forEach(([g, s], n) => {
         if (g !== lastG) { p.appendChild(el("div.ob-plan-label", { text:g, style:"margin-top:10px" })); lastG = g; }
         const r = el("div", { style:"display:flex;gap:8px;align-items:flex-start;margin:4px 0" });
         const id = "cit-" + n;
         const cb = el("input", { type:"checkbox", id:id, "aria-label": s });
-        cb.addEventListener("change", () => { done += cb.checked ? 1 : -1;
-          (tally.querySelector(".v")||{}).textContent = done + " / 25"; });
+        cb.checked = !!saved["cit" + n];
+        cb.addEventListener("change", async () => {
+          saved["cit" + n] = cb.checked;
+          done += cb.checked ? 1 : -1;
+          (tally.querySelector(".v")||{}).textContent = done + " / 25";
+          try { await G.db.put("kv", { k: KEY, v: saved }); } catch (e) {}
+        });
         r.appendChild(cb); r.appendChild(el("label", { text:(n+1)+". "+s, for:id, style:"margin:0;font-weight:400" }));
         p.appendChild(r);
       });
