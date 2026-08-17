@@ -1,8 +1,11 @@
 /**
  * GUIDON build.
  *
- * One source (src/index.html — the single-file app exactly as authored) produces
- * two artifacts, because the project has two distribution promises to keep:
+ * Two sources - src/index.html (the app shell: nav, routing, and every module
+ * that hasn't been split out) PLUS every *.js file in src/app-modules/ (a
+ * module per file, spliced in as its own <script> block right before
+ * </body> - see "app modules" below) - produce two artifacts, because the
+ * project has two distribution promises to keep:
  *
  *   dist/guidon-standalone.html
  *       The hand-someone-the-file build. Self-contained, opens from file://,
@@ -12,6 +15,15 @@
  *       The installable/hostable bundle: index.html + manifest.webmanifest +
  *       sw.js + icons/. This is what installs as a real app and what the native
  *       wrappers (Tauri desktop, Capacitor Android) load.
+ *
+ * src/index.html alone is NOT the complete app - a handful of modules
+ * (currently: assignments, calendar, currency, fitness, icons, leader,
+ * records, scrollhint) live only in src/app-modules/*.js and are injected
+ * here. Grepping src/index.html alone for one of those modules' "G.<name> ="
+ * assignment will correctly find nothing; that is not evidence of a missing
+ * module, only evidence of where it actually lives. assertRouteModulesPresent()
+ * below cross-checks the fully ASSEMBLED output instead, and fails the build
+ * loudly if a registered route's module genuinely never got assigned.
  *
  * Nothing is minified or restructured. Every edit below is a targeted,
  * asserted replacement — if the anchor text is not found exactly once, the
@@ -96,6 +108,27 @@ function sub(html, find, replace, label) {
     throw new Error(`build: anchor "${label}" matched ${parts.length - 1} times (expected exactly 1)`);
   }
   return parts[0] + replace + parts[1];
+}
+
+// Safety net for exactly the failure class a Diagnostics-scoping pass once
+// suspected (correctly, in caution; incorrectly, in the specific instance -
+// see selftest.js's "Module integrity"/"Route health" checks, which catch
+// this same thing at runtime): a route in ROUTES calling into G.<name> whose
+// module never actually got assigned onto G anywhere in the assembled
+// output - e.g. a module deleted from src/app-modules/ without its route
+// being removed too, or a future module extraction that lands the file
+// somewhere readdir(appModuleDir) doesn't reach. Scans the FINAL assembled
+// HTML (after app modules are already spliced in), not src/index.html
+// alone, since app-modules/*.js content legitimately lives outside it until
+// this build step injects it. Fails the build loudly and immediately rather
+// than shipping a route that throws the instant a Soldier taps it.
+function assertRouteModulesPresent(html, label) {
+  const needed = new Set();
+  for (const m of html.matchAll(/render:\s*\(m\)\s*=>\s*G\.([a-zA-Z_][a-zA-Z0-9_]*)\./g)) needed.add(m[1]);
+  const missing = [...needed].filter((name) => !new RegExp("G\\." + name + "\\s*=").test(html));
+  if (missing.length) {
+    throw new Error(`build: ${label} is missing a "G.<name> = ..." assignment for module(s) referenced by a registered route: ${missing.join(", ")}`);
+  }
 }
 
 /* The guidon mark as a compact inline SVG, so the favicon matches the app icon
@@ -191,6 +224,7 @@ async function main() {
   const seed = seedAsJsonParse(standalone);
   standalone = seed.html;
   standalone = sub(standalone, bodyClose, `</script>\n${appModules}</body>\n</html>`, "terminator(standalone)");
+  assertRouteModulesPresent(standalone, "dist/guidon-standalone.html");
   await writeFile(join(DIST, "guidon-standalone.html"), standalone);
 
   /* ================================================================= web */
@@ -259,6 +293,7 @@ async function main() {
     "document terminator"
   );
 
+  assertRouteModulesPresent(web, "web/index.html");
   await writeFile(join(WEB, "index.html"), web);
 
   /* ------------- service worker, versioned by content hash -------------
