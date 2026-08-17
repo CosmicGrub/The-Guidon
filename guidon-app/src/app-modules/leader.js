@@ -257,6 +257,31 @@ window.G = window.G || {};
           refreshHint();
           inp.addEventListener("change", function () { sol[f.key] = inp.value; persist(); buildSummary(); refreshHint(); });
           row.appendChild(hintEl);
+          // Upgrade-roadmap first wave, item 8: "counseling" is a real,
+          // already-defined Reminders kind (reminders.js's own KINDS[0])
+          // that had zero integration anywhere in the app, despite THIS
+          // being the one module whose stated purpose is tracking
+          // counselling overdue-ness. Reuses the exact G.reminders.add() +
+          // G.notify.scheduleForReminder() pattern records.js's cutoff
+          // reminder already established, one row per Soldier (label names
+          // them) rather than one shared reminder for the whole roster.
+          if (f.key === "counseled" && G.reminders && G.reminders.add) {
+            const rb = el("button.btn.sm.ghost", { type: "button", text: "Remind me", style: "margin-top:6px" });
+            rb.addEventListener("click", async function () {
+              const last = parseDate(sol[f.key]);
+              const due = last ? new Date(last.getTime() + f.days * DAY) : todayMid();
+              const p = function (n) { return (n < 10 ? "0" : "") + n; };
+              const dueIso = due.getFullYear() + "-" + p(due.getMonth() + 1) + "-" + p(due.getDate());
+              const who = (sol.rank ? sol.rank + " " : "") + (sol.name || "Soldier " + (idx + 1));
+              const updated = await G.reminders.add({ kind: "counseling", label: "Counsel " + who, date: dueIso });
+              if (!updated) { try { util.toast && util.toast("You've reached the " + G.reminders.MAX + "-reminder limit — remove an old one first."); } catch (e) {} return; }
+              try { if (G.notify) await G.notify.scheduleForReminder(updated[updated.length - 1]); } catch (e) {}
+              try { if (util.announce) util.announce("Reminder set to counsel " + who + "."); } catch (e) {}
+              rb.disabled = true;
+              rb.textContent = "Reminder set";
+            });
+            row.appendChild(rb);
+          }
           card.appendChild(row);
         });
         list.appendChild(card);

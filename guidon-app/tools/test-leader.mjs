@@ -91,6 +91,42 @@ const flagged = await page.evaluate(() => {
 flagged.overdue ? ok("counselling 45 days old flags 15 days past the 30-day cadence") : bad("overdue not computed correctly");
 flagged.named ? ok("entry appears in the Needs attention summary") : bad("summary did not list the entry");
 
+// --- Upgrade-roadmap first wave, item 8: counseling "Remind me" button.
+// "counseling" is a real, pre-existing Reminders kind that had zero
+// integration anywhere before this. ---
+const remindBtnCount = await page.evaluate(() =>
+  [...document.querySelectorAll("button")].filter((b) => /^Remind me$/.test((b.textContent || "").trim())).length);
+remindBtnCount === 1 ? ok("Squad Roster's counseling field has a 'Remind me' button") : bad("expected 1 'Remind me' button, found " + remindBtnCount);
+await clickText(/^remind me$/);
+await page.waitForTimeout(500);
+const afterClick = await page.evaluate(async () => {
+  const list = (await window.G.reminders.load()) || [];
+  const btn = [...document.querySelectorAll("button")].find((b) => /Reminder set/.test((b.textContent || "").trim()));
+  return {
+    btnDisabled: btn ? btn.disabled : null,
+    entry: list.find((r) => r.kind === "counseling"),
+  };
+});
+afterClick.btnDisabled === true ? ok("button confirms success in place (disabled, reads 'Reminder set')") : bad("button state after click: " + JSON.stringify(afterClick.btnDisabled));
+(afterClick.entry && /SPC J\.R\./.test(afterClick.entry.label))
+  ? ok("a real 'counseling' reminder was created, naming the Soldier (" + afterClick.entry.label + ", due " + afterClick.entry.date + ")")
+  : bad("no counseling reminder found, or it didn't name the Soldier: " + JSON.stringify(afterClick.entry));
+
+const countAfterFirst = await page.evaluate(async () => ((await window.G.reminders.load()) || []).length);
+
+// --- Upgrade-roadmap first wave, item 9: revisiting the page and clicking
+// "Remind me" again for the SAME Soldier/date must not create a duplicate
+// row - this is the exact "revisiting and re-clicking" scenario scoped. ---
+await page.reload({ waitUntil: "load" });
+await page.waitForTimeout(1400);
+await go();
+await clickText(/^remind me$/);
+await page.waitForTimeout(500);
+const countAfterRevisit = await page.evaluate(async () => ((await window.G.reminders.load()) || []).length);
+countAfterRevisit === countAfterFirst
+  ? ok("revisiting the page and clicking 'Remind me' again does not create a duplicate reminder (" + countAfterFirst + " -> " + countAfterRevisit + ")")
+  : bad("reminder count grew from a revisit+re-click: " + countAfterFirst + " -> " + countAfterRevisit);
+
 // --- persistence ---
 await page.reload({ waitUntil: "load" });
 await page.waitForTimeout(1400);

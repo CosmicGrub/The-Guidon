@@ -61,6 +61,12 @@ await page.waitForTimeout(500);
 const panelVisible = await page.locator(".backup-panel").count();
 panelVisible ? ok("Backup & restore panel renders on the Profile view") : bad("backup panel not found");
 
+// Upgrade-roadmap first wave, item 5: before any export has ever happened
+// on this fresh device, the hint should say so plainly, not show a blank
+// line or a stale-but-blank state.
+const neverBackedUp = await page.evaluate(() => (document.querySelector(".last-backup-status") || {}).textContent || "");
+/haven't exported/.test(neverBackedUp) ? ok("A device that has never been backed up says so plainly") : bad("never-backed-up hint: " + neverBackedUp);
+
 // ---- real Export: click the button, capture the real download ----
 const [download] = await Promise.all([
   page.waitForEvent("download"),
@@ -156,6 +162,43 @@ await page.locator(".gm-box button", { hasText: /Cancel/ }).click().catch(async 
 });
 await page.waitForTimeout(200);
 fs.unlinkSync(corruptPath);
+
+// ---- Upgrade-roadmap first wave, items 4+5: failure visibility + last-
+// backup staleness nudge. The real export above (line ~67) already wrote a
+// backup:lastExportAt marker, so both panels' hint should now read "today."
+const settingsHint = await page.evaluate(() => {
+  location.hash = "#/settings";
+  return new Promise((resolve) => setTimeout(() => resolve((document.querySelector(".last-backup-status") || {}).textContent || ""), 500));
+});
+/Last backed up today/.test(settingsHint) ? ok("Settings' Data & Backup panel shows the same last-backup hint the Profile export just set") : bad("Settings last-backup hint: " + settingsHint);
+
+const partialFailure = await page.evaluate(async () => {
+  const realAll = window.G.db.all;
+  window.G.db.all = function (store) {
+    if (store === "attempts") return Promise.reject(new Error("simulated read failure"));
+    return realAll.call(window.G.db, store);
+  };
+  try {
+    const payload = await window.G.backup.exportAll();
+    return { failedStores: payload.failedStores, msg: window.G.backup.exportDoneMessage(payload) };
+  } finally {
+    window.G.db.all = realAll;
+  }
+});
+(partialFailure.failedStores.length === 1 && partialFailure.failedStores[0] === "attempts")
+  ? ok("exportAll() names the real store that failed to read in payload.failedStores")
+  : bad("failedStores after a simulated attempts-store failure: " + JSON.stringify(partialFailure.failedStores));
+(/MISSING/.test(partialFailure.msg) && /attempts/.test(partialFailure.msg))
+  ? ok("A partial export failure produces a specific, visible warning instead of a silent 'Backup downloaded'")
+  : bad("exportDoneMessage for a partial failure: " + JSON.stringify(partialFailure.msg));
+
+const cleanExport = await page.evaluate(async () => {
+  const payload = await window.G.backup.exportAll();
+  return { failedStores: payload.failedStores, msg: window.G.backup.exportDoneMessage(payload) };
+});
+(cleanExport.failedStores.length === 0 && cleanExport.msg === "Backup downloaded")
+  ? ok("A clean export still reports plainly as 'Backup downloaded' with zero failedStores")
+  : bad("clean export result: " + JSON.stringify(cleanExport));
 
 const relevantNoise = noise.filter((n) => !/favicon/.test(n));
 relevantNoise.length === 0 ? ok("no console errors/warnings") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));

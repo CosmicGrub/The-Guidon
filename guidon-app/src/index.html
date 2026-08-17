@@ -3821,6 +3821,14 @@ html.focus-mode .status-chip { opacity:.5; }
 .backup-status{min-height:1.1em;margin-top:6px;font-size:.83rem}
 .backup-status.ok{color:var(--accent,#3a6b3a);font-weight:600}
 .backup-status.err{color:var(--warn,#8c2f2f);font-weight:600}
+/* Upgrade-roadmap first wave, item 5: deliberately a DIFFERENT class from
+   .backup-status above, not a second element sharing it - both Backup
+   panels already had test/automation code doing
+   document.querySelector(".backup-status") to read the import-result line
+   specifically, and a same-named sibling would silently steal that match
+   since querySelector returns the first one found. */
+.last-backup-status{min-height:1.1em;margin-top:6px;font-size:.83rem}
+.last-backup-status.stale{color:var(--warn,#8c2f2f);font-weight:600}
 
 /* ── Topbar spotlight search button (v0.49 Wave 2) ── */
 .topbar-search-btn{background:transparent;border:1px solid var(--line,#c9bd9e);border-radius:8px;
@@ -4549,8 +4557,14 @@ window.G = window.G || {};
       var label = btn.textContent;
       btn.disabled = true; btn.setAttribute("aria-busy", "true");
       if (opts.busy) btn.textContent = opts.busy;
-      Promise.resolve().then(handler).then(function () {
-        if (opts.done) { util.toast(opts.done); util.announce(opts.done); }
+      Promise.resolve().then(handler).then(function (result) {
+        // Upgrade-roadmap first wave, item 4: opts.done can be a function of
+        // the handler's resolved value, not just a fixed string - so a
+        // handler whose success is conditional (e.g. backup.downloadAll(),
+        // which can succeed while one of its stores silently failed to
+        // read) can say something truer than a blanket "done" message.
+        var msg = typeof opts.done === "function" ? opts.done(result) : opts.done;
+        if (msg) { util.toast(msg, opts.doneMs); util.announce(msg); }
       }).catch(function (err) {
         util.toast(opts.fail || "Something went wrong.");
         util.announce(opts.fail || "Action failed.");
@@ -4685,6 +4699,39 @@ window.GUIDON_BUILD_DATE = "2026-08-09";
     });
   }
 
+  // Upgrade-roadmap first wave, item 12: a shared cache for the "scan the
+  // WHOLE kv object store, then filter by string prefix" read pattern that
+  // Board Drill's loadAllSrs() (srs: prefix), curriculum's loadAllProgress()
+  // (curr: prefix), Home's weak-areas scan (boardQuiz:best: prefix),
+  // Diagnostics' kvscan, Backup's export, and Progress's category/print
+  // scans each independently re-implemented - every one of them paid for
+  // its own full IndexedDB cursor scan even when called back-to-back in the
+  // same render pass. Wrapping db.all/put/del/putMany/delMany/clear here
+  // means every EXISTING call site benefits automatically with no call-site
+  // changes: a "kv" read is served from cache when one is warm, and any
+  // write to "kv" (put/putMany/del/delMany/clear) invalidates it immediately
+  // - never on a timer, so a write can't be masked by a stale cached read.
+  // Called once right after the db object below is finalized (both for the
+  // default IndexedDB backend, and again inside installMemoryFallback()
+  // after IT reassigns these same methods to a different backend) so
+  // whichever backend actually ends up live is the one that gets cached.
+  function wrapKvCache() {
+    const rawAll = db.all, rawPut = db.put, rawDel = db.del,
+      rawPutMany = db.putMany, rawDelMany = db.delMany, rawClear = db.clear;
+    let cache = null;
+    db.all = function (store) {
+      if (store !== "kv") return rawAll.call(db, store);
+      if (cache) return Promise.resolve(cache.slice());
+      return rawAll.call(db, store).then((rows) => { cache = rows; return rows.slice(); });
+    };
+    db.put = function (store, value) { if (store === "kv") cache = null; return rawPut.call(db, store, value); };
+    db.del = function (store, key) { if (store === "kv") cache = null; return rawDel.call(db, store, key); };
+    db.putMany = function (store, values) { if (store === "kv") cache = null; return rawPutMany.call(db, store, values); };
+    db.delMany = function (store, keys) { if (store === "kv") cache = null; return rawDelMany.call(db, store, keys); };
+    db.clear = function (store) { if (store === "kv") cache = null; return rawClear.call(db, store); };
+    db._invalidateKvCache = function () { cache = null; };
+  }
+
   const db = {
     ready: open,
 
@@ -4795,6 +4842,7 @@ window.GUIDON_BUILD_DATE = "2026-08-09";
         };
         db.ready = () => Promise.resolve();
         db._backend = "localStorage";
+        wrapKvCache();
         return;
       }
 
@@ -4810,10 +4858,12 @@ window.GUIDON_BUILD_DATE = "2026-08-09";
       db.clear = (s) => { mem[s] = {}; return Promise.resolve(); };
       db.ready = () => Promise.resolve();
       db._backend = "memory";
+      wrapKvCache();
     },
     _backend: "indexeddb",
   };
 
+  wrapKvCache();
   G.db = db;
 })();
 
@@ -5169,6 +5219,14 @@ window.G = window.G || {};
       a.id = util.uid("att");
       a.ts = Date.now();
       await db.saveAttempt(a);
+      // Upgrade-roadmap first wave, item 2: getProgress()'s 5s TTL cache
+      // below only ever expired on a timer, never on a write - the same
+      // class of bug saveUserScenario()/deleteUserScenario() already avoid
+      // for the scenario cache (they bump a rev counter on every write
+      // instead of waiting out a timer). A completed scenario/quiz/board
+      // session immediately after this call could read back up to 5
+      // seconds of stale progress on whatever screen shows it next.
+      state._progressCache = null;
       util.emit("progress:change");
       return a;
     },
@@ -5225,6 +5283,11 @@ window.G = window.G || {};
 
     async resetProgress() {
       await db.clear("attempts");
+      // See recordAttempt()'s comment above - the concrete finding this
+      // fix scoped from: resetting used to leave the pre-reset numbers
+      // cached and visible for up to 5 more seconds on whatever screen
+      // shows progress next.
+      state._progressCache = null;
       util.emit("progress:change");
     },
 
@@ -5737,11 +5800,37 @@ window.G = window.G || {};
     const sc = sess.sc;
     const modes = (sc.renderModes || ["text", "course", "cyoa"]);
     const seg = el("div.segmented");
-    const labels = { text: "Text", course: "Course", cyoa: "Adventure" };
+    // "training" fell through to the raw lowercase mode string (labels[m]
+    // undefined) since this map was written before any scenario listed
+    // "training" alongside another mode in its own renderModes - the three
+    // ORIGINAL modes always read as proper labels, "training" alone read
+    // as a stray lowercase word next to them. Found while fixing item 11.
+    const labels = { text: "Text", course: "Course", cyoa: "Adventure", training: "Training" };
     modes.forEach((m) => {
       seg.appendChild(el("button" + (m === sess.mode ? ".active" : ""), {
         text: labels[m] || m,
-        onclick: () => { if (m !== sess.mode) restart(sess, m); },
+        onclick: async () => {
+          if (m === sess.mode) return;
+          // Upgrade-roadmap first wave, item 11: switching mode mid-session
+          // used to silently restart(sess, m) with zero warning. For the
+          // 8 real mandatory-training scenarios - 7 of which list a
+          // non-training mode alongside "training" in their own
+          // renderModes, so this switcher itself offers the trap -
+          // renderTrainingOutcome() (the only path that ever writes to
+          // trainingCompletions/bestPct) is reached ONLY when
+          // sess.mode === "training". Tapping "Course" or "Adventure"
+          // mid-module threw that 80%-pass tracking away with no error,
+          // no toast, nothing - the Soldier had no way to know the module
+          // no longer counted as complete.
+          if (sess.mode === "training") {
+            const proceed = G.modal && G.modal.confirm ? await G.modal.confirm(
+              "Switching modes restarts this module, and your progress will NOT count toward mandatory-training completion - only Training mode does that. Continue anyway?",
+              { title: "Leave training mode?", okText: "Switch anyway", danger: true }
+            ) : true;
+            if (!proceed) return;
+          }
+          restart(sess, m);
+        },
       }));
     });
     // Progress indicator — count reachable nodes (fast heuristic: unique nodeIds in graph)
@@ -13490,10 +13579,39 @@ window.G = window.G || {};
     catch(e) { return null; }
   }
   async function saveProfile(p) {
+    // Upgrade-roadmap first wave, item 1: Guest and Kiosk sessions are
+    // documented above (finishGuest()/finishKiosk()) as deliberately
+    // in-memory-only - "nothing is saved" is meant literally - but that
+    // promise was only ever honored by callers remembering to check first.
+    // Two real call sites didn't: the Profile view's "Regenerate plan"
+    // button and the promotion-points quick-estimate's debounced autosave
+    // both called this unconditionally, silently writing a guest/kiosk
+    // profile to IndexedDB - which then makes needsOnboarding() report
+    // false on the device's NEXT real launch, permanently skipping
+    // onboarding for whoever opens the app next. Guarding here, the one
+    // place every write funnels through, closes every such call site at
+    // once instead of relying on each one to remember its own check. The
+    // in-memory _cache still updates (via profile:change below) so the
+    // guest/kiosk session's own UI keeps working normally this session -
+    // only the disk write is skipped.
+    if (p && (p.mode === "guest" || p.mode === "kiosk")) {
+      util.emit && util.emit("profile:change", p);
+      return;
+    }
     try { await db.put("kv", { k: PROFILE_KEY, v: p }); } catch(e) {}
     util.emit && util.emit("profile:change", p);
   }
   async function deleteProfile() {
+    // Same reasoning as saveProfile()'s guard above, found while fixing it:
+    // a Guest/Kiosk session's _cache never came from storage in the first
+    // place (finishGuest()/finishKiosk() never call loadProfile()), so
+    // "Switch account or mode" / "Delete profile" clicked from INSIDE one
+    // of those sessions - both reachable, since the Profile view's own
+    // mode gate only excludes "guest", not "kiosk" - would otherwise wipe
+    // whatever REAL personal profile happens to already be saved on this
+    // device, even though nothing this session ever did put it there. A
+    // session that never touched that row has no business deleting it.
+    if (_cache && (_cache.mode === "guest" || _cache.mode === "kiosk")) return;
     try { await db.del && db.del("kv", PROFILE_KEY); } catch(e) {}
     try { await db.put("kv", { k: PROFILE_KEY, v: null }); } catch(e) {}
   }
@@ -16478,18 +16596,48 @@ window.G = window.G || {};
   // ── Automated checks — each returns {ok, detail} or throws ────────────────
   const AUTO = [
     { id:"modules", name:"Module integrity",
-      why:"Every module must have registered on G. A missing one fails silently at runtime.",
+      // Upgrade-roadmap first wave, item 10: `need` used to be a fixed
+      // 12-name list hand-typed when this check was first written. 6 real
+      // routes added since (#/leader, #/currency, #/fitness, #/records,
+      // #/calendar, #/assignments) called modules this list never even
+      // looked at, so if any of THOSE had ever gone missing, this still
+      // would have reported a clean "12 modules present" - checking names
+      // that were never at risk while saying nothing about the ones that
+      // actually mattered. Derived from G.routes itself below instead of a
+      // second hand-maintained list, so a future route can't silently ship
+      // uncovered the same way.
+      why:"Every module a real, registered route actually depends on must have registered on G, not just whichever names this list happened to be written with. A missing one fails silently at runtime.",
       run: async () => {
-        const need = ["util","db","store","profile","board","blc","alc","slc","drills","channels","modal","selftest"];
+        const routeMods = new Set();
+        (G.routes || []).forEach(r => {
+          const m = /G\.([a-zA-Z_][a-zA-Z0-9_]*)\./.exec(String(r.render));
+          if (m) routeMods.add(m[1]);
+        });
+        const core = ["util","db","store","profile","board","blc","alc","slc","drills","channels","modal","selftest"];
+        const need = Array.from(new Set(core.concat(Array.from(routeMods))));
         const missing = need.filter(k => !G[k]);
-        return { ok: !missing.length, detail: missing.length ? "Missing: " + missing.join(", ") : need.length + " modules present" };
+        return { ok: !missing.length, detail: missing.length ? "Missing: " + missing.join(", ") : need.length + " modules present (core infrastructure + every module a registered route depends on)" };
       } },
     { id:"routes", name:"Route health",
-      why:"Every route must render without throwing. A broken section is invisible until someone opens it.",
+      // Upgrade-roadmap first wave, item 10: this used to only confirm
+      // G.routes itself was a non-empty array - it never actually called a
+      // single render() function, so a route whose module was missing or
+      // whose render() threw immediately still reported a clean PASS ("36
+      // routes registered: ...") the exact same way a genuinely healthy
+      // app would. Each route is now actually rendered into a detached
+      // (never-attached) node - no visible flicker, no navigation, no
+      // history entry - and any throw, sync or async, is caught and named.
+      why:"Every route must render without throwing. A broken section is invisible until someone opens it - this used to only confirm a routes list existed, never that any route actually rendered.",
       run: async () => {
-        const routes = (G.routes || []).map(r => r.hash);
+        const routes = G.routes || [];
         if (!routes.length) return { ok:false, detail:"G.routes not exposed" };
-        return { ok:true, detail: routes.length + " routes registered: " + routes.slice(0,4).join(" ") + " \u2026" };
+        const broken = [];
+        for (const r of routes) {
+          const probe = document.createElement("div");
+          try { await Promise.resolve().then(() => r.render(probe)); }
+          catch (e) { broken.push(r.hash + ": " + (e && e.message ? e.message : String(e))); }
+        }
+        return { ok: !broken.length, detail: broken.length ? broken.length + " route(s) threw: " + broken.slice(0, 5).join(" | ") : routes.length + " routes rendered clean" };
       } },
     { id:"storage", name:"Storage round-trip",
       why:"If IndexedDB fails, your profile and card grades silently stop saving.",
@@ -16614,12 +16762,47 @@ window.G = window.G || {};
         if (!("serviceWorker" in navigator)) {
           return { ok:true, detail:"Service workers are not available in this browser (e.g. file:// or an unsupported browser)." };
         }
+        // Upgrade-roadmap first wave, item 7: getRegistration() below
+        // returns undefined for BOTH "never attempted" and "attempted and
+        // failed" - indistinguishable without pwa.js's own record of what
+        // actually happened. Checked first so a real registration failure
+        // (broken CSP, unreachable sw.js, corrupted cache) reports FAIL
+        // instead of the same "No service worker registered yet." a
+        // healthy first boot would also show.
+        if (G.pwa && G.pwa.state && G.pwa.state.swRegFailed) {
+          return { ok:false, detail:"Service-worker registration failed: " + G.pwa.state.swRegFailed + " — offline caching and update checks are not running." };
+        }
         let reg;
         try { reg = await navigator.serviceWorker.getRegistration(); }
         catch (e) { return { ok:false, detail:"Could not read the service-worker registration: " + (e && e.message ? e.message : String(e)) }; }
         if (!reg) return { ok:true, detail:"No service worker registered yet." };
         const waiting = !!reg.waiting || !!(G.pwa && G.pwa.state && G.pwa.state.swWaiting);
         return { ok:!waiting, detail: waiting ? "A newer build has been downloaded and is waiting to activate." : "Running the latest downloaded build." };
+      } },
+    // Upgrade-roadmap first wave, item 6: pwa.js already requests
+    // navigator.storage.persist() on every boot and tracks the result in
+    // G.pwa.state.persisted (the one signal that predicts whether iOS's
+    // ~7-day IndexedDB eviction can wipe this device's study data) - but
+    // this is the screen built specifically to surface exactly that kind
+    // of risk, and it never once read it.
+    { id:"storagePersist", name:"Storage durability",
+      why:"iOS evicts a site's IndexedDB after roughly 7 days without a visit unless the browser has granted persistent storage. pwa.js already asks for this on every boot; this surfaces the result here instead of only on the Share & Install panel, which a Soldier may never open.",
+      run: async () => {
+        if (!G.pwa) return { ok:true, detail:"G.pwa not available on this build." };
+        if (G.pwa.isNative && G.pwa.isNative()) {
+          return { ok:true, detail:"Native build — every file ships locally, so there's no browser eviction risk to protect against." };
+        }
+        let granted = G.pwa.state && G.pwa.state.persisted;
+        // A boot-time request may not have resolved yet by the time this
+        // check runs - ask again rather than trust a possibly-still-null
+        // value, since Chromium answers this near-instantly once already
+        // installed/engaged and there's no reason to report a false unknown.
+        if (granted == null && G.pwa.requestPersistence) {
+          try { granted = await G.pwa.requestPersistence(); } catch (e) {}
+        }
+        if (granted === true) return { ok:true, detail:"Persistent storage granted — this device's data is protected from browser eviction." };
+        if (granted === false) return { ok:false, detail:"Persistent storage was NOT granted. Installing GUIDON to your home screen (Share & Install) is what usually earns it." };
+        return { ok:true, detail:"This browser doesn't report storage durability at all — nothing to repair, but there's also no confirmation your data is protected from eviction." };
       } }
   ];
 
@@ -16738,6 +16921,32 @@ window.G = window.G || {};
             else location.reload();
           });
           row.appendChild(swFixBtn);
+        }
+        // The browser decides whether to grant persistence, not this app -
+        // "Fix" here can only ever mean "ask again," honestly re-verified
+        // rather than assumed, matching the re-verify-don't-assume pattern
+        // the statusbar Fix button above already established.
+        if (c.id === "storagePersist" && !r.ok && G.pwa && G.pwa.requestPersistence) {
+          const persistFixBtn = el("button.btn.sm", { type:"button", text:"Fix: ask again", style:"margin-top:6px" });
+          persistFixBtn.addEventListener("click", async () => {
+            persistFixBtn.disabled = true; persistFixBtn.textContent = "Asking\u2026";
+            const granted = await G.pwa.requestPersistence().catch(() => null);
+            if (granted === true) {
+              if (G.selfheal) G.selfheal.log("repair", "storage-persist", "persistent storage granted on re-ask");
+              detailEl.textContent = "Persistent storage granted \u2014 this device's data is protected from browser eviction.";
+              util.toast && util.toast("Persistent storage granted.");
+              util.announce && util.announce("Persistent storage granted.");
+              persistFixBtn.remove();
+              row.setAttribute("tabindex", "-1");
+              row.focus();
+            } else {
+              util.toast && util.toast("Still not granted \u2014 installing GUIDON to your home screen usually earns it.");
+              util.announce && util.announce("Persistent storage still not granted.");
+              persistFixBtn.disabled = false;
+              persistFixBtn.textContent = "Fix: ask again";
+            }
+          });
+          row.appendChild(persistFixBtn);
         }
         // Items 7 (safe-auto-repair) and 8 (confirm-then-repair) share one
         // review surface on the kvscan card: config-shaped rows carrying no
@@ -17280,6 +17489,14 @@ window.G = window.G || {};
   async function exportAll(opts) {
     opts = opts || {};
     var payload = { schema: SCHEMA, exportedAt: new Date().toISOString(), stores: {} };
+    // Upgrade-roadmap first wave, item 4: each per-store try/catch below
+    // used to default straight to [] on failure with no trace left anywhere
+    // - a Soldier could download a "backup" that was silently missing an
+    // entire store (e.g. every board-drill SRS row, since srs: rows live in
+    // kv) and downloadAll() would still say "Backup downloaded" with nothing
+    // to contradict it. failedStores makes that failure visible to the
+    // caller instead of only to whichever dev tools happened to be open.
+    var failedStores = [];
     // kv holds profile/goals/drafts/srs — all the user's own. It ALSO holds the
     // squad roster, which is other people's data, so that is excluded unless
     // explicitly asked for.
@@ -17295,15 +17512,16 @@ window.G = window.G || {};
       payload.stores.kv = kv;
       payload.excludedPrivateEntries = excluded;
       payload.includesOtherPeoplesData = !!opts.includePrivate;
-    } catch (e) { payload.stores.kv = []; }
-    try { payload.stores.userScenarios = await G.db.all("userScenarios"); } catch (e) { payload.stores.userScenarios = []; }
-    try { payload.stores.attempts = await G.db.all("attempts"); } catch (e) { payload.stores.attempts = []; }
+    } catch (e) { payload.stores.kv = []; failedStores.push("kv"); }
+    try { payload.stores.userScenarios = await G.db.all("userScenarios"); } catch (e) { payload.stores.userScenarios = []; failedStores.push("userScenarios"); }
+    try { payload.stores.attempts = await G.db.all("attempts"); } catch (e) { payload.stores.attempts = []; failedStores.push("attempts"); }
     // counts for a friendly summary
     payload.summary = {
       kv: (payload.stores.kv || []).length,
       userScenarios: (payload.stores.userScenarios || []).length,
       attempts: (payload.stores.attempts || []).length,
     };
+    payload.failedStores = failedStores;
     return payload;
   }
 
@@ -17318,10 +17536,44 @@ window.G = window.G || {};
       // was safe right before a reinstall (see task #202).
       return G.util.download("guidon-backup-" + nowStamp() + ".json", JSON.stringify(payload, null, 1), "application/json").then(function (ok) {
         if (!ok) throw new Error("Backup save did not complete (device declined or cancelled the save).");
-        if (G.util.announce) G.util.announce("Backup downloaded.");
-        return payload;
+        // The generic "Backup downloaded" announcement stays here for
+        // callers with no opts.done function of their own (there's still no
+        // way to surface failedStores without one), but every caller that
+        // uses busyButton's new function-form opts.done (below) supersedes
+        // this with a message that actually reflects payload.failedStores.
+        if (G.util.announce) G.util.announce(payload.failedStores.length ? "Backup downloaded, but " + payload.failedStores.length + " store(s) could not be read." : "Backup downloaded.");
+        // Upgrade-roadmap first wave, item 5: neither this function nor
+        // importAll() ever recorded WHEN a backup last actually happened -
+        // the Backup panel had no way to tell a Soldier "you haven't backed
+        // up in 40 days" on a single-device, no-cloud-sync app where that is
+        // the only copy of their data that can survive a lost/wiped device.
+        // Written here (the one place both UI entry points funnel through)
+        // rather than in each caller, and only on export - restoring FROM a
+        // file doesn't create a new external copy of today's data, so it
+        // isn't a "backup happened" event for staleness purposes.
+        return G.db.setSetting("backup:lastExportAt", new Date().toISOString()).then(function () { return payload; }, function () { return payload; });
       });
     });
+  }
+
+  function getLastExportAt() { return G.db.getSetting("backup:lastExportAt", null); }
+  // Pure formatter shared by both "Export backup" panels so neither can
+  // describe the same underlying timestamp differently. 30 days is the
+  // staleness line - long enough not to nag after every normal week of use,
+  // short enough that a Soldier is never more than a month of unbacked-up
+  // study history away from a lost/wiped/stolen device.
+  function formatLastExport(iso) {
+    var d = iso ? new Date(iso) : null;
+    if (!d || isNaN(d.getTime())) {
+      return { text: "You haven't exported a backup yet — everything you've entered lives only on this device.", stale: true };
+    }
+    var days = Math.floor((Date.now() - d.getTime()) / 86400000);
+    var stale = days >= 30;
+    var when = days <= 0 ? "today" : days === 1 ? "1 day ago" : days + " days ago";
+    return {
+      text: "Last backed up " + when + (stale ? " — this app has no cloud sync, so it's worth exporting a fresh copy." : "."),
+      stale: stale,
+    };
   }
 
   async function importAll(obj, opts) {
@@ -17410,6 +17662,21 @@ window.G = window.G || {};
     panel.appendChild(el("div.eyebrow", { text: "Backup & restore" }));
     panel.appendChild(el("p.hint", { text: "GUIDON stores everything on this device only. Export a backup file to move your profile, IDP goals, counseling drafts, promotion-point estimates, and study progress to another device — or to keep them safe across reinstalls." }));
 
+    // Upgrade-roadmap first wave, item 5: populated asynchronously right
+    // below (a fast IndexedDB read, not worth blocking the rest of the
+    // panel on) and refreshed again the moment an export actually succeeds,
+    // so it can never show a stale timestamp after the Soldier just fixed it.
+    var lastBackupHint = el("p.last-backup-status hint");
+    function refreshLastBackupHint() {
+      getLastExportAt().then(function (iso) {
+        var info = formatLastExport(iso);
+        lastBackupHint.textContent = info.text;
+        lastBackupHint.className = "last-backup-status hint" + (info.stale ? " stale" : "");
+      }).catch(function () {});
+    }
+    refreshLastBackupHint();
+    panel.appendChild(lastBackupHint);
+
     var row = el("div.backup-actions");
     var exportBtn = el("button.btn.sm", { type: "button", gi: "download", giSize: 14, text: "Export backup" });
     // busyButton() WIRES a click listener itself (see its own definition) -
@@ -17421,7 +17688,10 @@ window.G = window.G || {};
     // AND attached one more. Wiring it directly, the same way the DA 4856
     // filler's own genFill button already does correctly, fixes both.
     if (G.util.busyButton) {
-      G.util.busyButton(exportBtn, downloadAll, { busy: "Exporting…", done: "Backup downloaded" });
+      G.util.busyButton(exportBtn, downloadAll, {
+        busy: "Exporting…", doneMs: 6000,
+        done: function (payload) { refreshLastBackupHint(); return exportDoneMessage(payload); },
+      });
     } else {
       exportBtn.addEventListener("click", downloadAll);
     }
@@ -17498,7 +17768,19 @@ window.G = window.G || {};
     host.appendChild(panel);
   }
 
-  G.backup = { exportAll: exportAll, downloadAll: downloadAll, importAll: importAll, renderControls: renderControls, validateKvRow: validateKvRow };
+  // Upgrade-roadmap first wave, item 4: the message shown once a download
+  // actually finishes - shared by both places that wire up an "Export
+  // backup" button (this module's own renderControls() and Settings') so
+  // they can never say something different about the same payload.
+  function exportDoneMessage(payload) {
+    if (payload && payload.failedStores && payload.failedStores.length) {
+      return "Backup downloaded, but " + payload.failedStores.join(" and ") + " could not be read and " +
+        (payload.failedStores.length === 1 ? "is" : "are") + " MISSING from this file — don't rely on it alone, and check Diagnostics.";
+    }
+    return "Backup downloaded";
+  }
+
+  G.backup = { exportAll: exportAll, downloadAll: downloadAll, importAll: importAll, renderControls: renderControls, validateKvRow: validateKvRow, exportDoneMessage: exportDoneMessage, getLastExportAt: getLastExportAt, formatLastExport: formatLastExport };
 })();
 // END backup.js
 
@@ -17575,8 +17857,30 @@ window.G = window.G || {};
   async function add(entry) {
     return _serialize(async function () {
       var list = await load();
+      var kind = entry.kind || "other", label = entry.label || "Reminder", date = entry.date || "";
+      // Upgrade-roadmap first wave, item 9: none of this build's growing
+      // set of one-click quick-add buttons (Records' cutoff reminder,
+      // Salary Negotiation's follow-up, USAJOBS' deadline, Squad Roster's
+      // counseling due date) had any existence check - revisiting the same
+      // screen and clicking the same button again silently created a
+      // second, identical row against the MAX_REMINDERS cap instead of
+      // recognizing "this reminder already exists." Checked once here, the
+      // one place every quick-add AND the manual editor both funnel
+      // through, rather than teaching each new call site its own copy of
+      // the same check. The existing row is moved to the END of the list
+      // (not left in place) so every existing caller's
+      // `updated[updated.length - 1]` convention for "the reminder THIS
+      // call concerns" still resolves correctly whether it was freshly
+      // created or already existed - no call site needs to change.
+      var dupIdx = list.findIndex(function (r) { return r.kind === kind && r.label === label && r.date === date; });
+      if (dupIdx !== -1) {
+        var existing = list.splice(dupIdx, 1)[0];
+        list.push(existing);
+        await save(list);
+        return list;
+      }
       if (list.length >= MAX_REMINDERS) return null;
-      list.push({ id: uid(), kind: entry.kind || "other", label: entry.label || "Reminder", date: entry.date || "", note: entry.note || "" });
+      list.push({ id: uid(), kind: kind, label: label, date: date, note: entry.note || "" });
       await save(list);
       return list;
     });
@@ -21532,12 +21836,30 @@ window.G = window.G || {};
     // success). G.backup.downloadAll already does exportAll()+download()
     // with the real await-the-native-save handling built in - reuse it
     // instead of re-implementing a thinner, unfed-back copy here.
-    G.util.busyButton(exportBtn, G.backup.downloadAll, { busy: "Exporting…", done: "Backup downloaded", fail: "Export failed — try again." });
+    // Upgrade-roadmap first wave, item 5: same last-export hint as the
+    // Profile view's own Backup & restore panel, reading the same
+    // backup:lastExportAt marker through G.backup's shared getter/formatter
+    // so the two "Export backup" buttons can never disagree about when the
+    // Soldier last actually did it.
+    const lastBackupHint = el("p.last-backup-status hint");
+    function refreshLastBackupHint() {
+      G.backup.getLastExportAt().then((iso) => {
+        const info = G.backup.formatLastExport(iso);
+        lastBackupHint.textContent = info.text;
+        lastBackupHint.className = "last-backup-status hint" + (info.stale ? " stale" : "");
+      }).catch(() => {});
+    }
+    refreshLastBackupHint();
+    G.util.busyButton(exportBtn, G.backup.downloadAll, {
+      busy: "Exporting…", doneMs: 6000, fail: "Export failed — try again.",
+      done: (payload) => { refreshLastBackupHint(); return G.backup.exportDoneMessage(payload); },
+    });
     dataPanel.appendChild(el("div.btn-row", { style: "margin-top:8px" }, [
       exportBtn,
       el("button.btn.sm.ghost", { gi: "upload", giSize: 14, text: "Import backup", onclick: () => importInput.click() }),
     ]));
     dataPanel.appendChild(importInput);
+    dataPanel.appendChild(lastBackupHint);
     dataPanel.appendChild(el("p.hint", { text: "Export a full JSON backup — profile, IDP goals, counseling drafts, promotion-point estimates, SRS scheduling, authored scenarios, and recorded attempts — or restore one on another device." }));
     mount.appendChild(dataPanel);
 
