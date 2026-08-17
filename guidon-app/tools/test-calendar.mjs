@@ -110,6 +110,38 @@ const ordered = await page.evaluate(() => {
 });
 ordered ? ok("upcoming rows sorted soonest-first") : bad("rows are not in urgency order");
 
+/* "Remind me" quick-add (audit finding #11, ux-consistency): turns a row's
+   already-computed due date into a native-reminder round trip in one click -
+   no date re-entry, unlike the two freeform Money-tab quick-adds this
+   mirrors, because Calendar already knows the date. */
+const remindBefore = await page.evaluate(async () => (await window.G.reminders.load()).length);
+await page.evaluate(() => {
+  const card = [...document.querySelectorAll(".card")].find((c) => /weapons qualification/i.test((c.querySelector(".k") || {}).textContent || ""));
+  const btn = card && [...card.querySelectorAll("button")].find((b) => b.textContent.trim() === "Remind me");
+  if (btn) btn.click();
+});
+await page.waitForTimeout(300);
+const remindAfter = await page.evaluate(async () => {
+  const list = await window.G.reminders.load();
+  return { count: list.length, last: list[list.length - 1] };
+});
+remindAfter.count === remindBefore + 1
+  ? ok("Clicking Calendar's per-row 'Remind me' adds exactly one reminder")
+  : bad(`reminder count ${remindBefore} -> ${remindAfter.count}, expected +1`);
+remindAfter.last && remindAfter.last.kind === "weapons" && /weapons qualification/i.test(remindAfter.last.label) && remindAfter.last.date
+  ? ok(`The reminder carries the row's kind ('weapons'), label, and a real date (${remindAfter.last.date})`)
+  : bad("reminder shape: " + JSON.stringify(remindAfter.last));
+const btnAfter = await page.evaluate(() => {
+  const card = [...document.querySelectorAll(".card")].find((c) => /weapons qualification/i.test((c.querySelector(".k") || {}).textContent || ""));
+  const btn = card && [...card.querySelectorAll("button")].find((b) => /Reminder set/.test(b.textContent));
+  return btn ? { text: btn.textContent, disabled: btn.disabled } : null;
+});
+btnAfter && btnAfter.disabled
+  ? ok("The button confirms success in place (disabled, reads 'Reminder set')")
+  : bad("button state after click: " + JSON.stringify(btnAfter));
+// Cleanup — leaves reminders:v1 as this suite found it.
+if (remindAfter.last) await page.evaluate((id) => window.G.reminders.remove(id), remindAfter.last.id);
+
 /* Persistence across a reload. */
 await page.reload({ waitUntil: "load" });
 await page.waitForTimeout(1400);
