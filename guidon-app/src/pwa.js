@@ -34,6 +34,15 @@ window.G = window.G || {};
     installed: false,       // running in an installed window right now
     swActive: false,
     swWaiting: null,        // a newer worker sitting in the wings
+    // Upgrade-roadmap first wave, item 7: registerSW()'s own catch below
+    // used to only console.warn a real registration failure, with nothing
+    // recorded anywhere G could read back. Diagnostics' "Service worker
+    // freshness" check asks navigator.serviceWorker.getRegistration() for
+    // itself, which returns undefined/null for BOTH "never even tried" and
+    // "tried and failed" - so a genuine failure (a broken CSP, an
+    // unreachable sw.js, a corrupted cache) was reported as a clean PASS
+    // ("No service worker registered yet.") instead of the FAIL it is.
+    swRegFailed: null,      // null = not yet attempted; string = the error that occurred
     persisted: null,        // null = not yet asked
     estimate: null,
   };
@@ -80,6 +89,7 @@ window.G = window.G || {};
     if (!("serviceWorker" in navigator)) return;
 
     navigator.serviceWorker.register("sw.js").then((reg) => {
+      state.swRegFailed = false;
       if (reg.waiting && navigator.serviceWorker.controller) {
         state.swWaiting = reg.waiting;
         announceUpdate();
@@ -98,7 +108,11 @@ window.G = window.G || {};
         });
       });
       navigator.serviceWorker.ready.then(() => { state.swActive = true; notify(); });
-    }).catch((e) => console.warn("SW registration failed:", e));
+    }).catch((e) => {
+      state.swRegFailed = (e && e.message) ? e.message : String(e);
+      notify();
+      console.warn("SW registration failed:", e);
+    });
 
     // Reload ONLY when an update replaces an existing controller — never on the
     // first claim. On a first visit the worker installs, activates and calls

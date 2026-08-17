@@ -229,6 +229,120 @@ swMsg && swMsg.type === "SKIP_WAITING"
   : bad("Fix button did not post SKIP_WAITING to the waiting worker: " + JSON.stringify(swMsg));
 await page.evaluate(() => { window.G.pwa.state.swWaiting = null; });
 
+// ---- Upgrade-roadmap first wave, item 7: a real SW registration failure
+// must report FAIL, not the same "No service worker registered yet." a
+// healthy first boot also shows (both used to be indistinguishable). ----
+await page.evaluate(() => { window.G.pwa.state.swRegFailed = "simulated registration failure (QA)"; });
+await page.locator("button.btn.primary.sm").click();
+await page.waitForTimeout(400);
+const swFailCatText = await page.evaluate(() => {
+  const cats = Array.from(document.querySelectorAll(".ob-plan-cat"));
+  const cat = cats.find((n) => /service worker freshness/i.test(n.textContent || ""));
+  return cat ? cat.closest(".card").textContent : null;
+});
+(swFailCatText && swFailCatText.indexOf("✕") !== -1 && /simulated registration failure/.test(swFailCatText))
+  ? ok("A real SW registration failure reports FAIL and names the actual error, not 'No service worker registered yet.'")
+  : bad("Service worker freshness card text with swRegFailed set: " + swFailCatText);
+await page.evaluate(() => { window.G.pwa.state.swRegFailed = false; });
+
+// ---- Upgrade-roadmap first wave, item 6: Storage durability check + its
+// "Fix: ask again" button. ----
+await page.evaluate(() => {
+  window.G.pwa.state.persisted = false;
+  window.G.pwa.requestPersistence = async () => window.G.pwa.state.persisted;
+});
+await page.locator("button.btn.primary.sm").click();
+await page.waitForTimeout(400);
+const persistCatText = await page.evaluate(() => {
+  const cats = Array.from(document.querySelectorAll(".ob-plan-cat"));
+  const cat = cats.find((n) => /storage durability/i.test(n.textContent || ""));
+  return cat ? cat.closest(".card").textContent : null;
+});
+(persistCatText && persistCatText.indexOf("✕") !== -1 && /NOT granted/.test(persistCatText))
+  ? ok("'Storage durability' check reports fail (✕) when persistence was not granted")
+  : bad("Storage durability card text when not granted: " + persistCatText);
+const persistFixCount = await page.locator("button", { hasText: /Fix: ask again/ }).count();
+persistFixCount > 0 ? ok("Fix: ask again button appears when storage durability was not granted") : bad("Fix: ask again button did not appear");
+await page.locator("button", { hasText: /Fix: ask again/ }).click();
+await page.waitForTimeout(300);
+const persistFixStillThere = await page.locator("button", { hasText: /Fix: ask again/ }).count();
+persistFixStillThere > 0 ? ok("Fix button re-verifies rather than assuming success - still offers a retry while persistence is still denied") : bad("Fix button vanished even though persistence is still denied");
+// Now let the (stubbed) browser actually grant it and retry.
+await page.evaluate(() => { window.G.pwa.state.persisted = true; });
+await page.locator("button", { hasText: /Fix: ask again/ }).click();
+await page.waitForTimeout(300);
+const persistFixGoneText = await page.evaluate(() => {
+  const cats = Array.from(document.querySelectorAll(".ob-plan-cat"));
+  const cat = cats.find((n) => /storage durability/i.test(n.textContent || ""));
+  return cat ? cat.closest(".card").textContent : null;
+});
+(persistFixGoneText && /granted/i.test(persistFixGoneText) && !/NOT granted/.test(persistFixGoneText))
+  ? ok("Fix: ask again flips the card to 'granted' once persistence is actually obtained")
+  : bad("Storage durability card text after a successful re-ask: " + persistFixGoneText);
+const persistFixRemoved = await page.locator("button", { hasText: /Fix: ask again/ }).count();
+persistFixRemoved === 0 ? ok("Fix: ask again button removes itself once persistence is actually granted") : bad("Fix: ask again button is still present after a successful grant");
+
+// ---- Upgrade-roadmap first wave, item 10: "Module integrity" and "Route
+// health" used to be near-tautological - the first checked a fixed dozen
+// hand-typed names that never included 6 real, later-added routes'
+// modules, the second only confirmed G.routes was a non-empty array
+// without ever calling a single render(). Both are now derived from/drive
+// the real G.routes registry, so a genuinely broken module or route
+// reports FAIL - verified here by forcing exactly that, the same way the
+// statusbar/swfresh checks above are forced to fail on purpose. ----
+const moduleBaseline = await page.evaluate(() => {
+  const cats = Array.from(document.querySelectorAll(".ob-plan-cat"));
+  const cat = cats.find((n) => /module integrity/i.test(n.textContent || ""));
+  return cat ? cat.closest(".card").textContent : null;
+});
+(moduleBaseline && moduleBaseline.indexOf("✓") !== -1 && /\d\d modules present/.test(moduleBaseline))
+  ? ok("'Module integrity' now derives its list from G.routes (30+ modules, not the old fixed dozen) and passes clean")
+  : bad("Module integrity baseline text: " + moduleBaseline);
+
+await page.evaluate(() => { window.__savedLeader = window.G.leader; delete window.G.leader; });
+await page.locator("button.btn.primary.sm").click();
+await page.waitForTimeout(400);
+const moduleFailText = await page.evaluate(() => {
+  const cats = Array.from(document.querySelectorAll(".ob-plan-cat"));
+  const cat = cats.find((n) => /module integrity/i.test(n.textContent || ""));
+  return cat ? cat.closest(".card").textContent : null;
+});
+(moduleFailText && moduleFailText.indexOf("✕") !== -1 && /leader/.test(moduleFailText))
+  ? ok("'Module integrity' reports FAIL and names 'leader' once a module a real route depends on is actually missing")
+  : bad("Module integrity text with G.leader deleted: " + moduleFailText);
+await page.evaluate(() => { window.G.leader = window.__savedLeader; delete window.__savedLeader; });
+
+await page.evaluate(() => {
+  const r = window.G.routes.find((x) => x.hash === "#/leader");
+  window.__origLeaderRender = r.render;
+  r.render = () => { throw new Error("simulated route failure (QA)"); };
+});
+await page.locator("button.btn.primary.sm").click();
+await page.waitForTimeout(1500);
+const routesFailText = await page.evaluate(() => {
+  const cats = Array.from(document.querySelectorAll(".ob-plan-cat"));
+  const cat = cats.find((n) => /route health/i.test(n.textContent || ""));
+  return cat ? cat.closest(".card").textContent : null;
+});
+(routesFailText && routesFailText.indexOf("✕") !== -1 && /#\/leader/.test(routesFailText) && /simulated route failure/.test(routesFailText))
+  ? ok("'Route health' actually renders every route and reports FAIL naming the specific one that threw")
+  : bad("Route health text with #/leader forced to throw: " + routesFailText);
+await page.evaluate(() => {
+  const r = window.G.routes.find((x) => x.hash === "#/leader");
+  r.render = window.__origLeaderRender;
+  delete window.__origLeaderRender;
+});
+await page.locator("button.btn.primary.sm").click();
+await page.waitForTimeout(1500);
+const routesRestoredText = await page.evaluate(() => {
+  const cats = Array.from(document.querySelectorAll(".ob-plan-cat"));
+  const cat = cats.find((n) => /route health/i.test(n.textContent || ""));
+  return cat ? cat.closest(".card").textContent : null;
+});
+(routesRestoredText && routesRestoredText.indexOf("✓") !== -1 && /routes rendered clean/.test(routesRestoredText))
+  ? ok("'Route health' returns to a real clean pass once the route is restored (" + routesRestoredText.match(/\d+ routes rendered clean/)[0] + ")")
+  : bad("Route health text after restoring #/leader: " + routesRestoredText);
+
 // ---- Diagnostics self-repair items 7 & 8: kvscan "Review & repair" ----
 // Corrupt one config-shaped row (has a safe default -> item 7's one-click,
 // no-confirm reset) and one Soldier-authored row (no safe default -> item
