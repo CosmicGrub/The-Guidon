@@ -356,6 +356,67 @@ async function clickCheckbox(label) {
     : bad(`Bold focus off again: focus-visible=${off.focusVisible} style=${off.style} width=${off.width}, expected solid 2px`);
 }
 
+// ---- Audit finding (ux-consistency): Focus tier confirm gate ----
+// This control is labeled only as a content filter, but store.setSetting's
+// own bidirectional sync also overwrites a PERSONAL account's saved rank
+// and clears its action plan. Seeded directly (not via the guest flow
+// above, since the confirm only applies to non-guest profiles) - a reload
+// is required since G.profile.current() caches, and a raw db.put alone
+// wouldn't be picked up.
+await page.evaluate(async () => {
+  await window.G.db.put("kv", { k: "guidon:profile:v1", v: {
+    onboardingComplete: true, mode: "personal", tier: "E5", rank: "SGT",
+    actionPlan: [{ id: "x", action: "test goal" }],
+  } });
+  // Seed settings.tierFilter directly onto the real "settings" kv row (the
+  // Focus tier <select>'s own read path) - store.setSetting's override
+  // also reads G.profile.current(), whose cache would still hold the
+  // guest session from the setup above until this same reload flushes it,
+  // so seeding goes straight to storage rather than through that wrapper.
+  const s = await window.G.db.get("kv", "settings");
+  const sv = Object.assign({}, s && s.v, { tierFilter: "E5" });
+  await window.G.db.put("kv", { k: "settings", v: sv });
+});
+await page.reload({ waitUntil: "load" });
+await page.waitForTimeout(700);
+await page.evaluate(() => { location.hash = "#/settings"; });
+await page.waitForTimeout(500);
+
+const tierSelect = page.locator('select[aria-label^="Focus tier"]');
+await tierSelect.waitFor({ state: "visible", timeout: 5000 });
+const tierBefore = await tierSelect.inputValue();
+tierBefore === "E5" ? ok("Focus tier seeded correctly (E5) before the confirm-gate test") : bad("seeded tier: " + tierBefore);
+
+await tierSelect.selectOption("E6");
+await page.waitForTimeout(300);
+const tierConfirmBox = page.locator(".gm-box", { hasText: /also updates your rank/ });
+(await tierConfirmBox.count()) > 0
+  ? ok("Changing Focus tier for a real profile opens a confirm naming the rank/action-plan consequence")
+  : bad("Focus tier confirm dialog did not appear");
+
+// Cancel: the select must revert, and nothing in storage should change.
+await page.locator(".gm-box button", { hasText: /Cancel/ }).click();
+await page.waitForTimeout(300);
+const tierAfterCancel = await tierSelect.inputValue();
+tierAfterCancel === "E5" ? ok("Cancelling the confirm reverts the select back to E5") : bad("select value after cancel: " + tierAfterCancel);
+const profileAfterCancel = await page.evaluate(async () => { const r = await window.G.db.get("kv", "guidon:profile:v1"); return r && r.v; });
+profileAfterCancel && profileAfterCancel.tier === "E5" && Array.isArray(profileAfterCancel.actionPlan) && profileAfterCancel.actionPlan.length === 1
+  ? ok("Cancelling leaves profile.tier and the action plan untouched")
+  : bad("profile after cancel: " + JSON.stringify(profileAfterCancel));
+
+// Confirm this time: the change and the disclosed consequence both happen for real.
+await tierSelect.selectOption("E6");
+await page.waitForTimeout(300);
+await page.locator(".gm-box button", { hasText: /Continue/ }).click();
+await page.waitForTimeout(300);
+const profileAfterConfirm = await page.evaluate(async () => { const r = await window.G.db.get("kv", "guidon:profile:v1"); return r && r.v; });
+profileAfterConfirm && profileAfterConfirm.tier === "E6"
+  ? ok("Confirming actually updates profile.tier to E6")
+  : bad("profile.tier after confirming: " + (profileAfterConfirm && profileAfterConfirm.tier));
+Array.isArray(profileAfterConfirm && profileAfterConfirm.actionPlan) && profileAfterConfirm.actionPlan.length === 0
+  ? ok("Confirming clears the action plan, exactly as the dialog disclosed it would")
+  : bad("action plan after confirming: " + JSON.stringify(profileAfterConfirm && profileAfterConfirm.actionPlan));
+
 const relevantNoise = noise.filter((n) => !/favicon/.test(n));
 relevantNoise.length === 0 ? ok("no console errors/warnings") : bad(relevantNoise.length + " console msg(s); first: " + relevantNoise[0]);
 

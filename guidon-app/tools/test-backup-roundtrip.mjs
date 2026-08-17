@@ -129,6 +129,34 @@ await page.waitForTimeout(300);
 const markerRestored = await page.evaluate((marker) => (document.body.textContent || "").includes(marker), MARKER);
 markerRestored ? ok("The marker goal is restored after the real import + reload round trip") : bad("marker goal was NOT restored after import");
 
+// ---- Diagnostics self-repair item 9: casualties named BEFORE the confirm ----
+// Previously importAll() validated AFTER the confirm was accepted, so a
+// Soldier committed to "yes, restore" before knowing the file was corrupted.
+// Build a second backup file with one row deliberately corrupted and
+// confirm the dialog names it up front, using the exact same validators
+// the real import will use.
+const corruptPath = path.join(os.tmpdir(), "guidon-test-backup-corrupt-" + Date.now() + ".json");
+const corrupted = JSON.parse(JSON.stringify(parsed));
+corrupted.stores.kv.push({ k: "streak:v1", v: "not-an-object" });
+corrupted.summary.kv = (corrupted.summary.kv || 0) + 1;
+fs.writeFileSync(corruptPath, JSON.stringify(corrupted));
+
+await page.evaluate(() => { location.hash = "#/profile"; });
+await page.waitForTimeout(400);
+await page.locator("button", { hasText: /Import backup/ }).click();
+await page.locator('input[type="file"]').setInputFiles(corruptPath);
+await page.waitForTimeout(300);
+const preConfirmText = await page.locator(".gm-box").textContent();
+/streak:v1/.test(preConfirmText || "") ? ok("The import confirm dialog names the corrupted key (streak:v1) BEFORE any commit, not after") : bad("confirm dialog did not name the corrupted row up front: " + (preConfirmText || "").slice(0, 300));
+/corrupted and will be skipped/.test(preConfirmText || "") ? ok("The dialog states plainly that the named item(s) will be skipped") : bad("confirm dialog did not explain the consequence: " + (preConfirmText || "").slice(0, 300));
+// Cancel rather than confirm - this stage only verifies the preview text,
+// the real restore path is already proven above.
+await page.locator(".gm-box button", { hasText: /Cancel/ }).click().catch(async () => {
+  await page.keyboard.press("Escape");
+});
+await page.waitForTimeout(200);
+fs.unlinkSync(corruptPath);
+
 const relevantNoise = noise.filter((n) => !/favicon/.test(n));
 relevantNoise.length === 0 ? ok("no console errors/warnings") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));
 

@@ -35,11 +35,25 @@ window.G = window.G || {};
   function update(elm) {
     if (!elm || !elm.isConnected) return;
     const overflows = elm.scrollWidth - elm.clientWidth > EDGE;
-    if (!overflows) { elm.removeAttribute("data-scroll"); return; }
-    const atEnd = elm.scrollLeft + elm.clientWidth >= elm.scrollWidth - EDGE;
-    const atStart = elm.scrollLeft <= EDGE;
-    // both = content hidden in both directions; more/back = one side only.
-    elm.setAttribute("data-scroll", atEnd ? "back" : (atStart ? "more" : "both"));
+    if (!overflows) elm.removeAttribute("data-scroll");
+    else {
+      const atEnd = elm.scrollLeft + elm.clientWidth >= elm.scrollWidth - EDGE;
+      const atStart = elm.scrollLeft <= EDGE;
+      // both = content hidden in both directions; more/back = one side only.
+      elm.setAttribute("data-scroll", atEnd ? "back" : (atStart ? "more" : "both"));
+    }
+
+    // Vertical counterpart (nav.nav only, in practice): at >=600px the side
+    // rail becomes a column and overflows top/bottom instead of left/right
+    // once enough groups are open - see the flex-shrink:0 fix on
+    // .nav-group-body that made real overflow (rather than silent clipping)
+    // possible in the first place. .segmented/.tabbar never scroll
+    // vertically, so this attribute simply never sets on them.
+    const vOverflows = elm.scrollHeight - elm.clientHeight > EDGE;
+    if (!vOverflows) { elm.removeAttribute("data-scroll-y"); return; }
+    const atBottom = elm.scrollTop + elm.clientHeight >= elm.scrollHeight - EDGE;
+    const atTop = elm.scrollTop <= EDGE;
+    elm.setAttribute("data-scroll-y", atBottom ? "back" : (atTop ? "more" : "both"));
   }
 
   const wired = new WeakSet();
