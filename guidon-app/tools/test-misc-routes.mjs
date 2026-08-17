@@ -218,6 +218,45 @@ countText2 === "3 results"
   ? ok(`Search "PT test": breakdown correctly attributes 1 hit to each of scenario/board/lesson ("${breakdownText2.trim()}")`)
   : bad(`Search "PT test": breakdown text was "${breakdownText2}"`);
 
+// Audit finding (rank/MOS scoping pass): typing an MOS code into the app's
+// own search box previously returned nothing, despite a 164-entry MOS
+// database existing two taps away - "92a" (case-insensitive, matches the
+// MOS code field) hits exactly one real entry (92A) verified directly
+// against the seed, with zero collision against either query above.
+await page.evaluate(() => { location.hash = "#/search"; });
+await page.waitForTimeout(500);
+const searchInput3 = page.locator('input[aria-label="Global search"]');
+await searchInput3.fill("92a");
+await page.waitForTimeout(300);
+const countText3 = await page.evaluate(() => (document.querySelector(".search-count") || {}).textContent || "");
+countText3 === "1 result"
+  ? ok('Search "92a": exactly 1 result, a real MOS entry the global search previously never indexed')
+  : bad(`Search "92a": count text was "${countText3}", expected "1 result"`);
+const hitTitle3 = await page.evaluate(() => (document.querySelector(".search-hit-title") || {}).textContent || "");
+hitTitle3.includes("92A")
+  ? ok(`Search "92a": the hit is the real MOS entry ("${hitTitle3}")`)
+  : bad(`Search "92a": hit title was "${hitTitle3}", expected it to include "92A"`);
+const sectionHead3 = await page.evaluate(() => (document.querySelector(".search-section-head") || {}).textContent || "");
+/MOS/.test(sectionHead3)
+  ? ok(`Search "92a": result is grouped under the MOS/Career section ("${sectionHead3}")`)
+  : bad(`Search "92a": section head was "${sectionHead3}", expected it to mention MOS`);
+// Clicking through should land on #/career with the code prefilled via
+// G.career._searchSeed - not just navigate there empty.
+await page.locator(".search-hit").first().click();
+await page.waitForTimeout(500);
+const hashAfterMosClick = await page.evaluate(() => location.hash);
+const careerInputValue = await page.evaluate(() => {
+  const inp = document.querySelector('input[aria-label="MOS code or title"], .panel input[type="text"]');
+  return inp ? inp.value : null;
+});
+hashAfterMosClick === "#/career"
+  ? ok('Search "92a": clicking the hit navigates to #/career')
+  : bad(`Search "92a": clicking the hit navigated to "${hashAfterMosClick}", expected "#/career"`);
+const careerResultVisible = await page.evaluate(() => (document.body.textContent || "").includes("Petroleum") || (document.body.textContent || "").includes("92A"));
+careerResultVisible
+  ? ok("Search \"92a\": the Career Center auto-prefills and renders the 92A result, not a blank search box")
+  : bad("Search \"92a\": Career Center did not show the 92A result after the search hand-off");
+
 // ============================================================
 // #/privacy -> real, substantive content (not just structural presence).
 // Already swept for CSP/contrast/a11y-tree structurally elsewhere; this

@@ -52,6 +52,16 @@ window.G = window.G || {};
       implemented: "Mechanics only - YMAV, YMAEAT, KDA, preferencing.",
       ask: "Your talent manager or career counsellor.", link: "#/assignments" },
 
+    // Audit finding (rank/MOS scoping pass): the MOS Career Center's own
+    // in-page disclaimer already says ASVAB minimums, IN/OUT-call status
+    // and SRB tables "change roughly every six months via MILPER message" -
+    // it was the single most self-described-perishable content in the app
+    // and the one domain this tracker never listed.
+    { area: "MOS shortage/growth and reclassification", short: "Career", asOf: "2026", volatility: "high",
+      basis: "FY26 shortage/growth and overstrength/restricted MOS lists; SRB Quality Tiered Incentive Program (HQDA EXORD 117-26). Superseded roughly every six months by a new IN/OUT-call MILPER message.",
+      implemented: "164 MOS entries, Warrant Officer feeder pathways, civilian-credential mapping, and the reclassification policy panel.",
+      ask: "Your Career Counselor / Installation Retention Office via RETAIN for the current IN/OUT call.", link: "#/career" },
+
     { area: "Transition and VA benefits", short: "ETS", asOf: "2026-07", volatility: "medium",
       basis: "BDD filing window and the DD-214 walkthrough; Continuation Pay window moved to 7 years on 1 Jan 2026.",
       implemented: "ETS timeline and the money section.",
@@ -64,7 +74,12 @@ window.G = window.G || {};
 
     { area: "Doctrine corpus", short: "Doctrine", asOf: "2026-07", volatility: "low",
       basis: "ADP/FM/ATP publications spanning many years. Doctrine changes slowly; the risk here is a superseded edition, not a wrong number.",
-      implemented: "336 entries and 1,014 board cards.",
+      // Spotted in passing during the rank/MOS scoping pass: this said
+      // "1,014 board cards", a leftover from before the Board Drill count
+      // grew to its current 1,069 (task history: "bump board-card
+      // regression baseline 1014 -> 1069") - this file exists specifically
+      // to catch stale numbers, so it should not be carrying one itself.
+      implemented: "336 entries and 1,069 board cards.",
       ask: "armypubs.army.mil for the current edition of any publication you are quoting.", link: "#/doctrine" },
   ];
 
