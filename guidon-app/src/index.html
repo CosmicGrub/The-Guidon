@@ -7297,8 +7297,12 @@ window.G = window.G || {};
     // has no dedicated segment yet (a real content gap, tracked separately),
     // so it falls back to the SGT view rather than guessing wrong. E5 also
     // falls to the SGT default since that's already correct for it.
+    // Hoisted out of the try block below (was a try-scoped const) so
+    // buildBody() further down - a closure over this function's scope -
+    // can also read it, for the MOS-credential cross-link near credMos.
+    let profile = null;
     try {
-      const profile = G.profile && G.profile.current ? await G.profile.current() : null;
+      profile = G.profile && G.profile.current ? await G.profile.current() : null;
       const settings = (store && store.settings && store.settings()) || {};
       const tier = (G.rankUtils && G.rankUtils.tierOf(profile, settings)) || null;
       if (tier === "E6") rank = "SSG";
@@ -7693,7 +7697,26 @@ window.G = window.G || {};
           "Entered directly \u2014 sources disagree on the exact per-semester-hour rate (1 vs. 2 points seen cited) and the governing DA Pam 600-25 text could not be confirmed for this build, so the app does not guess it. Take this figure from your PPW in IPPS-A."));
         body.appendChild(chk("Degree completed (timing rules apply)", "degree",
           "+20 points. For SSG the degree must have been earned while holding SGT; for SGT, after enlisting but before pinning SGT."));
-        body.appendChild(num("MOS-enhancing credentials (15 pts each)", "credMos", 0, 5, 1, "HRC-approved, directly related to your PMOS."));
+        const credMosCard = num("MOS-enhancing credentials (15 pts each)", "credMos", 0, 5, 1, "HRC-approved, directly related to your PMOS.");
+        // Audit finding (rank/MOS scoping pass): this field asked the
+        // Soldier to enter a count blind, with no visibility into WHICH
+        // credentials for their own MOS would actually count - despite
+        // the Career Center's own civilianCertsByCMF list (illustrative
+        // COOL-mapped starting points) already existing two taps away.
+        try {
+          const career3 = (G.store && G.store.career && G.store.career()) || null;
+          const mosEntry = (profile && profile.mos && career3) ? (career3.mos || []).find((m) => m.code.toUpperCase() === profile.mos.trim().toUpperCase()) : null;
+          const certs3 = (mosEntry && career3.civilianCertsByCMF) ? career3.civilianCertsByCMF[mosEntry.cmf] : null;
+          if (certs3 && certs3.length) {
+            const certHint = el("p.hint", { style: "margin-top:6px" });
+            certHint.appendChild(document.createTextNode("Illustrative candidates for " + mosEntry.code + ": " + certs3.slice(0, 4).join(", ") + (certs3.length > 4 ? ", …" : "") + " — "));
+            const openBtn = el("button.btn.tiny.ghost", { type: "button", text: "MOS Career Center" });
+            openBtn.addEventListener("click", () => { location.hash = "#/career"; });
+            certHint.appendChild(openBtn);
+            credMosCard.appendChild(certHint);
+          }
+        } catch (e) {}
+        body.appendChild(credMosCard);
         body.appendChild(num("Professional development credentials (10 each)", "credProf", 0, 5, 1, ""));
         body.appendChild(num("Personal credentials (5 each)", "credPers", 0, 10, 1, "All credentials together cap at 50. Mandatory MOS credentials earn nothing; recertification does not re-earn."));
         body.appendChild(num("CLEP / DANTES / ACT credit hours", "clepHours", 0, 60, 1, "2 points per credit hour."));
@@ -10310,6 +10333,9 @@ window.G = window.G || {};
   }
 
   G.learn = {
+    // One-shot flag "Show all courses" sets before re-rendering - see the
+    // fix comment at the top of render() below for why this exists.
+    _showAll: false,
     async render(mount) {
       util.clear(mount);
       const data = store.curriculum();
@@ -10326,10 +10352,31 @@ window.G = window.G || {};
       mount.appendChild(el("p.hint", { text: "Every topic at four depths — " + Object.values(labels).join(" → ") + ". Work up to \"By the Book\": the verbatim answer a board expects." + (data.asOf ? "  (As of " + data.asOf + ".)" : "") }));
 
       // ── Rank-aware filtering ──────────────────────────────────────────────
+      // Audit finding (rank/MOS scoping pass): re-implemented the exact
+      // profileTier-first-then-tierFilter formula G.rankUtils.tierOf()
+      // already canonicalizes — this module is literally the one
+      // G.rankUtils's own header comment (idp.js) names as the idiom's
+      // origin, but never switched to calling it.
+      //
+      // Spotted in passing while making this exact change: "Show all
+      // courses" below set a local `profileTier = null` and then called
+      // G.learn.render(mount) again — a real re-render, a NEW call of this
+      // same async function with its own fresh local scope, which
+      // immediately re-fetches the profile and recomputes the identical
+      // activeTier from scratch. The old local's reset was already
+      // discarded by the time the new render ran, so the button silently
+      // did nothing. Fixed with the same one-shot-flag-on-G pattern this
+      // build already uses for G.career._searchSeed/G.resources._searchSeed
+      // (read once, cleared immediately, so a later ordinary visit isn't
+      // permanently stuck on "all courses").
       let profileTier = null;
-      try { const p = G.profile && await G.profile.current(); if (p && p.tier) profileTier = p.tier; } catch(e) {}
-      const settingsTier = G.store && G.store.settings && G.store.settings().tierFilter;
-      const activeTier = profileTier || (settingsTier !== "all" ? settingsTier : null);
+      if (G.learn._showAll) {
+        G.learn._showAll = false;
+      } else {
+        try { const p = G.profile && await G.profile.current(); if (p && p.tier) profileTier = p.tier; } catch(e) {}
+      }
+      const settingsForTier4 = (G.store && G.store.settings && G.store.settings()) || {};
+      const activeTier = (G.rankUtils && G.rankUtils.tierOf({ tier: profileTier }, settingsForTier4)) || null;
 
       if (activeTier) {
         const rankBanner = el("div.panel.curr-rank-banner");
@@ -10337,7 +10384,7 @@ window.G = window.G || {};
         rankBanner.appendChild(el("h3", { text: getRankCourseLabel(activeTier) }));
         rankBanner.appendChild(el("p.hint", { text: getRankCourseContext(activeTier) }));
         const clearBtn = el("button.btn.ghost.sm", { text: "Show all courses", type: "button" });
-        clearBtn.addEventListener("click", () => { profileTier = null; G.learn.render(mount); });
+        clearBtn.addEventListener("click", () => { G.learn._showAll = true; G.learn.render(mount); });
         rankBanner.appendChild(clearBtn);
         mount.appendChild(rankBanner);
       }
@@ -13411,6 +13458,15 @@ window.G = window.G || {};
     PVT:"E1", PV2:"E2", PFC:"E3", SPC:"E4", CPL:"E4", SGT:"E5", SSG:"E6",
     SFC:"E7", MSG:"E8", "1SG":"E8", SGM:"E9", CSM:"E9", SMA:"E9",
   };
+  // Audit finding (rank/MOS scoping pass): extends the already-existing
+  // G.rankUtils (idp.js, loaded earlier — this file's own IIFE runs after
+  // it, so the object is guaranteed to exist by now) with the canonical
+  // RANKS list and its RANK_TO_TIER map, so a future consumer (leader.js's
+  // roster, for one) can validate/resolve a rank against the SAME list
+  // this wizard uses, instead of re-typing a third copy of it — the exact
+  // "same fact, independently maintained in N places" pattern this file's
+  // own RANK_TO_TIER comment above already describes going wrong once.
+  if (G.rankUtils) { G.rankUtils.RANKS = RANKS; G.rankUtils.RANK_TO_TIER = RANK_TO_TIER; }
 
   // ── IDB persistence ──────────────────────────────────────────────────────
   async function loadProfile() {
@@ -13460,6 +13516,37 @@ window.G = window.G || {};
         plan.push({ id:"rank-path", priority:"medium", category:"Rank & Career",
           action: "Know your path from " + tier + " — " + row.system + ": " + row.detail,
           route: "#/career", icon: "\u2191" });
+      }
+    } catch (e) {}
+    // Audit finding (rank/MOS scoping pass): this function already reads
+    // `career` immediately above for the rank-path item, but never checked
+    // profile.mos against career.fy26Snapshot - the Career Center's own
+    // FY26 shortage/growth and overstrength/restricted lists - so a
+    // Soldier in a shortage MOS got no nudge toward the SRB/accelerated-
+    // promotion angle anywhere the app's own "what to do next" engine
+    // surfaces, despite the data being one property read away. Entries in
+    // both lists carry trailing context ("13M (fires)", not a bare code),
+    // so this matches the same startsWith-style check career.js's own
+    // Warrant Officer feeder-pathway filter already uses, not exact
+    // equality.
+    try {
+      const mos = (profile.mos || "").trim().toUpperCase();
+      if (mos) {
+        const career2 = (G.store && G.store.career && G.store.career()) || null;
+        const snap = career2 && career2.fy26Snapshot;
+        if (snap) {
+          const inShortage = (snap.shortageGrowth || []).some((e) => typeof e === "string" && e.indexOf(mos) === 0);
+          const inOverstrength = !inShortage && (snap.overstrengthRestricted || []).some((e) => typeof e === "string" && e.indexOf(mos) === 0);
+          if (inShortage) {
+            plan.push({ id:"mos-shortage", priority:"medium", category:"Rank & Career",
+              action: "Your MOS (" + mos + ") is on the FY26 shortage/growth list \u2014 ask your career counselor about SRB and accelerated-promotion eligibility",
+              route:"#/career", icon:"\u2605" });
+          } else if (inOverstrength) {
+            plan.push({ id:"mos-overstrength", priority:"low", category:"Rank & Career",
+              action: "Your MOS (" + mos + ") is on the FY26 overstrength/restricted list \u2014 worth a conversation with your career counselor about reclass options",
+              route:"#/career", icon:"\u25cb" });
+          }
+        }
       }
     } catch (e) {}
     // A restored/hand-edited backup only validates the profile row's own
@@ -19970,7 +20057,17 @@ window.G = window.G || {};
     // IIFE that this render() (now itself async) no longer needs.
     let profile = null;
     try { profile = G.profile && G.profile.current ? await G.profile.current() : null; } catch (e) {}
-    if (profile && profile.mos) {
+    // A code carried over from Global Search (G.career._searchSeed, set by
+    // views.search's goTo() using the same one-shot pattern
+    // G.resources._searchSeed already uses) takes precedence over the
+    // profile's own saved MOS, so searching for a DIFFERENT MOS than the
+    // Soldier's own doesn't get silently overridden by the auto-prefill.
+    const searchSeed = G.career && G.career._searchSeed;
+    if (G.career) G.career._searchSeed = null;
+    if (searchSeed) {
+      input.value = searchSeed.toUpperCase();
+      drawResult(searchSeed);
+    } else if (profile && profile.mos) {
       input.value = profile.mos.toUpperCase();
       drawResult(profile.mos);
     } else {
@@ -21318,11 +21415,35 @@ window.G = window.G || {};
           "Changing your Focus tier also updates your saved rank (used across the app for “You Are Here” highlights) and clears your current action plan, since it's built around your rank. Continue?",
           { title: "Focus tier also updates your rank", okText: "Continue", danger: true }
         );
-        if (!ok) { tierSel.value = s.tierFilter || "all"; return; }
+        if (!ok) { tierSel.value = s.tierFilter || "all"; updateTierHint(); return; }
       }
       store.setSetting("tierFilter", newVal);
+      updateTierHint();
     });
     tierPanel.appendChild(tierSel);
+    // Audit finding (rank/MOS scoping pass): E7-E9 are real, selectable
+    // options here, but board questions/scenarios/doctrine are tier-tagged
+    // only through E6/SSG (verified: zero of 1,069 board questions and zero
+    // of 182 scenarios carry E7/E8/E9) - selecting a senior-NCO tier
+    // silently collapses the pool to whatever has no tier tag at all, with
+    // no disclosure anywhere in this UI. Same honesty this app already
+    // applies to IDP's own E7-E9 curriculum gap (see RANK_CURRICULUM_MAP's
+    // 'E7'/'E8'/'E9' entries and their header comment) - say what's
+    // genuinely here rather than let the option look like it works the
+    // same as every other tier.
+    const tierHint = el("p.hint", { style: "margin-top:6px" });
+    function updateTierHint() {
+      const v = tierSel.value;
+      if (v === "E7" || v === "E8" || v === "E9") {
+        tierHint.textContent = "Board questions, scenarios, and doctrine cards are tier-tagged only through E6/SSG today — at " + v + " you'll mainly see the content every rank shares (untagged items), not a smaller senior-NCO-specific set.";
+        tierHint.style.display = "";
+      } else {
+        tierHint.textContent = "";
+        tierHint.style.display = "none";
+      }
+    }
+    updateTierHint();
+    tierPanel.appendChild(tierHint);
     mount.appendChild(tierPanel);
 
     // forms fill mode
@@ -21489,7 +21610,7 @@ window.G = window.G || {};
     mount.appendChild(el("div.section-title", {}, [el("h2", { text: "Search" }), el("div.rule")]));
 
     const panel = el("div.panel");
-    panel.appendChild(el("p.hint", { text: "Search across all scenarios, doctrine, board questions, and curriculum lessons. Use filters to narrow results." }));
+    panel.appendChild(el("p.hint", { text: "Search across all scenarios, doctrine, board questions, curriculum lessons, and MOS/career data. Use filters to narrow results." }));
 
     // Search input
     const box = el("div.search-box");
@@ -21499,10 +21620,10 @@ window.G = window.G || {};
     panel.appendChild(box);
 
     // Type filter chips
-    const TYPES = ["all","scenario","board","doctrine","lesson","resource"];
-    const TYPE_ICON = { all:"⊞", scenario:"▶", board:"★", doctrine:"▤", lesson:"📖", resource:"🧭" };
-    const TYPE_COLOR = { scenario:"var(--ink-amber)", board:"var(--ink-cyan)", doctrine:"var(--ink-violet)", lesson:"var(--ink-green)", resource:"var(--ink-red)", all:"var(--text-dim)" };
-    const TYPE_LABEL = { all:"All", scenario:"Scenarios", board:"Board Q", doctrine:"Doctrine", lesson:"Lessons", resource:"Resources" };
+    const TYPES = ["all","scenario","board","doctrine","lesson","resource","career"];
+    const TYPE_ICON = { all:"⊞", scenario:"▶", board:"★", doctrine:"▤", lesson:"📖", resource:"🧭", career:"🎖" };
+    const TYPE_COLOR = { scenario:"var(--ink-amber)", board:"var(--ink-cyan)", doctrine:"var(--ink-violet)", lesson:"var(--ink-green)", resource:"var(--ink-red)", career:"var(--ink-blue)", all:"var(--text-dim)" };
+    const TYPE_LABEL = { all:"All", scenario:"Scenarios", board:"Board Q", doctrine:"Doctrine", lesson:"Lessons", resource:"Resources", career:"MOS/Career" };
 
     let activeFilter = "all";
     const filterBar = el("div.search-filters");
@@ -21574,8 +21695,9 @@ window.G = window.G || {};
       const doc  = store.doctrine ? store.doctrine("") : [];
       const cur  = store.curriculum ? store.curriculum() : {};
       const res  = store.resources ? store.resources() : { categories: [] };
+      const car  = store.career ? store.career() : { mos: [] };
 
-      const allHits = { scenario:[], board:[], doctrine:[], lesson:[], resource:[] };
+      const allHits = { scenario:[], board:[], doctrine:[], lesson:[], resource:[], career:[] };
 
       if (activeFilter === "all" || activeFilter === "scenario") {
         sc.forEach((s) => {
@@ -21632,6 +21754,25 @@ window.G = window.G || {};
         });
       }
 
+      // Audit finding (rank/MOS scoping pass): typing an MOS code or title
+      // ("92A", "Infantry") into the app's own search box previously
+      // returned nothing, despite a 164-entry MOS database existing two
+      // taps away at #/career - this was the one content type Global
+      // Search never indexed at all. mosSeed carries the matched code
+      // through to career.js via the same G.career._searchSeed one-shot
+      // handoff G.resources._searchSeed already established for resources.
+      if (activeFilter === "all" || activeFilter === "career") {
+        (car.mos || []).forEach((m) => {
+          const cmfObj = (car.cmfs || []).find((c) => c.id === m.cmf);
+          const cmfName = cmfObj ? cmfObj.name : "";
+          const hay = ((m.code||"")+" "+(m.title||"")+" "+cmfName+" "+(m.notes||"")).toLowerCase();
+          if (hay.includes(ql)) {
+            allHits.career.push({ type:"career", id:m.code, title:m.code+" — "+m.title,
+              sub:cmfName, meta:m.status && m.status !== "normal" ? m.status : "", route:"#/career", mosSeed:m.code });
+          }
+        });
+      }
+
       const totalHits = Object.values(allHits).reduce((s,a) => s+a.length, 0);
       if (!totalHits) {
         resultsDiv.appendChild(el("div.search-empty", {
@@ -21649,12 +21790,13 @@ window.G = window.G || {};
       if (allHits.doctrine.length) parts.push(allHits.doctrine.length+" doctrine");
       if (allHits.lesson.length) parts.push(allHits.lesson.length+" lesson"+(allHits.lesson.length===1?"":"s"));
       if (allHits.resource.length) parts.push(allHits.resource.length+" resource"+(allHits.resource.length===1?"":"s"));
+      if (allHits.career.length) parts.push(allHits.career.length+" MOS/career");
       if (parts.length > 1) header.appendChild(el("span.search-breakdown", { text:" ("+parts.join(", ")+")" }));
       resultsDiv.appendChild(header);
 
       // Render by group (sections)
-      const SECTION_ORDER = ["scenario","board","doctrine","lesson","resource"];
-      const SECTION_LABEL = { scenario:"Scenarios", board:"Board Questions", doctrine:"Doctrine", lesson:"Lessons", resource:"Resources" };
+      const SECTION_ORDER = ["scenario","board","doctrine","lesson","resource","career"];
+      const SECTION_LABEL = { scenario:"Scenarios", board:"Board Questions", doctrine:"Doctrine", lesson:"Lessons", resource:"Resources", career:"MOS / Career" };
       const MAX_PER = activeFilter === "all" ? 8 : 40;
 
       SECTION_ORDER.forEach((type) => {
@@ -21694,6 +21836,9 @@ window.G = window.G || {};
             }
             if (type === "resource" && h.resSeed && G.resources) {
               G.resources._searchSeed = h.resSeed;
+            }
+            if (type === "career" && h.mosSeed && G.career) {
+              G.career._searchSeed = h.mosSeed;
             }
             location.hash = h.route;
           };

@@ -52,10 +52,33 @@ await page.waitForTimeout(600);
 let n = await page.evaluate(() => document.querySelectorAll('input[aria-label^="Rank for roster entry"]').length);
 n === 1 ? ok("Add Soldier creates a roster entry") : bad("expected 1 entry, got " + n);
 
+// Audit finding (rank/MOS scoping pass): rank was free text with no link
+// to the app's own canonical RANKS list, and there was no MOS field on a
+// roster entry at all - both fixed with real <datalist> options, checked
+// here rather than just assuming the wiring is correct.
+const datalists = await page.evaluate(() => ({
+  rankOptionCount: document.querySelectorAll("#roster-ranks-list option").length,
+  rankHasSGT: !!document.querySelector('#roster-ranks-list option[value="SGT"]'),
+  mosOptionCount: document.querySelectorAll("#roster-mos-list option").length,
+  mosHas11B: !!document.querySelector('#roster-mos-list option[value="11B"]'),
+  rankInputLinked: document.querySelector('input[aria-label^="Rank for roster entry"]')?.getAttribute("list"),
+  mosInputLinked: document.querySelector('input[aria-label^="MOS for roster entry"]')?.getAttribute("list"),
+}));
+(datalists.rankOptionCount === 13 && datalists.rankHasSGT)
+  ? ok("Rank field is backed by a <datalist> of the app's canonical 13 ranks (SGT present)")
+  : bad("rank datalist: " + JSON.stringify(datalists));
+(datalists.mosOptionCount === 164 && datalists.mosHas11B)
+  ? ok("MOS field is backed by a <datalist> of all 164 real MOS entries (11B present)")
+  : bad("MOS datalist: " + JSON.stringify(datalists));
+(datalists.rankInputLinked === "roster-ranks-list" && datalists.mosInputLinked === "roster-mos-list")
+  ? ok("Both inputs are actually wired to their datalists via list=")
+  : bad("input list= attributes: " + JSON.stringify(datalists));
+
 // --- fill it, with a counselling date 45 days old (30-day cadence) ---
 await page.evaluate((d) => {
   const set = (sel, val) => { const e = document.querySelector(sel); e.value = val; e.dispatchEvent(new Event("change", { bubbles: true })); };
   set('input[aria-label^="Rank for roster entry"]', "SPC");
+  set('input[aria-label^="MOS for roster entry"]', "68W");
   set('input[aria-label^="Initials or roster number"]', "J.R.");
   set('input[aria-label^="Last counselling for roster entry"]', d);
 }, daysAgo(45));
@@ -72,9 +95,12 @@ flagged.named ? ok("entry appears in the Needs attention summary") : bad("summar
 await page.reload({ waitUntil: "load" });
 await page.waitForTimeout(1400);
 await go();
-const survived = await page.evaluate(() =>
-  (document.querySelector('input[aria-label^="Initials or roster number"]') || {}).value);
-survived === "J.R." ? ok("roster survives a reload") : bad("after reload initials were " + JSON.stringify(survived));
+const survived = await page.evaluate(() => ({
+  initials: (document.querySelector('input[aria-label^="Initials or roster number"]') || {}).value,
+  mos: (document.querySelector('input[aria-label^="MOS for roster entry"]') || {}).value,
+}));
+survived.initials === "J.R." ? ok("roster survives a reload") : bad("after reload initials were " + JSON.stringify(survived.initials));
+survived.mos === "68W" ? ok("MOS survives a reload too (68W)") : bad("after reload MOS was " + JSON.stringify(survived.mos));
 
 // --- Remove must confirm, and dismissing must abort ---
 await clickText(/^remove$/);

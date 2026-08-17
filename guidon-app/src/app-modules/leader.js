@@ -180,13 +180,43 @@ window.G = window.G || {};
         const sol = entry.sol, idx = entry.idx;
         const card = el("div.panel", { style: "margin-bottom:10px" });
         const head = el("div", { style: "display:flex;gap:8px;align-items:center;flex-wrap:wrap" });
+        // Audit finding (rank/MOS scoping pass): rank was free text with no
+        // link to the app's own canonical RANKS list (G.rankUtils, shared
+        // with onboarding) - a "rank" that can't resolve to a tier can't
+        // drive anything tier-aware elsewhere in the app. list= keeps this
+        // a real text input (an existing hand-typed value still displays
+        // and edits fine) rather than swapping in a <select> that could
+        // silently reject data already saved before this change.
+        const ranksListId = "roster-ranks-list";
+        if (!document.getElementById(ranksListId) && G.rankUtils && G.rankUtils.RANKS) {
+          const dl = el("datalist", { id: ranksListId });
+          G.rankUtils.RANKS.forEach(function (r) { dl.appendChild(el("option", { value: r })); });
+          document.body.appendChild(dl);
+        }
         const rankIn = el("input.ob-input", { type: "text", value: sol.rank || "", placeholder: "Rank",
+          list: (G.rankUtils && G.rankUtils.RANKS) ? ranksListId : null,
           "aria-label": "Rank for roster entry " + (idx + 1), style: "width:90px" });
         const nameIn = el("input.ob-input", { type: "text", value: sol.name || "", placeholder: "Initials",
           "aria-label": "Initials or roster number for entry " + (idx + 1), style: "flex:1;min-width:120px" });
-        rankIn.addEventListener("change", function () { sol.rank = rankIn.value.trim(); persist(); buildSummary(); });
+        // Same MOS <datalist> pattern the onboarding role step and
+        // career.js's own lookup already use - unlike rank, MOS never
+        // existed on a roster entry at all, so a squad leader had no way
+        // to see which of their Soldiers were in a shortage MOS or open
+        // the Career Center for one of them specifically.
+        const mosListId = "roster-mos-list";
+        if (!document.getElementById(mosListId) && G.store && G.store.career) {
+          const career = G.store.career() || { mos: [] };
+          const mdl = el("datalist", { id: mosListId });
+          (career.mos || []).forEach(function (m) { mdl.appendChild(el("option", { value: m.code, text: m.code + " — " + m.title })); });
+          document.body.appendChild(mdl);
+        }
+        const mosIn = el("input.ob-input", { type: "text", value: sol.mos || "", placeholder: "MOS",
+          list: mosListId, maxlength: 6,
+          "aria-label": "MOS for roster entry " + (idx + 1), style: "width:80px" });
+        rankIn.addEventListener("change", function () { sol.rank = rankIn.value.trim().toUpperCase(); persist(); buildSummary(); });
         nameIn.addEventListener("change", function () { sol.name = nameIn.value.trim(); persist(); buildSummary(); });
-        head.appendChild(rankIn); head.appendChild(nameIn);
+        mosIn.addEventListener("change", function () { sol.mos = mosIn.value.trim().toUpperCase(); persist(); });
+        head.appendChild(rankIn); head.appendChild(mosIn); head.appendChild(nameIn);
 
         const del = el("button.btn.sm.ghost", { type: "button", text: "Remove", "aria-label": "Remove roster entry " + (idx + 1) });
         del.addEventListener("click", async function () {
@@ -242,7 +272,7 @@ window.G = window.G || {};
     const controls = el("div.panel", { style: "margin-bottom:10px" });
     const addBtn = el("button.btn.primary", { type: "button", text: "+ Add Soldier", style: "margin-right:6px" });
     addBtn.addEventListener("click", async function () {
-      roster.push({ rank: "", name: "", counseled: "", aft: "", wpn: "", ncoer: "" });
+      roster.push({ rank: "", name: "", mos: "", counseled: "", aft: "", wpn: "", ncoer: "" });
       await persist(); buildSummary(); buildList();
     });
     const clrBtn = el("button.btn.sm.ghost", { type: "button", text: "Clear roster" });

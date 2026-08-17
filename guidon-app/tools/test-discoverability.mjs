@@ -56,6 +56,20 @@ freshnessLabel !== null ? ok("found the #/currency nav button") : bad("#/currenc
 freshnessLabel && /Freshness/i.test(freshnessLabel) ? ok("#/currency nav label reads 'Freshness'") : bad("#/currency nav label is not 'Freshness': " + freshnessLabel);
 freshnessLabel && /Currency/i.test(freshnessLabel) ? bad("#/currency nav label still contains the old text 'Currency': " + freshnessLabel) : ok("no lingering 'Currency' text in the nav label");
 
+// ---- Audit finding (rank/MOS scoping pass): the Career Center's own
+// in-page disclaimer says its MOS shortage/growth/SRB data changes
+// roughly every six months - the single most self-described-perishable
+// content in the app - yet this tracker never listed it as a domain. ----
+await page.evaluate(() => { location.hash = "#/currency"; });
+await page.waitForTimeout(500);
+const careerDomainText = await page.evaluate(() => document.body.textContent || "");
+/MOS shortage.growth and reclassification/.test(careerDomainText)
+  ? ok("Freshness tracker now lists the MOS/Career domain")
+  : bad("Freshness tracker body did not mention the MOS/Career domain");
+/RETAIN/.test(careerDomainText) && /Career Counselor/i.test(careerDomainText)
+  ? ok("Freshness tracker's Career entry names who to ask (Career Counselor / RETAIN)")
+  : bad("Freshness tracker's Career entry is missing the 'who to ask' guidance");
+
 // ---- Self-Test -> Diagnostics relabel ----
 const diagLabel = await page.evaluate(() => {
   const el = document.querySelector('button[data-hash="#/selftest"]');

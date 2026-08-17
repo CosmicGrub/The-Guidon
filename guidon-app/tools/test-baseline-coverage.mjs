@@ -250,6 +250,37 @@ await page.waitForTimeout(400);
 const wentToBoard = await page.evaluate(() => location.hash === "#/board" && (document.querySelector("h2") || {}).textContent === "Board Prep");
 wentToBoard ? ok("clicking 'Calculate it in the PPW' navigates to #/board and renders 'Board Prep'") : bad("navigation from #/fitness's PPW button failed");
 
+// Audit finding (rank/MOS scoping pass): the page never checked the
+// Soldier's own profile.mos against either MOS list, so a Soldier reading
+// it had to eyeball a wall of codes to find their own. "11B" (Infantry) is
+// on the AFT combat-standard list but not the CFT-extra list; "12D" is on
+// both (CFT-extra is additive, not exclusive with the combat list per the
+// module's own header comment); "42A" is on neither.
+async function checkFitnessMos(mos, expectSubstr) {
+  // A raw db.put() to guidon:profile:v1 is silently ignored here: this
+  // file's session is a guest session throughout, and G.profile.current()
+  // prefers its in-memory _cache (populated once at guest onboarding, never
+  // written to storage) over ever re-reading IndexedDB. A real personal
+  // profile + reload is required, matching test-ppw.mjs/test-career.mjs.
+  await page.evaluate(async (m) => {
+    await window.G.db.put("kv", { k: "guidon:profile:v1", v: {
+      onboardingComplete: true, mode: "personal", tier: "E5", rank: "SGT", mos: m,
+    } });
+  }, mos);
+  await page.reload({ waitUntil: "load" });
+  await page.waitForTimeout(700);
+  await goto("#/fitness");
+  const bodyText = await page.evaluate(() => document.body.textContent || "");
+  const hasLabel = bodyText.includes("Your MOS (" + mos + ")");
+  const hasExpected = expectSubstr.test(bodyText);
+  (hasLabel && hasExpected)
+    ? ok(`#/fitness personalizes for MOS ${mos} (label present, expected text matched)`)
+    : bad(`#/fitness MOS ${mos}: label=${hasLabel}, expected text matched=${hasExpected}`);
+}
+await checkFitnessMos("11B", /AFT combat standard.*AND the Combat Field Test list/);
+await checkFitnessMos("12D", /On the Combat Field Test list\. The AFT general standard/);
+await checkFitnessMos("42A", /Not on either list/);
+
 /* ========================================================================
  * #/assignments (G.assignments, src/app-modules/assignments.js)
  * Pure reference content; the "Related" button row (~lines 72-80) does

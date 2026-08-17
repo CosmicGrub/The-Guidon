@@ -124,6 +124,38 @@ window.G = window.G || {};
       "24 in total for the CFT. If you have seen '21 or 24' argued about, that is the answer - two different tests with two different lists, not a contradiction. MOS designations are the most perishable thing on this page; verify yours against the current directive before making a career decision on it." }));
     mount.appendChild(lists);
 
+    // Audit finding (rank/MOS scoping pass): this page never checked the
+    // Soldier's own profile.mos against either list, even though both are
+    // plain arrays of the same MOS-code strings the Career Center already
+    // uses - a Soldier reading this page had to eyeball a wall of codes to
+    // find their own.
+    try {
+      const profile = G.profile && G.profile.current ? await G.profile.current() : null;
+      const mos = profile && profile.mos ? profile.mos.trim().toUpperCase() : "";
+      if (mos) {
+        const onAft = AFT_COMBAT_MOS.indexOf(mos) !== -1;
+        // CFT_EXTRA_MOS holds only the 3 codes ADDITIONAL to the AFT
+        // combat list, per this module's own header comment ("Combat
+        // Field Test - the same 21, plus 3"): the real 24-member CFT
+        // roster is AFT_COMBAT_MOS UNION CFT_EXTRA_MOS, not CFT_EXTRA_MOS
+        // alone. Checking only CFT_EXTRA_MOS here first missed the CFT for
+        // all 21 AFT-combat MOSs (e.g. told an 11B "the CFT does not apply
+        // to your MOS", which is exactly backwards).
+        const onCftOnly = CFT_EXTRA_MOS.indexOf(mos) !== -1;
+        const onCft = onAft || onCftOnly;
+        const you = el("div.panel", { style: "margin-bottom:10px;border-left:3px solid " + (onAft || onCft ? "var(--red)" : "var(--green)") });
+        you.appendChild(el("div.eyebrow", { text: "Your MOS (" + mos + ")" }));
+        if (onAft) {
+          you.appendChild(el("p", { text: "On the AFT combat standard (350 minimum, sex-neutral) AND the Combat Field Test list. You take both tests, annually." }));
+        } else if (onCftOnly) {
+          you.appendChild(el("p", { text: "On the Combat Field Test list. The AFT general standard (not combat standard) applies to your MOS." }));
+        } else {
+          you.appendChild(el("p", { text: "Not on either list — the AFT general standard applies. Verify against your unit's test calendar; this list is the most perishable thing on this page." }));
+        }
+        mount.appendChild(you);
+      }
+    } catch (e) {}
+
     mount.appendChild(rows("Where this comes from", [
       ["AR 600-8-19 (6 March 2026), table 3-4", "AFT aggregate score to promotion points."],
       ["Army Directive 2026-07", "Combat Field Test: events, uniform, time cap, phasing."],

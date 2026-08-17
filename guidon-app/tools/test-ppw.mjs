@@ -137,6 +137,52 @@ czAfterRerender === CZ_MONTHS
   ? ok("Full PPW worksheet field survives leaving and re-entering the view (persisted to IndexedDB, not just in-memory)")
   : bad("combat-zone months after re-render: expected " + CZ_MONTHS + ", got " + czAfterRerender);
 
+// ---- Audit finding (rank/MOS scoping pass): the "MOS-enhancing
+// credentials" field asked the Soldier to enter a count blind, with no
+// visibility into which credentials for their own MOS would actually
+// count - despite the Career Center's own civilianCertsByCMF list
+// (11B -> CMF 11 -> 3 real illustrative credentials, verified against the
+// seed directly) already existing two taps away. A guest session's
+// profile lives only in an in-memory _cache and is never written to
+// IndexedDB (G.profile.current() prefers that cache and never even reads
+// storage while it's populated), so a raw db.put() to guidon:profile:v1
+// is silently ignored for the rest of this run - a real personal profile
+// + reload is required, matching the pattern test-career.mjs's own
+// profile.mos prefill test and test-settings-toggles.mjs's Focus-tier
+// confirm-gate test both already establish. ----
+await page.evaluate(async () => {
+  await window.G.db.put("kv", { k: "guidon:profile:v1", v: {
+    onboardingComplete: true, mode: "personal", tier: "E5", rank: "SGT", mos: "11B",
+  } });
+});
+await page.reload({ waitUntil: "load" });
+await page.waitForTimeout(1000);
+await page.evaluate(() => { location.hash = "#/board"; });
+await page.waitForTimeout(400);
+await page.locator("button", { hasText: /^Points$/ }).click();
+await page.waitForTimeout(300);
+await page.locator("button", { hasText: /^Full PPW$/ }).click();
+await page.waitForTimeout(300);
+const credHintText = await page.evaluate(() => {
+  const inp = document.querySelector('input[aria-label="MOS-enhancing credentials (15 pts each)"]');
+  const card = inp ? inp.closest(".card") : null;
+  return card ? card.textContent : null;
+});
+(credHintText && /Illustrative candidates for 11B/.test(credHintText) && /OSHA 10\/30/.test(credHintText))
+  ? ok("Full PPW: MOS-enhancing credentials field shows the real, MOS-specific candidate list for 11B (CMF 11)")
+  : bad("MOS-enhancing credentials card text: " + credHintText);
+const credOpenBtn = page.locator('input[aria-label="MOS-enhancing credentials (15 pts each)"]').locator("xpath=ancestor::div[contains(@class,'card')]//button", { hasText: /MOS Career Center/ });
+if (await credOpenBtn.count()) {
+  await credOpenBtn.click();
+  await page.waitForTimeout(400);
+  const hashAfterCredClick = await page.evaluate(() => location.hash);
+  hashAfterCredClick === "#/career"
+    ? ok("Full PPW: the credentials card's 'MOS Career Center' button actually navigates there")
+    : bad("hash after clicking MOS Career Center button: " + hashAfterCredClick);
+} else {
+  bad("MOS Career Center button not found on the credentials card");
+}
+
 const relevantNoise = noise.filter((n) => !/favicon/.test(n));
 relevantNoise.length === 0 ? ok("no console errors/warnings") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));
 

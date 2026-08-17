@@ -87,6 +87,38 @@ prefillVal === "19D" ? ok("profile.mos ('19D') auto-prefills the search input") 
   ? ok("the prefilled MOS renders its result card without any typing")
   : bad("prefilled result card missing/incorrect for 19D");
 
+// --- Audit finding (rank/MOS scoping pass): generateActionPlan() (profile.js)
+// never read profile.mos, so a Soldier in an FY26-shortage MOS got no nudge
+// toward the SRB/accelerated-promotion angle anywhere the app's own "what
+// to do next" engine surfaces. "13F" is confirmed above (line 52) to carry
+// the 'shortage' status the Career Center itself displays; the action-plan
+// nudge needs to reuse that exact same underlying fy26Snapshot data. A real
+// (non-guest) personal profile with no existing actionPlan is required, so
+// the Profile screen's own auto-regenerate path runs. ---
+await page.evaluate(async () => {
+  await window.G.db.put("kv", { k: "guidon:profile:v1", v: {
+    onboardingComplete: true, mode: "personal", tier: "E5", rank: "SGT",
+    mos: "13F", actionPlan: [],
+  } });
+});
+await page.reload({ waitUntil: "load" });
+await page.waitForTimeout(700);
+await page.evaluate(() => { location.hash = "#/profile"; });
+await page.waitForTimeout(700);
+const planText = await page.evaluate(() => {
+  const panel = [...document.querySelectorAll(".eyebrow")].find((n) => /Action Plan/i.test(n.textContent || ""));
+  return panel ? panel.closest(".panel").textContent : null;
+});
+(planText && /13F/.test(planText) && /shortage.growth/i.test(planText) && /SRB/.test(planText))
+  ? ok("A Soldier in a shortage MOS (13F) gets an Action Plan item naming it, the FY26 shortage/growth list, and SRB")
+  : bad("Action Plan panel text: " + planText);
+const planItemRoute = await page.evaluate(() => {
+  const items = [...document.querySelectorAll(".ob-plan-item")];
+  const mosItem = items.find((n) => /13F/.test(n.textContent || ""));
+  return mosItem ? true : false;
+});
+planItemRoute ? ok("The MOS-shortage item renders as a real clickable Action Plan row, not just backing data") : bad("MOS-shortage item did not render as a plan row");
+
 noise.length === 0 ? ok("no console errors/warnings") : bad(noise.length + " console msgs; first: " + noise[0]);
 
 await browser.close();

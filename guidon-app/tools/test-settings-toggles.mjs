@@ -477,6 +477,52 @@ async function clickCheckbox(label) {
     : bad(`Content density 'Standard' revert: .card padding was "${cardBack}", expected "${cardBefore}"`);
 }
 
+// ============================================================
+// 8) FOCUS TIER E7-E9 DISCLOSURE - segmented <select> (Appearance panel).
+//    Real fix under test: zero board questions/scenarios are tagged past
+//    E6, so selecting a senior-NCO tier used to silently collapse the
+//    content pool with no indication anywhere in this UI. A guest session
+//    (in scope here, unlike a personal profile) never triggers the
+//    separate rank-change confirm dialog, so tierSel.value changes apply
+//    immediately - exactly what this check needs.
+// ============================================================
+{
+  const tierSel = page.locator('select[aria-label^="Focus tier"]');
+  const hintText = () => page.evaluate(() => {
+    const sel = document.querySelector('select[aria-label^="Focus tier"]');
+    const hint = sel ? sel.closest(".panel").querySelector("p.hint") : null;
+    return hint ? hint.textContent : null;
+  });
+
+  await tierSel.selectOption("E5");
+  await page.waitForTimeout(200);
+  const hintAtE5 = await hintText();
+  (!hintAtE5 || hintAtE5 === "")
+    ? ok("Focus tier E5: no E7-E9 disclosure shown (board/scenario content is tagged through E6)")
+    : bad("Focus tier E5: unexpected hint text: " + hintAtE5);
+
+  await tierSel.selectOption("E7");
+  await page.waitForTimeout(200);
+  const hintAtE7 = await hintText();
+  (hintAtE7 && /tagged only through E6\/SSG/.test(hintAtE7) && hintAtE7.includes("E7"))
+    ? ok("Focus tier E7: discloses that board/scenario/doctrine content tops out at E6")
+    : bad("Focus tier E7: hint text was " + JSON.stringify(hintAtE7));
+
+  await tierSel.selectOption("E9");
+  await page.waitForTimeout(200);
+  const hintAtE9 = await hintText();
+  (hintAtE9 && hintAtE9.includes("E9"))
+    ? ok("Focus tier E9: disclosure names the actually-selected tier (E9), not a stale E7")
+    : bad("Focus tier E9: hint text was " + JSON.stringify(hintAtE9));
+
+  await tierSel.selectOption("all");
+  await page.waitForTimeout(200);
+  const hintAtAll = await hintText();
+  (!hintAtAll || hintAtAll === "")
+    ? ok("Focus tier 'All ranks': disclosure hides again")
+    : bad("Focus tier 'All ranks': unexpected hint text: " + hintAtAll);
+}
+
 // ---- Audit finding (ux-consistency): Focus tier confirm gate ----
 // This control is labeled only as a content filter, but store.setSetting's
 // own bidirectional sync also overwrites a PERSONAL account's saved rank
