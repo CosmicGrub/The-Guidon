@@ -8571,6 +8571,32 @@ window.G = window.G || {};
       return MAP[d] || "intermediate";
     },
     loadAllSrs,
+    // Audit finding (new-features): Board Drill's own SRS/leech data - the
+    // richest "what does this Soldier not know" signal in the app - never
+    // reached Home's weak-areas banner or Progress's priority queue, both
+    // of which only ever read boardQuiz:best (Quiz mode scores). A Soldier
+    // who studies mainly via Board Drill got an empty or misleading panel
+    // despite this data existing one screen away. Reuses the same batched
+    // loadAllSrs() cursor scan (task #197) rather than a new one.
+    async weakCategoriesFromSrs() {
+      try {
+        const questions = (store && store.boardQuestions && store.boardQuestions()) || [];
+        if (!questions.length) return [];
+        const srsMap = await loadAllSrs(questions.map((q) => q.id));
+        const byCat = {};
+        questions.forEach((q) => {
+          const srs = srsMap[q.id];
+          const cat = q.category || "General";
+          if (!byCat[cat]) byCat[cat] = { category: cat, total: 0, leeches: 0, misses: 0 };
+          byCat[cat].total++;
+          if (G.board.isLeech(srs)) byCat[cat].leeches++;
+          byCat[cat].misses += (srs && srs.misses) || 0;
+        });
+        return Object.values(byCat)
+          .filter((c) => c.leeches > 0)
+          .sort((a, b) => b.leeches - a.leeches || b.misses - a.misses);
+      } catch (e) { return []; }
+    },
     render(mount) {
       util.clear(mount);
       const seg = el("div.segmented");
@@ -8758,11 +8784,25 @@ window.G = window.G || {};
             const best = byCat[c];
             if (best != null && best < 80) weak.push({ cat: c, score: best });
           }
+          // Audit finding (new-features): Quiz-mode scores are only one
+          // signal - a Soldier who studies mainly via Board Drill (not
+          // Quiz mode) got an empty or misleading panel despite Board
+          // Drill's own SRS/leech data being the richest "what does this
+          // Soldier not know" signal in the app, one screen away. Merged
+          // in additively - never overrides a category already flagged by
+          // its quiz score, shown with a leech count instead of a
+          // percentage since it's a different signal, not a fabricated one.
+          try {
+            const weakSrs = G.board && G.board.weakCategoriesFromSrs ? await G.board.weakCategoriesFromSrs() : [];
+            const alreadyFlagged = new Set(weak.map((w) => w.cat));
+            weakSrs.forEach((w) => { if (!alreadyFlagged.has(w.category)) weak.push({ cat: w.category, leeches: w.leeches }); });
+          } catch (e) {}
           if (weak.length) {
-            weak.sort((a, b) => a.score - b.score);
+            weak.sort((a, b) => (a.score != null ? a.score : 101) - (b.score != null ? b.score : 101));
             const panel = el("div.panel", { style: "margin-bottom:12px;border-left:3px solid var(--amber)" });
             panel.appendChild(el("div.eyebrow", { text: "Weak areas to hit before your board" }));
-            weak.slice(0, 6).forEach((w) => panel.appendChild(el("div.stat", {}, [el("span.k", { text: w.cat }), el("span.v", { text: w.score + "%", style: "color:var(--amber)" })])));
+            weak.slice(0, 6).forEach((w) => panel.appendChild(el("div.stat", {}, [el("span.k", { text: w.cat }),
+              el("span.v", { text: w.score != null ? w.score + "%" : w.leeches + " leech" + (w.leeches === 1 ? "" : "es"), style: "color:var(--amber)" })])));
             wrap.appendChild(panel);
           }
         })();
@@ -9326,6 +9366,24 @@ window.G = window.G || {};
             onclick: () => { location.hash = "#/board"; setTimeout(() => G.board && G.board._openReadiness && G.board._openReadiness(), 100); }
           });
         }
+
+        // 4. Board Drill's own per-category leech data - audit finding
+        // (new-features): a Soldier who studies mainly via Board Drill
+        // (not the LRM/Train scenarios checks 1-3 above) got nothing here
+        // naming a SPECIFIC weak category, only the generic aggregate
+        // readiness % in check 3. Names the single worst category instead.
+        try {
+          const weakCats = G.board && G.board.weakCategoriesFromSrs ? await G.board.weakCategoriesFromSrs() : [];
+          if (weakCats.length) {
+            const worst = weakCats[0];
+            priorities.push({
+              icon: "⟳", label: "Board Drill",
+              action: "Focus: " + worst.category,
+              detail: worst.leeches + " leech" + (worst.leeches === 1 ? "" : "es") + " in this category — cards you keep missing",
+              onclick: () => { G.board && (G.board._filterCat = worst.category); location.hash = "#/board"; }
+            });
+          }
+        } catch (e) {}
 
         if (priorities.length) {
           const pqPanel = el("div.panel.prog-priority");
