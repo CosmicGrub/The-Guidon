@@ -64,6 +64,7 @@ async function resetPrefs() {
     await t.setPref("largeTargets", false);
     await t.setPref("reduceTransparency", false);
     await t.setPref("boldFocus", false);
+    await t.setPref("contentDensity", "standard");
   });
   await page.waitForTimeout(150);
 }
@@ -354,6 +355,126 @@ async function clickCheckbox(label) {
   (off.focusVisible && off.style === "solid" && off.width === "2px")
     ? ok(`Bold focus off again: keyboard focus-visible outline reverted to 2px solid`)
     : bad(`Bold focus off again: focus-visible=${off.focusVisible} style=${off.style} width=${off.width}, expected solid 2px`);
+}
+
+// ============================================================
+// 7) CONTENT DENSITY - segmented control (Appearance panel), shipped but
+//    never previously exercised end-to-end. Real behavior under test:
+//    panel/card/tile spacing changes, [data-content-density] on <html>
+//    tracks the choice, the choice survives a real reload (proving the
+//    pre-paint localStorage mirror + syncFromSettings() boot path, not
+//    just the live in-session theme.setPref() call), and - the module's
+//    own stated design rule - body-copy font-size never moves, so density
+//    never trades off against readability.
+// ============================================================
+{
+  const panelPadding = () => page.evaluate(() => {
+    const p = document.querySelector(".panel");
+    return p ? getComputedStyle(p).paddingTop : null;
+  });
+  const densityAttr = () => page.evaluate(() => document.documentElement.getAttribute("data-content-density"));
+  // A real body-copy element (a .hint paragraph), not a component that
+  // legitimately scales with density - proves density is spacing-only.
+  const hintFontSize = () => page.evaluate(() => {
+    const h = document.querySelector(".hint");
+    return h ? getComputedStyle(h).fontSize : null;
+  });
+  // The Settings page itself has no .card elements, only .panel - Calendar's
+  // "Your dates" inputs (src/app-modules/calendar.js) does, and the CSS rule
+  // under test (html[data-content-density] .card) is global, so reading it
+  // there is exactly as valid as reading it on Settings.
+  async function cardPaddingOnCalendar() {
+    await page.evaluate(() => { location.hash = "#/calendar"; });
+    await page.waitForTimeout(400);
+    const v = await page.evaluate(() => {
+      const c = document.querySelector(".card");
+      return c ? getComputedStyle(c).paddingTop : null;
+    });
+    await page.evaluate(() => { location.hash = "#/settings"; });
+    await page.waitForTimeout(400);
+    return v;
+  }
+
+  const paddingBefore = await panelPadding();
+  const cardBefore = await cardPaddingOnCalendar();
+  const fontBefore = await hintFontSize();
+  paddingBefore === "16px" ? ok(`Content density 'Standard': .panel padding is 16px (baseline)`) : bad(`Content density 'Standard': .panel padding was "${paddingBefore}", expected "16px"`);
+  cardBefore === "14px" ? ok(`Content density 'Standard': .card padding is 14px (baseline)`) : bad(`Content density 'Standard': .card padding was "${cardBefore}", expected "14px"`);
+  (await densityAttr()) === "standard" ? ok(`Content density 'Standard': <html data-content-density="standard">`) : bad(`Content density attribute was "${await densityAttr()}", expected "standard"`);
+
+  await page.getByRole("button", { name: "Sparse content density", exact: true }).click();
+  await page.waitForTimeout(200);
+  const paddingSparse = await panelPadding();
+  const cardSparse = await cardPaddingOnCalendar();
+  paddingSparse === "22px"
+    ? ok(`Content density 'Sparse': .panel padding widened to 22px`)
+    : bad(`Content density 'Sparse': .panel padding was "${paddingSparse}", expected "22px"`);
+  cardSparse === "20px"
+    ? ok(`Content density 'Sparse': .card padding widened to 20px`)
+    : bad(`Content density 'Sparse': .card padding was "${cardSparse}", expected "20px"`);
+  (await densityAttr()) === "sparse" ? ok(`Content density 'Sparse': <html data-content-density="sparse">`) : bad(`Content density attribute was "${await densityAttr()}", expected "sparse"`);
+  (await hintFontSize()) === fontBefore
+    ? ok(`Content density 'Sparse': body-copy font-size unchanged (${fontBefore}) - spacing only, as designed`)
+    : bad(`Content density 'Sparse': .hint font-size changed (${fontBefore} -> ${await hintFontSize()})`);
+
+  await page.getByRole("button", { name: "Dense content density", exact: true }).click();
+  await page.waitForTimeout(200);
+  const paddingDense = await panelPadding();
+  const cardDense = await cardPaddingOnCalendar();
+  paddingDense === "11px"
+    ? ok(`Content density 'Dense': .panel padding tightened to 11px`)
+    : bad(`Content density 'Dense': .panel padding was "${paddingDense}", expected "11px"`);
+  cardDense === "10px"
+    ? ok(`Content density 'Dense': .card padding tightened to 10px`)
+    : bad(`Content density 'Dense': .card padding was "${cardDense}", expected "10px"`);
+  (await densityAttr()) === "dense" ? ok(`Content density 'Dense': <html data-content-density="dense">`) : bad(`Content density attribute was "${await densityAttr()}", expected "dense"`);
+  (await hintFontSize()) === fontBefore
+    ? ok(`Content density 'Dense': body-copy font-size unchanged (${fontBefore}) - spacing only, as designed`)
+    : bad(`Content density 'Dense': .hint font-size changed (${fontBefore} -> ${await hintFontSize()})`);
+
+  // Persistence: a real reload, not just the in-session setPref() call -
+  // exercises the pre-paint localStorage mirror (avoids a flash of the
+  // wrong density) and app.start()'s G.theme.syncFromSettings() boot path.
+  // theme.setPref()'s store.setSetting() write is debounced 300ms
+  // (db.js/store.js's debouncedSettingsSave) - clears via pagehide/
+  // visibilitychange in a real close/reload, but a scripted reload fired
+  // faster than that window would race it, so wait the debounce out first
+  // (same idiom as test-ppw.mjs's own persistence check).
+  await page.waitForTimeout(400);
+  // A reload re-runs onboarding for a guest session (profile is in-memory
+  // only, unlike settings/contentDensity, which is real IndexedDB and
+  // survives) - dismiss it again, same as the very first page load above,
+  // before touching the Settings page underneath it.
+  await page.reload({ waitUntil: "load" });
+  await page.waitForTimeout(1000);
+  const guestCardAgain = page.locator(".ob-mode-card", { hasText: /guest session/i }).first();
+  await guestCardAgain.waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
+  if (await guestCardAgain.count()) {
+    await guestCardAgain.click();
+    await page.locator("#ob-overlay").waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
+  }
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { location.hash = "#/settings"; });
+  await page.waitForTimeout(500);
+  const densityAfterReload = await densityAttr();
+  const paddingAfterReload = await panelPadding();
+  densityAfterReload === "dense"
+    ? ok("Content density 'Dense' survives a real reload (data-content-density still 'dense')")
+    : bad(`Content density after reload was "${densityAfterReload}", expected "dense"`);
+  paddingAfterReload === "11px"
+    ? ok("Content density 'Dense': .panel padding is still 11px after reload, not just the attribute")
+    : bad(`.panel padding after reload was "${paddingAfterReload}", expected "11px"`);
+
+  await page.getByRole("button", { name: "Standard content density", exact: true }).click();
+  await page.waitForTimeout(200);
+  const paddingBack = await panelPadding();
+  const cardBack = await cardPaddingOnCalendar();
+  paddingBack === paddingBefore
+    ? ok("Content density 'Standard': .panel padding reverted to its original value")
+    : bad(`Content density 'Standard' revert: .panel padding was "${paddingBack}", expected "${paddingBefore}"`);
+  cardBack === cardBefore
+    ? ok("Content density 'Standard': .card padding reverted to its original value")
+    : bad(`Content density 'Standard' revert: .card padding was "${cardBack}", expected "${cardBefore}"`);
 }
 
 // ---- Audit finding (ux-consistency): Focus tier confirm gate ----
