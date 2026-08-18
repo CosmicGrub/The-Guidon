@@ -154,6 +154,11 @@ window.G = window.G || {};
       try { await G.db.put("kv", { k: KEY, v: saved }); } catch (e) { /* offline-safe */ }
     }
 
+    // .panel-grid-2 (>=600px, see index.html) lays the 4 groups out 2-across
+    // on a Fold5/tablet-class screen instead of forcing one long single-
+    // column scroll - purely a container change, nothing below cares which
+    // parent its panel ends up in.
+    const groupGrid = el("div.panel-grid-2");
     GROUPS.forEach(function (grp, gi) {
       const p = el("div.panel", { style: "margin-bottom:10px" });
       p.appendChild(el("div.eyebrow", { text: grp.title }));
@@ -170,8 +175,9 @@ window.G = window.G || {};
         row.appendChild(box); row.appendChild(lab);
         p.appendChild(row);
       });
-      mount.appendChild(p);
+      groupGrid.appendChild(p);
     });
+    mount.appendChild(groupGrid);
 
     // Audit finding (ux-consistency): "The clock" group above states the one
     // checklist item this page can't just let a Soldier tick off from memory

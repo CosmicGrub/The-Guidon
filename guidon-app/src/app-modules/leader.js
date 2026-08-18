@@ -91,6 +91,30 @@ window.G = window.G || {};
 
     const summary = el("div.panel", { style: "margin-bottom:10px" });
     const list = el("div");
+    // List-detail left pane (Fold5/tablet fidelity wave 1): a real roster
+    // list at >=1024px (.list-detail, see index.html) that jumps to and
+    // highlights a Soldier's existing edit card rather than replacing the
+    // "all cards" view with a single-selection one - a leader scanning a
+    // real roster still sees every Soldier's data at a glance, they just no
+    // longer have to scroll to find the one they came here for, and this
+    // needed zero changes to persist()/buildSummary()/the data model itself.
+    const rosterList = el("div.list-detail-list", { role: "listbox", "aria-label": "Jump to Soldier" });
+    function jumpToSoldier(idx) {
+      if (listExpanded === false) {
+        const stillCapped = !Array.from(list.querySelectorAll("[data-roster-idx]"))
+          .some(function (n) { return Number(n.getAttribute("data-roster-idx")) === idx; });
+        if (stillCapped) { listExpanded = true; buildList(); }
+      }
+      const card = list.querySelector('[data-roster-idx="' + idx + '"]');
+      if (!card) return;
+      let reduceMotion = false;
+      try { reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
+      card.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
+      card.classList.add("list-detail-jumped");
+      setTimeout(function () { card.classList.remove("list-detail-jumped"); }, 1600);
+      const first = card.querySelector("input");
+      if (first) first.focus({ preventScroll: true });
+    }
 
     function buildSummary() {
       util.clear(summary);
@@ -161,6 +185,7 @@ window.G = window.G || {};
     let listExpanded = false;
     function buildList() {
       util.clear(list);
+      util.clear(rosterList);
       // Filter by rank/initials substring, preserving each entry's REAL
       // index in `roster` (not its position in the filtered subset) - the
       // Remove button and every field's change handler below index into
@@ -178,7 +203,15 @@ window.G = window.G || {};
       const shown = listExpanded ? visible : visible.slice(0, LIST_CAP);
       shown.forEach(function (entry) {
         const sol = entry.sol, idx = entry.idx;
-        const card = el("div.panel", { style: "margin-bottom:10px" });
+        const worst = overdueFor(sol).filter(function (x) { return x.over !== null; }).sort(function (a, b) { return b.over - a.over; })[0];
+        const row = el("button.list-detail-row", { type: "button", role: "option" }, [
+          el("span.ldr-name", { text: (sol.rank ? sol.rank + " " : "") + (sol.name || "(unnamed)") }),
+          worst ? el("span.ldr-badge", { text: worst.over + "d over" }) : null,
+        ]);
+        row.addEventListener("click", function () { jumpToSoldier(idx); });
+        rosterList.appendChild(row);
+
+        const card = el("div.panel", { style: "margin-bottom:10px", "data-roster-idx": String(idx) });
         const head = el("div", { style: "display:flex;gap:8px;align-items:center;flex-wrap:wrap" });
         // Audit finding (rank/MOS scoping pass): rank was free text with no
         // link to the app's own canonical RANKS list (G.rankUtils, shared
@@ -228,6 +261,11 @@ window.G = window.G || {};
         head.appendChild(del);
         card.appendChild(head);
 
+        // .panel-grid-2 (>=600px, see index.html) lays the 4 date fields out
+        // 2x2 on a Fold5/tablet-class screen instead of 4 full-width rows -
+        // roughly halves each card's height once a roster is actually
+        // populated, without changing anything about the fields themselves.
+        const fieldsGrid = el("div.panel-grid-2");
         FIELDS.forEach(function (f) {
           const row = el("div", { style: "margin-top:8px" });
           const lab = el("div.k", { text: f.label });
@@ -282,8 +320,9 @@ window.G = window.G || {};
             });
             row.appendChild(rb);
           }
-          card.appendChild(row);
+          fieldsGrid.appendChild(row);
         });
+        card.appendChild(fieldsGrid);
         list.appendChild(card);
       });
       if (!listExpanded && visible.length > LIST_CAP) {
@@ -328,9 +367,11 @@ window.G = window.G || {};
     filterRow.appendChild(filterInp);
     controls.appendChild(filterRow);
 
-    mount.appendChild(summary);
-    mount.appendChild(controls);
-    mount.appendChild(list);
+    const rosterDetail = el("div");
+    rosterDetail.appendChild(summary);
+    rosterDetail.appendChild(controls);
+    rosterDetail.appendChild(list);
+    mount.appendChild(el("div.list-detail", {}, [rosterList, rosterDetail]));
 
     const foot = el("div.panel");
     foot.appendChild(el("div.eyebrow", { text: "Counselling, properly" }));
