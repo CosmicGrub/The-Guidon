@@ -279,7 +279,7 @@ a:hover { text-decoration: underline; }
 .card.click { cursor: pointer; }
 .card.click:hover { border-color: var(--amber-dim); transform: translateY(-1px); }
 .card h3 { font-size: 1rem; margin-bottom: 6px; }
-.card .met/* DEDUPED: a — merged below */
+/* DEDUPED: .card .met — merged below */
 
 .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
 
@@ -1186,7 +1186,7 @@ select.in { appearance:none; }
 .mb-timer.mb-low { color:var(--amber); }
 .mb-timer.mb-timeup { color:var(--red); }
 .mb-timerbar { height:4px; background:var(--line); border-radius:2px; overflow:hidden; }
-.mb-timerfill { height:100%; background:var(--green); width:100%; transition:width 1s linear; }
+.mb-timerfill { height:100%; background:var(--green); width:100%; transform-origin:left; transition:transform 1s linear; }
 .mb-cat { font-family:var(--font-mono); font-size:.75rem; color:var(--amber); letter-spacing:.06em; text-transform:uppercase; }
 .mb-q { font-size:1.25rem; font-weight:600; color:var(--text); line-height:1.4; margin:2px 0; }
 .mb-say { color:var(--text-mute); font-size:.85rem; font-style:italic; margin:0; }
@@ -1793,8 +1793,11 @@ button:focus:not(:focus-visible),
 .idp-status-complete { background: rgba(74,222,128,0.15); color: var(--green); }
 
 
-/* ===== 768px — Fold 5 unfolded / tablet layout ===== */
-@media (min-width: 768px) {
+/* .panel-grid-2/-3 trigger at 600px (not 768px) deliberately: the Z Fold 5's
+   unfolded main screen is ~673px CSS-wide in its default book-style portrait
+   orientation - below 768px. Gating this at 768px would silently skip
+   Fold5-portrait users and only ever fire when they rotate to landscape. */
+@media (min-width: 600px) {
   .panel-grid-2 {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -1805,6 +1808,10 @@ button:focus:not(:focus-visible),
     grid-template-columns: 1fr 1fr 1fr;
     gap: 12px;
   }
+}
+
+/* ===== 768px — Fold 5 unfolded landscape / tablet layout ===== */
+@media (min-width: 768px) {
   .main { padding: 20px 28px; }
   .section-title h2 { font-size: 1.5rem; }
   .stat { padding: 14px 18px; }
@@ -3944,6 +3951,43 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
 
 /* Resources directory (new top-level tab) */
 .res-card{margin:6px 0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel-2,rgba(127,127,127,.04))}
+/* Card-result lists (Resources/Dictionary) that stacked one full-width card
+   per row regardless of viewport - auto-fill naturally collapses to a
+   single column on its own at narrow widths, no separate mobile override
+   needed. .search-header rows (category dividers mixed into the same list)
+   span the full grid width instead of squeezing into a card-sized cell. */
+.card-results-grid { display:grid; gap:10px; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); }
+.card-results-grid .search-header { grid-column:1 / -1; }
+.card-results-grid .empty { grid-column:1 / -1; }
+
+/* Master-detail split (Board Drill, Doctrine, Squad Roster) - a narrow
+   list pane next to a wider detail pane. Gated at >=1024px deliberately:
+   below that, a ~280px list pane leaves too little room for a comfortable
+   detail pane (Board Drill's own flashcard alone is capped at 720px). The
+   Z Fold 5's largest CSS viewport (~841px unfolded-landscape) falls short
+   of this and keeps the existing, already-tested single-column flow rather
+   than being forced into a cramped three-way squeeze. Single column
+   (list stacked above detail) below 1024px - nothing here changes on
+   phones, the Fold5 in any orientation, or small/portrait tablets. */
+.list-detail { display:block; }
+.list-detail-list { margin-bottom:12px; }
+@media (min-width: 1024px) {
+  .list-detail { display:grid; grid-template-columns: minmax(240px, 280px) 1fr; gap:16px; align-items:start; }
+  .list-detail-list { margin-bottom:0; max-height:calc(100vh - 160px); overflow-y:auto; }
+}
+.list-detail-row { display:block; width:100%; text-align:left; background:var(--panel); border:1px solid var(--line);
+  border-radius:8px; padding:8px 10px; margin-bottom:6px; cursor:pointer; font-family:var(--font-body); color:var(--text); }
+.list-detail-row:hover { border-color:var(--amber-dim); }
+.list-detail-row:focus-visible { outline: 3px solid var(--amber); outline-offset: 2px; }
+.list-detail-row.active { border-color:var(--amber); background:color-mix(in srgb, var(--amber) 8%, var(--panel)); }
+.list-detail-row .ldr-name { font-weight:600; }
+.list-detail-row .ldr-badge { float:right; font-family:var(--font-mono); font-size:.72rem; color:var(--text-dim); }
+.list-detail-row.active .ldr-badge { color:var(--ink-amber); }
+/* Squad Roster's "jump to" pulse — a paint-only box-shadow/border transition
+   (no width/height/layout property involved), so it needs none of the
+   transform:scaleX() treatment the fill-bars elsewhere in this file do. */
+.list-detail-jumped { border-color:var(--amber) !important; box-shadow:0 0 0 2px color-mix(in srgb, var(--amber) 35%, transparent);
+  transition: border-color var(--dur-base, .25s) var(--ease-standard, ease), box-shadow var(--dur-base, .25s) var(--ease-standard, ease); }
 .res-name{font-weight:600;font-size:14px}
 .res-url{font-size:12px;color:var(--text-dim);margin:2px 0;display:block;text-decoration:none}
 a.res-url:hover{text-decoration:underline}
@@ -3973,7 +4017,7 @@ a.res-url:hover{text-decoration:underline}
 .quiz-feedback{margin-top:8px;font-size:.85rem;color:var(--text-dim);opacity:0;transform:translateY(3px);transition:opacity var(--quiz-dur,.32s) var(--quiz-ease,ease),transform var(--quiz-dur,.32s) var(--quiz-ease,ease)}
 .quiz-feedback.show{opacity:1;transform:translateY(0)}
 .quiz-timer-track{height:6px;border-radius:999px;background:var(--line-2);overflow:hidden;margin:8px 0}
-.quiz-timer-fill{display:block;height:100%;width:100%;background:var(--amber);transition:width 1s linear}
+.quiz-timer-fill{display:block;height:100%;width:100%;background:var(--amber);transform-origin:left;transition:transform 1s linear}
 
 
 
@@ -6671,6 +6715,7 @@ window.G = window.G || {};
       if (!dueOnlyMode && dueCount > 0 && idx === 0 && seen === 0) {
         dueChip.replaceChildren(G.util.icon("clock", 13), document.createTextNode(" " + dueCount + " due — tap to drill these first"));
       }
+      refreshCatList();
       draw();
     }
 
@@ -7035,6 +7080,41 @@ window.G = window.G || {};
     catSel.addEventListener("change", build);
     diffSel.addEventListener("change", build);
 
+    // List-detail left pane (Fold5/tablet fidelity wave 1): a real clickable
+    // category list next to the card at >=1024px (.list-detail, see CSS),
+    // driving the exact same catSel value + change event the dropdown above
+    // already does - a supplementary VIEW onto existing state, not a
+    // parallel one, so none of the filtering/theater-mode/keyboard logic in
+    // this function needed to change to add it. Below 1024px .list-detail
+    // is just a plain block and catList sits above the dropdown row,
+    // unused in practice since the dropdown remains the primary control
+    // there - kept in the DOM rather than conditionally built so switching
+    // between tiers via a resize/fold event never needs a re-render.
+    const catList = el("div.list-detail-list", { role: "listbox", "aria-label": "Jump to category" });
+    async function refreshCatList() {
+      let allSrs = {};
+      try { allSrs = await loadAllSrs(all.map((q) => q.id)); } catch (e) {}
+      const now = Date.now();
+      util.clear(catList);
+      categories.forEach((c) => {
+        const pool = c === "All" ? all : all.filter((q) => q.category === c);
+        const due = pool.filter((q) => G.board.isDueSrs(allSrs[q.id], now)).length;
+        const active = (catSel.value || "All") === c;
+        const row = el("button.list-detail-row" + (active ? ".active" : ""), {
+          type: "button", role: "option", "aria-selected": String(active),
+        }, [
+          el("span.ldr-name", { text: c }),
+          due ? el("span.ldr-badge", { text: due + " due" }) : null,
+        ]);
+        row.addEventListener("click", () => {
+          if (catSel.value === c) return;
+          catSel.value = c;
+          catSel.dispatchEvent(new Event("change"));
+        });
+        catList.appendChild(row);
+      });
+    }
+
     // Full instructions cost ~90px on every visit, pushing the flashcard below
     // the fold on a 390-412px phone. Shown in full once per device; a short
     // one-liner (which still says everything actionable -- tap, grade 1-4)
@@ -7047,11 +7127,12 @@ window.G = window.G || {};
       ? "Tap a card to flip it, then grade yourself 1-4."
       : "Tap a card (or press Space) to flip it. Grade yourself 1-4 — Needs Help, Somewhat, Know It, or Down Cold — and spaced repetition schedules your next review accordingly. Filter by study level: Beginner, Intermediate, or Expert (by-the-book verbatim). Star a card to add it to your personal bookmark deck." }));
     if (!boardHintSeen) { try { localStorage.setItem(BOARD_HINT_KEY, "1"); } catch (e) {} }
-    mount.appendChild(el("div.mini-row", {}, [el("label", { text: "Category", style: "margin:0" }), catSel, el("label", { text: "Level", style: "margin:0" }), diffSel, dueChip, leechChip, starChip, shuffleBtn]));
-    mount.appendChild(el("div", { style: "height:8px" }));
-    mount.appendChild(tally);
-    mount.appendChild(cardWrap);
-    mount.appendChild(el("div.btn-row.no-print", { style: "margin-top:12px" }, [
+    const drillDetail = el("div");
+    drillDetail.appendChild(el("div.mini-row", {}, [el("label", { text: "Category", style: "margin:0" }), catSel, el("label", { text: "Level", style: "margin:0" }), diffSel, dueChip, leechChip, starChip, shuffleBtn]));
+    drillDetail.appendChild(el("div", { style: "height:8px" }));
+    drillDetail.appendChild(tally);
+    drillDetail.appendChild(cardWrap);
+    drillDetail.appendChild(el("div.btn-row.no-print", { style: "margin-top:12px" }, [
       el("button.btn.ghost.sm", { text: "Reset drill schedule", onclick: async () => {
         if (!(await G.modal.confirm("Reset spaced-repetition schedule for all board questions?"))) return;
         // One transaction for every graded question (900+ cards) instead
@@ -7061,6 +7142,7 @@ window.G = window.G || {};
         build();
       } }),
     ]));
+    mount.appendChild(el("div.list-detail", {}, [catList, drillDetail]));
     build();
   }
 
@@ -7207,7 +7289,7 @@ window.G = window.G || {};
         let remaining = QUIZ_SECONDS;
         timerInterval = setInterval(() => {
           remaining -= 1;
-          fill.style.width = Math.max(0, Math.round((remaining / QUIZ_SECONDS) * 100)) + "%";
+          fill.style.transform = "scaleX(" + Math.max(0, remaining / QUIZ_SECONDS) + ")";
           if (remaining <= 0) { stopTimer(); selectOption(-1, correctIdx, options, card); }
         }, 1000);
       }
@@ -8038,7 +8120,7 @@ window.G = window.G || {};
         scoreRow.removeAttribute("hidden");
         revealBtn.setAttribute("hidden", "hidden");
         timerEl.textContent = "";
-        fill.style.width = "0%";
+        fill.style.transform = "scaleX(0)";
       });
       panel.appendChild(revealBtn);
 
@@ -8048,14 +8130,14 @@ window.G = window.G || {};
       if (sess.seconds > 0) {
         sess.remaining = sess.seconds;
         timerEl.textContent = sess.remaining + "s";
-        fill.style.width = "100%";
+        fill.style.transform = "scaleX(1)";
         sess.timer = setInterval(() => {
           sess.remaining--;
           if (sess.remaining <= 0) {
             stop();
             timerEl.textContent = "time";
             timerEl.classList.add("mb-timeup");
-            fill.style.width = "0%";
+            fill.style.transform = "scaleX(0)";
             if (!sess.revealed) {
               // auto-reveal on timeout; Soldier still self-scores (likely a miss under real pressure)
               sess.revealed = true;
@@ -8065,7 +8147,7 @@ window.G = window.G || {};
             }
           } else {
             timerEl.textContent = sess.remaining + "s";
-            fill.style.width = Math.round((sess.remaining / sess.seconds) * 100) + "%";
+            fill.style.transform = "scaleX(" + (sess.remaining / sess.seconds) + ")";
             if (sess.remaining <= 5) timerEl.classList.add("mb-low");
           }
         }, 1000);
@@ -10298,7 +10380,7 @@ window.G = window.G || {};
       mount.appendChild(el("div.doc-search", {}, [el("div.mini-row", {}, [search])]));
 
       const count = el("div.meta", { style: "margin:6px 0" });
-      const results = el("div");
+      const results = el("div.card-results-grid");
       mount.appendChild(count);
       mount.appendChild(results);
 
@@ -19118,6 +19200,12 @@ window.G = window.G || {};
       host.appendChild(lp);
     }
 
+    // Reuses the same .panel-grid-2 utility Records/Roster wire up elsewhere
+    // (>=600px, see index.html) - these two calculators used to stack full-
+    // width even on desktop, each getting a cramped single column while a
+    // Fold5/tablet screen sat mostly empty beside it.
+    const calcGrid = el("div.panel-grid-2");
+
     // match-capture calculator
     const calc = el("div.panel.fin-calc");
     calc.appendChild(el("div.fin-h", { text: "Match-capture calculator" }));
@@ -19155,7 +19243,7 @@ window.G = window.G || {};
     let d1 = null;
     [payIn, pctIn].forEach((inp) => inp.addEventListener("input", () => { clearTimeout(d1); d1 = setTimeout(recalc, 60); }));
     recalc();
-    host.appendChild(calc);
+    calcGrid.appendChild(calc);
 
     // compound-growth projector
     const proj = el("div.panel.fin-calc");
@@ -19199,7 +19287,8 @@ window.G = window.G || {};
     let d2 = null;
     [mIn, yIn, rIn].forEach((inp) => inp.addEventListener("input", () => { clearTimeout(d2); d2 = setTimeout(reproj, 60); }));
     reproj();
-    host.appendChild(proj);
+    calcGrid.appendChild(proj);
+    host.appendChild(calcGrid);
   }
 
   // ---- 2) FUNDS ----
@@ -20524,7 +20613,7 @@ window.G = window.G || {};
       mount.appendChild(chipBar);
 
       const count = el("div.meta", { style: "margin:6px 0" });
-      const results = el("div#resources-stage");
+      const results = el("div#resources-stage.card-results-grid");
       mount.appendChild(count);
       mount.appendChild(results);
 
@@ -21324,6 +21413,16 @@ window.G = window.G || {};
 
     // ── Results ──────────────────────────────────────────────────────────
     const results = el("div");
+    // List-detail left pane (Fold5/tablet fidelity wave 1): a compact
+    // topic+title index at >=1024px (.list-detail, see CSS) that jumps to
+    // the matching full card below rather than replacing the full-card list
+    // with a single-selection view - this is by far the longest list in the
+    // app (up to DOC_CAP entries, each a multi-paragraph card), and a true
+    // state-replacing split would touch the topic-filter/search/DOC_CAP
+    // truncation/views._doctrineSeed cross-link logic below all at once.
+    // Scrolling to an unchanged card carries none of that risk while still
+    // turning a 300+-entry scroll into a real navigable index.
+    const entryList = el("div.list-detail-list", { role: "listbox", "aria-label": "Jump to entry" });
     const TOPIC_COLORS = {
       "Foundations":"var(--amber)","UCMJ":"var(--red)","SHARP":"var(--violet)",
       "Risk Management":"var(--cyan)","Professional Military Education":"var(--green)",
@@ -21336,8 +21435,18 @@ window.G = window.G || {};
     // a full util.clear(results) + re-create of up to all 336 multi-element
     // cards synchronously on the main thread.
     const DOC_CAP = 150;
+    function jumpToDocEntry(i) {
+      const card = results.querySelector('[data-doc-idx="' + i + '"]');
+      if (!card) return;
+      let reduceMotion = false;
+      try { reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
+      card.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+      card.classList.add("list-detail-jumped");
+      setTimeout(() => card.classList.remove("list-detail-jumped"), 1600);
+    }
     function draw() {
       util.clear(results);
+      util.clear(entryList);
       let list = store.doctrine(search.value.trim());
       if (activeDocTopic) list = list.filter((d) => d.topic === activeDocTopic);
       if (!list.length) {
@@ -21351,10 +21460,16 @@ window.G = window.G || {};
       hdr.appendChild(el("span.search-count",
         { text: list.length + " entr" + (list.length===1?"y":"ies") }));
       results.appendChild(hdr);
-      list.slice(0, DOC_CAP).forEach((d) => {
+      list.slice(0, DOC_CAP).forEach((d, i) => {
         const topicColor = TOPIC_COLORS[d.topic] || "var(--text-dim)";
         const src = d.source ? (d.source.ref || d.ref || "") : (d.ref || "");
-        const card = el("div.card.doc-entry-card");
+        const row = el("button.list-detail-row", { type: "button", role: "option" }, [
+          el("span.ldr-name", { text: d.title }),
+          el("span.ldr-badge", { text: d.topic || "Reference" }),
+        ]);
+        row.addEventListener("click", () => jumpToDocEntry(i));
+        entryList.appendChild(row);
+        const card = el("div.card.doc-entry-card", { "data-doc-idx": String(i) });
         card.style.borderLeftColor = topicColor;
         // Topic eyebrow + source badge
         const topRow = el("div.doc-topic-row");
@@ -21388,7 +21503,7 @@ window.G = window.G || {};
     }
     let docSearchDeb;
     search.addEventListener("input", () => { clearTimeout(docSearchDeb); docSearchDeb = setTimeout(draw, 120); });
-    mount.appendChild(results);
+    mount.appendChild(el("div.list-detail", {}, [entryList, results]));
     // Consume a cross-link seed (e.g. from a board question's "Related doctrine" link):
     // pre-fill the search with the publication ref so the Soldier lands on relevant passages.
     if (views._doctrineSeed) {
