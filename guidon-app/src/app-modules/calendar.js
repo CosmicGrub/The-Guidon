@@ -277,8 +277,15 @@ window.G = window.G || {};
       });
     }
 
-    mount.appendChild(upcoming);
-    mount.appendChild(inputs);
+    // Fold5/tablet fidelity wave 2: "What is next" (read-only, sorted by
+    // urgency) and "Your dates" (the editor that feeds it) used to stack in
+    // a single column regardless of viewport, even though they're a
+    // classic summary/editor pair - .panel-grid-2 (>=600px) sits them
+    // side by side instead.
+    const calGrid = el("div.panel-grid-2");
+    calGrid.appendChild(upcoming);
+    calGrid.appendChild(inputs);
+    mount.appendChild(calGrid);
     buildUpcoming();
     buildInputs();
 

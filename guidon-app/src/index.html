@@ -1302,6 +1302,24 @@ select.in { appearance:none; }
    on, and a 24-theme sweep confirms it clears 3:1 here in all of them. */
 .fin-h     { font-family:var(--font-head); font-weight:700; color:var(--text);
              text-transform:uppercase; letter-spacing:.05em; font-size:.92rem; margin-bottom:10px; }
+/* Settings' thematic zone dividers (Fold5/tablet fidelity wave 2) - 18
+   panels used to run as one long undifferentiated column with no visual
+   grouping at all. This is a page-level divider between zones (top rule +
+   label), distinct from .fin-h's panel-INTERNAL heading style above - the
+   two coexist (About GUIDON's own .fin-h sits unchanged inside its panel,
+   below this). Panels within a zone are wrapped in .panel-grid-2 (see CSS)
+   so related settings sit side by side at >=600px instead of stacking
+   regardless of viewport. color:var(--text), NOT var(--text-mute): the
+   full 24-theme contrast sweep (test:contrast-full) caught var(--text-mute)
+   failing 4.5:1 in exactly the same 4 themes (blackout, desert-cadence,
+   parade-rest, sepia-study) where the pre-existing .res-source class
+   already fails for the identical reason - var(--text) is the token
+   .fin-h's own comment above already documents as clearing 3:1 in all 24
+   themes, so this reuses that same already-verified-safe choice rather
+   than adding a second occurrence of a known-bad one. */
+.settings-zone-h { margin:20px 0 10px; padding-top:16px; border-top:1px solid var(--line-2);
+             font-family:var(--font-head); font-weight:700; text-transform:uppercase;
+             letter-spacing:.06em; font-size:.78rem; color:var(--text); }
 .fin-note  { font-size:.78rem; color:var(--text-mute); line-height:1.4; margin-top:10px; }
 .fin-key   { background:rgba(56,214,224,.08); border-left:3px solid var(--cyan);
              border-radius:0 var(--radius-sm) var(--radius-sm) 0; padding:10px 12px;
@@ -1402,7 +1420,12 @@ select.in { appearance:none; }
 
 /* ===== Resilience & H2F ===== */
 .res-intro     { color:var(--text-dim); line-height:1.5; margin:0 0 12px; }
-.res-source    { font-size:.75rem; color:var(--text-mute); margin-top:8px; }
+/* color:var(--text), not var(--text-mute): the full 24-theme contrast
+   sweep (test:contrast-full, run incidentally while verifying this wave's
+   Settings zone-header fix) caught this pre-existing rule failing 4.5:1 in
+   the same 4 themes (blackout, desert-cadence, parade-rest, sepia-study) -
+   same var(--text-mute) root cause, same fix. */
+.res-source    { font-size:.75rem; color:var(--text); margin-top:8px; }
 .res-section-h { font-family:var(--font-head); font-weight:700; color:var(--cyan);
                  text-transform:uppercase; letter-spacing:.05em; font-size:.9rem; margin-bottom:10px; }
 /* H2F domain cards */
@@ -1798,17 +1821,31 @@ button:focus:not(:focus-visible),
    orientation - below 768px. Gating this at 768px would silently skip
    Fold5-portrait users and only ever fire when they rotate to landscape. */
 @media (min-width: 600px) {
+  /* align-items:start (wave 2, same reasoning as .card-results-grid above):
+     these pair up independent panels of differing natural length (e.g.
+     Career's reclass-policy vs FY26-snapshot) - default stretch would force
+     the shorter one to match the taller one's height for no benefit. */
   .panel-grid-2 {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 12px;
+    align-items: start;
   }
   .panel-grid-3 {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
     gap: 12px;
+    align-items: start;
   }
 }
+
+/* LRM Balance radar chart (Progress page) - viewBox-based SVG, so raising
+   the display cap at wider breakpoints is pure CSS, no coordinate math in
+   the chart itself needs to change. 340px was a fixed cap on every
+   viewport; a Fold5-unfolded/tablet width has plenty of room to show it
+   larger. */
+.lrm-radar-svg { max-width: 340px; }
+@media (min-width: 768px) { .lrm-radar-svg { max-width: 480px; } }
 
 /* ===== 768px — Fold 5 unfolded landscape / tablet layout ===== */
 @media (min-width: 768px) {
@@ -3956,9 +3993,17 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
    single column on its own at narrow widths, no separate mobile override
    needed. .search-header rows (category dividers mixed into the same list)
    span the full grid width instead of squeezing into a card-sized cell. */
-.card-results-grid { display:grid; gap:10px; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); }
+/* align-items:start (wave 2) - grid items default to stretch, which forces
+   every card in a row to the height of its tallest row-mate. None of this
+   grid's cards need to fill that height (they're independent, not
+   baseline-aligned decorative tiles), and it actively hurts cards with
+   expand/collapse content (e.g. H2F domain accordions) - a collapsed card
+   next to an expanded one would otherwise stretch to match, leaving a
+   stretched-but-empty panel rather than just sitting shorter. */
+.card-results-grid { display:grid; gap:10px; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); align-items:start; }
 .card-results-grid .search-header { grid-column:1 / -1; }
 .card-results-grid .empty { grid-column:1 / -1; }
+.card-results-grid .curr-group-label { grid-column:1 / -1; }
 
 /* Master-detail split (Board Drill, Doctrine, Squad Roster) - a narrow
    list pane next to a wider detail pane. Gated at >=1024px deliberately:
@@ -3974,6 +4019,25 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
 @media (min-width: 1024px) {
   .list-detail { display:grid; grid-template-columns: minmax(240px, 280px) 1fr; gap:16px; align-items:start; }
   .list-detail-list { margin-bottom:0; max-height:calc(100vh - 160px); overflow-y:auto; }
+}
+
+/* Board Drill's own layout (wave 2): identical to .list-detail through
+   1024-1199px (category list | flashcard), then gains a third narrow
+   column - a persistent Readiness supporting pane - at >=1200px (Fold5-
+   unfolded-landscape's ~1812px CSS width, or a larger tablet in landscape,
+   have real room for it; a Fold5-unfolded-portrait ~841px does not). Kept
+   as its own class rather than adding a third column to .list-detail
+   itself, because Doctrine and Squad Roster's own .list-detail usages only
+   ever pass two children and would silently break if that shared class'
+   column count changed under them. */
+.drill-layout { display:block; }
+.drill-readiness-pane { display:none; }
+@media (min-width: 1024px) {
+  .drill-layout { display:grid; grid-template-columns: minmax(240px, 280px) 1fr; gap:16px; align-items:start; }
+}
+@media (min-width: 1200px) {
+  .drill-layout { grid-template-columns: minmax(240px, 280px) 1fr minmax(220px, 280px); }
+  .drill-readiness-pane { display:block; }
 }
 .list-detail-row { display:block; width:100%; text-align:left; background:var(--panel); border:1px solid var(--line);
   border-radius:8px; padding:8px 10px; margin-bottom:6px; cursor:pointer; font-family:var(--font-body); color:var(--text); }
@@ -6716,6 +6780,7 @@ window.G = window.G || {};
         dueChip.replaceChildren(G.util.icon("clock", 13), document.createTextNode(" " + dueCount + " due — tap to drill these first"));
       }
       refreshCatList();
+      refreshReadinessPane();
       draw();
     }
 
@@ -7115,6 +7180,53 @@ window.G = window.G || {};
       });
     }
 
+    // Readiness supporting pane (Fold5/tablet fidelity wave 2): a third,
+    // narrow column next to the flashcard at >=1200px (Fold5-unfolded-
+    // landscape / larger-tablet width - .drill-layout, see CSS), showing a
+    // condensed version of the Readiness tab's per-category mastery so a
+    // Soldier drilling on a wide screen doesn't have to leave the card to
+    // see where they stand. Kept out of .list-detail's own grid (a separate
+    // .drill-layout class) so Doctrine/Squad Roster's existing 2-pane
+    // .list-detail usages are untouched. Refreshed on the same cadence as
+    // catList - build()'s filter/reset triggers - not after every single
+    // grade: that would mean an IndexedDB full-collection scan on every
+    // card flip, the exact per-action-read pattern this app's SRS loader
+    // was batched specifically to avoid elsewhere.
+    const readinessPane = el("div.drill-readiness-pane.panel");
+    async function refreshReadinessPane() {
+      let allSrs = {};
+      try { allSrs = await loadAllSrs(all.map((q) => q.id)); } catch (e) {}
+      util.clear(readinessPane);
+      readinessPane.appendChild(el("div.eyebrow", { text: "Readiness" }));
+      const catStats = categories.filter((c) => c !== "All").map((c) => {
+        const pool = all.filter((q) => q.category === c);
+        const mastered = pool.filter((q) => G.board.isMasteredSrs(allSrs[q.id])).length;
+        return { cat: c, total: pool.length, mastered: mastered,
+          pct: pool.length ? Math.round(mastered / pool.length * 100) : 0 };
+      });
+      const totalMastered = catStats.reduce((s, c) => s + c.mastered, 0);
+      const overallPct = all.length ? Math.round(totalMastered / all.length * 100) : 0;
+      readinessPane.appendChild(el("div.stat", {}, [
+        el("span.k", { text: "Overall" }),
+        el("span.v", { text: overallPct + "%" }),
+      ]));
+      readinessPane.appendChild(el("div.bar" + (overallPct >= 85 ? ".green" : ""), {},
+        [el("span", { style: "width:" + overallPct + "%" })]));
+      // Weakest 3 only - this pane is a glance, not a replacement for the
+      // full Readiness tab's complete per-category breakdown.
+      catStats.filter((c) => c.total > 0).sort((a, b) => a.pct - b.pct).slice(0, 3).forEach((c) => {
+        const row = el("div", { style: "margin-top:10px" });
+        row.appendChild(el("div.stat", {}, [
+          el("span.k", { text: c.cat, style: "font-size:0.82rem" }),
+          el("span.v", { style: "font-size:0.82rem;color:var(--amber)", text: c.pct + "%" }),
+        ]));
+        row.appendChild(el("div.bar", {}, [el("span", { style: "width:" + c.pct + "%" })]));
+        readinessPane.appendChild(row);
+      });
+      readinessPane.appendChild(el("button.btn.ghost.sm", { type: "button", text: "Open full Readiness →", style: "margin-top:12px",
+        onclick: () => { G.board && G.board._openReadiness && G.board._openReadiness(); } }));
+    }
+
     // Full instructions cost ~90px on every visit, pushing the flashcard below
     // the fold on a 390-412px phone. Shown in full once per device; a short
     // one-liner (which still says everything actionable -- tap, grade 1-4)
@@ -7142,7 +7254,7 @@ window.G = window.G || {};
         build();
       } }),
     ]));
-    mount.appendChild(el("div.list-detail", {}, [catList, drillDetail]));
+    mount.appendChild(el("div.drill-layout", {}, [catList, drillDetail, readinessPane]));
     build();
   }
 
@@ -9074,7 +9186,12 @@ window.G = window.G || {};
     const dots = dataPts.map((p) =>
       '<circle cx="'+p[0]+'" cy="'+p[1]+'" r="3.5" fill="var(--cyan)" stroke="var(--bg,#0a0e14)" stroke-width="1.5"/>'
     ).join("");
-    const svg = '<svg viewBox="'+(-VB_PAD_X)+' 0 '+(size+VB_PAD_X*2)+' '+(size+18)+'" width="100%" style="max-width:340px;display:block;margin:0 auto" role="img" aria-label="Leadership Requirements Model radar chart showing balance across six dimensions">'+
+    // Fold5/tablet fidelity wave 2: max-width lived inline, hard-capping the
+    // chart at 340px on every viewport including a Fold5-unfolded/tablet
+    // width with plenty of room to spare. viewBox-based SVG scales cleanly,
+    // so raising the cap at wider breakpoints (.lrm-radar-svg, see CSS) is a
+    // pure display-size change - no coordinate math above needs to move.
+    const svg = '<svg viewBox="'+(-VB_PAD_X)+' 0 '+(size+VB_PAD_X*2)+' '+(size+18)+'" width="100%" class="lrm-radar-svg" style="display:block;margin:0 auto" role="img" aria-label="Leadership Requirements Model radar chart showing balance across six dimensions">'+
       rings + spokes +
       '<polygon points="'+dataPoly+'" fill="rgba(0,212,255,0.16)" stroke="var(--cyan)" stroke-width="2"/>' +
       dots + labels +
@@ -10574,6 +10691,11 @@ window.G = window.G || {};
         return 0;
       });
 
+      // Fold5/tablet fidelity wave 2: 28 course cards used to stack single-
+      // column regardless of viewport (4,532px tall at the worst case) -
+      // reuses the same .card-results-grid utility Resources/Dictionary
+      // already wire up (auto-fill, group-label rows span the full width).
+      const courseGrid = el("div.card-results-grid");
       let lastGroup = null;
       for (const course of sortedCourses) {
         const pr = courseProgress(course, cache);
@@ -10593,7 +10715,7 @@ window.G = window.G || {};
           if (group !== lastGroup) {
             lastGroup = group;
             const grpLabel = isPrimary ? ("Priority courses for " + activeTier) : isRelevant ? "Also relevant" : "Advanced / reference";
-            mount.appendChild(el("div.curr-group-label", { text: grpLabel }));
+            courseGrid.appendChild(el("div.curr-group-label", { text: grpLabel }));
           }
         }
 
@@ -10613,11 +10735,12 @@ window.G = window.G || {};
           }));
         }
 
-        mount.appendChild(el("div.card.click", { role: "button", tabindex: "0",
+        courseGrid.appendChild(el("div.card.click", { role: "button", tabindex: "0",
           onclick: () => openCourse(mount, course, cache, labels),
           onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") openCourse(mount, course, cache, labels); }
         }, cardChildren));
       }
+      mount.appendChild(courseGrid);
     },
   };
 
@@ -16028,6 +16151,10 @@ window.G = window.G || {};
 
     function menu() {
       util.clear(stage);
+      // Fold5/tablet fidelity wave 2: 6 drill-picker cards used to stack
+      // single-column regardless of viewport - .card-results-grid auto-fills
+      // (260px min) so the Fold5-unfolded/tablet width shows 2-3 across.
+      const grid = el("div.card-results-grid");
       DRILLS.forEach(d => {
         const card = el("div.panel", { style:"margin-bottom:10px" });
         const btn = el("button", { type:"button",
@@ -16036,8 +16163,9 @@ window.G = window.G || {};
         btn.appendChild(el("p.hint", { text: d.blurb, style:"margin:4px 0 0" }));
         btn.addEventListener("click", () => open(d.id));
         card.appendChild(btn);
-        stage.appendChild(card);
+        grid.appendChild(card);
       });
+      stage.appendChild(grid);
     }
     function back() { const b = el("button.btn.sm.ghost", { type:"button", text:"\u2190 All drills", style:"margin-bottom:10px" });
       b.addEventListener("click", menu); return b; }
@@ -19512,6 +19640,13 @@ window.G = window.G || {};
     }));
     host.appendChild(introPanel);
 
+    // Fold5/tablet fidelity wave 2: 6 domain cards used to stack single-
+    // column regardless of viewport. .card-results-grid's align-items:start
+    // (added this wave) keeps a collapsed card from being stretched to
+    // match an expanded row-mate's height.
+    const domainGrid = el("div.card-results-grid");
+    host.appendChild(domainGrid);
+
     (d.domains || []).forEach((dom) => {
       const wrap = el("div.panel.res-domain-wrap");
       const card = el("div.res-domain");
@@ -19573,7 +19708,7 @@ window.G = window.G || {};
       });
 
       wrap.appendChild(card);
-      host.appendChild(wrap);
+      domainGrid.appendChild(wrap);
     });
 
     host.appendChild(el("div.res-source", { text: "Source: FM 7-22 (Holistic Health and Fitness, 2020)" }));
@@ -19699,6 +19834,10 @@ window.G = window.G || {};
     list.appendChild(el("p.res-intro", {
       text: "These skills are from the Army's Master Resilience Trainer (MRT) program — derived from 20+ years of research at UPenn's Positive Psychology Center. They respond to practice the same way physical skills do. Use them daily."
     }));
+    // Fold5/tablet fidelity wave 2: same nested-grid treatment as the
+    // Support Resources list below - header/intro stay outside the grid.
+    const skillGrid = el("div.card-results-grid", { style: "margin-top:8px" });
+    list.appendChild(skillGrid);
 
     // Deduplicate by name
     const seen = new Set();
@@ -19733,7 +19872,7 @@ window.G = window.G || {};
       });
       card.appendChild(head);
       card.appendChild(body);
-      list.appendChild(card);
+      skillGrid.appendChild(card);
     });
 
     host.appendChild(list);
@@ -19773,6 +19912,13 @@ window.G = window.G || {};
 
     const list = el("div.panel");
     list.appendChild(el("div.res-section-h", { text: "All support resources" }));
+    // Fold5/tablet fidelity wave 2: this list can run well past a dozen
+    // resource cards and used to stack single-column regardless of
+    // viewport. Nested one level inside the existing bordered .panel
+    // (header text stays outside the grid, no exemption class needed) so
+    // the outer panel framing is unchanged.
+    const resGrid = el("div.card-results-grid", { style: "margin-top:8px" });
+    list.appendChild(resGrid);
     (d.resources || []).forEach((r) => {
       const card = el("div.res-resource");
       const clr = TYPE_CLR[r.type] || TYPE_CLR.support;
@@ -19810,7 +19956,7 @@ window.G = window.G || {};
       if (r.desc || r.d) {
         card.appendChild(el("p.res-resource-d", { text: r.desc || r.d }));
       }
-      list.appendChild(card);
+      resGrid.appendChild(card);
     });
     host.appendChild(list);
   }
@@ -19893,13 +20039,17 @@ window.G = window.G || {};
       el("p.fin-intro", { text: vct.intro }),
       el("div.feedback.warn", { text: "Educational guide — not VA official guidance. Verify timelines with your VSO and VA Benefits Advisor." })
     ]));
+    // Fold5/tablet fidelity wave 2: step cards used to stack single-column
+    // regardless of viewport - intro banner above stays full-width.
+    const stepGrid = el("div.card-results-grid");
+    host.appendChild(stepGrid);
     (vct.steps || []).forEach((step) => {
       const card = el("div.panel");
       card.style.borderLeftColor = step.deadline && step.deadline.includes("HARD") ? "var(--red)" : "var(--amber)";
       card.appendChild(el("div.eyebrow", { text: "Step " + step.step + " — " + (step.deadline || "") }));
       card.appendChild(el("h3", { text: step.label }));
       card.appendChild(el("p.hint", { text: step.d }));
-      host.appendChild(card);
+      stepGrid.appendChild(card);
     });
   }
 
@@ -19972,6 +20122,12 @@ window.G = window.G || {};
     }
     host.appendChild(panel);
 
+    // Fold5/tablet fidelity wave 2: milestone cards used to stack single-
+    // column regardless of viewport - the countdown banner above stays
+    // full-width, only the milestone list goes into the grid.
+    const msGrid = el("div.card-results-grid");
+    host.appendChild(msGrid);
+
     (d.timeline.milestones || []).forEach((m) => {
       const card = el("div.tx-milestone");
       card.style.borderLeftColor = COLORS[m.color] || COLORS.amber;
@@ -19990,7 +20146,7 @@ window.G = window.G || {};
         ul.appendChild(li);
       });
       card.appendChild(ul);
-      host.appendChild(el("div.panel", {}, [card]));
+      msGrid.appendChild(el("div.panel", {}, [card]));
     });
   }
 
@@ -20078,6 +20234,11 @@ window.G = window.G || {};
     intro.appendChild(stayBtn);
     host.appendChild(intro);
 
+    // Fold5/tablet fidelity wave 2: career-path cards used to stack single-
+    // column regardless of viewport - intro banner above stays full-width.
+    const pathGrid = el("div.card-results-grid");
+    host.appendChild(pathGrid);
+
     (career.paths || []).forEach((p) => {
       const card = el("div.tx-path");
       card.appendChild(el("div.tx-path-name", { text: p.name }));
@@ -20092,7 +20253,7 @@ window.G = window.G || {};
         xl.addEventListener("click", () => { if (_lastMount) render(_lastMount, "federal"); });
         card.appendChild(xl);
       }
-      host.appendChild(el("div.panel", {}, [card]));
+      pathGrid.appendChild(el("div.panel", {}, [card]));
     });
   }
 
@@ -20502,7 +20663,14 @@ window.G = window.G || {};
     if (rp.governingRegs && rp.governingRegs.length) {
       refPanel.appendChild(el("p", { style: "margin-top:8px;font-size:0.85rem;color:var(--text-dim)", text: "Governing regs: " + rp.governingRegs.join("; ") }));
     }
-    mount.appendChild(refPanel);
+    // Fold5/tablet fidelity wave 2: reclass-policy and FY26-snapshot are two
+    // independent reference panels that used to force a single long column;
+    // .panel-grid-2 (>=600px) sits them side by side. NCOES ladder stays out
+    // of this grid and full-width below - it's a growing per-grade card
+    // list, not a fixed-size panel, so halving its width would just
+    // compress that list rather than help it.
+    const topGrid = el("div.panel-grid-2");
+    topGrid.appendChild(refPanel);
 
     const fy = d.fy26Snapshot || {};
     if (fy.shortageGrowth || fy.overstrengthRestricted) {
@@ -20512,8 +20680,9 @@ window.G = window.G || {};
       if (fy.overstrengthRestricted) fyPanel.appendChild(el("p", { style: "margin-top:6px", text: "Overstrength / restricted: " + fy.overstrengthRestricted.join(", ") }));
       if (fy.srbNote) fyPanel.appendChild(el("p", { style: "margin-top:8px", text: fy.srbNote }));
       if (fy.howToCheckLive) fyPanel.appendChild(el("p", { style: "margin-top:8px;font-style:italic", text: fy.howToCheckLive }));
-      mount.appendChild(fyPanel);
+      topGrid.appendChild(fyPanel);
     }
+    mount.appendChild(topGrid);
 
     const ns = d.ncoesStep || {};
     if (ns.grades && ns.grades.length) {
@@ -21596,10 +21765,19 @@ window.G = window.G || {};
     mount.appendChild(el("div.section-title", {}, [el("h2", { text: "Settings" }), el("div.rule")]));
     mount.appendChild(_aboutPanel);
 
+    // Thematic zone grouping (Fold5/tablet fidelity wave 2): 18 panels used
+    // to run as one long undifferentiated column regardless of viewport.
+    // accGrid is declared here (outside the `if (G.theme)` block below) so
+    // the standalone "Reduce motion" a11yPanel further down - built
+    // unconditionally, unlike acc/iface/notif which only exist when G.theme
+    // is present - can still join the same visual group.
+    let accGrid = null;
+
     // ---- APPEARANCE (v0.43: themes grouped + typography + size/spacing + motion) ----
     if (G.theme) {
       const cur = G.theme.current();
       const s2 = store.settings();
+      mount.appendChild(el("div.settings-zone-h", { text: "Appearance" }));
       const apPanel = el("div.panel");
       apPanel.appendChild(el("label", { text: "Theme" }));
 
@@ -21703,6 +21881,9 @@ window.G = window.G || {};
       mount.appendChild(apPanel);
 
       // ---- ACCESSIBILITY & FOCUS panel ----
+      mount.appendChild(el("div.settings-zone-h", { text: "Accessibility & Interface" }));
+      accGrid = el("div.panel-grid-2");
+      mount.appendChild(accGrid);
       const acc = el("div.panel", { style: "margin-top:12px" });
       acc.appendChild(el("label", { text: "Accessibility & Focus" }));
       function toggle(label, key, hint) {
@@ -21721,7 +21902,7 @@ window.G = window.G || {};
       acc.appendChild(toggle("Dyslexia-friendly spacing", "dyslexiaSpacing", "Adds letter/word spacing and caps reading width. Pairs with the Readable font."));
       acc.appendChild(toggle("Reduce transparency", "reduceTransparency", "Solid fills instead of tinted overlays for extra clarity."));
       acc.appendChild(toggle("Focus mode", "focusMode", "Dims the side rail and narrows the reading column for distraction-free study."));
-      mount.appendChild(acc);
+      accGrid.appendChild(acc);
 
       // ---- INTERFACE panel: nav density/labels, default view, auto-night ----
       const iface = el("div.panel", { style: "margin-top:12px" });
@@ -21759,7 +21940,7 @@ window.G = window.G || {};
         el("label", { text: "From", style: "margin:0" }), startSel,
         el("label", { text: "to", style: "margin:0" }), endSel,
       ]));
-      mount.appendChild(iface);
+      accGrid.appendChild(iface);
 
       // ---- NOTIFICATIONS panel: Android-only, hidden entirely on web/Tauri
       // since G.notify.supported() is false there -- no point showing a toggle
@@ -21796,12 +21977,14 @@ window.G = window.G || {};
           el("p.hint", { text: "Local only " + String.fromCharCode(8212) + " no network, no push service. Scheduled on this device from the dates you set in Reminders." }),
         ]));
         notif.appendChild(notifStatus);
-        mount.appendChild(notif);
+        accGrid.appendChild(notif);
       }
     }
 
     // default mode
-    // default mode
+    mount.appendChild(el("div.settings-zone-h", { text: "Study Preferences" }));
+    const prefGrid = el("div.panel-grid-2");
+    mount.appendChild(prefGrid);
     const modePanel = el("div.panel");
     modePanel.appendChild(el("label", { text: "Default scenario mode" }));
     const seg = el("div.segmented");
@@ -21815,7 +21998,7 @@ window.G = window.G || {};
     });
     modePanel.appendChild(seg);
     modePanel.appendChild(el("p.hint", { text: "Each scenario also has its own natural default; this applies when a scenario doesn't specify one." }));
-    mount.appendChild(modePanel);
+    prefGrid.appendChild(modePanel);
 
     // tier filter
     const tierPanel = el("div.panel", { style: "margin-top:12px" });
@@ -21872,7 +22055,7 @@ window.G = window.G || {};
     }
     updateTierHint();
     tierPanel.appendChild(tierHint);
-    mount.appendChild(tierPanel);
+    prefGrid.appendChild(tierPanel);
 
     // forms fill mode
     const fmPanel = el("div.panel", { style: "margin-top:12px" });
@@ -21893,7 +22076,7 @@ window.G = window.G || {};
       "<b>Replica + PDF hook</b> — same replica now, with a slot to drop in an official armypubs PDF later. " +
       "<b>Overlay on my PDF</b> — position your typed answers on top of an official PDF you supply. " +
       "All modes are practice study aids, not signable official DA forms." }));
-    mount.appendChild(fmPanel);
+    prefGrid.appendChild(fmPanel);
 
     // content toggles
     const togglePanel = el("div.panel", { style: "margin-top:12px" });
@@ -21913,9 +22096,17 @@ window.G = window.G || {};
     togglePanel.appendChild(el("label", { text: "Content" }));
     togglePanel.appendChild(toggleRow("Show 'in transition' doctrine", "showInTransition", "Includes policy that's actively changing (PME lengths, the fitness test). Clearly flagged and dated."));
     togglePanel.appendChild(toggleRow("Show community / supplementary content", "showCommunity", "Board-prep framing beyond primary doctrine."));
-    mount.appendChild(togglePanel);
+    prefGrid.appendChild(togglePanel);
 
-    // accessibility
+    // accessibility - joins the "Accessibility & Interface" zone above
+    // (accGrid) rather than standing alone here: this toggle is an explicit
+    // shortcut/duplicate of Appearance -> Motion -> Minimal (see its own
+    // hint below), and it used to sit several panels away from Accessibility
+    // & Focus under a second, differently-worded "Accessibility" label - the
+    // exact same-word-different-panel fragmentation this wave's regrouping
+    // is meant to fix. accGrid is only null if G.theme itself is somehow
+    // absent (core infrastructure, not expected in practice) - falls back to
+    // mount directly rather than throwing in that edge case.
     const a11yPanel = el("div.panel", { style: "margin-top:12px" });
     a11yPanel.appendChild(el("label", { text: "Accessibility" }));
     const rmInput = el("input", { type: "checkbox", "aria-label": "Reduce motion" });
@@ -21928,9 +22119,12 @@ window.G = window.G || {};
       el("div.switch", {}, [el("label.toggle", { style: "margin:0" }, [rmInput, el("span.track")]), el("span", { text: "Reduce motion" })]),
       el("p.hint", { text: "Shortcut for Appearance → Motion → Minimal. Your system's reduced-motion preference is also respected automatically." }),
     ]));
-    mount.appendChild(a11yPanel);
+    (accGrid || mount).appendChild(a11yPanel);
 
     // data / backup
+    mount.appendChild(el("div.settings-zone-h", { text: "Data, Help & About" }));
+    const dataGrid = el("div.panel-grid-2");
+    mount.appendChild(dataGrid);
     const dataPanel = el("div.panel", { style: "margin-top:12px" });
     dataPanel.appendChild(el("label", { text: "Data & Backup" }));
     const importInput = el("input", { type: "file", accept: "application/json,.json", style: "display:none" });
@@ -21985,7 +22179,7 @@ window.G = window.G || {};
     dataPanel.appendChild(importInput);
     dataPanel.appendChild(lastBackupHint);
     dataPanel.appendChild(el("p.hint", { text: "Export a full JSON backup — profile, IDP goals, counseling drafts, promotion-point estimates, SRS scheduling, authored scenarios, and recorded attempts — or restore one on another device." }));
-    mount.appendChild(dataPanel);
+    dataGrid.appendChild(dataPanel);
 
     // help / guided tour — the tour itself already exists (one-line
     // descriptions of every section, derived from ROUTES) and works for any
@@ -21999,7 +22193,7 @@ window.G = window.G || {};
     tourBtn.addEventListener("click", () => { location.hash = "#/kiosk"; });
     helpPanel.appendChild(tourBtn);
     helpPanel.appendChild(el("p.hint", { text: "A guided, one-line walkthrough of every section — the same tour offered during setup, available any time.", style: "margin-top:8px" }));
-    mount.appendChild(helpPanel);
+    dataGrid.appendChild(helpPanel);
 
     // feedback / bug report — there was previously no way to report a bug or
     // send feedback from inside the app at all. A hosted feedback form would
@@ -22034,10 +22228,10 @@ window.G = window.G || {};
     });
     fbPanel.appendChild(fbBtn);
     fbPanel.appendChild(el("p.hint", { text: "Opens your device's email app with a draft addressed and pre-filled with your build and device info — nothing is sent until you do. GUIDON has no server to phone home to; this is a plain mailto: link, the same as tapping an email address anywhere else.", style: "margin-top:8px" }));
-    mount.appendChild(fbPanel);
+    dataGrid.appendChild(fbPanel);
 
     // about
-    mount.appendChild(el("div.panel", { style: "margin-top:12px" }, [
+    dataGrid.appendChild(el("div.panel", { style: "margin-top:12px" }, [
       el("div.eyebrow", { text: "About & Disclaimer" }),
       // Reuse GUIDON_APP_VERSION (now build-time-injected, see tools/build.mjs)
       // rather than G.store.settings().version, which nothing ever sets - this

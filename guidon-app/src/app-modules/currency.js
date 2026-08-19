@@ -115,6 +115,12 @@ window.G = window.G || {};
       return (B ? B.months : 0) - (A ? A.months : 0);
     });
 
+    // Fold5/tablet fidelity wave 2: 9 uniform domain-staleness cards used to
+    // stack single-column regardless of viewport - same .card-results-grid
+    // utility as Learn/Drills/Health.
+    const grid = el("div.card-results-grid");
+    mount.appendChild(grid);
+
     sorted.forEach(function (d) {
       const age = ageOf(d.asOf);
       const bd = age ? band(age.months, d.volatility) : { c: "var(--text-dim)", word: "unknown" };
@@ -139,7 +145,7 @@ window.G = window.G || {};
         b.addEventListener("click", function () { location.hash = d.link; });
         p.appendChild(b);
       }
-      mount.appendChild(p);
+      grid.appendChild(p);
     });
 
     const foot = el("div.panel");
