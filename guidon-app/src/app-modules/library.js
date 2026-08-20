@@ -265,15 +265,56 @@ window.G = window.G || {};
     }, { passive: true });
   }
 
+  // Fetches the real PDF bytes and hands them to util.downloadBinary(),
+  // which already branches correctly per platform (task #200's own fix,
+  // reused rather than re-solved): a real blob-download on web, and on
+  // native Android — where <a download>/<a target=_blank> are confirmed
+  // silent no-ops, verified on a real device — Filesystem.writeFile() +
+  // Share.share() so the OS share sheet's "Open with" hands it to a real
+  // PDF viewer. Fetching first rather than passing d.pdfAsset straight
+  // through matters here specifically: downloadBinary's native branch needs
+  // the actual bytes to base64-encode for Filesystem.writeFile, not a URL.
+  async function saveOriginal(d) {
+    const res = await fetch(d.pdfAsset);
+    if (!res.ok) throw new Error("fetch failed: " + res.status);
+    const buf = new Uint8Array(await res.arrayBuffer());
+    const name = d.citation.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "") + ".pdf";
+    const ok = await util.downloadBinary(name, buf, "application/pdf");
+    if (!ok) throw new Error("downloadBinary returned false");
+  }
+
   function renderOriginal(stage, d) {
     util.clear(stage);
-    const frame = el("iframe", {
-      src: d.pdfAsset, title: d.citation + " — original PDF",
-      style: "width:100%;height:75vh;border:1px solid var(--line);border-radius:8px;background:var(--panel)",
-    });
-    stage.appendChild(frame);
-    const dl = el("a.btn.sm.ghost", { href: d.pdfAsset, target: "_blank", rel: "noopener", text: "Open in a new tab", style: "margin-top:8px;display:inline-block" });
-    stage.appendChild(dl);
+    const isNative = !!(G.native && G.native.isNative && G.native.isNative());
+    // Android's stock WebView (unlike a real browser) has no built-in PDF
+    // renderer - an <iframe src="*.pdf"> is confirmed blank on a real
+    // device, not just untested. Showing an always-empty box there is
+    // worse than not showing one; native gets a single clear action
+    // instead, web keeps the iframe (real browsers render it fine).
+    if (isNative) {
+      // No working href fallback exists on this platform (that's this
+      // function's whole reason for being) — the button below is the only
+      // way to reach the file, so it's the primary control, not an
+      // afterthought under an empty box.
+      const btn = el("button.btn.sm", { type: "button", text: "Open the original PDF", style: "display:inline-block" });
+      util.busyButton(btn, () => saveOriginal(d), {
+        busy: "Opening…", doneMs: 4000,
+        done: () => "Choose an app to view the PDF.",
+        fail: "Couldn't open the PDF. Try again, or use the Read in GUIDON tab instead.",
+      });
+      stage.appendChild(btn);
+    } else {
+      // Real browsers render a PDF <iframe> natively; target="_blank" and
+      // <a download> both already work correctly here (task #200's gap is
+      // Android-WebView-specific), so the plain link from before is enough.
+      const frame = el("iframe", {
+        src: d.pdfAsset, title: d.citation + " — original PDF",
+        style: "width:100%;height:75vh;border:1px solid var(--line);border-radius:8px;background:var(--panel)",
+      });
+      stage.appendChild(frame);
+      const dl = el("a.btn.sm.ghost", { href: d.pdfAsset, target: "_blank", rel: "noopener", text: "Open in a new tab", style: "margin-top:8px;display:inline-block" });
+      stage.appendChild(dl);
+    }
     stage.appendChild(el("p.hint", { style: "margin-top:6px", text: "The real, unmodified publication (" + fmtBytes(d.pdfBytes) + ") as fetched from armypubs.army.mil." }));
   }
 
