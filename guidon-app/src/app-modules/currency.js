@@ -30,7 +30,15 @@ window.G = window.G || {};
     { area: "Promotion points and eligibility", short: "Board Prep", asOf: "2026-03-06", volatility: "high",
       basis: "AR 600-8-19, 6 March 2026 (effective 6 April 2026), superseding the 21 June 2024 edition.",
       implemented: "Point tables 3-2, 3-3 and 3-4 are transcribed from this edition and unit-tested against it.",
-      ask: "S-1, and the monthly HQDA cutoff message for your MOS.", link: "#/board" },
+      ask: "S-1, and the monthly HQDA cutoff message for your MOS.", link: "#/board",
+      // Reference Library cross-link: the one domain here whose `basis`
+      // names a single publication that's also in the Library's 15-document
+      // core set - a direct "don't just trust the transcription, read the
+      // actual regulation" path. Not added to every domain: most of the
+      // others cite Army Directives/ALARACTs/EXORDs outside that set, or a
+      // whole corpus (Doctrine) rather than one document - a fabricated
+      // link there would be worse than no link.
+      libraryId: "ar-600-8-19" },
 
     { area: "Fitness tests of record", short: "Fitness", asOf: "2026-07-07", volatility: "high",
       basis: "AFT combat standard effective 1 Jan 2026 (RA); Combat Field Test under AD 2026-07 from April 2026; AD 2026-13 rescinded the body-composition exemption on 7 July 2026.",
@@ -144,6 +152,11 @@ window.G = window.G || {};
         const b = el("button.btn.sm.ghost", { type: "button", text: "Open " + (d.short || d.area), style: "margin-top:8px" });
         b.addEventListener("click", function () { location.hash = d.link; });
         p.appendChild(b);
+      }
+      if (d.libraryId && G.library) {
+        const rb = el("button.btn.sm.ghost", { type: "button", text: "Read the source", style: "margin-top:8px;margin-left:6px" });
+        rb.addEventListener("click", function () { G.library._openId = d.libraryId; location.hash = "#/library"; });
+        p.appendChild(rb);
       }
       grid.appendChild(p);
     });

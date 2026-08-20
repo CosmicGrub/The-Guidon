@@ -29,7 +29,7 @@
  * asserted replacement — if the anchor text is not found exactly once, the
  * build fails loudly rather than silently producing a broken artifact.
  */
-import { readFile, writeFile, mkdir, copyFile, readdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, copyFile, readdir, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 
@@ -277,6 +277,29 @@ async function main() {
       }
     }
     if (!done) throw new Error(`build: could not extract ${file} (anchor "${needle}")`);
+  }
+
+  // 3b. Reference Library source PDFs (web/Android only — see src/app-modules/
+  //     library.js's header comment for the full rationale). Unlike
+  //     pdf-lib.js/da4856.js above, these are NOT added to sw.js's PRECACHE
+  //     list: at ~80MB combined, eagerly downloading all of them on first
+  //     install would be a poor deal for a cellular-data PWA install. The
+  //     service worker's existing runtime fetch handler (cache-on-first-use
+  //     for any same-origin GET, see src/sw.js) already covers this with no
+  //     changes needed — each PDF is fetched (and then cached for offline)
+  //     only the first time a Soldier actually opens it. Android gets every
+  //     PDF for free regardless: Capacitor bundles the whole web/ directory
+  //     into the installed APK's local assets, no network or cache involved.
+  const docsSourceDir = "docs-source";
+  const pdfFiles = (await readdir(docsSourceDir).catch(() => [])).filter((f) => f.endsWith(".pdf"));
+  if (pdfFiles.length) {
+    await mkdir(join(WEB, "docs"), { recursive: true });
+    let pdfBytes = 0;
+    for (const f of pdfFiles) {
+      await copyFile(join(docsSourceDir, f), join(WEB, "docs", f));
+      pdfBytes += (await stat(join(docsSourceDir, f))).size;
+    }
+    console.log(`  web/docs/                     ${pdfFiles.length} source PDFs, ${(pdfBytes / 1048576).toFixed(1)} MB (not in dist/, not precached)`);
   }
 
   // 4. The deferral shim and the PWA module, last, so every other module has

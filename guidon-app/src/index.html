@@ -4052,6 +4052,16 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
    transform:scaleX() treatment the fill-bars elsewhere in this file do. */
 .list-detail-jumped { border-color:var(--amber) !important; box-shadow:0 0 0 2px color-mix(in srgb, var(--amber) 35%, transparent);
   transition: border-color var(--dur-base, .25s) var(--ease-standard, ease), box-shadow var(--dur-base, .25s) var(--ease-standard, ease); }
+/* Reference Library's continuous-scroll reader (library.js) - one block
+   per page, content-visibility:auto so off-screen pages skip layout/paint
+   (a virtualization-like win) without hiding their text from native
+   Ctrl+F/Cmd+F the way display:none would. A transparent border by
+   default so .list-detail-jumped's border-color override above is
+   actually visible when a search/TOC jump lands on a page - a color-only
+   override needs a border already present to color. */
+.lib-page { padding:10px 0; border-bottom:1px dashed var(--line); border-left:3px solid transparent; padding-left:8px;
+  content-visibility:auto; contain-intrinsic-size:0 900px; }
+.lib-page:last-child { border-bottom:none; }
 .res-name{font-weight:600;font-size:14px}
 .res-url{font-size:12px;color:var(--text-dim);margin:2px 0;display:block;text-decoration:none}
 a.res-url:hover{text-decoration:underline}
@@ -13597,6 +13607,8 @@ window.G = window.G || {};
                      w:"Search any publication number to see everything in the corpus that cites it." },
     "#/dictionary":{ d:"3,629-term Army and DoD acronym dictionary — instant lookup, fully offline.",
                      w:"Type a partial acronym; results narrow as you type with no network call." },
+    "#/library":   { d:"The real, current-edition text of the core Army publications GUIDON's own content is built on — read natively or view the original PDF.",
+                     w:"Open AR 600-8-19 to read the actual promotion regulation GUIDON's own point tables come from." },
     "#/learn":     { d:"Structured study paths that build toward board readiness, competency by competency.",
                      w:"Paths adapt to the tier on your profile." },
     "#/forms":     { d:"Interactive replica DA forms — 4856, 638, 31, NCOER support and more, fillable and exportable.",
@@ -22548,6 +22560,7 @@ window.G = window.G || {};
     { hash: "#/resources", label: "Resources", ico: "compass", render: (m) => G.resources.render(m) },
     { hash: "#/doctrine", label: "Doctrine", ico: "book", render: (m) => G.views.doctrine(m) },
     { hash: "#/dictionary", label: "Terms", ico: "book-open", render: (m) => G.dictionary.render(m) },
+    { hash: "#/library", label: "Reference Library", ico: "archive", render: (m) => G.library.render(m) },
     { hash: "#/board", label: "Board", ico: "layers", render: (m) => G.board.render(m) },
     { hash: "#/risk", label: "Risk", ico: "alert-triangle", render: (m) => G.risk.render(m) },
     { hash: "#/progress", label: "Progress", ico: "bar-chart", render: (m) => G.progress.render(m) },
@@ -22578,7 +22591,7 @@ window.G = window.G || {};
   // are unchanged, so nothing else in the app needs to know this exists.
   const NAV_GROUPS = [
     { id: "home",    label: null,             hashes: ["#/home"] },
-    { id: "prep",    label: "Board Prep",     hashes: ["#/train", "#/board", "#/records", "#/calendar", "#/doctrine", "#/dictionary"] },
+    { id: "prep",    label: "Board Prep",     hashes: ["#/train", "#/board", "#/records", "#/calendar", "#/doctrine", "#/dictionary", "#/library"] },
     { id: "study",   label: "Study & Skills", hashes: ["#/learn", "#/forms", "#/write"] },
     { id: "lead",    label: "Leadership",     hashes: ["#/blc", "#/alc", "#/slc", "#/drills", "#/leader", "#/counsel", "#/develop", "#/risk"] },
     { id: "career",  label: "Career & Life",  hashes: ["#/career", "#/assignments", "#/channels", "#/money", "#/health", "#/fitness", "#/transition", "#/resources"] },

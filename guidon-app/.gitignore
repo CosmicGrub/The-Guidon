@@ -16,3 +16,12 @@ android/keystore.properties
 # report this suite regenerates lives at the repo root under "GUIDON files/",
 # not here -- ignored in the root .gitignore.)
 tools/_*
+
+# Reference Library: docs-source/_text/*.txt is a build artifact, fully
+# regenerated from docs-source/*.pdf by `node tools/build-library-data.mjs`
+# (which itself invokes pdftotext -enc UTF-8 fresh each run - see that
+# script's header comment). The *.pdf files themselves ARE committed: they
+# are the actual source of truth this feature is built on, and a fresh
+# clone should get the complete feature, not one silently missing its
+# "Original PDF" tab because nobody re-ran the fetch pipeline.
+docs-source/_text/

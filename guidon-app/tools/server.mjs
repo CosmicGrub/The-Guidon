@@ -14,6 +14,11 @@ const MIME = {
   ".svg": "image/svg+xml",
   ".ico": "image/x-icon",
   ".txt": "text/plain; charset=utf-8",
+  // Reference Library's "Original PDF" tab embeds docs/*.pdf in an <iframe>;
+  // without an explicit MIME entry this fell through to the generic
+  // application/octet-stream default, which browsers typically treat as
+  // "unknown binary, offer a download" rather than rendering inline.
+  ".pdf": "application/pdf",
 };
 
 export function serve(root, port = 0) {
