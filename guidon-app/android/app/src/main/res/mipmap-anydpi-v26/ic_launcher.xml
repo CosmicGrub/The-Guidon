@@ -2,4 +2,9 @@
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
   <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
   <background android:drawable="@color/ic_launcher_background"/>
+  <!-- Fold5/tablet fidelity wave 2: Android 13+ Material You themed-icon
+       support - see ic_launcher_monochrome.xml's own header comment.
+       android:monochrome is ignored (not an error) on API <33, so this is
+       purely additive for every device this app already supports. -->
+  <monochrome android:drawable="@drawable/ic_launcher_monochrome"/>
 </adaptive-icon>
