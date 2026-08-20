@@ -80,31 +80,88 @@ async function attachForward() {
 
 function guidonFocused() {
   const dump = adb("shell", "dumpsys", "window");
-  // Same signal test-android-back.mjs already trusts for this exact
-  // question (see its own header comment on why device evidence beats
-  // reasoning about a platform). mCurrentFocus's window name is either
-  // "pkg/component" for a real app window or a bare system-window name
-  // for a transient one - either way, "does it mention guidon" is the
-  // reliable part; the package name below is best-effort, for readable
-  // test output only.
-  const line = dump.split("\n").find((l) => l.includes("mCurrentFocus=")) || "";
-  const m = /Window\{[^}]*\s([\w.]+)(?:\/[\w.]+)?\}/.exec(line);
-  return { pkg: m ? m[1] : null, isGuidon: /guidon/i.test(line) };
+  const lines = dump.split("\n").filter((l) => l.includes("mCurrentFocus="));
+  // Two device-specific ways this silently lied before landing on the
+  // shape below (both left in README's "Rules worth not relearning" so
+  // they don't get rediscovered):
+  //
+  // 1. A foldable reports ONE mCurrentFocus line per display (cover +
+  //    inner). The first was `mCurrentFocus=null` (an idle display) on a
+  //    real Fold 5 while the second correctly named the real window - so
+  //    only look at lines that actually name a window.
+  // 2. A bare system-window name (NotificationShade, an IME, a lock
+  //    screen) also doesn't mention "guidon", and got miscounted as "an
+  //    external app opened" during a doze/lock transition mid-check on a
+  //    real Tab S9 FE. Only a genuine "pkg/component" shape counts as a
+  //    real app window; require that shape explicitly rather than
+  //    accepting any line that merely fails to mention guidon.
+  const appPkgs = lines
+    .map((line) => /Window\{[^}]*\s([\w.]+)\/[\w.]+\}/.exec(line))
+    .filter(Boolean)
+    .map((m) => m[1]);
+  if (!appPkgs.length) return { pkg: null, isGuidon: true }; // no real app window anywhere (doze, lock screen, ...) - fail safe
+  const external = appPkgs.find((pkg) => !/guidon/i.test(pkg));
+  return { pkg: external || appPkgs[0], isGuidon: !external };
 }
 
-// Keep the screen awake for the duration of the run (device-plugged-in-for-
-// adb "stay on while charging" toggle) - a doze/lock transition mid-test
-// showed up as GUIDON merely losing focus to the lock screen, a false pass
-// for "an external app opened" if left unguarded against.
+// Keep the screen awake for the duration of the run. `svc power stayon
+// true` (device-plugged-in-for-adb "stay on while charging") was tried
+// alone first and was NOT sufficient by itself - a real Tab S9 FE still
+// dozed mid-run under it on a later pass, going undetected until
+// guidonFocused() was tightened (above) to stop miscounting the resulting
+// lock-screen/NotificationShade window as "an external app opened."
+// Belt-and-suspenders: also push the screen-off timeout out for the
+// run's duration and restore whatever it was after, rather than trusting
+// stayon alone.
+const prevTimeout = adb("shell", "settings", "get", "system", "screen_off_timeout").trim();
+adb("shell", "settings", "put", "system", "screen_off_timeout", "600000");
 adb("shell", "svc", "power", "stayon", "true");
 adb("shell", "input", "keyevent", "KEYCODE_WAKEUP");
 try { adb("shell", "wm", "dismiss-keyguard"); } catch (e) {}
+// A device already deep in doze when this script starts (e.g. left idle
+// between runs) was seen taking a moment to actually settle into Awake
+// after the above - proceeding immediately raced it back to sleep before
+// the app even finished launching. Confirm Awake before moving on instead
+// of assuming the keyevent above was synchronous.
+for (let i = 0; i < 5; i++) {
+  if (adb("shell", "dumpsys", "power").includes("mWakefulness=Awake")) break;
+  adb("shell", "input", "keyevent", "KEYCODE_WAKEUP");
+  await sleep(500);
+}
 
 // Fresh start so the app (not some leftover browser tab) owns focus going in.
 adb("shell", "am", "force-stop", PKG);
 adb("shell", "am", "start", "-n", `${PKG}/.MainActivity`);
 await sleep(8000);
 await attachForward();
+
+// A fresh install (no profile yet) routes #/health and #/resources straight
+// into onboarding instead - found by reinstalling over a signature mismatch
+// on a real Fold 5, then watching both tap checks below "fail" against a
+// "WHO ARE YOU?" screen instead of the actual link. Seed a minimal
+// completed profile up front so this suite doesn't depend on the device
+// already having one; a Board Prep/Home smoke-test route is not this
+// suite's job, so a plain non-guest profile (same shape store.profile.js
+// already writes) is enough.
+{
+  const p = await attachToPage("http://127.0.0.1:9222");
+  const needsOnboarding = await p.evaluate(() => G.profile && G.profile.needsOnboarding ? G.profile.needsOnboarding() : false);
+  if (needsOnboarding) {
+    await p.evaluate(() => G.db.put("kv", { k: "guidon:profile:v1", v: {
+      mode: "full", displayName: "TEST", rank: "SPC", lastName: "",
+      mos: "", unit: "", tier: "E4", etsDate: "", retirementSystem: "brs",
+      readinessConcerns: [], studyWeakPoints: [], actionPlan: [],
+      onboardingComplete: true, createdAt: Date.now(),
+    } }));
+    p.close();
+    adb("shell", "am", "force-stop", PKG);
+    adb("shell", "am", "start", "-n", `${PKG}/.MainActivity`);
+    await sleep(6000);
+    await attachForward();
+  } else {
+    p.close();
+  }
+}
 
 async function tapLinkAndCheck(hash, { tabText, selector }, label) {
   const p = await attachToPage("http://127.0.0.1:9222");
@@ -163,6 +220,7 @@ await tapLinkAndCheck(
 );
 
 try { adb("shell", "svc", "power", "stayon", "false"); } catch (e) {}
+try { adb("shell", "settings", "put", "system", "screen_off_timeout", prevTimeout || "60000"); } catch (e) {}
 
 console.log("\n" + (fails ? `ANDROID EXTERNAL LINKS: ${fails} FAILURE(S)` : "ANDROID EXTERNAL LINKS: all passed"));
 process.exit(fails ? 1 : 0);
