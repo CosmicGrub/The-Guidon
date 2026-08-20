@@ -36,9 +36,10 @@ npm run build     # -> web/ and dist/guidon-standalone.html
 npm test          # lint + build + verify + full suite battery (39 suites, see package.json)
 ```
 
-Device suites (`test:android`, `test:android:back`) need a running device or
-emulator. `test:android` also needs the DevTools bridge — note this only works
-against a **debug** build; release builds disable WebView debugging:
+Device suites (`test:android`, `test:android:back`, `test:android:links`) need
+a running device or emulator. `test:android` also needs the DevTools bridge —
+note this only works against a **debug** build; release builds disable WebView
+debugging:
 
 ```bash
 adb forward tcp:9222 localabstract:webview_devtools_remote_$(adb shell pidof app.guidon.trainer)
@@ -107,3 +108,19 @@ both are tested.
   `android/gradlew.bat` sitting right in the cwd. `tools/android-gradle.mjs`
   spawns the wrapper by its real per-platform name (`gradlew.bat` on Windows,
   `./gradlew` elsewhere) directly instead of trusting a shell to resolve it.
+- **A CDP-dispatched `Input.dispatchMouseEvent` is not a real tap.** It's
+  enough to satisfy Chromium's own `onCreateWindow`/`isUserGesture` check
+  (same as Puppeteer's `.click()`), but not Android's separate OS-level
+  "recent user interaction" gate on letting one app foreground another -
+  that one only counts events that went through the real input dispatcher.
+  A CDP tap on an `<a target="_blank">` link silently produced a false pass
+  in `test-android-external-links.mjs` (GUIDON merely lost focus to the
+  lock screen, not to a browser) until `adb shell input tap` at real
+  physical coordinates surfaced the difference. Use CDP to read layout,
+  `adb shell input tap` for the tap itself.
+- **The screen going to sleep mid-test looks exactly like a passing focus
+  check.** `mCurrentFocus` moving off `app.guidon.trainer` was being read as
+  "an external app opened," but a doze/lock transition moves focus too
+  (to a bare system-window name, not a package). `svc power stayon true`
+  before a device suite runs closes this; a screenshot at the moment of
+  failure is what actually caught it.
