@@ -24,6 +24,7 @@
     "test:android": "node tools/test-android.mjs",
     "_note": "test:android* need a running device/emulator + adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>",
     "test:android:back": "node tools/test-android-back.mjs",
+    "test:android:links": "node tools/test-android-external-links.mjs",
     "splash": "node tools/make-splash.mjs",
     "test:points": "node tools/test-points.mjs",
     "test:calendar": "node tools/test-calendar.mjs",
