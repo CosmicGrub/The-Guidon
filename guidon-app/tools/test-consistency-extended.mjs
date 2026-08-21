@@ -238,44 +238,49 @@ readinessMasteredMatch && parseInt(readinessMasteredMatch[1], 10) === 4
 await page.evaluate(() => { location.hash = "#/progress"; });
 await page.waitForTimeout(1200);
 
-const progress = await page.evaluate(({ catA, catB }) => {
+// Progress's per-category "Board Q Readiness" rows (and the standalone due
+// badge) were collapsed into two one-stat teasers by the intuitivism pass
+// (Board Drill Mastery / Board Q Readiness, each a single .panel with an
+// .eyebrow + h3 + p.hint). The teasers still expose the same raw numbers in
+// their hint text - masteredCount and totalDue - specifically so this
+// suite's real cross-view-consistency check survives the UI shrink instead
+// of losing coverage to it.
+const progress = await page.evaluate(() => {
   const out = {};
-  const badge = document.querySelector(".bq-due-badge");
-  out.dueBadge = badge ? badge.textContent.trim() : null;
-  function rowMeta(catName) {
-    for (const row of document.querySelectorAll(".bq-cat-row")) {
-      const nameEl = row.querySelector(".bq-cat-name");
-      if (nameEl && nameEl.textContent.trim() === catName) {
-        const metaEl = row.querySelector(".bq-cat-meta");
-        return metaEl ? metaEl.textContent.trim() : null;
-      }
+  function panelByEyebrow(label) {
+    for (const p of document.querySelectorAll(".panel")) {
+      const eyebrow = p.querySelector(".eyebrow");
+      if (eyebrow && eyebrow.textContent.trim() === label) return p;
     }
     return null;
   }
-  out.catAMeta = rowMeta(catA);
-  out.catBMeta = rowMeta(catB);
+  const bqPanel = panelByEyebrow("Board Q Readiness");
+  const bqHint = bqPanel ? bqPanel.querySelector("p.hint") : null;
+  out.bqHint = bqHint ? bqHint.textContent.trim() : null;
   // streak, via the Weekly Study Goal widget
   for (const s of document.querySelectorAll(".stat")) {
     const k = s.querySelector(".k"), v = s.querySelector(".v");
     if (k && v && k.textContent.includes("Study streak")) { out.streakStat = v.textContent.trim(); break; }
   }
   return out;
-}, { catA: catMeta.catA, catB: catMeta.catB });
+});
 
-progress.dueBadge === "5 cards due for review"
-  ? ok(`Progress's due badge reads "${progress.dueBadge}"`)
-  : bad(`Progress due badge: expected "5 cards due for review", got "${progress.dueBadge}"`);
+// Board Q Readiness teaser: raw mastered count must agree with Board
+// Readiness's own "Questions mastered" stat (4, checked above) - both sum
+// G.board.isMasteredSrs(srs) across the same board-question corpus, just
+// grouped differently (by category here vs. flat total there).
+const progMasteredMatch = progress.bqHint && progress.bqHint.match(/^(\d+)\s+mastered/);
+progMasteredMatch && parseInt(progMasteredMatch[1], 10) === 4
+  ? ok(`Progress's Board Q Readiness teaser reads "${progress.bqHint}" (4 mastered, matches Board Readiness)`)
+  : bad(`Progress mastered count: expected 4 mastered, got "${progress.bqHint}"`);
 
-const expectCatAMeta = `5 due · 5/${catATotal}`;
-progress.catAMeta === expectCatAMeta
-  ? ok(`Progress's "${catMeta.catA}" row reads "${progress.catAMeta}"`)
-  : bad(`Progress category A row: expected "${expectCatAMeta}", got "${progress.catAMeta}"`);
-
-const expectCatBPct = Math.round((masteredIds.length / catBTotal) * 100);
-const expectCatBMeta = `${expectCatBPct}% drilled · 4 mastered`;
-progress.catBMeta === expectCatBMeta
-  ? ok(`Progress's "${catMeta.catB}" row reads "${progress.catBMeta}" (4 mastered, matches Board Readiness)`)
-  : bad(`Progress category B row: expected "${expectCatBMeta}", got "${progress.catBMeta}"`);
+// Same teaser's raw due count must agree with Home's due-count card, Board
+// Drill's due chip, and Board Readiness's own "Due for review now" stat
+// (all 5, checked above) - same G.board.isDueSrs predicate.
+const progDueMatch = progress.bqHint && progress.bqHint.match(/(\d+)\s+due for review/);
+progDueMatch && parseInt(progDueMatch[1], 10) === 5
+  ? ok(`Progress's Board Q Readiness teaser reads "${progress.bqHint}" (5 due, matches Home/Board Drill/Board Readiness)`)
+  : bad(`Progress due count: expected 5 due, got "${progress.bqHint}"`);
 
 const progStreakMatch = progress.streakStat && progress.streakStat.match(/(\d+)d\s*\(best:\s*(\d+)d\)/);
 progStreakMatch && parseInt(progStreakMatch[1], 10) === 4 && parseInt(progStreakMatch[2], 10) === 6

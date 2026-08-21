@@ -122,7 +122,10 @@ seed.topKeys === 17 ? ok("seed has all 17 top-level sections") : bad(`expected 1
 // board-drill questions for the 6 new courses. Verified 1,069 unique
 // question ids, zero duplicates, before bumping this baseline.
 seed.board === 1069 ? ok("1,069 board cards intact") : bad(`board cards: ${seed.board}, expected 1069`);
-seed.acronyms === 3629 ? ok("3,629 acronym terms intact") : bad(`acronyms: ${seed.acronyms}, expected 3629`);
+// 3631 as of the intuitivism pass: added "SLC" (Senior Leader Course) and
+// "DA 7906" (the IDP form itself), both real, genuinely missing entries
+// the terminology audit found - not padding.
+seed.acronyms === 3631 ? ok("3,631 acronym terms intact") : bad(`acronyms: ${seed.acronyms}, expected 3631`);
 seed.doctrine === 336 ? ok("336 doctrine entries intact") : bad(`doctrine: ${seed.doctrine}, expected 336`);
 // 164 as of v1.4.20: task #104 added a real 46T (Visual Information
 // Equipment Operator-Maintainer) entry, previously mentioned only in a

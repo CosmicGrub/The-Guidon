@@ -41,7 +41,9 @@ await page.locator("button.ob-next", { hasText: /Next/ }).click();
 await page.waitForTimeout(300);
 await page.locator("button.ob-next", { hasText: /Next/ }).click();
 await page.waitForTimeout(300);
-await page.locator("button.ob-next", { hasText: /Next/ }).click();
+// Concerns step lost its .ob-next class (intuitivism pass) - same
+// Skip/Next button-row pattern WeakPoints/BoardDate already used.
+await page.locator("button", { hasText: /^Next →$/ }).click();
 await page.waitForTimeout(300);
 await page.locator("button", { hasText: /Build my plan/ }).click();
 await page.waitForTimeout(300);

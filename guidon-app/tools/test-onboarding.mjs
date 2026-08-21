@@ -44,7 +44,10 @@ await page.locator("button.ob-next", { hasText: /Next/ }).click(); // identity -
 await page.waitForTimeout(300);
 await page.locator("button.ob-next", { hasText: /Next/ }).click(); // role -> concerns
 await page.waitForTimeout(300);
-await page.locator("button.ob-next", { hasText: /Next/ }).click(); // concerns -> weakpoints
+// Concerns step lost its .ob-next class (intuitivism pass) - it now uses
+// the same Skip/Next button-row pattern WeakPoints/BoardDate already did,
+// so it's selected by text like those, not by .ob-next.
+await page.locator("button", { hasText: /^Next →$/ }).click(); // concerns -> weakpoints
 await page.waitForTimeout(300);
 await page.locator("button", { hasText: /Build my plan/ }).click(); // weakpoints -> boarddate
 await page.waitForTimeout(300);
