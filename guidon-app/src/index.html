@@ -22318,8 +22318,16 @@ window.G = window.G || {};
     panel.appendChild(filterBar);
     mount.appendChild(panel);
 
+    // List-detail split (Fold5/tablet fidelity - same pattern as Board
+    // Drill, Doctrine, Squad Roster). Search spans six heterogeneous
+    // content types rendered as grouped-by-type sections, not a single-
+    // selection view, so this follows Doctrine's mechanic: a compact
+    // cross-type jump index that scrolls to and pulses the already-
+    // rendered full result card, rather than Board Drill's rebuild-on-
+    // select mechanic.
+    const entryList = el("div.list-detail-list", { role: "listbox", "aria-label": "Jump to result" });
     const resultsDiv = el("div");
-    mount.appendChild(resultsDiv);
+    mount.appendChild(el("div.list-detail", {}, [entryList, resultsDiv]));
 
     // Keyboard nav state
     let currentHits = [];
@@ -22329,7 +22337,7 @@ window.G = window.G || {};
       const cards = resultsDiv.querySelectorAll(".search-hit");
       if (e.key === "ArrowDown") { e.preventDefault(); focusIdx = Math.min(focusIdx+1, cards.length-1); if (cards[focusIdx]) cards[focusIdx].focus(); }
       else if (e.key === "ArrowUp") { e.preventDefault(); focusIdx = Math.max(focusIdx-1, -1); if (focusIdx < 0) inp.focus(); else if (cards[focusIdx]) cards[focusIdx].focus(); }
-      else if (e.key === "Escape") { inp.value = ""; util.clear(resultsDiv); inp.focus(); }
+      else if (e.key === "Escape") { inp.value = ""; util.clear(resultsDiv); util.clear(entryList); inp.focus(); }
     });
 
     let debounce;
@@ -22352,9 +22360,32 @@ window.G = window.G || {};
       return span;
     }
 
+    // Adapted from Doctrine's jumpToDocEntry: scroll to and pulse the
+    // already-rendered card rather than rebuilding it. The trailing
+    // .focus() is new here, not present in Doctrine's version - it's safe
+    // and worthwhile because .search-hit cards (unlike Doctrine's plain
+    // card) are already natively focusable (tabIndex=0, role="button") and
+    // already own a full Enter/Space/Arrow keydown handler, so focusing the
+    // jumped-to card wires straight into existing keyboard nav for free.
+    function jumpToHit(i) {
+      const card = resultsDiv.querySelector('[data-search-idx="' + i + '"]');
+      if (!card) return;
+      let reduceMotion = false;
+      try { reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
+      card.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+      card.classList.add("list-detail-jumped");
+      setTimeout(() => card.classList.remove("list-detail-jumped"), 1600);
+      card.focus({ preventScroll: true });
+    }
+
     function runSearch(q) {
       util.clear(resultsDiv);
+      util.clear(entryList);
       currentHits = [];
+      // Runs across ALL six SECTION_ORDER groups below, not reset per type -
+      // entryList rows and .search-hit cards are matched 1:1 by
+      // data-search-idx, so a per-type index would collide across sections.
+      let hitIdx = 0;
       if (!q || q.length < 2) {
         // Show recent searches hint
         resultsDiv.appendChild(el("div.search-empty", {
@@ -22483,10 +22514,12 @@ window.G = window.G || {};
         }
         const color = TYPE_COLOR[type];
         group.slice(0, MAX_PER).forEach((h) => {
+          const myIdx = hitIdx;
           const card = el("div.search-hit");
           card.tabIndex = 0;
           card.setAttribute("role", "button");
           card.setAttribute("aria-label", (h.type || "result") + ": " + (h.title || ""));
+          card.setAttribute("data-search-idx", String(myIdx));
           card.style.borderLeftColor = color;
           const badge = el("span.search-badge");
           badge.textContent = TYPE_ICON[type];
@@ -22529,6 +22562,24 @@ window.G = window.G || {};
           });
           section.appendChild(card);
           currentHits.push(h);
+
+          // List-detail jump row (mirrors Doctrine's entryList row). Unlike
+          // Doctrine/Squad Roster/Library's rows, this one sets an explicit
+          // aria-label: its visible ldr-name is cut to 60 chars (a full
+          // card's 80-char title is still too wide for a ~240-280px list
+          // column), so the untruncated string needs to stay exposed to
+          // assistive tech via aria-label rather than the truncated text
+          // content alone.
+          const rowLabel = h.title && h.title.length > 60 ? h.title.slice(0, 60) + "…" : (h.title || "");
+          const row = el("button.list-detail-row", { type: "button", role: "option",
+            "aria-label": (h.type || "result") + ": " + (h.title || "") }, [
+            el("span.ldr-name", { text: rowLabel }),
+            el("span.ldr-badge", { text: TYPE_ICON[type] }),
+          ]);
+          row.addEventListener("click", () => jumpToHit(myIdx));
+          entryList.appendChild(row);
+
+          hitIdx++;
         });
         if (group.length > MAX_PER) {
           const more = el("div.search-more");
