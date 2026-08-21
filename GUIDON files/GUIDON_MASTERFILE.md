@@ -326,6 +326,8 @@ Per the proposal's own recommendation, the axe-core sweep was extended from the 
 
 **Result:** the device renders cleanly with no issues found. **No code changes were made** — the responsive and device-mode work from sessions 5 (foldable/cross-device breakpoints), 6 (pointer/hover auto-detection), 9 (Quizlet flip-card responsiveness), and 11 (contrast fixes) already generalizes correctly to this specific real device without any further changes needed. `guidon_40.html` remains the current, verified build.
 
+> **Correction (intuitivism pass, 2026-08-20):** the "~720×1152 portrait" figure above was a researched estimate, not a measurement — it assumed this device class reports DPR 2 to the browser. It doesn't. With the actual Tab S9 FE 5G (SM-X518U) connected via adb this session, `tools/cdp.mjs` attached directly to the real installed app's WebView and read `window.innerWidth` off the live page: **823** in portrait, with `window.devicePixelRatio` actually **1.75**, not 2 (2304×1440 physical ÷ 1.75 ≈ 1317×823, not ÷2 = 1152×720). The true portrait CSS viewport is **~823×1286**, not 720×1152. This also means the "portrait → the compact 600–859px tier" line in the Verification-performed paragraph above was itself a downstream consequence of the same bad DPR assumption, not a separate finding — on the real 823px width it was *already* eligible for the ≥860px tier's neighbor once that boundary moved (see the intuitivism pass, Tier 1(h): the desktop side-rail threshold moved to ≥800px specifically because of this). `tools/verify.mjs`'s `tabS9-portrait` fixture is corrected to 823×1286 to match. Landscape was not re-verified the same way (the installed app is orientation-locked to portrait, so CDP couldn't observe it directly there) - system-level rotation reported `w1317dp h823dp`, suggesting the landscape figure above may also be off, but that number wasn't load-bearing for anything this pass touched and is left as an open item rather than a second inference-based "fix."
+
 ---
 
 ## 17. Tab S9 FE Hardware Optimization: S Pen Hover + 90Hz Audit (new this session)
@@ -823,6 +825,8 @@ Ten themes designed to **one brief**: promote focus, comfortable at any ambient 
 ## 41. Adaptability Audit — Six Real Viewports (session 36)
 
 Measured against **real CSS viewports** (physical ÷ DPR, not guessed): Z Fold folded **344×882**, Z Fold unfolded **673×841** (nearly square, the awkward one), Tab S9 FE **720×1152** / **1152×720**, phones 360×780 and 320×700.
+
+> **Correction (intuitivism pass, 2026-08-20):** the Tab S9 FE portrait figure here inherited §16's DPR-2 assumption, which was wrong (real device: DPR 1.75). Actual portrait CSS width, read directly off the real device's WebView via CDP: **823px**, not 720. Full citation and correction at §16.
 
 **Quiz cards were already fine — verified, not assumed.** Scale cleanly 284×322 → 888×480, holding 42–52% of viewport height throughout. Flipped to the **longest card in the corpus** (`ucmj-2`, 1,911 chars): **no clipping at any viewport**, `.qz-back-scroll` correctly scrollable. Checked before changing anything; nothing needed changing.
 

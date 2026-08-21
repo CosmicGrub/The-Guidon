@@ -389,7 +389,7 @@ html.high-contrast nav.nav[data-scroll],
 html.high-contrast .tabbar[data-scroll] { -webkit-mask-image: none; mask-image: none; }
 
 /* Vertical counterpart, for nav.nav only: at >=600px the side rail becomes a
-   column (see the 600-859px and >=860px tiers below) and overflows top/bottom
+   column (see the 600-799px and >=800px tiers below) and overflows top/bottom
    instead of left/right. Same alpha-mask approach, same measured-geometry
    driver in js/scrollhint.js (data-scroll-y, not a media query - whether the
    rail overflows depends on how many groups are expanded). This is what
@@ -514,15 +514,15 @@ html.high-contrast nav.nav[data-scroll-y] { -webkit-mask-image: none; mask-image
                           5-col gate table's stacked-card fallback)
      480px   max-width   general "small phone" cosmetic tier (most-used)
      600px   min-width   foldable/small-tablet compact-rail tier floor —
-             (paired with the 859px ceiling below in ONE rule, never alone)
+             (paired with the 799px ceiling below in ONE rule, never alone)
      640px   max-width   dominant touch-target / mobile-layout-sweep
                           boundary (WCAG 2.5.5 44px minimum, table scroll,
                           modal viewport capping) — the default choice for
                           any new narrow-viewport override unless it has a
                           specific content-fit reason to use 420 or 480
      768px   min-width   tablet / large-fold enablement
-     859px   max-width   foldable/small-tablet tier ceiling (see 600px)
-     860px   min-width   desktop persistent side-rail
+     799px   max-width   foldable/small-tablet tier ceiling (see 600px)
+     800px   min-width   desktop persistent side-rail
      1024px  min-width   main-content max-width cap
      1200px  min-width   wide-desktop rail widen
 
@@ -531,10 +531,20 @@ html.high-contrast nav.nav[data-scroll-y] { -webkit-mask-image: none; mask-image
    no tested viewport sits in the gap), 540px→640px (.fin-va-grid),
    560px→640px (.cpdf-head) — both were orphaned one-off values with no
    device rationale, folded into the dominant 640px touch-target boundary.
+
+   860px→800px / 859px→799px (intuitivism pass, 2026-08-20): the desktop
+   side-rail threshold nudged down 60px so a Tab S9 FE in portrait
+   (~823px CSS width, real hardware) gets the roomier labeled rail
+   instead of the compact icon-only one meant for an in-transition
+   foldable posture. Accepted side effect (see the Tab S9 FE vs. Fold5
+   section of the intuitivism plan): a Z Fold5 unfolded-landscape
+   (~841px) is pulled into the same labeled rail, ~18px earlier than it
+   used to switch - cosmetic, not functional, and the smaller real cost
+   than leaving Tab-portrait on the cramped rail.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /* ---------- Responsive: desktop side rail ---------- */
-@media (min-width: 860px) {
+@media (min-width: 800px) {
   #app { grid-template-columns: 200px 1fr; grid-template-rows: auto 1fr;
          grid-template-areas: "top top" "nav main"; }
   .topbar { grid-area: top; }
@@ -2437,6 +2447,15 @@ mark.dict-hi {
   font-weight: 600;
 }
 
+/* ── Inline sub-group labels (Tier 1(f)) - pure visual chunking of the
+   Concerns checklist and WeakPoints chip grid, no new interaction. ── */
+.ob-subgroup-label {
+  font-family: var(--font-head); font-size: 0.72rem; font-weight: 600;
+  letter-spacing: .06em; text-transform: uppercase; color: var(--text-mute);
+  margin: 14px 0 6px;
+}
+.ob-subgroup-label:first-child { margin-top: 0; }
+
 /* ── Action plan ──────────────────────────────────────────── */
 .ob-plan-section { margin-top: 12px; }
 .ob-plan-label {
@@ -3203,7 +3222,7 @@ html.light .theme-swatch-dot { border-color:rgba(0,0,0,.12); }
 /* ======================================================================
    v0.42.1 — SHELL LAYOUT RESTORE
    The base #app / .topbar / .nav / .main structural rules were lost in an
-   earlier "dedup" pass, leaving the @media(min-width:860px) grid-template
+   earlier "dedup" pass, leaving the @media(min-width:800px) grid-template
    with no `display:grid` to apply to — so the side rail never formed and
    the nav rendered as wrapping inline buttons over the header. This block
    re-establishes a mobile-first shell (top bar + bottom rail) that upgrades
@@ -3242,7 +3261,7 @@ html.light .theme-swatch-dot { border-color:rgba(0,0,0,.12); }
    stay one line, hence its own ellipsis rule above), this subtitle's second
    clause ("E1-E9") is real content, not decoration - a 49-agent audit this
    session found it silently dropping below ~375px with zero affordance. The
-   topbar's grid row is auto-sized (see @media(min-width:860px) grid-template-
+   topbar's grid row is auto-sized (see @media(min-width:800px) grid-template-
    rows: auto 1fr), so a wrapped second line grows the row instead of
    overflowing anything. */
 .topbar .brand small { white-space: normal; overflow-wrap: break-word; max-width: 100%; display: block; }
@@ -3349,13 +3368,102 @@ html.reduce-motion .nav-group-body, html[data-motion="minimal"] .nav-group-body 
   transition: none;
 }
 
-/* ---- Foldable / small-tablet tier (600–859px): e.g. Galaxy Z Fold5's inner
-   display unfolded (~717–840 CSS px depending on orientation), small Android
-   tablets, and split-screen multitasking windows. Without this tier, a device
-   in this range either got a stretched bottom rail or waited for the full
-   860px+ desktop sidebar — this gives it a purpose-built compact side-rail so
-   the transition across a fold/unfold isn't a jarring layout jump. ---- */
-@media (min-width: 600px) and (max-width: 859px) {
+/* ---- Demoted nav items (Tier 1(d)): Diagnostics/Author within Account -
+   fully linkable, just visually deprioritized in place (Q1: no new 7th
+   nav group). Dims/shrinks like a "power user" row, not a disabled one -
+   full opacity restored on hover/focus/active so it never reads as
+   unavailable. */
+.nav button.nav-demoted { opacity: .68; }
+.nav button.nav-demoted .ico { font-size: .88em; }
+.nav button.nav-demoted:hover, .nav button.nav-demoted:focus-visible, .nav button.nav-demoted.active {
+  opacity: 1;
+}
+
+/* ---- Mobile nav drawer ("More" - Tier 1(a)) ----
+   Below 600px the flat bar shows only 4 curated routes + this "More"
+   button, which opens the SAME NAV_GROUPS accordion the sidebar renders
+   at >=600px (renderGroupsInto() - one render path, not a duplicate) as
+   a bottom sheet. Reuses .gm-back for the backdrop + util.modalTrap for
+   focus-trap/Escape/restore, matching every other modal in the app -
+   only the panel itself (.nav-drawer) is new, anchored to the bottom
+   instead of centered. Scoped explicitly rather than relying on the
+   >=600px/>=800px rail media queries (which don't apply below 600px,
+   where this drawer lives) so it looks right regardless of viewport. */
+.nav-drawer-back { align-items: flex-end; padding: 0; }
+.nav-drawer {
+  background: var(--panel); border-top: 1px solid var(--line);
+  border-radius: 14px 14px 0 0; box-shadow: var(--shadow);
+  width: 100%; max-width: 100%; max-height: 80vh; overflow-y: auto;
+  padding: 6px 8px max(14px, env(safe-area-inset-bottom));
+  opacity: 0; transform: translateY(100%);
+  transition: opacity var(--modal-dur,.22s) var(--modal-ease,ease), transform var(--modal-dur,.22s) var(--modal-ease,ease);
+}
+html.reduce-motion .nav-drawer, html[data-motion="minimal"] .nav-drawer { transition: none; }
+.nav-drawer-back.modaltrap-open .nav-drawer { opacity: 1; transform: translateY(0); }
+.nav-drawer-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 8px 10px; margin-bottom: 4px; border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  /* NOT position:sticky - a sticky head over a scrolling list this short
+     (max-height:80vh, ~33 items) isn't worth the real bug it caused: a
+     button scrolled to the very top of the scroll container renders
+     UNDERNEATH the sticky head in the same stacking context, so a tap
+     there is silently swallowed by the head instead of reaching the
+     route button (found via test-nav-tier1.mjs's real click-through
+     check, not a visual pass). Escape/backdrop-click/swipe already close
+     the drawer without needing a persistently-visible header. */
+}
+.nav-drawer-head h2 { font-family: var(--font-head); font-size: .95rem; margin: 0; text-transform: uppercase; letter-spacing: .04em; }
+.nav-drawer .nav-group-body { gap: 2px; }
+.nav-drawer button[data-hash] {
+  display: flex; flex-direction: row; align-items: center; justify-content: flex-start;
+  gap: 10px; width: 100%; min-width: 0; padding: 10px 12px;
+  background: transparent; border: 1px solid transparent; border-radius: var(--radius-sm);
+  color: color-mix(in srgb, var(--text-dim) 35%, var(--text)); cursor: pointer;
+  font-family: var(--font-head); font-size: .78rem; letter-spacing: .02em;
+  text-transform: uppercase; text-align: left; white-space: normal;
+}
+.nav-drawer button[data-hash]:hover { color: var(--text); background: var(--panel-2); }
+.nav-drawer button[data-hash].active {
+  position: relative; color: color-mix(in srgb, var(--amber) 55%, var(--text));
+  background: color-mix(in srgb, var(--amber) 12%, transparent);
+}
+.nav-drawer button[data-hash].active::after {
+  content: ""; position: absolute; left: 0; top: 18%; bottom: 18%;
+  width: 3px; border-radius: 2px; background: var(--amber);
+}
+.nav-drawer .ico { font-size: 1.05rem; }
+.nav-drawer .nav-divider { width: auto; height: 1px; align-self: stretch; margin: 6px 8px; }
+.nav-drawer .nav-group-header {
+  font-size: .7rem !important; letter-spacing: .06em; text-transform: uppercase !important;
+  padding: 10px 12px 4px !important; gap: 6px !important;
+}
+.nav-drawer .nav-group-header .ico { font-size: .7rem !important; width: 12px; }
+.nav-drawer button.nav-demoted { opacity: .68; }
+.nav-drawer button.nav-demoted:hover, .nav-drawer button.nav-demoted:focus-visible, .nav-drawer button.nav-demoted.active { opacity: 1; }
+
+/* "More" button itself, in the <600px flat bar - same base .nav button
+   look (inherited, not restated), .active reused verbatim from the
+   existing rule above so it lights up whenever the current route lives
+   inside the drawer rather than the 4 curated primaries. */
+.nav-more-btn .ico { font-size: 1.15rem; }
+
+/* ---- Foldable / small-tablet tier (600–799px): small Android tablets and
+   split-screen multitasking windows in that range. Without this tier, a
+   device here either got a stretched bottom rail or waited for the full
+   800px+ desktop sidebar — this gives it a purpose-built compact side-rail
+   so the transition across a fold/unfold isn't a jarring layout jump.
+   Intuitivism pass: the ceiling moved down from 859px to 799px so a Tab S9
+   FE in portrait (~823px CSS width, real hardware) lands on the labeled
+   rail below instead of this compact one — meant for an in-transition
+   foldable posture, not a large, stable tablet. Accepted side effect (see
+   the canonical breakpoint scale note above): a Z Fold5 unfolded (~841px,
+   either orientation) sat inside the OLD 600-859px ceiling and got this
+   compact rail; at the new 799px ceiling it's pulled into the desktop
+   labeled rail instead, ~18px earlier than before - cosmetic extra rail
+   width, not a functional change, and the smaller real cost than leaving
+   Tab-portrait stuck on this compact tier. ---- */
+@media (min-width: 600px) and (max-width: 799px) {
   #app {
     grid-template-columns: 96px 1fr;
     grid-template-rows: auto 1fr;
@@ -3384,20 +3492,20 @@ html.reduce-motion .nav-group-body, html[data-motion="minimal"] .nav-group-body 
   .nav-divider { width: auto; height: 1px; align-self: stretch; margin: 6px 6px; }
   .main { padding: 20px 18px 36px; padding-bottom: calc(36px + env(safe-area-inset-bottom)); }
   .view { max-width: 100%; }
-  /* "Side rail density" / "Show rail labels" were desktop-only (>=860px) -
-     silent no-ops for the entire 600-859px range this tier exists for
-     (the comment above names the Z Fold5 unfolded as the exact device
-     this was built for), with no indication in the settings UI that they
-     only worked on wider screens. Same compact/labels-off treatment as
-     the desktop tier below, scaled to this tier's own smaller baseline. */
+  /* "Side rail density" / "Show rail labels" were desktop-only (>=800px) -
+     silent no-ops for the entire 600-799px range this tier now covers
+     (small Android tablets and split-screen windows - see the comment
+     above), with no indication in the settings UI that they only worked
+     on wider screens. Same compact/labels-off treatment as the desktop
+     tier below, scaled to this tier's own smaller baseline. */
   html[data-nav-density="compact"] .nav button { padding: 5px 3px; font-size: .56rem; }
   html[data-nav-density="compact"] .nav .ico { font-size: .92rem; }
   html[data-nav-labels="off"] .nav button { font-size: 0; padding-top: 10px; padding-bottom: 10px; }
   html[data-nav-labels="off"] .nav .ico { font-size: 1.25rem; }
 }
 
-/* ---- Desktop: fixed left side-rail (≥ 860px) ---- */
-@media (min-width: 860px) {
+/* ---- Desktop: fixed left side-rail (≥ 800px) ---- */
+@media (min-width: 800px) {
   #app {
     grid-template-columns: 208px 1fr;
     grid-template-rows: auto 1fr;
@@ -3721,7 +3829,7 @@ html.reduce-transparency .feedback.warn { background:color-mix(in srgb, var(--am
 }
 
 /* ---- NAV DENSITY + LABELS (desktop side rail) ---- */
-@media (min-width:860px){
+@media (min-width:800px){
   html[data-nav-density="compact"] .nav button { padding:6px 10px; font-size:.72rem; }
   html[data-nav-density="compact"] .nav .ico { font-size:.95rem; }
   html[data-nav-labels="off"] .nav button { justify-content:center; gap:0; }
@@ -4071,13 +4179,17 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
 
 /* Board Drill's own layout (wave 2): identical to .list-detail through
    1024-1199px (category list | flashcard), then gains a third narrow
-   column - a persistent Readiness supporting pane - at >=1200px (Fold5-
-   unfolded-landscape's ~1812px CSS width, or a larger tablet in landscape,
-   have real room for it; a Fold5-unfolded-portrait ~841px does not). Kept
-   as its own class rather than adding a third column to .list-detail
-   itself, because Doctrine and Squad Roster's own .list-detail usages only
-   ever pass two children and would silently break if that shared class'
-   column count changed under them. */
+   column - a persistent Readiness supporting pane - at >=1200px (a larger
+   tablet or desktop in landscape has real room for it; the Fold5 doesn't,
+   in EITHER orientation - intuitivism pass, devices: this comment
+   previously called ~841px "portrait" and invented a ~1812px "landscape"
+   figure, contradicting the ground-truth ~841px unfolded-LANDSCAPE figure
+   documented at .list-detail above. Corrected: the Fold5's largest
+   unfolded CSS viewport tops out around ~841px in landscape, nowhere near
+   this 1200px gate in any orientation). Kept as its own class rather than
+   adding a third column to .list-detail itself, because Doctrine and Squad
+   Roster's own .list-detail usages only ever pass two children and would
+   silently break if that shared class' column count changed under them. */
 .drill-layout { display:block; }
 .drill-readiness-pane { display:none; }
 /* The middle column's minmax(440px, 1fr) floor - not a bare 1fr - exists
@@ -14462,19 +14574,22 @@ window.G = window.G || {};
         el("p.hint", { text: "Optional. Check everything that applies — your action plan is built from these." }),
       ]));
 
+      // Tier 1(f): 3 inline sub-group labels, pure visual chunking of the
+      // same flat 12-item list - group membership carries no other meaning
+      // (still one flat data.readinessConcerns array, same ids).
       const CONCERNS = [
-        { id:"board",      label:"📋 Preparing for a promotion board" },
-        { id:"promotion",  label:"⬆ Working toward a promotion" },
-        { id:"training",   label:"◎ Completing mandatory training" },
-        { id:"ets",        label:"⇢ Separating / ETS soon" },
-        { id:"pt",         label:"⊕ AFT / physical fitness" },
-        { id:"leadership", label:"◆ Developing leadership skills" },
-        { id:"doctrine",   label:"▤ Learning doctrine and regulations" },
-        { id:"counseling", label:"☎ Counseling Soldiers" },
-        { id:"risk",       label:"⚠ Risk management / safety" },
-        { id:"finance",    label:"₵ Financial readiness / TSP" },
-        { id:"transition", label:"⇢ Transition planning / VA benefits" },
-        { id:"nco",        label:"★ NCO duties and responsibilities" },
+        { id:"board",      label:"📋 Preparing for a promotion board", group:"Board & Career" },
+        { id:"promotion",  label:"⬆ Working toward a promotion", group:"Board & Career" },
+        { id:"ets",        label:"⇢ Separating / ETS soon", group:"Board & Career" },
+        { id:"transition", label:"⇢ Transition planning / VA benefits", group:"Board & Career" },
+        { id:"leadership", label:"◆ Developing leadership skills", group:"Leadership & Skills" },
+        { id:"doctrine",   label:"▤ Learning doctrine and regulations", group:"Leadership & Skills" },
+        { id:"counseling", label:"☎ Counseling Soldiers", group:"Leadership & Skills" },
+        { id:"nco",        label:"★ NCO duties and responsibilities", group:"Leadership & Skills" },
+        { id:"risk",       label:"⚠ Risk management / safety", group:"Leadership & Skills" },
+        { id:"training",   label:"◎ Completing mandatory training", group:"Personal Readiness" },
+        { id:"pt",         label:"⊕ AFT / physical fitness", group:"Personal Readiness" },
+        { id:"finance",    label:"₵ Financial readiness / TSP", group:"Personal Readiness" },
       ];
 
       const card = el("div.ob-card");
@@ -14487,7 +14602,15 @@ window.G = window.G || {};
       // silently dropping every earlier selection.
       const checks = {};
       (data.readinessConcerns || []).forEach(id => { checks[id] = true; });
+      let concernsGroupSeen = null;
       CONCERNS.forEach(c => {
+        // Inline sub-group label, rendered once per group in list order -
+        // the grouping in the array above IS the visual grouping, no
+        // separate structure to keep in sync.
+        if (c.group !== concernsGroupSeen) {
+          concernsGroupSeen = c.group;
+          card.appendChild(el("p.ob-subgroup-label", { text: c.group }));
+        }
         const row = el("div.ob-check-row");
         // .checked set as a direct property, NOT via the attrs object above:
         // el()'s generic attribute path does node.setAttribute(k, v) for any
@@ -14533,30 +14656,40 @@ window.G = window.G || {};
       // LDRSHIP, CBRN/MOPP, Supply/FLIPL, Weapons/M4-M9), are untouched -
       // splitting those would separate the acronym from the word it
       // defines, not demote a citation.
+      //
+      // Tier 1(e)/(f): grouped into 3 labeled sub-clusters. "Foundations"
+      // (7 items) is the universally board-relevant set regardless of MOS
+      // or rank - shown by default. "Regulations & Safety" and "Field &
+      // Technical Skills" (6 each, 12 total) are more specialized/
+      // situational and collapse behind one "+12 more" toggle, each still
+      // under its own label once expanded - a judgment call about which
+      // topics are common enough to lead with, not something the code
+      // itself can derive; trivial to re-sort (one array) if it doesn't
+      // match your actual population.
       const WEAK_AREAS = [
-        { id:"army values",   label:"Army Values (LDRSHIP)" },
-        { id:"lrm",           label:"Leadership Requirements Model", cite:"ADRP 6-22" },
-        { id:"nco creed",     label:"NCO Creed" },
-        { id:"chain of command", label:"Chain of Command" },
-        { id:"ucmj",          label:"UCMJ / Article 15 / Discipline" },
-        { id:"customs",       label:"Customs & Courtesies" },
-        { id:"counseling",    label:"Counseling", cite:"DA 4856 / ATP 6-22.1" },
-        { id:"land nav",      label:"Land Navigation / Map Reading" },
-        { id:"first aid",     label:"TCCC / First Aid" },
-        { id:"cbrn",          label:"CBRN Defense / MOPP" },
-        { id:"risk",          label:"Composite Risk Management", cite:"ATP 5-19" },
-        { id:"opsec",         label:"OPSEC", cite:"AR 530-1" },
-        { id:"supply",        label:"Supply / Property Accountability (FLIPL)" },
-        { id:"finance",       label:"Military Pay / BRS / TSP" },
-        { id:"promotions",    label:"Promotions / Points", cite:"AR 600-8-19" },
-        { id:"evaluations",   label:"NCOERs / DA 2166-9 / Support Forms" },
-        { id:"adp",           label:"Army Doctrine Publications", cite:"ADP 3-0, 5-0, 6-0, 6-22" },
-        { id:"acft",          label:"AFT Events & Standards" },
-        { id:"weapons",       label:"Weapons (M4, M9, crew-served)" },
+        { id:"army values",   label:"Army Values (LDRSHIP)", group:"Foundations" },
+        { id:"lrm",           label:"Leadership Requirements Model", cite:"ADRP 6-22", group:"Foundations" },
+        { id:"nco creed",     label:"NCO Creed", group:"Foundations" },
+        { id:"chain of command", label:"Chain of Command", group:"Foundations" },
+        { id:"customs",       label:"Customs & Courtesies", group:"Foundations" },
+        { id:"ucmj",          label:"UCMJ / Article 15 / Discipline", group:"Foundations" },
+        { id:"promotions",    label:"Promotions / Points", cite:"AR 600-8-19", group:"Foundations" },
+        { id:"counseling",    label:"Counseling", cite:"DA 4856 / ATP 6-22.1", group:"Regulations & Safety" },
+        { id:"risk",          label:"Composite Risk Management", cite:"ATP 5-19", group:"Regulations & Safety" },
+        { id:"opsec",         label:"OPSEC", cite:"AR 530-1", group:"Regulations & Safety" },
+        { id:"supply",        label:"Supply / Property Accountability (FLIPL)", group:"Regulations & Safety" },
+        { id:"evaluations",   label:"NCOERs / DA 2166-9 / Support Forms", group:"Regulations & Safety" },
+        { id:"adp",           label:"Army Doctrine Publications", cite:"ADP 3-0, 5-0, 6-0, 6-22", group:"Regulations & Safety" },
+        { id:"land nav",      label:"Land Navigation / Map Reading", group:"Field & Technical Skills" },
+        { id:"first aid",     label:"TCCC / First Aid", group:"Field & Technical Skills" },
+        { id:"cbrn",          label:"CBRN Defense / MOPP", group:"Field & Technical Skills" },
+        { id:"finance",       label:"Military Pay / BRS / TSP", group:"Field & Technical Skills" },
+        { id:"acft",          label:"AFT Events & Standards", group:"Field & Technical Skills" },
+        { id:"weapons",       label:"Weapons (M4, M9, crew-served)", group:"Field & Technical Skills" },
       ];
+      const WEAK_DEFAULT_GROUP = "Foundations";
 
       const card = el("div.ob-card");
-      const grid = el("div.ob-weak-grid");
       // Seed from data.studyWeakPoints, same reasoning as the concerns step
       // above: this step can now be revisited via Back, and starting from an
       // empty {} every render both looked wrong (selections appeared to
@@ -14564,7 +14697,7 @@ window.G = window.G || {};
       // overwrite data.studyWeakPoints with just that one selection).
       const checks = {};
       (data.studyWeakPoints || []).forEach(id => { checks[id] = true; });
-      WEAK_AREAS.forEach(a => {
+      function weakBtn(a) {
         const btn = a.cite
           ? el("button.ob-weak-btn" + (checks[a.id] ? ".active" : ""), {
               type:"button", "aria-label": a.label + " (" + a.cite + ")",
@@ -14578,9 +14711,35 @@ window.G = window.G || {};
           checks[a.id] = on;
           data.studyWeakPoints = Object.entries(checks).filter(([,v])=>v).map(([k])=>k);
         });
-        grid.appendChild(btn);
-      });
+        return btn;
+      }
+      const defaultAreas = WEAK_AREAS.filter((a) => a.group === WEAK_DEFAULT_GROUP);
+      const moreAreas = WEAK_AREAS.filter((a) => a.group !== WEAK_DEFAULT_GROUP);
+      card.appendChild(el("p.ob-subgroup-label", { text: WEAK_DEFAULT_GROUP }));
+      const grid = el("div.ob-weak-grid");
+      defaultAreas.forEach((a) => grid.appendChild(weakBtn(a)));
       card.appendChild(grid);
+
+      const moreWrap = el("div", { style: "display:none" });
+      let moreGroupSeen = null;
+      moreAreas.forEach((a) => {
+        if (a.group !== moreGroupSeen) {
+          moreGroupSeen = a.group;
+          moreWrap.appendChild(el("p.ob-subgroup-label", { text: a.group, style: "margin-top:14px" }));
+          moreWrap.appendChild(el("div.ob-weak-grid.ob-weak-grid-more"));
+        }
+        moreWrap.lastChild.appendChild(weakBtn(a));
+      });
+      card.appendChild(moreWrap);
+      const moreToggle = el("button.btn.sm.ghost", { type: "button", text: "+" + moreAreas.length + " more ▾", style: "margin-top:10px", "aria-expanded": "false" });
+      moreToggle.addEventListener("click", () => {
+        const open = moreWrap.style.display === "none";
+        moreWrap.style.display = open ? "" : "none";
+        moreToggle.textContent = open ? "Show fewer ▴" : "+" + moreAreas.length + " more ▾";
+        moreToggle.setAttribute("aria-expanded", String(open));
+      });
+      card.appendChild(moreToggle);
+
       card.appendChild(el("p.hint", { style:"margin-top:10px", text:"Don't stress — you can update these any time from the Progress view." }));
       host.appendChild(card);
 
@@ -21571,6 +21730,14 @@ window.G = window.G || {};
     if (util.tabbarKeys) util.tabbarKeys(tabBar);    const filterDefs = [["all","All (" + allScenarios.length + ")"],["scenario","Leadership"],["training","Mandatory Training"]];
     const gridWrap = el("div");
 
+    // Tier 1(g): the 11 always-visible filter chips (7 competency + 4
+    // difficulty) collapse behind one "Filters" toggle - the tab bar
+    // above (All/Leadership/Mandatory Training) and the search field stay
+    // always visible; only the chip rows move. filtersToggle's own label
+    // names how many are active, so a collapsed filter panel still
+    // discloses state rather than hiding it silently.
+    let updateFiltersToggle = () => {};
+
     // Competency chip filter
     const COMP_CHIPS = ["Leads","Develops","Achieves","Character","Presence","Intellect"];
     const COMP_COLORS = { Leads:"var(--text)", Develops:"var(--ink-green)", Achieves:"var(--ink-violet)",
@@ -21581,6 +21748,7 @@ window.G = window.G || {};
     allChip.addEventListener("click", () => {
       activeComp = null;
       Array.from(compChipBar.querySelectorAll(".search-chip")).forEach((b,i) => { const on = i===0; b.classList.toggle("active", on); b.setAttribute("aria-pressed", String(on)); });
+      updateFiltersToggle();
       buildGrid();
     });
     compChipBar.appendChild(allChip);
@@ -21593,6 +21761,7 @@ window.G = window.G || {};
           const on = i === 0 ? activeComp === null : b.textContent === activeComp;
           b.classList.toggle("active", on); b.setAttribute("aria-pressed", String(on));
         });
+        updateFiltersToggle();
         buildGrid();
       });
       compChipBar.appendChild(chip);
@@ -21607,6 +21776,7 @@ window.G = window.G || {};
     allDiffChip.addEventListener("click", () => {
       activeDiff = null;
       Array.from(diffChipBar.querySelectorAll(".search-chip")).forEach((b,i) => { const on = i===0; b.classList.toggle("active", on); b.setAttribute("aria-pressed", String(on)); });
+      updateFiltersToggle();
       buildGrid();
     });
     diffChipBar.appendChild(allDiffChip);
@@ -21619,10 +21789,28 @@ window.G = window.G || {};
           const on = i === 0 ? activeDiff === null : b.textContent === activeDiff;
           b.classList.toggle("active", on); b.setAttribute("aria-pressed", String(on));
         });
+        updateFiltersToggle();
         buildGrid();
       });
       diffChipBar.appendChild(chip);
     });
+
+    const filtersWrap = el("div", { style: "display:none" });
+    filtersWrap.appendChild(compChipBar);
+    filtersWrap.appendChild(diffChipBar);
+    const filtersToggle = el("button.btn.sm.ghost", { type: "button", style: "margin-bottom:10px", "aria-expanded": "false" });
+    updateFiltersToggle = () => {
+      const activeCount = (activeComp ? 1 : 0) + (activeDiff ? 1 : 0);
+      const open = filtersWrap.style.display !== "none";
+      filtersToggle.textContent = (open ? "Hide filters" : "Filters") + (activeCount ? " (" + activeCount + " active)" : "") + (open ? " ▴" : " ▾");
+    };
+    filtersToggle.addEventListener("click", () => {
+      const open = filtersWrap.style.display === "none";
+      filtersWrap.style.display = open ? "" : "none";
+      filtersToggle.setAttribute("aria-expanded", String(open));
+      updateFiltersToggle();
+    });
+    updateFiltersToggle();
 
     // Same debounce+cap pattern Doctrine (120ms, CAP=150) and Dictionary
     // (120ms, CAP=120) already use for comparably-sized lists - Train had
@@ -21769,8 +21957,8 @@ window.G = window.G || {};
       tabBar.appendChild(btn);
     });
     listWrap.appendChild(tabBar);
-    listWrap.appendChild(compChipBar);
-    listWrap.appendChild(diffChipBar);
+    listWrap.appendChild(filtersToggle);
+    listWrap.appendChild(filtersWrap);
     buildGrid();
     listWrap.appendChild(gridWrap);
 
@@ -22035,6 +22223,19 @@ window.G = window.G || {};
     // is present - can still join the same visual group.
     let accGrid = null;
 
+    // Tier 1(c), two-tier collapse: Standard tier (Theme, Text size, Motion,
+    // one combined Accessibility entry, Focus tier, Data & Backup, Help,
+    // About) stays open by default; Advanced (typography/line-spacing/
+    // density, the 7 individual accessibility toggles, Interface options,
+    // Forms fill mode) collects here and renders as ONE collapsed section,
+    // reusing the exact show/hide toggle mechanism the Theme picker already
+    // uses just above (tsToggle/themeWrap) rather than inventing a new one.
+    // Q7: persisted per-device once opened, mirroring how nav-group
+    // open/closed state already persists (guidon-nav-open-groups).
+    const advancedPanels = [];
+    let settingsAdvancedOpen = false;
+    try { settingsAdvancedOpen = localStorage.getItem("guidon-settings-advanced-open") === "1"; } catch (e) {}
+
     // ---- APPEARANCE (v0.43: themes grouped + typography + size/spacing + motion) ----
     if (G.theme) {
       const cur = G.theme.current();
@@ -22115,26 +22316,30 @@ window.G = window.G || {};
         return grid;
       }
 
-      // Typography pairing
-      apPanel.appendChild(el("label", { text: "Typography", style: "margin-top:16px" }));
-      apPanel.appendChild(optGrid(G.theme.TYPE_PAIRINGS, (t)=>cur.typePairing===t.id, (t)=>G.theme.set("typePairing", t.id)));
-
-      // Text size + line spacing (simple segmented via optGrid of {id,name})
+      // Text size (simple segmented via optGrid of {id,name}) - stays in the
+      // Standard tier (Tier 1(c)); Typography/Line spacing/Content density
+      // moved into the Advanced panel below.
       const sizes = G.theme.PREF_ENUMS.textScale.map((id)=>({id,name:id[0].toUpperCase()+id.slice(1)}));
       apPanel.appendChild(el("label", { text: "Text size", style: "margin-top:16px" }));
       apPanel.appendChild(optGrid(sizes, (o)=> (s2.textScale||"standard")===o.id, (o)=>G.theme.setPref("textScale", o.id), "text size"));
-      const spacings = G.theme.PREF_ENUMS.lineSpacing.map((id)=>({id,name:id[0].toUpperCase()+id.slice(1)}));
-      apPanel.appendChild(el("label", { text: "Line spacing", style: "margin-top:16px" }));
-      apPanel.appendChild(optGrid(spacings, (o)=> (s2.lineSpacing||"normal")===o.id, (o)=>G.theme.setPref("lineSpacing", o.id), "line spacing"));
 
+      // Typography / line spacing / content density (Tier 1(c): Advanced
+      // tier - reading-comfort fine-tuning, not the day-one basics above).
+      const apAdvPanel = el("div.panel", { style: "margin-top:12px" });
+      apAdvPanel.appendChild(el("label", { text: "Typography" }));
+      apAdvPanel.appendChild(optGrid(G.theme.TYPE_PAIRINGS, (t)=>cur.typePairing===t.id, (t)=>G.theme.set("typePairing", t.id)));
+      const spacings = G.theme.PREF_ENUMS.lineSpacing.map((id)=>({id,name:id[0].toUpperCase()+id.slice(1)}));
+      apAdvPanel.appendChild(el("label", { text: "Line spacing", style: "margin-top:16px" }));
+      apAdvPanel.appendChild(optGrid(spacings, (o)=> (s2.lineSpacing||"normal")===o.id, (o)=>G.theme.setPref("lineSpacing", o.id), "line spacing"));
       // Content density — panel/card/tile spacing only, never font size.
       const densities = [
         { id: "sparse", name: "Sparse", blurb: "More room per item." },
         { id: "standard", name: "Standard", blurb: "Today's spacing." },
         { id: "dense", name: "Dense", blurb: "More items per screen." },
       ];
-      apPanel.appendChild(el("label", { text: "Content density", style: "margin-top:16px" }));
-      apPanel.appendChild(optGrid(densities, (o)=> (s2.contentDensity||"standard")===o.id, (o)=>G.theme.setPref("contentDensity", o.id), "content density"));
+      apAdvPanel.appendChild(el("label", { text: "Content density", style: "margin-top:16px" }));
+      apAdvPanel.appendChild(optGrid(densities, (o)=> (s2.contentDensity||"standard")===o.id, (o)=>G.theme.setPref("contentDensity", o.id), "content density"));
+      advancedPanels.push(apAdvPanel);
 
       // Motion
       apPanel.appendChild(el("label", { text: "Motion", style: "margin-top:16px" }));
@@ -22146,7 +22351,7 @@ window.G = window.G || {};
       mount.appendChild(el("div.settings-zone-h", { text: "Accessibility & Interface" }));
       accGrid = el("div.panel-grid-2");
       mount.appendChild(accGrid);
-      const acc = el("div.panel", { style: "margin-top:12px" });
+      const acc = el("div.panel#settings-acc-panel", { style: "margin-top:12px" });
       acc.appendChild(el("label", { text: "Accessibility & Focus" }));
       function toggle(label, key, hint) {
         const input = el("input", { type: "checkbox", "aria-label": label });
@@ -22164,7 +22369,22 @@ window.G = window.G || {};
       acc.appendChild(toggle("Dyslexia-friendly spacing", "dyslexiaSpacing", "Adds letter/word spacing and caps reading width. Pairs with the Readable font."));
       acc.appendChild(toggle("Reduce transparency", "reduceTransparency", "Solid fills instead of tinted overlays for extra clarity."));
       acc.appendChild(toggle("Focus mode", "focusMode", "Dims the side rail and narrows the reading column for distraction-free study."));
-      accGrid.appendChild(acc);
+      // Tier 1(c): the full 7-toggle panel moves to the Advanced tier; a
+      // single combined summary stays in Standard so a low-vision or
+      // field-use Soldier can still SEE that these exist and how many are
+      // on, without the whole panel being open by default for everyone.
+      const a11yKeys = ["highContrast", "largeTargets", "underlineLinks", "boldFocus", "dyslexiaSpacing", "reduceTransparency", "focusMode"];
+      const a11yOnCount = a11yKeys.filter((k) => !!s2[k]).length;
+      const accSummary = el("div.panel", { style: "margin-top:12px" });
+      accSummary.appendChild(el("label", { text: "Accessibility & Focus" }));
+      accSummary.appendChild(el("p.hint", { style: "margin-top:8px", text:
+        (a11yOnCount ? a11yOnCount + " of 7 accessibility option" + (a11yOnCount === 1 ? "" : "s") + " on" : "All 7 accessibility options are off") +
+        " — high contrast, larger tap targets, underlined links, bold focus ring, dyslexia-friendly spacing, reduced transparency, focus mode." }));
+      const accJumpBtn = el("button.btn.sm.ghost", { type: "button", text: "Turn options on/off ▾", style: "margin-top:8px" });
+      accJumpBtn.addEventListener("click", () => openSettingsAdvanced("#settings-acc-panel"));
+      accSummary.appendChild(accJumpBtn);
+      accGrid.appendChild(accSummary);
+      advancedPanels.push(acc);
 
       // ---- INTERFACE panel: nav density/labels, default view, auto-night ----
       const iface = el("div.panel", { style: "margin-top:12px" });
@@ -22202,7 +22422,9 @@ window.G = window.G || {};
         el("label", { text: "From", style: "margin:0" }), startSel,
         el("label", { text: "to", style: "margin:0" }), endSel,
       ]));
-      accGrid.appendChild(iface);
+      // Tier 1(c): Interface options (rail density/labels, default landing
+      // view, auto-night scheduling) move to the Advanced tier.
+      advancedPanels.push(iface);
 
       // ---- NOTIFICATIONS panel: Android-only, hidden entirely on web/Tauri
       // since G.notify.supported() is false there -- no point showing a toggle
@@ -22338,7 +22560,8 @@ window.G = window.G || {};
       "<b>Replica + PDF hook</b> — same replica now, with a slot to drop in an official armypubs PDF later. " +
       "<b>Overlay on my PDF</b> — position your typed answers on top of an official PDF you supply. " +
       "All modes are practice study aids, not signable official DA forms." }));
-    prefGrid.appendChild(fmPanel);
+    // Tier 1(c): Forms fill mode moves to the Advanced tier.
+    advancedPanels.push(fmPanel);
 
     // content toggles
     const togglePanel = el("div.panel", { style: "margin-top:12px" });
@@ -22386,6 +22609,50 @@ window.G = window.G || {};
         el("p.hint", { text: "Your system's reduced-motion preference is also respected automatically." }),
       ]));
       mount.appendChild(a11yPanel);
+    }
+
+    // ---- ADVANCED (Tier 1(c)) ----
+    // Everything collected into advancedPanels above (typography/line
+    // spacing/content density, the 7 individual accessibility toggles,
+    // Interface options, Forms fill mode) renders here as ONE collapsed
+    // section - not open by default for anyone, not scattered as several
+    // separate per-panel collapses. Nothing is removed or made harder to
+    // reach; it's one tap away instead of always-on-screen.
+    let settingsAdvancedWrap = null, settingsAdvToggle = null;
+    function openSettingsAdvanced(scrollToSelector) {
+      if (!settingsAdvancedWrap) return;
+      if (!settingsAdvancedWrap.classList.contains("open")) settingsAdvToggle.click();
+      if (scrollToSelector) {
+        setTimeout(() => {
+          const target = settingsAdvancedWrap.querySelector(scrollToSelector);
+          if (target && target.scrollIntoView) target.scrollIntoView({ block: "center", behavior: "smooth" });
+        }, 60);
+      }
+    }
+    if (advancedPanels.length) {
+      mount.appendChild(el("div.settings-zone-h", { text: "Advanced" }));
+      const advPanel = el("div.panel");
+      const advRow = el("div", { style: "display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap" });
+      // lint-patterns check (c): space-between+flex-wrap needs a grow/shrink
+      // child (flex:1 1 auto;min-width:0, so long text wraps/ellipsizes
+      // instead of pushing) paired with a fixed child (flex:0 0 auto;
+      // white-space:nowrap, so the toggle button never wraps its own text).
+      advRow.appendChild(el("p.hint", { style: "margin:0;flex:1 1 auto;min-width:0", text: "Typography, individual accessibility toggles, interface options, and forms fill mode." }));
+      settingsAdvToggle = el("button.btn.sm.ghost", { type: "button", style: "flex:0 0 auto;white-space:nowrap", text: settingsAdvancedOpen ? "Hide advanced settings ▴" : "Show advanced settings ▾", "aria-expanded": settingsAdvancedOpen ? "true" : "false" });
+      advRow.appendChild(settingsAdvToggle);
+      advPanel.appendChild(advRow);
+      settingsAdvancedWrap = el("div" + (settingsAdvancedOpen ? ".open" : ""), { style: "margin-top:10px;" + (settingsAdvancedOpen ? "" : "display:none") });
+      advancedPanels.forEach((p) => settingsAdvancedWrap.appendChild(p));
+      advPanel.appendChild(settingsAdvancedWrap);
+      settingsAdvToggle.addEventListener("click", () => {
+        const open = !settingsAdvancedWrap.classList.contains("open");
+        settingsAdvancedWrap.classList.toggle("open", open);
+        settingsAdvancedWrap.style.display = open ? "" : "none";
+        settingsAdvToggle.textContent = open ? "Hide advanced settings ▴" : "Show advanced settings ▾";
+        settingsAdvToggle.setAttribute("aria-expanded", String(open));
+        try { localStorage.setItem("guidon-settings-advanced-open", open ? "1" : "0"); } catch (e) {}
+      });
+      mount.appendChild(advPanel);
     }
 
     // data / backup
@@ -22912,17 +23179,40 @@ window.G = window.G || {};
   // labeled, collapsible clusters — only the group containing the active
   // route auto-expands. Purely a nav-presentation concern; routes/hashes
   // are unchanged, so nothing else in the app needs to know this exists.
+  // subdivideAfter (Tier 1(b), in-group dividers): renders one more
+  // .nav-divider - the SAME element already used between groups - right
+  // after the named hash's button, purely to visually chunk a long
+  // group into two sub-clusters. No new collapsible header, no new
+  // persisted state, group membership/routing is unchanged.
+  // demoted (Tier 1(d)): these hashes get the .nav-demoted styling (Q1:
+  // in-place, not a 7th nav group; Q2: only Diagnostics/Author demote -
+  // Freshness and Share & Install stay in Account's primary row).
   const NAV_GROUPS = [
     { id: "home",    label: null,             hashes: ["#/home"] },
-    { id: "prep",    label: "Board Prep",     hashes: ["#/train", "#/board", "#/records", "#/calendar", "#/doctrine", "#/dictionary", "#/library"] },
+    // Practice & tracking (Train/Board Drill/Records/Calendar) | reference
+    // library (Doctrine/Dictionary/Library).
+    { id: "prep",    label: "Board Prep",     hashes: ["#/train", "#/board", "#/records", "#/calendar", "#/doctrine", "#/dictionary", "#/library"],
+      subdivideAfter: "#/calendar" },
     // Counsel moved here from Leadership (intuitivism pass) - its own
     // DEMO_NOTES tooltip already calls it a "skill-builder," closer in
     // kind to Learn/Forms/Write than to the BLC/ALC/SLC course-prep
     // cluster it used to sit in.
     { id: "study",   label: "Study & Skills", hashes: ["#/learn", "#/forms", "#/write", "#/counsel"] },
-    { id: "lead",    label: "Leadership",     hashes: ["#/blc", "#/alc", "#/slc", "#/drills", "#/leader", "#/develop", "#/risk"] },
-    { id: "career",  label: "Career & Life",  hashes: ["#/career", "#/assignments", "#/channels", "#/money", "#/health", "#/fitness", "#/transition", "#/resources"] },
-    { id: "account", label: "Account",        hashes: ["#/progress", "#/currency", "#/author", "#/settings", "#/selftest", "#/share"] },
+    // PME course-prep self-checks (BLC/ALC/SLC) | leadership practice
+    // tools (Leadership Drills/Squad Roster/My IDP/Risk).
+    { id: "lead",    label: "Leadership",     hashes: ["#/blc", "#/alc", "#/slc", "#/drills", "#/leader", "#/develop", "#/risk"],
+      subdivideAfter: "#/slc" },
+    // Career-track (MOS Center/Assignments/Channels/Transition) | personal
+    // (Money/Health/Fitness/Resources). Reordered from the flat list so
+    // the two clusters sit contiguous - #/transition moved next to
+    // #/channels, routing/grouping otherwise unchanged.
+    { id: "career",  label: "Career & Life",  hashes: ["#/career", "#/assignments", "#/channels", "#/transition", "#/money", "#/health", "#/fitness", "#/resources"],
+      subdivideAfter: "#/transition" },
+    // Primary row (Progress/Freshness/Settings/Share & Install) | demoted
+    // (Author, Diagnostics) - reordered so the two demoted items sit
+    // together at the end, below the divider.
+    { id: "account", label: "Account",        hashes: ["#/progress", "#/currency", "#/settings", "#/share", "#/author", "#/selftest"],
+      subdivideAfter: "#/share", demoted: ["#/author", "#/selftest"] },
   ];
   const navOpenGroups = new Set(["home"]);
   try {
@@ -23043,26 +23333,45 @@ window.G = window.G || {};
   // two sidebar tiers (≥600px) where vertical space actually benefits from it.
   const SIDEBAR_MQ = window.matchMedia ? window.matchMedia("(min-width: 600px)") : { matches: true };
 
-  function renderNav() {
-    util.clear(navEl);
-    if (!SIDEBAR_MQ.matches) {
-      ROUTES.forEach((r) => { const b = navButton(r.hash); if (b) navEl.appendChild(b); });
-      setActive(location.hash || "#/home");
-      return;
-    }
+  // Tier 1(a): the <600px flat bar used to render all 33 routes in one
+  // horizontally-scrolling strip - the single highest-leverage finding of
+  // the intuitivism pass. Curated to 4 primary routes + "More" below,
+  // which opens the exact same NAV_GROUPS accordion the >=600px sidebar
+  // renders (renderGroupsInto), as a drawer. Zero new routes.
+  // Chosen as: the dashboard (Home), the two highest-traffic daily-prep
+  // tools (Train, Board Drill), and the progress/tracking hub - orient,
+  // practice, drill, track. A judgment call with no single "correct"
+  // answer the code can derive; flagged for review, trivial to change
+  // (one array) if a different 4 reads better in practice.
+  const NAV_PRIMARY_MOBILE = ["#/home", "#/train", "#/board", "#/progress"];
+
+  // Renders the full grouped accordion (dividers, collapsible headers,
+  // in-group sub-dividers, demoted items) into ANY container - the
+  // >=600px sidebar (navEl) and the <600px "More" drawer both call this
+  // SAME function, so the drawer is never a second, driftable copy of
+  // the group structure.
+  function renderGroupsInto(container) {
     NAV_GROUPS.forEach((g) => {
       if (g.label === null) {
-        g.hashes.forEach((h) => { const b = navButton(h); if (b) navEl.appendChild(b); });
+        g.hashes.forEach((h) => { const b = navButton(h); if (b) container.appendChild(b); });
         return;
       }
-      navEl.appendChild(el("div.nav-divider"));
+      container.appendChild(el("div.nav-divider"));
       const isOpen = navOpenGroups.has(g.id);
       // Children always render (into a .nav-group-body wrapper) rather than
       // only when open -- open/close is then a pure CSS class toggle on
       // existing elements, not a DOM add/remove, so it can actually animate
       // (max-height/opacity) and never needs a full renderNav() rebuild.
       const body = el("div.nav-group-body" + (isOpen ? ".open" : ""));
-      g.hashes.forEach((h) => { const b = navButton(h); if (b) body.appendChild(b); });
+      g.hashes.forEach((h) => {
+        const b = navButton(h);
+        if (!b) return;
+        if (g.demoted && g.demoted.indexOf(h) !== -1) b.classList.add("nav-demoted");
+        body.appendChild(b);
+        // In-group divider (Tier 1(b)): same .nav-divider element already
+        // used between groups, just placed inside this one's body too.
+        if (g.subdivideAfter === h) body.appendChild(el("div.nav-divider"));
+      });
       const chev = el("span.ico.nav-group-chev", { "aria-hidden": "true" }, [G.util.icon("chevron-right", 14, "▸")]);
       const header = el("button.nav-group-header" + (isOpen ? ".open" : ""), {
         "aria-expanded": isOpen ? "true" : "false",
@@ -23078,9 +23387,54 @@ window.G = window.G || {};
         chev,
         document.createTextNode(g.label),
       ]);
-      navEl.appendChild(header);
-      navEl.appendChild(body);
+      container.appendChild(header);
+      container.appendChild(body);
     });
+  }
+
+  // Tier 1(a): the "More" drawer. Reuses .gm-back for the backdrop and the
+  // shared util.modalTrap (Escape, Tab focus-trap, focus-restore) every
+  // other dialog in the app already uses - only the panel's own look
+  // (.nav-drawer, bottom-anchored) is new.
+  let navDrawerTrap = null;
+  function closeNavDrawer() {
+    if (navDrawerTrap) { navDrawerTrap.close(); navDrawerTrap = null; }
+  }
+  function openNavDrawer() {
+    if (navDrawerTrap) return;
+    const back = el("div.gm-back.nav-drawer-back", { role: "presentation" });
+    const panel = el("div.nav-drawer", { role: "dialog", "aria-modal": "true", "aria-label": "More sections" });
+    const closeBtn = el("button.btn.ghost.sm", { type: "button", "aria-label": "Close" });
+    closeBtn.appendChild(G.util.icon("x", 16, "✕"));
+    closeBtn.addEventListener("click", () => closeNavDrawer());
+    panel.appendChild(el("div.nav-drawer-head", {}, [el("h2", { text: "More" }), closeBtn]));
+    renderGroupsInto(panel);
+    // Any real navigation (a button carrying data-hash - group headers
+    // don't) closes the drawer. Delegated on the panel, bubble phase, so
+    // it fires after navButton()'s own click handler has already set
+    // location.hash.
+    panel.addEventListener("click", (e) => {
+      if (e.target.closest("button[data-hash]")) closeNavDrawer();
+    });
+    back.appendChild(panel);
+    back.addEventListener("click", (e) => { if (e.target === back) closeNavDrawer(); });
+    document.body.appendChild(back);
+    navDrawerTrap = util.modalTrap(back, panel, () => { navDrawerTrap = null; });
+  }
+
+  function renderNav() {
+    util.clear(navEl);
+    if (!SIDEBAR_MQ.matches) {
+      NAV_PRIMARY_MOBILE.forEach((h) => { const b = navButton(h); if (b) navEl.appendChild(b); });
+      const moreBtn = el("button.nav-more-btn", {
+        type: "button", "aria-label": "More", title: "More sections",
+        onclick: () => openNavDrawer(),
+      }, [el("span.ico", { "aria-hidden": "true" }, [G.util.icon("more-horizontal", 18, "⋯")]), document.createTextNode("More")]);
+      navEl.appendChild(moreBtn);
+      setActive(location.hash || "#/home");
+      return;
+    }
+    renderGroupsInto(navEl);
     setActive(location.hash || "#/home");
   }
   // Re-render if a resize crosses the 600px line (e.g. a foldable unfolding,
@@ -23095,6 +23449,11 @@ window.G = window.G || {};
       b.classList.toggle("active", on);
       if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
     });
+    // "More" lights up whenever the active route lives inside the drawer
+    // rather than among the 4 curated primaries, so a Soldier deep in
+    // Settings still sees SOMETHING highlighted in the flat bar.
+    const moreBtn = navEl.querySelector(".nav-more-btn");
+    if (moreBtn) moreBtn.classList.toggle("active", NAV_PRIMARY_MOBILE.indexOf(hash) === -1);
   }
 
   // ── Demo Mode badge (Free Mode indicator + one-tap exit) ──────────────────
@@ -23157,6 +23516,11 @@ window.G = window.G || {};
       try { if (G.board && G.board.exitTheater) G.board.exitTheater(); } catch (e) {}
       document.documentElement.classList.remove("qz-theater");
     }
+    // Same reasoning for the "More" drawer (Tier 1(a)) - a click on one of
+    // its own nav buttons already closes it (see openNavDrawer), but any
+    // OTHER route change while it's open (browser back, search-jump, a
+    // deep link) must not leave it stranded over the new view.
+    try { closeNavDrawer(); } catch (e) {}
     util.clear(routeEl);
     // Every render gets its OWN frame inside #route, so a superseded render can
     // only ever append into a detached node. Without this, two quick route()

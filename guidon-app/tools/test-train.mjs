@@ -76,6 +76,14 @@ trainingCardState.badges === trainingCount
 await page.locator(".tabbar .tab", { hasText: /^All/ }).click();
 await page.waitForTimeout(200);
 
+// Intuitivism pass, Tier 1(g): the competency/difficulty chip rows moved
+// behind a "Filters" toggle (11 always-visible chips collapsed to one).
+// A display:none ancestor has no accessible role, so a real
+// page.locator().click() on a chip inside it would time out until this
+// expands the section first - once, for the whole chip block below.
+await page.locator("button", { hasText: /^Filters/ }).click();
+await page.waitForTimeout(150);
+
 // ---- competency chip: real filter + aria-pressed + cap/header text ----
 const leadsCount = await page.evaluate(() => window.G.store.scenarios().filter((s) => (s.competency || []).includes("Leads")).length);
 await page.locator('[aria-label="Filter by competency"] .search-chip', { hasText: /^Leads$/ }).click();

@@ -83,6 +83,21 @@ async function clickCheckbox(label) {
   await cb.evaluate((el) => el.click());
 }
 
+// Intuitivism pass, Tier 1(c): Line spacing, Content density, and all 7
+// Accessibility & Focus checkboxes moved behind Settings' new "Show
+// advanced settings" collapse - a display:none ancestor drops out of the
+// accessibility tree entirely, so getByRole()/clickCheckbox() above would
+// find nothing until this expands it. Idempotent (checks aria-expanded
+// first) - safe to call before every block below regardless of whether an
+// earlier call (or the guidon-settings-advanced-open localStorage flag it
+// writes, which survives the section-7 reload) already left it open.
+async function openAdvanced() {
+  const btn = page.getByRole("button", { name: /advanced settings/i });
+  const expanded = await btn.getAttribute("aria-expanded").catch(() => null);
+  if (expanded !== "true") await btn.click();
+  await page.waitForTimeout(150);
+}
+
 // ============================================================
 // 1) TEXT SIZE - segmented control (Appearance panel), not a checkbox.
 //    Real fix under test: font-size lives on <html>, so a component sized
@@ -150,6 +165,7 @@ async function clickCheckbox(label) {
   const scaleBefore = await scaleVar();
   scaleBefore === "1" ? ok(`Line spacing 'Normal': --line-spacing-scale is 1 (baseline)`) : bad(`Line spacing 'Normal': --line-spacing-scale was "${scaleBefore}", expected "1"`);
 
+  await openAdvanced();
   await page.getByRole("button", { name: "Relaxed line spacing", exact: true }).click();
   await page.waitForTimeout(200);
   const lhRelaxed = await bodyLineHeight();
@@ -198,6 +214,7 @@ async function clickCheckbox(label) {
   const before = await panelBorder();
   before === "1px" ? ok(`High contrast off: a real .panel border-width is 1px (baseline)`) : bad(`High contrast off: .panel border-width was "${before}", expected "1px"`);
 
+  await openAdvanced();
   await clickCheckbox("High contrast");
   await page.waitForTimeout(200);
   const on = await panelBorder();
@@ -228,6 +245,7 @@ async function clickCheckbox(label) {
 
   await page.evaluate(() => { location.hash = "#/settings"; });
   await page.waitForTimeout(400);
+  await openAdvanced();
   await clickCheckbox("Larger tap targets");
   await page.waitForTimeout(150);
 
@@ -240,6 +258,7 @@ async function clickCheckbox(label) {
 
   await page.evaluate(() => { location.hash = "#/settings"; });
   await page.waitForTimeout(400);
+  await openAdvanced();
   await clickCheckbox("Larger tap targets");
   await page.waitForTimeout(150);
 
@@ -288,6 +307,7 @@ async function clickCheckbox(label) {
 
   await page.evaluate(() => { location.hash = "#/settings"; });
   await page.waitForTimeout(400);
+  await openAdvanced();
   await clickCheckbox("Reduce transparency");
   await page.waitForTimeout(150);
 
@@ -300,6 +320,7 @@ async function clickCheckbox(label) {
 
   await page.evaluate(() => { location.hash = "#/settings"; });
   await page.waitForTimeout(400);
+  await openAdvanced();
   await clickCheckbox("Reduce transparency");
   await page.waitForTimeout(150);
 
@@ -323,6 +344,7 @@ async function clickCheckbox(label) {
 {
   await page.evaluate(() => { location.hash = "#/settings"; });
   await page.waitForTimeout(400);
+  await openAdvanced();
 
   async function focusedOutline() {
     await page.keyboard.press("Tab"); // establishes real keyboard input modality
@@ -402,6 +424,7 @@ async function clickCheckbox(label) {
   cardBefore === "14px" ? ok(`Content density 'Standard': .card padding is 14px (baseline)`) : bad(`Content density 'Standard': .card padding was "${cardBefore}", expected "14px"`);
   (await densityAttr()) === "standard" ? ok(`Content density 'Standard': <html data-content-density="standard">`) : bad(`Content density attribute was "${await densityAttr()}", expected "standard"`);
 
+  await openAdvanced();
   await page.getByRole("button", { name: "Sparse content density", exact: true }).click();
   await page.waitForTimeout(200);
   const paddingSparse = await panelPadding();
@@ -465,6 +488,11 @@ async function clickCheckbox(label) {
     ? ok("Content density 'Dense': .panel padding is still 11px after reload, not just the attribute")
     : bad(`.panel padding after reload was "${paddingAfterReload}", expected "11px"`);
 
+  // guidon-settings-advanced-open persists across the reload above (Q7:
+  // Advanced-tier persistence mirrors nav-group open/closed state), but
+  // openAdvanced() checks aria-expanded first regardless, so this is a
+  // correct no-op if it's already open rather than an assumption.
+  await openAdvanced();
   await page.getByRole("button", { name: "Standard content density", exact: true }).click();
   await page.waitForTimeout(200);
   const paddingBack = await panelPadding();

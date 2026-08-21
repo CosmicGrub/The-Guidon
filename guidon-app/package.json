@@ -12,7 +12,7 @@
     "test:standalone": "node tools/test-standalone.mjs",
     "test:csp": "node tools/test-csp.mjs",
     "lint:patterns": "node tools/lint-patterns.mjs",
-    "test": "npm run lint:patterns && npm run build && npm run verify && node tools/run-parallel.mjs test:points test:consistency test:calendar test:leader test:privacy test:scrollhint test:theater test:flip test:a11y test:pdf test:standalone test:bridge test:contrast-full test:responsive test:csp test:discoverability test:mockboard test:idp test:reminders test:finance test:salneg test:career test:author test:onboarding test:backup-roundtrip test:selftest test:print-paths test:search-views test:records test:ppw test:native-download test:print-native test:native-unit test:train test:forms test:settings-toggles test:misc-routes test:consistency-extended test:baseline-coverage test:weak-areas test:profile-guest-guard test:progress-cache test:train-mode-guard test:board-drill-grading test:search-list-detail test:board-drill-dynamic",
+    "test": "npm run lint:patterns && npm run build && npm run verify && node tools/run-parallel.mjs test:points test:consistency test:calendar test:leader test:privacy test:scrollhint test:theater test:flip test:a11y test:pdf test:standalone test:bridge test:contrast-full test:responsive test:csp test:discoverability test:mockboard test:idp test:reminders test:finance test:salneg test:career test:author test:onboarding test:backup-roundtrip test:selftest test:print-paths test:search-views test:records test:ppw test:native-download test:print-native test:native-unit test:train test:forms test:settings-toggles test:misc-routes test:consistency-extended test:baseline-coverage test:weak-areas test:profile-guest-guard test:progress-cache test:train-mode-guard test:board-drill-grading test:search-list-detail test:board-drill-dynamic test:nav-tier1",
     "perf": "node tools/perf.mjs",
     "serve": "node tools/server.mjs web 8099",
     "desktop:dev": "npm run build && tauri dev",
@@ -70,7 +70,8 @@
     "test:train-mode-guard": "node tools/test-train-mode-guard.mjs",
     "test:board-drill-dynamic": "node tools/test-board-drill-dynamic.mjs",
     "test:board-drill-grading": "node tools/test-board-drill-grading.mjs",
-    "test:search-list-detail": "node tools/test-search-list-detail.mjs"
+    "test:search-list-detail": "node tools/test-search-list-detail.mjs",
+    "test:nav-tier1": "node tools/test-nav-tier1.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",

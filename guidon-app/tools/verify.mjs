@@ -17,12 +17,21 @@ const WEB = process.argv[2] || "web";
 const SETTLE_NAV = 250;
 const SETTLE_THEME = 700; // > longest transition; phantom failures below this
 
-// Real CSS viewports (physical / DPR), matching masterfile §41.
+// Real CSS viewports (physical / DPR), matching masterfile §41 - except
+// tabS9-portrait, corrected during the intuitivism pass (2026-08-20).
+// §41 had recorded 720x1152 labeled "physical / DPR, not guessed," which
+// contradicted the intuitivism plan's own separate ~823px figure. Resolved
+// for real this time, not by picking a side: a Tab S9 FE (SM-X518U) was
+// connected via adb for this session, so this was read directly from the
+// live installed app's own WebView over CDP - window.innerWidth === 823,
+// window.devicePixelRatio === 1.75 - not computed, not guessed. §41's 720
+// was wrong. GUIDON_MASTERFILE.md §41 corrected to match; see its own note
+// there for the same real-hardware citation.
 const VIEWPORTS = [
   { name: "fold-closed", width: 344, height: 882 },
   { name: "phone-360", width: 360, height: 780 },
   { name: "fold-open", width: 673, height: 841 },
-  { name: "tabS9-portrait", width: 720, height: 1152 },
+  { name: "tabS9-portrait", width: 823, height: 1286 },
   { name: "tabS9-landscape", width: 1152, height: 720 },
   { name: "desktop", width: 1440, height: 900 },
 ];
