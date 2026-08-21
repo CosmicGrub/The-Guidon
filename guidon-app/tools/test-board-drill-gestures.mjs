@@ -5,6 +5,9 @@
  *   - vertical (up OR down) always flips the card, whatever state it's in
  *   - horizontal BEFORE flip browses the deck without grading (prev/next)
  *   - horizontal AFTER flip keeps the original swipe-to-grade behavior
+ *   - a drag that STARTS inside the answer's own scroll region
+ *     (.qz-back-scroll — long answers, key points, cross-links) is not a
+ *     card gesture at all; it's that region's native scroll
  * — across BOTH input paths wireSwipe() now drives: raw Touch events
  * (already covered for the horizontal/post-flip case by test-flip.mjs and
  * test-board-drill-grading.mjs) and the new Pointer Events path for
@@ -12,9 +15,23 @@
  * vertical flip (either input), pre-flip horizontal browse (either input),
  * mouse drag specifically (via Playwright's trusted page.mouse, not
  * scripted dispatchEvent — real click synthesis only follows trusted
- * input), and the drag-vs-click disambiguation that a trusted mouse
+ * input), the drag-vs-click disambiguation that a trusted mouse
  * down/move/up sequence uniquely puts at risk (a scripted PointerEvent
- * dispatch never exercises the browser's own click synthesis at all).
+ * dispatch never exercises the browser's own click synthesis at all), and
+ * the scroll-region carve-out (via CDP's Input.dispatchTouchEvent, which —
+ * unlike this file's own touchSwipe() below — does real coordinate-based
+ * hit-testing, so it's the only way here to prove a touch that visually
+ * lands inside .qz-back-scroll resolves to that element, the same gap that
+ * let the original regression through: touchSwipe() dispatches events
+ * directly on .qz-card regardless of (x,y), so target-based logic like
+ * closest(".qz-back-scroll") can never see anything but .qz-card there).
+ *
+ * NOTE on the mouse post-flip grade test below: because .qz-back-scroll is
+ * a flex:1 child that fills nearly the whole back face, the card's
+ * geometric CENTER sits inside it once flipped — so that test deliberately
+ * grabs from the card's top padding strip (just below the top edge, above
+ * where the scroll region begins), not dead-center, to stay in the
+ * still-swipeable chrome around it.
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
@@ -45,6 +62,13 @@ const cardCenter = async () => page.evaluate(() => {
   const r = document.querySelector(".qz-card").getBoundingClientRect();
   return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
 });
+// Inside the 22px card padding, above where .qz-back-scroll begins — see
+// this file's header note on why the post-flip grade test needs this
+// instead of cardCenter().
+const cardTopEdge = async () => page.evaluate(() => {
+  const r = document.querySelector(".qz-card").getBoundingClientRect();
+  return { cx: r.left + r.width / 2, cy: r.top + 10 };
+});
 const isFlipped = () => page.evaluate(() => !!document.querySelector(".qz-card.flipped"));
 const tallyText = () => page.evaluate(() => (document.querySelector(".stat .v") || {}).textContent || "");
 const promptText = () => page.evaluate(() => (document.querySelector(".qz-prompt") || {}).textContent || "");
@@ -65,8 +89,8 @@ async function touchSwipe(dx, dy) {
   }, { cx, cy, dx, dy });
 }
 
-async function mouseDrag(dx, dy) {
-  const { cx, cy } = await cardCenter();
+async function mouseDrag(dx, dy, origin) {
+  const { cx, cy } = await (origin || cardCenter)();
   await page.mouse.move(cx, cy);
   await page.mouse.down();
   await page.mouse.move(cx + dx * 0.5, cy + dy * 0.5, { steps: 5 });
@@ -141,18 +165,95 @@ promptAfterMouseBrowse !== promptBeforeMouseBrowse
 
 /* ---- 8. Mouse: vertical drag flips the card ---- */
 await mouseDrag(0, -140);
-await page.waitForTimeout(300);
+// Unlike a plain click, a vertical drag's own release fling (140ms) is
+// stacked BEFORE doFlip() hands off to the stylesheet's rich-motion 650ms
+// rotateY transition - isFlipped() (a class check) settles well inside
+// 300ms, but getBoundingClientRect() below in test 9 needs the transform
+// itself to have finished, or it reads a mid-rotation, geometrically
+// skewed rect and computes the wrong coordinates for the next drag.
+await page.waitForTimeout(900);
 (await isFlipped()) ? ok("mouse: vertical drag flips an unflipped card") : bad("mouse: vertical drag did not flip");
 
 /* ---- 9. Mouse: horizontal drag past threshold, post-flip, grades ---- */
+// From the top padding strip, not the center — see this file's header note.
 const tallyBeforeMouseGrade = await tallyText();
-await mouseDrag(220, 0); // drag right -> "Know It"
+await mouseDrag(220, 0, cardTopEdge); // drag right -> "Know It"
 await page.waitForTimeout(400);
 const tallyAfterMouseGrade = await tallyText();
 tallyAfterMouseGrade !== tallyBeforeMouseGrade
   ? ok(`mouse: post-flip horizontal drag graded the card (tally advanced: "${tallyBeforeMouseGrade}" -> "${tallyAfterMouseGrade}")`)
   : bad("mouse: post-flip drag did not grade/advance");
 (await isFlipped()) === false ? ok("mouse: the next card arrives unflipped after a mouse-graded swipe") : bad("mouse: next card came in already flipped");
+
+/* ---- 10. Touch (real hit-testing via CDP): a drag starting inside the
+   answer's own scroll region scrolls it, and does NOT flip/grade the card.
+   This is the actual regression a real Soldier hit: dragging up through a
+   long answer to keep reading was being read as a vertical swipe and
+   flipping the card back to the question, discarding the scroll. Uses CDP's
+   Input.dispatchTouchEvent specifically because it hit-tests by real
+   coordinate (unlike touchSwipe() above, which always dispatches on
+   .qz-card regardless of where the touch visually lands) - the same gap
+   that let this regression ship unnoticed. ---- */
+async function cdpTouchDrag(x, y, dx, dy) {
+  const cdp = await page.context().newCDPSession(page);
+  const pt = (px, py) => [{ x: px, y: py, id: 1 }];
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: pt(x, y) });
+  await new Promise((r) => setTimeout(r, 40));
+  for (let i = 1; i <= 5; i++) {
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: pt(x + (dx * i) / 5, y + (dy * i) / 5) });
+    await new Promise((r) => setTimeout(r, 40));
+  }
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await cdp.detach();
+}
+
+// Find a card whose answer actually overflows .qz-back-scroll — a short
+// answer has nothing to scroll and would make this test meaningless.
+let overflowingCardFound = false;
+for (let i = 0; i < 12 && !overflowingCardFound; i++) {
+  if (!(await isFlipped())) { await page.evaluate(() => document.querySelector(".qz-card").click()); await page.waitForTimeout(600); }
+  overflowingCardFound = await page.evaluate(() => {
+    const s = document.querySelector(".qz-back-scroll");
+    return s.scrollHeight > s.clientHeight + 40;
+  });
+  if (!overflowingCardFound) {
+    await page.evaluate(() => document.querySelector(".qz-card").click()); // flip back
+    await page.waitForTimeout(600);
+    await page.evaluate(() => {
+      const b = [...document.querySelectorAll(".qz-nav-btn")].find((x) => (x.getAttribute("aria-label") || "") === "Next card");
+      if (b) b.click();
+    });
+    await page.waitForTimeout(250);
+  }
+}
+
+if (!overflowingCardFound) {
+  bad("scroll-region test: could not find a card with an overflowing answer to test against");
+} else {
+  const before = await page.evaluate(() => {
+    const s = document.querySelector(".qz-back-scroll");
+    const r = s.getBoundingClientRect();
+    return { cx: r.left + r.width / 2, cy: r.top + 30, scrollTop: s.scrollTop, flipped: document.querySelector(".qz-card").classList.contains("flipped") };
+  });
+  const tallyBeforeScrollTest = await tallyText();
+  await cdpTouchDrag(before.cx, before.cy, 0, -140); // drag up through the text, as if reading on
+  await page.waitForTimeout(350);
+  const after = await page.evaluate(() => ({
+    scrollTop: document.querySelector(".qz-back-scroll").scrollTop,
+    flipped: document.querySelector(".qz-card").classList.contains("flipped"),
+  }));
+  const tallyAfterScrollTest = await tallyText();
+
+  after.scrollTop > before.scrollTop
+    ? ok(`touch (real hit-test): dragging inside a long answer's text scrolls it (scrollTop ${before.scrollTop} -> ${after.scrollTop})`)
+    : bad(`touch (real hit-test): scrollTop did not advance (${before.scrollTop} -> ${after.scrollTop}) - the drag was swallowed instead of scrolling`);
+  after.flipped === before.flipped
+    ? ok("touch (real hit-test): the card stayed flipped/showing the answer - did NOT get flipped away by the scroll drag")
+    : bad("touch (real hit-test): the card's flip state changed - the scroll drag was misread as a vertical swipe-to-flip");
+  tallyAfterScrollTest === tallyBeforeScrollTest
+    ? ok("touch (real hit-test): no grade was triggered by scrolling the answer")
+    : bad(`touch (real hit-test): tally changed from scrolling alone - "${tallyBeforeScrollTest}" -> "${tallyAfterScrollTest}"`);
+}
 
 const relevantNoise = noise.filter((n) => !/favicon/.test(n));
 relevantNoise.length === 0 ? ok("no console errors/warnings") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));

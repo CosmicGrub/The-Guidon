@@ -7411,8 +7411,25 @@ window.G = window.G || {};
         }
       }
 
+      // A drag that STARTS inside the answer's own scroll region (long
+      // answers, key points, cross-links — see buildBackContent) must stay
+      // that region's own native scroll, never a card-level gesture. Found
+      // as a real regression, not reasoned about in the abstract: a long
+      // answer's content was getting cut off, and the actual cause was this
+      // engine hijacking the exact drag a Soldier makes to keep reading -
+      // dragging up through the text to scroll it was being read as a
+      // vertical swipe and flipping the card back to the question,
+      // discarding the scroll entirely. .qz-back-scroll already declares
+      // itself independently scrollable (role="region", its own tabindex),
+      // so a touch/pointer starting there is opted out of begin() entirely
+      // - dragging/move/end all no-op on it (dragging stays false), leaving
+      // the browser's native scroll (and, for mouse, the wheel, which was
+      // never affected by this to begin with) fully in charge.
+      const startsInScroll = (e) => e.target instanceof HTMLElement && !!e.target.closest(".qz-back-scroll");
+
       // ---- Touch path: unchanged raw Touch events ----
       card.addEventListener("touchstart", (e) => {
+        if (startsInScroll(e)) return;
         const t = e.touches[0];
         begin(t.clientX, t.clientY);
       }, { passive: true });
@@ -7433,6 +7450,7 @@ window.G = window.G || {};
       card.addEventListener("pointerdown", (e) => {
         if (e.pointerType === "touch") return;
         if (e.target instanceof HTMLElement && e.target.closest(".qz-star-btn")) return;
+        if (startsInScroll(e)) return;
         pointerId = e.pointerId;
         try { card.setPointerCapture(pointerId); } catch (e2) {}
         begin(e.clientX, e.clientY);
