@@ -4473,6 +4473,27 @@ window.G = window.G || {};
     return Promise.resolve(true);
   };
 
+  // Single call site for "good"/"needs work" feedback buzzes (Board Drill
+  // grading, Quiz answers). Unlike _nativeSave, this needs NO isNative()
+  // branch: @capacitor/haptics' own web implementation already delegates to
+  // navigator.vibrate() internally (with richer, more distinct patterns per
+  // NotificationType than our old flat 30ms/[30,30,30] buzzes), so one
+  // Capacitor call works correctly on both native Android and web. Falls
+  // back to a raw navigator.vibrate() if the plugin isn't present for any
+  // reason (e.g. an older cached build), and is silently a no-op if neither
+  // is available.
+  util.haptic = function (kind) {
+    try {
+      const Cap = window.Capacitor;
+      const Haptics = Cap && Cap.Plugins && Cap.Plugins.Haptics;
+      if (Haptics) {
+        Haptics.notification({ type: kind === "success" ? "SUCCESS" : "WARNING" });
+        return;
+      }
+      if (navigator.vibrate) navigator.vibrate(kind === "success" ? 30 : [30, 30, 30]);
+    } catch (e) {}
+  };
+
   // Print/export an element's HTML in a clean, isolated print view.
   util.printHTML = function (title, innerHTML) {
     // window.print() is a silent no-op inside Capacitor's bare Android
@@ -7093,7 +7114,7 @@ window.G = window.G || {};
       seen++; if (gradeLevel >= 2) recalled++;
       const labels = ["Marked needs help.", "Marked somewhat known.", "Marked known.", "Marked down cold."];
       try { if (G.util.announce) G.util.announce((labels[gradeLevel] || "Graded.") + " Next card."); } catch (e) {}
-      try { if (navigator.vibrate) navigator.vibrate(gradeLevel >= 2 ? 30 : [30, 30, 30]); } catch (e) {}
+      util.haptic(gradeLevel >= 2 ? "success" : "warning");
       if (gradeLevel <= 1) {
         // Fixed +3 thrashed on small filtered pools (single-category + due-
         // only + leech combos routinely leave <=3 cards) — scale the
@@ -7451,7 +7472,7 @@ window.G = window.G || {};
       card._feedback.textContent = ok ? "Correct!" : (chosenIdx === -1 ? "Time's up — " : "Incorrect — ") + "correct answer: " + options[correctIdx];
       card._feedback.classList.add("show");
       try { if (G.util.announce) G.util.announce(ok ? "Correct." : "Incorrect. Correct answer: " + options[correctIdx]); } catch (e) {}
-      try { if (navigator.vibrate) navigator.vibrate(ok ? 30 : [30, 30, 30]); } catch (e) {}
+      util.haptic(ok ? "success" : "warning");
       sess.idx++;
       const nextBtn = el("button.btn.primary", { type: "button", text: sess.idx < sess.total ? "Next →" : "See Results", style: "margin-top:10px" });
       nextBtn.addEventListener("click", () => advanceQuiz(card));
