@@ -81,8 +81,18 @@ await page.waitForTimeout(200);
 // A display:none ancestor has no accessible role, so a real
 // page.locator().click() on a chip inside it would time out until this
 // expands the section first - once, for the whole chip block below.
-await page.locator("button", { hasText: /^Filters/ }).click();
+const filtersToggle = page.locator("button", { hasText: /^(Filters|Hide filters)/ });
+await filtersToggle.click();
 await page.waitForTimeout(150);
+
+// Audit finding (test-coverage gap): the toggle's own label - which names
+// how many filters are active so a COLLAPSED panel still discloses state,
+// per its own code comment - had zero coverage. Checked open with nothing
+// active here; the "N active" and re-collapsed cases are checked below,
+// after a chip is picked.
+(await filtersToggle.textContent())?.trim() === "Hide filters ▴"
+  ? ok("Filters toggle reads 'Hide filters ▴' when open with nothing active")
+  : bad("Filters toggle text right after opening: " + (await filtersToggle.textContent()));
 
 // ---- competency chip: real filter + aria-pressed + cap/header text ----
 const leadsCount = await page.evaluate(() => window.G.store.scenarios().filter((s) => (s.competency || []).includes("Leads")).length);
@@ -104,6 +114,17 @@ const allCompPressed = afterLeadsChip.pressed.find((c) => c.t === "All competenc
 leadsPressed?.p === "true" && allCompPressed?.p === "false"
   ? ok("clicking 'Leads' sets its own aria-pressed=true and clears 'All competencies'")
   : bad("aria-pressed state after Leads chip: " + JSON.stringify(afterLeadsChip.pressed));
+
+(await filtersToggle.textContent())?.trim() === "Hide filters (1 active) ▴"
+  ? ok("Filters toggle names the active count while open ('Hide filters (1 active) ▴')")
+  : bad("Filters toggle text with Leads active, open: " + (await filtersToggle.textContent()));
+await filtersToggle.click(); // collapse with a filter still active
+await page.waitForTimeout(150);
+(await filtersToggle.textContent())?.trim() === "Filters (1 active) ▾"
+  ? ok("Filters toggle still names the active count once collapsed - the whole point of the disclosure")
+  : bad("Filters toggle text with Leads active, collapsed: " + (await filtersToggle.textContent()));
+await filtersToggle.click(); // reopen for the rest of this suite
+await page.waitForTimeout(150);
 
 await page.locator('[aria-label="Filter by competency"] .search-chip', { hasText: /^All competencies$/ }).click();
 await page.waitForTimeout(200);

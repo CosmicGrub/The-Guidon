@@ -99,6 +99,61 @@ async function openAdvanced() {
 }
 
 // ============================================================
+// 0) SETTINGS ADVANCED COLLAPSE - own behavior (audit finding: every
+//    other section only ever used openAdvanced() as setup, never
+//    asserted on the toggle's own start-state, persistence write, or
+//    reload-restore - a regression breaking any of those would go
+//    completely unnoticed since openAdvanced()'s aria-expanded check
+//    just tolerates either state).
+// ============================================================
+{
+  const advBtn = page.getByRole("button", { name: /advanced settings/i });
+  // Fresh guest profile: collapsed by default, WITHOUT calling
+  // openAdvanced() first - proves the real default, not a forced state.
+  (await advBtn.getAttribute("aria-expanded")) === "false"
+    ? ok("Advanced settings starts collapsed by default for a fresh profile")
+    : bad("Advanced settings aria-expanded on fresh load: " + (await advBtn.getAttribute("aria-expanded")));
+
+  await advBtn.click();
+  await page.waitForTimeout(150);
+  (await page.evaluate(() => localStorage.getItem("guidon-settings-advanced-open"))) === "1"
+    ? ok("opening Advanced settings persists guidon-settings-advanced-open=1 to localStorage")
+    : bad("guidon-settings-advanced-open after opening: " + (await page.evaluate(() => localStorage.getItem("guidon-settings-advanced-open"))));
+
+  // Real reload (same guest-onboarding-dismiss dance section 7 already
+  // uses) - proves a genuine restore-from-storage, not just in-memory state.
+  await page.reload({ waitUntil: "load" });
+  await page.waitForTimeout(1000);
+  const guestCardAdv = page.locator(".ob-mode-card", { hasText: /guest session/i }).first();
+  await guestCardAdv.waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
+  if (await guestCardAdv.count()) {
+    await guestCardAdv.click();
+    await page.locator("#ob-overlay").waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
+  }
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { location.hash = "#/settings"; });
+  await page.waitForTimeout(500);
+  const advBtnAfterReload = page.getByRole("button", { name: /advanced settings/i });
+  (await advBtnAfterReload.getAttribute("aria-expanded")) === "true"
+    ? ok("a real reload restores Advanced settings to open, without openAdvanced() forcing it")
+    : bad("Advanced settings aria-expanded after reload: " + (await advBtnAfterReload.getAttribute("aria-expanded")));
+  const advPanelVisible = await page.evaluate(() => {
+    const wrap = document.querySelector("#settings-acc-panel")?.parentElement;
+    return wrap ? getComputedStyle(wrap).display !== "none" : null;
+  });
+  advPanelVisible === true
+    ? ok("the Advanced panel is actually visible (not display:none) after the reload-restore, not just the button's own state")
+    : bad("Advanced panel visibility after reload: " + advPanelVisible);
+
+  // Revert, for a clean baseline before the rest of this suite runs.
+  await advBtnAfterReload.click();
+  await page.waitForTimeout(150);
+  (await page.evaluate(() => localStorage.getItem("guidon-settings-advanced-open"))) === "0"
+    ? ok("closing Advanced settings again reverts guidon-settings-advanced-open to 0")
+    : bad("guidon-settings-advanced-open after closing: " + (await page.evaluate(() => localStorage.getItem("guidon-settings-advanced-open"))));
+}
+
+// ============================================================
 // 1) TEXT SIZE - segmented control (Appearance panel), not a checkbox.
 //    Real fix under test: font-size lives on <html>, so a component sized
 //    in rem (not just body copy) scales too.

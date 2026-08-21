@@ -49,12 +49,35 @@ await page.waitForTimeout(300);
 // so it's selected by text like those, not by .ob-next.
 await page.locator("button", { hasText: /^Next →$/ }).click(); // concerns -> weakpoints
 await page.waitForTimeout(300);
+// Audit finding (test-coverage gap): no suite ever expanded WeakPoints'
+// "+N more" toggle and selected a chip from its collapsed clusters (12 of
+// 19 options, structurally a different append path than the always-
+// visible "Foundations" default) - so the click -> data.studyWeakPoints
+// wiring for that subtree had zero coverage. Expand it and pick one chip
+// from each of the two collapsed groups here.
+await page.locator("button", { hasText: /more ▾/ }).click();
+await page.waitForTimeout(200);
+// Both chosen WITHOUT a `cite` field deliberately - a cited chip's button
+// is two sibling <span>s with no text-node separator (e.g. "Composite Risk
+// ManagementATP 5-19" as raw textContent), so a plain hasText string match
+// stays simple and unambiguous here.
+await page.locator("button", { hasText: "Supply / Property Accountability" }).click(); // "Regulations & Safety"
+await page.locator("button", { hasText: "Land Navigation / Map Reading" }).click(); // "Field & Technical Skills"
+await page.waitForTimeout(150);
 await page.locator("button", { hasText: /Build my plan/ }).click(); // weakpoints -> boarddate
 await page.waitForTimeout(300);
 await page.locator("button", { hasText: /^Skip$/ }).click(); // boarddate -> summary
 await page.waitForTimeout(300);
 await page.locator("button", { hasText: /Save profile & start/ }).click();
 await page.waitForTimeout(500);
+
+const savedWeakPoints = await page.evaluate(async () => {
+  const row = await window.G.db.get("kv", "guidon:profile:v1");
+  return (row && row.v && row.v.studyWeakPoints) || [];
+});
+savedWeakPoints.includes("supply") && savedWeakPoints.includes("land nav")
+  ? ok("selecting chips from WeakPoints' collapsed '+more' clusters (Supply, Land Navigation) saves them to the real profile")
+  : bad("studyWeakPoints after save: " + JSON.stringify(savedWeakPoints));
 
 await page.evaluate(() => { location.hash = "#/profile"; });
 await page.waitForTimeout(500);

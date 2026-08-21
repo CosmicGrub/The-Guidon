@@ -22,16 +22,21 @@ const SETTLE_THEME = 700; // > longest transition; phantom failures below this
 // §41 had recorded 720x1152 labeled "physical / DPR, not guessed," which
 // contradicted the intuitivism plan's own separate ~823px figure. Resolved
 // for real this time, not by picking a side: a Tab S9 FE (SM-X518U) was
-// connected via adb for this session, so this was read directly from the
+// connected via adb for this session, so width was read directly from the
 // live installed app's own WebView over CDP - window.innerWidth === 823,
 // window.devicePixelRatio === 1.75 - not computed, not guessed. §41's 720
-// was wrong. GUIDON_MASTERFILE.md §41 corrected to match; see its own note
-// there for the same real-hardware citation.
+// was wrong. Height (1317) is the physical/DPR division (2304/1.75), not a
+// separate CDP read (a second attempt to reattach and read
+// window.innerHeight directly hung mid-session and wasn't retried) - it
+// also matches the system's own rotation report for the swapped
+// orientation (w1317dp h823dp), so it's corroborated, just not
+// independently CDP-measured the way width/DPR are. GUIDON_MASTERFILE.md
+// §41 corrected to match; see its own note there.
 const VIEWPORTS = [
   { name: "fold-closed", width: 344, height: 882 },
   { name: "phone-360", width: 360, height: 780 },
   { name: "fold-open", width: 673, height: 841 },
-  { name: "tabS9-portrait", width: 823, height: 1286 },
+  { name: "tabS9-portrait", width: 823, height: 1317 },
   { name: "tabS9-landscape", width: 1152, height: 720 },
   { name: "desktop", width: 1440, height: 900 },
 ];

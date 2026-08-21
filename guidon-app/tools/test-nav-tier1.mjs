@@ -129,6 +129,32 @@ const noise = [];
   afterNav.drawerGone ? ok("the drawer closes itself once a route is chosen") : bad("drawer still present after choosing a route");
   afterNav.moreActive ? ok('"More" lights up now that the active route (#/settings) lives inside the drawer, not the 4 primaries') : bad("More button did not activate for a non-primary route");
 
+  // ---- regression: the drawer's group-open state persists to the same
+  // localStorage key the >=600px sidebar shares (guidon-nav-open-groups) -
+  // Account was just expanded above and never explicitly closed, so it
+  // should still be recorded open. ----
+  const navGroupsAfterNav = await page.evaluate(() => localStorage.getItem("guidon-nav-open-groups") || "");
+  navGroupsAfterNav.includes("account")
+    ? ok('opening the "Account" group in the drawer persists to the shared guidon-nav-open-groups key')
+    : bad("guidon-nav-open-groups after opening Account: " + navGroupsAfterNav);
+
+  // ---- regression: re-opening the drawer while already on a drawer-only
+  // route highlights the matching button, the same way the >=600px
+  // sidebar already does - this used to be dead CSS (setActive() was
+  // hardcoded to navEl, a different DOM subtree from the drawer's panel,
+  // so the drawer's own current-route highlight never applied). ----
+  await page.locator(".nav-more-btn").click();
+  await page.waitForTimeout(400);
+  const reopenedHighlight = await page.evaluate(() => {
+    const btn = document.querySelector('.nav-drawer button[data-hash="#/settings"]');
+    return btn ? { active: btn.classList.contains("active"), ariaCurrent: btn.getAttribute("aria-current") } : null;
+  });
+  reopenedHighlight && reopenedHighlight.active && reopenedHighlight.ariaCurrent === "page"
+    ? ok("re-opening the drawer while on #/settings highlights the matching button (.active + aria-current)")
+    : bad("drawer's #/settings button state on reopen: " + JSON.stringify(reopenedHighlight));
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(500);
+
   // ---- a non-drawer navigation (not a drawer click) also closes it if left open ----
   await page.locator(".nav-more-btn").click();
   await page.waitForTimeout(400);
@@ -136,6 +162,38 @@ const noise = [];
   await page.waitForTimeout(400);
   const afterExternalNav = await page.evaluate(() => !document.querySelector(".nav-drawer-back"));
   afterExternalNav ? ok("an external navigation (not a drawer click) also closes an open drawer, not just leaves it stranded") : bad("drawer was left open after a non-drawer navigation");
+
+  // ---- regression: a resize crossing the 600px breakpoint while the
+  // drawer is open must close it too, not just leave it stranded, focus-
+  // trapped, over the freshly-rendered >=600px sidebar underneath (a real
+  // bug this suite did not originally catch - found by a later adversarial
+  // audit and fixed by also calling closeNavDrawer() from the SIDEBAR_MQ
+  // "change" listener, alongside the existing route()-driven close). ----
+  await page.setViewportSize({ width: 412, height: 915 });
+  await page.waitForTimeout(200);
+  await page.locator(".nav-more-btn").click();
+  await page.waitForTimeout(400);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.waitForTimeout(300);
+  const afterResize = await page.evaluate(() => {
+    const back = document.querySelector(".nav-drawer-back");
+    // #/home specifically: it's the one nav item NAV_GROUPS leaves
+    // ungrouped (label:null), so it's always rendered directly, never
+    // inside a collapsible .nav-group-body that might legitimately be
+    // closed (we never navigated to a grouped route in this test, so
+    // e.g. "Board Prep" - #/train's own group - was never auto-opened,
+    // which would make #/train collapsed/off-position for reasons that
+    // have nothing to do with the stale-drawer bug this checks for).
+    const homeBtn = document.querySelector('.nav button[data-hash="#/home"]');
+    let hitsButton = false;
+    if (homeBtn) {
+      const r = homeBtn.getBoundingClientRect();
+      hitsButton = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === homeBtn;
+    }
+    return { drawerGone: !back, sidebarClickable: hitsButton };
+  });
+  afterResize.drawerGone ? ok("a resize crossing the 600px breakpoint while the drawer is open closes it") : bad("drawer was still present after a breakpoint-crossing resize");
+  afterResize.sidebarClickable ? ok("the >=600px sidebar underneath is genuinely clickable after the resize, not covered by a stale drawer backdrop") : bad("the sidebar's #/home button is not the topmost element at its own coordinates after the resize");
 
   await page.close();
 }
@@ -186,6 +244,24 @@ const noise = [];
   demotedOpacity !== null && parseFloat(demotedOpacity) < 1
     ? ok(`Diagnostics' nav button is visually dimmed (opacity ${demotedOpacity}), not just marked in the DOM`)
     : bad("Diagnostics nav button opacity: " + demotedOpacity + ", expected <1");
+
+  // ---- regression: the sidebar's own .nav-group-header toggle - covered
+  // nowhere in this suite before (Part 1 only ever clicks the DRAWER's
+  // copy) - actually flips state and persists to the same shared
+  // guidon-nav-open-groups key the drawer reads/writes. ----
+  const studyHeader = page.locator(".nav .nav-group-header", { hasText: /^Study & Skills$/ });
+  const beforeToggle = await studyHeader.getAttribute("aria-expanded");
+  await studyHeader.click();
+  await page.waitForTimeout(250);
+  const afterToggle = await studyHeader.getAttribute("aria-expanded");
+  beforeToggle !== afterToggle
+    ? ok(`sidebar's "Study & Skills" group header toggles aria-expanded (${beforeToggle} -> ${afterToggle})`)
+    : bad(`sidebar group header aria-expanded did not change: ${beforeToggle} -> ${afterToggle}`);
+  const persistedKey = await page.evaluate(() => localStorage.getItem("guidon-nav-open-groups") || "");
+  const nowOpen = afterToggle === "true";
+  (nowOpen ? persistedKey.includes("study") : !persistedKey.includes("study"))
+    ? ok(`sidebar group toggle persists to the shared guidon-nav-open-groups key (now ${nowOpen ? "includes" : "excludes"} "study")`)
+    : bad(`guidon-nav-open-groups after sidebar toggle: ${persistedKey} (group now ${nowOpen ? "open" : "closed"})`);
 
   await page.close();
 }
