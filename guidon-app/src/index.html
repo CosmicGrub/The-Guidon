@@ -836,6 +836,20 @@ html.reduce-motion .qz-card.flipped .qz-front,
 html[data-motion="minimal"] .qz-card.flipped .qz-front { display: none; }
 html.reduce-motion .qz-card,
 html[data-motion="minimal"] .qz-card { height: auto; min-height: clamp(260px, 40vh, 420px); }
+/* .qz-back itself also needs a bound. .qz-face losing position:absolute;
+   inset:0 above means it no longer inherits a bounded height from .qz-card
+   the way the motion-enabled face does - without this, .qz-back-scroll's
+   flex:1;min-height:0;overflow-y:auto (below, unchanged) has no box to
+   shrink into, so a long answer just grows .qz-back (and with it .qz-card,
+   since .qz-card's height:auto above just tracks its content) unbounded
+   instead of scrolling internally, pushing .qz-grade-row far down the page
+   instead of keeping it reliably visible right under the answer. Capped at
+   the same value the motion-enabled .qz-card height already uses (line
+   ~666) so both modes start scrolling internally at the same content
+   length; max-height (not height) so short answers still hug their own
+   height via .qz-card's height:auto above, same as before this rule. */
+html.reduce-motion .qz-back,
+html[data-motion="minimal"] .qz-back { max-height: clamp(300px, 52vh, 480px); }
 
 /* Phones: slightly shorter card so the nav row + toolbar above it still
    fit on screen without excess scrolling. */
