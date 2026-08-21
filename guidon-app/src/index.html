@@ -648,7 +648,16 @@ html.qz-theater .qz-scene {
   width: 100%; max-width: 1500px; margin: 0 auto;
   display: flex;
 }
-html.qz-theater .qz-card { height: auto; flex: 1 1 auto; min-height: 280px; }
+/* aspect-ratio:auto explicitly resets the base .qz-card rule's ratio
+   (added below, see that rule's own comment) - CSS cascades per property,
+   not per rule, so without this reset the base rule's aspect-ratio would
+   otherwise still apply here too, fighting flex:1 1 auto's own "fill the
+   available space" sizing. Caught by review before shipping: empirically,
+   flex-grow already wins the WIDTH axis regardless (the card still
+   stretches to fill .qz-scene's width in theater), but resetting the
+   ratio explicitly removes any ambiguity rather than relying on that
+   specific browser behavior continuing to hold. */
+html.qz-theater .qz-card { height: auto; flex: 1 1 auto; min-height: 280px; aspect-ratio: auto; }
 html.qz-theater .qz-face { padding: clamp(20px, 3vw, 44px); font-size: 1.12em; }
 html.qz-theater .qz-nav-row { margin-top: 10px; }
 /* Toasts ("Deck reshuffled", grade feedback) are z-index 50 and would vanish
@@ -660,10 +669,33 @@ html.qz-theater #toast { z-index: 900; }
   perspective: 1150px;
   width: 100%;
 }
+/* Card size: width-driven via aspect-ratio, deliberately NOT vh-driven -
+   no vh anywhere in this rule, on purpose. The old
+   `height: clamp(300px, 52vh, 480px)` meant the card visibly resized on
+   every device rotation, since vh swaps which dimension is "tall" - a
+   Soldier flipping a tablet from portrait to landscape mid-session
+   watched their flashcard change size for no reason tied to the content.
+   width:min(100%,420px) + aspect-ratio ties height to width instead,
+   which - once .drill-layout's own middle column is floored at 440px
+   (see .drill-layout) so it can actually deliver that 420px in split
+   mode too - stays genuinely constant across orientation, not just
+   "less sensitive." A first version of this rule also had a
+   `max-height: min(504px, 62vh)` safety net for short viewports, which
+   defeated its own purpose (it re-coupled height to vh, just less
+   aggressively) and turned out to be unnecessary: .main (the view's own
+   container) is independently overflow-y:auto, so a card that's taller
+   than the visible viewport just makes the page scroll a little further
+   - the same thing that already happens for any other view with more
+   content than fits, not a special case this rule needs to prevent.
+   Theater mode (below) is deliberately NOT touched - its
+   height:auto;flex:1 1 auto is an intentional "fill the screen" mode, a
+   different goal from this base card's "stay a comfortable, consistent
+   size." */
 .qz-card {
   position: relative;
-  width: 100%;
-  height: clamp(300px, 52vh, 480px);
+  width: min(100%, 420px);
+  aspect-ratio: 5 / 6;
+  margin-inline: auto;
   transform-style: preserve-3d;
   touch-action: manipulation;
   /* Duration and easing come from the Motion setting (Settings → Motion)
@@ -692,7 +724,9 @@ html[data-motion="cinematic"] { --qz-flip-dur: .95s; --qz-flip-ease: cubic-bezie
   backface-visibility: hidden; -webkit-backface-visibility: hidden;
   border: 1px solid var(--line); border-radius: var(--radius);
   background: var(--panel); box-shadow: var(--shadow);
-  padding: clamp(16px, 3vw, 28px);
+  /* Flat, not vw-driven - the card box itself no longer resizes with
+     orientation (above), so its padding shouldn't either. */
+  padding: 22px;
   display: flex; flex-direction: column;
   overflow: hidden;
 }
@@ -708,7 +742,7 @@ html[data-motion="cinematic"] { --qz-flip-dur: .95s; --qz-flip-ease: cubic-bezie
 .qz-back-scroll { overflow-y: auto; flex: 1; min-height: 0; padding-right: 2px; }
 .qz-prompt {
   font-family: var(--font-head); font-weight: 600; letter-spacing: .01em;
-  font-size: clamp(1.05rem, 1rem + 1vw, 1.55rem); line-height: 1.35;
+  font-size: 1.25rem; line-height: 1.35;
   color: var(--text); max-width: 46ch;
 }
 /* Both were previously unstyled — .kc-label only had color/type rules under
@@ -834,14 +868,28 @@ html.reduce-motion .qz-card.flipped .qz-back,
 html[data-motion="minimal"] .qz-card.flipped .qz-back { display: flex; }
 html.reduce-motion .qz-card.flipped .qz-front,
 html[data-motion="minimal"] .qz-card.flipped .qz-front { display: none; }
+/* aspect-ratio:auto is not cosmetic here - it's load-bearing. In this
+   mode .qz-face switches to position:relative/in-flow (above), so
+   .qz-card's height needs to come from its one visible face's actual
+   content, the way height:auto always used to before this rule ever
+   existed. Without resetting the ratio, aspect-ratio would still force
+   height to width/ratio regardless of content (the CSS spec's normal
+   aspect-ratio+height:auto behavior on a block with a definite width) -
+   and since .qz-card itself has no overflow:hidden of its own (only
+   .qz-face did, and that only clips content when .qz-face is absolutely
+   positioned and inset:0, which it isn't in this mode), a back face
+   whose real content needs more room than the ratio would allow doesn't
+   grow the card - it silently overflows past its bottom edge into the
+   grade row beneath it. Caught by review before shipping. */
 html.reduce-motion .qz-card,
-html[data-motion="minimal"] .qz-card { height: auto; min-height: clamp(260px, 40vh, 420px); }
+html[data-motion="minimal"] .qz-card { height: auto; min-height: 320px; aspect-ratio: auto; }
 
-/* Phones: slightly shorter card so the nav row + toolbar above it still
-   fit on screen without excess scrolling. */
-@media (max-width: 480px) {
-  .qz-card { height: clamp(280px, 46vh, 420px); }
-  .qz-prompt { font-size: clamp(1rem, 1rem + 2.5vw, 1.3rem); }
+/* Phones: the base rule's width:min(100%,420px) + aspect-ratio already
+   shrinks the card proportionally on a narrow screen with no override
+   needed - only the prompt text gets a touch smaller here, purely a
+   width-driven (not orientation-driven) accommodation for small screens. */
+@media (max-width: 420px) {
+  .qz-prompt { font-size: 1.1rem; }
 }
 
 /* ---- Authoring: structured editor ---- */
@@ -4032,11 +4080,21 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
    column count changed under them. */
 .drill-layout { display:block; }
 .drill-readiness-pane { display:none; }
+/* The middle column's minmax(440px, 1fr) floor - not a bare 1fr - exists
+   specifically so .qz-card's own width:min(100%,420px) cap (see .qz-card)
+   actually gets reached in split mode too. Without a floor, the split
+   grid could squeeze the card's column narrower than 420px on its own,
+   which would mean the card visibly shrinks again exactly on the
+   transition this feature exists to prevent - e.g. rotating a tablet from
+   portrait (stacked, full page width) to landscape (split, middle column)
+   crosses this exact breakpoint. The two side panes give up width toward
+   their own minimums first if space is tight, which is the right
+   priority: the actual study card should win over supporting panes. */
 @media (min-width: 1024px) {
-  .drill-layout { display:grid; grid-template-columns: minmax(240px, 280px) 1fr; gap:16px; align-items:start; }
+  .drill-layout { display:grid; grid-template-columns: minmax(240px, 280px) minmax(440px, 1fr); gap:16px; align-items:start; }
 }
 @media (min-width: 1200px) {
-  .drill-layout { grid-template-columns: minmax(240px, 280px) 1fr minmax(220px, 280px); }
+  .drill-layout { grid-template-columns: minmax(240px, 280px) minmax(440px, 1fr) minmax(220px, 280px); }
   .drill-readiness-pane { display:block; }
 }
 .list-detail-row { display:block; width:100%; text-align:left; background:var(--panel); border:1px solid var(--line);
@@ -7203,9 +7261,44 @@ window.G = window.G || {};
           due ? el("span.ldr-badge", { text: due + " due" }) : null,
         ]);
         row.addEventListener("click", () => {
-          if (catSel.value === c) return;
-          catSel.value = c;
-          catSel.dispatchEvent(new Event("change"));
+          if (catSel.value !== c) {
+            catSel.value = c;
+            catSel.dispatchEvent(new Event("change"));
+          }
+          // Auto-scroll to the flashcard - catList sits above drillDetail
+          // in DOM order on stacked (<1024px) layouts, so picking a
+          // category used to leave a Soldier looking at the (now
+          // unchanged) list with the actual card off-screen below. Same
+          // scrollIntoView pattern as Doctrine's jumpToDocEntry / Search's
+          // jumpToHit. Deliberately fires even when the category was
+          // already selected (unlike the filter-dispatch above) - "jump
+          // back down to the card" is useful on its own, and a no-op cost
+          // (scrollIntoView on an already-visible element does nothing)
+          // on split layouts where the card sits right next to the list.
+          //
+          // Called synchronously, before catSel's own async change handler
+          // (build() -> awaits loadAllSrs() -> refreshCatList()/draw())
+          // has actually rebuilt cardWrap's contents for the new category
+          // - so this measures cardWrap's position before that rebuild
+          // lands. Not currently a bug: cardWrap is a stable node (never
+          // replaced, only its children are), and everything above it
+          // (mini-row, tally, catList) is structural, not sized by which
+          // category is active, so its top-edge offset doesn't meaningfully
+          // shift across a rebuild. Worth revisiting this ordering if that
+          // ever stops being true.
+          //
+          // Checks both signals real reduced-motion support needs, same
+          // as quizMotionOK() in Quiz mode below (a different function
+          // scope, so not directly callable here) - matching the CSS
+          // this same diff added (html.reduce-motion / data-motion=
+          // "minimal" both drive it), not just the OS-level media query
+          // alone the way Doctrine's jumpToDocEntry/Search's jumpToHit do.
+          let reduceMotion = false;
+          try {
+            reduceMotion = document.documentElement.getAttribute("data-motion") === "minimal" ||
+              (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+          } catch (e) {}
+          cardWrap.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
         });
         catList.appendChild(row);
       });
