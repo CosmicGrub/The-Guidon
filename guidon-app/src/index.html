@@ -933,6 +933,29 @@ html[data-motion="minimal"] .qz-card.flipped .qz-front { display: none; }
    grade row beneath it. Caught by review before shipping. */
 html.reduce-motion .qz-card,
 html[data-motion="minimal"] .qz-card { height: auto; min-height: 320px; aspect-ratio: auto; }
+/* .qz-back itself also needs a bound, separate from the aspect-ratio reset
+   just above. That reset fixes .qz-card being forced too SHORT for its
+   content (aspect-ratio fighting height:auto); this fixes the opposite
+   failure mode. .qz-face losing position:absolute;inset:0 (above) means
+   .qz-back no longer inherits ANY bounded height from .qz-card - so
+   .qz-back-scroll's flex:1;min-height:0;overflow-y:auto (below, unchanged)
+   has no box to shrink into, and a long answer just grows .qz-back (and
+   with it .qz-card, since its height:auto above simply tracks content)
+   unbounded instead of scrolling internally, pushing .qz-grade-row far
+   down the page instead of keeping it reliably visible right under the
+   answer. Capped at 322px - the tallest the motion-enabled .qz-card (see
+   .qz-card, width:min(100%,536px) + aspect-ratio:5/3 = 536*3/5) can ever
+   reach - so both modes start scrolling internally at the same content
+   length; flat px, not vh, to match that rule's deliberate no-vh-here
+   reasoning. Uses max-height, not height, so short answers still hug their
+   own height via .qz-card's height:auto above, same as before this rule.
+   (Originally 504px, matching the pre-536px card's 420px-wide/5:6 cap -
+   corrected here to stay true to this rule's own stated intent once the
+   width/ratio changed size AND shape; the two rules must track each other
+   or reduce-motion mode silently drifts from what rich-motion actually
+   shows.) */
+html.reduce-motion .qz-back,
+html[data-motion="minimal"] .qz-back { max-height: 322px; }
 
 /* Phones: the base rule's width:min(100%,420px) + aspect-ratio already
    shrinks the card proportionally on a narrow screen with no override
