@@ -169,7 +169,7 @@ clearedPersisted === "" ? ok("Clear persists the emptied value to kv \"counsel:p
  *   ALC: KEY "guidon:alc:checks:v1", SELF_CHECK.length === 12 (~14853-14868)
  *   SLC: KEY "guidon:slc:checks:v1", SELF_CHECK.length === 10 (~15064-15077)
  * SLC's actual <h2> text is "SLC & Senior NCO Path" - the nav label
- * ("SLC & Beyond") is different text, confirmed by reading the render().
+ * ("SLC Prep") is different text, confirmed by reading the render().
  * ======================================================================== */
 await selfCheckTest("#/blc", "BLC Prep", "guidon:blc:checks:v1", 12);
 await selfCheckTest("#/alc", "ALC Prep", "guidon:alc:checks:v1", 12);
@@ -190,7 +190,7 @@ const DRILLS_KEY = "guidon:drills:v1";
 console.log(`\n-- #/drills: Conduct Individual Training checklist (kv "${DRILLS_KEY}") --`);
 await page.evaluate((k) => window.G.db.put("kv", { k, v: {} }), DRILLS_KEY);
 await goto("#/drills");
-const drillsHeading = await page.evaluate(() => (document.querySelector("h2") || {}).textContent === "NCOPDS Drills");
+const drillsHeading = await page.evaluate(() => (document.querySelector("h2") || {}).textContent === "Leadership Drills");
 drillsHeading ? ok("#/drills view renders") : bad("#/drills h2 mismatch");
 
 await page.locator("button", { hasText: /Conduct Individual Training/ }).click();
@@ -302,8 +302,8 @@ fitnessHeading ? ok("#/fitness view renders") : bad("#/fitness h2 mismatch");
 
 await page.locator("button", { hasText: /^Calculate it in the PPW$/ }).click();
 await page.waitForTimeout(400);
-const wentToBoard = await page.evaluate(() => location.hash === "#/board" && (document.querySelector("h2") || {}).textContent === "Board Prep");
-wentToBoard ? ok("clicking 'Calculate it in the PPW' navigates to #/board and renders 'Board Prep'") : bad("navigation from #/fitness's PPW button failed");
+const wentToBoard = await page.evaluate(() => location.hash === "#/board" && (document.querySelector("h2") || {}).textContent === "Board Drill");
+wentToBoard ? ok("clicking 'Calculate it in the PPW' navigates to #/board and renders 'Board Drill'") : bad("navigation from #/fitness's PPW button failed");
 
 // Audit finding (rank/MOS scoping pass): the page never checked the
 // Soldier's own profile.mos against either MOS list, so a Soldier reading

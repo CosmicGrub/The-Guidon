@@ -47,7 +47,9 @@ await page.waitForTimeout(300);
 await page.locator("button.ob-next", { hasText: /Next/ }).click(); // role -> concerns
 await page.waitForTimeout(300);
 await page.locator('label:has-text("AFT / physical fitness")').click();
-await page.locator("button.ob-next", { hasText: /Next/ }).click(); // concerns -> weakpoints
+// Concerns step lost its .ob-next class (intuitivism pass) - same
+// Skip/Next button-row pattern WeakPoints/BoardDate already used.
+await page.locator("button", { hasText: /^Next →$/ }).click(); // concerns -> weakpoints
 await page.waitForTimeout(300);
 await page.locator("button", { hasText: /^Customs & Courtesies$/ }).click();
 await page.locator("button", { hasText: /Build my plan/ }).click();
