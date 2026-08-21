@@ -230,11 +230,16 @@ console.log("lint-patterns: static regression guard for 3 repeat bug shapes\n");
    so the next stray "some-number-in-the-500s" doesn't silently reopen the
    same drift.
 
+   859/860 -> 799/800 (intuitivism pass, 2026-08-20): the desktop side-rail
+   pair moved down 60px so a Tab S9 FE in portrait (~823px, real hardware)
+   gets the labeled rail instead of the compact one. See the canonical
+   breakpoint scale comment in src/index.html for the full rationale.
+
    `prefers-*`, `hover`, `pointer`, and `print` are feature queries, not
    layout breakpoints, and are intentionally out of scope.
    ====================================================================== */
 {
-  const CANONICAL = new Set([420, 480, 600, 640, 768, 859, 860, 1024, 1200]);
+  const CANONICAL = new Set([420, 480, 600, 640, 768, 799, 800, 1024, 1200]);
   // Not anchored to a literal "@media" prefix: compound conditions like
   // "@media (min-width: 600px) and (max-width: 859px)" put the second
   // clause after "and (", not "@media (", so anchoring would silently

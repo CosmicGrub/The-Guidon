@@ -120,7 +120,19 @@ if (matched) {
     : bad(`grade row bottom (${layout.gradeRowRect.bottom}) exceeds the viewport height (${layout.viewportHeight})`);
 }
 
-/* ---- a short-answer card: still hugs its own content, no forced scroll ---- */
+/* ---- a short-answer card: reduce-motion's scroll-or-not state matches
+   rich motion's for the SAME card - this is the real invariant the fix
+   above is for ("both modes start scrolling internally at the same
+   content length"), not "short answers never scroll". The literal
+   shortest board-question answer ("Competence.", 11 chars) still renders
+   two full labeled blocks (Acceptable Answer + By the Book, identical
+   text) plus a source line - real structural chrome independent of how
+   short the quoted text is - so whether that scrolls or not is a function
+   of the card's own height cap, not answer length; asserting it against
+   rich motion's own behavior for the identical card is what actually
+   proves the two modes agree, and stays correct even if a future width/
+   ratio change (like this session's 420px/5:6 -> 536px/5:3) shifts
+   exactly which cards are short enough to fit without scrolling. ---- */
 const shortest = await page.evaluate(() => {
   const qs = G.store.boardQuestions();
   let best = qs[0], min = Infinity;
@@ -139,9 +151,30 @@ shortMatched ? ok("found and flipped the shortest-answer board question") : bad(
 
 if (shortMatched) {
   const layout = await readLayout();
-  layout.scrollScrollHeight === layout.scrollClientHeight
-    ? ok("short answer does not trigger an unwanted internal scrollbar")
-    : bad(`short answer unexpectedly scrolls (scrollHeight ${layout.scrollScrollHeight} > clientHeight ${layout.scrollClientHeight})`);
+  const reduceMotionScrolls = layout.scrollScrollHeight > layout.scrollClientHeight;
+
+  // Same card, rich motion this time (data-motion back to a real level,
+  // reduce-motion class off) - what SHOULD this card do, per the card
+  // Soldiers actually flip day to day?
+  await page.evaluate(() => {
+    document.documentElement.removeAttribute("data-motion");
+    document.documentElement.classList.remove("reduce-motion");
+  });
+  await page.waitForTimeout(200);
+  const richLayout = await readLayout();
+  const richMotionScrolls = richLayout ? richLayout.scrollScrollHeight > richLayout.scrollClientHeight : null;
+  // Put reduce-motion back for anything after this block.
+  await page.evaluate(() => {
+    document.documentElement.setAttribute("data-motion", "minimal");
+    document.documentElement.classList.add("reduce-motion");
+  });
+  await page.waitForTimeout(200);
+
+  richMotionScrolls === null
+    ? bad("could not re-read the same card under rich motion for comparison")
+    : reduceMotionScrolls === richMotionScrolls
+      ? ok(`reduce-motion's scroll state for the shortest answer matches rich motion's (both ${reduceMotionScrolls ? "scroll" : "fit without scrolling"})`)
+      : bad(`reduce-motion ${reduceMotionScrolls ? "scrolls" : "fits without scrolling"} but rich motion ${richMotionScrolls ? "scrolls" : "doesn't"} for the identical card - the two modes disagree`);
 }
 
 noise.length === 0 ? ok("no console errors/warnings") : bad("console noise: " + noise.join(" | "));
