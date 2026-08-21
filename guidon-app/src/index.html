@@ -4912,9 +4912,11 @@ window.G = window.G || {};
   };
 
   // Same purpose as util.etsUrgency, for the board-date countdown - shared by
-  // renderBoardCountdown (Home/Transition/Board Prep's own banner) and
-  // Calendar's "What is next" list, so the same profile boardDate can't show
-  // a contradicting colour depending which screen it's viewed on.
+  // renderBoardCountdown (Home and Board Drill's own banner - verified via
+  // grep, "Transition" was a stale claim here; renderBoardCountdown has only
+  // those two call sites) and Calendar's "What is next" list, so the same
+  // profile boardDate can't show a contradicting colour depending which
+  // screen it's viewed on.
   util.boardUrgency = function (daysOut) {
     if (daysOut <= 3) return { color: "var(--red)", level: "red" };
     if (daysOut <= 14) return { color: "var(--amber)", level: "amber" };
@@ -9185,7 +9187,7 @@ window.G = window.G || {};
         else if (t === "readiness") r = renderReadiness(body);
         else if (t === "definitions") r = renderDefinitions(body);
         else r = renderPoints(body);
-        if (r && r.catch) r.catch((e) => { if (window.console) console.error("Board Prep tab render failed:", e); });
+        if (r && r.catch) r.catch((e) => { if (window.console) console.error("Board Drill tab render failed:", e); });
       }
       drillBtn.onclick = () => set("drill");
       quizBtn.onclick = () => set("quiz");
@@ -13826,7 +13828,12 @@ window.G = window.G || {};
     "#/home":      { d:"Home dashboard — readiness snapshot, board countdown, mandatory-training tracker and your action plan in one view.",
                      w:"Watch the board-date banner: tap it to switch between a live countdown and a plain date." },
     "#/train":     { d:"Leadership scenarios in Text, Course or Adventure mode. Every decision maps to an ADP 6-22 competency.",
-                     w:"Filter by competency and difficulty — the chips above the list drive the whole catalogue." },
+                     // Intuitivism pass Tier 1(g): the competency/difficulty chips
+                     // moved behind a "Filters" toggle (no longer visible by
+                     // default) - was "the chips above the list drive the whole
+                     // catalogue," which pointed a live Guided Tour/Demo Center
+                     // presenter at chips that are not on screen.
+                     w:"Tap Filters to reveal the competency and difficulty chips — together they drive the whole catalogue." },
     "#/board":     { d:"1,014 deduplicated board cards with 3D flip, spaced repetition and four-level mastery grading.",
                      w:"Two things to show here: the Level filter (beginner/intermediate/expert) and the Points tab — a rank-aware PPW calculator." },
     "#/blc":       { d:"BLC preparation built from the actual Individual Student Assessment Plan — the document that defines how BLC is graded.",
@@ -13865,8 +13872,13 @@ window.G = window.G || {};
                      w:"Milestones shift with the ETS date on your profile." },
     "#/resources": { d:"Curated directory of career, education and life resources.",
                      w:"Everything here works offline — no dead links to a network you do not have." },
-    "#/progress":  { d:"Competency map, scenario history, board-readiness score and Board Drill mastery by study level.",
-                     w:"The mastery panel breaks out beginner, intermediate and expert separately." },
+    // Intuitivism pass Tier 0: both mastery panels on this screen shrunk
+    // from a full per-tier/per-category breakdown to a one-stat teaser +
+    // "Open Board -> Readiness" link (see G.progress's own comments where
+    // those panels render). The full beginner/intermediate/expert split
+    // this used to describe now lives only on #/board's Readiness tab.
+    "#/progress":  { d:"Competency map, scenario history, board-readiness score and a Board Drill mastery snapshot.",
+                     w:"The mastery panel is a one-stat teaser now — tap 'Open Board → Readiness' for the full beginner/intermediate/expert breakdown." },
     "#/author":    { d:"Build your own scenarios, cards and reference material.",
                      w:"Custom content persists alongside the built-in corpus." },
     "#/settings":  { d:"14 themes, accessibility controls, About panel and account management.",
@@ -14752,7 +14764,7 @@ window.G = window.G || {};
       host.appendChild(row);
     }
 
-    // Optional — the Home countdown and Board Prep's points-per-week math
+    // Optional — the Home countdown and Board Drill's points-per-week math
     // both key off profile.boardDate, but plenty of people onboard before
     // they have a date (or never sit a board at all), so this step has to
     // be skippable with zero friction. Either button below advances with
@@ -14761,7 +14773,7 @@ window.G = window.G || {};
       host.appendChild(el("div.ob-step-header", {}, [
         el("div.ob-step-num", { text: "5 of 5" }),
         el("h3.ob-step-title", { text: "When's your board?" }),
-        el("p.hint", { text: "Powers the countdown on Home and the points-per-week target in Board Prep. Don't have a date yet, or not boarding? Skip it — you can set this any time from Settings or the Board Prep tab." }),
+        el("p.hint", { text: "Powers the countdown on Home and the points-per-week target in Board Drill. Don't have a date yet, or not boarding? Skip it — you can set this any time from Settings or the Board Drill tab." }),
       ]));
 
       const card = el("div.ob-card");
@@ -21440,7 +21452,7 @@ window.G = window.G || {};
       el("button.btn", { onclick: () => {
         location.hash = "#/board";
         setTimeout(() => { G.board && G.board._openReadiness && G.board._openReadiness(); }, 150);
-      } }, [G.util.icon("layers", 16), document.createTextNode(" Board Prep")]),
+      } }, [G.util.icon("layers", 16), document.createTextNode(" Board Drill")]),
       el("button.btn", { onclick: () => location.hash = "#/write" },
         [G.util.icon("pencil", 16), document.createTextNode(" Write")]),
       el("button.btn", { onclick: () => location.hash = "#/money" },
