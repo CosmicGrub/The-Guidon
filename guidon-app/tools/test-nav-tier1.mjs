@@ -107,15 +107,17 @@ const noise = [];
   // ---- a real route click inside the drawer navigates AND closes it ----
   await page.locator(".nav-more-btn").click();
   await page.waitForTimeout(400);
-  // #/settings lives in the "Account" group, which - same shared
+  // #/progress lives in the "Account" group, which - same shared
   // navOpenGroups state the >=600px sidebar uses - starts collapsed here
   // (we're arriving from Home, not a route inside Account). A real
   // Soldier taps the group header open first; do the same rather than
   // reaching straight for a button that's currently clipped off by its
-  // own collapsed .nav-group-body.
+  // own collapsed .nav-group-body. Using #/progress specifically (not
+  // #/settings, which the user picked as one of the 4 primaries) so this
+  // stays a genuine non-primary route for the "More lights up" check below.
   await page.locator(".nav-drawer .nav-group-header", { hasText: /^Account$/ }).click();
   await page.waitForTimeout(300);
-  await page.locator('.nav-drawer button[data-hash="#/settings"]').click();
+  await page.locator('.nav-drawer button[data-hash="#/progress"]').click();
   await page.waitForTimeout(400);
   const afterNav = await page.evaluate(() => ({
     hash: location.hash,
@@ -123,11 +125,11 @@ const noise = [];
     drawerGone: !document.querySelector(".nav-drawer-back"),
     moreActive: document.querySelector(".nav-more-btn").classList.contains("active"),
   }));
-  afterNav.hash === "#/settings" && afterNav.heading === "Settings"
-    ? ok("clicking a route inside the drawer navigates for real (#/settings renders)")
+  afterNav.hash === "#/progress" && afterNav.heading === "Progress"
+    ? ok("clicking a route inside the drawer navigates for real (#/progress renders)")
     : bad(`hash/heading after drawer nav click: ${afterNav.hash} / ${afterNav.heading}`);
   afterNav.drawerGone ? ok("the drawer closes itself once a route is chosen") : bad("drawer still present after choosing a route");
-  afterNav.moreActive ? ok('"More" lights up now that the active route (#/settings) lives inside the drawer, not the 4 primaries') : bad("More button did not activate for a non-primary route");
+  afterNav.moreActive ? ok('"More" lights up now that the active route (#/progress) lives inside the drawer, not the 4 primaries') : bad("More button did not activate for a non-primary route");
 
   // ---- regression: the drawer's group-open state persists to the same
   // localStorage key the >=600px sidebar shares (guidon-nav-open-groups) -
@@ -146,12 +148,12 @@ const noise = [];
   await page.locator(".nav-more-btn").click();
   await page.waitForTimeout(400);
   const reopenedHighlight = await page.evaluate(() => {
-    const btn = document.querySelector('.nav-drawer button[data-hash="#/settings"]');
+    const btn = document.querySelector('.nav-drawer button[data-hash="#/progress"]');
     return btn ? { active: btn.classList.contains("active"), ariaCurrent: btn.getAttribute("aria-current") } : null;
   });
   reopenedHighlight && reopenedHighlight.active && reopenedHighlight.ariaCurrent === "page"
-    ? ok("re-opening the drawer while on #/settings highlights the matching button (.active + aria-current)")
-    : bad("drawer's #/settings button state on reopen: " + JSON.stringify(reopenedHighlight));
+    ? ok("re-opening the drawer while on #/progress highlights the matching button (.active + aria-current)")
+    : bad("drawer's #/progress button state on reopen: " + JSON.stringify(reopenedHighlight));
   await page.keyboard.press("Escape");
   await page.waitForTimeout(500);
 

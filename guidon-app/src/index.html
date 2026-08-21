@@ -679,32 +679,68 @@ html.qz-theater #toast { z-index: 900; }
   perspective: 1150px;
   width: 100%;
 }
-/* Card size: width-driven via aspect-ratio, deliberately NOT vh-driven -
-   no vh anywhere in this rule, on purpose. The old
+/* Card size: matches a real 3x5 index card, landscape (5:3 - wider than
+   tall, chosen over portrait because a wider card reads multi-line board-
+   question prompts more comfortably on screen; confirmed with the user).
+   width-driven via aspect-ratio, deliberately NOT vh-driven - no vh
+   anywhere in this rule, on purpose. The old
    `height: clamp(300px, 52vh, 480px)` meant the card visibly resized on
    every device rotation, since vh swaps which dimension is "tall" - a
    Soldier flipping a tablet from portrait to landscape mid-session
    watched their flashcard change size for no reason tied to the content.
-   width:min(100%,420px) + aspect-ratio ties height to width instead,
-   which - once .drill-layout's own middle column is floored at 440px
-   (see .drill-layout) so it can actually deliver that 420px in split
+   width:min(100%,640px) + aspect-ratio ties height to width instead,
+   which - once .drill-layout's own middle column is floored to match
+   (see .drill-layout) so it can actually deliver that width in split
    mode too - stays genuinely constant across orientation, not just
-   "less sensitive." A first version of this rule also had a
-   `max-height: min(504px, 62vh)` safety net for short viewports, which
-   defeated its own purpose (it re-coupled height to vh, just less
-   aggressively) and turned out to be unnecessary: .main (the view's own
-   container) is independently overflow-y:auto, so a card that's taller
-   than the visible viewport just makes the page scroll a little further
-   - the same thing that already happens for any other view with more
-   content than fits, not a special case this rule needs to prevent.
+   "less sensitive."
+
+   536px was chosen, not a rounder/bigger number, because it's the actual
+   measured ceiling at test-board-drill-dynamic.mjs's portrait viewport
+   (800x1200): at exactly 800px wide, .drill-layout is still single-
+   column (<1024px breakpoint) so the card gets whatever .main leaves
+   after the persistent side-rail (208px, active >=800px) and .main's own
+   28px*2 padding - 800 - 208 - 56 = 536px, measured via
+   getBoundingClientRect() through the live ancestor chain, not hand-
+   computed. The landscape pairing (1200x800) is >=1024px, so
+   .drill-layout is already in its grid form there; its middle column's
+   minmax(556px, 1fr) (see .drill-layout) guarantees >=556px regardless
+   of outer width - CSS grid's minmax floor holds even by overflowing the
+   container if the outer track can't fit it (confirmed: at 1200px the
+   3-column track total exceeds .main's available inner width, and the
+   middle column still renders at its full floor rather than shrinking) -
+   so landscape saturates at the same 536px cap too, with room to spare.
+   A bigger cap (640px was tried first) reads more
+   "prominent" in isolation but exceeds the 536px portrait ceiling, so
+   the two orientations would disagree there, reintroducing the exact bug
+   this whole rule exists to prevent - confirmed by actually building and
+   running test-board-drill-dynamic.mjs, not just reasoning about it.
+   420px (2026-08-20's own "fixed card size" pass) turned out too
+   conservative for the "same size as a real index card, prominently
+   large" requirement - 536px corrects that (+28% wider) without
+   re-breaking orientation stability. If a future change moves the
+   side-rail's breakpoint or .main's padding, re-measure this the same
+   way rather than adjusting the number by feel.
+
+   A first version of this rule also had a `max-height: min(504px, 62vh)`
+   safety net for short viewports, which defeated its own purpose (it
+   re-coupled height to vh, just less aggressively) and turned out to be
+   unnecessary: .main (the view's own container) is independently
+   overflow-y:auto, so a card that's taller than the visible viewport
+   just makes the page scroll a little further - the same thing that
+   already happens for any other view with more content than fits, not a
+   special case this rule needs to prevent. At 5:3 (vs the old 5:6) this
+   matters even less in practice: a 536px-wide card is only ~322px tall,
+   comfortably under nearly every real device's available height even in
+   a landscape/short-viewport state.
+
    Theater mode (below) is deliberately NOT touched - its
    height:auto;flex:1 1 auto is an intentional "fill the screen" mode, a
    different goal from this base card's "stay a comfortable, consistent
    size." */
 .qz-card {
   position: relative;
-  width: min(100%, 420px);
-  aspect-ratio: 5 / 6;
+  width: min(100%, 536px);
+  aspect-ratio: 5 / 3;
   margin-inline: auto;
   transform-style: preserve-3d;
   touch-action: manipulation;
@@ -728,6 +764,10 @@ html[data-motion="standard"] { --qz-flip-dur: .45s; --qz-flip-ease: cubic-bezier
 html[data-motion="rich"] { --qz-flip-dur: .65s; --qz-flip-ease: cubic-bezier(.34, .88, .28, 1.08); --quiz-dur: .32s; --quiz-ease: cubic-bezier(.22, .8, .25, 1); --modal-dur: .22s; --modal-ease: cubic-bezier(.22, .8, .25, 1); --dur-base: .25s; --ease-standard: cubic-bezier(.22, .8, .25, 1); }
 html[data-motion="cinematic"] { --qz-flip-dur: .95s; --qz-flip-ease: cubic-bezier(.3, .85, .3, 1.12); --quiz-dur: .42s; --quiz-ease: cubic-bezier(.3, .85, .3, 1.05); --modal-dur: .3s; --modal-ease: cubic-bezier(.3, .85, .3, 1.05); --dur-base: .35s; --ease-standard: cubic-bezier(.3, .85, .3, 1.05); }
 .qz-card.flipped { transform: rotateY(180deg); }
+/* Mouse/pen drag affordance (wireSwipe's pointer path) — matches the
+   "grabbing" cursor convention users already know from map/canvas dragging.
+   Not applied to touch, which has no cursor to change. */
+.qz-card.qz-dragging { cursor: grabbing; }
 
 .qz-face {
   position: absolute; inset: 0;
@@ -4205,21 +4245,28 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
    silently break if that shared class' column count changed under them. */
 .drill-layout { display:block; }
 .drill-readiness-pane { display:none; }
-/* The middle column's minmax(440px, 1fr) floor - not a bare 1fr - exists
-   specifically so .qz-card's own width:min(100%,420px) cap (see .qz-card)
-   actually gets reached in split mode too. Without a floor, the split
-   grid could squeeze the card's column narrower than 420px on its own,
-   which would mean the card visibly shrinks again exactly on the
-   transition this feature exists to prevent - e.g. rotating a tablet from
-   portrait (stacked, full page width) to landscape (split, middle column)
-   crosses this exact breakpoint. The two side panes give up width toward
-   their own minimums first if space is tight, which is the right
-   priority: the actual study card should win over supporting panes. */
+/* The middle column's minmax(556px, 1fr) floor - not a bare 1fr - exists
+   specifically so .qz-card's own width:min(100%,536px) cap (see .qz-card,
+   floor = cap + 20px buffer, same margin the original 440=420+20 pattern
+   used) actually gets reached in split mode too. CSS grid's minmax()
+   minimum is a hard floor - if the outer track can't fit 556px+240px+gap,
+   the grid overflows its own container rather than shrinking the middle
+   column below its floor - which is exactly what guarantees the card
+   reaches its full 536px cap at test-board-drill-dynamic.mjs's landscape
+   viewport (1200x800) with room to spare, confirmed by actually running
+   that test, not just reasoned about. Without this floor, the split grid
+   could squeeze the card's column narrower than 536px on its own, which
+   would mean the card visibly shrinks again exactly on the transition
+   this feature exists to prevent - e.g. rotating a tablet from portrait
+   (stacked, full page width) to landscape (split, middle column) crosses
+   this exact breakpoint. The two side panes give up width toward their
+   own minimums first if space is tight, which is the right priority: the
+   actual study card should win over supporting panes. */
 @media (min-width: 1024px) {
-  .drill-layout { display:grid; grid-template-columns: minmax(240px, 280px) minmax(440px, 1fr); gap:16px; align-items:start; }
+  .drill-layout { display:grid; grid-template-columns: minmax(240px, 280px) minmax(556px, 1fr); gap:16px; align-items:start; }
 }
 @media (min-width: 1200px) {
-  .drill-layout { grid-template-columns: minmax(240px, 280px) minmax(440px, 1fr) minmax(220px, 280px); }
+  .drill-layout { grid-template-columns: minmax(240px, 280px) minmax(556px, 1fr) minmax(220px, 280px); }
   .drill-readiness-pane { display:block; }
 }
 .list-detail-row { display:block; width:100%; text-align:left; background:var(--panel); border:1px solid var(--line);
@@ -7196,7 +7243,21 @@ window.G = window.G || {};
         if (flipped) back.removeAttribute("inert"); else back.setAttribute("inert", "");
         try { if (flipped && G.util.announce) G.util.announce("Answer revealed."); } catch (e2) {}
       }
-      card.addEventListener("click", (e) => { if (e.target === starBtn) return; doFlip(); });
+      // Real (trusted) pointer/touch input synthesizes a compatibility
+      // "click" after mouseup/touchend even when a drag happened first — a
+      // below-threshold drag that snaps back would otherwise ALSO flip the
+      // card via this handler right after, a double-fire only trusted input
+      // exercises (a scripted dispatchEvent never triggers browser click
+      // synthesis at all, which is why this wasn't caught until real
+      // page.mouse-driven gesture tests were added). wireSwipe sets
+      // dragState.suppressClick synchronously in its own pointerup/touchend
+      // handler, which always runs before the click event that follows.
+      const dragState = { suppressClick: false };
+      card.addEventListener("click", (e) => {
+        if (e.target === starBtn) return;
+        if (dragState.suppressClick) { dragState.suppressClick = false; return; }
+        doFlip();
+      });
 
       // S Pen-aware hover feedback. This tablet ships with an S Pen that
       // genuinely hovers above the glass before touching it (unlike a
@@ -7232,64 +7293,162 @@ window.G = window.G || {};
       navRow.appendChild(prevBtn); navRow.appendChild(flipBtn); navRow.appendChild(nextBtn); navRow.appendChild(fsBtn);
       cardWrap.appendChild(navRow);
 
-      wireSwipe(card, q, () => flipped);
+      wireSwipe(card, q, () => flipped, doFlip, dragState);
       (tally.querySelector(".v") || {}).textContent = `Card ${(idx % queue.length) + 1}/${queue.length}  ·  recalled ${recalled}/${seen}` + (overdue ? "  ·  due" : "");
     }
 
-    // Swipe right = Know It, swipe left = Needs Help — the two most common
-    // outcomes, matching standard flashcard-app swipe conventions. The full
-    // 4-level grade (including Somewhat / Down Cold) is available via the
-    // buttons on the card back for anyone who wants more nuance than a swipe
-    // allows. Swipe only takes effect once flipped.
-    function wireSwipe(card, q, isFlipped) {
-      let startX = 0, startY = 0, dx = 0, dragging = false;
+    // Full drag gesture surface (confirmed with the user, post-Tier-1
+    // follow-up): the axis of the drag decides what it means, independent of
+    // input device.
+    //   - Vertical (up OR down, either direction does the same thing) always
+    //     flips the card, whatever state it's in — the natural "turn it
+    //     over" motion, not gated on flip state the way horizontal is.
+    //   - Horizontal BEFORE flip browses the deck without grading (swipe
+    //     left = next, swipe right = previous) — previously swipe did
+    //     nothing pre-flip; you had to reach for the nav-row arrows.
+    //   - Horizontal AFTER flip keeps the original behavior unchanged:
+    //     swipe right = Know It, swipe left = Needs Help. The full 4-level
+    //     grade (including Somewhat / Down Cold) is still available via the
+    //     buttons on the card back for anyone who wants more nuance than a
+    //     swipe allows.
+    // One shared axis-lock/threshold engine drives two independent input
+    // paths below: raw Touch events (untouched from before this pass, still
+    // exactly what test-flip.mjs's synthetic TouchEvent dispatch exercises)
+    // and Pointer Events restricted to pointerType !== "touch" (new — mouse
+    // drag and S Pen drag, which previously had no drag gesture at all, only
+    // the tap-to-flip click and the pen's separate hover-lift effect above).
+    // Kept as two paths rather than migrating touch onto Pointer Events too,
+    // specifically so the already-verified touch behavior isn't disturbed.
+    function wireSwipe(card, q, isFlipped, doFlip, dragState) {
       const threshold = 70;
-      // Pixels of movement before the drag visually engages. touchmove fires
-      // on sub-pixel sensor jitter and on the first frames of what turns out
-      // to be a vertical scroll — without this, either can transiently
-      // satisfy dx>dy and flicker the card with a drag transform that was
-      // never actually intended. The grade-on-release threshold below is
-      // unaffected: dx keeps tracking true movement regardless, this only
-      // gates when the card starts visibly responding to it.
+      // Pixels of movement before a drag visually engages, and before the
+      // gesture's axis (horizontal vs vertical) locks in. touchmove/
+      // pointermove fire on sub-pixel sensor jitter and on the first frames
+      // of what turns out to be an incidental wobble — without this, a
+      // near-diagonal drag could flicker between the two axis' transforms
+      // before settling. Locking the axis once, on first exit from the dead
+      // zone, rather than re-deciding every move, is what prevents that
+      // flicker for the rest of the gesture.
       const DEAD_ZONE = 8;
+      let startX = 0, startY = 0, dx = 0, dy = 0, dragging = false, dragMoved = false, axis = null;
+
+      function begin(x, y) {
+        startX = x; startY = y; dx = 0; dy = 0; dragging = true; dragMoved = false; axis = null;
+      }
+      function move(x, y) {
+        if (!dragging) return;
+        dx = x - startX; dy = y - startY;
+        if (!axis) {
+          if (Math.abs(dx) <= DEAD_ZONE && Math.abs(dy) <= DEAD_ZONE) return;
+          axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+        }
+        // Kill the flip transition for the duration of the drag — with it
+        // active, every move event's transform eased in over the full flip
+        // duration and the card chased the finger/cursor half a second
+        // behind. Set on first real movement, not on begin(), so a plain
+        // tap/click never touches the inline style.
+        if (!dragMoved) { dragMoved = true; card.style.transition = "none"; card.classList.add("qz-dragging"); }
+        if (axis === "y") {
+          card.style.transform = `translateY(${dy}px) scale(${1 - Math.min(Math.abs(dy), 150) / 1500})`;
+          card.style.opacity = String(Math.max(0.55, 1 - Math.abs(dy) / 260));
+        } else if (isFlipped()) {
+          card.style.transform = `rotateY(180deg) translateX(${-dx}px) rotate(${-dx / 20}deg)`;
+          card.style.opacity = String(Math.max(0.4, 1 - Math.abs(dx) / 300));
+        } else {
+          card.style.transform = `translateX(${dx}px) rotate(${dx / 20}deg)`;
+          card.style.opacity = String(Math.max(0.4, 1 - Math.abs(dx) / 300));
+        }
+      }
+      function snapBack() {
+        card.style.transition = "transform .2s ease, opacity .2s ease";
+        card.style.transform = ""; card.style.opacity = "";
+        setTimeout(() => { card.style.transition = ""; }, 200);
+      }
+      function end() {
+        if (!dragging) return;
+        dragging = false;
+        card.classList.remove("qz-dragging");
+        const moved = dragMoved; dragMoved = false;
+        if (!moved || !axis) return; // plain tap/click — let the click handler flip it
+        // A real drag happened (even one that snaps back below threshold) —
+        // the compatibility click that follows should do nothing, since
+        // this handler (or snapBack, for a below-threshold release) already
+        // decided what the gesture meant.
+        dragState.suppressClick = true;
+
+        if (axis === "y") {
+          if (Math.abs(dy) >= threshold) {
+            const downward = dy > 0;
+            card.style.transition = "transform .16s ease, opacity .16s ease";
+            card.style.transform = `translateY(${downward ? 60 : -60}px) scale(0.94)`;
+            card.style.opacity = "0.25";
+            setTimeout(() => {
+              card.style.transition = ""; card.style.transform = ""; card.style.opacity = "";
+              doFlip();
+            }, 140);
+          } else snapBack();
+          return;
+        }
+        if (isFlipped()) {
+          if (Math.abs(dx) >= threshold) {
+            const ok = dx > 0;
+            card.style.transition = "transform .2s ease, opacity .2s ease";
+            card.style.transform = `rotateY(180deg) translateX(${(ok ? -1 : 1) * 300}px) rotate(${ok ? -20 : 20}deg)`;
+            card.style.opacity = "0";
+            setTimeout(() => grade(q, ok ? 2 : 0), 150);
+          } else snapBack();
+        } else {
+          if (Math.abs(dx) >= threshold) {
+            const goNext = dx < 0; // swipe left -> next, swipe right -> previous
+            card.style.transition = "transform .18s ease, opacity .18s ease";
+            card.style.transform = `translateX(${goNext ? -280 : 280}px) rotate(${goNext ? -16 : 16}deg)`;
+            card.style.opacity = "0";
+            setTimeout(() => {
+              idx = goNext ? (idx + 1) % queue.length : (idx - 1 + queue.length) % queue.length;
+              draw();
+            }, 150);
+          } else snapBack();
+        }
+      }
+
+      // ---- Touch path: unchanged raw Touch events ----
       card.addEventListener("touchstart", (e) => {
-        if (!isFlipped()) return;
         const t = e.touches[0];
-        startX = t.clientX; startY = t.clientY; dx = 0; dragging = true;
+        begin(t.clientX, t.clientY);
       }, { passive: true });
-      let dragMoved = false;
       card.addEventListener("touchmove", (e) => {
         if (!dragging) return;
         const t = e.touches[0];
-        dx = t.clientX - startX;
-        const dy = t.clientY - startY;
-        if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > DEAD_ZONE) {
-          // Kill the flip transition for the duration of the drag — with it
-          // active, every touchmove's transform eased in over the full flip
-          // duration and the card chased the finger half a second behind.
-          // Set on first real movement, not touchstart, so a plain tap never
-          // touches the inline style.
-          if (!dragMoved) { dragMoved = true; card.style.transition = "none"; }
-          card.style.transform = `rotateY(180deg) translateX(${-dx}px) rotate(${-dx / 20}deg)`;
-          card.style.opacity = String(Math.max(0.4, 1 - Math.abs(dx) / 300));
-        }
+        move(t.clientX, t.clientY);
       }, { passive: true });
-      card.addEventListener("touchend", () => {
-        if (!dragging) return;
-        dragging = false;
-        dragMoved = false;
-        if (Math.abs(dx) >= threshold) {
-          const ok = dx > 0;
-          card.style.transition = "transform .2s ease, opacity .2s ease";
-          card.style.transform = `rotateY(180deg) translateX(${(ok ? -1 : 1) * 300}px) rotate(${ok ? -20 : 20}deg)`;
-          card.style.opacity = "0";
-          setTimeout(() => grade(q, ok ? 2 : 0), 150);
-        } else {
-          card.style.transition = "transform .2s ease, opacity .2s ease";
-          card.style.transform = ""; card.style.opacity = "";
-          setTimeout(() => { card.style.transition = ""; }, 200);
-        }
+      card.addEventListener("touchend", end);
+
+      // ---- Mouse/pen path: Pointer Events, explicitly not touch (the path
+      // above already owns touch — this avoids double-handling the same
+      // finger drag through two event systems at once). The star button
+      // keeps its own click behavior exactly like the tap-to-flip handler
+      // above already carves it out — a mouse press starting there is
+      // "star this card," never "begin a drag."
+      let pointerId = null;
+      card.addEventListener("pointerdown", (e) => {
+        if (e.pointerType === "touch") return;
+        if (e.target instanceof HTMLElement && e.target.closest(".qz-star-btn")) return;
+        pointerId = e.pointerId;
+        try { card.setPointerCapture(pointerId); } catch (e2) {}
+        begin(e.clientX, e.clientY);
       });
+      card.addEventListener("pointermove", (e) => {
+        if (e.pointerType === "touch" || e.pointerId !== pointerId) return;
+        move(e.clientX, e.clientY);
+      });
+      const endPointer = (e) => {
+        if (e.pointerType === "touch" || e.pointerId !== pointerId) return;
+        if (pointerId !== null) { try { card.releasePointerCapture(pointerId); } catch (e2) {} }
+        pointerId = null;
+        end();
+      };
+      card.addEventListener("pointerup", endPointer);
+      card.addEventListener("pointercancel", endPointer);
     }
 
     async function grade(q, gradeLevel) {
@@ -23429,12 +23588,12 @@ window.G = window.G || {};
   // the intuitivism pass. Curated to 4 primary routes + "More" below,
   // which opens the exact same NAV_GROUPS accordion the >=600px sidebar
   // renders (renderGroupsInto), as a drawer. Zero new routes.
-  // Chosen as: the dashboard (Home), the two highest-traffic daily-prep
-  // tools (Train, Board Drill), and the progress/tracking hub - orient,
-  // practice, drill, track. A judgment call with no single "correct"
-  // answer the code can derive; flagged for review, trivial to change
-  // (one array) if a different 4 reads better in practice.
-  const NAV_PRIMARY_MOBILE = ["#/home", "#/train", "#/board", "#/progress"];
+  // Chosen (confirmed with the user, morning check-in): the dashboard
+  // (Home), the two highest-traffic daily-prep tools (Train, Board
+  // Drill), and Settings - quick theme/account access one tap away
+  // rather than through "More", swapped in over the original draft's
+  // Progress (still fully reachable via More, same as every other route).
+  const NAV_PRIMARY_MOBILE = ["#/home", "#/train", "#/board", "#/settings"];
 
   // Renders the full grouped accordion (dividers, collapsible headers,
   // in-group sub-dividers, demoted items) into ANY container - the
@@ -23559,7 +23718,7 @@ window.G = window.G || {};
     if (scope !== navEl) return;
     // "More" lights up whenever the active route lives inside the drawer
     // rather than among the 4 curated primaries, so a Soldier deep in
-    // Settings still sees SOMETHING highlighted in the flat bar.
+    // e.g. Progress still sees SOMETHING highlighted in the flat bar.
     const moreBtn = navEl.querySelector(".nav-more-btn");
     if (moreBtn) moreBtn.classList.toggle("active", NAV_PRIMARY_MOBILE.indexOf(hash) === -1);
   }
