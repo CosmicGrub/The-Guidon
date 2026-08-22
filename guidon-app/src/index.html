@@ -927,63 +927,76 @@ html[data-motion="minimal"] .qz-card.flipped .qz-front { display: none; }
 /* Explicit, permanent invariant (user-requested, not incidental): the
    question side and the answer side render at EXACTLY the same size,
    always - flipping the card must never visibly resize it, in either
-   motion mode. In rich motion this was already true for free (both
-   faces are position:absolute;inset:0 within the same box, see .qz-face
-   above - there's structurally only one size to have). It was NOT true
-   here: this mode switches .qz-face to position:relative/in-flow (above,
-   needed to kill the 3D rotation), so before this rule each face's
-   height came from its OWN content instead of a shared box - a short
-   question and a long answer genuinely produced two different card
-   heights, and flipping visibly resized the card. Fixed height (not
-   auto, not min-height-only) makes .qz-card itself stop tracking
-   content, the same guarantee rich motion already had.
-   389px matches the motion-enabled .qz-card's own height (see .qz-card:
-   width:min(100%,648px) + aspect-ratio:5/3 = 648*3/5) so rich-motion and
-   reduce-motion agree on one number. aspect-ratio:auto stays reset for
-   the reason it always was: with a fixed height instead, the ratio
-   doesn't need to compute anything, but leaving it unset here would let
-   it fight the explicit height on a block with a definite width (the CSS
-   spec's normal aspect-ratio+definite-width behavior), backwards from
-   what a fixed height is supposed to guarantee.
+   motion mode, AT ANY WIDTH. In rich motion this was already true for
+   free (both faces are position:absolute;inset:0 within the same box,
+   see .qz-face above - there's structurally only one size to have). It
+   was NOT true here: this mode switches .qz-face to position:relative/
+   in-flow (above, needed to kill the 3D rotation), so before this rule
+   each face's height came from its OWN content instead of a shared box -
+   a short question and a long answer genuinely produced two different
+   card heights, and flipping visibly resized the card.
 
-   Fixing .qz-card's height was NOT sufficient on its own - caught live on
-   a real device, not in a synthetic test: giving .qz-card a fixed height
-   doesn't make its CHILDREN (.qz-front/.qz-back) fill it. position:
-   relative (.qz-face, above) has no inherent stretch-to-parent behavior
-   the way position:absolute;inset:0 did in rich motion - each face still
-   sized itself to its own content, full stop, leaving a dead gap between
-   a short face's actual content and the card's now-fixed bottom edge (a
-   question rendered visibly small/cramped inside a much taller box,
-   which is what "the question side is cut off" was actually describing -
-   nothing was clipped, the content just never filled the box it was
-   supposed to). Every earlier check here - the automated parity test,
-   the live-device confirmation - measured .qz-card's own rect and never
-   .qz-front's, so this passed clean while still being visibly broken.
-   height:100% on .qz-face (above) is the actual fix: with .qz-card's
-   height now definite (not auto), a percentage height on its direct
-   child correctly resolves against it, replacing the stretch behavior
+   First attempt at this fix used a FLAT height:389px - matched rich
+   motion's own height at its 648px width cap, so the two modes agreed at
+   THAT one width. It was wrong at every narrower width: rich motion's
+   height is aspect-ratio-DERIVED (5:3 against whatever width it actually
+   has), so it shrinks proportionally on a narrow screen; a flat 389px
+   does not shrink at all. Caught live on the Z Fold5's folded cover
+   screen (344px wide): rich motion correctly showed a 298x179 card
+   (5:3, matches everywhere else); reduce-motion showed 298x389 - ratio
+   0.77, TALLER than wide, nothing like the "real 3x5 index card,
+   landscape" shape this whole sizing pass exists to guarantee. Same bug
+   shape as the very first same-size fix: right at the one width actually
+   tested, silently wrong everywhere else - width:min(100%,648px) up on
+   .qz-card's own base rule (unaffected by anything in this block) is
+   still definite, so aspect-ratio:5/3 here computes height from THAT
+   width directly, the exact mechanism rich motion already uses - no flat
+   number to fall out of sync the next time the base cap changes, and
+   correct at every width in between, not just the ones actually tested.
+
+   Fixing .qz-card's height (whichever way) was NOT sufficient on its own
+   - caught live on a real device, not in a synthetic test: giving
+   .qz-card a definite height doesn't make its CHILDREN (.qz-front/
+   .qz-back) fill it. position:relative (.qz-face, above) has no inherent
+   stretch-to-parent behavior the way position:absolute;inset:0 did in
+   rich motion - each face still sized itself to its own content, full
+   stop, leaving a dead gap between a short face's actual content and the
+   card's bottom edge (a question rendered visibly small/cramped inside a
+   much taller box, which is what "the question side is cut off" was
+   actually describing - nothing was clipped, the content just never
+   filled the box it was supposed to). Every earlier check here - the
+   automated parity test, the live-device confirmation - measured
+   .qz-card's own rect and never .qz-front's, so this passed clean while
+   still being visibly broken. height:100% on .qz-face (above) is the
+   actual fix: with .qz-card's height definite (whether from a flat value
+   or, now, aspect-ratio), a percentage height on its direct child
+   correctly resolves against it, replacing the stretch behavior
    position:absolute;inset:0 used to provide for free. */
 html.reduce-motion .qz-card,
-html[data-motion="minimal"] .qz-card { height: 389px; aspect-ratio: auto; }
+html[data-motion="minimal"] .qz-card { aspect-ratio: 5 / 3; }
 /* Both faces need their OWN overflow handling now that they actually
-   fill the fixed 389px box (above) - a face whose content is taller than
-   that has to scroll internally instead of growing the card (which would
-   break the same-size invariant) or silently overflowing past the edge
-   (the original bug this whole area was first built to prevent). The
-   answer side already had this via .qz-back-scroll (below, unchanged)
-   for its own reasons (long answers predate this rule) - max-height is
-   now redundant there (height:100% above already fixes it at exactly
-   389px, so max-height:389px can never trigger) but left in place as a
-   second, explicit line of defense rather than relying solely on the
-   height:100% chain holding forever. The question side never needed
-   overflow handling before - front content is normally short - but
-   "never needed it" isn't "guaranteed": the actual longest real
-   board-question PROMPT (not answer) runs 244 characters, genuinely
-   enough to overflow a fixed 389px face on a narrow card. overflow-y:auto
-   directly on .qz-front (no separate wrapper needed - unlike the back
-   face, front has no non-scrolling footer like .qz-grade-row competing
-   for the same box) closes that gap rather than leaving it as a
-   theoretical edge case nobody had actually measured. */
+   fill the card's real (now width-derived, not flat) height - a face
+   whose content is taller than that has to scroll internally instead of
+   growing the card (which would break the same-size invariant) or
+   silently overflowing past the edge (the original bug this whole area
+   was first built to prevent). The answer side already had this via
+   .qz-back-scroll (below, unchanged) for its own reasons (long answers
+   predate this rule) - max-height:389px below is now a ceiling for the
+   WIDEST case only (648px width, where height:100% above also resolves
+   to 389px, so the two agree there and max-height never actively
+   constrains anything narrower) rather than the general-purpose height
+   enforcer it was when the card's own height was still a flat 389px;
+   left in place as a second, explicit line of defense rather than
+   relying solely on the height:100% chain holding forever. The question
+   side never needed overflow handling before - front content is
+   normally short - but "never needed it" isn't "guaranteed": the actual
+   longest real board-question PROMPT (not answer) runs 244 characters,
+   genuinely enough to overflow a narrow card's real (now potentially
+   under 200px, on the narrowest real device this app targets) height.
+   overflow-y:auto directly on .qz-front (no separate wrapper needed -
+   unlike the back face, front has no non-scrolling footer like
+   .qz-grade-row competing for the same box) closes that gap rather than
+   leaving it as a theoretical edge case nobody had actually measured. */
 html.reduce-motion .qz-front,
 html[data-motion="minimal"] .qz-front { overflow-y: auto; }
 html.reduce-motion .qz-back,

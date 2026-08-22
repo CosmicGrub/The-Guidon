@@ -182,6 +182,64 @@ if (found) {
 const relevantNoise = noise.filter((n) => !/favicon/.test(n));
 relevantNoise.length === 0 ? ok("no console errors/warnings") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));
 
+/* ---- Narrow width (344px - the actual Z Fold5 folded-cover-screen width,
+   the narrowest real viewport this app targets): a second, distinct bug
+   from the first same-size fix, caught live on the real folded device, not
+   in this suite. A flat height:389px in reduce-motion matched rich
+   motion's height only AT rich motion's own 648px width cap - narrower
+   than that, rich motion's aspect-ratio-derived height shrinks
+   proportionally (5:3) while a flat number does not, so the two modes'
+   card SHAPES diverged (reduce-motion rendered 298x389, ratio 0.77 -
+   taller than wide - while rich motion correctly showed 298x179, ratio
+   1.67, the intended "real index card, landscape" shape). Fixed by giving
+   reduce-motion the same aspect-ratio:5/3 rich motion already uses
+   instead of a flat height, so both modes compute height from width
+   identically at every width, not just the one this suite happened to
+   test at (900px, well above the 648px cap, where the old flat number
+   and the new aspect-ratio approach produce the same result by
+   coincidence - this section exists specifically because the wide-
+   viewport checks above could not have caught this). ---- */
+const narrowPage = await (await browser.newContext({ viewport: { width: 344, height: 900 } })).newPage();
+const narrowNoise = [];
+narrowPage.on("console", (m) => { if (["error", "warning"].includes(m.type())) narrowNoise.push(m.type() + ": " + m.text()); });
+narrowPage.on("pageerror", (e) => narrowNoise.push("pageerror: " + e.message));
+await narrowPage.goto(url, { waitUntil: "load" });
+await narrowPage.waitForTimeout(1100);
+await narrowPage.evaluate(() => {
+  const t = [...document.querySelectorAll("button,.ob-mode-card,[role=button],.click")]
+    .find((e) => /guest session/i.test(e.textContent || ""));
+  if (t) t.click();
+});
+await narrowPage.waitForTimeout(1100);
+await narrowPage.evaluate(() => { location.hash = "#/board"; });
+await narrowPage.waitForTimeout(1100);
+
+const richNarrow = await narrowPage.evaluate(() => {
+  const r = document.querySelector(".qz-card").getBoundingClientRect();
+  return { w: Math.round(r.width), h: Math.round(r.height) };
+});
+await narrowPage.evaluate(() => {
+  document.documentElement.setAttribute("data-motion", "minimal");
+  document.documentElement.classList.add("reduce-motion");
+});
+await narrowPage.waitForTimeout(300);
+const minimalNarrow = await narrowPage.evaluate(() => {
+  const r = document.querySelector(".qz-card").getBoundingClientRect();
+  return { w: Math.round(r.width), h: Math.round(r.height) };
+});
+
+const richRatio = richNarrow.w / richNarrow.h;
+const minimalRatio = minimalNarrow.w / minimalNarrow.h;
+Math.abs(richRatio - minimalRatio) < 0.05
+  ? ok(`at 344px width, rich motion (${richNarrow.w}x${richNarrow.h}, ratio ${richRatio.toFixed(2)}) and reduce-motion (${minimalNarrow.w}x${minimalNarrow.h}, ratio ${minimalRatio.toFixed(2)}) render the same card shape`)
+  : bad(`at 344px width, rich motion is ${richNarrow.w}x${richNarrow.h} (ratio ${richRatio.toFixed(2)}) but reduce-motion is ${minimalNarrow.w}x${minimalNarrow.h} (ratio ${minimalRatio.toFixed(2)}) - the two motion modes disagree on the card's shape at this width`);
+minimalNarrow.w > minimalNarrow.h
+  ? ok(`reduce-motion's card is wider than tall at 344px (${minimalNarrow.w}x${minimalNarrow.h}) - the intended landscape index-card shape, not the inverted portrait shape the flat-height bug produced`)
+  : bad(`reduce-motion's card is ${minimalNarrow.w}x${minimalNarrow.h} at 344px - taller than wide, the exact shape-inversion bug this check exists to catch`);
+
+narrowNoise.length === 0 ? ok("no console errors/warnings at 344px width") : bad("console noise at 344px: " + narrowNoise.slice(0, 5).join(" | "));
+await narrowPage.close();
+
 await browser.close();
 server.close();
 console.log("\n" + (fails ? `BOARD DRILL FACE PARITY: ${fails} FAILURE(S)` : "BOARD DRILL FACE PARITY: all passed"));
