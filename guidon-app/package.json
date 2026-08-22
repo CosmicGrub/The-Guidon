@@ -90,5 +90,9 @@
     "@capacitor/local-notifications": "^8.2.1",
     "@capacitor/share": "^8.0.1",
     "@capacitor/status-bar": "^8.0.3"
-  }
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
+  },
+  "_overrides_note": "uuid pinned above GHSA-w5hq-g745-h8pq (moderate, buffer bounds check) - the only place it appears is xcode, pulled in transitively by @capacitor/cli for iOS project-file tooling this project never invokes (no ios: scripts, cap add ios never run). npm audit fix --force would instead downgrade @capacitor/cli itself to 8.4.2, a real breaking change to touch for code that's never exercised; this pins just the vulnerable leaf instead."
 }
