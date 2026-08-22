@@ -3618,6 +3618,52 @@ html.reduce-motion .nav-drawer, html[data-motion="minimal"] .nav-drawer { transi
   .view { max-width: 960px; }
 }
 
+/* ---- Tier 2: split a recognized Z Fold5 back out of the labeled rail
+   above, keyed by the html.device-fold-narrow class the UA-Client-Hints
+   check (see renderShell/SIDEBAR_MQ) adds - see that comment for the full
+   rationale. Every selector below is scoped to that class specifically so
+   an unrecognized device (the vast majority - no class ever added) keeps
+   the >=800px block above completely untouched. No new breakpoint number:
+   same >=800px floor as the rule this overrides, deliberately no upper
+   bound - a Fold-class device's real unfolded width never approaches the
+   1024px tier above, so bounding this would only add a non-canonical
+   pixel value (859/860 is the RETIRED one, see lint-patterns.mjs check d)
+   for a ceiling that's never actually reached in practice.
+   Reproduces the 600-799px tier's compact-rail declarations rather than
+   sharing them - a CSS @media condition can't itself depend on a JS-added
+   class, so there's no way to reference that block instead of repeating
+   it. If the compact-rail styling above changes, mirror the change here. */
+@media (min-width: 800px) {
+  html.device-fold-narrow #app {
+    grid-template-columns: 96px 1fr;
+    grid-template-rows: auto 1fr;
+    grid-template-areas: "top top" "nav main";
+  }
+  html.device-fold-narrow .nav {
+    flex-direction: column; align-items: stretch;
+    gap: 2px; padding: 12px 6px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    overflow-x: hidden; overflow-y: auto;
+    border-top: none; border-right: 1px solid var(--line);
+  }
+  html.device-fold-narrow .nav button {
+    flex: 0 0 auto; flex-direction: column; justify-content: center;
+    gap: 3px; min-width: 0; width: 100%; padding: 8px 4px;
+    font-size: .62rem; text-align: center; white-space: normal;
+  }
+  html.device-fold-narrow .nav button.active { position: relative; background: color-mix(in srgb, var(--amber) 14%, transparent); }
+  html.device-fold-narrow .nav button.active::after {
+    content: ""; position: absolute; left: 0; top: 15%; bottom: 15%;
+    width: 2px; border-radius: 2px; background: var(--amber);
+  }
+  html.device-fold-narrow .nav .ico { font-size: 1.05rem; }
+  html.device-fold-narrow .nav-group-header { padding: 8px 4px 3px !important; font-size: .58rem !important; gap: 3px !important; }
+  html.device-fold-narrow .nav-group-header .ico { font-size: .62rem !important; }
+  html.device-fold-narrow .nav-divider { width: auto; height: 1px; align-self: stretch; margin: 6px 6px; }
+  html.device-fold-narrow .main { padding: 20px 18px 36px; padding-bottom: calc(36px + env(safe-area-inset-bottom)); }
+  html.device-fold-narrow .view { max-width: 100%; }
+}
+
 @media (min-width: 1200px) {
   #app { grid-template-columns: 232px 1fr; }
   .main { padding: 30px 40px 48px; }
@@ -23615,6 +23661,51 @@ window.G = window.G || {};
       },
     }, [el("span.ico", { "aria-hidden": "true" }, [G.util.icon(r.ico, 18)]), document.createTextNode(r.label)]);
   }
+
+  // Tier 2 (intuitivism pass) - the plan's own words: "Only worth it if the
+  // shared treatment actually bothers you on real hardware." Confirmed live
+  // on the actual devices first (not assumed): the in-place Diagnostics/
+  // Author demotion reads as distinct on its own, and this one specific
+  // refinement was asked for anyway. Tab S9 FE portrait (~823px) and a
+  // Z Fold5 unfolded (~829-841px, real device measurement vs. the plan's
+  // ~841px estimate) both land in the >=800px labeled-rail tier and,
+  // without this, get the identical 208px rail - width alone can't tell
+  // them apart, they're 18px apart on the same axis. UA-Client-Hints'
+  // `model` is the only signal that can: high-entropy, so it needs an
+  // explicit async request (getHighEntropyValues), not the ordinary
+  // navigator.userAgentData that's available synchronously.
+  //
+  // Deliberately narrow and fails soft, per the plan's own warning about
+  // this exact approach ("a hardcoded model allowlist that silently stops
+  // matching on a Fold6/Tab S10, zero signal on iOS"):
+  //   - matches Samsung's Z Fold model-number PREFIX (SM-F9xx), not an
+  //     exact model string, so a Fold 6/7/8 (same prefix so far) keeps
+  //     working without a code change - narrower than "any Samsung fold"
+  //     (which would also catch the Z Flip's SM-F7xx and misfire on a
+  //     device this rule was never meant for), wider than "SM-F946U"
+  //     alone (which stops matching the moment this exact SKU is gone).
+  //   - unsupported browser/WebView, blocked permission, or no match ->
+  //     html never gets the class -> the >=800px CSS block below never
+  //     applies -> exactly today's shipped behavior (Tab-like treatment),
+  //     unchanged. This can only ever narrow the labeled-rail tier for a
+  //     device it positively recognizes, never break anything for a
+  //     device it doesn't.
+  //   - runs once, fire-and-forget, well before renderNav()'s first call
+  //     below - device model can't change mid-session, and the API
+  //     resolves fast enough (no network involved) that this beats first
+  //     paint in practice; if it somehow didn't, the CSS re-evaluates
+  //     live the instant the class lands, so the worst case is one
+  //     imperceptible reflow, not a lasting visual bug.
+  (async () => {
+    try {
+      const uad = navigator.userAgentData;
+      if (!uad || typeof uad.getHighEntropyValues !== "function") return;
+      const { model } = await uad.getHighEntropyValues(["model"]);
+      if (/^SM-F9\d{2}/i.test(model || "")) {
+        document.documentElement.classList.add("device-fold-narrow");
+      }
+    } catch (e) { /* no signal - fall through to the unchanged default */ }
+  })();
 
   // Below 600px there's no side-rail — it's the horizontal bottom tab bar.
   // Real bottom tab bars (Material Design, iOS) are flat and scrollable, not
