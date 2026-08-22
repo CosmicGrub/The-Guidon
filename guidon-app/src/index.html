@@ -694,32 +694,38 @@ html.qz-theater #toast { z-index: 900; }
    mode too - stays genuinely constant across orientation, not just
    "less sensitive."
 
-   536px was chosen, not a rounder/bigger number, because it's the actual
+   648px was chosen, not a rounder/bigger number, because it's the actual
    measured ceiling at test-board-drill-dynamic.mjs's portrait viewport
    (800x1200): at exactly 800px wide, .drill-layout is still single-
    column (<1024px breakpoint) so the card gets whatever .main leaves
-   after the persistent side-rail (208px, active >=800px) and .main's own
-   28px*2 padding - 800 - 208 - 56 = 536px, measured via
-   getBoundingClientRect() through the live ancestor chain, not hand-
-   computed. The landscape pairing (1200x800) is >=1024px, so
+   after the side-rail and .main's own 28px*2 padding. The side-rail
+   itself is NOT the normal 208px here - route()'s html.board-drill-active
+   toggle (see .nav, near @media(min-width:1200px) above) collapses it to
+   96px icon-only specifically on this route, freeing real width instead
+   of accepting the 208px rail as a fixed cost: 800 - 96 - 56 = 648px,
+   measured via getBoundingClientRect() through the live ancestor chain,
+   not hand-computed. The landscape pairing (1200x800) is >=1024px, so
    .drill-layout is already in its grid form there; its middle column's
-   minmax(556px, 1fr) (see .drill-layout) guarantees >=556px regardless
+   minmax(668px, 1fr) (see .drill-layout) guarantees >=668px regardless
    of outer width - CSS grid's minmax floor holds even by overflowing the
-   container if the outer track can't fit it (confirmed: at 1200px the
-   3-column track total exceeds .main's available inner width, and the
-   middle column still renders at its full floor rather than shrinking) -
-   so landscape saturates at the same 536px cap too, with room to spare.
-   A bigger cap (640px was tried first) reads more
-   "prominent" in isolation but exceeds the 536px portrait ceiling, so
-   the two orientations would disagree there, reintroducing the exact bug
-   this whole rule exists to prevent - confirmed by actually building and
-   running test-board-drill-dynamic.mjs, not just reasoning about it.
-   420px (2026-08-20's own "fixed card size" pass) turned out too
-   conservative for the "same size as a real index card, prominently
-   large" requirement - 536px corrects that (+28% wider) without
-   re-breaking orientation stability. If a future change moves the
-   side-rail's breakpoint or .main's padding, re-measure this the same
-   way rather than adjusting the number by feel.
+   container if the outer track can't fit it - so landscape saturates at
+   the same 648px cap too, with room to spare.
+
+   This replaced an EARLIER 536px version of this same rule, which was
+   itself already a correction of a still-earlier 640px attempt - both
+   confirmed-with-user, both actually measured rather than guessed, and
+   both superseded for the same underlying reason: they treated the
+   208px side-rail as a fixed cost of being on this route, when the real
+   fix was to stop paying it. 536px was "the actual measured ceiling"
+   given that constraint - true then, obsolete the moment the constraint
+   itself was removed. If a future change moves the collapsed rail's own
+   width (96px), the side-rail breakpoint, or .main's padding, re-measure
+   this the same way rather than adjusting the number by feel - exactly
+   the mistake that produced the 640px attempt in the first place.
+   420px (2026-08-20's own "fixed card size" pass, before ANY of this)
+   turned out too conservative for the "same size as a real index card,
+   prominently large" requirement - 648px corrects that (+54% wider)
+   without re-breaking orientation stability.
 
    A first version of this rule also had a `max-height: min(504px, 62vh)`
    safety net for short viewports, which defeated its own purpose (it
@@ -728,8 +734,8 @@ html.qz-theater #toast { z-index: 900; }
    overflow-y:auto, so a card that's taller than the visible viewport
    just makes the page scroll a little further - the same thing that
    already happens for any other view with more content than fits, not a
-   special case this rule needs to prevent. At 5:3 (vs the old 5:6) this
-   matters even less in practice: a 536px-wide card is only ~322px tall,
+   special case this rule needs to prevent. At 5:3 a 648px-wide card is
+   ~389px tall - taller than the earlier 536px/322px version, but still
    comfortably under nearly every real device's available height even in
    a landscape/short-viewport state.
 
@@ -739,7 +745,7 @@ html.qz-theater #toast { z-index: 900; }
    size." */
 .qz-card {
   position: relative;
-  width: min(100%, 536px);
+  width: min(100%, 648px);
   aspect-ratio: 5 / 3;
   margin-inline: auto;
   transform-style: preserve-3d;
@@ -943,19 +949,20 @@ html[data-motion="minimal"] .qz-card { height: auto; min-height: 320px; aspect-r
    with it .qz-card, since its height:auto above simply tracks content)
    unbounded instead of scrolling internally, pushing .qz-grade-row far
    down the page instead of keeping it reliably visible right under the
-   answer. Capped at 322px - the tallest the motion-enabled .qz-card (see
-   .qz-card, width:min(100%,536px) + aspect-ratio:5/3 = 536*3/5) can ever
+   answer. Capped at 389px - the tallest the motion-enabled .qz-card (see
+   .qz-card, width:min(100%,648px) + aspect-ratio:5/3 = 648*3/5) can ever
    reach - so both modes start scrolling internally at the same content
    length; flat px, not vh, to match that rule's deliberate no-vh-here
    reasoning. Uses max-height, not height, so short answers still hug their
    own height via .qz-card's height:auto above, same as before this rule.
-   (Originally 504px, matching the pre-536px card's 420px-wide/5:6 cap -
-   corrected here to stay true to this rule's own stated intent once the
-   width/ratio changed size AND shape; the two rules must track each other
+   (504px, then 322px matching the 536px-wide/5:3 cap that superseded the
+   original 420px-wide/5:6 one - corrected again here to stay true to
+   this rule's own stated intent every time .qz-card's own width/cap
+   changes; the two rules must track each other
    or reduce-motion mode silently drifts from what rich-motion actually
    shows.) */
 html.reduce-motion .qz-back,
-html[data-motion="minimal"] .qz-back { max-height: 322px; }
+html[data-motion="minimal"] .qz-back { max-height: 389px; }
 
 /* Phones: the base rule's width:min(100%,420px) + aspect-ratio already
    shrinks the card proportionally on a narrow screen with no override
@@ -3669,6 +3676,27 @@ html.reduce-motion .nav-drawer, html[data-motion="minimal"] .nav-drawer { transi
   .main { padding: 30px 40px 48px; }
 }
 
+/* ---- Board Drill: collapse the side-rail to icon-only (see route()'s
+   html.board-drill-active toggle) - reproduces the existing icon-only
+   look (compare html[data-nav-labels="off"] above) rather than sharing
+   it, same reasoning as the device-fold-narrow block above: a media
+   query can't itself depend on the route, so there's no way to reference
+   that rule instead of repeating its shape. No max-width bound and no
+   >=1200px-specific override needed - .qz-card's own cap (see .qz-card)
+   stays comfortably under what a 96px rail leaves free even at the
+   widest desktop tier, and this selector's extra specificity
+   (html.board-drill-active #app vs. plain #app) already wins over BOTH
+   the >=800px and >=1200px column-width rules above regardless of which
+   one the current viewport also matches - cascade order never enters
+   into it. */
+@media (min-width: 800px) {
+  html.board-drill-active #app { grid-template-columns: 96px 1fr; }
+  html.board-drill-active .nav button { font-size: 0; padding-top: 10px; padding-bottom: 10px; }
+  html.board-drill-active .nav .ico { font-size: 1.25rem; }
+  html.board-drill-active .nav-group-header { font-size: 0 !important; padding: 8px 4px 3px !important; }
+  html.board-drill-active .nav-group-header .ico { font-size: .7rem !important; }
+}
+
 /* Keep the fixed-grid shell from being overridden by legacy print block's
    generic #app display:block — scope handled by print media already, no-op here. */
 
@@ -4314,28 +4342,31 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
    silently break if that shared class' column count changed under them. */
 .drill-layout { display:block; }
 .drill-readiness-pane { display:none; }
-/* The middle column's minmax(556px, 1fr) floor - not a bare 1fr - exists
-   specifically so .qz-card's own width:min(100%,536px) cap (see .qz-card,
-   floor = cap + 20px buffer, same margin the original 440=420+20 pattern
-   used) actually gets reached in split mode too. CSS grid's minmax()
-   minimum is a hard floor - if the outer track can't fit 556px+240px+gap,
-   the grid overflows its own container rather than shrinking the middle
-   column below its floor - which is exactly what guarantees the card
-   reaches its full 536px cap at test-board-drill-dynamic.mjs's landscape
-   viewport (1200x800) with room to spare, confirmed by actually running
-   that test, not just reasoned about. Without this floor, the split grid
-   could squeeze the card's column narrower than 536px on its own, which
-   would mean the card visibly shrinks again exactly on the transition
-   this feature exists to prevent - e.g. rotating a tablet from portrait
-   (stacked, full page width) to landscape (split, middle column) crosses
-   this exact breakpoint. The two side panes give up width toward their
-   own minimums first if space is tight, which is the right priority: the
-   actual study card should win over supporting panes. */
+/* The middle column's minmax(668px, 1fr) floor - not a bare 1fr - exists
+   specifically so .qz-card's own width:min(100%,648px) cap (see .qz-card,
+   floor = cap + 20px buffer, same margin this pattern has used since the
+   original 440=420+20) actually gets reached in split mode too. CSS
+   grid's minmax() minimum is a hard floor - if the outer track can't fit
+   668px+240px+gap, the grid overflows its own container rather than
+   shrinking the middle column below its floor - which is exactly what
+   guarantees the card reaches its full 648px cap at
+   test-board-drill-dynamic.mjs's landscape viewport (1200x800) with room
+   to spare, confirmed by actually running that test, not just reasoned
+   about. Without this floor, the split grid could squeeze the card's
+   column narrower than 648px on its own, which would mean the card
+   visibly shrinks again exactly on the transition this feature exists to
+   prevent - e.g. rotating a tablet from portrait (stacked, full page
+   width) to landscape (split, middle column) crosses this exact
+   breakpoint. The two side panes give up width toward their own minimums
+   first if space is tight, which is the right priority: the actual study
+   card should win over supporting panes. This floor moves in lockstep
+   with .qz-card's own cap - see that rule's comment for why 648px, not
+   536px, is now the number both of them track. */
 @media (min-width: 1024px) {
-  .drill-layout { display:grid; grid-template-columns: minmax(240px, 280px) minmax(556px, 1fr); gap:16px; align-items:start; }
+  .drill-layout { display:grid; grid-template-columns: minmax(240px, 280px) minmax(668px, 1fr); gap:16px; align-items:start; }
 }
 @media (min-width: 1200px) {
-  .drill-layout { grid-template-columns: minmax(240px, 280px) minmax(556px, 1fr) minmax(220px, 280px); }
+  .drill-layout { grid-template-columns: minmax(240px, 280px) minmax(668px, 1fr) minmax(220px, 280px); }
   .drill-readiness-pane { display:block; }
 }
 .list-detail-row { display:block; width:100%; text-align:left; background:var(--panel); border:1px solid var(--line);
@@ -23908,6 +23939,16 @@ window.G = window.G || {};
     }
     const main = document.querySelector(".main");
     if (main) main.scrollTop = 0;
+    // Board Drill specifically collapses the persistent side-rail to
+    // icon-only (see the html.board-drill-active CSS block near .qz-card)
+    // - a Soldier studying flashcards should get chrome out of the way
+    // and the card as large as possible, not the full labeled nav sitting
+    // idle beside it. This is the ONLY route that does this - deliberately
+    // not tied to the user's own "Show rail labels" Settings toggle, which
+    // stays exactly what they set everywhere else. Toggled here (not via
+    // a CSS attribute selector on the route itself) because nothing else
+    // already exposes "which route is active" to CSS directly.
+    document.documentElement.classList.toggle("board-drill-active", r.hash === "#/board");
     // Leaving the drill exits fullscreen study — a fixed overlay must never
     // outlive the view that owns it. (A re-tap on the same nav item also
     // lands here, which is a deliberate exit gesture and may as well work.)
