@@ -15,6 +15,15 @@
  * shortest), in both motion modes, and that the longest prompt (244 real
  * characters, easily enough to overflow a fixed-height face) scrolls
  * internally instead of breaking the invariant or silently clipping.
+ *
+ * Also covers two further real bugs found live on the physical Z Fold5,
+ * neither catchable by the checks above (both needed a viewport shape none
+ * of them test): a card-shape inversion at 344px WIDTH (reduce-motion's old
+ * flat height didn't scale with width the way rich motion's aspect-ratio
+ * did), and a card cut off at the bottom at 344px total HEIGHT (folded AND
+ * rotated to landscape - the card's width-driven size never checked
+ * whether the resulting height fit the viewport at all). See each
+ * section's own comment below.
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
@@ -239,6 +248,93 @@ minimalNarrow.w > minimalNarrow.h
 
 narrowNoise.length === 0 ? ok("no console errors/warnings at 344px width") : bad("console noise at 344px: " + narrowNoise.slice(0, 5).join(" | "));
 await narrowPage.close();
+
+/* ---- SHORT viewport (882x344 - the real Z Fold5's cover screen, folded
+   AND rotated to landscape, CDP-confirmed live against the physical
+   device on 2026-08-22): a third, distinct bug from the two above. The
+   card's width-driven sizing (width:min(100%,648px), height from
+   aspect-ratio) has never checked whether the resulting height actually
+   FITS the viewport - at 882px wide there's easily enough width for the
+   full 648px cap, so the card renders its normal 648x389 regardless of
+   how tall the viewport actually is. At 344px of total viewport height
+   that's a contradiction on its face (the card alone is taller than the
+   whole screen), and live on the device the header/progress-track/nav-
+   row chrome around it left only ~104px - the question was cut off mid-
+   sentence at the bottom edge with no scroll affordance to hint more was
+   below. Fixed with a third, height-derived width candidate in .qz-card's
+   min() (see that rule's own comment) that only engages when the
+   viewport is too short for 648px to fit, shrinking the card
+   (preserving its 5:3 shape) instead of overflowing. This section proves
+   the card's bottom edge stays within the viewport at the exact
+   dimensions that reproduced the live bug, in both motion modes - the
+   other checks above never test a viewport shorter than the card. ---- */
+const shortPage = await (await browser.newContext({ viewport: { width: 882, height: 344 } })).newPage();
+const shortNoise = [];
+shortPage.on("console", (m) => { if (["error", "warning"].includes(m.type())) shortNoise.push(m.type() + ": " + m.text()); });
+shortPage.on("pageerror", (e) => shortNoise.push("pageerror: " + e.message));
+await shortPage.goto(url, { waitUntil: "load" });
+await shortPage.waitForTimeout(1100);
+await shortPage.evaluate(() => {
+  const t = [...document.querySelectorAll("button,.ob-mode-card,[role=button],.click")]
+    .find((e) => /guest session/i.test(e.textContent || ""));
+  if (t) t.click();
+});
+await shortPage.waitForTimeout(1100);
+await shortPage.evaluate(() => { location.hash = "#/board"; });
+await shortPage.waitForTimeout(1100);
+// Explicitly select a category (same mechanism findByPrompt uses above) -
+// without this, whichever topic a fresh guest session auto-selects as
+// "next due" varies run to run and can land arbitrarily far down a long
+// topic list in DOM order, which is a real but SEPARATE thing (scroll
+// position), not what this section exists to test. Selecting a category
+// is also what triggers the app's own scrollIntoView(block:"start") on
+// the flashcard (see test-board-drill-dynamic.mjs), which is the actual,
+// real mechanism that brings the card near the viewport top in normal
+// use - reproducing that here rather than relying on auto-select luck.
+await shortPage.evaluate(() => {
+  const sel = document.querySelector('select[aria-label="Filter by category"]');
+  if (sel && sel.options.length > 1) { sel.value = sel.options[1].value; sel.dispatchEvent(new Event("change")); }
+});
+await shortPage.waitForTimeout(500);
+// The app's own scrollIntoView(block:"start") call (verified separately by
+// test-board-drill-dynamic.mjs) is what brings the card into view in real
+// use, confirmed working live on the physical Z Fold5 (card landed at
+// top:110.6px, not scrolled away). In headless Chromium specifically at
+// this extreme 882x344 viewport it did not reliably take effect within a
+// generous wait - a test-environment timing quirk, not what this section
+// exists to test. Scrolling explicitly here isolates the actual question:
+// once the card IS in view, does it fit - independent of how it got there.
+await shortPage.evaluate(() => { document.querySelector(".qz-wrap").scrollIntoView({ block: "start" }); });
+await shortPage.waitForTimeout(300);
+
+async function shortFit(mode) {
+  return shortPage.evaluate((m) => {
+    if (m === "minimal") {
+      document.documentElement.setAttribute("data-motion", "minimal");
+      document.documentElement.classList.add("reduce-motion");
+    } else {
+      document.documentElement.removeAttribute("data-motion");
+      document.documentElement.classList.remove("reduce-motion");
+    }
+    const r = document.querySelector(".qz-card").getBoundingClientRect();
+    return { w: Math.round(r.width), h: Math.round(r.height), bottom: Math.round(r.bottom), vh: innerHeight };
+  }, mode);
+}
+
+for (const mode of ["rich", "minimal"]) {
+  const fit = await shortFit(mode);
+  await shortPage.waitForTimeout(200);
+  fit.bottom <= fit.vh
+    ? ok(`[${mode} motion] at 882x344 (Z Fold5 folded+landscape), the card (${fit.w}x${fit.h}, bottom ${fit.bottom}px) fits within the viewport (${fit.vh}px tall) - no cut-off`)
+    : bad(`[${mode} motion] at 882x344, the card (${fit.w}x${fit.h}) bottom edge is at ${fit.bottom}px but the viewport is only ${fit.vh}px tall - overflowing by ${fit.bottom - fit.vh}px, reproducing the live cut-off bug`);
+  const ratio = fit.w / fit.h;
+  Math.abs(ratio - 5 / 3) < 0.1
+    ? ok(`[${mode} motion] the shrunk card (${fit.w}x${fit.h}) keeps its 5:3 shape (ratio ${ratio.toFixed(2)}), not distorted by the height-driven clamp`)
+    : bad(`[${mode} motion] the shrunk card (${fit.w}x${fit.h}) has ratio ${ratio.toFixed(2)}, expected ~1.67 (5:3) - the height clamp distorted the card instead of scaling it`);
+}
+
+shortNoise.length === 0 ? ok("no console errors/warnings at 882x344") : bad("console noise at 882x344: " + shortNoise.slice(0, 5).join(" | "));
+await shortPage.close();
 
 await browser.close();
 server.close();

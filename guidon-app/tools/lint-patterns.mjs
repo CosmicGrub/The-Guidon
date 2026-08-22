@@ -55,7 +55,34 @@ console.log("lint-patterns: static regression guard for 3 repeat bug shapes\n");
     const css = html.slice(styleStart, styleEnd);
     const RAW_COLOR = /(?<![\w-])color\s*:\s*var\(--(cyan|violet|red|green|amber)\)/g;
     const hits = [...css.matchAll(RAW_COLOR)];
-    const BASELINE = 115; // audited count as of 2026-08-15 (rank/MOS upgrade #1: added .roadmap-mechanism summary {color:var(--cyan)}, a small mono-font disclosure label matching the .mode-course .kc-label/.qz-front .kc-label treatment already audited above; re-verified via a fresh test:contrast-full run - 36 routes x 24 themes = 864 combinations, 0 violations); previously 114 earlier the same day (Board Drill upgrade #3), 113 as of 2026-08-13 (task #225); see comment above
+    const BASELINE = 117; // audited count as of 2026-08-22 (PC parity pass:
+    // added .idp-smart-build summary:hover and .promo-coaching
+    // summary:hover, both color:var(--amber). test-contrast-full.mjs
+    // never simulates :hover so it can't verify these on its own - checked
+    // separately via a one-off script that REALLY hovers each selector
+    // (Playwright's real synthetic hover, not a class-toggle stand-in) and
+    // runs live axe-core color-contrast against it across all 24 themes:
+    // .promo-coaching summary (found rendering on #/profile) came back
+    // clean, 0 violations across all 24. .idp-smart-build wasn't reachable
+    // via a plain route hash to hover directly, but its CSS sets an
+    // explicit background:var(--panel) on the .idp-smart-build container
+    // itself (not ambient/inherited), and a direct amber-vs-panel contrast
+    // check across all 24 themes came back >=5.10:1 in the worst case
+    // (WCAG AA floor for this text size is 4.5:1) - safe by the same
+    // reasoning, not by direct hover simulation. Three OTHER new
+    // color:var(--amber) hover candidates from this same pass
+    // (.fin-details/.tx-details/.wr-details summary) were deliberately
+    // NOT added here - amber-vs-bg (their ambient, unset-own-background
+    // case) came out to 4.46:1 in desert-cadence, just under the 4.5:1
+    // floor, so those three use color:var(--text) instead (see each
+    // rule's own comment) and never became new raw-accent hits at all.
+    // Previously 115 as of 2026-08-15 (rank/MOS upgrade #1: added
+    // .roadmap-mechanism summary {color:var(--cyan)}, a small mono-font
+    // disclosure label matching the .mode-course .kc-label/.qz-front
+    // .kc-label treatment already audited above; re-verified via a fresh
+    // test:contrast-full run - 36 routes x 24 themes = 864 combinations, 0
+    // violations); 114 earlier the same day (Board Drill upgrade #3), 113
+    // as of 2026-08-13 (task #225); see comment above
     if (hits.length > BASELINE) {
       bad(`(a) raw accent color used as text: ${hits.length} found, baseline is ${BASELINE} (+${hits.length - BASELINE} new)`);
       console.log("         first matches (compare against a diff to find the new one(s)):");
@@ -235,11 +262,18 @@ console.log("lint-patterns: static regression guard for 3 repeat bug shapes\n");
    gets the labeled rail instead of the compact one. See the canonical
    breakpoint scale comment in src/index.html for the full rationale.
 
+   1360 added (PC parity pass, 2026-08-22): Board Drill's 3rd column
+   (the readiness pane) needs 96px rail + 80px .main padding + 1160px of
+   its own declared minimum = 1336px, rounded up - was gated at 1200px,
+   which silently overflowed and rendered invisible on every real desktop
+   browser. See the canonical breakpoint scale comment in src/index.html
+   for the full measured derivation.
+
    `prefers-*`, `hover`, `pointer`, and `print` are feature queries, not
    layout breakpoints, and are intentionally out of scope.
    ====================================================================== */
 {
-  const CANONICAL = new Set([420, 480, 600, 640, 768, 799, 800, 1024, 1200]);
+  const CANONICAL = new Set([420, 480, 600, 640, 768, 799, 800, 1024, 1200, 1360]);
   // Not anchored to a literal "@media" prefix: compound conditions like
   // "@media (min-width: 600px) and (max-width: 859px)" put the second
   // clause after "and (", not "@media (", so anchoring would silently
