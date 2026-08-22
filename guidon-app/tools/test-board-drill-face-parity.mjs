@@ -72,6 +72,21 @@ async function findByPrompt(targetQ, category) {
 async function cardHeight() {
   return page.evaluate(() => Math.round(document.querySelector(".qz-card").getBoundingClientRect().height));
 }
+// The bug this closes: .qz-card having a fixed height does NOT guarantee
+// its CHILD face (.qz-front/.qz-back) actually fills it - position:relative
+// (reduce-motion's .qz-face) has no inherent stretch-to-parent behavior the
+// way position:absolute;inset:0 does in rich motion, so a face can size
+// itself to its own (shorter) content and leave a dead gap before the
+// card's real bottom edge. Every earlier version of this test only checked
+// .qz-card's own rect and missed this entirely - it shipped broken and
+// this suite still went green. Always check BOTH from here on.
+async function visibleFaceHeight() {
+  return page.evaluate(() => {
+    const flipped = document.querySelector(".qz-card").classList.contains("flipped");
+    const face = document.querySelector(flipped ? ".qz-back" : ".qz-front");
+    return Math.round(face.getBoundingClientRect().height);
+  });
+}
 async function isFlipped() {
   return page.evaluate(() => document.querySelector(".qz-card").classList.contains("flipped"));
 }
@@ -88,11 +103,19 @@ async function flip() {
 
 /* ---- Rich motion: parity should already hold structurally ---- */
 const frontHRich = await cardHeight();
+const frontFaceHRich = await visibleFaceHeight();
+frontFaceHRich === frontHRich
+  ? ok(`rich motion: the visible face (${frontFaceHRich}px) actually fills the card (${frontHRich}px), not just the outer container matching itself`)
+  : bad(`rich motion: visible face is ${frontFaceHRich}px but .qz-card is ${frontHRich}px - the face doesn't fill the card`);
 await flip();
 const backHRich = await cardHeight();
+const backFaceHRich = await visibleFaceHeight();
 frontHRich === backHRich
   ? ok(`rich motion: front (${frontHRich}px) and back (${backHRich}px) are the same height`)
   : bad(`rich motion: front ${frontHRich}px != back ${backHRich}px`);
+backFaceHRich === backHRich
+  ? ok(`rich motion: the visible (back) face (${backFaceHRich}px) actually fills the card (${backHRich}px)`)
+  : bad(`rich motion: back face is ${backFaceHRich}px but .qz-card is ${backHRich}px - the face doesn't fill the card`);
 await flip(); // back to front
 
 /* ---- Reduce/minimal motion: the actual fix ---- */
@@ -103,11 +126,19 @@ await page.evaluate(() => {
 await page.waitForTimeout(200);
 
 const frontHMinimal = await cardHeight();
+const frontFaceHMinimal = await visibleFaceHeight();
+frontFaceHMinimal === frontHMinimal
+  ? ok(`reduce-motion: the visible (front) face (${frontFaceHMinimal}px) actually fills the card (${frontHMinimal}px) - this is the real bug that shipped once already (checking only .qz-card's own rect missed it)`)
+  : bad(`reduce-motion: front face is ${frontFaceHMinimal}px but .qz-card is ${frontHMinimal}px - the question side does not fill the card (this is "the question side is cut off")`);
 await flip();
 const backHMinimal = await cardHeight();
+const backFaceHMinimal = await visibleFaceHeight();
 frontHMinimal === backHMinimal
   ? ok(`reduce-motion: front (${frontHMinimal}px) and back (${backHMinimal}px) are the same height`)
   : bad(`reduce-motion: front ${frontHMinimal}px != back ${backHMinimal}px - flipping visibly resizes the card`);
+backFaceHMinimal === backHMinimal
+  ? ok(`reduce-motion: the visible (back) face (${backFaceHMinimal}px) actually fills the card (${backHMinimal}px)`)
+  : bad(`reduce-motion: back face is ${backFaceHMinimal}px but .qz-card is ${backHMinimal}px - the answer side does not fill the card`);
 frontHMinimal === frontHRich
   ? ok(`reduce-motion's height (${frontHMinimal}px) matches rich motion's (${frontHRich}px) - the two modes fully agree`)
   : bad(`reduce-motion height ${frontHMinimal}px doesn't match rich motion's ${frontHRich}px`);
@@ -121,9 +152,13 @@ found ? ok("found the longest-prompt board question") : bad("could not locate th
 
 if (found) {
   const longFrontH = await cardHeight();
+  const longFrontFaceH = await visibleFaceHeight();
   longFrontH === frontHMinimal
     ? ok(`longest real question (${longest.len} chars) still renders at the same fixed height (${longFrontH}px) - overflow-y:auto is doing its job, not silently breaking the invariant`)
     : bad(`longest question's front face is ${longFrontH}px, expected the fixed ${frontHMinimal}px - the invariant broke under real long content`);
+  longFrontFaceH === longFrontH
+    ? ok(`the longest question's own face (${longFrontFaceH}px) also fills the card, not just the outer container`)
+    : bad(`the longest question's face is ${longFrontFaceH}px but .qz-card is ${longFrontH}px - doesn't fill the card`);
 
   const overflowInfo = await page.evaluate(() => {
     const f = document.querySelector(".qz-front");
@@ -135,9 +170,13 @@ if (found) {
 
   await flip();
   const longBackH = await cardHeight();
+  const longBackFaceH = await visibleFaceHeight();
   longBackH === longFrontH
     ? ok(`flipping the longest-prompt card to its answer keeps the same height (${longBackH}px)`)
     : bad(`flipping the longest-prompt card changed height: front ${longFrontH}px -> back ${longBackH}px`);
+  longBackFaceH === longBackH
+    ? ok(`the answer face (${longBackFaceH}px) also fills the card after flipping the longest-prompt card`)
+    : bad(`the answer face is ${longBackFaceH}px but .qz-card is ${longBackH}px - doesn't fill the card`);
 }
 
 const relevantNoise = noise.filter((n) => !/favicon/.test(n));

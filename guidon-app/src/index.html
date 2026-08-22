@@ -917,7 +917,7 @@ html[data-motion="cinematic"] { --qz-flip-dur: .95s; --qz-flip-ease: cubic-bezie
 html.reduce-motion .qz-card,
 html[data-motion="minimal"] .qz-card { transition: none; transform: none !important; }
 html.reduce-motion .qz-face,
-html[data-motion="minimal"] .qz-face { position: relative; inset: auto; transform: none !important; backface-visibility: visible; }
+html[data-motion="minimal"] .qz-face { position: relative; inset: auto; transform: none !important; backface-visibility: visible; height: 100%; }
 html.reduce-motion .qz-back,
 html[data-motion="minimal"] .qz-back { display: none; }
 html.reduce-motion .qz-card.flipped .qz-back,
@@ -935,35 +935,55 @@ html[data-motion="minimal"] .qz-card.flipped .qz-front { display: none; }
    height came from its OWN content instead of a shared box - a short
    question and a long answer genuinely produced two different card
    heights, and flipping visibly resized the card. Fixed height (not
-   auto, not min-height-only) makes both faces share the identical box
-   this mode was missing, the same guarantee rich motion already had.
-   389px matches .qz-back's own max-height below (and the motion-enabled
-   .qz-card's own height, see .qz-card: width:min(100%,648px) +
-   aspect-ratio:5/3 = 648*3/5) so all three - rich-motion card,
-   reduce-motion question side, reduce-motion answer side - agree on one
-   number. aspect-ratio:auto stays reset for the reason it always was:
-   with a fixed height instead, the ratio doesn't need to compute
-   anything, but leaving it unset here would let it fight the explicit
-   height on a block with a definite width (the CSS spec's normal
-   aspect-ratio+definite-width behavior), which is exactly backwards from
-   what a FIXED height is supposed to guarantee. */
+   auto, not min-height-only) makes .qz-card itself stop tracking
+   content, the same guarantee rich motion already had.
+   389px matches the motion-enabled .qz-card's own height (see .qz-card:
+   width:min(100%,648px) + aspect-ratio:5/3 = 648*3/5) so rich-motion and
+   reduce-motion agree on one number. aspect-ratio:auto stays reset for
+   the reason it always was: with a fixed height instead, the ratio
+   doesn't need to compute anything, but leaving it unset here would let
+   it fight the explicit height on a block with a definite width (the CSS
+   spec's normal aspect-ratio+definite-width behavior), backwards from
+   what a fixed height is supposed to guarantee.
+
+   Fixing .qz-card's height was NOT sufficient on its own - caught live on
+   a real device, not in a synthetic test: giving .qz-card a fixed height
+   doesn't make its CHILDREN (.qz-front/.qz-back) fill it. position:
+   relative (.qz-face, above) has no inherent stretch-to-parent behavior
+   the way position:absolute;inset:0 did in rich motion - each face still
+   sized itself to its own content, full stop, leaving a dead gap between
+   a short face's actual content and the card's now-fixed bottom edge (a
+   question rendered visibly small/cramped inside a much taller box,
+   which is what "the question side is cut off" was actually describing -
+   nothing was clipped, the content just never filled the box it was
+   supposed to). Every earlier check here - the automated parity test,
+   the live-device confirmation - measured .qz-card's own rect and never
+   .qz-front's, so this passed clean while still being visibly broken.
+   height:100% on .qz-face (above) is the actual fix: with .qz-card's
+   height now definite (not auto), a percentage height on its direct
+   child correctly resolves against it, replacing the stretch behavior
+   position:absolute;inset:0 used to provide for free. */
 html.reduce-motion .qz-card,
 html[data-motion="minimal"] .qz-card { height: 389px; aspect-ratio: auto; }
-/* Both faces need their OWN overflow handling now that the shared box is
-   fixed rather than content-tracking - a face taller than 389px has to
-   scroll internally instead of growing the card (which would break the
-   same-size invariant above) or silently overflowing past the edge (the
-   original bug this whole area was first built to prevent). The answer
-   side already had this via .qz-back-scroll (below, unchanged) for its
-   own reasons (long answers predate this rule). The question side never
-   needed it before - front content is normally short - but "never
-   needed it" isn't "guaranteed": the actual longest real board-question
-   PROMPT (not answer) runs 244 characters, genuinely enough to overflow
-   a fixed 389px face on a narrow card. overflow-y:auto directly on
-   .qz-front (no separate wrapper needed - unlike the back face, front
-   has no non-scrolling footer like .qz-grade-row competing for the same
-   box) closes that gap rather than leaving it as a theoretical edge case
-   nobody had actually measured. */
+/* Both faces need their OWN overflow handling now that they actually
+   fill the fixed 389px box (above) - a face whose content is taller than
+   that has to scroll internally instead of growing the card (which would
+   break the same-size invariant) or silently overflowing past the edge
+   (the original bug this whole area was first built to prevent). The
+   answer side already had this via .qz-back-scroll (below, unchanged)
+   for its own reasons (long answers predate this rule) - max-height is
+   now redundant there (height:100% above already fixes it at exactly
+   389px, so max-height:389px can never trigger) but left in place as a
+   second, explicit line of defense rather than relying solely on the
+   height:100% chain holding forever. The question side never needed
+   overflow handling before - front content is normally short - but
+   "never needed it" isn't "guaranteed": the actual longest real
+   board-question PROMPT (not answer) runs 244 characters, genuinely
+   enough to overflow a fixed 389px face on a narrow card. overflow-y:auto
+   directly on .qz-front (no separate wrapper needed - unlike the back
+   face, front has no non-scrolling footer like .qz-grade-row competing
+   for the same box) closes that gap rather than leaving it as a
+   theoretical edge case nobody had actually measured. */
 html.reduce-motion .qz-front,
 html[data-motion="minimal"] .qz-front { overflow-y: auto; }
 html.reduce-motion .qz-back,
