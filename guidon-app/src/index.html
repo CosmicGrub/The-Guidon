@@ -414,9 +414,20 @@ html.high-contrast nav.nav[data-scroll-y] { -webkit-mask-image: none; mask-image
 
 .segmented button { scroll-snap-align: start; flex: 0 0 auto; }
 .segmented button { background: var(--panel); color: var(--text-dim); border:none; padding: 7px 12px;
-  font-family: var(--font-head); text-transform: uppercase; letter-spacing:.06em; font-size: .75rem; cursor:pointer; border-right:1px solid var(--line-2); }
+  font-family: var(--font-head); text-transform: uppercase; letter-spacing:.06em; font-size: .75rem; cursor:pointer; border-right:1px solid var(--line-2);
+  transition: background .15s, color .15s; }
 .segmented button:last-child { border-right: none; }
 .segmented button.active { background: var(--amber); color:var(--btn-ink, #1a1206); }
+/* PC parity pass (2026-08-22): the un-selected buttons in this shared
+   toggle component (9+ call sites: mode pickers, rank selectors, etc.)
+   gave zero mouse feedback - only .active was ever styled. Neutral
+   panel-2 shift, matching .nav button:hover's own convention, not
+   amber - this component already has a real, distinct .active state,
+   so a hover treatment that leaned toward amber would read as "this one
+   is selected" rather than "this one is hoverable". :not(.active) so
+   hovering the already-selected button doesn't visually flicker toward
+   a state it's already past. */
+.segmented button:hover:not(.active) { background: var(--panel-2); color: var(--text); }
 
 /* ---------- Engine: shared ---------- */
 .engine-head { display:flex; align-items:center; gap:12px; flex-wrap: wrap; margin-bottom: 12px; }
@@ -525,6 +536,30 @@ html.high-contrast nav.nav[data-scroll-y] { -webkit-mask-image: none; mask-image
      800px   min-width   desktop persistent side-rail
      1024px  min-width   main-content max-width cap
      1200px  min-width   wide-desktop rail widen
+     1360px  min-width   Board Drill's 3rd (readiness) column enablement -
+                          the actual room-fits-the-content threshold, not
+                          a device-size tier like the others (see below)
+
+   1360px added (PC parity pass, 2026-08-22): Board Drill's third grid
+   column (.drill-layout, the "Readiness supporting pane") was gated at
+   1200px on the assumption a wide-desktop viewport has room for it -
+   true for viewport width alone, but false once the 96px icon-rail
+   (board-drill-active's own #app override, narrower than the normal
+   200-232px rail) and .main's padding are subtracted: 1200 - 96 - 80 =
+   1024px of real space against .drill-layout's own documented 1160px
+   minimum (240 + 668 + 220 + 2*16px gap - see that rule's comment). The
+   pane was silently overflowing .main's own overflow-x:hidden and
+   rendering completely invisible on every desktop browser at every width
+   from 1200px up to whatever ACTUALLY had room - confirmed live via
+   getBoundingClientRect() at 1440px CSS width, not assumed. 1360px is
+   96 + 80 + 1160 = 1336px, rounded up for margin the same way the
+   folded-landscape card-fit budget was (232.76->240px) - the smallest
+   width where the pane's own stated minimum genuinely fits, derived from
+   measurement rather than picked by eye. This is NOT a device-size tier
+   like the rest of the scale (no real device targets exactly 1360px) -
+   it's a content-fit threshold specific to one feature, kept in this
+   scale anyway so lint check (d) still catches drift, rather than
+   carving out a feature-specific exemption.
 
    Folded into this scale during the Week 4 consolidation (2026-08-09):
    400px→420px (two cosmetic font-size tweaks, now firing 20px earlier —
@@ -735,9 +770,49 @@ html.qz-theater #toast { z-index: 900; }
    just makes the page scroll a little further - the same thing that
    already happens for any other view with more content than fits, not a
    special case this rule needs to prevent. At 5:3 a 648px-wide card is
-   ~389px tall - taller than the earlier 536px/322px version, but still
-   comfortably under nearly every real device's available height even in
-   a landscape/short-viewport state.
+   ~389px tall.
+
+   That last claim ("comfortably under nearly every real device's
+   available height") turned out to be false for one real, physical
+   state: a Z Fold5 folded AND rotated to landscape - 882x344 CSS px,
+   confirmed live via CDP against the physical device (2026-08-22). 344px
+   of TOTAL viewport height doesn't even fit the 389px card alone, let
+   alone the ~233px of header/progress-track/nav-row chrome around it -
+   screenshot-confirmed the question text cut off mid-sentence at the
+   bottom edge, no scroll affordance visible to hint more was below. The
+   "just scrolls a little further" reasoning above is still correct as
+   far as it goes - .main really is overflow-y:auto, the content really
+   is reachable by scrolling - but "reachable if you know to scroll" and
+   "elegant" are different bars, and this state is extreme enough (a
+   2.6:1 aspect ratio, shorter than the card's own height) that arriving
+   on a visibly truncated card with zero indication more exists below it
+   fails the second one.
+
+   Fixed with a third width candidate in the min() below: a height-
+   derived safety valve that only engages when the viewport is too SHORT
+   for the width-driven size to fit, converting the available vertical
+   budget into an equivalent width via the same 5:3 ratio so the card
+   shrinks (preserving its shape) instead of overflowing. 240px is the
+   measured chrome around the card in the Board Drill view - header
+   (91.76px) + .main's own top/bottom padding (20px+36px) +
+   .qz-progress-track and its gaps (~33px) + .qz-nav-row and its gap
+   (~66px) = ~233px, rounded up for margin - so `(100dvh - 240px) * 5/3`
+   is the largest width whose 5:3 height still leaves that chrome
+   visible. Declared twice below (vh, then dvh) rather than combined in
+   one min() - vh is the widely-supported fallback, and an unsupported
+   dvh makes only the SECOND declaration invalid (ignored, keeping the
+   first), not the whole width property; folding both into one min()
+   would have made the entire value invalid on a browser that doesn't
+   know dvh, losing the 648px/100% terms too. This is inert everywhere
+   already verified: Tab S9 FE both
+   orientations, Z Fold5 unfolded both orientations, and Z Fold5 folded
+   portrait all have height-derived-width comfortably above 648px (the
+   shortest of those, Tab landscape at 800px viewport height, still
+   clears it - (800-240)*5/3=933px), so min() keeps picking the plain
+   648px cap there, unchanged. It only takes over in the genuinely-too-
+   short case that produced the cut-off screenshot, and generalizes to
+   any future device or window shape that's similarly short rather than
+   special-casing the Fold by name.
 
    Theater mode (below) is deliberately NOT touched - its
    height:auto;flex:1 1 auto is an intentional "fill the screen" mode, a
@@ -745,7 +820,8 @@ html.qz-theater #toast { z-index: 900; }
    size." */
 .qz-card {
   position: relative;
-  width: min(100%, 648px);
+  width: min(100%, 648px, calc((100vh - 240px) * 5 / 3));
+  width: min(100%, 648px, calc((100dvh - 240px) * 5 / 3));
   aspect-ratio: 5 / 3;
   margin-inline: auto;
   transform-style: preserve-3d;
@@ -974,6 +1050,54 @@ html[data-motion="minimal"] .qz-card.flipped .qz-front { display: none; }
    position:absolute;inset:0 used to provide for free. */
 html.reduce-motion .qz-card,
 html[data-motion="minimal"] .qz-card { aspect-ratio: 5 / 3; }
+/* Theater mode's own .qz-card rule (near .qz-scene, above) resets
+   aspect-ratio back to auto - it deliberately wants height:auto;flex:1 1
+   auto instead (fill the screen, not a fixed ratio). Both that rule and
+   this one select on a single html.CLASS .qz-card, so they're EQUAL
+   specificity, and the one declared later in the file wins regardless of
+   which one more specifically describes the current state - this rule,
+   added after theater mode already existed, silently started winning
+   whenever both html.qz-theater and html.reduce-motion/[data-motion=
+   minimal] were present together. Found live on a Z Fold5 in theater
+   mode (auto-entered - see the auto-fullscreen comment near catList's row
+   click handler) switched to reduce-motion: .qz-card's aspect-ratio
+   stayed 5/3 instead of resetting to auto, so its used height came out
+   internally inconsistent with the same box's flex-resolved height
+   (getBoundingClientRect() reported the correct, flexed 708px, but
+   .qz-face's height:100% resolved against a DIFFERENT, aspect-ratio-
+   derived 389px instead) - the answer face rendered visibly short inside
+   a much taller card, the exact "face doesn't fill card" bug this whole
+   block exists to prevent, just reachable through a combination nothing
+   had exercised before. Fixed with a higher-specificity override (three
+   selectors instead of two) rather than reordering the two same-
+   specificity rules - reordering would fix today's conflict but stays
+   exactly as fragile against the next rule added after both of them. */
+html.qz-theater.reduce-motion .qz-card,
+html.qz-theater[data-motion="minimal"] .qz-card { aspect-ratio: auto; }
+/* The aspect-ratio override above fixed the specificity conflict, but not
+   the whole bug: even with .qz-card correctly at aspect-ratio:auto and a
+   real, laid-out 708px getBoundingClientRect() height, .qz-face's own
+   height:100% (the reduce-motion base rule, above) still resolved against
+   something else and came out short. Root cause is a step deeper than the
+   aspect-ratio conflict: CSS percentage-height resolution needs the
+   parent's height to be "definite" in the spec sense, and while
+   aspect-ratio-derived height counts as definite (which is why height:100%
+   already works correctly in reduce-motion's normal, non-theater case),
+   a flex item's auto height - theater's .qz-card is height:auto;flex:1 1
+   auto - is only conditionally treated that way, and evidently isn't here.
+   Rather than fight percentage resolution in exactly the one context it's
+   unreliable, this sidesteps it the same way rich motion's .qz-face
+   already does everywhere (see the base .qz-face rule near the top of
+   this file): position:absolute;inset:0 sizes against the nearest
+   positioned ancestor's padding box directly, through the CSS box
+   offset-resolution algorithm rather than a height percentage - no
+   "definite height" requirement to fail to meet. reduce-motion normally
+   needs position:relative specifically to kill rich motion's 3D rotation
+   transform (see that rule's own comment), but position:absolute with no
+   transform applied kills it exactly as well, so switching back for this
+   one combination costs nothing. */
+html.qz-theater.reduce-motion .qz-face,
+html.qz-theater[data-motion="minimal"] .qz-face { position: absolute; inset: 0; height: auto; }
 /* Both faces need their OWN overflow handling now that they actually
    fill the card's real (now width-derived, not flat) height - a face
    whose content is taller than that has to scroll internally instead of
@@ -1001,6 +1125,19 @@ html.reduce-motion .qz-front,
 html[data-motion="minimal"] .qz-front { overflow-y: auto; }
 html.reduce-motion .qz-back,
 html[data-motion="minimal"] .qz-back { max-height: 389px; }
+/* Theater mode's card is NOT capped at 389px (height:auto;flex:1 1 auto
+   fills the screen instead, up to several hundred px more on a real
+   device) - this 389px safety net, sized for the fixed-ratio card's own
+   height, would silently re-clamp the back face short again in theater
+   mode even after the position:absolute;inset:0 fix above, since
+   max-height and position/inset are independent constraints that both
+   apply rather than one superseding the other. Same three-selector
+   specificity pattern as the two theater overrides above, for the same
+   reason: this rule and theater's own sizing are equally "correct" in
+   their own context, so the combination needs to explicitly pick a
+   winner rather than leave it to declaration order. */
+html.qz-theater.reduce-motion .qz-back,
+html.qz-theater[data-motion="minimal"] .qz-back { max-height: none; }
 
 /* Phones: the base rule's width:min(100%,420px) + aspect-ratio already
    shrinks the card proportionally on a narrow screen with no override
@@ -1281,7 +1418,17 @@ select.in { appearance:none; }
 .roadmap-grade { font-family:var(--font-head); font-weight:700; font-size:1.15rem; color:var(--amber); }
 .roadmap-theme { color:var(--text-dim); font-style:italic; margin:4px 0 14px; }
 .roadmap-mechanism { border:1px solid var(--line-2); border-radius:var(--radius-sm); padding:8px 12px; background:var(--bg-2); margin-bottom:10px; }
-.roadmap-mechanism summary { cursor:pointer; font-family:var(--font-mono); font-size:0.8rem; color:var(--cyan); font-weight:600; }
+.roadmap-mechanism summary { cursor:pointer; font-family:var(--font-mono); font-size:0.8rem; color:var(--cyan); font-weight:600; transition: text-decoration-color .15s; }
+/* PC parity pass (2026-08-22): cursor:pointer with zero :hover feedback,
+   here and at every other disclosure <summary> in the file (idp-smart-
+   build/promo-coaching/fin-details/tx-details/wr-details below) - dozens
+   of instantiations across Finance/Transition/Write, none of them
+   confirming to a mouse that they're clickable until the click itself.
+   Underline rather than a color shift here specifically - this element
+   already uses color (--cyan) as its own identity, and amber (the file's
+   default hover color) would compete with that branding rather than
+   read as "hovering". */
+.roadmap-mechanism summary:hover { text-decoration: underline; }
 .roadmap-mechanism p { margin-top:6px; font-size:0.85rem; color:var(--text-dim); }
 .roadmap-cols { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; }
 .roadmap-col { background:var(--bg-2); border:1px solid var(--line); border-radius:var(--radius-sm); padding:12px; border-top-width:3px; }
@@ -2891,7 +3038,12 @@ html.light .feedback.error { background: rgba(220,53,69,0.1); }
 /* ── Resilience domain skill accordions ──────────────────────────────────── */
 .res-domain-wrap { padding:0; }
 .res-domain-head { display:flex; align-items:center; gap:10px; background:none; border:none;
-  cursor:pointer; text-align:left; padding:12px 4px; width:100%; }
+  cursor:pointer; text-align:left; padding:12px 4px; width:100%; transition:background .15s; }
+/* PC parity pass (2026-08-22): these two accordion headers had no hover
+   at all, while their sibling .res-skill-head (below) already does -
+   same component family (Resilience module's three accordion levels),
+   inconsistent treatment. Matches .res-skill-head:hover's own value. */
+.res-domain-head:hover { background:rgba(255,255,255,0.04); }
 .res-domain-name { font-family:var(--font-head); font-size:1rem; font-weight:700; flex:1; }
 .res-domain-badge { font-size:0.7rem; font-family:var(--font-mono); color:var(--text-dim);
   background:var(--bg-2); border:1px solid var(--line); border-radius:3px; padding:1px 6px; }
@@ -2899,7 +3051,8 @@ html.light .feedback.error { background: rgba(220,53,69,0.1); }
 .res-domain-skills { padding:0 4px 8px; border-top:1px solid var(--line); margin-top:0; }
 .res-domain-skill { margin:8px 0; border-left:2px solid var(--line); padding-left:10px; }
 .res-dskill-head { display:flex; align-items:center; gap:8px; background:none; border:none;
-  cursor:pointer; text-align:left; padding:6px 0; width:100%; }
+  cursor:pointer; text-align:left; padding:6px 0; width:100%; transition:background .15s; }
+.res-dskill-head:hover { background:rgba(255,255,255,0.04); }
 .res-dskill-name { font-size:0.88rem; font-weight:600; color:var(--text-1); flex:1; }
 .res-dskill-chev { color:var(--text-dim); font-size:0.8rem; }
 .res-dskill-body { padding:6px 0 4px; }
@@ -2953,6 +3106,12 @@ html.light .feedback.error { background: rgba(220,53,69,0.1); }
 .search-chip { font-size:0.78rem; padding:3px 10px; border-radius:20px;
   border:1px solid var(--line); background:var(--bg-2); cursor:pointer;
   transition:background 0.15s, border-color 0.15s; }
+/* PC parity pass (2026-08-22): transition was already declared (above),
+   but nothing ever set an end state for it - only .active (below) ever
+   got a background. A lighter version of .active's own color-mix wash,
+   so hover reads as "leaning toward selecting this" without being
+   mistaken for the selected state itself. */
+.search-chip:hover:not(.active) { background: color-mix(in srgb, var(--amber) 6%, var(--bg-2)); border-color: var(--line-2); }
 /* Was a literal rgba(255,176,32,...) - "amber" as a fixed orange, not the
    theme's actual --amber token. Some themes reassign --amber to a different
    hue for branding (squadron-blue maps it to a light blue): the hardcoded
@@ -3078,6 +3237,13 @@ html.light .feedback.error { background: rgba(220,53,69,0.1); }
   border:1px solid var(--line); background:var(--bg-2); cursor:pointer;
   transition:all 0.12s; color:var(--text-dim); }
 .bq-cat-chip.active { background:rgba(255,176,32,0.12); border-color:var(--amber); color:var(--amber); }
+/* PC parity pass (2026-08-22): Board Drill's own category-filter chip had
+   no hover at all, while the near-identical .mb-cat-chip (Mission Brief's
+   equivalent, above) already does - transition:all was already declared
+   here, just never paired with an end state. Matches .mb-cat-chip:hover's
+   own convention (simple color shift, not a background/border change like
+   .active - hover and active need to stay visually distinct). */
+.bq-cat-chip:hover:not(.active) { color:var(--text); border-color:var(--line-2); }
 
 /* ── Progress: readiness level badge ─────────────────────────────────────── */
 .ready-badge { display:inline-flex; align-items:center; gap:6px;
@@ -3719,20 +3885,44 @@ html.reduce-motion .nav-drawer, html[data-motion="minimal"] .nav-drawer { transi
    look (compare html[data-nav-labels="off"] above) rather than sharing
    it, same reasoning as the device-fold-narrow block above: a media
    query can't itself depend on the route, so there's no way to reference
-   that rule instead of repeating its shape. No max-width bound and no
-   >=1200px-specific override needed - .qz-card's own cap (see .qz-card)
-   stays comfortably under what a 96px rail leaves free even at the
-   widest desktop tier, and this selector's extra specificity
-   (html.board-drill-active #app vs. plain #app) already wins over BOTH
-   the >=800px and >=1200px column-width rules above regardless of which
-   one the current viewport also matches - cascade order never enters
-   into it. */
+   that rule instead of repeating its shape. This selector's extra
+   specificity (html.board-drill-active #app vs. plain #app) already wins
+   over BOTH the >=800px and >=1200px column-width rules above regardless
+   of which one the current viewport also matches - cascade order never
+   enters into it.
+
+   .qz-card's own cap DOES stay comfortably under what a 96px rail leaves
+   free at every desktop tier, as originally reasoned here - that part
+   held. What this comment got wrong (PC parity pass, 2026-08-22): it
+   never re-checked that claim against the Readiness supporting pane
+   (.drill-readiness-pane, wave 2, added after this comment was first
+   written), whose 3-column layout needs more room than .main's own
+   legacy max-width:960px (see that rule, ~line 2128) allows even once
+   the rail shrinks to 96px - the pane was overflowing invisibly on
+   every desktop browser until this fix (see .drill-layout's own comment
+   for the full measured derivation). Lifting the cap here rather than
+   raising the shared rule's value is deliberate: every OTHER route still
+   wants the normal 960px prose-friendly column, and .main's grid cell
+   width (viewport minus the rail above) is already the real outer
+   bound, so removing the max-width entirely on this route can't make it
+   grow past that. */
 @media (min-width: 800px) {
   html.board-drill-active #app { grid-template-columns: 96px 1fr; }
   html.board-drill-active .nav button { font-size: 0; padding-top: 10px; padding-bottom: 10px; }
   html.board-drill-active .nav .ico { font-size: 1.25rem; }
   html.board-drill-active .nav-group-header { font-size: 0 !important; padding: 8px 4px 3px !important; }
   html.board-drill-active .nav-group-header .ico { font-size: .7rem !important; }
+}
+@media (min-width: 1360px) {
+  /* .main's own cap (above) isn't the only one in the way - .view (the
+     per-route wrapper every route renders into, including this one) has
+     its own separate max-width:960px at >=800px (see that rule) that
+     would immediately re-cap the content right back down even with
+     .main's lifted, since .view sits inside .main and takes whichever
+     constraint binds tighter. Both need lifting together or this is the
+     same bug at the same width, just from the other rule. */
+  html.board-drill-active .main,
+  html.board-drill-active .view { max-width: none; }
 }
 
 /* Keep the fixed-grid shell from being overridden by legacy print block's
@@ -4117,7 +4307,8 @@ html.focus-mode .status-chip { opacity:.5; }
 .idp-suggest-title{font-size:.85rem;font-weight:600}
 .idp-suggest-meta{font-size:.7rem;color:var(--text-mute,#5b5344)}
 .idp-smart-build{margin:10px 0;border:1px solid var(--line,#c9bd9e);border-radius:8px;background:var(--panel,#f4eeda);padding:6px 12px}
-.idp-smart-build summary{cursor:pointer;font-family:"Oswald",system-ui;font-size:.9rem;padding:6px 0}
+.idp-smart-build summary{cursor:pointer;font-family:"Oswald",system-ui;font-size:.9rem;padding:6px 0;transition:color .15s}
+.idp-smart-build summary:hover{color:var(--amber)}
 .idp-smart-build-body{padding:6px 0 10px}
 .idp-smart-prompt{font-weight:400;color:var(--text-mute,#5b5344);font-size:.8rem}
 .idp-smart-preview{margin:8px 0;padding:10px 12px;border-left:3px solid var(--accent,#b8860b);background:rgba(184,134,11,.08);border-radius:0 6px 6px 0;font-size:.86rem;min-height:20px}
@@ -4199,7 +4390,8 @@ html.focus-mode .status-chip { opacity:.5; }
 .promo-gap.over{color:var(--accent,#3a6b3a)}
 .promo-coach{font-size:.86rem;margin:8px 0;padding:8px 10px;border-left:3px solid var(--accent,#4b5320);background:var(--panel-2,rgba(75,83,32,.06));border-radius:0 6px 6px 0}
 .promo-coaching{margin:8px 0;font-size:.85rem}
-.promo-coaching summary{cursor:pointer;font-weight:600}
+.promo-coaching summary{cursor:pointer;font-weight:600;transition:color .15s}
+.promo-coaching summary:hover{color:var(--amber)}
 .promo-coaching ul{margin:6px 0 0;padding-left:20px}
 .promo-coaching li{margin:4px 0}
 .promo-disclaimer{margin-top:10px;font-size:.76rem;line-height:1.45;font-style:italic}
@@ -4282,7 +4474,10 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
 /* Reminders (Wave 3 #11) */
 .reminders-strip{margin-top:12px}
 .reminders-list{display:flex;flex-direction:column;gap:6px;margin-top:6px}
-.reminder-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel-2,rgba(127,127,127,.05));cursor:pointer}
+.reminder-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel-2,rgba(127,127,127,.05));cursor:pointer;transition:border-color .15s}
+/* PC parity pass (2026-08-22): clickable row on the home dashboard's
+   Reminders strip, no hover feedback at all before this. */
+.reminder-row:hover{border-color:var(--amber-dim)}
 .reminder-row.overdue{border-color:var(--red);background:rgba(255,93,93,.08)}
 .reminder-row.soon{border-color:var(--amber,#f0b429)}
 .reminder-when{font-weight:600;font-size:12px;min-width:104px;color:var(--text-dim)}
@@ -4300,7 +4495,18 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
 @media(max-width:640px){.rem-form select,.rem-form input{min-width:100%}.reminder-when{min-width:90px}}
 
 /* Salary Negotiation (Money tab) */
-.fin-details summary{cursor:pointer;font-family:var(--font-head);font-size:13px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim);padding:4px 0}
+.fin-details summary{cursor:pointer;font-family:var(--font-head);font-size:13px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim);padding:4px 0;transition:color .15s}
+/* --text, not --amber: this element sets no explicit background of its
+   own (inherits whatever ancestor panel/card it's nested in), and a
+   direct 24-theme contrast check of amber-on-bg (the worst-case ambient
+   background) came out to 4.46:1 in desert-cadence - just under WCAG
+   AA's 4.5:1 floor for this size of text. --text sidesteps the question
+   entirely: it's the color every readable line of body copy in this app
+   already uses against these same backgrounds, so it's safe by
+   construction rather than needing its own separate verification -
+   still a real, visible hover cue (dimmer --text-dim brightening to
+   full --text on hover), just not an accent-color one. */
+.fin-details summary:hover{color:var(--text)}
 .fin-prompt{margin:6px 0;padding:8px 10px;border-left:3px solid var(--cyan,#4ecdc4);background:var(--panel-2,rgba(127,127,127,.05));font-style:italic;font-size:13px}
 .fin-worksheet{margin-top:14px}
 .fin-range-rows,.fin-range-row,.fin-skills-row,.fin-check-row,.fin-plan-row{display:flex;flex-direction:column;gap:8px}
@@ -4321,7 +4527,10 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
 @media(max-width:640px){.fin-range-row input,.fin-skills-row input{min-width:100%}.fin-check-row{flex-direction:column;align-items:flex-start}.fin-plan-item{flex:0 0 100%}}
 
 /* Federal Hiring (ETS/Transition tab) */
-.tx-details summary{cursor:pointer;font-family:var(--font-head);font-size:13px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim);padding:4px 0}
+.tx-details summary{cursor:pointer;font-family:var(--font-head);font-size:13px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim);padding:4px 0;transition:color .15s}
+/* --text, not --amber - see .fin-details summary:hover's own comment
+   (identical component, same reasoning). */
+.tx-details summary:hover{color:var(--text)}
 .tx-h{font-family:var(--font-head);font-size:12px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim)}
 .tx-fh-grid{display:flex;flex-direction:column;gap:6px;margin:8px 0}
 .tx-fh-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px}
@@ -4366,18 +4575,41 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
 }
 
 /* Board Drill's own layout (wave 2): identical to .list-detail through
-   1024-1199px (category list | flashcard), then gains a third narrow
-   column - a persistent Readiness supporting pane - at >=1200px (a larger
+   1024-1359px (category list | flashcard), then gains a third narrow
+   column - a persistent Readiness supporting pane - at >=1360px (a larger
    tablet or desktop in landscape has real room for it; the Fold5 doesn't,
    in EITHER orientation - intuitivism pass, devices: this comment
    previously called ~841px "portrait" and invented a ~1812px "landscape"
    figure, contradicting the ground-truth ~841px unfolded-LANDSCAPE figure
    documented at .list-detail above. Corrected: the Fold5's largest
    unfolded CSS viewport tops out around ~841px in landscape, nowhere near
-   this 1200px gate in any orientation). Kept as its own class rather than
+   this gate in any orientation). Kept as its own class rather than
    adding a third column to .list-detail itself, because Doctrine and Squad
    Roster's own .list-detail usages only ever pass two children and would
-   silently break if that shared class' column count changed under them. */
+   silently break if that shared class' column count changed under them.
+
+   The gate was 1200px (matching .list-detail's own philosophy of "wide
+   enough to be worth a 3rd thing"), and was WRONG - found live during the
+   PC parity pass (2026-08-22): 1200px of VIEWPORT width doesn't mean
+   1200px of space for this grid. board-drill-active's #app override
+   (below) narrows the side-rail to 96px specifically to give the card
+   more room, and .main still carries a legacy max-width:960px (see that
+   rule's own comment) - between the two, only ~1024px was ever actually
+   reaching .drill-layout at exactly 1200px, well under this row's own
+   1160px minimum (240 + 668 + 220 + 2*16px gap, see that minmax()
+   comment below). The result: .main's overflow-x:hidden (see that rule)
+   silently clipped the entire third column - confirmed via
+   getBoundingClientRect() at a real 1440px desktop width, where the pane
+   measured fully outside .view's own right edge. Not a viewport-width
+   problem so much as never having re-derived the threshold for THIS
+   route's own narrower rail once wave 2 added a feature that needed
+   more room than .qz-card alone does. Fixed two ways together, both
+   required: .main's max-width is lifted for board-drill-active (see
+   that rule), and this gate itself moved from 1200px to a new 1360px
+   canonical tier sized to the real requirement (96 + 80 + 1160 = 1336px,
+   rounded up - see the canonical breakpoint scale comment near line 504
+   for the full derivation). Moving the gate without also lifting .main's
+   cap (or vice versa) would leave the same bug at a different width. */
 .drill-layout { display:block; }
 .drill-readiness-pane { display:none; }
 /* The middle column's minmax(668px, 1fr) floor - not a bare 1fr - exists
@@ -4403,7 +4635,7 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
 @media (min-width: 1024px) {
   .drill-layout { display:grid; grid-template-columns: minmax(240px, 280px) minmax(668px, 1fr); gap:16px; align-items:start; }
 }
-@media (min-width: 1200px) {
+@media (min-width: 1360px) {
   .drill-layout { grid-template-columns: minmax(240px, 280px) minmax(668px, 1fr) minmax(220px, 280px); }
   .drill-readiness-pane { display:block; }
 }
@@ -4436,7 +4668,10 @@ a.res-url:hover{text-decoration:underline}
 .res-d{font-size:13px;color:var(--text-dim)}
 
 /* Resume Example (Write module tab) */
-.wr-details summary{cursor:pointer;font-family:var(--font-head);font-size:13px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim);padding:4px 0}
+.wr-details summary{cursor:pointer;font-family:var(--font-head);font-size:13px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim);padding:4px 0;transition:color .15s}
+/* --text, not --amber - see .fin-details summary:hover's own comment
+   (identical component, same reasoning). */
+.wr-details summary:hover{color:var(--text)}
 .wr-h{font-family:var(--font-head);font-size:12px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim)}
 .wr-list{margin:6px 0;padding-left:20px}
 .wr-list li{margin:4px 0;font-size:13px}
@@ -6982,7 +7217,7 @@ window.G = window.G || {};
         const on = theaterOn();
         b.replaceChildren(G.util.icon(on ? "minimize-2" : "maximize-2", 18, on ? "⤡" : "⤢"));
         b.setAttribute("aria-label", on ? "Exit fullscreen study" : "Fullscreen study");
-        b.title = on ? "Exit fullscreen (Esc)" : "Fullscreen study — just the card, nothing else";
+        b.title = on ? "Exit fullscreen (Esc or F)" : "Fullscreen study — just the card, nothing else (F)";
       });
     };
     // html.qz-theater turns .qz-wrap into a fixed full-screen overlay, but
@@ -7041,7 +7276,7 @@ window.G = window.G || {};
       try { if (target && target.requestFullscreen) target.requestFullscreen().catch(() => {}); } catch (e) {}
       try { if (G.native && G.native.setImmersive) G.native.setImmersive(true); } catch (e) {}
       if (target && target.focus) target.focus();
-      if (util.announce) util.announce("Fullscreen study. Press Escape or the button to exit.");
+      if (util.announce) util.announce("Fullscreen study. Press Escape, F, or the button to exit.");
       syncFsBtns();
     };
     G.board.exitTheater = function () {
@@ -7421,7 +7656,7 @@ window.G = window.G || {};
       const fsOn = document.documentElement.classList.contains("qz-theater");
       const fsBtn = el("button.qz-nav-btn.qz-fs-btn", { type: "button",
         "aria-label": fsOn ? "Exit fullscreen study" : "Fullscreen study",
-        title: fsOn ? "Exit fullscreen (Esc)" : "Fullscreen study — just the card, nothing else", });
+        title: fsOn ? "Exit fullscreen (Esc or F)" : "Fullscreen study — just the card, nothing else (F)", });
       fsBtn.appendChild(G.util.icon(fsOn ? "minimize-2" : "maximize-2", 18, fsOn ? "⤤" : "⤢"));
       fsBtn.addEventListener("click", () => {
         document.documentElement.classList.contains("qz-theater")
@@ -7629,7 +7864,10 @@ window.G = window.G || {};
     // Keyboard shortcuts, scoped to the card container (not global) so they
     // never fight with typing elsewhere in the app: Space/Enter flips,
     // ←/→ browse without grading, 1-4 grade the card (Needs Help / Somewhat /
-    // Know It / Down Cold — only once flipped, matching the on-card buttons).
+    // Know It / Down Cold — only once flipped, matching the on-card buttons),
+    // F toggles fullscreen study (Escape already exits it — see the
+    // document-level listener near enterTheater/exitTheater — this is the
+    // matching way to enter it from the keyboard).
     cardWrap.addEventListener("keydown", (e) => {
       if (!queue.length) return;
       const q = queue[idx % queue.length];
@@ -7652,6 +7890,20 @@ window.G = window.G || {};
         e.preventDefault(); idx = (idx + 1) % queue.length; draw();
       } else if (flipped && ["1", "2", "3", "4"].includes(e.key)) {
         e.preventDefault(); grade(q, +e.key - 1);
+      } else if (e.key === "f" || e.key === "F") {
+        // PC parity pass (2026-08-22): the only existing theater-mode
+        // keyboard binding was Escape to EXIT (see the document-level
+        // listener above) - entering was mouse/touch-only (qz-fs-btn) or
+        // the automatic folded-landscape trigger. A keyboard-only desktop
+        // user had no way to reach fullscreen study at all. Scoped to
+        // cardWrap rather than a new document-level listener, matching
+        // this handler's own existing shortcuts (arrows, 1-4) rather than
+        // the different, document-level pattern the global "/"-for-search
+        // shortcut uses (see that binding) - cardWrap contains no text
+        // inputs, so there's no typing-hijack risk here the way a global
+        // letter-key binding would need an input-focus guard for.
+        e.preventDefault();
+        theaterOn() ? G.board.exitTheater() : G.board.enterTheater(cardWrap);
       }
     });
 
@@ -7741,6 +7993,45 @@ window.G = window.G || {};
               (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
           } catch (e) {}
           cardWrap.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+
+          // Auto-fullscreen on a genuinely short landscape viewport - found
+          // live on a Z Fold5 folded AND rotated to landscape (882x344 CSS
+          // px, 2026-08-22): .qz-card's own width:min(...) formula (see that
+          // rule's comment) correctly stops the card overflowing the
+          // viewport there, but shrinking a FIXED-ASPECT-RATIO card down to
+          // fit only 344px of total height also shrinks everything INSIDE
+          // it - category label, mastery badge, difficulty pill, progress
+          // dots - and those don't get smaller gracefully. Measured on the
+          // real device: at a 104px-tall card the answer's own scrollable
+          // area (.qz-back-scroll) collapsed to 0px of usable height - the
+          // chrome above it alone consumed the entire card, so the actual
+          // question/answer text became completely invisible, not just
+          // cramped. A fixed-ratio card cannot serve both goals (fit the
+          // viewport AND stay legible) at this aspect ratio - so instead of
+          // shrinking further, hand it the whole screen: theater mode
+          // (G.board.enterTheater, existing feature - see its own comment
+          // above) drops the fixed 5:3 ratio entirely (height:auto;flex:1 1
+          // auto), which is exactly "give way to the cards" rather than
+          // squeezing a rigid shape into too little space. Landscape is
+          // part of the condition, not just short - a short PORTRAIT
+          // viewport (the Fold folded the other way, 344x882) already has
+          // plenty of vertical room for the same card at its narrower
+          // width, so forcing fullscreen there would be a solution to a
+          // problem that state doesn't have. 460px is a generous floor -
+          // comfortably above the Tab S9 FE's shortest real dimension
+          // (823px) and the Fold UNFOLDED in any orientation, so this only
+          // ever engages in the genuinely-cramped folded+landscape case
+          // this comment describes, confirmed via the live rotation-battery
+          // sweep across both devices. Delayed slightly so the scroll above
+          // is visually perceived first - "scrolls to the card, THEN goes
+          // fullscreen" reads as one continuous, legible motion rather than
+          // an instant jump cut. G.board.exitTheater() (Escape key, the
+          // qz-fs-btn toggle already in the card's own nav row, or the
+          // Android Back handler) is the existing, already-shipped way out
+          // - nothing new needed there.
+          if (window.innerWidth > window.innerHeight && window.innerHeight < 460) {
+            setTimeout(() => { try { G.board.enterTheater(cardWrap); } catch (e) {} }, 220);
+          }
         });
         catList.appendChild(row);
       });
