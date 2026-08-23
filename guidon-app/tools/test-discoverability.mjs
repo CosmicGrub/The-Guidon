@@ -36,7 +36,7 @@ await page.waitForTimeout(1000);
 const navTitles = await page.evaluate(() => {
   const dn = window.G && window.G.demoNotes;
   if (!dn) return null;
-  const els = Array.from(document.querySelectorAll("button[data-hash]"));
+  const els = Array.from(document.querySelectorAll("a[data-hash]"));
   const results = els.map((elx) => ({ hash: elx.dataset.hash, title: elx.getAttribute("title"), expected: dn[elx.dataset.hash] && dn[elx.dataset.hash].d }));
   return { total: results.length, withTitle: results.filter((r) => r.title).length, mismatches: results.filter((r) => r.title && r.expected && r.title !== r.expected) };
 });
@@ -49,7 +49,7 @@ if (navTitles) {
 
 // ---- Currency -> Freshness rename ----
 const freshnessLabel = await page.evaluate(() => {
-  const el = document.querySelector('button[data-hash="#/currency"]');
+  const el = document.querySelector('a[data-hash="#/currency"]');
   return el ? el.textContent.trim() : null;
 });
 freshnessLabel !== null ? ok("found the #/currency nav button") : bad("#/currency nav button not found");
@@ -72,7 +72,7 @@ const careerDomainText = await page.evaluate(() => document.body.textContent || 
 
 // ---- Self-Test -> Diagnostics relabel ----
 const diagLabel = await page.evaluate(() => {
-  const el = document.querySelector('button[data-hash="#/selftest"]');
+  const el = document.querySelector('a[data-hash="#/selftest"]');
   return el ? el.textContent.trim() : null;
 });
 diagLabel && /Diagnostics/i.test(diagLabel) ? ok("#/selftest nav label reads 'Diagnostics'") : bad("#/selftest nav label is not 'Diagnostics': " + diagLabel);

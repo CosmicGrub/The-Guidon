@@ -72,7 +72,7 @@ const SAMPLES = [
   [".probe-contrast .console .choice", 4.5, "Train console choice"],
   [".probe-contrast .console .sys", 3.0, "Train console system line"],
   ["#route .text-dim, #route .hint, #route small, .text-dim", 3.0, "dim/secondary text"],
-  [".nav button, nav button", 4.5, "nav label"],
+  [".nav :is(button, a), nav :is(button, a)", 4.5, "nav label"],
   [".btn.primary", 4.5, "primary button"],
   [".probe-contrast .forms-view .btn.primary", 4.5, "forms primary button"],
   [".topbar-search-btn", 3.0, "topbar icon control"],
