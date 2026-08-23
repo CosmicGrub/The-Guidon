@@ -266,6 +266,21 @@ window.G = window.G || {};
     function buildInputs() {
       util.clear(inputs);
       inputs.appendChild(el("div.eyebrow", { text: "Your dates" }));
+      // Roadmap Tier 5 width-waste audit: these 6 TRACKED cards used to
+      // append straight into `inputs` (a plain block container), so they
+      // stacked single-column no matter how wide the "Your dates" side of
+      // the calGrid panel-grid-2 split got - a 1360px-wide viewport still
+      // rendered each card at its full ~484px column width even though the
+      // content (a label, one date input, a couple lines of hint text) is
+      // comfortably narrower than that. .cal-dates-grid (see its own CSS
+      // comment for why it's a 150px-floor sibling of the shared 260px
+      // .card-results-grid utility, not that utility reused directly)
+      // auto-fills instead - degrades to the existing single column below
+      // that width (matches the 375px mobile layout exactly) and opens up
+      // to 2-3 columns once the halved panel is wide enough, with
+      // align-items:start so the 6 cards' varying hint-text lengths don't
+      // force a shorter card to stretch to match a taller row-mate.
+      const cardsGrid = el("div.cal-dates-grid");
       TRACKED.forEach(function (t) {
         const c = el("div.card", { style: "margin-bottom:8px" });
         c.appendChild(el("div.k", { text: t.label + (t.months ? "  (valid " + t.months + " months)" : "") }));
@@ -276,8 +291,9 @@ window.G = window.G || {};
         });
         c.appendChild(inp);
         c.appendChild(el("p.hint", { style: "margin-top:6px", text: t.consequence }));
-        inputs.appendChild(c);
+        cardsGrid.appendChild(c);
       });
+      inputs.appendChild(cardsGrid);
     }
 
     // Fold5/tablet fidelity wave 2: "What is next" (read-only, sorted by

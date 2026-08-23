@@ -21,7 +21,14 @@ function monthsAgo(n) {
 
 const { server, url } = await serve("web");
 const browser = await chromium.launch();
-const ctx = await browser.newContext();
+// Roadmap Tier 5 width-waste fix: explicit 1024x900 (a canonical breakpoint,
+// tools/lint-patterns.mjs check (d)) rather than Playwright's default
+// viewport, so every interactive assertion below (setDate, "Remind me",
+// reload-persistence) genuinely exercises the 2-column .cal-dates-grid this
+// fix introduced, not just the pre-fix single-column layout by accident of
+// a wide-enough default. Proves add/edit/remind-me survive the regrouping,
+// not merely that the grid *renders*.
+const ctx = await browser.newContext({ viewport: { width: 1024, height: 900 } });
 const page = await ctx.newPage();
 const noise = [];
 page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push(m.type() + ": " + m.text()); });
@@ -45,6 +52,39 @@ booted.heading === "Career Calendar" ? ok("Career Calendar renders") : bad("head
 booted.dateInputs >= booted.trackedCount
   ? ok(`${booted.dateInputs} tracked date fields`)
   : bad(`only ${booted.dateInputs} date inputs, expected >= ${booted.trackedCount} (TRACKED.length)`);
+
+/* Roadmap Tier 5 width-waste audit: the 6 TRACKED "Your dates" cards used to
+   stack single-column no matter the viewport (confirmed pre-fix: still one
+   484px-wide column at a 1360px viewport). .cal-dates-grid (src/index.html
+   CSS, wired up in src/app-modules/calendar.js's buildInputs()) now grids
+   them - real column count and a real bounding-rect same-row comparison,
+   not just a CSS-class-exists check, since a `display:grid` container with
+   only one track would still trivially "have grid" without fixing anything. */
+const gridInfo = await page.evaluate(() => {
+  const grid = document.querySelector(".cal-dates-grid");
+  if (!grid) return null;
+  const cs = getComputedStyle(grid);
+  const cards = [...grid.querySelectorAll(":scope > .card")];
+  const rects = cards.map((c) => c.getBoundingClientRect());
+  return {
+    display: cs.display,
+    columns: cs.gridTemplateColumns.trim().split(/\s+/).length,
+    cardCount: cards.length,
+    // Real same-row check: two cards only share a row if the grid actually
+    // placed them side by side - same top edge, not one above the other.
+    firstTwoSameRow: rects.length >= 2 && Math.abs(rects[0].y - rects[1].y) < 1,
+    firstTwoDifferentX: rects.length >= 2 && Math.abs(rects[0].x - rects[1].x) > 1,
+  };
+});
+gridInfo && gridInfo.display === "grid" && gridInfo.columns >= 2
+  ? ok(`"Your dates" grids into ${gridInfo.columns} real columns at 1024px wide`)
+  : bad("expected a real multi-column grid for the 6 TRACKED cards at 1024px, got " + JSON.stringify(gridInfo));
+gridInfo && gridInfo.cardCount === booted.trackedCount
+  ? ok(`all ${gridInfo.cardCount} TRACKED cards are present inside the grid`)
+  : bad("grid card count " + (gridInfo && gridInfo.cardCount) + " != TRACKED.length " + booted.trackedCount);
+gridInfo && gridInfo.firstTwoSameRow && gridInfo.firstTwoDifferentX
+  ? ok("first two date cards share a real top edge at different x positions (genuinely side by side, not stacked)")
+  : bad("first two date cards are not genuinely side by side: " + JSON.stringify(gridInfo));
 
 /* The fixed anchors nobody enters must always be present. */
 const anchors = await page.evaluate(() => document.body.textContent || "");
@@ -154,6 +194,39 @@ const persisted = await page.evaluate(() => {
 persisted === monthsAgo(11)
   ? ok("entered dates survive a reload")
   : bad(`expected ${monthsAgo(11)} after reload, got ${persisted}`);
+
+/* Narrow-viewport regression: the same .cal-dates-grid must degrade back to
+   the pre-fix clean single column at mobile widths - a fix that helps wide
+   viewports must not break narrow ones. Separate context (not a resize of
+   `page`) so it's a genuine fresh 375px boot, same as a phone opening the
+   app cold, not a desktop layout being shrunk after the fact. */
+const narrowCtx = await browser.newContext({ viewport: { width: 375, height: 812 } });
+const narrowPage = await narrowCtx.newPage();
+await narrowPage.goto(url, { waitUntil: "load" });
+await narrowPage.waitForTimeout(700);
+await narrowPage.evaluate(() => { location.hash = "#/calendar"; });
+await narrowPage.waitForTimeout(900);
+const narrowGrid = await narrowPage.evaluate(() => {
+  const grid = document.querySelector(".cal-dates-grid");
+  if (!grid) return null;
+  const cs = getComputedStyle(grid);
+  const cards = [...grid.querySelectorAll(":scope > .card")];
+  const rects = cards.map((c) => c.getBoundingClientRect());
+  return {
+    columns: cs.gridTemplateColumns.trim().split(/\s+/).length,
+    cardCount: cards.length,
+    // Real same-column check: every card shares the same left edge only if
+    // the grid is genuinely one track wide, not partially wrapping.
+    allSameLeft: rects.length > 1 && rects.every((r) => Math.abs(r.x - rects[0].x) < 1),
+  };
+});
+narrowGrid && narrowGrid.columns === 1
+  ? ok("at 375px, \"Your dates\" stays a real single column (no wide-viewport regression)")
+  : bad("expected exactly 1 column at 375px, got " + JSON.stringify(narrowGrid));
+narrowGrid && narrowGrid.cardCount === 6 && narrowGrid.allSameLeft
+  ? ok("all 6 date cards share the same left edge at 375px (genuinely stacked)")
+  : bad("date cards not cleanly stacked at 375px: " + JSON.stringify(narrowGrid));
+await narrowCtx.close();
 
 noise.length === 0 ? ok("no console errors/warnings") : bad(noise.length + " console msgs; first: " + noise[0]);
 
