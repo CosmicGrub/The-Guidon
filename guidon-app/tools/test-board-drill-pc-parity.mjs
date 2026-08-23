@@ -15,7 +15,7 @@
  * canonical tier (96 + 80 + 1160 = 1336px, rounded up) - see the canonical
  * breakpoint scale comment in src/index.html for the full derivation.
  */
-import { chromium } from "playwright";
+import { chromium, devices } from "playwright";
 import { serve } from "./server.mjs";
 
 let fails = 0;
@@ -190,6 +190,60 @@ async function bootToActiveCard(viewport) {
     ? ok(`the fullscreen button's tooltip mentions the F key (title: "${title}")`)
     : bad(`the fullscreen button's tooltip doesn't mention F (title: "${title}")`);
   await page.close();
+}
+
+/* ---- PC/desktop intuitivism pass: the flip-hint/aria-label copy used to
+   say "Tap" unconditionally - correct for GUIDON's primary touch devices
+   (Tab S9 FE, Z Fold5), wrong for a real desktop mouse user. Now branches
+   on the same (hover: hover) and (pointer: fine) condition the CSS itself
+   already uses for the desktop-only card hover-lift, so this proves both
+   directions: a real desktop-shaped context says "Click", a real
+   touch-shaped context still says "Tap" - neither wording regressed for
+   the other's audience. ---- */
+{
+  const desktopCtx = await browser.newContext({ viewport: { width: 1440, height: 900 }, hasTouch: false });
+  const desktopPage = await desktopCtx.newPage();
+  await desktopPage.goto(url, { waitUntil: "load" });
+  await desktopPage.waitForTimeout(700);
+  const dGuest = desktopPage.locator(".ob-mode-card", { hasText: /guest session/i }).first();
+  if (await dGuest.count()) { await dGuest.click(); await desktopPage.waitForTimeout(700); }
+  await desktopPage.evaluate(() => { location.hash = "#/board"; });
+  await desktopPage.waitForTimeout(700);
+  const desktopHint = await desktopPage.evaluate(() => ({
+    hoverFine: window.matchMedia("(hover: hover) and (pointer: fine)").matches,
+    hint: document.querySelector(".qz-flip-hint")?.textContent || null,
+  }));
+  desktopHint.hoverFine && /^ Click card/.test(desktopHint.hint)
+    ? ok(`a real desktop context (hover:hover, pointer:fine matches) shows "Click" (hint: "${desktopHint.hint.trim()}")`)
+    : bad(`desktop context: hoverFine=${desktopHint.hoverFine}, hint="${desktopHint.hint}" - expected "Click"`);
+  // The dynamic aria-label (flipped ? "...click to flip back" : "...click to
+  // flip") only updates ON a flip - the initial, pre-flip aria-label is a
+  // separate, untouched string ("Flashcard, showing question"). Flip once
+  // to actually exercise the code this fix touched.
+  await desktopPage.evaluate(() => { document.querySelector(".qz-card")?.click(); });
+  await desktopPage.waitForTimeout(700);
+  const desktopAriaLabel = await desktopPage.evaluate(() => document.querySelector(".qz-card")?.getAttribute("aria-label") || null);
+  desktopAriaLabel === "Flashcard — showing answer, click to flip back"
+    ? ok(`after flipping on desktop, the card's aria-label also says "click" ("${desktopAriaLabel}")`)
+    : bad(`desktop aria-label after flip: "${desktopAriaLabel}", expected "Flashcard — showing answer, click to flip back"`);
+  await desktopCtx.close();
+
+  const touchCtx = await browser.newContext({ ...devices["Pixel 7"], viewport: { width: 412, height: 915 } });
+  const touchPage = await touchCtx.newPage();
+  await touchPage.goto(url, { waitUntil: "load" });
+  await touchPage.waitForTimeout(700);
+  const tGuest = touchPage.locator(".ob-mode-card", { hasText: /guest session/i }).first();
+  if (await tGuest.count()) { await tGuest.click(); await touchPage.waitForTimeout(700); }
+  await touchPage.evaluate(() => { location.hash = "#/board"; });
+  await touchPage.waitForTimeout(700);
+  const touchText = await touchPage.evaluate(() => ({
+    hoverFine: window.matchMedia("(hover: hover) and (pointer: fine)").matches,
+    hint: document.querySelector(".qz-flip-hint")?.textContent || null,
+  }));
+  !touchText.hoverFine && /^ Tap card/.test(touchText.hint)
+    ? ok(`a real touch context (hover:hover, pointer:fine does NOT match) still shows "Tap" (hint: "${touchText.hint.trim()}") - unchanged for GUIDON's primary devices`)
+    : bad(`touch context: hoverFine=${touchText.hoverFine}, hint="${touchText.hint}" - expected "Tap"`);
+  await touchCtx.close();
 }
 
 await browser.close();

@@ -8,7 +8,7 @@
  *   - Line spacing    - body's line-height honored the setting, but a
  *                      handful of components hardcoded their own
  *                      line-height and never picked it up at all.
- *   - Larger tap targets - the shared .tabbar/.tab component (IDP, Forms
+ *   - Larger buttons & links - the shared .tabbar/.tab component (IDP, Forms
  *                      Trainer, Finance, Transition, ...) was left off the
  *                      selector list entirely.
  *   - Reduce transparency - only ever touched two selectors that don't
@@ -296,33 +296,33 @@ async function openAdvanced() {
   });
 
   const before = await tabMinHeight();
-  (before === "0px" || before === "auto") ? ok(`Larger tap targets off: .tabbar .tab min-height is "${before}" (baseline, no explicit minimum)`) : bad(`Larger tap targets off: .tabbar .tab min-height was "${before}", expected "0px"/"auto"`);
+  (before === "0px" || before === "auto") ? ok(`Larger buttons & links off: .tabbar .tab min-height is "${before}" (baseline, no explicit minimum)`) : bad(`Larger buttons & links off: .tabbar .tab min-height was "${before}", expected "0px"/"auto"`);
 
   await page.evaluate(() => { location.hash = "#/settings"; });
   await page.waitForTimeout(400);
   await openAdvanced();
-  await clickCheckbox("Larger tap targets");
+  await clickCheckbox("Larger buttons & links");
   await page.waitForTimeout(150);
 
   await page.evaluate(() => { location.hash = "#/develop"; });
   await page.waitForTimeout(500);
   const on = await tabMinHeight();
   on === "48px"
-    ? ok("Larger tap targets on: the shared .tabbar .tab component picked up min-height:48px (the fixed bug)")
-    : bad(`Larger tap targets on: .tabbar .tab min-height was "${on}", expected "48px"`);
+    ? ok("Larger buttons & links on: the shared .tabbar .tab component picked up min-height:48px (the fixed bug)")
+    : bad(`Larger buttons & links on: .tabbar .tab min-height was "${on}", expected "48px"`);
 
   await page.evaluate(() => { location.hash = "#/settings"; });
   await page.waitForTimeout(400);
   await openAdvanced();
-  await clickCheckbox("Larger tap targets");
+  await clickCheckbox("Larger buttons & links");
   await page.waitForTimeout(150);
 
   await page.evaluate(() => { location.hash = "#/develop"; });
   await page.waitForTimeout(500);
   const off = await tabMinHeight();
   (off === "0px" || off === "auto")
-    ? ok(`Larger tap targets off again: .tabbar .tab min-height reverted to "${off}"`)
-    : bad(`Larger tap targets off again: .tabbar .tab min-height was "${off}", expected to revert`);
+    ? ok(`Larger buttons & links off again: .tabbar .tab min-height reverted to "${off}"`)
+    : bad(`Larger buttons & links off again: .tabbar .tab min-height was "${off}", expected to revert`);
 }
 
 // ============================================================

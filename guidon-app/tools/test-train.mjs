@@ -273,6 +273,52 @@ backToList ? ok("'Done' returns to the scenario list") : bad("scenario list did 
 
 noise.length === 0 ? ok("no console errors/warnings") : bad(noise.length + " console msgs; first: " + noise[0]);
 
+/* ---- PC/desktop intuitivism pass (2026-08-22): the competency/difficulty
+   filter chips (11 total) used to collapse behind "Filters ▾" unconditionally
+   - identically at 1440px and at 375px - even though they fit with real room
+   to spare at the app's own >=1360px desktop tier, and DEMO_NOTES itself
+   calls them load-bearing ("together they drive the whole catalogue"). Only
+   the INITIAL state is width-aware (matches how the rest of the app's
+   toggles behave - no live re-check on resize), so this only needs a fresh
+   page load per viewport, not a resize-and-recheck. ---- */
+{
+  const wideCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const widePage = await wideCtx.newPage();
+  await widePage.goto(url, { waitUntil: "load" });
+  await widePage.waitForTimeout(700);
+  const wideGuest = widePage.locator(".ob-mode-card", { hasText: /guest session/i }).first();
+  if (await wideGuest.count()) { await wideGuest.click(); await widePage.waitForTimeout(700); }
+  await widePage.evaluate(() => { location.hash = "#/train"; });
+  await widePage.waitForTimeout(700);
+  const wideState = await widePage.evaluate(() => {
+    const toggle = [...document.querySelectorAll("button[aria-expanded]")].find((b) => b.className.includes("ghost"));
+    const wrap = toggle ? toggle.nextElementSibling : null;
+    return { text: toggle ? toggle.textContent : null, expanded: toggle ? toggle.getAttribute("aria-expanded") : null, visible: wrap ? getComputedStyle(wrap).display !== "none" : null };
+  });
+  wideState.visible === true && wideState.expanded === "true"
+    ? ok(`at 1440px (>=1360px desktop tier), Train's filter chips are open by default (toggle: "${wideState.text}")`)
+    : bad(`at 1440px, filter chips should default open - got visible=${wideState.visible}, aria-expanded=${wideState.expanded}`);
+  await wideCtx.close();
+
+  const narrowCtx = await browser.newContext({ viewport: { width: 1200, height: 900 } });
+  const narrowPage = await narrowCtx.newPage();
+  await narrowPage.goto(url, { waitUntil: "load" });
+  await narrowPage.waitForTimeout(700);
+  const narrowGuest = narrowPage.locator(".ob-mode-card", { hasText: /guest session/i }).first();
+  if (await narrowGuest.count()) { await narrowGuest.click(); await narrowPage.waitForTimeout(700); }
+  await narrowPage.evaluate(() => { location.hash = "#/train"; });
+  await narrowPage.waitForTimeout(700);
+  const narrowState = await narrowPage.evaluate(() => {
+    const toggle = [...document.querySelectorAll("button[aria-expanded]")].find((b) => b.className.includes("ghost"));
+    const wrap = toggle ? toggle.nextElementSibling : null;
+    return { text: toggle ? toggle.textContent : null, expanded: toggle ? toggle.getAttribute("aria-expanded") : null, visible: wrap ? getComputedStyle(wrap).display !== "none" : null };
+  });
+  narrowState.visible === false && narrowState.expanded === "false"
+    ? ok(`at 1200px (below the desktop tier), Train's filter chips stay collapsed by default (toggle: "${narrowState.text}") - unchanged mobile/tablet behavior`)
+    : bad(`at 1200px, filter chips should default collapsed - got visible=${narrowState.visible}, aria-expanded=${narrowState.expanded}`);
+  await narrowCtx.close();
+}
+
 await browser.close();
 server.close();
 console.log("\n" + (fails ? `TRAIN: ${fails} FAILURE(S)` : "TRAIN: all passed"));
