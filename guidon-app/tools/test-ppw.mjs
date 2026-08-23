@@ -183,6 +183,66 @@ if (await credOpenBtn.count()) {
   bad("MOS Career Center button not found on the credentials card");
 }
 
+// ---- Roadmap (Tier 3 batch 2, "cross-link the PME-graduate bonus to
+// BLC/ALC Prep"): the ranked-moves list on this same worksheet calls the
+// +150 PME-graduate bonus the single highest-value line on the sheet
+// ("Nothing else here comes close"), but until now nothing linked from the
+// bonus checkbox itself to the actual course prep - despite the
+// MOS-credential card two fields up already establishing exactly this
+// cross-link shape ("MOS Career Center" -> #/career, tested above). The
+// previous assertion clicked that button, which navigated away to
+// #/career, so this section re-enters #/board > Points > Full PPW before
+// touching the rank switches. The fix is rank-scoped, not either/or:
+// PPW[rank].pme is "BLC" for SGT and "ALC" for SSG - only one course gates
+// a given rank's promotion, never both at once.
+await page.evaluate(() => { location.hash = "#/board"; });
+await page.waitForTimeout(400);
+await page.locator("button", { hasText: /^Points$/ }).click();
+await page.waitForTimeout(300);
+await page.locator("button", { hasText: /^Full PPW$/ }).click();
+await page.waitForTimeout(300);
+await page.locator("button", { hasText: /^SGT \(E-5\)$/ }).click();
+await page.waitForTimeout(300);
+const pmeGradSgtCard = page.locator("label", { hasText: /^BLC graduate, recommended for promotion$/ }).locator("xpath=ancestor::div[contains(@class,'card')][1]");
+await pmeGradSgtCard.waitFor({ state: "visible", timeout: 5000 });
+const pmeBtnSgt = pmeGradSgtCard.locator("button", { hasText: /^BLC Prep$/ });
+(await pmeBtnSgt.count()) === 1
+  ? ok("Full PPW at SGT: the PME-graduate card shows a 'BLC Prep' cross-link button (BLC is SGT's PME gate)")
+  : bad("BLC Prep button count on SGT's PME-graduate card: " + (await pmeBtnSgt.count()));
+if (await pmeBtnSgt.count()) {
+  await pmeBtnSgt.click();
+  await page.waitForTimeout(400);
+  const hashAfterBlcClick = await page.evaluate(() => location.hash);
+  hashAfterBlcClick === "#/blc"
+    ? ok("Full PPW at SGT: clicking 'BLC Prep' actually navigates to #/blc")
+    : bad("hash after clicking BLC Prep button: " + hashAfterBlcClick);
+}
+
+// Back to the Points > Full PPW worksheet, switch to SSG - the same card
+// should now read "ALC graduate..." and link to #/alc instead.
+await page.evaluate(() => { location.hash = "#/board"; });
+await page.waitForTimeout(400);
+await page.locator("button", { hasText: /^Points$/ }).click();
+await page.waitForTimeout(300);
+await page.locator("button", { hasText: /^Full PPW$/ }).click();
+await page.waitForTimeout(300);
+await page.locator("button", { hasText: /^SSG \(E-6\)$/ }).click();
+await page.waitForTimeout(300);
+const pmeGradSsgCard = page.locator("label", { hasText: /^ALC graduate, recommended for promotion$/ }).locator("xpath=ancestor::div[contains(@class,'card')][1]");
+await pmeGradSsgCard.waitFor({ state: "visible", timeout: 5000 });
+const pmeBtnSsg = pmeGradSsgCard.locator("button", { hasText: /^ALC Prep$/ });
+(await pmeBtnSsg.count()) === 1
+  ? ok("Full PPW at SSG: the PME-graduate card relabels to an 'ALC Prep' cross-link (ALC is SSG's PME gate)")
+  : bad("ALC Prep button count on SSG's PME-graduate card: " + (await pmeBtnSsg.count()));
+if (await pmeBtnSsg.count()) {
+  await pmeBtnSsg.click();
+  await page.waitForTimeout(400);
+  const hashAfterAlcClick = await page.evaluate(() => location.hash);
+  hashAfterAlcClick === "#/alc"
+    ? ok("Full PPW at SSG: clicking 'ALC Prep' actually navigates to #/alc")
+    : bad("hash after clicking ALC Prep button: " + hashAfterAlcClick);
+}
+
 const relevantNoise = noise.filter((n) => !/favicon/.test(n));
 relevantNoise.length === 0 ? ok("no console errors/warnings") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));
 

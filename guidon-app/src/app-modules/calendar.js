@@ -103,10 +103,13 @@ window.G = window.G || {};
       were looking at, even after the underlying VALUE was already fixed to
       come from the same profile field. */
   function urgency(days) {
-    if (days < 0) return { c: "var(--red)", word: "OVERDUE" };
-    if (days <= 14) return { c: "var(--red)", word: days + " days" };
-    if (days <= 45) return { c: "var(--amber)", word: days + " days" };
-    return { c: "var(--green)", word: days + " days" };
+    // Colour now sourced from util.genericUrgency() (pulled out to util for
+    // reminders.js's own urgency-convergence fix - see its comment there)
+    // rather than re-deriving the same 14/45 cutoffs locally - identical
+    // numbers to before, so every non-board/ETS row on this page renders
+    // exactly as it always did. Only the WORD differs for a negative day
+    // count, same as sharedUrgency() just below handles it for board/ETS.
+    return { c: util.genericUrgency(days).color, word: days < 0 ? "OVERDUE" : days + " days" };
   }
   function sharedUrgency(days, fn) {
     // Negative days (overdue) still resolves correctly through fn's own

@@ -24,6 +24,44 @@ window.G = window.G || {};
   "use strict";
   const util = G.util, el = util.el;
 
+  // Money's own currency signal (window.GUIDON_SEED.finance.asOf, read live
+  // via G.store.finance() - the exact same accessor finance.js's own data()
+  // uses, so this can never see anything finance.js itself couldn't) is
+  // prose, not a bare stamp: "TSP/BRS rules current as of 2026 (IRS Notice
+  // 2025-67, TSP Bulletin 25-3); VA compensation rates current as of 2026
+  // (2.8% COLA, effective Dec 1 2025, verified at va.gov) - always verify
+  // at tsp.gov and va.gov" - because two different regimes (TSP/BRS vs
+  // VA/GI Bill, both on the Money tab) are asserted current together, each
+  // with its own citation. ageOf() below only understands a bare
+  // YYYY[-MM[-DD]] stamp, so pull the leading year out of that prose at
+  // render time instead of hand-typing a second date here that the real
+  // field could silently drift away from - the whole point of this file.
+  // Called from a `get asOf()` accessor on the DOMAINS entry below (not
+  // computed once at module load): finance.js's asOf backfills to "" until
+  // loadContent() resolves state.seed.finance (see sgtCapsFromSeed() above
+  // PPW for the same seed-not-ready-yet race, solved the same way there).
+  let _financeAsOfWarned = false;
+  function financeAsOfStamp() {
+    try {
+      const s = (G.store && G.store.finance && G.store.finance()) || {};
+      const m = /\b(20\d{2})\b/.exec(s.asOf || "");
+      if (m) return m[1];
+    } catch (e) {}
+    // Either the seed hasn't loaded yet (normal, transient - render() only
+    // runs once the user opens #/currency, by which point store.init()
+    // has already resolved in every real path) or finance.asOf changed
+    // shape enough to no longer contain a leading year - which would
+    // otherwise leave this domain silently reading "unknown" forever with
+    // no trace. Log once per session, not once per read (this getter is
+    // read multiple times per render() call - once per sort comparison,
+    // again for display).
+    if (!_financeAsOfWarned && G.selfheal) {
+      _financeAsOfWarned = true;
+      G.selfheal.log("currency-derive-fail", "finance", "could not find a leading year in G.store.finance().asOf - the Money/Finance Freshness entry will read “unknown” instead of a real age");
+    }
+    return null;
+  }
+
   /* volatility: how fast this area has actually moved, not how important it is.
      "high" = it changed within the last year and could again. */
   const DOMAINS = [
@@ -75,6 +113,21 @@ window.G = window.G || {};
       implemented: "ETS timeline and the money section.",
       ask: "SFL-TAP and a VSO.", link: "#/transition" },
 
+    // Distinct from "Transition and VA benefits" just above: that domain is
+    // the #/transition route's own ETS timeline and DD-214 walkthrough.
+    // This one is the separate #/money route (G.finance) - BRS/TSP, TSP
+    // Funds, Budget, Predatory Lending, ETS Finance, VA Compensation,
+    // Credit & Debt and Salary Negotiation all live behind ONE tab bar and
+    // share ONE asOf stamp (rendered as the Money tab's own top disclaimer),
+    // and none of that was tracked here before. asOf is a live getter, not
+    // a literal, on purpose - see financeAsOfStamp() above.
+    { area: "TSP, BRS, VA and GI Bill dollar figures", short: "Money",
+      get asOf() { return financeAsOfStamp(); },
+      volatility: "medium",
+      basis: "IRS Notice 2025-67 / TSP Bulletin 25-3 (TSP contribution limits and the BRS match); the Dec 2025 VA COLA (VA compensation and GI Bill figures) - see the Money tab's own disclaimer for the exact citation text this age is derived from.",
+      implemented: "All eight Money tabs: BRS & TSP, TSP Funds, Budget, Predatory Lending, ETS Finance, VA Compensation, Credit & Debt, Salary Negotiation.",
+      ask: "tsp.gov, va.gov, and your installation's Personal Financial Counselor.", link: "#/money" },
+
     { area: "Acronyms and terms", short: "Terms", asOf: "2021", volatility: "low",
       basis: "DoD Dictionary of Military and Associated Terms, 2021 baseline, with an Army overlay.",
       implemented: "3,629 terms. The baseline is the oldest thing in the app and is flagged as such.",
@@ -123,8 +176,9 @@ window.G = window.G || {};
       return (B ? B.months : 0) - (A ? A.months : 0);
     });
 
-    // Fold5/tablet fidelity wave 2: 9 uniform domain-staleness cards used to
-    // stack single-column regardless of viewport - same .card-results-grid
+    // Fold5/tablet fidelity wave 2: uniform domain-staleness cards (9 at the
+    // time, now 10 with Money/Finance added below) used to stack
+    // single-column regardless of viewport - same .card-results-grid
     // utility as Learn/Drills/Health.
     const grid = el("div.card-results-grid");
     mount.appendChild(grid);
