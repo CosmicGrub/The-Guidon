@@ -8303,7 +8303,27 @@ window.G = window.G || {};
     async function grade(q, gradeLevel) {
       const s = schedule(srsMap[q.id], gradeLevel);
       srsMap[q.id] = s;
-      await saveSrs(q.id, s);
+      // Code-review finding (post-merge audit): this is Board Drill's
+      // PRIMARY grading path (the on-card buttons, the swipe gesture, and
+      // the 1-4 keyboard shortcuts below all call grade() directly), unlike
+      // noteExternalResult() above which is Quiz/Mock Board's SECONDARY
+      // path. Before this fix, an unguarded `await saveSrs(...)` failure
+      // (the same srs: kv-write failure this file's own test suite already
+      // simulates) didn't just lose one recall event the way a
+      // noteExternalResult() failure does - it threw here, past every line
+      // below it, so seen/recalled never incremented, idx never advanced,
+      // and draw() never ran, freezing the drill on the same card with zero
+      // indication why. A save failure here must never block the Soldier's
+      // forward progress through the deck - so this still advances exactly
+      // as if the save had succeeded, but tells the truth about what
+      // didn't stick, using the exact same self-heal-log + toast contract
+      // noteExternalResult() already established.
+      try {
+        await saveSrs(q.id, s);
+      } catch (e) {
+        if (G.selfheal) G.selfheal.log("srs-write-fail", q.id, "grade(gradeLevel=" + gradeLevel + ") failed: " + (e && e.message ? e.message : String(e)));
+        util.toast("Couldn't save that grade to your review schedule.");
+      }
       seen++; if (gradeLevel >= 2) recalled++;
       const labels = ["Marked needs help.", "Marked somewhat known.", "Marked known.", "Marked down cold."];
       try { if (G.util.announce) G.util.announce((labels[gradeLevel] || "Graded.") + " Next card."); } catch (e) {}
@@ -8811,9 +8831,18 @@ window.G = window.G || {};
       // "Needs Help" on the underlying card - it becomes due right now.
       // A correct pick deliberately writes nothing: recognition never
       // advances a recall schedule.
+      // Deliberately fire-and-forget - grading must not block the next
+      // question rendering. noteExternalResult() itself now logs any write
+      // failure to G.selfheal (see board.js), so this only needs to react
+      // to a null result: toast so a vanished grade isn't silent at the
+      // UI layer either, on top of being discoverable in Diagnostics.
       if (!ok) {
         const missedQ = sess.questions[sess.idx];
-        if (missedQ && missedQ.id && G.board.noteExternalResult) G.board.noteExternalResult(missedQ.id, 0);
+        if (missedQ && missedQ.id && G.board.noteExternalResult) {
+          G.board.noteExternalResult(missedQ.id, 0).then((r) => {
+            if (r == null) util.toast("Couldn't save that grade to your review schedule.");
+          });
+        }
       }
       Array.from(card.querySelectorAll(".quiz-opt")).forEach((btn, i) => {
         btn.disabled = true;
@@ -9666,8 +9695,14 @@ window.G = window.G || {};
           // feeds the drill's schedule in both directions. "Nailed it" maps
           // to Know It (2), not Down Cold: the top drill grade stays an
           // explicit claim made on the card itself.
-          if (q.id && G.board.noteExternalResult)
-            G.board.noteExternalResult(q.id, sc.points >= 2 ? 2 : sc.points >= 1 ? 1 : 0);
+          // Same fire-and-forget contract as Quiz's miss path (see the
+          // comment there) - noteExternalResult() logs its own failures to
+          // G.selfheal, this just reacts to a null result with a toast.
+          if (q.id && G.board.noteExternalResult) {
+            G.board.noteExternalResult(q.id, sc.points >= 2 ? 2 : sc.points >= 1 ? 1 : 0).then((r) => {
+              if (r == null) util.toast("Couldn't save that grade to your review schedule.");
+            });
+          }
           next();
         });
         scoreRow.appendChild(b);
@@ -10479,7 +10514,21 @@ window.G = window.G || {};
       const rec = schedule(await loadSrs(id), gradeLevel);
       await saveSrs(id, rec);
       return rec;
-    } catch (e) { return null; }
+    } catch (e) {
+      // Was a bare `catch (e) { return null; }` - a failed SRS write from
+      // Quiz's grading flow or Mock Board's scoring flow (both call this
+      // fire-and-forget, by design: grading must not block advancing to
+      // the next question/card) vanished with zero trace anywhere,
+      // including Diagnostics' own self-heal log (G.selfheal, js/
+      // selfheal.js) that every OTHER silent repair/reject path in the
+      // app already reports through (settings/profile backfill, backup-
+      // import row rejection, service-worker/storage repairs - see the
+      // grep hits on G.selfheal.log elsewhere in this file). Logging here,
+      // once, covers both call sites (and any future caller) instead of
+      // duplicating the same guard at each one.
+      if (G.selfheal) G.selfheal.log("srs-write-fail", id, "noteExternalResult(grade=" + gradeLevel + ") failed: " + (e && e.message ? e.message : String(e)));
+      return null;
+    }
   };
 
   // ---------------- Board-date countdown (mirrors the ETS countdown pattern
@@ -19484,6 +19533,16 @@ window.G = window.G || {};
   // self-heal to a fresh record.
   var KV_PREFIX_VALIDATORS = [
     { prefix: "srs:", test: function (v) { return v && typeof v === "object" && !Array.isArray(v); } },
+    // curr:<lessonId> - one row per curriculum lesson ever touched
+    // (curriculum.js's own setP()), same "no single literal key" problem
+    // as srs: above - 106+ lessons across the full curriculum, growing
+    // with every content pass. Identical shape/rigor to srs: (a plain
+    // {studied, mastered} object, not array) because the read site's own
+    // guard is the same shape: loadAllProgress() (curriculum.js) already
+    // falls back to a fresh {studied:false, mastered:false} record for
+    // anything that isn't a bare object, so this only turns that silent
+    // self-heal into an earlier, visible "skipped" the same way srs: does.
+    { prefix: "curr:", test: function (v) { return v && typeof v === "object" && !Array.isArray(v); } },
     // boardQuiz:best:<category>[:<level>] - one row per category/level
     // combo ever quizzed, same "no single literal key" problem as srs:.
     // The read site (drawResults(), hardened this same pass) already
@@ -20591,16 +20650,40 @@ window.G = window.G || {};
   // Future value of a monthly contribution stream with monthly compounding.
   // fvContributions(monthly, years, annualRatePct) -> { future, contributed, growth }
   function fvContributions(monthly, years, annualRatePct) {
-    monthly = Math.max(0, Number(monthly) || 0);
-    years = Math.max(0, Number(years) || 0);
-    // The projector's own input declares min="0" (a negative "assumed
-    // return" isn't a scenario this simplified tool models), but <input
-    // type=number>'s min/max only drives browser validity styling - it
-    // never stops a typed-in value from reaching here. An unfloored deeply
-    // negative rate pushes (1+r) toward/through zero, and Math.pow raised
-    // to n compounding periods then produces wildly wrong, sign-flipping
-    // results instead of a real projection.
-    const r = Math.max(0, Number(annualRatePct) || 0) / 100 / 12; // monthly rate, floored at 0%
+    // A code-review pass on the rate-only version of this clamp (below)
+    // caught that it was incomplete: Math.pow(1+r, n) overflows toward
+    // Infinity via n (years*12) alone, at ANY positive rate - not just an
+    // uncapped one. Concretely reproduced pre-this-fix: with the rate
+    // already clamped to its 15% max, years=200 (a fat-fingered "20") still
+    // produced an 18-digit dollar figure, and years>=~4691 produced a
+    // literal future=Infinity -> money(r.future) rendering "$∞" - the
+    // exact symptom this function exists to prevent, just reached through
+    // the other axis. Years' own <input> declares max="40" (same
+    // unenforced-by-JS-min/max situation as the rate input below), so that's
+    // the bound to reuse here too. Monthly has no declared max on its own
+    // input - contributed/future both scale linearly (not exponentially)
+    // with monthly, so it can't overflow at any realistic typed value, but a
+    // finite ceiling still closes the theoretical gap a malicious/garbled
+    // paste could reach; $1,000,000/mo is far past any real TSP/BRS
+    // contribution and exists only to guarantee this stays finite.
+    monthly = Math.min(1000000, Math.max(0, Number(monthly) || 0));
+    years = Math.min(40, Math.max(0, Number(years) || 0));
+    // The projector's own input declares min="0" and max="15" (a negative
+    // "assumed return" isn't a scenario this simplified tool models, and 15%
+    // is the ceiling this educational tool treats as a plausible sustained
+    // return), but <input type=number>'s min/max only drives browser
+    // validity styling - neither bound stops a typed-in value from reaching
+    // here. An unfloored deeply negative rate pushes (1+r) toward/through
+    // zero, and Math.pow raised to n compounding periods then produces
+    // wildly wrong, sign-flipping results instead of a real projection.
+    // Symmetrically, an uncapped-high rate pushes Math.pow(1+r, n) past
+    // Number.MAX_VALUE for realistic year counts, so `future` - and the
+    // headline dollar figure at money(r.future) below - silently renders
+    // "$∞" instead of a real projection. matchDollars() just below already
+    // guards its own rate input the same shape (Math.min(60, Math.max(0,
+    // ...))) on yourPct; this reuses that shape with this input's own
+    // declared max (15) as the upper bound instead of that one's 60.
+    const r = Math.min(15, Math.max(0, Number(annualRatePct) || 0)) / 100 / 12; // monthly rate, clamped to 0-15%
     const n = Math.round(years * 12);
     let future;
     if (r === 0) future = monthly * n;
