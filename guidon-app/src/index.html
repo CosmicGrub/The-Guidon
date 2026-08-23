@@ -24751,18 +24751,21 @@ window.G = window.G || {};
 
   let routeEl, navEl, statusEl;
 
-  // Grouped, collapsible sidebar. Reduces 18 flat buttons down to Home + 5
-  // labeled, collapsible clusters — only the group containing the active
-  // route auto-expands. Purely a nav-presentation concern; routes/hashes
-  // are unchanged, so nothing else in the app needs to know this exists.
+  // Grouped, collapsible sidebar. Reduces 18 flat buttons down to Home + 6
+  // labeled, collapsible clusters (Board Prep/Study & Skills/Leadership/
+  // Career & Life/Account/Advanced — the last added by Tier 2, Part One)
+  // — only the group containing the active route auto-expands. Purely a
+  // nav-presentation concern; routes/hashes are unchanged, so nothing else
+  // in the app needs to know this exists.
   // subdivideAfter (Tier 1(b), in-group dividers): renders one more
   // .nav-divider - the SAME element already used between groups - right
   // after the named hash's button, purely to visually chunk a long
   // group into two sub-clusters. No new collapsible header, no new
   // persisted state, group membership/routing is unchanged.
-  // demoted (Tier 1(d)): these hashes get the .nav-demoted styling (Q1:
-  // in-place, not a 7th nav group; Q2: only Diagnostics/Author demote -
-  // Freshness and Share & Install stay in Account's primary row).
+  // demoted (Tier 1(d), superseded by Tier 2/Part One below): a group can
+  // still list hashes here to get the .nav-demoted styling in place, but
+  // nothing currently does - see the "advanced" group's own comment for
+  // why Author/Diagnostics moved off this mechanism entirely.
   const NAV_GROUPS = [
     { id: "home",    label: null,             hashes: ["#/home"] },
     // Practice & tracking (Train/Board Drill/Records/Calendar) | reference
@@ -24784,11 +24787,30 @@ window.G = window.G || {};
     // #/channels, routing/grouping otherwise unchanged.
     { id: "career",  label: "Career & Life",  hashes: ["#/career", "#/assignments", "#/channels", "#/transition", "#/money", "#/health", "#/fitness", "#/resources"],
       subdivideAfter: "#/transition" },
-    // Primary row (Progress/Freshness/Settings/Share & Install) | demoted
-    // (Author, Diagnostics) - reordered so the two demoted items sit
-    // together at the end, below the divider.
-    { id: "account", label: "Account",        hashes: ["#/progress", "#/currency", "#/settings", "#/share", "#/author", "#/selftest"],
-      subdivideAfter: "#/share", demoted: ["#/author", "#/selftest"] },
+    // Primary row only now (Progress/Freshness/Settings/Share & Install) -
+    // Author/Diagnostics moved out to their own "advanced" group below
+    // (Tier 2, Part One); no demoted pair left in Account, so no
+    // subdivideAfter/demoted fields remain on this entry.
+    { id: "account", label: "Account",        hashes: ["#/progress", "#/currency", "#/settings", "#/share"] },
+    // Intuitivism pass, Tier 2 (Part One): a real 7th nav group, not the
+    // in-place .nav-demoted dimming Tier 1(d) shipped with (Author and
+    // Diagnostics used to sit inside "account", styling-only demoted).
+    // The plan's own Tier 2 item 1 offered this as a fallback "if the
+    // in-place version doesn't read as distinct enough once built" - asked
+    // directly, the owner said it doesn't and to build this instead.
+    // Label: "Advanced", not "More" (the plan's other suggested name).
+    // "More" is already the <600px flat bar's own drawer-opening button
+    // (renderNav() below) - naming a group "Advanced" [sic - see "More"]
+    // inside the very drawer that button opens would read as confusingly
+    // self-referential ("tap More to open More"). "Advanced" instead
+    // matches an existing convention already in this file: Settings' own
+    // two-tier collapse (views.settings, Tier 1(c)) names its hidden,
+    // less-common-but-still-fully-reachable tier "Advanced" for exactly
+    // the same kind of content (power-user/infrequent controls, not
+    // hidden or gated - one tap away). No "demoted" field needed here -
+    // a real labeled group doesn't need its own members further demoted
+    // within it.
+    { id: "advanced", label: "Advanced",      hashes: ["#/author", "#/selftest"] },
   ];
   const navOpenGroups = new Set(["home"]);
   // PC/desktop intuitivism pass, Tier 1(f): the accordion's open/closed

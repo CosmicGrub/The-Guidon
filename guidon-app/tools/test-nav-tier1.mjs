@@ -5,11 +5,14 @@
  *      SAME grouped accordion the >=600px sidebar renders as a bottom-sheet
  *      drawer (renderGroupsInto - one render path, not a duplicate DOM
  *      structure that could drift from the sidebar).
- *   2. In-group dividers (Board Prep/Leadership/Career & Life/Account) -
- *      pure visual chunking, reusing the same .nav-divider element already
+ *   2. In-group dividers (Board Prep/Leadership/Career & Life) - pure
+ *      visual chunking, reusing the same .nav-divider element already
  *      used between groups.
- *   3. Demoted nav items (Diagnostics/Author within Account) - in-place,
- *      not a new 7th group.
+ *   3. Diagnostics/Author's own dedicated "Advanced" group (Tier 2, Part
+ *      One - this suite originally covered Tier 1(d)'s in-place
+ *      .nav-demoted dimming of the same pair within Account; superseded
+ *      when the owner asked for the plan's own 7th-group fallback
+ *      instead - see NAV_GROUPS in src/index.html for the full writeup).
  * Exercises the real drawer end-to-end (open, focus-trap, Escape, a route
  * click closing it and navigating for real, focus restore) rather than
  * just checking the curated button list exists.
@@ -77,15 +80,18 @@ const noise = [];
     ? ok("drawer panel carries role=dialog aria-modal=true")
     : bad(`drawer panel role/aria-modal: ${drawerOpen.role}/${drawerOpen.ariaModal}`);
   drawerOpen.ariaLabel === "More sections" ? ok('drawer aria-label reads "More sections"') : bad("drawer aria-label: " + drawerOpen.ariaLabel);
-  JSON.stringify(drawerOpen.groupHeaders) === JSON.stringify(["Board Prep", "Study & Skills", "Leadership", "Career & Life", "Account"])
-    ? ok("drawer renders all 5 labeled groups, same order as the sidebar")
+  // Tier 2 (Part One): a genuine 7th group, "Advanced" (Author +
+  // Diagnostics), replaces the old in-place .nav-demoted pair inside
+  // Account - so 6 labeled headers now, not 5.
+  JSON.stringify(drawerOpen.groupHeaders) === JSON.stringify(["Board Prep", "Study & Skills", "Leadership", "Career & Life", "Account", "Advanced"])
+    ? ok("drawer renders all 6 labeled groups, same order as the sidebar")
     : bad("drawer group headers: " + JSON.stringify(drawerOpen.groupHeaders));
   drawerOpen.totalButtons === 33
     ? ok("drawer renders all 33 non-hidden routes (same set the >=600px sidebar shows)")
     : bad("drawer route button count: " + drawerOpen.totalButtons + ", expected 33");
-  JSON.stringify(drawerOpen.demoted.sort()) === JSON.stringify(["#/author", "#/selftest"])
-    ? ok("drawer marks exactly Author + Diagnostics as demoted")
-    : bad("drawer demoted hashes: " + JSON.stringify(drawerOpen.demoted));
+  drawerOpen.demoted.length === 0
+    ? ok("drawer has no .nav-demoted items - Author/Diagnostics moved to their own real group instead of in-place dimming")
+    : bad("drawer still has .nav-demoted items: " + JSON.stringify(drawerOpen.demoted));
 
   // ---- focus trap: opening moves focus inside the panel ----
   const focusedInPanel = await page.evaluate(() => {
@@ -201,7 +207,9 @@ const noise = [];
 }
 
 // ============================================================
-// PART 2 — >=600px sidebar: in-group dividers + demoted items
+// PART 2 — >=600px sidebar: in-group dividers + the "Advanced" group
+// (Tier 2, Part One - Author/Diagnostics's own real 7th group, replacing
+// the old in-place .nav-demoted dimming this Part used to cover)
 // ============================================================
 {
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
@@ -219,33 +227,63 @@ const noise = [];
   const sidebar = await page.evaluate(() => ({
     totalButtons: document.querySelectorAll(".nav a[data-hash]").length,
     dividerCount: document.querySelectorAll(".nav .nav-divider").length,
+    groupHeaders: Array.from(document.querySelectorAll(".nav .nav-group-header")).map((h) => h.textContent.trim()),
     demoted: Array.from(document.querySelectorAll(".nav .nav-demoted")).map((b) => b.getAttribute("data-hash")),
     hasMoreBtn: !!document.querySelector(".nav-more-btn"),
     accountOrder: Array.from(document.querySelectorAll(".nav-group-body a[data-hash]"))
       .map((b) => b.getAttribute("data-hash"))
-      .filter((h) => ["#/progress", "#/currency", "#/settings", "#/share", "#/author", "#/selftest"].includes(h)),
+      .filter((h) => ["#/progress", "#/currency", "#/settings", "#/share"].includes(h)),
   }));
   sidebar.totalButtons === 33 ? ok("sidebar renders all 33 non-hidden routes") : bad("sidebar route button count: " + sidebar.totalButtons);
   sidebar.hasMoreBtn === false ? ok("no More button at >=600px - the sidebar shows everything directly") : bad("unexpected More button in the sidebar");
-  // 5 between-group dividers (one per labeled group) + 4 in-group
-  // subdividers (Board Prep/Leadership/Career & Life/Account each have one).
+  // 6 labeled groups now (Board Prep/Study & Skills/Leadership/Career &
+  // Life/Account/Advanced) = 6 between-group dividers, + 3 in-group
+  // subdividers (Board Prep/Leadership/Career & Life only - Account lost
+  // its subdivideAfter along with the demoted pair it used to separate,
+  // and the new Advanced group is too short to need one). Same total (9)
+  // as the old 5+4 split, different composition - spelled out here so a
+  // future count change doesn't get "fixed" by cancelling out two
+  // unrelated regressions.
   sidebar.dividerCount === 9
-    ? ok("sidebar renders 9 dividers total (5 between-group + 4 in-group sub-dividers)")
+    ? ok("sidebar renders 9 dividers total (6 between-group + 3 in-group sub-dividers)")
     : bad("sidebar divider count: " + sidebar.dividerCount + ", expected 9");
-  JSON.stringify(sidebar.demoted.sort()) === JSON.stringify(["#/author", "#/selftest"])
-    ? ok("sidebar marks exactly Author + Diagnostics as .nav-demoted")
-    : bad("sidebar demoted hashes: " + JSON.stringify(sidebar.demoted));
-  JSON.stringify(sidebar.accountOrder) === JSON.stringify(["#/progress", "#/currency", "#/settings", "#/share", "#/author", "#/selftest"])
-    ? ok("Account group orders the demoted pair (Author, Diagnostics) last, after the primary row")
+  JSON.stringify(sidebar.groupHeaders) === JSON.stringify(["Board Prep", "Study & Skills", "Leadership", "Career & Life", "Account", "Advanced"])
+    ? ok("sidebar renders 6 labeled group headers, Advanced last")
+    : bad("sidebar group headers: " + JSON.stringify(sidebar.groupHeaders));
+  sidebar.demoted.length === 0
+    ? ok("no .nav-demoted item exists anywhere in the sidebar - Author/Diagnostics moved to a real group instead")
+    : bad("sidebar still has .nav-demoted items: " + JSON.stringify(sidebar.demoted));
+  JSON.stringify(sidebar.accountOrder) === JSON.stringify(["#/progress", "#/currency", "#/settings", "#/share"])
+    ? ok("Account's own remaining 4 items (Progress/Freshness/Settings/Share & Install) are unaffected, in their original order")
     : bad("Account group order: " + JSON.stringify(sidebar.accountOrder));
 
-  const demotedOpacity = await page.evaluate(() => {
-    const btn = document.querySelector('.nav a[data-hash="#/selftest"]');
-    return btn ? getComputedStyle(btn).opacity : null;
+  // ---- the "Advanced" group itself: real label, real members, real
+  // hrefs, no leftover demoted styling now that it's a genuine group. ----
+  const advancedHeader = page.locator(".nav .nav-group-header", { hasText: /^Advanced$/ });
+  (await advancedHeader.count()) === 1 ? ok('exactly one "Advanced" group header renders in the sidebar') : bad('"Advanced" group header count: ' + (await advancedHeader.count()));
+  await advancedHeader.click();
+  await page.waitForTimeout(250);
+  const advanced = await page.evaluate(() => {
+    const header = Array.from(document.querySelectorAll(".nav .nav-group-header")).find((h) => h.textContent.trim() === "Advanced");
+    const body = header ? header.nextElementSibling : null;
+    const items = body ? Array.from(body.querySelectorAll("a[data-hash]")) : [];
+    return {
+      expanded: header ? header.getAttribute("aria-expanded") : null,
+      hashes: items.map((b) => b.getAttribute("data-hash")),
+      hrefsMatch: items.every((b) => b.getAttribute("href") === b.getAttribute("data-hash")),
+      anyDemoted: items.some((b) => b.classList.contains("nav-demoted")),
+      opacities: items.map((b) => getComputedStyle(b).opacity),
+    };
   });
-  demotedOpacity !== null && parseFloat(demotedOpacity) < 1
-    ? ok(`Diagnostics' nav button is visually dimmed (opacity ${demotedOpacity}), not just marked in the DOM`)
-    : bad("Diagnostics nav button opacity: " + demotedOpacity + ", expected <1");
+  advanced.expanded === "true" ? ok('clicking the "Advanced" header opens it') : bad('"Advanced" header aria-expanded after click: ' + advanced.expanded);
+  JSON.stringify(advanced.hashes) === JSON.stringify(["#/author", "#/selftest"])
+    ? ok('"Advanced" contains exactly Author and Diagnostics, in that order')
+    : bad('"Advanced" group members: ' + JSON.stringify(advanced.hashes));
+  advanced.hrefsMatch ? ok('"Advanced" members are real <a href> links resolving to their own hash') : bad('"Advanced" member href mismatch: ' + JSON.stringify(advanced));
+  advanced.anyDemoted ? bad('"Advanced" members still carry .nav-demoted - should render like any other group\'s members') : ok('"Advanced" members carry no .nav-demoted class');
+  advanced.opacities.every((o) => parseFloat(o) === 1)
+    ? ok(`"Advanced" members render at full opacity (${advanced.opacities.join(", ")}), not the old .82 demoted dimming`)
+    : bad('"Advanced" member opacities: ' + JSON.stringify(advanced.opacities) + ", expected all 1");
 
   // ---- regression: the sidebar's own .nav-group-header toggle - covered
   // nowhere in this suite before (Part 1 only ever clicks the DRAWER's
@@ -264,6 +302,15 @@ const noise = [];
   (nowOpen ? persistedKey.includes("study") : !persistedKey.includes("study"))
     ? ok(`sidebar group toggle persists to the shared guidon-nav-open-groups key (now ${nowOpen ? "includes" : "excludes"} "study")`)
     : bad(`guidon-nav-open-groups after sidebar toggle: ${persistedKey} (group now ${nowOpen ? "open" : "closed"})`);
+
+  // ---- same open/closed persistence check, but for the NEW "advanced"
+  // group specifically - it was opened above (the click that expanded it
+  // to inspect its members); confirm that stuck to the shared key exactly
+  // like every pre-existing group already does, rather than assuming a
+  // brand-new NAV_GROUPS entry "just works" because it reuses shared code. ----
+  persistedKey.includes("advanced")
+    ? ok('opening the "Advanced" group persists to the shared guidon-nav-open-groups key, same as every other group')
+    : bad("guidon-nav-open-groups after opening Advanced: " + persistedKey);
 
   await page.close();
 }
