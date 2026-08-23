@@ -539,6 +539,28 @@ html.high-contrast nav.nav[data-scroll-y] { -webkit-mask-image: none; mask-image
      1360px  min-width   Board Drill's 3rd (readiness) column enablement -
                           the actual room-fits-the-content threshold, not
                           a device-size tier like the others (see below)
+     1500px  min-width   Board Drill's icon-only rail re-expands back to
+                          the normal labeled one - another content-fit
+                          threshold, not a device tier (see below)
+
+   1500px added (PC/desktop intuitivism pass, Tier 1(e), 2026-08-22):
+   board-drill-active's own #app override (96px icon-only rail, >=800px,
+   no ceiling) was justified at the time as "comfortably under what a
+   96px rail leaves free at every desktop tier" - true for .qz-card's own
+   648px cap, but never re-checked against what restoring the FULL 232px
+   labeled rail would cost once genuinely wide. Measured live, not
+   guessed: forcing the labeled rail back on at 1920px changed nothing
+   about the drill layout at all (identical 648px card, identical 280px
+   readiness pane, 202px of margin still free) - the rail was discarding
+   all 38 nav labels for a card that was never at risk of shrinking, on
+   every viewport from 800px through any ultrawide monitor. The real
+   crossover, confirmed by forcing the labeled rail on across a range of
+   widths: clean at 1500px, genuinely clipped at 1472px. Formula matches
+   .drill-layout's own documented 1160px minimum: 232px (labeled rail) +
+   80px (.main's >=1200px padding) + 1160px = 1472px, rounded up to
+   1500px for margin the same way 1336px became 1360px above - not a
+   device-size tier, a content-fit threshold specific to this one
+   override, kept in the canonical scale anyway per that same reasoning.
 
    1360px added (PC parity pass, 2026-08-22): Board Drill's third grid
    column (.drill-layout, the "Readiness supporting pane") was gated at
@@ -2509,6 +2531,22 @@ mark.dict-hi {
   padding-bottom: calc(40px + env(safe-area-inset-bottom));
   margin: 0 auto;
 }
+/* PC/desktop intuitivism pass, Tier 1(d): 560px stayed fixed at every
+   viewport width - measured live at 1440px, the wizard's own content
+   column rendered at exactly 560px, 61% of the screen sitting empty on
+   both sides, identically on every one of its 7 steps. Untouched by both
+   the earlier device-detection pass (that one was about nav/rail width,
+   not onboarding) and the just-shipped PC-parity pass (Board Drill only).
+   1024px reuses the app's own existing canonical breakpoint rather than
+   picking a new one. 720px, not wider still - onboarding's own content
+   (mode cards, short form fields, rank buttons) wasn't designed around a
+   much wider column, and a bigger jump risks the same "just stretched"
+   look this fix exists to avoid; the collapsed Weak Points chip grid
+   getting real multi-column room at this width is a separate, later
+   change (Tier 2), not assumed here. */
+@media (min-width: 1024px) {
+  .ob-wrap { max-width: 720px; }
+}
 
 /* ── Hero (mode select screen) ────────────────────────────── */
 .ob-hero {
@@ -3583,6 +3621,28 @@ html.reduce-transparency #demo-mode-badge { background: var(--panel-2); }
 /* Main scroll container. */
 .main {
   grid-area: main;
+  /* PC/desktop intuitivism pass, Tier 1(b): real, separate bug from the
+     cap-lift above - found live, not by inspecting CSS alone. Search's
+     .main rendered at a stable, uncentered ~804px at 1440px+ (worse than
+     any other route: 44.8% dead space at 1920px) even though its rules
+     are byte-identical to every working route (confirmed: same
+     max-width:1200px, same margin:0 auto, same nested .list-detail
+     structure Doctrine uses at full width without issue). Root cause:
+     .main has no explicit width of its own, relying entirely on the
+     default grid-item stretch behavior a block-level box gets for free -
+     which this route's specific content shape doesn't reliably trigger
+     (a known CSS edge case: overflow:auto/hidden below establishes a new
+     block-formatting context, and a BFC-establishing grid item sizing
+     itself around a NESTED grid's own 1fr-track content can fall back to
+     shrink-to-fit instead of stretch in some engines/content shapes,
+     rather than always filling its grid area the way width:auto usually
+     implies). Confirmed empirically: forcing an explicit width here
+     restores the expected centered layout immediately, on every route
+     tested, with no other visible change - not just theorized. width:100%
+     matches this file's own established width:min(100%,Npx) idiom
+     (.qz-card, etc.) - a definite width to stretch against, rather than
+     depending on grid's default (and here, unreliable) auto-stretch. */
+  width: 100%;
   overflow-y: auto; overflow-x: hidden;
   padding: 22px 18px 92px;      /* bottom pad clears the mobile nav rail */
   padding-bottom: calc(92px + env(safe-area-inset-bottom));
@@ -3901,16 +3961,36 @@ html.reduce-motion .nav-drawer, html[data-motion="minimal"] .nav-drawer { transi
    the rail shrinks to 96px - the pane was overflowing invisibly on
    every desktop browser until this fix (see .drill-layout's own comment
    for the full measured derivation). Lifting the cap here rather than
-   raising the shared rule's value is deliberate: every OTHER route still
-   wants the normal 960px prose-friendly column, and .main's grid cell
-   width (viewport minus the rail above) is already the real outer
-   bound, so removing the max-width entirely on this route can't make it
-   grow past that. */
+   raising the shared rule's value is deliberate: this route's own
+   layout (one full-bleed flashcard, not a prose column) can genuinely
+   go unbounded safely, since .main's grid cell width (viewport minus
+   the rail above) is already the real outer bound. Every OTHER route
+   is different - see the general cap-lift immediately below, which
+   raises rather than removes their shared limit, on purpose (PC/desktop
+   intuitivism pass, Tier 1(a)). */
 @media (min-width: 800px) {
   html.board-drill-active #app { grid-template-columns: 96px 1fr; }
   html.board-drill-active .nav button { font-size: 0; padding-top: 10px; padding-bottom: 10px; }
   html.board-drill-active .nav .ico { font-size: 1.25rem; }
   html.board-drill-active .nav-group-header { font-size: 0 !important; padding: 8px 4px 3px !important; }
+  html.board-drill-active .nav-group-header .ico { font-size: .7rem !important; }
+}
+/* PC/desktop intuitivism pass, Tier 1(e): re-expand back to the normal
+   labeled rail once genuinely wide - see the canonical breakpoint scale
+   comment (near line 504) for the full measured derivation of 1500px.
+   Every declaration here just UNDOES the icon-only block immediately
+   above, restoring the exact same rules the plain (non-board-drill)
+   >=1200px tier already uses elsewhere in this file - not a new visual
+   treatment, the existing one, simply no longer suppressed past this
+   width. Same specificity-wins-regardless-of-order guarantee as the
+   icon-only block's own comment already explains (html.board-drill-active
+   prefix beats the bare rules it's restoring), so declaration order
+   relative to those bare rules doesn't matter here either. */
+@media (min-width: 1500px) {
+  html.board-drill-active #app { grid-template-columns: 232px 1fr; }
+  html.board-drill-active .nav button { font-size: .78rem; padding-top: 9px; padding-bottom: 9px; }
+  html.board-drill-active .nav .ico { font-size: 1.05rem; }
+  html.board-drill-active .nav-group-header { font-size: .68rem !important; padding: 8px 12px 4px !important; }
   html.board-drill-active .nav-group-header .ico { font-size: .7rem !important; }
 }
 @media (min-width: 1360px) {
@@ -3923,6 +4003,43 @@ html.reduce-motion .nav-drawer, html[data-motion="minimal"] .nav-drawer { transi
      same bug at the same width, just from the other rule. */
   html.board-drill-active .main,
   html.board-drill-active .view { max-width: none; }
+}
+
+/* PC/desktop intuitivism pass, Tier 1(a): the single highest-leverage
+   finding in the whole pass. .main's legacy max-width:960px (~line 2128)
+   and .view's own copy (~line 3810-ish, ">=800px") apply to EVERY route
+   except Board Drill (lifted above) - measured live at 1920x1080 on Home,
+   Train, Doctrine, Search, Records, Calendar, Settings, Progress, and
+   Develop: 728px (37.9% of the screen) sits empty beside every one of
+   them, identically, because none of them was ever revisited once the
+   960px number was first chosen. Several other findings from the same
+   pass are direct downstream consequences of this one cap, not separate
+   bugs: Train's scenario grid is already coded to reflow past 3 columns,
+   frozen only because its container never gets wider; Doctrine's 150-
+   entry reference reader gets 574px of a 1920px screen for one
+   continuous 41,479px-tall scroll; Progress's seven stat panels stack
+   single-column at 2,834px of scroll when the .panel-grid-2 pattern
+   Records/Calendar/Settings already use elsewhere would pair at least
+   two of them. Fixing the shared cap once is upstream of most of that -
+   the panel/grid work itself is a separate, later change.
+
+   1200px, not unbounded like Board Drill above: raising a shared limit
+   is a different move than removing one entirely. Most routes here are
+   prose/card panels, not one full-bleed component - an unbounded cap
+   would over-widen running text well past a comfortable reading measure.
+   1200px reuses the app's own existing canonical breakpoint value (the
+   ">=1200px: wide-desktop rail widen" tier already named in the
+   canonical scale comment near line 504) rather than picking a new
+   number for the CONTENT width specifically - the same value already
+   meant "genuinely wide desktop" elsewhere in this file. Gated at the
+   same >=1360px tier as Board Drill's own lift, for one reason: that's
+   the width this file has already measured and picked for "board-drill-
+   active's 96px rail leaves enough room" - reusing it here keeps every
+   route transitioning to its wider layout at the same, single canonical
+   point rather than each route inventing its own threshold. */
+@media (min-width: 1360px) {
+  .main { max-width: 1200px; }
+  .view { max-width: 1200px; }
 }
 
 /* Keep the fixed-grid shell from being overridden by legacy print block's
@@ -5205,11 +5322,23 @@ window.G = window.G || {};
 
   // Modal manager: Escape to close, Tab focus-trap, focus restore on close.
   // Returns { close }. `panel` should be the focusable dialog element.
-  util.modalTrap = function (backdrop, panel, onClose) {
+  // opts.escapeCloses (default true) - PC/desktop intuitivism pass, Tier
+  // 1(c): onboarding needed the Tab-focus-trap here (see that call site's
+  // own comment) but NOT the Escape-closes behavior - it already has its
+  // own document-level Escape handler that steps back one wizard step,
+  // deliberately never closing/abandoning setup outright (a fresh profile
+  // has no "before" state to return to). Both handlers fire independently
+  // on the same keydown without conflict - this one just no-ops on Escape
+  // when told to, rather than fighting the wizard's own handler for who
+  // gets to decide what Escape means. Every existing caller (DA 4856
+  // wizard, confirm dialogs, the nav drawer) passes no opts at all, so
+  // their behavior is byte-for-byte unchanged.
+  util.modalTrap = function (backdrop, panel, onClose, opts) {
+    var escapeCloses = !opts || opts.escapeCloses !== false;
     var prevFocus = document.activeElement;
     function focusables() { return Array.prototype.slice.call(panel.querySelectorAll(FOCUSABLE)); }
     function onKey(e) {
-      if (e.key === "Escape") { e.preventDefault(); close(); return; }
+      if (e.key === "Escape") { if (escapeCloses) { e.preventDefault(); close(); } return; }
       if (e.key === "Tab") {
         var f = focusables(); if (!f.length) return;
         var first = f[0], last = f[f.length - 1];
@@ -15006,13 +15135,31 @@ window.G = window.G || {};
     // wrap is no longer in the document, the very next keydown anywhere in
     // the app unregisters it rather than acting on stale state.
     function onKey(e) {
-      if (!wrap.isConnected) { document.removeEventListener("keydown", onKey, true); return; }
+      if (!wrap.isConnected) { document.removeEventListener("keydown", onKey, true); ob_trap.close(); return; }
       if (e.key === "Escape" && step > 0) { e.preventDefault(); back(); }
     }
     document.addEventListener("keydown", onKey, true);
+    // PC/desktop intuitivism pass, Tier 1(c): every other full-screen
+    // dialog in the app (DA 4856 wizard, confirm dialogs, the nav drawer)
+    // already goes through util.modalTrap for its Tab focus-trap and focus
+    // restore; onboarding never did. Confirmed live: a keyboard user
+    // Tabbing from page load passed 17 fully-hidden background controls
+    // (nav buttons, home cards, the board-date input) before reaching the
+    // wizard's own first field - activating one fired a real, invisible
+    // background action. escapeCloses:false so this doesn't fight the
+    // onKey handler just above - see util.modalTrap's own comment for why
+    // both listeners coexist safely. Closed from the SAME wrap.isConnected
+    // self-clean check above (an abandoned mid-flow exit - the overlay is
+    // appended straight to document.body, outside the router's own mount,
+    // so a route change alone never removes it or tells this trap to let
+    // go) and from onComplete's own wrapper below (the real, successful
+    // finish) - both paths already existed for onKey; the trap now shares
+    // them instead of getting a third, separate cleanup story.
+    const ob_trap = util.modalTrap(mount, wrap, null, { escapeCloses: false });
     const _onComplete = onComplete;
     onComplete = function (profile) {
       document.removeEventListener("keydown", onKey, true);
+      ob_trap.close();
       if (_onComplete) _onComplete(profile);
     };
 
@@ -23958,6 +24105,23 @@ window.G = window.G || {};
       subdivideAfter: "#/share", demoted: ["#/author", "#/selftest"] },
   ];
   const navOpenGroups = new Set(["home"]);
+  // PC/desktop intuitivism pass, Tier 1(f): the accordion's open/closed
+  // policy used to be identical code for the cramped mobile drawer and the
+  // persistently-visible desktop rail - a first-time desktop visitor saw
+  // an equally bare sidebar (just "Home" + 5 empty headers) despite having
+  // 2-4x the pixel budget a phone does. Measured before changing anything:
+  // full simultaneous expansion never fits at any tested desktop size
+  // (1647px of content against 837-1017px available at 1440x900/1920x1080),
+  // so the fix isn't "open everything" - just one more group (Board Prep,
+  // the daily hub) by default, and ONLY on a genuine first-ever visit.
+  // localStorage.getItem() === null is the correct "never saved anything"
+  // check here, not "the saved array happens to be empty" - a returning
+  // user who deliberately collapsed every group (including one this
+  // default opened for them) explicitly persists that as [] on their next
+  // toggle (see persistNavOpenGroups below), and that choice must stick;
+  // only a key that was NEVER written gets the desktop default at all.
+  const isFirstEverVisit = localStorage.getItem("guidon-nav-open-groups") === null;
+  if (isFirstEverVisit && window.innerWidth >= 1200) navOpenGroups.add("prep");
   try {
     const saved = JSON.parse(localStorage.getItem("guidon-nav-open-groups") || "[]");
     if (Array.isArray(saved)) saved.forEach((id) => navOpenGroups.add(id));
@@ -24365,7 +24529,26 @@ window.G = window.G || {};
         // which makes the skip link unreachable by forward tabbing and defeats
         // its entire purpose. On first paint we leave focus at the document
         // start so the skip link is the first stop, as it must be.
-        if (_firstRouteDone) {
+        //
+        // ALSO skipped while onboarding's overlay is open (PC/desktop
+        // intuitivism pass, Tier 1(c)): a real, confirmed race, not a
+        // hypothetical one - the boot sequence's own documented double
+        // route() call (see the comment above "const frame = el(...)") means
+        // this promise chain's "first render" flag is already true by the
+        // time onboarding's first-boot overlay finishes setting ITS OWN
+        // initial focus via util.modalTrap. Without this guard, that
+        // redundant hashchange-triggered re-render's heading-focus reliably
+        // fired AFTER modalTrap's and silently stole focus back to the
+        // underlying page's own heading - confirmed live, not assumed: a
+        // temporary diagnostic showed modalTrap's focus() call succeeding
+        // (activeElement genuinely became the mode-select card), then
+        // reverting to the background heading within the same tick this
+        // code runs in. The overlay is intentionally the ONLY thing that
+        // should own focus while it's open - it already has its own
+        // complete focus-management story (modalTrap's trap + this file's
+        // own restore-on-close), so route()'s more general "announce the
+        // new view" behavior has nothing useful to do here anyway.
+        if (_firstRouteDone && !document.getElementById("ob-overlay")) {
           const heading = routeEl.querySelector("h1, h2");
           if (heading) { heading.setAttribute("tabindex", "-1"); try { heading.focus({ preventScroll: true }); } catch (e) {} }
         }

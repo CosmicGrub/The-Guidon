@@ -269,11 +269,19 @@ console.log("lint-patterns: static regression guard for 3 repeat bug shapes\n");
    browser. See the canonical breakpoint scale comment in src/index.html
    for the full measured derivation.
 
+   1500 added (PC/desktop intuitivism pass, Tier 1(e), 2026-08-22):
+   Board Drill's icon-only 96px rail had no ceiling - restoring the full
+   232px labeled rail costs nothing until 232 + 80 (.main padding) +
+   1160 (.drill-layout's own minimum) = 1472px, rounded up. Below that,
+   the rail was discarding all 38 nav labels for a card that was never
+   at risk of shrinking. See the canonical breakpoint scale comment in
+   src/index.html for the full measured derivation.
+
    `prefers-*`, `hover`, `pointer`, and `print` are feature queries, not
    layout breakpoints, and are intentionally out of scope.
    ====================================================================== */
 {
-  const CANONICAL = new Set([420, 480, 600, 640, 768, 799, 800, 1024, 1200, 1360]);
+  const CANONICAL = new Set([420, 480, 600, 640, 768, 799, 800, 1024, 1200, 1360, 1500]);
   // Not anchored to a literal "@media" prefix: compound conditions like
   // "@media (min-width: 600px) and (max-width: 859px)" put the second
   // clause after "and (", not "@media (", so anchoring would silently

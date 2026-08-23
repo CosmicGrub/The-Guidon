@@ -118,10 +118,16 @@ async function bootToActiveCard(viewport) {
   await page.close();
 }
 
-/* ---- Other routes must be untouched: .main/.view's max-width:none
-   override is scoped to html.board-drill-active specifically - a normal
-   route (e.g. Home) must keep its regular 960px content cap, not
-   silently grow full-width on desktop as a side effect of this fix ---- */
+/* ---- Other routes must be untouched by Board Drill's OWN override
+   specifically: .main/.view's max-width:none rule is scoped to
+   html.board-drill-active, so a normal route (e.g. Home) must never go
+   unbounded as a side effect of leaving board-drill-active on by mistake.
+   Note (PC/desktop intuitivism pass, Tier 1(a), 2026-08-22): a SEPARATE,
+   route-agnostic cap-lift was added afterward that raises every route's
+   own cap from 960px to 1200px at >=1360px - so at this test's 1440px
+   viewport, 1200px (not the original 960px) is now the correct value.
+   The real regression this guards against is "none" (unbounded, i.e. the
+   board-drill-active override leaking), not "not exactly 960px". ---- */
 {
   const { page, noise } = await bootToActiveCard({ width: 1440, height: 900 });
   await page.evaluate(() => { location.hash = "#/home"; });
@@ -133,9 +139,9 @@ async function bootToActiveCard(viewport) {
   !r.boardDrillActive
     ? ok("navigating away from Board Drill clears html.board-drill-active")
     : bad("html.board-drill-active is still set after navigating to #/home");
-  r.viewMaxWidth === "960px"
-    ? ok(`#/home's .view keeps its normal 960px cap at 1440px (got "${r.viewMaxWidth}") - the fix didn't leak to other routes`)
-    : bad(`#/home's .view max-width is "${r.viewMaxWidth}" at 1440px, expected "960px" - the board-drill-active override is leaking to other routes`);
+  r.viewMaxWidth === "1200px"
+    ? ok(`#/home's .view uses the general 1200px cap at 1440px (got "${r.viewMaxWidth}") - Board Drill's own unbounded override didn't leak to other routes`)
+    : bad(`#/home's .view max-width is "${r.viewMaxWidth}" at 1440px, expected "1200px" (the general Tier-1(a) cap) - either the cap-lift regressed, or Board Drill's own override is leaking`);
   const noiseFiltered = noise.filter((n) => !/favicon/.test(n));
   noiseFiltered.length === 0 ? ok("no console errors/warnings after navigating to #/home") : bad("console noise: " + noiseFiltered.slice(0, 5).join(" | "));
   await page.close();
