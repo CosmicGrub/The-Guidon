@@ -8303,7 +8303,27 @@ window.G = window.G || {};
     async function grade(q, gradeLevel) {
       const s = schedule(srsMap[q.id], gradeLevel);
       srsMap[q.id] = s;
-      await saveSrs(q.id, s);
+      // Code-review finding (post-merge audit): this is Board Drill's
+      // PRIMARY grading path (the on-card buttons, the swipe gesture, and
+      // the 1-4 keyboard shortcuts below all call grade() directly), unlike
+      // noteExternalResult() above which is Quiz/Mock Board's SECONDARY
+      // path. Before this fix, an unguarded `await saveSrs(...)` failure
+      // (the same srs: kv-write failure this file's own test suite already
+      // simulates) didn't just lose one recall event the way a
+      // noteExternalResult() failure does - it threw here, past every line
+      // below it, so seen/recalled never incremented, idx never advanced,
+      // and draw() never ran, freezing the drill on the same card with zero
+      // indication why. A save failure here must never block the Soldier's
+      // forward progress through the deck - so this still advances exactly
+      // as if the save had succeeded, but tells the truth about what
+      // didn't stick, using the exact same self-heal-log + toast contract
+      // noteExternalResult() already established.
+      try {
+        await saveSrs(q.id, s);
+      } catch (e) {
+        if (G.selfheal) G.selfheal.log("srs-write-fail", q.id, "grade(gradeLevel=" + gradeLevel + ") failed: " + (e && e.message ? e.message : String(e)));
+        util.toast("Couldn't save that grade to your review schedule.");
+      }
       seen++; if (gradeLevel >= 2) recalled++;
       const labels = ["Marked needs help.", "Marked somewhat known.", "Marked known.", "Marked down cold."];
       try { if (G.util.announce) G.util.announce((labels[gradeLevel] || "Graded.") + " Next card."); } catch (e) {}
@@ -20630,8 +20650,24 @@ window.G = window.G || {};
   // Future value of a monthly contribution stream with monthly compounding.
   // fvContributions(monthly, years, annualRatePct) -> { future, contributed, growth }
   function fvContributions(monthly, years, annualRatePct) {
-    monthly = Math.max(0, Number(monthly) || 0);
-    years = Math.max(0, Number(years) || 0);
+    // A code-review pass on the rate-only version of this clamp (below)
+    // caught that it was incomplete: Math.pow(1+r, n) overflows toward
+    // Infinity via n (years*12) alone, at ANY positive rate - not just an
+    // uncapped one. Concretely reproduced pre-this-fix: with the rate
+    // already clamped to its 15% max, years=200 (a fat-fingered "20") still
+    // produced an 18-digit dollar figure, and years>=~4691 produced a
+    // literal future=Infinity -> money(r.future) rendering "$∞" - the
+    // exact symptom this function exists to prevent, just reached through
+    // the other axis. Years' own <input> declares max="40" (same
+    // unenforced-by-JS-min/max situation as the rate input below), so that's
+    // the bound to reuse here too. Monthly has no declared max on its own
+    // input - contributed/future both scale linearly (not exponentially)
+    // with monthly, so it can't overflow at any realistic typed value, but a
+    // finite ceiling still closes the theoretical gap a malicious/garbled
+    // paste could reach; $1,000,000/mo is far past any real TSP/BRS
+    // contribution and exists only to guarantee this stays finite.
+    monthly = Math.min(1000000, Math.max(0, Number(monthly) || 0));
+    years = Math.min(40, Math.max(0, Number(years) || 0));
     // The projector's own input declares min="0" and max="15" (a negative
     // "assumed return" isn't a scenario this simplified tool models, and 15%
     // is the ceiling this educational tool treats as a plausible sustained

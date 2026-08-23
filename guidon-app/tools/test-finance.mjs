@@ -118,6 +118,31 @@ else {
     ? ok(`fvContributions clamps annualRatePct to the 15% input max (999999% -> 15%, future=${fvOverRate.future})`)
     : bad("fvContributions(500,20,999999) = " + JSON.stringify(fvOverRate) + ", expected to match the 15% clamp " + JSON.stringify(fvAtCeiling));
 
+  // ---- fvContributions: years clamped to the input's declared 40 max
+  // (post-merge code-review finding: the rate-only clamp above was
+  // incomplete) ----
+  // A code-review pass caught that clamping only annualRatePct left the
+  // exact same overflow reachable through years instead: Math.pow(1+r,n)
+  // grows exponentially in n (years*12), so even at the rate's now-safe
+  // 15% ceiling, years=200 already produced an 18-digit dollar figure and
+  // years>=~4691 produced a literal future=Infinity pre-fix. The Years
+  // <input> declares max="40" (same unenforced-by-JS situation as the rate
+  // input), so that's the bound to reuse.
+  const fvOverYears = await page.evaluate(() => window.G.finance.fvContributions(500, 999999, 15));
+  const fvAtYearsCeiling = await page.evaluate(() => window.G.finance.fvContributions(500, 40, 15));
+  (Number.isFinite(fvOverYears.future) && fvOverYears.future === fvAtYearsCeiling.future && fvOverYears.growth === fvAtYearsCeiling.growth)
+    ? ok(`fvContributions clamps years to the 40yr input max (999999yr -> 40yr, future=${fvOverYears.future})`)
+    : bad("fvContributions(500,999999,15) = " + JSON.stringify(fvOverYears) + ", expected to match the 40yr clamp " + JSON.stringify(fvAtYearsCeiling));
+
+  // ---- fvContributions: monthly contribution clamped too (closes the
+  // theoretical gap - contributed/future scale LINEARLY with monthly, so
+  // this can't realistically overflow, but a finite ceiling still
+  // guarantees it) ----
+  const fvOverMonthly = await page.evaluate(() => window.G.finance.fvContributions(999999999999999999999, 20, 7));
+  Number.isFinite(fvOverMonthly.future)
+    ? ok(`fvContributions clamps an absurd monthly contribution to stay finite (future=${fvOverMonthly.future})`)
+    : bad("fvContributions with an absurd monthly value produced a non-finite result: " + JSON.stringify(fvOverMonthly));
+
   // ---- fvContributions: negative monthly contribution floored at $0 ----
   const fvNegMonthly = await page.evaluate(() => window.G.finance.fvContributions(-100, 5, 7));
   (fvNegMonthly.future === 0 && fvNegMonthly.contributed === 0 && fvNegMonthly.growth === 0)
@@ -177,6 +202,26 @@ else {
   (!/[∞]|Infinity|NaN/.test(headline) && headline === expected)
     ? ok(`projector headline survives a 999999% typed rate: renders ${headline} (the 15%-clamped value), not "$∞"`)
     : bad(`projector headline at rate=999999% was "${headline}", expected "${expected}" and no ∞/Infinity/NaN`);
+
+  // ---- fvContributions: the live projector headline can't render $∞ via
+  // an oversized YEARS value either (the axis a code-review pass found the
+  // rate-only fix had missed) ----
+  await rIn.fill("7"); // restore the rate field to a normal value first
+  const yIn = page.locator(".fin-calc-row input").nth(3); // "Years"
+  await yIn.fill("999999");
+  await page.waitForTimeout(300);
+  const yearsHeadline = await page.evaluate(() => (document.querySelector(".fin-proj-num") || {}).textContent || "");
+  const [mVal2] = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll(".fin-calc-row")];
+    return [Number(rows[2].querySelector("input").value)];
+  });
+  const yearsExpected = await page.evaluate((m) => {
+    const r = window.G.finance.fvContributions(m, 40, 7);
+    return "$" + r.future.toLocaleString("en-US");
+  }, mVal2);
+  (!/[∞]|Infinity|NaN/.test(yearsHeadline) && yearsHeadline === yearsExpected)
+    ? ok(`projector headline survives a 999999yr typed value: renders ${yearsHeadline} (the 40yr-clamped value), not "$∞"`)
+    : bad(`projector headline at years=999999 was "${yearsHeadline}", expected "${yearsExpected}" and no ∞/Infinity/NaN`);
 }
 
 await browser.close();

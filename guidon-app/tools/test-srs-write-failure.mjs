@@ -33,6 +33,17 @@
  *   3. Mock Board's real score-button click does the same.
  * A final control run (no injected failure) proves the fix doesn't spam a
  * false-positive toast or self-heal entry on ordinary, successful grading.
+ *
+ * Post-merge code-review addendum: a review pass caught that the above only
+ * covered noteExternalResult() - Quiz/Mock Board's SECONDARY grading path.
+ * board.js's own grade() (the PRIMARY path: the on-card grade buttons, the
+ * swipe gesture, and the 1-4 keyboard shortcuts) had zero failure handling
+ * of its own, and unlike noteExternalResult() a failure there didn't just
+ * lose one recall event - it threw past every line below it in grade(),
+ * freezing the drill on the same card with no explanation. Fixed the same
+ * way, and section 4 below proves the drill genuinely still ADVANCES on a
+ * forced write failure (not just that it toasts) - a save failure must
+ * never block forward progress through the deck.
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
@@ -115,10 +126,25 @@ await page.evaluate(() => {
   if (t) t.classList.remove("show");
 });
 
+// Code-review finding (post-merge audit): a fixed wait here used to race
+// the app's own .quiz-card-leaving exit animation - under the default
+// "rich" motion setting that animation runs for --quiz-dur (320ms), but
+// the old fixed wait below was only 300ms, so the next round's opts[0]
+// could land on the OLD card's already-disabled buttons (a JS .click() on
+// a disabled <button> never dispatches to its listener in Chromium),
+// silently skipping the round instead of registering a real click. Waiting
+// on a concrete DOM signal - a real, enabled .quiz-opt actually present -
+// instead of a fixed duration removes the race entirely rather than just
+// padding the timeout further (which would still be fragile on a slower
+// machine).
 let quizAttemptedWrong = false, quizToastSeen = false;
 for (let round = 0; round < 12 && !quizToastSeen; round++) {
-  const hasOpts = await page.evaluate(() => {
+  await page.waitForFunction(() => {
     const opts = [...document.querySelectorAll(".quiz-opt")];
+    return opts.length > 0 && opts.some((o) => !o.disabled);
+  }, { timeout: 3000 }).catch(() => {});
+  const hasOpts = await page.evaluate(() => {
+    const opts = [...document.querySelectorAll(".quiz-opt")].filter((o) => !o.disabled);
     if (!opts.length) return false;
     opts[0].click();
     return true;
@@ -138,7 +164,6 @@ for (let round = 0; round < 12 && !quizToastSeen; round++) {
     if (b) { b.click(); return true; }
     return false;
   });
-  await page.waitForTimeout(300);
   if (!advanced) break;
 }
 quizAttemptedWrong
@@ -180,7 +205,63 @@ mockToastSeen
 
 await page.evaluate(() => { window.__failSrsPuts = false; });
 
-/* ---- 4: control run - no injected failure means no false-positive noise ---- */
+/* ---- 4: Board Drill's own flashcard grade() path - the PRIMARY grading
+   surface (on-card buttons, swipe, 1-4 keys), not just the secondary
+   noteExternalResult() path Quiz/Mock Board use. A post-merge code-review
+   pass caught that this call site had zero failure handling: an unguarded
+   `await saveSrs(...)` failure here doesn't just lose one recall event the
+   way noteExternalResult() does, it throws PAST every line below it in
+   grade() - seen/recalled never increment, idx never advances, draw()
+   never runs, freezing the drill on the same card with zero indication
+   why. Proves the fix (a) still advances the drill (idx/draw/seen all
+   still fire) on a forced write failure, not just that it toasts, and
+   (b) actually flipped/clicked the real .qz-card / .qz-grade-btn UI. ---- */
+await page.evaluate(() => { location.hash = "#/board"; });
+await page.waitForTimeout(500);
+// Re-setting the same "#/board" hash after section 3 left the page on its
+// Mock Board sub-tab doesn't reset that in-page tab state (no hashchange
+// fires for an unchanged hash) - explicitly click back to the Board Drill
+// tab, the same way section 3 explicitly clicked to Mock Board.
+await page.locator("button", { hasText: /^Board Drill$/ }).click();
+await page.waitForTimeout(400);
+const before = await page.evaluate(() => {
+  const q = document.querySelector(".qz-prompt")?.textContent || "";
+  return { q };
+});
+await page.evaluate(() => {
+  window.__failSrsPuts = true;
+  const t = document.getElementById("toast");
+  if (t) t.classList.remove("show");
+});
+await page.evaluate(() => document.querySelector(".qz-wrap")?.focus());
+await page.keyboard.press("Space");
+await page.waitForTimeout(500);
+const flipped = await page.evaluate(() => !!document.querySelector(".qz-card.flipped"));
+const graded = flipped ? await page.evaluate(() => {
+  const btn = document.querySelector(".qz-grade-btn.qz-grade-2");
+  if (!btn) return false;
+  btn.click();
+  return true;
+}) : false;
+await page.waitForTimeout(400);
+const after = await page.evaluate(() => ({
+  q: document.querySelector(".qz-prompt")?.textContent || "",
+  flipped: !!document.querySelector(".qz-card.flipped"),
+  toastShown: !!(document.getElementById("toast")?.classList.contains("show") && /couldn.?t save that grade/i.test(document.getElementById("toast").textContent || "")),
+}));
+(flipped && graded)
+  ? ok("Board Drill: flipped the real card and clicked a real .qz-grade-btn")
+  : bad(`Board Drill: could not drive the real grading UI (flipped=${flipped}, graded=${graded})`);
+after.toastShown
+  ? ok("Board Drill: grade()'s own primary write path surfaces the same failure toast on a forced SRS write failure")
+  : bad("Board Drill: no failure toast appeared from grade() with the SRS write forced to fail");
+(after.q !== before.q && !after.flipped)
+  ? ok("Board Drill: the drill still ADVANCED to a new, unflipped card despite the write failure - not frozen on the same card")
+  : bad(`Board Drill: drill did not advance after a forced write failure - still frozen (before="${before.q.slice(0, 30)}" after="${after.q.slice(0, 30)}" stillFlipped=${after.flipped})`);
+
+await page.evaluate(() => { window.__failSrsPuts = false; });
+
+/* ---- 5: control run - no injected failure means no false-positive noise ---- */
 const happy = await page.evaluate(async () => {
   const countBefore = await G.selfheal.count();
   const t = document.getElementById("toast");
