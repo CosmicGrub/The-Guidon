@@ -12,6 +12,17 @@
  * setup" re-entrant path, which — unlike the first-run full-screen overlay —
  * keeps the app's own nav reachable around the wizard and is the only path
  * a user can actually abandon mid-flow from.
+ *
+ * Roadmap Tier 3: also exercises the shared .ob-stepper (renderStepper() in
+ * renderOnboarding) at every one of the wizard's real 7 steps, both stepping
+ * forward through the full Personal-mode path and stepping back via Back/
+ * Escape - the bug this replaced was 5 of those 7 steps hand-typing a stale
+ * "N of 5" (STEPS.length grew to 7 after renderBoardDateStep/renderSummaryStep
+ * were added later, and the literals were never updated) plus mode-select and
+ * summary showing no counter at all. Checked via aria-valuenow/valuemax/
+ * valuetext (what a screen reader gets) and the done/current segment classes
+ * (what's on screen), not by re-parsing visible text - there is no visible
+ * "N of M" text left to parse, that's the whole point of the fix.
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
@@ -26,6 +37,41 @@ const page = await (await browser.newContext()).newPage();
 const noise = [];
 page.on("console", (m) => { if (m.type() === "error") noise.push(m.text()); });
 page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
+
+// Reads the shared .ob-stepper's real DOM/ARIA state rather than any
+// visible text - there's no "N of M" text node left to scrape post-fix,
+// the stepper is a row of .ob-stepper-seg segments plus a
+// role="progressbar" carrying aria-valuenow/valuemax/valuetext for screen
+// readers. Returns null if the wizard isn't currently rendering one at all
+// (would itself be a regression on any of the 7 steps post-fix).
+async function stepperState() {
+  return await page.evaluate(() => {
+    const bar = document.querySelector(".ob-stepper");
+    if (!bar) return null;
+    const segs = Array.from(bar.querySelectorAll(".ob-stepper-seg"));
+    return {
+      total: segs.length,
+      valuenow: bar.getAttribute("aria-valuenow"),
+      valuemax: bar.getAttribute("aria-valuemax"),
+      valuetext: bar.getAttribute("aria-valuetext"),
+      doneCount: segs.filter((s) => s.classList.contains("done")).length,
+      currentIndex: segs.findIndex((s) => s.classList.contains("current")),
+    };
+  });
+}
+// current is 0-indexed (step), valuenow/valuetext are 1-indexed (display) -
+// both need to agree with the caller's real step index for the check to
+// mean anything.
+function assertStepper(st, stepIndex, label) {
+  const ok1 = st && st.total === 7 && st.valuemax === "7"
+    && st.valuenow === String(stepIndex + 1)
+    && st.valuetext === `Step ${stepIndex + 1} of 7`
+    && st.currentIndex === stepIndex
+    && st.doneCount === stepIndex;
+  ok1
+    ? ok(`Stepper on ${label} reads step ${stepIndex + 1} of 7 (${stepIndex} done segment(s), current at index ${stepIndex})`)
+    : bad(`Stepper on ${label} expected step ${stepIndex + 1} of 7: got ${JSON.stringify(st)}`);
+}
 
 await page.goto(url, { waitUntil: "load" });
 await page.waitForTimeout(700);
@@ -75,18 +121,27 @@ stillInOverlayAfterCycling
   ? ok(`cycling Tab all the way around the overlay's ${overlayFocusableCount} focusable controls (plus 2 extra presses) stays trapped inside it, never escaping to the background`)
   : bad("Tab cycling past the overlay's own controls escaped to a background element");
 
+// Stepper on mode-select (step 0) - this and the summary step (step 6) are
+// the "2 steps show no counter at all" half of the bug; mode-select never
+// had an .ob-step-num node to begin with.
+assertStepper(await stepperState(), 0, "mode-select");
+
 await page.locator(".ob-mode-card", { hasText: /Personal Account/i }).click();
 await page.waitForTimeout(300);
+assertStepper(await stepperState(), 1, "identity step"); // was hardcoded "1 of 5"
 await page.locator(".ob-rank-btn", { hasText: /^SSG$/ }).click();
 await page.locator("button.ob-next", { hasText: /Next/ }).click(); // identity -> role
 await page.waitForTimeout(300);
+assertStepper(await stepperState(), 2, "role step"); // was hardcoded "2 of 5"
 await page.locator("button.ob-next", { hasText: /Next/ }).click(); // role -> concerns
 await page.waitForTimeout(300);
+assertStepper(await stepperState(), 3, "concerns step"); // was hardcoded "3 of 5"
 // Concerns step lost its .ob-next class (intuitivism pass) - it now uses
 // the same Skip/Next button-row pattern WeakPoints/BoardDate already did,
 // so it's selected by text like those, not by .ob-next.
 await page.locator("button", { hasText: /^Next →$/ }).click(); // concerns -> weakpoints
 await page.waitForTimeout(300);
+assertStepper(await stepperState(), 4, "weakpoints step"); // was hardcoded "4 of 5"
 // Audit finding (test-coverage gap): no suite ever expanded WeakPoints'
 // "+N more" toggle and selected a chip from its collapsed clusters (12 of
 // 19 options, structurally a different append path than the always-
@@ -119,8 +174,13 @@ await page.locator("button", { hasText: "Land Navigation / Map Reading" }).click
 await page.waitForTimeout(150);
 await page.locator("button", { hasText: /Build my plan/ }).click(); // weakpoints -> boarddate
 await page.waitForTimeout(300);
+assertStepper(await stepperState(), 5, "board date step"); // was hardcoded "5 of 5"
 await page.locator("button", { hasText: /^Skip$/ }).click(); // boarddate -> summary
 await page.waitForTimeout(300);
+// Summary (step 6, the last step) is the other half of "2 steps show no
+// counter at all" - it never had an .ob-step-num node either. All 7
+// segments should read done/current now (doneCount === stepIndex === 6).
+assertStepper(await stepperState(), 6, "summary step");
 await page.locator("button", { hasText: /Save profile & start/ }).click();
 await page.waitForTimeout(500);
 
@@ -160,7 +220,8 @@ await page.waitForTimeout(300);
 
 // ---- Back button: goes back one step AND keeps the changed rank ----
 const onRoleStep = await page.evaluate(() => /Your role/.test(document.body.textContent || ""));
-onRoleStep ? ok("Advanced to the role step (2 of 5)") : bad("did not reach role step");
+onRoleStep ? ok("Advanced to the role step") : bad("did not reach role step");
+assertStepper(await stepperState(), 2, "role step (2nd walkthrough, via Next)");
 
 await page.locator("button.ob-back", { hasText: /Back/ }).click();
 await page.waitForTimeout(300);
@@ -168,23 +229,32 @@ const backOnIdentity = await page.evaluate(() => /Who are you/.test(document.bod
 backOnIdentity ? ok("Back button returns to the identity step") : bad("Back did not return to identity step");
 const rankAfterBack = await page.locator(".ob-rank-btn.active").textContent();
 rankAfterBack?.trim() === "SFC" ? ok("The rank change (SFC) survived the Back navigation, not reset to the seeded value") : bad("rank after Back: " + rankAfterBack);
+// The stepper must recompute on back() too, not just advance() - it's
+// driven by the same live `step` variable renderStep() already reads for
+// the Back button and refreshLiveSummary(), so this should just fall out
+// of that, but it's exactly the kind of thing a one-directional check
+// (forward-only) would miss.
+assertStepper(await stepperState(), 1, "identity step (after Back)");
 
 // ---- Escape mirrors Back ----
 await page.locator("button.ob-next", { hasText: /Next/ }).click();
 await page.waitForTimeout(300);
 const backOnRole = await page.evaluate(() => /Your role/.test(document.body.textContent || ""));
 backOnRole ? ok("Next re-advances to the role step") : bad("did not re-advance to role step");
+assertStepper(await stepperState(), 2, "role step (re-advanced)");
 
 await page.keyboard.press("Escape");
 await page.waitForTimeout(300);
 const escBackOnIdentity = await page.evaluate(() => /Who are you/.test(document.body.textContent || ""));
 escBackOnIdentity ? ok("Escape steps back exactly like the Back button") : bad("Escape did not step back");
+assertStepper(await stepperState(), 1, "identity step (after Escape)");
 
 // Escape again should reach mode-select (step 0) and then be a no-op there.
 await page.keyboard.press("Escape");
 await page.waitForTimeout(300);
 const escBackOnMode = await page.evaluate(() => /How are you using GUIDON/.test(document.body.textContent || ""));
 escBackOnMode ? ok("A second Escape reaches the mode-select step (step 0)") : bad("second Escape did not reach mode-select");
+assertStepper(await stepperState(), 0, "mode-select (after 2nd Escape, zero done segments)");
 
 await page.keyboard.press("Escape");
 await page.waitForTimeout(200);
