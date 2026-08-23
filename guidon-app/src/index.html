@@ -1549,7 +1549,7 @@ select.in { appearance:none; }
 .mb-/* DEDUPED: a — merged below */
 
 .mb-a-src { margin-top:8px; font-family:var(--font-mono); font-size:.74rem; color:var(--cyan); }
-.mb-score-row { display:flex; gap:8px; flex-wrap:wrap; }
+.mb-score-row:not([hidden]) { display:flex; gap:8px; flex-wrap:wrap; }
 .mb-score-btn { flex:1; min-width:90px; padding:10px; border-radius:var(--radius-sm); cursor:pointer;
   font-family:var(--font-head); font-weight:600; border:1px solid var(--line-2); background:var(--panel-2); color:var(--text); }
 .mb-score-btn.score-nailed { border-color:var(--green); color:var(--green); }
