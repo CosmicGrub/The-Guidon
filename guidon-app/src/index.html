@@ -5730,6 +5730,38 @@ window.G = window.G || {};
   });
   window.addEventListener("pagehide", _flushAllPending);
 
+  // ── Cross-view navigation handoff (G.nav) ───────────────────────────────
+  // location.hash carries no payload, so a view that needs the view it's
+  // about to navigate to open on a specific item (a scenario id, a search
+  // term) has always stashed that value on a one-shot global set right
+  // before the hash change and read-and-cleared by the destination's own
+  // render. That pattern got reinvented independently at least four times
+  // under four different names before this registry existed: G.views._pending
+  // (Home's "Recommended next" card and Global Search's scenario hits ->
+  // Train), G.resources._searchSeed and G.career._searchSeed (Global Search's
+  // resource/MOS hits -> Resources/Career), and G.engine._pending (Board
+  // Drill and Home's priorities card -> Train, feeding a *different*
+  // consumption path than G.views._pending inside views.train - kept as its
+  // own thing rather than folded in here, see views.train's own comment).
+  // G.nav.seed(target, value) / G.nav.consume(target) replace the first
+  // three with one keyed registry: seed() stashes a value under a target
+  // view's name, consume() reads and immediately clears it so a later
+  // ordinary visit to that view never replays a stale seed. Every existing
+  // caller is fire-and-forget (the source view never checks whether its seed
+  // was actually consumed) and every value is a single scalar (an id or a
+  // search string) - so, like util.onFlush above, this deliberately stays a
+  // plain keyed store rather than growing subscribe/observe machinery
+  // nothing here needs yet.
+  var _navSeeds = Object.create(null);
+  G.nav = {
+    seed: function (target, value) { _navSeeds[target] = value; },
+    consume: function (target) {
+      var v = (target in _navSeeds) ? _navSeeds[target] : null;
+      delete _navSeeds[target];
+      return v;
+    },
+  };
+
   G.util = util;
 })();
 
@@ -5886,6 +5918,33 @@ window.GUIDON_BUILD_DATE = "2026-08-09";
     // --- attempts ---
     saveAttempt(a) { return this.put("attempts", a); },
     allAttempts() { return this.all("attempts"); },
+    // Retention cap: without this, "attempts" (one row per scenario
+    // completion, see store.recordAttempt() below) grows forever. That's
+    // both a storage-footprint problem AND a scan-cost one - getProgress()
+    // full-scans this whole store on every 5s cache-miss, so an uncapped
+    // store means that scan gets slower every month of real use, not just
+    // bigger on disk. Reuses this.all()/this.delMany() (already
+    // backend-agnostic - both are reassigned together by
+    // installMemoryFallback() for the localStorage/memory backends, same as
+    // saveAttempt()/allAttempts() above) instead of a raw IDB
+    // transaction/cursor, so this doesn't need its own fallback-aware
+    // reimplementation. Mirrors recordBullet()'s "evict the OLDEST rows,
+    // keep the newest" shape (push, then shift() the front off once length
+    // exceeds its cap) - ts is stamped once in recordAttempt() and never
+    // mutated after, so sorting ascending by ts puts the oldest attempts
+    // first. Called from recordAttempt() right after every write (see
+    // ATTEMPTS_CAP below), so the store is only ever transiently one row
+    // over cap between save and trim - never sits over cap indefinitely, no
+    // matter how it got backlogged (a single recordAttempt() call, a bulk
+    // progress-file import, a backup restore).
+    trimAttempts(cap) {
+      return this.all("attempts").then((rows) => {
+        const over = rows.length - cap;
+        if (over <= 0) return 0;
+        const doomed = rows.slice().sort((a, b) => (a.ts || 0) - (b.ts || 0)).slice(0, over).map((a) => a.id);
+        return this.delMany("attempts", doomed).then(() => doomed.length);
+      });
+    },
 
     // --- authored scenarios ---
     saveUserScenario(sc) { return this.put("userScenarios", sc); },
@@ -5964,6 +6023,21 @@ window.G = window.G || {};
 
   const DIMS = ["Leads", "Develops", "Achieves", "Character", "Presence", "Intellect"];
   const COMPS = ["Leads", "Develops", "Achieves", "Character", "Presence", "Intellect"];
+  // Retention cap for the "attempts" store (see recordAttempt() and
+  // db.trimAttempts() below). Deliberately much larger than
+  // recordBullet()'s 200-row bulletHistory cap a few hundred lines down:
+  // bulletHistory is a manually-typed writing-practice list, but "attempts"
+  // gets one row per scenario completion automatically, and the seed alone
+  // ships 182 scenarios (Authoring Studio can add more on top of that) - a
+  // 200-cap here would start silently evicting a scenario's ONLY completed
+  // attempt (and with it, that scenario's contribution to getProgress()'s
+  // per-dimension scores - see the `best` Map keyed by scenarioId below)
+  // well within a normal single pass through the seed content, let alone a
+  // multi-week board-prep cycle of replays. 1000 gives ~5x headroom over
+  // the seed's scenario count for replays and authored scenarios while
+  // still keeping getProgress()'s full-store scan (and the store's on-disk
+  // footprint) bounded rather than ever-growing.
+  const ATTEMPTS_CAP = 1000;
 
   const DEFAULT_SETTINGS = { trainingCompletions: {},
     boardDate: "",             // YYYY-MM-DD — enables the Board Prep countdown banner
@@ -6146,7 +6220,7 @@ window.G = window.G || {};
   }
 
   const store = {
-    DIMS, COMPS,
+    DIMS, COMPS, ATTEMPTS_CAP,
 
     async init() {
       try { await db.ready(); } catch (e) { db.installMemoryFallback(); }
@@ -6244,6 +6318,46 @@ window.G = window.G || {};
       if (!state._scenarioCache || state._scenarioCache.key !== key) this.scenarios();
       return state._scenarioCache.byId.get(id) || null;
     },
+    // Scenario-difficulty vocabulary normalization - the same shape of bug
+    // G.board.normDifficulty() already fixed for Board Drill questions (see
+    // its comment) existed here too, on a completely different field/dataset.
+    // Scenario authoring originally used Basic/Intermediate/NCO/"Board Prep",
+    // but a later curriculum-expansion batch (52 new E5/E6 cyoa/text
+    // scenarios) tagged its own difficulty "Advanced"/"Core" instead, and
+    // nothing converged on it: Train's own filter chips silently couldn't
+    // match those 52 scenarios (matched sc.difficulty === activeDiff
+    // literally, and no chip exists for "Core" or "NCO"/"Board Prep"
+    // either), the Authoring Studio's difficulty dropdown couldn't display
+    // their real value (fell back to the browser default of the first
+    // option, "Basic", showing selected while model.difficulty still held
+    // "Advanced"/"Core" underneath), and recommendNext()'s diffRank rated
+    // both as the same mid rank as Intermediate via its `?? 1` fallback
+    // instead of the hardest rank they actually are.
+    // Deliberately NOT reusing G.board.normDifficulty() itself - its MAP is
+    // keyed on Board Drill's own lowercase beginner/basic/intermediate/
+    // advanced/expert vocabulary for a different field on a different
+    // dataset, and this domain's "Advanced" needs to land in the *hardest*
+    // tier alongside "NCO", not get treated as a synonym of Board Drill's
+    // "expert" the way a shared literal MAP would force. Same normalize-at-
+    // one-read-boundary pattern, its own appropriately-scoped vocabulary.
+    // SCENARIO_DIFF_MAP is now the one place that vocabulary lives - the
+    // Authoring Studio's dropdown (DIFFS), Train's filter chips, and
+    // recommendNext() all read through normDifficulty()/this map's own keys
+    // instead of each hand-rolling a copy that can silently drift again.
+    SCENARIO_DIFF_MAP: {
+      "Basic": "Basic",
+      "Intermediate": "Intermediate",
+      "Board Prep": "Intermediate",
+      "Core": "Intermediate",
+      "Advanced": "Advanced",
+      "NCO": "Advanced",
+    },
+    // Ordered canonical tiers - index order is the "ease in with lower
+    // difficulty first" rank recommendNext() sorts by.
+    SCENARIO_DIFFICULTY_TIERS: ["Basic", "Intermediate", "Advanced"],
+    normDifficulty(d) {
+      return this.SCENARIO_DIFF_MAP[d] || "Intermediate";
+    },
 
     // ---- board ----
     boardQuestions() {
@@ -6307,6 +6421,15 @@ window.G = window.G || {};
       a.id = util.uid("att");
       a.ts = Date.now();
       await db.saveAttempt(a);
+      // Retention cap (ATTEMPTS_CAP above, db.trimAttempts() in db.js):
+      // recordBullet() below already caps its own history at 200 rows via
+      // push+shift, but this write path had no equivalent - every scenario
+      // completion added a row here with nothing ever removed, so the
+      // store (and getProgress()'s full scan of it, right below) grew
+      // without bound for as long as the app was used. Evicting the
+      // oldest rows down to ATTEMPTS_CAP on every write keeps both bounded
+      // from here on, regardless of how long a Soldier has been training.
+      await db.trimAttempts(ATTEMPTS_CAP);
       // Upgrade-roadmap first wave, item 2: getProgress()'s 5s TTL cache
       // below only ever expired on a timer, never on a write - the same
       // class of bug saveUserScenario()/deleteUserScenario() already avoid
@@ -6398,10 +6521,16 @@ window.G = window.G || {};
       let weakest = "Leads", lowest = Infinity;
       COMPS.forEach((c) => { if (prog.dims[c].pct < lowest) { lowest = prog.dims[c].pct; weakest = c; } });
       const pool = undone.length ? undone : nonTraining; // if all done, allow replays
-      const diffRank = { "Basic": 0, "Intermediate": 1, "NCO": 2, "Board Prep": 1, "": 0 };
+      // Reads through the shared normDifficulty()/SCENARIO_DIFFICULTY_TIERS
+      // above instead of its own hand-typed {Basic:0,Intermediate:1,NCO:2,
+      // "Board Prep":1} map, which used to silently rate the curriculum-
+      // expansion batch's "Advanced"/"Core" scenarios as rank 1 (same as
+      // Intermediate) via the `?? 1` fallback instead of the hardest rank
+      // they actually are.
       const scored = pool.map((s) => {
         const targetsWeak = (s.competency || []).includes(weakest) ? 0 : 1;
-        return { s, key: [targetsWeak, diffRank[s.difficulty] ?? 1] };
+        const diffRank = this.SCENARIO_DIFFICULTY_TIERS.indexOf(this.normDifficulty(s.difficulty));
+        return { s, key: [targetsWeak, diffRank] };
       }).sort((a, b) => a.key[0] - b.key[0] || a.key[1] - b.key[1]);
       const pick = scored[0].s;
       const reason = prog.totalAttempts === 0
@@ -8937,13 +9066,48 @@ window.G = window.G || {};
   // were removed from the semi-centralized system (SSG boards now use a Yes/No
   // validation vote). The 150 points that DO exist are a BLC/ALC completion
   // bonus that sits OUTSIDE the 800-point ceiling.
+  // SGT's 4 category maximums used to be a second, independently hand-typed
+  // copy of the exact same numbers already carried by the seed's own
+  // points.categories[].max (see renderPointsCalculator's own comment,
+  // "This quick-estimate ruleset (state.seed.points) only ever represents
+  // the SGT (E-5) caps" - that calculator already reads them live through
+  // store.pointsRules()). The two copies happened to still agree
+  // (280/145/240/135) but nothing enforced it - editing one without the
+  // other would have silently let this worksheet and the dashboard's quick
+  // estimate disagree on a Soldier's own cap. Derived here at the same
+  // store.pointsRules() read boundary instead, same "expose the source,
+  // don't duplicate it" shape as G.routes (nav.js) and store.DEFAULT_SETTINGS.
+  // SSG has no seed-side equivalent (points.categories[].max is SGT-only by
+  // design), so SSG.caps stays a plain literal below - there is nothing to
+  // derive it from.
+  function sgtCapsFromSeed() {
+    const fallback = { training:280, awards:145, milEd:240, civEd:135 };
+    try {
+      const rules = store.pointsRules();
+      const cats = (rules && Array.isArray(rules.categories)) ? rules.categories : [];
+      const byId = {};
+      cats.forEach((c) => { if (c && c.id) byId[c.id] = c.max; });
+      // Seed ids (training/awards/militaryEd/civilianEd) -> this worksheet's
+      // own shorter milEd/civEd keys.
+      const merged = { training: byId.training, awards: byId.awards,
+                        milEd: byId.militaryEd, civEd: byId.civilianEd };
+      // Only trust the seed once it has actually supplied all 4 - before
+      // loadContent() resolves (or if a future edit drops a category)
+      // state.seed.points is empty/partial, and a partial merge would zero
+      // out a cap rather than just fall back to the known-good literal.
+      const allPresent = Object.keys(fallback).every((k) => typeof merged[k] === "number" && merged[k] > 0);
+      if (allPresent) return merged;
+    } catch (e) {}
+    return fallback;
+  }
+
   const PPW = {
     version: "2.0.0",
     asOf: "2026-07",
     reg: "AR 600-8-19 \u00b7 current edition effective 6 Apr 2026",
     total: 800,
     SGT: { label:"SGT (E-5)", pme:"BLC",
-           caps:{ training:280, awards:145, milEd:240, civEd:135 },
+           get caps() { return sgtCapsFromSeed(); },
            weaponsMax:160, aftMax:120, residentMax:110, cbtMax:90, czMax:30,
            hits:{ lo:[23,33], hi:[40,160] } },
     SSG: { label:"SSG (E-6)", pme:"ALC",
@@ -11464,7 +11628,15 @@ window.G = window.G || {};
   const util = G.util, store = G.store, el = util.el, esc = util.esc;
   const DIMS = store.DIMS || ["Leads", "Develops", "Achieves", "Character", "Presence", "Intellect"];
   const MODES = ["text", "course", "cyoa"];
-  const DIFFS = ["Basic", "Intermediate", "NCO", "Board Prep"];
+  // Was its own hand-typed ["Basic","Intermediate","NCO","Board Prep"] list -
+  // missing "Advanced" and "Core" (52 real scenarios from the curriculum-
+  // expansion batch, see store.SCENARIO_DIFF_MAP's comment), so opening one
+  // of those in this editor showed "Basic" selected here (browser default:
+  // no <option> matched model.difficulty) while the model still held the
+  // real value underneath. Deriving DIFFS from store's shared map keeps this
+  // dropdown's options complete and in sync with every other difficulty
+  // reader by construction, instead of drifting again.
+  const DIFFS = Object.keys(store.SCENARIO_DIFF_MAP);
   const TIERS = ["E1", "E2", "E3", "E4", "E5", "E6"];
 
   const TEMPLATE = {
@@ -15455,7 +15627,24 @@ window.G = window.G || {};
       util.emit && util.emit("profile:change", p);
       return;
     }
-    try { await db.put("kv", { k: PROFILE_KEY, v: p }); } catch(e) {}
+    try { await db.put("kv", { k: PROFILE_KEY, v: p }); }
+    catch (e) {
+      // Same "failure caught, then reported as healthy" shape board.js's
+      // grade()/noteExternalResult() were already fixed for (see the
+      // srs-write-fail kind there) - this bare `catch(e){}` used to let a
+      // failed IndexedDB write vanish with zero trace while the
+      // profile:change emit below still fired unconditionally, updating
+      // every listening view's in-memory copy as if the save had genuinely
+      // reached disk. A reload then silently reverted to the old profile
+      // (rank, tier, board date, weak points, promo-points autosave - this
+      // is the one function every profile write in the app funnels
+      // through) with nothing anywhere to explain why. Same self-heal-log +
+      // toast contract as the SRS-write fix: still emits below so the UI
+      // stays live this session, but now tells the truth about what didn't
+      // stick instead of only the DOM knowing.
+      if (G.selfheal) G.selfheal.log("profile-write-fail", null, "saveProfile() failed: " + (e && e.message ? e.message : String(e)));
+      if (util.toast) util.toast("Couldn't save your profile changes to this device.");
+    }
     util.emit && util.emit("profile:change", p);
   }
   async function deleteProfile() {
@@ -18986,15 +19175,51 @@ window.G = window.G || {};
         // in THIS session, so it is logged directly rather than routed
         // through logRepair()'s synchronous before/after pair, which
         // assumes the page stays put.
+        //
+        // House-rule audit finding: this used to render the SAME "Fix:
+        // update to latest build" button for two different failure shapes
+        // that both make swfresh's check fail \u2014 a real waiting update
+        // (state.swWaiting, the case this was written for) AND an outright
+        // registration failure (state.swRegFailed \u2014 broken CSP,
+        // unreachable sw.js, corrupted cache; see pwa.js's
+        // registerSW().catch()). In the second case G.pwa.applyUpdate()
+        // silently no-ops \u2014 there is no state.swWaiting to post
+        // SKIP_WAITING to \u2014 so the button just sat disabled at
+        // "Updating\u2026" forever, AND it had already written a self-heal
+        // entry claiming "applying a waiting service-worker update" when no
+        // update was ever waiting: a false entry in the exact audit trail
+        // this convention exists to keep honest. Split into the two real
+        // remedies instead \u2014 apply the waiting worker when one actually
+        // exists, otherwise the only real fix is asking pwa.js's
+        // unconditional registerSW() to try again, which a reload does.
         if (c.id === "swfresh" && !r.ok) {
-          const swFixBtn = el("button.btn.sm", { type:"button", text:"Fix: update to latest build", style:"margin-top:6px" });
-          swFixBtn.addEventListener("click", async () => {
-            swFixBtn.disabled = true; swFixBtn.textContent = "Updating\u2026";
-            if (G.selfheal) G.selfheal.log("repair", "sw-update", "applying a waiting service-worker update; page will reload");
-            if (G.pwa && G.pwa.applyUpdate) G.pwa.applyUpdate();
-            else location.reload();
-          });
-          row.appendChild(swFixBtn);
+          const hasWaiting = !!(G.pwa && G.pwa.state && G.pwa.state.swWaiting);
+          if (hasWaiting) {
+            const swFixBtn = el("button.btn.sm", { type:"button", text:"Fix: update to latest build", style:"margin-top:6px" });
+            swFixBtn.addEventListener("click", async () => {
+              swFixBtn.disabled = true; swFixBtn.textContent = "Updating\u2026";
+              if (G.selfheal) G.selfheal.log("repair", "sw-update", "applying a waiting service-worker update; page will reload");
+              if (G.pwa && G.pwa.applyUpdate) G.pwa.applyUpdate();
+              else location.reload();
+            });
+            row.appendChild(swFixBtn);
+          } else {
+            const swRetryBtn = el("button.btn.sm", { type:"button", text:"Fix: retry service worker registration", style:"margin-top:6px" });
+            swRetryBtn.addEventListener("click", async () => {
+              swRetryBtn.disabled = true; swRetryBtn.textContent = "Retrying\u2026";
+              // Awaited, unlike the sw-update branch above (which can afford
+              // fire-and-forget because ITS reload only happens later, async,
+              // from pwa.js's controllerchange listener - plenty of time for
+              // the log's own db.get/db.put round trip to land first). This
+              // branch calls location.reload() directly and immediately, so
+              // an un-awaited log() here would race the navigation and could
+              // lose the very entry it exists to leave behind.
+              if (G.selfheal) await G.selfheal.log("repair", "sw-retry", "service worker registration previously failed (" +
+                ((G.pwa && G.pwa.state && G.pwa.state.swRegFailed) || r.detail || "unknown reason") + "); reloading to retry registration");
+              location.reload();
+            });
+            row.appendChild(swRetryBtn);
+          }
         }
         // The browser decides whether to grant persistence, not this app -
         // "Fix" here can only ever mean "ask again," honestly re-verified
@@ -19570,6 +19795,20 @@ window.G = window.G || {};
     return !!validator(row.k === "forms:saved" ? row : row.v);
   }
 
+  // House-rule audit finding: failedStores (below) already made a failed
+  // per-store read visible to whichever caller happened to be watching
+  // (downloadAll()'s announce, exportDoneMessage()'s "check Diagnostics"
+  // line) - but that's a toast, and a toast that's missed leaves nothing
+  // behind. Every OTHER silent-failure path in the app (srs-write-fail,
+  // profile-write-fail, the settings/profile backfills) also writes
+  // through G.selfheal.log so it survives in the durable "Self-healing"
+  // trail (Diagnostics) even if the in-the-moment toast was never seen.
+  // This closes that same gap for backup export instead of leaving it as
+  // the one write-failure path with surfacing but no durable trace.
+  function logExportFail(store, e) {
+    if (G.selfheal) G.selfheal.log("backup-export-fail", store, "exportAll() could not read the " + store + " store: " + (e && e.message ? e.message : String(e)));
+  }
+
   async function exportAll(opts) {
     opts = opts || {};
     var payload = { schema: SCHEMA, exportedAt: new Date().toISOString(), stores: {} };
@@ -19579,7 +19818,8 @@ window.G = window.G || {};
     // entire store (e.g. every board-drill SRS row, since srs: rows live in
     // kv) and downloadAll() would still say "Backup downloaded" with nothing
     // to contradict it. failedStores makes that failure visible to the
-    // caller instead of only to whichever dev tools happened to be open.
+    // caller instead of only to whichever dev tools happened to be open,
+    // and logExportFail() above additionally makes it durable.
     var failedStores = [];
     // kv holds profile/goals/drafts/srs — all the user's own. It ALSO holds the
     // squad roster, which is other people's data, so that is excluded unless
@@ -19596,9 +19836,9 @@ window.G = window.G || {};
       payload.stores.kv = kv;
       payload.excludedPrivateEntries = excluded;
       payload.includesOtherPeoplesData = !!opts.includePrivate;
-    } catch (e) { payload.stores.kv = []; failedStores.push("kv"); }
-    try { payload.stores.userScenarios = await G.db.all("userScenarios"); } catch (e) { payload.stores.userScenarios = []; failedStores.push("userScenarios"); }
-    try { payload.stores.attempts = await G.db.all("attempts"); } catch (e) { payload.stores.attempts = []; failedStores.push("attempts"); }
+    } catch (e) { payload.stores.kv = []; failedStores.push("kv"); logExportFail("kv", e); }
+    try { payload.stores.userScenarios = await G.db.all("userScenarios"); } catch (e) { payload.stores.userScenarios = []; failedStores.push("userScenarios"); logExportFail("userScenarios", e); }
+    try { payload.stores.attempts = await G.db.all("attempts"); } catch (e) { payload.stores.attempts = []; failedStores.push("attempts"); logExportFail("attempts", e); }
     // counts for a friendly summary
     payload.summary = {
       kv: (payload.stores.kv || []).length,
@@ -22514,13 +22754,12 @@ window.G = window.G || {};
     // IIFE that this render() (now itself async) no longer needs.
     let profile = null;
     try { profile = G.profile && G.profile.current ? await G.profile.current() : null; } catch (e) {}
-    // A code carried over from Global Search (G.career._searchSeed, set by
-    // views.search's goTo() using the same one-shot pattern
-    // G.resources._searchSeed already uses) takes precedence over the
-    // profile's own saved MOS, so searching for a DIFFERENT MOS than the
-    // Soldier's own doesn't get silently overridden by the auto-prefill.
-    const searchSeed = G.career && G.career._searchSeed;
-    if (G.career) G.career._searchSeed = null;
+    // A code carried over from Global Search (views.search's goTo() calls
+    // G.nav.seed("career", m.code) - see G.nav's own header comment in
+    // util.js) takes precedence over the profile's own saved MOS, so
+    // searching for a DIFFERENT MOS than the Soldier's own doesn't get
+    // silently overridden by the auto-prefill.
+    const searchSeed = G.nav && G.nav.consume("career");
     if (searchSeed) {
       input.value = searchSeed.toUpperCase();
       drawResult(searchSeed);
@@ -22756,11 +22995,13 @@ window.G = window.G || {};
 
       let deb;
       search.addEventListener("input", () => { clearTimeout(deb); deb = setTimeout(draw, 120); });
-      // Consume a cross-link seed (e.g. from a global search hit): pre-fill the
-      // search with the matched resource name so the Soldier lands on it directly.
-      if (G.resources._searchSeed) {
-        search.value = G.resources._searchSeed;
-        G.resources._searchSeed = null;
+      // Consume a cross-link seed (e.g. from a global search hit, via
+      // G.nav.seed("resources", ...) - see G.nav's own header comment in
+      // util.js): pre-fill the search with the matched resource name so the
+      // Soldier lands on it directly.
+      const resSeed = G.nav && G.nav.consume("resources");
+      if (resSeed) {
+        search.value = resSeed;
         try { if (G.util.announce) G.util.announce("Showing results for " + search.value); } catch (e) {}
       }
       draw();
@@ -22986,8 +23227,11 @@ window.G = window.G || {};
       if (rec && rec.scenario) {
         const s = rec.scenario;
         hero.appendChild(el("div.card.click", { style: "margin-top:10px", role: "button", tabindex: "0",
-          onclick: () => { views._pending = s.id; location.hash = "#/train"; },
-          onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { views._pending = s.id; location.hash = "#/train"; } } }, [
+          // Seeds Train's "train" slot via G.nav (same registry views.search's
+          // scenario hits use below) so Train opens straight into this
+          // scenario instead of its plain list.
+          onclick: () => { G.nav.seed("train", s.id); location.hash = "#/train"; },
+          onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { G.nav.seed("train", s.id); location.hash = "#/train"; } } }, [
           el("div.eyebrow", { text: (rec.isReplay ? "Sharpen up" : "Recommended next") }),
           el("h3", { text: s.title }),
           el("p.hint", { text: rec.reason + " " + (s.summary || "") }),
@@ -23330,8 +23574,12 @@ window.G = window.G || {};
       compChipBar.appendChild(chip);
     });
 
-    // Difficulty chip filter
-    const DIFF_CHIPS = ["Basic","Intermediate","Advanced"];
+    // Difficulty chip filter - tiers (and their order) come from
+    // store.SCENARIO_DIFFICULTY_TIERS, the same shared source
+    // store.normDifficulty()/the Authoring Studio dropdown read, instead of
+    // a hand-typed duplicate that can silently drift out of sync again (see
+    // store.SCENARIO_DIFF_MAP's comment for the concrete bug that caused).
+    const DIFF_CHIPS = store.SCENARIO_DIFFICULTY_TIERS;
     const DIFF_CHIP_COLORS = { Basic:"var(--ink-green)", Intermediate:"var(--ink-amber)", Advanced:"var(--ink-red)" };
     let activeDiff = null; // null = all
     const diffChipBar = el("div.search-filters", { style:"margin-bottom:10px", "aria-label":"Filter by difficulty" });
@@ -23406,8 +23654,13 @@ window.G = window.G || {};
       const compFiltered0 = activeComp
         ? modeFiltered.filter((s) => (s.competency || []).includes(activeComp))
         : modeFiltered;
+      // Matches through store.normDifficulty() rather than a literal
+      // s.difficulty === activeDiff compare, so scenarios tagged "NCO",
+      // "Board Prep", or "Core" (which have no chip of their own) still
+      // classify into whichever tier chip they belong to instead of being
+      // unreachable by every difficulty chip.
       const compFiltered = activeDiff
-        ? compFiltered0.filter((s) => s.difficulty === activeDiff)
+        ? compFiltered0.filter((s) => store.normDifficulty(s.difficulty) === activeDiff)
         : compFiltered0;
       const filtered = q ? compFiltered.filter((s) =>
         (s.title || "").toLowerCase().includes(q) ||
@@ -23450,7 +23703,12 @@ window.G = window.G || {};
         const primaryComp = (sc.competency || [])[0] || "";
         const compColor = COMP_COLORS[primaryComp] || "var(--text-dim)";
         const DIFF_COLOR = { Basic:"var(--ink-green)", Intermediate:"var(--ink-amber)", Advanced:"var(--ink-red)" };
-        const diffColor = DIFF_COLOR[sc.difficulty] || "var(--text-dim)";
+        // Keyed by canonical tier (store.normDifficulty()), not the raw
+        // sc.difficulty label - otherwise "NCO"/"Board Prep"/"Core"
+        // scenarios (no key of their own here) always fell back to the
+        // same dim gray badge instead of their real Basic/Intermediate/
+        // Advanced tier color.
+        const diffColor = DIFF_COLOR[store.normDifficulty(sc.difficulty)] || "var(--text-dim)";
         const MODE_ICON = { text:"📄", scored:"⭐", cyoa:"🌿", course:"📚", training:"🎯" };
         const card = el("div.card.click" + (isTraining ? ".tr-card-list" : ""), {
           role: "button", tabindex: "0",
@@ -23550,10 +23808,22 @@ window.G = window.G || {};
     mount.appendChild(listWrap);
     mount.appendChild(player);
 
-    // honor a recommendation launch from Home
-    if (views._pending) {
-      const id = views._pending; views._pending = null;
-      if (store.scenario(id)) launch(id);
+    // Honor a recommendation launch from Home's "Recommended next" card or a
+    // scenario hit from Global Search - both seed the shared G.nav registry's
+    // "train" slot (G.nav.seed("train", id); see G.nav's own header comment
+    // in util.js) rather than the old, separately-named views._pending
+    // global. This is a DIFFERENT consumption path than the G.engine._pending
+    // check at the top of this function: that one fires before the grid
+    // below is even built and jumps straight into G.engine.run() with an
+    // onExit that re-renders this whole view; this one runs after the grid
+    // already exists and reuses the local launch()/showList() pair instead,
+    // toggling the pre-built list and player panels rather than rebuilding
+    // either. Left as two paths (not folded into one) because they were
+    // already two different call shapes before G.nav existed - see G.nav's
+    // own header comment for why G.engine._pending stays as-is.
+    const trainSeed = G.nav.consume("train");
+    if (trainSeed) {
+      if (store.scenario(trainSeed)) launch(trainSeed);
     }
   };
 
@@ -24625,8 +24895,8 @@ window.G = window.G || {};
       // returned nothing, despite a 164-entry MOS database existing two
       // taps away at #/career - this was the one content type Global
       // Search never indexed at all. mosSeed carries the matched code
-      // through to career.js via the same G.career._searchSeed one-shot
-      // handoff G.resources._searchSeed already established for resources.
+      // through to career.js via the same G.nav.seed("career", ...) handoff
+      // used for resources below (goTo(), further down this function).
       if (activeFilter === "all" || activeFilter === "career") {
         (car.mos || []).forEach((m) => {
           const cmfObj = (car.cmfs || []).find((c) => c.id === m.cmf);
@@ -24698,15 +24968,22 @@ window.G = window.G || {};
           action.textContent = type === "scenario" ? "▶" : "→";
           action.style.color = color;
           card.appendChild(action);
+          // Cross-view handoff via the shared G.nav registry (util.js) - one
+          // seed(target, value) call per hit type, read-and-cleared by that
+          // target view's own render (views.train / views.resources /
+          // views.career). Replaces three independently-named one-shot
+          // globals this same goTo() used to set directly (G.views._pending,
+          // G.resources._searchSeed, G.career._searchSeed) - see G.nav's own
+          // header comment for the full history.
           const goTo = () => {
-            if (type === "scenario" && h.scId && G.views) {
-              G.views._pending = h.scId;
+            if (type === "scenario" && h.scId) {
+              G.nav.seed("train", h.scId);
             }
-            if (type === "resource" && h.resSeed && G.resources) {
-              G.resources._searchSeed = h.resSeed;
+            if (type === "resource" && h.resSeed) {
+              G.nav.seed("resources", h.resSeed);
             }
-            if (type === "career" && h.mosSeed && G.career) {
-              G.career._searchSeed = h.mosSeed;
+            if (type === "career" && h.mosSeed) {
+              G.nav.seed("career", h.mosSeed);
             }
             location.hash = h.route;
           };

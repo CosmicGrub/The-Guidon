@@ -12,6 +12,7 @@
 import { chromium } from "playwright";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { ICON_TARGETS } from "./icon-spec.mjs";
 
 const BG = "#0a0e12";
 const AMBER = "#ffb020";
@@ -46,14 +47,10 @@ const svg = {
     <rect width="512" height="512" fill="${BG}"/>${art(0.80)}</svg>`,
 };
 
-const TARGETS = [
-  { file: "icon-192.png", size: 192, kind: "any" },
-  { file: "icon-512.png", size: 512, kind: "any" },
-  { file: "icon-maskable-192.png", size: 192, kind: "maskable" },
-  { file: "icon-maskable-512.png", size: 512, kind: "maskable" },
-  { file: "apple-touch-icon.png", size: 180, kind: "apple" },
-  { file: "icon-48.png", size: 48, kind: "any" },
-];
+// The list itself lives in icon-spec.mjs - see that file's header comment
+// for why (it's shared with build.mjs, which needs these same filenames
+// for <link> tags/manifest icons and for sw.js's precache list).
+const TARGETS = ICON_TARGETS;
 
 const browser = await chromium.launch();
 const page = await browser.newPage();
