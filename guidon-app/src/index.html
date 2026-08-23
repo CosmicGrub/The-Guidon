@@ -7184,6 +7184,21 @@ window.G = window.G || {};
   // ---------------- Flashcard drill (SRS) — Quizlet-style flip cards ----------------
   async function renderDrill(mount) {
     util.clear(mount);
+    // PC/desktop intuitivism pass: the flip-hint copy below used to say
+    // "Tap" unconditionally, which was correct for GUIDON's primary touch
+    // devices (Tab S9 FE, Z Fold5) but wrong for the PC-parity pass's own
+    // desktop/mouse users - a blanket swap to "Click" would have just
+    // regressed the touch wording instead. Matches the exact condition the
+    // CSS itself already uses for the desktop-only card hover-lift (see
+    // .qz-card:not(.flipped):hover, near .qz-face) - "true" mouse/trackpad
+    // input, not just any device wide enough to run the check. Re-evaluated
+    // per render rather than cached, since a 2-in-1 or an external mouse
+    // plugged into a tablet can change which one is accurate mid-session.
+    const clickVerb = () => {
+      try { return window.matchMedia("(hover: hover) and (pointer: fine)").matches ? "Click" : "Tap"; }
+      catch (e) { return "Tap"; }
+    };
+    const clickVerbLower = () => clickVerb().toLowerCase();
     const all = store.boardQuestions();
     const categories = ["All", ...Array.from(new Set(all.map((q) => q.category)))];
 
@@ -7413,7 +7428,7 @@ window.G = window.G || {};
       queue = ordered.map((x) => x.q);
       idx = 0; seen = 0; recalled = 0; flipped = false;
       if (!dueOnlyMode && dueCount > 0 && idx === 0 && seen === 0) {
-        dueChip.replaceChildren(G.util.icon("clock", 13), document.createTextNode(" " + dueCount + " due — tap to drill these first"));
+        dueChip.replaceChildren(G.util.icon("clock", 13), document.createTextNode(" " + dueCount + " due — select to drill these first"));
       }
       refreshCatList();
       refreshReadinessPane();
@@ -7562,7 +7577,7 @@ window.G = window.G || {};
       }
       if (G.board.isLeech(s)) front.appendChild(el("div.leech-badge", { gi: "alert-triangle", giSize: 12, text: "LEECH — missed " + s.misses + "× " }));
       front.appendChild(el("div.qz-prompt", { text: q.q }));
-      front.appendChild(el("div.qz-flip-hint", { "aria-hidden": "true" }, [G.util.icon("rotate-ccw", 13, "⤾"), document.createTextNode(" Tap card, or press Space, to flip")]));
+      front.appendChild(el("div.qz-flip-hint", { "aria-hidden": "true" }, [G.util.icon("rotate-ccw", 13, "⤾"), document.createTextNode(" " + clickVerb() + " card, or press Space, to flip")]));
 
       const back = buildBackContent(q);
 
@@ -7612,7 +7627,7 @@ window.G = window.G || {};
         flipped = !flipped;
         card.classList.toggle("flipped", flipped);
         card.classList.remove("qz-pen-hover"); // hover feedback ends once committed
-        card.setAttribute("aria-label", flipped ? "Flashcard — showing answer, tap to flip back" : "Flashcard — tap to flip");
+        card.setAttribute("aria-label", flipped ? "Flashcard — showing answer, " + clickVerbLower() + " to flip back" : "Flashcard — " + clickVerbLower() + " to flip");
         if (flipped) back.removeAttribute("inert"); else back.setAttribute("inert", "");
         try { if (flipped && G.util.announce) G.util.announce("Answer revealed."); } catch (e2) {}
       }
@@ -8093,8 +8108,12 @@ window.G = window.G || {};
     let boardHintSeen = false;
     try { boardHintSeen = localStorage.getItem(BOARD_HINT_KEY) === "1"; } catch (e) {}
     mount.appendChild(el("p.hint", { text: boardHintSeen
-      ? "Tap a card to flip it, then grade yourself 1-4."
-      : "Tap a card (or press Space) to flip it. Grade yourself 1-4 — Needs Help, Somewhat, Know It, or Down Cold — and spaced repetition schedules your next review accordingly. Filter by study level: Beginner, Intermediate, or Expert (by-the-book verbatim). Star a card to add it to your personal bookmark deck." }));
+      // PC/desktop intuitivism pass: this used to drop the keyboard mention
+      // entirely on repeat visits (kept only in the longer first-run copy
+      // below) - restored, briefly, since it's the one line a returning
+      // desktop keyboard user actually sees every time.
+      ? clickVerb() + " a card (or press Space) to flip it, then grade yourself 1-4."
+      : clickVerb() + " a card (or press Space) to flip it. Grade yourself 1-4 — Needs Help, Somewhat, Know It, or Down Cold — and spaced repetition schedules your next review accordingly. Filter by study level: Beginner, Intermediate, or Expert (by-the-book verbatim). Star a card to add it to your personal bookmark deck." }));
     if (!boardHintSeen) { try { localStorage.setItem(BOARD_HINT_KEY, "1"); } catch (e) {} }
     const drillDetail = el("div");
     drillDetail.appendChild(el("div.mini-row", {}, [el("label", { text: "Category", style: "margin:0" }), catSel, el("label", { text: "Level", style: "margin:0" }), diffSel, dueChip, leechChip, starChip, shuffleBtn]));
@@ -9775,12 +9794,18 @@ window.G = window.G || {};
     render(mount) {
       util.clear(mount);
       const seg = el("div.segmented");
-      const drillBtn = el("button.active", { text: "Board Drill" });
-      const quizBtn = el("button", { text: "Quiz" });
-      const mockBtn = el("button", { text: "Mock Board" });
-      const ptsBtn = el("button", { text: "Points" });
-      const readBtn = el("button", { text: "Readiness" });
-      const defBtn = el("button", { text: "Definitions" });
+      // PC/desktop intuitivism pass: none of these six carried a title -
+      // desktop hover-preview before committing to a click, same reasoning
+      // navButton() already documents for the top-level sidebar one click
+      // earlier (search "title gives desktop hover" in this file). Short
+      // phrases, not the full DEMO_NOTES paragraph - a one-line preview,
+      // not a repeat of what the tab's own content already explains.
+      const drillBtn = el("button.active", { text: "Board Drill", title: "Flashcards with spaced repetition and four-level mastery grading" });
+      const quizBtn = el("button", { text: "Quiz", title: "Quick recognition-memory practice, no grading or SRS scheduling" });
+      const mockBtn = el("button", { text: "Mock Board", title: "Timed, live-board-style simulation" });
+      const ptsBtn = el("button", { text: "Points", title: "Rank-aware promotion-points worksheet calculator" });
+      const readBtn = el("button", { text: "Readiness", title: "Per-category mastery breakdown across the full deck" });
+      const defBtn = el("button", { text: "Definitions", title: "Board-relevant terms and their doctrinal meaning" });
       seg.appendChild(drillBtn); seg.appendChild(quizBtn); seg.appendChild(mockBtn); seg.appendChild(ptsBtn); seg.appendChild(readBtn); seg.appendChild(defBtn);
       const body = el("div", { style: "margin-top:14px" });
       // renderDrill/renderQuiz/renderReadiness are async; this dispatcher was
@@ -14452,14 +14477,19 @@ window.G = window.G || {};
   // the time anything needs it).
   const DEMO_NOTES = {
     "#/home":      { d:"Home dashboard — readiness snapshot, board countdown, mandatory-training tracker and your action plan in one view.",
-                     w:"Watch the board-date banner: tap it to switch between a live countdown and a plain date." },
+                     // PC/desktop intuitivism pass: this used to say "tap it"
+                     // about the banner itself, which has no click handler at
+                     // all - the real control is the "Show countdown/Show date
+                     // only" button inside it (see boardDateDisplay's modeBtn).
+                     // Wrong on every device, not just desktop.
+                     w:"Watch the board-date banner: use its 'Show countdown/date only' button to switch views." },
     "#/train":     { d:"Leadership scenarios in Text, Course or Adventure mode. Every decision maps to an ADP 6-22 competency.",
                      // Intuitivism pass Tier 1(g): the competency/difficulty chips
                      // moved behind a "Filters" toggle (no longer visible by
                      // default) - was "the chips above the list drive the whole
                      // catalogue," which pointed a live Guided Tour/Demo Center
                      // presenter at chips that are not on screen.
-                     w:"Tap Filters to reveal the competency and difficulty chips — together they drive the whole catalogue." },
+                     w:"Open Filters to reveal the competency and difficulty chips — together they drive the whole catalogue." },
     "#/board":     { d:"1,014 deduplicated board cards with 3D flip, spaced repetition and four-level mastery grading.",
                      w:"Two things to show here: the Level filter (beginner/intermediate/expert) and the Points tab — a rank-aware PPW calculator." },
     "#/blc":       { d:"BLC preparation built from the actual Individual Student Assessment Plan — the document that defines how BLC is graded.",
@@ -14497,7 +14527,7 @@ window.G = window.G || {};
     "#/money":     { d:"Financial readiness — BRS, TSP, SGLI, allowances and board-relevant money topics.",
                      w:"Every calculator input is labelled for screen readers." },
     "#/health":    { d:"H2F wellness across six domains, plus crisis resources.",
-                     w:"Crisis resources are reachable in one tap from anywhere in this section." },
+                     w:"Crisis resources are reachable in one click from anywhere in this section." },
     "#/transition":{ d:"ETS timeline with VA BDD milestones and the SFL-TAP checklist.",
                      w:"Milestones shift with the ETS date on your profile." },
     "#/resources": { d:"Curated directory of career, education and life resources.",
@@ -14508,7 +14538,7 @@ window.G = window.G || {};
     // those panels render). The full beginner/intermediate/expert split
     // this used to describe now lives only on #/board's Readiness tab.
     "#/progress":  { d:"Competency map, scenario history, board-readiness score and a Board Drill mastery snapshot.",
-                     w:"The mastery panel is a one-stat teaser now — tap 'Open Board → Readiness' for the full beginner/intermediate/expert breakdown." },
+                     w:"The mastery panel is a one-stat teaser now — select 'Open Board → Readiness' for the full beginner/intermediate/expert breakdown." },
     "#/author":    { d:"Build your own scenarios, cards and reference material.",
                      w:"Custom content persists alongside the built-in corpus." },
     "#/settings":  { d:"14 themes, accessibility controls, About panel and account management.",
@@ -15964,7 +15994,7 @@ window.G = window.G || {};
       const freeCard = el("button.panel.ob-mode-card", { type: "button", style: "text-align:left;cursor:pointer" });
       freeCard.appendChild(el("div.eyebrow", { text: "Free Mode" }));
       freeCard.appendChild(el("h3", { gi: "compass", giSize: 14, text: "Explore on your own" }));
-      freeCard.appendChild(el("p.hint", { text: "Drop straight into the app and click around at your own pace. A small Demo Mode badge stays on screen so it's obvious you're in a walk-through, with one tap to exit." }));
+      freeCard.appendChild(el("p.hint", { text: "Drop straight into the app and click around at your own pace. A small Demo Mode badge stays on screen so it's obvious you're in a walk-through, with one click to exit." }));
       freeCard.addEventListener("click", () => { setMode("free"); });
 
       choiceRow.appendChild(guidedCard);
@@ -15980,7 +16010,7 @@ window.G = window.G || {};
     function buildCueSheet() {
       const panel = el("div.panel", { style:"margin-top:10px" });
       panel.appendChild(el("div.eyebrow", { text:"Presenter cheat-sheet \u2014 what to show in each section" }));
-      panel.appendChild(el("p.hint", { text:"All " + DEMO_STEPS.length + " sections, each with the single detail worth pointing at. Tap a row to jump straight there." }));
+      panel.appendChild(el("p.hint", { text:"All " + DEMO_STEPS.length + " sections, each with the single detail worth pointing at. Select a row to jump straight there." }));
       DEMO_STEPS.forEach((s) => {
         const row = el("button", { type:"button",
           style:"width:100%;text-align:left;background:none;border:none;border-top:1px solid var(--line);cursor:pointer;padding:8px 0;color:inherit;font:inherit;min-height:44px;display:flex;flex-direction:column;justify-content:center" });
@@ -18036,7 +18066,7 @@ window.G = window.G || {};
     { id:"sun", name:"Outdoor legibility",
       how:"Take the tablet outside in direct sun. Cycle the light themes (field-manual, parade-rest, desert-cadence, sepia-study, ink-paper). Confirm body text stays readable at full brightness." },
     { id:"print", name:"Print output",
-      how:"From Profile \u2192 Account, tap Print readiness summary. Confirm it renders black-on-white regardless of theme, fits one page, and the signature blocks are intact." },
+      how:"From Profile \u2192 Account, click Print readiness summary. Confirm it renders black-on-white regardless of theme, fits one page, and the signature blocks are intact." },
     { id:"persist", name:"Persistence across a real restart",
       how:"Grade several board cards, set a board date, then force-stop the browser and reopen. Confirm grades, board date and action plan all survived." },
     { id:"demo", name:"Demo Center dry run",
@@ -18514,7 +18544,7 @@ window.G = window.G || {};
       "Pick where it goes right in the share sheet that opens — email it to yourself, save to Drive/cloud storage, or send to another app",
       "Install GUIDON on the other device, then use Import backup and pick the file you saved"
     ] : [
-      "Open Profile → Backup & restore and tap Export backup",
+      "Open Profile → Backup & restore and click Export backup",
       "Move the downloaded .json file to the other device (email it to yourself, a USB drive, cloud storage — whatever you'd normally use)",
       "Install GUIDON on that device, then use Import backup and pick the file"
     ]).forEach((t) => steps.appendChild(el("li", { text:t, style:"margin:3px 0" })));
@@ -20632,7 +20662,7 @@ window.G = window.G || {};
     }
     const introPanel = el("div.panel");
     introPanel.appendChild(el("p.res-intro", {
-      text: "FM 7-22 (Holistic Health and Fitness, 2020) identifies six readiness domains. A leader's job is to optimize all six — in their own life and in their formation. Tap each domain card to expand domain-specific skills."
+      text: "FM 7-22 (Holistic Health and Fitness, 2020) identifies six readiness domains. A leader's job is to optimize all six — in their own life and in their formation. Select each domain card to expand domain-specific skills."
     }));
     host.appendChild(introPanel);
 
@@ -22465,7 +22495,17 @@ window.G = window.G || {};
       diffChipBar.appendChild(chip);
     });
 
-    const filtersWrap = el("div", { style: "display:none" });
+    // PC/desktop intuitivism pass: this was unconditionally collapsed,
+    // identically at 1440px and at 375px - the 11 chips (7 competency + 4
+    // difficulty) fit with real room to spare at the app's own 1360px
+    // canonical desktop tier (measured: 870px of two rows inside a 960px+
+    // .main), and DEMO_NOTES itself calls them load-bearing ("together
+    // they drive the whole catalogue"). Only the INITIAL state is
+    // width-aware - like the rest of this app's toggles, it doesn't
+    // re-evaluate live on resize after that; updateFiltersToggle() (below)
+    // already reads this element's live display value, so changing just
+    // this one line keeps the toggle's label/aria-expanded correct too.
+    const filtersWrap = el("div", { style: window.innerWidth >= 1360 ? "" : "display:none" });
     filtersWrap.appendChild(compChipBar);
     filtersWrap.appendChild(diffChipBar);
     const filtersToggle = el("button.btn.sm.ghost", { type: "button", style: "margin-bottom:10px", "aria-expanded": "false" });
@@ -22473,11 +22513,17 @@ window.G = window.G || {};
       const activeCount = (activeComp ? 1 : 0) + (activeDiff ? 1 : 0);
       const open = filtersWrap.style.display !== "none";
       filtersToggle.textContent = (open ? "Hide filters" : "Filters") + (activeCount ? " (" + activeCount + " active)" : "") + (open ? " ▴" : " ▾");
+      // aria-expanded lives here now, not just the click handler below - the
+      // wrap's initial display can start "open" (desktop-width default,
+      // above) without ever going through a click, and the hardcoded
+      // aria-expanded="false" at this button's own creation would have gone
+      // stale in that case if this were the only place reading the wrap's
+      // real state.
+      filtersToggle.setAttribute("aria-expanded", String(open));
     };
     filtersToggle.addEventListener("click", () => {
       const open = filtersWrap.style.display === "none";
       filtersWrap.style.display = open ? "" : "none";
-      filtersToggle.setAttribute("aria-expanded", String(open));
       updateFiltersToggle();
     });
     updateFiltersToggle();
@@ -23049,7 +23095,7 @@ window.G = window.G || {};
         ]);
       }
       acc.appendChild(toggle("High contrast", "highContrast", "Boosts borders and text on any theme for low-vision or bright-sun use."));
-      acc.appendChild(toggle("Larger tap targets", "largeTargets", "Bumps buttons and nav to ≥48px — easier with gloves or in the field."));
+      acc.appendChild(toggle("Larger buttons & links", "largeTargets", "Bumps buttons and nav to ≥48px — easier with a mouse, trackpad, gloves, or in the field."));
       acc.appendChild(toggle("Underline all links", "underlineLinks", "A non-color cue for color-vision deficiency."));
       acc.appendChild(toggle("Bold focus ring", "boldFocus", "Thicker, high-visibility keyboard focus outline."));
       acc.appendChild(toggle("Dyslexia-friendly spacing", "dyslexiaSpacing", "Adds letter/word spacing and caps reading width. Pairs with the Readable font."));
@@ -23065,7 +23111,7 @@ window.G = window.G || {};
       accSummary.appendChild(el("label", { text: "Accessibility & Focus" }));
       accSummary.appendChild(el("p.hint", { style: "margin-top:8px", text:
         (a11yOnCount ? a11yOnCount + " of 7 accessibility option" + (a11yOnCount === 1 ? "" : "s") + " on" : "All 7 accessibility options are off") +
-        " — high contrast, larger tap targets, underlined links, bold focus ring, dyslexia-friendly spacing, reduced transparency, focus mode." }));
+        " — high contrast, larger buttons & links, underlined links, bold focus ring, dyslexia-friendly spacing, reduced transparency, focus mode." }));
       const accJumpBtn = el("button.btn.sm.ghost", { type: "button", text: "Turn options on/off ▾", style: "margin-top:8px" });
       accJumpBtn.addEventListener("click", () => openSettingsAdvanced("#settings-acc-panel"));
       accSummary.appendChild(accJumpBtn);
@@ -23458,7 +23504,7 @@ window.G = window.G || {};
       location.href = "mailto:ctsolomon95@gmail.com?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
     });
     fbPanel.appendChild(fbBtn);
-    fbPanel.appendChild(el("p.hint", { text: "Opens your device's email app with a draft addressed and pre-filled with your build and device info — nothing is sent until you do. GUIDON has no server to phone home to; this is a plain mailto: link, the same as tapping an email address anywhere else.", style: "margin-top:8px" }));
+    fbPanel.appendChild(el("p.hint", { text: "Opens your email app with a draft addressed and pre-filled with your build and device info — nothing is sent until you do. GUIDON has no server to phone home to; this is a plain mailto: link, the same as clicking an email address anywhere else.", style: "margin-top:8px" }));
     dataGrid.appendChild(fbPanel);
 
     // about
