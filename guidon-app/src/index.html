@@ -2203,13 +2203,47 @@ button:focus:not(:focus-visible),
   }
 }
 
-/* LRM Balance radar chart (Progress page) - viewBox-based SVG, so raising
-   the display cap at wider breakpoints is pure CSS, no coordinate math in
-   the chart itself needs to change. 340px was a fixed cap on every
-   viewport; a Fold5-unfolded/tablet width has plenty of room to show it
-   larger. */
-.lrm-radar-svg { max-width: 340px; }
-@media (min-width: 768px) { .lrm-radar-svg { max-width: 480px; } }
+/* ── Shared chart primitives (G.chart — see js/charts.js) ─────────────────
+   RADAR / HEATMAP-GRID / DENSITY-TIMELINE all inline SVG, no dependency.
+   Colors are pulled from this app's existing themed custom properties
+   (var(--cyan)/var(--amber)/var(--line)/var(--text-dim)/etc, resolved at
+   render time) so every one of the 24 themes "just works" with no chart-
+   specific palette. Transitions below are covered by the app-wide
+   `@media (prefers-reduced-motion: reduce)` / `html.reduce-motion` rule
+   near the top of this stylesheet - no per-component override needed. */
+
+/* RADAR - was .lrm-radar-svg (Progress-only name) before this became a
+   shared primitive; viewBox-based SVG, so raising the display cap at wider
+   breakpoints is pure CSS, no coordinate math in the chart itself needs to
+   change. 340px was a fixed cap on every viewport; a Fold5-unfolded/tablet
+   width has plenty of room to show it larger. */
+.chart-radar-svg { max-width: 340px; }
+@media (min-width: 768px) { .chart-radar-svg { max-width: 480px; } }
+
+/* HEATMAP-GRID - deliberately NOT width:100%/viewBox-scaled like RADAR and
+   DENSITY-TIMELINE above/below: a dense grid (e.g. Board Drill's 93
+   categories) needs literal per-cell pixel geometry so scrolling is
+   predictable, so the <svg> carries explicit width/height attributes
+   instead. .chart-heatmap-wrap is the scroll boundary in BOTH axes - tall
+   grids scroll vertically up to `maxHeight` (caller-configurable, default
+   480px), and a caller with many columns or long row labels on a narrow
+   viewport gets horizontal scroll for free from the same rule. */
+.chart-heatmap-wrap { overflow: auto; border: 1px solid var(--line); border-radius: var(--radius-sm, 6px); }
+.chart-heatmap-cell { transition: fill-opacity .15s ease, stroke .15s ease; }
+.chart-heatmap-cell:hover { fill-opacity: 1 !important; stroke: var(--text-dim); }
+
+/* DENSITY-TIMELINE - reuses the existing .trend-chart COLOR convention
+   (today/most-recent = amber, zero-value = dimmed text-dim — same as both
+   pre-existing .trend-chart call sites above) but NOT its CSS class: this
+   is one viewBox-scaled <svg> (RADAR's own width:100%-with-no-height-
+   attribute trick), not a flex row of per-day <div>s, so it does not want
+   .trend-chart's own `height:72px` ceiling — see the doc comment on
+   G.chart.densityTimeline (js/charts.js) for why that would clip/overflow
+   on a wide desktop panel. */
+.chart-density-wrap { padding: 8px 0; }
+.chart-density-svg { display: block; width: 100%; }
+.chart-density-svg .cdt-bar { transition: opacity .15s ease; }
+.chart-density-svg .cdt-bar:hover { opacity: 1 !important; }
 
 /* ===== 768px — Fold 5 unfolded landscape / tablet layout ===== */
 @media (min-width: 768px) {
@@ -4792,6 +4826,9 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
 .reminder-row.overdue .reminder-when{color:var(--ink-red)}
 .reminder-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rem-h{margin:0 0 4px}
+/* Tier 4: 90-day density strip, above the bucket list (G.chart.densityTimeline) */
+.rem-timeline-mount{margin:10px 0 4px}
+.rem-timeline-mount .eyebrow{margin-bottom:4px}
 .rem-list-mount{display:flex;flex-direction:column;gap:8px;margin:10px 0}
 .rem-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:8px}
 .rem-item.overdue{border-color:var(--red)}
@@ -6641,6 +6678,33 @@ window.G = window.G || {};
         // ATTEMPTS_CAP (1000, see recordAttempt() above) so this filter never
         // scans an unbounded set.
         last7Days: attempts.filter((a) => (now - a.ts) < 8 * 86400000),
+        // Tier 4 roadmap: multi-week activity heatmap (GitHub-contributions
+        // style), replacing nothing - it sits ADDITIVE next to the 7-day
+        // trend chart above, which stays exactly as-is (its own regression
+        // test, test-progress-trend-chart.mjs, asserts on it directly and
+        // must keep passing). A single 7-day window can't show a
+        // build-up-then-lapse pattern - someone who trained hard for three
+        // weeks, went quiet for two, then came back looks identical to
+        // someone training lightly-but-steadily under a 7-day lens, since
+        // that lens only ever sees whichever week happens to be "now".
+        // Same real-calendar-time filter shape as last7Days just above
+        // (not `recent`, not count-capped), widened to a 12-full-calendar-
+        // week window. The render side aligns this to real Sun-Sat weeks
+        // (see renderActivityHeatmap()), which can start up to 6 days
+        // before a naive "84 days ago" cutoff - 91 days (13 weeks) of
+        // buffer here guarantees every attempt the aligned grid could ever
+        // need is present, same "buffer past the exact window" idea as
+        // last7Days' own extra day above. `attempts` is already bounded by
+        // ATTEMPTS_CAP (1000, see recordAttempt() above) so this filter
+        // never scans an unbounded set - though see ATTEMPTS_CAP's own
+        // comment: that's a COUNT cap, not a time cap, so a profile that
+        // sustains well over ~11 attempts/day for the full 12-week window
+        // (1000 attempts / 84 days) could in theory see its oldest days
+        // undercounted as history gets evicted from under it. Not a
+        // realistic rate for this app's actual usage pattern (see
+        // ATTEMPTS_CAP's sizing comment), but a real edge case, not a
+        // hypothetical one, if a Soldier or QA script ever hits it.
+        last12Weeks: attempts.filter((a) => (now - a.ts) < 91 * 86400000),
       };
       state._progressCache = result;
       state._progressCacheTs = Date.now();
@@ -7781,6 +7845,44 @@ window.G = window.G || {};
     if (node.prompt) root.appendChild(el("p", { text: node.prompt }));
     if (node.outcome) root.appendChild(el("div.feedback " + (total >= 4 ? "good" : total >= 0 ? "warn" : "bad"), { text: node.outcome }));
 
+    // Tier 4 roadmap item: a 6-axis competency radar as the AAR's primary
+    // visual, ahead of the flat score-grid it used to lead with. DIMS is
+    // exactly ADP 6-22's Leadership Requirements Model - the three
+    // competencies (Leads/Develops/Achieves) plus the three attributes
+    // (Character/Presence/Intellect), same 6 dims/order the Progress
+    // panel's own LRM radar already uses (see radarChart() in
+    // js/progress.js) - so this is a second real consumer of the exact
+    // same axis vocabulary, not a reinterpretation of it.
+    //
+    // sess.score[d] is a SIGNED point total (each choice.score[k] adds a
+    // delta, typically -3..+3, summed across every node visited this
+    // playthrough) - not a 0-100 percentage like Progress's aggregate
+    // dims[d].pct is. G.chart.radar's axisVal() clamps to [0, max], so a
+    // negative dimension score reads identically to an untouched (0)
+    // one on the radar - a real loss of information the flat grid below
+    // does NOT have (it shows the signed value in red/green/muted). That
+    // flat grid is therefore kept, unchanged, right under the radar
+    // rather than being replaced by it: the radar is the new
+    // at-a-glance shape-of-performance view, the grid is still the
+    // source of exact signed point values.
+    //
+    // AAR_RADAR_AXIS_MAX=10 is a real ceiling, not a guess: walking every
+    // built-in scenario's node graph for the best-scoring path per
+    // dimension puts the 90th percentile single-dimension value at 5 and
+    // the 99th at 9 (median full-session total across all 6 dims is 9,
+    // vs. the engine's own grade cutoff of total>=8 for an "A"). 10
+    // comfortably fits ordinary play without bunching every real result
+    // near the center, while an outlier above it still reads as "maxed
+    // out that dimension" at the rim rather than misrepresenting it.
+    const AAR_RADAR_AXIS_MAX = 10;
+    const radarWrap = el("div", { style: "margin:14px 0" });
+    radarWrap.appendChild(G.chart.radar({
+      axes: DIMS.map((d) => ({ label: d, value: sess.score[d] || 0, max: AAR_RADAR_AXIS_MAX })),
+      ariaLabel: "After-Action Review radar chart across the six ADP 6-22 leadership dimensions for this scenario",
+    }));
+    root.appendChild(radarWrap);
+
+    root.appendChild(el("div.hint", { style: "text-align:center;margin-bottom:4px", text: "Exact point values" }));
     const grid = el("div.score-grid");
     DIMS.forEach((d) => {
       const v = sess.score[d] || 0;
@@ -10496,20 +10598,49 @@ window.G = window.G || {};
     }
 
     // ── All categories ─────────────────────────────────────────
-    const allCatPanel = el("div.panel", { style: "margin-top:12px" });
-    allCatPanel.appendChild(el("div.eyebrow", { text: "All Categories" }));
-    catScores.forEach((c) => {
-      if (!c.total) return;
-      const row = el("div", { style: "margin-bottom:8px" });
-      const color = c.pct >= 85 ? "var(--green)" : c.pct >= 50 ? "var(--cyan)" : c.pct > 0 ? "var(--amber)" : "var(--text-mute)";
-      row.appendChild(el("div.stat", {}, [
-        el("span.k", { text: c.cat }),
-        el("span.v", { style: "color:" + color, text: c.pct + "%" + (c.seen === 0 ? "  (unstarted)" : "") }),
-      ]));
-      row.appendChild(el("div.bar" + (c.pct >= 85 ? ".green" : ""), {}, [el("span", { style: "width:" + c.pct + "%" })]));
-      allCatPanel.appendChild(row);
-    });
-    mount.appendChild(allCatPanel);
+    // Tier 4 roadmap: this used to be a single-column scrolling bar-list,
+    // one row per category (93 real categories in the deck) with only one
+    // pct value per row. catScores above already carries three numbers per
+    // category (total/seen/mastered) - they decompose cleanly into New /
+    // Learning / Mastered card counts, the SAME three-state classification
+    // the flashcard's own front-of-card mastery badge already uses (see
+    // masteryState in the drill card renderer above: reps===0 -> "new",
+    // isMasteredSrs -> "mastered", else "learning") - a genuine, already-
+    // established second axis, not a single flat column forced into a
+    // grid shape. Rendered with the shared G.chart.heatmapGrid primitive
+    // (js/charts.js); cellH tuned tighter than its 22px default so more of
+    // the 93 rows are visible per scroll page, and maxHeight's built-in
+    // vertical-scroll cap handles the rest. This is a full replacement,
+    // not an addition alongside the old list - the roadmap explicitly
+    // frames the bar-list itself as the problem ("render as one scrolling
+    // bar-list"). The old full list had no click/drill interaction on its
+    // rows to preserve (unlike the "Needs Work" weakest-3 panel above,
+    // which keeps its own "Drill <category>" buttons unchanged).
+    const heatCats = catScores.filter((c) => c.total > 0);
+    if (heatCats.length) {
+      const heatPanel = el("div.panel", { style: "margin-top:12px" });
+      heatPanel.appendChild(el("div.eyebrow", { text: "All Categories" }));
+      heatPanel.appendChild(el("p.hint", { text: heatCats.length + " categories — card counts by study state (New / Learning / Mastered). Hover or tap a cell for detail." }));
+      const heatCols = ["New", "Learning", "Mastered"];
+      const heatRows = heatCats.map((c) => c.cat);
+      const heatValues = heatCats.map((c) => [c.total - c.seen, c.seen - c.mastered, c.mastered]);
+      const heatNode = G.chart.heatmapGrid({
+        rows: heatRows,
+        cols: heatCols,
+        values: heatValues,
+        min: 0,
+        cellH: 14,
+        ariaLabel: "Category mastery heatmap: " + heatCats.length + " categories by New, Learning, and Mastered card counts",
+        valueFormat: (v, row, col) => {
+          const c = heatCats.find((x) => x.cat === row);
+          const n = v || 0;
+          const pct = c && c.total ? Math.round(n / c.total * 100) : 0;
+          return row + " — " + col + ": " + n + " card" + (n === 1 ? "" : "s") + (c ? " (" + pct + "% of " + c.total + ")" : "");
+        },
+      });
+      heatPanel.appendChild(heatNode);
+      mount.appendChild(heatPanel);
+    }
 
     // Intuitivism pass: reverse of the "Open Board -> Readiness" cross-link
     // Progress's own Board Drill Mastery/Board Q Readiness panels use to
@@ -11086,6 +11217,309 @@ window.G = window.G || {};
   }
 })();
 
+/* ==== js/charts.js ==== */
+/* GUIDON — charts.js : shared inline-SVG chart primitives (global G.chart)
+ *
+ * Tier 4 roadmap item: six engines (AAR, Train, Board Drill, Progress,
+ * Reminders, Diagnostics) independently wanted the same small chart
+ * vocabulary — a radar, a shaded density/coverage grid, and a horizontal
+ * timeline/trend strip. This module is that shared vocabulary, built by
+ * generalizing progress.js's own radarChart() (see below — same geometry,
+ * same "N axes around a circle" math, just no longer hardcoded to the LRM's
+ * exact 6 dimensions) rather than starting from a blank page, plus two new
+ * siblings shaped the same way: one factory function per chart, each
+ * returning a ready-to-append DOM node.
+ *
+ * Mount pattern (matches every other chart-like element already in this
+ * file, e.g. the old radarChart()/renderTrainingPanel()): every G.chart.*
+ * function is a pure factory — it takes a plain config object and RETURNS a
+ * detached DOM node; it never takes a container argument and never mounts
+ * itself. Callers do `mount.appendChild(G.chart.radar({...}))`. Colors are
+ * resolved from this app's real themed CSS custom properties (var(--cyan),
+ * var(--line), etc.) at the moment the browser paints the returned node —
+ * so the node must actually be inserted under the real <html> theme root
+ * (i.e. after document.body exists) for colors to resolve correctly; the
+ * factories never hardcode a hex value for anything data-driven.
+ *
+ * No new dependency — plain string-built inline SVG assigned via
+ * innerHTML, exactly how the pre-existing radarChart() already worked.
+ */
+window.G = window.G || {};
+(function () {
+  "use strict";
+  const util = G.util, el = util.el;
+
+  // Clamp a number into [lo, hi], tolerating non-numeric/undefined input by
+  // treating it as 0 — every one of the three primitives below is fed real
+  // app data (scores, counts, mastery percentages) that is occasionally
+  // missing/undefined for a brand-new profile, and a chart should degrade
+  // to "flat at zero" rather than throw NaN into an SVG coordinate.
+  function clamp(v, lo, hi) {
+    v = Number(v); if (!isFinite(v)) v = 0;
+    return Math.max(lo, Math.min(hi, v));
+  }
+
+  // ── RADAR ── N-axis radar/spider chart ──────────────────────────────────
+  // Generalizes progress.js's original 6-axis-only radarChart(): the axis
+  // count and label set are now whatever the caller passes (N >= 3 for a
+  // legible polygon), each axis has its own optional `max` (defaults to
+  // 100, i.e. a percentage — the LRM's own dimensions all work this way),
+  // and the two colors that make up the data shape (accentColor for the
+  // stroke/vertex dots, fillColor for the translucent polygon fill) are
+  // configurable but default to the EXACT values the original Progress
+  // radar always used, so migrating Progress's call site onto this
+  // function is a no-visual-change swap. The grid rings/spokes now resolve
+  // var(--line) — the original used var(--grid-line,...), a custom
+  // property this codebase never actually defined anywhere, so the "grid"
+  // silently rendered as a barely-visible always-white 10%-opacity overlay
+  // in every theme, dark or light. var(--line) is a real per-theme token
+  // (borders/dividers app-wide) already used for exactly this kind of
+  // structural chrome, so this is a deliberate, in-scope fix, not a
+  // preserved bug — grid rings are meant to be theme-aware and previously
+  // weren't.
+  //
+  //   G.chart.radar({
+  //     axes: [ { label: "Leads", value: 62 },           // max defaults 100
+  //             { label: "Presence", value: 40, max: 50 } ],  // per-axis max
+  //     size: 260,            // optional, px "logical" size (default 260)
+  //     ariaLabel: "…",       // optional; auto-generated from axis labels
+  //     showValues: true,     // optional; appends " (NN%)" to each axis label
+  //     accentColor: "var(--cyan)",              // optional
+  //     fillColor: "rgba(0,212,255,0.16)",       // optional
+  //     className: "",        // optional extra class(es) on the <svg>
+  //   }) -> HTMLDivElement (append it — it's already the full chart)
+  function radar(cfg) {
+    cfg = cfg || {};
+    const axes = Array.isArray(cfg.axes) ? cfg.axes : [];
+    const N = Math.max(axes.length, 1);
+    const size = cfg.size > 0 ? cfg.size : 260;
+    const cx = size / 2, cy = size / 2, maxR = size * (92 / 260);
+    const LABEL_R = maxR + 14, VB_PAD_X = 60;
+    const showValues = cfg.showValues !== false;
+    const accentColor = cfg.accentColor || "var(--cyan)";
+    const fillColor = cfg.fillColor || "rgba(0,212,255,0.16)";
+    const angleFor = (i) => (Math.PI * 2 * i / N) - Math.PI / 2;
+    const pointFor = (i, r) => { const a = angleFor(i); return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; };
+    const axisMax = (axis) => (axis && axis.max > 0) ? axis.max : 100;
+    const axisVal = (axis) => clamp(axis && axis.value, 0, axisMax(axis));
+
+    const rings = [0.25, 0.5, 0.75, 1.0].map((frac) => {
+      const pts = axes.map((_, i) => pointFor(i, maxR * frac).join(",")).join(" ");
+      return '<polygon points="' + pts + '" fill="none" stroke="var(--line,rgba(255,255,255,0.10))" stroke-width="1"/>';
+    }).join("");
+    const spokes = axes.map((_, i) => {
+      const [x, y] = pointFor(i, maxR);
+      return '<line x1="' + cx + '" y1="' + cy + '" x2="' + x + '" y2="' + y + '" stroke="var(--line,rgba(255,255,255,0.10))" stroke-width="1"/>';
+    }).join("");
+    const dataPts = axes.map((axis, i) => pointFor(i, maxR * axisVal(axis) / axisMax(axis)));
+    const dataPoly = dataPts.map((p) => p.join(",")).join(" ");
+    const labels = axes.map((axis, i) => {
+      const [lx, ly] = pointFor(i, LABEL_R);
+      const anchor = Math.abs(Math.cos(angleFor(i))) < 0.3 ? "middle" : (Math.cos(angleFor(i)) > 0 ? "start" : "end");
+      const pct = Math.round(axisVal(axis) / axisMax(axis) * 100);
+      const suffix = showValues ? " (" + pct + "%)" : "";
+      return '<text x="' + lx + '" y="' + ly + '" text-anchor="' + anchor + '" font-size="11" fill="var(--text-dim)" font-family="inherit">' +
+        util.esc((axis && axis.label) || "") + suffix + '</text>';
+    }).join("");
+    const dots = dataPts.map((p) =>
+      '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="3.5" fill="' + accentColor + '" stroke="var(--bg,#0a0e14)" stroke-width="1.5"/>'
+    ).join("");
+
+    const ariaLabel = cfg.ariaLabel ||
+      ("Radar chart across " + N + " dimensions: " + axes.map((a) => (a && a.label) || "").join(", "));
+    const cls = "chart-radar-svg" + (cfg.className ? " " + cfg.className : "");
+    const svg = '<svg viewBox="' + (-VB_PAD_X) + ' 0 ' + (size + VB_PAD_X * 2) + ' ' + (size + 18) +
+      '" width="100%" class="' + cls + '" style="display:block;margin:0 auto" role="img" aria-label="' + util.esc(ariaLabel) + '">' +
+      rings + spokes +
+      '<polygon points="' + dataPoly + '" fill="' + fillColor + '" stroke="' + accentColor + '" stroke-width="2"/>' +
+      dots + labels +
+      '</svg>';
+    const wrap = el("div", { style: "display:flex;justify-content:center;padding:8px 0" });
+    wrap.innerHTML = svg;
+    return wrap;
+  }
+
+  // ── HEATMAP-GRID ── arbitrary R×C grid, each cell colored by intensity ──
+  // Built for dense real-world shapes like Board Drill's 93 categories ×
+  // a handful of SRS buckets — deliberately NOT viewBox-scaled like RADAR
+  // above (see the .chart-heatmap-wrap CSS comment): the <svg> is sized in
+  // real pixels (rowLabelW + C*cellW  by  colHeaderH + R*cellH) and the
+  // wrapping <div class="chart-heatmap-wrap"> is the overflow:auto scroll
+  // boundary in both axes. A caller with many rows gets vertical scroll
+  // bounded by `maxHeight` (default 480px); a caller with many columns or
+  // long row labels on a narrow viewport gets horizontal scroll from the
+  // same rule, automatically — no separate handling needed on either axis.
+  // Row/column labels are baked into row 0 / column 0 of the same SVG
+  // (they scroll WITH the grid, not sticky) — simple and legible, though a
+  // future version could make them sticky headers if a consumer needs it.
+  //
+  //   G.chart.heatmapGrid({
+  //     rows: ["Cat A", "Cat B", …],           // R row labels
+  //     cols: ["New", "Learning", …],          // C column labels
+  //     values: [[3,0,1,…], [0,2,0,…], …],     // R×C matrix; null/undefined = "no data" cell
+  //     min: 0, max: undefined,                // optional domain; max defaults to the matrix's own max (or 1)
+  //     ariaLabel: "…",                        // optional; auto-generated
+  //     accentColor: "var(--cyan)",            // optional; intensity ramp color
+  //     emptyColor: "var(--line)",             // optional; null/no-data cell color
+  //     cellW: 26, cellH: 22,                  // optional per-cell px size
+  //     rowLabelW: 132, colHeaderH: 26,         // optional label gutter px size
+  //     maxHeight: 480,                         // optional vertical-scroll cap (px)
+  //     valueFormat: (v, row, col) => "…",      // optional per-cell tooltip text
+  //     className: "",
+  //   }) -> HTMLDivElement (append it — it's already the full scroll-wrapped chart)
+  function heatmapGrid(cfg) {
+    cfg = cfg || {};
+    const rows = Array.isArray(cfg.rows) ? cfg.rows : [];
+    const cols = Array.isArray(cfg.cols) ? cfg.cols : [];
+    const values = Array.isArray(cfg.values) ? cfg.values : [];
+    const R = rows.length, C = cols.length;
+    const cellW = cfg.cellW > 0 ? cfg.cellW : 26;
+    const cellH = cfg.cellH > 0 ? cfg.cellH : 22;
+    const rowLabelW = cfg.rowLabelW > 0 ? cfg.rowLabelW : 132;
+    const colHeaderH = cfg.colHeaderH > 0 ? cfg.colHeaderH : 26;
+    const accentColor = cfg.accentColor || "var(--cyan)";
+    const emptyColor = cfg.emptyColor || "var(--line)";
+    const min = cfg.min != null ? cfg.min : 0;
+    let max = cfg.max;
+    if (max == null) {
+      max = 0;
+      for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
+        const v = values[r] && values[r][c];
+        if (v != null && isFinite(v) && v > max) max = v;
+      }
+      if (max <= min) max = min + 1;
+    }
+    // Not pre-escaped here — the single util.esc() at the <title> assembly
+    // site below covers both this default and any caller-supplied
+    // valueFormat exactly once (matching densityTimeline's own convention).
+    const fmt = typeof cfg.valueFormat === "function" ? cfg.valueFormat :
+      (v, row, col) => row + " × " + col + ": " + (v == null ? "no data" : v);
+
+    const totalW = rowLabelW + C * cellW;
+    const totalH = colHeaderH + R * cellH;
+
+    let svg = "";
+    // Column headers (row 0)
+    for (let c = 0; c < C; c++) {
+      const x = rowLabelW + c * cellW + cellW / 2;
+      svg += '<text x="' + x + '" y="' + (colHeaderH - 8) + '" text-anchor="middle" font-size="10" fill="var(--text-dim)" font-family="inherit">' +
+        util.esc(String(cols[c]).slice(0, 8)) + '</text>';
+    }
+    // Rows: label (column 0) + cells
+    for (let r = 0; r < R; r++) {
+      const y = colHeaderH + r * cellH;
+      svg += '<text x="' + (rowLabelW - 8) + '" y="' + (y + cellH / 2 + 4) + '" text-anchor="end" font-size="10.5" fill="var(--text-dim)" font-family="inherit">' +
+        util.esc(String(rows[r]).slice(0, 20)) + '</text>';
+      for (let c = 0; c < C; c++) {
+        const raw = values[r] && values[r][c];
+        const x = rowLabelW + c * cellW;
+        const hasVal = raw != null && isFinite(raw);
+        const frac = hasVal ? clamp((raw - min) / (max - min), 0, 1) : 0;
+        const fill = hasVal ? accentColor : emptyColor;
+        const opacity = hasVal ? (0.12 + frac * 0.80).toFixed(2) : "0.35";
+        svg += '<rect class="chart-heatmap-cell" x="' + x + '" y="' + y + '" width="' + (cellW - 1.5) + '" height="' + (cellH - 1.5) +
+          '" fill="' + fill + '" fill-opacity="' + opacity + '" stroke="var(--line)" stroke-width="0.5">' +
+          '<title>' + util.esc(fmt(hasVal ? raw : null, rows[r], cols[c])) + '</title></rect>';
+      }
+    }
+
+    const ariaLabel = cfg.ariaLabel ||
+      ("Heatmap grid: " + R + " rows by " + C + " columns, values from " + min + " to " + max);
+    const cls = "chart-heatmap-svg" + (cfg.className ? " " + cfg.className : "");
+    const fullSvg = '<svg width="' + totalW + '" height="' + totalH + '" viewBox="0 0 ' + totalW + ' ' + totalH +
+      '" class="' + cls + '" style="display:block" role="img" aria-label="' + util.esc(ariaLabel) + '">' + svg + '</svg>';
+
+    const wrap = el("div.chart-heatmap-wrap", { style: "max-height:" + (cfg.maxHeight > 0 ? cfg.maxHeight : 480) + "px" });
+    wrap.innerHTML = fullSvg;
+    return wrap;
+  }
+
+  // ── DENSITY-TIMELINE ── horizontal count/density strip over a date range ─
+  // Reuses this app's existing .trend-chart COLOR CONVENTION, not its CSS
+  // class: both pre-existing .trend-chart call sites (Home, Progress) key
+  // the "today"/most-recent bucket to var(--amber) and a zero-value bucket
+  // to a dimmed var(--text-dim), and this primitive's `highlightColor` /
+  // `emptyColor` defaults match that exactly. The literal .trend-chart CSS
+  // class itself is NOT reused for the wrapper, deliberately: that class's
+  // `display:flex;height:72px` rule was tuned for a row of JS-sized <div>
+  // children, and this primitive is one single viewBox-scaled <svg>
+  // (RADAR's own "width:100% with no explicit height attribute" trick) —
+  // its rendered height grows with container width to stay flat/wide, so a
+  // hard 72px ceiling would clip or overflow it on a wide desktop panel.
+  // A 90-day strip (Reminders' real case) needs to shrink to fit the panel
+  // rather than force horizontal scroll, unlike HEATMAP-GRID above.
+  //
+  //   G.chart.densityTimeline({
+  //     days: [ { date: "2026-06-01", value: 2, label: "Jun 1" }, … ],  // ordered ascending
+  //     max: undefined,                  // optional; defaults to the data's own max (or 1)
+  //     ariaLabel: "…",                  // optional; auto-generated
+  //     accentColor: "var(--cyan)",      // optional
+  //     highlightColor: "var(--amber)",  // optional; applied to the LAST bucket when highlightLast
+  //     emptyColor: "var(--text-dim)",   // optional; zero-value buckets
+  //     highlightLast: true,             // optional
+  //     labelEvery: 0,                   // optional; 0 = auto (~8 tick labels across the strip)
+  //     valueFormat: (v, day) => "…",    // optional per-bar tooltip text
+  //     height: 72, className: "",
+  //   }) -> HTMLDivElement (append it — it's already the full chart)
+  function densityTimeline(cfg) {
+    cfg = cfg || {};
+    const days = Array.isArray(cfg.days) ? cfg.days : [];
+    const N = Math.max(days.length, 1);
+    const height = cfg.height > 0 ? cfg.height : 72;
+    const labelH = 16;
+    const W = 600; // logical viewBox width; scales to container via width:100%
+    const accentColor = cfg.accentColor || "var(--cyan)";
+    const highlightColor = cfg.highlightColor || "var(--amber)";
+    const emptyColor = cfg.emptyColor || "var(--text-dim)";
+    const highlightLast = cfg.highlightLast !== false;
+    let max = cfg.max;
+    if (max == null) { max = 0; days.forEach((d) => { const v = Number(d && d.value) || 0; if (v > max) max = v; }); if (max <= 0) max = 1; }
+    const fmt = typeof cfg.valueFormat === "function" ? cfg.valueFormat :
+      (v, d) => v + (v === 1 ? " on " : "s on ") + ((d && (d.label || d.date)) || "");
+    const step = cfg.labelEvery > 0 ? cfg.labelEvery : Math.max(1, Math.ceil(N / 8));
+
+    const colW = W / N;
+    const barGap = colW > 4 ? 1 : 0;
+    let bars = "";
+    let labels = "";
+    days.forEach((d, i) => {
+      const v = clamp(d && d.value, 0, max);
+      const x = i * colW;
+      const barH = v > 0 ? Math.max(2, Math.round((v / max) * height)) : 1.5;
+      const y = height - barH;
+      const isLast = highlightLast && i === N - 1;
+      const fill = v === 0 ? emptyColor : isLast ? highlightColor : accentColor;
+      const opacity = v === 0 ? 0.35 : 1;
+      bars += '<rect class="cdt-bar" x="' + (x + barGap / 2) + '" y="' + y + '" width="' + Math.max(0.5, colW - barGap) +
+        '" height="' + barH + '" fill="' + fill + '" opacity="' + opacity + '" rx="1">' +
+        '<title>' + util.esc(fmt(v, d)) + '</title></rect>';
+      if (i % step === 0 || i === N - 1) {
+        const lx = x + colW / 2;
+        labels += '<text x="' + lx + '" y="' + (height + 12) + '" text-anchor="middle" font-size="8.5" fill="var(--text-dim)" font-family="inherit">' +
+          util.esc((d && (d.label || d.date) || "").slice(0, 6)) + '</text>';
+      }
+    });
+
+    const total = days.reduce((s, d) => s + (Number(d && d.value) || 0), 0);
+    const ariaLabel = cfg.ariaLabel ||
+      (N + "-day density timeline, " + total + " total, peak " + max + " per day");
+    const cls = "chart-density-svg" + (cfg.className ? " " + cfg.className : "");
+    // No explicit height attribute and no preserveAspectRatio override —
+    // same trick RADAR relies on: viewBox + width="100%" alone makes the
+    // browser derive the rendered height from the viewBox aspect ratio
+    // automatically, so it shrinks/grows to fit its container's width
+    // while staying visually flat and wide at any panel size.
+    const svg = '<svg viewBox="0 0 ' + W + ' ' + (height + labelH) + '" width="100%" class="' + cls +
+      '" role="img" aria-label="' + util.esc(ariaLabel) + '">' + bars + labels + '</svg>';
+
+    const wrap = el("div.chart-density-wrap");
+    wrap.innerHTML = svg;
+    return wrap;
+  }
+
+  G.chart = { radar: radar, heatmapGrid: heatmapGrid, densityTimeline: densityTimeline };
+})();
+
 /* ==== js/progress.js ==== */
 /* GUIDON — progress.js : readiness dashboard (global G.progress) */
 window.G = window.G || {};
@@ -11108,64 +11542,114 @@ window.G = window.G || {};
   }
 
   // ── LRM Radar Chart — six-axis SVG spider chart of competency balance ────
+  // Tier 4: this is now a thin wrapper around the shared G.chart.radar()
+  // primitive (js/charts.js, generalized FROM this exact function) instead
+  // of its own bespoke SVG builder, so there is only one radar
+  // implementation in the codebase. dims[axis].pct is already a 0-100
+  // percentage (computed elsewhere in this module's getProgress() call),
+  // so each axis is passed as {value: pct, max: 100} - mathematically
+  // identical to the old `maxR * pct/100` geometry, and the shared
+  // primitive's accentColor/fillColor defaults match what this call site
+  // always used, so the rendered chart is visually unchanged. See
+  // G.chart.radar's own doc comment for the one deliberate behavior change
+  // (grid rings now resolve the real var(--line) token instead of the
+  // never-defined var(--grid-line) the old code referenced).
   function radarChart(dims) {
     const AXES = ["Leads","Develops","Achieves","Character","Presence","Intellect"];
-    const N = AXES.length;
-    const size = 260, cx = size/2, cy = size/2, maxR = 92;
-    // Session-53 deep-UX audit: diagonal axis labels (Develops/Achieves/Presence/
-    // Intellect) clipped against the SVG viewBox — their text-anchor start/end
-    // placement pushed label text past the 0..260 horizontal bounds at every
-    // percentage value. Pulling the label ring in (was maxR+22) and widening the
-    // viewBox horizontally (VB_PAD_X extra room each side) gives every label
-    // full room to render without changing the hexagon/grid geometry itself.
-    const LABEL_R = maxR + 14, VB_PAD_X = 60;
-    const angleFor = (i) => (Math.PI * 2 * i / N) - Math.PI/2;
-    const pointFor = (i, r) => {
-      const a = angleFor(i);
-      return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
-    };
-    // Grid rings at 25/50/75/100%
-    const rings = [0.25, 0.5, 0.75, 1.0].map((frac) => {
-      const pts = AXES.map((_, i) => pointFor(i, maxR * frac).join(",")).join(" ");
-      return '<polygon points="' + pts + '" fill="none" stroke="var(--grid-line,rgba(255,255,255,0.10))" stroke-width="1"/>';
-    }).join("");
-    // Axis spokes
-    const spokes = AXES.map((_, i) => {
-      const [x,y] = pointFor(i, maxR);
-      return '<line x1="'+cx+'" y1="'+cy+'" x2="'+x+'" y2="'+y+'" stroke="var(--grid-line,rgba(255,255,255,0.10))" stroke-width="1"/>';
-    }).join("");
-    // Data polygon
-    const dataPts = AXES.map((axis, i) => {
-      const pct = (dims[axis] && dims[axis].pct) || 0;
-      const r = maxR * Math.max(0, Math.min(100, pct)) / 100;
-      return pointFor(i, r);
+    return G.chart.radar({
+      axes: AXES.map((axis) => ({ label: axis, value: (dims[axis] && dims[axis].pct) || 0, max: 100 })),
+      ariaLabel: "Leadership Requirements Model radar chart showing balance across six dimensions",
     });
-    const dataPoly = dataPts.map((p) => p.join(",")).join(" ");
-    // Axis labels
-    const labels = AXES.map((axis, i) => {
-      const [lx, ly] = pointFor(i, LABEL_R);
-      const anchor = Math.abs(Math.cos(angleFor(i))) < 0.3 ? "middle" : (Math.cos(angleFor(i)) > 0 ? "start" : "end");
-      const pct = (dims[axis] && dims[axis].pct) || 0;
-      return '<text x="'+lx+'" y="'+ly+'" text-anchor="'+anchor+'" font-size="11" fill="var(--text-dim)" font-family="inherit">'+
-        util.esc(axis)+' ('+pct+'%)</text>';
-    }).join("");
-    // Vertex dots
-    const dots = dataPts.map((p) =>
-      '<circle cx="'+p[0]+'" cy="'+p[1]+'" r="3.5" fill="var(--cyan)" stroke="var(--bg,#0a0e14)" stroke-width="1.5"/>'
-    ).join("");
-    // Fold5/tablet fidelity wave 2: max-width lived inline, hard-capping the
-    // chart at 340px on every viewport including a Fold5-unfolded/tablet
-    // width with plenty of room to spare. viewBox-based SVG scales cleanly,
-    // so raising the cap at wider breakpoints (.lrm-radar-svg, see CSS) is a
-    // pure display-size change - no coordinate math above needs to move.
-    const svg = '<svg viewBox="'+(-VB_PAD_X)+' 0 '+(size+VB_PAD_X*2)+' '+(size+18)+'" width="100%" class="lrm-radar-svg" style="display:block;margin:0 auto" role="img" aria-label="Leadership Requirements Model radar chart showing balance across six dimensions">'+
-      rings + spokes +
-      '<polygon points="'+dataPoly+'" fill="rgba(0,212,255,0.16)" stroke="var(--cyan)" stroke-width="2"/>' +
-      dots + labels +
-      '</svg>';
-    const wrap = el("div", { style: "display:flex;justify-content:center;padding:8px 0" });
-    wrap.innerHTML = svg;
-    return wrap;
+  }
+
+  // ── 12-Week Activity Heatmap — GitHub-contributions-style calendar ──────
+  // Tier 4 roadmap: the Weekly Activity Trend Chart (below, in render())
+  // shows a single 7-day bar strip - real and useful for "how is this week
+  // going", but structurally unable to show a build-up-then-lapse pattern
+  // across a longer stretch, since it only ever has one week's worth of
+  // bars on screen. This is ADDITIVE next to that chart, not a replacement
+  // of it (see the last12Weeks comment in getProgress() for why: the trend
+  // chart's own regression test asserts on it directly and must keep
+  // passing) - a thin wrapper around the shared G.chart.heatmapGrid()
+  // primitive (js/charts.js) rather than a bespoke SVG grid, per that
+  // module's own "stay within the shared primitive" intent.
+  //
+  // heatmapGrid's native shape is "R row labels x C column labels", built
+  // for something like Board Drill's categories x SRS-bucket matrix - not
+  // calendar-specific. This adapts it to a real Sun-Sat-aligned calendar:
+  // rows = weekday (7, fixed), columns = week-start date (12, chronological
+  // oldest-to-newest), each cell = that exact day's real attempt count.
+  // Grid alignment intentionally follows real calendar weeks (not just "the
+  // last 84 days") so the weekday rows are genuinely meaningful (row 0 is
+  // ALWAYS Sunday for every column) - the tradeoff is the grid's leftmost
+  // column can start up to 6 days before a naive 84-day lookback, and its
+  // rightmost column extends past "today" through the rest of the current
+  // week; those future cells are marked null ("no data" - heatmapGrid's own
+  // convention, visually distinct from a real zero-attempt day) rather than
+  // 0, so a Soldier looking at this on a Tuesday doesn't see a misleading
+  // "zero" for Wednesday-through-Saturday that simply haven't happened yet.
+  function renderActivityHeatmap(mount, last12Weeks) {
+    const DAY = 86400000, WEEKS = 12;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const currentWeekStart = new Date(today.getTime() - today.getDay() * DAY);
+    const gridStart = new Date(currentWeekStart.getTime() - (WEEKS - 1) * 7 * DAY);
+
+    // Real attempts per calendar day, local-time date key - same
+    // toDateString() convention the trend chart above uses for its own
+    // day-bucketing, so the two never disagree about which day an attempt
+    // with a given timestamp belongs to.
+    const countByDay = new Map();
+    (last12Weeks || []).forEach((a) => {
+      const key = new Date(a.ts).toDateString();
+      countByDay.set(key, (countByDay.get(key) || 0) + 1);
+    });
+
+    const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const weekLabels = [];
+    const values = WEEKDAY_LABELS.map(() => []);
+    const tooltips = WEEKDAY_LABELS.map(() => []);
+    let totalCount = 0, activeDays = 0, pastDays = 0, longestGap = 0, curGap = 0;
+
+    for (let c = 0; c < WEEKS; c++) {
+      const weekStart = new Date(gridStart.getTime() + c * 7 * DAY);
+      weekLabels.push(weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" }));
+      for (let r = 0; r < 7; r++) {
+        const d = new Date(weekStart.getTime() + r * DAY);
+        if (d.getTime() > today.getTime()) {
+          values[r][c] = null;
+          tooltips[r][c] = "Upcoming — " + d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+          continue;
+        }
+        pastDays++;
+        const count = countByDay.get(d.toDateString()) || 0;
+        values[r][c] = count;
+        totalCount += count;
+        if (count > 0) { activeDays++; curGap = 0; } else { curGap++; if (curGap > longestGap) longestGap = curGap; }
+        tooltips[r][c] = count + (count === 1 ? " attempt" : " attempts") + " on " +
+          d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+      }
+    }
+
+    const panel = el("div.panel", { style: "margin-top:12px" });
+    panel.appendChild(el("div.eyebrow", { text: "Activity" }));
+    panel.appendChild(el("h3", { text: totalCount + " session" + (totalCount !== 1 ? "s" : "") +
+      " across the last " + WEEKS + " weeks" }));
+    panel.appendChild(el("p.hint", { text: activeDays + " active day" + (activeDays !== 1 ? "s" : "") +
+      " of " + pastDays + " · longest lapse " + longestGap + " day" + (longestGap !== 1 ? "s" : "") +
+      " — build-up and lapse patterns a 7-day window can't show." }));
+    panel.appendChild(G.chart.heatmapGrid({
+      rows: WEEKDAY_LABELS,
+      cols: weekLabels,
+      values,
+      cellW: 14, cellH: 14, rowLabelW: 34, colHeaderH: 22,
+      ariaLabel: WEEKS + "-week activity heatmap: " + totalCount + " total attempts across " +
+        activeDays + " active days out of " + pastDays,
+      valueFormat: (v, rowLabel, colLabel) => {
+        const r = WEEKDAY_LABELS.indexOf(rowLabel), c = weekLabels.indexOf(colLabel);
+        return (r >= 0 && c >= 0 && tooltips[r][c]) ? tooltips[r][c] : (v == null ? "No data" : v + " attempts");
+      },
+    }));
+    mount.appendChild(panel);
   }
 
   // ── Training completions sub-panel ─────────────────────────────────────
@@ -11675,6 +12159,18 @@ window.G = window.G || {};
           mount.appendChild(trendPanel);
         }
       } catch(e) { /* non-fatal */ }
+
+      // ── 12-Week Activity Heatmap ──────────────────────────────────────────────
+      // Own try/catch, separate from the trend chart's above, so a failure in
+      // either can never take the other down with it. Guarded the same way the
+      // trend chart guards itself (only render with real data in the window) -
+      // a brand-new zero-attempt profile already gets the "No scenario attempts
+      // yet" empty state higher up this page instead of an all-empty grid here.
+      try {
+        if (p.last12Weeks && p.last12Weeks.length) {
+          renderActivityHeatmap(mount, p.last12Weeks);
+        }
+      } catch (e) { /* non-fatal */ }
 
       // competencies
       mount.appendChild(el("div.section-title", {}, [el("h2", { text: "Competencies — what a leader DOES" }), el("div.rule")]));
@@ -19333,6 +19829,64 @@ window.G = window.G || {};
     return entry;
   }
 
+  // ── Run history (roadmap Tier 4: "Persist Diagnostics' per-run results and
+  // render a pass/fail trend timeline, reusing the app's existing
+  // .trend-chart CSS") ────────────────────────────────────────────────────
+  // Before this, NOTHING about a past automated run survived past the
+  // render() pass that produced it: `lastRun` a few hundred lines below is
+  // deliberately in-memory-only (Copy report's own footer text already says
+  // "NOTE: automated checks reflect only the theme and view active when
+  // they ran"), and no kv key anywhere stored a prior run's pass/fail
+  // shape. This is genuinely new storage, not a new render on top of
+  // something already persisted.
+  //
+  // Follows the SAME kv-prefixed, capped, FIFO-trimmed convention this file
+  // already has two precedents for - G.selfheal's own audit log
+  // (guidon:selfheal:v1, CAP=200, get -> push -> slice-from-the-end -> put,
+  // a few hundred lines up) and Mock Board's rolling history
+  // (board:mockHistory:v1, cap 20, same push+slice shape) - rather than a
+  // third, novel storage mechanism. CAP mirrors selfheal's 200 specifically
+  // (not mockHistory's 20): a diagnostics run is user-triggered and cheap
+  // (one row: a timestamp, two counts and a small id->bool map), so 200 of
+  // them is negligible on-disk weight for a lot of trend history, the same
+  // trade-off selfheal already made for its own append-only log.
+  //
+  // Each entry is one full "Run automated checks" pass: pass/fail COUNTS
+  // (what the trend chart plots) plus a per-check id->ok map (what a future
+  // consumer - or a support conversation - could use to see exactly which
+  // check(s) were failing on a given run, not just how many). A later
+  // Fix-button repair (statusbar/kvscan/swfresh/storagePersist, all a few
+  // hundred lines below) does NOT rewrite an already-recorded run's entry -
+  // it is a separate action, already tracked in G.selfheal's own audit
+  // trail; history rows are an immutable record of what a completed
+  // automated pass actually found, matching that same audit-log philosophy
+  // of "append, never edit."
+  const HISTORY_KEY = "guidon:selftest:history:v1";
+  const HISTORY_CAP = 200;
+
+  async function recordRunHistory(pass, fail, checks) {
+    try {
+      const r = await G.db.get("kv", HISTORY_KEY);
+      let list = (r && Array.isArray(r.v)) ? r.v.slice() : [];
+      list.push({ at: new Date().toISOString(), pass: pass, fail: fail, total: pass + fail, checks: checks || {} });
+      if (list.length > HISTORY_CAP) list = list.slice(list.length - HISTORY_CAP);
+      await G.db.put("kv", { k: HISTORY_KEY, v: list });
+    } catch (e) { /* history is a nice-to-have - must never block the run it describes */ }
+  }
+
+  // n omitted -> every retained entry (up to HISTORY_CAP), oldest first -
+  // matches G.selfheal.count()'s own "no argument = everything" contract,
+  // NOT G.selfheal.recent()'s newest-first reversal (the trend chart below
+  // wants ascending chronological order, exactly what densityTimeline's own
+  // `days` contract requires: "ordered ascending").
+  async function runHistory(n) {
+    try {
+      const r = await G.db.get("kv", HISTORY_KEY);
+      const list = (r && Array.isArray(r.v)) ? r.v : [];
+      return n ? list.slice(-n) : list.slice();
+    } catch (e) { return []; }
+  }
+
   // Status bar theming's pass/fail predicate, extracted out of the AUTO
   // entry below so the Fix button (item 5) can re-run the exact same check
   // the automated pass used, rather than a second hand-written copy that
@@ -19685,7 +20239,69 @@ window.G = window.G || {};
     const summary = el("div.stat", { style:"margin-top:8px" }, [ el("span.k", { text:"Not yet run" }), el("span.v", { text:"\u2014" }) ]);
     const results = el("div");
     auto.appendChild(runBtn); auto.appendChild(summary); auto.appendChild(results);
+
+    // ---- run history / pass-fail trend (roadmap Tier 4) ----
+    // Lives inside the SAME "Automated checks" panel, right below the live
+    // results - the trend is a history of exactly what runs above, not a
+    // separate engine. Rendered once immediately below from whatever is
+    // already persisted (so a Soldier sees their trend on simply opening
+    // Diagnostics, not only after clicking Run), then re-rendered after
+    // every completed run once that run's own entry is appended.
+    const historyPanel = el("div", { style:"margin-top:14px;padding-top:12px;border-top:1px solid var(--line)" });
+    historyPanel.appendChild(el("div.eyebrow", { text:"Run history \u00b7 this device" }));
+    const historyMount = el("div");
+    historyPanel.appendChild(historyMount);
+    auto.appendChild(historyPanel);
     mount.appendChild(auto);
+
+    // Shows at most this many of the most-recent persisted runs in the live
+    // chart - distinct from HISTORY_CAP (200, the STORAGE retention limit
+    // above). Mirrors the same "display cap smaller than storage cap"
+    // pattern already used elsewhere in this view (G.selfheal.recent(20) for
+    // its own "Show recent entries" list vs the full uncapped download) -
+    // 200 individual bars would still render (densityTimeline handled a
+    // 90-bar strip fine in its own test), just less legibly than a shorter,
+    // genuinely "recent trend" window.
+    const HISTORY_DISPLAY_MAX = 60;
+    async function renderHistoryChart() {
+      util.clear(historyMount);
+      const all = await runHistory();
+      if (!all.length) {
+        historyMount.appendChild(el("p.hint", { text:
+          "No runs recorded yet on this device \u2014 click \u201cRun automated checks\u201d above to start a history." }));
+        return;
+      }
+      const shown = all.length > HISTORY_DISPLAY_MAX ? all.slice(-HISTORY_DISPLAY_MAX) : all;
+      historyMount.appendChild(el("p.hint", { text:
+        shown.length + " of " + all.length + " run" + (all.length === 1 ? "" : "s") + " on this device shown" +
+        (all.length > shown.length ? " (most recent " + HISTORY_DISPLAY_MAX + ")" : "") +
+        " \u2014 up to " + HISTORY_CAP + " retained. Bar height is the number of FAILING checks that run; the most recent run is always highlighted." }));
+      // value = fail COUNT, not a pass percentage: a fully healthy run
+      // (fail=0) then lands on densityTimeline's own zero-value branch and
+      // renders dimmed/quiet - exactly the ".trend-chart" convention this
+      // item asks to reuse (zero = dimmed var(--text-dim), most-recent =
+      // var(--amber), any other real non-zero value = var(--cyan)) - so a
+      // clean streak of runs reads as visually quiet and a spike of
+      // failures reads as visually loud, the same "quiet unless there's
+      // something to see" shape Home/Progress's own trend strips use for
+      // activity. A pass-RATE (0-100) value was the other option on the
+      // table, but on a run with a couple dozen checks a single failure
+      // barely dents a percentage bar - a fail-count bar makes even one
+      // real failure visible.
+      const days = shown.map((h) => {
+        const d = new Date(h.at);
+        const label = isFinite(d.getTime()) ? (d.getMonth() + 1) + "/" + d.getDate() : "?";
+        return { date: (h.at || "").slice(0, 10), label: label, value: h.fail, pass: h.pass, fail: h.fail, total: h.total, at: h.at };
+      });
+      historyMount.appendChild(G.chart.densityTimeline({
+        days: days,
+        ariaLabel: "Diagnostics pass-fail trend across " + shown.length + " run" + (shown.length === 1 ? "" : "s") +
+          " on this device: bar height is the failing-check count for that run, most recent run highlighted",
+        valueFormat: (v, d) => d.pass + "/" + d.total + " checks passed" + (v ? " \u2014 " + v + " failing" : ", none failing") +
+          " (" + new Date(d.at).toLocaleString() + ")",
+      }));
+    }
+    await renderHistoryChart();
 
     let lastRun = null;
     runBtn.addEventListener("click", async () => {
@@ -19693,11 +20309,17 @@ window.G = window.G || {};
       runBtn.disabled = true; runBtn.textContent = "Running\u2026";
       let pass = 0, fail = 0;
       const lines = [];
+      // Per-check id -> ok map for this run's own history entry (below) -
+      // built alongside `lines`/pass/fail in the SAME loop rather than
+      // re-derived afterward, so it can never drift from what the cards on
+      // screen actually show.
+      const checks = {};
       for (const c of AUTO) {
         let r;
         try { r = await c.run(); }
         catch (e) { r = { ok:false, detail:"Threw: " + (e && e.message ? e.message : String(e)) }; }
         if (r.ok) pass++; else fail++;
+        checks[c.id] = !!r.ok;
         lines.push((r.ok ? "PASS" : "FAIL") + "  " + c.name + " \u2014 " + r.detail);
         const row = el("div.card", { style:"margin:6px 0;border-left:3px solid " + (r.ok ? "var(--green)" : "var(--red)") });
         const catEl = el("div.ob-plan-cat", { text: (r.ok ? "\u2713 " : "\u2715 ") + c.name });
@@ -19959,6 +20581,13 @@ window.G = window.G || {};
       lastRun = { when:new Date().toISOString(), pass:pass, fail:fail, lines:lines,
                   theme: document.documentElement.getAttribute("data-theme"),
                   view: location.hash, width: window.innerWidth, ua: navigator.userAgent };
+      // Persist this completed run to history and refresh the trend chart
+      // in place - the one real trigger point for every automated pass
+      // (there is no separate auto-on-load run; a Soldier always reaches
+      // this via a real click on this same button, "Run" the first time or
+      // "Run again" after).
+      await recordRunHistory(pass, fail, checks);
+      await renderHistoryChart();
       runBtn.disabled = false; runBtn.textContent = "\u21ba Run again";
     });
 
@@ -20374,6 +21003,12 @@ window.G = window.G || {};
     // New in this pass (Diagnostics self-repair item 1): guidon:selfheal:v1
     // is G.selfheal's own audit-log array, capped at 200 entries.
     "guidon:selfheal:v1": function (v) { return Array.isArray(v); },
+    // Roadmap Tier 4: guidon:selftest:history:v1 is selftest.js's own
+    // per-run pass/fail history array (recordRunHistory()/runHistory()),
+    // capped the same way at 200 entries - identical shape check to
+    // guidon:selfheal:v1 immediately above (both are a plain array of
+    // append-only log rows, never a keyed object).
+    "guidon:selftest:history:v1": function (v) { return Array.isArray(v); },
     "guidon:records:checks:v1": function (v) { return v && typeof v === "object" && !Array.isArray(v); },
     // getSetting/setSetting are thin wrappers over this same "kv" store
     // (db.getSetting -> db.get("kv", k)), so every key below round-trips
@@ -20964,11 +21599,81 @@ window.G = window.G || {};
     } catch (e) { /* non-fatal */ }
   }
 
+  // ── 90-day density timeline (roadmap Tier 4) ─────────────────────────────
+  // The full editor's bucket list below (Overdue / Next 14 days / Later) is
+  // a flat, capped-at-25 scroll with no shape at all — at real volume
+  // (MAX_REMINDERS' own comment above records ~250 reminders actually
+  // observed on one real account, so this isn't hypothetical) it's an
+  // undifferentiated wall even capped. This strip renders ABOVE that list
+  // (never replaces it) so a Soldier gets an at-a-glance shape — dense
+  // clusters, real gaps — before scrolling the detailed rows.
+  //
+  // "Density" here is a literal day-level histogram: count of reminders
+  // whose OWN date falls on each day of a 90-day window, not an
+  // urgency-bucketed summary (the more natural reading of "density" for a
+  // dated list like this one). The window spans BOTH past-due and upcoming
+  // reminders — DAYS_BEFORE days back through DAYS_AFTER days ahead — so
+  // "today" lands somewhere in the MIDDLE of the strip, not at either edge.
+  // That's exactly the case G.chart.densityTimeline's own doc comment
+  // flags: `highlightLast` only ever colors the LITERAL LAST bucket, a
+  // convention that matches Home/Progress's own trend-chart strips (which
+  // only ever look backward, so "today" truly is always their last
+  // bucket). Passing highlightLast here would mis-color some future day
+  // amber as if it were "today" whenever the window has any upcoming
+  // reminders at all — so this passes highlightLast:false and marks today
+  // by LABEL instead. DAYS_BEFORE/LABEL_EVERY are chosen so today's index
+  // (DAYS_BEFORE) is an exact multiple of LABEL_EVERY, which guarantees
+  // densityTimeline's own auto-tick selection (i % step === 0) always
+  // renders that label — "Today" is never silently dropped by the ~8-tick
+  // spacing the way an arbitrary index could be.
+  var TIMELINE_DAYS_BEFORE = 45; // today sits at this index (0-based)
+  var TIMELINE_DAYS_AFTER = 44;  // 45 + 1 (today) + 44 = 90 days total
+  var TIMELINE_LABEL_EVERY = 15; // 45 (today's index) is a multiple of 15
+
+  function isoDate(d) {
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+
+  // Pure and independently testable: given the raw reminder list, returns
+  // the ordered 90-day `days` array G.chart.densityTimeline expects. Dates
+  // outside the window are not counted here — they're still fully present
+  // in the bucket list below; this strip is an at-a-glance preview of the
+  // near term, not a full accounting of every stored reminder.
+  function buildTimeline(list) {
+    var start = today0();
+    start.setDate(start.getDate() - TIMELINE_DAYS_BEFORE);
+    var counts = Object.create(null);
+    (Array.isArray(list) ? list : []).forEach(function (r) {
+      if (!r || typeof r !== "object") return;
+      var d = parseDate(r.date);
+      if (!d) return;
+      var key = isoDate(d);
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    var todayKey = isoDate(today0());
+    var total = TIMELINE_DAYS_BEFORE + TIMELINE_DAYS_AFTER + 1;
+    var days = [];
+    for (var i = 0; i < total; i++) {
+      var d = new Date(start);
+      d.setDate(start.getDate() + i);
+      var key = isoDate(d);
+      days.push({
+        date: key,
+        value: counts[key] || 0,
+        label: key === todayKey ? "Today" : (d.getMonth() + 1) + "/" + d.getDate(),
+      });
+    }
+    return days;
+  }
+
   // Full editor — lives in the Profile view.
   async function renderEditor(host) {
     util.clear(host);
     host.appendChild(el("h3.rem-h", { text: "Reminders" }));
     host.appendChild(el("p.hint", { text: "Set key dates and GUIDON will surface anything due on your home screen. Stored offline on this device only. Turn on Notifications in Settings if you'd like a local reminder on the day, too." }));
+
+    var timelineMount = el("div.rem-timeline-mount");
+    host.appendChild(timelineMount);
 
     // tabindex="-1": not in the normal tab order, but a valid focus() target
     // for the "no reminders left after removal" fallback below (task #226).
@@ -20987,6 +21692,7 @@ window.G = window.G || {};
     var expanded = false;
     async function redraw() {
       util.clear(listMount);
+      util.clear(timelineMount);
       var list = await load();
       var b = bucket(list);
       var totalCount = b.overdue.length + b.soon.length + b.later.length;
@@ -20994,6 +21700,23 @@ window.G = window.G || {};
         listMount.appendChild(el("div.empty", { text: "No reminders yet. Add one below." }));
         return;
       }
+      try {
+        if (G.chart && G.chart.densityTimeline) {
+          var days = buildTimeline(list);
+          var windowTotal = days.reduce(function (s, d) { return s + d.value; }, 0);
+          timelineMount.appendChild(el("div.eyebrow", { text: "90-day density" }));
+          timelineMount.appendChild(G.chart.densityTimeline({
+            days: days,
+            labelEvery: TIMELINE_LABEL_EVERY,
+            highlightLast: false, // see the doc comment above buildTimeline() — today isn't the last bucket here
+            ariaLabel: "90-day reminder density timeline, " + windowTotal + " of " + totalCount +
+              " total reminders fall in this window, today marked",
+            valueFormat: function (v, d) {
+              return (v === 1 ? "1 reminder" : v + " reminders") + " on " + (d && d.date);
+            },
+          }));
+        }
+      } catch (e) { /* non-fatal — the bucket list below still renders */ }
       var shown = 0;
       function renderRow(r) {
         var rowIndex = shown; // this row's position across ALL sections, captured now - redraw() below rebuilds every row fresh, so this is the one stable handle for "where was I" once the clicked button itself is gone.
@@ -21077,6 +21800,7 @@ window.G = window.G || {};
     load: load, add: add, remove: remove, bucket: bucket,
     renderStrip: renderStrip, renderEditor: renderEditor,
     _daysUntil: daysUntil, // exported for tests
+    _buildTimeline: buildTimeline, // exported for tests (90-day density strip)
   };
 })();
 
@@ -24219,6 +24943,104 @@ window.G = window.G || {};
     const allScenarios = store.scenarios();
     if (!allScenarios.length) {
       listWrap.appendChild(el("div.empty", { text: "No scenarios available for the current tier filter. Adjust it in Settings." }));
+    }
+
+    // ── Tier 4 roadmap: competency × rank-tier coverage heatmap ────────────
+    // "Junior tiers are covered thinner, invisible today since the catalog
+    // only ever filters one tier at a time" - true against the real seed
+    // data (verified against the live catalog: junior tiers carry far fewer
+    // scenario-tier tags per tier than senior tiers - see coverageNote
+    // below, computed live from allScenarios rather than a hardcoded ratio
+    // so this stays honest if the catalog's real distribution ever drifts).
+    // This panel is the actual fix: one glance across the WHOLE unfiltered
+    // catalog (allScenarios, not the tab/chip-filtered `filtered` list built
+    // in buildGrid() below) instead of switching one tier filter at a time
+    // to piece the picture together by hand.
+    //
+    // Rows = competency, columns = rank tier: competency names run up to 9
+    // characters and would truncate inside heatmapGrid's 8-char
+    // column-header budget ("Character" -> "Characte"), while real tier
+    // labels ("E1".."E6" today) are 2 characters and fit either axis
+    // cleanly - so competency reads better as rows here. Tier columns are
+    // derived from the real data (not a hardcoded E1-E6 literal) so this
+    // keeps working if the catalog's own tier vocabulary ever grows.
+    if (allScenarios.length && G.chart && G.chart.heatmapGrid) {
+      const HEATMAP_COMPS = ["Leads", "Develops", "Achieves", "Character", "Presence", "Intellect"];
+      const tierSet = new Set();
+      allScenarios.forEach((s) => (s.tier || []).forEach((t) => tierSet.add(t)));
+      const naturalTierSort = (a, b) => {
+        const na = parseInt(String(a).replace(/\D/g, ""), 10);
+        const nb = parseInt(String(b).replace(/\D/g, ""), 10);
+        if (isFinite(na) && isFinite(nb) && na !== nb) return na - nb;
+        return String(a).localeCompare(String(b));
+      };
+      const heatmapTiers = Array.from(tierSet).sort(naturalTierSort);
+
+      if (heatmapTiers.length) {
+        const coverageMatrix = HEATMAP_COMPS.map((comp) =>
+          heatmapTiers.map((t) => allScenarios.filter((s) =>
+            (s.competency || []).includes(comp) && (s.tier || []).includes(t)
+          ).length)
+        );
+
+        // Dynamic junior-vs-senior note: split the real (sorted) tier list
+        // in half rather than hardcoding which literal tier labels count as
+        // "junior", so this keeps telling the truth if the catalog's tier
+        // vocabulary ever grows past E1-E6 or shifts. Counts scenario-tier
+        // TAGS per tier (a multi-tier scenario counts once per tier it
+        // lists) - the same counting convention the matrix above and
+        // store.scenarios()'s own tierFilter elsewhere in this file use.
+        let coverageNote = "";
+        const half = Math.floor(heatmapTiers.length / 2);
+        if (half >= 1 && heatmapTiers.length - half >= 1) {
+          const juniorTiers = heatmapTiers.slice(0, half);
+          const seniorTiers = heatmapTiers.slice(half);
+          const tagCountFor = (t) => allScenarios.filter((s) => (s.tier || []).includes(t)).length;
+          const avg = (tiers) => tiers.reduce((sum, t) => sum + tagCountFor(t), 0) / tiers.length;
+          const juniorAvg = avg(juniorTiers), seniorAvg = avg(seniorTiers);
+          if (juniorAvg > 0 && seniorAvg > juniorAvg) {
+            coverageNote = juniorTiers.join("/") + " average " + Math.round(juniorAvg) +
+              " scenarios each vs " + seniorTiers.join("/") + "'s " + Math.round(seniorAvg) +
+              " — about " + (seniorAvg / juniorAvg).toFixed(1) + "× thinner junior-tier coverage.";
+          }
+        }
+
+        // coverageToggle is deliberately NOT the same "btn sm ghost" class
+        // the Filters toggle below uses - test-train.mjs's existing
+        // wide/narrow-viewport check (see its own comment) finds "the first
+        // button[aria-expanded] whose class includes 'ghost'" to locate the
+        // Filters toggle specifically; sharing that class combo on a toggle
+        // mounted earlier in the DOM would silently hijack that lookup and
+        // break an existing, passing test.
+        let coverageOpen = true;
+        const coveragePanel = el("div.card.tr-coverage-panel", { style: "margin-bottom:14px" });
+        const coverageHead = el("div", { style: "display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap" });
+        coverageHead.appendChild(el("h3", { text: "Catalog coverage: competency × rank tier", style: "margin:0;flex:1 1 auto;min-width:0" }));
+        const coverageToggle = el("button.btn.sm.tr-coverage-toggle", { type: "button", text: "Hide ▴", "aria-expanded": "true", style: "flex:0 0 auto;white-space:nowrap" });
+        coverageHead.appendChild(coverageToggle);
+        coveragePanel.appendChild(coverageHead);
+        coveragePanel.appendChild(el("p.hint", {
+          text: "How many Train scenarios tag each competency at each rank tier, across the full catalog — not just the tier you currently have filtered." +
+            (coverageNote ? " " + coverageNote : ""),
+        }));
+        const coverageBody = el("div.tr-coverage-body");
+        coverageBody.appendChild(G.chart.heatmapGrid({
+          rows: HEATMAP_COMPS,
+          cols: heatmapTiers,
+          values: coverageMatrix,
+          ariaLabel: "Scenario catalog coverage by competency and rank tier",
+          className: "tr-coverage-heatmap",
+          valueFormat: (v, comp, tier) => (v == null ? 0 : v) + " scenario" + (v === 1 ? "" : "s") + " tagged " + comp + " at " + tier,
+        }));
+        coveragePanel.appendChild(coverageBody);
+        coverageToggle.addEventListener("click", () => {
+          coverageOpen = !coverageOpen;
+          coverageBody.style.display = coverageOpen ? "" : "none";
+          coverageToggle.textContent = coverageOpen ? "Hide ▴" : "Show ▾";
+          coverageToggle.setAttribute("aria-expanded", String(coverageOpen));
+        });
+        listWrap.appendChild(coveragePanel);
+      }
     }
 
     // Tab filter: All | Leadership | Mandatory Training
