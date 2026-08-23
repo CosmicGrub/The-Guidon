@@ -58,14 +58,25 @@ window.G = window.G || {};
       AS_OF + " - fitness policy moved repeatedly this year, so confirm anything decision-critical with your chain before planning around it." }));
 
     mount.appendChild(el("div.eyebrow", { text: "Army Fitness Test (AFT)", style: "margin-top:14px" }));
-    mount.appendChild(rows("Two standards, same five events", [
+
+    // Width-waste audit (Tier 5): these four AFT reference panels (the two
+    // standards, what a miss costs you, the points note, body composition)
+    // used to stack single-column all the way down regardless of viewport -
+    // 2,000px+ of unused right-hand margin on tablet/Fold-5-unfolded/desktop
+    // for four panels that are each a few short lines. .panel-grid-2
+    // (>=600px, see CSS) pairs them up the same way Career's own
+    // reclass-policy/FY26-snapshot topGrid already does. The CFT's ordered
+    // 7-event walkthrough and the MOS code walls further down stay OUT of
+    // this treatment on purpose - see the comments at each.
+    const aftGrid = el("div.panel-grid-2");
+    aftGrid.appendChild(rows("Two standards, same five events", [
       ["General standard", "Minimum 60 points per event AND 300 overall. Performance-normed by age and sex."],
       ["Combat standard", "Minimum 60 points per event AND 350 overall. Sex-neutral and age-normed - the 350 is the same number for everyone."],
       ["The rule people miss", "Both standards require 60 in EVERY event. Drop one event below 60 and the test is a fail, whatever the total says."],
       ["Effective", "1 January 2026 for the Regular Army; 1 June 2026 for USAR and ARNG."]
     ]));
 
-    mount.appendChild(rows("What a combat-MOS score actually costs you", [
+    aftGrid.appendChild(rows("What a combat-MOS score actually costs you", [
       ["350 or above", "Combat standard met. Nothing further."],
       ["300 to 349", "General standard met, combat standard missed. Coded AEA AECBTDQ, which blocks PCS - you stay where you are until it is fixed."],
       ["Below 300", "Test failure, with the usual flag and retest consequences."],
@@ -79,16 +90,22 @@ window.G = window.G || {};
     const goPts = el("button.btn.sm", { type: "button", text: "Calculate it in the PPW" });
     goPts.addEventListener("click", function () { location.hash = "#/board"; });
     ptsP.appendChild(goPts);
-    mount.appendChild(ptsP);
+    aftGrid.appendChild(ptsP);
 
-    mount.appendChild(rows("Body composition", [
+    aftGrid.appendChild(rows("Body composition", [
       ["No AFT exemption any more", "Army Directive 2026-13 rescinded AD 2025-17 effective 7 July 2026. The old 'a 465 exempts you from taping' rule is gone. Every Soldier meets the body composition standard regardless of AFT score."]
     ]));
+    mount.appendChild(aftGrid);
 
     mount.appendChild(el("div.eyebrow", { text: "Combat Field Test (CFT)", style: "margin-top:16px" }));
     mount.appendChild(el("p.hint", { text:
       "New in 2026 under Army Directive 2026-07. It does NOT replace the AFT - Soldiers in the designated specialties pass one of each, annually." }));
 
+    // Kept full width, unlike the two grids above: this is a NUMBERED,
+    // ordered 7-step procedure meant to be read top to bottom in sequence -
+    // halving its width would just wrap a walkthrough into a cramped
+    // column, the same reasoning Career's own topGrid keeps its growing
+    // NCOES ladder out of .panel-grid-2 for.
     const ev = el("div.panel", { style: "margin-bottom:10px" });
     ev.appendChild(el("div.eyebrow", { text: "Seven events, in this order, 30 minutes or less" }));
     CFT_EVENTS.forEach(function (pair, i) {
@@ -99,19 +116,26 @@ window.G = window.G || {};
       "Continuous and cumulative - the clock does not stop between events. Uniform is ACU top and bottom, combat boots, brown T-shirt, no headgear." }));
     mount.appendChild(ev);
 
-    mount.appendChild(rows("How it is scored", [
+    // Same pairing treatment as the AFT group above: two short, comparable
+    // reference panels (how it's scored, the phasing deadline).
+    const cftGrid = el("div.panel-grid-2");
+    cftGrid.appendChild(rows("How it is scored", [
       ["Pass or fail only", "No event points and no total score. You finish inside 30 minutes or you do not."],
       ["No age or sex adjustment", "Unlike the AFT general standard, nothing is normed. One time cap for everyone."],
       ["It earns no promotion points", "The CFT is a gate, not a scorer. Only the AFT feeds your PPW."]
     ]));
 
-    mount.appendChild(rows("The deadline that matters", [
+    cftGrid.appendChild(rows("The deadline that matters", [
       ["April 2026", "Diagnostic testing begins. A failure in this window carries no permanent record consequence."],
       ["The 365-day window", "Reconditioning, and voluntary reclassification without damage to your record. This is the cheap time to fix it."],
       ["After roughly April 2027", "For record. A failure can bring a Flag (code C) and can trigger mandatory reclassification."],
       ["Retest", "About 90 days for Active Duty, 180 for the Reserve Component."]
     ], "var(--amber)"));
+    mount.appendChild(cftGrid);
 
+    // Also kept full width: the monospace MOS code walls below wrap on
+    // word-break as it is at full width - halving the column would just
+    // force them into more, choppier wrapped lines for no readability gain.
     const lists = el("div.panel", { style: "margin-bottom:10px" });
     lists.appendChild(el("div.eyebrow", { text: "Which list are you on" }));
     lists.appendChild(el("div.ob-plan-cat", { text: "AFT combat standard - 21 specialties", style: "margin-top:8px" }));
