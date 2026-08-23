@@ -93,8 +93,23 @@ await page.waitForTimeout(300);
 // visible "Foundations" default) - so the click -> data.studyWeakPoints
 // wiring for that subtree had zero coverage. Expand it and pick one chip
 // from each of the two collapsed groups here.
-await page.locator("button", { hasText: /more ▾/ }).click();
-await page.waitForTimeout(200);
+//
+// PC/desktop intuitivism pass, Tier 2(f): this context's default
+// (unspecified) viewport is Playwright's own 1280x720 - already past the
+// >=1024px tier where those two groups now start pre-expanded, so the
+// toggle may already read "Show fewer ▴" with nothing left to click open.
+// Click only if it's still showing the collapsed "+N more ▾" label, so
+// this keeps covering the SAME click -> data.studyWeakPoints wiring this
+// section was written for regardless of which default the toggle starts
+// at - the thing under test here (test-onboarding.mjs is a general
+// step-flow regression suite, not a width-tier suite; that lives in
+// test-intuitivism-pc-tier2ef.mjs) is that a chip inside the collapsed
+// clusters actually saves, not which state the toggle starts in.
+const weakMoreToggle = page.locator("button", { hasText: /more ▾|Show fewer ▴/ });
+if (/more ▾/.test((await weakMoreToggle.textContent()) || "")) {
+  await weakMoreToggle.click();
+  await page.waitForTimeout(200);
+}
 // Both chosen WITHOUT a `cite` field deliberately - a cited chip's button
 // is two sibling <span>s with no text-node separator (e.g. "Composite Risk
 // ManagementATP 5-19" as raw textContent), so a plain hasText string match

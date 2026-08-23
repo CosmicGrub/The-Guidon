@@ -263,11 +263,11 @@ a:hover { text-decoration: underline; }
 /* DEDUPED: .nav — merged below */
 
 .nav::-webkit-scrollbar { display: none; }
-/* DEDUPED: .nav button — merged below */
+/* DEDUPED: .nav :is(button, a) — merged below */
 
-.nav button .ico { font-size: 1.125rem; line-height: 1; }
-.nav button.active { color: var(--amber); }
-/* DEDUPED: .nav button.active::after — merged below */
+.nav :is(button, a) .ico { font-size: 1.125rem; line-height: 1; }
+.nav :is(button, a).active { color: var(--amber); }
+/* DEDUPED: .nav :is(button, a).active::after — merged below */
 
 
 /* ---------- Cards / panels ---------- */
@@ -421,7 +421,7 @@ html.high-contrast nav.nav[data-scroll-y] { -webkit-mask-image: none; mask-image
 /* PC parity pass (2026-08-22): the un-selected buttons in this shared
    toggle component (9+ call sites: mode pickers, rank selectors, etc.)
    gave zero mouse feedback - only .active was ever styled. Neutral
-   panel-2 shift, matching .nav button:hover's own convention, not
+   panel-2 shift, matching .nav :is(button, a):hover's own convention, not
    amber - this component already has a real, distinct .active state,
    so a hover treatment that leaned toward amber would read as "this one
    is selected" rather than "this one is hoverable". :not(.active) so
@@ -459,6 +459,12 @@ html.high-contrast nav.nav[data-scroll-y] { -webkit-mask-image: none; mask-image
   padding:9px 12px; border-radius: var(--radius-sm); cursor:pointer; }
 .mode-text .choice:hover { border-color: var(--amber); color: var(--amber); background: rgba(255,176,32,.04); }
 .mode-text .choice b { color: var(--text); margin-right: 8px; }
+/* PC/desktop intuitivism pass, Tier 2(c): .mode-text's own root (tabIndex="0")
+   is the real keyboard-shortcut tab stop now (see renderText's keydown
+   comment) - same outline treatment Board Drill's own .qz-wrap already uses
+   for the identical reason (search this file for ".qz-wrap:focus-visible"). */
+.mode-text { outline: none; }
+.mode-text:focus-visible { outline: 3px solid var(--amber); outline-offset: 4px; border-radius: var(--radius-sm); }
 
 /* ---------- Engine: COURSE (slides) ---------- */
 .mode-course .slide { background: linear-gradient(180deg, var(--panel), var(--panel-2)); border:1px solid var(--line);
@@ -468,7 +474,13 @@ html.high-contrast nav.nav[data-scroll-y] { -webkit-mask-image: none; mask-image
 .mode-course .choice { display:block; width:100%; text-align:left; margin:8px 0; background: var(--bg);
   border:1px solid var(--line-2); color: var(--text); padding:12px 14px; border-radius: var(--radius-sm); cursor:pointer; font-size: 1.0rem; }
 .mode-course .choice:hover { border-color: var(--cyan); }
+.mode-course .choice b { color: var(--text); margin-right: 8px; }
 .mode-course .courseprog { display:flex; align-items:center; gap:10px; margin-bottom: 12px; font-family: var(--font-mono); font-size: 0.786rem; color: var(--text-mute); }
+/* Tier 2(c), same reasoning as .mode-text above - .mode-course is rebuilt
+   (not reused) on every decision, but each rebuild is still tabIndex="0"
+   and still the real keydown tab stop for that node's own listener. */
+.mode-course { outline: none; }
+.mode-course:focus-visible { outline: 3px solid var(--cyan); outline-offset: 4px; border-radius: var(--radius-sm); }
 
 /* ---------- Engine: CYOA (scene) ---------- */
 .mode-cyoa .scene-banner { height: 120px; border-radius: var(--radius); border:1px solid var(--line-2);
@@ -607,12 +619,12 @@ html.high-contrast nav.nav[data-scroll-y] { -webkit-mask-image: none; mask-image
   .topbar { grid-area: top; }
   .main { grid-area: main; }
   .nav { grid-area: nav; flex-direction: column; border-top: none; border-right: 1px solid var(--line); padding-top: 10px; }
-  /* DEDUPED: .nav button — merged below */
+  /* DEDUPED: .nav :is(button, a) — merged below */
 
-  .nav button.active::after { top: 15%; bottom: 15%; left: 0; right: auto; width: 2px; height: auto; }
+  .nav :is(button, a).active::after { top: 15%; bottom: 15%; left: 0; right: auto; width: 2px; height: auto; }
 }
 @media (max-width: 420px) {
-  .nav button { font-size: .625rem; }
+  .nav :is(button, a) { font-size: .625rem; }
   .brand h1 { font-size: 1.214rem; }
 }
 
@@ -1491,6 +1503,13 @@ select.in { appearance:none; }
 }
 
 /* ===== Mock Board (live drill) ===== */
+/* PC/desktop intuitivism pass, Tier 2(c): .mb-wrap (tabIndex="0") is the
+   real keyboard-shortcut tab stop for the whole Mock Board visit (see
+   renderMockBoard's own keydown comment) - same outline treatment Board
+   Drill's own .qz-wrap already uses (search this file for
+   ".qz-wrap:focus-visible") for the identical reason. */
+.mb-wrap { outline: none; }
+.mb-wrap:focus-visible { outline: 3px solid var(--amber); outline-offset: 4px; border-radius: var(--radius); }
 .mb-setup, .mb-brief, .mb-quiz, .mb-done { display:flex; flex-direction:column; gap:12px; }
 .mb-h { font-family:var(--font-head); color:var(--amber); font-size:1.2rem; margin:0 0 4px; }
 .mb-comp { background:var(--bg-2); border:1px solid var(--line); border-radius:var(--radius-sm); padding:12px; }
@@ -1953,7 +1972,7 @@ select.in { appearance:none; }
    mode) keeps them legible with zero per-theme work. .gi is stamped on every
    svg the icon factory produces. */
 .gi { flex: none; vertical-align: -3px; }
-.nav button .ico, .nav-group-header .ico {
+.nav :is(button, a) .ico, .nav-group-header .ico {
   display: inline-flex; align-items: center; justify-content: center;
 }
 .btn .gi { vertical-align: -3px; margin-right: 2px; }
@@ -1995,7 +2014,7 @@ button:focus:not(:focus-visible),
   outline-offset: 2px;
 }
 /* Nav buttons */
-.nav button:focus-visible {
+.nav :is(button, a):focus-visible {
   outline: 2px solid var(--cyan);
   outline-offset: -2px;
   border-radius: var(--radius-sm);
@@ -2032,10 +2051,10 @@ button:focus:not(:focus-visible),
 /* ===== Risk module — template selector ===== */
 
 /* ===== Nav visual grouping — section separators ===== */
-.nav button[data-hash="#/forms"],
-.nav button[data-hash="#/doctrine"],
-.nav button[data-hash="#/board"],
-.nav button[data-hash="#/author"] {
+.nav :is(button, a)[data-hash="#/forms"],
+.nav :is(button, a)[data-hash="#/doctrine"],
+.nav :is(button, a)[data-hash="#/board"],
+.nav :is(button, a)[data-hash="#/author"] {
   margin-top: 6px;
   border-top: 1px solid var(--line);
   padding-top: 8px;
@@ -2546,6 +2565,62 @@ mark.dict-hi {
    change (Tier 2), not assumed here. */
 @media (min-width: 1024px) {
   .ob-wrap { max-width: 720px; }
+}
+
+/* PC/desktop intuitivism pass, Tier 2(e): the live-updating summary panel
+   the Tier 1(d) comment above explicitly deferred ("a separate, later
+   change (Tier 2)") - JS (renderOnboarding's isWideOnboardTier()) only
+   builds .ob-live-layout/.ob-live-summary at all once window.innerWidth
+   is >=1024, so this media query is belt-and-suspenders against the two
+   ever disagreeing, not the thing actually gating visibility. .ob-wrap
+   keeps its own Tier 1(d) 720px cap and centered layout completely
+   unchanged when the panel isn't present (narrower than 1024px, or this
+   query somehow not matching what the JS check saw) - this rule only
+   changes anything once .ob-wrap has a sibling to sit next to. */
+@media (min-width: 1024px) {
+  .ob-live-layout {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 28px;
+  }
+  /* Was centered alone via margin:0 auto (.ob-wrap's own base rule); as a
+     flex item next to .ob-live-summary it's centered as part of the row
+     instead - both children's widths plus the gap add up to less than
+     .ob-overlay's own width at every size this rule is active for (720px
+     cap + 28px gap + 280px panel = 1028px, comfortably under the 1024px
+     floor's own realistic viewport minus scrollbar/padding at any width
+     that would report >=1024 in the first place... in practice this
+     activates alongside Tier 1(d)'s cap, which was itself only proven in
+     at >=1024px, so the row's total width tracks .ob-wrap's own already-
+     validated sizing rather than introducing a new one). */
+  .ob-live-layout > .ob-wrap { margin-left: 0; margin-right: 0; }
+  .ob-live-summary {
+    flex: 0 0 280px;
+    width: 280px;
+    margin-top: 20px;
+    padding: 16px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-sizing: border-box;
+    position: sticky;
+    top: 24px;
+  }
+  .ob-live-summary-row + .ob-live-summary-row { margin-top: 14px; }
+  .ob-live-summary-label {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+  }
+  .ob-live-summary-value { color: var(--text-1); font-size: 0.9rem; }
+  .ob-live-summary-list { margin: 0; padding-left: 18px; font-size: 0.86rem; color: var(--text-1); }
+  .ob-live-summary-list li { margin-bottom: 2px; }
+  .ob-live-summary-empty { color: var(--text-dim); font-size: 0.84rem; font-style: italic; }
 }
 
 /* ── Hero (mode select screen) ────────────────────────────── */
@@ -3664,7 +3739,7 @@ html.reduce-transparency #demo-mode-badge { background: var(--panel-2); }
   background: var(--panel);
   scrollbar-width: none;
 }
-.nav button {
+.nav :is(button, a) {
   flex: 0 0 auto;
   display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 3px; min-width: 60px; padding: 7px 10px;
@@ -3673,9 +3748,16 @@ html.reduce-transparency #demo-mode-badge { background: var(--panel-2); }
   font-family: var(--font-head); font-size: .68rem; letter-spacing: .02em;
   text-transform: uppercase; white-space: nowrap; line-height: 1.1;
   transition: color .15s, background .15s, border-color .15s;
+  /* Tier 2(a): leaf items are now real <a href> elements (see navButton()),
+     not just <button>, so the default UA anchor underline needs an explicit
+     opt-out here - every other <a> in the app (.res-crisis-tel, .res-url)
+     already sets this itself rather than relying on a global "a { }" reset,
+     because there isn't one (grep confirms: no bare "a { text-decoration"
+     rule exists anywhere in this file). Matches that established pattern. */
+  text-decoration: none;
 }
-.nav button:hover { color: var(--text); background: var(--panel-2); }
-.nav button.active { color: color-mix(in srgb, var(--amber) 55%, var(--text)); background: color-mix(in srgb, var(--amber) 12%, transparent); }
+.nav :is(button, a):hover { color: var(--text); background: var(--panel-2); }
+.nav :is(button, a).active { color: color-mix(in srgb, var(--amber) 55%, var(--text)); background: color-mix(in srgb, var(--amber) 12%, transparent); }
 .nav .ico { font-size: 1.15rem; line-height: 1; }
 .nav-divider { flex: 0 0 auto; width: 1px; align-self: center; height: 22px; background: var(--line); margin: 0 4px; }
 .nav-group-header {
@@ -3692,7 +3774,7 @@ html.reduce-transparency #demo-mode-badge { background: var(--panel-2); }
      content size before its own overflow-y:auto ever kicks in - so a rail
      with several groups open just silently clipped the lower groups (e.g.
      Settings) instead of becoming scrollable. flex:0 0 auto on individual
-     .nav buttons already prevented this at the leaf level; the group
+     .nav items already prevented this at the leaf level; the group
      wrapper itself was the one flex item still allowed to shrink. */
   flex: 0 0 auto;
   transition: max-height var(--dur-base, .25s) var(--ease-standard, ease), opacity var(--dur-base, .25s) var(--ease-standard, ease);
@@ -3713,9 +3795,9 @@ html.reduce-motion .nav-group-body, html[data-motion="minimal"] .nav-group-body 
    .82 clears every theme with margin - raising opacity toward 1 only
    ever increases contrast, so this can't regress any theme that already
    passed at .68. */
-.nav button.nav-demoted { opacity: .82; }
-.nav button.nav-demoted .ico { font-size: .88em; }
-.nav button.nav-demoted:hover, .nav button.nav-demoted:focus-visible, .nav button.nav-demoted.active {
+.nav :is(button, a).nav-demoted { opacity: .82; }
+.nav :is(button, a).nav-demoted .ico { font-size: .88em; }
+.nav :is(button, a).nav-demoted:hover, .nav :is(button, a).nav-demoted:focus-visible, .nav :is(button, a).nav-demoted.active {
   opacity: 1;
 }
 
@@ -3755,20 +3837,25 @@ html.reduce-motion .nav-drawer, html[data-motion="minimal"] .nav-drawer { transi
 }
 .nav-drawer-head h2 { font-family: var(--font-head); font-size: .95rem; margin: 0; text-transform: uppercase; letter-spacing: .04em; }
 .nav-drawer .nav-group-body { gap: 2px; }
-.nav-drawer button[data-hash] {
+.nav-drawer :is(button, a)[data-hash] {
   display: flex; flex-direction: row; align-items: center; justify-content: flex-start;
   gap: 10px; width: 100%; min-width: 0; padding: 10px 12px;
   background: transparent; border: 1px solid transparent; border-radius: var(--radius-sm);
   color: color-mix(in srgb, var(--text-dim) 35%, var(--text)); cursor: pointer;
   font-family: var(--font-head); font-size: .78rem; letter-spacing: .02em;
   text-transform: uppercase; text-align: left; white-space: normal;
+  /* Tier 2(a): same opt-out as the base .nav rule above - this is a
+     separate selector (the drawer panel lives outside .nav, appended to
+     document.body), so it needs its own explicit reset rather than
+     inheriting the sidebar's. */
+  text-decoration: none;
 }
-.nav-drawer button[data-hash]:hover { color: var(--text); background: var(--panel-2); }
-.nav-drawer button[data-hash].active {
+.nav-drawer :is(button, a)[data-hash]:hover { color: var(--text); background: var(--panel-2); }
+.nav-drawer :is(button, a)[data-hash].active {
   position: relative; color: color-mix(in srgb, var(--amber) 55%, var(--text));
   background: color-mix(in srgb, var(--amber) 12%, transparent);
 }
-.nav-drawer button[data-hash].active::after {
+.nav-drawer :is(button, a)[data-hash].active::after {
   content: ""; position: absolute; left: 0; top: 18%; bottom: 18%;
   width: 3px; border-radius: 2px; background: var(--amber);
 }
@@ -3779,10 +3866,10 @@ html.reduce-motion .nav-drawer, html[data-motion="minimal"] .nav-drawer { transi
   padding: 10px 12px 4px !important; gap: 6px !important;
 }
 .nav-drawer .nav-group-header .ico { font-size: .7rem !important; width: 12px; }
-.nav-drawer button.nav-demoted { opacity: .82; } /* same contrast fix as .nav button.nav-demoted above */
-.nav-drawer button.nav-demoted:hover, .nav-drawer button.nav-demoted:focus-visible, .nav-drawer button.nav-demoted.active { opacity: 1; }
+.nav-drawer :is(button, a).nav-demoted { opacity: .82; } /* same contrast fix as .nav :is(button, a).nav-demoted above */
+.nav-drawer :is(button, a).nav-demoted:hover, .nav-drawer :is(button, a).nav-demoted:focus-visible, .nav-drawer :is(button, a).nav-demoted.active { opacity: 1; }
 
-/* "More" button itself, in the <600px flat bar - same base .nav button
+/* "More" button itself, in the <600px flat bar - same base .nav :is(button, a)
    look, including its icon size (both fully inherited from .nav/.nav .ico
    above - audit finding: a redundant, byte-for-byte duplicate ".nav-more-
    btn .ico { font-size: 1.15rem }" rule used to sit here, contradicting
@@ -3823,13 +3910,13 @@ html.reduce-motion .nav-drawer, html[data-motion="minimal"] .nav-drawer { transi
     overflow-x: hidden; overflow-y: auto;
     border-top: none; border-right: 1px solid var(--line);
   }
-  .nav button {
+  .nav :is(button, a) {
     flex: 0 0 auto; flex-direction: column; justify-content: center;
     gap: 3px; min-width: 0; width: 100%; padding: 8px 4px;
     font-size: .62rem; text-align: center; white-space: normal;
   }
-  .nav button.active { position: relative; background: color-mix(in srgb, var(--amber) 14%, transparent); }
-  .nav button.active::after {
+  .nav :is(button, a).active { position: relative; background: color-mix(in srgb, var(--amber) 14%, transparent); }
+  .nav :is(button, a).active::after {
     content: ""; position: absolute; left: 0; top: 15%; bottom: 15%;
     width: 2px; border-radius: 2px; background: var(--amber);
   }
@@ -3845,9 +3932,9 @@ html.reduce-motion .nav-drawer, html[data-motion="minimal"] .nav-drawer { transi
      above), with no indication in the settings UI that they only worked
      on wider screens. Same compact/labels-off treatment as the desktop
      tier below, scaled to this tier's own smaller baseline. */
-  html[data-nav-density="compact"] .nav button { padding: 5px 3px; font-size: .56rem; }
+  html[data-nav-density="compact"] .nav :is(button, a) { padding: 5px 3px; font-size: .56rem; }
   html[data-nav-density="compact"] .nav .ico { font-size: .92rem; }
-  html[data-nav-labels="off"] .nav button { font-size: 0; padding-top: 10px; padding-bottom: 10px; }
+  html[data-nav-labels="off"] .nav :is(button, a) { font-size: 0; padding-top: 10px; padding-bottom: 10px; }
   html[data-nav-labels="off"] .nav .ico { font-size: 1.25rem; }
 }
 
@@ -3864,17 +3951,17 @@ html.reduce-motion .nav-drawer, html[data-motion="minimal"] .nav-drawer { transi
     overflow-x: hidden; overflow-y: auto;
     border-top: none; border-right: 1px solid var(--line);
   }
-  .nav button {
+  .nav :is(button, a) {
     flex: 0 0 auto;
     flex-direction: row; justify-content: flex-start;
     gap: 10px; min-width: 0; width: 100%; padding: 9px 12px;
     font-size: .78rem; text-transform: none; text-align: left;
   }
-  .nav button.active {
+  .nav :is(button, a).active {
     position: relative;
     background: color-mix(in srgb, var(--amber) 14%, transparent);
   }
-  .nav button.active::after {
+  .nav :is(button, a).active::after {
     content: ""; position: absolute; left: 0; top: 18%; bottom: 18%;
     width: 3px; border-radius: 2px; background: var(--amber);
   }
@@ -3917,13 +4004,13 @@ html.reduce-motion .nav-drawer, html[data-motion="minimal"] .nav-drawer { transi
     overflow-x: hidden; overflow-y: auto;
     border-top: none; border-right: 1px solid var(--line);
   }
-  html.device-fold-narrow .nav button {
+  html.device-fold-narrow .nav :is(button, a) {
     flex: 0 0 auto; flex-direction: column; justify-content: center;
     gap: 3px; min-width: 0; width: 100%; padding: 8px 4px;
     font-size: .62rem; text-align: center; white-space: normal;
   }
-  html.device-fold-narrow .nav button.active { position: relative; background: color-mix(in srgb, var(--amber) 14%, transparent); }
-  html.device-fold-narrow .nav button.active::after {
+  html.device-fold-narrow .nav :is(button, a).active { position: relative; background: color-mix(in srgb, var(--amber) 14%, transparent); }
+  html.device-fold-narrow .nav :is(button, a).active::after {
     content: ""; position: absolute; left: 0; top: 15%; bottom: 15%;
     width: 2px; border-radius: 2px; background: var(--amber);
   }
@@ -3970,7 +4057,7 @@ html.reduce-motion .nav-drawer, html[data-motion="minimal"] .nav-drawer { transi
    intuitivism pass, Tier 1(a)). */
 @media (min-width: 800px) {
   html.board-drill-active #app { grid-template-columns: 96px 1fr; }
-  html.board-drill-active .nav button { font-size: 0; padding-top: 10px; padding-bottom: 10px; }
+  html.board-drill-active .nav :is(button, a) { font-size: 0; padding-top: 10px; padding-bottom: 10px; }
   html.board-drill-active .nav .ico { font-size: 1.25rem; }
   html.board-drill-active .nav-group-header { font-size: 0 !important; padding: 8px 4px 3px !important; }
   html.board-drill-active .nav-group-header .ico { font-size: .7rem !important; }
@@ -3988,7 +4075,7 @@ html.reduce-motion .nav-drawer, html[data-motion="minimal"] .nav-drawer { transi
    relative to those bare rules doesn't matter here either. */
 @media (min-width: 1500px) {
   html.board-drill-active #app { grid-template-columns: 232px 1fr; }
-  html.board-drill-active .nav button { font-size: .78rem; padding-top: 9px; padding-bottom: 9px; }
+  html.board-drill-active .nav :is(button, a) { font-size: .78rem; padding-top: 9px; padding-bottom: 9px; }
   html.board-drill-active .nav .ico { font-size: 1.05rem; }
   html.board-drill-active .nav-group-header { font-size: .68rem !important; padding: 8px 12px 4px !important; }
   html.board-drill-active .nav-group-header .ico { font-size: .7rem !important; }
@@ -4210,11 +4297,11 @@ html.hc { --line:var(--text-mute) !important; --line-2:var(--text-dim) !importan
 html.hc[data-theme="blackout"] { --line:var(--text-dim) !important; --border:var(--text-dim) !important; }
 html.hc .panel, html.hc .card { border-width:2px; }
 html.hc .text-dim, html.hc .hint, html.hc small { color:var(--text-dim); }
-html.hc .nav button.active { outline:2px solid var(--amber); outline-offset:-2px; }
+html.hc .nav :is(button, a).active { outline:2px solid var(--amber); outline-offset:-2px; }
 html.hc a { text-decoration:underline; }
 
 /* ---- LARGER TAP TARGETS (gloves / field) ---- */
-html.large-targets .nav button { min-height:48px; padding-top:10px; padding-bottom:10px; }
+html.large-targets .nav :is(button, a) { min-height:48px; padding-top:10px; padding-bottom:10px; }
 html.large-targets .btn, html.large-targets .segmented button,
 html.large-targets .choice-btn, html.large-targets .topbar-profile-btn,
 /* .tabbar is the shared tab-strip component (IDP, Forms Trainer, Finance,
@@ -4226,18 +4313,18 @@ html.large-targets .toggle { transform:scale(1.15); transform-origin:left center
 
 /* ---- UNDERLINE ALL LINKS (non-color cue) ---- */
 html.underline-links a { text-decoration:underline; }
-html.underline-links .nav button.active { text-decoration:underline; text-underline-offset:3px; }
+html.underline-links .nav :is(button, a).active { text-decoration:underline; text-underline-offset:3px; }
 
 /* ---- BOLD FOCUS RING ---- */
 html.bold-focus :focus-visible { outline:3px solid var(--amber); outline-offset:3px; }
-html.bold-focus .nav button:focus-visible { outline:3px solid var(--amber); outline-offset:-3px; }
+html.bold-focus .nav :is(button, a):focus-visible { outline:3px solid var(--amber); outline-offset:-3px; }
 
 /* ---- DYSLEXIA SPACING ---- */
 html.dyslexia-spacing body { letter-spacing:.03em; word-spacing:.08em; }
 html.dyslexia-spacing p, html.dyslexia-spacing li { line-height:1.75; max-width:66ch; }
 
 /* ---- REDUCE TRANSPARENCY (solid fills instead of color-mix tints) ---- */
-html.reduce-transparency .nav button.active { background:var(--panel-2); }
+html.reduce-transparency .nav :is(button, a).active { background:var(--panel-2); }
 /* .badge.accent and .nav-pill.active don't exist anywhere in the app (grep
    across the whole file turns up nothing but these two rules) - the
    setting's own hint promises "solid fills instead of tinted overlays,"
@@ -4264,7 +4351,7 @@ html.reduce-transparency .feedback.warn { background:color-mix(in srgb, var(--am
 /* Coarse pointer (touchscreen, incl. phone/tablet/Z Fold in either fold
    state) — same tap-target sizing as the manual "large targets" toggle. */
 @media (pointer: coarse) {
-  .nav button { min-height:48px; padding-top:10px; padding-bottom:10px; }
+  .nav :is(button, a) { min-height:48px; padding-top:10px; padding-bottom:10px; }
   /* Session-52 responsive audit: this list used to be a strict subset of the
      @media(max-width:640px) list below, so a touch-capable device wider than
      640px (a tablet or unfolded foldable in landscape, a touchscreen laptop)
@@ -4309,14 +4396,14 @@ html.reduce-transparency .feedback.warn { background:color-mix(in srgb, var(--am
   html { --line:var(--text-mute); --line-2:var(--text-dim); --border:var(--text-mute); }
   .panel, .card { border-width:2px; }
   .text-dim, .hint, small { color:var(--text-dim); }
-  .nav button.active { outline:2px solid var(--amber); outline-offset:-2px; }
+  .nav :is(button, a).active { outline:2px solid var(--amber); outline-offset:-2px; }
   a { text-decoration:underline; }
 }
 
 /* OS-level "reduce transparency" request — same solid-fill treatment as the
    manual toggle. */
 @media (prefers-reduced-transparency: reduce) {
-  .nav button.active { background:var(--panel-2); }
+  .nav :is(button, a).active { background:var(--panel-2); }
   .feedback { background:var(--panel-2); }
   .feedback.good { background:color-mix(in srgb, var(--green) 12%, var(--panel-2)); }
   .feedback.bad { background:color-mix(in srgb, var(--red) 12%, var(--panel-2)); }
@@ -4325,10 +4412,10 @@ html.reduce-transparency .feedback.warn { background:color-mix(in srgb, var(--am
 
 /* ---- NAV DENSITY + LABELS (desktop side rail) ---- */
 @media (min-width:800px){
-  html[data-nav-density="compact"] .nav button { padding:6px 10px; font-size:.72rem; }
+  html[data-nav-density="compact"] .nav :is(button, a) { padding:6px 10px; font-size:.72rem; }
   html[data-nav-density="compact"] .nav .ico { font-size:.95rem; }
-  html[data-nav-labels="off"] .nav button { justify-content:center; gap:0; }
-  html[data-nav-labels="off"] .nav button { font-size:0; }      /* hide label text */
+  html[data-nav-labels="off"] .nav :is(button, a) { justify-content:center; gap:0; }
+  html[data-nav-labels="off"] .nav :is(button, a) { font-size:0; }      /* hide label text */
   html[data-nav-labels="off"] .nav .ico { font-size:1.25rem; }  /* keep icon */
   html[data-nav-labels="off"] #app { grid-template-columns:76px 1fr; }
   html[data-nav-density="compact"][data-nav-labels="on"] #app { grid-template-columns:188px 1fr; }
@@ -4461,7 +4548,7 @@ html.focus-mode .status-chip { opacity:.5; }
 /* ── Mobile responsiveness sweep (v0.49) — comfortable touch targets by default ── */
 @media (max-width: 640px) {
   /* WCAG 2.5.5 / Apple HIG: interactive controls ≥44px on touch screens, without needing the opt-in toggle */
-  .btn, .nav button, .tab, .segmented button, .choice-btn, .grade-btn,
+  .btn, .nav :is(button, a), .tab, .segmented button, .choice-btn, .grade-btn,
   .idp-suggest-chip, .cpdf-modebtn, .cpdf-sigbtn, .fin-calc-row input,
   select, input[type="text"], input[type="number"], input[type="date"],
   .topbar-profile-btn, button.chip, .ob-rank-btn,
@@ -4802,12 +4889,24 @@ a.res-url:hover{text-decoration:underline}
 @keyframes quizCorrectPulse{0%{transform:scale(1)}40%{transform:scale(1.025)}100%{transform:scale(1)}}
 @keyframes quizWrongShake{10%,90%{transform:translateX(-1px)}20%,80%{transform:translateX(2px)}30%,50%,70%{transform:translateX(-4px)}40%,60%{transform:translateX(4px)}}
 .quiz-options{display:flex;flex-direction:column;gap:8px;margin:12px 0}
-.quiz-opt{text-align:left;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text);font-size:.92rem;line-height:1.4;cursor:pointer;transition:border-color var(--quiz-dur,.32s) var(--quiz-ease,ease),background-color var(--quiz-dur,.32s) var(--quiz-ease,ease),opacity var(--quiz-dur,.32s) var(--quiz-ease,ease)}
+.quiz-opt{display:flex;align-items:flex-start;gap:10px;text-align:left;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text);font-size:.92rem;line-height:1.4;cursor:pointer;transition:border-color var(--quiz-dur,.32s) var(--quiz-ease,ease),background-color var(--quiz-dur,.32s) var(--quiz-ease,ease),opacity var(--quiz-dur,.32s) var(--quiz-ease,ease)}
 .quiz-opt:hover:not(:disabled){border-color:var(--accent,var(--amber))}
 .quiz-opt:disabled{cursor:default}
 .quiz-opt:disabled:not(.quiz-correct):not(.quiz-wrong){opacity:.55}
 .quiz-opt.quiz-correct{border-color:var(--green);background:color-mix(in srgb, var(--green) 15%, var(--panel));animation:quizCorrectPulse var(--quiz-dur,.32s) ease;}
 .quiz-opt.quiz-wrong{border-color:var(--red,#e05757);background:color-mix(in srgb, var(--red,#e05757) 15%, var(--panel));animation:quizWrongShake calc(var(--quiz-dur,.32s) * 1.3) ease;}
+/* PC/desktop intuitivism pass, Tier 2(c): letter badge for the new
+   letter-key selection (see renderQuiz's own keydown comment) - same
+   flex-badge shape Training mode's .tr-letter already uses (search this
+   file for that class), just under quiz-opt's own naming. */
+.quiz-opt-letter{flex:0 0 auto;font-family:var(--font-mono);font-weight:700;font-size:.9rem;color:var(--text-mute);line-height:1.4;}
+/* --ink-* (not raw var(--green)/var(--red)) - this project's own
+   color-mix-toward-text tokens for exactly this "accent color used as
+   text" case (see lint-patterns.mjs check (a), and every other .tr-letter/
+   .cnt.over/.wr-ex-tag precedent already using the same tokens above). */
+.quiz-opt.quiz-correct .quiz-opt-letter{color:var(--ink-green)}
+.quiz-opt.quiz-wrong .quiz-opt-letter{color:var(--ink-red)}
+.quiz-opt-text{flex:1 1 auto;}
 .quiz-feedback{margin-top:8px;font-size:.85rem;color:var(--text-dim);opacity:0;transform:translateY(3px);transition:opacity var(--quiz-dur,.32s) var(--quiz-ease,ease),transform var(--quiz-dur,.32s) var(--quiz-ease,ease)}
 .quiz-feedback.show{opacity:1;transform:translateY(0)}
 .quiz-timer-track{height:6px;border-radius:999px;background:var(--line-2);overflow:hidden;margin:8px 0}
@@ -5416,6 +5515,122 @@ window.G = window.G || {};
       t[j].focus();                  // move focus immediately (in case no re-render)
       t.forEach(function (x, k) { x.tabIndex = k === j ? 0 : -1; });
       t[j].click();                  // activate (may trigger a full re-render → new tablist syncs)
+    });
+  };
+
+  // Tier 2(b) (PC/desktop intuitivism pass): role-agnostic vertical roving-
+  // tabindex for a live list of interactive children that ISN'T a tablist.
+  // The nav sidebar (button group-headers + <a> leaf items, collapsible)
+  // is the first and, for now, only caller - forcing role="tablist"/"tab"
+  // onto it just to reuse util.tabbarKeys above would misdescribe every
+  // item to a screen reader ("tab 1 of 33" instead of "link, Home"), so
+  // this is a separate primitive rather than an option bolted onto that
+  // one: it manages ONLY tabIndex + arrow-key focus movement and touches
+  // zero ARIA attributes of its own, leaving role/aria-expanded/aria-
+  // current exactly as the caller already set them. Up/Down, not Left/
+  // Right (tabbarKeys' axis) - this is a vertical list, so Down means
+  // "next," matching every OS treeview/menu.
+  //
+  // Unlike tabbarKeys, arrow keys here move focus ONLY - they do not also
+  // activate (no t[j].click()). tabbarKeys' tabs auto-activate on arrow
+  // because WAI-ARIA's own tabs pattern calls for it (switching a lightweight
+  // content panel is cheap and expected on selection change); a nav
+  // sidebar's items are real navigations - auto-firing one just because the
+  // roving position passed over it while arrowing to something further down
+  // would be surprising and, for a route with heavy view teardown, costly.
+  // Enter/Space activation needs no extra code either way: it's already
+  // native on both tags itemSelector ever matches (<button>, <a href>).
+  //
+  // itemSelector matches every POTENTIAL stop, visible or not - a collapsed
+  // group's members included. groupSelector/openClass say which of those
+  // count as visible right now (e.g. inside an open .nav-group-body vs. a
+  // closed one); an item with no matching ancestor is always visible.
+  // Exactly one visible item ever holds tabIndex 0 (Tab stops into/out of
+  // the whole list once, same contract as tabbarKeys), everything else is
+  // -1 - INCLUDING anything inside a collapsed group, which is the actual
+  // bug this fixes for the nav specifically: those items used to be only
+  // visually hidden (max-height:0/overflow:hidden), never removed from Tab
+  // order, so a keyboard user tabbing past a collapsed group silently
+  // stepped through every one of its hidden members.
+  //
+  // Re-callable and idempotent: calling this again on a container that's
+  // already bound just resyncs tabIndex against whatever's in the DOM right
+  // now (cheap - a handful of querySelectorAll + tabIndex writes) - it does
+  // NOT rebind the keydown listener a second time (container._rovingBound
+  // guards that, mirroring tablist._tabkeys above). That's what lets nav's
+  // setActive() call this after EVERY route change, most of which don't
+  // rebuild the nav DOM at all (see route()), to keep the roving position
+  // pointed at whatever route is current without needing its own render
+  // pass - exactly the gap a plain "attach once" guard (tabbarKeys' whole
+  // contract) can't cover on a persistent, cleared-and-refilled container
+  // like navEl (renderNav() clears + refills it in place; it never becomes
+  // a fresh node the way each view's own tab bar does on every render).
+  //
+  // opts.isActive: optional predicate checked on every keydown before
+  // acting - lets a caller keep this bound to a container that's sometimes
+  // in a shape this pattern doesn't apply to without ever unbinding or
+  // rebinding it. navEl specifically is reused across the <600px flat tab
+  // bar and the >=600px accordion (SIDEBAR_MQ) - passing
+  // isActive:() => SIDEBAR_MQ.matches keeps arrow-key roving inert on the
+  // flat bar even on a device that resizes back down after this was bound
+  // on the accordion once, without the two presentations needing separate
+  // containers.
+  util.rovingList = function (container, opts) {
+    if (!container) return;
+    opts = opts || {};
+    var itemSel = opts.itemSelector;
+    var groupSel = opts.groupSelector || null;
+    var openClass = opts.openClass || "open";
+    var isActive = opts.isActive || function () { return true; };
+    function allItems() { return Array.prototype.slice.call(container.querySelectorAll(itemSel)); }
+    function visibleItems() {
+      if (!groupSel) return allItems();
+      return allItems().filter(function (x) {
+        var grp = x.closest(groupSel);
+        return !grp || grp.classList.contains(openClass);
+      });
+    }
+    // "Current" = whichever visible item is marked aria-current="page" (the
+    // active route) - same role selectedIdx() plays for tabbarKeys above,
+    // just keyed off a different attribute since these aren't tabs.
+    function currentIdx(list) {
+      for (var k = 0; k < list.length; k++) { if (list[k].getAttribute("aria-current") === "page") return k; }
+      return 0;
+    }
+    function sync() {
+      allItems().forEach(function (x) { x.tabIndex = -1; });
+      var vis = visibleItems();
+      if (vis.length) vis[currentIdx(vis)].tabIndex = 0;
+    }
+    sync();
+    requestAnimationFrame(function () { if (document.body.contains(container)) sync(); });
+    if (container._rovingBound) return;
+    container._rovingBound = true;
+    container.addEventListener("keydown", function (e) {
+      if (!isActive()) return;
+      var vis = visibleItems();
+      if (!vis.length) return;
+      var i = vis.indexOf(document.activeElement); if (i < 0) i = currentIdx(vis);
+      var j = i;
+      if (e.key === "ArrowDown") j = (i + 1) % vis.length;
+      else if (e.key === "ArrowUp") j = (i - 1 + vis.length) % vis.length;
+      else if (e.key === "Home") j = 0;
+      else if (e.key === "End") j = vis.length - 1;
+      else return;
+      e.preventDefault();
+      allItems().forEach(function (x) { x.tabIndex = -1; });
+      vis[j].tabIndex = 0;
+      vis[j].focus();
+    });
+    // A group header's own click toggles navOpenGroups + the body's "open"
+    // class synchronously in its own onclick (see renderGroupsInto), with
+    // no full renderNav() rebuild - resync here (bubble phase, so the
+    // header's own handler has already run) so a just-collapsed item's
+    // stale tabIndex=0 never becomes an invisible extra Tab stop, and a
+    // just-expanded group's members are reachable on the very next arrow
+    // press instead of only after some unrelated re-render.
+    container.addEventListener("click", function (e) {
+      if (e.target.closest && e.target.closest(".nav-group-header")) sync();
     });
   };
 
@@ -6668,6 +6883,19 @@ window.G = window.G || {};
 
   function totalOf(score) { return DIMS.reduce((a, d) => a + (score[d] || 0), 0); }
 
+  // PC/desktop intuitivism pass, Tier 2(c): shared by renderText and
+  // renderCourse below, both of which just gained real keyboard shortcuts
+  // for their choice lists (see each function's own keydown comment). Same
+  // exact device-check the Board Drill flashcard/Quiz PC-parity pass already
+  // uses for its own "Click"/"Tap" hint wording (search this file for the
+  // other three definitions of this same helper) - kept as a small local
+  // copy here rather than promoted to a shared util, matching how the
+  // Board Drill one is itself local to renderDrill rather than global.
+  function clickVerb() {
+    try { return window.matchMedia("(hover: hover) and (pointer: fine)").matches ? "Click" : "Tap"; }
+    catch (e) { return "Tap"; }
+  }
+
   // ---------- header + mode switch ----------
   function renderHeader(sess) {
     const sc = sess.sc;
@@ -6867,10 +7095,55 @@ window.G = window.G || {};
     if (!root) {
       util.clear(sess.container);
       sess.container.appendChild(renderHeader(sess));
-      root = el("div.mode-text");
+      // PC/desktop intuitivism pass, Tier 2(c): the "[A]"/"[B]" prefixes
+      // below (see letters/btn.innerHTML further down) already looked like
+      // a keyboard hint - they were pure decoration, pressing the actual
+      // letter did nothing. This line is the discoverability affordance for
+      // the real binding added below, using the exact same device-aware
+      // Click/Tap phrasing Board Drill's own flip-hint already established
+      // (see clickVerb() above and cardWrap's keydown comment in
+      // renderDrill) rather than inventing new copy.
+      sess.container.appendChild(el("p.hint.eng-kbd-hint", { style: "margin:6px 0 10px",
+        text: clickVerb() + " a choice, or press its letter key. Once you've decided, press Space or Enter to continue." }));
+      root = el("div.mode-text", { tabIndex: "0" });
       consoleEl = el("div.console");
       root.appendChild(consoleEl);
       sess.container.appendChild(root);
+      // Keyboard shortcuts, scoped to this session's .mode-text root (not
+      // global) for the identical reason Board Drill's own cardWrap keydown
+      // handler gives (see that comment, above renderDrill's own listener):
+      // never fight typing elsewhere in the app. Wired ONCE here, in the
+      // "first build" branch only - unlike renderCourse below (which fully
+      // rebuilds sess.container, and so its handler, on every single node),
+      // renderText's own root/consoleEl persist across the whole scenario
+      // (a scrolling transcript, appended to rather than replaced - see the
+      // `else` branch above), so binding again on every node here would
+      // stack one more duplicate listener per decision for the rest of the
+      // run. Letter keys pick the matching visible choice (mirrors the
+      // decorative "[A]" prefix into a real binding); Space/Enter activates
+      // the resulting "Continue" button once one exists - matching Board
+      // Drill's own guard: never hijack Enter/Space while focus is already
+      // on a real <button> (a keyboard user tabbing to Continue and
+      // pressing Enter should get the button's own native activation, not
+      // a second, redundant click routed through here). No arrow-key
+      // browsing: Text mode has no next/prev to browse independent of a
+      // choice, and no numeric grading: nothing here is self-scored.
+      root.addEventListener("keydown", (e) => {
+        const contBtn = consoleEl.querySelector(".choice-continue:not(:disabled)");
+        if (contBtn) {
+          if (e.key !== " " && e.key !== "Enter") return;
+          if (e.target instanceof HTMLElement && e.target.closest("button")) return;
+          e.preventDefault();
+          contBtn.click();
+          return;
+        }
+        const opts = Array.from(consoleEl.querySelectorAll(".choice:not(.choice-continue):not(:disabled)"));
+        if (!opts.length) return;
+        const idx = "ABCDEFGH".indexOf((e.key || "").toUpperCase());
+        if (idx === -1 || idx >= opts.length) return;
+        e.preventDefault();
+        opts[idx].click();
+      });
     } else {
       consoleEl = root.querySelector(".console");
     }
@@ -6889,7 +7162,7 @@ window.G = window.G || {};
           renderExchange(consoleEl, c);
           appendFeedback(consoleEl, c);
           appendTradeoff(consoleEl, c);
-          const cont = el("button.choice", {
+          const cont = el("button.choice.choice-continue", {
             html: "<b>▸</b> Continue",
             onclick: () => { cont.remove(); advance(sess, c); },
           });
@@ -7051,7 +7324,19 @@ window.G = window.G || {};
   function renderCourse(sess, node) {
     util.clear(sess.container);
     sess.container.appendChild(renderHeader(sess));
-    const root = el("div.mode-course");
+    // PC/desktop intuitivism pass, Tier 2(c): the assignment for this item
+    // described Course mode as already showing "[A]/[B]/[C]"-style
+    // keyboard-looking badges on its choices - on inspection that's
+    // actually renderText's own decorative "[A]" prefix (see renderText
+    // above), not this function's: Course mode's .choice buttons carried no
+    // letter at all. Added below (see COURSE_LETTERS/btn.innerHTML) so
+    // "Course" - the literal UI label this render mode owns, in
+    // renderHeader's labels map - gets the same real letter-key binding
+    // Text mode just did, with a matching badge to make it discoverable
+    // rather than inventing an unlabeled shortcut.
+    sess.container.appendChild(el("p.hint.eng-kbd-hint", { style: "margin:6px 0 10px",
+      text: clickVerb() + " a choice, or press its letter key. Once you've decided, press Space or Enter to continue." }));
+    const root = el("div.mode-course", { tabIndex: "0" });
     root.appendChild(el("div.courseprog", {}, [
       el("span", { text: "DECISION " + (sess.choices + 1) }),
       el("span", { text: "•" }),
@@ -7063,22 +7348,51 @@ window.G = window.G || {};
     if (node.prompt) slide.appendChild(el("div.prompt", { text: node.prompt }));
     renderDialogue(slide, node.dialogue);
     const choiceWrap = el("div");
-    visibleChoices(node, sess.flags).forEach((c) => {
-      const btn = el("button.choice", { text: c.say ? "“" + c.say + "”" : c.text, onclick: () => {
+    const COURSE_LETTERS = "ABCDEFGH";
+    visibleChoices(node, sess.flags).forEach((c, i) => {
+      const btn = el("button.choice", { onclick: () => {
         Array.from(choiceWrap.querySelectorAll(".choice")).forEach((b) => (b.disabled = true));
         btn.style.borderColor = feedbackClass(c) === "good" ? "var(--green)" : feedbackClass(c) === "bad" ? "var(--red)" : "var(--amber)";
         renderExchange(slide, c);
         slide.appendChild(buildFeedbackBlock(c));
         appendTradeoff(slide, c);
-        const cont = el("button.btn.primary", { text: "Continue ▸", onclick: () => advance(sess, c) });
+        const cont = el("button.btn.primary.course-continue-btn", { text: "Continue ▸", onclick: () => advance(sess, c) });
         slide.appendChild(el("div", { style: "margin-top:14px" }, [cont]));
       } });
+      btn.innerHTML = "<b>[" + esc(COURSE_LETTERS[i] || "") + "]</b> " + esc(c.say ? "“" + c.say + "”" : c.text);
       if (c.say) btn.title = c.text;
       choiceWrap.appendChild(btn);
     });
     slide.appendChild(choiceWrap);
     root.appendChild(slide);
     sess.container.appendChild(root);
+    // Keyboard shortcuts. Unlike renderText above, this function fully
+    // tears down and rebuilds sess.container (util.clear at the top) on
+    // EVERY node, so - unlike there - there is no "first build only" branch
+    // to worry about: `root` is a brand-new element each call, the previous
+    // one (and its own listener) already detached by the clear above, so
+    // binding again here every time is exactly one listener per node, never
+    // a stack. Same guard and division of keys as Text mode's own handler:
+    // letters pick a still-enabled choice, Space/Enter activates the
+    // resulting Continue button (never while focus already sits on a real
+    // <button>, so tabbing to Continue and pressing Enter still gets that
+    // button's own native activation instead of a redundant second click).
+    root.addEventListener("keydown", (e) => {
+      const contBtn = root.querySelector(".course-continue-btn");
+      if (contBtn) {
+        if (e.key !== " " && e.key !== "Enter") return;
+        if (e.target instanceof HTMLElement && e.target.closest("button")) return;
+        e.preventDefault();
+        contBtn.click();
+        return;
+      }
+      const opts = Array.from(choiceWrap.querySelectorAll(".choice:not(:disabled)"));
+      if (!opts.length) return;
+      const idx = COURSE_LETTERS.indexOf((e.key || "").toUpperCase());
+      if (idx === -1 || idx >= opts.length) return;
+      e.preventDefault();
+      opts[idx].click();
+    });
   }
 
   // ---------- CYOA (scene) ----------
@@ -8177,6 +8491,38 @@ window.G = window.G || {};
             setTimeout(() => { try { G.board.enterTheater(cardWrap); } catch (e) {} }, 220);
           }
         });
+        // PC/desktop intuitivism pass, Tier 2(d): arrow-key row-to-row nav,
+        // same backport-from-Search shape as Doctrine's entryList row above
+        // (see that view's near-identical comment for the full rationale -
+        // no Enter/Space handler needed since these are real <button>
+        // elements that already invoke the click listener above natively
+        // on Enter/Space; plain next/previousElementSibling is a complete
+        // traversal since catList holds only row buttons, nothing else,
+        // per refreshCatList()'s util.clear(catList) + rebuild-from-
+        // categories.forEach() above). Clamps rather than wraps, matching
+        // Search. Deliberately does NOT return focus to a filter input on
+        // ArrowUp-from-row-0 the way Doctrine's row does: unlike Doctrine's
+        // "search" box (which sits directly above entryList, both visually
+        // and as its literal filter source), catList has no equivalent
+        // control - the category/level filtering it drives lives in
+        // catSel/diffSel inside drillDetail, a DIFFERENT column of
+        // .drill-layout (see that CSS rule), not a control positioned
+        // above this list. Per this item's own spec: replicate the
+        // return-focus contract "only where Doctrine/Board Drill actually
+        // have an equivalent control to return focus to" - catList doesn't,
+        // so ArrowUp simply clamps at row 0 instead of jumping focus
+        // somewhere that isn't actually "above" this list.
+        row.addEventListener("keydown", (e) => {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            const next = row.nextElementSibling;
+            if (next) next.focus();
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            const prev = row.previousElementSibling;
+            if (prev) prev.focus();
+          }
+        });
         catList.appendChild(row);
       });
     }
@@ -8310,6 +8656,15 @@ window.G = window.G || {};
 
   async function renderQuiz(mount) {
     util.clear(mount);
+    // PC/desktop intuitivism pass, Tier 2(c): same device-aware Click/Tap
+    // check Board Drill's own flashcard flip-hint already uses (see
+    // clickVerb() inside renderDrill, above) - kept as its own local copy
+    // here rather than promoted to a shared util, matching how renderDrill
+    // keeps its own copy rather than sharing one across these sibling tabs.
+    const clickVerb = () => {
+      try { return window.matchMedia("(hover: hover) and (pointer: fine)").matches ? "Click" : "Tap"; }
+      catch (e) { return "Tap"; }
+    };
     const all = store.boardQuestions();
     const categories = ["All", ...Array.from(new Set(all.map((q) => q.category)))];
     const catSel = el("select", { "aria-label": "Filter by category" });
@@ -8333,7 +8688,18 @@ window.G = window.G || {};
 
     const bestChip = el("p.hint");
     const startBtn = el("button.btn.primary", { type: "button", text: "Start Quiz" });
-    const body = el("div", { style: "margin-top:10px" });
+    // tabIndex="0": `body` is this tab visit's real keyboard tab stop, same
+    // role cardWrap plays for the flashcard drill (see its own keydown
+    // comment) - and, critically, the same NEW element every time this
+    // function runs (renderQuiz(mount) reruns from scratch on every visit
+    // to the Quiz tab; `mount` itself is the ONE body element every Board
+    // Drill sub-tab shares and reuses across tab switches - see
+    // G.board.render()'s set(t) dispatcher). Binding the listener below to
+    // `mount` directly would leave it live on every OTHER sub-tab after
+    // navigating away, and stack a fresh duplicate on every return visit.
+    // `body` avoids both: created fresh here, discarded (never reused) the
+    // moment the Soldier leaves this tab.
+    const body = el("div", { style: "margin-top:10px", tabIndex: "0" });
 
     async function updateBest() {
       const cat = catSel.value || "All";
@@ -8412,8 +8778,19 @@ window.G = window.G || {};
       }
 
       const optWrap = el("div.quiz-options");
+      // PC/desktop intuitivism pass, Tier 2(c): lettered badges (A-D), the
+      // same "[X]" convention Train's own Text/Course modes just picked up
+      // (see renderText/renderCourse in engine.js) - Quiz options previously
+      // had no letter at all, only mouse/touch could pick one. Real letter
+      // keys now select the matching option below (see the keydown listener
+      // near the end of this function); the badge is what makes that
+      // discoverable instead of a hidden shortcut nobody would find.
+      const QUIZ_LETTERS = "ABCD";
       options.forEach((opt, i) => {
-        const btn = el("button.btn.quiz-opt", { type: "button", text: opt });
+        const btn = el("button.btn.quiz-opt", { type: "button" });
+        btn.appendChild(el("span.quiz-opt-letter", { "aria-hidden": "true", text: QUIZ_LETTERS[i] || "" }));
+        btn.appendChild(el("span.quiz-opt-text", { text: opt }));
+        btn.setAttribute("aria-label", "Option " + (QUIZ_LETTERS[i] || "") + ": " + opt);
         btn.addEventListener("click", () => selectOption(i, correctIdx, options, card));
         optWrap.appendChild(btn);
       });
@@ -8448,7 +8825,7 @@ window.G = window.G || {};
       try { if (G.util.announce) G.util.announce(ok ? "Correct." : "Incorrect. Correct answer: " + options[correctIdx]); } catch (e) {}
       util.haptic(ok ? "success" : "warning");
       sess.idx++;
-      const nextBtn = el("button.btn.primary", { type: "button", text: sess.idx < sess.total ? "Next →" : "See Results", style: "margin-top:10px" });
+      const nextBtn = el("button.btn.primary.quiz-next-btn", { type: "button", text: sess.idx < sess.total ? "Next →" : "See Results", style: "margin-top:10px" });
       nextBtn.addEventListener("click", () => advanceQuiz(card));
       card.appendChild(nextBtn);
     }
@@ -8482,7 +8859,39 @@ window.G = window.G || {};
 
     startBtn.addEventListener("click", buildSession);
 
-    mount.appendChild(el("p.hint", { text: "Multiple-choice quiz drawn from your board question bank — 4 options per question, only one correct." }));
+    // Keyboard shortcuts, scoped to `body` (not `mount` - see the tabIndex
+    // comment on `body` above) so they never fight typing elsewhere in the
+    // app, matching Board Drill's own cardWrap keydown convention. Bound
+    // ONCE here since `body` itself is never recreated across the whole
+    // Quiz-tab visit (only its contents are cleared/rebuilt per question -
+    // see drawQuestion/drawResults). Letter keys pick the matching option
+    // while the question is still open; once answered, Space/Enter
+    // activates the Next/See Results button - same guard as everywhere
+    // else in this pass: never hijack Enter/Space while focus already sits
+    // on a real <button>. No numeric grading here (Quiz is auto-scored by
+    // correctness, it has no self-grade step) and no arrow-key browsing
+    // (no skip-without-answering concept - Space/Enter after answering
+    // already IS "move on").
+    body.addEventListener("keydown", (e) => {
+      if (!sess) return;
+      const card = body.querySelector(".quiz-card");
+      if (!card) return;
+      if (!sess.answered) {
+        const opts = Array.from(card.querySelectorAll(".quiz-opt"));
+        if (!opts.length) return;
+        const idx = "ABCD".indexOf((e.key || "").toUpperCase());
+        if (idx === -1 || idx >= opts.length || opts[idx].disabled) return;
+        e.preventDefault();
+        opts[idx].click();
+      } else if (e.key === " " || e.key === "Enter") {
+        if (e.target instanceof HTMLElement && e.target.closest("button")) return;
+        const nextBtn = card.querySelector(".quiz-next-btn");
+        if (nextBtn) { e.preventDefault(); nextBtn.click(); }
+      }
+    });
+
+    mount.appendChild(el("p.hint", { text: "Multiple-choice quiz drawn from your board question bank — 4 options per question, only one correct. "
+      + clickVerb() + " an option, or press its letter key. Once answered, press Space or Enter to continue." }));
     mount.appendChild(el("div.mini-row", {}, [el("label", { text: "Category", style: "margin:0" }), catSel, el("label", { text: "Level", style: "margin:0" }), diffSel, timerBtn]));
     mount.appendChild(bestChip);
     mount.appendChild(el("div", { style: "height:8px" }));
@@ -9049,6 +9458,14 @@ window.G = window.G || {};
   // the board bank; procedure/rubric come from data/mockboard.json.
   function renderMockBoard(mount) {
     util.clear(mount);
+    // PC/desktop intuitivism pass, Tier 2(c): same device-aware Click/Tap
+    // check as Board Drill's own flip-hint (see renderDrill) and the local
+    // copy just added to renderQuiz above - kept local here too rather than
+    // shared, matching the established per-function pattern.
+    const clickVerb = () => {
+      try { return window.matchMedia("(hover: hover) and (pointer: fine)").matches ? "Click" : "Tap"; }
+      catch (e) { return "Tap"; }
+    };
     const cfg = store.mockboard();
     const bank = store.boardQuestions();
     const categories = Array.from(new Set(bank.map((q) => q.category)));
@@ -9086,12 +9503,30 @@ window.G = window.G || {};
     // catch it.
     const scaleMaxPts = Math.max(0, ...util.asArray(cfg.answerScale).map((s) => s.points || 0)) || 2;
 
+    // PC/desktop intuitivism pass, Tier 2(c): a fresh, dedicated wrapper -
+    // NOT `mount` itself - for the same reason renderQuiz's own `body`
+    // isn't `mount` either (see that comment): `mount` is the ONE body
+    // element every Board Drill sub-tab (Drill/Quiz/Mock Board/Points/
+    // Readiness/Definitions) reuses across every tab switch (see
+    // G.board.render()'s set(t) dispatcher, and this very function running
+    // again from scratch on every return visit to Mock Board). A keydown
+    // listener bound straight to `mount` would still be live - and firing -
+    // after navigating to a different sub-tab, and stack one more copy on
+    // every trip back here. mbWrap is created exactly once per Mock Board
+    // visit and discarded (never reused) the moment the Soldier leaves;
+    // draw() below now clears and rebuilds INSIDE mbWrap, never touching
+    // `mount` again after this point, so the one listener bound to mbWrap
+    // near the bottom of this function covers every phase's DOM for the
+    // visit's whole lifetime.
+    const mbWrap = el("div.mb-wrap", { tabIndex: "0" });
+    mount.appendChild(mbWrap);
+
     function stop() { if (sess.timer) { clearInterval(sess.timer); sess.timer = null; } }
 
     function draw() {
       stop();
-      util.clear(mount);
-      mount.appendChild(el("div.feedback.warn", { text: cfg.disclaimer || "Study aid. Board format and scoring vary by unit SOP." }));
+      util.clear(mbWrap);
+      mbWrap.appendChild(el("div.feedback.warn", { text: cfg.disclaimer || "Study aid. Board format and scoring vary by unit SOP." }));
       if (sess.phase === "setup") drawSetup();
       else if (sess.phase === "brief") drawBrief();
       else if (sess.phase === "quiz") drawQuiz();
@@ -9158,7 +9593,7 @@ window.G = window.G || {};
         draw();
       });
       panel.appendChild(start);
-      mount.appendChild(panel);
+      mbWrap.appendChild(panel);
     }
 
     // ---- REPORTING BRIEF ----
@@ -9184,7 +9619,7 @@ window.G = window.G || {};
       const go = el("button.btn.primary", { type: "button", text: "I've reported — start questions (" + sess.queue.length + ")" });
       go.addEventListener("click", () => { sess.phase = "quiz"; sess.idx = 0; draw(); });
       panel.appendChild(go);
-      mount.appendChild(panel);
+      mbWrap.appendChild(panel);
     }
 
     // ---- LIVE Q&A ----
@@ -9203,7 +9638,16 @@ window.G = window.G || {};
 
       panel.appendChild(el("div.mb-cat", { text: q.category }));
       panel.appendChild(el("div.mb-q", { text: q.q }));
-      panel.appendChild(el("p.mb-say", { text: "Answer out loud, as you would to the board. Then reveal the doctrinal answer and score yourself honestly." }));
+      // PC/desktop intuitivism pass, Tier 2(c): the keyboard-shortcut
+      // mention below, using the same clickVerb() phrasing Board Drill's
+      // own hint already established (see clickVerbLower() inside
+      // renderDrill and the local clickVerb() copies added elsewhere this
+      // same pass - kept local here too, matching that precedent rather
+      // than a shared util). The 1/2/3 keys map to cfg.answerScale's own
+      // order (Nailed it / Partial / Missed, as currently shipped) - see
+      // sess._scoreBtns below and the keydown listener near the end of
+      // this function.
+      panel.appendChild(el("p.mb-say", { text: "Answer out loud, as you would to the board. Then reveal the doctrinal answer (" + clickVerb() + " Reveal, or press Space/Enter) and score yourself honestly (1-" + util.asArray(cfg.answerScale).length + ", once revealed)." }));
 
       const answerWrap = el("div.mb-answer", { hidden: "hidden" });
       answerWrap.appendChild(el("div.mb-a-label", { text: "Doctrinal answer" }));
@@ -9229,6 +9673,13 @@ window.G = window.G || {};
         scoreRow.appendChild(b);
       });
       panel.appendChild(scoreRow);
+      // Read live off the actual rendered buttons (not re-derived from
+      // cfg.answerScale) by the keydown listener below, so a future content
+      // edit to the scale can never drift the 1/2/3 keys out of sync with
+      // what's really on screen - same "read the DOM, don't re-derive"
+      // principle Board Drill's own grade-key handler follows (it reads
+      // `flipped` + the live queue, never a cached copy).
+      sess._scoreBtns = Array.from(scoreRow.children);
 
       const revealBtn = el("button.btn.primary.mb-reveal", { type: "button", text: "Reveal answer & score" });
       revealBtn.addEventListener("click", () => {
@@ -9240,8 +9691,9 @@ window.G = window.G || {};
         fill.style.transform = "scaleX(0)";
       });
       panel.appendChild(revealBtn);
+      sess._revealBtn = revealBtn;
 
-      mount.appendChild(panel);
+      mbWrap.appendChild(panel);
 
       // timer
       if (sess.seconds > 0) {
@@ -9381,11 +9833,13 @@ window.G = window.G || {};
             // type=range> replaces this one on every keystroke, dropping
             // keyboard focus to document.body on every single ArrowUp/Down
             // press. Refocus the newly-created slider for this SAME rating
-            // dimension (found via the stable data-rate-id, since `mount`
-            // is the one container that survives across draw() calls) so a
-            // keyboard user can keep adjusting without re-tabbing to it
-            // after every step (task #222).
-            const fresh = mount.querySelector('input[data-rate-id="' + id + '"]');
+            // dimension (found via the stable data-rate-id, since mbWrap -
+            // Tier 2(c) replaced the old `mount`-direct target with this
+            // dedicated wrap, see its own comment above - is the container
+            // that survives across draw() calls) so a keyboard user can
+            // keep adjusting without re-tabbing to it after every step
+            // (task #222).
+            const fresh = mbWrap.querySelector('input[data-rate-id="' + id + '"]');
             if (fresh) fresh.focus();
           });
           row.appendChild(slider);
@@ -9472,7 +9926,7 @@ window.G = window.G || {};
       printBtn.addEventListener("click", () => printScorecard(pct, label, total, max, byCat, weak, hasRubric ? rubricById : null, dimPct));
       actions.appendChild(again); actions.appendChild(printBtn);
       panel.appendChild(actions);
-      mount.appendChild(panel);
+      mbWrap.appendChild(panel);
     }
 
     function printScorecard(pct, label, total, max, byCat, weak, rubricById, dimPct) {
@@ -9504,6 +9958,36 @@ window.G = window.G || {};
         "<p class='foot'>" + util.esc(cfg.disclaimer || "") + "</p>";
       util.printHTML("GUIDON — Mock Board Scorecard", html);
     }
+
+    // PC/desktop intuitivism pass, Tier 2(c): mirrors Board Drill's own
+    // cardWrap keydown convention (see that comment above renderDrill's own
+    // listener) - Mock Board's reveal-then-score flow is the same shape (a
+    // single reveal step, then a small fixed set of self-graded buttons),
+    // so it earns the same two bindings: Space/Enter reveals (identical
+    // guard - never hijack a focused real <button>'s native Enter/Space
+    // activation), and once revealed, 1/2/3 pick the matching self-score
+    // button in sess._scoreBtns (cfg.answerScale's own on-screen order -
+    // currently Nailed it / Partial / Missed - read live rather than
+    // hardcoded, see the comment where sess._scoreBtns is built in
+    // drawQuiz). No letter keys: these are score labels, not a lettered
+    // MCQ. No arrow-key browsing: Mock Board has no next/prev/skip concept
+    // to bind to - the only way to move on IS to score the question, which
+    // 1/2/3 already do.
+    mbWrap.addEventListener("keydown", (e) => {
+      if (sess.phase !== "quiz") return;
+      if (e.key === " " || e.key === "Enter") {
+        if (sess.revealed || !sess._revealBtn) return;
+        if (e.target instanceof HTMLElement && e.target.closest("button")) return;
+        e.preventDefault();
+        sess._revealBtn.click();
+      } else if (sess.revealed) {
+        const btns = sess._scoreBtns || [];
+        const idx = "123456789".indexOf(e.key);
+        if (idx === -1 || idx >= btns.length) return;
+        e.preventDefault();
+        btns[idx].click();
+      }
+    });
 
     draw();
   }
@@ -14809,6 +15293,78 @@ window.G = window.G || {};
   // own RANK_TO_TIER comment above already describes going wrong once.
   if (G.rankUtils) { G.rankUtils.RANKS = RANKS; G.rankUtils.RANK_TO_TIER = RANK_TO_TIER; }
 
+  // PC/desktop intuitivism pass, Tier 2(e): hoisted out of renderConcernsStep,
+  // where this was previously a same-named local const built fresh on every
+  // render of that one step. The new live-updating summary panel
+  // (renderOnboarding's refreshLiveSummary(), >=1024px only) needs to resolve
+  // a selected concern id back to its label from ANY step, not just while
+  // step 3 happens to be mounted - reaching into renderConcernsStep's own
+  // closure isn't an option since it doesn't run until its own step is
+  // reached, and re-typing the same 12-entry list a second time is exactly
+  // the "same fact, independently maintained in N places" trap the
+  // RANK_TO_TIER comment above already flags. Shape, ids, groups, and the
+  // Tier 1(f) sub-grouping are unchanged - this is a pure relocation.
+  const CONCERNS = [
+    { id:"board",      label:"📋 Preparing for a promotion board", group:"Board & Career" },
+    { id:"promotion",  label:"⬆ Working toward a promotion", group:"Board & Career" },
+    { id:"ets",        label:"⇢ Separating / ETS soon", group:"Board & Career" },
+    { id:"transition", label:"⇢ Transition planning / VA benefits", group:"Board & Career" },
+    { id:"leadership", label:"◆ Developing leadership skills", group:"Leadership & Skills" },
+    { id:"doctrine",   label:"▤ Learning doctrine and regulations", group:"Leadership & Skills" },
+    { id:"counseling", label:"☎ Counseling Soldiers", group:"Leadership & Skills" },
+    { id:"nco",        label:"★ NCO duties and responsibilities", group:"Leadership & Skills" },
+    { id:"risk",       label:"⚠ Risk management / safety", group:"Leadership & Skills" },
+    { id:"training",   label:"◎ Completing mandatory training", group:"Personal Readiness" },
+    { id:"pt",         label:"⊕ AFT / physical fitness", group:"Personal Readiness" },
+    { id:"finance",    label:"₵ Financial readiness / TSP", group:"Personal Readiness" },
+  ];
+
+  // Same Tier 2(e) hoist as CONCERNS just above, same reason: renderWeakPoints
+  // Step's live-summary counterpart needs to resolve a checked weak-point id
+  // back to its label (and WEAK_DEFAULT_GROUP, for Tier 1(e)/(f)'s own
+  // default-visible/collapsed split) from outside that step's closure.
+  // Entries that name a real regulation/publication carry a separate `cite`
+  // field, rendered smaller/muted below the topic name rather than packed
+  // into the same clickable label - a long, dense chip like "Composite Risk
+  // Management (ATP 5-19)" read as one block of text where the citation
+  // competed for attention with the actual topic. Entries whose parenthetical
+  // is an acronym expansion or a list of related items, not a citation (Army
+  // Values/LDRSHIP, CBRN/MOPP, Supply/FLIPL, Weapons/M4-M9), are untouched -
+  // splitting those would separate the acronym from the word it defines, not
+  // demote a citation.
+  //
+  // Tier 1(e)/(f): grouped into 3 labeled sub-clusters. "Foundations" (7
+  // items) is the universally board-relevant set regardless of MOS or rank -
+  // shown by default. "Regulations & Safety" and "Field & Technical Skills"
+  // (6 each, 12 total) are more specialized/situational and, below the
+  // Tier 2(f) width tier, collapse behind one "+12 more" toggle, each still
+  // under its own label once expanded - a judgment call about which topics
+  // are common enough to lead with, not something the code itself can
+  // derive; trivial to re-sort (one array) if it doesn't match your actual
+  // population.
+  const WEAK_DEFAULT_GROUP = "Foundations";
+  const WEAK_AREAS = [
+    { id:"army values",   label:"Army Values (LDRSHIP)", group:"Foundations" },
+    { id:"lrm",           label:"Leadership Requirements Model", cite:"ADRP 6-22", group:"Foundations" },
+    { id:"nco creed",     label:"NCO Creed", group:"Foundations" },
+    { id:"chain of command", label:"Chain of Command", group:"Foundations" },
+    { id:"customs",       label:"Customs & Courtesies", group:"Foundations" },
+    { id:"ucmj",          label:"UCMJ / Article 15 / Discipline", group:"Foundations" },
+    { id:"promotions",    label:"Promotions / Points", cite:"AR 600-8-19", group:"Foundations" },
+    { id:"counseling",    label:"Counseling", cite:"DA 4856 / ATP 6-22.1", group:"Regulations & Safety" },
+    { id:"risk",          label:"Composite Risk Management", cite:"ATP 5-19", group:"Regulations & Safety" },
+    { id:"opsec",         label:"OPSEC", cite:"AR 530-1", group:"Regulations & Safety" },
+    { id:"supply",        label:"Supply / Property Accountability (FLIPL)", group:"Regulations & Safety" },
+    { id:"evaluations",   label:"NCOERs / DA 2166-9 / Support Forms", group:"Regulations & Safety" },
+    { id:"adp",           label:"Army Doctrine Publications", cite:"ADP 3-0, 5-0, 6-0, 6-22", group:"Regulations & Safety" },
+    { id:"land nav",      label:"Land Navigation / Map Reading", group:"Field & Technical Skills" },
+    { id:"first aid",     label:"TCCC / First Aid", group:"Field & Technical Skills" },
+    { id:"cbrn",          label:"CBRN Defense / MOPP", group:"Field & Technical Skills" },
+    { id:"finance",       label:"Military Pay / BRS / TSP", group:"Field & Technical Skills" },
+    { id:"acft",          label:"AFT Events & Standards", group:"Field & Technical Skills" },
+    { id:"weapons",       label:"Weapons (M4, M9, crew-served)", group:"Field & Technical Skills" },
+  ];
+
   // ── IDB persistence ──────────────────────────────────────────────────────
   async function loadProfile() {
     try {
@@ -15163,6 +15719,83 @@ window.G = window.G || {};
       if (_onComplete) _onComplete(profile);
     };
 
+    // PC/desktop intuitivism pass, Tier 2(e)/(f): both key off the same
+    // >=1024px tier Tier 1(d) already established for .ob-wrap's own 720px
+    // cap (see that CSS rule's own comment for why 1024px and not a new
+    // breakpoint). One helper instead of two independently-typed
+    // window.innerWidth checks, so the two features can never drift onto
+    // different thresholds. Checked once at mount, not via a resize
+    // listener - matches this file's other one-time width checks (the
+    // nav-accordion default-open check at boot, Search's filter-chip-row
+    // check) rather than the persistent nav rail's live matchMedia
+    // listener; a window resize mid-flow through a short modal wizard is
+    // exactly the corner case those two precedents already decided isn't
+    // worth a live listener for.
+    const isWideOnboardTier = () => window.innerWidth >= 1024;
+
+    // PC/desktop intuitivism pass, Tier 2(e): a live-updating summary panel
+    // next to the wizard's own step content, shown only at the width tier
+    // above. renderSummaryStep (STEPS[6] below) already builds a full
+    // recap of the same data, but only ever appears once, on the LAST of 7
+    // steps - right for a phone, where there's no spare width for a second
+    // column and a recap before there's anything to recap would just be
+    // noise, but Tier 1(d) already proved there's a real second column's
+    // worth of space sitting unused beside .ob-wrap at >=1024px, with no
+    // reason to make someone wait 6 steps to see whether their answers are
+    // adding up to something coherent. Rebuilt (not diffed) on every call -
+    // cheap here (a handful of text rows, not a virtualized list) and
+    // simpler than tracking exactly what changed since the last render.
+    // liveSummaryBody stays null when the tier isn't active, and
+    // refreshLiveSummary() below no-ops on that, so every mutation site
+    // that calls it can do so unconditionally instead of each one
+    // re-deriving whether the panel even exists.
+    let liveSummaryBody = null;
+    let layoutHost = wrap;
+    if (isWideOnboardTier()) {
+      const layout = el("div.ob-live-layout");
+      const panel = el("aside.ob-live-summary", { "aria-label": "Your answers so far" });
+      panel.appendChild(el("div.eyebrow", { text: "So far" }));
+      liveSummaryBody = el("div.ob-live-summary-body");
+      panel.appendChild(liveSummaryBody);
+      layout.appendChild(wrap);
+      layout.appendChild(panel);
+      layoutHost = layout;
+    }
+    function refreshLiveSummary() {
+      if (!liveSummaryBody) return;
+      util.clear(liveSummaryBody);
+      function row(label, valueNode) {
+        const r = el("div.ob-live-summary-row");
+        r.appendChild(el("div.ob-live-summary-label", { text: label }));
+        r.appendChild(valueNode);
+        liveSummaryBody.appendChild(r);
+      }
+      function list(items) {
+        return items.length
+          ? el("ul.ob-live-summary-list", {}, items.map((t) => el("li", { text: t })))
+          : el("div.ob-live-summary-empty", { text: "None selected yet" });
+      }
+      // Rank/tier — data.rank defaults to "SPC" (data.tier to "E4") before
+      // the identity step is ever touched, the same default the rank
+      // picker itself pre-selects (renderIdentityStep's own
+      // `r === (data.rank || "SPC")` active check) - the panel states that
+      // same default instead of showing a false-looking blank on first
+      // paint.
+      row("Rank", el("div.ob-live-summary-value",
+        { text: (data.rank || "SPC") + " · " + (data.tier || "E4") }));
+      if (data.mos) row("MOS", el("div.ob-live-summary-value", { text: data.mos }));
+
+      const concernLabels = (data.readinessConcerns || [])
+        .map((id) => { const c = CONCERNS.find((x) => x.id === id); return c ? c.label : null; })
+        .filter(Boolean);
+      row("Concerns" + (concernLabels.length ? " (" + concernLabels.length + ")" : ""), list(concernLabels));
+
+      const weakLabels = (data.studyWeakPoints || [])
+        .map((id) => { const a = WEAK_AREAS.find((x) => x.id === id); return a ? a.label : null; })
+        .filter(Boolean);
+      row("Weak points" + (weakLabels.length ? " (" + weakLabels.length + ")" : ""), list(weakLabels));
+    }
+
     const STEPS = [
       // 0: Mode select
       { id:"mode", render: renderModeStep },
@@ -15195,8 +15828,14 @@ window.G = window.G || {};
         backBtn.addEventListener("click", back);
         wrap.insertBefore(backBtn, wrap.firstChild);
       }
+      // Tier 2(e): covers step-to-step navigation (Back/Next/mode-select's
+      // immediate advance) - same-step toggles (rank buttons, concern
+      // checkboxes, weak-point chips) call this directly from their own
+      // handlers below, since navigating away is never guaranteed to
+      // happen right after those.
+      refreshLiveSummary();
     }
-    mount.appendChild(wrap);
+    mount.appendChild(layoutHost);
     renderStep();
 
     function renderModeStep(host, data, next) {
@@ -15262,6 +15901,7 @@ window.G = window.G || {};
             prevEl.textContent = getRankPreviewText(tier);
             prevEl.style.display = "";
           }
+          refreshLiveSummary(); // Tier 2(e): this step doesn't advance on rank pick, so the panel needs its own nudge here
         });
         rankRow.appendChild(b);
       });
@@ -15337,7 +15977,7 @@ window.G = window.G || {};
         if (t.v === (data.tier || "E4")) opt.selected = true;
         tierSel.appendChild(opt);
       });
-      tierSel.addEventListener("change", () => { data.tier = tierSel.value; });
+      tierSel.addEventListener("change", () => { data.tier = tierSel.value; refreshLiveSummary(); }); // Tier 2(e)
       card.appendChild(tierSel);
 
       // MOS
@@ -15348,7 +15988,7 @@ window.G = window.G || {};
       card.appendChild(el("label.ob-field-label", { text: "MOS (e.g. 92A, 11B, 25U)", style:"margin-top:14px;display:block" }));
       const mosInp = el("input.ob-input", { type:"text", placeholder:"92A", maxlength:"5", style:"text-transform:uppercase", list:"ob-mos-codes" });
       mosInp.value = data.mos || "";
-      mosInp.addEventListener("input", () => { data.mos = mosInp.value.toUpperCase().trim(); });
+      mosInp.addEventListener("input", () => { data.mos = mosInp.value.toUpperCase().trim(); refreshLiveSummary(); }); // Tier 2(e)
       card.appendChild(mosInp);
       card.appendChild(el("p.hint", { style:"margin-top:4px", text: "Your job code — unlocks the MOS Career Center's shortage/incentive data and civilian-credential mapping." }));
       try {
@@ -15395,22 +16035,10 @@ window.G = window.G || {};
 
       // Tier 1(f): 3 inline sub-group labels, pure visual chunking of the
       // same flat 12-item list - group membership carries no other meaning
-      // (still one flat data.readinessConcerns array, same ids).
-      const CONCERNS = [
-        { id:"board",      label:"📋 Preparing for a promotion board", group:"Board & Career" },
-        { id:"promotion",  label:"⬆ Working toward a promotion", group:"Board & Career" },
-        { id:"ets",        label:"⇢ Separating / ETS soon", group:"Board & Career" },
-        { id:"transition", label:"⇢ Transition planning / VA benefits", group:"Board & Career" },
-        { id:"leadership", label:"◆ Developing leadership skills", group:"Leadership & Skills" },
-        { id:"doctrine",   label:"▤ Learning doctrine and regulations", group:"Leadership & Skills" },
-        { id:"counseling", label:"☎ Counseling Soldiers", group:"Leadership & Skills" },
-        { id:"nco",        label:"★ NCO duties and responsibilities", group:"Leadership & Skills" },
-        { id:"risk",       label:"⚠ Risk management / safety", group:"Leadership & Skills" },
-        { id:"training",   label:"◎ Completing mandatory training", group:"Personal Readiness" },
-        { id:"pt",         label:"⊕ AFT / physical fitness", group:"Personal Readiness" },
-        { id:"finance",    label:"₵ Financial readiness / TSP", group:"Personal Readiness" },
-      ];
-
+      // (still one flat data.readinessConcerns array, same ids). CONCERNS
+      // itself now lives at module scope (Tier 2(e) hoist, see its
+      // definition up near RANK_TO_TIER) so the live-summary panel can
+      // resolve a selected id's label without reaching into this closure.
       const card = el("div.ob-card");
       // Seed from data.readinessConcerns (not empty), and reflect it in each
       // checkbox's initial .checked below: this step can now be revisited
@@ -15455,6 +16083,7 @@ window.G = window.G || {};
         chk.addEventListener("change", () => {
           checks[c.id] = chk.checked;
           data.readinessConcerns = Object.keys(checks).filter(k => checks[k]);
+          refreshLiveSummary(); // Tier 2(e): live panel reflects this toggle immediately, no need to advance
         });
         const lbl = el("label.ob-check-label", { for:"ob-c-"+c.id, text: c.label });
         checkRow.appendChild(chk); checkRow.appendChild(lbl);
@@ -15493,33 +16122,32 @@ window.G = window.G || {};
       // (7 items) is the universally board-relevant set regardless of MOS
       // or rank - shown by default. "Regulations & Safety" and "Field &
       // Technical Skills" (6 each, 12 total) are more specialized/
-      // situational and collapse behind one "+12 more" toggle, each still
-      // under its own label once expanded - a judgment call about which
-      // topics are common enough to lead with, not something the code
-      // itself can derive; trivial to re-sort (one array) if it doesn't
-      // match your actual population.
-      const WEAK_AREAS = [
-        { id:"army values",   label:"Army Values (LDRSHIP)", group:"Foundations" },
-        { id:"lrm",           label:"Leadership Requirements Model", cite:"ADRP 6-22", group:"Foundations" },
-        { id:"nco creed",     label:"NCO Creed", group:"Foundations" },
-        { id:"chain of command", label:"Chain of Command", group:"Foundations" },
-        { id:"customs",       label:"Customs & Courtesies", group:"Foundations" },
-        { id:"ucmj",          label:"UCMJ / Article 15 / Discipline", group:"Foundations" },
-        { id:"promotions",    label:"Promotions / Points", cite:"AR 600-8-19", group:"Foundations" },
-        { id:"counseling",    label:"Counseling", cite:"DA 4856 / ATP 6-22.1", group:"Regulations & Safety" },
-        { id:"risk",          label:"Composite Risk Management", cite:"ATP 5-19", group:"Regulations & Safety" },
-        { id:"opsec",         label:"OPSEC", cite:"AR 530-1", group:"Regulations & Safety" },
-        { id:"supply",        label:"Supply / Property Accountability (FLIPL)", group:"Regulations & Safety" },
-        { id:"evaluations",   label:"NCOERs / DA 2166-9 / Support Forms", group:"Regulations & Safety" },
-        { id:"adp",           label:"Army Doctrine Publications", cite:"ADP 3-0, 5-0, 6-0, 6-22", group:"Regulations & Safety" },
-        { id:"land nav",      label:"Land Navigation / Map Reading", group:"Field & Technical Skills" },
-        { id:"first aid",     label:"TCCC / First Aid", group:"Field & Technical Skills" },
-        { id:"cbrn",          label:"CBRN Defense / MOPP", group:"Field & Technical Skills" },
-        { id:"finance",       label:"Military Pay / BRS / TSP", group:"Field & Technical Skills" },
-        { id:"acft",          label:"AFT Events & Standards", group:"Field & Technical Skills" },
-        { id:"weapons",       label:"Weapons (M4, M9, crew-served)", group:"Field & Technical Skills" },
-      ];
-      const WEAK_DEFAULT_GROUP = "Foundations";
+      // situational and, below the Tier 2(f) width tier, collapse behind
+      // one "+12 more" toggle, each still under its own label once
+      // expanded - a judgment call about which topics are common enough to
+      // lead with, not something the code itself can derive; trivial to
+      // re-sort (one array) if it doesn't match your actual population.
+      // WEAK_AREAS/WEAK_DEFAULT_GROUP themselves now live at module scope
+      // (Tier 2(e) hoist, see their definition up near RANK_TO_TIER) so the
+      // live-summary panel can resolve a checked id's label without
+      // reaching into this closure.
+
+      // PC/desktop intuitivism pass, Tier 2(f): the "+12 more" collapse a
+      // few lines down exists purely to manage vertical height in a
+      // 478px-wide MOBILE grid (confirmed live: 19 chips stacked at that
+      // width ran the step well past a comfortable single scroll) - it
+      // never once checked actual screen width, so the identical collapse
+      // fired at 1440px too, where Tier 1(d) already gives .ob-wrap a
+      // 720px-wide column with real room for a 2-3-across chip grid. Same
+      // >=1024px tier Tier 1(d) uses (isWideOnboardTier(), defined once in
+      // renderOnboarding's own scope above so this and the live-summary
+      // panel can never drift onto different thresholds) flips the
+      // DEFAULT open/closed state only - moreToggle and its click handler
+      // below are byte-for-byte unchanged, so a Soldier who wants the
+      // specialized groups out of the way at any width still can, and one
+      // below 1024px still gets the exact same collapsed-by-default,
+      // "+12 more"-toggle behavior as before this change.
+      const weakDefaultOpen = isWideOnboardTier();
 
       const card = el("div.ob-card");
       // Seed from data.studyWeakPoints, same reasoning as the concerns step
@@ -15542,6 +16170,7 @@ window.G = window.G || {};
           const on = btn.classList.toggle("active");
           checks[a.id] = on;
           data.studyWeakPoints = Object.entries(checks).filter(([,v])=>v).map(([k])=>k);
+          refreshLiveSummary(); // Tier 2(e): live panel reflects this toggle immediately, no need to advance
         });
         return btn;
       }
@@ -15561,7 +16190,9 @@ window.G = window.G || {};
       defaultAreas.forEach((a) => grid.appendChild(weakBtn(a)));
       card.appendChild(grid);
 
-      const moreWrap = el("div", { style: "display:none" });
+      // Tier 2(f): starts open (no inline display:none) at >=1024px instead
+      // of always-collapsed - see weakDefaultOpen's own comment above.
+      const moreWrap = el("div", { style: weakDefaultOpen ? "" : "display:none" });
       let moreGroupSeen = null;
       moreAreas.forEach((a) => {
         if (a.group !== moreGroupSeen) {
@@ -15572,7 +16203,9 @@ window.G = window.G || {};
         }
         moreWrap.lastChild.appendChild(weakBtn(a));
       });
-      const moreToggle = el("button.btn.sm.ghost", { type: "button", text: "+" + moreAreas.length + " more ▾", style: "margin-top:10px", "aria-expanded": "false" });
+      const moreToggle = el("button.btn.sm.ghost", { type: "button",
+        text: weakDefaultOpen ? "Show fewer ▴" : "+" + moreAreas.length + " more ▾",
+        style: "margin-top:10px", "aria-expanded": String(weakDefaultOpen) });
       moreToggle.addEventListener("click", () => {
         const open = moreWrap.style.display === "none";
         moreWrap.style.display = open ? "" : "none";
@@ -22956,6 +23589,44 @@ window.G = window.G || {};
           el("span.ldr-badge", { text: d.topic || "Reference" }),
         ]);
         row.addEventListener("click", () => jumpToDocEntry(i));
+        // PC/desktop intuitivism pass, Tier 2(d): arrow-key row-to-row nav,
+        // backported from Search's .search-hit card keydown handler (see
+        // that view's runSearch()) - the audit that flagged this gap found
+        // Search's own code comment calling this row's markup shape
+        // ("List-detail jump row (mirrors Doctrine's entryList row)") but
+        // that markup borrow never carried the KEYBOARD behavior back with
+        // it, so this 99+-row jump list (up to DOC_CAP=150 rows) was mouse/
+        // Tab-only: reaching row 80 meant either scrolling+clicking or
+        // tabbing through 80 individual buttons one at a time. No Enter/
+        // Space handler needed here unlike Search's version - these rows
+        // are real <button> elements (Search's .search-hit is a div with
+        // role="button"), so Enter/Space already invoke the click listener
+        // above natively; adding an explicit e.preventDefault()+click()
+        // here would risk a double-fire depending on browser Enter-on-
+        // button timing, for zero behavioral gain. entryList holds ONLY
+        // row buttons (util.clear(entryList) at the top of every draw(),
+        // nothing else ever appended) unlike Search's resultsDiv which
+        // interleaves section-head/hit-card/"+N more" siblings - so plain
+        // next/previousElementSibling is a complete, correct traversal
+        // here with no classList guard needed the way Search's ArrowUp
+        // handler requires one. Clamps rather than wraps at both ends,
+        // matching Search's own clamping (Math.min/Math.max there) rather
+        // than the wrapping used by, e.g., util.tabbarKeys elsewhere in
+        // this file - a different existing helper for a different roving-
+        // tabindex shape (single-row tablist), not reused here because
+        // these rows are independently-focusable real buttons, not a
+        // single roving tabIndex managed across siblings.
+        row.addEventListener("keydown", (e) => {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            const next = row.nextElementSibling;
+            if (next) next.focus();
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            const prev = row.previousElementSibling;
+            if (prev) prev.focus(); else search.focus();
+          }
+        });
         entryList.appendChild(row);
         const card = el("div.card.doc-entry-card", { "data-doc-idx": String(i) });
         card.style.borderLeftColor = topicColor;
@@ -22991,6 +23662,21 @@ window.G = window.G || {};
     }
     let docSearchDeb;
     search.addEventListener("input", () => { clearTimeout(docSearchDeb); docSearchDeb = setTimeout(draw, 120); });
+    // PC/desktop intuitivism pass, Tier 2(d): mirrors Search's own filter-
+    // input keydown (runSearch()'s `inp.addEventListener("keydown", ...)`)
+    // half of the arrow-key contract - ArrowDown from the filter box enters
+    // the jump list at its first row, the down-direction complement to the
+    // entryList row handler's ArrowUp-from-row-0-returns-here above. Only
+    // ArrowDown is mirrored, not Search's Escape-clears-search behavior:
+    // Escape-to-clear is a distinct, orthogonal feature Doctrine's search
+    // box never had before this pass, and this item's scope is arrow-key
+    // LIST NAVIGATION specifically, not a new clear shortcut.
+    search.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown") {
+        const first = entryList.querySelector(".list-detail-row");
+        if (first) { e.preventDefault(); first.focus(); }
+      }
+    });
     mount.appendChild(el("div.list-detail", {}, [entryList, results]));
     // Consume a cross-link seed (e.g. from a board question's "Related doctrine" link):
     // pre-fill the search with the publication ref so the Soldier lands on relevant passages.
@@ -24218,15 +24904,44 @@ window.G = window.G || {};
     // narration) rather than authoring separate tooltip copy that would
     // just drift out of sync with it.
     const note = G.demoNotes && G.demoNotes[r.hash];
-    return el("button", {
+    // Tier 2(a) (PC/desktop intuitivism pass): a real <a href>, not a plain
+    // <button onclick> - the ONLY way to get right-click "open in new tab",
+    // middle-click, Ctrl/Cmd+click, and the browser's own status-bar URL
+    // preview on hover, none of which a <button> can provide no matter what
+    // ARIA role or JS is layered on top. r.hash is already in
+    // location.hash's own format ("#/home"), so href=r.hash is a genuinely
+    // working target - a middle-clicked/Ctrl-clicked nav item opens a real
+    // second tab of this app at the right route, not a dead "#" link.
+    //
+    // This touches every one of the 33 non-hidden nav items' markup at once (every
+    // call site renders through here - see renderGroupsInto below), which
+    // is exactly why every ".nav button"-shaped CSS selector in this file
+    // had to move to ".nav :is(button, a)" alongside it (grepped and
+    // updated everywhere - .nav-group-header stays a real <button>, so the
+    // union still has to match both tags). See also the JS selectors this
+    // forced a matching update in: the "More" drawer's close-on-navigate
+    // listener and setActive(), both below.
+    //
+    // onclick keeps doing exactly what it did before (same re-tap-to-
+    // refresh + hash-set logic) but now guards itself first: it only
+    // preventDefault()s a plain, unmodified left-click, so a modified click
+    // (Ctrl/Cmd/Shift+click) falls through to the browser's own native
+    // new-tab/new-window handling instead of being hijacked into an SPA
+    // hash-set on the CURRENT tab. Middle-click doesn't even reach this
+    // handler in the first place in most browsers (it fires "auxclick", not
+    // "click"), so it already opens a background tab with zero extra code.
+    return el("a", {
+      href: r.hash,
       "data-hash": r.hash,
       "aria-label": r.label,
       title: note ? note.d : undefined,
-      onclick: () => {
+      onclick: (e) => {
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
         // Re-tapping the section you are already in previously did nothing,
         // because the hash never changed and route() never fired — leaving a
         // drill sub-view or expanded panel stuck open. Force a re-render.
-        if (location.hash === r.hash) { try { route(); } catch (e) {} }
+        if (location.hash === r.hash) { try { route(); } catch (err) {} }
         else location.hash = r.hash;
       },
     }, [el("span.ico", { "aria-hidden": "true" }, [G.util.icon(r.ico, 18)]), document.createTextNode(r.label)]);
@@ -24297,6 +25012,16 @@ window.G = window.G || {};
   // Progress (still fully reachable via More, same as every other route).
   const NAV_PRIMARY_MOBILE = ["#/home", "#/train", "#/board", "#/settings"];
 
+  // Tier 2(b): shared roving-tabindex config (see util.rovingList) for
+  // both destinations renderGroupsInto fills - the >=600px sidebar (navEl)
+  // and the "More" drawer panel - since both render the identical group-
+  // header + leaf-item shape and should arrow-key the same way. Group
+  // headers stay real <button class="nav-group-header">; leaf items are
+  // the <a data-hash> navButton() now returns (Tier 2(a)) - matches the
+  // ".nav-group-header, a[data-hash]" JS/CSS pattern used everywhere else
+  // in this file post-Tier-2(a).
+  const NAV_ROVING_SEL = { itemSelector: ".nav-group-header, a[data-hash]", groupSelector: ".nav-group-body" };
+
   // Renders the full grouped accordion (dividers, collapsible headers,
   // in-group sub-dividers, demoted items) into ANY container - the
   // >=600px sidebar (navEl) and the <600px "More" drawer both call this
@@ -24362,12 +25087,19 @@ window.G = window.G || {};
     panel.appendChild(el("div.nav-drawer-head", {}, [el("h2", { text: "More" }), closeBtn]));
     renderGroupsInto(panel);
     setActive(location.hash || "#/home", panel);
-    // Any real navigation (a button carrying data-hash - group headers
+    // Tier 2(b): same roving-tabindex arrow nav as the >=600px sidebar -
+    // always active (no isActive gate needed) since the drawer only ever
+    // exists in the <600px flat-bar tier, where it's the sole accordion-
+    // shaped surface (unlike navEl, which is reused between the flat bar
+    // and the accordion and needs SIDEBAR_MQ to disambiguate - see the
+    // isActive comment on util.rovingList itself).
+    if (util.rovingList) util.rovingList(panel, NAV_ROVING_SEL);
+    // Any real navigation (a link carrying data-hash - group headers
     // don't) closes the drawer. Delegated on the panel, bubble phase, so
     // it fires after navButton()'s own click handler has already set
     // location.hash.
     panel.addEventListener("click", (e) => {
-      if (e.target.closest("button[data-hash]")) closeNavDrawer();
+      if (e.target.closest("a[data-hash]")) closeNavDrawer();
     });
     back.appendChild(panel);
     back.addEventListener("click", (e) => { if (e.target === back) closeNavDrawer(); });
@@ -24389,6 +25121,15 @@ window.G = window.G || {};
     }
     renderGroupsInto(navEl);
     setActive(location.hash || "#/home");
+    // Tier 2(b): roving-tabindex arrow nav for the sidebar itself. Gated
+    // to SIDEBAR_MQ.matches (checked live, on every keydown - not just
+    // here) because navEl is the SAME persistent node reused for the
+    // <600px flat bar (the branch above, which never calls this): once
+    // bound, the keydown listener stays bound forever (util.rovingList's
+    // own contract, matching tabbarKeys), so a device that resizes back
+    // down after this ran at least once must not have arrow keys firing on
+    // the flat bar's 4 primaries + More.
+    if (util.rovingList) util.rovingList(navEl, Object.assign({ isActive: () => SIDEBAR_MQ.matches }, NAV_ROVING_SEL));
   }
   // Re-render if a resize crosses the 600px line (e.g. a foldable unfolding,
   // or a desktop window being resized) so the nav presentation stays correct
@@ -24412,11 +25153,21 @@ window.G = window.G || {};
   // highlighting logic scoped to its own panel instead of duplicating it.
   function setActive(hash, container) {
     const scope = container || navEl;
-    Array.from(scope.querySelectorAll("button[data-hash]")).forEach((b) => {
+    Array.from(scope.querySelectorAll("a[data-hash]")).forEach((b) => {
       const on = b.getAttribute("data-hash") === hash;
       b.classList.toggle("active", on);
       if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
     });
+    // Tier 2(b): most route changes land here WITHOUT a full nav rebuild
+    // (see route() - renderNav() only re-runs when a not-yet-open group
+    // needs opening), so this is the only place that would otherwise ever
+    // notice the active route moved and update the roving-tabindex
+    // position to match. Only resyncs a container renderNav()/
+    // openNavDrawer() already bound (scope._rovingBound, set by
+    // util.rovingList itself) - never binds one on its own, so this can't
+    // accidentally attach roving behavior to navEl while it's in its
+    // <600px flat-bar shape (that branch never binds it - see renderNav()).
+    if (scope._rovingBound && util.rovingList) util.rovingList(scope, NAV_ROVING_SEL);
     if (scope !== navEl) return;
     // "More" lights up whenever the active route lives inside the drawer
     // rather than among the 4 curated primaries, so a Soldier deep in

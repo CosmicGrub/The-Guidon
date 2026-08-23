@@ -148,7 +148,7 @@ async function bootTo(hash, viewport, { clearStorage = true } = {}) {
     ? ok("at 1500px with the labeled rail restored, .drill-layout still fits cleanly, no overflow")
     : bad(`at 1500px, .drill-layout overflow check: ${atOverflow}`);
   const navLabelVisible = await at.evaluate(() => {
-    const btn = [...document.querySelectorAll(".nav button")].find((b) => /home/i.test(b.textContent || ""));
+    const btn = [...document.querySelectorAll(".nav :is(button, a)")].find((b) => /home/i.test(b.textContent || ""));
     return btn ? getComputedStyle(btn).fontSize !== "0px" : null;
   });
   navLabelVisible

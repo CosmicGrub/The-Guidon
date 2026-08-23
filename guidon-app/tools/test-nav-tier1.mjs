@@ -42,7 +42,7 @@ const noise = [];
   await page.waitForTimeout(700);
 
   const navState = await page.evaluate(() => {
-    const buttons = Array.from(document.querySelectorAll(".nav > button[data-hash]"));
+    const buttons = Array.from(document.querySelectorAll(".nav > a[data-hash]"));
     const more = document.querySelector(".nav-more-btn");
     return {
       primaryHashes: buttons.map((b) => b.getAttribute("data-hash")),
@@ -68,7 +68,7 @@ const noise = [];
       ariaModal: panel ? panel.getAttribute("aria-modal") : null,
       ariaLabel: panel ? panel.getAttribute("aria-label") : null,
       groupHeaders: panel ? Array.from(panel.querySelectorAll(".nav-group-header")).map((h) => h.textContent.trim()) : [],
-      totalButtons: panel ? panel.querySelectorAll("button[data-hash]").length : 0,
+      totalButtons: panel ? panel.querySelectorAll("a[data-hash]").length : 0,
       demoted: panel ? Array.from(panel.querySelectorAll(".nav-demoted")).map((b) => b.getAttribute("data-hash")) : [],
     };
   });
@@ -117,7 +117,7 @@ const noise = [];
   // stays a genuine non-primary route for the "More lights up" check below.
   await page.locator(".nav-drawer .nav-group-header", { hasText: /^Account$/ }).click();
   await page.waitForTimeout(300);
-  await page.locator('.nav-drawer button[data-hash="#/progress"]').click();
+  await page.locator('.nav-drawer a[data-hash="#/progress"]').click();
   await page.waitForTimeout(400);
   const afterNav = await page.evaluate(() => ({
     hash: location.hash,
@@ -148,7 +148,7 @@ const noise = [];
   await page.locator(".nav-more-btn").click();
   await page.waitForTimeout(400);
   const reopenedHighlight = await page.evaluate(() => {
-    const btn = document.querySelector('.nav-drawer button[data-hash="#/progress"]');
+    const btn = document.querySelector('.nav-drawer a[data-hash="#/progress"]');
     return btn ? { active: btn.classList.contains("active"), ariaCurrent: btn.getAttribute("aria-current") } : null;
   });
   reopenedHighlight && reopenedHighlight.active && reopenedHighlight.ariaCurrent === "page"
@@ -186,7 +186,7 @@ const noise = [];
     // e.g. "Board Prep" - #/train's own group - was never auto-opened,
     // which would make #/train collapsed/off-position for reasons that
     // have nothing to do with the stale-drawer bug this checks for).
-    const homeBtn = document.querySelector('.nav button[data-hash="#/home"]');
+    const homeBtn = document.querySelector('.nav a[data-hash="#/home"]');
     let hitsButton = false;
     if (homeBtn) {
       const r = homeBtn.getBoundingClientRect();
@@ -217,11 +217,11 @@ const noise = [];
   await page.waitForTimeout(700);
 
   const sidebar = await page.evaluate(() => ({
-    totalButtons: document.querySelectorAll(".nav button[data-hash]").length,
+    totalButtons: document.querySelectorAll(".nav a[data-hash]").length,
     dividerCount: document.querySelectorAll(".nav .nav-divider").length,
     demoted: Array.from(document.querySelectorAll(".nav .nav-demoted")).map((b) => b.getAttribute("data-hash")),
     hasMoreBtn: !!document.querySelector(".nav-more-btn"),
-    accountOrder: Array.from(document.querySelectorAll(".nav-group-body button[data-hash]"))
+    accountOrder: Array.from(document.querySelectorAll(".nav-group-body a[data-hash]"))
       .map((b) => b.getAttribute("data-hash"))
       .filter((h) => ["#/progress", "#/currency", "#/settings", "#/share", "#/author", "#/selftest"].includes(h)),
   }));
@@ -240,7 +240,7 @@ const noise = [];
     : bad("Account group order: " + JSON.stringify(sidebar.accountOrder));
 
   const demotedOpacity = await page.evaluate(() => {
-    const btn = document.querySelector('.nav button[data-hash="#/selftest"]');
+    const btn = document.querySelector('.nav a[data-hash="#/selftest"]');
     return btn ? getComputedStyle(btn).opacity : null;
   });
   demotedOpacity !== null && parseFloat(demotedOpacity) < 1
