@@ -37,6 +37,44 @@ await page.waitForTimeout(700);
 // populates that cache correctly; a raw db.put here would leave _cache
 // stale/empty and #/profile would still show the overlay underneath.
 await page.locator(".ob-mode-card", { hasText: /Personal Account/i }).waitFor({ state: "visible", timeout: 8000 });
+
+// PC/desktop intuitivism pass, Tier 1(c): the actual bug this section
+// fixes - confirmed live on a real fresh boot, a keyboard user Tabbing
+// from page load reached 17 fully-hidden background controls (nav
+// buttons, home cards, the board-date input) before ever reaching the
+// wizard's own first field. util.modalTrap proactively focuses the first
+// element inside the panel shortly after construction (its own
+// setTimeout(...,0), documented on that function) specifically so a real
+// user's first Tab press already starts from inside the trap rather than
+// from nothing/document.body - confirm that's actually where focus has
+// landed by now, not just that Tab-cycling behaves once inside.
+const focusAlreadyInOverlay = await page.evaluate(() => {
+  const active = document.activeElement;
+  const overlay = document.getElementById("ob-overlay");
+  return !!(overlay && active && overlay.contains(active));
+});
+focusAlreadyInOverlay
+  ? ok("modalTrap's own deferred initial-focus already landed inside the onboarding overlay, not on a hidden background control")
+  : bad("focus did not land inside #ob-overlay after opening - the background is still reachable");
+
+// Tab all the way through the overlay's own focusable controls (there are
+// only a handful on the mode-select step) and confirm it wraps back to
+// the first one instead of ever escaping to whatever real nav/home
+// control would be next in a naive, untrapped document Tab order.
+const overlayFocusableCount = await page.evaluate(() => {
+  const overlay = document.getElementById("ob-overlay");
+  return overlay ? overlay.querySelectorAll('a[href],button:not([disabled]),input,select,textarea,[tabindex]:not([tabindex="-1"])').length : 0;
+});
+for (let i = 0; i < overlayFocusableCount + 2; i++) await page.keyboard.press("Tab");
+const stillInOverlayAfterCycling = await page.evaluate(() => {
+  const active = document.activeElement;
+  const overlay = document.getElementById("ob-overlay");
+  return !!(overlay && active && overlay.contains(active));
+});
+stillInOverlayAfterCycling
+  ? ok(`cycling Tab all the way around the overlay's ${overlayFocusableCount} focusable controls (plus 2 extra presses) stays trapped inside it, never escaping to the background`)
+  : bad("Tab cycling past the overlay's own controls escaped to a background element");
+
 await page.locator(".ob-mode-card", { hasText: /Personal Account/i }).click();
 await page.waitForTimeout(300);
 await page.locator(".ob-rank-btn", { hasText: /^SSG$/ }).click();
@@ -167,14 +205,24 @@ await page.waitForTimeout(300);
 await page.locator(".ob-mode-card", { hasText: /Personal Account/i }).click();
 await page.waitForTimeout(300);
 
+// PC/desktop intuitivism pass, Tier 1(c): the wizard now registers TWO
+// capture-phase keydown listeners, not one - its own (Escape steps back)
+// plus util.modalTrap's (Tab focus-trap, Escape intentionally disabled via
+// escapeCloses:false so it doesn't fight the wizard's own handler - see
+// that call site's comment). Both get removed together from the exact
+// same two cleanup points this suite already exercises below (the
+// self-clean check inside onKey, and onComplete's own wrapper), so the
+// actual regression this suite guards - unbounded accumulation across
+// abandon cycles - is still fully covered, just at a baseline of 2
+// instead of 1.
 let kdAfterOpen = await page.evaluate(() => window.__kd);
-kdAfterOpen === 1 ? ok("Opening the wizard registers exactly one capture-phase keydown listener") : bad("keydown listener count after open: " + kdAfterOpen);
+kdAfterOpen === 2 ? ok("Opening the wizard registers exactly two capture-phase keydown listeners (its own Escape-steps-back handler, plus util.modalTrap's focus-trap)") : bad("keydown listener count after open: " + kdAfterOpen);
 
 // Abandon mid-flow: navigate away without finishing or pressing Escape.
 await page.evaluate(() => { location.hash = "#/home"; });
 await page.waitForTimeout(300);
 let kdAfterAbandon = await page.evaluate(() => window.__kd);
-kdAfterAbandon === 1 ? ok("Abandoning mid-flow does not immediately remove the listener (expected - self-cleans on next keydown, not on navigation)") : bad("unexpected listener count right after abandoning: " + kdAfterAbandon);
+kdAfterAbandon === 2 ? ok("Abandoning mid-flow does not immediately remove either listener (expected - both self-clean on the next keydown, not on navigation)") : bad("unexpected listener count right after abandoning: " + kdAfterAbandon);
 
 // The very next keydown anywhere in the app should self-clean it.
 await page.keyboard.press("a");
