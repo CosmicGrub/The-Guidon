@@ -15,6 +15,18 @@
  * capped at the input's declared 60% max - all of which only matter because
  * <input type=number> min/max never stops a typed-in out-of-range value from
  * reaching these functions).
+ *
+ * Also covers the upper-bound half of that same clamp on fvContributions()'s
+ * annualRatePct: it used to floor at 0% (Math.max(0, ...)) with no matching
+ * Math.min ceiling, so a large typed "assumed annual return %" pushed
+ * Math.pow(1+r, n) past Number.MAX_VALUE and the projector's headline dollar
+ * figure silently rendered "$∞" instead of a number - the same class of
+ * unguarded-input bug matchDollars() already defends against on yourPct. The
+ * fix clamps annualRatePct to the projector's own declared max=15 the same
+ * shape matchDollars() uses (Math.min(N, Math.max(0, ...))). Checked both at
+ * the pure-function level and by actually typing an oversized rate into the
+ * live "Assumed annual return %" field on #/money and reading the rendered
+ * headline - not just re-deriving the math from source.
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
@@ -94,6 +106,18 @@ else {
     ? ok("fvContributions floors a negative rate at 0% (no sign-flipped Math.pow blowup)")
     : bad("fvContributions(300,5,-50) = " + JSON.stringify(fvNegRate));
 
+  // ---- fvContributions: rate clamped to the input's declared 15% max (the fix under test) ----
+  // Before the fix, annualRatePct only had a Math.max(0, ...) floor and no
+  // matching Math.min ceiling, so 999999% at 20yr overflows Math.pow(1+r,n)
+  // straight to Infinity (future/growth both Infinity, not just "big"). A
+  // clamped 999999% must come out byte-identical to a clamped 15% - proving
+  // the ceiling actually engages rather than merely capping the display.
+  const fvOverRate = await page.evaluate(() => window.G.finance.fvContributions(500, 20, 999999));
+  const fvAtCeiling = await page.evaluate(() => window.G.finance.fvContributions(500, 20, 15));
+  (Number.isFinite(fvOverRate.future) && fvOverRate.future === fvAtCeiling.future && fvOverRate.growth === fvAtCeiling.growth)
+    ? ok(`fvContributions clamps annualRatePct to the 15% input max (999999% -> 15%, future=${fvOverRate.future})`)
+    : bad("fvContributions(500,20,999999) = " + JSON.stringify(fvOverRate) + ", expected to match the 15% clamp " + JSON.stringify(fvAtCeiling));
+
   // ---- fvContributions: negative monthly contribution floored at $0 ----
   const fvNegMonthly = await page.evaluate(() => window.G.finance.fvContributions(-100, 5, 7));
   (fvNegMonthly.future === 0 && fvNegMonthly.contributed === 0 && fvNegMonthly.growth === 0)
@@ -108,6 +132,51 @@ else {
   monotonic.b > monotonic.a
     ? ok("fvContributions: growth increases with a higher assumed rate (8% > 4% over 20yr)")
     : bad("growth at 8% (" + monotonic.b + ") not greater than growth at 4% (" + monotonic.a + ")");
+
+  // ---- fvContributions: the live "Compound-growth projector" headline can't render $∞ ----
+  // Reproduces the actual reported symptom end-to-end: type an oversized
+  // rate into the real #/money "Assumed annual return %" field (not just
+  // call the calculator function) and read what the headline dollar figure
+  // actually renders. Against the pre-fix code this reads literally "$∞" -
+  // (Infinity).toLocaleString("en-US") === "∞" - because money(r.future)
+  // formats whatever fvContributions() hands back with no finite-check of
+  // its own (unlike the bar-segment width just below it, which already had
+  // an explicit Number.isFinite guard - see the fin-bar code and its
+  // comment in index.html).
+  const guestCard = page.locator(".ob-mode-card", { hasText: /guest session/i }).first();
+  await guestCard.waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
+  if (await guestCard.count()) {
+    await guestCard.click();
+    await page.locator("#ob-overlay").waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
+  }
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { location.hash = "#/money"; });
+  await page.waitForTimeout(600);
+
+  const rIn = page.locator(".fin-calc-row input").nth(4); // 5th input on the BRS & TSP tab: "Assumed annual return %"
+  const rLabelOk = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll(".fin-calc-row")];
+    const row = rows[4];
+    return !!row && /Assumed annual return/.test(row.querySelector("label").textContent || "");
+  });
+  rLabelOk
+    ? ok("located the live 'Assumed annual return %' input (5th .fin-calc-row on #/money)")
+    : bad("the 5th .fin-calc-row on #/money was not the 'Assumed annual return %' field - selector needs updating");
+
+  await rIn.fill("999999");
+  await page.waitForTimeout(300); // past the 60ms reproj() debounce
+  const headline = await page.evaluate(() => (document.querySelector(".fin-proj-num") || {}).textContent || "");
+  const [mVal, yVal] = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll(".fin-calc-row")];
+    return [Number(rows[2].querySelector("input").value), Number(rows[3].querySelector("input").value)];
+  });
+  const expected = await page.evaluate((args) => {
+    const r = window.G.finance.fvContributions(args[0], args[1], 15);
+    return "$" + r.future.toLocaleString("en-US");
+  }, [mVal, yVal]);
+  (!/[∞]|Infinity|NaN/.test(headline) && headline === expected)
+    ? ok(`projector headline survives a 999999% typed rate: renders ${headline} (the 15%-clamped value), not "$∞"`)
+    : bad(`projector headline at rate=999999% was "${headline}", expected "${expected}" and no ∞/Infinity/NaN`);
 }
 
 await browser.close();

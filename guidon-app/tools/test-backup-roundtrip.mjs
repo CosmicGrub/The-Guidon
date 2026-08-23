@@ -165,6 +165,50 @@ await page.locator(".gm-box button", { hasText: /Cancel/ }).click().catch(async 
 await page.waitForTimeout(200);
 fs.unlinkSync(corruptPath);
 
+// ---- Upgrade-roadmap Tier 1: KV_PREFIX_VALIDATORS had no "curr:" entry.
+// srs:/boardQuiz:best: (dynamically-keyed row families, identical problem
+// - no single literal key to register in KV_VALIDATORS) both had a
+// registered prefix validator; curriculum.js's curr:<lessonId> rows
+// (curriculum.js's own setP(), one row per lesson ever touched) are the
+// exact same shape - a plain {studied, mastered} object - but had NO entry
+// at all, so prefixValidatorFor() returned null and validateKvRow() fell
+// through to its own "no validator registered -> true" default, letting a
+// malformed curr: row from a hand-edited or corrupted backup reach
+// db.putMany() unchecked. Same corrupted-import-dialog proof as the
+// streak:v1 block above, this time on curr:.
+const currCorruptPath = path.join(os.tmpdir(), "guidon-test-backup-curr-corrupt-" + Date.now() + ".json");
+const currCorrupted = JSON.parse(JSON.stringify(parsed));
+currCorrupted.stores.kv.push({ k: "curr:some-lesson-id", v: "not-an-object" });
+currCorrupted.summary.kv = (currCorrupted.summary.kv || 0) + 1;
+fs.writeFileSync(currCorruptPath, JSON.stringify(currCorrupted));
+
+await page.evaluate(() => { location.hash = "#/profile"; });
+await page.waitForTimeout(400);
+await page.locator("button", { hasText: /Import backup/ }).click();
+await page.locator('input[type="file"]').setInputFiles(currCorruptPath);
+await page.waitForTimeout(300);
+const currPreConfirmText = await page.locator(".gm-box").textContent();
+/curr:some-lesson-id/.test(currPreConfirmText || "") ? ok("The import confirm dialog names a corrupted curr: row before any commit, not after") : bad("confirm dialog did not name the corrupted curr: row: " + (currPreConfirmText || "").slice(0, 300));
+await page.locator(".gm-box button", { hasText: /Cancel/ }).click().catch(async () => {
+  await page.keyboard.press("Escape");
+});
+await page.waitForTimeout(200);
+fs.unlinkSync(currCorruptPath);
+
+// Direct unit check on the shared validator itself (used by BOTH
+// importAll() and Diagnostics' live "Data validity scan" per backup.js's
+// own header comment on validateKvRow) - proves curr: now has a real
+// registered test rather than just happening to be caught by this one
+// dialog's rendering.
+const currValidatorCheck = await page.evaluate(() => ({
+  rejectsGarbage: window.G.backup.validateKvRow({ k: "curr:some-lesson-id", v: "not-an-object" }) === false,
+  rejectsArray: window.G.backup.validateKvRow({ k: "curr:some-lesson-id", v: [] }) === false,
+  acceptsRealShape: window.G.backup.validateKvRow({ k: "curr:some-lesson-id", v: { studied: true, mastered: false } }) === true,
+}));
+currValidatorCheck.rejectsGarbage ? ok("validateKvRow rejects a curr: row whose value is a bare string") : bad("validateKvRow did not reject a garbage-string curr: row (curr: has no registered validator)");
+currValidatorCheck.rejectsArray ? ok("validateKvRow rejects a curr: row whose value is an array") : bad("validateKvRow did not reject an array-valued curr: row");
+currValidatorCheck.acceptsRealShape ? ok("validateKvRow still accepts a real {studied,mastered} curr: row") : bad("validateKvRow rejected a well-formed curr: row");
+
 // ---- Upgrade-roadmap first wave, items 4+5: failure visibility + last-
 // backup staleness nudge. The real export above (line ~67) already wrote a
 // backup:lastExportAt marker, so both panels' hint should now read "today."
