@@ -400,6 +400,61 @@ kvscanFixedText && kvscanFixedText.indexOf("✓") !== -1
   ? ok("The outer 'Data validity scan' card re-verifies and flips to a real pass once both rows are repaired")
   : bad("Data validity scan card did not flip back to passing: " + kvscanFixedText);
 
+// ---- Roadmap Tier 3: report-only AUTO checks now carry a concrete "next"
+// step, not just a "why" rationale. Only the 4 checks with their own Fix
+// button (statusbar/kvscan/swfresh/storagePersist) can safely self-repair;
+// the other 11 are report-only and previously left the Soldier with a
+// rationale but no instruction. Re-run for a clean full render (the kvscan
+// section above left rows repaired, which is fine - "Next:" renders
+// unconditionally alongside "why", independent of pass/fail).
+await page.locator("button.btn.primary.sm").click();
+await page.waitForTimeout(1200);
+
+const REPORT_ONLY_CHECKS = [
+  "Module integrity", "Route health", "Storage round-trip", "Content integrity",
+  "No external requests", "Screen-reader landmarks", "Skip link reachable",
+  "Heading hierarchy", "Contrast sample (current theme)", "No horizontal overflow",
+  "Input mode detected",
+];
+const REPAIR_UI_CHECKS = ["Status bar theming", "Data validity scan", "Service worker freshness", "Storage durability"];
+
+function cardTextFor(name) {
+  return page.evaluate((n) => {
+    const cats = Array.from(document.querySelectorAll(".ob-plan-cat"));
+    const cat = cats.find((el) => el.textContent.replace(/^[✓✕]\s*/, "") === n);
+    return cat ? cat.closest(".card").textContent : null;
+  }, name);
+}
+
+const nextTexts = [];
+for (const name of REPORT_ONLY_CHECKS) {
+  const text = await cardTextFor(name);
+  const m = text && text.match(/Next:\s*(.+)$/s);
+  const nextStep = m ? m[1].trim() : null;
+  if (nextStep && nextStep.length >= 40) {
+    ok(`'${name}' shows a substantive Next step (${nextStep.length} chars)`);
+    nextTexts.push(nextStep);
+  } else {
+    bad(`'${name}' is missing a substantive Next step: ${JSON.stringify(nextStep)}`);
+  }
+  // Not a generic placeholder - must actually reference something specific
+  // to THIS check (its own name, or a concrete noun from its own detail/why),
+  // not an interchangeable "see above"/"contact support" stand-in.
+  if (nextStep && /^(see above|contact support|n\/a|todo)\.?$/i.test(nextStep)) {
+    bad(`'${name}'s Next step reads as a generic placeholder: "${nextStep}"`);
+  }
+}
+new Set(nextTexts).size === nextTexts.length
+  ? ok("Every report-only check's Next step is check-specific text (no two checks share identical wording)")
+  : bad("Two or more report-only checks share an identical Next step - looks like a copy-pasted generic placeholder");
+
+for (const name of REPAIR_UI_CHECKS) {
+  const text = await cardTextFor(name);
+  !/Next:/.test(text || "")
+    ? ok(`'${name}' has its own Fix button, so it correctly has no separate "Next:" text line`)
+    : bad(`'${name}' unexpectedly rendered a "Next:" line even though it already has a Fix button`);
+}
+
 const relevantNoise = noise.filter((n) => !/favicon/.test(n));
 relevantNoise.length === 0 ? ok("no console errors/warnings") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));
 

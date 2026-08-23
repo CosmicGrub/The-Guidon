@@ -324,6 +324,18 @@ a:hover { text-decoration: underline; }
 .bar.green > span { background: linear-gradient(90deg, #2f9e5b, var(--green)); }
 .bar.violet > span { background: linear-gradient(90deg, #6d54c4, var(--violet)); }
 
+/* ---------- Auto-night 24h window bar (Settings > Interface) ---------- */
+/* Visual companion to the Auto-night start/end <select>s -- the selects stay
+   the actual input, this just renders the same [start,end) window they
+   describe as a shaded span on a 24h track instead of two disconnected hour
+   numbers. Shading placement is driven entirely by G.theme.hourInNightWindow
+   (see js-theme's effectiveTheme) so it can never show a shape that
+   disagrees with what auto-night actually does at midnight wrap. */
+.night-hourbar { position: relative; height: 22px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; }
+.night-hourbar-tick { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line); opacity: .7; pointer-events: none; }
+.night-hourbar-fill { position: absolute; top: 0; bottom: 0; background: linear-gradient(180deg, var(--violet), #6d54c4); opacity: .6; pointer-events: none; }
+.night-hourbar-labels { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: .65rem; color: var(--text-dim); margin-top: 4px; }
+
 .stat { display:flex; justify-content: space-between; align-items:center; font-family: var(--font-mono); font-size: .75rem; margin: 8px 0 4px; }
 .stat .k { color: var(--text-dim); }
 .stat .v { color: var(--text); }
@@ -2486,6 +2498,38 @@ mark.dict-hi {
   font-family: var(--font-head);
   letter-spacing: 0.02em;
 }
+/* A-Z section headers — renderDefinitions() sorts the combined board-Q/
+   doctrine/dictionary list by concept before slicing, then drops one of
+   these in front of each new first letter. position:sticky (not the
+   .nav-drawer-head "NOT sticky" case a few hundred lines up - .def-card
+   below has no focusable control of its own, so there's no click-through
+   target for a stuck header to silently swallow) lets consecutive letters
+   naturally displace each other while scrolling, which is the whole point
+   of an A-Z glossary: always know which letter you're in. top:0 (not
+   .doc-search's top:-18px) because this sticks against .main's own top
+   padding edge mid-list, not flush against mount's first child. */
+.def-section-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin-top: 14px;
+  padding: 4px 10px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--font-head);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: color-mix(in srgb, var(--amber) 55%, var(--text));
+}
+/* NOT ":first-of-type" here - :first-of-type filters by tag name (div),
+   and listDiv's own .search-count "Showing N of M" line is ALSO a <div>
+   appended just before the first header, so it - not the first header -
+   would win that title and the rule would silently never match anything.
+   renderDefinitions() instead adds this class only to the literal first
+   header it appends per render() call. */
+.def-section-header.def-section-header-first { margin-top: 0; }
 
 /* .tabBtn/.tab-row/.tab-host retired v1.4.12 -- Risk Management (their
    only consumer) now uses the shared .tabbar/util.tabBtn() every other
@@ -2691,6 +2735,28 @@ mark.dict-hi {
 }
 
 /* ── Step UI ─────────────────────────────────────────────── */
+/* Roadmap Tier 3: real visual stepper, built by renderStepper() in the JS
+   off the wizard's actual STEPS.length (7) - replaces the hand-typed "N of 5"
+   text that used to live separately in 5 of the 7 step-render functions (and
+   was never added to the other 2 at all). One segment per real step; amber
+   fill for done/current, --border for not-yet-reached. role="progressbar" +
+   aria-valuetext carries the same "Step X of Y" info to screen readers that
+   the old text nodes gave visually - the segments themselves are decorative. */
+.ob-stepper {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 16px;
+}
+.ob-stepper-seg {
+  flex: 1 1 0;
+  height: 4px;
+  min-width: 10px;
+  border-radius: 2px;
+  background: var(--border);
+  transition: background 0.15s;
+}
+.ob-stepper-seg.done { background: var(--amber); opacity: 0.5; }
+.ob-stepper-seg.current { background: var(--amber); }
 .ob-step-header {
   margin-bottom: 14px;
 }
@@ -6486,6 +6552,22 @@ window.G = window.G || {};
         competencyReadiness: compAvg,
         readinessLabel: label,
         recent: attempts.sort((a, b) => b.ts - a.ts).slice(0, 6),
+        // Tier 3 roadmap fix: the Progress screen's weekly trend chart (and
+        // the "N-day streak" it derives) used to bucket `recent` above -
+        // sized as a 6-item cap for the "Recent After-Action Reviews" DISPLAY
+        // list, not for a 7-day window. Any week with more than 6 completed
+        // scenarios silently undercounted: the 7th-most-recent attempt (and
+        // older) fell outside the top-6-by-recency slice even though its
+        // timestamp was still inside the last 7 days, so the chart's bars -
+        // and the streak's day-count - read low. last7Days queries `attempts`
+        // directly by real calendar time instead (an 8-day cutoff, one extra
+        // day of buffer since the chart itself does the exact toDateString()
+        // match against `now` at render time, which can differ slightly from
+        // this `now` under the 5s cache above), independent of the Recent
+        // AARs list's own display cap. `attempts` is already bounded by
+        // ATTEMPTS_CAP (1000, see recordAttempt() above) so this filter never
+        // scans an unbounded set.
+        last7Days: attempts.filter((a) => (now - a.ts) < 8 * 86400000),
       };
       state._progressCache = result;
       state._progressCacheTs = Date.now();
@@ -6628,37 +6710,56 @@ window.G = window.G || {};
 
   // ── Registry ────────────────────────────────────────────────────────────
   // id must match the [data-theme] selectors in css/theme.css.
+  //
+  // `since`: optional wave marker, present ONLY on the newest batch below
+  // (mirrors the version-wave comments this file already carries -- "session
+  // 35", "v0.43", etc. -- as a value the picker UI can actually read instead
+  // of a human having to notice a code comment). Settings' theme wall
+  // (openSettings' "APPEARANCE" block, ~line 24190) renders a "New" badge
+  // on any theme with this field set - see t.since there. Discoverability
+  // gap this closes: the wall is collapsed by default (too long to leave
+  // open - see the "Collapsed by default" comment at that call site), so a
+  // returning Soldier who already picked a theme once had no in-app signal
+  // that a newer batch existed at all, only this source comment.
+  // Convention for whoever adds the NEXT batch: tag only that batch's
+  // entries with `since` (a short slug for the new wave) and REMOVE it from
+  // whichever batch was tagged before - this is a "what's new since you
+  // last looked" marker, not a permanent badge of honor, so exactly one
+  // wave should carry it at a time. No expiry timer on purpose: the roadmap
+  // process that touches this file runs in verify-first passes (see this
+  // repo's own audit trail), so the removal happens as a deliberate one-line
+  // edit the next time a batch actually ships, not automatically.
   const THEMES = [
-    // ── Focus set (session 35) ──────────────────────
+    // ── Focus set (session 35) ── newest wave; tagged `since` below ──
     // One brief: promote focus, comfortable at any ambient brightness.
-    { id: "graphite-calm", name: "Graphite Calm", kind: "dark", group: "Focus",
+    { id: "graphite-calm", name: "Graphite Calm", kind: "dark", group: "Focus", since: "session-35",
       swatches: ["#15181c", "#1c2026", "#7fa6c4", "#8fb39a"],
       blurb: "Neutral graphite with one steel accent. The default when you want nothing competing for attention." },
-    { id: "umber-lamp", name: "Umber Lamp", kind: "dark", group: "Focus",
+    { id: "umber-lamp", name: "Umber Lamp", kind: "dark", group: "Focus", since: "session-35",
       swatches: ["#191512", "#211c18", "#d0a068", "#a8a58c"],
       blurb: "Warm brown-black, low blue. For late study when a cool screen keeps you awake." },
-    { id: "pine-dusk", name: "Pine Dusk", kind: "dark", group: "Focus",
+    { id: "pine-dusk", name: "Pine Dusk", kind: "dark", group: "Focus", since: "session-35",
       swatches: ["#131815", "#1a211d", "#84b394", "#a8b8c0"],
       blurb: "Desaturated forest greys with a sage accent. Quiet without being cold." },
-    { id: "slate-quiet", name: "Slate Quiet", kind: "dark", group: "Focus",
+    { id: "slate-quiet", name: "Slate Quiet", kind: "dark", group: "Focus", since: "session-35",
       swatches: ["#20242a", "#282d34", "#8fb0cc", "#b0a898"],
       blurb: "A step lighter than the night set \u2014 sized for an indoor bay, not a dark room." },
-    { id: "clay-warm", name: "Clay Warm", kind: "dark", group: "Focus",
+    { id: "clay-warm", name: "Clay Warm", kind: "dark", group: "Focus", since: "session-35",
       swatches: ["#241f1c", "#2c2622", "#c9a077", "#a4ab98"],
       blurb: "Warm mid-dark neutral. Comfortable under tungsten light." },
-    { id: "harbor-mid", name: "Harbor Mid", kind: "dark", group: "Focus",
+    { id: "harbor-mid", name: "Harbor Mid", kind: "dark", group: "Focus", since: "session-35",
       swatches: ["#1b2126", "#232a30", "#7db0bd", "#b3ad9a"],
       blurb: "Cool blue-grey at mid brightness. Reads well under fluorescent." },
-    { id: "parchment-read", name: "Parchment Read", kind: "light", group: "Focus",
+    { id: "parchment-read", name: "Parchment Read", kind: "light", group: "Focus", since: "session-35",
       swatches: ["#f4efe6", "#fbf7f0", "#7d5f33", "#5f6b52"],
       blurb: "Warm off-white, e-ink feel. Long-form reading without the glare of pure white." },
-    { id: "bone-neutral", name: "Bone Neutral", kind: "light", group: "Focus",
+    { id: "bone-neutral", name: "Bone Neutral", kind: "light", group: "Focus", since: "session-35",
       swatches: ["#f2f2f0", "#fafaf8", "#4a6b8a", "#5c6b58"],
       blurb: "Neutral off-white. The most colour-honest light theme in the set." },
-    { id: "overcast-glare", name: "Overcast", kind: "light", group: "Focus",
+    { id: "overcast-glare", name: "Overcast", kind: "light", group: "Focus", since: "session-35",
       swatches: ["#eceff2", "#f7f9fb", "#3f6484", "#54685c"],
       blurb: "Cool light grey, tuned for glare \u2014 overcast daylight and bright indoor." },
-    { id: "sandstone-sun", name: "Sandstone Sun", kind: "light", group: "Focus",
+    { id: "sandstone-sun", name: "Sandstone Sun", kind: "light", group: "Focus", since: "session-35",
       swatches: ["#f0e9dd", "#f9f4ea", "#8a5f2e", "#5a6349"],
       blurb: "Warm tan with high text contrast. Built for direct sun on a tablet." },
     // ── Shipped (v0.42) ──────────────────────────────────────────────
@@ -6883,6 +6984,16 @@ window.G = window.G || {};
 
   function inList(list, v, dflt){ return list.indexOf(v)>=0 ? v : dflt; }
 
+  // Wrap-aware "is hour h inside the night window [start,end)" check. Shared
+  // by effectiveTheme() below (decides which theme applies right now) and
+  // the Settings auto-night hour bar (draws that same window visually) so
+  // there is exactly one place that knows how to handle a window that wraps
+  // past midnight (e.g. 20:00-06:00) — the bar can never disagree with what
+  // auto-night actually does.
+  function hourInNightWindow(h, a, b){
+    return (a<=b) ? (h>=a && h<b) : (h>=a || h<b); // handles wrap past midnight
+  }
+
   // If autoNight is on and the local hour is within the night window, the chosen
   // night theme overrides the base theme. Pure local clock — no network.
   function effectiveTheme(s){
@@ -6892,8 +7003,7 @@ window.G = window.G || {};
         var h = new Date().getHours();
         var a = (typeof s.autoNightStart==="number")?s.autoNightStart:20;
         var b = (typeof s.autoNightEnd==="number")?s.autoNightEnd:6;
-        var night = (a<=b) ? (h>=a && h<b) : (h>=a || h<b); // handles wrap past midnight
-        if (night) return normTheme(s.autoNightTheme || "night-vision");
+        if (hourInNightWindow(h, a, b)) return normTheme(s.autoNightTheme || "night-vision");
       }catch(e){}
     }
     return base;
@@ -6931,6 +7041,7 @@ window.G = window.G || {};
   // Public prefs API for the Settings UI.
   theme.applyPrefs = applyPrefs;
   theme.effectiveTheme = effectiveTheme;
+  theme.hourInNightWindow = hourInNightWindow;
   theme.PREF_ENUMS = { textScale: TEXT_SCALE, lineSpacing: LINE_SPACING, navDensity: NAV_DENSITY, contentDensity: CONTENT_DENSITY };
   theme.setPref = async function(key, value){
     applyPrefs(Object.assign({}, (G.store && G.store.settings && G.store.settings()) || {}, kv(key,value)));
@@ -10328,6 +10439,20 @@ window.G = window.G || {};
 
   // ═══════════════════════════════════════════════════════════════
   // DEFINITIONS TAB — searchable glossary of board terms & concepts
+  //
+  // Roadmap Tier 3 fix: this was framed as a "searchable glossary" in its
+  // own copy (see the <p.hint> a few lines into render(), below) but the
+  // combined board-Q/doctrine/dictionary `items` list rendered in flat
+  // insertion order (board Qs, then doctrine, then - during a search only -
+  // dictionary terms) behind a plain "Load 150 more" button, with no A-Z
+  // structure at all. render() now sorts `items` by concept before slicing
+  // and drops a sticky .def-section-header in front of each new first
+  // letter (see that class's own comment for why sticky is safe here,
+  // unlike .nav-drawer-head's deliberate opt-out). The 150-card visibleCap
+  // and its "Load more" button stay - untouched - as pagination *within*
+  // the sorted, sectioned list, since a global search can still surface
+  // thousands of dictionary hits; sections just make that list legible
+  // instead of replacing the mechanism that keeps it fast to render.
   // ═══════════════════════════════════════════════════════════════
   function renderDefinitions(mount) {
     util.clear(mount);
@@ -10438,6 +10563,14 @@ window.G = window.G || {};
         });
       }
 
+      // Alphabetize the combined list by concept so the section headers
+      // below land in real A-Z order regardless of which of the three
+      // source types (board Q / doctrine / dictionary) a given concept
+      // came from - a board Q and a doctrine entry that happen to start
+      // with the same letter now sit next to each other, not in whatever
+      // order their source array iterated in.
+      items.sort((a, b) => (a.concept || "").localeCompare(b.concept || "", undefined, { sensitivity: "base", numeric: true }));
+
       if (!items.length) {
         // Previously a flat "No matching definitions." regardless of
         // whether a category filter was active - unlike the sibling
@@ -10456,7 +10589,23 @@ window.G = window.G || {};
 
       listDiv.appendChild(el("div.search-count", { text: "Showing " + Math.min(items.length, visibleCap) + " of " + items.length + " concept" + (items.length === 1 ? "" : "s") }));
 
+      // A-Z sticky section headers. Since render() always clears listDiv
+      // and rebuilds the whole 0..visibleCap slice from scratch (never
+      // appends incrementally - see the "Load more" handler below, which
+      // just bumps visibleCap and re-invokes render()), a fresh letter
+      // walk over the current slice is always correct: no risk of a
+      // duplicate header surviving from a previous, shorter render.
+      let sectionLetter = null;
+      let firstSectionHeader = true;
       items.slice(0, visibleCap).forEach(item => {
+        const firstChar = (item.concept || "").trim().charAt(0).toUpperCase();
+        const letter = (firstChar >= "A" && firstChar <= "Z") ? firstChar : "#";
+        if (letter !== sectionLetter) {
+          sectionLetter = letter;
+          const headerSel = "div.def-section-header" + (firstSectionHeader ? ".def-section-header-first" : "");
+          listDiv.appendChild(el(headerSel, { text: letter, role: "heading", "aria-level": "3" }));
+          firstSectionHeader = false;
+        }
         const card = el("div.def-card");
         const header = el("div.def-card-header");
         const badgeText = item.type === "doctrine" ? "▤ Doctrine" : item.type === "dict" ? "🔤 Term" : "★ Board";
@@ -10932,11 +11081,13 @@ window.G = window.G || {};
   }
 
   // ── Training completions sub-panel ─────────────────────────────────────
-  function renderTrainingPanel(mount) {
-    const completions = (store.trainingCompletions && store.trainingCompletions()) || {};
-    const trainingScs = store.scenarios ? store.scenarios().filter((s) => s.defaultMode === "training") : [];
+  // trainingScs/done/completions are computed once in G.progress.render()
+  // (see the "At-a-glance dashboard strip data" block, right after `p` is
+  // fetched) and passed in here rather than recomputed, so this panel and
+  // the strip's "Training passed" tile can never disagree about what
+  // "passed" means.
+  function renderTrainingPanel(mount, trainingScs, done, completions) {
     if (!trainingScs.length) return;
-    const done = trainingScs.filter((s) => completions[s.id] && completions[s.id].bestPct >= 80).length;
     const panel = el("div.panel", { style: "margin-top:12px" });
     panel.appendChild(el("div.stat", {}, [
       el("span.k", { text: "Mandatory Training" }),
@@ -11090,7 +11241,11 @@ window.G = window.G || {};
   }
 
   // ── Weekly Study Goal tracker ────────────────────────────────────────────
-  function renderWeeklyGoal(mount) {
+  // streakData is computed once in G.progress.render() (see the "At-a-glance
+  // dashboard strip data" block, right after `p` is fetched) and passed in
+  // here rather than re-fetched, so this panel's "Study streak" row and the
+  // strip's "Study streak" tile can never show two different numbers.
+  function renderWeeklyGoal(mount, streakData) {
     const GOAL_KEY = "progress:weeklyGoal:v1";
     const host = el("div");
     mount.appendChild(host);
@@ -11149,8 +11304,7 @@ window.G = window.G || {};
       bar.appendChild(el("span", { style:"width:"+pct+"%" }));
       panel.appendChild(bar);
 
-      // Streak counter
-      const streakData = (store.streakDays && await store.streakDays()) || { current: 0, best: 0 };
+      // Streak counter (streakData passed in from render(), see above)
       if (streakData.current > 0 || streakData.best > 0) {
         const srow = el("div.stat", { style:"margin-top:8px" });
         srow.appendChild(el("span.k", { text: "Study streak" }));
@@ -11193,6 +11347,82 @@ window.G = window.G || {};
   G.progress = {    async render(mount) {
       util.clear(mount);
       const p = await store.getProgress();
+
+      // ── At-a-glance dashboard strip data (Tier 3 roadmap item) ──────────
+      // Every number the strip below needs - overall %, weakest dimension,
+      // training completion %, streak, cards due - is already computed
+      // somewhere further down this same render pass (training panel,
+      // weekly-goal panel, coverage-gaps callout, Board Q Readiness panel).
+      // Computed ONCE here instead, and threaded down into those panels as
+      // parameters, so the strip and the panel it summarizes always read
+      // the identical value - the same "one predicate, can't drift" idea
+      // this file already applies to G.board.isDueSrs/isMasteredSrs, just
+      // applied to render-time values instead of shared predicates.
+
+      // Weakest LRM dimension - was previously computed inline again, right
+      // before the "coverage gaps callout" section further down; that
+      // section now reads weakestDim/weakestPct instead of re-running its
+      // own copy of this reduce.
+      const all6 = [...COMPS, ...ATTRS];
+      const weakestDim = all6.reduce((min, c) => p.dims[c].pct < p.dims[min].pct ? c : min, all6[0]);
+      const weakestPct = p.dims[weakestDim].pct;
+
+      // Mandatory training completion - was previously computed only
+      // inside renderTrainingPanel() and never exposed to a caller; hoisted
+      // so renderTrainingPanel (below) takes it as a parameter instead of
+      // recomputing it from scratch.
+      const trainingScs = store.scenarios ? store.scenarios().filter((s) => s.defaultMode === "training") : [];
+      const trainingCompletions = (store.trainingCompletions && store.trainingCompletions()) || {};
+      const trainingDone = trainingScs.filter((s) => trainingCompletions[s.id] && trainingCompletions[s.id].bestPct >= 80).length;
+
+      // Current streak and Board Drill due/mastery data both need an async
+      // store/db read - run them concurrently so the strip (and headline)
+      // don't wait on two sequential round trips before first paint.
+      const [streakData, bqCatStats] = await Promise.all([
+        // Same canonical G.streak number the Weekly Study Goal panel
+        // (below) and Home both read via store.streakDays(); fetched once
+        // here so renderWeeklyGoal takes it as a parameter instead of
+        // making its own second G.streak.get() round trip.
+        (async () => (store.streakDays && await store.streakDays()) || { current: 0, best: 0 })(),
+        // Board Drill cards due - same srsAll cursor scan and catStats/
+        // tierStats shape the "Board Q performance by category" section
+        // further down builds; hoisted so that section reuses this object
+        // instead of re-running its own loadAllSrs() scan. Stays null (not
+        // just {}) on any failure or empty deck so both this strip and
+        // that section can tell "no data" apart from "zero due" via the
+        // same `if (bqCatStats)` guard.
+        (async () => {
+          try {
+            const bqs = store.boardQuestions ? store.boardQuestions() : [];
+            if (!bqs.length || !G.board || !G.board.loadAllSrs) return null;
+            const catStats = {};
+            const tierStats = { beginner: { total: 0, downCold: 0, knowIt: 0, needsWork: 0, untouched: 0 },
+                                 intermediate: { total: 0, downCold: 0, knowIt: 0, needsWork: 0, untouched: 0 },
+                                 expert: { total: 0, downCold: 0, knowIt: 0, needsWork: 0, untouched: 0 } };
+            // One db.all("kv") cursor scan instead of one db.get() per question.
+            const srsAll = await G.board.loadAllSrs(bqs.map((q) => q.id));
+            for (const q of bqs) {
+              const srs = srsAll[q.id];
+              if (!catStats[q.category]) catStats[q.category] = { total: 0, reviewed: 0, mastered: 0, due: 0 };
+              catStats[q.category].total++;
+              if (srs && srs.reps > 0) {
+                catStats[q.category].reviewed++;
+                if (G.board.isMasteredSrs(srs)) catStats[q.category].mastered++;
+                if (G.board.isDueSrs(srs)) catStats[q.category].due++;
+              }
+              const tier = G.board.normDifficulty(q.difficulty);
+              tierStats[tier].total++;
+              const g = srs ? srs.lastGrade : null;
+              if (g === 3) tierStats[tier].downCold++;
+              else if (g === 2) tierStats[tier].knowIt++;
+              else if (g === 0 || g === 1) tierStats[tier].needsWork++;
+              else tierStats[tier].untouched++;
+            }
+            return { bqs, catStats, tierStats };
+          } catch (e) { return null; }
+        })(),
+      ]);
+
       // "Progress", matching the nav label - not "Readiness", which is
       // already a distinct sub-tab name inside Board Prep (a records-
       // readiness checklist, an unrelated feature) and would collide.
@@ -11222,9 +11452,55 @@ window.G = window.G || {};
       ]);
       mount.appendChild(headline);
 
+      // ── At-a-glance dashboard strip ──────────────────────────────────────
+      // Every value below is read from a variable computed above, not
+      // recomputed - so this strip can never show a different number than
+      // the panel further down the page that independently owns it. Same
+      // .readiness-dash/.readiness-grid/.readiness-tile shape as Home's "My
+      // readiness at a glance" strip - reused verbatim (see the js/home.js
+      // section's `dash`/`grid`/`tile` build, search "readiness-dash")
+      // rather than inventing a second compact-stat-card pattern.
+      {
+        const glanceTiles = [];
+        const readyTone = p.readinessLabel === "Board Ready" ? "green" : p.readinessLabel === "Strong" ? "cyan" : p.readinessLabel === "On Track" ? "amber" : "red";
+        glanceTiles.push({ tone: readyTone, value: p.competencyReadiness + "%", label: "Overall readiness", sub: p.readinessLabel });
+        glanceTiles.push({ tone: weakestPct < 40 ? "amber" : "cyan", value: weakestPct + "%", label: weakestDim, sub: "Weakest dimension" });
+        // Matches renderTrainingPanel's own early return: no training
+        // scenarios means no Mandatory Training panel to compare against,
+        // so the strip skips this tile too rather than claiming a 0/0.
+        if (trainingScs.length) {
+          const trainComplete = trainingDone === trainingScs.length;
+          glanceTiles.push({ tone: trainComplete ? "green" : "amber", value: trainingDone + "/" + trainingScs.length, label: "Training passed", sub: trainComplete ? "Complete" : "Keep going" });
+        }
+        glanceTiles.push({ tone: streakData.current >= 3 ? "amber" : undefined, value: streakData.current + "d", label: "Study streak", sub: "Best: " + streakData.best + "d" });
+        if (bqCatStats) {
+          const totalReviewed = Object.values(bqCatStats.catStats).reduce((s, c) => s + c.reviewed, 0);
+          const totalDue = Object.values(bqCatStats.catStats).reduce((s, c) => s + c.due, 0);
+          // A fresh, never-drilled deck reads 0 due too - same distinction
+          // Home's own due-count card draws (see its "fresh" branch) - so
+          // this tile doesn't claim "caught up" for a deck nobody's touched.
+          if (totalReviewed > 0) {
+            glanceTiles.push({ tone: totalDue > 0 ? "amber" : "green", value: String(totalDue), label: "Cards due", sub: totalDue > 0 ? "Ready to drill" : "All caught up" });
+          } else {
+            glanceTiles.push({ tone: undefined, value: "—", label: "Cards due", sub: "Not studied yet" });
+          }
+        }
+        const glanceDash = el("div.readiness-dash", { style: "margin-top:12px", "aria-label": "Progress at a glance" });
+        const glanceGrid = el("div.readiness-grid");
+        glanceTiles.forEach((t) => {
+          const tile = el("div.readiness-tile", { "data-tone": t.tone, "aria-label": t.label + ": " + t.value + ". " + t.sub });
+          tile.appendChild(el("div.readiness-val", { text: t.value }));
+          tile.appendChild(el("div.readiness-label", { text: t.label }));
+          tile.appendChild(el("div.readiness-sub", { text: t.sub }));
+          glanceGrid.appendChild(tile);
+        });
+        glanceDash.appendChild(glanceGrid);
+        mount.appendChild(glanceDash);
+      }
+
       // mandatory training panel
-      renderTrainingPanel(mount);
-      await renderWeeklyGoal(mount);
+      renderTrainingPanel(mount, trainingScs, trainingDone, trainingCompletions);
+      await renderWeeklyGoal(mount, streakData);
 
       // LRM balance radar — always shown, even at zero attempts, as a visual
       // incentive for a brand-new Soldier to start building the hexagon out.
@@ -11245,7 +11521,12 @@ window.G = window.G || {};
 
       // ── Weekly Activity Trend Chart ──────────────────────────────────────────
       try {
-        if (p.recent && p.recent.length) {
+        // Sourced from p.last7Days (queried directly by calendar date in
+        // getProgress() above), NOT p.recent - p.recent is capped at 6 items
+        // for the "Recent After-Action Reviews" display list further down
+        // this page and would silently undercount any week with more than 6
+        // completed scenarios. See the comment on last7Days in getProgress().
+        if (p.last7Days && p.last7Days.length) {
           const now = Date.now();
           const DAY = 86400000;
           // Build 7-day buckets (today = index 6)
@@ -11257,7 +11538,7 @@ window.G = window.G || {};
             dayLabels.push(i === 0 ? "Today" : i === 1 ? "Yest" : d.toLocaleDateString("en-US",{weekday:"short"}));
             dayDates.push(d.toDateString());
           }
-          p.recent.forEach((aar) => {
+          p.last7Days.forEach((aar) => {
             const d = new Date(aar.ts);
             for (let i = 0; i < 7; i++) {
               if (d.toDateString() === dayDates[i]) { buckets[i]++; break; }
@@ -11283,7 +11564,9 @@ window.G = window.G || {};
           });
           trendPanel.appendChild(chartWrap);
           // Streak insight - deliberately scoped to Train-scenario activity
-          // only, same as the bar chart above it (both come from p.recent).
+          // only, same as the bar chart above it (both come from the
+          // `buckets` derived from p.last7Days, not the display-capped
+          // p.recent - see the note above the p.last7Days guard).
           // The "Weekly Study Goal" panel elsewhere on this same page shows
           // a DIFFERENT, canonical app-wide streak (G.streak, ticked on any
           // Home visit) labeled "Study streak" - this one is genuinely a
@@ -11317,14 +11600,13 @@ window.G = window.G || {};
       ATTRS.forEach((a) => attrPanel.appendChild(barRow(a, p.dims[a].pct, p.dims[a].score, CLS[a])));
       mount.appendChild(attrPanel);
 
-      // coverage gaps callout
-      const all6 = [...COMPS, ...ATTRS];
-      const weakest = all6.reduce((min, c) => p.dims[c].pct < p.dims[min].pct ? c : min, all6[0]);
-      const lowest = p.dims[weakest].pct;
-      if (lowest < 40) {
+      // coverage gaps callout - weakestDim/weakestPct computed once, near
+      // the top of render() (see "At-a-glance dashboard strip data"), and
+      // reused here instead of a second copy of this same reduce.
+      if (weakestPct < 40) {
         mount.appendChild(el("div.card", { style: "margin-top:4px;border-left:3px solid var(--amber)" }, [
           el("div.eyebrow", { text: "Focus area" }),
-          el("h3", { text: weakest + " (" + lowest + "%)" }),
+          el("h3", { text: weakestDim + " (" + weakestPct + "%)" }),
           el("p.hint", { text: "Your lowest dimension. Scenario recommendations on the Home screen will prioritize this area automatically." }),
         ]));
       }
@@ -11448,37 +11730,15 @@ window.G = window.G || {};
       } catch(e) { /* non-fatal */ }
 
       // ── Board Q performance by category ────────────────────────────────
+      // bqs/catStats/tierStats were computed once, near the top of
+      // render() (see "At-a-glance dashboard strip data"), so the strip's
+      // "Cards due" tile and the two panels below always agree - all three
+      // read the SAME catStats/tierStats object from a single loadAllSrs()
+      // scan instead of two independent scans that could (in principle)
+      // race against a write landing between them.
       try {
-        const bqs = store.boardQuestions ? store.boardQuestions() : [];
-        if (bqs.length) {
-          // Load SRS data for all questions and compute per-category stats,
-          // plus a per-difficulty-tier mastery breakdown (Beginner/
-          // Intermediate/Expert) using the 4-level grade recorded by the
-          // Board Drill flip card (session 16) rather than just the old
-          // binary reps-based "mastered" signal.
-          const catStats = {};
-          const tierStats = { beginner: { total: 0, downCold: 0, knowIt: 0, needsWork: 0, untouched: 0 },
-                               intermediate: { total: 0, downCold: 0, knowIt: 0, needsWork: 0, untouched: 0 },
-                               expert: { total: 0, downCold: 0, knowIt: 0, needsWork: 0, untouched: 0 } };
-          // One db.all("kv") cursor scan instead of one db.get() per question.
-          const srsAll = await G.board.loadAllSrs(bqs.map((q) => q.id));
-          for (const q of bqs) {
-            const srs = srsAll[q.id];
-            if (!catStats[q.category]) catStats[q.category] = { total: 0, reviewed: 0, mastered: 0, due: 0 };
-            catStats[q.category].total++;
-            if (srs && srs.reps > 0) {
-              catStats[q.category].reviewed++;
-              if (G.board.isMasteredSrs(srs)) catStats[q.category].mastered++;
-              if (G.board.isDueSrs(srs)) catStats[q.category].due++;
-            }
-            const tier = G.board.normDifficulty(q.difficulty);
-            tierStats[tier].total++;
-            const g = srs ? srs.lastGrade : null;
-            if (g === 3) tierStats[tier].downCold++;
-            else if (g === 2) tierStats[tier].knowIt++;
-            else if (g === 0 || g === 1) tierStats[tier].needsWork++;
-            else tierStats[tier].untouched++;
-          }
+        if (bqCatStats) {
+          const { catStats, tierStats } = bqCatStats;
           const anyGraded = Object.values(tierStats).some((t) => t.total > t.untouched);
           if (anyGraded) {
             // Intuitivism pass: shrunk from a per-tier breakdown (3 rows +
@@ -15804,6 +16064,24 @@ window.G = window.G || {};
       "opsec": { route:"#/board", action:"Memorize OPSEC 5-step process and definition of critical information" },
       "first aid": { route:"#/board", action:"Know TCCC phases (Care Under Fire, TFC, TACEVAC) and MARCH protocol" },
       "cbrn": { route:"#/board", action:"Know MOPP levels 0-4 and SLUDGEM nerve agent symptoms" },
+      // Coverage-gap fix (roadmap Tier 3): WEAK_AREAS (the checkable list
+      // above, module scope) had 7 ids with no key here at all — a Soldier
+      // checking any of these got zero "Study Gaps" item back, silently, since
+      // the forEach below just finds no match and moves on. Verified by
+      // cross-referencing every WEAK_AREAS id against these keys directly
+      // (substring match, same as the forEach does) rather than trusting the
+      // 5-item list a prior scoping pass named — that pass missed "adp" and
+      // "acft" entirely. Each of the 7 below routes to the actual in-app view
+      // that covers it (per DEMO_NOTES' own descriptions of those routes)
+      // rather than defaulting every one to #/board, same judgment call the
+      // counseling/risk/finance entries above already made.
+      "chain of command": { route:"#/channels", action:"Know your chain of command start to finish, and who to see for what — Channels maps the requirements that gate each rank" },
+      "promotions": { route:"#/board", action:"Know your AR 600-8-19 point breakdown by category (military/civilian education, awards, military training) — the Points tab gives a rank-aware calculation" },
+      "supply": { route:"#/board", action:"Know supply accountability basics — hand receipts (DA 2062), command supply discipline, and when a loss becomes a FLIPL under AR 735-5" },
+      "evaluations": { route:"#/forms", action:"Know the NCOER rating chain and DA 2166-9 rating scale (Not Qualified through Most Qualified) — Forms has a fillable NCOER support form walkthrough" },
+      "adp": { route:"#/doctrine", action:"Know the doctrine hierarchy (ADP → FM → ATP/TC) and what ADP 3-0, 5-0, 6-0, and 6-22 each cover" },
+      "acft": { route:"#/fitness", action:"Know your AFT event standards and scoring by age/gender — Fitness has the promotion-point conversion table" },
+      "weapons": { route:"#/board", action:"Know max effective range, rate of fire, and characteristics for the M4, M9, and your unit's crew-served weapon" },
     };
     weak.forEach(w => {
       const wl = w.toLowerCase();
@@ -16051,6 +16329,40 @@ window.G = window.G || {};
       { id:"summary", render: renderSummaryStep },
     ];
 
+    // Roadmap Tier 3: replaces the 5 divergent hardcoded "N of 5" ob-step-num
+    // nodes that used to live one-per-function in renderIdentityStep/
+    // RoleStep/ConcernsStep/WeakPointsStep/BoardDateStep - each was a literal
+    // string typed by hand when the wizard only had 5 numbered steps, and
+    // none of them got updated when renderBoardDateStep and renderSummaryStep
+    // were added later and pushed STEPS.length to 7 (see the STEPS comment
+    // above: "LAST of 7" was already correct in prose while the on-screen
+    // counters still said "of 5"). Mode-select and the summary step never had
+    // a counter at all. One shared, real-total stepper fixes both at once:
+    // built off STEPS.length itself so it can never drift from the array
+    // again, and injected by renderStep() below so every step gets it
+    // uniformly - same reasoning as the shared Back button just below it.
+    // Guest/Kiosk both terminate onboarding from mode-select's own advance()
+    // call (renderIdentityStep's `if (data.mode === "guest"/"kiosk")` early
+    // returns straight into finishGuest()/finishKiosk(), never rendering
+    // step content) so STEPS.length is the one real total for every path
+    // that ever paints a stepper - there is no separate shorter STEPS array
+    // for those modes to account for.
+    function renderStepper(current, total) {
+      const bar = el("div.ob-stepper", {
+        role: "progressbar",
+        "aria-valuemin": "1",
+        "aria-valuemax": String(total),
+        "aria-valuenow": String(current + 1),
+        "aria-valuetext": "Step " + (current + 1) + " of " + total,
+        "aria-label": "Onboarding progress",
+      });
+      for (let i = 0; i < total; i++) {
+        const cls = i < current ? ".done" : i === current ? ".current" : "";
+        bar.appendChild(el("span.ob-stepper-seg" + cls));
+      }
+      return bar;
+    }
+
     function advance() { step++; if (step < STEPS.length) renderStep(); else finish(); }
     function back() { if (step > 0) { step--; renderStep(); } }
     function renderStep() {
@@ -16066,6 +16378,10 @@ window.G = window.G || {};
         backBtn.addEventListener("click", back);
         wrap.insertBefore(backBtn, wrap.firstChild);
       }
+      // Stepper goes above the Back button (inserted second, so it lands
+      // first) - visible on all 7 steps, not just the 5 that used to have
+      // their own hand-typed counter.
+      wrap.insertBefore(renderStepper(step, STEPS.length), wrap.firstChild);
       // Tier 2(e): covers step-to-step navigation (Back/Next/mode-select's
       // immediate advance) - same-step toggles (rank buttons, concern
       // checkboxes, weak-point chips) call this directly from their own
@@ -16111,7 +16427,6 @@ window.G = window.G || {};
       if (data.mode === "kiosk") { finishKiosk(); return; }
 
       host.appendChild(el("div.ob-step-header", {}, [
-        el("div.ob-step-num", { text: "1 of 5" }),
         el("h3.ob-step-title", { text: "Who are you?" }),
         el("p.hint", { text: "Your name appears on the home screen and pre-fills DA forms. Never shared externally." }),
       ]));
@@ -16200,7 +16515,6 @@ window.G = window.G || {};
 
     function renderRoleStep(host, data, next) {
       host.appendChild(el("div.ob-step-header", {}, [
-        el("div.ob-step-num", { text: "2 of 5" }),
         el("h3.ob-step-title", { text: "Your role" }),
         el("p.hint", { text: "All optional except pay grade." }),
       ]));
@@ -16261,7 +16575,6 @@ window.G = window.G || {};
 
     function renderConcernsStep(host, data, next) {
       host.appendChild(el("div.ob-step-header", {}, [
-        el("div.ob-step-num", { text: "3 of 5" }),
         el("h3.ob-step-title", { text: "What's on your mind?" }),
         // Intuitivism pass: "optional" framing + a real Skip button added,
         // matching the WeakPoints/BoardDate steps' own established pattern
@@ -16340,7 +16653,6 @@ window.G = window.G || {};
 
     function renderWeakPointsStep(host, data, next) {
       host.appendChild(el("div.ob-step-header", {}, [
-        el("div.ob-step-num", { text: "4 of 5" }),
         el("h3.ob-step-title", { text: "What do you need to work on?" }),
         el("p.hint", { text: "Select any areas you want to study or brush up on. Your action plan will prioritize these." }),
       ]));
@@ -16477,7 +16789,6 @@ window.G = window.G || {};
     // no validation; the field only ever writes a value if one was typed.
     function renderBoardDateStep(host, data, next) {
       host.appendChild(el("div.ob-step-header", {}, [
-        el("div.ob-step-num", { text: "5 of 5" }),
         el("h3.ob-step-title", { text: "When's your board?" }),
         el("p.hint", { text: "Powers the countdown on Home and the points-per-week target in Board Drill. Don't have a date yet, or not boarding? Skip it — you can set this any time from Settings or the Board Drill tab." }),
       ]));
@@ -16800,6 +17111,34 @@ window.G = window.G || {};
     }
     hdr.appendChild(info);
     mount.appendChild(hdr);
+
+    // ── Stale board date flag ────────────────────────────────────────────
+    // generateActionPlan() below only pushes board-date items when `out`
+    // (days-until) is non-negative — a board date that has already passed
+    // (the board happened and the Soldier forgot to update it, or it
+    // slipped) silently produces nothing there, and until now nothing on
+    // this screen said so either: the only other place a past board date
+    // showed at all was buried in the "Print readiness summary" output as
+    // a parenthetical "(past)". renderBoardCountdown() (Home's and Board
+    // Drill's own banner) already renders this exact case correctly — red
+    // via the shared util.boardUrgency(), "N days since your board", and a
+    // working "Change" button to fix it — and the Transition tab uses the
+    // identical .tx-countdown-banner shape for a past ETS date ("days
+    // since ETS"), so this reuses that established banner language instead
+    // of inventing new copy. Deliberately gated to the stale case only — a
+    // future board date stays silent here; Home/Board Drill already own
+    // the day-to-day countdown for that.
+    if (profile.boardDate && typeof G.renderBoardCountdown === "function") {
+      try {
+        const bdToday = new Date(); bdToday.setHours(0, 0, 0, 0);
+        const bdDaysOut = Math.round((new Date(profile.boardDate + "T00:00:00") - bdToday) / 86400000);
+        if (bdDaysOut < 0) {
+          mount.appendChild(el("p.hint", { style: "margin:10px 0 4px",
+            text: "Your saved board date has passed — update it below if your board already happened, or confirm it's still correct." }));
+          mount.appendChild(G.renderBoardCountdown());
+        }
+      } catch (e) {}
+    }
 
     // Action plan
     // Self-healing: setSetting() invalidates the plan when tier/ETS/retirement
@@ -18801,6 +19140,39 @@ window.G = window.G || {};
   const util = G.util, el = util.el;
   const KEY = "guidon:selftest:v1";
 
+  // Self-heal log entries -> owning route (roadmap Tier 3: "self-heal jump-
+  // links"). Every G.selfheal.log(kind, key, detail) call site (grep
+  // "G.selfheal.log(" across the file) already names a real section the
+  // failure/repair belongs to - this just makes that association explicit
+  // instead of leaving each entry as flat, unlinked text below:
+  //   srs-write-fail     - board.js's grade()/noteExternalResult() catch;
+  //                         key is a real board question id -> Board Drill.
+  //   profile-backfill,
+  //   profile-write-fail - profile.js's loadProfile()/saveProfile(); the
+  //                         Profile view owns every field these touch.
+  //   settings-backfill  - store.js's settings merge; Settings owns them.
+  //   backup-export-fail,
+  //   backup-import,
+  //   kv-reject          - backup.js's exportAll()/importAll(); the
+  //                         "Backup & restore" panel these describe lives
+  //                         in the Profile view (renderProfileView() calls
+  //                         G.backup.renderControls(), NOT Settings - see
+  //                         that call site's own comment), not Settings.
+  // "repair" (selftest.js's own logRepair() plus the direct sw-update/sw-
+  // retry/storage-persist calls a few hundred lines below) is deliberately
+  // absent: every one of those repairs happens ON this same Diagnostics
+  // page, so a jump-link back to where the Soldier already is would be
+  // dead weight, not a shortcut.
+  const SELFHEAL_ROUTES = {
+    "srs-write-fail":     { target: "board",    hash: "#/board",    label: "Board Drill" },
+    "profile-backfill":   { target: "profile",  hash: "#/profile",  label: "Profile" },
+    "profile-write-fail": { target: "profile",  hash: "#/profile",  label: "Profile" },
+    "settings-backfill":  { target: "settings", hash: "#/settings", label: "Settings" },
+    "backup-export-fail": { target: "profile",  hash: "#/profile",  label: "Profile" },
+    "backup-import":      { target: "profile",  hash: "#/profile",  label: "Profile" },
+    "kv-reject":          { target: "profile",  hash: "#/profile",  label: "Profile" },
+  };
+
   // Session-scoped repair history (item 2 of the Diagnostics self-repair
   // shortlist) - NOT the durable trail (G.selfheal.log already persists
   // that); this is only what the CURRENT page session needs to render the
@@ -18870,6 +19242,12 @@ window.G = window.G || {};
       // second hand-maintained list, so a future route can't silently ship
       // uncovered the same way.
       why:"Every module a real, registered route actually depends on must have registered on G, not just whichever names this list happened to be written with. A missing one fails silently at runtime.",
+      // Roadmap Tier 3: this check has no Fix button - a missing module is a
+      // load/build problem, not something a click on this page can repair.
+      // "next" names the one thing actually worth trying (a clean relaunch)
+      // before escalating to a reinstall, instead of leaving the Soldier
+      // staring at a bare "Missing: X" with no idea what to do about it.
+      next:"Force-close and reopen the app fully first — a missing module is usually a bad load, not a bad install. If the same module is still reported missing after a clean relaunch, this build itself is corrupted or incomplete; reinstall GUIDON from a known-good source (Share & Install) rather than keep using this copy.",
       run: async () => {
         const routeMods = new Set();
         (G.routes || []).forEach(r => {
@@ -18891,6 +19269,7 @@ window.G = window.G || {};
       // (never-attached) node - no visible flicker, no navigation, no
       // history entry - and any throw, sync or async, is caught and named.
       why:"Every route must render without throwing. A broken section is invisible until someone opens it - this used to only confirm a routes list existed, never that any route actually rendered.",
+      next:"Open the exact section named in the detail above and see what actually happens on screen — a reload will not fix a genuine code error in that section. Note the error text shown there and report it; it's already copied into Copy report below.",
       run: async () => {
         const routes = G.routes || [];
         if (!routes.length) return { ok:false, detail:"G.routes not exposed" };
@@ -18904,6 +19283,7 @@ window.G = window.G || {};
       } },
     { id:"storage", name:"Storage round-trip",
       why:"If IndexedDB fails, your profile and card grades silently stop saving.",
+      next:"Confirm this browser tab isn't in private/incognito mode and the device has free storage space, then reload and run this check again. Until it passes, nothing you do here — grades, board date, profile edits — is actually being saved.",
       run: async () => {
         const probe = { t: Date.now(), n: Math.random() };
         await G.db.put("kv", { k:"__selftest", v: probe });
@@ -18914,6 +19294,7 @@ window.G = window.G || {};
       } },
     { id:"data", name:"Content integrity",
       why:"Card and term counts should match what the app advertises.",
+      next:"This copy's content data is incomplete or corrupted — do not rely on it for board prep. Reinstall GUIDON from a known-good source (Share & Install) rather than continuing on this build.",
       run: async () => {
         const cards = (G.store.boardQuestions && G.store.boardQuestions().length) || 0;
         const acr = (window.GUIDON_SEED && window.GUIDON_SEED.acronyms && window.GUIDON_SEED.acronyms.terms.length) || 0;
@@ -18922,6 +19303,7 @@ window.G = window.G || {};
       } },
     { id:"offline", name:"No external requests",
       why:"This app must work with no signal. Any external URL is a bug.",
+      next:"Note the exact URL(s) listed in the detail above and report them. This is a packaging bug — a reference to an outside resource slipped into what is supposed to be an offline-only build — not something fixable from the device.",
       run: async () => {
         const bad = [];
         document.querySelectorAll("link[href],script[src],img[src]").forEach(n => {
@@ -18930,8 +19312,58 @@ window.G = window.G || {};
         });
         return { ok: !bad.length, detail: bad.length ? "External refs: " + bad.join(", ") : "No external resource references" };
       } },
+    { id:"themeSync", name:"Theme registry / pre-paint sync",
+      // Roadmap Tier 3. The pre-paint bootstrap <script> (top of <head>, runs
+      // before CSS and before this ~25,000-line app itself parses) cannot
+      // read js/theme.js's THEME_IDS at that point - that script hasn't
+      // loaded yet - so it has always carried its OWN hand-copied id list
+      // ("var T=[...]"). That copy used to genuinely drift: the ten "Focus
+      // set" themes (session 35) went missing from it for a while, so anyone
+      // on one of those got a real flash of the wrong theme on every load
+      // until js/theme.js finished parsing and corrected the attribute a
+      // beat later - see tools/test-theme-id-sync.mjs's header for the full
+      // incident writeup. tools/build.mjs's deriveThemeIds() now regenerates
+      // "var T=[...]" from the real THEMES registry at BUILD time (see its
+      // "pre-paint theme-id sync" step in main()), so drift is structurally
+      // impossible in any build that pipeline actually produced. But that
+      // guarantee lives entirely in the build step, not in anything the
+      // shipped app verifies about itself - a bypassed build script, a
+      // hand-edit of dist/web output, or a future refactor that forgets to
+      // call deriveThemeIds() would all fail silently, right back to the
+      // original bug. "Made visible instead of silent" is this Diagnostics
+      // suite's whole reason to exist, so this check closes that gap: it
+      // reads the id list the live pre-paint <script> is ACTUALLY running
+      // with right now (parsed straight out of its own source text - not
+      // re-derived, so a broken build can't fool it by re-running the same
+      // logic) and diffs it against G.theme.ids.themes (THEME_IDS, js/
+      // theme.js's live THEMES registry) - the exact two lists build.mjs's
+      // deriveThemeIds() is supposed to keep identical.
+      why:"If the pre-paint script's hand-copied theme-id list ever falls out of sync with the real THEMES registry again (bypassed build step, hand-edited output, a future refactor), Soldiers on an unsynced theme get a real flash of the wrong theme on every load - this makes that drift visible here instead of waiting for someone to notice on-screen.",
+      run: async () => {
+        if (!G.theme || !G.theme.ids || !Array.isArray(G.theme.ids.themes)) {
+          return { ok:false, detail:"G.theme.ids.themes not exposed — cannot verify against the live THEMES registry" };
+        }
+        const real = G.theme.ids.themes;
+        const prePaint = Array.from(document.scripts || [])
+          .find((s) => /GUIDON pre-paint appearance/.test(s.textContent || ""));
+        if (!prePaint) return { ok:false, detail:"Pre-paint bootstrap <script> not found in this document — cannot verify" };
+        const m = /var T=(\[[^\]]*\])/.exec(prePaint.textContent);
+        if (!m) return { ok:false, detail:"Pre-paint script's \"var T=[...]\" id list not found — markup changed?" };
+        let live;
+        try { live = JSON.parse(m[1]); }
+        catch (e) { return { ok:false, detail:"Pre-paint \"var T=[...]\" did not parse: " + (e && e.message ? e.message : String(e)) }; }
+        const missing = real.filter((id) => !live.includes(id));
+        const extra = live.filter((id) => !real.includes(id));
+        const ok = !missing.length && !extra.length;
+        return { ok, detail: ok
+          ? "Pre-paint list matches THEMES registry — " + live.length + " theme id(s) in sync"
+          : "DRIFT vs THEMES registry" +
+            (missing.length ? " — missing from pre-paint: " + missing.join(", ") : "") +
+            (extra.length ? " — extra in pre-paint: " + extra.join(", ") : "") };
+      } },
     { id:"landmarks", name:"Screen-reader landmarks",
       why:"Landmark navigation is how a screen-reader user jumps around the page.",
+      next:"Note which count is off in the detail above (banner/nav/main/h1) and which section you were viewing. This needs a markup fix in that view's template, not a device-side change — report it with Copy report below.",
       run: async () => {
         const b = document.querySelectorAll("[role=banner],header").length;
         const n = document.querySelectorAll("nav,[role=navigation]").length;
@@ -18942,6 +19374,7 @@ window.G = window.G || {};
       } },
     { id:"skip", name:"Skip link reachable",
       why:"A skip link that is not the first tab stop is decorative. This was a real bug.",
+      next:"From a fresh page load, press Tab once and see what actually receives focus first. Report that, plus the detail above — the fix is reordering markup so the skip link comes first, not a setting you can change here.",
       run: async () => {
         const s = document.querySelector(".skip-link");
         if (!s) return { ok:false, detail:"No skip link found" };
@@ -18954,6 +19387,7 @@ window.G = window.G || {};
       } },
     { id:"headings", name:"Heading hierarchy",
       why:"Skipped levels (h2 straight to h4) make a screen reader's outline nonsense.",
+      next:"Note the exact skip shown in the detail above (for example h2→h4) and which section you were viewing, then report it — the fix is inserting the missing heading level in that section's markup.",
       run: async () => {
         const hs = Array.from(document.querySelectorAll("#main h1,#main h2,#main h3,#main h4")).map(x => +x.tagName[1]);
         const skips = [];
@@ -18962,6 +19396,7 @@ window.G = window.G || {};
       } },
     { id:"contrast", name:"Contrast sample (current theme)",
       why:"Samples real rendered colours on this view. Not a full audit \u2014 that needs axe-core.",
+      next:"Switching themes (Settings \u2192 Appearance) is an immediate workaround if the flagged text is hard to read. Note the theme and the element named in the detail above (\u201clowest \u2026 on \u2026\u201d) and report both \u2014 that theme's colours need correcting at the source.",
       run: async () => {
         function lum(c) {
           const m = c.match(/\d+/g); if (!m) return null;
@@ -18991,12 +19426,14 @@ window.G = window.G || {};
       } },
     { id:"overflow", name:"No horizontal overflow",
       why:"Sideways scroll on a phone is the most common responsive failure.",
+      next:"Note the exact viewport width in the detail above and which section was open. Rotating the device or resizing the window may work around it for now; report the width and section so the layout can be fixed at that size.",
       run: async () => {
         const o = document.documentElement.scrollWidth - window.innerWidth;
         return { ok: o <= 0, detail: o <= 0 ? "None at " + window.innerWidth + "px" : o + "px overflow at " + window.innerWidth + "px" };
       } },
     { id:"pointer", name:"Input mode detected",
       why:"S Pen hover cannot be detected by CSS media queries on a touch-primary device.",
+      next:"Informational only — this can't detect real S Pen hover, only what the browser's pointer/hover media queries report. Confirm hover for real using the “S Pen hover” item in the Manual protocol below.",
       run: async () => {
         const fine = window.matchMedia("(pointer: fine)").matches;
         const hover = window.matchMedia("(hover: hover)").matches;
@@ -19132,6 +19569,17 @@ window.G = window.G || {};
         row.appendChild(catEl);
         row.appendChild(detailEl);
         row.appendChild(el("div.hint", { text: c.why, style:"opacity:.72;margin-top:3px" }));
+        // Roadmap Tier 3: only the 4 checks below with an actual Fix
+        // button (statusbar/kvscan/swfresh/storagePersist) can safely
+        // self-repair - the other 11 are report-only, and "why" alone
+        // told the Soldier WHY something matters without ever saying
+        // what to DO about it. "next" is the concrete manual action;
+        // rendered right alongside "why" (full opacity, not dimmed, so
+        // it reads as an instruction rather than background colour) and
+        // only for checks that actually define one, which is exactly
+        // the report-only set - a check with its own Fix button doesn't
+        // need a second, text-only way to say "click the button above".
+        if (c.next) row.appendChild(el("div.hint", { text: "Next: " + c.next, style:"margin-top:3px;font-weight:600" }));
         results.appendChild(row);
         // Item 5: the only repair action wired to an automated check today.
         // Gated on the check having actually failed AND the repair function
@@ -19399,12 +19847,48 @@ window.G = window.G || {};
           row.appendChild(el("div.ob-plan-cat", { text: e.kind + (e.key ? " \u00b7 " + e.key : "") }));
           row.appendChild(el("div.hint", { text: new Date(e.at).toLocaleString() }));
           row.appendChild(el("div.hint", { text: e.detail, style:"margin-top:3px" }));
+          // Roadmap Tier 3 "self-heal jump-links": SELFHEAL_ROUTES (this
+          // module's own header comment) maps this entry's kind to the real
+          // route that owns it. Hands the entry's key off through the SAME
+          // shared G.nav.seed(target, value)/consume(target) registry
+          // Global Search's own result-click handlers use for this identical
+          // "stash context, then hash-change" need (see G.nav's own header
+          // comment in util.js) - fire-and-forget by that registry's own
+          // design, so this is correct even for the targets ("board",
+          // "settings") that don't consume it yet.
+          const dest = SELFHEAL_ROUTES[e.kind];
+          if (dest) {
+            const jumpBtn = el("button.btn.sm.ghost", { type:"button", text:"Go to " + dest.label + " \u2192", style:"margin-top:6px" });
+            jumpBtn.addEventListener("click", () => {
+              if (G.nav) G.nav.seed(dest.target, e.key || null);
+              location.hash = dest.hash;
+            });
+            row.appendChild(jumpBtn);
+          }
           healList.appendChild(row);
         });
         healList.style.display = "";
         healToggle.textContent = "Hide entries";
       });
+      // "Show recent entries" above only ever surfaces the newest 20 (via
+      // G.selfheal.recent(20)) - selfheal.js's own log() hard-caps stored
+      // history at CAP=200 and FIFO-drops whatever's oldest once that fills,
+      // silently, with no archive. recent() called with no argument already
+      // returns everything currently stored (uncapped display, same list
+      // log() itself is still limited to <=200 entries) - this button is
+      // just that unbounded read piped through util.download(), same JSON-
+      // export shape as Authoring's per-scenario "Export" button (js/
+      // authoring.js) and G.backup.exportAll's backup file, so a Soldier can
+      // archive the full history before the FIFO quietly takes more of it.
+      const healDlBtn = el("button.btn.sm.ghost", { type:"button", text:"Download full log", style:"margin-top:6px;margin-left:8px" });
+      healDlBtn.addEventListener("click", async () => {
+        const all = await G.selfheal.recent();
+        util.download("guidon-selfheal-log-" + new Date().toISOString().slice(0, 10) + ".json", JSON.stringify(all, null, 2)).then((ok) => {
+          util.toast && util.toast(ok ? "Downloaded " + all.length + " entr" + (all.length === 1 ? "y" : "ies") + "." : "Download failed — try again.");
+        });
+      });
       heal.appendChild(healToggle);
+      heal.appendChild(healDlBtn);
       heal.appendChild(healList);
     }
     mount.appendChild(heal);
@@ -24200,7 +24684,14 @@ window.G = window.G || {};
               btn.classList.add("active");
               drawSummary(t);
             } }, [
-            el("span.tsb-name", {}, [el("span", { text: t.name }), el("span.tsb-check", { "aria-hidden": "true", gi: "check", giSize: 13 })]),
+            // t.since: the theme registry's wave marker (THEMES' own comment
+            // block explains the convention) - only the current newest batch
+            // carries it, so this badge is what makes "something new shipped"
+            // discoverable at all now that the wall defaults to collapsed
+            // (see "Collapsed by default" a few lines up). Plain visible text,
+            // not aria-hidden, so it lands in the button's accessible name
+            // too - a screen-reader Soldier gets the same signal.
+            el("span.tsb-name", {}, [el("span", { text: t.name }), t.since ? el("span.badge.green.tsb-new", { text: "New" }) : null, el("span.tsb-check", { "aria-hidden": "true", gi: "check", giSize: 13 })]),
             dots, el("span.tsb-blurb", { text: t.blurb }),
           ]);
           btn.setAttribute("aria-pressed", cur.theme === t.id ? "true" : "false");
@@ -24340,6 +24831,39 @@ window.G = window.G || {};
         el("label", { text: "From", style: "margin:0" }), startSel,
         el("label", { text: "to", style: "margin:0" }), endSel,
       ]));
+      // 24h night-window bar — a compact visual complement to the two
+      // <select>s above, which the selects stay the actual input for; this
+      // just renders the window they describe so a Soldier can SEE the
+      // shape of it (does it span a normal evening, or wrap past midnight?)
+      // instead of reading two disconnected hour numbers. Shading is driven
+      // hour-by-hour through G.theme.hourInNightWindow — the exact wrap-
+      // aware [start,end) check effectiveTheme() itself uses to decide the
+      // live theme — so this can never draw a shape auto-night disagrees
+      // with; a run of consecutive "in window" hours becomes one shaded
+      // rect, which naturally yields two rects (one touching each edge of
+      // the bar) when the window wraps past midnight.
+      const nightBar = el("div.night-hourbar", { role: "img" });
+      function renderNightBar() {
+        util.clear(nightBar);
+        const a = +startSel.value, b = +endSel.value;
+        nightBar.setAttribute("aria-label", "Night theme active " + hourLabel(a) + " to " + hourLabel(b));
+        [0, 6, 12, 18].forEach((h) => nightBar.appendChild(el("div.night-hourbar-tick", { style: "left:" + (h / 24 * 100) + "%" })));
+        let runStart = null;
+        for (let h = 0; h <= 24; h++) {
+          const on = h < 24 && G.theme.hourInNightWindow(h, a, b);
+          if (on && runStart === null) runStart = h;
+          if (!on && runStart !== null) {
+            nightBar.appendChild(el("div.night-hourbar-fill", { style: "left:" + (runStart / 24 * 100) + "%;width:" + ((h - runStart) / 24 * 100) + "%" }));
+            runStart = null;
+          }
+        }
+      }
+      renderNightBar();
+      startSel.addEventListener("change", renderNightBar);
+      endSel.addEventListener("change", renderNightBar);
+      iface.appendChild(nightBar);
+      iface.appendChild(el("div.night-hourbar-labels", { style: "margin-bottom:4px" },
+        [0, 6, 12, 18, 24].map((h) => el("span", { text: hourLabel(h % 24) }))));
       // Tier 1(c): Interface options (rail density/labels, default landing
       // view, auto-night scheduling) move to the Advanced tier.
       advancedPanels.push(iface);
