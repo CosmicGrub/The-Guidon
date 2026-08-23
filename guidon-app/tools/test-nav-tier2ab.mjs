@@ -206,12 +206,14 @@ async function focusedId(page) {
 
   // ---- 2(b): Home/End jump to the first/last VISIBLE item, not the
   // first/last item in the DOM (which would include collapsed members).
-  // Last visible here is the "Account" header - the last group in
-  // NAV_GROUPS, itself collapsed (all its members invisible), so the
-  // header is the final roving stop. ----
+  // Last visible here is the "Advanced" header - the last group in
+  // NAV_GROUPS as of Tier 2 (Part One), which appended a real 7th group
+  // (Author/Diagnostics) after "account" rather than demoting them inside
+  // it - itself collapsed (all its members invisible), so the header is
+  // the final roving stop. ----
   await page.keyboard.press("End");
   const atEnd = await focusedId(page);
-  atEnd === "Account" ? ok("End jumps to the last VISIBLE item ('Account' header, its members all collapsed)") : bad("focus after End: " + atEnd + ", expected 'Account' header");
+  atEnd === "Advanced" ? ok("End jumps to the last VISIBLE item ('Advanced' header, its members all collapsed)") : bad("focus after End: " + atEnd + ", expected 'Advanced' header");
   await page.keyboard.press("Home");
   const atHome = await focusedId(page);
   atHome === "#/home" ? ok("Home jumps to the first VISIBLE item (#/home)") : bad("focus after Home: " + atHome + ", expected #/home");
@@ -295,7 +297,7 @@ async function focusedId(page) {
 
   await page.keyboard.press("End");
   const drawerAtEnd = await focusedId(page);
-  drawerAtEnd === "Account" ? ok("drawer: End jumps to the last VISIBLE item ('Account' header)") : bad("drawer: focus after End: " + drawerAtEnd);
+  drawerAtEnd === "Advanced" ? ok("drawer: End jumps to the last VISIBLE item ('Advanced' header)") : bad("drawer: focus after End: " + drawerAtEnd);
 
   // ---- 2(b): Enter on a header opens it and live-updates the drawer's
   // own roving set, same as the sidebar. ----
