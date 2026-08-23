@@ -133,6 +133,35 @@ else {
   capErr.length === 0
     ? ok("category maximums match AR 600-8-19 para 3-15 to 3-18")
     : bad("cap mismatches: " + capErr.join(", "));
+
+  // ---- No second hand-typed copy: PPW.SGT.caps derives from the seed's own
+  // points.categories[].max at the store.pointsRules() read boundary, not a
+  // parallel hardcoded literal (see the comment above sgtCapsFromSeed() in
+  // index.html). Assert this by comparing the two live, at runtime, rather
+  // than against another hardcoded "want" object here - a future edit that
+  // only touches the seed (data/points.json in the served build, or the
+  // GUIDON_SEED literal in the standalone build) and forgets the worksheet
+  // would have re-drifted the two independent objects this test in "want"
+  // above cannot catch, since both sides of a stale re-hardcode could still
+  // agree with a stale "want". This one can't be fooled that way: it reads
+  // the seed's own numbers and the worksheet's own numbers off the live page
+  // and checks they're the literal same object shape.
+  const seedVsWorksheet = await page.evaluate(() => {
+    const rules = window.G.store.pointsRules();
+    const seedById = {};
+    (rules.categories || []).forEach((c) => { if (c && c.id) seedById[c.id] = c.max; });
+    const seedCaps = { training: seedById.training, awards: seedById.awards,
+                        milEd: seedById.militaryEd, civEd: seedById.civilianEd };
+    return { seedCaps, worksheetCaps: { ...window.G.pointsMath.PPW.SGT.caps } };
+  });
+  const driftErr = Object.keys(seedVsWorksheet.seedCaps).filter(
+    (k) => seedVsWorksheet.seedCaps[k] !== seedVsWorksheet.worksheetCaps[k]
+  );
+  driftErr.length === 0
+    ? ok("PPW.SGT.caps matches the seed's own points.categories[].max for all 4 categories (single-sourced, not a second copy)")
+    : bad("SGT caps drifted from the seed: " + driftErr.map(
+        (k) => `${k} seed=${seedVsWorksheet.seedCaps[k]} worksheet=${seedVsWorksheet.worksheetCaps[k]}`
+      ).join(", "));
 }
 
 await browser.close();

@@ -226,7 +226,18 @@ const partialFailure = await page.evaluate(async () => {
   };
   try {
     const payload = await window.G.backup.exportAll();
-    return { failedStores: payload.failedStores, msg: window.G.backup.exportDoneMessage(payload) };
+    // House-rule audit finding: failedStores/exportDoneMessage below already
+    // surfaced this via a toast/panel message - but a toast that's missed
+    // leaves nothing behind. exportAll()'s per-store catches now ALSO write
+    // through G.selfheal.log (kind "backup-export-fail"), the same durable-
+    // trail convention every OTHER silent-failure path in the app already
+    // follows (srs-write-fail, profile-write-fail, the backfill kinds), so
+    // this survives in Diagnostics' "Self-healing" panel even if the toast
+    // was never seen. Give its own fire-and-forget db.get/db.put round trip
+    // a beat to land before reading it back.
+    await new Promise((r) => setTimeout(r, 300));
+    const entries = await window.G.selfheal.recent(5);
+    return { failedStores: payload.failedStores, msg: window.G.backup.exportDoneMessage(payload), entries };
   } finally {
     window.G.db.all = realAll;
   }
@@ -237,14 +248,24 @@ const partialFailure = await page.evaluate(async () => {
 (/MISSING/.test(partialFailure.msg) && /attempts/.test(partialFailure.msg))
   ? ok("A partial export failure produces a specific, visible warning instead of a silent 'Backup downloaded'")
   : bad("exportDoneMessage for a partial failure: " + JSON.stringify(partialFailure.msg));
+const loggedExportFail = partialFailure.entries.find((e) => e.kind === "backup-export-fail" && e.key === "attempts");
+loggedExportFail
+  ? ok("exportAll()'s attempts-store read failure is ALSO logged to G.selfheal (kind 'backup-export-fail') - discoverable in Diagnostics even if the export message was missed")
+  : bad("no matching G.selfheal entry for the failed attempts-store read - it only surfaced via the in-the-moment toast/message. Recent entries: " + JSON.stringify(partialFailure.entries));
 
 const cleanExport = await page.evaluate(async () => {
+  const countBefore = await window.G.selfheal.count();
   const payload = await window.G.backup.exportAll();
-  return { failedStores: payload.failedStores, msg: window.G.backup.exportDoneMessage(payload) };
+  await new Promise((r) => setTimeout(r, 300));
+  const countAfter = await window.G.selfheal.count();
+  return { failedStores: payload.failedStores, msg: window.G.backup.exportDoneMessage(payload), countBefore, countAfter };
 });
 (cleanExport.failedStores.length === 0 && cleanExport.msg === "Backup downloaded")
   ? ok("A clean export still reports plainly as 'Backup downloaded' with zero failedStores")
   : bad("clean export result: " + JSON.stringify(cleanExport));
+(cleanExport.countAfter === cleanExport.countBefore)
+  ? ok("A clean export does not add a self-heal entry (no false positives)")
+  : bad("self-heal count changed on a clean export: before=" + cleanExport.countBefore + " after=" + cleanExport.countAfter);
 
 const relevantNoise = noise.filter((n) => !/favicon/.test(n));
 relevantNoise.length === 0 ? ok("no console errors/warnings") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));

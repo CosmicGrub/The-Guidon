@@ -11,6 +11,8 @@
  * Usage: node tools/verify.mjs [webDir]
  */
 import { chromium, devices } from "playwright";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { serve } from "./server.mjs";
 
 const WEB = process.argv[2] || "web";
@@ -147,6 +149,62 @@ async function main() {
 
     const appleIcon = await page.evaluate(() => !!document.querySelector('link[rel="apple-touch-icon"]'));
     appleIcon ? ok("apple-touch-icon present (iOS home screen)") : bad("no apple-touch-icon - iOS uses a screenshot");
+
+    // ---------- 2b. sw.js PRECACHE completeness ----------
+    // Every icon this page's own <link>/manifest actually references must
+    // also be in sw.js's PRECACHE array, or it is not actually offline-ready
+    // on first boot - it just falls back to a network fetch. This is exactly
+    // how icon-48.png drifted (GUIDON roadmap Tier 2): it shipped and was
+    // linked from a real <link rel="icon" sizes="48x48"> tag (built by
+    // build.mjs), but src/sw.js's PRECACHE array used to be a 4th
+    // independently hand-typed copy of the icon list and nobody had updated
+    // it. PRECACHE is now generated at build time from tools/icon-spec.mjs
+    // (see build.mjs's sw.js section), so this check compares two things
+    // neither of which is hand-typed here: the icons the live page actually
+    // links/declares, against the actual PRECACHE array in the actual built
+    // web/sw.js on disk. A regression in either direction - a linked icon
+    // that stops being precached, or icon-spec.mjs drifting from what's
+    // really linked - fails this.
+    console.log("\n[2b] sw.js PRECACHE completeness (every linked icon offline-ready)");
+    const linkedIconPaths = await page.evaluate(() => {
+      const hrefs = new Set();
+      document.querySelectorAll('link[rel="icon"][href], link[rel="apple-touch-icon"][href]').forEach((l) => {
+        const href = l.getAttribute("href");
+        if (href && !href.startsWith("data:")) hrefs.add(new URL(href, location.href).pathname);
+      });
+      return [...hrefs];
+    });
+    if (results.info.manifest && Array.isArray(results.info.manifest.icons)) {
+      for (const i of results.info.manifest.icons) {
+        if (i.src) linkedIconPaths.push(new URL(i.src, manifestHref).pathname);
+      }
+    }
+    const uniqueLinkedIcons = [...new Set(linkedIconPaths)];
+    if (!uniqueLinkedIcons.length) {
+      bad("no same-origin icon <link>/manifest entries found on the page to check against PRECACHE");
+    } else {
+      let swText = "";
+      try { swText = await readFile(join(WEB, "sw.js"), "utf8"); } catch (e) {}
+      // sw.js embeds PRECACHE as JSON.parse("...") (see seedAsJsonParse-style
+      // double-stringify in build.mjs), so unwind that one layer before the
+      // real JSON.parse of the array itself.
+      const m = swText.match(/const PRECACHE = JSON\.parse\("(.*)"\);/);
+      if (!m) {
+        bad(`could not find a "const PRECACHE = JSON.parse(...)" literal in ${join(WEB, "sw.js")}`);
+      } else {
+        let precache = null;
+        try { precache = JSON.parse(JSON.parse('"' + m[1] + '"')); } catch (e) {}
+        if (!Array.isArray(precache)) {
+          bad("web/sw.js PRECACHE did not decode to a JSON array");
+        } else {
+          const precacheNorm = new Set(precache.map((p) => p.replace(/^\.\//, "/")));
+          const missing = uniqueLinkedIcons.filter((p) => !precacheNorm.has(p));
+          missing.length
+            ? bad(`linked icon(s) missing from web/sw.js PRECACHE, not offline-ready on first boot: ${missing.join(", ")}`)
+            : ok(`every linked icon (${uniqueLinkedIcons.length}) is in web/sw.js PRECACHE: ${uniqueLinkedIcons.join(", ")}`);
+        }
+      }
+    }
 
     // ---------- 3. service worker + real offline ----------
     console.log("\n[3] Service worker + offline");

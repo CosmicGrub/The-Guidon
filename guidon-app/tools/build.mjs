@@ -32,6 +32,8 @@
 import { readFile, writeFile, mkdir, copyFile, readdir, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { ICON_TARGETS } from "./icon-spec.mjs";
 
 const SRC = "src/index.html";
 const PWA = "src/pwa.js";
@@ -99,6 +101,69 @@ function seedAsJsonParse(html) {
   const out = html.slice(0, objStart) + "JSON.parse(" + JSON.stringify(JSON.stringify(parsed)) + ")" + html.slice(objEnd);
   return { html: out, skipped: false, keys: Object.keys(parsed).length,
            before: literal.length, after: out.length - html.length + literal.length };
+}
+
+/**
+ * Parses js/theme.js's `const THEMES = [...]` registry (embedded in src/index.html)
+ * and returns the two derived lists the pre-paint bootstrap <script> needs:
+ * every theme id in registration order, and the subset whose `kind` is "light".
+ *
+ * WHY THIS EXISTS: the pre-paint script (top of <head>, applies data-theme
+ * before first paint so there's no flash of the wrong theme) runs before
+ * js/theme.js itself has loaded, so it can't just call G.theme / read its
+ * THEME_IDS at runtime - it has always carried its OWN copies, `var T=[...]`
+ * (every id) and `var LIGHT=[...]` (the light-kind subset, for the legacy
+ * `.light` class toggle). Those copies used to be hand-maintained and drifted:
+ * the ten "Focus set" themes added in session 35 (graphite-calm, umber-lamp,
+ * pine-dusk, slate-quiet, clay-warm, harbor-mid, parchment-read, bone-neutral,
+ * overcast-glare, sandstone-sun) were never added to either array, so anyone
+ * on one of those themes got a real flash of the wrong theme on every load -
+ * T.indexOf(a.theme) came back -1, so the pre-paint script silently fell back
+ * to field-manual/parade-rest until js/theme.js finished parsing and corrected
+ * the attribute a beat later. Fixed by deriving both lists here, at build
+ * time, from the same THEMES array THEME_IDS itself is built from (see
+ * js/theme.js), so a new theme can never again exist in THEMES without the
+ * pre-paint script knowing about it - see the "pre-paint theme-id sync" call
+ * site in main() below, which asserts these into `var T=`/`var LIGHT=`.
+ *
+ * Brace-matches through string literals exactly like seedAsJsonParse above
+ * (so a `]` or `"` inside a blurb can't fool it), then evaluates the literal
+ * with `new Function` - safe here because the input is this repo's own
+ * trusted src/index.html, not user data, same trust boundary as
+ * seedAsJsonParse's JSON.parse. Exported (and main() only self-invokes under
+ * the direct-execution guard at the bottom of this file) so tools/test-*.mjs
+ * can unit-test this derivation against a synthetic THEMES literal without
+ * triggering a real build as an import side effect.
+ */
+function deriveThemeIds(html) {
+  const START = "const THEMES = [";
+  const at = html.indexOf(START);
+  if (at < 0) throw new Error("build: THEMES array not found (js/theme.js registry)");
+  const arrStart = html.indexOf("[", at);
+  let depth = 0, inStr = false, esc = false, arrEnd = -1;
+  for (let p = arrStart; p < html.length; p++) {
+    const c = html[p];
+    if (esc) { esc = false; continue; }
+    if (c === "\\") { esc = true; continue; }
+    if (inStr) { if (c === '"') inStr = false; continue; }
+    if (c === '"') { inStr = true; continue; }
+    if (c === "[") depth++;
+    else if (c === "]") { depth--; if (depth === 0) { arrEnd = p + 1; break; } }
+  }
+  if (arrEnd < 0) throw new Error("build: could not brace-match the THEMES array literal");
+  const literal = html.slice(arrStart, arrEnd);
+  let themes;
+  try {
+    themes = new Function("return " + literal)();
+  } catch (e) {
+    throw new Error(`build: THEMES array literal did not evaluate (${e.message})`);
+  }
+  if (!Array.isArray(themes) || !themes.length) {
+    throw new Error("build: THEMES evaluated to something empty or non-array");
+  }
+  const ids = themes.map((t) => t.id);
+  const lightIds = themes.filter((t) => t.kind === "light").map((t) => t.id);
+  return { ids, lightIds };
 }
 
 /** Replace exactly once, or fail. Silent no-op replacements are how builds rot. */
@@ -189,6 +254,20 @@ async function main() {
     `window.GUIDON_APP_VERSION = "${pkg.version}";\nwindow.GUIDON_BUILD_DATE = "${buildDate}";`,
     "app version/build date"
   );
+
+  /* ---------------- pre-paint theme-id sync (both builds) ----------------
+     See deriveThemeIds()'s header comment for the full history. Derives the
+     real, current theme-id lists from js/theme.js's own THEMES registry and
+     overwrites the pre-paint bootstrap script's hand-copied `var T=[...]`
+     (every id) and `var LIGHT=[...]` (the light-kind subset) with them, so
+     the two can never again silently drift apart. */
+  const { ids: themeIds, lightIds: themeLightIds } = deriveThemeIds(src);
+  const tAnchor = src.match(/var T=\[[^\]]*\]/);
+  if (!tAnchor) throw new Error("build: pre-paint script's \"var T=[...]\" anchor not found");
+  src = sub(src, tAnchor[0], `var T=${JSON.stringify(themeIds)}`, "pre-paint theme-id list (var T)");
+  const lightAnchor = src.match(/var LIGHT=\[[^\]]*\]/);
+  if (!lightAnchor) throw new Error("build: pre-paint script's \"var LIGHT=[...]\" anchor not found");
+  src = sub(src, lightAnchor[0], `var LIGHT=${JSON.stringify(themeLightIds)}`, "pre-paint theme-id list (var LIGHT)");
 
   /* ---------------- locate the anchors we rely on ---------------- */
   const manifestLink = src.match(/<link rel="manifest" href="data:application\/manifest\+json,[^"]*"\s*\/?>/);
@@ -319,13 +398,43 @@ async function main() {
   assertRouteModulesPresent(web, "web/index.html");
   await writeFile(join(WEB, "index.html"), web);
 
-  /* ------------- service worker, versioned by content hash -------------
-     The hash is taken over the built index.html, so any change to the app
-     produces a new cache name and therefore a real update prompt. */
-  const hash = createHash("sha256").update(web).digest("hex").slice(0, 12);
-  const swSrc = await readFile("src/sw.js", "utf8");
+  /* ------------- service worker: precache list + content hash -------------
+     PRECACHE is generated here, not hand-typed in src/sw.js: icon filenames
+     come from tools/icon-spec.mjs (the exact same list make-icons.mjs
+     renders from, and this build already used above for the platform
+     <link> tags/manifest.webmanifest icons), and the two PDF-stack files
+     come from the `extracted` array this build itself just wrote to
+     web/assets/ in step 3. Previously src/sw.js carried a 4th
+     independently hand-typed copy of this same list, and it had already
+     drifted: icon-48.png shipped and was linked from the <link rel="icon"
+     sizes="48x48"> above, but was never added to that hand-typed array, so
+     it loaded over the network on first boot instead of being available
+     offline immediately (see verify.mjs "[2b] sw.js PRECACHE completeness",
+     which now regression-guards this).
+
+     The hash that becomes the SW's own cache-version name (and therefore
+     the cache generation a real device swaps to on update) is taken over
+     `web` PLUS this generated precache list, not `web` alone as before: a
+     build that only changes the icon set or the PDF-extraction list -
+     without touching index.html - must still mint a new cache generation,
+     or the fix reaches the build output on disk but never a device that
+     already has an old service worker installed and active. */
+  const precache = [
+    "./index.html",
+    "./manifest.webmanifest",
+    ...ICON_TARGETS.map((t) => `./icons/${t.file}`),
+    ...extracted.map(([file]) => `./assets/${file}`),
+  ];
+  const hash = createHash("sha256").update(web).update(JSON.stringify(precache)).digest("hex").slice(0, 12);
+  let swSrc = await readFile("src/sw.js", "utf8");
   if (!swSrc.includes("__GUIDON_BUILD__")) throw new Error("build: sw.js version placeholder missing");
-  await writeFile(join(WEB, "sw.js"), swSrc.replace("__GUIDON_BUILD__", hash));
+  if (!swSrc.includes('"__GUIDON_PRECACHE_JSON__"')) throw new Error("build: sw.js precache placeholder missing");
+  swSrc = swSrc.replace("__GUIDON_BUILD__", hash);
+  // Same double-JSON.stringify technique as seedAsJsonParse above: the inner
+  // stringify produces the JSON text, the outer one produces a correctly
+  // escaped JS string literal to sit inside JSON.parse("...") in sw.js.
+  swSrc = swSrc.replace('"__GUIDON_PRECACHE_JSON__"', JSON.stringify(JSON.stringify(precache)));
+  await writeFile(join(WEB, "sw.js"), swSrc);
 
   await copyFile("src/manifest.webmanifest", join(WEB, "manifest.webmanifest"));
 
@@ -337,7 +446,16 @@ async function main() {
     : `  seed                          JSON.parse, ${seed.keys} top-level keys (~94ms faster boot at 6x CPU)`);
   console.log(`  dist/guidon-standalone.html   ${kb(standalone)}   (single file, file:// ready)`);
   console.log(`  web/index.html                ${kb(web)}   (installable bundle)`);
-  console.log(`  web/sw.js                     cache version ${hash}`);
+  console.log(`  web/sw.js                     cache version ${hash}, ${precache.length} precache entries`);
 }
 
-main().catch((e) => { console.error(String(e.message || e)); process.exit(1); });
+// Only self-invoke when run directly (`node tools/build.mjs`), not when
+// imported as a module - tools/test-theme-id-sync.mjs imports deriveThemeIds
+// to unit-test the derivation itself, and a real build as an import side
+// effect would be a surprising (and slow) thing for a test file to trigger.
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isMain) {
+  main().catch((e) => { console.error(String(e.message || e)); process.exit(1); });
+}
+
+export { deriveThemeIds, main };
