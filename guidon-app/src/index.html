@@ -1329,8 +1329,6 @@ select.in { appearance:none; }
 .replica-block .cnt{ margin-top:4px; }
 .replica-block .rb-mirror{ display:none; } /* screen: input is source of truth; mirror used for print */
 
-.replica-sheet.overlay-mode{ opacity:.98; outline:1px dashed var(--cyan); }
-
 @media (max-width:640px){
   .replica-grid, .replica-grid.cols-2, .replica-grid.cols-3{ grid-template-columns:1fr 1fr; }
   .replica-block.w3, .replica-block.w4{ grid-column:span 2; }
@@ -3303,6 +3301,22 @@ html.light .feedback.error { background: rgba(220,53,69,0.1); }
 .search-header { display:flex; align-items:baseline; gap:6px; padding:10px 4px 4px; }
 .search-count { font-family:var(--font-mono); font-size:0.85rem; font-weight:700; color:color-mix(in srgb, var(--amber) 40%, var(--text)); }
 .search-breakdown { font-size:0.78rem; color:var(--text-dim); }
+/* Per-domain distribution bar (Tier 3 batch 2 roadmap item): replaces the
+   old plain-text ".search-breakdown" parenthetical for Global Search's own
+   results header ("12 doctrine, 5 scenarios, …") with a clickable
+   proportional bar - segment widths come from flex-grow set inline per
+   segment (real hit count, not a hand-rolled percentage), segment color
+   reuses the SAME TYPE_COLOR map the filter chips and .search-hit
+   border-left/badge already use above. .search-breakdown itself stays
+   defined and in use elsewhere (Train's own scenario-browser header) -
+   only Search's results header stopped using it. */
+.search-dist-bar { display:flex; height:9px; border-radius:99px; overflow:hidden;
+  background:var(--line); margin:2px 4px 10px; }
+.search-dist-seg { height:100%; min-width:4px; border:none; padding:0; margin:0;
+  cursor:pointer; opacity:0.86; transition:opacity 0.12s, filter 0.12s; }
+.search-dist-seg:hover { opacity:1; filter:brightness(1.15); }
+.search-dist-seg:focus-visible { outline:2px solid var(--amber); outline-offset:1px; opacity:1; }
+@media (prefers-reduced-motion: reduce) { .search-dist-seg { transition:none; } }
 .search-section { margin-bottom:10px; }
 .search-section-head { font-family:var(--font-head); font-size:0.72rem; font-weight:700;
   text-transform:uppercase; letter-spacing:0.08em; color:var(--text-dim);
@@ -3314,10 +3328,21 @@ html.light .feedback.error { background: rgba(220,53,69,0.1); }
 .search-hit-body { flex:1; min-width:0; }
 .search-hit-title { font-size:0.88rem; font-weight:600; }
 .search-hit-sub { font-size:0.75rem; color:var(--text-dim); margin-top:2px; }
+/* Secondary line for h.meta (tier/category/source/status - see runSearch's
+   6 hit-builders) - italic like .doc-src-badge/.bq-source, the existing
+   convention for "small citation-ish detail under the main line" elsewhere
+   in this file, kept visually distinct from the mono .search-hit-sub above it. */
+.search-hit-meta { font-size:0.72rem; color:var(--text-dim); font-style:italic; margin-top:1px; }
 .search-go { font-size:0.8rem; flex-shrink:0; opacity:0.6; }
 .search-hit:hover .search-go { opacity:1; }
 .search-empty { padding:24px 16px; text-align:center; color:var(--text-dim); font-size:0.9rem; }
 .search-more { font-size:0.76rem; color:var(--text-dim); padding:4px 8px; font-style:italic; }
+/* Zero-result empty state's "what Search doesn't index yet" chip map (views.js
+   runSearch, UNINDEXED_DOMAIN_HASHES) — sits directly under .search-empty's
+   own centered message, so it reads as a continuation of that state, not a
+   new unrelated section. */
+.search-empty-domains { padding:0 16px 20px; text-align:center; }
+.search-empty-domains .hint { margin-bottom:8px; }
 
 
 /* ── Weekly Goal widget ─────────────────────────────────────────────────── */
@@ -4530,6 +4555,7 @@ html.focus-mode .status-chip { opacity:.5; }
 .cpdf-sigbtn{text-align:left;padding:8px 10px;border:1px solid var(--border);background:var(--bg);color:var(--text-dim);border-radius:5px;cursor:pointer;font-size:.8rem}
 .cpdf-sigbtn.active{border-color:var(--amber);color:var(--text);background:var(--panel-2)}
 .cpdf-warn{border-left:3px solid var(--red);background:color-mix(in srgb,var(--red) 8%,transparent);padding:8px 12px;border-radius:0 5px 5px 0;font-size:.8rem;margin:12px 0}
+.cpdf-scope{border-left:3px solid var(--cyan);background:color-mix(in srgb,var(--cyan) 8%,transparent);padding:8px 12px;border-radius:0 5px 5px 0;font-size:.8rem;margin:8px 0}
 .cpdf-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 .cpdf-status{font-size:.82rem;color:var(--ink-amber);margin-top:10px;min-height:18px}
 @media (max-width:640px){.cpdf-head{flex-wrap:wrap}.cpdf-actions .btn{flex:1}}
@@ -4680,6 +4706,13 @@ html.focus-mode .status-chip { opacity:.5; }
 .last-backup-status{min-height:1.1em;margin-top:6px;font-size:.83rem}
 .last-backup-status.stale{color:var(--warn,#8c2f2f);font-weight:600}
 
+/* Settings' Notifications panel: live OS permission + scheduled-count status,
+   same visual language as .last-backup-status.stale above (a local flag
+   disagreeing with the real, external truth). See views.settings' Notifications
+   panel and notify.js's checkPermission()/getPendingCount(). */
+.notify-live-status{min-height:1.1em;margin-top:6px;font-size:.83rem}
+.notify-live-status.warn{color:var(--warn,#8c2f2f);font-weight:600}
+
 /* ── Topbar spotlight search button (v0.49 Wave 2) ── */
 .topbar-search-btn{background:transparent;border:1px solid var(--line,#c9bd9e);border-radius:8px;
   width:38px;height:38px;font-size:1.15rem;cursor:pointer;color:var(--text,#2c2a22);
@@ -4749,6 +4782,11 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
    Reminders strip, no hover feedback at all before this. */
 .reminder-row:hover{border-color:var(--amber-dim)}
 .reminder-row.overdue{border-color:var(--red);background:rgba(255,93,93,.08)}
+/* Tier 3 urgency-convergence fix: "red" level per urgencyFor() (reminders.js)
+   but not literally overdue yet - e.g. a board reminder inside
+   util.boardUrgency's own 3-day red window. Same red as .overdue, no
+   background tint, so a genuinely late item still reads as more severe. */
+.reminder-row.urgent{border-color:var(--red)}
 .reminder-row.soon{border-color:var(--amber,#f0b429)}
 .reminder-when{font-weight:600;font-size:12px;min-width:104px;color:var(--text-dim)}
 .reminder-row.overdue .reminder-when{color:var(--ink-red)}
@@ -5404,6 +5442,26 @@ window.G = window.G || {};
       });
       return;
     }
+    // Re-entrancy guard: none of this function's ~20 call sites (report/print
+    // buttons across Progress, Mock Board, IDP, DA 4856, Memo/SITREP, etc.)
+    // debounce their trigger button, and a fast double-click can call this
+    // twice before the first call's "afterprint" listener has fired to clean
+    // up (that only happens once the OS print dialog actually closes). A
+    // second #print-holder appended alongside a still-present first one would
+    // both print: @media print's `.print-only { display: block !important }`
+    // rule (search this file for "#print-holder's" own comment above that
+    // block) matches by CLASS, so it doesn't care that #print-holder isn't a
+    // unique id — both holders would render, duplicating the report content
+    // on the page. Mirrors counselpdf.js's openFiller() (js/counselpdf.js),
+    // which guards the exact same shape of problem the exact same way:
+    // remove any leftover node of this kind before appending a fresh one,
+    // rather than a single global in-flight flag — a flag would also wrongly
+    // block a second LEGITIMATE printHTML call for a genuinely different
+    // report firing close behind the first. Removing-and-replacing instead
+    // means the most recent call always wins and only ever one holder (and
+    // therefore one copy of one report) is present when print() fires.
+    const existingHolder = document.getElementById("print-holder");
+    if (existingHolder) existingHolder.remove();
     const holder = util.el("div.print-only#print-holder");
     holder.innerHTML = "<h1>" + util.esc(title) + "</h1>" + innerHTML;
     document.body.appendChild(holder);
@@ -5763,6 +5821,21 @@ window.G = window.G || {};
   util.boardUrgency = function (daysOut) {
     if (daysOut <= 3) return { color: "var(--red)", level: "red" };
     if (daysOut <= 14) return { color: "var(--amber)", level: "amber" };
+    return { color: "var(--green)", level: "green" };
+  };
+
+  // Third member of the same family, for every OTHER tracked date that has
+  // no board/ETS-specific regulatory deadline of its own (weapons quals,
+  // AFT, NCOER thru-dates, Calendar's fixed anchors, and reminders.js's own
+  // non-board/ETS kinds). Same "red under 14 days, amber under 45" scale
+  // calendar.js's own local urgency() already used privately - pulled out
+  // here (roadmap Tier 3 batch 2: "unify Reminders' urgency scale") so
+  // reminders.js's bucket()/renderStrip() could reuse the exact same numbers
+  // instead of running their own independently-tuned 14-day/3-day cutoffs
+  // that disagreed with Calendar for the identical underlying date.
+  util.genericUrgency = function (daysOut) {
+    if (daysOut <= 14) return { color: "var(--red)", level: "red" };
+    if (daysOut <= 45) return { color: "var(--amber)", level: "amber" };
     return { color: "var(--green)", level: "green" };
   };
 
@@ -6139,7 +6212,7 @@ window.G = window.G || {};
     // ── v0.44 counseling PDF ──
     counselFormMode: "wizard", // wizard | single
     sigMode: "cac-note",       // cac-note | bare | typed-name  (never signs in-app)
-    formsMode: "replica",      // replica | overlay-ready | pdf-overlay
+    formsMode: "replica",      // replica | overlay-ready ("pdf-overlay" retired — see forms.js's formsMode())
     userName: "",              // pre-fills DA forms
     etsDate: "",               // YYYY-MM-DD — enables dynamic transition countdown
     retirementSystem: "brs",   // brs | legacy — drives Finance module content
@@ -9723,8 +9796,23 @@ window.G = window.G || {};
         body.appendChild(num("CLEP / DANTES / ACT credit hours", "clepHours", 0, 60, 1, "2 points per credit hour."));
         body.appendChild(chk("DLPT 1/1 or higher", "dlpt", "25 points, valid 12 months."));
       }
-      body.appendChild(chk((PPW[rank].pme) + " graduate, recommended for promotion", "pmeGrad",
-        "150 additional points, added on top of the 800 ceiling \u2014 and " + PPW[rank].pme + " is a pin-on requirement, not optional."));
+      const pmeGradCard = chk((PPW[rank].pme) + " graduate, recommended for promotion", "pmeGrad",
+        "150 additional points, added on top of the 800 ceiling \u2014 and " + PPW[rank].pme + " is a pin-on requirement, not optional.");
+      // Cross-link (same shape as the MOS-credential card's "MOS Career
+      // Center" button above, ~30 lines up): the ranked-moves list below
+      // calls this THE single highest-value line on the sheet ("Nothing
+      // else here comes close" \u2014 see the moves.push for pmeGrad right
+      // above draw()), yet nothing here pointed the Soldier at the actual
+      // course prep. Route to whichever course gates THIS rank \u2014
+      // PPW[rank].pme is "BLC" for SGT, "ALC" for SSG, never both: it's a
+      // rank-scoped PME gate, not an either-or choice.
+      const pmeLinkHint = el("p.hint", { style: "margin-top:6px" });
+      pmeLinkHint.appendChild(document.createTextNode("Highest-value line on this worksheet \u2014 study for it directly: "));
+      const pmeLinkBtn = el("button.btn.tiny.ghost", { type: "button", text: PPW[rank].pme + " Prep" });
+      pmeLinkBtn.addEventListener("click", () => { location.hash = "#/" + PPW[rank].pme.toLowerCase(); });
+      pmeLinkHint.appendChild(pmeLinkBtn);
+      pmeGradCard.appendChild(pmeLinkHint);
+      body.appendChild(pmeGradCard);
       draw();
     }
 
@@ -13833,12 +13921,35 @@ window.G = window.G || {};
   };
 
   /* ============================================================
-   *  LIVE-SYNC REPLICA ENGINE  (formsMode: replica | overlay-ready | pdf-overlay)
+   *  LIVE-SYNC REPLICA ENGINE  (formsMode: replica | overlay-ready)
    *  A faithful, numbered-block re-creation of each DA form whose
    *  inputs mirror in real time into a print-ready shadow copy.
+   *
+   *  Roadmap audit (Tier 3 batch 2): a third mode, "pdf-overlay"
+   *  ("Overlay on my PDF"), used to promise positioning typed answers on
+   *  an official PDF the Soldier supplies. It was never real: zero of
+   *  the 34 forms in G.store.forms().forms carry any field-coordinate
+   *  data (verified against the seed - no coord/xy/position key exists
+   *  anywhere in a form record), buildPdfOverlay() below only ever
+   *  stored the uploaded File object and never read it again, and the
+   *  Print button (drawReplica's printBtn) always called
+   *  replicaPrintMarkup() regardless of mode - never touched the
+   *  uploaded PDF at all. Retired the option from Settings' picker
+   *  (below) and this coercion drops any value still persisted from
+   *  before the retirement (synced backup, old localStorage) to the
+   *  one honest fallback that actually renders something -
+   *  "overlay-ready"'s plain "this can bind to a PDF later" hook -
+   *  rather than resurrecting the broken upload UI. This is NOT the
+   *  same feature as G.pdf456 (the real DA 4856 AcroForm filler, driven
+   *  from Counsel's "Fill real PDF" button) - that one genuinely fills
+   *  a real embedded PDF by field name and never consults formsMode.
    * ============================================================ */
   function formsMode() {
-    try { var s = G.store && G.store.settings && G.store.settings(); return (s && s.formsMode) || "replica"; }
+    try {
+      var s = G.store && G.store.settings && G.store.settings();
+      var m = (s && s.formsMode) || "replica";
+      return m === "pdf-overlay" ? "overlay-ready" : m;
+    }
     catch (e) { return "replica"; }
   }
 
@@ -13894,14 +14005,14 @@ window.G = window.G || {};
       (f.form || "the form") + " for training. Get the real, signable form from armypubs.army.mil."
     ]));
 
-    // ---- optional PDF overlay host (modes 2 & 3) ----
+    // ---- optional PDF hook (mode 2 only; mode 3 "pdf-overlay" retired - see formsMode()) ----
     var pdfLayer = null;
-    if (mode === "pdf-overlay" || mode === "overlay-ready") {
-      pdfLayer = buildPdfOverlay(f, host, mode);
+    if (mode === "overlay-ready") {
+      pdfLayer = buildPdfOverlay(f, host);
     }
 
     // ---- the replica sheet ----
-    var sheet = U.el("div", { class: "replica-sheet" + (mode === "pdf-overlay" ? " overlay-mode" : "") });
+    var sheet = U.el("div", { class: "replica-sheet" });
     sheet.setAttribute("role", "group");
     sheet.setAttribute("aria-label", (f.form || "Form") + " practice replica");
 
@@ -13977,29 +14088,25 @@ window.G = window.G || {};
     clearBtn.addEventListener("click", function () { state.ex = false; state.drafts[f.id] = {}; drawReplica(f, host, mount); });
   }
 
-  // PDF overlay scaffold — modes 2 (overlay-ready) & 3 (pdf-overlay).
-  // Mode 2 shows a hook (drop-zone) but keeps the replica primary.
-  // Mode 3 lets the user load an official PDF; typed answers position over it (print-through).
-  function buildPdfOverlay(f, host, mode) {
+  // PDF hook scaffold — mode 2 (overlay-ready) only.
+  // Shows an honest "not yet" placeholder but keeps the replica primary.
+  //
+  // A former mode 3 ("pdf-overlay" / "Overlay on my PDF") used to render a
+  // file-upload input here and claim typed answers would position onto
+  // whatever official PDF the Soldier loaded. Retired (see formsMode()'s
+  // header comment above drawReplica) - it had a file <input> that stored
+  // the chosen File on `api.pdf` and nothing else ever read that property,
+  // no form in G.store.forms().forms carries the field-coordinate data
+  // actual positioning would need, and the real Print button never
+  // consulted pdfLayer/api.pdf at all, so no answer ever actually printed
+  // "over" the loaded PDF - the upload control was pure UI theater.
+  function buildPdfOverlay(f, host) {
     var wrap = U.el("div", { class: "pdf-hook" });
-    var msg = mode === "pdf-overlay"
-      ? "Overlay mode: load the official " + (f.form || "DA form") + " PDF (from armypubs). Your typed answers position on top for Print-to-PDF. The PDF stays on your device."
-      : "PDF hook ready: this form can later bind to an official " + (f.form || "DA form") + " PDF. For now, the replica below is the fill surface.";
-    wrap.appendChild(U.el("div", { class: "hint" }, [msg]));
-    var api = { pdf: null, sync: function () {} };
-    if (mode === "pdf-overlay") {
-      var file = U.el("input", { type: "file", accept: "application/pdf", class: "in" });
-      var status = U.el("div", { class: "cnt" }, ["No PDF loaded — replica is active."]);
-      file.addEventListener("change", function () {
-        var fobj = file.files && file.files[0];
-        if (!fobj) return;
-        status.textContent = "Loaded: " + fobj.name + " — answers will print over it. (Overlay positioning is a study approximation.)";
-        api.pdf = fobj;
-      });
-      wrap.appendChild(file); wrap.appendChild(status);
-    }
+    wrap.appendChild(U.el("div", { class: "hint" }, [
+      "PDF hook ready: this form can later bind to an official " + (f.form || "DA form") + " PDF. For now, the replica below is the fill surface."
+    ]));
     host.appendChild(wrap);
-    return api;
+    return { sync: function () {} };
   }
 
   function replicaPrintMarkup(f, vals, lay) {
@@ -14461,6 +14568,22 @@ window.G = window.G || {};
     // it and warn the Soldier rather than reporting a silent clean success.
     async generateFillable(vals) {
       var bytes = await fill(vals || {});
+      // Defense in depth, actually wired: assertUnsigned() existed for a
+      // while as documented-but-dormant code (defined + exported, never
+      // called). fill() never maps a vals key onto a SIG field today, so
+      // this can't currently be tripped through the public API — but it's
+      // the last checkpoint before the bytes we're about to hand the
+      // Soldier get written to disk, and it's the only thing standing
+      // between a corrupted/replaced source template (formBytes() reading
+      // a window.GUIDON_DA4856_B64 that isn't the clean unsigned original)
+      // and a "successful" export that quietly carries signature data.
+      // Same convention as every other hard failure in this module
+      // (lib()/formBytes()/doc.save() above): throw, don't return a falsy
+      // result — every existing caller (see counselpdf.js's genFill click
+      // handlers) already awaits generateFillable() inside a .catch that
+      // surfaces "Error: " + e.message, so this needs no new plumbing.
+      var unsigned = await assertUnsigned(bytes);
+      if (!unsigned) throw new Error("Signature field check failed — refusing to export this PDF (it may carry signature data).");
       // .saved mirrors the existing .failedFields attachment (see the note
       // above fill()) — callers await this promise, so the save has already
       // resolved true/false by the time they read it, not just "was called".
@@ -14732,7 +14855,7 @@ window.G = window.G || {};
     var sigMode = "cac-note";
     try { sigMode = G.store.settings().sigMode || "cac-note"; } catch (e) {}
     wrap.appendChild(el("div.cpdf-sechead", { text: "Signature handling" }));
-    wrap.appendChild(el("p.cpdf-hint", { text: "The app never applies a digital signature. Choose how blank signature blocks appear; sign later on CAC-enabled hardware." }));
+    wrap.appendChild(el("p.cpdf-hint", { text: "The app never applies a digital signature; sign later on CAC-enabled hardware. Choose how the blank signature area looks on the printed copy below." }));
     var sigOpts = [
       { id: "cac-note", label: "Empty fields + “Sign on CAC hardware” note (recommended)" },
       { id: "bare", label: "Empty signature fields only" },
@@ -14745,6 +14868,19 @@ window.G = window.G || {};
       sigSel.appendChild(b);
     });
     wrap.appendChild(sigSel);
+    // Scope disclosure: the 4 signature widgets on the real DA 4856 AcroForm
+    // (Counseledsignat/Counselorsignat/Counseled2signat/Indivcounselsignat)
+    // are genuine PDF /Sig fields, not text fields - verified against the
+    // embedded form via pdf-lib field introspection (they report no settable
+    // text value, unlike NAME/RANK/etc which are plain text fields). There is
+    // no field-level way to pre-render a note or typed name under them the
+    // way printFlatten()'s HTML can, so withSig()'s _sigMode never reaches
+    // fill()/generateFillable() at all (fill() only walks the F key map,
+    // which has no sigMode entry) - the fillable PDF's signature blocks are
+    // identical plain blanks no matter which option above is active. Rather
+    // than let that read as the picker silently doing nothing on that button,
+    // say so plainly next to it, before either button is clicked.
+    wrap.appendChild(el("p.cpdf-scope", { text: "Applies to the Print / flatten copy only. The fillable PDF's signature blocks are the form's real signature fields, which can't carry preset text — they're plain blanks under every option above." }));
 
     wrap.appendChild(el("div.cpdf-warn", { text: "Study aid. Verify every entry against current regulations before use. Signatures are applied only outside the app on CAC-capable hardware." }));
 
@@ -19731,7 +19867,34 @@ window.G = window.G || {};
               item.appendChild(el("div.hint", { text: hasDefault
                 ? "Internal setting/checklist data, not something you typed \u2014 safe to reset to a known-good default."
                 : "May hold something you entered. Repairing this discards the unreadable entry; there is no safe default to fall back to." }));
-              const actBtn = el("button.btn.sm" + (hasDefault ? "" : ".ghost"), { type:"button", text: hasDefault ? "Reset to default" : "Quarantine this entry" });
+              // Roadmap Tier 3 batch 2: the confirm dialog below (see msg,
+              // just under) tells the Soldier to go export a FULL backup
+              // from Settings → Backup & restore first if they want to
+              // keep this row — a much heavier ask than downloading just
+              // this one row, right here, before they even decide whether
+              // to quarantine it. Only offered on the no-safe-default path:
+              // the hasDefault branch above never shows a confirm at all
+              // (an immediate, reversible-by-rerun reset), so there's
+              // nothing this download would be "before." Same util.download()
+              // primitive as the self-heal log's "Download full log" button
+              // a few panels up and G.backup.downloadAll's full backup —
+              // just scoped to this one key+value instead of everything.
+              let dlBtn = null;
+              if (!hasDefault) {
+                dlBtn = el("button.btn.sm.ghost", { type:"button", text:"Download this entry", style:"margin-top:6px" });
+                dlBtn.addEventListener("click", async () => {
+                  let payload;
+                  try { payload = JSON.stringify({ k: badRow.k, v: badRow.v }, null, 2); }
+                  catch (e) { payload = JSON.stringify({ k: badRow.k, v: String(badRow.v) }, null, 2); }
+                  const safeKey = badRow.k.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "entry";
+                  const name = "guidon-kv-" + safeKey + "-" + new Date().toISOString().slice(0, 10) + ".json";
+                  util.download(name, payload).then((ok) => {
+                    util.toast && util.toast(ok ? "Downloaded " + badRow.k + "." : "Download failed — try again.");
+                  });
+                });
+                item.appendChild(dlBtn);
+              }
+              const actBtn = el("button.btn.sm" + (hasDefault ? "" : ".ghost"), { type:"button", text: hasDefault ? "Reset to default" : "Quarantine this entry", style: hasDefault ? "" : "margin-top:6px;margin-left:8px" });
               actBtn.addEventListener("click", async () => {
                 if (hasDefault) {
                   actBtn.disabled = true;
@@ -20702,7 +20865,19 @@ window.G = window.G || {};
     });
   }
 
-  // Returns { overdue:[], soon:[], later:[] } sorted by date. "soon" = within 14 days.
+  // Returns { overdue:[], soon:[], later:[] } sorted by date. "soon" = within
+  // 14 days - a display/selection WINDOW only ("how far ahead is worth
+  // surfacing at all" for the home strip's actionable list and the editor's
+  // own section headers below), separate from visual urgency colour. Colour
+  // itself is decided by urgencyFor() further down, sourced from
+  // util.boardUrgency()/util.etsUrgency()/util.genericUrgency() per the
+  // reminder's own kind - this 14 used to be paired with a SECOND, separate
+  // hardcoded 3-day cutoff in renderStrip() below that together acted as
+  // this module's own independently-tuned urgency scale, disagreeing with
+  // the shared scale calendar.js already established (a board-date reminder
+  // 10 days out showed no colour at all here despite Calendar's own board
+  // row already showing amber for the identical date, per util.boardUrgency's
+  // real 3/14 thresholds).
   function bucket(list) {
     var out = { overdue: [], soon: [], later: [] };
     // load() already coerces to an array, but bucket() has no other
@@ -20730,6 +20905,25 @@ window.G = window.G || {};
     return "in " + d + " days";
   }
 
+  // Kind-aware bridge onto the shared util.boardUrgency()/util.etsUrgency()/
+  // util.genericUrgency() colour scales calendar.js's own sharedUrgency()
+  // already established (see calendar.js) - a "board" reminder (the kind
+  // calendar.js's "Remind me" button on its OWN board-date row creates,
+  // remKind:"board" in buildUpcoming()) now can never disagree with
+  // Calendar's board-date row for the identical date. "ets" is included
+  // defensively even though no reachable path sets it today (calendar.js's
+  // ETS "Remind me" button falls back to kind "other" - that's calendar.js's
+  // own gap, not this fix's, to close). Every other kind (weapons,
+  // counseling, promo points, USAJOBS, salary-negotiation follow-up,
+  // "other") falls back to util.genericUrgency(), the same 14/45-day scale
+  // calendar.js itself uses for every OTHER tracked date, so this module no
+  // longer runs any independently-invented scale of its own for those either.
+  function urgencyFor(kind, daysUntil) {
+    if (kind === "board") return util.boardUrgency(daysUntil);
+    if (kind === "ets") return util.etsUrgency(daysUntil);
+    return util.genericUrgency(daysUntil);
+  }
+
   // Compact strip for the home view. Only renders overdue + soon (actionable).
   async function renderStrip(host) {
     try {
@@ -20741,7 +20935,21 @@ window.G = window.G || {};
       wrap.appendChild(el("div.eyebrow", { text: "Coming up" }));
       var ulist = el("div.reminders-list");
       actionable.slice(0, 5).forEach(function (r) {
-        var row = el("button.reminder-row" + (r.daysUntil < 0 ? ".overdue" : r.daysUntil <= 3 ? ".soon" : ""), {
+        // Literally overdue keeps its own distinct, more severe styling
+        // regardless of kind - matches every other overdue check in this
+        // module (bucket()/renderEditor() both key off daysUntil<0 the same
+        // way). For anything not yet due, colour now comes from
+        // urgencyFor() instead of the flat "<=3 days" cutoff this module
+        // used to invent on its own: level "red" (e.g. a board reminder
+        // inside util.boardUrgency's own 3-day red window) gets the new
+        // .urgent class (same red as .overdue, just without the "already
+        // late" background tint), "amber" reuses the existing .soon styling
+        // (already amber - only the THRESHOLD that reached it was wrong
+        // before, fixed at 3 days when board/generic dates should stay
+        // amber out to 14/45), "green" gets no class, same as before.
+        var lvl = urgencyFor(r.kind, r.daysUntil).level;
+        var cls = r.daysUntil < 0 ? ".overdue" : lvl === "red" ? ".urgent" : lvl === "amber" ? ".soon" : "";
+        var row = el("button.reminder-row" + cls, {
           type: "button",
           "aria-label": r.label + " — " + whenText(r.daysUntil),
           onclick: function () { location.hash = "#/profile"; },
@@ -24878,12 +25086,57 @@ window.G = window.G || {};
         const notifInput = el("input", { type: "checkbox", "aria-label": "Reminder notifications" });
         notifInput.checked = !!s2.notifyReminders;
         const notifStatus = el("p.hint", { style: "margin-top:6px" });
+        // Live OS status, distinct from the checkbox above. notifInput.checked
+        // only ever reflects s.notifyReminders — a LOCAL, app-side flag this
+        // toggle itself writes — so it kept reading "on" for as long as the
+        // Soldier left it that way, even after the OS permission was revoked
+        // entirely outside the app (Android's own per-app notification
+        // setting, flippable with zero signal back to GUIDON) or the schedule
+        // was otherwise dropped. This calls G.notify.checkPermission() +
+        // getPendingCount() (notify.js) to show what's REALLY true right now
+        // — whether the OS will actually let a notification through, and how
+        // many are really sitting in its queue — not just what the toggle
+        // above claims.
+        const notifLive = el("p.notify-live-status hint", { style: "margin-top:6px" });
+        async function refreshNotifyLive() {
+          const [perm, pending] = await Promise.all([G.notify.checkPermission(), G.notify.getPendingCount()]);
+          const pendingTxt = pending + (pending === 1 ? " reminder currently scheduled" : " reminders currently scheduled");
+          if (notifInput.checked && perm !== "granted") {
+            notifLive.textContent = "OS permission is \"" + perm + "\", not granted " + String.fromCharCode(8212) +
+              " revoked outside GUIDON, most likely from your device's system settings. Reminders will NOT fire until it's re-enabled there. " + pendingTxt + ".";
+            notifLive.className = "notify-live-status hint warn";
+          } else {
+            notifLive.textContent = (notifInput.checked ? "OS permission granted. " : "") + pendingTxt + ".";
+            notifLive.className = "notify-live-status hint" + (!notifInput.checked && pending > 0 ? " warn" : "");
+          }
+        }
+        refreshNotifyLive();
+        // Settings has no route-teardown hook to unregister this on
+        // navigating away, and this view re-renders fresh on every visit —
+        // so a plain addEventListener here would stack one more document-
+        // level listener per visit, forever. Self-cleans on notif's own
+        // connectedness instead, same idiom renderOnboarding's document
+        // keydown listener uses (grep "wrap.isConnected" for that
+        // precedent): once notif is no longer in the document, the next
+        // visibilitychange anywhere unregisters it rather than acting on a
+        // detached panel. Checking on visibilitychange (not just on mount)
+        // is what actually catches the case this panel exists for: a
+        // Soldier backgrounds GUIDON while already sitting on this screen,
+        // flips the OS permission off in system settings, then switches
+        // back — an on-mount-only check would leave that stale "on" sitting
+        // there unnoticed until the next full navigation away and back.
+        function onNotifVisible() {
+          if (!notif.isConnected) { document.removeEventListener("visibilitychange", onNotifVisible); return; }
+          if (document.visibilityState === "visible") refreshNotifyLive();
+        }
+        document.addEventListener("visibilitychange", onNotifVisible);
         notifInput.addEventListener("change", async () => {
           if (notifInput.checked) {
             const perm = await G.notify.requestPermission();
             if (perm !== "granted") {
               notifInput.checked = false;
               notifStatus.textContent = "Permission was not granted " + String.fromCharCode(8212) + " enable notifications for GUIDON in your device's system settings, then try again.";
+              await refreshNotifyLive();
               return;
             }
             await store.setSetting("notifyReminders", true);
@@ -24897,12 +25150,14 @@ window.G = window.G || {};
             try { if (G.notify) await G.notify.cancelAll(); } catch (e) {}
             notifStatus.textContent = "Off " + String.fromCharCode(8212) + " GUIDON will still show reminders on Home, just without a notification.";
           }
+          await refreshNotifyLive();
         });
         notif.appendChild(el("div", { style: "margin:12px 0" }, [
           el("div.switch", {}, [el("label.toggle", { style: "margin:0" }, [notifInput, el("span.track")]), el("span", { text: "Reminder notifications" })]),
           el("p.hint", { text: "Local only " + String.fromCharCode(8212) + " no network, no push service. Scheduled on this device from the dates you set in Reminders." }),
         ]));
         notif.appendChild(notifStatus);
+        notif.appendChild(notifLive);
         accGrid.appendChild(notif);
       }
     }
@@ -24987,20 +25242,31 @@ window.G = window.G || {};
     const fmPanel = el("div.panel", { style: "margin-top:12px" });
     fmPanel.appendChild(el("label", { text: "Forms fill mode" }));
     const fmSeg = el("div.segmented");
-    [["replica", "Replica"], ["overlay-ready", "Replica + PDF hook"], ["pdf-overlay", "Overlay on my PDF"]].forEach(([v, lbl]) => {
-      const b = el("button" + (s.formsMode === v ? ".active" : ""), { text: lbl, onclick: async () => {
+    // Roadmap audit (Tier 3 batch 2): a third option here, "pdf-overlay"
+    // ("Overlay on my PDF"), promised positioning typed answers on top of
+    // an official PDF the Soldier supplied. It was never real for any of
+    // the 34 forms — no form carries field-coordinate data, the uploaded
+    // file was stored and never read again, and the real Print button
+    // (forms.js drawReplica's printBtn) always printed the plain replica
+    // regardless of mode. Retired rather than left live; see forms.js's
+    // formsMode() for the storage-level fallback covering anyone who still
+    // has the old value persisted. effFormsMode folds that same legacy
+    // value onto "overlay-ready" here too, so a stale pick still shows an
+    // active button instead of none.
+    const effFormsMode = s.formsMode === "pdf-overlay" ? "overlay-ready" : s.formsMode;
+    [["replica", "Replica"], ["overlay-ready", "Replica + PDF hook"]].forEach(([v, lbl]) => {
+      const b = el("button" + (effFormsMode === v ? ".active" : ""), { text: lbl, onclick: async () => {
         await store.setSetting("formsMode", v);
         fmSeg.querySelectorAll("button").forEach((x) => x.classList.remove("active"));
         b.classList.add("active");
       } });
-      b.setAttribute("aria-pressed", s.formsMode === v ? "true" : "false");
+      b.setAttribute("aria-pressed", effFormsMode === v ? "true" : "false");
       fmSeg.appendChild(b);
     });
     fmPanel.appendChild(fmSeg);
     fmPanel.appendChild(el("p.hint", { html:
       "<b>Replica</b> — a faithful, live-fillable HTML re-creation of each form (block numbers &amp; labels) with Print-to-PDF, fully offline. " +
       "<b>Replica + PDF hook</b> — same replica now, with a slot to drop in an official armypubs PDF later. " +
-      "<b>Overlay on my PDF</b> — position your typed answers on top of an official PDF you supply. " +
       "All modes are practice study aids, not signable official DA forms." }));
     // Tier 1(c): Forms fill mode moves to the Advanced tier.
     advancedPanels.push(fmPanel);
@@ -25334,6 +25600,43 @@ window.G = window.G || {};
       card.focus({ preventScroll: true });
     }
 
+    // Roadmap Tier 3 batch 2: "what Search doesn't cover yet" quick-link
+    // chips for the zero-result empty state (see the `!totalHits` branch
+    // below). A no-hit query today reads as "this doesn't exist in
+    // GUIDON," when the honest answer for a lot of queries is "Search
+    // hasn't indexed that domain yet" — the six SECTION_ORDER groups above
+    // (scenario/board/doctrine/lesson/resource/career) cover exactly six
+    // of G.routes' ~30 real, live routes (#/train, #/board, #/doctrine,
+    // #/learn, #/resources, #/career). Real content sections like Forms or
+    // Money are one tap away in the nav but invisible to a search box.
+    //
+    // Re-verified against the roadmap's own named list (Forms, Counseling,
+    // IDP, Mock Board, Writing, Money, Resilience, Transition) rather than
+    // trusted verbatim — it was written 6+ days before this pass and this
+    // project ships fast. Six of the eight check out directly against the
+    // live G.routes labels below (Counseling → "#/counsel", IDP →
+    // "#/develop", Writing → "#/write" and Transition all match hash-for-
+    // hash; Money is unchanged). "Resilience" is now labeled "Health" in
+    // G.routes (G.resilience.render is still the module behind it — see
+    // ROUTES in app.js — so the underlying domain is the same one the
+    // roadmap meant, just relabeled since it was written). "Mock Board" is
+    // NOT a route of its own, though — it's a sub-tab inside #/board
+    // (app.js's mockBtn / board.js's render()), and #/board is already
+    // indexed above: the "board" SECTION_ORDER group reads
+    // store.boardQuestions(), the exact same question bank Mock Board
+    // drills from. A "Mock Board" chip here would point at a route Search
+    // already covers, so it's dropped rather than carried forward — the
+    // real, current gap is these seven, not eight.
+    //
+    // Hashes only, not hand-copied labels/icons/tooltips — resolved from
+    // G.routes (and G.demoNotes for the tooltip) at render time below, the
+    // same "derived from ROUTES rather than hand-maintained" discipline
+    // the Guided Tour and nav-hover tooltips already use (grep "DERIVED
+    // FROM ROUTES" in this file), so a future route rename can't leave a
+    // stale label on one of these chips the way it did for the roadmap's
+    // own "Resilience"/"Health" drift above.
+    const UNINDEXED_DOMAIN_HASHES = ["#/forms", "#/counsel", "#/develop", "#/write", "#/money", "#/health", "#/transition"];
+
     function runSearch(q) {
       util.clear(resultsDiv);
       util.clear(entryList);
@@ -25384,8 +25687,18 @@ window.G = window.G || {};
         (Array.isArray(doc) ? doc : []).forEach((e) => {
           const hay = ((e.title||"")+" "+(e.body||"")+" "+(e.topic||"")).toLowerCase();
           if (hay.includes(ql)) {
+            // e.source is an object ({ref, para, asOf, ...}, see doctrine.json),
+            // never a plain string - same shape store.doctrine()'s own query
+            // filter and views.doctrine's draw() unwrap via d.source.ref (this
+            // file, ~line 6355 and ~line 24423), and the exact e.source.ref
+            // extraction Board Prep's cross-link search already uses for this
+            // same doctrine-entry shape (~line 10539). Assigning the raw
+            // object here (pre-fix: meta:e.source||"") was harmless only
+            // because the render loop below never read h.meta at all; now
+            // that it does, coercing an object straight to text would print
+            // the literal string "[object Object]" on every doctrine hit.
             allHits.doctrine.push({ type:"doctrine", id:e.title, title:e.title,
-              sub:"Doctrine: "+e.topic, meta:e.source||"", route:"#/doctrine" });
+              sub:"Doctrine: "+e.topic, meta:e.source ? (e.source.ref||"") : "", route:"#/doctrine" });
           }
         });
       }
@@ -25438,21 +25751,67 @@ window.G = window.G || {};
         resultsDiv.appendChild(el("div.search-empty", {
           text: 'No results for "' + q + '". Try different keywords.'
         }));
+        // Map of what Search doesn't cover yet (UNINDEXED_DOMAIN_HASHES,
+        // above) — a real, live chip per un-indexed route rather than a
+        // dead end, so a zero-hit query reads as "not indexed" instead of
+        // "doesn't exist in GUIDON." Same chip-button visual pattern as
+        // this view's own type-filter row above (button.chip.search-chip),
+        // but these navigate instead of toggling a filter, so each gets its
+        // own click handler rather than the filter row's shared re-render.
+        const domainWrap = el("div.search-empty-domains");
+        domainWrap.appendChild(el("p.hint", { text: "Also in GUIDON — not indexed by Search yet:" }));
+        const domainChips = el("div.search-filters", { style: "justify-content:center", "aria-label": "Sections Search doesn't index yet" });
+        UNINDEXED_DOMAIN_HASHES.forEach((hash) => {
+          const r = (G.routes || []).find((x) => x.hash === hash);
+          if (!r) return; // route renamed/removed since this list was written — fail soft, never a dead chip
+          const note = G.demoNotes && G.demoNotes[hash];
+          const chip = el("button.chip.search-chip", { type: "button", gi: r.ico, giSize: 14, text: r.label,
+            title: note ? note.d : undefined, "aria-label": "Go to " + r.label + " — not indexed by Search" });
+          chip.addEventListener("click", () => { location.hash = r.hash; });
+          domainChips.appendChild(chip);
+        });
+        domainWrap.appendChild(domainChips);
+        resultsDiv.appendChild(domainWrap);
         return;
       }
 
       // Summary header
       const header = el("div.search-header");
       header.appendChild(el("span.search-count", { text: totalHits + " result"+(totalHits===1?"":"s") }));
-      const parts = [];
-      if (allHits.scenario.length) parts.push(allHits.scenario.length+" scenario"+(allHits.scenario.length===1?"":"s"));
-      if (allHits.board.length) parts.push(allHits.board.length+" board Q");
-      if (allHits.doctrine.length) parts.push(allHits.doctrine.length+" doctrine");
-      if (allHits.lesson.length) parts.push(allHits.lesson.length+" lesson"+(allHits.lesson.length===1?"":"s"));
-      if (allHits.resource.length) parts.push(allHits.resource.length+" resource"+(allHits.resource.length===1?"":"s"));
-      if (allHits.career.length) parts.push(allHits.career.length+" MOS/career");
-      if (parts.length > 1) header.appendChild(el("span.search-breakdown", { text:" ("+parts.join(", ")+")" }));
       resultsDiv.appendChild(header);
+
+      // Per-domain distribution bar. Used to be a plain-text parenthetical
+      // here ("(12 doctrine, 5 scenarios, …)") - same "more than one domain
+      // has hits" threshold as that old `parts.length > 1` check, just
+      // rendered as a clickable proportional bar instead of a joined
+      // string. TYPES.slice(1) drops the "all" pseudo-type and is exactly
+      // SECTION_ORDER's six real domains in the same order (both are
+      // defined from the same six-type list; SECTION_ORDER itself isn't in
+      // scope yet here, it's declared with `const` further down this same
+      // function). Segment width is flex-grow:<real hit count> with
+      // flex-basis:0 - flexbox does the percentage math, so it can't drift
+      // out of sync with the actual counts the way a hand-computed width%
+      // could. Clicking a segment does NOT reimplement filtering: it calls
+      // .click() on the SAME filterBtns[t] chip button built in the
+      // TYPES.forEach above, so activeFilter, aria-pressed and the chip's
+      // own .active class all update through that one already-wired
+      // handler - this is just a second, proportional entry point into it.
+      const domainsWithHits = TYPES.slice(1).filter((t) => allHits[t].length);
+      if (domainsWithHits.length > 1) {
+        const distBar = el("div.search-dist-bar", { role: "group",
+          "aria-label": "Result breakdown by type - activate a segment to filter to that type" });
+        domainsWithHits.forEach((t) => {
+          const n = allHits[t].length;
+          const pct = Math.round((n / totalHits) * 100);
+          const seg = el("button.search-dist-seg", { type: "button",
+            style: "background:" + TYPE_COLOR[t] + ";flex-grow:" + n + ";flex-basis:0;",
+            title: n + " " + TYPE_LABEL[t] + " (" + pct + "%) — click to filter",
+            "aria-label": n + " " + TYPE_LABEL[t] + ", " + pct + " percent of results — activate to filter to " + TYPE_LABEL[t] });
+          seg.addEventListener("click", () => filterBtns[t].click());
+          distBar.appendChild(seg);
+        });
+        resultsDiv.appendChild(distBar);
+      }
 
       // Render by group (sections)
       const SECTION_ORDER = ["scenario","board","doctrine","lesson","resource","career"];
@@ -25486,6 +25845,19 @@ window.G = window.G || {};
           titleEl.appendChild(highlight(h.title, q));
           body.appendChild(titleEl);
           if (h.sub) body.appendChild(el("div.search-hit-sub", { text: h.sub }));
+          // Audit finding: every hit-builder above computes a real h.meta
+          // (tier for scenarios, category for board/resource, doctrine's own
+          // source.ref, board-status for career) but this loop never read it -
+          // meta was computed and silently discarded on every hit, every
+          // domain. Rendered as its own small secondary line rather than
+          // folded into .search-hit-sub so existing sub-line content (e.g.
+          // "Doctrine: Leadership") isn't crowded or duplicated by meta that
+          // often overlaps it in meaning (e.g. doctrine's source ref, board's
+          // category repeated from sub). Guarded the same way h.sub is -
+          // several domains (lesson always; scenario/career often) legitimately
+          // compute an empty string, and that's not a bug, just "nothing to
+          // show here".
+          if (h.meta) body.appendChild(el("div.search-hit-meta", { text: h.meta }));
           card.appendChild(body);
           // Action button
           const action = el("button.btn.sm.ghost.search-go", { type:"button" });

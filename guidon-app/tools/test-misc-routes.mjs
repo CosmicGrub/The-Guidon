@@ -168,8 +168,8 @@ sessionStep === "1" ? ok("Guided Tour: current step (index 1 = step 2) is persis
 // logic in views.search, verified against real content read directly from
 // the app's own data (store.scenarios/boardQuestions/doctrine/etc.) rather
 // than guessed. "reflective belt" hits exactly one doctrine entry; "PT
-// test" hits three different content types at once, so the breakdown text
-// is checked too.
+// test" hits three different content types at once, so the per-domain
+// distribution bar is checked too.
 // ============================================================
 await page.evaluate(() => { location.hash = "#/search"; });
 await page.waitForTimeout(500);
@@ -202,7 +202,11 @@ hashAfterClick === "#/doctrine"
   : bad(`Search "reflective belt": clicking the hit navigated to "${hashAfterClick}", expected "#/doctrine"`);
 
 // A second query spanning three different content types at once, to prove
-// the cross-category breakdown line is real and specific too.
+// the cross-category breakdown is real and specific too. Roadmap Tier 3
+// batch 2 replaced the old plain-text ".search-breakdown" line with a
+// clickable ".search-dist-bar" of ".search-dist-seg" segments (see
+// views.search in src/index.html) - same underlying per-domain counts,
+// surfaced as segment titles instead of one joined string.
 await page.evaluate(() => { location.hash = "#/search"; });
 await page.waitForTimeout(500);
 const searchInput2 = page.locator('input[aria-label="Global search"]');
@@ -210,13 +214,13 @@ await searchInput2.fill("PT test");
 await page.waitForTimeout(300);
 
 const countText2 = await page.evaluate(() => (document.querySelector(".search-count") || {}).textContent || "");
-const breakdownText2 = await page.evaluate(() => (document.querySelector(".search-breakdown") || {}).textContent || "");
+const segTitles2 = await page.evaluate(() => [...document.querySelectorAll(".search-dist-seg")].map((s) => s.title));
 countText2 === "3 results"
   ? ok('Search "PT test": exactly 3 results across scenario/board/lesson content')
   : bad(`Search "PT test": count text was "${countText2}", expected "3 results"`);
-(breakdownText2.includes("1 scenario") && breakdownText2.includes("1 board Q") && breakdownText2.includes("1 lesson"))
-  ? ok(`Search "PT test": breakdown correctly attributes 1 hit to each of scenario/board/lesson ("${breakdownText2.trim()}")`)
-  : bad(`Search "PT test": breakdown text was "${breakdownText2}"`);
+(segTitles2.some((t) => t.startsWith("1 Scenarios")) && segTitles2.some((t) => t.startsWith("1 Board Q")) && segTitles2.some((t) => t.startsWith("1 Lessons")))
+  ? ok(`Search "PT test": distribution bar correctly attributes 1 hit to each of scenario/board/lesson (${JSON.stringify(segTitles2)})`)
+  : bad(`Search "PT test": distribution bar segment titles were ${JSON.stringify(segTitles2)}`);
 
 // Audit finding (rank/MOS scoping pass): typing an MOS code into the app's
 // own search box previously returned nothing, despite a 164-entry MOS

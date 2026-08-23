@@ -88,6 +88,22 @@ window.G = window.G || {};
     catch (e) { return false; }
   }
 
+  // How many reminder notifications are ACTUALLY sitting in the OS's
+  // schedule right now, as opposed to what s.notifyReminders (a local,
+  // app-side boolean) claims. Settings' own toggle previously only ever
+  // read that boolean, so it could read "on" for weeks after the Soldier
+  // revoked GUIDON's notification permission from Android's system
+  // settings (or the OS itself dropped the schedule on a reinstall) with
+  // no way to tell from inside the app. Paired with checkPermission()
+  // below, this gives Settings a real, live answer instead of an assumed
+  // one — see the "Notifications" panel in index.html's views.settings.
+  async function getPendingCount() {
+    const p = plugin();
+    if (!p) return 0;
+    try { const r = await p.getPending(); return (r && Array.isArray(r.notifications)) ? r.notifications.length : 0; }
+    catch (e) { return 0; }
+  }
+
   // Re-syncs every upcoming reminder's notification against the plugin's own
   // schedule. Called once right after the Soldier turns the toggle on, and
   // again on boot so a reinstall/update never silently drops the schedule —
@@ -130,6 +146,7 @@ window.G = window.G || {};
     requestPermission,
     scheduleForReminder,
     cancelForReminder,
+    getPendingCount,
     syncAll,
     cancelAll,
     _notifId: notifId, // exported for tests
