@@ -183,9 +183,31 @@ window.G = window.G || {};
     // buildSummary's own SUMMARY_CAP just above - one file, one pattern.
     const LIST_CAP = 25;
     let listExpanded = false;
+    // Roadmap Tier 5 (width-utilization audit, "(latent)" - only visible
+    // once a roster is actually populated): every Soldier card used to be
+    // appended straight to `list`, one full-width row after another, on
+    // every viewport including a 1500px desktop. `cardsGrid` reuses the
+    // same .card-results-grid utility career.js's NCOES ladder and half a
+    // dozen other routes already share (see that class's own comment in
+    // the CSS) rather than inventing a leader.js-specific grid - auto-fill/
+    // minmax(260px,1fr) needs no media query of its own: it collapses to a
+    // single column below ~530px of available width on its own (measured:
+    // 375px viewport unchanged, still one column) and opens to 2-3 up once
+    // the roster's own panel actually has the room (measured: 2-up at
+    // 768-1023px and 1200-1499px, 3-up at >=1500px; it dips back to one
+    // column at 1024-1199px because .list-detail's own >=1024px split
+    // narrows this panel to ~464-580px there - real, honest available
+    // space, not a bug). The "Show all N (M more)" expander button is
+    // appended to `list` itself, OUTSIDE cardsGrid, so it naturally spans
+    // full width instead of sitting inside a grid cell sized for a card.
+    // A card this narrow (as little as 268px at 3-up) is exactly what made
+    // fieldsGrid's own inline grid-template-columns override necessary
+    // below - see that override's comment for the real overflow it fixed.
+    const cardsGrid = el("div.card-results-grid");
     function buildList() {
       util.clear(list);
       util.clear(rosterList);
+      util.clear(cardsGrid);
       // Filter by rank/initials substring, preserving each entry's REAL
       // index in `roster` (not its position in the filtered subset) - the
       // Remove button and every field's change handler below index into
@@ -211,7 +233,12 @@ window.G = window.G || {};
         row.addEventListener("click", function () { jumpToSoldier(idx); });
         rosterList.appendChild(row);
 
-        const card = el("div.panel", { style: "margin-bottom:10px", "data-roster-idx": String(idx) });
+        // No margin-bottom here (unlike other .panel usages in this file) -
+        // cardsGrid's own .card-results-grid gap:10px now provides the
+        // spacing between cards, in both the stacked (narrow-width,
+        // one-column) and side-by-side (gridded) cases, so a hand-set
+        // margin would just double up on top of the grid gap.
+        const card = el("div.panel", { "data-roster-idx": String(idx) });
         const head = el("div", { style: "display:flex;gap:8px;align-items:center;flex-wrap:wrap" });
         // Audit finding (rank/MOS scoping pass): rank was free text with no
         // link to the app's own canonical RANKS list (G.rankUtils, shared
@@ -265,7 +292,24 @@ window.G = window.G || {};
         // 2x2 on a Fold5/tablet-class screen instead of 4 full-width rows -
         // roughly halves each card's height once a roster is actually
         // populated, without changing anything about the fields themselves.
-        const fieldsGrid = el("div.panel-grid-2");
+        //
+        // Roadmap Tier 5 (width-utilization audit) follow-up: .panel-grid-2's
+        // own "1fr 1fr" is a fixed 2-column split with no minimum, sized off
+        // VIEWPORT width - fine when this card was always the full detail-pane
+        // width, but now that cardsGrid (below) can put 2-3 roster cards side
+        // by side, a card's OWN width can drop as low as ~268px while the
+        // viewport is still >=600px. A native <input type="date"> has a real,
+        // unshrinkable min-content width (measured 151px) that "1fr 1fr" does
+        // not respect, so at that card width the second date column measurably
+        // overflowed the card by 18-63px (real bounding-rect measurement, not
+        // a guess). Overriding grid-template-columns inline - while leaving
+        // .panel-grid-2's own media-gated `display:grid` (and every OTHER
+        // route's plain "1fr 1fr" usage) completely untouched - swaps just
+        // this card's 2 date columns for an auto-fit/minmax(150px,1fr) grid:
+        // it still shows 2x2 whenever the card is wide enough, but degrades
+        // to a single column instead of overflowing when cardsGrid has
+        // squeezed this particular card narrower than that.
+        const fieldsGrid = el("div.panel-grid-2", { style: "grid-template-columns:repeat(auto-fit,minmax(150px,1fr))" });
         FIELDS.forEach(function (f) {
           const row = el("div", { style: "margin-top:8px" });
           const lab = el("div.k", { text: f.label });
@@ -323,8 +367,9 @@ window.G = window.G || {};
           fieldsGrid.appendChild(row);
         });
         card.appendChild(fieldsGrid);
-        list.appendChild(card);
+        cardsGrid.appendChild(card);
       });
+      list.appendChild(cardsGrid);
       if (!listExpanded && visible.length > LIST_CAP) {
         const more = el("button.btn.sm.ghost", { type: "button",
           text: "Show all " + visible.length + " (" + (visible.length - LIST_CAP) + " more)", style: "margin-top:8px" });

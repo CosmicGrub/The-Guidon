@@ -319,7 +319,14 @@ a:hover { text-decoration: underline; }
 
 /* ---------- Progress ---------- */
 .bar { height: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
-.bar > span { display: block; height: 100%; background: linear-gradient(90deg, var(--amber-dim), var(--amber)); box-shadow: 0 0 10px rgba(255,176,32,.4); transition: width .4s; }
+/* Roadmap Tier 7 (120Hz/90Hz motion cleanup): was width:<pct>% animated via
+   `transition: width .4s`, which forces layout on every frame of the
+   transition (the classic 120Hz/90Hz jank source - same fix already applied
+   to .mb-timerfill/.quiz-timer-fill/.idp-dash-fill). Fixed width:100% now,
+   with the fill fraction driven by a GPU-compositable transform:scaleX()
+   instead - every el("span",{style:"width:"+pct+"%"}) call site below was
+   switched to style:"transform:scaleX("+(pct/100)+")" to match. */
+.bar > span { display: block; height: 100%; width: 100%; transform-origin: left; background: linear-gradient(90deg, var(--amber-dim), var(--amber)); box-shadow: 0 0 10px rgba(255,176,32,.4); transition: transform .4s; }
 .bar.cyan > span { background: linear-gradient(90deg, #1c8f97, var(--cyan)); box-shadow: 0 0 10px rgba(56,214,224,.4); }
 .bar.green > span { background: linear-gradient(90deg, #2f9e5b, var(--green)); }
 .bar.violet > span { background: linear-gradient(90deg, #6d54c4, var(--violet)); }
@@ -936,6 +943,59 @@ html[data-motion="cinematic"] { --qz-flip-dur: .95s; --qz-flip-ease: cubic-bezie
   display: block; margin-top: 6px; font-family: var(--font-mono);
   font-size: 0.786rem; color: var(--text-mute);
 }
+
+/* ── Rapid Fire (Board Drill's 7th tab) ───────────────────────────────────
+   The round screen mounts INSIDE the same html.qz-theater overlay Board
+   Drill's own flashcard study uses — .rf-wrap carries the .qz-wrap class
+   too, so html.qz-theater .qz-wrap's fixed fullscreen-overlay rules (above)
+   apply here unchanged. Everything below is new layout INSIDE that reused
+   overlay, not a second overlay system — see docs/superpowers/specs/
+   2026-08-23-rapid-fire-design.md, "Implementation notes for the next
+   phase." No new @media width breakpoint anywhere in this block — every
+   size here is relative (%, ch, clamp()) or borrowed from the shared .btn/
+   .panel/.segmented/.due-chip components, on purpose (see lint-patterns.mjs
+   check (d), the canonical breakpoint-scale guard). */
+.rf-setup-grid { display: flex; flex-direction: column; gap: 12px; }
+.rf-setup-row { display: flex; flex-direction: column; gap: 6px; }
+.rf-scene { flex: 1 1 auto; min-height: 0; width: 100%; max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.rf-hud { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.rf-hud-stat { font-family: var(--font-mono); font-size: .82rem; color: var(--text-dim); }
+.rf-hud-stat b { color: var(--text); font-size: 1rem; }
+/* Color set via JS (updateHud(), below) rather than a static CSS rule here —
+   matches the established idiom renderBoardCountdown's own daysEl.style.color
+   already uses for the same kind of live amber/red state cue, and keeps this
+   out of lint-patterns.mjs check (a)'s raw-accent-on-text audit (that check
+   only scans the <style> block; it isn't a substitute for actually reasoning
+   about contrast, done in updateHud()'s own comment). */
+.rf-timer { font-family: var(--font-head); font-weight: 700; font-size: 1.4rem; margin-left: auto; }
+.rf-card {
+  flex: 1 1 auto; min-height: 220px; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--panel); box-shadow: var(--shadow);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+  padding: clamp(20px, 3vw, 44px); gap: 14px; overflow: hidden;
+}
+.rf-card .kc-label {
+  font-family: var(--font-mono); font-size: 0.786rem; letter-spacing: .14em;
+  color: var(--cyan); text-transform: uppercase;
+}
+/* Same responsive-font intent as .qz-prompt above (design spec's own
+   "Question/answer length handling" section) — fluid via clamp() rather
+   than a breakpoint override, since this screen is always full-bleed
+   (mounted straight into theater, never inline like the flashcard is). */
+.rf-question { font-family: var(--font-head); font-weight: 600; letter-spacing: .01em; font-size: clamp(1.15rem, 4vw, 1.6rem); line-height: 1.35; color: var(--text); max-width: 46ch; }
+.rf-answer-panel { width: 100%; max-width: 46ch; margin-top: 6px; border-top: 1px solid var(--line); padding-top: 12px; max-height: 34vh; overflow-y: auto; text-align: left; }
+.rf-answer-label { font-family: var(--font-mono); font-size: .7rem; letter-spacing: .14em; color: var(--cyan); text-transform: uppercase; margin-bottom: 4px; }
+.rf-answer-text { white-space: pre-wrap; line-height: 1.5; }
+.rf-judge-row { display: flex; gap: 12px; }
+.rf-judge-btn { flex: 1 1 0; font-size: 1.05rem; font-weight: 700; padding: 16px 10px; min-height: 56px; }
+.rf-judge-correct { background: var(--green); color: var(--btn-ink, #1a1206); border-color: var(--green); }
+.rf-judge-correct:hover { border-color: var(--green); color: var(--btn-ink, #1a1206); filter: brightness(1.08); }
+.rf-judge-pass:hover { border-color: var(--line-2); color: var(--text); background: var(--panel-2); }
+.rf-explainer ul { margin: 8px 0 0 20px; padding: 0; }
+.rf-explainer li { margin-bottom: 6px; }
+.rf-recap-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.rf-recap-list li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line-2); font-size: .9rem; }
+.rf-recap-list li span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Compact recall-strength indicator — segments fill with reps, color flips
    from amber to green once G.board.isMasteredSrs() is true. Reads entirely
    from existing srs state, no new persisted fields. */
@@ -1649,6 +1709,30 @@ select.in { appearance:none; }
 .wr-row { display:flex; flex-direction:column; gap:5px; margin-bottom:12px; }
 .wr-label { font-family:var(--font-head); font-weight:600; color:var(--text); font-size:.9rem; }
 .wr-hint { font-size:.74rem; color:var(--text-mute); }
+/* Memorandum tab (#/write, renderMemo) width-waste fix, Tier 5: the AR
+   25-50 rules panel (.wr-rules, the memo's "anatomy" reference) and the
+   field editor (.wr-form) sit in a dedicated .wr-memo-layout wrapper (see
+   renderMemo) rather than being styled by their own class names directly -
+   .wr-rules and .wr-form are shared with renderSitrep()'s intro+form,
+   which must stay single-column and is never inside this wrapper. Single
+   column below 1024px (unchanged stacked behavior); at >=1024px becomes a
+   real 2-pane grid - rules narrow-and-pinned on the left, form free to
+   grow on the right. minmax(260px,320px) - not a bare fraction - mirrors
+   .list-detail's own narrow-reference-pane idiom (see that rule's comment
+   near .list-detail): wide enough that none of the 6 AR 25-50 rules (full
+   sentences, e.g. "'MEMORANDUM FOR' line names the recipient...") wrap
+   into single-word ladders, but no wider than it needs to be so the form
+   column keeps the lion's share of .main's ~760px+ width at this
+   breakpoint. position:sticky (not .list-detail's max-height+overflow-y:
+   auto, meant for a genuinely long scrolling list) because the rules
+   list itself is short - it always fits the viewport on its own, so
+   pinning it in place while the taller form scrolls past is enough; no
+   inner scrollbar needed. top:16px matches .main's own scroll-container
+   padding-top (22px) closely enough to sit flush without touching it. */
+@media (min-width: 1024px) {
+  .wr-memo-layout { display: grid; grid-template-columns: minmax(260px, 320px) 1fr; gap: 16px; align-items: start; }
+  .wr-memo-layout > .wr-rules { position: sticky; top: 16px; }
+}
 .wr-form input, .wr-form textarea { width:100%; background:var(--bg); color:var(--text); border:1px solid var(--line-2); border-radius:var(--radius-sm); padding:9px 11px; font-family:var(--font-mono); font-size:.81rem; }
 /* DEDUPED: a — merged below */
 
@@ -2213,6 +2297,39 @@ button:focus:not(:focus-visible),
     gap: 12px;
     align-items: start;
   }
+}
+
+/* Roadmap Tier 5 (route-by-route width audit, "Optional" tier — BLC/ALC/SLC
+   Prep): all three modules render the same shape — a self-check checklist
+   plus a stack of accordion .panel SECTIONS whose body/points are running
+   prose, not tabular data — inside .view, which is sized for cards/records
+   (900/960/1200px across its own existing breakpoints), not long-form text.
+   Measured live at a real 1440px viewport: SECTIONS body text (.hint) wraps
+   at up to 1120px-wide lines and .points bullets (li) at up to 1028px -
+   both roughly double a comfortable reading measure. The self-check
+   checklist's <label> rows are NOT part of that problem - as flex-row
+   children with no explicit width they already shrink to their own content
+   (measured 385-777px across all 12 BLC items, one line each) rather than
+   stretching to the panel's full width, so they're included here only for
+   the one long outlier (the 777px item) and cost nothing on the rest.
+   max-width:70ch reuses the exact measure html.dyslexia-spacing already
+   uses for running text elsewhere in this file (see that rule above)
+   instead of inventing a new number. No media query: max-width only ever
+   CLAMPS a box already wider than 70ch, so this is already a no-op below
+   that width (every phone/narrow viewport, where .view itself is under
+   70ch) and only changes anything at the wide breakpoints where the real
+   problem lives - no canonical-breakpoint value needed for something that's
+   width-driven, not viewport-driven. Scoped to each module's own -view
+   class (set once by blc.js/alc.js/slc.js's render() on the fresh per-route
+   mount frame - see app.js's route() for why that frame is always new and
+   never carries a class over from the previous route) rather than a bare
+   `.panel .hint, .panel li` selector, which would reach every OTHER route's
+   panels too - this app has dozens of them, most of them short stat/status
+   text nobody wants force-wrapped narrower for no reason. */
+.blc-view p.hint, .blc-view li, .blc-view label,
+.alc-view p.hint, .alc-view li, .alc-view label,
+.slc-view p.hint, .slc-view li, .slc-view label {
+  max-width: 70ch;
 }
 
 /* ── Shared chart primitives (G.chart — see js/charts.js) ─────────────────
@@ -3254,7 +3371,25 @@ html.light .feedback.error { background: rgba(220,53,69,0.1); }
 /* ── Weekly activity trend chart ──────────────────────────────────────────── */
 .trend-chart { display:flex; align-items:flex-end; gap:8px; height:72px; margin:12px 0 4px; }
 .trend-col { display:flex; flex-direction:column; align-items:center; gap:4px; flex:1; }
-.trend-bar { width:100%; border-radius:3px 3px 0 0; min-height:3px; transition:height 0.3s ease; }
+/* Roadmap Tier 7 (120Hz/90Hz motion cleanup): height used to be a JS-set px
+   value (relayouts every frame of its own transition); now the box is
+   always the fixed 56px "tallest bar" reference (see the trend-bar el()
+   call below - the old min-height:3px floor is gone since height is no
+   longer data-dependent) and the real day's height is a
+   transform:scaleY() from transform-origin:bottom, which the compositor
+   can animate without layout.
+   Scoped to `.trend-col > .trend-bar` (bar is a DIRECT child of .trend-col
+   here), not the bare `.trend-bar` the other 7-day sparkline component
+   below also uses - two same-named-but-different components sharing one
+   class collide under the cascade (same specificity, last-in-file wins
+   for every SHARED property on BOTH), which silently broke this chart's
+   own transition when the sparkline's still-transition:height rule
+   happened to land later in the file. The extra `.trend-col >` combinator
+   raises specificity just enough to make each rule apply only to its own
+   real DOM shape (this chart's bar is .trend-col's direct child; the
+   sparkline's is nested one level deeper inside its own .trend-bar-wrap -
+   see that rule below), independent of source order. */
+.trend-col > .trend-bar { width:100%; height:56px; transform-origin:bottom; border-radius:3px 3px 0 0; transition:transform 0.3s ease; }
 .trend-label { font-size:0.6rem; font-family:var(--font-mono); color:var(--text-dim); text-align:center; }
 .trend-streak { font-size:0.82rem; color:var(--amber); margin-top:4px; }
 
@@ -3450,8 +3585,23 @@ html.light .feedback.error { background: rgba(220,53,69,0.1); }
   background:rgba(255,255,255,0.04); white-space:nowrap; }
 
 /* ── Doctrine entries ─────────────────────────────────────────────────────── */
+/* margin-bottom:0 (roadmap Tier 5 width-waste fix): cards now render inside
+   the .card-results-grid wrapper added in views.doctrine's draw() (see that
+   call site's own comment), whose gap:10px already provides inter-card
+   spacing in both the single-column collapse (narrow viewports) and the
+   multi-column grid (wide viewports). This class carries the .card utility
+   class too (el("div.card.doc-entry-card", ...)), and .card's own
+   margin-bottom:12px (same specificity, earlier in the cascade) was only
+   ever being suppressed by this rule's ORIGINAL margin-bottom:8px, not
+   truly redundant with it - simply deleting the declaration (tried first,
+   confirmed live) let .card's larger 12px through and made narrow-viewport
+   spacing worse, not better. Explicit 0 is the correct override so the
+   grid's own gap is the only source of spacing, matching the convention
+   the .panel-in-.card-results-grid call sites elsewhere already use
+   (inline margin-bottom overrides at their own card element, not a change
+   to a shared base class). */
 .doc-entry-card { border-left:3px solid var(--text-dim); padding:12px 14px 10px;
-  margin-bottom:8px; border-radius:0 6px 6px 0; background:var(--bg-2);
+  margin-bottom:0; border-radius:0 6px 6px 0; background:var(--bg-2);
   transition:border-color 0.15s; }
 .doc-topic-row { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
 .doc-topic-badge { font-family:var(--font-mono); font-size:0.68rem; font-weight:700;
@@ -3474,7 +3624,32 @@ html.light .feedback.error { background: rgba(220,53,69,0.1); }
   gap:2px; flex:1; min-width:0; }
 .trend-bar-wrap { flex:1; width:100%; display:flex; flex-direction:column;
   justify-content:flex-end; }
-.trend-bar { width:100%; transition:height 0.3s ease-out; border-radius:2px 2px 0 0; }
+/* Roadmap Tier 7 (120Hz/90Hz motion cleanup) - investigated, NOT converted:
+   .trend-bar-wrap's `flex:1` expands to flex-basis:0%, and .trend-col
+   (its parent) is never stretched by .trend-bars-row's own
+   align-items:flex-end - so .trend-bar-wrap's own height is never
+   definite, and every .trend-bar height:<pct>% below resolves against an
+   indefinite containing block (i.e. effectively 0, rescued only by the
+   inline min-height:3px floor). Confirmed live: even the "today" bar,
+   height:100%, renders at exactly 3px, same as every 0%-count day - this
+   sparkline has never visually shown a real proportional bar, pre-existing
+   and unrelated to this Tier. A transform:scaleY() fix (matching .bar >
+   span and the OTHER .trend-bar below) needs a real, non-zero reference
+   box to scale FROM - scaling a permanently-0px box just makes every bar
+   invisible instead of the current flat-3px-regardless-of-value look,
+   which is a real visual regression this Tier's brief explicitly rules
+   out ("performance-only, not a visual redesign"). Left as
+   transition:height (functionally inert today - the box never actually
+   settles at a different pixel height across a transition, so this isn't
+   a real 120Hz jank source in practice either) until the underlying
+   indefinite-height flex chain is fixed on its own; flagged separately.
+   Scoped to `.trend-bar-wrap > .trend-bar` (this bar is nested one level
+   inside its own wrap), not the bare `.trend-bar` the OTHER weekly-chart
+   component above also uses - same class name, different DOM shape (that
+   one's bar is .trend-col's direct child). Equal-specificity same-name
+   rules cascade by source order and would otherwise silently steal each
+   other's `transition` - see the longer comment on that rule. */
+.trend-bar-wrap > .trend-bar { width:100%; transition:height 0.3s ease-out; border-radius:2px 2px 0 0; }
 .trend-label { font-family:var(--font-mono); font-size:0.65rem;
   color:var(--text-dim); text-align:center; }
 .trend-count { font-family:var(--font-mono); font-size:0.65rem;
@@ -4914,6 +5089,34 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
 .card-results-grid .search-header { grid-column:1 / -1; }
 .card-results-grid .empty { grid-column:1 / -1; }
 .card-results-grid .curr-group-label { grid-column:1 / -1; }
+/* Counsel's examples tab (Tier 5) is the first .card-results-grid caller to
+   pair it with util.emptyState()'s zero-results markup (div.empty-state, not
+   the plain div.empty the other three selectors above already cover) - without
+   this it would squeeze into one auto-fill column instead of centering across
+   the full row width like every other empty/no-match message in this grid. */
+.card-results-grid .empty-state { grid-column:1 / -1; }
+
+/* Career Calendar's 6 TRACKED-date cards (js/calendar.js buildInputs()) -
+   same shape as .card-results-grid just above (auto-fill, align-items:start
+   so cards with differently-long hint text don't stretch to match a taller
+   row-mate) but a narrower 150px floor, not the shared 260px one. Those 6
+   cards don't sit in the full mount width like every other .card-results-
+   grid consumer - they're the RIGHT half of calGrid's existing .panel-
+   grid-2 split (upcoming | inputs, >=600px), so their real container is
+   already halved before this grid ever sees it (measured ~340px at a
+   1024px viewport, ~484px at 1360px). At 260px-per-card that halved width
+   never clears the 2-column threshold below roughly 1500px; a card here is
+   only a label, one <input type=date> and 2-3 lines of hint text, not
+   dense enough to need 260px. 150px was chosen by screenshotting the
+   rendered date input at candidate widths, not by formula alone: 130px
+   visibly clipped native Chromium date-input glyphs (the "yyyy" segment
+   and the calendar-icon button both got cut off), 150px did not, at any
+   tested viewport. That still isn't small enough to reach 2 columns at
+   exactly 768px (halved container there is ~278px, and even 150px's own
+   134px-clipping-safe ceiling can't clear 2*150+10 within it) - genuine
+   multi-column starts at 1024px (2 columns) and 1360px (3), both still
+   comfortably inside "wide viewports" the audit was written against. */
+.cal-dates-grid { display:grid; gap:10px; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); align-items:start; }
 
 /* Master-detail split (Board Drill, Doctrine, Squad Roster) - a narrow
    list pane next to a wider detail pane. Gated at >=1024px deliberately:
@@ -9005,7 +9208,7 @@ window.G = window.G || {};
         el("span.v", { text: overallPct + "%" }),
       ]));
       readinessPane.appendChild(el("div.bar" + (overallPct >= 85 ? ".green" : ""), {},
-        [el("span", { style: "width:" + overallPct + "%" })]));
+        [el("span", { style: "transform:scaleX(" + (overallPct / 100) + ")" })]));
       // Weakest 3 only - this pane is a glance, not a replacement for the
       // full Readiness tab's complete per-category breakdown.
       catStats.filter((c) => c.total > 0).sort((a, b) => a.pct - b.pct).slice(0, 3).forEach((c) => {
@@ -9014,7 +9217,7 @@ window.G = window.G || {};
           el("span.k", { text: c.cat, style: "font-size:0.82rem" }),
           el("span.v", { style: "font-size:0.82rem;color:var(--amber)", text: c.pct + "%" }),
         ]));
-        row.appendChild(el("div.bar", {}, [el("span", { style: "width:" + c.pct + "%" })]));
+        row.appendChild(el("div.bar", {}, [el("span", { style: "transform:scaleX(" + (c.pct / 100) + ")" })]));
         readinessPane.appendChild(row);
       });
       readinessPane.appendChild(el("button.btn.ghost.sm", { type: "button", text: "Open full Readiness →", style: "margin-top:12px",
@@ -9628,7 +9831,7 @@ window.G = window.G || {};
         row.appendChild(el("span.k", { text: label + (val >= max ? "  \u2713 maxed" : "") }));
         row.appendChild(el("span.v", { text: val + " / " + max }));
         outWrap.appendChild(row);
-        const bar = el("div.bar", {}, [ el("span", { style:"width:" + (max? (val/max*100):0) + "%" }) ]);
+        const bar = el("div.bar", {}, [ el("span", { style:"transform:scaleX(" + (max? (val/max):0) + ")" }) ]);
         outWrap.appendChild(bar);
       }
       line("Military training (weapons + AFT)", s.training, r.caps.training);
@@ -9640,7 +9843,7 @@ window.G = window.G || {};
       tot.appendChild(el("span.k", { text:"Subtotal (800 ceiling)" }));
       tot.appendChild(el("span.v", { text: s.base + " / 800" }));
       outWrap.appendChild(tot);
-      outWrap.appendChild(el("div.bar.cyan", {}, [ el("span", { style:"width:" + (s.base/800*100) + "%" }) ]));
+      outWrap.appendChild(el("div.bar.cyan", {}, [ el("span", { style:"transform:scaleX(" + (s.base/800) + ")" }) ]));
 
       if (s.bonus) {
         const b = el("div.stat");
@@ -10510,19 +10713,15 @@ window.G = window.G || {};
   async function renderReadiness(mount) {
     util.clear(mount);
     const all = store.boardQuestions();
-    const categories = [...new Set(all.map((q) => q.category))].sort();
     // One db.all("kv") cursor scan instead of one db.get() per question.
     const srsData = await loadAllSrs(all.map((q) => q.id));
     const now = Date.now();
 
     // ── Overall score ──────────────────────────────────────────
-    const catScores = categories.map((cat) => {
-      const qs = all.filter((q) => q.category === cat);
-      const seen = qs.filter((q) => srsData[q.id].reps > 0);
-      const mastered = qs.filter((q) => G.board.isMasteredSrs(srsData[q.id]));
-      const pct = qs.length ? Math.round(mastered.length / qs.length * 100) : 0;
-      return { cat, total: qs.length, seen: seen.length, mastered: mastered.length, pct };
-    });
+    // G.board.categoryMasteryScores() (shared with Rapid Fire's "Needs
+    // Work" Setup option) — passing this tab's own already-loaded all/
+    // srsData through avoids a second loadAllSrs() cursor scan here.
+    const catScores = await G.board.categoryMasteryScores(all, srsData);
 
     const totalQ = all.length;
     const totalMastered = catScores.reduce((s, c) => s + c.mastered, 0);
@@ -10553,7 +10752,7 @@ window.G = window.G || {};
         el("span.k", { text: "Mandatory Training" }),
         el("span.v", { style: "color:" + (allPass ? "var(--green)" : "var(--amber)"), text: trainingPassed + " / " + trainingScs.length + " passed at 80%+" }),
       ]));
-      trainPanel.appendChild(el("div.bar" + (allPass ? ".green" : ""), {}, [el("span", { style: "width:" + Math.round(trainingPassed / trainingScs.length * 100) + "%" })]));
+      trainPanel.appendChild(el("div.bar" + (allPass ? ".green" : ""), {}, [el("span", { style: "transform:scaleX(" + (trainingPassed / trainingScs.length) + ")" })]));
       if (!allPass) {
         trainPanel.appendChild(el("p.hint", { text: "Complete all mandatory training modules before your board — readiness includes compliance, not just knowledge." }));
         trainPanel.appendChild(el("button.btn.sm", { style: "margin-top:6px", text: "Go to Mandatory Training →",
@@ -10568,7 +10767,7 @@ window.G = window.G || {};
       el("span.v", { style: "color:" + readColor + ";font-weight:700", text: overallPct + "%  " + readLabel }),
     ]));
     header.appendChild(el("div.bar" + (overallPct >= 85 ? ".green" : overallPct >= 60 ? "" : ""), {},
-      [el("span", { style: "width:" + overallPct + "%" })]));
+      [el("span", { style: "transform:scaleX(" + (overallPct / 100) + ")" })]));
     header.appendChild(el("div.stat", { style: "margin-top:10px" }, [
       el("span.k", { text: "Questions mastered (interval ≥ 3 days)" }),
       el("span.v", { text: totalMastered + " / " + totalQ }),
@@ -10598,7 +10797,7 @@ window.G = window.G || {};
           el("span.k", { text: c.cat }),
           el("span.v", { style: "color:var(--amber)", text: c.pct + "%  (" + c.mastered + "/" + c.total + ")" }),
         ]));
-        row.appendChild(el("div.bar", {}, [el("span", { style: "width:" + c.pct + "%" })]));
+        row.appendChild(el("div.bar", {}, [el("span", { style: "transform:scaleX(" + (c.pct / 100) + ")" })]));
         row.appendChild(el("button.btn.ghost.sm", { text: "Drill " + c.cat, style: "margin-top:4px",
           // Set the flag but never navigated anywhere to read it - the
           // button did nothing visible. Matches the working "Drill N Due
@@ -10896,6 +11095,477 @@ window.G = window.G || {};
     render("", "All");
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // RAPID FIRE — Board Drill's 7th tab. A fast, "Heads Up!"-style party
+  // round built on the SAME Q&A bank (store.boardQuestions()) Flashcards/
+  // Quiz/Mock Board already use — not a new content pipeline. Full design:
+  // docs/superpowers/specs/2026-08-23-rapid-fire-design.md.
+  //
+  // Stage 1 of that spec: only Party mode's round engine + round screen are
+  // built here (Solo/Team are a later pass) — there is deliberately no
+  // mode-selection UI at all yet, since Party is the only mode this tab
+  // runs. The round engine itself is written so Solo/Team can layer on top
+  // of it later without a redesign (per the spec's own "one round engine"
+  // framing), but nothing Solo/Team-specific exists in this file yet.
+  //
+  // Zero persistence beyond one kv flag (the one-time quick-start
+  // explainer's "seen" bit, RF_SEEN_EXPLAINER_KEY below) — Setup choices
+  // and round state live entirely in this function's own closure, the same
+  // shape Quiz's in-round state (sess, timerInterval — see renderQuiz
+  // above) already uses, and are discarded the moment the Soldier leaves
+  // the tab. This is a deliberate design decision, not an oversight: per
+  // the spec's "Alternatives considered," Rapid Fire results never touch
+  // the real attempts/SRS mastery-tracking system, in any mode — this
+  // function makes NO db.put("attempts", ...) or saveSrs()/db.put("kv",
+  // {k:"srs:..."}) calls anywhere below (tools/test-rapid-fire-no-srs-
+  // writes.mjs is the regression test proving that stays true).
+  // ═══════════════════════════════════════════════════════════════
+  const RF_SEEN_EXPLAINER_KEY = "rapidFire:seenExplainer";
+  // No existing rank -> board-question-difficulty mapping exists anywhere
+  // in the app (recommendNext()'s SCENARIO_DIFFICULTY_TIERS, near the top
+  // of store, is a DIFFERENT scale for Train scenarios, not board
+  // questions) — "Match my rank" is a genuinely new idea this feature
+  // introduces, so this mapping is this feature's own, documented here
+  // rather than guessed silently at the call site. Junior enlisted study
+  // at the beginner band, NCOs at intermediate, senior NCOs at the by-the-
+  // book expert band — the same three-tier vocabulary Board Drill's own
+  // DIFF_LABELS (see renderDrill above) already uses. A Soldier with no
+  // resolvable rank (guest, no profile tier set) gets no band restriction
+  // at all — the same "fall back to the unrestricted option when the
+  // signal doesn't exist" shape as "Needs Work" falling back to "All
+  // categories" with no attempt history, below.
+  const RF_TIER_TO_DIFF = {
+    E1: "beginner", E2: "beginner", E3: "beginner", E4: "beginner",
+    E5: "intermediate", E6: "intermediate",
+    E7: "expert", E8: "expert", E9: "expert",
+  };
+  const RF_PASS_FREQUENT = 2; // "came up as Pass a lot" threshold — passed at least this many times this round
+
+  async function renderRapidFire(mount) {
+    util.clear(mount);
+    const all = store.boardQuestions();
+    const categories = ["All", ...Array.from(new Set(all.map((q) => q.category)))];
+    const byId = {};
+    all.forEach((q) => { byId[q.id] = q; });
+
+    // Setup state — ephemeral (see the module header above), resets to
+    // these defaults every time the tab is (re)opened, matching the
+    // spec's Setup table defaults exactly.
+    const cfg = {
+      categoryMode: "all",        // "all" | "needsWork" | a real category string
+      timerSec: 60,                // 30 | 60 | 90 | null (Untimed)
+      diffMode: "rank",            // "rank" | "all"
+      passedBehavior: "requeue",   // "requeue" | "remove"
+      soundHaptics: true,
+    };
+    let needsWorkCats = [];
+
+    const root = el("div.rf-root");
+    mount.appendChild(root);
+
+    function rankBand() {
+      try {
+        const profile = (G.profile && G.profile.cached) ? G.profile.cached() : null;
+        const settings = (G.store && G.store.settings) ? G.store.settings() : {};
+        const tier = (G.rankUtils && G.rankUtils.tierOf) ? G.rankUtils.tierOf(profile, settings) : null;
+        return tier ? (RF_TIER_TO_DIFF[tier] || null) : null;
+      } catch (e) { return null; }
+    }
+
+    function computePool() {
+      let pool = all;
+      if (cfg.categoryMode === "needsWork") {
+        if (needsWorkCats.length) {
+          const set = new Set(needsWorkCats.map((c) => c.cat));
+          pool = pool.filter((q) => set.has(q.category));
+        }
+        // else: no attempt history yet — falls back to the full,
+        // unfiltered pool below, matching the Setup note shown for
+        // this exact case (see refreshStart()'s fallenBack check).
+      } else if (cfg.categoryMode !== "all") {
+        pool = pool.filter((q) => q.category === cfg.categoryMode);
+      }
+      if (cfg.diffMode === "rank") {
+        const band = rankBand();
+        if (band) pool = pool.filter((q) => G.board.normDifficulty(q.difficulty) === band);
+      }
+      return pool;
+    }
+
+    async function refreshNeedsWork() {
+      try { needsWorkCats = await G.board.weakestCategoriesByMastery(3); }
+      catch (e) { needsWorkCats = []; }
+    }
+
+    // ── Setup screen ────────────────────────────────────────────────
+    async function drawSetup() {
+      await refreshNeedsWork();
+      util.clear(root);
+      root.appendChild(buildSetup());
+    }
+
+    function buildSetup() {
+      const wrap = el("div.rf-setup-grid");
+      wrap.appendChild(el("p.hint", { text: "A fast, “Heads Up!”-style way to drill this same Q&A bank — pass the device around: the screen shows the question, everyone else gives clues out loud, and the holder taps Correct or Pass." }));
+
+      // Deck / Categories — the same single-category <select> Flashcards
+      // (renderDrill) and Quiz (renderQuiz) already use above (Board Drill
+      // has no multi-select "pick several categories at once" UI anywhere
+      // to reuse instead), plus a .due-chip-styled "Needs Work" toggle that
+      // overrides it with the Readiness tab's own real weakest-3-categories
+      // ranking (G.board.weakestCategoriesByMastery, shared above).
+      const catRow = el("div.rf-setup-row");
+      catRow.appendChild(el("label", { text: "Deck / Categories" }));
+      const pickRow = el("div", { style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center" });
+      const catSel = el("select", { "aria-label": "Filter by category" });
+      categories.forEach((c) => catSel.appendChild(el("option", { value: c, text: c })));
+      catSel.value = (cfg.categoryMode !== "all" && cfg.categoryMode !== "needsWork") ? cfg.categoryMode : "All";
+      const needsWorkChip = el("button.due-chip", { type: "button", text: "⚙ Needs Work",
+        "aria-pressed": String(cfg.categoryMode === "needsWork"),
+        title: "Your weakest 3 categories — the same ranking the Readiness tab shows" });
+      if (cfg.categoryMode === "needsWork") needsWorkChip.classList.add("active");
+      catSel.addEventListener("change", () => {
+        cfg.categoryMode = catSel.value === "All" ? "all" : catSel.value;
+        needsWorkChip.classList.remove("active");
+        needsWorkChip.setAttribute("aria-pressed", "false");
+        refreshStart();
+      });
+      needsWorkChip.addEventListener("click", () => {
+        const activating = !needsWorkChip.classList.contains("active");
+        needsWorkChip.classList.toggle("active", activating);
+        needsWorkChip.setAttribute("aria-pressed", String(activating));
+        cfg.categoryMode = activating ? "needsWork" : (catSel.value === "All" ? "all" : catSel.value);
+        refreshStart();
+      });
+      pickRow.appendChild(catSel); pickRow.appendChild(needsWorkChip);
+      catRow.appendChild(pickRow);
+      const needsWorkNote = el("p.hint.rf-needs-work-note", { style: "display:none",
+        text: "No attempt history yet, so there's nothing weak to surface — showing All categories instead." });
+      catRow.appendChild(needsWorkNote);
+      wrap.appendChild(catRow);
+
+      function segRow(labelText, options, key) {
+        const row = el("div.rf-setup-row");
+        row.appendChild(el("label", { text: labelText }));
+        const seg = el("div.segmented");
+        options.forEach(([val, text]) => {
+          const b = el("button", { type: "button", text: text });
+          if (cfg[key] === val) b.classList.add("active");
+          b.addEventListener("click", () => {
+            cfg[key] = val;
+            seg.querySelectorAll("button").forEach((x) => x.classList.remove("active"));
+            b.classList.add("active");
+            refreshStart();
+          });
+          seg.appendChild(b);
+        });
+        row.appendChild(seg);
+        wrap.appendChild(row);
+      }
+
+      segRow("Round timer", [[30, "30s"], [60, "60s"], [90, "90s"], [null, "Untimed"]], "timerSec");
+      segRow("Difficulty band", [["rank", "Match my rank"], ["all", "All difficulties"]], "diffMode");
+      segRow("Passed cards", [["requeue", "Requeue"], ["remove", "Remove for this round"]], "passedBehavior");
+      segRow("Sound / Haptics", [[true, "On"], [false, "Off"]], "soundHaptics");
+
+      const poolNote = el("p.hint");
+      wrap.appendChild(poolNote);
+      const startBtn = el("button.btn.primary", { type: "button", text: "Start Round" });
+      wrap.appendChild(startBtn);
+
+      function refreshStart() {
+        const pool = computePool();
+        poolNote.textContent = pool.length
+          ? pool.length + " question" + (pool.length === 1 ? "" : "s") + " in this deck."
+          : "No questions match these filters.";
+        startBtn.disabled = pool.length === 0;
+        const fallenBack = cfg.categoryMode === "needsWork" && !needsWorkCats.length;
+        needsWorkNote.style.display = fallenBack ? "" : "none";
+      }
+      refreshStart();
+
+      startBtn.addEventListener("click", async () => {
+        const pool = computePool();
+        if (!pool.length) return;
+        let seen = false;
+        try { seen = await db.getSetting(RF_SEEN_EXPLAINER_KEY, false); } catch (e) {}
+        if (seen) beginRound(pool); else drawExplainer(pool);
+      });
+
+      return wrap;
+    }
+
+    // ── One-time quick-start explainer (a Soldier's first-ever round) ──
+    function drawExplainer(pool) {
+      util.clear(root);
+      const panel = el("div.panel.rf-explainer");
+      panel.appendChild(el("div.eyebrow", { text: "How Rapid Fire works" }));
+      const list = el("ul");
+      [
+        "Pass the device to one Soldier. Everyone else gives verbal clues — never the answer itself.",
+        "The holder can privately tap Reveal answer to check before judging.",
+        "Tap Correct or Pass — you judge it, same as the real game. There's no answer-checking logic.",
+        "The timer keeps things moving. Passed cards can come back around before time's up.",
+      ].forEach((t) => list.appendChild(el("li", { text: t })));
+      panel.appendChild(list);
+      const go = el("button.btn.primary", { type: "button", text: "Got it — let's go" });
+      go.addEventListener("click", async () => {
+        try { await db.setSetting(RF_SEEN_EXPLAINER_KEY, true); } catch (e) {}
+        beginRound(pool);
+      });
+      panel.appendChild(go);
+      root.appendChild(panel);
+    }
+
+    // ── Round engine + round screen (Party mode) ────────────────────
+    // The whole state machine lives in this closure — card queue, timer,
+    // correct-count, streak, pass tally — discarded when the round ends,
+    // per the "ephemeral, in-memory only" data-flow decision above.
+    function beginRound(pool) {
+      util.clear(root);
+      // Each round gets its own shuffled queue of full question objects.
+      // Requeue just pushes a passed card back onto the END of this SAME
+      // array; Remove doesn't — no separate "already seen" bookkeeping.
+      // shuffle() (above, board.js's own copy) always returns a fresh
+      // slice()'d copy, so this never mutates `pool`/`all`.
+      let queue = shuffle(pool);
+      let current = null;
+      let correctCount = 0;
+      let currentStreak = 0, bestStreak = 0;
+      const passTally = new Map(); // question id -> times passed this round
+      const roundCategories = new Set();
+      let remaining = cfg.timerSec; // null when Untimed — counts down; elapsed counts up regardless
+      let activeElapsedMs = 0;
+      let paused = false;
+      let finished = false;
+      let revealed = false;
+
+      const wrapEl = el("div.qz-wrap.rf-wrap", { tabIndex: "0" });
+      const scene = el("div.rf-scene");
+      const hud = el("div.rf-hud");
+      const scoreEl = el("span.rf-hud-stat");
+      const streakEl = el("span.trend-streak"); // same visual convention as Progress's own trend-chart streak
+      const timerEl = el("span.rf-timer");
+      const endBtn = el("button.btn.ghost.sm", { type: "button", text: "End Round" });
+      hud.appendChild(scoreEl); hud.appendChild(streakEl); hud.appendChild(timerEl); hud.appendChild(endBtn);
+      const cardEl = el("div.rf-card");
+      const judgeRow = el("div.rf-judge-row");
+      const correctBtn = el("button.btn.rf-judge-btn.rf-judge-correct", { type: "button", text: "✓ Correct" });
+      const passBtn = el("button.btn.rf-judge-btn.rf-judge-pass", { type: "button", text: "→ Pass" });
+      judgeRow.appendChild(correctBtn); judgeRow.appendChild(passBtn);
+      scene.appendChild(hud); scene.appendChild(cardEl); scene.appendChild(judgeRow);
+      wrapEl.appendChild(scene);
+      root.appendChild(wrapEl);
+      // Reuses Theater Mode's real enter/exit functions (renderDrill, above)
+      // — no second overlay/focus-trap/ARIA system. Only one .qz-wrap is
+      // ever in the DOM at a time (each render*(mount) clears `body`
+      // first), so enterTheater()'s own document.querySelector(".qz-wrap")
+      // correctly finds this one.
+      G.board.enterTheater(wrapEl);
+
+      function updateHud() {
+        util.clear(scoreEl);
+        scoreEl.appendChild(document.createTextNode("Correct: "));
+        scoreEl.appendChild(el("b", { text: String(correctCount) }));
+        streakEl.textContent = currentStreak >= 2 ? ("🔥 " + currentStreak + " in a row") : "";
+        if (remaining != null) {
+          timerEl.textContent = Math.max(0, remaining) + "s";
+          // Bold 1.4rem (22.4px) qualifies as WCAG "large text" (>=18.66px
+          // bold), so the AA floor here is 3:1, not 4.5:1 - the same
+          // amber-vs-bg combination lint-patterns.mjs's own check (a)
+          // comment already measured at 4.46:1 in its worst theme
+          // (desert-cadence), comfortably above 3:1. Plain --text under 10s
+          // would fail to read as urgent, and --red only kicks in for that
+          // last stretch, not the whole round.
+          timerEl.style.color = remaining <= 10 ? "var(--red)" : "var(--amber)";
+        } else {
+          timerEl.textContent = Math.round(activeElapsedMs / 1000) + "s";
+          timerEl.style.color = "var(--amber)";
+        }
+      }
+
+      function drawCard() {
+        revealed = false;
+        util.clear(cardEl);
+        if (!current) { finishRound(); return; }
+        roundCategories.add(current.category);
+        cardEl.appendChild(el("div.kc-label", { text: current.category }));
+        // Full text, never truncated or altered — the question is
+        // essentially never a length problem (spec's own measured data:
+        // 0.3% of 1069 questions exceed 200 chars), and .rf-question's
+        // clamp()-based font-size (above) is this screen's version of the
+        // same responsive-font treatment .qz-prompt already gets.
+        cardEl.appendChild(el("div.rf-question", { text: current.q }));
+        const revealBtn = el("button.btn.ghost.sm", { type: "button", text: "Reveal answer" });
+        const answerPanel = el("div.rf-answer-panel", { style: "display:none" });
+        answerPanel.appendChild(el("div.rf-answer-label", { text: "Answer" }));
+        // Prefer acceptableAnswer (70% of cards — shorter, board-ready
+        // phrasing); fall back to the full `a` field when absent. Never
+        // truncated — the panel itself scrolls (.rf-answer-panel,
+        // max-height + overflow-y:auto) for the rare genuinely-long one.
+        answerPanel.appendChild(el("div.rf-answer-text", { text: current.acceptableAnswer || current.a }));
+        revealBtn.addEventListener("click", () => {
+          revealed = !revealed;
+          answerPanel.style.display = revealed ? "" : "none";
+          revealBtn.textContent = revealed ? "Hide answer" : "Reveal answer";
+        });
+        cardEl.appendChild(revealBtn);
+        cardEl.appendChild(answerPanel);
+        updateHud();
+      }
+
+      function advance() {
+        current = queue.shift() || null;
+        drawCard();
+      }
+
+      function judge(isCorrect) {
+        if (finished || !current) return;
+        if (isCorrect) {
+          correctCount++;
+          currentStreak++;
+          bestStreak = Math.max(bestStreak, currentStreak);
+          if (cfg.soundHaptics) util.haptic("success");
+        } else {
+          const id = current.id;
+          passTally.set(id, (passTally.get(id) || 0) + 1);
+          currentStreak = 0;
+          if (cfg.soundHaptics) util.haptic("warning");
+          if (cfg.passedBehavior === "requeue") queue.push(current);
+        }
+        advance();
+      }
+      correctBtn.addEventListener("click", () => judge(true));
+      passBtn.addEventListener("click", () => judge(false));
+      endBtn.addEventListener("click", () => finishRound());
+
+      // Error handling (spec): "App backgrounds mid-round — pause the
+      // timer on the page's visibilitychange event, resume on return." The
+      // interval simply does nothing while `paused` is true, so no elapsed
+      // time (timed OR untimed) is ever counted while the screen is off.
+      // This view has no route-teardown hook (same situation Settings'
+      // Notifications panel already documented — see onNotifVisible, grep
+      // it in this file), so both the interval and the listener self-clean
+      // via wrapEl.isConnected the next time either fires after this
+      // screen has been torn down (tab switch, "End Round", or the round
+      // finishing on its own), rather than leaking forever.
+      function tick() {
+        if (!wrapEl.isConnected) { clearInterval(tickHandle); document.removeEventListener("visibilitychange", onVisible); return; }
+        if (paused || finished) return;
+        activeElapsedMs += 1000;
+        if (remaining != null) {
+          remaining--;
+          if (remaining <= 0) { updateHud(); finishRound(); return; }
+        }
+        updateHud();
+      }
+      function onVisible() {
+        if (!wrapEl.isConnected) { document.removeEventListener("visibilitychange", onVisible); return; }
+        paused = document.visibilityState === "hidden";
+      }
+      document.addEventListener("visibilitychange", onVisible);
+      const tickHandle = setInterval(tick, 1000);
+
+      function finishRound() {
+        if (finished) return;
+        finished = true;
+        clearInterval(tickHandle);
+        document.removeEventListener("visibilitychange", onVisible);
+        G.board.exitTheater();
+        drawRecap({
+          correctCount, bestStreak,
+          elapsedSec: Math.round(activeElapsedMs / 1000),
+          passTally, roundCategories, pool,
+        });
+      }
+
+      advance();
+    }
+
+    // ── Recap screen ─────────────────────────────────────────────────
+    function drawRecap(stats) {
+      util.clear(root);
+      const panel = el("div.panel");
+      panel.appendChild(el("div.section-title", {}, [el("h3", { text: "Round Recap" })]));
+      const statsRow = el("div", { style: "display:flex;gap:18px;flex-wrap:wrap;margin:10px 0" });
+      statsRow.appendChild(el("div.stat", {}, [el("span.k", { text: "Correct" }), el("span.v", { text: String(stats.correctCount) })]));
+      statsRow.appendChild(el("div.stat", {}, [el("span.k", { text: "Elapsed" }), el("span.v", { text: stats.elapsedSec + "s" })]));
+      statsRow.appendChild(el("div.stat", {}, [el("span.k", { text: "Best streak" }), el("span.v", { text: stats.bestStreak + " in a row" })]));
+      panel.appendChild(statsRow);
+
+      // "Came up as Pass a lot" — the round's own local tally, read back
+      // once at the end. No persisted store touched (spec: purely a
+      // same-session summary).
+      const passList = Array.from(stats.passTally.entries())
+        .filter(([, n]) => n >= RF_PASS_FREQUENT)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([id, n]) => ({ q: byId[id], n }))
+        .filter((r) => r.q);
+      if (passList.length) {
+        panel.appendChild(el("div.eyebrow", { style: "margin-top:12px", text: "Came up as Pass a lot" }));
+        const ul = el("ul.rf-recap-list");
+        passList.forEach((r) => {
+          ul.appendChild(el("li", {}, [
+            el("span", { text: r.q.q }),
+            el("span", { text: r.n + "×", style: "color:var(--amber);flex-shrink:0" }),
+          ]));
+        });
+        panel.appendChild(ul);
+      }
+
+      // Cross-link into Flashcards for the weakest category THIS round
+      // actually touched, via the real G.nav.seed()/consume() cross-view
+      // handoff registry (util.js) — consumed by the Board Drill
+      // dispatcher itself (G.board.render(), above) into the existing
+      // _filterCat mechanism renderDrill already reads. Ranked using the
+      // same categoryMasteryScores() data "Needs Work" uses above, not a
+      // second independent judgment.
+      const linkHost = el("div", { style: "margin-top:12px" });
+      panel.appendChild(linkHost);
+      (async () => {
+        let target = Array.from(stats.roundCategories)[0] || null;
+        try {
+          const scores = await G.board.categoryMasteryScores();
+          const inRound = scores.filter((s) => stats.roundCategories.has(s.cat));
+          if (inRound.length) target = inRound.sort((a, b) => a.pct - b.pct)[0].cat;
+        } catch (e) {}
+        if (!target) return;
+        linkHost.appendChild(el("p.hint", { text: "Keep working " + target + ":" }));
+        const goBtn = el("button.btn.ghost.sm", { type: "button", text: "Practice in Flashcards →" });
+        goBtn.addEventListener("click", () => {
+          // "board-category", NOT "board" - the self-heal jump-link system
+          // (Tier 3 batch 1, SELFHEAL_ROUTES) already claims the "board"
+          // G.nav target for its own srs-write-fail entries (a board-
+          // question id, not a category name; see that seed's own header
+          // comment, which explicitly documented it as dormant/unconsumed
+          // "yet" - Rapid Fire consuming the generic "board" name would have
+          // silently swallowed that seed on every Board Drill render, not
+          // just ones arriving from this cross-link. Distinct name, same
+          // shared registry.
+          G.nav.seed("board-category", target);
+          G.board.render(mount.parentElement || mount);
+        });
+        linkHost.appendChild(goBtn);
+      })();
+
+      const btnRow = el("div.btn-row", { style: "margin-top:14px" });
+      const againBtn = el("button.btn.primary", { type: "button", text: "Play Again" });
+      againBtn.addEventListener("click", () => {
+        const pool = computePool();
+        if (pool.length) beginRound(pool); else drawSetup();
+      });
+      const newDeckBtn = el("button.btn.ghost", { type: "button", text: "New Deck" });
+      newDeckBtn.addEventListener("click", () => { drawSetup(); });
+      btnRow.appendChild(againBtn); btnRow.appendChild(newDeckBtn);
+      panel.appendChild(btnRow);
+
+      root.appendChild(panel);
+    }
+
+    await drawSetup();
+  }
+
   G.renderBoardCountdown = renderBoardCountdown;
   // Exposed deliberately, not incidentally: these are transcriptions of real
   // AR 600-8-19 tables, and tools/test-points.mjs asserts every published row
@@ -10956,6 +11626,40 @@ window.G = window.G || {};
       const MAP = { beginner: "beginner", basic: "beginner", intermediate: "intermediate", advanced: "expert", expert: "expert" };
       return MAP[d] || "intermediate";
     },
+    // Shared category-mastery-score computation — same total/seen/mastered/
+    // pct shape the Readiness tab's own per-category breakdown has always
+    // computed inline. Extracted so Rapid Fire's "Needs Work" Setup option
+    // (docs/superpowers/specs/2026-08-23-rapid-fire-design.md) can reuse the
+    // EXACT ranking Readiness already shows instead of a second copy that
+    // could silently drift from it. Optional all/srsData let a caller that
+    // already loaded them (Readiness itself) skip a second loadAllSrs()
+    // cursor scan; a caller with neither (Rapid Fire's Setup) gets them
+    // loaded here.
+    async categoryMasteryScores(all, srsData) {
+      all = all || store.boardQuestions();
+      const categories = [...new Set(all.map((q) => q.category))].sort();
+      srsData = srsData || await loadAllSrs(all.map((q) => q.id));
+      return categories.map((cat) => {
+        const qs = all.filter((q) => q.category === cat);
+        const seen = qs.filter((q) => srsData[q.id].reps > 0);
+        const mastered = qs.filter((q) => G.board.isMasteredSrs(srsData[q.id]));
+        const pct = qs.length ? Math.round(mastered.length / qs.length * 100) : 0;
+        return { cat, total: qs.length, seen: seen.length, mastered: mastered.length, pct };
+      });
+    },
+    // Weakest-N categories by mastery pct — the Readiness tab's own
+    // weakest-3 ranking (categories with zero cards excluded). Returns []
+    // when there's no attempt history at all yet: every category sits at a
+    // fresh, untouched 0%, so "weakest 3" would be meaningless noise rather
+    // than a real signal — callers (Rapid Fire's Setup "Needs Work" option)
+    // fall back to "All categories" on an empty result instead of
+    // surfacing it.
+    async weakestCategoriesByMastery(n, all, srsData) {
+      const scored = (await this.categoryMasteryScores(all, srsData)).filter((c) => c.total > 0);
+      const anySeen = scored.some((c) => c.seen > 0);
+      if (!anySeen) return [];
+      return scored.sort((a, b) => a.pct - b.pct).slice(0, n || 3);
+    },
     loadAllSrs,
     // Audit finding (new-features): Board Drill's own SRS/leech data - the
     // richest "what does this Soldier not know" signal in the app - never
@@ -10998,7 +11702,11 @@ window.G = window.G || {};
       const ptsBtn = el("button", { text: "Points", title: "Rank-aware promotion-points worksheet calculator" });
       const readBtn = el("button", { text: "Readiness", title: "Per-category mastery breakdown across the full deck" });
       const defBtn = el("button", { text: "Definitions", title: "Board-relevant terms and their doctrinal meaning" });
-      seg.appendChild(drillBtn); seg.appendChild(quizBtn); seg.appendChild(mockBtn); seg.appendChild(ptsBtn); seg.appendChild(readBtn); seg.appendChild(defBtn);
+      // Rapid Fire — a "Heads Up!"-style party round on this same Q&A bank
+      // (docs/superpowers/specs/2026-08-23-rapid-fire-design.md). Added
+      // last so the existing six tabs keep their exact left-to-right order.
+      const rapidBtn = el("button", { text: "Rapid Fire", title: "Fast-paced party round — pass the device, give clues, judge Correct or Pass" });
+      seg.appendChild(drillBtn); seg.appendChild(quizBtn); seg.appendChild(mockBtn); seg.appendChild(ptsBtn); seg.appendChild(readBtn); seg.appendChild(defBtn); seg.appendChild(rapidBtn);
       const body = el("div", { style: "margin-top:14px" });
       // renderDrill/renderQuiz/renderReadiness are async; this dispatcher was
       // itself synchronous and never awaited/chained their promises, so a
@@ -11008,7 +11716,8 @@ window.G = window.G || {};
       // the tab body stayed blank with nothing telling the app anything went
       // wrong. Same shape as the fix already applied to
       // G.reminders.renderEditor() - "await it so the catch actually covers
-      // the render" - just applied here too (task #208).
+      // the render" - just applied here too (task #208). renderRapidFire
+      // follows the exact same async/await-and-catch shape.
       function set(t) {
         drillBtn.classList.toggle("active", t === "drill");
         quizBtn.classList.toggle("active", t === "quiz");
@@ -11016,12 +11725,14 @@ window.G = window.G || {};
         ptsBtn.classList.toggle("active", t === "points");
         readBtn.classList.toggle("active", t === "readiness");
         defBtn.classList.toggle("active", t === "definitions");
+        rapidBtn.classList.toggle("active", t === "rapid");
         let r;
         if (t === "drill") r = renderDrill(body);
         else if (t === "quiz") r = renderQuiz(body);
         else if (t === "mock") r = renderMockBoard(body);
         else if (t === "readiness") r = renderReadiness(body);
         else if (t === "definitions") r = renderDefinitions(body);
+        else if (t === "rapid") r = renderRapidFire(body);
         else r = renderPoints(body);
         if (r && r.catch) r.catch((e) => { if (window.console) console.error("Board Drill tab render failed:", e); });
       }
@@ -11032,6 +11743,7 @@ window.G = window.G || {};
       ptsBtn.onclick = () => set("points");
       readBtn.onclick = () => set("readiness");
       defBtn.onclick = () => set("definitions");
+      rapidBtn.onclick = () => set("rapid");
       // Was "Board Prep" - the same string as the sidebar's own "Board Prep"
       // GROUP heading, so a soldier reading nav-group -> page title saw
       // "Board Prep -> Board Prep," a tautology that told them nothing
@@ -11042,6 +11754,17 @@ window.G = window.G || {};
       mount.appendChild(renderBoardCountdown());
       mount.appendChild(seg);
       mount.appendChild(body);
+      // Rapid Fire's Recap screen cross-links into Flashcards for the
+      // weakest category the round touched, via the real G.nav.seed()/
+      // consume() cross-view handoff registry (util.js) - the same
+      // mechanism a global-search hit already uses to land on Train/
+      // Resources/Career pre-filtered. Consumed here (this dispatcher's own
+      // mount, the one place that owns both _filterCat and set()) rather
+      // than inside renderDrill itself, so it composes with the EXISTING
+      // _filterCat consumption renderDrill already does below, instead of
+      // duplicating it.
+      const boardSeed = G.nav && G.nav.consume("board-category");
+      if (boardSeed) G.board._filterCat = boardSeed;
       set("drill");
     },
   };
@@ -11549,7 +12272,7 @@ window.G = window.G || {};
         el("span.k", { text: label }),
         el("span.v", { text: pct + "%  (" + (score >= 0 ? "+" : "") + score + ")" }),
       ]),
-      el("div.bar " + (cls || ""), {}, [el("span", { style: "width:" + pct + "%" })]),
+      el("div.bar " + (cls || ""), {}, [el("span", { style: "transform:scaleX(" + (pct / 100) + ")" })]),
     ]);
   }
 
@@ -11679,7 +12402,7 @@ window.G = window.G || {};
                     text: done + " / " + trainingScs.length + " PASSED" }),
     ]));
     const prog_bar = el("div.bar" + (done === trainingScs.length ? ".green" : ""), {},
-      [el("span", { style: "width:" + Math.round(done / trainingScs.length * 100) + "%" })]);
+      [el("span", { style: "transform:scaleX(" + (done / trainingScs.length) + ")" })]);
     panel.appendChild(prog_bar);
     const list = el("div", { style: "display:flex;flex-direction:column;gap:5px;margin-top:10px" });
     trainingScs.forEach((s) => {
@@ -11885,7 +12608,7 @@ window.G = window.G || {};
 
       // Progress bar
       const bar = el("div.bar" + (onTrack ? ".green" : ""));
-      bar.appendChild(el("span", { style:"width:"+pct+"%" }));
+      bar.appendChild(el("span", { style:"transform:scaleX("+(pct/100)+")" }));
       panel.appendChild(bar);
 
       // Streak counter (streakData passed in from render(), see above)
@@ -12018,7 +12741,7 @@ window.G = window.G || {};
           el("span.k", { text: "Promotable Readiness (LRM)" }),
           el("span.v", { text: p.readinessLabel }),
         ]),
-        el("div.bar", {}, [el("span", { style: "width:" + p.competencyReadiness + "%" })]),
+        el("div.bar", {}, [el("span", { style: "transform:scaleX(" + (p.competencyReadiness / 100) + ")" })]),
         el("div.readiness-legend", {}, [
           el("span", { text: "Developing < 30" }),
           el("span", { text: "On Track 30–60" }),
@@ -12139,7 +12862,10 @@ window.G = window.G || {};
             const barH = count > 0 ? Math.max(8, Math.round((count / maxVal) * 56)) : 3;
             const barCol = count === 0 ? "var(--text-dim)" : i === 6 ? "var(--amber)" : "var(--cyan)";
             const bar = el("div.trend-bar");
-            bar.style.height = barH + "px";
+            // barH (px, capped at the CSS-fixed 56px reference height) is
+            // now applied as a scaleY() fraction, not a literal box height -
+            // see the .trend-bar comment above.
+            bar.style.transform = "scaleY(" + (barH / 56) + ")";
             bar.style.background = barCol;
             bar.title = count + " session" + (count !== 1 ? "s" : "") + " · " + dayLabels[i];
             col.appendChild(bar);
@@ -13312,7 +14038,7 @@ window.G = window.G || {};
             el("span.meta", { text: pr.studied + "/" + pr.total + (pr.mastered ? " · " + pr.mastered + " mastered" : "") }),
           ]),
           el("p.hint", { text: course.summary || "" }),
-          el("div.bar", {}, [el("span", { style: "width:" + pct + "%" })]),
+          el("div.bar", {}, [el("span", { style: "transform:scaleX(" + (pct / 100) + ")" })]),
           el("div.meta", { style: "margin-top:6px", text: "Source: " + (course.source || "") }),
         ];
         if (badge) {
@@ -14819,7 +15545,17 @@ window.G = window.G || {};
     if (!list.length) { host.appendChild(el("div.empty", { text: "No examples loaded." })); return; }
     // search box
     const search = el("input.doc-search-input", { type: "search", placeholder: "Search " + list.length + " counseling examples (e.g. DUI, overweight, GTC)…", value: _exFilter, "aria-label": "Search counseling examples" });
-    const results = el("div.counsel-examples");
+    // Tier 5 width-waste audit: 30 accordion cards stacked one full-width
+    // card per row regardless of viewport (real measured container height
+    // 1655px, IDENTICAL at 768/1024/1200px - .counsel-examples had no grid
+    // at all, just block stacking). Reuses the same .card-results-grid
+    // utility Resources/Dictionary/Train's course grid already wire up
+    // (see that grid's own comment at ~L13271) rather than inventing a
+    // fourth copy of the same auto-fill pattern - align-items:start also
+    // matters here specifically, since these are expand/collapse accordion
+    // cards (exampleCard()'s .skill-head/.skill-body) that must NOT stretch
+    // to match a taller row-mate.
+    const results = el("div.counsel-examples.card-results-grid");
     function draw() {
       util.clear(results);
       const q = (_exFilter || "").toLowerCase();
@@ -14838,7 +15574,12 @@ window.G = window.G || {};
       const groups = {};
       shown.slice(0, EXAMPLES_CAP).forEach((e) => { (groups[e.category] = groups[e.category] || []).push(e); });
       Object.keys(groups).sort().forEach((cat) => {
-        results.appendChild(el("p.hint", { text: cat + " · " + groups[cat].length, style: "margin:14px 0 4px;text-transform:uppercase;letter-spacing:.06em;font-size:.68rem;color:var(--text-mute)" }));
+        // .curr-group-label (not the old inline-styled p.hint) so
+        // .card-results-grid's own `grid-column:1 / -1` rule spans this
+        // divider across the full row instead of squeezing it into a
+        // single 260px auto-fill column - same class the course grid's
+        // group separators already use for the identical purpose.
+        results.appendChild(el("div.curr-group-label", { text: cat + " · " + groups[cat].length }));
         groups[cat].forEach((e) => results.appendChild(exampleCard(e)));
       });
     }
@@ -18528,6 +19269,14 @@ window.G = window.G || {};
 
   async function render(mount) {
     util.clear(mount);
+    // Roadmap Tier 5: scopes the 70ch reading-comfort cap on SECTIONS'
+    // prose (.hint/li) and the self-check labels to THIS view only - see
+    // the .blc-view CSS rule's own comment for why a bare selector would
+    // reach every other route's .panel text. Safe to set unconditionally
+    // on every render: mount is a fresh per-route frame div (app.js's
+    // route() builds a new one on every navigation), never a reused node
+    // carrying a stale class from whatever route was open before this one.
+    mount.classList.add("blc-view");
     mount.appendChild(el("div.section-title", {}, [
       el("h2", { text: "BLC Prep" }), el("div.rule") ]));
     mount.appendChild(el("p.hint", {
@@ -18543,7 +19292,7 @@ window.G = window.G || {};
     const prog = el("div.panel", { style:"margin:10px 0;border-left:3px solid var(--amber)" });
     prog.appendChild(el("div.eyebrow", { text:"Readiness self-check" }));
     const progStat = el("div.stat", {}, [ el("span.k", { text:"Honest answers only" }), el("span.v", { text:"0 / " + SELF_CHECK.length }) ]);
-    const progBar  = el("div.bar.cyan", {}, [ el("span", { style:"width:0%" }) ]);
+    const progBar  = el("div.bar.cyan", {}, [ el("span", { style:"transform:scaleX(0)" }) ]);
     prog.appendChild(progStat); prog.appendChild(progBar);
     const progNote = el("p.hint", { text:"" });
     prog.appendChild(progNote);
@@ -18551,7 +19300,7 @@ window.G = window.G || {};
     function refresh() {
       const done = SELF_CHECK.filter((_, i) => saved["c" + i]).length;
       (progStat.querySelector(".v") || {}).textContent = done + " / " + SELF_CHECK.length;
-      progBar.firstChild.style.width = (done / SELF_CHECK.length * 100) + "%";
+      progBar.firstChild.style.transform = "scaleX(" + (done / SELF_CHECK.length) + ")";
       progNote.textContent = done === SELF_CHECK.length
         ? "That is Commandant's List preparation, not pass-the-course preparation."
         : done >= 9 ? "Strong. You are competing, not just attending."
@@ -18741,6 +19490,10 @@ window.G = window.G || {};
 
   async function render(mount) {
     util.clear(mount);
+    // Roadmap Tier 5: see the matching comment in blc.js's render() and the
+    // .alc-view CSS rule itself - same reasoning, same 70ch cap, own class
+    // so it can't leak onto or be leaked onto by any other route.
+    mount.classList.add("alc-view");
     mount.appendChild(el("div.section-title", {}, [
       el("h2", { text: "ALC Prep" }), el("div.rule") ]));
     mount.appendChild(el("p.hint", {
@@ -18756,7 +19509,7 @@ window.G = window.G || {};
     const prog = el("div.panel", { style:"margin:10px 0;border-left:3px solid var(--amber)" });
     prog.appendChild(el("div.eyebrow", { text:"Readiness self-check" }));
     const progStat = el("div.stat", {}, [ el("span.k", { text:"Honest answers only" }), el("span.v", { text:"0 / " + SELF_CHECK.length }) ]);
-    const progBar  = el("div.bar.cyan", {}, [ el("span", { style:"width:0%" }) ]);
+    const progBar  = el("div.bar.cyan", {}, [ el("span", { style:"transform:scaleX(0)" }) ]);
     prog.appendChild(progStat); prog.appendChild(progBar);
     const progNote = el("p.hint", { text:"" });
     prog.appendChild(progNote);
@@ -18764,7 +19517,7 @@ window.G = window.G || {};
     function refresh() {
       const done = SELF_CHECK.filter((_, i) => saved["c" + i]).length;
       (progStat.querySelector(".v") || {}).textContent = done + " / " + SELF_CHECK.length;
-      progBar.firstChild.style.width = (done / SELF_CHECK.length * 100) + "%";
+      progBar.firstChild.style.transform = "scaleX(" + (done / SELF_CHECK.length) + ")";
       progNote.textContent = done === SELF_CHECK.length
         ? "You are ready to compete rather than just attend. Keep the technical track moving."
         : done >= 7 ? "Strong. The remaining gaps are the ones the graded products will find."
@@ -18950,6 +19703,10 @@ window.G = window.G || {};
 
   async function render(mount) {
     util.clear(mount);
+    // Roadmap Tier 5: see the matching comment in blc.js's render() and the
+    // .slc-view CSS rule itself - same reasoning, same 70ch cap, own class
+    // so it can't leak onto or be leaked onto by any other route.
+    mount.classList.add("slc-view");
     mount.appendChild(el("div.section-title", {}, [
       el("h2", { text: "SLC & Senior NCO Path" }), el("div.rule") ]));
     mount.appendChild(el("p.hint", {
@@ -18965,7 +19722,7 @@ window.G = window.G || {};
     const prog = el("div.panel", { style:"margin:10px 0;border-left:3px solid var(--amber)" });
     prog.appendChild(el("div.eyebrow", { text:"Readiness self-check" }));
     const progStat = el("div.stat", {}, [ el("span.k", { text:"Honest answers only" }), el("span.v", { text:"0 / " + SELF_CHECK.length }) ]);
-    const progBar  = el("div.bar.cyan", {}, [ el("span", { style:"width:0%" }) ]);
+    const progBar  = el("div.bar.cyan", {}, [ el("span", { style:"transform:scaleX(0)" }) ]);
     prog.appendChild(progStat); prog.appendChild(progBar);
     const progNote = el("p.hint", { text:"" });
     prog.appendChild(progNote);
@@ -18973,7 +19730,7 @@ window.G = window.G || {};
     function refresh() {
       const done = SELF_CHECK.filter((_, i) => saved["c" + i]).length;
       (progStat.querySelector(".v") || {}).textContent = done + " / " + SELF_CHECK.length;
-      progBar.firstChild.style.width = (done / SELF_CHECK.length * 100) + "%";
+      progBar.firstChild.style.transform = "scaleX(" + (done / SELF_CHECK.length) + ")";
       progNote.textContent = done === SELF_CHECK.length
         ? "That is senior-NCO preparation, not course preparation. It will show."
         : done >= 7 ? "Strong. The remaining items are the ones the written products will expose."
@@ -20613,6 +21370,22 @@ window.G = window.G || {};
       const n = MANUAL.filter(m => saved["m_" + m.id]).length;
       (mstat.querySelector(".v")||{}).textContent = n + " / " + MANUAL.length;
     }
+    // Roadmap Tier 5 (width-waste audit): these 9 protocol cards used to
+    // append straight into `man`, one full-width .card per row, so a
+    // tablet/Fold5-unfolded/desktop Soldier scrolled a single narrow column
+    // past a wide-open page either side of it. .card-results-grid (see its
+    // own header comment near .res-card in the CSS - same "auto-fill,
+    // minmax(260px,1fr), no separate mobile override needed" utility
+    // drills.js's own menu() already wired up for its 6 drill-picker cards,
+    // and Resources/Dictionary use for their result lists) is the same
+    // "many independent, similarly-sized cards" shape as this list, so this
+    // reuses it rather than inventing a route-specific grid: auto-fill
+    // collapses to one column on its own once the panel is narrower than
+    // two 260px cards plus the gap (comfortably true at a 375px phone,
+    // false by 768px/Fold5-unfolded/tablet), with no explicit breakpoint to
+    // keep in sync with the canonical scale.
+    const manualGrid = el("div.card-results-grid");
+    man.appendChild(manualGrid);
     MANUAL.forEach(m => {
       const row = el("div.card", { style:"margin:8px 0" });
       const top = el("div", { style:"display:flex;gap:8px;align-items:flex-start" });
@@ -20628,7 +21401,7 @@ window.G = window.G || {};
       top.appendChild(el("label", { text: m.name, for:id, style:"margin:0;font-weight:600" }));
       row.appendChild(top);
       row.appendChild(el("div.hint", { text: m.how, style:"margin-top:4px" }));
-      man.appendChild(row);
+      manualGrid.appendChild(row);
     });
     refreshM();
     mount.appendChild(man);
@@ -22071,7 +22844,6 @@ window.G = window.G || {};
     const ul = el("ul.wr-rules-list");
     (cfg.rules || []).forEach((r) => ul.appendChild(el("li", { text: r })));
     rules.appendChild(ul);
-    host.appendChild(rules);
 
     const form = el("div.panel.wr-form");
     (cfg.fields || []).forEach((f) => {
@@ -22089,7 +22861,25 @@ window.G = window.G || {};
     const printBtn = el("button.btn.primary", { type: "button", text: "\u2399 Format & print memo" });
     printBtn.addEventListener("click", () => printMemo(d));
     form.appendChild(printBtn);
-    host.appendChild(form);
+
+    // Tier 5 width-waste fix: the AR 25-50 rules panel (the memo's
+    // "anatomy" - office symbol/date, MEMORANDUM FOR, SUBJECT, numbered
+    // body, POC, signature block) and the field-by-field editor below it
+    // used to be two independent full-width host.appendChild() calls,
+    // stacking them even on desktop where .main has plenty of width to
+    // spare (confirmed live: ~1500px of stacked stage height at a 1024px
+    // viewport, none of it using the ~760px of available row width). A
+    // Soldier filling in the form had to scroll up to re-check a rule,
+    // then back down to the field they were on. Wrapping both in
+    // .wr-memo-layout (see CSS) turns them into a real 2-pane grid at
+    // >=1024px - rules pinned on the left, editor scrolling on the right -
+    // without touching .wr-rules/.wr-form themselves, which renderSitrep()
+    // below reuses for its own single-column intro+form and must NOT pick
+    // up this grid.
+    const layout = el("div.wr-memo-layout");
+    layout.appendChild(rules);
+    layout.appendChild(form);
+    host.appendChild(layout);
 
     // ── Memo worked example ─────────────────────────────────────────────────
     if (cfg.example && cfg.example.text) {
@@ -24227,9 +25017,11 @@ window.G = window.G || {};
     // Fold5/tablet fidelity wave 2: reclass-policy and FY26-snapshot are two
     // independent reference panels that used to force a single long column;
     // .panel-grid-2 (>=600px) sits them side by side. NCOES ladder stays out
-    // of this grid and full-width below - it's a growing per-grade card
-    // list, not a fixed-size panel, so halving its width would just
-    // compress that list rather than help it.
+    // of THIS grid (it's a growing per-grade card list, not a fixed-size
+    // panel — halving its width via panel-grid-2 would just compress the
+    // list rather than help it) but is not left ungridded either: see its
+    // own .card-results-grid wrapper below (Roadmap Tier 5 width-utilization
+    // pass), which grids ITS cards on their own auto-fill terms instead.
     const topGrid = el("div.panel-grid-2");
     topGrid.appendChild(refPanel);
 
@@ -24260,17 +25052,28 @@ window.G = window.G || {};
           ? "You're at " + myTier + " — your next step (" + myRow.grade.replace(/\s*->\s*/, " \u2192 ") + ") is " + myRow.system.toLowerCase() + "."
           : "You're at " + myTier + " — the top of the enlisted ladder." }));
       }
+      // Roadmap Tier 5 (width-utilization audit): this was 7 .dict-entry-card
+      // rows appended straight to nsPanel, one per line, full-width on every
+      // viewport including a 1360px desktop - the exact same card shape
+      // .card-results-grid already exists for (dictionary.js's own results,
+      // curriculum's lesson list, resilience's domain/skill cards, etc. -
+      // see that class's own comment in the CSS). Reusing it here instead of
+      // inventing a new grid needed zero new CSS: auto-fill/minmax(260px,1fr)
+      // already collapses to one column on its own at narrow widths (375px
+      // measured: unchanged single column), so nothing below 768px moves.
+      const ladderGrid = el("div.card-results-grid", { style: "margin-top:8px" });
       ns.grades.forEach((g) => {
         const isMine = !!(myRow && g === myRow);
         const topRowChildren = [];
         if (isMine) topRowChildren.push(el("span.tag.you-are-here", { text: "YOU ARE HERE" }));
         topRowChildren.push(el("span.dict-acronym", { text: g.grade }));
         topRowChildren.push(el("span.tag", { text: g.system }));
-        nsPanel.appendChild(el("div.dict-entry-card" + (isMine ? ".you-are-here" : ""), {}, [
+        ladderGrid.appendChild(el("div.dict-entry-card" + (isMine ? ".you-are-here" : ""), {}, [
           el("div.dict-top-row", {}, topRowChildren),
           el("div.dict-def", { text: g.detail }),
         ]));
       });
+      nsPanel.appendChild(ladderGrid);
       if (ns.note) nsPanel.appendChild(el("p", { style: "margin-top:8px", text: ns.note }));
       mount.appendChild(nsPanel);
     }
@@ -24598,7 +25401,7 @@ window.G = window.G || {};
       el("span.k", { text: "Promotable Readiness" }),
       el("span.v", { text: p.readinessLabel }),
     ]));
-    hero.appendChild(el("div.bar", {}, [el("span", { style: "width:" + p.competencyReadiness + "%" })]));
+    hero.appendChild(el("div.bar", {}, [el("span", { style: "transform:scaleX(" + (p.competencyReadiness / 100) + ")" })]));
     hero.appendChild(el("div.stat", { style: "margin-top:8px" }, [
       el("span.k", { text: "Scenarios completed" }),
       el("span.v", { text: p.completedCount + " / " + p.totalScenarios }),
@@ -24834,7 +25637,7 @@ window.G = window.G || {};
       [["Leads", ""], ["Develops", "green"], ["Achieves", "violet"], ["Character", "amber"], ["Presence", "cyan"], ["Intellect", "violet"]].forEach(([c, cls]) => {
         mini.appendChild(el("div.card", {}, [
           el("div.stat", {}, [el("span.k", { text: c }), el("span.v", { text: p.dims[c].pct + "%" })]),
-          el("div.bar " + cls, {}, [el("span", { style: "width:" + p.dims[c].pct + "%" })]),
+          el("div.bar " + cls, {}, [el("span", { style: "transform:scaleX(" + (p.dims[c].pct / 100) + ")" })]),
         ]));
       });
       mount.appendChild(mini);
@@ -24870,6 +25673,14 @@ window.G = window.G || {};
           const col = el("div.trend-col");
           const barWrap = el("div.trend-bar-wrap");
           const bar = el("div.trend-bar");
+          // Roadmap Tier 7 (120Hz/90Hz motion cleanup): investigated, NOT
+          // converted to transform:scaleY() - see the .trend-bar CSS
+          // comment above. This height:<pct>% never resolves to a real
+          // pixel value (its .trend-bar-wrap containing block is
+          // permanently indefinite), so it falls back to the min-height:3px
+          // floor for every bar regardless of count - a pre-existing,
+          // unrelated bug, flagged separately, not something this Tier's
+          // performance-only brief should paper over with a visual change.
           const heightPct = Math.max(4, Math.round(b.count / maxCount * 100));
           bar.style.cssText = "height:" + heightPct + "%;background:" +
             (b.isToday ? "var(--amber)" : b.count > 0 ? "var(--cyan)" : "var(--bg-3)") + ";opacity:" +
@@ -25460,6 +26271,38 @@ window.G = window.G || {};
       hdr.appendChild(el("span.search-count",
         { text: list.length + " entr" + (list.length===1?"y":"ies") }));
       results.appendChild(hdr);
+      // Width-waste fix (roadmap Tier 5, #/doctrine): up to DOC_CAP=150
+      // multi-paragraph cards used to stack in a single flat column no
+      // matter how wide the .list-detail results pane got (measured
+      // 36,091px of .main scrollHeight at 1500px viewport before this,
+      // every card at a unique Y - confirmed live, not assumed from the
+      // roadmap's own older figure). Reuses the SAME .card-results-grid
+      // utility Resources/Dictionary/Board Drill's picker/Readiness domain
+      // grid etc. already share (see that class's own comment near line
+      // 4901) rather than inventing a new grid pattern - its unconditional
+      // repeat(auto-fill,minmax(260px,1fr)) needs no extra media query of
+      // its own: at 375px it stays a clean single column (260px*2+gap
+      // alone exceeds the viewport), and at 768/1280/1500px it measures 2,
+      // 2, and 3 columns respectively - confirmed live with real
+      // getBoundingClientRect() comparisons, not assumed. Counterintuitive
+      // wrinkle worth flagging for the next person here: exactly at
+      // 1024px, where .list-detail itself (see that class' own comment)
+      // switches from stacked to its two-column master-detail grid, this
+      // nested grid actually DROPS BACK to 1 column - the 280px list pane
+      // + 16px gap leaves only ~464px for `results`, and (464+10)/(260+10)
+      // < 2, so auto-fill can't fit a second 260px track there yet. Not a
+      // bug in this fix - .list-detail's own split is out of scope for
+      // this pass (see the roadmap's explicit "no list-detail split here"
+      // scope note) - just an artifact of two independent responsive
+      // rules sharing the same 1024px breakpoint from different reasons.
+      // A nested grid (not `results` itself) so hdr above and the
+      // DOC_CAP-truncation hint below stay full-width block siblings
+      // instead of being squeezed into a single grid cell - .card-
+      // results-grid's own grid-column:1/-1 overrides only cover
+      // .search-header/.empty/.curr-group-label, not an ad hoc trailing
+      // .hint like this view's "Showing N of M" notice.
+      const cardGrid = el("div.card-results-grid");
+      results.appendChild(cardGrid);
       list.slice(0, DOC_CAP).forEach((d, i) => {
         const topicColor = TOPIC_COLORS[d.topic] || "var(--text-dim)";
         const src = d.source ? (d.source.ref || d.ref || "") : (d.ref || "");
@@ -25531,7 +26374,7 @@ window.G = window.G || {};
         if (footerParts.length) {
           card.appendChild(el("div.doc-footer", { text: footerParts.join(" · ") }));
         }
-        results.appendChild(card);
+        cardGrid.appendChild(card);
       });
       if (list.length > DOC_CAP) {
         results.appendChild(el("div.hint",
@@ -25655,6 +26498,30 @@ window.G = window.G || {};
     // the standalone "Reduce motion" a11yPanel further down - built
     // unconditionally, unlike acc/iface/notif which only exist when G.theme
     // is present - can still join the same visual group.
+    //
+    // Tier 5 width-utilization pass: accGrid now ALSO holds the Appearance
+    // panel (Theme/Text size/Motion), not just Accessibility & Focus +
+    // Notifications. Re-measured live (Playwright, real .main.scrollHeight,
+    // not the stale audit figure this roadmap item started from - that
+    // figure predates the Fold5/tablet wave 2 pass above, which already
+    // fixed Study Preferences and Data/Help/About into their own
+    // .panel-grid-2 groups): only the Appearance panel was still a lone
+    // full-width row at every width up to 1500px (1120px wide there, for a
+    // theme summary row + two 4-option segmented controls that need
+    // nowhere near that), and on any platform where G.notify.supported()
+    // is false (web/Tauri/desktop - i.e. this Playwright suite and every
+    // non-Android build) accGrid's own second column sat permanently empty
+    // once Notifications never renders into it. Folding Appearance into
+    // the same grid fixes both at once. Reuses .panel-grid-2's existing
+    // 600px trigger (see that class's own comment on the Z Fold 5's
+    // ~673px-wide unfolded-portrait viewport) rather than a new 1024px
+    // gate, so this stays consistent with prefGrid/dataGrid on this same
+    // page instead of one zone alone waiting for a wider breakpoint than
+    // its siblings. align-items:start (.panel-grid-2's own rule) already
+    // handles the height mismatch between the tall Appearance panel and
+    // the much shorter Accessibility & Focus summary sitting beside it -
+    // the identical pattern dataGrid already relies on for Data & Backup
+    // vs. the shorter Help/Feedback/About panels next to it.
     let accGrid = null;
 
     // Tier 1(c), two-tier collapse: Standard tier (Theme, Text size, Motion,
@@ -25680,7 +26547,16 @@ window.G = window.G || {};
     if (G.theme) {
       const cur = G.theme.current();
       const s2 = store.settings();
-      mount.appendChild(el("div.settings-zone-h", { text: "Appearance" }));
+      // Single combined zone header for Appearance + Accessibility & Focus +
+      // Notifications (Tier 5): accGrid is created here, before apPanel, so
+      // apPanel becomes accGrid's first child instead of its own full-width
+      // row - see the "Tier 5 width-utilization pass" comment above accGrid's
+      // declaration for why. Mirrors the "Data, Help & About" zone below,
+      // which already puts multiple conceptually-distinct panels (Data &
+      // Backup, Help, Feedback, About) under one shared header + one grid.
+      mount.appendChild(el("div.settings-zone-h", { text: "Appearance & Accessibility" }));
+      accGrid = el("div.panel-grid-2");
+      mount.appendChild(accGrid);
       const apPanel = el("div.panel");
       apPanel.appendChild(el("label", { text: "Theme" }));
 
@@ -25792,12 +26668,12 @@ window.G = window.G || {};
       apPanel.appendChild(el("label", { text: "Motion", style: "margin-top:16px" }));
       apPanel.appendChild(optGrid(G.theme.MOTIONS, (m)=>cur.motion===m.id, (m)=>G.theme.set("motion", m.id)));
       apPanel.appendChild(el("p.hint", { text: "Themes are grouped by intent — Focus themes stay low-saturation and mid-brightness to reduce eye strain at any screen brightness. All settings apply instantly and persist. Minimal turns off animation entirely (same as \"Reduce motion\" elsewhere) — your system's reduced-motion preference is also respected automatically." }));
-      mount.appendChild(apPanel);
+      // Tier 5: joins accGrid (declared + appended to mount above, alongside
+      // the combined "Appearance & Accessibility" zone header) instead of
+      // its own full-width mount row - see that header's comment.
+      accGrid.appendChild(apPanel);
 
       // ---- ACCESSIBILITY & FOCUS panel ----
-      mount.appendChild(el("div.settings-zone-h", { text: "Accessibility & Interface" }));
-      accGrid = el("div.panel-grid-2");
-      mount.appendChild(accGrid);
       // tabindex="-1": a valid programmatic focus target (for
       // openSettingsAdvanced's jump-button) without joining the normal
       // Tab order - matches this codebase's own established convention
@@ -25826,7 +26702,17 @@ window.G = window.G || {};
       // on, without the whole panel being open by default for everyone.
       const a11yKeys = ["highContrast", "largeTargets", "underlineLinks", "boldFocus", "dyslexiaSpacing", "reduceTransparency", "focusMode"];
       const a11yOnCount = a11yKeys.filter((k) => !!s2[k]).length;
-      const accSummary = el("div.panel", { style: "margin-top:12px" });
+      // Tier 5: no margin-top - accSummary now sits beside apPanel (which
+      // has none either) as accGrid's row-1 pair, matching the convention
+      // every other grid here already follows (only the FIRST panel in a
+      // zone skips margin-top, since the zone header's own margin-bottom
+      // already provides that spacing - see modePanel/dataPanel above for
+      // the same pattern). The old margin-top:12px predates the merge, from
+      // when accSummary was accGrid's own first child under its own
+      // "Accessibility & Interface" header - harmless as a lone top-of-zone
+      // panel, but left apPanel and accSummary visibly offset from each
+      // other by 12px once they became same-row grid siblings.
+      const accSummary = el("div.panel");
       accSummary.appendChild(el("label", { text: "Accessibility & Focus" }));
       accSummary.appendChild(el("p.hint", { style: "margin-top:8px", text:
         (a11yOnCount ? a11yOnCount + " of 7 accessibility option" + (a11yOnCount === 1 ? "" : "s") + " on" : "All 7 accessibility options are off") +
