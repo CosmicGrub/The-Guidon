@@ -353,7 +353,7 @@ label { display: block; font-family: var(--font-mono); font-size: .69rem; letter
 input[type="text"], input[type="number"], textarea, select {
   width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line-2);
   border-radius: var(--radius-sm); padding: 9px 11px; font-family: var(--font-mono); font-size: .81rem; }
-textare/* DEDUPED: a — merged below */
+/* DEDUPED: a — merged below */
 
 input:focus, textarea:focus, select:focus { outline: none; border-color: var(--amber); box-shadow: var(--glow-amber); }
 input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 6px; background: var(--bg); border: 1px solid var(--line-2); border-radius: 999px; }
@@ -996,6 +996,16 @@ html[data-motion="cinematic"] { --qz-flip-dur: .95s; --qz-flip-ease: cubic-bezie
 .rf-recap-list { list-style: none; margin: 8px 0 0; padding: 0; }
 .rf-recap-list li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line-2); font-size: .9rem; }
 .rf-recap-list li span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Stage 2 — Team mode's Setup roster. Every color/border here is a shared
+   token (var(--line), input[type="text"]'s own global styling) already used
+   throughout this stylesheet, so html.hc's --line/--line-2 overrides and
+   html.dyslexia-spacing's body-level letter/word-spacing apply automatically
+   — no new color/size literal introduced for this row. No new @media
+   breakpoint here either, matching this whole block's own rule (see this
+   block's header comment). */
+.rf-team-list { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.rf-team-row { display: flex; gap: 8px; align-items: center; }
+.rf-team-row input { flex: 1 1 auto; min-width: 0; }
 /* Compact recall-strength indicator — segments fill with reps, color flips
    from amber to green once G.board.isMasteredSrs() is true. Reads entirely
    from existing srs state, no new persisted fields. */
@@ -1480,19 +1490,27 @@ select.in { appearance:none; }
 .counsel-drills { display:flex; flex-direction:column; gap:12px; }
 .drill-card { display:flex; flex-direction:column; gap:8px; }
 .drill-title { font-family:var(--font-head); font-weight:700; font-size:1.1rem; color:var(--amber); }
-.drill-met/* DEDUPED: a — merged below */
+.drill-meta { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
+/* DEDUPED: a — merged below */
 
 .drill-scene { font-family:var(--font-mono); font-size:.78rem; color:var(--text-mute); letter-spacing:.04em; }
-.counsel-aren/* DEDUPED: a — merged below */
+/* DEDUPED: a — merged below */
+/* .counsel-arena's own rule was lost to this same CSS-dedup bug (its selector
+   fused into the next rule's prelude as an unreachable descendant chain);
+   original declarations are unrecoverable - not present in any commit
+   history, including this repo's earliest import. */
 
-.counsel-po/* DEDUPED: a — merged below */
+/* .counsel-poa (the plan-of-action form container) lost its own rule the
+   same way - see note above. */
 
 .poa-row { display:flex; flex-direction:column; gap:5px; margin-bottom:14px; }
 .poa-label { font-family:var(--font-head); font-weight:600; color:var(--text); font-size:.95rem; }
 .poa-hint { font-size:.74rem; color:var(--text-mute); }
-.counsel-poa input, .counsel-poa textare/* DEDUPED: a — merged below */
+.counsel-poa input, .counsel-poa textarea { width:100%; background:var(--bg); color:var(--text); border:1px solid var(--line-2); border-radius:var(--radius-sm); padding:9px 11px; font-family:var(--font-mono); font-size:.81rem; }
+/* DEDUPED: a — merged below */
 
-.counsel-poa textare/* DEDUPED: a — merged below */
+.counsel-poa textarea { resize:vertical; }
+/* DEDUPED: a — merged below */
 
 .poa-actions, .idp-actions { display:flex; gap:10px; margin-top:6px; flex-wrap:wrap; }
 
@@ -1559,7 +1577,8 @@ select.in { appearance:none; }
 .idp-goal.status-in-progress { border-left-color:var(--amber); }
 .idp-goal.status-done { border-left-color:var(--green); }
 .idp-goal-text { font-weight:600; color:var(--text); margin-bottom:7px; }
-.idp-goal-met/* DEDUPED: a — merged below */
+.idp-goal-meta { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
+/* DEDUPED: a — merged below */
 
 .idp-goal-ctl { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
 .idp-goal-ctl select { background:var(--bg-2); border:1px solid var(--line-2); color:var(--text);
@@ -1616,7 +1635,8 @@ select.in { appearance:none; }
 .mb-say { color:var(--text-mute); font-size:.85rem; font-style:italic; margin:0; }
 .mb-answer { background:var(--bg-2); border:1px solid var(--cyan); border-radius:var(--radius-sm); padding:12px; }
 .mb-a-label { font-family:var(--font-mono); font-size:.7rem; color:var(--cyan); text-transform:uppercase; letter-spacing:.06em; margin-bottom:5px; }
-.mb-/* DEDUPED: a — merged below */
+.mb-a { font-size:.9rem; line-height:1.6; color:var(--text); margin:0; }
+/* DEDUPED: a — merged below */
 
 .mb-a-src { margin-top:8px; font-family:var(--font-mono); font-size:.74rem; color:var(--cyan); }
 .mb-score-row:not([hidden]) { display:flex; gap:8px; flex-wrap:wrap; }
@@ -1718,22 +1738,13 @@ select.in { appearance:none; }
    list itself is short - it always fits the viewport on its own, so
    pinning it in place while the taller form scrolls past is enough; no
    inner scrollbar needed. top:16px matches .main's own scroll-container
-   padding-top (22px) closely enough to sit flush without touching it.
-   Placed BEFORE the ".wr-form input, .wr-form textare..." line below on
-   purpose, not after: that line's selector prelude has no block of its
-   own (a pre-existing dedup artifact, already on main, out of THIS fix's
-   scope) and swallows the next brace-balanced block it meets as its own
-   (invalid, discarded) declaration body - confirmed live via the CSSOM
-   (document.styleSheets) with a rule placed after it: the follow-on rule
-   never appears as a real CSSOM rule at all. Sitting before it instead
-   keeps this rule a normal, independently-parsed block untouched by that
-   bug, and leaves the existing swallow relationship between that line and
-   whatever already follows it exactly as it was. */
+   padding-top (22px) closely enough to sit flush without touching it. */
 @media (min-width: 1024px) {
   .wr-memo-layout { display: grid; grid-template-columns: minmax(260px, 320px) 1fr; gap: 16px; align-items: start; }
   .wr-memo-layout > .wr-rules { position: sticky; top: 16px; }
 }
-.wr-form input, .wr-form textare/* DEDUPED: a — merged below */
+.wr-form input, .wr-form textarea { width:100%; background:var(--bg); color:var(--text); border:1px solid var(--line-2); border-radius:var(--radius-sm); padding:9px 11px; font-family:var(--font-mono); font-size:.81rem; }
+/* DEDUPED: a — merged below */
 
 @media print {
   .memo { font-family:'Courier New',monospace; font-size: 0.857rem; color:#000; }
@@ -2180,7 +2191,8 @@ button:focus:not(:focus-visible),
   font-size: 0.95rem;
   color: var(--text);
 }
-.idp-tpl-met/* DEDUPED: a — merged below */
+.idp-tpl-meta { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
+/* DEDUPED: a — merged below */
 
 
 /* ===== Writing SITREP / Memo worked examples ===== */
@@ -11103,12 +11115,19 @@ window.G = window.G || {};
   // Quiz/Mock Board already use — not a new content pipeline. Full design:
   // docs/superpowers/specs/2026-08-23-rapid-fire-design.md.
   //
-  // Stage 1 of that spec: only Party mode's round engine + round screen are
-  // built here (Solo/Team are a later pass) — there is deliberately no
-  // mode-selection UI at all yet, since Party is the only mode this tab
-  // runs. The round engine itself is written so Solo/Team can layer on top
-  // of it later without a redesign (per the spec's own "one round engine"
-  // framing), but nothing Solo/Team-specific exists in this file yet.
+  // Stage 2 of that spec: Solo and Team modes now layer on top of Stage 1's
+  // Party-mode round engine, exactly as that engine was written to allow —
+  // beginRound(pool, mode, opts) below is the SAME function for all three
+  // modes. "mode" ("party"|"solo") only ever changes drawCard()'s own
+  // rendering branch (drawCardParty vs. drawCardSolo); "opts.onFinish" is
+  // the seam Team mode uses to run the identical function twice (once per
+  // team) instead of going straight to the single-round Recap. Nothing
+  // about the timer/judge/streak/pass-tally state machine itself branches
+  // on mode — that's the whole point of "one round engine," not three
+  // parallel implementations. Setup gained a Party/Solo/Team mode selector
+  // (defaulting to Party, matching Stage 1's shipped-only mode, so a
+  // returning Soldier's first Rapid Fire visit post-upgrade behaves exactly
+  // as before) and, for Team mode only, a team-name roster UI.
   //
   // Zero persistence beyond one kv flag (the one-time quick-start
   // explainer's "seen" bit, RF_SEEN_EXPLAINER_KEY below) — Setup choices
@@ -11154,16 +11173,35 @@ window.G = window.G || {};
     // these defaults every time the tab is (re)opened, matching the
     // spec's Setup table defaults exactly.
     const cfg = {
+      mode: "party",                // "party" | "solo" | "team" — defaults to
+      // Party: Stage 1 shipped Party-only, so a returning Soldier's next
+      // visit to this tab looks and behaves exactly like before the Stage 2
+      // upgrade rather than silently defaulting them into a mode they've
+      // never seen.
       categoryMode: "all",        // "all" | "needsWork" | a real category string
       timerSec: 60,                // 30 | 60 | 90 | null (Untimed)
       diffMode: "rank",            // "rank" | "all"
       passedBehavior: "requeue",   // "requeue" | "remove"
       soundHaptics: true,
+      teams: ["", ""],              // Team mode only — 2 empty slots by default,
+      // "+ Add team" can add more (spec: "2+ named teams"); persists across
+      // Setup redraws (mode switches, Play Again) the same way every other
+      // cfg field already does.
     };
     let needsWorkCats = [];
 
     const root = el("div.rf-root");
     mount.appendChild(root);
+
+    // Same local-copy convention Board Drill's own renderDrill/renderQuiz/
+    // renderMockBoard already each keep (search this file for the other
+    // three definitions) rather than a shared util — see renderDrill's own
+    // comment on why. Used by Solo mode's flip-card hint text below.
+    const clickVerb = () => {
+      try { return window.matchMedia("(hover: hover) and (pointer: fine)").matches ? "Click" : "Tap"; }
+      catch (e) { return "Tap"; }
+    };
+    const clickVerbLower = () => clickVerb().toLowerCase();
 
     function rankBand() {
       try {
@@ -11206,9 +11244,47 @@ window.G = window.G || {};
       root.appendChild(buildSetup());
     }
 
+    // Mode-aware Setup intro copy (Stage 2) — Party's own original wording,
+    // unchanged verbatim; Solo drops the "pass the device"/clue-giver
+    // framing entirely (task spec: "there's no pass the device/clue-giver
+    // framing in any copy" for Solo, since there's no one else in the
+    // room to give clues); Team keeps the clue-giver framing (each team's
+    // turn genuinely IS a Party-style round) but names the team dimension.
+    function introTextFor(mode) {
+      if (mode === "solo") return "A fast way to drill this same Q&A bank on your own — flip each card, judge yourself Correct or Pass, and beat the clock.";
+      if (mode === "team") return "A fast, team-vs-team way to drill this same Q&A bank — each team takes a turn passing the device around: the screen shows the question, everyone else gives clues out loud, and the holder taps Correct or Pass. Compare scores at the end.";
+      return "A fast, “Heads Up!”-style way to drill this same Q&A bank — pass the device around: the screen shows the question, everyone else gives clues out loud, and the holder taps Correct or Pass.";
+    }
+
     function buildSetup() {
       const wrap = el("div.rf-setup-grid");
-      wrap.appendChild(el("p.hint", { text: "A fast, “Heads Up!”-style way to drill this same Q&A bank — pass the device around: the screen shows the question, everyone else gives clues out loud, and the holder taps Correct or Pass." }));
+
+      // Mode — Party (default, see cfg above) / Solo / Team. Placed first
+      // since it changes how several rows below this one are read (Team
+      // names only appears in Team mode; the intro line just below changes
+      // with it too). A mode switch fully rebuilds the Setup screen rather
+      // than patching individual rows in place — simplest correct thing,
+      // and matches the DA 4856 wizard's own full-body-redraw convention
+      // (see renderCounselPdf's body() above) rather than inventing a
+      // second partial-update pattern just for this one control.
+      const modeRow = el("div.rf-setup-row");
+      modeRow.appendChild(el("label", { text: "Mode" }));
+      const modeSeg = el("div.segmented");
+      [["party", "Party"], ["solo", "Solo"], ["team", "Team"]].forEach(([val, text]) => {
+        const b = el("button", { type: "button", text: text });
+        if (cfg.mode === val) b.classList.add("active");
+        b.addEventListener("click", () => {
+          if (cfg.mode === val) return;
+          cfg.mode = val;
+          util.clear(root);
+          root.appendChild(buildSetup());
+        });
+        modeSeg.appendChild(b);
+      });
+      modeRow.appendChild(modeSeg);
+      wrap.appendChild(modeRow);
+
+      wrap.appendChild(el("p.hint", { text: introTextFor(cfg.mode) }));
 
       // Deck / Categories — the same single-category <select> Flashcards
       // (renderDrill) and Quiz (renderQuiz) already use above (Board Drill
@@ -11270,17 +11346,58 @@ window.G = window.G || {};
       segRow("Passed cards", [["requeue", "Requeue"], ["remove", "Remove for this round"]], "passedBehavior");
       segRow("Sound / Haptics", [[true, "On"], [false, "Off"]], "soundHaptics");
 
+      // Team names (Team mode only) — error handling per the design spec:
+      // "Team mode with fewer than 2 teams named — Start button disabled
+      // until both names are filled in." Follows the SAME required-field
+      // convention this exact Setup screen already established for its own
+      // "no questions match these filters" case just below (refreshStart()
+      // recomputes a boolean on every relevant change and sets
+      // startBtn.disabled directly) — no other multi-required-text-field
+      // gate-a-submit-button precedent exists elsewhere in this codebase to
+      // follow instead (searched: onboarding's multi-field wizard never
+      // gates its own Next/Continue on field validity at all).
+      if (cfg.mode === "team") {
+        const teamRowWrap = el("div.rf-setup-row.rf-team-names-row");
+        teamRowWrap.appendChild(el("label", { text: "Team names" }));
+        const list = el("div.rf-team-list");
+        function drawTeams() {
+          util.clear(list);
+          cfg.teams.forEach((name, i) => {
+            const teamRow = el("div.rf-team-row");
+            const inp = el("input", { type: "text", value: name, placeholder: "Team " + (i + 1), "aria-label": "Team " + (i + 1) + " name" });
+            inp.addEventListener("input", () => { cfg.teams[i] = inp.value; refreshStart(); });
+            teamRow.appendChild(inp);
+            if (cfg.teams.length > 2) {
+              const rmBtn = el("button.btn.ghost.sm", { type: "button", text: "Remove", "aria-label": "Remove Team " + (i + 1) });
+              rmBtn.addEventListener("click", () => { cfg.teams.splice(i, 1); drawTeams(); refreshStart(); });
+              teamRow.appendChild(rmBtn);
+            }
+            list.appendChild(teamRow);
+          });
+        }
+        drawTeams();
+        teamRowWrap.appendChild(list);
+        const addBtn = el("button.btn.ghost.sm", { type: "button", text: "+ Add team" });
+        addBtn.addEventListener("click", () => { cfg.teams.push(""); drawTeams(); refreshStart(); });
+        teamRowWrap.appendChild(addBtn);
+        teamRowWrap.appendChild(el("p.hint", { text: "Name at least 2 teams to start." }));
+        wrap.appendChild(teamRowWrap);
+      }
+
       const poolNote = el("p.hint");
       wrap.appendChild(poolNote);
       const startBtn = el("button.btn.primary", { type: "button", text: "Start Round" });
       wrap.appendChild(startBtn);
+
+      function namedTeams() { return cfg.teams.map((t) => t.trim()).filter(Boolean); }
 
       function refreshStart() {
         const pool = computePool();
         poolNote.textContent = pool.length
           ? pool.length + " question" + (pool.length === 1 ? "" : "s") + " in this deck."
           : "No questions match these filters.";
-        startBtn.disabled = pool.length === 0;
+        const teamsOk = cfg.mode !== "team" || namedTeams().length >= 2;
+        startBtn.disabled = pool.length === 0 || !teamsOk;
         const fallenBack = cfg.categoryMode === "needsWork" && !needsWorkCats.length;
         needsWorkNote.style.display = fallenBack ? "" : "none";
       }
@@ -11289,16 +11406,33 @@ window.G = window.G || {};
       startBtn.addEventListener("click", async () => {
         const pool = computePool();
         if (!pool.length) return;
+        if (cfg.mode === "team" && namedTeams().length < 2) return;
+        function go() {
+          if (cfg.mode === "solo") beginRound(pool, "solo");
+          else if (cfg.mode === "team") beginTeamMode(pool);
+          else beginRound(pool, "party");
+        }
+        // Solo has no clue-giver/pass-the-device mechanic to explain, so it
+        // skips the one-time explainer entirely — it's the same flip-and-
+        // grade-yourself pattern Board Drill's Flashcards already teach.
+        // Party and Team (each team's turn genuinely runs Party's own loop)
+        // both show it once per session, exactly as Stage 1 already did.
+        if (cfg.mode === "solo") { go(); return; }
         let seen = false;
         try { seen = await db.getSetting(RF_SEEN_EXPLAINER_KEY, false); } catch (e) {}
-        if (seen) beginRound(pool); else drawExplainer(pool);
+        if (seen) go(); else drawExplainer(pool, go);
       });
 
       return wrap;
     }
 
     // ── One-time quick-start explainer (a Soldier's first-ever round) ──
-    function drawExplainer(pool) {
+    // `onGo` (Stage 2) replaces a hardcoded beginRound(pool) call so this
+    // same explainer can hand off into Party's round OR Team mode's first
+    // turn — Solo never reaches this screen at all (see the Start-button
+    // handler above), so its copy is still written from Party's own
+    // pass-the-device framing on purpose, unchanged from Stage 1.
+    function drawExplainer(pool, onGo) {
       util.clear(root);
       const panel = el("div.panel.rf-explainer");
       panel.appendChild(el("div.eyebrow", { text: "How Rapid Fire works" }));
@@ -11313,17 +11447,35 @@ window.G = window.G || {};
       const go = el("button.btn.primary", { type: "button", text: "Got it — let's go" });
       go.addEventListener("click", async () => {
         try { await db.setSetting(RF_SEEN_EXPLAINER_KEY, true); } catch (e) {}
-        beginRound(pool);
+        onGo();
       });
       panel.appendChild(go);
       root.appendChild(panel);
     }
 
-    // ── Round engine + round screen (Party mode) ────────────────────
+    // ── Round engine + round screen (Party mode, and Solo/Team on top) ──
     // The whole state machine lives in this closure — card queue, timer,
     // correct-count, streak, pass tally — discarded when the round ends,
     // per the "ephemeral, in-memory only" data-flow decision above.
-    function beginRound(pool) {
+    //
+    // Stage 2: `mode` ("party" default | "solo") and `opts.onFinish` are the
+    // ONLY two seams Solo/Team add to this function — everything else
+    // (queue/advance/judge/timer/pause/streak) is untouched, unbranched,
+    // shared code, genuinely the "one round engine" the design spec asks
+    // for rather than a lookalike reimplementation:
+    //   - mode only changes which of drawCardParty()/drawCardSolo() renders
+    //     the card each turn (Party's Reveal-answer gate vs. Solo's real
+    //     Board-Drill-flashcard flip-to-reveal convention — see drawCard()).
+    //   - opts.onFinish, when provided, replaces the default drawRecap(stats)
+    //     call in finishRound() below. Team mode is the only caller that
+    //     passes one — it re-invokes THIS SAME beginRound(pool, "party", …)
+    //     once per team, catching each team's finish to advance to the next
+    //     team's turn (or the Final Recap) instead of Party's own
+    //     single-round Recap. A Team turn is thus literally a Party round,
+    //     not a parallel copy of one.
+    function beginRound(pool, mode, opts) {
+      mode = mode || "party";
+      opts = opts || {};
       util.clear(root);
       // Each round gets its own shuffled queue of full question objects.
       // Requeue just pushes a passed card back onto the END of this SAME
@@ -11350,12 +11502,27 @@ window.G = window.G || {};
       const timerEl = el("span.rf-timer");
       const endBtn = el("button.btn.ghost.sm", { type: "button", text: "End Round" });
       hud.appendChild(scoreEl); hud.appendChild(streakEl); hud.appendChild(timerEl); hud.appendChild(endBtn);
-      const cardEl = el("div.rf-card");
+      // cardHost: Party keeps Stage 1's own flat .rf-card (built directly
+      // into cardHost by drawCardParty() below). Solo reuses Board Drill's
+      // real flashcard flip mechanic instead — a .qz-scene hosting a fresh
+      // .qz-card each turn — so it inherits that mechanic's actual flip
+      // animation, Space/Enter keyboard handling, AND (the accessibility
+      // spot-check's real finding, confirmed by reading the CSS rather than
+      // assumed) its existing reduce-motion/data-motion="minimal" instant-
+      // face-swap fallback and high-contrast (html.hc) var overrides —
+      // .qz-card/.qz-face/.qz-front/.qz-back/.qz-flip-hint are matched
+      // purely by class name, with no dependency on being inside Board
+      // Drill's own DOM, and html.qz-theater .qz-scene/.qz-card (this view
+      // is ALWAYS inside qz-theater — enterTheater() is called
+      // unconditionally just below) already resize them to fill available
+      // space exactly like Party's .rf-card does. Zero new CSS for Solo's
+      // card as a result — see the stylesheet's own Rapid Fire block.
+      const cardHost = mode === "solo" ? el("div.qz-scene") : el("div.rf-card");
       const judgeRow = el("div.rf-judge-row");
       const correctBtn = el("button.btn.rf-judge-btn.rf-judge-correct", { type: "button", text: "✓ Correct" });
       const passBtn = el("button.btn.rf-judge-btn.rf-judge-pass", { type: "button", text: "→ Pass" });
       judgeRow.appendChild(correctBtn); judgeRow.appendChild(passBtn);
-      scene.appendChild(hud); scene.appendChild(cardEl); scene.appendChild(judgeRow);
+      scene.appendChild(hud); scene.appendChild(cardHost); scene.appendChild(judgeRow);
       wrapEl.appendChild(scene);
       root.appendChild(wrapEl);
       // Reuses Theater Mode's real enter/exit functions (renderDrill, above)
@@ -11386,18 +11553,40 @@ window.G = window.G || {};
         }
       }
 
+      // Solo self-grading only makes sense once the answer's actually been
+      // seen — judging blind isn't "judge yourself", it's guessing.
+      // Party/Team never gate this: the room may already know whether the
+      // clue-giver's guess was right without the holder ever tapping Reveal
+      // (spec: Reveal is used "privately... right before calling
+      // Correct/Pass", i.e. optional, not required). Uses the real global
+      // .btn:disabled rule (opacity .4 + not-allowed cursor) already used
+      // app-wide — no new disabled styling.
+      function updateJudgeGate() {
+        if (mode !== "solo") return;
+        correctBtn.disabled = !revealed;
+        passBtn.disabled = !revealed;
+      }
+
       function drawCard() {
         revealed = false;
-        util.clear(cardEl);
+        util.clear(cardHost);
         if (!current) { finishRound(); return; }
         roundCategories.add(current.category);
-        cardEl.appendChild(el("div.kc-label", { text: current.category }));
+        if (mode === "solo") drawCardSolo(); else drawCardParty();
+        updateJudgeGate();
+        updateHud();
+      }
+
+      // Party's own Stage 1 card — question always shown; Reveal answer is
+      // an explicit extra tap, used privately right before judging.
+      function drawCardParty() {
+        cardHost.appendChild(el("div.kc-label", { text: current.category }));
         // Full text, never truncated or altered — the question is
         // essentially never a length problem (spec's own measured data:
         // 0.3% of 1069 questions exceed 200 chars), and .rf-question's
         // clamp()-based font-size (above) is this screen's version of the
         // same responsive-font treatment .qz-prompt already gets.
-        cardEl.appendChild(el("div.rf-question", { text: current.q }));
+        cardHost.appendChild(el("div.rf-question", { text: current.q }));
         const revealBtn = el("button.btn.ghost.sm", { type: "button", text: "Reveal answer" });
         const answerPanel = el("div.rf-answer-panel", { style: "display:none" });
         answerPanel.appendChild(el("div.rf-answer-label", { text: "Answer" }));
@@ -11411,10 +11600,58 @@ window.G = window.G || {};
           answerPanel.style.display = revealed ? "" : "none";
           revealBtn.textContent = revealed ? "Hide answer" : "Reveal answer";
         });
-        cardEl.appendChild(revealBtn);
-        cardEl.appendChild(answerPanel);
-        updateHud();
+        cardHost.appendChild(revealBtn);
+        cardHost.appendChild(answerPanel);
       }
+
+      // Solo (Stage 2) — no clue-giver, no Reveal-answer gate. Matches
+      // Board Drill's own Flashcards self-grading convention exactly: tap/
+      // click (or Space/Enter) flips the card and the answer shows
+      // automatically as part of that ONE action, same .qz-card/.qz-face
+      // classes and `.flipped` mechanic renderDrill's own doFlip() uses
+      // (see that function, above) — a real flip, not a second copy of the
+      // mechanic. `inert` on the unflipped face matches renderDrill's own
+      // reasoning: backface-visibility:hidden only hides it visually, not
+      // from tab order or a screen reader.
+      function drawCardSolo() {
+        const card = el("div.qz-card", { "aria-label": "Flashcard, showing question" });
+        const front = el("div.qz-face.qz-front");
+        front.appendChild(el("div.kc-label", { text: current.category }));
+        front.appendChild(el("div.rf-question", { text: current.q }));
+        front.appendChild(el("div.qz-flip-hint", { "aria-hidden": "true" }, [document.createTextNode(clickVerb() + " card, or press Space, to flip")]));
+        const back = el("div.qz-face.qz-back");
+        back.appendChild(el("div.rf-answer-label", { text: "Answer" }));
+        // Same acceptableAnswer-preferred/fall-back-to-`a` rule as Party's
+        // card, above — identical content rule, just a different reveal
+        // interaction.
+        back.appendChild(el("div.rf-answer-text", { text: current.acceptableAnswer || current.a }));
+        back.setAttribute("inert", "");
+        card.appendChild(front); card.appendChild(back);
+        function doFlip() {
+          revealed = !revealed;
+          card.classList.toggle("flipped", revealed);
+          card.setAttribute("aria-label", revealed ? "Flashcard — showing answer, " + clickVerbLower() + " to flip back" : "Flashcard — " + clickVerbLower() + " to flip");
+          if (revealed) back.removeAttribute("inert"); else back.setAttribute("inert", "");
+          updateJudgeGate();
+          try { if (revealed && G.util.announce) G.util.announce("Answer revealed."); } catch (e2) {}
+        }
+        card.addEventListener("click", () => doFlip());
+        cardHost.appendChild(card);
+      }
+
+      // Space/Enter flips the Solo card, mirroring renderDrill's own
+      // cardWrap keydown convention (search this file for its comment) —
+      // scoped to wrapEl (already tabIndex="0") rather than a document-
+      // level listener, and ignored while focus is on a real button so
+      // Tab+Enter still activates Correct/Pass/End Round normally.
+      wrapEl.addEventListener("keydown", (e) => {
+        if (mode !== "solo" || !current) return;
+        if (e.key !== " " && e.key !== "Enter") return;
+        if (e.target instanceof HTMLElement && e.target.closest("button")) return;
+        e.preventDefault();
+        const card = cardHost.querySelector(".qz-card");
+        if (card) card.click();
+      });
 
       function advance() {
         current = queue.shift() || null;
@@ -11474,21 +11711,37 @@ window.G = window.G || {};
         clearInterval(tickHandle);
         document.removeEventListener("visibilitychange", onVisible);
         G.board.exitTheater();
-        drawRecap({
+        const stats = {
           correctCount, bestStreak,
           elapsedSec: Math.round(activeElapsedMs / 1000),
           passTally, roundCategories, pool,
-        });
+        };
+        // Team mode's own seam (see beginRound's header comment, above):
+        // when a caller supplies onFinish, it runs INSTEAD of the default
+        // single-round Recap — beginTeamMode() uses this to catch each
+        // team's finish and advance to the next team's turn (or the Final
+        // Recap) rather than showing Party's own Recap screen mid-match.
+        if (opts.onFinish) opts.onFinish(stats); else drawRecap(stats);
       }
 
       advance();
     }
 
     // ── Recap screen ─────────────────────────────────────────────────
-    function drawRecap(stats) {
-      util.clear(root);
-      const panel = el("div.panel");
-      panel.appendChild(el("div.section-title", {}, [el("h3", { text: "Round Recap" })]));
+    // Stage 2 split this into three pieces so Team mode's Final Recap can
+    // genuinely reuse the same structure ("the same recap component as
+    // Party/Solo, with an added per-team dimension" — design spec) instead
+    // of a second, parallel recap implementation:
+    //   - buildStatsBlock(panel, stats): the stat tiles + "Came up as Pass
+    //     a lot" list, Stage 1's own recap body, byte-for-byte unchanged,
+    //     now callable once per team too.
+    //   - wireCrossLink(linkHost, roundCategories): Stage 1's own
+    //     Flashcards cross-link, now fed either one round's categories
+    //     (Party/Solo) or the union across every team's turns (Team).
+    //   - drawRecap(stats): Party/Solo's own single-round screen, unchanged
+    //     behavior, just calling the two shared helpers above.
+
+    function buildStatsBlock(panel, stats) {
       const statsRow = el("div", { style: "display:flex;gap:18px;flex-wrap:wrap;margin:10px 0" });
       statsRow.appendChild(el("div.stat", {}, [el("span.k", { text: "Correct" }), el("span.v", { text: String(stats.correctCount) })]));
       statsRow.appendChild(el("div.stat", {}, [el("span.k", { text: "Elapsed" }), el("span.v", { text: stats.elapsedSec + "s" })]));
@@ -11515,21 +11768,21 @@ window.G = window.G || {};
         });
         panel.appendChild(ul);
       }
+    }
 
-      // Cross-link into Flashcards for the weakest category THIS round
-      // actually touched, via the real G.nav.seed()/consume() cross-view
-      // handoff registry (util.js) — consumed by the Board Drill
-      // dispatcher itself (G.board.render(), above) into the existing
-      // _filterCat mechanism renderDrill already reads. Ranked using the
-      // same categoryMasteryScores() data "Needs Work" uses above, not a
-      // second independent judgment.
-      const linkHost = el("div", { style: "margin-top:12px" });
-      panel.appendChild(linkHost);
+    // Cross-link into Flashcards for the weakest category the round(s)
+    // actually touched, via the real G.nav.seed()/consume() cross-view
+    // handoff registry (util.js) — consumed by the Board Drill dispatcher
+    // itself (G.board.render(), above) into the existing _filterCat
+    // mechanism renderDrill already reads. Ranked using the same
+    // categoryMasteryScores() data "Needs Work" uses above, not a second
+    // independent judgment.
+    function wireCrossLink(linkHost, roundCategories) {
       (async () => {
-        let target = Array.from(stats.roundCategories)[0] || null;
+        let target = Array.from(roundCategories)[0] || null;
         try {
           const scores = await G.board.categoryMasteryScores();
-          const inRound = scores.filter((s) => stats.roundCategories.has(s.cat));
+          const inRound = scores.filter((s) => roundCategories.has(s.cat));
           if (inRound.length) target = inRound.sort((a, b) => a.pct - b.pct)[0].cat;
         } catch (e) {}
         if (!target) return;
@@ -11550,12 +11803,119 @@ window.G = window.G || {};
         });
         linkHost.appendChild(goBtn);
       })();
+    }
+
+    function drawRecap(stats) {
+      util.clear(root);
+      const panel = el("div.panel");
+      panel.appendChild(el("div.section-title", {}, [el("h3", { text: "Round Recap" })]));
+      buildStatsBlock(panel, stats);
+
+      const linkHost = el("div", { style: "margin-top:12px" });
+      panel.appendChild(linkHost);
+      wireCrossLink(linkHost, stats.roundCategories);
 
       const btnRow = el("div.btn-row", { style: "margin-top:14px" });
       const againBtn = el("button.btn.primary", { type: "button", text: "Play Again" });
       againBtn.addEventListener("click", () => {
         const pool = computePool();
-        if (pool.length) beginRound(pool); else drawSetup();
+        if (pool.length) beginRound(pool, cfg.mode === "solo" ? "solo" : "party"); else drawSetup();
+      });
+      const newDeckBtn = el("button.btn.ghost", { type: "button", text: "New Deck" });
+      newDeckBtn.addEventListener("click", () => { drawSetup(); });
+      btnRow.appendChild(againBtn); btnRow.appendChild(newDeckBtn);
+      panel.appendChild(btnRow);
+
+      root.appendChild(panel);
+    }
+
+    // ── Team mode (Stage 2) ──────────────────────────────────────────
+    // "Setup (with team names) → Team 1's Party-style turn → Team 2's
+    // Party-style turn → repeat → Final Recap" (design spec). Read
+    // literally — "a Party-mode round" (singular) per team, not a
+    // configurable number of rounds the Setup table never mentions —
+    // each named team gets exactly ONE Party-style turn, in order, then
+    // the Final Recap. Every turn is the SAME real beginRound(pool,
+    // "party", …) Party mode itself calls; the only Team-specific code
+    // here is what happens BETWEEN turns (a handoff screen) and AFTER the
+    // last one (the Final Recap comparing every team).
+    function beginTeamMode(pool) {
+      const teamNames = cfg.teams.map((t) => t.trim()).filter(Boolean);
+      const teamResults = [];
+      function runTeam(i) {
+        if (i >= teamNames.length) { drawTeamRecap(teamResults); return; }
+        drawTeamHandoff(teamNames[i], i, teamNames.length, () => {
+          beginRound(pool, "party", {
+            onFinish: (stats) => {
+              teamResults.push({ name: teamNames[i], stats });
+              runTeam(i + 1);
+            },
+          });
+        });
+      }
+      runTeam(0);
+    }
+
+    // Handoff between turns (and before the very first one) — nothing in
+    // the spec's own prose names this screen, but the flow diagram's
+    // "Team 1's turn → Team 2's turn" is two genuinely separate physical
+    // hand-offs of the device, and starting Team 2's timer automatically
+    // the instant Team 1's ends would blindside whoever's holding it.
+    // Reuses the same .panel/.eyebrow/.btn.primary shapes drawExplainer()
+    // and drawRecap() already use, not a new screen pattern.
+    function drawTeamHandoff(teamName, index, total, onGo) {
+      util.clear(root);
+      const panel = el("div.panel.rf-team-handoff");
+      panel.appendChild(el("div.eyebrow", { text: "Team " + (index + 1) + " of " + total }));
+      panel.appendChild(el("div.section-title", {}, [el("h3", { text: teamName + "’s turn" })]));
+      panel.appendChild(el("p.hint", { text: "Pass the device to " + teamName + ". Same as Party mode: everyone else gives clues out loud, and the holder judges Correct or Pass." }));
+      const go = el("button.btn.primary", { type: "button", text: "Start " + teamName + "’s turn" });
+      go.addEventListener("click", onGo);
+      panel.appendChild(go);
+      root.appendChild(panel);
+    }
+
+    // Final Recap — "compares both teams' cumulative scores using the same
+    // recap component as Party/Solo, with an added per-team dimension"
+    // (design spec): a winner/tie summary + a compact score-comparison row
+    // (the "added per-team dimension"), then Stage 1's own buildStatsBlock
+    // repeated once per team (the reused "same recap component"), then one
+    // combined cross-link over every team's categories, via the same
+    // wireCrossLink() Party/Solo use.
+    function drawTeamRecap(teamResults) {
+      util.clear(root);
+      const panel = el("div.panel");
+      panel.appendChild(el("div.section-title", {}, [el("h3", { text: "Final Recap" })]));
+
+      const sorted = teamResults.slice().sort((a, b) => b.stats.correctCount - a.stats.correctCount);
+      const top = sorted[0];
+      const tie = sorted.length > 1 && sorted[1].stats.correctCount === top.stats.correctCount;
+      panel.appendChild(el("p.hint", {
+        text: tie ? "It’s a tie!" : (top.name + " wins with " + top.stats.correctCount + " correct."),
+      }));
+
+      const compareRow = el("div.rf-team-compare", { style: "display:flex;gap:18px;flex-wrap:wrap;margin:10px 0" });
+      teamResults.forEach((tr) => {
+        compareRow.appendChild(el("div.stat", {}, [el("span.k", { text: tr.name }), el("span.v", { text: String(tr.stats.correctCount) })]));
+      });
+      panel.appendChild(compareRow);
+
+      const combinedCats = new Set();
+      teamResults.forEach((tr) => {
+        panel.appendChild(el("div.eyebrow", { style: "margin-top:16px", text: tr.name }));
+        buildStatsBlock(panel, tr.stats);
+        tr.stats.roundCategories.forEach((c) => combinedCats.add(c));
+      });
+
+      const linkHost = el("div", { style: "margin-top:12px" });
+      panel.appendChild(linkHost);
+      wireCrossLink(linkHost, combinedCats);
+
+      const btnRow = el("div.btn-row", { style: "margin-top:14px" });
+      const againBtn = el("button.btn.primary", { type: "button", text: "Play Again" });
+      againBtn.addEventListener("click", () => {
+        const pool = computePool();
+        if (pool.length) beginTeamMode(pool); else drawSetup();
       });
       const newDeckBtn = el("button.btn.ghost", { type: "button", text: "New Deck" });
       newDeckBtn.addEventListener("click", () => { drawSetup(); });
