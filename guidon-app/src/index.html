@@ -319,7 +319,14 @@ a:hover { text-decoration: underline; }
 
 /* ---------- Progress ---------- */
 .bar { height: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
-.bar > span { display: block; height: 100%; background: linear-gradient(90deg, var(--amber-dim), var(--amber)); box-shadow: 0 0 10px rgba(255,176,32,.4); transition: width .4s; }
+/* Roadmap Tier 7 (120Hz/90Hz motion cleanup): was width:<pct>% animated via
+   `transition: width .4s`, which forces layout on every frame of the
+   transition (the classic 120Hz/90Hz jank source - same fix already applied
+   to .mb-timerfill/.quiz-timer-fill/.idp-dash-fill). Fixed width:100% now,
+   with the fill fraction driven by a GPU-compositable transform:scaleX()
+   instead - every el("span",{style:"width:"+pct+"%"}) call site below was
+   switched to style:"transform:scaleX("+(pct/100)+")" to match. */
+.bar > span { display: block; height: 100%; width: 100%; transform-origin: left; background: linear-gradient(90deg, var(--amber-dim), var(--amber)); box-shadow: 0 0 10px rgba(255,176,32,.4); transition: transform .4s; }
 .bar.cyan > span { background: linear-gradient(90deg, #1c8f97, var(--cyan)); box-shadow: 0 0 10px rgba(56,214,224,.4); }
 .bar.green > span { background: linear-gradient(90deg, #2f9e5b, var(--green)); }
 .bar.violet > span { background: linear-gradient(90deg, #6d54c4, var(--violet)); }
@@ -3309,7 +3316,25 @@ html.light .feedback.error { background: rgba(220,53,69,0.1); }
 /* ── Weekly activity trend chart ──────────────────────────────────────────── */
 .trend-chart { display:flex; align-items:flex-end; gap:8px; height:72px; margin:12px 0 4px; }
 .trend-col { display:flex; flex-direction:column; align-items:center; gap:4px; flex:1; }
-.trend-bar { width:100%; border-radius:3px 3px 0 0; min-height:3px; transition:height 0.3s ease; }
+/* Roadmap Tier 7 (120Hz/90Hz motion cleanup): height used to be a JS-set px
+   value (relayouts every frame of its own transition); now the box is
+   always the fixed 56px "tallest bar" reference (see the trend-bar el()
+   call below - the old min-height:3px floor is gone since height is no
+   longer data-dependent) and the real day's height is a
+   transform:scaleY() from transform-origin:bottom, which the compositor
+   can animate without layout.
+   Scoped to `.trend-col > .trend-bar` (bar is a DIRECT child of .trend-col
+   here), not the bare `.trend-bar` the other 7-day sparkline component
+   below also uses - two same-named-but-different components sharing one
+   class collide under the cascade (same specificity, last-in-file wins
+   for every SHARED property on BOTH), which silently broke this chart's
+   own transition when the sparkline's still-transition:height rule
+   happened to land later in the file. The extra `.trend-col >` combinator
+   raises specificity just enough to make each rule apply only to its own
+   real DOM shape (this chart's bar is .trend-col's direct child; the
+   sparkline's is nested one level deeper inside its own .trend-bar-wrap -
+   see that rule below), independent of source order. */
+.trend-col > .trend-bar { width:100%; height:56px; transform-origin:bottom; border-radius:3px 3px 0 0; transition:transform 0.3s ease; }
 .trend-label { font-size:0.6rem; font-family:var(--font-mono); color:var(--text-dim); text-align:center; }
 .trend-streak { font-size:0.82rem; color:var(--amber); margin-top:4px; }
 
@@ -3544,7 +3569,32 @@ html.light .feedback.error { background: rgba(220,53,69,0.1); }
   gap:2px; flex:1; min-width:0; }
 .trend-bar-wrap { flex:1; width:100%; display:flex; flex-direction:column;
   justify-content:flex-end; }
-.trend-bar { width:100%; transition:height 0.3s ease-out; border-radius:2px 2px 0 0; }
+/* Roadmap Tier 7 (120Hz/90Hz motion cleanup) - investigated, NOT converted:
+   .trend-bar-wrap's `flex:1` expands to flex-basis:0%, and .trend-col
+   (its parent) is never stretched by .trend-bars-row's own
+   align-items:flex-end - so .trend-bar-wrap's own height is never
+   definite, and every .trend-bar height:<pct>% below resolves against an
+   indefinite containing block (i.e. effectively 0, rescued only by the
+   inline min-height:3px floor). Confirmed live: even the "today" bar,
+   height:100%, renders at exactly 3px, same as every 0%-count day - this
+   sparkline has never visually shown a real proportional bar, pre-existing
+   and unrelated to this Tier. A transform:scaleY() fix (matching .bar >
+   span and the OTHER .trend-bar below) needs a real, non-zero reference
+   box to scale FROM - scaling a permanently-0px box just makes every bar
+   invisible instead of the current flat-3px-regardless-of-value look,
+   which is a real visual regression this Tier's brief explicitly rules
+   out ("performance-only, not a visual redesign"). Left as
+   transition:height (functionally inert today - the box never actually
+   settles at a different pixel height across a transition, so this isn't
+   a real 120Hz jank source in practice either) until the underlying
+   indefinite-height flex chain is fixed on its own; flagged separately.
+   Scoped to `.trend-bar-wrap > .trend-bar` (this bar is nested one level
+   inside its own wrap), not the bare `.trend-bar` the OTHER weekly-chart
+   component above also uses - same class name, different DOM shape (that
+   one's bar is .trend-col's direct child). Equal-specificity same-name
+   rules cascade by source order and would otherwise silently steal each
+   other's `transition` - see the longer comment on that rule. */
+.trend-bar-wrap > .trend-bar { width:100%; transition:height 0.3s ease-out; border-radius:2px 2px 0 0; }
 .trend-label { font-family:var(--font-mono); font-size:0.65rem;
   color:var(--text-dim); text-align:center; }
 .trend-count { font-family:var(--font-mono); font-size:0.65rem;
@@ -9103,7 +9153,7 @@ window.G = window.G || {};
         el("span.v", { text: overallPct + "%" }),
       ]));
       readinessPane.appendChild(el("div.bar" + (overallPct >= 85 ? ".green" : ""), {},
-        [el("span", { style: "width:" + overallPct + "%" })]));
+        [el("span", { style: "transform:scaleX(" + (overallPct / 100) + ")" })]));
       // Weakest 3 only - this pane is a glance, not a replacement for the
       // full Readiness tab's complete per-category breakdown.
       catStats.filter((c) => c.total > 0).sort((a, b) => a.pct - b.pct).slice(0, 3).forEach((c) => {
@@ -9112,7 +9162,7 @@ window.G = window.G || {};
           el("span.k", { text: c.cat, style: "font-size:0.82rem" }),
           el("span.v", { style: "font-size:0.82rem;color:var(--amber)", text: c.pct + "%" }),
         ]));
-        row.appendChild(el("div.bar", {}, [el("span", { style: "width:" + c.pct + "%" })]));
+        row.appendChild(el("div.bar", {}, [el("span", { style: "transform:scaleX(" + (c.pct / 100) + ")" })]));
         readinessPane.appendChild(row);
       });
       readinessPane.appendChild(el("button.btn.ghost.sm", { type: "button", text: "Open full Readiness →", style: "margin-top:12px",
@@ -9726,7 +9776,7 @@ window.G = window.G || {};
         row.appendChild(el("span.k", { text: label + (val >= max ? "  \u2713 maxed" : "") }));
         row.appendChild(el("span.v", { text: val + " / " + max }));
         outWrap.appendChild(row);
-        const bar = el("div.bar", {}, [ el("span", { style:"width:" + (max? (val/max*100):0) + "%" }) ]);
+        const bar = el("div.bar", {}, [ el("span", { style:"transform:scaleX(" + (max? (val/max):0) + ")" }) ]);
         outWrap.appendChild(bar);
       }
       line("Military training (weapons + AFT)", s.training, r.caps.training);
@@ -9738,7 +9788,7 @@ window.G = window.G || {};
       tot.appendChild(el("span.k", { text:"Subtotal (800 ceiling)" }));
       tot.appendChild(el("span.v", { text: s.base + " / 800" }));
       outWrap.appendChild(tot);
-      outWrap.appendChild(el("div.bar.cyan", {}, [ el("span", { style:"width:" + (s.base/800*100) + "%" }) ]));
+      outWrap.appendChild(el("div.bar.cyan", {}, [ el("span", { style:"transform:scaleX(" + (s.base/800) + ")" }) ]));
 
       if (s.bonus) {
         const b = el("div.stat");
@@ -10651,7 +10701,7 @@ window.G = window.G || {};
         el("span.k", { text: "Mandatory Training" }),
         el("span.v", { style: "color:" + (allPass ? "var(--green)" : "var(--amber)"), text: trainingPassed + " / " + trainingScs.length + " passed at 80%+" }),
       ]));
-      trainPanel.appendChild(el("div.bar" + (allPass ? ".green" : ""), {}, [el("span", { style: "width:" + Math.round(trainingPassed / trainingScs.length * 100) + "%" })]));
+      trainPanel.appendChild(el("div.bar" + (allPass ? ".green" : ""), {}, [el("span", { style: "transform:scaleX(" + (trainingPassed / trainingScs.length) + ")" })]));
       if (!allPass) {
         trainPanel.appendChild(el("p.hint", { text: "Complete all mandatory training modules before your board — readiness includes compliance, not just knowledge." }));
         trainPanel.appendChild(el("button.btn.sm", { style: "margin-top:6px", text: "Go to Mandatory Training →",
@@ -10666,7 +10716,7 @@ window.G = window.G || {};
       el("span.v", { style: "color:" + readColor + ";font-weight:700", text: overallPct + "%  " + readLabel }),
     ]));
     header.appendChild(el("div.bar" + (overallPct >= 85 ? ".green" : overallPct >= 60 ? "" : ""), {},
-      [el("span", { style: "width:" + overallPct + "%" })]));
+      [el("span", { style: "transform:scaleX(" + (overallPct / 100) + ")" })]));
     header.appendChild(el("div.stat", { style: "margin-top:10px" }, [
       el("span.k", { text: "Questions mastered (interval ≥ 3 days)" }),
       el("span.v", { text: totalMastered + " / " + totalQ }),
@@ -10696,7 +10746,7 @@ window.G = window.G || {};
           el("span.k", { text: c.cat }),
           el("span.v", { style: "color:var(--amber)", text: c.pct + "%  (" + c.mastered + "/" + c.total + ")" }),
         ]));
-        row.appendChild(el("div.bar", {}, [el("span", { style: "width:" + c.pct + "%" })]));
+        row.appendChild(el("div.bar", {}, [el("span", { style: "transform:scaleX(" + (c.pct / 100) + ")" })]));
         row.appendChild(el("button.btn.ghost.sm", { text: "Drill " + c.cat, style: "margin-top:4px",
           // Set the flag but never navigated anywhere to read it - the
           // button did nothing visible. Matches the working "Drill N Due
@@ -11647,7 +11697,7 @@ window.G = window.G || {};
         el("span.k", { text: label }),
         el("span.v", { text: pct + "%  (" + (score >= 0 ? "+" : "") + score + ")" }),
       ]),
-      el("div.bar " + (cls || ""), {}, [el("span", { style: "width:" + pct + "%" })]),
+      el("div.bar " + (cls || ""), {}, [el("span", { style: "transform:scaleX(" + (pct / 100) + ")" })]),
     ]);
   }
 
@@ -11777,7 +11827,7 @@ window.G = window.G || {};
                     text: done + " / " + trainingScs.length + " PASSED" }),
     ]));
     const prog_bar = el("div.bar" + (done === trainingScs.length ? ".green" : ""), {},
-      [el("span", { style: "width:" + Math.round(done / trainingScs.length * 100) + "%" })]);
+      [el("span", { style: "transform:scaleX(" + (done / trainingScs.length) + ")" })]);
     panel.appendChild(prog_bar);
     const list = el("div", { style: "display:flex;flex-direction:column;gap:5px;margin-top:10px" });
     trainingScs.forEach((s) => {
@@ -11983,7 +12033,7 @@ window.G = window.G || {};
 
       // Progress bar
       const bar = el("div.bar" + (onTrack ? ".green" : ""));
-      bar.appendChild(el("span", { style:"width:"+pct+"%" }));
+      bar.appendChild(el("span", { style:"transform:scaleX("+(pct/100)+")" }));
       panel.appendChild(bar);
 
       // Streak counter (streakData passed in from render(), see above)
@@ -12116,7 +12166,7 @@ window.G = window.G || {};
           el("span.k", { text: "Promotable Readiness (LRM)" }),
           el("span.v", { text: p.readinessLabel }),
         ]),
-        el("div.bar", {}, [el("span", { style: "width:" + p.competencyReadiness + "%" })]),
+        el("div.bar", {}, [el("span", { style: "transform:scaleX(" + (p.competencyReadiness / 100) + ")" })]),
         el("div.readiness-legend", {}, [
           el("span", { text: "Developing < 30" }),
           el("span", { text: "On Track 30–60" }),
@@ -12237,7 +12287,10 @@ window.G = window.G || {};
             const barH = count > 0 ? Math.max(8, Math.round((count / maxVal) * 56)) : 3;
             const barCol = count === 0 ? "var(--text-dim)" : i === 6 ? "var(--amber)" : "var(--cyan)";
             const bar = el("div.trend-bar");
-            bar.style.height = barH + "px";
+            // barH (px, capped at the CSS-fixed 56px reference height) is
+            // now applied as a scaleY() fraction, not a literal box height -
+            // see the .trend-bar comment above.
+            bar.style.transform = "scaleY(" + (barH / 56) + ")";
             bar.style.background = barCol;
             bar.title = count + " session" + (count !== 1 ? "s" : "") + " · " + dayLabels[i];
             col.appendChild(bar);
@@ -13410,7 +13463,7 @@ window.G = window.G || {};
             el("span.meta", { text: pr.studied + "/" + pr.total + (pr.mastered ? " · " + pr.mastered + " mastered" : "") }),
           ]),
           el("p.hint", { text: course.summary || "" }),
-          el("div.bar", {}, [el("span", { style: "width:" + pct + "%" })]),
+          el("div.bar", {}, [el("span", { style: "transform:scaleX(" + (pct / 100) + ")" })]),
           el("div.meta", { style: "margin-top:6px", text: "Source: " + (course.source || "") }),
         ];
         if (badge) {
@@ -18664,7 +18717,7 @@ window.G = window.G || {};
     const prog = el("div.panel", { style:"margin:10px 0;border-left:3px solid var(--amber)" });
     prog.appendChild(el("div.eyebrow", { text:"Readiness self-check" }));
     const progStat = el("div.stat", {}, [ el("span.k", { text:"Honest answers only" }), el("span.v", { text:"0 / " + SELF_CHECK.length }) ]);
-    const progBar  = el("div.bar.cyan", {}, [ el("span", { style:"width:0%" }) ]);
+    const progBar  = el("div.bar.cyan", {}, [ el("span", { style:"transform:scaleX(0)" }) ]);
     prog.appendChild(progStat); prog.appendChild(progBar);
     const progNote = el("p.hint", { text:"" });
     prog.appendChild(progNote);
@@ -18672,7 +18725,7 @@ window.G = window.G || {};
     function refresh() {
       const done = SELF_CHECK.filter((_, i) => saved["c" + i]).length;
       (progStat.querySelector(".v") || {}).textContent = done + " / " + SELF_CHECK.length;
-      progBar.firstChild.style.width = (done / SELF_CHECK.length * 100) + "%";
+      progBar.firstChild.style.transform = "scaleX(" + (done / SELF_CHECK.length) + ")";
       progNote.textContent = done === SELF_CHECK.length
         ? "That is Commandant's List preparation, not pass-the-course preparation."
         : done >= 9 ? "Strong. You are competing, not just attending."
@@ -18881,7 +18934,7 @@ window.G = window.G || {};
     const prog = el("div.panel", { style:"margin:10px 0;border-left:3px solid var(--amber)" });
     prog.appendChild(el("div.eyebrow", { text:"Readiness self-check" }));
     const progStat = el("div.stat", {}, [ el("span.k", { text:"Honest answers only" }), el("span.v", { text:"0 / " + SELF_CHECK.length }) ]);
-    const progBar  = el("div.bar.cyan", {}, [ el("span", { style:"width:0%" }) ]);
+    const progBar  = el("div.bar.cyan", {}, [ el("span", { style:"transform:scaleX(0)" }) ]);
     prog.appendChild(progStat); prog.appendChild(progBar);
     const progNote = el("p.hint", { text:"" });
     prog.appendChild(progNote);
@@ -18889,7 +18942,7 @@ window.G = window.G || {};
     function refresh() {
       const done = SELF_CHECK.filter((_, i) => saved["c" + i]).length;
       (progStat.querySelector(".v") || {}).textContent = done + " / " + SELF_CHECK.length;
-      progBar.firstChild.style.width = (done / SELF_CHECK.length * 100) + "%";
+      progBar.firstChild.style.transform = "scaleX(" + (done / SELF_CHECK.length) + ")";
       progNote.textContent = done === SELF_CHECK.length
         ? "You are ready to compete rather than just attend. Keep the technical track moving."
         : done >= 7 ? "Strong. The remaining gaps are the ones the graded products will find."
@@ -19094,7 +19147,7 @@ window.G = window.G || {};
     const prog = el("div.panel", { style:"margin:10px 0;border-left:3px solid var(--amber)" });
     prog.appendChild(el("div.eyebrow", { text:"Readiness self-check" }));
     const progStat = el("div.stat", {}, [ el("span.k", { text:"Honest answers only" }), el("span.v", { text:"0 / " + SELF_CHECK.length }) ]);
-    const progBar  = el("div.bar.cyan", {}, [ el("span", { style:"width:0%" }) ]);
+    const progBar  = el("div.bar.cyan", {}, [ el("span", { style:"transform:scaleX(0)" }) ]);
     prog.appendChild(progStat); prog.appendChild(progBar);
     const progNote = el("p.hint", { text:"" });
     prog.appendChild(progNote);
@@ -19102,7 +19155,7 @@ window.G = window.G || {};
     function refresh() {
       const done = SELF_CHECK.filter((_, i) => saved["c" + i]).length;
       (progStat.querySelector(".v") || {}).textContent = done + " / " + SELF_CHECK.length;
-      progBar.firstChild.style.width = (done / SELF_CHECK.length * 100) + "%";
+      progBar.firstChild.style.transform = "scaleX(" + (done / SELF_CHECK.length) + ")";
       progNote.textContent = done === SELF_CHECK.length
         ? "That is senior-NCO preparation, not course preparation. It will show."
         : done >= 7 ? "Strong. The remaining items are the ones the written products will expose."
@@ -24773,7 +24826,7 @@ window.G = window.G || {};
       el("span.k", { text: "Promotable Readiness" }),
       el("span.v", { text: p.readinessLabel }),
     ]));
-    hero.appendChild(el("div.bar", {}, [el("span", { style: "width:" + p.competencyReadiness + "%" })]));
+    hero.appendChild(el("div.bar", {}, [el("span", { style: "transform:scaleX(" + (p.competencyReadiness / 100) + ")" })]));
     hero.appendChild(el("div.stat", { style: "margin-top:8px" }, [
       el("span.k", { text: "Scenarios completed" }),
       el("span.v", { text: p.completedCount + " / " + p.totalScenarios }),
@@ -25009,7 +25062,7 @@ window.G = window.G || {};
       [["Leads", ""], ["Develops", "green"], ["Achieves", "violet"], ["Character", "amber"], ["Presence", "cyan"], ["Intellect", "violet"]].forEach(([c, cls]) => {
         mini.appendChild(el("div.card", {}, [
           el("div.stat", {}, [el("span.k", { text: c }), el("span.v", { text: p.dims[c].pct + "%" })]),
-          el("div.bar " + cls, {}, [el("span", { style: "width:" + p.dims[c].pct + "%" })]),
+          el("div.bar " + cls, {}, [el("span", { style: "transform:scaleX(" + (p.dims[c].pct / 100) + ")" })]),
         ]));
       });
       mount.appendChild(mini);
@@ -25045,6 +25098,14 @@ window.G = window.G || {};
           const col = el("div.trend-col");
           const barWrap = el("div.trend-bar-wrap");
           const bar = el("div.trend-bar");
+          // Roadmap Tier 7 (120Hz/90Hz motion cleanup): investigated, NOT
+          // converted to transform:scaleY() - see the .trend-bar CSS
+          // comment above. This height:<pct>% never resolves to a real
+          // pixel value (its .trend-bar-wrap containing block is
+          // permanently indefinite), so it falls back to the min-height:3px
+          // floor for every bar regardless of count - a pre-existing,
+          // unrelated bug, flagged separately, not something this Tier's
+          // performance-only brief should paper over with a visual change.
           const heightPct = Math.max(4, Math.round(b.count / maxCount * 100));
           bar.style.cssText = "height:" + heightPct + "%;background:" +
             (b.isToday ? "var(--amber)" : b.count > 0 ? "var(--cyan)" : "var(--bg-3)") + ";opacity:" +
