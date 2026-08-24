@@ -6489,6 +6489,13 @@ window.G = window.G || {};
     // left the one boolean flag that arms an OS permission prompt as the
     // single settings key with no documented default alongside its siblings.
     notifyReminders: false,    // native reminder notifications (Android only; off until opted in)
+    // Opt-in biometric unlock for Personal Account (Android only; off until
+    // opted in) - same "declared here, not just read" hardening as
+    // notifyReminders immediately above. Gated by G.biometricGate
+    // (index.html, near G.kioskBadge) at app launch/resume only, never on
+    // route navigation; Guest and Kiosk sessions are never gated regardless
+    // of this flag - see that module's own header comment.
+    biometricLock: false,
   };
 
   let _settingsDebounce = null;
@@ -27241,6 +27248,56 @@ window.G = window.G || {};
         notif.appendChild(notifLive);
         accGrid.appendChild(notif);
       }
+
+      // ---- BIOMETRIC LOCK panel: Android-only (real AndroidX BiometricPrompt
+      // via @aparajita/capacitor-biometric-auth's Cap.Plugins.BiometricAuthNative
+      // bridge), hidden entirely on web/Tauri since G.biometric.supported() is
+      // false there - same convention as the Notifications panel just above.
+      // Off by default (DEFAULT_SETTINGS.biometricLock). The prompt fires from
+      // exactly two places in the whole app: right here, as a real
+      // proof-of-enrollment check BEFORE the toggle is allowed to turn on
+      // (mirrors Notifications' own real-permission-request-before-flip
+      // pattern one panel up), and G.biometricGate's own launch/resume gate
+      // (index.html, near G.kioskBadge) once the toggle is on. Never anywhere
+      // else, and never on plain route navigation - see that module's own
+      // header comment for the full fail-open reasoning.
+      if (G.biometric && G.biometric.supported()) {
+        const bio = el("div.panel", { style: "margin-top:12px" });
+        bio.appendChild(el("label", { text: "Biometric lock" }));
+        const bioInput = el("input", { type: "checkbox", "aria-label": "Biometric lock for Personal Account" });
+        bioInput.checked = !!s2.biometricLock;
+        const bioStatus = el("p.hint", { style: "margin-top:6px" });
+        bioInput.addEventListener("change", async () => {
+          if (bioInput.checked) {
+            bioInput.disabled = true;
+            const avail = await G.biometric.checkAvailability();
+            if (!avail.available) {
+              bioInput.checked = false;
+              bioInput.disabled = false;
+              bioStatus.textContent = "No fingerprint or face is set up on this device " + String.fromCharCode(8212) + " enroll one in your device's system settings, then try again.";
+              return;
+            }
+            const r = await G.biometric.authenticate("Confirm to turn on biometric lock for GUIDON");
+            bioInput.disabled = false;
+            if (!r.ok) {
+              bioInput.checked = false;
+              bioStatus.textContent = "Biometric check didn't succeed, so the lock was not turned on. Try again.";
+              return;
+            }
+            await store.setSetting("biometricLock", true);
+            bioStatus.textContent = "On " + String.fromCharCode(8212) + " GUIDON will ask for your fingerprint or face when you open the app or return to it, whenever you're signed in with a Personal Account. Guest and Kiosk sessions are never gated.";
+          } else {
+            await store.setSetting("biometricLock", false);
+            bioStatus.textContent = "Off " + String.fromCharCode(8212) + " GUIDON will not ask for biometrics.";
+          }
+        });
+        bio.appendChild(el("div", { style: "margin:12px 0" }, [
+          el("div.switch", {}, [el("label.toggle", { style: "margin:0" }, [bioInput, el("span.track")]), el("span", { text: "Biometric lock (Personal Account)" })]),
+          el("p.hint", { text: "Off by default. When on, GUIDON asks for your fingerprint or face on launch and whenever you return to the app — never on every screen, and never for Guest or Kiosk sessions. This is a privacy screen, not encryption — your data is stored on this device the same way either way (see the Privacy Policy)." }),
+        ]));
+        bio.appendChild(bioStatus);
+        accGrid.appendChild(bio);
+      }
     }
 
     // default mode
@@ -28574,6 +28631,135 @@ window.G = window.G || {};
     },
   };
 
+  // ── Biometric lock gate (Personal Account) ─────────────────────────────────
+  // Opt-in privacy screen, default OFF (DEFAULT_SETTINGS.biometricLock, store.js
+  // above). Extends the same "shared-device" boundary #/kiosk already draws for
+  // Guest/Kiosk sessions to Personal Account: a Personal profile keeps real
+  // name/rank/board-date/action-plan data in IndexedDB across launches (see
+  // G.profile's own PROFILE_KEY), and until now nothing stood between "device
+  // is unlocked" and "that data is on screen". This gates exactly the two
+  // moments a Soldier would land on that data — cold launch (app.start(),
+  // below) and returning to the app after it was backgrounded (biometric.js's
+  // own Cap.Plugins.App "appStateChange" listener calls onResume()) — never
+  // individual route navigation, which the roadmap item this shipped under
+  // explicitly warns would be genuinely annoying.
+  //
+  // Fails OPEN, never closed: this is a privacy nudge layered onto data the
+  // app's own #/privacy policy already documents as stored unencrypted on
+  // this device, not a cryptographic boundary — a Soldier who enabled this
+  // and then lost biometric enrollment (broken sensor, cleared fingerprints,
+  // a device restore) has no account-recovery path at all (no server, no
+  // password — see #/privacy's "no accounts" section), so a hardware/
+  // enrollment problem lets them straight through with a one-time notice
+  // instead of bricking their own study data. A failed or cancelled PROMPT
+  // still holds the gate (that is the one real case this whole feature
+  // exists for), but the lock screen always offers a deliberately-confirmed
+  // way to turn the lock off from right there, for the exact same
+  // never-lock-a-Soldier-out-of-their-own-device reason.
+  G.biometricGate = (function () {
+    let unlocked = false;          // true once verified for the current foreground session
+    let warnedUnavailable = false; // told once per boot, not nagged every gate check
+    let pending = null;            // in-flight run() promise — overlapping callers share one overlay
+
+    async function applies() {
+      try {
+        if (!G.biometric || !G.biometric.supported()) return false;
+        const s = store.settings ? store.settings() : {};
+        if (!s.biometricLock) return false;
+        // Guest and Kiosk profiles are never written to IndexedDB
+        // (finishGuest()/finishKiosk() keep them in-memory only — see
+        // profile.js's saveProfile() guard) and never set onboardingComplete
+        // the way a real Personal profile does, so this check alone already
+        // excludes both without needing a separate mode check anywhere else.
+        const p = G.profile && G.profile.current ? await G.profile.current() : null;
+        return !!(p && p.mode === "personal" && p.onboardingComplete);
+      } catch (e) { return false; }
+    }
+
+    function buildOverlay(onUnlocked) {
+      const overlay = el("div.ob-overlay#bio-lock-overlay");
+      const wrap = el("div.ob-wrap");
+      wrap.appendChild(el("div.ob-hero", {}, [
+        el("div.ob-g-mark", { text: "G" }),
+        el("h2.ob-title", { text: "GUIDON is locked" }),
+        el("p.ob-sub", { text: "Confirm it's you to open your Personal Account." }),
+      ]));
+      const card = el("div.ob-card");
+      const status = el("p.hint", { style: "margin:0 0 14px" });
+      card.appendChild(status);
+      const unlockBtn = el("button.btn.primary", { type: "button", text: "\u{1F512} Unlock with biometrics" });
+      card.appendChild(unlockBtn);
+      const offLink = el("button.btn.sm.ghost", { type: "button", text: "Can't unlock? Turn off biometric lock", style: "margin-top:14px" });
+      card.appendChild(offLink);
+      wrap.appendChild(card);
+      overlay.appendChild(wrap);
+      document.body.appendChild(overlay);
+
+      async function attempt() {
+        unlockBtn.disabled = true;
+        status.textContent = "";
+        const r = await G.biometric.authenticate("Unlock GUIDON");
+        if (r.ok) {
+          unlocked = true;
+          trap.close();
+          onUnlocked();
+          return;
+        }
+        unlockBtn.disabled = false;
+        if (r.code === "userCancel" || r.code === "systemCancel" || r.code === "appCancel") {
+          status.textContent = "Cancelled. Tap Unlock when you're ready.";
+        } else if (r.code === "biometryLockout") {
+          status.textContent = "Too many failed attempts — your device has temporarily locked biometrics. Wait a moment and try again, or turn off biometric lock below.";
+        } else {
+          status.textContent = "Authentication failed. Try again.";
+        }
+        try { if (util.announce) util.announce(status.textContent); } catch (e) {}
+      }
+      unlockBtn.addEventListener("click", attempt);
+      offLink.addEventListener("click", async () => {
+        if (!await G.modal.confirm("You won't be asked for biometrics to open GUIDON on this device until you turn it back on from Settings.", { title: "Turn off biometric lock?", okText: "Turn off", danger: true })) return;
+        try { await store.setSetting("biometricLock", false); } catch (e) {}
+        unlocked = true;
+        trap.close();
+        onUnlocked();
+      });
+
+      const trap = util.modalTrap(overlay, wrap, null, { escapeCloses: false });
+      // The Soldier opted into this specifically to skip a manual step, so
+      // the lock screen's very first act is to ask, not to wait for a tap.
+      attempt();
+    }
+
+    function run() {
+      if (unlocked) return Promise.resolve(true);
+      if (pending) return pending;
+      pending = (async () => {
+        if (!(await applies())) { unlocked = true; return true; }
+        const avail = await G.biometric.checkAvailability();
+        if (!avail.available) {
+          // Fail OPEN — see this module's header comment.
+          unlocked = true;
+          if (!warnedUnavailable) {
+            warnedUnavailable = true;
+            try { if (util.toast) util.toast("Biometric lock is on, but no usable biometrics are set up on this device right now — GUIDON let you in without prompting."); } catch (e) {}
+            try { if (G.selfheal) G.selfheal.log("biometric-fail-open", avail.code || "", "Biometric lock is enabled but unavailable (" + (avail.code || "unknown") + ") — gate skipped so the Soldier is not locked out."); } catch (e) {}
+          }
+          return true;
+        }
+        return await new Promise((resolve) => buildOverlay(() => resolve(true)));
+      })();
+      pending.then(() => { pending = null; }, () => { pending = null; });
+      return pending;
+    }
+
+    // Called by biometric.js's own "appStateChange" listener every time the
+    // native shell reports the app returning to the foreground — never on
+    // plain route navigation (see header comment above).
+    function onResume() { unlocked = false; run(); }
+
+    return { run, onResume, applies };
+  })();
+
   function route() {
     let hash = location.hash || "#/home";
     // tolerate trailing params (e.g. deep links); match on the base
@@ -28772,6 +28958,18 @@ window.G = window.G || {};
           }
         };
       }
+      // Biometric lock gate (opt-in, default off — see G.biometricGate's own
+      // header comment near G.kioskBadge below): resolves instantly and does
+      // nothing when the setting is off, the current profile isn't a
+      // completed Personal Account, or this isn't a native build. Awaited
+      // HERE — before the userName/profile greeting is written to the
+      // topbar below, and before route() renders anything — so a Personal
+      // Soldier's real name/data never lands in the DOM, even underneath
+      // the overlay, ahead of a successful unlock. store.init() (and its
+      // settings-sync wiring immediately above) must already have run for
+      // G.biometricGate.applies() to read a real settings/profile state,
+      // which is exactly why this sits here and not any earlier.
+      if (G.biometricGate) await G.biometricGate.run();
       // Apply stored userName to topbar greeting
       try {
         const uName = store.settings && store.settings().userName;

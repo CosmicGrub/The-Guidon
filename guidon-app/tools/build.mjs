@@ -388,10 +388,17 @@ async function main() {
   const pdfDefer = await readFile("src/pdf-defer.js", "utf8");
   const native = await readFile("src/native.js", "utf8");
   const notify = await readFile("src/notify.js", "utf8");
+  // biometric.js's own top-level "appStateChange" listener reaches back into
+  // G.biometricGate (defined inside index.html's own inline script, in the
+  // <script> block this sub() call replaces the tail of) — safe precisely
+  // because every module spliced in here runs AFTER that script tag has
+  // already executed in full, same guarantee native.js/notify.js already
+  // rely on for G.profile/G.store/etc.
+  const biometric = await readFile("src/biometric.js", "utf8");
   web = sub(
     web,
     bodyClose,
-    `</script>\n<script>\n${pdfDefer}\n</script>\n<script>\n${native}\n</script>\n<script>\n${notify}\n</script>\n<script>\n${pwa}\n</script>\n</body>\n</html>`,
+    `</script>\n<script>\n${pdfDefer}\n</script>\n<script>\n${native}\n</script>\n<script>\n${notify}\n</script>\n<script>\n${biometric}\n</script>\n<script>\n${pwa}\n</script>\n</body>\n</html>`,
     "document terminator"
   );
 
