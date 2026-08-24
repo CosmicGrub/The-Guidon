@@ -55,7 +55,22 @@ console.log("lint-patterns: static regression guard for 3 repeat bug shapes\n");
     const css = html.slice(styleStart, styleEnd);
     const RAW_COLOR = /(?<![\w-])color\s*:\s*var\(--(cyan|violet|red|green|amber)\)/g;
     const hits = [...css.matchAll(RAW_COLOR)];
-    const BASELINE = 117; // audited count as of 2026-08-22 (PC parity pass:
+    const BASELINE = 119; // audited count as of 2026-08-23 (Rapid Fire,
+    // Stage 1: added .rf-card .kc-label and .rf-answer-label, both
+    // color:var(--cyan) - the SAME mono-uppercase-label-on-var(--panel)
+    // treatment .qz-front .kc-label already uses (already inside this
+    // baseline), just under new selectors for Rapid Fire's own round-
+    // screen markup. Both sit on an explicit background:var(--panel)
+    // (.rf-card's own, not ambient/inherited - .rf-answer-panel has no
+    // background of its own, so it inherits .rf-card's), the identical
+    // combination already covered by test-contrast-full.mjs's existing
+    // sweep of .qz-front .kc-label - not a new contrast question, a new
+    // selector for an already-audited one. .rf-timer's amber/red (the
+    // OTHER two new color spots on this same screen) are deliberately set
+    // via JS (updateHud(), src/index.html) instead of a static CSS rule,
+    // so they never became new hits here at all - see that function's own
+    // comment for the contrast reasoning (large bold text, 3:1 floor).
+    // Previously 117 as of 2026-08-22 (PC parity pass:
     // added .idp-smart-build summary:hover and .promo-coaching
     // summary:hover, both color:var(--amber). test-contrast-full.mjs
     // never simulates :hover so it can't verify these on its own - checked

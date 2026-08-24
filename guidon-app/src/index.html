@@ -943,6 +943,59 @@ html[data-motion="cinematic"] { --qz-flip-dur: .95s; --qz-flip-ease: cubic-bezie
   display: block; margin-top: 6px; font-family: var(--font-mono);
   font-size: 0.786rem; color: var(--text-mute);
 }
+
+/* ── Rapid Fire (Board Drill's 7th tab) ───────────────────────────────────
+   The round screen mounts INSIDE the same html.qz-theater overlay Board
+   Drill's own flashcard study uses — .rf-wrap carries the .qz-wrap class
+   too, so html.qz-theater .qz-wrap's fixed fullscreen-overlay rules (above)
+   apply here unchanged. Everything below is new layout INSIDE that reused
+   overlay, not a second overlay system — see docs/superpowers/specs/
+   2026-08-23-rapid-fire-design.md, "Implementation notes for the next
+   phase." No new @media width breakpoint anywhere in this block — every
+   size here is relative (%, ch, clamp()) or borrowed from the shared .btn/
+   .panel/.segmented/.due-chip components, on purpose (see lint-patterns.mjs
+   check (d), the canonical breakpoint-scale guard). */
+.rf-setup-grid { display: flex; flex-direction: column; gap: 12px; }
+.rf-setup-row { display: flex; flex-direction: column; gap: 6px; }
+.rf-scene { flex: 1 1 auto; min-height: 0; width: 100%; max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.rf-hud { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.rf-hud-stat { font-family: var(--font-mono); font-size: .82rem; color: var(--text-dim); }
+.rf-hud-stat b { color: var(--text); font-size: 1rem; }
+/* Color set via JS (updateHud(), below) rather than a static CSS rule here —
+   matches the established idiom renderBoardCountdown's own daysEl.style.color
+   already uses for the same kind of live amber/red state cue, and keeps this
+   out of lint-patterns.mjs check (a)'s raw-accent-on-text audit (that check
+   only scans the <style> block; it isn't a substitute for actually reasoning
+   about contrast, done in updateHud()'s own comment). */
+.rf-timer { font-family: var(--font-head); font-weight: 700; font-size: 1.4rem; margin-left: auto; }
+.rf-card {
+  flex: 1 1 auto; min-height: 220px; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--panel); box-shadow: var(--shadow);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+  padding: clamp(20px, 3vw, 44px); gap: 14px; overflow: hidden;
+}
+.rf-card .kc-label {
+  font-family: var(--font-mono); font-size: 0.786rem; letter-spacing: .14em;
+  color: var(--cyan); text-transform: uppercase;
+}
+/* Same responsive-font intent as .qz-prompt above (design spec's own
+   "Question/answer length handling" section) — fluid via clamp() rather
+   than a breakpoint override, since this screen is always full-bleed
+   (mounted straight into theater, never inline like the flashcard is). */
+.rf-question { font-family: var(--font-head); font-weight: 600; letter-spacing: .01em; font-size: clamp(1.15rem, 4vw, 1.6rem); line-height: 1.35; color: var(--text); max-width: 46ch; }
+.rf-answer-panel { width: 100%; max-width: 46ch; margin-top: 6px; border-top: 1px solid var(--line); padding-top: 12px; max-height: 34vh; overflow-y: auto; text-align: left; }
+.rf-answer-label { font-family: var(--font-mono); font-size: .7rem; letter-spacing: .14em; color: var(--cyan); text-transform: uppercase; margin-bottom: 4px; }
+.rf-answer-text { white-space: pre-wrap; line-height: 1.5; }
+.rf-judge-row { display: flex; gap: 12px; }
+.rf-judge-btn { flex: 1 1 0; font-size: 1.05rem; font-weight: 700; padding: 16px 10px; min-height: 56px; }
+.rf-judge-correct { background: var(--green); color: var(--btn-ink, #1a1206); border-color: var(--green); }
+.rf-judge-correct:hover { border-color: var(--green); color: var(--btn-ink, #1a1206); filter: brightness(1.08); }
+.rf-judge-pass:hover { border-color: var(--line-2); color: var(--text); background: var(--panel-2); }
+.rf-explainer ul { margin: 8px 0 0 20px; padding: 0; }
+.rf-explainer li { margin-bottom: 6px; }
+.rf-recap-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.rf-recap-list li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line-2); font-size: .9rem; }
+.rf-recap-list li span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Compact recall-strength indicator — segments fill with reps, color flips
    from amber to green once G.board.isMasteredSrs() is true. Reads entirely
    from existing srs state, no new persisted fields. */
@@ -10658,19 +10711,15 @@ window.G = window.G || {};
   async function renderReadiness(mount) {
     util.clear(mount);
     const all = store.boardQuestions();
-    const categories = [...new Set(all.map((q) => q.category))].sort();
     // One db.all("kv") cursor scan instead of one db.get() per question.
     const srsData = await loadAllSrs(all.map((q) => q.id));
     const now = Date.now();
 
     // ── Overall score ──────────────────────────────────────────
-    const catScores = categories.map((cat) => {
-      const qs = all.filter((q) => q.category === cat);
-      const seen = qs.filter((q) => srsData[q.id].reps > 0);
-      const mastered = qs.filter((q) => G.board.isMasteredSrs(srsData[q.id]));
-      const pct = qs.length ? Math.round(mastered.length / qs.length * 100) : 0;
-      return { cat, total: qs.length, seen: seen.length, mastered: mastered.length, pct };
-    });
+    // G.board.categoryMasteryScores() (shared with Rapid Fire's "Needs
+    // Work" Setup option) — passing this tab's own already-loaded all/
+    // srsData through avoids a second loadAllSrs() cursor scan here.
+    const catScores = await G.board.categoryMasteryScores(all, srsData);
 
     const totalQ = all.length;
     const totalMastered = catScores.reduce((s, c) => s + c.mastered, 0);
@@ -11044,6 +11093,477 @@ window.G = window.G || {};
     render("", "All");
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // RAPID FIRE — Board Drill's 7th tab. A fast, "Heads Up!"-style party
+  // round built on the SAME Q&A bank (store.boardQuestions()) Flashcards/
+  // Quiz/Mock Board already use — not a new content pipeline. Full design:
+  // docs/superpowers/specs/2026-08-23-rapid-fire-design.md.
+  //
+  // Stage 1 of that spec: only Party mode's round engine + round screen are
+  // built here (Solo/Team are a later pass) — there is deliberately no
+  // mode-selection UI at all yet, since Party is the only mode this tab
+  // runs. The round engine itself is written so Solo/Team can layer on top
+  // of it later without a redesign (per the spec's own "one round engine"
+  // framing), but nothing Solo/Team-specific exists in this file yet.
+  //
+  // Zero persistence beyond one kv flag (the one-time quick-start
+  // explainer's "seen" bit, RF_SEEN_EXPLAINER_KEY below) — Setup choices
+  // and round state live entirely in this function's own closure, the same
+  // shape Quiz's in-round state (sess, timerInterval — see renderQuiz
+  // above) already uses, and are discarded the moment the Soldier leaves
+  // the tab. This is a deliberate design decision, not an oversight: per
+  // the spec's "Alternatives considered," Rapid Fire results never touch
+  // the real attempts/SRS mastery-tracking system, in any mode — this
+  // function makes NO db.put("attempts", ...) or saveSrs()/db.put("kv",
+  // {k:"srs:..."}) calls anywhere below (tools/test-rapid-fire-no-srs-
+  // writes.mjs is the regression test proving that stays true).
+  // ═══════════════════════════════════════════════════════════════
+  const RF_SEEN_EXPLAINER_KEY = "rapidFire:seenExplainer";
+  // No existing rank -> board-question-difficulty mapping exists anywhere
+  // in the app (recommendNext()'s SCENARIO_DIFFICULTY_TIERS, near the top
+  // of store, is a DIFFERENT scale for Train scenarios, not board
+  // questions) — "Match my rank" is a genuinely new idea this feature
+  // introduces, so this mapping is this feature's own, documented here
+  // rather than guessed silently at the call site. Junior enlisted study
+  // at the beginner band, NCOs at intermediate, senior NCOs at the by-the-
+  // book expert band — the same three-tier vocabulary Board Drill's own
+  // DIFF_LABELS (see renderDrill above) already uses. A Soldier with no
+  // resolvable rank (guest, no profile tier set) gets no band restriction
+  // at all — the same "fall back to the unrestricted option when the
+  // signal doesn't exist" shape as "Needs Work" falling back to "All
+  // categories" with no attempt history, below.
+  const RF_TIER_TO_DIFF = {
+    E1: "beginner", E2: "beginner", E3: "beginner", E4: "beginner",
+    E5: "intermediate", E6: "intermediate",
+    E7: "expert", E8: "expert", E9: "expert",
+  };
+  const RF_PASS_FREQUENT = 2; // "came up as Pass a lot" threshold — passed at least this many times this round
+
+  async function renderRapidFire(mount) {
+    util.clear(mount);
+    const all = store.boardQuestions();
+    const categories = ["All", ...Array.from(new Set(all.map((q) => q.category)))];
+    const byId = {};
+    all.forEach((q) => { byId[q.id] = q; });
+
+    // Setup state — ephemeral (see the module header above), resets to
+    // these defaults every time the tab is (re)opened, matching the
+    // spec's Setup table defaults exactly.
+    const cfg = {
+      categoryMode: "all",        // "all" | "needsWork" | a real category string
+      timerSec: 60,                // 30 | 60 | 90 | null (Untimed)
+      diffMode: "rank",            // "rank" | "all"
+      passedBehavior: "requeue",   // "requeue" | "remove"
+      soundHaptics: true,
+    };
+    let needsWorkCats = [];
+
+    const root = el("div.rf-root");
+    mount.appendChild(root);
+
+    function rankBand() {
+      try {
+        const profile = (G.profile && G.profile.cached) ? G.profile.cached() : null;
+        const settings = (G.store && G.store.settings) ? G.store.settings() : {};
+        const tier = (G.rankUtils && G.rankUtils.tierOf) ? G.rankUtils.tierOf(profile, settings) : null;
+        return tier ? (RF_TIER_TO_DIFF[tier] || null) : null;
+      } catch (e) { return null; }
+    }
+
+    function computePool() {
+      let pool = all;
+      if (cfg.categoryMode === "needsWork") {
+        if (needsWorkCats.length) {
+          const set = new Set(needsWorkCats.map((c) => c.cat));
+          pool = pool.filter((q) => set.has(q.category));
+        }
+        // else: no attempt history yet — falls back to the full,
+        // unfiltered pool below, matching the Setup note shown for
+        // this exact case (see refreshStart()'s fallenBack check).
+      } else if (cfg.categoryMode !== "all") {
+        pool = pool.filter((q) => q.category === cfg.categoryMode);
+      }
+      if (cfg.diffMode === "rank") {
+        const band = rankBand();
+        if (band) pool = pool.filter((q) => G.board.normDifficulty(q.difficulty) === band);
+      }
+      return pool;
+    }
+
+    async function refreshNeedsWork() {
+      try { needsWorkCats = await G.board.weakestCategoriesByMastery(3); }
+      catch (e) { needsWorkCats = []; }
+    }
+
+    // ── Setup screen ────────────────────────────────────────────────
+    async function drawSetup() {
+      await refreshNeedsWork();
+      util.clear(root);
+      root.appendChild(buildSetup());
+    }
+
+    function buildSetup() {
+      const wrap = el("div.rf-setup-grid");
+      wrap.appendChild(el("p.hint", { text: "A fast, “Heads Up!”-style way to drill this same Q&A bank — pass the device around: the screen shows the question, everyone else gives clues out loud, and the holder taps Correct or Pass." }));
+
+      // Deck / Categories — the same single-category <select> Flashcards
+      // (renderDrill) and Quiz (renderQuiz) already use above (Board Drill
+      // has no multi-select "pick several categories at once" UI anywhere
+      // to reuse instead), plus a .due-chip-styled "Needs Work" toggle that
+      // overrides it with the Readiness tab's own real weakest-3-categories
+      // ranking (G.board.weakestCategoriesByMastery, shared above).
+      const catRow = el("div.rf-setup-row");
+      catRow.appendChild(el("label", { text: "Deck / Categories" }));
+      const pickRow = el("div", { style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center" });
+      const catSel = el("select", { "aria-label": "Filter by category" });
+      categories.forEach((c) => catSel.appendChild(el("option", { value: c, text: c })));
+      catSel.value = (cfg.categoryMode !== "all" && cfg.categoryMode !== "needsWork") ? cfg.categoryMode : "All";
+      const needsWorkChip = el("button.due-chip", { type: "button", text: "⚙ Needs Work",
+        "aria-pressed": String(cfg.categoryMode === "needsWork"),
+        title: "Your weakest 3 categories — the same ranking the Readiness tab shows" });
+      if (cfg.categoryMode === "needsWork") needsWorkChip.classList.add("active");
+      catSel.addEventListener("change", () => {
+        cfg.categoryMode = catSel.value === "All" ? "all" : catSel.value;
+        needsWorkChip.classList.remove("active");
+        needsWorkChip.setAttribute("aria-pressed", "false");
+        refreshStart();
+      });
+      needsWorkChip.addEventListener("click", () => {
+        const activating = !needsWorkChip.classList.contains("active");
+        needsWorkChip.classList.toggle("active", activating);
+        needsWorkChip.setAttribute("aria-pressed", String(activating));
+        cfg.categoryMode = activating ? "needsWork" : (catSel.value === "All" ? "all" : catSel.value);
+        refreshStart();
+      });
+      pickRow.appendChild(catSel); pickRow.appendChild(needsWorkChip);
+      catRow.appendChild(pickRow);
+      const needsWorkNote = el("p.hint.rf-needs-work-note", { style: "display:none",
+        text: "No attempt history yet, so there's nothing weak to surface — showing All categories instead." });
+      catRow.appendChild(needsWorkNote);
+      wrap.appendChild(catRow);
+
+      function segRow(labelText, options, key) {
+        const row = el("div.rf-setup-row");
+        row.appendChild(el("label", { text: labelText }));
+        const seg = el("div.segmented");
+        options.forEach(([val, text]) => {
+          const b = el("button", { type: "button", text: text });
+          if (cfg[key] === val) b.classList.add("active");
+          b.addEventListener("click", () => {
+            cfg[key] = val;
+            seg.querySelectorAll("button").forEach((x) => x.classList.remove("active"));
+            b.classList.add("active");
+            refreshStart();
+          });
+          seg.appendChild(b);
+        });
+        row.appendChild(seg);
+        wrap.appendChild(row);
+      }
+
+      segRow("Round timer", [[30, "30s"], [60, "60s"], [90, "90s"], [null, "Untimed"]], "timerSec");
+      segRow("Difficulty band", [["rank", "Match my rank"], ["all", "All difficulties"]], "diffMode");
+      segRow("Passed cards", [["requeue", "Requeue"], ["remove", "Remove for this round"]], "passedBehavior");
+      segRow("Sound / Haptics", [[true, "On"], [false, "Off"]], "soundHaptics");
+
+      const poolNote = el("p.hint");
+      wrap.appendChild(poolNote);
+      const startBtn = el("button.btn.primary", { type: "button", text: "Start Round" });
+      wrap.appendChild(startBtn);
+
+      function refreshStart() {
+        const pool = computePool();
+        poolNote.textContent = pool.length
+          ? pool.length + " question" + (pool.length === 1 ? "" : "s") + " in this deck."
+          : "No questions match these filters.";
+        startBtn.disabled = pool.length === 0;
+        const fallenBack = cfg.categoryMode === "needsWork" && !needsWorkCats.length;
+        needsWorkNote.style.display = fallenBack ? "" : "none";
+      }
+      refreshStart();
+
+      startBtn.addEventListener("click", async () => {
+        const pool = computePool();
+        if (!pool.length) return;
+        let seen = false;
+        try { seen = await db.getSetting(RF_SEEN_EXPLAINER_KEY, false); } catch (e) {}
+        if (seen) beginRound(pool); else drawExplainer(pool);
+      });
+
+      return wrap;
+    }
+
+    // ── One-time quick-start explainer (a Soldier's first-ever round) ──
+    function drawExplainer(pool) {
+      util.clear(root);
+      const panel = el("div.panel.rf-explainer");
+      panel.appendChild(el("div.eyebrow", { text: "How Rapid Fire works" }));
+      const list = el("ul");
+      [
+        "Pass the device to one Soldier. Everyone else gives verbal clues — never the answer itself.",
+        "The holder can privately tap Reveal answer to check before judging.",
+        "Tap Correct or Pass — you judge it, same as the real game. There's no answer-checking logic.",
+        "The timer keeps things moving. Passed cards can come back around before time's up.",
+      ].forEach((t) => list.appendChild(el("li", { text: t })));
+      panel.appendChild(list);
+      const go = el("button.btn.primary", { type: "button", text: "Got it — let's go" });
+      go.addEventListener("click", async () => {
+        try { await db.setSetting(RF_SEEN_EXPLAINER_KEY, true); } catch (e) {}
+        beginRound(pool);
+      });
+      panel.appendChild(go);
+      root.appendChild(panel);
+    }
+
+    // ── Round engine + round screen (Party mode) ────────────────────
+    // The whole state machine lives in this closure — card queue, timer,
+    // correct-count, streak, pass tally — discarded when the round ends,
+    // per the "ephemeral, in-memory only" data-flow decision above.
+    function beginRound(pool) {
+      util.clear(root);
+      // Each round gets its own shuffled queue of full question objects.
+      // Requeue just pushes a passed card back onto the END of this SAME
+      // array; Remove doesn't — no separate "already seen" bookkeeping.
+      // shuffle() (above, board.js's own copy) always returns a fresh
+      // slice()'d copy, so this never mutates `pool`/`all`.
+      let queue = shuffle(pool);
+      let current = null;
+      let correctCount = 0;
+      let currentStreak = 0, bestStreak = 0;
+      const passTally = new Map(); // question id -> times passed this round
+      const roundCategories = new Set();
+      let remaining = cfg.timerSec; // null when Untimed — counts down; elapsed counts up regardless
+      let activeElapsedMs = 0;
+      let paused = false;
+      let finished = false;
+      let revealed = false;
+
+      const wrapEl = el("div.qz-wrap.rf-wrap", { tabIndex: "0" });
+      const scene = el("div.rf-scene");
+      const hud = el("div.rf-hud");
+      const scoreEl = el("span.rf-hud-stat");
+      const streakEl = el("span.trend-streak"); // same visual convention as Progress's own trend-chart streak
+      const timerEl = el("span.rf-timer");
+      const endBtn = el("button.btn.ghost.sm", { type: "button", text: "End Round" });
+      hud.appendChild(scoreEl); hud.appendChild(streakEl); hud.appendChild(timerEl); hud.appendChild(endBtn);
+      const cardEl = el("div.rf-card");
+      const judgeRow = el("div.rf-judge-row");
+      const correctBtn = el("button.btn.rf-judge-btn.rf-judge-correct", { type: "button", text: "✓ Correct" });
+      const passBtn = el("button.btn.rf-judge-btn.rf-judge-pass", { type: "button", text: "→ Pass" });
+      judgeRow.appendChild(correctBtn); judgeRow.appendChild(passBtn);
+      scene.appendChild(hud); scene.appendChild(cardEl); scene.appendChild(judgeRow);
+      wrapEl.appendChild(scene);
+      root.appendChild(wrapEl);
+      // Reuses Theater Mode's real enter/exit functions (renderDrill, above)
+      // — no second overlay/focus-trap/ARIA system. Only one .qz-wrap is
+      // ever in the DOM at a time (each render*(mount) clears `body`
+      // first), so enterTheater()'s own document.querySelector(".qz-wrap")
+      // correctly finds this one.
+      G.board.enterTheater(wrapEl);
+
+      function updateHud() {
+        util.clear(scoreEl);
+        scoreEl.appendChild(document.createTextNode("Correct: "));
+        scoreEl.appendChild(el("b", { text: String(correctCount) }));
+        streakEl.textContent = currentStreak >= 2 ? ("🔥 " + currentStreak + " in a row") : "";
+        if (remaining != null) {
+          timerEl.textContent = Math.max(0, remaining) + "s";
+          // Bold 1.4rem (22.4px) qualifies as WCAG "large text" (>=18.66px
+          // bold), so the AA floor here is 3:1, not 4.5:1 - the same
+          // amber-vs-bg combination lint-patterns.mjs's own check (a)
+          // comment already measured at 4.46:1 in its worst theme
+          // (desert-cadence), comfortably above 3:1. Plain --text under 10s
+          // would fail to read as urgent, and --red only kicks in for that
+          // last stretch, not the whole round.
+          timerEl.style.color = remaining <= 10 ? "var(--red)" : "var(--amber)";
+        } else {
+          timerEl.textContent = Math.round(activeElapsedMs / 1000) + "s";
+          timerEl.style.color = "var(--amber)";
+        }
+      }
+
+      function drawCard() {
+        revealed = false;
+        util.clear(cardEl);
+        if (!current) { finishRound(); return; }
+        roundCategories.add(current.category);
+        cardEl.appendChild(el("div.kc-label", { text: current.category }));
+        // Full text, never truncated or altered — the question is
+        // essentially never a length problem (spec's own measured data:
+        // 0.3% of 1069 questions exceed 200 chars), and .rf-question's
+        // clamp()-based font-size (above) is this screen's version of the
+        // same responsive-font treatment .qz-prompt already gets.
+        cardEl.appendChild(el("div.rf-question", { text: current.q }));
+        const revealBtn = el("button.btn.ghost.sm", { type: "button", text: "Reveal answer" });
+        const answerPanel = el("div.rf-answer-panel", { style: "display:none" });
+        answerPanel.appendChild(el("div.rf-answer-label", { text: "Answer" }));
+        // Prefer acceptableAnswer (70% of cards — shorter, board-ready
+        // phrasing); fall back to the full `a` field when absent. Never
+        // truncated — the panel itself scrolls (.rf-answer-panel,
+        // max-height + overflow-y:auto) for the rare genuinely-long one.
+        answerPanel.appendChild(el("div.rf-answer-text", { text: current.acceptableAnswer || current.a }));
+        revealBtn.addEventListener("click", () => {
+          revealed = !revealed;
+          answerPanel.style.display = revealed ? "" : "none";
+          revealBtn.textContent = revealed ? "Hide answer" : "Reveal answer";
+        });
+        cardEl.appendChild(revealBtn);
+        cardEl.appendChild(answerPanel);
+        updateHud();
+      }
+
+      function advance() {
+        current = queue.shift() || null;
+        drawCard();
+      }
+
+      function judge(isCorrect) {
+        if (finished || !current) return;
+        if (isCorrect) {
+          correctCount++;
+          currentStreak++;
+          bestStreak = Math.max(bestStreak, currentStreak);
+          if (cfg.soundHaptics) util.haptic("success");
+        } else {
+          const id = current.id;
+          passTally.set(id, (passTally.get(id) || 0) + 1);
+          currentStreak = 0;
+          if (cfg.soundHaptics) util.haptic("warning");
+          if (cfg.passedBehavior === "requeue") queue.push(current);
+        }
+        advance();
+      }
+      correctBtn.addEventListener("click", () => judge(true));
+      passBtn.addEventListener("click", () => judge(false));
+      endBtn.addEventListener("click", () => finishRound());
+
+      // Error handling (spec): "App backgrounds mid-round — pause the
+      // timer on the page's visibilitychange event, resume on return." The
+      // interval simply does nothing while `paused` is true, so no elapsed
+      // time (timed OR untimed) is ever counted while the screen is off.
+      // This view has no route-teardown hook (same situation Settings'
+      // Notifications panel already documented — see onNotifVisible, grep
+      // it in this file), so both the interval and the listener self-clean
+      // via wrapEl.isConnected the next time either fires after this
+      // screen has been torn down (tab switch, "End Round", or the round
+      // finishing on its own), rather than leaking forever.
+      function tick() {
+        if (!wrapEl.isConnected) { clearInterval(tickHandle); document.removeEventListener("visibilitychange", onVisible); return; }
+        if (paused || finished) return;
+        activeElapsedMs += 1000;
+        if (remaining != null) {
+          remaining--;
+          if (remaining <= 0) { updateHud(); finishRound(); return; }
+        }
+        updateHud();
+      }
+      function onVisible() {
+        if (!wrapEl.isConnected) { document.removeEventListener("visibilitychange", onVisible); return; }
+        paused = document.visibilityState === "hidden";
+      }
+      document.addEventListener("visibilitychange", onVisible);
+      const tickHandle = setInterval(tick, 1000);
+
+      function finishRound() {
+        if (finished) return;
+        finished = true;
+        clearInterval(tickHandle);
+        document.removeEventListener("visibilitychange", onVisible);
+        G.board.exitTheater();
+        drawRecap({
+          correctCount, bestStreak,
+          elapsedSec: Math.round(activeElapsedMs / 1000),
+          passTally, roundCategories, pool,
+        });
+      }
+
+      advance();
+    }
+
+    // ── Recap screen ─────────────────────────────────────────────────
+    function drawRecap(stats) {
+      util.clear(root);
+      const panel = el("div.panel");
+      panel.appendChild(el("div.section-title", {}, [el("h3", { text: "Round Recap" })]));
+      const statsRow = el("div", { style: "display:flex;gap:18px;flex-wrap:wrap;margin:10px 0" });
+      statsRow.appendChild(el("div.stat", {}, [el("span.k", { text: "Correct" }), el("span.v", { text: String(stats.correctCount) })]));
+      statsRow.appendChild(el("div.stat", {}, [el("span.k", { text: "Elapsed" }), el("span.v", { text: stats.elapsedSec + "s" })]));
+      statsRow.appendChild(el("div.stat", {}, [el("span.k", { text: "Best streak" }), el("span.v", { text: stats.bestStreak + " in a row" })]));
+      panel.appendChild(statsRow);
+
+      // "Came up as Pass a lot" — the round's own local tally, read back
+      // once at the end. No persisted store touched (spec: purely a
+      // same-session summary).
+      const passList = Array.from(stats.passTally.entries())
+        .filter(([, n]) => n >= RF_PASS_FREQUENT)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([id, n]) => ({ q: byId[id], n }))
+        .filter((r) => r.q);
+      if (passList.length) {
+        panel.appendChild(el("div.eyebrow", { style: "margin-top:12px", text: "Came up as Pass a lot" }));
+        const ul = el("ul.rf-recap-list");
+        passList.forEach((r) => {
+          ul.appendChild(el("li", {}, [
+            el("span", { text: r.q.q }),
+            el("span", { text: r.n + "×", style: "color:var(--amber);flex-shrink:0" }),
+          ]));
+        });
+        panel.appendChild(ul);
+      }
+
+      // Cross-link into Flashcards for the weakest category THIS round
+      // actually touched, via the real G.nav.seed()/consume() cross-view
+      // handoff registry (util.js) — consumed by the Board Drill
+      // dispatcher itself (G.board.render(), above) into the existing
+      // _filterCat mechanism renderDrill already reads. Ranked using the
+      // same categoryMasteryScores() data "Needs Work" uses above, not a
+      // second independent judgment.
+      const linkHost = el("div", { style: "margin-top:12px" });
+      panel.appendChild(linkHost);
+      (async () => {
+        let target = Array.from(stats.roundCategories)[0] || null;
+        try {
+          const scores = await G.board.categoryMasteryScores();
+          const inRound = scores.filter((s) => stats.roundCategories.has(s.cat));
+          if (inRound.length) target = inRound.sort((a, b) => a.pct - b.pct)[0].cat;
+        } catch (e) {}
+        if (!target) return;
+        linkHost.appendChild(el("p.hint", { text: "Keep working " + target + ":" }));
+        const goBtn = el("button.btn.ghost.sm", { type: "button", text: "Practice in Flashcards →" });
+        goBtn.addEventListener("click", () => {
+          // "board-category", NOT "board" - the self-heal jump-link system
+          // (Tier 3 batch 1, SELFHEAL_ROUTES) already claims the "board"
+          // G.nav target for its own srs-write-fail entries (a board-
+          // question id, not a category name; see that seed's own header
+          // comment, which explicitly documented it as dormant/unconsumed
+          // "yet" - Rapid Fire consuming the generic "board" name would have
+          // silently swallowed that seed on every Board Drill render, not
+          // just ones arriving from this cross-link. Distinct name, same
+          // shared registry.
+          G.nav.seed("board-category", target);
+          G.board.render(mount.parentElement || mount);
+        });
+        linkHost.appendChild(goBtn);
+      })();
+
+      const btnRow = el("div.btn-row", { style: "margin-top:14px" });
+      const againBtn = el("button.btn.primary", { type: "button", text: "Play Again" });
+      againBtn.addEventListener("click", () => {
+        const pool = computePool();
+        if (pool.length) beginRound(pool); else drawSetup();
+      });
+      const newDeckBtn = el("button.btn.ghost", { type: "button", text: "New Deck" });
+      newDeckBtn.addEventListener("click", () => { drawSetup(); });
+      btnRow.appendChild(againBtn); btnRow.appendChild(newDeckBtn);
+      panel.appendChild(btnRow);
+
+      root.appendChild(panel);
+    }
+
+    await drawSetup();
+  }
+
   G.renderBoardCountdown = renderBoardCountdown;
   // Exposed deliberately, not incidentally: these are transcriptions of real
   // AR 600-8-19 tables, and tools/test-points.mjs asserts every published row
@@ -11104,6 +11624,40 @@ window.G = window.G || {};
       const MAP = { beginner: "beginner", basic: "beginner", intermediate: "intermediate", advanced: "expert", expert: "expert" };
       return MAP[d] || "intermediate";
     },
+    // Shared category-mastery-score computation — same total/seen/mastered/
+    // pct shape the Readiness tab's own per-category breakdown has always
+    // computed inline. Extracted so Rapid Fire's "Needs Work" Setup option
+    // (docs/superpowers/specs/2026-08-23-rapid-fire-design.md) can reuse the
+    // EXACT ranking Readiness already shows instead of a second copy that
+    // could silently drift from it. Optional all/srsData let a caller that
+    // already loaded them (Readiness itself) skip a second loadAllSrs()
+    // cursor scan; a caller with neither (Rapid Fire's Setup) gets them
+    // loaded here.
+    async categoryMasteryScores(all, srsData) {
+      all = all || store.boardQuestions();
+      const categories = [...new Set(all.map((q) => q.category))].sort();
+      srsData = srsData || await loadAllSrs(all.map((q) => q.id));
+      return categories.map((cat) => {
+        const qs = all.filter((q) => q.category === cat);
+        const seen = qs.filter((q) => srsData[q.id].reps > 0);
+        const mastered = qs.filter((q) => G.board.isMasteredSrs(srsData[q.id]));
+        const pct = qs.length ? Math.round(mastered.length / qs.length * 100) : 0;
+        return { cat, total: qs.length, seen: seen.length, mastered: mastered.length, pct };
+      });
+    },
+    // Weakest-N categories by mastery pct — the Readiness tab's own
+    // weakest-3 ranking (categories with zero cards excluded). Returns []
+    // when there's no attempt history at all yet: every category sits at a
+    // fresh, untouched 0%, so "weakest 3" would be meaningless noise rather
+    // than a real signal — callers (Rapid Fire's Setup "Needs Work" option)
+    // fall back to "All categories" on an empty result instead of
+    // surfacing it.
+    async weakestCategoriesByMastery(n, all, srsData) {
+      const scored = (await this.categoryMasteryScores(all, srsData)).filter((c) => c.total > 0);
+      const anySeen = scored.some((c) => c.seen > 0);
+      if (!anySeen) return [];
+      return scored.sort((a, b) => a.pct - b.pct).slice(0, n || 3);
+    },
     loadAllSrs,
     // Audit finding (new-features): Board Drill's own SRS/leech data - the
     // richest "what does this Soldier not know" signal in the app - never
@@ -11146,7 +11700,11 @@ window.G = window.G || {};
       const ptsBtn = el("button", { text: "Points", title: "Rank-aware promotion-points worksheet calculator" });
       const readBtn = el("button", { text: "Readiness", title: "Per-category mastery breakdown across the full deck" });
       const defBtn = el("button", { text: "Definitions", title: "Board-relevant terms and their doctrinal meaning" });
-      seg.appendChild(drillBtn); seg.appendChild(quizBtn); seg.appendChild(mockBtn); seg.appendChild(ptsBtn); seg.appendChild(readBtn); seg.appendChild(defBtn);
+      // Rapid Fire — a "Heads Up!"-style party round on this same Q&A bank
+      // (docs/superpowers/specs/2026-08-23-rapid-fire-design.md). Added
+      // last so the existing six tabs keep their exact left-to-right order.
+      const rapidBtn = el("button", { text: "Rapid Fire", title: "Fast-paced party round — pass the device, give clues, judge Correct or Pass" });
+      seg.appendChild(drillBtn); seg.appendChild(quizBtn); seg.appendChild(mockBtn); seg.appendChild(ptsBtn); seg.appendChild(readBtn); seg.appendChild(defBtn); seg.appendChild(rapidBtn);
       const body = el("div", { style: "margin-top:14px" });
       // renderDrill/renderQuiz/renderReadiness are async; this dispatcher was
       // itself synchronous and never awaited/chained their promises, so a
@@ -11156,7 +11714,8 @@ window.G = window.G || {};
       // the tab body stayed blank with nothing telling the app anything went
       // wrong. Same shape as the fix already applied to
       // G.reminders.renderEditor() - "await it so the catch actually covers
-      // the render" - just applied here too (task #208).
+      // the render" - just applied here too (task #208). renderRapidFire
+      // follows the exact same async/await-and-catch shape.
       function set(t) {
         drillBtn.classList.toggle("active", t === "drill");
         quizBtn.classList.toggle("active", t === "quiz");
@@ -11164,12 +11723,14 @@ window.G = window.G || {};
         ptsBtn.classList.toggle("active", t === "points");
         readBtn.classList.toggle("active", t === "readiness");
         defBtn.classList.toggle("active", t === "definitions");
+        rapidBtn.classList.toggle("active", t === "rapid");
         let r;
         if (t === "drill") r = renderDrill(body);
         else if (t === "quiz") r = renderQuiz(body);
         else if (t === "mock") r = renderMockBoard(body);
         else if (t === "readiness") r = renderReadiness(body);
         else if (t === "definitions") r = renderDefinitions(body);
+        else if (t === "rapid") r = renderRapidFire(body);
         else r = renderPoints(body);
         if (r && r.catch) r.catch((e) => { if (window.console) console.error("Board Drill tab render failed:", e); });
       }
@@ -11180,6 +11741,7 @@ window.G = window.G || {};
       ptsBtn.onclick = () => set("points");
       readBtn.onclick = () => set("readiness");
       defBtn.onclick = () => set("definitions");
+      rapidBtn.onclick = () => set("rapid");
       // Was "Board Prep" - the same string as the sidebar's own "Board Prep"
       // GROUP heading, so a soldier reading nav-group -> page title saw
       // "Board Prep -> Board Prep," a tautology that told them nothing
@@ -11190,6 +11752,17 @@ window.G = window.G || {};
       mount.appendChild(renderBoardCountdown());
       mount.appendChild(seg);
       mount.appendChild(body);
+      // Rapid Fire's Recap screen cross-links into Flashcards for the
+      // weakest category the round touched, via the real G.nav.seed()/
+      // consume() cross-view handoff registry (util.js) - the same
+      // mechanism a global-search hit already uses to land on Train/
+      // Resources/Career pre-filtered. Consumed here (this dispatcher's own
+      // mount, the one place that owns both _filterCat and set()) rather
+      // than inside renderDrill itself, so it composes with the EXISTING
+      // _filterCat consumption renderDrill already does below, instead of
+      // duplicating it.
+      const boardSeed = G.nav && G.nav.consume("board-category");
+      if (boardSeed) G.board._filterCat = boardSeed;
       set("drill");
     },
   };
