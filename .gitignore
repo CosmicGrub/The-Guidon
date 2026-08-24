@@ -37,3 +37,6 @@ GUIDON files/contrast-full-sweep-raw.json
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Brainstorming visual-companion session files (local scratch, not shared)
+.superpowers/
