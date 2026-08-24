@@ -8,16 +8,28 @@
  * reliability, never corrupt the real spaced-repetition signal), not an
  * oversight — this file is the regression proving it stays true.
  *
+ * Stage 2 extended this ONE continuous spied session to also play a full
+ * Solo round (real flip-to-reveal + self-graded Correct/Pass) and a full
+ * Team match (two named teams' turns through to the Final Recap) — the
+ * same "zero forbidden writes" guarantee this file already proved for
+ * Party must hold for Solo and Team too, not just the mode Stage 1 shipped
+ * with. One spy/one baseline covers all three modes end-to-end rather than
+ * three separate files, since the property being proven ("nothing in this
+ * whole feature ever writes to attempts/SRS") is the same property in all
+ * three, differently reached.
+ *
  * Two independent lines of evidence, both required:
  *   1. A spy wrapped around the real G.db.put() records every call made
  *      anywhere in the app during a full, real play session (Setup with
- *      several controls touched, a full round including Reveal/Correct/
- *      Pass/End Round, Recap, Play Again, a second round) — then asserts
- *      zero of those calls ever targeted the "attempts" store, and zero
- *      targeted the "kv" store with a key starting with "srs:" (the real
- *      SRS record key shape — see srsKey()/loadSrs()/saveSrs() in
- *      src/index.html). rapidFire's own "seen" flag (a plain kv row, NOT
- *      "srs:"-prefixed) is expected and allowed through unfiltered.
+ *      several controls touched, a full Party round including Reveal/
+ *      Correct/Pass/End Round, Recap, Play Again, a second round, THEN a
+ *      full Solo round, THEN a full 2-team Team match through to the Final
+ *      Recap) — then asserts zero of those calls ever targeted the
+ *      "attempts" store, and zero targeted the "kv" store with a key
+ *      starting with "srs:" (the real SRS record key shape — see
+ *      srsKey()/loadSrs()/saveSrs() in src/index.html). rapidFire's own
+ *      "seen" flag (a plain kv row, NOT "srs:"-prefixed) is expected and
+ *      allowed through unfiltered.
  *   2. The real row counts — G.db.all("attempts").length and the count of
  *      "srs:"-prefixed kv rows — read directly before and after the whole
  *      session, proving the actual database is untouched, not just that
@@ -80,6 +92,21 @@ async function tapReveal() { return clickButtonByText("Reveal answer", ".rf-card
 async function tapCorrect() { await page.evaluate(() => document.querySelector(".rf-judge-correct")?.click()); await page.waitForTimeout(120); }
 async function tapPass() { await page.evaluate(() => document.querySelector(".rf-judge-pass")?.click()); await page.waitForTimeout(120); }
 async function tapEndRound() { await clickButtonByText("End Round"); await page.waitForTimeout(200); }
+async function tapQzCard() { await page.evaluate(() => document.querySelector(".qz-card")?.click()); await page.waitForTimeout(120); }
+async function clickButtonStartingWith(prefix) {
+  return page.evaluate((prefix) => {
+    const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim().startsWith(prefix));
+    if (!btn) return false;
+    btn.click();
+    return true;
+  }, prefix);
+}
+async function enterRapidFireFresh() {
+  await page.evaluate(() => { location.hash = "#/board"; });
+  await page.waitForTimeout(300);
+  await clickButtonByText("Rapid Fire");
+  await page.waitForTimeout(300);
+}
 
 // ── Baseline: real row counts, before Rapid Fire is ever touched ────────
 const baseline = await page.evaluate(async () => {
@@ -151,6 +178,59 @@ const onRecap2 = await page.evaluate(() =>
   [...document.querySelectorAll("h3")].some((h) => h.textContent.trim() === "Round Recap")
 );
 onRecap2 ? ok("Play Again round also reached Recap") : bad("second (Play Again) round did not reach Recap");
+await tapEndRound(); // no-op if already at Recap; harmless if a round is somehow still active
+
+// ── Stage 2: a full Solo session (real flip-to-reveal + self-graded
+//    Correct/Pass), same spy still watching from above ────────────────────
+await enterRapidFireFresh();
+await clickButtonByText("Solo");
+await setCategory("AFT");
+await clickButtonByText("All difficulties");
+await clickButtonByText("Untimed");
+await clickButtonByText("Start Round"); // Solo skips the explainer entirely
+await page.waitForTimeout(250);
+await tapQzCard(); // flip to reveal — Solo's own reveal mechanic, not Party's Reveal button
+await tapCorrect();
+await tapQzCard();
+await tapPass();
+await tapQzCard();
+await tapCorrect();
+await tapEndRound();
+const onSoloRecap = await page.evaluate(() =>
+  [...document.querySelectorAll("h3")].some((h) => h.textContent.trim() === "Round Recap")
+);
+onSoloRecap ? ok("the Solo session reached its own Recap") : bad("Solo session did not reach Recap — results below may be incomplete");
+
+// ── Stage 2: a full 2-team Team match through to the Final Recap, same
+//    spy still watching ────────────────────────────────────────────────
+await enterRapidFireFresh();
+await clickButtonByText("Team");
+await page.evaluate(() => {
+  const inputs = [...document.querySelectorAll(".rf-team-row input")];
+  inputs[0].value = "Alpha"; inputs[0].dispatchEvent(new Event("input"));
+  inputs[1].value = "Bravo"; inputs[1].dispatchEvent(new Event("input"));
+});
+await setCategory("AFT");
+await clickButtonByText("All difficulties");
+await clickButtonByText("Untimed");
+await clickButtonByText("Start Round");
+await page.waitForTimeout(250);
+const hadTeamExplainer = await page.evaluate(() => !!document.querySelector(".rf-explainer"));
+if (hadTeamExplainer) { await clickButtonByText("Got it — let's go"); await page.waitForTimeout(250); }
+await clickButtonStartingWith("Start Alpha");
+await page.waitForTimeout(200);
+await tapCorrect();
+await tapPass();
+await tapEndRound();
+await clickButtonStartingWith("Start Bravo");
+await page.waitForTimeout(200);
+await tapCorrect();
+await tapCorrect();
+await tapEndRound();
+const onFinalRecap = await page.evaluate(() =>
+  [...document.querySelectorAll("h3")].some((h) => h.textContent.trim() === "Final Recap")
+);
+onFinalRecap ? ok("the Team match reached its own Final Recap (both teams' turns played)") : bad("Team match did not reach the Final Recap — results below may be incomplete");
 
 // ── Evidence 1: the spy saw zero forbidden writes ───────────────────────
 const putCalls = await page.evaluate(() => window.__putCalls.slice());
