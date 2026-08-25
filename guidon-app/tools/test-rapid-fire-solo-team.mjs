@@ -41,10 +41,9 @@
  *      color — themed via the same CSS custom properties as everything
  *      else, not literals.
  *
- * Same three real board-question category fixtures test-rapid-fire.mjs
- * already verified against the seed data: "AFT" (5 questions, all
- * intermediate band), "Drill and Ceremony" (10, all beginner, none have
- * acceptableAnswer).
+ * Same real board-question category fixture test-rapid-fire.mjs already
+ * verified against the seed data: "AFT" (5 questions, all intermediate
+ * band) — used throughout this file the same way.
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
