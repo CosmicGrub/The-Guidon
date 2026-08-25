@@ -22,23 +22,30 @@
  * not an animation, so also correctly out of scope.
  *
  * Of the .trend-bar pair, only Progress's weekly chart (pixel heights,
- * e.g. "37px") was actually converted - Home's 7-day sparkline
+ * e.g. "37px") was converted in this pass - Home's 7-day sparkline
  * (percentage heights, e.g. "45%") was investigated and deliberately left
- * alone: its .trend-bar-wrap sits in a permanently-indefinite-height flex
- * chain (.trend-bar-wrap's flex:1 expands to flex-basis:0%, and its parent
- * .trend-col is never stretched by .trend-bars-row's align-items:flex-end),
- * so every height:<pct>% on it already resolves to ~0 and only ever
- * displays via the inline min-height:3px floor - confirmed live, even the
- * "today" bar (height:100%) rendered at exactly 3px, identical to every
- * 0%-count day. A transform:scaleY() needs a real non-zero reference box
- * to scale from; scaling this permanently-0px box would make every bar
- * fully invisible instead of today's flat-3px-regardless-of-value look,
- * which is a real visual regression ("performance-only, not a visual
- * redesign" per this Tier's own brief) - so it stays transition:height,
- * which in this specific broken container never actually settles at a
- * different pixel height across a transition anyway (not a real 120Hz
- * jank source in practice). Section (4) below documents that state
- * directly rather than asserting a conversion that didn't happen.
+ * alone at the time: its .trend-bar-wrap sat in a permanently-indefinite-
+ * height flex chain (.trend-bar-wrap's flex:1 expanded to flex-basis:0%,
+ * and its parent .trend-col was never stretched by .trend-bars-row's
+ * align-items:flex-end), so every height:<pct>% on it resolved to ~0 and
+ * only ever displayed via the inline min-height:3px floor - confirmed
+ * live at the time, even the "today" bar (height:100%) rendered at
+ * exactly 3px, identical to every 0%-count day. A transform:scaleY()
+ * needs a real non-zero reference box to scale from; scaling that
+ * permanently-0px box would have made every bar fully invisible instead
+ * of the flat-3px-regardless-of-value look, a real visual regression
+ * ("performance-only, not a visual redesign" per this Tier's own brief) -
+ * so it stayed transition:height, flagged as its own follow-up rather
+ * than silently expanding this pass's scope.
+ *
+ * That follow-up landed separately: .trend-bars-row now uses
+ * align-items:stretch, so .trend-bar-wrap gets a real, definite height
+ * and its .trend-bar's height:<pct>% genuinely resolves per day's count.
+ * Section (4) below has been updated to assert THAT state (bars vary
+ * proportionally with count) instead of the old uniform-3px-floor bug -
+ * still checking transition:height, not transform, since the
+ * transform:scaleY() conversion itself (now a safe candidate, per the
+ * above) is intentionally still a separate, not-yet-taken follow-up.
  *
  * This file covers the .bar > span and Progress's .trend-bar conversions
  * made in this pass, confirming for each:
@@ -294,16 +301,16 @@ if (weeklyChart) {
 
 /* ------------------------------------------------------------------ *
  * (4) .trend-bar (Home's 7-day activity sparkline) - deliberately NOT
- *     converted, see the header comment and the matching CSS/JS comments
- *     at .trend-bar's second declaration and its el() call site. This
- *     confirms the documented reason still holds (still transition:height,
- *     still a permanently-indefinite .trend-bar-wrap making every bar
- *     resolve to the same min-height:3px floor regardless of count) rather
- *     than silently trusting the comment - if a future change to
- *     .trend-bars-row/.trend-col/.trend-bar-wrap's flex sizing ever gives
- *     this component a real definite height, THIS check starts failing
- *     (today's bar would stop being exactly 3px) and is the signal that
- *     the transform:scaleY() conversion (skipped here) becomes safe to do.
+ *     converted to transform:scaleY() in THIS pass, see the header
+ *     comment and the matching CSS/JS comments at .trend-bar's second
+ *     declaration and its el() call site. The layout bug that ruled the
+ *     conversion out here (.trend-bar-wrap's containing block was
+ *     permanently indefinite) has since been fixed separately
+ *     (.trend-bars-row now uses align-items:stretch), so this section now
+ *     confirms bars genuinely vary with their day's count - not the old
+ *     "every bar pinned at the 3px floor" bug - while still transitioning
+ *     height rather than transform (the scaleY() conversion itself is a
+ *     distinct, not-yet-taken follow-up).
  * ------------------------------------------------------------------ */
 await page.evaluate(async () => {
   await window.G.store.recordTrainingComplete("qa-fillbar-transform-training", 90);
@@ -324,20 +331,24 @@ sparkline && sparkline.length === 7
   : bad("expected 7 sparkline .trend-bar bars on #/home, got " + (sparkline ? sparkline.length : "none (sparkline did not render)"));
 if (sparkline) {
   sparkline.every((b) => b.transitionProperty.includes("height"))
-    ? ok("Home's sparkline .trend-bar still transitions height (left unconverted on purpose - see header comment)")
+    ? ok("Home's sparkline .trend-bar still transitions height (transform:scaleY() conversion is a separate follow-up, not taken here)")
     : bad("Home's sparkline .trend-bar transition-property changed unexpectedly: " + sparkline.map((b) => b.transitionProperty).join(", "));
-  // The documented pre-existing bug, confirmed live: every bar - today
-  // (height:100%, the only non-zero count) AND every 0-count day alike -
-  // renders at exactly the inline min-height:3px floor, because
-  // .trend-bar-wrap's containing block is never definite. If this ever
-  // starts varying by day, the bug is fixed and this component becomes a
-  // real candidate for the transform:scaleY() conversion.
-  const allThreePx = sparkline.every((b) => close(b.heightPx, 3, 0.5));
-  allThreePx
-    ? ok("confirmed live: every sparkline bar (incl. today's height:100%) is pinned to the 3px min-height floor - " +
-         sparkline.map((b) => b.heightPx.toFixed(1)).join(",") + "px - the pre-existing bug that rules out a transform fix here today")
-    : bad("sparkline bars are NOT uniformly pinned at 3px anymore (" + sparkline.map((b) => b.heightPx.toFixed(1)).join(",") +
-          "px) - the underlying .trend-bar-wrap sizing bug may be fixed; .trend-bar is now a safe, real candidate for the transform:scaleY() conversion this Tier skipped");
+  // Only today (index 6) has a non-zero count (the single seeded training
+  // completion), so it's the isToday/height:100% bar - every other day is
+  // a 0-count floor bar. Before the .trend-bars-row align-items fix, ALL
+  // seven rendered at the same ~3px floor regardless of this; now today's
+  // bar should genuinely resolve taller than the 0-count floor, proving
+  // .trend-bar-wrap has a real definite height for its percentage-height
+  // child to resolve against again.
+  const today = sparkline[6];
+  const zeroDayHeights = sparkline.slice(0, 6).map((b) => b.heightPx);
+  const maxZeroDay = Math.max(...zeroDayHeights);
+  (today.heightPx > maxZeroDay + 2)
+    ? ok("today's bar (the only non-zero count, height:100%) genuinely resolves taller than the 0-count floor bars - " +
+         today.heightPx.toFixed(1) + "px vs floor " + zeroDayHeights.map((h) => h.toFixed(1)).join(",") +
+         "px - the .trend-bar-wrap definite-height fix is live, not the old uniform-3px bug")
+    : bad("today's bar (" + today.heightPx.toFixed(1) + "px) is NOT meaningfully taller than the 0-count floor bars (" +
+          zeroDayHeights.map((h) => h.toFixed(1)).join(",") + "px) - the sparkline may be back to the old pinned-3px-regardless-of-count bug");
 }
 
 /* ------------------------------------------------------------------ *

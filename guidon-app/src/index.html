@@ -3645,31 +3645,35 @@ html.light .feedback.error { background: rgba(220,53,69,0.1); }
 
 /* ── 7-day trend sparkline ────────────────────────────────────────────────── */
 .trend-chart { padding:12px 14px; }
-.trend-bars-row { display:flex; align-items:flex-end; gap:4px; height:60px;
+/* align-items:stretch (the default - kept explicit here since a bare flex
+   row reads as ambiguous) so .trend-col gets a definite height from this
+   row's own height:60px. Was align-items:flex-end, which left .trend-col
+   sized to content: .trend-bar-wrap's flex:1 (-> flex-basis:0%) then had
+   no definite height to resolve against, so .trend-bar's inline
+   height:<pct>% (JS-computed per day's count) always resolved to ~0 and
+   every bar rendered pinned at its min-height:3px floor regardless of
+   that day's real count. Stretching .trend-col gives .trend-bar-wrap a
+   real flex-resolved height, which is definite for the percentage-height
+   child, restoring genuine proportional bars. .trend-label/.trend-count
+   still bottom-align correctly - they keep their natural/auto heights
+   and .trend-bar-wrap's flex:1 absorbs the rest of the 60px column. */
+.trend-bars-row { display:flex; align-items:stretch; gap:4px; height:60px;
   margin:10px 0 4px; }
 .trend-col { display:flex; flex-direction:column; align-items:center;
   gap:2px; flex:1; min-width:0; }
 .trend-bar-wrap { flex:1; width:100%; display:flex; flex-direction:column;
   justify-content:flex-end; }
-/* Roadmap Tier 7 (120Hz/90Hz motion cleanup) - investigated, NOT converted:
-   .trend-bar-wrap's `flex:1` expands to flex-basis:0%, and .trend-col
-   (its parent) is never stretched by .trend-bars-row's own
-   align-items:flex-end - so .trend-bar-wrap's own height is never
-   definite, and every .trend-bar height:<pct>% below resolves against an
-   indefinite containing block (i.e. effectively 0, rescued only by the
-   inline min-height:3px floor). Confirmed live: even the "today" bar,
-   height:100%, renders at exactly 3px, same as every 0%-count day - this
-   sparkline has never visually shown a real proportional bar, pre-existing
-   and unrelated to this Tier. A transform:scaleY() fix (matching .bar >
-   span and the OTHER .trend-bar below) needs a real, non-zero reference
-   box to scale FROM - scaling a permanently-0px box just makes every bar
-   invisible instead of the current flat-3px-regardless-of-value look,
-   which is a real visual regression this Tier's brief explicitly rules
-   out ("performance-only, not a visual redesign"). Left as
-   transition:height (functionally inert today - the box never actually
-   settles at a different pixel height across a transition, so this isn't
-   a real 120Hz jank source in practice either) until the underlying
-   indefinite-height flex chain is fixed on its own; flagged separately.
+/* Roadmap Tier 7 (120Hz/90Hz motion cleanup) originally investigated this
+   rule and left it as transition:height on purpose: .trend-bar-wrap's own
+   height was indefinite (see the .trend-bars-row comment above for why),
+   so every .trend-bar height:<pct>% resolved to ~0 regardless of count -
+   a transform:scaleY() needs a real, non-zero reference box to scale FROM,
+   and scaling a permanently-0px box would have made every bar invisible
+   instead of merely flat. .trend-bars-row's align-items fix above gives
+   .trend-bar-wrap a real, definite height now, so that reference box
+   exists - the transform:scaleY() conversion (matching .bar > span and
+   the OTHER .trend-bar below) is a safe follow-up, deliberately left for
+   its own pass rather than folded into this layout fix.
    Scoped to `.trend-bar-wrap > .trend-bar` (this bar is nested one level
    inside its own wrap), not the bare `.trend-bar` the OTHER weekly-chart
    component above also uses - same class name, different DOM shape (that
@@ -26481,14 +26485,13 @@ window.G = window.G || {};
           const col = el("div.trend-col");
           const barWrap = el("div.trend-bar-wrap");
           const bar = el("div.trend-bar");
-          // Roadmap Tier 7 (120Hz/90Hz motion cleanup): investigated, NOT
-          // converted to transform:scaleY() - see the .trend-bar CSS
-          // comment above. This height:<pct>% never resolves to a real
-          // pixel value (its .trend-bar-wrap containing block is
-          // permanently indefinite), so it falls back to the min-height:3px
-          // floor for every bar regardless of count - a pre-existing,
-          // unrelated bug, flagged separately, not something this Tier's
-          // performance-only brief should paper over with a visual change.
+          // This height:<pct>% now resolves against .trend-bar-wrap's real,
+          // definite height (.trend-bars-row's align-items fix - see the
+          // .trend-bar CSS comment above), so bars genuinely scale with
+          // count again. Still transition:height, not transform:scaleY() -
+          // that conversion (matching .bar > span and the OTHER .trend-bar
+          // below) is a safe follow-up now that a real reference box
+          // exists, deliberately left for its own pass.
           const heightPct = Math.max(4, Math.round(b.count / maxCount * 100));
           bar.style.cssText = "height:" + heightPct + "%;background:" +
             (b.isToday ? "var(--amber)" : b.count > 0 ? "var(--cyan)" : "var(--bg-3)") + ";opacity:" +
