@@ -207,7 +207,7 @@ const pmeGradSgtCard = page.locator("label", { hasText: /^BLC graduate, recommen
 await pmeGradSgtCard.waitFor({ state: "visible", timeout: 5000 });
 const pmeBtnSgt = pmeGradSgtCard.locator("button", { hasText: /^BLC Prep$/ });
 (await pmeBtnSgt.count()) === 1
-  ? ok("Full PPW at SGT: the PME-graduate card shows a 'BLC Prep' cross-link button (BLC is SGT's PME gate)")
+  ? ok("Full PPW at SGT: the PME-graduate card shows a 'BLC Prep' cross-link button (BLC earns SGT's 150-pt PME bonus; it gates SSG pin-on, not SGT's)")
   : bad("BLC Prep button count on SGT's PME-graduate card: " + (await pmeBtnSgt.count()));
 if (await pmeBtnSgt.count()) {
   await pmeBtnSgt.click();
@@ -232,7 +232,7 @@ const pmeGradSsgCard = page.locator("label", { hasText: /^ALC graduate, recommen
 await pmeGradSsgCard.waitFor({ state: "visible", timeout: 5000 });
 const pmeBtnSsg = pmeGradSsgCard.locator("button", { hasText: /^ALC Prep$/ });
 (await pmeBtnSsg.count()) === 1
-  ? ok("Full PPW at SSG: the PME-graduate card relabels to an 'ALC Prep' cross-link (ALC is SSG's PME gate)")
+  ? ok("Full PPW at SSG: the PME-graduate card relabels to an 'ALC Prep' cross-link (ALC earns SSG's 150-pt PME bonus; it gates SFC pin-on, not SSG's)")
   : bad("ALC Prep button count on SSG's PME-graduate card: " + (await pmeBtnSsg.count()));
 if (await pmeBtnSsg.count()) {
   await pmeBtnSsg.click();
