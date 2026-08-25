@@ -95,10 +95,21 @@ await page.waitForTimeout(1100);
 await page.evaluate(() => { location.hash = "#/board"; });
 await page.waitForTimeout(1100);
 
-const cardCenter = async () => page.evaluate(() => {
-  const r = document.querySelector(".qz-card").getBoundingClientRect();
-  return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
-});
+// REAL FIX under verification on this scratch branch (see the diagnostic
+// evidence above/below): scrollIntoViewIfNeeded() guarantees .qz-card - and
+// therefore its center point - is actually inside the viewport before any
+// coordinate is read off it. See the matching comment on cardCenter/
+// cardTopEdge in the real fix commit for the full root-cause writeup.
+async function ensureCardVisible() {
+  await page.locator(".qz-card").scrollIntoViewIfNeeded();
+}
+const cardCenter = async () => {
+  await ensureCardVisible();
+  return page.evaluate(() => {
+    const r = document.querySelector(".qz-card").getBoundingClientRect();
+    return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+  });
+};
 
 // THROWAWAY DIAGNOSTIC: dumps real hit-testing/layout evidence for the
 // card's current position - what document.elementFromPoint() ACTUALLY
@@ -150,10 +161,13 @@ async function diag(label) {
 // Inside the 22px card padding, above where .qz-back-scroll begins — see
 // this file's header note on why the post-flip grade test needs this
 // instead of cardCenter().
-const cardTopEdge = async () => page.evaluate(() => {
-  const r = document.querySelector(".qz-card").getBoundingClientRect();
-  return { cx: r.left + r.width / 2, cy: r.top + 10 };
-});
+const cardTopEdge = async () => {
+  await ensureCardVisible();
+  return page.evaluate(() => {
+    const r = document.querySelector(".qz-card").getBoundingClientRect();
+    return { cx: r.left + r.width / 2, cy: r.top + 10 };
+  });
+};
 const isFlipped = () => page.evaluate(() => !!document.querySelector(".qz-card.flipped"));
 const tallyText = () => page.evaluate(() => (document.querySelector(".stat .v") || {}).textContent || "");
 const promptText = () => page.evaluate(() => (document.querySelector(".qz-prompt") || {}).textContent || "");
