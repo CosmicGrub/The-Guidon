@@ -5145,6 +5145,18 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
    comfortably inside "wide viewports" the audit was written against. */
 .cal-dates-grid { display:grid; gap:10px; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); align-items:start; }
 
+/* Career timeline (js/calendar.js buildTimeline(), roadmap Tier 8) - a
+   vertical stepper: real dated anchors only (now/rank, board date, ETS),
+   connected by a track line. Deliberately single-column at every width -
+   a handful of sparse milestones never needs the >=600px multi-column
+   treatment .cal-dates-grid/.panel-grid-2 use elsewhere on this route. */
+.cal-timeline { display:flex; flex-direction:column; }
+.cal-timeline-row { display:flex; gap:12px; align-items:flex-start; }
+.cal-timeline-dot { width:12px; height:12px; border-radius:50%; background:var(--line-2); border:2px solid var(--line-2); flex:0 0 auto; margin-top:3px; }
+.cal-timeline-now .cal-timeline-dot { background:var(--amber); border-color:var(--amber); box-shadow:var(--glow-amber); }
+.cal-timeline-body { flex:1 1 auto; min-width:0; }
+.cal-timeline-line { width:2px; height:20px; background:var(--line-2); margin:2px 0 2px 5px; }
+
 /* Master-detail split (Board Drill, Doctrine, Squad Roster) - a narrow
    list pane next to a wider detail pane. Gated at >=1024px deliberately:
    below that, a ~280px list pane leaves too little room for a comfortable

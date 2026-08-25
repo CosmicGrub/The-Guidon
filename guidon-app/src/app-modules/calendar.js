@@ -296,15 +296,76 @@ window.G = window.G || {};
       inputs.appendChild(cardsGrid);
     }
 
+    // Roadmap Tier 8: a real career timeline - "now" plus the two genuine
+    // career-shaping dates this app actually tracks (board date, ETS),
+    // drawn as a vertical stepper rather than another sorted card list
+    // ("What is next" below already is that). Deliberately does NOT plot
+    // a projected next-promotion-eligibility date: that would need an
+    // enlistment/grade-entry date this profile has never collected, and
+    // the TIS/TIG thresholds that would drive it (Board's own Compare
+    // SGT/SSG segment, #/board) exist only as display strings today, not
+    // structured numbers - faking a date from neither would be exactly
+    // the kind of guess this module's own header comment says it won't
+    // make ("make the arithmetic and the consequence obvious, not
+    // pretend we know when their last AFT was"). Real anchors only.
+    function buildTimeline() {
+      util.clear(timeline);
+      timeline.appendChild(el("div.eyebrow", { text: "Career timeline" }));
+
+      let prof = null, settings = {};
+      try { prof = (G.profile && G.profile.cached) ? G.profile.cached() : null; } catch (e) {}
+      try { settings = (G.store && G.store.settings) ? G.store.settings() : {}; } catch (e) {}
+      const rank = (prof && (prof.rank || prof.tier)) || "";
+
+      const points = [{ label: rank ? "Now — " + rank : "Now", when: today, isNow: true }];
+      const bd = parseDate((prof && prof.boardDate) || settings.boardDate);
+      if (bd) points.push({ label: "Promotion board", when: bd, link: "#/records" });
+      const etsRaw = (prof && prof.etsDate) || settings.etsDate || saved.ets;
+      const ed = parseDate(etsRaw);
+      if (ed) points.push({ label: "ETS", when: ed, link: "#/transition" });
+      points.sort(function (a, b) { return a.when.getTime() - b.when.getTime(); });
+
+      const track = el("div.cal-timeline");
+      points.forEach(function (p, i) {
+        const days = daysBetween(today, p.when);
+        const row = el("div.cal-timeline-row" + (p.isNow ? ".cal-timeline-now" : ""));
+        row.appendChild(el("div.cal-timeline-dot"));
+        const body = el("div.cal-timeline-body");
+        body.appendChild(el("div", { style: "display:flex;justify-content:space-between;gap:8px;align-items:baseline" }, [
+          el("span.k", { text: p.label }),
+          el("span.hint", { text: p.isNow ? fmt(p.when) : fmt(p.when) + " · " + (days < 0 ? "OVERDUE" : days + "d") }),
+        ]));
+        if (p.link && !p.isNow) {
+          const b = el("button.btn.sm.ghost", { type: "button", text: "Open", style: "margin-top:4px" });
+          b.addEventListener("click", function () { location.hash = p.link; });
+          body.appendChild(b);
+        }
+        row.appendChild(body);
+        track.appendChild(row);
+        if (i < points.length - 1) track.appendChild(el("div.cal-timeline-line"));
+      });
+      timeline.appendChild(track);
+
+      if (points.length === 1) {
+        timeline.appendChild(el("p.hint", { style: "margin-top:8px", text:
+          "Add a board date and/or ETS date below (or in Settings) to see them plotted here." }));
+      }
+      timeline.appendChild(el("p.hint", { style: "margin-top:8px", text:
+        "Real dates only — this does not project a next-promotion-eligibility date, because that needs an enlistment date this app doesn't collect and TIS/TIG math it doesn't yet compute. See #/board's Compare SGT/SSG for the real threshold figures to do that math yourself." }));
+    }
+
     // Fold5/tablet fidelity wave 2: "What is next" (read-only, sorted by
     // urgency) and "Your dates" (the editor that feeds it) used to stack in
     // a single column regardless of viewport, even though they're a
     // classic summary/editor pair - .panel-grid-2 (>=600px) sits them
     // side by side instead.
+    const timeline = el("div.panel", { style: "margin-bottom:10px" });
+    mount.appendChild(timeline);
     const calGrid = el("div.panel-grid-2");
     calGrid.appendChild(upcoming);
     calGrid.appendChild(inputs);
     mount.appendChild(calGrid);
+    buildTimeline();
     buildUpcoming();
     buildInputs();
 

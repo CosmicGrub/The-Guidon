@@ -262,8 +262,8 @@ jobs:
             tests: "test:board-drill-readiness-heatmap test:progress-activity-heatmap test:reminders-density test:selftest-history-trend test:doctrine-card-grid test:settings-appearance-grid test:transition-health-grid test:write-memo-split"
           - name: "13-fitnesscurrencygrid-widthwasteselftestdrillsassignments-careerleadergrid-formscounselgrid-checklistreadingwidth-fillbartransforms-hapticscapacitor-rapidfire"
             tests: "test:fitness-currency-grid test:width-waste-selftest-drills-assignments test:career-leader-grid test:forms-counsel-grid test:checklist-reading-width test:fillbar-transforms test:haptics-capacitor test:rapid-fire"
-          - name: "14-rapidfirenosrswrites-rapidfiresoloteam-biometriclock-storagedashboard-schemamigration-vacombinedrating-sgtssgcompare"
-            tests: "test:rapid-fire-no-srs-writes test:rapid-fire-solo-team test:biometric-lock test:storage-dashboard test:schema-migration test:va-combined-rating test:sgt-ssg-compare"
+          - name: "14-rapidfirenosrswrites-rapidfiresoloteam-biometriclock-storagedashboard-schemamigration-vacombinedrating-sgtssgcompare-careertimeline"
+            tests: "test:rapid-fire-no-srs-writes test:rapid-fire-solo-team test:biometric-lock test:storage-dashboard test:schema-migration test:va-combined-rating test:sgt-ssg-compare test:career-timeline"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
