@@ -38,7 +38,7 @@
  * beginner (6) / intermediate (11) band — the former AFT/ACFT/Fitness
  * three-category cluster merged into one, per the board-content
  * redundancy-audit merge),
- * "Counseling (ATP 6-22.1)" (20 questions, ALL have acceptableAnswer — the
+ * "Counseling (ATP 6-22.1)" (19 questions, ALL have acceptableAnswer — the
  * Counseling + ATP 6-22.1 board categories merged, per the board-content
  * redundancy-audit merge). The Reveal-fallback fixture (a category where
  * NONE of the cards have acceptableAnswer) is looked up LIVE at runtime
@@ -224,8 +224,8 @@ let note = await poolNoteText();
 
 await setCategory("Counseling (ATP 6-22.1)");
 note = await poolNoteText();
-/^20 questions in this deck\.$/.test(note || "")
-  ? ok("selecting category 'Counseling (ATP 6-22.1)' shows the real 20-question pool count")
+/^19 questions in this deck\.$/.test(note || "")
+  ? ok("selecting category 'Counseling (ATP 6-22.1)' shows the real 19-question pool count")
   : bad("pool note after selecting Counseling (ATP 6-22.1): " + note);
 
 const realTotal = await page.evaluate(() => G.store.boardQuestions().length);
