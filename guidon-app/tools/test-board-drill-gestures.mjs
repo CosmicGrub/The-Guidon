@@ -58,17 +58,51 @@ await page.waitForTimeout(1100);
 await page.evaluate(() => { location.hash = "#/board"; });
 await page.waitForTimeout(1100);
 
-const cardCenter = async () => page.evaluate(() => {
-  const r = document.querySelector(".qz-card").getBoundingClientRect();
-  return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
-});
+// Real root cause (found via diagnostic instrumentation on GitHub's actual
+// ubuntu-latest CI runner, not a local approximation - see PR #57, closed):
+// on real CI this test's fixed 900px-tall viewport left almost no margin
+// below the card's own vertical center - locally the card sits ~17px above
+// the viewport's bottom edge at its center point, but CI's Chromium (same
+// browser build/version, confirmed identical via browser.version()) renders
+// whatever sits above the card on this route a few pixels taller, pushing
+// the WHOLE card down just far enough that its center point lands *below*
+// the viewport, off-screen. document.elementFromPoint() at that exact
+// coordinate returned null there, and the trusted page.mouse click/drag
+// events Playwright dispatched at it resolved to <html> as their target (a
+// real mouse literally cannot click a point that isn't rendered on screen) -
+// never reaching .qz-card at all, so its click/pointerdown/pointermove
+// handlers never ran. This is NOT the drag/text-selection race the earlier
+// user-select:none fix addressed (that was real too, for the OTHER 3
+// failures now fixed) - a plain, no-drag click failing is the tell: there
+// was no drag to race, the coordinate itself was simply never on-screen.
+// scrollIntoViewIfNeeded() scrolls .qz-card fully into the viewport before
+// any coordinate is read off it, which - since the card's own height
+// (~389px) is far smaller than this viewport - guarantees every point
+// inside its box, center included, is on-screen afterward, regardless of
+// exactly how many pixels taller CI's font/layout rendering makes whatever
+// sits above the card on any given run. Fixes the actual mechanism instead
+// of guessing a taller magic-number viewport that could still be too short
+// under some future layout.
+async function ensureCardVisible() {
+  await page.locator(".qz-card").scrollIntoViewIfNeeded();
+}
+const cardCenter = async () => {
+  await ensureCardVisible();
+  return page.evaluate(() => {
+    const r = document.querySelector(".qz-card").getBoundingClientRect();
+    return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+  });
+};
 // Inside the 22px card padding, above where .qz-back-scroll begins — see
 // this file's header note on why the post-flip grade test needs this
 // instead of cardCenter().
-const cardTopEdge = async () => page.evaluate(() => {
-  const r = document.querySelector(".qz-card").getBoundingClientRect();
-  return { cx: r.left + r.width / 2, cy: r.top + 10 };
-});
+const cardTopEdge = async () => {
+  await ensureCardVisible();
+  return page.evaluate(() => {
+    const r = document.querySelector(".qz-card").getBoundingClientRect();
+    return { cx: r.left + r.width / 2, cy: r.top + 10 };
+  });
+};
 const isFlipped = () => page.evaluate(() => !!document.querySelector(".qz-card.flipped"));
 const tallyText = () => page.evaluate(() => (document.querySelector(".stat .v") || {}).textContent || "");
 const promptText = () => page.evaluate(() => (document.querySelector(".qz-prompt") || {}).textContent || "");
