@@ -21992,6 +21992,36 @@ window.G = window.G || {};
     return { count: rows.length, bytes };
   }
 
+  // G.pwa (src/pwa.js) is a web-only "installed app" affordance — build.mjs
+  // does not inject it into dist/guidon-standalone.html (same exclusion as
+  // notify.js; see that module's own test file for the precedent). Both
+  // helpers below work either way: where G.pwa exists, reuse ITS cached
+  // state/formatter so this view can never disagree with Share & Install's
+  // own figures; where it doesn't (standalone build), fall back to
+  // querying the same standard Web APIs directly, or an identical local
+  // copy of the formatter — equally real either way, just not shared.
+  function fmtBytes(n) {
+    if (G.pwa && G.pwa.fmtBytes) return G.pwa.fmtBytes(n);
+    if (!n && n !== 0) return "—";
+    const u = ["B", "KB", "MB", "GB"];
+    let i = 0, v = n;
+    while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+    return (i === 0 ? v : v.toFixed(1)) + " " + u[i];
+  }
+
+  async function readStorageEstimate() {
+    if (G.pwa && G.pwa.state) {
+      const estimate = G.pwa.state.estimate || await G.pwa.readEstimate();
+      return { estimate, persisted: G.pwa.state.persisted };
+    }
+    if (!navigator.storage || !navigator.storage.estimate) return { estimate: null, persisted: null };
+    try {
+      const estimate = await navigator.storage.estimate();
+      const persisted = navigator.storage.persisted ? await navigator.storage.persisted() : null;
+      return { estimate, persisted };
+    } catch (e) { return { estimate: null, persisted: null }; }
+  }
+
   async function render(mount) {
     util.clear(mount);
     mount.appendChild(el("div.section-title", {}, [el("h2", { text: "Data & Storage" }), el("div.rule")]));
@@ -22010,12 +22040,11 @@ window.G = window.G || {};
     mount.appendChild(usagePanel);
 
     (async () => {
-      const est = (G.pwa.state && G.pwa.state.estimate) || await G.pwa.readEstimate();
+      const { estimate: est, persisted } = await readStorageEstimate();
       util.clear(usageStat);
       if (est && typeof est.usage === "number") {
-        const fmt = G.pwa.fmtBytes;
         const pct = est.quota ? Math.round((est.usage / est.quota) * 100) : null;
-        usageStat.appendChild(el("span.k", { text: fmt(est.usage) + (est.quota ? " of " + fmt(est.quota) : "") }));
+        usageStat.appendChild(el("span.k", { text: fmtBytes(est.usage) + (est.quota ? " of " + fmtBytes(est.quota) : "") }));
         usageStat.appendChild(el("span.v", { text: pct != null ? pct + "%" : "—" }));
         usageDetail.textContent = "This figure is reported by the browser for GUIDON's entire origin (IndexedDB plus the cached app files themselves) — not the per-store breakdown below, which is IndexedDB only.";
       } else {
@@ -22023,7 +22052,6 @@ window.G = window.G || {};
         usageStat.appendChild(el("span.v", { text: "—" }));
         usageDetail.textContent = "This browser doesn't report a storage estimate. GUIDON still works normally — this is just a missing number, not a problem.";
       }
-      const persisted = G.pwa.state && G.pwa.state.persisted;
       if (persisted === true) {
         usagePanel.appendChild(el("p.hint", { style: "margin-top:6px", text: "✓ Persistent storage granted — this browser won't silently evict GUIDON's data under storage pressure." }));
       } else if (persisted === false) {
@@ -22044,7 +22072,7 @@ window.G = window.G || {};
         const stat = await storeStats(s.name);
         rowsMount.appendChild(el("div.stat", { style: "margin-top:6px" }, [
           el("span.k", { text: s.label }),
-          el("span.v", { text: stat.error ? "—" : stat.count + " row" + (stat.count === 1 ? "" : "s") + " · " + G.pwa.fmtBytes(stat.bytes) }),
+          el("span.v", { text: stat.error ? "—" : stat.count + " row" + (stat.count === 1 ? "" : "s") + " · " + fmtBytes(stat.bytes) }),
         ]));
         rowsMount.appendChild(el("p.hint", { style: "margin:2px 0 8px", text: s.hint }));
       }
