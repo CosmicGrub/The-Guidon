@@ -34,7 +34,10 @@
  *
  * Two real board-question categories are used as fixed, known-shape
  * fixtures (verified directly against the seed data before this file was
- * written, not guessed): "AFT" (5 questions, all intermediate band),
+ * written, not guessed): "Army Fitness Test (AFT)" (17 questions, mixed
+ * beginner (6) / intermediate (11) band — the former AFT/ACFT/Fitness
+ * three-category cluster merged into one, per the board-content
+ * redundancy-audit merge),
  * "Counseling (ATP 6-22.1)" (20 questions, ALL have acceptableAnswer — the
  * Counseling + ATP 6-22.1 board categories merged, per the board-content
  * redundancy-audit merge). The Reveal-fallback fixture (a category where
@@ -213,11 +216,11 @@ afterSwitch.hasStartBtn ? ok("Rapid Fire's Setup screen renders (real 'Start Rou
 //     for the real guest profile's real tier E4 means the beginner band)
 //     doesn't silently narrow these category counts further.
 await clickButtonByText("All difficulties");
-await setCategory("AFT");
+await setCategory("Army Fitness Test (AFT)");
 let note = await poolNoteText();
-/^5 questions in this deck\.$/.test(note || "")
-  ? ok("selecting category 'AFT' shows the real 5-question pool count")
-  : bad("pool note after selecting AFT: " + note);
+/^17 questions in this deck\.$/.test(note || "")
+  ? ok("selecting category 'Army Fitness Test (AFT)' shows the real 17-question pool count")
+  : bad("pool note after selecting Army Fitness Test (AFT): " + note);
 
 await setCategory("Counseling (ATP 6-22.1)");
 note = await poolNoteText();
@@ -273,7 +276,7 @@ new RegExp("^" + bandCounts.total + " questions in this deck\\.$").test(note || 
 // rather than guessed, so this stays correct however the ranking algorithm
 // breaks ties.
 await page.evaluate(async () => {
-  const q = G.store.boardQuestions().find((x) => x.category === "AFT");
+  const q = G.store.boardQuestions().find((x) => x.category === "Army Fitness Test (AFT)");
   await G.db.put("kv", { k: "srs:" + q.id, v: { reps: 1, ease: 2.3, interval: 1, due: 0, misses: 0, lastGrade: 0 } });
 });
 await enterRapidFireFresh();
@@ -391,7 +394,7 @@ drillActiveAfterLink ? ok("the cross-link switches to the Flashcards ('Board Dri
 // Deck path) — one-time, persisted via the real kv-store "seen" flag.
 // ════════════════════════════════════════════════════════════════════
 await enterRapidFireFresh();
-await setCategory("AFT");
+await setCategory("Army Fitness Test (AFT)");
 await clickButtonByText("All difficulties");
 await clickButtonByText("Start Round");
 await page.waitForTimeout(300);
@@ -443,24 +446,24 @@ await tapEndRound();
 
 // ════════════════════════════════════════════════════════════════════
 // Passed-cards behavior: Requeue vs Remove, proven by real round length
-// (AFT — 5 real questions, all intermediate band, so "All difficulties"
-// is used to keep the whole 5-question pool in play; Untimed so only
-// deck-exhaustion — not a timer — can end the round).
+// (Army Fitness Test (AFT) — 17 real questions, mixed beginner/intermediate
+// band, so "All difficulties" is used to keep the whole 17-question pool in
+// play; Untimed so only deck-exhaustion — not a timer — can end the round).
 // ════════════════════════════════════════════════════════════════════
 await enterRapidFireFresh();
-await setCategory("AFT");
+await setCategory("Army Fitness Test (AFT)");
 await clickButtonByText("All difficulties");
 await clickButtonByText("Untimed");
 await clickButtonByText("Remove for this round");
 await startRound();
-for (let i = 0; i < 5; i++) await tapPass();
+for (let i = 0; i < 17; i++) await tapPass();
 st = await roundState();
 st.onRecap
-  ? ok("Passed cards = Remove: passing all 5 real AFT questions exhausts the deck and ends the round on its own (caps the round to the real available card count, per the design spec's error-handling section)")
+  ? ok("Passed cards = Remove: passing all 17 real AFT questions exhausts the deck and ends the round on its own (caps the round to the real available card count, per the design spec's error-handling section)")
   : bad("round did not end after passing every card with Remove selected: " + JSON.stringify(st));
 
 await enterRapidFireFresh();
-await setCategory("AFT");
+await setCategory("Army Fitness Test (AFT)");
 await clickButtonByText("All difficulties");
 await clickButtonByText("Untimed");
 // "Requeue" is already the Setup default — left untouched here on purpose.
@@ -468,7 +471,7 @@ await startRound();
 for (let i = 0; i < 5; i++) await tapPass();
 st = await roundState();
 (!st.onRecap && st.onRound)
-  ? ok("Passed cards = Requeue: passing 5 real AFT questions does NOT end the round (each pass goes back into the queue) — genuinely different real behavior from Remove above")
+  ? ok("Passed cards = Requeue: passing 5 of 17 real AFT questions does NOT end the round (each pass goes back into the queue) — genuinely different real behavior from Remove above")
   : bad("round state after 5 passes with Requeue selected (expected still running): " + JSON.stringify(st));
 await tapEndRound();
 
@@ -487,7 +490,7 @@ async function hapticsCalls() { return page.evaluate(() => window.__hapticsCalls
 async function clearCapacitor() { await page.evaluate(() => { delete window.Capacitor; }); }
 
 await enterRapidFireFresh();
-await setCategory("AFT");
+await setCategory("Army Fitness Test (AFT)");
 await clickButtonByText("All difficulties");
 await clickButtonByText("Untimed");
 await mockHaptics();
@@ -508,7 +511,7 @@ await clearCapacitor();
 // Sound/Haptics Setup toggle genuinely gates the call — switch it Off and
 // confirm zero haptics calls fire for the same Correct/Pass actions.
 await enterRapidFireFresh();
-await setCategory("AFT");
+await setCategory("Army Fitness Test (AFT)");
 await clickButtonByText("All difficulties");
 await clickButtonByText("Untimed");
 await clickButtonByText("Off"); // Sound / Haptics: Off
@@ -529,7 +532,7 @@ await clearCapacitor();
 // ════════════════════════════════════════════════════════════════════
 async function timerAt(label) {
   await enterRapidFireFresh();
-  await setCategory("AFT");
+  await setCategory("Army Fitness Test (AFT)");
   await clickButtonByText("All difficulties");
   if (label) await clickButtonByText(label);
   await startRound();
@@ -555,7 +558,7 @@ tAtUntimed === "0s" ? ok("selecting Untimed starts a round showing an elapsed '0
 // while backgrounded (design spec's own error-handling requirement)
 // ════════════════════════════════════════════════════════════════════
 await enterRapidFireFresh();
-await setCategory("AFT");
+await setCategory("Army Fitness Test (AFT)");
 await clickButtonByText("All difficulties");
 await clickButtonByText("30s");
 await startRound();
@@ -582,12 +585,12 @@ await tapEndRound();
 // "Came up as Pass a lot" — the round's own local tally, read back once
 // ════════════════════════════════════════════════════════════════════
 await enterRapidFireFresh();
-await setCategory("AFT"); // 5 real questions — small enough to pass the same ones repeatedly
+await setCategory("Army Fitness Test (AFT)"); // 17 real questions
 await clickButtonByText("All difficulties");
 await clickButtonByText("Untimed");
 // Requeue (default) so passed cards keep coming back around.
 await startRound();
-for (let i = 0; i < 8; i++) await tapPass(); // more taps than cards -> guarantees at least one card passed 2x+
+for (let i = 0; i < 20; i++) await tapPass(); // more taps than cards (17) -> guarantees at least one card passed 2x+
 await tapEndRound();
 const passListCount = await page.evaluate(() => document.querySelectorAll(".rf-recap-list li").length);
 passListCount > 0

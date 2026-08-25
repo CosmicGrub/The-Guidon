@@ -117,14 +117,15 @@ const seed = await page.evaluate(() => {
 });
 seed.isObject ? ok("GUIDON_SEED parsed to an object") : bad("GUIDON_SEED is not an object");
 seed.topKeys === 17 ? ok("seed has all 17 top-level sections") : bad(`expected 17 top-level keys, got ${seed.topKeys}`);
-// 1009 as of the board-category redundancy-merge pass: 60 genuinely
-// redundant/duplicate cards were deleted (content folded into the
-// surviving card in every case where a fact would otherwise be lost) across
-// the 15-item merge plan from the session's own Board Study Redundancy
-// Audit. Was 1069 before this pass (see git history for the prior
-// baseline's own provenance comment). Verified 1,009 unique question ids,
-// zero duplicates, before bumping this baseline.
-seed.board === 1009 ? ok("1,009 board cards intact") : bad(`board cards: ${seed.board}, expected 1009`);
+// 993 as of the AFT/ACFT/Fitness consolidation pass: the AFT/ACFT/Fitness
+// three-category cluster (all covering the same Army Fitness Test subject,
+// with the same facts independently stated 2-5 times across them) was
+// merged into one "Army Fitness Test (AFT)" category, deleting 16 genuinely
+// redundant/duplicate cards (content folded into the surviving card in
+// every case where a fact would otherwise be lost). Was 1009 before this
+// pass (itself down from 1069 via the board-category redundancy-merge
+// pass - see git history for that baseline's own provenance comment).
+seed.board === 993 ? ok("993 board cards intact") : bad(`board cards: ${seed.board}, expected 993`);
 // 3631 as of the intuitivism pass: added "SLC" (Senior Leader Course) and
 // "DA 7906" (the IDP form itself), both real, genuinely missing entries
 // the terminology audit found - not padding.
