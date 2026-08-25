@@ -327,6 +327,10 @@ window.G = window.G || {};
     requestPersistence,
     readEstimate,
     detectDisplayMode,
+    // Exposed so other modules showing a byte figure (e.g. a Data & Storage
+    // dashboard) reuse the exact same B/KB/MB/GB formatting instead of a
+    // second, possibly-diverging copy.
+    fmtBytes,
     onChange: (fn) => { listeners.push(fn); return () => { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); }; },
     isInstalled: () => state.installed,
     isInstallable: () => !!state.deferredPrompt,
