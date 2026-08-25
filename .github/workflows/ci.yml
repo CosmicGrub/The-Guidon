@@ -170,6 +170,23 @@ jobs:
       - name: Lint patterns
         run: npm run lint:patterns
 
+      # Freshness cross-reference (tools/audit-content-freshness.mjs):
+      # reports whether any content item carrying a verifiedAgainst tag has
+      # gone stale relative to its currency.js domain's real current asOf
+      # date. Reads src/index.html + src/app-modules/currency.js directly,
+      # so it needs neither the built web/+dist/ output nor a browser -
+      # runs fine right after checkout, before Generate icons/Build below.
+      # NON-BLOCKING ON PURPOSE (matches the Engineering Systems pitch:
+      # "non-blocking initially, until there's real coverage to make it
+      # meaningful") - this is a discovery/report tool, not a gate. The
+      # script itself always exits 0 even when it finds stale items (a
+      # human decides what a stale finding means); continue-on-error here
+      # is a second, visible layer of the same guarantee at the workflow
+      # level, not a workaround for a script that can fail.
+      - name: Content freshness cross-reference (non-blocking)
+        run: npm run audit:freshness
+        continue-on-error: true
+
       # Must run before build/verify - see the top-of-file note. build.mjs
       # only ever *references* icon paths, it never generates the PNGs;
       # without this, verify's icon-fetch checks 404 in any fresh checkout.
