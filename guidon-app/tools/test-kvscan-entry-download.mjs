@@ -47,6 +47,28 @@ const noise = [];
 page.on("console", (m) => { if (m.type() === "error") noise.push(m.text()); });
 page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 
+// This suite clicks "Run automated checks" on #/selftest below, which runs the
+// "Route health" check (src/index.html, id:"routes") - it renders every route,
+// including #/library, to prove none of them throw. That triggers
+// src/app-modules/library.js's one-time same-origin HEAD probe against
+// DOCS[0].pdfAsset (docs/<first reference doc>.pdf), which detects whether
+// web/docs/*.pdf shipped with this build. It only 404s here because
+// .github/workflows/ci.yml's build-artifact upload deliberately excludes
+// guidon-app/web/docs/** (~78MB, not worth re-uploading/downloading for all 14
+// test-matrix jobs) - every real build.mjs run (local, Android, a genuine
+// deploy) writes web/docs/ alongside web/index.html together, so this never
+// happens outside that one CI artifact trim. A same-origin fetch() against a
+// URL that genuinely 404s logs Chromium's own "Failed to load resource" line
+// to the console as an unavoidable network-layer side effect that no app-code
+// try/catch can suppress. Counting the actual docs/*.pdf 404 responses (the
+// console message text itself never includes the URL) and spending exactly
+// that many off the noise list below keeps this check honest: any other
+// unexplained page error still fails it.
+let docsProbe404 = 0;
+page.on("response", (r) => {
+  if (!r.ok() && /\/docs\/.*\.pdf$/i.test(new URL(r.url()).pathname)) docsProbe404++;
+});
+
 await page.goto(url, { waitUntil: "load" });
 await page.waitForTimeout(700);
 const guestCard = page.locator(".ob-mode-card", { hasText: /guest session/i }).first();
@@ -166,7 +188,13 @@ kvscanStillFailing === true
   ? ok("'Data validity scan' still reports fail (streak:v1 remains corrupted) - the re-verify reflects real remaining state")
   : bad("kvscan pass/fail state after quarantining idp:goals: " + kvscanStillFailing);
 
-noise.length === 0 ? ok("no page errors") : bad(noise.length + " page errors; first: " + noise[0]);
+const DOCS_PROBE_404 = /Failed to load resource: the server responded with a status of 404/;
+let docsAllowance = docsProbe404;
+const unexpectedNoise = noise.filter((n) => {
+  if (docsAllowance > 0 && DOCS_PROBE_404.test(n)) { docsAllowance--; return false; }
+  return true;
+});
+unexpectedNoise.length === 0 ? ok("no page errors") : bad(unexpectedNoise.length + " page errors; first: " + unexpectedNoise[0]);
 
 await page.close();
 await browser.close();

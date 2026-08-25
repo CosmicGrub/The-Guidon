@@ -879,6 +879,23 @@ html.qz-theater #toast { z-index: 900; }
   margin-inline: auto;
   transform-style: preserve-3d;
   touch-action: manipulation;
+  /* A mouse press-drag anywhere on the card (wireSwipe's Pointer Events path)
+     is the browser's OWN native "select this text" gesture unless told
+     otherwise — the front/back faces are full of plain selectable text (the
+     difficulty badge, the prompt, the answer). Without this, a real mouse
+     swipe that starts over any of that text fights the drag with a
+     highlighted text selection at the same time, which can eat or delay the
+     pointermove events wireSwipe needs to track the gesture — root cause of
+     a real, reproducible flake (page.mouse-driven drag tests: found via a
+     genuine Linux+Playwright container repro, not Windows-local, where
+     drags starting on the front face's difficulty badge intermittently
+     never registered). Touch was never affected (a touch has to long-press
+     before it starts a text selection; a swipe never lingers there), so this
+     only ever showed up on the newer real-mouse-drag coverage.
+     -webkit-user-select covers Safari/older WebKit; user-select alone covers
+     every current Chromium/Firefox (Android's WebView included). */
+  -webkit-user-select: none;
+  user-select: none;
   /* Duration and easing come from the Motion setting (Settings → Motion)
      rather than one hardcoded curve — the flip is the drill's signature
      movement, so it should answer to the same dial as everything else.
