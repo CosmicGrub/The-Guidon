@@ -32,11 +32,17 @@
  *      correct category pre-filtered (the real G.board._filterCat / catSel
  *      wiring, fed by the real G.nav.seed()/consume() handoff).
  *
- * Three real board-question categories are used as fixed, known-shape
+ * Two real board-question categories are used as fixed, known-shape
  * fixtures (verified directly against the seed data before this file was
  * written, not guessed): "AFT" (5 questions, all intermediate band),
- * "Counseling" (8 questions, ALL have acceptableAnswer), "Drill and
- * Ceremony" (10 questions, ALL beginner band, NONE have acceptableAnswer).
+ * "Counseling (ATP 6-22.1)" (20 questions, ALL have acceptableAnswer — the
+ * Counseling + ATP 6-22.1 board categories merged, per the board-content
+ * redundancy-audit merge). The Reveal-fallback fixture (a category where
+ * NONE of the cards have acceptableAnswer) is looked up LIVE at runtime
+ * instead of hardcoded, since the exact set of such categories shifts as
+ * board content is merged/reorganized (e.g. "Drill and Ceremony" no longer
+ * qualifies after merging in the 15 acceptableAnswer-bearing TC 3-21.5
+ * cards).
  * The zero-writes-to-attempts/SRS regression (the spec's own "load-bearing"
  * test) lives in its own file, test-rapid-fire-no-srs-writes.mjs, so it can
  * be run/re-run in isolation.
@@ -213,11 +219,11 @@ let note = await poolNoteText();
   ? ok("selecting category 'AFT' shows the real 5-question pool count")
   : bad("pool note after selecting AFT: " + note);
 
-await setCategory("Counseling");
+await setCategory("Counseling (ATP 6-22.1)");
 note = await poolNoteText();
-/^8 questions in this deck\.$/.test(note || "")
-  ? ok("selecting category 'Counseling' shows the real 8-question pool count")
-  : bad("pool note after selecting Counseling: " + note);
+/^20 questions in this deck\.$/.test(note || "")
+  ? ok("selecting category 'Counseling (ATP 6-22.1)' shows the real 20-question pool count")
+  : bad("pool note after selecting Counseling (ATP 6-22.1): " + note);
 
 const realTotal = await page.evaluate(() => G.store.boardQuestions().length);
 await setCategory("All");
@@ -290,7 +296,7 @@ new RegExp("^" + expectedNeedsWork + " questions in this deck\\.$").test(note ||
 //      Reveal prefers acceptableAnswer, real question text (no truncation)
 // ════════════════════════════════════════════════════════════════════
 await enterRapidFireFresh();
-await setCategory("Counseling"); // every question here HAS acceptableAnswer
+await setCategory("Counseling (ATP 6-22.1)"); // every question here HAS acceptableAnswer
 await clickButtonByText("All difficulties");
 await clickButtonByText("Start Round");
 await page.waitForTimeout(300);
@@ -307,12 +313,12 @@ st.onRound ? ok("the round screen renders after dismissing the explainer") : bad
 // Question-only default: no answer text anywhere in the visible DOM before
 // Reveal is tapped.
 const realCard = await page.evaluate((qText) => {
-  const q = G.store.boardQuestions().find((x) => x.q === qText && x.category === "Counseling");
+  const q = G.store.boardQuestions().find((x) => x.q === qText && x.category === "Counseling (ATP 6-22.1)");
   return q ? { q: q.q, a: q.a, acceptableAnswer: q.acceptableAnswer } : null;
 }, st.questionText);
 st.questionText && realCard && st.questionText === realCard.q
   ? ok("the round screen shows the real question text, in full, unaltered")
-  : bad("round question text did not exactly match a real Counseling question: " + JSON.stringify({ shown: st.questionText, realCard }));
+  : bad("round question text did not exactly match a real Counseling (ATP 6-22.1) question: " + JSON.stringify({ shown: st.questionText, realCard }));
 // The answer panel's own display:none (checked via roundState()'s
 // answerVisible, above — the real computed/inline style, not a text scan)
 // IS the "not visible to the Soldier" proof: headless Chromium's innerText
@@ -324,7 +330,7 @@ st.answerVisible === false
   ? ok("the answer panel is hidden by default (question-only) — real display:none, checked before Reveal is ever tapped")
   : bad("answer panel state before Reveal: " + st.answerVisible);
 
-// Reveal — prefers acceptableAnswer (Counseling: every card has one).
+// Reveal — prefers acceptableAnswer (Counseling (ATP 6-22.1): every card has one).
 await tapReveal();
 st = await roundState();
 (realCard && st.answerText === realCard.acceptableAnswer)
@@ -352,18 +358,18 @@ await tapEndRound();
 st = await roundState();
 st.onRecap ? ok("'End Round' ends the round and shows the real Recap screen") : bad("Recap did not appear after End Round: " + JSON.stringify(st));
 
-// ── Recap cross-link: this whole round only ever touched "Counseling" ──
-// Scoped to the real rendered Recap <div.panel> via innerText (not a
-// document.body.textContent scan — see the false-positive risk documented
-// above: "Counseling" is also a real category name used throughout this
-// app's own source, so an unscoped scan could pass for the wrong reason
-// even if this specific panel never mentioned it).
+// ── Recap cross-link: this whole round only ever touched "Counseling
+// (ATP 6-22.1)" ── Scoped to the real rendered Recap <div.panel> via
+// innerText (not a document.body.textContent scan — see the false-positive
+// risk documented above: "Counseling" is also a real category name used
+// throughout this app's own source, so an unscoped scan could pass for the
+// wrong reason even if this specific panel never mentioned it).
 const recapPanelText = await page.evaluate(() => {
   const h3 = [...document.querySelectorAll("h3")].find((h) => h.textContent.trim() === "Round Recap");
   const panel = h3 ? h3.closest(".panel") : null;
   return panel ? panel.innerText : "";
 });
-/Counseling/.test(recapPanelText) ? ok("Recap's cross-link names the round's own category ('Counseling', the only one this round touched)") : bad("Recap panel text does not mention Counseling: " + recapPanelText.slice(0, 400));
+/Counseling \(ATP 6-22\.1\)/.test(recapPanelText) ? ok("Recap's cross-link names the round's own category ('Counseling (ATP 6-22.1)', the only one this round touched)") : bad("Recap panel text does not mention Counseling (ATP 6-22.1): " + recapPanelText.slice(0, 400));
 const clicked = await clickButtonByText("Practice in Flashcards →");
 await page.waitForTimeout(500);
 clicked ? ok("Recap's 'Practice in Flashcards →' cross-link button is clickable") : bad("cross-link button not found on Recap");
@@ -371,8 +377,8 @@ const drillCatValue = await page.evaluate(() => {
   const sel = document.querySelector('select[aria-label="Filter by category"]');
   return sel ? sel.value : null;
 });
-drillCatValue === "Counseling"
-  ? ok("clicking the cross-link lands on Board Drill's Flashcards tab with the category filter actually set to 'Counseling'")
+drillCatValue === "Counseling (ATP 6-22.1)"
+  ? ok("clicking the cross-link lands on Board Drill's Flashcards tab with the category filter actually set to 'Counseling (ATP 6-22.1)'")
   : bad("category filter select after the cross-link click: " + drillCatValue);
 const drillActiveAfterLink = await page.evaluate(() => {
   const b = [...document.querySelectorAll(".segmented button")].find((x) => x.textContent.trim() === "Board Drill");
@@ -396,19 +402,38 @@ seenFlag === true ? ok("the one-time explainer's 'seen' flag is persisted in the
 await tapEndRound();
 
 // ════════════════════════════════════════════════════════════════════
-// Reveal fallback — Drill and Ceremony: NONE of these have
-// acceptableAnswer, so Reveal must show the full `a` field, unaltered.
+// Reveal fallback: pick a REAL category, looked up LIVE (not hardcoded —
+// the exact set of categories where every card lacks acceptableAnswer
+// shifts as board content is merged/reorganized; "Drill and Ceremony" no
+// longer qualifies once merged with TC 3-21.5's acceptableAnswer-bearing
+// cards) where NONE of the cards have acceptableAnswer, so Reveal must
+// show the full `a` field, unaltered.
 // ════════════════════════════════════════════════════════════════════
+const noAcceptableCat = await page.evaluate(() => {
+  const qs = G.store.boardQuestions();
+  const byCat = new Map();
+  for (const q of qs) {
+    if (!byCat.has(q.category)) byCat.set(q.category, []);
+    byCat.get(q.category).push(q);
+  }
+  for (const [cat, list] of byCat) {
+    if (list.length > 0 && list.every((q) => !q.acceptableAnswer)) return cat;
+  }
+  return null;
+});
+noAcceptableCat
+  ? ok(`found a real category with zero acceptableAnswer coverage to use as the Reveal-fallback fixture: "${noAcceptableCat}"`)
+  : bad("could not find any real category where every card lacks acceptableAnswer — Reveal-fallback scenario can't be exercised");
 await enterRapidFireFresh();
-await setCategory("Drill and Ceremony");
+await setCategory(noAcceptableCat);
 await clickButtonByText("All difficulties");
 await startRound();
 st = await roundState();
-const realCard2 = await page.evaluate((qText) => {
-  const q = G.store.boardQuestions().find((x) => x.q === qText && x.category === "Drill and Ceremony");
+const realCard2 = await page.evaluate(({ qText, cat }) => {
+  const q = G.store.boardQuestions().find((x) => x.q === qText && x.category === cat);
   return q ? { q: q.q, a: q.a, acceptableAnswer: q.acceptableAnswer } : null;
-}, st.questionText);
-(realCard2 && !realCard2.acceptableAnswer) ? ok("landed on a real Drill and Ceremony question, confirmed to have no acceptableAnswer field") : bad("fixture assumption broken — real card: " + JSON.stringify(realCard2));
+}, { qText: st.questionText, cat: noAcceptableCat });
+(realCard2 && !realCard2.acceptableAnswer) ? ok(`landed on a real "${noAcceptableCat}" question, confirmed to have no acceptableAnswer field`) : bad("fixture assumption broken — real card: " + JSON.stringify(realCard2));
 await tapReveal();
 st = await roundState();
 (realCard2 && st.answerText === realCard2.a)
