@@ -135,7 +135,7 @@ await page.waitForTimeout(400);
 await clickButtonByText("Rapid Fire");
 await page.waitForTimeout(300);
 
-await setCategory("Counseling");
+await setCategory("Counseling (ATP 6-22.1)");
 await clickButtonByText("All difficulties");
 await clickButtonByText("30s");
 await clickButtonByText("Match my rank");
@@ -143,7 +143,7 @@ await clickButtonByText("All difficulties"); // back to a non-empty pool
 await clickButtonByText("Remove for this round");
 await clickButtonByText("Requeue");
 await clickButtonByText("⚙ Needs Work");
-await clickButtonByText("⚙ Needs Work"); // toggle back off — Counseling stays selected
+await clickButtonByText("⚙ Needs Work"); // toggle back off — Counseling (ATP 6-22.1) stays selected
 await startRound();
 
 await tapReveal();
@@ -184,7 +184,7 @@ await tapEndRound(); // no-op if already at Recap; harmless if a round is someho
 //    Correct/Pass), same spy still watching from above ────────────────────
 await enterRapidFireFresh();
 await clickButtonByText("Solo");
-await setCategory("AFT");
+await setCategory("Army Fitness Test (AFT)");
 await clickButtonByText("All difficulties");
 await clickButtonByText("Untimed");
 await clickButtonByText("Start Round"); // Solo skips the explainer entirely
@@ -210,7 +210,7 @@ await page.evaluate(() => {
   inputs[0].value = "Alpha"; inputs[0].dispatchEvent(new Event("input"));
   inputs[1].value = "Bravo"; inputs[1].dispatchEvent(new Event("input"));
 });
-await setCategory("AFT");
+await setCategory("Army Fitness Test (AFT)");
 await clickButtonByText("All difficulties");
 await clickButtonByText("Untimed");
 await clickButtonByText("Start Round");

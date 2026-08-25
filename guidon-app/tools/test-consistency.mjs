@@ -117,15 +117,26 @@ const seed = await page.evaluate(() => {
 });
 seed.isObject ? ok("GUIDON_SEED parsed to an object") : bad("GUIDON_SEED is not an object");
 seed.topKeys === 17 ? ok("seed has all 17 top-level sections") : bad(`expected 17 top-level keys, got ${seed.topKeys}`);
-// 1069 as of v1.4.25: curriculum expansion batch 1 (Land Nav, First
-// Aid/CLS, CBRN, Weapons/Marksmanship, Drill & Ceremony, PRT/AFT) added
-// board-drill questions for the 6 new courses. Verified 1,069 unique
-// question ids, zero duplicates, before bumping this baseline.
-seed.board === 1069 ? ok("1,069 board cards intact") : bad(`board cards: ${seed.board}, expected 1069`);
-// 3631 as of the intuitivism pass: added "SLC" (Senior Leader Course) and
-// "DA 7906" (the IDP form itself), both real, genuinely missing entries
-// the terminology audit found - not padding.
-seed.acronyms === 3631 ? ok("3,631 acronym terms intact") : bad(`acronyms: ${seed.acronyms}, expected 3631`);
+// 984 as of the quick-win internal-redundancy pass: General Orders (bq21,
+// bq22 - strict subsets of go-1/go-3), Weapons TC 3-22.9 (m4-1 duplicate
+// of wpn-8; m4-2 duplicate of wpn-9), and TCCC/First Aid (bq-tccc-01,
+// tccc-7, tccc-9, tccc-8 - each a duplicate of a fuller card) each had
+// genuinely redundant cards deleted, 9 total. Every fact unique to a
+// deleted card was folded into the card it duplicated first - see that
+// pass's PR for the per-card reasoning. Was 993 before this pass (itself
+// down from 1009 via the AFT/ACFT/Fitness consolidation - see git history
+// for that baseline's own provenance comment).
+seed.board === 984 ? ok("984 board cards intact") : bad(`board cards: ${seed.board}, expected 984`);
+// 3623 as of the same quick-win pass: deleted "RAC-OT" (an OCR/scrape
+// duplicate artifact of "RAS-OT", not a real distinct acronym) and 7
+// redundant unhyphenated staff-designator overlay entries (S2, S3, G1,
+// G2, G3, G4, G6) that duplicated the doctrinally-correct hyphenated
+// forms (S-2, S-3, G-1..G-4, G-6) already present. G1's one unique fact
+// (the S1-equivalent-at-higher-echelons framing) was folded into G-1
+// first. Was 3631 as of the intuitivism pass before this: added "SLC"
+// (Senior Leader Course) and "DA 7906" (the IDP form itself), both real,
+// genuinely missing entries the terminology audit found - not padding.
+seed.acronyms === 3623 ? ok("3,623 acronym terms intact") : bad(`acronyms: ${seed.acronyms}, expected 3623`);
 seed.doctrine === 336 ? ok("336 doctrine entries intact") : bad(`doctrine: ${seed.doctrine}, expected 336`);
 // 164 as of v1.4.20: task #104 added a real 46T (Visual Information
 // Equipment Operator-Maintainer) entry, previously mentioned only in a

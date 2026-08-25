@@ -41,10 +41,10 @@
  *      color — themed via the same CSS custom properties as everything
  *      else, not literals.
  *
- * Same three real board-question category fixtures test-rapid-fire.mjs
- * already verified against the seed data: "AFT" (5 questions, all
- * intermediate band), "Drill and Ceremony" (10, all beginner, none have
- * acceptableAnswer).
+ * Same real board-question category fixture test-rapid-fire.mjs already
+ * verified against the seed data: "Army Fitness Test (AFT)" (17 questions,
+ * mixed beginner/intermediate band) — used throughout this file the same
+ * way.
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
@@ -175,7 +175,7 @@ defaultActive ? ok("Party is the default active mode on a fresh visit (Stage 1's
 
 // Party round screen shape (Stage 1's own, unchanged) — real .rf-card + a
 // real Reveal-answer button, no .qz-card anywhere.
-await setCategory("AFT");
+await setCategory("Army Fitness Test (AFT)");
 await clickButtonByText("All difficulties");
 await clickButtonByText("Untimed");
 await clickButtonByText("Start Round");
@@ -191,7 +191,7 @@ await tapEndRound();
 // gate").
 await enterRapidFireFresh();
 await setMode("Solo");
-await setCategory("AFT");
+await setCategory("Army Fitness Test (AFT)");
 await clickButtonByText("All difficulties");
 await clickButtonByText("Untimed");
 await clickButtonByText("Start Round");
@@ -212,7 +212,7 @@ st.correctBtnDisabled === true && st.passBtnDisabled === true
   : bad("judge-button disabled state before flip: " + JSON.stringify({ correctBtnDisabled: st.correctBtnDisabled, passBtnDisabled: st.passBtnDisabled }));
 
 const realAftCard = await page.evaluate(() => {
-  const q = G.store.boardQuestions().find((x) => x.category === "AFT" && x.q === document.querySelector(".rf-question").textContent);
+  const q = G.store.boardQuestions().find((x) => x.category === "Army Fitness Test (AFT)" && x.q === document.querySelector(".rf-question").textContent);
   return q ? { q: q.q, a: q.a, acceptableAnswer: q.acceptableAnswer } : null;
 });
 await tapQzCard();
@@ -243,7 +243,7 @@ await tapEndRound();
 // 3a) Streak threshold — identical "🔥 2 in a row" behavior.
 await enterRapidFireFresh();
 await setMode("Solo");
-await setCategory("AFT");
+await setCategory("Army Fitness Test (AFT)");
 await clickButtonByText("All difficulties");
 await clickButtonByText("Untimed");
 await clickButtonByText("Start Round");
@@ -263,7 +263,7 @@ await tapEndRound();
 // Solo mode too, exactly like Party's own default.
 await enterRapidFireFresh();
 await setMode("Solo");
-await setCategory("AFT");
+await setCategory("Army Fitness Test (AFT)");
 await clickButtonByText("All difficulties");
 // 60s is Setup's default — left untouched.
 await clickButtonByText("Start Round");
@@ -276,21 +276,21 @@ await tapEndRound();
 // test-rapid-fire.mjs already used for Party, reproduced in Solo mode.
 await enterRapidFireFresh();
 await setMode("Solo");
-await setCategory("AFT");
+await setCategory("Army Fitness Test (AFT)");
 await clickButtonByText("All difficulties");
 await clickButtonByText("Untimed");
 await clickButtonByText("Remove for this round");
 await clickButtonByText("Start Round");
 await page.waitForTimeout(250);
-for (let i = 0; i < 5; i++) { await tapQzCard(); await tapPass(); }
+for (let i = 0; i < 17; i++) { await tapQzCard(); await tapPass(); }
 st = await roundState();
 st.onRecap
-  ? ok("Solo, Passed cards = Remove: passing all 5 real AFT questions exhausts the deck and ends the round on its own — same real Remove behavior Party uses")
-  : bad("Solo round state after 5 Removes (expected Recap): " + JSON.stringify(st));
+  ? ok("Solo, Passed cards = Remove: passing all 17 real AFT questions exhausts the deck and ends the round on its own — same real Remove behavior Party uses")
+  : bad("Solo round state after 17 Removes (expected Recap): " + JSON.stringify(st));
 
 await enterRapidFireFresh();
 await setMode("Solo");
-await setCategory("AFT");
+await setCategory("Army Fitness Test (AFT)");
 await clickButtonByText("All difficulties");
 await clickButtonByText("Untimed");
 // Requeue is Setup's default — left untouched.
@@ -299,7 +299,7 @@ await page.waitForTimeout(250);
 for (let i = 0; i < 5; i++) { await tapQzCard(); await tapPass(); }
 st = await roundState();
 (!st.onRecap && st.onRound)
-  ? ok("Solo, Passed cards = Requeue: passing 5 real AFT questions does NOT end the round — each pass goes back into the SAME queue Party's own judge() maintains")
+  ? ok("Solo, Passed cards = Requeue: passing 5 of 17 real AFT questions does NOT end the round — each pass goes back into the SAME queue Party's own judge() maintains")
   : bad("Solo round state after 5 Requeues (expected still running): " + JSON.stringify(st));
 await tapEndRound();
 
@@ -350,7 +350,7 @@ await page.waitForTimeout(80);
 //    loop, and 6) the Final Recap correctly compares both teams' real
 //    cumulative scores.
 // ════════════════════════════════════════════════════════════════════
-await setCategory("AFT");
+await setCategory("Army Fitness Test (AFT)");
 await clickButtonByText("All difficulties");
 await clickButtonByText("Untimed");
 await clickButtonByText("Start Round");
@@ -408,7 +408,7 @@ hasCrossLink ? ok("Final Recap includes the same real Flashcards cross-link Part
 await page.evaluate(() => { document.documentElement.classList.add("reduce-motion"); });
 await enterRapidFireFresh();
 await setMode("Solo");
-await setCategory("AFT");
+await setCategory("Army Fitness Test (AFT)");
 await clickButtonByText("All difficulties");
 await clickButtonByText("Start Round");
 await page.waitForTimeout(250);
