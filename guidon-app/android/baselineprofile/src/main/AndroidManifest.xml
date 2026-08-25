@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Minimal on purpose: this is a "com.android.test" module (see build.gradle),
+  which compiles to a standalone instrumented-test APK rather than a real
+  app. AGP synthesizes the rest (package/instrumentation declarations) from
+  the Gradle DSL (android.namespace, android.targetProjectPath) - nothing
+  else belongs here.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" />

@@ -1,0 +1,59 @@
+// :baselineprofile - AndroidX Macrobenchmark module that GENERATES the real
+// Baseline Profile for app.guidon.trainer (Roadmap Tier 7).
+//
+// This is a "com.android.test" module: a separate, standalone instrumented-
+// test APK that installs alongside the real app and drives it via UiAutomator
+// (accessibility-tree based - it can see and tap real elements inside the
+// app's WebView because Chromium exposes them through the standard Android
+// accessibility bridge). It is NOT bundled into the shipped app; it exists
+// purely so `generateBaselineProfile` has something real to run.
+//
+// Follows the same legacy buildscript+"apply plugin" convention as every
+// other module in this android/ tree (see app/build.gradle) rather than the
+// newer plugins{}/version-catalog style most current AndroidX samples use.
+apply plugin: 'com.android.test'
+apply plugin: 'androidx.baselineprofile'
+
+android {
+    namespace = "app.guidon.trainer.baselineprofile"
+    compileSdk = rootProject.ext.compileSdkVersion
+
+    defaultConfig {
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // The app module this test module measures/drives. Required by
+    // com.android.test; this is how the plugin knows which app to install
+    // alongside the test APK and which app's process to profile.
+    targetProjectPath = ":app"
+
+    // Matches app/capacitor.build.gradle's own compileOptions (JDK 21 is this
+    // project's real, already-established toolchain floor - see
+    // tools/android-gradle.mjs's header comment).
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+}
+
+// Config for the androidx.baselineprofile Gradle plugin itself (its
+// BaselineProfileProducerPlugin extension, created because this module also
+// applies "androidx.baselineprofile" above).
+baselineProfile {
+    // This project generates profiles against whichever real device is
+    // plugged in (see the repo's own real-device workflow in
+    // tools/android-gradle.mjs / tools/test-android.mjs) rather than a
+    // Gradle Managed Device emulator - there is no emulator system image on
+    // this machine, and API 33+/API 36 real hardware needs no root for
+    // macrobenchmark's UiAutomator-based collection.
+    useConnectedDevices = true
+}
+
+dependencies {
+    implementation "androidx.test.ext:junit:$androidxJunitVersion"
+    implementation "androidx.test:runner:$androidxTestRunnerVersion"
+    implementation "androidx.test.uiautomator:uiautomator:$uiAutomatorVersion"
+    implementation "androidx.benchmark:benchmark-macro-junit4:$benchmarkMacroJunit4Version"
+}

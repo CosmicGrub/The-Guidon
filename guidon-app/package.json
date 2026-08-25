@@ -24,6 +24,8 @@
     "android:debug": "npm run android:sync && node tools/android-gradle.mjs assembleDebug",
     "android:release": "npm run android:sync && node tools/android-gradle.mjs assembleRelease bundleRelease",
     "android:verify-release": "node tools/verify-release-apk.mjs",
+    "android:generate-baseline-profile": "npm run android:sync && node tools/android-gradle.mjs :app:generateReleaseBaselineProfile",
+    "android:verify-baseline-profile": "node tools/verify-baseline-profile.mjs",
     "test:android": "node tools/test-android.mjs",
     "_note": "test:android* need a running device/emulator + adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>",
     "test:android:back": "node tools/test-android-back.mjs",
