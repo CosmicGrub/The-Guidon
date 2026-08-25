@@ -41,6 +41,29 @@ const page = await browser.newPage();
 const noise = [];
 page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 page.on("console", (m) => { if (m.type() === "error") noise.push("console.error: " + m.text()); });
+
+// This suite clicks "Run automated checks" on #/selftest below, which runs the
+// "Route health" check (src/index.html, id:"routes") - it renders every route,
+// including #/library, to prove none of them throw. That triggers
+// src/app-modules/library.js's one-time same-origin HEAD probe against
+// DOCS[0].pdfAsset (docs/<first reference doc>.pdf), which detects whether
+// web/docs/*.pdf shipped with this build. It only 404s here because
+// .github/workflows/ci.yml's build-artifact upload deliberately excludes
+// guidon-app/web/docs/** (~78MB, not worth re-uploading/downloading for all 14
+// test-matrix jobs) - every real build.mjs run (local, Android, a genuine
+// deploy) writes web/docs/ alongside web/index.html together, so this never
+// happens outside that one CI artifact trim. A same-origin fetch() against a
+// URL that genuinely 404s logs Chromium's own "Failed to load resource" line
+// to the console as an unavoidable network-layer side effect that no app-code
+// try/catch can suppress. Counting the actual docs/*.pdf 404 responses (the
+// console message text itself never includes the URL) and spending exactly
+// that many off the noise list below keeps this check honest: any other
+// unexplained console/page error still fails it.
+let docsProbe404 = 0;
+page.on("response", (r) => {
+  if (!r.ok() && /\/docs\/.*\.pdf$/i.test(new URL(r.url()).pathname)) docsProbe404++;
+});
+
 await page.goto(url, { waitUntil: "load" });
 await page.waitForTimeout(700);
 // web/index.html boots into onboarding on a fresh profile - skip through it
@@ -233,9 +256,15 @@ if (!trapClosed.ranBaseline || !trapClosed.ranBroken) {
     : bad("'Status bar theming' still passed (or card not found) even with parseColor() broken — the false-coverage trap is NOT closed: " + trapClosed.brokenText);
 }
 
-noise.length === 0
+const DOCS_PROBE_404 = /Failed to load resource: the server responded with a status of 404/;
+let docsAllowance = docsProbe404;
+const unexpectedNoise = noise.filter((n) => {
+  if (docsAllowance > 0 && DOCS_PROBE_404.test(n)) { docsAllowance--; return false; }
+  return true;
+});
+unexpectedNoise.length === 0
   ? ok("no unexpected console errors/page errors")
-  : bad(`${noise.length} unexpected console/page error(s); first: ${noise[0]}`);
+  : bad(`${unexpectedNoise.length} unexpected console/page error(s); first: ${unexpectedNoise[0]}`);
 
 await browser.close();
 await server.close();
