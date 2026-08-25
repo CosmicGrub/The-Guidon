@@ -25133,11 +25133,66 @@ window.G = window.G || {};
       warn.appendChild(el("span", { text: bdd.warning }));
       host.appendChild(warn);
     }
-    // Calculator tip
-    host.appendChild(el("div.panel.tx-tip-panel", {}, [
-      el("span.tx-tip-label", { text: "TOOL " }),
-      el("span", { text: "VA Combined Rating Calculator: use the 'whole person method'. 40% + 30% + 10% = approximately 58-60%, not 80%. Visit VA.gov or a VSO for an estimate before your C&P exam." }),
-    ]));
+    // Calculator — real VA combined-rating math (roadmap Tier 8), not just
+    // a "don't add percentages" warning. See combineVaRatings() near the
+    // bottom of this module for the algorithm (38 CFR 4.25, verified
+    // against the regulation's own worked examples) and its own header
+    // comment for what it deliberately does NOT do (the bilateral factor).
+    // Reuses finance.js's .fin-calc/.fin-calc-row/.fin-out-grid CSS - those
+    // classes aren't finance-route-scoped, just finance-module-first-used.
+    const calc = el("div.panel.fin-calc", { style: "margin-top:14px" });
+    calc.appendChild(el("div.fin-h", { text: "VA combined-rating calculator" }));
+    calc.appendChild(el("p.fin-sub", { text: "Enter your expected individual ratings (whole numbers, up to 6). VA combines them with the “whole person” method — each rating applies to whatever percent is left, not the original 100%." }));
+    const ROWS = 6;
+    const ratingInputs = [];
+    for (let i = 0; i < ROWS; i++) {
+      const row = el("div.fin-calc-row");
+      row.appendChild(el("label", { text: "Condition " + (i + 1) + " %" }));
+      const inp = el("input", { type: "number", min: "0", max: "100", step: "10", inputmode: "numeric", "aria-label": "Condition " + (i + 1) + " rating percent" });
+      row.appendChild(inp);
+      calc.appendChild(row);
+      ratingInputs.push(inp);
+    }
+    const calcOut = el("div.fin-calc-out");
+    calc.appendChild(calcOut);
+
+    function recalcVa() {
+      const result = combineVaRatings(ratingInputs.map((inp) => inp.value));
+      util.clear(calcOut);
+      if (!result.individualRatings.length) {
+        calcOut.appendChild(el("p.hint", { text: "Enter at least one rating to see your combined percentage." }));
+        return;
+      }
+      const grid = el("div.fin-out-grid");
+      [
+        ["You entered", result.individualRatings.join("% + ") + "%"],
+        ["Combined (before rounding)", result.combined + "%"],
+        ["Final combined rating", result.rounded + "%"],
+      ].forEach(([k, v]) => {
+        const cell = el("div.fin-out-cell");
+        cell.appendChild(el("span.fin-out-k", { text: k }));
+        cell.appendChild(el("span.fin-out-v", { text: v }));
+        grid.appendChild(cell);
+      });
+      calcOut.appendChild(grid);
+      // Feed the result into Finance's real compensation-by-rating table
+      // instead of hand-copying dollar figures here - same cross-module
+      // accessor pattern currency.js already uses for finance data.
+      const fin = (G.store && G.store.finance && G.store.finance()) || {};
+      const ratings = (fin.va_financial && fin.va_financial.rating_values && fin.va_financial.rating_values.ratings) || [];
+      const match = ratings.find((r) => r.pct === result.rounded);
+      if (match) {
+        calcOut.appendChild(el("div.fin-good", { text: "At " + result.rounded + "%, current VA compensation (veteran alone, no dependents) is approximately " + match.approx_monthly + "/mo." }));
+      }
+      const vaBtn = el("button.btn.ghost.sm", { type: "button", text: "▤ See the full VA Compensation breakdown (Money) →", style: "margin-top:8px" });
+      vaBtn.addEventListener("click", () => { if (G.finance) G.finance._pendingTab = "va"; location.hash = "#/money"; });
+      calcOut.appendChild(vaBtn);
+      calcOut.appendChild(el("p.hint", { style: "margin-top:8px", text: "This does not include the bilateral factor (an extra 10% when ratings affect both a left and right paired arm, leg, eye, or ear — 38 CFR 4.26). Visit VA.gov or a VSO for an official estimate before your C&P exam." }));
+    }
+    let vaDeb = null;
+    ratingInputs.forEach((inp) => inp.addEventListener("input", () => { clearTimeout(vaDeb); vaDeb = setTimeout(recalcVa, 60); }));
+    recalcVa();
+    host.appendChild(calc);
   }
 
   // ── DD-214 ────────────────────────────────────────────────────────────
@@ -25465,8 +25520,39 @@ window.G = window.G || {};
     else renderCareer(body);
   }
 
+  // VA combined-rating calculator (38 CFR 4.25, roadmap Tier 8). Ratings
+  // are combined highest-to-lowest, each pairwise step rounded to the
+  // nearest WHOLE NUMBER (not carried at full fractional precision, and
+  // not rounded to the nearest 10 until the very last step) - a
+  // load-bearing detail, since rounding at each step is non-associative:
+  // the regulation's own required combination order (greatest disability
+  // first) genuinely changes the final result versus combining in a
+  // different order, it isn't just a presentation convention. Verified
+  // against 4 independent worked examples quoted directly from the
+  // regulation and outside legal references before this was written:
+  // 50+30 -> 70, 40+20 -> 50, 60+40+20 -> 80, 50+20+10 -> 60.
+  //
+  // Does NOT apply the bilateral factor (38 CFR 4.26 - an extra 10% when
+  // disabilities affect a paired left/right extremity) - that requires
+  // knowing WHICH conditions are paired-limb conditions, which a bare list
+  // of percentages can't tell you. The UI this feeds says so explicitly
+  // rather than silently under-computing it.
+  function combineVaRatings(ratings) {
+    const clean = (ratings || [])
+      .map((r) => Math.min(100, Math.max(0, Math.round(Number(r) || 0))))
+      .filter((r) => r > 0)
+      .sort((a, b) => b - a); // regulation requires greatest-first order
+    const combined = clean.reduce((acc, r) => Math.round(100 - ((100 - acc) * (100 - r)) / 100), 0);
+    // Nearest 10, values ending in 5-9 round up (65 must become 70, never
+    // 60) - JS's Math.round already rounds .5 up for positive numbers, so
+    // this needs no custom tie-break.
+    const rounded = Math.round(combined / 10) * 10;
+    return { individualRatings: clean, combined, rounded };
+  }
+
   G.transition = G.transition || {};
   G.transition.render = function (mount) { render(mount); };
+  G.transition.combineVaRatings = combineVaRatings;
 })();
 
 /* ==== js/career.js ==== */
