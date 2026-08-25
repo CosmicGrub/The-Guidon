@@ -14799,17 +14799,35 @@ window.G = window.G || {};
 
       function drawMatrix(vIdx, lIdx) {
         util.clear(matrix);
-        const tbl = el("table", { style: "border-collapse:collapse;margin-top:8px;font-size:12px" });
-        const head = el("tr", {}, [el("th", { style: "padding:4px 8px;text-align:right;color:var(--text-dim)", text: "Value ↓ / Likelihood →" })]);
-        LEVELS.forEach((l) => head.appendChild(el("th", { style: "padding:4px 8px;color:var(--text-dim)", text: l })));
+        // table-layout:fixed + explicit column widths + wrapping cell text keeps
+        // this genuinely responsive down to the narrowest real viewport (344px
+        // fold-closed cover screen). The mobile `table { display:block }` reflow
+        // rule (index.html ~L4887) only overrides this *outer* element's display
+        // - the <tr>/<td> children stay table-row/table-cell, so the browser
+        // still runs the auto table-layout algorithm on them at natural
+        // (un-wrapped) content width, and a 6-column reference matrix can end up
+        // wider than the viewport itself once font metrics shift (confirmed:
+        // this table's rows sit right at the fold-closed viewport edge on
+        // Windows/Segoe UI and cross it on Linux's default sans-serif fallback -
+        // GUIDON ships no embedded webfonts, so CI's font substitution differs
+        // from local dev). Inline display:table + table-layout:fixed overrides
+        // that mobile rule (inline style always wins the cascade) and makes
+        // column widths content-independent, so no viewport-specific hack is
+        // needed - it reflows correctly at any width.
+        const tbl = el("table", { style: "border-collapse:collapse;margin-top:8px;font-size:12px;display:table;table-layout:fixed;width:100%" });
+        const cg = el("colgroup", {}, [el("col", { style: "width:30%" })]);
+        LEVELS.forEach(() => cg.appendChild(el("col", { style: "width:14%" })));
+        tbl.appendChild(cg);
+        const head = el("tr", {}, [el("th", { style: "padding:4px 8px;text-align:right;color:var(--text-dim);overflow-wrap:anywhere", text: "Value ↓ / Likelihood →" })]);
+        LEVELS.forEach((l) => head.appendChild(el("th", { style: "padding:4px 8px;color:var(--text-dim);overflow-wrap:anywhere", text: l })));
         tbl.appendChild(head);
         for (let v = LEVELS.length - 1; v >= 0; v--) {
-          const row = el("tr", {}, [el("td", { style: "padding:4px 8px;text-align:right;color:var(--text-dim)", text: LEVELS[v] })]);
+          const row = el("tr", {}, [el("td", { style: "padding:4px 8px;text-align:right;color:var(--text-dim);overflow-wrap:anywhere", text: LEVELS[v] })]);
           for (let l = 0; l < LEVELS.length; l++) {
             const band = BANDS[riskBand(v, l)];
             const on = v === vIdx && l === lIdx;
             row.appendChild(el("td", {
-              style: "padding:6px 10px;text-align:center;border:1px solid var(--line);color:" + (on ? "#000" : RISK_COLOR[band]) +
+              style: "padding:6px 10px;text-align:center;border:1px solid var(--line);overflow-wrap:anywhere;color:" + (on ? "#000" : RISK_COLOR[band]) +
                 ";background:" + (on ? RISK_COLOR[band] : "transparent") + ";font-weight:" + (on ? "700" : "400"),
               text: band[0],
             }));
@@ -14837,20 +14855,31 @@ window.G = window.G || {};
       const crmPanel = el("div.panel", { style: "margin-top:14px" });
       crmPanel.appendChild(el("label", { text: "ATP 5-19 Composite Risk Matrix (operational training reference)" }));
       crmPanel.appendChild(el("p.hint", { style:"margin-top:4px", text: "Use this for mission/training event risk management (separate from the DA 7278 physical security tool above). Probability × Severity = Risk Level. (ATP 5-19, 2014.)" }));
-      const crmTbl = el("table", { style: "border-collapse:collapse;margin-top:8px;font-size:11px;width:100%" });
+      // table-layout:fixed + explicit column widths + wrapping cell text - see
+      // drawMatrix()'s note above for the root cause (same mechanism, same fix:
+      // long English severity labels like "Catastrophic"/"Negligible" force the
+      // table wider than the viewport at narrow widths unless columns are
+      // content-independent). Wrapped in its own overflow:auto div as a
+      // defense-in-depth fallback, matching the DA 7278 matrix's `matrix` div.
+      const crmTblWrap = el("div", { style: "overflow:auto" });
+      const crmTbl = el("table", { style: "border-collapse:collapse;margin-top:8px;font-size:11px;width:100%;display:table;table-layout:fixed" });
+      const crmCg = el("colgroup", {}, [el("col", { style: "width:32%" })]);
+      SEVERITY.forEach(() => crmCg.appendChild(el("col", { style: "width:17%" })));
+      crmTbl.appendChild(crmCg);
       const crmHead = el("tr");
-      crmHead.appendChild(el("th", { style: "padding:4px;text-align:right;color:var(--text-dim)", text: "Prob ↓ / Severity →" }));
-      SEVERITY.forEach((s) => crmHead.appendChild(el("th", { style: "padding:4px 6px;color:var(--text-dim);text-align:center", text: s })));
+      crmHead.appendChild(el("th", { style: "padding:4px;text-align:right;color:var(--text-dim);overflow-wrap:anywhere", text: "Prob ↓ / Severity →" }));
+      SEVERITY.forEach((s) => crmHead.appendChild(el("th", { style: "padding:4px 6px;color:var(--text-dim);text-align:center;overflow-wrap:anywhere", text: s })));
       crmTbl.appendChild(crmHead);
       PROBABILITY.forEach((prob, pi) => {
         const row = el("tr");
-        row.appendChild(el("td", { style: "padding:4px;text-align:right;color:var(--text-dim)", text: prob }));
+        row.appendChild(el("td", { style: "padding:4px;text-align:right;color:var(--text-dim);overflow-wrap:anywhere", text: prob }));
         CRM_MATRIX[pi].forEach((lvl) => {
           row.appendChild(el("td", { style: "padding:5px 8px;text-align:center;border:1px solid var(--line);font-weight:700;font-family:var(--font-mono);font-size:.7rem;color:" + (lvl === "E" ? "#fff" : lvl === "L" ? "var(--bg)" : "var(--bg)") + ";background:" + CRM_COLOR[lvl], text: lvl }));
         });
         crmTbl.appendChild(row);
       });
-      crmPanel.appendChild(crmTbl);
+      crmTblWrap.appendChild(crmTbl);
+      crmPanel.appendChild(crmTblWrap);
       crmPanel.appendChild(el("div.hint", { style: "margin-top:6px", text: "E = Extremely High · H = High · M = Medium · L = Low. Countermeasures required for all E/H ratings before mission execution. (ATP 5-19.)" }));
       mount.appendChild(crmPanel);
 
