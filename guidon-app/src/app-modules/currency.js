@@ -62,6 +62,42 @@ window.G = window.G || {};
     return null;
   }
 
+  // Career's own currency signal, same live-getter shape as financeAsOfStamp()
+  // just above but simpler to extract: G.store.career().fy26Snapshot -
+  // read live via G.store.career(), the exact same accessor career.js's own
+  // data() uses - carries a `sourceMilper` object naming the actual MILPER
+  // message the shortage/growth and overstrength/restricted MOS lists come
+  // from (`{ number, title, effectiveDate, supersedes }`), added specifically
+  // so this tracker has something real to read instead of the hand-typed
+  // "2026" literal this domain used to carry. Unlike finance.asOf (prose that
+  // needs a year regexed out of it), sourceMilper.effectiveDate is already a
+  // bare ISO-ish stamp (YYYY-MM-DD) in exactly the shape ageOf() below
+  // parses natively, so no extraction is needed - just a shape check.
+  // Called from a `get asOf()` accessor on the DOMAINS entry below, not
+  // computed once at module load, for the same reason as Money: the seed
+  // backfills to {} until loadContent() resolves state.seed.career.
+  let _careerAsOfWarned = false;
+  function careerAsOfStamp() {
+    try {
+      const s = (G.store && G.store.career && G.store.career()) || {};
+      const snap = s.fy26Snapshot || {};
+      const stamp = (snap.sourceMilper && snap.sourceMilper.effectiveDate) || "";
+      if (/^\d{4}(-\d{2}(-\d{2})?)?$/.test(stamp)) return stamp;
+    } catch (e) {}
+    // Either the seed hasn't loaded yet (normal, transient - same race as
+    // financeAsOfStamp() above) or fy26Snapshot.sourceMilper changed shape
+    // enough to no longer carry a parseable effectiveDate - which would
+    // otherwise leave this domain silently reading "unknown" forever with
+    // no trace. Log once per session, not once per read (this getter is
+    // read multiple times per render() call - once per sort comparison,
+    // again for display).
+    if (!_careerAsOfWarned && G.selfheal) {
+      _careerAsOfWarned = true;
+      G.selfheal.log("currency-derive-fail", "career", "could not find a parseable sourceMilper.effectiveDate in G.store.career().fy26Snapshot - the Career Freshness entry will read “unknown” instead of a real age");
+    }
+    return null;
+  }
+
   /* volatility: how fast this area has actually moved, not how important it is.
      "high" = it changed within the last year and could again. */
   const DOMAINS = [
@@ -103,8 +139,15 @@ window.G = window.G || {};
     // and SRB tables "change roughly every six months via MILPER message" -
     // it was the single most self-described-perishable content in the app
     // and the one domain this tracker never listed.
-    { area: "MOS shortage/growth and reclassification", short: "Career", asOf: "2026", volatility: "high",
-      basis: "FY26 shortage/growth and overstrength/restricted MOS lists; SRB Quality Tiered Incentive Program (HQDA EXORD 117-26). Superseded roughly every six months by a new IN/OUT-call MILPER message.",
+    // asOf is a live getter, not a literal, same reasoning as Money below:
+    // data.career.fy26Snapshot.sourceMilper.effectiveDate is the real MILPER
+    // message's own effective date, read live via G.store.career() so this
+    // can never see anything career.js itself couldn't - see
+    // careerAsOfStamp() above.
+    { area: "MOS shortage/growth and reclassification", short: "Career",
+      get asOf() { return careerAsOfStamp(); },
+      volatility: "high",
+      basis: "FY26 shortage/growth and overstrength/restricted MOS lists; SRB Quality Tiered Incentive Program (HQDA EXORD 117-26). Superseded roughly every six months by a new IN/OUT-call MILPER message - see the Career tab's own fy26Snapshot.sourceMilper for the exact message this age is derived from.",
       implemented: "164 MOS entries, Warrant Officer feeder pathways, civilian-credential mapping, and the reclassification policy panel.",
       ask: "Your Career Counselor / Installation Retention Office via RETAIN for the current IN/OUT call.", link: "#/career" },
 
