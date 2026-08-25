@@ -264,6 +264,15 @@ jobs:
             tests: "test:fitness-currency-grid test:width-waste-selftest-drills-assignments test:career-leader-grid test:forms-counsel-grid test:checklist-reading-width test:fillbar-transforms test:haptics-capacitor test:rapid-fire"
           - name: "14-rapidfirenosrswrites-rapidfiresoloteam-biometriclock-storagedashboard-schemamigration-vacombinedrating-sgtssgcompare-careertimeline"
             tests: "test:rapid-fire-no-srs-writes test:rapid-fire-solo-team test:biometric-lock test:storage-dashboard test:schema-migration test:va-combined-rating test:sgt-ssg-compare test:career-timeline"
+          # New chunk rather than appended to an existing one: every chunk
+          # above is already at the documented 8-per-chunk ceiling (this
+          # file's own <=8-concurrent-Chromium safety limit, not an
+          # arbitrary round number - see the top-of-file note), so there is
+          # no "lightest" chunk with room left. Adding a 9th test to any of
+          # them would silently exceed that ceiling on a runner already
+          # sized to the 8-test assumption.
+          - name: "15-focusringslistdetail"
+            tests: "test:focus-rings-list-detail"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
