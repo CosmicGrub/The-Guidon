@@ -6191,6 +6191,17 @@ window.G = window.G || {};
      attempts      keyPath "id"  -> attempt records  (autoIndexed by scenarioId, ts)
      userScenarios keyPath "id"  -> authored scenarios (same schema as seed)
      meta          keyPath "k"   -> content cache metadata / seed snapshot
+
+   SCHEMA MIGRATIONS (roadmap Tier 8): bumping DB_VERSION and adding a
+   MIGRATIONS[<newVersion>] function below is how a future structural or
+   data change to this schema ships - see the MIGRATIONS/runMigrations()
+   comments a few lines down for the mechanism. Unused today (this schema
+   has been stable since v1 and MIGRATIONS is empty) - this is the harness,
+   not a migration in progress. NOTE: this is a completely separate concept
+   from backup.js's SCHEMA constant ("guidon.backup/v1"), which versions the
+   exported/imported JSON backup FILE format, not this IndexedDB database -
+   the two have never needed to move together and there's no reason they
+   would.
    ------------------------------------------------------------------ */
 window.G = window.G || {};
 // Placeholder values only - tools/build.mjs always overwrites both from
@@ -6203,8 +6214,36 @@ window.GUIDON_BUILD_DATE = "2026-08-09";
 (function () {
   "use strict";
   const DB_NAME = "guidon";
-  const DB_VERSION = 1;
+  const DB_VERSION = 1;   // bump only when a MIGRATIONS entry below is added
   let _db = null;
+
+  // Versioned migrations, keyed by the TARGET version they upgrade TO. Each
+  // fn receives the real IDBDatabase and the shared versionchange
+  // IDBTransaction from onupgradeneeded - per the IndexedDB spec, object
+  // stores/indexes can only be created/deleted here, but the same
+  // transaction also has readwrite access to every existing store for its
+  // duration, so it can just as well cursor/get/put existing rows into a
+  // new shape (a real data migration, not just a structural one).
+  //
+  // Exposed as db._migrations below (not kept as a private const the
+  // outside world can't reach) so tools/test-schema-migration.mjs can
+  // inject a disposable migration against a scratch database and prove the
+  // real loop in runMigrations() actually runs it end-to-end, without ever
+  // bumping DB_VERSION or touching the real "guidon" database to do so.
+  const MIGRATIONS = {};
+
+  // Runs every registered migration strictly between the version this
+  // connection is upgrading FROM and the version it's upgrading TO, in
+  // order - the standard IndexedDB migration idiom. Reads db._migrations
+  // (falling back to the module's own MIGRATIONS) rather than closing over
+  // MIGRATIONS directly, specifically so a test can substitute its own
+  // registry on the live db object without this function needing to change.
+  function runMigrations(targetDb, versionTx, oldVersion, newVersion) {
+    const registry = db._migrations || MIGRATIONS;
+    for (let v = oldVersion + 1; v <= newVersion; v++) {
+      if (typeof registry[v] === "function") registry[v](targetDb, versionTx);
+    }
+  }
 
   function open() {
     return new Promise((resolve, reject) => {
@@ -6221,6 +6260,10 @@ window.GUIDON_BUILD_DATE = "2026-08-09";
           s.createIndex("byScenario", "scenarioId", { unique: false });
           s.createIndex("byTs", "ts", { unique: false });
         }
+        // No-op today (MIGRATIONS is empty and DB_VERSION is still 1) -
+        // zero behavior change on any existing install until a real
+        // migration is registered.
+        runMigrations(db, e.target.transaction, e.oldVersion, DB_VERSION);
       };
       req.onsuccess = () => { _db = req.result; resolve(_db); };
       req.onerror = () => reject(req.error);
@@ -6426,6 +6469,13 @@ window.GUIDON_BUILD_DATE = "2026-08-09";
       wrapKvCache();
     },
     _backend: "indexeddb",
+    // See MIGRATIONS/runMigrations() above open() - exposed here (not kept
+    // private) so tools/test-schema-migration.mjs can inject a disposable
+    // migration and invoke this SAME real function against a scratch
+    // database, exercising the actual shipped upgrade path end-to-end
+    // rather than a reimplementation of it.
+    _migrations: MIGRATIONS,
+    _runMigrations: runMigrations,
   };
 
   wrapKvCache();
