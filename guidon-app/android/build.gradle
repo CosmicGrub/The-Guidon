@@ -1,7 +1,7 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 
 buildscript {
-    
+
     repositories {
         google()
         mavenCentral()
@@ -9,6 +9,21 @@ buildscript {
     dependencies {
         classpath 'com.android.tools.build:gradle:8.13.0'
         classpath 'com.google.gms:google-services:4.5.0'
+        // Baseline Profile Gradle plugin (id "androidx.baselineprofile"), applied
+        // to :baselineprofile (com.android.test, generator) and :app (consumer).
+        // This project uses the legacy buildscript+"apply plugin" style
+        // throughout (no plugins{} DSL/version catalog), so the plugin id
+        // resolves off this classpath entry the same way com.android.application
+        // already does above.
+        //
+        // Version hardcoded (not read from variables.gradle's ext) because
+        // buildscript{} always evaluates before "apply from: variables.gradle"
+        // below runs - ext.baselineProfileGradlePluginVersion doesn't exist yet
+        // at this point in the script. Keep this literal in sync with
+        // variables.gradle's baselineProfileGradlePluginVersion by hand; it's
+        // the same constraint com.android.tools.build:gradle's own hardcoded
+        // 8.13.0 above already lives under.
+        classpath 'androidx.benchmark:benchmark-baseline-profile-gradle-plugin:1.4.1'
 
         // NOTE: Do not place your application dependencies here; they belong
         // in the individual module build.gradle files
