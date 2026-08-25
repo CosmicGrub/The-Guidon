@@ -75,6 +75,28 @@ page.on("console", (m) => {
 });
 page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 
+// src/app-modules/library.js's render() does a one-time same-origin HEAD probe
+// against DOCS[0].pdfAsset (docs/<first reference doc>.pdf) to detect whether
+// web/docs/*.pdf actually shipped with this build - true for a real web/Android
+// build, false for the standalone single-file build. This route sweep below
+// renders every route including #/library, which triggers that probe. It is
+// only ever missing here because .github/workflows/ci.yml's build-artifact
+// upload deliberately excludes guidon-app/web/docs/** (~78MB, not worth
+// re-uploading/downloading for all 14 test-matrix jobs) - a real build.mjs run
+// (local, Android, a genuine deploy) always writes web/docs/ alongside
+// web/index.html together, so this never happens outside that one CI artifact
+// trim. A same-origin fetch() against a URL that genuinely 404s logs Chromium's
+// own "Failed to load resource" line to the console as an unavoidable
+// network-layer side effect - no try/catch in app code can suppress it, and
+// the message text itself never includes the URL (see the response listener
+// below, which is what actually confirms *which* 404 this is). Counting real
+// docs/*.pdf 404 responses and spending exactly that many off the noise list
+// keeps this check honest: any OTHER unexplained 404/console error still fails.
+let docsProbe404 = 0;
+page.on("response", (r) => {
+  if (!r.ok() && /\/docs\/.*\.pdf$/i.test(new URL(r.url()).pathname)) docsProbe404++;
+});
+
 console.log("  policy: " + CSP + "\n");
 await page.goto(url, { waitUntil: "load" });
 await page.waitForTimeout(800);
@@ -147,7 +169,13 @@ const all = violations.concat(domViolations);
 all.length === 0 ? ok("zero CSP violations") : bad(`${all.length} CSP violations; first: ${all[0]}`);
 
 const KNOWN = [/Removing XFA form data as pdf-lib does not support/];
-const unexpected = noise.filter((n) => !KNOWN.some((k) => k.test(n)));
+const DOCS_PROBE_404 = /Failed to load resource: the server responded with a status of 404/;
+let docsAllowance = docsProbe404;
+const unexpected = noise.filter((n) => {
+  if (KNOWN.some((k) => k.test(n))) return false;
+  if (docsAllowance > 0 && DOCS_PROBE_404.test(n)) { docsAllowance--; return false; }
+  return true;
+});
 unexpected.length === 0 ? ok("no unexpected console output") : bad(unexpected.length + " msgs; first: " + unexpected[0]);
 
 await browser.close();
