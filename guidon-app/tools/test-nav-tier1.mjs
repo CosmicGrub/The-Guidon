@@ -86,9 +86,11 @@ const noise = [];
   JSON.stringify(drawerOpen.groupHeaders) === JSON.stringify(["Board Prep", "Study & Skills", "Leadership", "Career & Life", "Account", "Advanced"])
     ? ok("drawer renders all 6 labeled groups, same order as the sidebar")
     : bad("drawer group headers: " + JSON.stringify(drawerOpen.groupHeaders));
-  drawerOpen.totalButtons === 33
-    ? ok("drawer renders all 33 non-hidden routes (same set the >=600px sidebar shows)")
-    : bad("drawer route button count: " + drawerOpen.totalButtons + ", expected 33");
+  // 34 as of the Data & Storage dashboard (#/storage, roadmap Tier 8) - was
+  // 33 before that route existed.
+  drawerOpen.totalButtons === 34
+    ? ok("drawer renders all 34 non-hidden routes (same set the >=600px sidebar shows)")
+    : bad("drawer route button count: " + drawerOpen.totalButtons + ", expected 34");
   drawerOpen.demoted.length === 0
     ? ok("drawer has no .nav-demoted items - Author/Diagnostics moved to their own real group instead of in-place dimming")
     : bad("drawer still has .nav-demoted items: " + JSON.stringify(drawerOpen.demoted));
@@ -234,7 +236,9 @@ const noise = [];
       .map((b) => b.getAttribute("data-hash"))
       .filter((h) => ["#/progress", "#/currency", "#/settings", "#/share"].includes(h)),
   }));
-  sidebar.totalButtons === 33 ? ok("sidebar renders all 33 non-hidden routes") : bad("sidebar route button count: " + sidebar.totalButtons);
+  // 34 as of the Data & Storage dashboard (#/storage) - see the drawer
+  // assertion above for the same count and its own provenance note.
+  sidebar.totalButtons === 34 ? ok("sidebar renders all 34 non-hidden routes") : bad("sidebar route button count: " + sidebar.totalButtons + ", expected 34");
   sidebar.hasMoreBtn === false ? ok("no More button at >=600px - the sidebar shows everything directly") : bad("unexpected More button in the sidebar");
   // 6 labeled groups now (Board Prep/Study & Skills/Leadership/Career &
   // Life/Account/Advanced) = 6 between-group dividers, + 3 in-group
@@ -276,8 +280,12 @@ const noise = [];
     };
   });
   advanced.expanded === "true" ? ok('clicking the "Advanced" header opens it') : bad('"Advanced" header aria-expanded after click: ' + advanced.expanded);
-  JSON.stringify(advanced.hashes) === JSON.stringify(["#/author", "#/selftest"])
-    ? ok('"Advanced" contains exactly Author and Diagnostics, in that order')
+  // #/storage (Data & Storage dashboard) added to this group alongside
+  // Author/Diagnostics - same "power-user/infrequent controls, one tap
+  // away" rationale the group's own header comment in src/index.html gives
+  // for Author/Diagnostics.
+  JSON.stringify(advanced.hashes) === JSON.stringify(["#/author", "#/selftest", "#/storage"])
+    ? ok('"Advanced" contains exactly Author, Diagnostics and Data & Storage, in that order')
     : bad('"Advanced" group members: ' + JSON.stringify(advanced.hashes));
   advanced.hrefsMatch ? ok('"Advanced" members are real <a href> links resolving to their own hash') : bad('"Advanced" member href mismatch: ' + JSON.stringify(advanced));
   advanced.anyDemoted ? bad('"Advanced" members still carry .nav-demoted - should render like any other group\'s members') : ok('"Advanced" members carry no .nav-demoted class');

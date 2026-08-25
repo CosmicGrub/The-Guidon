@@ -21954,6 +21954,124 @@ window.G = window.G || {};
 })();
 // END selftest.js
 
+/* ==== js/storage.js ==== */
+/* GUIDON — storage.js : Data & Storage dashboard (G.storage)
+   Shows the real numbers behind "everything stays on this device" — the
+   live navigator.storage.estimate() figure G.pwa already tracks (reused,
+   not re-queried), plus a genuine per-store row count and byte size read
+   straight from IndexedDB (kv, meta, userScenarios, attempts).
+
+   Deliberately read-only: this app ships no single "erase everything"
+   action (see views.privacy, which points a Soldier at their browser/OS's
+   own "clear site data" for that) — this view informs, Settings' Data &
+   Backup panel is where a Soldier actually acts (export/import), and
+   Diagnostics' "Data validity scan" / "Storage durability" checks are
+   where they see pass/fail health. Adding a destructive control here
+   would be new scope this dashboard doesn't need.
+*/
+window.G = window.G || {};
+(function () {
+  "use strict";
+  const util = G.util, el = util.el;
+
+  const STORES = [
+    { name: "kv", label: "Settings & flags", hint: "Profile, preferences, streaks, SRS scheduling, self-heal log, one-time flags." },
+    { name: "meta", label: "Content cache", hint: "Cached copies of the app's own board/doctrine/scenario/etc. data — not your data; rebuilt automatically if ever cleared." },
+    { name: "userScenarios", label: "Authored scenarios", hint: "Scenarios written in Author." },
+    { name: "attempts", label: "Recorded attempts", hint: "Board Drill / Rapid Fire / Train history — capped at the most recent 1,000." },
+  ];
+
+  async function storeStats(name) {
+    let rows;
+    try { rows = await G.db.all(name); } catch (e) { return { count: 0, bytes: 0, error: true }; }
+    let bytes = 0;
+    // Blob's size is a real UTF-8 byte count, unlike JSON.stringify(...).length
+    // (UTF-16 code units) — this app's content includes non-ASCII text
+    // (em dashes, curly quotes), so the two figures genuinely differ.
+    try { bytes = new Blob([JSON.stringify(rows)]).size; } catch (e) {}
+    return { count: rows.length, bytes };
+  }
+
+  async function render(mount) {
+    util.clear(mount);
+    mount.appendChild(el("div.section-title", {}, [el("h2", { text: "Data & Storage" }), el("div.rule")]));
+    mount.appendChild(el("p.hint", { text:
+      "Everything GUIDON stores lives in this browser's own local database — no account, no server, nothing ever leaves this device unless you export a backup yourself. This shows the real numbers behind that." }));
+
+    // ---- overall usage (navigator.storage.estimate(), via G.pwa — reused,
+    // not re-queried, so this can never disagree with Share & Install's own
+    // "Stored on this device" figure) ----
+    const usagePanel = el("div.panel", { style: "margin-bottom:12px;border-left:3px solid var(--amber)" });
+    usagePanel.appendChild(el("div.eyebrow", { text: "Total storage used by this site" }));
+    const usageStat = el("div.stat", {}, [el("span.k", { text: "Checking…" }), el("span.v", { text: "—" })]);
+    usagePanel.appendChild(usageStat);
+    const usageDetail = el("p.hint", { style: "margin-top:6px" });
+    usagePanel.appendChild(usageDetail);
+    mount.appendChild(usagePanel);
+
+    (async () => {
+      const est = (G.pwa.state && G.pwa.state.estimate) || await G.pwa.readEstimate();
+      util.clear(usageStat);
+      if (est && typeof est.usage === "number") {
+        const fmt = G.pwa.fmtBytes;
+        const pct = est.quota ? Math.round((est.usage / est.quota) * 100) : null;
+        usageStat.appendChild(el("span.k", { text: fmt(est.usage) + (est.quota ? " of " + fmt(est.quota) : "") }));
+        usageStat.appendChild(el("span.v", { text: pct != null ? pct + "%" : "—" }));
+        usageDetail.textContent = "This figure is reported by the browser for GUIDON's entire origin (IndexedDB plus the cached app files themselves) — not the per-store breakdown below, which is IndexedDB only.";
+      } else {
+        usageStat.appendChild(el("span.k", { text: "Not available" }));
+        usageStat.appendChild(el("span.v", { text: "—" }));
+        usageDetail.textContent = "This browser doesn't report a storage estimate. GUIDON still works normally — this is just a missing number, not a problem.";
+      }
+      const persisted = G.pwa.state && G.pwa.state.persisted;
+      if (persisted === true) {
+        usagePanel.appendChild(el("p.hint", { style: "margin-top:6px", text: "✓ Persistent storage granted — this browser won't silently evict GUIDON's data under storage pressure." }));
+      } else if (persisted === false) {
+        usagePanel.appendChild(el("p.hint", { style: "margin-top:6px", text: "Persistent storage was not granted. See Diagnostics → Storage durability to try again." }));
+      }
+    })();
+
+    // ---- per-store breakdown (real IndexedDB rows, not the origin estimate) ----
+    const breakdownPanel = el("div.panel", { style: "margin-bottom:12px" });
+    breakdownPanel.appendChild(el("div.eyebrow", { text: "By store" }));
+    const rowsMount = el("div", { style: "margin-top:6px" });
+    breakdownPanel.appendChild(rowsMount);
+    mount.appendChild(breakdownPanel);
+
+    (async () => {
+      util.clear(rowsMount);
+      for (const s of STORES) {
+        const stat = await storeStats(s.name);
+        rowsMount.appendChild(el("div.stat", { style: "margin-top:6px" }, [
+          el("span.k", { text: s.label }),
+          el("span.v", { text: stat.error ? "—" : stat.count + " row" + (stat.count === 1 ? "" : "s") + " · " + G.pwa.fmtBytes(stat.bytes) }),
+        ]));
+        rowsMount.appendChild(el("p.hint", { style: "margin:2px 0 8px", text: s.hint }));
+      }
+    })();
+
+    // ---- cross-links — point to the real controls, don't duplicate them ----
+    const linksPanel = el("div.panel");
+    linksPanel.appendChild(el("div.eyebrow", { text: "Related" }));
+    const linkRow = el("div.btn-row", { style: "margin-top:6px" });
+    const backupBtn = el("button.btn.sm.ghost", { type: "button", gi: "download", giSize: 14, text: "Export a backup" });
+    backupBtn.addEventListener("click", () => { location.hash = "#/settings"; });
+    linkRow.appendChild(backupBtn);
+    const diagBtn = el("button.btn.sm.ghost", { type: "button", gi: "check-circle", giSize: 14, text: "Check data validity" });
+    diagBtn.addEventListener("click", () => { location.hash = "#/selftest"; });
+    linkRow.appendChild(diagBtn);
+    const privacyBtn = el("button.btn.sm.ghost", { type: "button", gi: "shield", giSize: 14, text: "Clearing your data" });
+    privacyBtn.addEventListener("click", () => { location.hash = "#/privacy"; });
+    linkRow.appendChild(privacyBtn);
+    linksPanel.appendChild(linkRow);
+    linksPanel.appendChild(el("p.hint", { style: "margin-top:8px", text: "This app deliberately has no single “erase everything” button inside it — see Privacy for how to fully clear GUIDON's data via your browser/OS if you ever need to." }));
+    mount.appendChild(linksPanel);
+  }
+
+  G.storage = { render };
+})();
+// END storage.js
+
 /* ==== js/share.js ==== */
 /* GUIDON — share.js : hosted-access panel (G.share)
    NOTE: an embedded QR encoder was written for this panel and REMOVED before
@@ -27640,6 +27758,13 @@ window.G = window.G || {};
     dataPanel.appendChild(importInput);
     dataPanel.appendChild(lastBackupHint);
     dataPanel.appendChild(el("p.hint", { text: "Export a full JSON backup — profile, IDP goals, counseling drafts, promotion-point estimates, SRS scheduling, authored scenarios, and recorded attempts — or restore one on another device." }));
+    // Signposts to the full Data & Storage dashboard (usage estimate,
+    // per-store row counts) rather than duplicating any of it here — same
+    // "point there, don't copy it" convention the Privacy/Account links
+    // above this panel already use.
+    const storageLink = el("button.btn.sm.ghost", { type: "button", gi: "database", giSize: 14, text: "View storage details", style: "margin-top:6px" });
+    storageLink.addEventListener("click", () => { location.hash = "#/storage"; });
+    dataPanel.appendChild(storageLink);
     dataGrid.appendChild(dataPanel);
 
     // help / guided tour — the tour itself already exists (one-line
@@ -28201,6 +28326,7 @@ window.G = window.G || {};
     // checklist (screen-reader checks, device report export) - "Diagnostics"
     // doesn't invite that confusion.
     { hash: "#/selftest", label: "Diagnostics", ico: "check-circle", render: (m) => G.selftest.render(m) },
+    { hash: "#/storage", label: "Data & Storage", ico: "database", render: (m) => G.storage.render(m) },
     { hash: "#/settings", label: "Settings", ico: "sliders", render: (m) => G.views.settings(m) },
     { hash: "#/search",   label: "Search",   ico: "search", render: (m) => G.views.search(m) },
     { hash: "#/profile",  label: "Profile",  ico: "user", render: (m) => G.profile.render(m) },
@@ -28274,7 +28400,7 @@ window.G = window.G || {};
     // hidden or gated - one tap away). No "demoted" field needed here -
     // a real labeled group doesn't need its own members further demoted
     // within it.
-    { id: "advanced", label: "Advanced",      hashes: ["#/author", "#/selftest"] },
+    { id: "advanced", label: "Advanced",      hashes: ["#/author", "#/selftest", "#/storage"] },
   ];
   const navOpenGroups = new Set(["home"]);
   // PC/desktop intuitivism pass, Tier 1(f): the accordion's open/closed

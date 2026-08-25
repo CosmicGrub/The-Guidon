@@ -65,8 +65,9 @@ async function focusedId(page) {
   await pastOnboarding(page);
 
   // ---- 2(a): DOM contract - every leaf item is a real <a href> whose
-  // href resolves to its own data-hash. 33 is the same non-hidden route
-  // count test-nav-tier1.mjs already established for this sidebar. ----
+  // href resolves to its own data-hash. 34 is the same non-hidden route
+  // count test-nav-tier1.mjs already established for this sidebar (was 33
+  // before the Data & Storage dashboard, #/storage, added a route). ----
   const leafContract = await page.evaluate(() => {
     const els = Array.from(document.querySelectorAll(".nav a[data-hash]"));
     return {
@@ -76,7 +77,7 @@ async function focusedId(page) {
       headersStillButtons: Array.from(document.querySelectorAll(".nav .nav-group-header")).every((e) => e.tagName === "BUTTON"),
     };
   });
-  leafContract.total === 33 ? ok("sidebar still renders all 33 non-hidden routes as leaf items") : bad("sidebar leaf item count: " + leafContract.total + ", expected 33");
+  leafContract.total === 34 ? ok("sidebar still renders all 34 non-hidden routes as leaf items") : bad("sidebar leaf item count: " + leafContract.total + ", expected 34");
   leafContract.allAnchors ? ok("every sidebar leaf item is a real <a> element") : bad("some sidebar leaf items are not <a> elements");
   leafContract.hrefMismatches.length === 0
     ? ok("every sidebar leaf item's href resolves to its own #/... hash")
@@ -264,7 +265,7 @@ async function focusedId(page) {
       hrefMismatches: els.filter((e) => e.getAttribute("href") !== e.getAttribute("data-hash")).map((e) => e.getAttribute("data-hash")),
     };
   });
-  drawerContract.total === 33 ? ok("drawer still renders all 33 non-hidden routes as leaf items") : bad("drawer leaf item count: " + drawerContract.total + ", expected 33");
+  drawerContract.total === 34 ? ok("drawer still renders all 34 non-hidden routes as leaf items") : bad("drawer leaf item count: " + drawerContract.total + ", expected 34");
   drawerContract.allAnchors ? ok("every drawer leaf item is a real <a> element") : bad("some drawer leaf items are not <a> elements");
   drawerContract.hrefMismatches.length === 0
     ? ok("every drawer leaf item's href resolves to its own #/... hash")

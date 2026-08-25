@@ -20,7 +20,8 @@ window.G = window.G || {};
   "use strict";
 
   // Geometry idiom: p = path d, c = circle [cx,cy,r], l = line [x1,y1,x2,y2],
-  // pl = polyline points, pg = polygon points, r = rect [x,y,w,h,rx].
+  // pl = polyline points, pg = polygon points, r = rect [x,y,w,h,rx],
+  // e = ellipse [cx,cy,rx,ry].
   const D = {
     home: [{ p: "M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" }, { pl: "9 22 9 12 15 12 15 22" }],
     target: [{ c: [12, 12, 10] }, { c: [12, 12, 6] }, { c: [12, 12, 2] }],
@@ -74,6 +75,7 @@ window.G = window.G || {};
     "life-buoy": [{ c: [12, 12, 10] }, { c: [12, 12, 4] }, { l: [4.93, 4.93, 9.17, 9.17] }, { l: [14.83, 14.83, 19.07, 19.07] }, { l: [14.83, 9.17, 19.07, 4.93] }, { l: [4.93, 19.07, 9.17, 14.83] }],
     map: [{ pg: "1 6 8 2 16 6 23 2 23 18 16 22 8 18 1 22" }, { l: [8, 2, 8, 18] }, { l: [16, 6, 16, 22] }],
     archive: [{ pl: "21 8 21 21 3 21 3 8" }, { r: [1, 3, 22, 5] }, { l: [10, 12, 14, 12] }],
+    database: [{ e: [12, 5, 9, 3] }, { p: "M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" }, { p: "M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" }],
   };
 
   const NS = "http://www.w3.org/2000/svg";
@@ -100,6 +102,7 @@ window.G = window.G || {};
       else if (part.pl) { node = document.createElementNS(NS, "polyline"); node.setAttribute("points", part.pl); }
       else if (part.pg) { node = document.createElementNS(NS, "polygon"); node.setAttribute("points", part.pg); }
       else if (part.r) { node = document.createElementNS(NS, "rect"); node.setAttribute("x", part.r[0]); node.setAttribute("y", part.r[1]); node.setAttribute("width", part.r[2]); node.setAttribute("height", part.r[3]); if (part.r[4]) node.setAttribute("rx", part.r[4]); }
+      else if (part.e) { node = document.createElementNS(NS, "ellipse"); node.setAttribute("cx", part.e[0]); node.setAttribute("cy", part.e[1]); node.setAttribute("rx", part.e[2]); node.setAttribute("ry", part.e[3]); }
       if (node) svg.appendChild(node);
     }
     return svg;
