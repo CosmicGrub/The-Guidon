@@ -1,0 +1,306 @@
+name: CI
+
+# GUIDON's first CI pipeline. Automates exactly what `guidon-app`'s own
+# `npm test` already runs manually every time: lint:patterns -> build ->
+# verify -> the full test:* suite. No new checks are introduced here.
+#
+# ---------------------------------------------------------------------------
+# WHY THIS ISN'T A SINGLE "npm test" STEP (read this before touching batching)
+# ---------------------------------------------------------------------------
+# guidon-app/package.json's "test" script ends in:
+#   node tools/run-parallel.mjs <~107 test:* script names>
+# tools/run-parallel.mjs launches EVERY name it's given as a fully concurrent
+# child process (`Promise.all(names.map(run))`, no concurrency cap), and most
+# of those test:* scripts each spin up their own Playwright/Chromium
+# instance. Firing all ~107 at once means ~107 concurrent Chromium
+# instances - that exhausts RAM/disk even on a well-resourced workstation,
+# and a standard GitHub-hosted `ubuntu-latest` runner (2 vCPU, ~7 GB RAM) has
+# far less headroom than that. A naive `npm test` call here would very
+# likely OOM, thrash, or time out. The exact same reasoning is why this
+# session's own local practice has never invoked `npm test` as one shot -
+# every local run has been manually batched into groups of <=8 concurrent
+# test:* scripts.
+#
+# BATCHING STRATEGY CHOSEN: a GitHub Actions job matrix, not sequential
+# batches in one job.
+#   - The list of 107 test:* names (the exact set `npm test` itself invokes,
+#     in its own order - see note below on test:contrast) is split into 14
+#     chunks of at most 8 names each (13 chunks of 8, 1 final chunk of 3),
+#     mirroring this session's own <=8-concurrent-Chromium local discipline
+#     exactly.
+#   - Each chunk becomes its own `strategy.matrix` job, each calling
+#     `node tools/run-parallel.mjs <that chunk's 8ish names>` - so the peak
+#     concurrent Chromium count per job is identical to what's already been
+#     proven safe locally.
+#   - Matrix (parallel, isolated jobs) was chosen over "one job, sequential
+#     batches" because each matrix entry gets its OWN runner VM with its own
+#     dedicated CPU/RAM/disk budget. A single job looping over 14 sequential
+#     batches would still cap concurrency at <=8 per batch (also safe from
+#     the OOM risk), but every batch would compete for the same one runner's
+#     resources for the entire run, any disk/process residue from an earlch
+#     batch lingers for the rest of the job, and total wall-clock time is the
+#     SUM of all 14 batches run one after another. The matrix instead runs
+#     chunks concurrently across GitHub's own runner fleet (bounded by the
+#     account's normal job-concurrency limit, not by us), so wall-clock stays
+#     close to a single chunk's time while keeping the same safe per-chunk
+#     concurrency ceiling. The repeated per-job setup (checkout/npm ci/
+#     Playwright install) this costs in CI-minutes is deliberate: it's cheap,
+#     fully parallel, and buys real host-level isolation instead of shared
+#     one-VM resource contention across the whole suite.
+#   - fail-fast is disabled so one failing chunk doesn't hide results from
+#     the other 13 - every chunk's outcome is visible.
+#
+# lint:patterns, build, and verify run exactly once, in their own job, ahead
+# of the test matrix - they're fast (a few seconds to under a minute locally)
+# and there is no reason to repeat them 14 times.
+#
+# EXCLUDED ON PURPOSE: test:android, test:android:back, test:android:links
+# (and any android:* build steps). These require a real device/emulator +
+# adb port-forwarding (see package.json's own "_note" on test:android*) that
+# this hosted runner does not have. Leaving native/Android verification out
+# of this workflow is a deliberate scope decision for this first CI pass, not
+# an oversight.
+#
+# NOTE on test:contrast: guidon-app/package.json defines a `test:contrast`
+# script, but `npm test` itself never invokes it (only `test:contrast-full`
+# is in the actual test script's run-parallel.mjs argument list - it appears
+# to be superseded/subsumed by test:contrast-full). This workflow mirrors
+# `npm test` exactly, so `test:contrast` is intentionally NOT included here
+# either - adding it would be a new check this workflow invents, not one
+# `npm test` already runs.
+#
+# NOTE on `npm run icons`: verified locally in a genuinely fresh checkout
+# (no node_modules, no web/, no dist/) that `npm run build && npm run
+# verify` FAILS on a clean clone - build never generates web/icons/*.png (it
+# only references those paths), so verify's icon-fetch checks 404 and the
+# route sweep picks up the resulting console errors. `npm run icons` must
+# run first. This is exactly the "known recurring environment quirk" this
+# session hit repeatedly, so it's included below as an explicit step -
+# npm run build and npm run verify alone are NOT sufficient in CI.
+#
+# NOTE on the test matrix needing web/ and dist/: `web/` and `dist/` are
+# both gitignored build output, not committed. Checked every tools/test-*.mjs
+# file (excluding the excluded android ones): the overwhelming majority call
+# `serve("web")` (server.mjs serving the built web/ bundle) and the rest read
+# built output directly - test-standalone.mjs and test-native-download.mjs/
+# test-print-native.mjs load dist/guidon-standalone.html (the latter two via
+# a file:// URL), test-csp.mjs reads web/index.html straight off disk. There
+# is no test:* suite that runs against src/ instead of built output. So the
+# 14 test-matrix jobs below cannot just install deps and go - they need the
+# SAME web/+dist/ the lint-build-verify job already built and verified.
+# Rather than re-running `npm run icons && npm run build` in all 14 jobs
+# (redundant work, and a small risk of testing against a *different* build
+# than the one verify actually checked), the setup job uploads web/+dist/ as
+# a single build artifact and every matrix job downloads it before running
+# its chunk. This also means a matrix job failure can never be "verify
+# passed against a build these tests never actually saw."
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same PR/branch so redundant jobs don't queue
+# up and burn concurrent-job slots that the test matrix needs. Runs on main
+# are never cancelled once started (branches[]) triggers push on main,
+# ref is refs/heads/main - excluded from cancellation).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  # Session's local dev environment uses Node 24; by this repo's current
+  # date (2026-08) Node 24 is Active LTS (entered LTS Oct 2025), so it's
+  # both the locally-matching version and a real, currently-supported
+  # stable choice - not a moving "latest" target.
+  NODE_VERSION: "24"
+
+defaults:
+  run:
+    working-directory: guidon-app
+
+jobs:
+  # ---------------------------------------------------------------------
+  # Fast, cheap, run-once checks: static lint, build, and the Playwright-
+  # based build/PWA verification harness. Gates the (much more expensive)
+  # test matrix below via `needs:`.
+  # ---------------------------------------------------------------------
+  lint-build-verify:
+    name: lint + build + verify
+    runs-on: ubuntu-latest
+    # Locally (24-core/33GB dev box, so treat as a floor not a ceiling):
+    # lint:patterns <1s, icons ~2s, build ~1.5s, verify ~51s (single
+    # Chromium instance doing a sequential 6-viewport x 37-route sweep).
+    # Add checkout + setup-node + npm ci + `playwright install --with-deps
+    # chromium` (can itself take 1-3 min cold on a fresh runner) and 15
+    # minutes leaves comfortable headroom without being an unbounded hang.
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: guidon-app/package-lock.json
+
+      - name: Install dependencies (npm ci)
+        run: npm ci
+
+      # Cache the downloaded Chromium binary across runs (keyed on the
+      # pinned Playwright version + lockfile) so repeated CI runs, and the
+      # other 14 jobs in this workflow, aren't all re-downloading it cold.
+      # Purely a speed/bandwidth optimization - correctness never depends
+      # on the cache hitting, `playwright install` below is a no-op if the
+      # requested browser is already present and installs it fresh otherwise.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('guidon-app/package-lock.json') }}
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Lint patterns
+        run: npm run lint:patterns
+
+      # Freshness cross-reference (tools/audit-content-freshness.mjs):
+      # reports whether any content item carrying a verifiedAgainst tag has
+      # gone stale relative to its currency.js domain's real current asOf
+      # date. Reads src/index.html + src/app-modules/currency.js directly,
+      # so it needs neither the built web/+dist/ output nor a browser -
+      # runs fine right after checkout, before Generate icons/Build below.
+      # NON-BLOCKING ON PURPOSE (matches the Engineering Systems pitch:
+      # "non-blocking initially, until there's real coverage to make it
+      # meaningful") - this is a discovery/report tool, not a gate. The
+      # script itself always exits 0 even when it finds stale items (a
+      # human decides what a stale finding means); continue-on-error here
+      # is a second, visible layer of the same guarantee at the workflow
+      # level, not a workaround for a script that can fail.
+      - name: Content freshness cross-reference (non-blocking)
+        run: npm run audit:freshness
+        continue-on-error: true
+
+      # Must run before build/verify - see the top-of-file note. build.mjs
+      # only ever *references* icon paths, it never generates the PNGs;
+      # without this, verify's icon-fetch checks 404 in any fresh checkout.
+      - name: Generate icons
+        run: npm run icons
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify (PWA/build harness)
+        run: npm run verify
+
+      # Shared with every test-matrix job below - see the top-of-file note
+      # on why the matrix downloads this instead of rebuilding 14 times.
+      # web/docs/ (the Reference Library's ~78MB of source PDFs, copied in
+      # by build.mjs) is excluded: verified no tools/test-*.mjs suite reads
+      # web/docs or docs-source at all, so shipping it through the artifact
+      # would be ~78MB of dead weight uploaded once and downloaded by all
+      # 14 matrix jobs for nothing.
+      - name: Upload build output (web/ + dist/)
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: |
+            guidon-app/web
+            guidon-app/dist
+            !guidon-app/web/docs/**
+          retention-days: 1
+
+  # ---------------------------------------------------------------------
+  # The ~107-suite test:* matrix, chunked to <=8 concurrent Playwright/
+  # Chromium instances per job - see the top-of-file comment for the full
+  # reasoning behind matrix-of-chunks over a single sequential job.
+  # ---------------------------------------------------------------------
+  test:
+    name: test (${{ matrix.chunk.name }})
+    needs: lint-build-verify
+    runs-on: ubuntu-latest
+    # Locally, an 8-suite chunk via run-parallel.mjs completed in ~14-15s on
+    # a 24-core/33GB dev box; a standard GitHub-hosted runner (2 vCPU, ~7GB
+    # RAM) is far more constrained and will run these suites markedly
+    # slower. Combined with per-job checkout/npm ci/Playwright-install
+    # overhead (the same as the setup job above), 15 minutes gives real
+    # margin without masking a genuinely hung suite for an hour.
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        chunk:
+          - name: "01-points-consistency-calendar-leader-privacy-scrollhint-theater-flip"
+            tests: "test:points test:consistency test:calendar test:leader test:privacy test:scrollhint test:theater test:flip"
+          - name: "02-a11y-pdf-standalone-bridge-contrastfull-responsive-csp-discoverability"
+            tests: "test:a11y test:pdf test:standalone test:bridge test:contrast-full test:responsive test:csp test:discoverability"
+          - name: "03-mockboard-idp-reminders-finance-salneg-career-author-onboarding"
+            tests: "test:mockboard test:idp test:reminders test:finance test:salneg test:career test:author test:onboarding"
+          - name: "04-backuproundtrip-selftest-printpaths-searchviews-records-ppw-nativedownload-printnative"
+            tests: "test:backup-roundtrip test:selftest test:print-paths test:search-views test:records test:ppw test:native-download test:print-native"
+          - name: "05-nativeunit-train-forms-settingstoggles-miscroutes-consistencyext-baselinecov-weakareas"
+            tests: "test:native-unit test:train test:forms test:settings-toggles test:misc-routes test:consistency-extended test:baseline-coverage test:weak-areas"
+          - name: "06-profileguestguard-progresscache-trainmodeguard-boarddrillgrading-boarddrillreducedmotion-searchlistdetail-boarddrilldynamic-navtier1"
+            tests: "test:profile-guest-guard test:progress-cache test:train-mode-guard test:board-drill-grading test:board-drill-reduced-motion-scroll test:search-list-detail test:board-drill-dynamic test:nav-tier1"
+          - name: "07-boarddrillgestures-foldnarrowsplit-boarddrillfaceparity-boarddrillautotheater-boarddrillpcparity-intuitivismpctier1-navtier2ab-intuitivismpctier2c"
+            tests: "test:board-drill-gestures test:fold-narrow-split test:board-drill-face-parity test:board-drill-auto-theater test:board-drill-pc-parity test:intuitivism-pc-tier1 test:nav-tier2ab test:intuitivism-pc-tier2c"
+          - name: "08-listnavtier2d-intuitivismpctier2ef-srswritefailure-attemptsretentioncap-selfhealaudit-themeidsync-scenariodifficultynormalize-navseed"
+            tests: "test:list-nav-tier2d test:intuitivism-pc-tier2ef test:srs-write-failure test:attempts-retention-cap test:selfheal-audit test:theme-id-sync test:scenario-difficulty-normalize test:nav-seed"
+          - name: "09-boarddrilldefinitionsglossary-progresstrendchart-progressglancestrip-themeselftestcheck-themenewbadge-autonighthourbar-weakmapcoverage-boarddatestale"
+            tests: "test:board-drill-definitions-glossary test:progress-trend-chart test:progress-glance-strip test:theme-selftest-check test:theme-new-badge test:auto-night-hourbar test:weak-map-coverage test:board-date-stale"
+          - name: "10-selfhealdownload-selfhealjumplinks-kvscanentrydownload-notifystatus-remindersurgencyparity-currencyfinance-searchhitmeta-searchemptydomains"
+            tests: "test:selfheal-download test:selfheal-jumplinks test:kvscan-entry-download test:notify-status test:reminders-urgency-parity test:currency-finance test:search-hit-meta test:search-empty-domains"
+          - name: "11-searchdistbar-counselpdfsigmode-formsfillmode-printreentrancy-pdfsignatureguard-charts-aarradar-traincoverageheatmap"
+            tests: "test:search-dist-bar test:counselpdf-sigmode test:forms-fill-mode test:print-reentrancy test:pdf-signature-guard test:charts test:aar-radar test:train-coverage-heatmap"
+          - name: "12-boarddrillreadinessheatmap-progressactivityheatmap-remindersdensity-selftesthistorytrend-doctrinecardgrid-settingsappearancegrid-transitionhealthgrid-writememosplit"
+            tests: "test:board-drill-readiness-heatmap test:progress-activity-heatmap test:reminders-density test:selftest-history-trend test:doctrine-card-grid test:settings-appearance-grid test:transition-health-grid test:write-memo-split"
+          - name: "13-fitnesscurrencygrid-widthwasteselftestdrillsassignments-careerleadergrid-formscounselgrid-checklistreadingwidth-fillbartransforms-hapticscapacitor-rapidfire"
+            tests: "test:fitness-currency-grid test:width-waste-selftest-drills-assignments test:career-leader-grid test:forms-counsel-grid test:checklist-reading-width test:fillbar-transforms test:haptics-capacitor test:rapid-fire"
+          - name: "14-rapidfirenosrswrites-rapidfiresoloteam-biometriclock"
+            tests: "test:rapid-fire-no-srs-writes test:rapid-fire-solo-team test:biometric-lock"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: guidon-app/package-lock.json
+
+      - name: Install dependencies (npm ci)
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('guidon-app/package-lock.json') }}
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      # The same web/+dist/ the lint-build-verify job already built and
+      # verified - see the top-of-file note. Almost every test:* suite
+      # serves web/ (server.mjs) or reads web/index.html /
+      # dist/guidon-standalone.html straight off disk; none run against
+      # uncompiled src/.
+      - name: Download build output (web/ + dist/)
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output
+          path: guidon-app
+
+      # Each test:* script serves/opens its own fixture from the downloaded
+      # build and drives its own Playwright browser instance with zero
+      # shared state (see tools/run-parallel.mjs's own header comment), so
+      # up to 8 of them can safely run concurrently in this one job.
+      - name: Run test chunk (${{ matrix.chunk.name }})
+        run: node tools/run-parallel.mjs ${{ matrix.chunk.tests }}
