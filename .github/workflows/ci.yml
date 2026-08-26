@@ -271,8 +271,8 @@ jobs:
           # no "lightest" chunk with room left. Adding a 9th test to any of
           # them would silently exceed that ceiling on a runner already
           # sized to the 8-test assumption.
-          - name: "15-focusringslistdetail-hometrendsparkline-currencycareer-seedio-resourceslistdetail"
-            tests: "test:focus-rings-list-detail test:home-trend-sparkline test:currency-career test:seed-io test:resources-list-detail"
+          - name: "15-focusringslistdetail-hometrendsparkline-currencycareer-seedio-resourceslistdetail-moneylistdetail"
+            tests: "test:focus-rings-list-detail test:home-trend-sparkline test:currency-career test:seed-io test:resources-list-detail test:money-list-detail"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
