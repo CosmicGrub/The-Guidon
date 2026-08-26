@@ -336,20 +336,38 @@ async function main() {
   if (firstStyleOpen < 0 || firstStyleClose < 0) throw new Error("build: no <style> block found");
   web = web.slice(0, firstStyleClose) + STANDALONE_CSS + web.slice(firstStyleClose);
 
-  // 3. Extract the PDF stack to sibling files, loaded only when a counseling
-  //    form is actually exported. Measured saving at 6x CPU throttle:
-  //    ~113 ms DomContentLoaded and ~900 KB of parsed memory, for a feature most
-  //    users never touch. Both files are precached by the service worker, so
-  //    exporting still works offline.
+  // 3. Extract the PDF stack(s) to sibling files, loaded only when actually
+  //    used. pdf-lib.js/da4856.js (fills a form): measured saving at 6x CPU
+  //    throttle, ~113 ms DomContentLoaded and ~900 KB of parsed memory, for
+  //    a feature most users never touch. pdfjs.js/pdfjs-worker.js (renders
+  //    an already-filled DA 4856 to <canvas> for the on-demand "Preview"
+  //    button, Roadmap Tier 6c): a further ~1.5 MB kept off the boot path,
+  //    used by that one button alone. All four files are precached by the
+  //    service worker, so exporting/previewing still works offline.
   await mkdir(join(WEB, "assets"), { recursive: true });
   const extracted = [];
-  for (const [needle, file] of [["PDFLib={})", "pdf-lib.js"], ["window.GUIDON_DA4856_B64 =", "da4856.js"]]) {
+  // pdfjs.js/pdfjs-worker.js (added for the DA 4856 on-demand PDF "Preview"
+  // button - Roadmap Tier 6c, scoped): the vendored pdfjs-dist 3.11.174
+  // "legacy" classic-script build, extracted by the identical mechanism as
+  // the pdf-lib pair above and loaded on demand by js/pdfjs-defer.js
+  // (mirrors js/pdf-defer.js exactly, as its own sibling file/global - see
+  // that file's header comment for why it's kept separate from pdf-lib's).
+  // Needles are each library's own webpack UMD `define(...)` line, unique
+  // to that one bundle (verified: neither needle appears in the other's
+  // source, nor in pdf-lib's).
+  for (const [needle, file] of [
+    ["PDFLib={})", "pdf-lib.js"],
+    ["window.GUIDON_DA4856_B64 =", "da4856.js"],
+    ['define("pdfjs-dist/build/pdf",[]', "pdfjs.js"],
+    ['define("pdfjs-dist/build/pdf.worker",[]', "pdfjs-worker.js"],
+  ]) {
     const re = /<script\b[^>]*>([\s\S]*?)<\/script>/g;
     let m, done = false;
     while ((m = re.exec(web))) {
       if (m[1].includes(needle)) {
         await writeFile(join(WEB, "assets", file), m[1]);
-        web = web.slice(0, m.index) + `<!-- ${file} extracted; loaded on demand by js/pdf-defer.js -->` + web.slice(m.index + m[0].length);
+        const loader = file.indexOf("pdfjs") === 0 ? "js/pdfjs-defer.js" : "js/pdf-defer.js";
+        web = web.slice(0, m.index) + `<!-- ${file} extracted; loaded on demand by ${loader} -->` + web.slice(m.index + m[0].length);
         extracted.push([file, Buffer.byteLength(m[1], "utf8")]);
         done = true;
         break;
@@ -381,11 +399,13 @@ async function main() {
     console.log(`  web/docs/                     ${pdfFiles.length} source PDFs, ${(pdfBytes / 1048576).toFixed(1)} MB (not in dist/, not precached)`);
   }
 
-  // 4. The deferral shim and the PWA module, last, so every other module has
-  //    already defined itself on G (pdf-defer patches G.pdf456; pwa decorates
-  //    G.share). Order matters: pdf-defer before pwa is not required, but both
+  // 4. The deferral shims and the PWA module, last, so every other module has
+  //    already defined itself on G (pdf-defer patches G.pdf456; pdfjs-defer
+  //    is independent - see its own header comment; pwa decorates G.share).
+  //    Order matters: neither deferral shim needs to precede pwa, but both
   //    must come after the app's own modules.
   const pdfDefer = await readFile("src/pdf-defer.js", "utf8");
+  const pdfjsDefer = await readFile("src/pdfjs-defer.js", "utf8");
   const native = await readFile("src/native.js", "utf8");
   const notify = await readFile("src/notify.js", "utf8");
   // biometric.js's own top-level "appStateChange" listener reaches back into
@@ -398,7 +418,7 @@ async function main() {
   web = sub(
     web,
     bodyClose,
-    `</script>\n<script>\n${pdfDefer}\n</script>\n<script>\n${native}\n</script>\n<script>\n${notify}\n</script>\n<script>\n${biometric}\n</script>\n<script>\n${pwa}\n</script>\n</body>\n</html>`,
+    `</script>\n<script>\n${pdfDefer}\n</script>\n<script>\n${pdfjsDefer}\n</script>\n<script>\n${native}\n</script>\n<script>\n${notify}\n</script>\n<script>\n${biometric}\n</script>\n<script>\n${pwa}\n</script>\n</body>\n</html>`,
     "document terminator"
   );
 
