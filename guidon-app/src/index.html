@@ -3637,6 +3637,17 @@ html.light .feedback.error { background: rgba(220,53,69,0.1); }
 .dict-acronym { font-family:var(--font-mono); font-weight:800; font-size:1.1rem;
   color:color-mix(in srgb, var(--amber) 40%, var(--text)); letter-spacing:0.03em; }
 .dict-def { font-size:0.87rem; color:var(--text); line-height:1.55; margin-top:2px; }
+/* Roadmap Tier 6b, #/dictionary list-detail split: the right-pane detail
+   card is a normal .dict-entry-card (same look the old card grid used),
+   just larger - it's the only thing in that pane at a time, not one of many
+   in a grid, so it can afford more breathing room and a bigger acronym. */
+.dict-detail-card { padding:18px 20px; }
+.dict-detail-acronym { font-size:1.6rem; }
+.dict-detail-def { font-size:0.95rem; }
+/* Same exact-acronym-match highlight .dict-entry-card.dict-exact already
+   gave the old card grid, now also available on a .list-detail-row (the
+   new entryList's rows are buttons, not cards). */
+.list-detail-row.dict-exact { border-color:var(--amber); }
 
 /* ── Train view: enhanced scenario cards ──────────────────────────────────── */
 .sc-meta-row { display:flex; flex-wrap:wrap; align-items:center;
@@ -14362,6 +14373,11 @@ window.G = window.G || {};
     if (src === "both") return el("span.tag.green", { text: "ARMY+JOINT" });
     return el("span.tag", { text: "JOINT" });
   }
+  // Plain-text version of badge()'s label, for the entryList row's
+  // .ldr-badge (a bare span, not one of badge()'s styled .tag elements -
+  // same convention Resources/Doctrine/Board/Money's own .ldr-badge rows
+  // already use).
+  function srcLabel(src) { return badge(src).textContent; }
 
   G.dictionary = {
     render(mount) {
@@ -14375,22 +14391,67 @@ window.G = window.G || {};
       const search = el("input", { type: "text", placeholder: "Search acronym or words (e.g. 'NCOER', 'sexual harassment', 'MDMP')…", "aria-label": "Search dictionary" });
       mount.appendChild(el("div.doc-search", {}, [el("div.mini-row", {}, [search])]));
 
+      // ── A-Z letter rail (roadmap Tier 6b): a real alphabetized browsing
+      // index - the one thing Dictionary never had (only a search box over a
+      // capped, truncated card grid). Mechanical copy of Doctrine's topic-
+      // chip mechanism (views.doctrine, index.html): an "All" chip plus one
+      // per letter, built once here (not inside draw() - the letter set
+      // never changes across re-draws, only which terms currently match
+      // does). The dataset's ~13 non-alpha-leading terms (e.g. "1SG",
+      // "2-D") have no dedicated chip - deliberately out of scope (the
+      // roadmap explicitly frames a non-alpha bucket as optional) - they
+      // stay reachable via "All" and via search.
+      let activeLetter = null;
+      const letterBar = el("div.search-filters", { "aria-label": "Filter by letter" });
+      const allLetterChip = el("button.chip.search-chip.active", { type: "button", text: "All", "aria-pressed": "true" });
+      allLetterChip.addEventListener("click", () => {
+        activeLetter = null;
+        Array.from(letterBar.querySelectorAll(".search-chip")).forEach((b, i) => { const on = i === 0; b.classList.toggle("active", on); b.setAttribute("aria-pressed", String(on)); });
+        draw();
+      });
+      letterBar.appendChild(allLetterChip);
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").forEach((letter) => {
+        const chip = el("button.chip.search-chip", { type: "button", text: letter, "aria-pressed": "false" });
+        chip.addEventListener("click", () => {
+          activeLetter = (activeLetter === letter) ? null : letter;
+          Array.from(letterBar.querySelectorAll(".search-chip")).forEach((b, i) => {
+            const on = i === 0 ? activeLetter === null : b.textContent === letter;
+            b.classList.toggle("active", on); b.setAttribute("aria-pressed", String(on));
+          });
+          draw();
+        });
+        letterBar.appendChild(chip);
+      });
+      mount.appendChild(letterBar);
+
       const count = el("div.meta", { style: "margin:6px 0" });
-      const results = el("div.card-results-grid");
       mount.appendChild(count);
-      mount.appendChild(results);
+
+      // ── List-detail split (roadmap Tier 6b, "simplest data shape of the
+      // batch"): the alphabetized left pane above plus a real right-pane
+      // DETAIL view for whichever term is currently selected. Unlike
+      // Doctrine/Resources/Search/Money's own .list-detail usages (every one
+      // of which JUMPS to an unchanged card/section already rendered below -
+      // see those views' own comments for the "don't replace a multi-card
+      // list with a single-selection view" rationale), this one actually
+      // REPLACES the right pane's content with the selected term: Dictionary
+      // has no other reason to show more than one full definition at a
+      // time, and no topic/category/doctrine-ref field to preserve a richer
+      // multi-card view around.
+      const entryList = el("div.list-detail-list", { role: "listbox", "aria-label": "Browse dictionary terms" });
+      const results = el("div#dictionary-detail-pane");
+      mount.appendChild(el("div.list-detail", {}, [entryList, results]));
 
       function match(t, q) {
+        if (activeLetter && !t.a.toUpperCase().startsWith(activeLetter)) return false;
         if (!q) return true;
         return (t.a + " " + t.d).toLowerCase().includes(q);
       }
 
-      function draw() {
-        const q = (search.value || "").trim().toLowerCase();
-        util.clear(results);
-        const hits = terms.filter((t) => match(t, q));
-        // Exact-acronym first, then prefix, then alpha
-        hits.sort((a, b) => {
+      // Exact-acronym first, then prefix, then alpha - same ordering the old
+      // card grid used, now driving entryList's row order instead.
+      function sortHits(list, q) {
+        list.sort((a, b) => {
           if (q) {
             const aq = a.a.toLowerCase(), bq = b.a.toLowerCase();
             if ((aq === q) !== (bq === q)) return aq === q ? -1 : 1;
@@ -14398,53 +14459,158 @@ window.G = window.G || {};
           }
           return a.a.toUpperCase() < b.a.toUpperCase() ? -1 : 1;
         });
-        // Count line
-        count.textContent = "Showing " + Math.min(hits.length, CAP) + " of " + hits.length + (q ? " matches" : " terms");
+        return list;
+      }
+
+      // Default selection: the alphabetically-first term across the WHOLE
+      // dataset (no query/letter active), computed once up front so the
+      // detail pane is never blank on load. draw() below never re-picks a
+      // new default on its own once this fires - see the selection-validity
+      // check inside draw() - only an explicit row click/Enter (selectTerm)
+      // ever changes `selected` again.
+      let selected = sortHits(terms.slice(), "")[0] || null;
+
+      function selectTerm(t) {
+        selected = t;
+        Array.from(entryList.querySelectorAll(".list-detail-row")).forEach((r) => {
+          const on = r.dataset.term === t.a;
+          r.classList.toggle("active", on);
+          r.setAttribute("aria-selected", String(on));
+        });
+        drawDetail();
+        // Convenience below 1024px only (.list-detail is a single stacked
+        // column there - see that class's own CSS comment): without this, a
+        // Soldier who taps a term stays looking at the unchanged list with
+        // the detail pane off-screen below. Same rationale as Board Drill's
+        // cardWrap.scrollIntoView() after a catList pick. At >=1024px the
+        // detail pane already sits right next to the list, so this is a
+        // harmless no-op there.
+        if (window.innerWidth < 1024) {
+          let reduceMotion = false;
+          try { reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
+          results.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+        }
+      }
+
+      function drawDetail() {
+        util.clear(results);
+        if (!selected) {
+          results.appendChild(el("div.card.dict-detail-empty", {}, [
+            el("p.hint", { text: "Select a term from the list to see its full definition." }),
+          ]));
+          return;
+        }
+        const panel = el("div.dict-entry-card.dict-detail-card");
+        const topRow = el("div.dict-top-row");
+        topRow.appendChild(el("span.dict-acronym.dict-detail-acronym", { text: selected.a }));
+        topRow.appendChild(badge(selected.src));
+        panel.appendChild(topRow);
+        panel.appendChild(el("div.dict-def.dict-detail-def", { text: selected.d }));
+        // Doctrine cross-link: does exactly what the existing board-question
+        // "Related doctrine" link already does (see that call site's onclick
+        // in index.html) - reuses Doctrine's own substring search with zero
+        // new data/curation, pre-filling it with this term's own acronym.
+        const xlBtn = el("button.btn.ghost.sm.dict-doctrine-link", { type: "button", style: "margin-top:8px", text: "Related doctrine →" });
+        xlBtn.addEventListener("click", () => {
+          if (G.views) G.views._doctrineSeed = selected.a;
+          location.hash = "#/doctrine";
+        });
+        panel.appendChild(xlBtn);
+        results.appendChild(panel);
+      }
+
+      function draw() {
+        const q = (search.value || "").trim().toLowerCase();
+        const hits = sortHits(terms.filter((t) => match(t, q)), q);
+
+        // Selection-validity check: a query/letter change that leaves the
+        // previously-selected term OUTSIDE the new filtered set clears it
+        // back to the placeholder rather than silently jumping to some
+        // other, unrelated term.
+        if (selected && hits.indexOf(selected) === -1) selected = null;
+
+        util.clear(entryList);
+        // Per-letter browsing never needs the CAP/virtualization safety net
+        // a bare, unfiltered 3,600+-term list does: the heaviest single
+        // letter is ~356 rows (C), well inside what Doctrine already renders
+        // safely at its own DOC_CAP=150 *full multi-paragraph cards* - a
+        // plain text row here is far lighter. Only the true "no letter, no
+        // query" browse-everything state and a broad, letter-less substring
+        // query (which can still match nearly the whole dataset) are capped.
+        const shown = activeLetter ? hits : hits.slice(0, CAP);
+        count.textContent = "Showing " + shown.length + " of " + hits.length + (q || activeLetter ? " matches" : " terms");
         if (q) { util.announce && util.announce(hits.length + (hits.length === 1 ? " match" : " matches")); }
+
         if (!hits.length) {
           // Was the one major searchable reference in the app with no
           // next-step suggestion - Doctrine and Resources both suggest
           // trying a different term or clearing the filter right here.
-          results.appendChild(el("div.empty", { text: "No terms match “" + search.value + "”. Try a shorter term, check the spelling, or search by what the acronym stands for instead of the acronym itself." }));
+          entryList.appendChild(el("div.empty", { text: "No terms match “" + search.value + "”. Try a shorter term, check the spelling, or search by what the acronym stands for instead of the acronym itself." }));
+          drawDetail();
           return;
         }
+
         const frag = document.createDocumentFragment();
-        hits.slice(0, CAP).forEach((t) => {
-          const isExact = q && t.a.toLowerCase() === q;
-          const card = el("div.dict-entry-card" + (isExact ? ".dict-exact" : ""), {
-            tabIndex: 0,
-            role: "article",
-            "aria-label": t.a + ": " + t.d
-          });
-          // Top row: acronym + source badge
-          const topRow = el("div.dict-top-row");
-          const acronym = el("span.dict-acronym");
+        shown.forEach((t) => {
+          const isExact = !!q && t.a.toLowerCase() === q;
+          const isSelected = selected === t;
+          const nameEl = el("span.ldr-name");
           if (q && t.a.toLowerCase().startsWith(q)) {
-            const matchPart = document.createTextNode(t.a.slice(0, q.length));
-            const mark = el("mark"); mark.className = "dict-hi"; mark.textContent = t.a.slice(0, q.length);
-            const rest = document.createTextNode(t.a.slice(q.length));
-            acronym.appendChild(mark);
-            acronym.appendChild(rest);
+            const mark = document.createElement("mark");
+            mark.className = "dict-hi";
+            mark.textContent = t.a.slice(0, q.length);
+            nameEl.appendChild(mark);
+            nameEl.appendChild(document.createTextNode(t.a.slice(q.length)));
           } else {
-            acronym.textContent = t.a;
+            nameEl.textContent = t.a;
           }
-          topRow.appendChild(acronym);
-          topRow.appendChild(badge(t.src));
-          card.appendChild(topRow);
-          // Definition
-          card.appendChild(el("div.dict-def", { text: t.d }));
-          frag.appendChild(card);
+          const row = el("button.list-detail-row" + (isExact ? ".dict-exact" : "") + (isSelected ? ".active" : ""), {
+            type: "button", role: "option", "aria-selected": String(isSelected),
+            "data-term": t.a,
+          }, [nameEl, el("span.ldr-badge", { text: srcLabel(t.src) })]);
+          row.addEventListener("click", () => selectTerm(t));
+          // PC/desktop intuitivism pass, Tier 2(d) contract (see Doctrine's
+          // entryList row / Board Drill's catList row for the near-identical
+          // comment): ArrowDown/ArrowUp move row-to-row, clamping at the
+          // bottom; ArrowUp from row 0 returns focus to the search input
+          // directly above this list (mirrored by the input's own ArrowDown
+          // handler below). No Enter/Space handler needed - these are real
+          // <button> elements, so the browser's native activation already
+          // invokes the click listener above.
+          row.addEventListener("keydown", (e) => {
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              const next = row.nextElementSibling;
+              if (next) next.focus();
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              const prev = row.previousElementSibling;
+              if (prev) prev.focus(); else search.focus();
+            }
+          });
+          frag.appendChild(row);
         });
-        results.appendChild(frag);
-        if (hits.length > CAP) {
-          results.appendChild(el("div.hint",
+        entryList.appendChild(frag);
+        if (!activeLetter && hits.length > CAP) {
+          entryList.appendChild(el("div.hint",
             { style: "margin-top:8px",
-              text: "Showing " + CAP + " of " + hits.length + " — type more to narrow results." }));
+              text: "Showing " + CAP + " of " + hits.length + " — pick a letter or type more to narrow." }));
         }
+        drawDetail();
       }
 
       let deb;
       search.addEventListener("input", () => { clearTimeout(deb); deb = setTimeout(draw, 120); });
+      // ArrowDown from the search input enters entryList at its first row -
+      // the down-direction complement to the row handler's
+      // ArrowUp-from-row-0-returns-here above (mirrors Doctrine's own
+      // search-input keydown handler).
+      search.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowDown") {
+          const first = entryList.querySelector(".list-detail-row");
+          if (first) { e.preventDefault(); first.focus(); }
+        }
+      });
       draw();
     },
   };
