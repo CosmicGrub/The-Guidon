@@ -24630,15 +24630,28 @@ window.G = window.G || {};
     mount.appendChild(el("div.feedback.warn", { text: d.disclaimer + (d.asOf ? "  (As of " + d.asOf + ".)" : "") }));
 
     const tabs = el("div.tabbar", { role: "tablist" });
+    if (util.tabbarKeys) util.tabbarKeys(tabs);
 
-    if (util.tabbarKeys) util.tabbarKeys(tabs);    tabs.appendChild(util.tabBtn("BRS & TSP", activeTab === "brs", () => render(mount, "brs")));
-    tabs.appendChild(util.tabBtn("TSP Funds", activeTab === "funds", () => render(mount, "funds")));
-    tabs.appendChild(util.tabBtn("Budget", activeTab === "budget", () => render(mount, "budget")));
-    tabs.appendChild(util.tabBtn("Predatory Lending", activeTab === "predatory", () => render(mount, "predatory")));
-    tabs.appendChild(util.tabBtn("ETS Finance", activeTab === "ets", () => render(mount, "ets")));
-    tabs.appendChild(util.tabBtn("VA Compensation", activeTab === "va", () => render(mount, "va")));
-    tabs.appendChild(util.tabBtn("Credit & Debt", activeTab === "credit", () => render(mount, "credit")));
-    tabs.appendChild(util.tabBtn("Salary Negotiation", activeTab === "salneg", () => render(mount, "salneg")));
+    // Tab defs drive both .tabbar (existing) and the list-detail navList
+    // below from ONE array + ONE set of dispatch closures (roadmap Tier
+    // 6c, #/money), so the two controls can never drift out of sync with
+    // each other - see navList's own comment further down for why this is
+    // a rebuild-on-select split (Board Drill's catList pattern), not a
+    // scroll-to-existing-content one (Doctrine/Search's entryList): Money's
+    // 8 tabs are mutually-exclusive full-panel content blocks, only the
+    // active one is ever in the DOM, so there is nothing to jump to.
+    const tabDefs = [
+      ["BRS & TSP", "brs"],
+      ["TSP Funds", "funds"],
+      ["Budget", "budget"],
+      ["Predatory Lending", "predatory"],
+      ["ETS Finance", "ets"],
+      ["VA Compensation", "va"],
+      ["Credit & Debt", "credit"],
+      ["Salary Negotiation", "salneg"],
+    ];
+    const tabGo = tabDefs.map(([, id]) => () => render(mount, id));
+    tabDefs.forEach(([label, id], i) => tabs.appendChild(util.tabBtn(label, activeTab === id, tabGo[i])));
     mount.appendChild(tabs);
     // Print / Save-as-PDF export of the current tab (Wave 3 #13)
     try {
@@ -24650,7 +24663,37 @@ window.G = window.G || {};
     } catch (e) {}
 
     const body = el("div#finance-stage");
-    mount.appendChild(body);
+    // List-detail jump pane (roadmap Tier 6c, #/money): a section-level
+    // index next to the tab body at >=1024px (.list-detail, see CSS),
+    // mirroring Board Drill's catList - reuses the EXACT SAME tabGo[i]
+    // dispatch closures the .tabbar buttons above already use, rather than
+    // duplicating the render-dispatch logic. Built after activeTab is
+    // resolved above (forceTab / _pendingTab), so a deep-linked tab's row
+    // starts pre-highlighted correctly. No filter/search input sits above
+    // this list (unlike Doctrine's entryList), so ArrowUp from row 0 simply
+    // clamps - same shape as Board Drill's catList, which has no such input
+    // either (see that list's own keydown comment).
+    const navList = el("div.list-detail-list", { role: "listbox", "aria-label": "Jump to section" });
+    tabDefs.forEach(([label, id], i) => {
+      const active = activeTab === id;
+      const row = el("button.list-detail-row" + (active ? ".active" : ""), {
+        type: "button", role: "option", "aria-selected": String(active),
+      }, [el("span.ldr-name", { text: label })]);
+      row.addEventListener("click", tabGo[i]);
+      row.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          const next = row.nextElementSibling;
+          if (next) next.focus();
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          const prev = row.previousElementSibling;
+          if (prev) prev.focus();
+        }
+      });
+      navList.appendChild(row);
+    });
+    mount.appendChild(el("div.list-detail", {}, [navList, body]));
     // renderSalaryNegotiation is async; this dispatcher itself is
     // synchronous and never awaited/chained it, so a rejection inside it
     // skipped route()'s own catch entirely and left the Money tab body

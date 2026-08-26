@@ -34,7 +34,11 @@ await page.waitForTimeout(300);
 await page.evaluate(() => { window.G.db.setSetting("finance:salaryNeg:v1", {}); window.G.db.setSetting("reminders:v1", []); });
 await page.evaluate(() => { location.hash = "#/money"; });
 await page.waitForTimeout(600);
-await page.locator("button", { hasText: /^Salary Negotiation$/ }).click();
+// Roadmap Tier 6c added a .list-detail-list navList row with this SAME
+// label text next to .tabbar (see test-money-list-detail.mjs) - scoped to
+// .tabbar specifically so this locator stays unique now that two buttons
+// share the visible text "Salary Negotiation".
+await page.locator(".tabbar button", { hasText: /^Salary Negotiation$/ }).click();
 await page.waitForTimeout(400);
 
 const rendered = await page.evaluate(() => /Salary Range Research worksheet/.test(document.body.textContent || ""));
