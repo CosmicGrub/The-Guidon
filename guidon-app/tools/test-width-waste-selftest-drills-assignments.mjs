@@ -53,7 +53,22 @@ const { server, url } = await serve("web");
 const browser = await chromium.launch();
 
 async function newPage(width) {
-  const ctx = await browser.newContext({ viewport: { width, height: 1400 } });
+  // height:1400 (this file's original value) made the @768px checks a
+  // 768x1400 viewport - aspect-ratio ~0.549, which is exactly the "generic
+  // narrow-tall small-tablet-portrait" shape Roadmap Tier 6's aspect-ratio
+  // gate on .panel-grid-2/-3 (index.html, "600-799px band" rule) is
+  // DELIBERATELY meant to exclude from the 2-up grid - see that rule's own
+  // comment. 1400 was never a real device height, just an arbitrary "tall
+  // enough to dodge scroll-related flakiness" pick; it happened to land in
+  // the excluded bucket by coincidence, not because #/selftest, #/drills or
+  // #/assignments actually need to keep a 2-up grid at genuinely
+  // narrow-portrait shapes. height:1000 replaces it - the SAME value this
+  // test's own sibling files already use for their real @768px checks
+  // (tools/test-forms-counsel-grid.mjs, tools/test-fitness-currency-grid.mjs),
+  // giving 768x1000 - aspect-ratio 0.768, comfortably inside the gate's
+  // >0.7 band and a realistic tablet-portrait proportion (close to a
+  // classic 768x1024 iPad-portrait shape), not an arbitrary rectangle.
+  const ctx = await browser.newContext({ viewport: { width, height: 1000 } });
   const page = await ctx.newPage();
   const noise = [];
   page.on("console", (m) => { if (m.type() === "error") noise.push(m.text()); });
