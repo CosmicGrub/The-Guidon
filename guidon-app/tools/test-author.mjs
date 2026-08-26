@@ -215,9 +215,12 @@ listText = await page.evaluate(() => document.body.textContent || "");
   : bad("list after hand-authored import: " + listText.slice(0, 300));
 fs.unlinkSync(importTmpPath);
 
-// ---- Map tab: node boxes render, are keyboard-operable, and route back to
-// the exact node clicked (regression coverage for #186's fix - map-node
-// boxes used to be plain unfocusable divs with an onclick and nothing else) ----
+// ---- Map tab: node boxes render, are keyboard-operable, and selecting one
+// swaps a persistent right-hand editor pane WITHOUT leaving the Map tab
+// (Roadmap Tier 6b - the list(map)-left/editor-right split; this replaces
+// the old click/Enter-on-a-node -> jump-to-Guided-tab behavior this suite
+// used to cover here). The role/tabindex/aria-label a11y coverage from
+// #186's original fix is unchanged and still asserted below. ----
 const qaCard = page.locator(".card", { hasText: "QA Test Scenario" });
 await qaCard.locator("button", { hasText: /^Edit$/ }).click();
 await page.waitForTimeout(300);
@@ -238,21 +241,64 @@ mapNodeAttrs?.role === "button" && mapNodeAttrs?.tabindex === "0" && !!mapNodeAt
   ? ok("map-node boxes carry role=button, tabindex=0, and a descriptive aria-label")
   : bad("map-node accessibility attrs: " + JSON.stringify(mapNodeAttrs));
 
-// Tab to a map-node and activate it with Enter - must land on the Guided
-// tab, scrolled to that specific node (not just "some" node).
-const targetNodeId = await page.evaluate(() => document.querySelector(".map-node .mn-id")?.textContent?.split(" ")[0] || "");
+// The right pane defaults to the scenario's start node (n1) the first time
+// the Map tab opens, so it's never empty.
+const defaultsToStart = await page.evaluate(() => !!document.querySelector('.author-map-split [data-node="n1"]'));
+defaultsToStart ? ok("Map tab's editor pane defaults to the start node (n1) on first entry") : bad("editor pane did not default to the start node");
+
+// Clicking a DIFFERENT node's box swaps the editor pane's content in
+// place - staying on the Map tab, with the left map still visible.
+await page.locator('.map-node[aria-label*="good"]').click();
+await page.waitForTimeout(200);
+const clickSwapped = await page.evaluate(() => {
+  const stillOnMap = document.querySelector(".author-tabs button.active")?.textContent?.trim() === "Map";
+  const showsGood = !!document.querySelector('.author-map-split [data-node="good"]');
+  const mapStillThere = document.querySelectorAll(".map-node").length === 2;
+  return stillOnMap && showsGood && mapStillThere;
+});
+clickSwapped ? ok("clicking a map-node swaps the editor pane to that node while staying on the Map tab, left map intact") : bad("click-to-select did not produce the expected split state");
+
+// Tab to the start node's map-node box and activate it with Enter - same
+// select-in-place contract, via keyboard.
+const targetNodeId = await page.evaluate(() => document.querySelector('.map-node[aria-label*="n1"] .mn-id')?.textContent?.split(" ")[0] || "");
 await page.evaluate(() => document.body.focus());
 let tabbedToMapNode = false;
-for (let i = 0; i < 15; i++) {
+for (let i = 0; i < 25; i++) {
   await page.keyboard.press("Tab");
-  tabbedToMapNode = await page.evaluate(() => !!document.activeElement?.classList.contains("map-node"));
+  tabbedToMapNode = await page.evaluate((id) => {
+    const a = document.activeElement;
+    return !!a && a.classList.contains("map-node") && (a.getAttribute("aria-label") || "").includes(id);
+  }, targetNodeId);
   if (tabbedToMapNode) break;
 }
-tabbedToMapNode ? ok("A map-node is reachable via sequential Tab navigation") : bad("could not Tab to a map-node");
+tabbedToMapNode ? ok("the start node's map-node box is reachable via sequential Tab navigation") : bad("could not Tab to node " + targetNodeId);
 await page.keyboard.press("Enter");
 await page.waitForTimeout(300);
-const backOnGuidedForNode = targetNodeId ? await page.evaluate((id) => !!document.querySelector('[data-node="' + id + '"]'), targetNodeId) : false;
-backOnGuidedForNode ? ok("Enter on a focused map-node switches to Guided and lands on that exact node (" + targetNodeId + ")") : bad("did not land on the expected node " + targetNodeId + " after Enter");
+const enterSelected = targetNodeId ? await page.evaluate((id) => {
+  const stillOnMap = document.querySelector(".author-tabs button.active")?.textContent?.trim() === "Map";
+  const showsNode = !!document.querySelector('.author-map-split [data-node="' + id + '"]');
+  return stillOnMap && showsNode;
+}, targetNodeId) : false;
+enterSelected
+  ? ok("Enter on a focused map-node selects that exact node (" + targetNodeId + ") into the editor pane without leaving the Map tab")
+  : bad("Enter did not select " + targetNodeId + " into the editor pane while staying on Map");
+
+// ---- live-sync: editing a choice's goto inline, from the Map tab's own
+// editor pane, recomputes the left map's connector without switching tabs
+// (new coverage - previously Map was read-only, re-entered fresh from
+// Guided each time, so this desync could never have been observed) ----
+const pathDBefore = await page.evaluate(() => document.querySelector(".node-map svg path")?.getAttribute("d") || "");
+const gotoSelOnMap = page.locator(".author-map-split .choice-editor select").first();
+await gotoSelOnMap.selectOption("n1"); // n1's own choice currently targets "good" - repoint it at n1 itself (a self-loop) so the connector's endpoint must move
+await page.waitForTimeout(400); // clears scheduleMapGraphRefresh's debounce
+const pathDAfter = await page.evaluate(() => document.querySelector(".node-map svg path")?.getAttribute("d") || "");
+(pathDBefore && pathDAfter && pathDBefore !== pathDAfter)
+  ? ok("editing a choice's goto inline on the Map tab redraws the left connector without leaving the tab")
+  : bad("connector path did not change after inline goto edit (before=" + pathDBefore + ", after=" + pathDAfter + ")");
+
+// restore the goto so the scenario stays valid for the remaining sections
+await gotoSelOnMap.selectOption("good");
+await page.waitForTimeout(400);
 
 // back to the scenario list before the next section
 await page.locator("button", { hasText: /^Cancel$/ }).click();
