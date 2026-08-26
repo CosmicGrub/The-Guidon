@@ -1307,6 +1307,33 @@ html.qz-theater[data-motion="minimal"] .qz-back { max-height: none; }
 .map-node.end { border-color: var(--cyan); border-style: dashed; }
 .map-node .mn-id { font-family: var(--font-mono); font-size: .625rem; color: var(--text); }
 .map-node .mn-prompt { color: var(--text-dim); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* Selection ring for the map-node whose card is currently open in the
+   split's right-hand editor pane (see .author-map-split below) - a
+   box-shadow only, so it layers over .start's green / .end's dashed cyan
+   border-color rather than fighting them for the same property. */
+.map-node.selected { box-shadow: 0 0 0 2px color-mix(in srgb, var(--amber) 35%, transparent); }
+
+/* ---- Authoring: Map tab's persistent list(map)-left/editor-right split
+   (Roadmap Tier 6b) - replaces the old click-a-node -> jump-to-Guided-tab
+   behavior. Modeled on .drill-layout's block-then-grid switch, but given
+   its own class rather than reusing .list-detail itself: that class' own
+   comment (see above) already documents Doctrine/Squad Roster's usages
+   "only ever pass two children and would silently break if that shared
+   class' column count changed under them," and separately, its
+   minmax(240px,280px) list column is sized for text rows, not a node
+   graph - drawMap()'s BFS-depth layout spaces columns COLW=210px apart, so
+   a graph past one branch needs real width to stay legible. The wide
+   first track below (minmax(360px, 1.4fr)) is sized for that; the second
+   (minmax(320px, 1fr)) is the editor pane, which only ever holds one
+   nodeCard() at a time. Single column (map stacked above editor) below
+   1024px, same canonical breakpoint every other list-detail split in this
+   file already gates on. */
+.author-map-split { display:block; }
+.author-map-editor { margin-top:12px; }
+@media (min-width: 1024px) {
+  .author-map-split { display:grid; grid-template-columns: minmax(360px, 1.4fr) minmax(320px, 1fr); gap:16px; align-items:start; }
+  .author-map-editor { margin-top:0; max-height:calc(100vh - 160px); overflow-y:auto; }
+}
 
 /* ---- Print: isolate a target for AAR / doctrine printing ---- */
 @media print {
@@ -13865,6 +13892,14 @@ window.G = window.G || {};
     normalizeModel(model);
     let tab = "guided";
     let focusNode = null; // node id to scroll to when returning to guided
+    // Map tab (Roadmap Tier 6b - persistent list(map)-left/editor-right
+    // split): id of the node whose nodeCard() renders in the right pane.
+    // Defaults to model.start the first time drawMap() runs (see there) so
+    // the editor pane is never empty; preserved across redraws (unlike
+    // focusNode above, this is NOT reset to null after each use) so a
+    // structural edit elsewhere doesn't silently kick the Soldier back to
+    // the start node mid-session.
+    let selectedNodeId = null;
 
     mount.appendChild(el("div.section-title", {}, [el("h2", { text: existing ? "Edit Scenario" : "New Scenario" }), el("div.rule")]));
 
@@ -13899,6 +13934,10 @@ window.G = window.G || {};
 
     function setTab(t) {
       if (tab === "json" && t !== "json") { if (!pullFromJSON()) return; }
+      // Drop any pending debounced map-graph refresh (see scheduleMapGraphRefresh
+      // below) when leaving the Map tab, so it can't fire later against a
+      // detached mapGraphHost.
+      if (tab === "map" && t !== "map") clearTimeout(mapRefreshTimer);
       tab = t;
       bGuided.classList.toggle("active", t === "guided");
       bJson.classList.toggle("active", t === "json");
@@ -14179,12 +14218,28 @@ window.G = window.G || {};
     }
 
     // ---- map tab ----
-    function drawMap() {
-      ta = null;
-      util.clear(body);
+    // Roadmap Tier 6b: persistent list(map)-left/editor-right split -
+    // replaces the old "click a node -> jump to the Guided tab" behavior.
+    // mapGraphHost/mapDetailHost are the two live panes; renderMapGraph()
+    // and renderMapDetail() below can each be re-run independently so a
+    // model change on one side never has to tear down the other.
+    let mapGraphHost = null;
+    let mapDetailHost = null;
+    let mapRefreshTimer = null;
+
+    // Recomputes the BFS-depth layout and redraws the SVG connectors +
+    // node boxes into mapGraphHost ONLY - this is the same layout code
+    // drawMap() used to run once per tab-entry, factored out so the
+    // live-sync listener (wired up at the bottom of drawMap(), below) can
+    // re-run it after an inline model edit without touching mapDetailHost
+    // (which would tear down and rebuild nodeCard(), stealing focus out of
+    // whatever field is mid-edit).
+    function renderMapGraph() {
+      if (!mapGraphHost) return;
+      util.clear(mapGraphHost);
       const nodes = model.nodes || {};
       const ids = Object.keys(nodes);
-      if (!ids.length) { body.appendChild(el("div.empty", { text: "No nodes to map." })); return; }
+      if (!ids.length) { mapGraphHost.appendChild(el("div.empty", { text: "No nodes to map." })); return; }
       // BFS depth from start
       const depth = {}; const q = [model.start]; depth[model.start] = 0;
       while (q.length) {
@@ -14224,21 +14279,89 @@ window.G = window.G || {};
       // boxes
       ids.forEach((id) => {
         const n = nodes[id];
-        const box = el("div.map-node" + (id === model.start ? ".start" : "") + (n.end ? ".end" : ""), {
+        const box = el("div.map-node" + (id === model.start ? ".start" : "") + (n.end ? ".end" : "") + (id === selectedNodeId ? ".selected" : ""), {
           style: "left:" + pos[id].x + "px;top:" + pos[id].y + "px",
           title: "Edit " + id,
           role: "button", tabindex: "0",
           "aria-label": "Edit node " + id + (id === model.start ? ", start node" : "") + (n.end ? ", ending node" : ""),
-          onclick: () => { focusNode = id; setTab("guided"); },
-          onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); focusNode = id; setTab("guided"); } },
+          onclick: () => { selectedNodeId = id; renderMapGraph(); renderMapDetail(); },
+          onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectedNodeId = id; renderMapGraph(); renderMapDetail(); } },
         }, [
           el("div.mn-id", { text: id + (n.end ? " · END" : "") }),
           el("div.mn-prompt", { text: (n.prompt || n.outcome || "").slice(0, 80) }),
         ]);
         wrap.appendChild(box);
       });
-      body.appendChild(el("p.hint", { text: "Visual map of your scenario. Green = start, dashed cyan = ending, red links = counterproductive choices. Click a node to edit it." }));
-      body.appendChild(wrap);
+      mapGraphHost.appendChild(wrap);
+    }
+
+    // Repopulates mapDetailHost with nodeCard(selectedNodeId) - reused
+    // completely unchanged, since it already operates on the closure
+    // `model` and calls the outer draw() itself for structural edits
+    // (add/remove choice, end-node toggle, delete node), which re-enters
+    // drawMap() wholesale below. That's fine for those: they all fire from
+    // a button click, not continuous typing, so there's no field focus to
+    // lose.
+    function renderMapDetail() {
+      if (!mapDetailHost) return;
+      util.clear(mapDetailHost);
+      const nodes = model.nodes || {};
+      if (!selectedNodeId || !nodes[selectedNodeId]) {
+        mapDetailHost.appendChild(el("div.empty", { text: "Select a node on the map to edit it." }));
+        return;
+      }
+      mapDetailHost.appendChild(nodeCard(selectedNodeId));
+    }
+
+    // Debounced so a fast-typing edit inside the editor pane (e.g. the
+    // Prompt textarea, whose text also feeds a box's .mn-prompt preview)
+    // doesn't recompute the whole graph layout on every keystroke.
+    function scheduleMapGraphRefresh() {
+      clearTimeout(mapRefreshTimer);
+      mapRefreshTimer = setTimeout(renderMapGraph, 200);
+    }
+
+    function drawMap() {
+      ta = null;
+      util.clear(body);
+      clearTimeout(mapRefreshTimer);
+      const nodes = model.nodes || {};
+      const ids = Object.keys(nodes);
+      if (!ids.length) { mapGraphHost = null; mapDetailHost = null; body.appendChild(el("div.empty", { text: "No nodes to map." })); return; }
+      // Default the right pane to the scenario's start node the first time
+      // the Map tab is opened (selectedNodeId starts null) so it's never
+      // empty; a structural edit that deletes the currently-selected node
+      // falls back to the same default rather than pointing at a ghost id.
+      if (!selectedNodeId || !nodes[selectedNodeId]) selectedNodeId = model.start;
+
+      body.appendChild(el("p.hint", { text: "Visual map of your scenario. Green = start, dashed cyan = ending, red links = counterproductive choices. Click a node to edit it here." }));
+      body.appendChild(el("button.btn.sm.ghost", { text: "＋ Add node", onclick: () => {
+        let n = 1; while (model.nodes["n" + n]) n++;
+        model.nodes["n" + n] = { prompt: "", choices: [{ text: "", goto: model.start, score: {}, feedback: "" }] };
+        draw();
+      } }));
+
+      mapGraphHost = el("div");
+      mapDetailHost = el("div.author-map-editor");
+      body.appendChild(el("div.author-map-split", {}, [mapGraphHost, mapDetailHost]));
+
+      renderMapGraph();
+      renderMapDetail();
+
+      // Live-sync (the real engineering content of this split): the
+      // gotoSel <select> inside nodeCard()'s choice-editor mutates c.goto
+      // directly with no draw() call of its own (harmless back when Map
+      // was a separate tab re-entered fresh each time) - but a goto edit
+      // changes graph edges/depth, so left alone it would silently desync
+      // the left pane's connectors/layout from the model the instant
+      // editing happens inline on this tab. Rather than reach into that
+      // one handler, a single delegated + debounced input/change listener
+      // on the whole editor pane covers it (and the same live-preview gap
+      // for a prompt-text edit, which feeds a box's .mn-prompt text) by
+      // re-running ONLY renderMapGraph() - never renderMapDetail(), which
+      // would tear down and rebuild nodeCard() mid-keystroke.
+      mapDetailHost.addEventListener("input", scheduleMapGraphRefresh);
+      mapDetailHost.addEventListener("change", scheduleMapGraphRefresh);
     }
 
     function draw() {
