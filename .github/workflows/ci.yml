@@ -8,11 +8,11 @@ name: CI
 # WHY THIS ISN'T A SINGLE "npm test" STEP (read this before touching batching)
 # ---------------------------------------------------------------------------
 # guidon-app/package.json's "test" script ends in:
-#   node tools/run-parallel.mjs <~107 test:* script names>
+#   node tools/run-parallel.mjs <116 test:* script names>
 # tools/run-parallel.mjs launches EVERY name it's given as a fully concurrent
 # child process (`Promise.all(names.map(run))`, no concurrency cap), and most
 # of those test:* scripts each spin up their own Playwright/Chromium
-# instance. Firing all ~107 at once means ~107 concurrent Chromium
+# instance. Firing all 116 at once means 116 concurrent Chromium
 # instances - that exhausts RAM/disk even on a well-resourced workstation,
 # and a standard GitHub-hosted `ubuntu-latest` runner (2 vCPU, ~7 GB RAM) has
 # far less headroom than that. A naive `npm test` call here would very
@@ -23,9 +23,9 @@ name: CI
 #
 # BATCHING STRATEGY CHOSEN: a GitHub Actions job matrix, not sequential
 # batches in one job.
-#   - The list of 107 test:* names (the exact set `npm test` itself invokes,
-#     in its own order - see note below on test:contrast) is split into 14
-#     chunks of at most 8 names each (13 chunks of 8, 1 final chunk of 3),
+#   - The list of 116 test:* names (the exact set `npm test` itself invokes,
+#     in its own order - see note below on test:contrast) is split into 15
+#     chunks of at most 8 names each (14 chunks of 8, 1 final chunk of 4),
 #     mirroring this session's own <=8-concurrent-Chromium local discipline
 #     exactly.
 #   - Each chunk becomes its own `strategy.matrix` job, each calling
@@ -217,7 +217,7 @@ jobs:
           retention-days: 1
 
   # ---------------------------------------------------------------------
-  # The ~107-suite test:* matrix, chunked to <=8 concurrent Playwright/
+  # The 116-suite test:* matrix, chunked to <=8 concurrent Playwright/
   # Chromium instances per job - see the top-of-file comment for the full
   # reasoning behind matrix-of-chunks over a single sequential job.
   # ---------------------------------------------------------------------
@@ -264,6 +264,15 @@ jobs:
             tests: "test:fitness-currency-grid test:width-waste-selftest-drills-assignments test:career-leader-grid test:forms-counsel-grid test:checklist-reading-width test:fillbar-transforms test:haptics-capacitor test:rapid-fire"
           - name: "14-rapidfirenosrswrites-rapidfiresoloteam-biometriclock-storagedashboard-schemamigration-vacombinedrating-sgtssgcompare-careertimeline"
             tests: "test:rapid-fire-no-srs-writes test:rapid-fire-solo-team test:biometric-lock test:storage-dashboard test:schema-migration test:va-combined-rating test:sgt-ssg-compare test:career-timeline"
+          # New chunk rather than appended to an existing one: every chunk
+          # above is already at the documented 8-per-chunk ceiling (this
+          # file's own <=8-concurrent-Chromium safety limit, not an
+          # arbitrary round number - see the top-of-file note), so there is
+          # no "lightest" chunk with room left. Adding a 9th test to any of
+          # them would silently exceed that ceiling on a runner already
+          # sized to the 8-test assumption.
+          - name: "15-focusringslistdetail-hometrendsparkline-currencycareer-seedio"
+            tests: "test:focus-rings-list-detail test:home-trend-sparkline test:currency-career test:seed-io"
     steps:
       - name: Checkout
         uses: actions/checkout@v4

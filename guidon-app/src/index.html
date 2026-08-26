@@ -2306,12 +2306,54 @@ button:focus:not(:focus-visible),
 /* .panel-grid-2/-3 trigger at 600px (not 768px) deliberately: the Z Fold 5's
    unfolded main screen is ~673px CSS-wide in its default book-style portrait
    orientation - below 768px. Gating this at 768px would silently skip
-   Fold5-portrait users and only ever fire when they rotate to landscape. */
-@media (min-width: 600px) {
+   Fold5-portrait users and only ever fire when they rotate to landscape.
+
+   Split into two rules (Roadmap Tier 6, aspect-ratio refinement,
+   2026-08-25) instead of one unbounded >=600px rule: the original fired
+   the grid for EVERY width from 600px up through any desktop monitor,
+   which happened to be harmless only because real monitors are virtually
+   always well outside a book-foldable's ~0.7-1.05 aspect-ratio band. But
+   it also meant a generic small-tablet PORTRAIT shape (~0.55-0.65 ratio,
+   narrow-and-tall) got the exact same 2-up/3-up grid as a book-style
+   foldable's inner screen (~0.8 ratio, closer to square) even though the
+   two aren't equivalent: a dual-pane split assumes roughly symmetric
+   panels, which suits the near-square foldable shape but cramps badly on
+   a narrow-tall portrait tablet. Desktop/large-tablet (>=800px) below
+   keeps the grid unconditionally - no aspect-ratio gating there, since
+   real monitors are essentially never inside the 0.7-1.05 band anyway and
+   gating desktop on aspect-ratio would just be a no-op with extra risk. */
+@media (min-width: 800px) {
   /* align-items:start (wave 2, same reasoning as .card-results-grid above):
      these pair up independent panels of differing natural length (e.g.
      Career's reclass-policy vs FY26-snapshot) - default stretch would force
      the shorter one to match the taller one's height for no benefit. */
+  .panel-grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    align-items: start;
+  }
+  .panel-grid-3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+    align-items: start;
+  }
+}
+/* 600-799px band: aspect-ratio-gated instead of unconditional. Deliberately
+   uses ONLY the lower bound (aspect-ratio > 0.7) - no "< 1.05" upper cap -
+   so a landscape phone that happens to land in this width range (aspect
+   ratio commonly 1.6-2.0, e.g. a phone rotated sideways) still clears
+   >0.7 and keeps the grid, same as a book-style foldable's inner screen
+   (~0.8). Only a narrow/tall generic-small-tablet-portrait shape (~0.55-
+   0.65 ratio) falls through this gate to the default display:block
+   stacked layout - which is the point: that's the one shape here where
+   forcing a symmetric dual-pane split onto two independent panels of
+   differing natural length actively hurts readability rather than helping
+   it. An upper bound would have excluded the landscape-phone case for no
+   benefit, since nothing in the 600-799px width tier is ever wide enough
+   AND square/portrait enough to need one. */
+@media (min-width: 600px) and (max-width: 799px) and (aspect-ratio > 0.7) {
   .panel-grid-2 {
     display: grid;
     grid-template-columns: 1fr 1fr;
