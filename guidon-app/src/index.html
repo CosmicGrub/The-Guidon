@@ -14792,7 +14792,13 @@ window.G = window.G || {};
     // One-shot flag "Show all courses" sets before re-rendering - see the
     // fix comment at the top of render() below for why this exists.
     _showAll: false,
-    async render(mount) {
+    // preselectId: optional course id to select in the new list-detail split
+    // instead of defaulting to the first course - passed by openCourse()
+    // below (openLesson()'s own "back" button target, left completely
+    // untouched by this change - see the Roadmap Tier 6b comment further
+    // down) so returning from the lesson reader lands back on the SAME
+    // course, not silently back on whatever course sorts first.
+    async render(mount, preselectId) {
       util.clear(mount);
       const data = store.curriculum();
       const labels = data.tierLabels || { layman: "Plain", beginner: "Basic", intermediate: "Working", professional: "By the Book" };
@@ -14859,73 +14865,150 @@ window.G = window.G || {};
         return 0;
       });
 
-      // Fold5/tablet fidelity wave 2: 28 course cards used to stack single-
-      // column regardless of viewport (4,532px tall at the worst case) -
-      // reuses the same .card-results-grid utility Resources/Dictionary
-      // already wire up (auto-fill, group-label rows span the full width).
-      const courseGrid = el("div.card-results-grid");
+      // ── List-detail split (Roadmap Tier 6b, "#/learn list-detail split",
+      // Sub-step A ONLY): course list left, that course's own lesson list
+      // right. Replaces the old 3-level grid-of-course-cards -> mount-wiping
+      // openCourse() drill-down (a real re-render of the ENTIRE mount every
+      // time a course was picked) with one persistent .list-detail view -
+      // same shared CSS family every other Tier 6a/6b/6c route already
+      // uses (Board/Doctrine/Search/Resources/Money/Dictionary), gated at
+      // the same >=1024px breakpoint, collapsing to a single stacked column
+      // below it with zero extra CSS.
+      //
+      // Left pane (courseList): the exact same rank-tier grouping/sort/
+      // badge-color logic the old card grid used, now painting
+      // .list-detail-row buttons instead of cards - reusing .ldr-name/
+      // .ldr-badge verbatim (Board/Doctrine/Search/Resources/Money/
+      // Dictionary's own convention for a lean list row). .ldr-badge
+      // carries the studied/total(+mastered) progress numbers each old
+      // card's own meta span showed - the piece most likely to silently
+      // regress in a rewrite like this, so it's covered explicitly by
+      // tools/test-learn-course-split.mjs against courseProgress()'s real
+      // output. The old per-card "Essential for X / Relevant / Advanced"
+      // rank badge collapses into the .curr-group-label divider rows
+      // between groups instead of a second per-row badge slot (Dictionary's
+      // own badge()->srcLabel() trim from a rich tag down to one plain
+      // .ldr-badge string, applied here) - which group a row falls under
+      // already conveys that same information without a second badge.
+      //
+      // Right pane (rightPane / renderCourseLessons() below): this is
+      // openCourse()'s OLD body (course header + summary/source + print
+      // button + one lesson row per lesson), extracted into a function that
+      // fills the right-pane container in place instead of util.clear()-ing
+      // and rebuilding the whole mount. A course row click only replaces
+      // rightPane's children, never touches courseList.
+      //
+      // Sub-step B of the roadmap item (promoting THIS right pane further
+      // into the actual active-lesson READER, rewriting openLesson()'s own
+      // tier-toggle/knowledge-check/mastery-button/prev-next logic to
+      // mutate in place instead of a full mount teardown) is deliberately
+      // OUT OF SCOPE here - openLesson() below is completely untouched.
+      // Clicking a lesson in the right pane still calls openLesson(mount, ...)
+      // exactly as before, still tearing down and rebuilding the whole
+      // mount into the full-page lesson reader.
+      let activeCourseId = preselectId || (sortedCourses.length ? sortedCourses[0].id : null);
+
+      const courseList = el("div.list-detail-list", { role: "listbox", "aria-label": "Browse courses" });
+      const rightPane = el("div#learn-detail-pane");
+      mount.appendChild(el("div.list-detail", {}, [courseList, rightPane]));
+
+      function selectCourse(course) {
+        activeCourseId = course.id;
+        Array.from(courseList.querySelectorAll(".list-detail-row")).forEach((r) => {
+          const on = r.dataset.courseId === course.id;
+          r.classList.toggle("active", on);
+          r.setAttribute("aria-selected", String(on));
+        });
+        renderCourseLessons(rightPane, mount, course, cache, labels);
+        // Same <1024px scroll-to-detail convenience Dictionary's own
+        // selectTerm() uses (this file's dictionary.js block) - .list-detail
+        // is a single stacked column there, so without this a Soldier who
+        // taps a course stays looking at the unchanged list with the lesson
+        // list off-screen below.
+        if (window.innerWidth < 1024) {
+          let reduceMotion = false;
+          try { reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
+          rightPane.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+        }
+      }
+
+      // Skips over non-row .curr-group-label divider siblings - a plain
+      // next/previousElementSibling walk (Doctrine's entryList/Board
+      // Drill's catList idiom) would land ON a divider at a group boundary
+      // instead of the next real row. Same classList-guard idea as
+      // Search's own resultsDiv arrow handler (which guards its single
+      // section-head sibling), generalized to a loop since courseList can
+      // have up to two divider boundaries to cross (primary/relevant/other).
+      // Clamps at both ends like Board Drill's catList (no filter/search
+      // input sits directly above courseList to return focus to).
+      function focusAdjacentRow(row, dir) {
+        let sib = dir > 0 ? row.nextElementSibling : row.previousElementSibling;
+        while (sib && !sib.classList.contains("list-detail-row")) {
+          sib = dir > 0 ? sib.nextElementSibling : sib.previousElementSibling;
+        }
+        if (sib) sib.focus();
+      }
+
       let lastGroup = null;
       for (const course of sortedCourses) {
         const pr = courseProgress(course, cache);
-        const pct = pr.total ? Math.round((pr.studied / pr.total) * 100) : 0;
 
-        // Rank relevance badge
-        let badge = null, badgeColor = "";
         if (activeTier) {
           const isPrimary = (course.primaryFor || []).includes(activeTier);
           const isRelevant = (course.relevantTiers || []).includes(activeTier);
-          if (isPrimary) { badge = "Essential for " + activeTier; badgeColor = "var(--amber)"; }
-          else if (isRelevant) { badge = "Relevant"; badgeColor = "var(--cyan)"; }
-          else { badge = "Advanced / reference"; badgeColor = "var(--text-dim)"; }
-
-          // Group separator
           const group = isPrimary ? "primary" : isRelevant ? "relevant" : "other";
           if (group !== lastGroup) {
             lastGroup = group;
             const grpLabel = isPrimary ? ("Priority courses for " + activeTier) : isRelevant ? "Also relevant" : "Advanced / reference";
-            courseGrid.appendChild(el("div.curr-group-label", { text: grpLabel }));
+            courseList.appendChild(el("div.curr-group-label", { text: grpLabel }));
           }
         }
 
-        const cardChildren = [
-          el("div.mini-row", { style: "justify-content:space-between;align-items:baseline" }, [
-            el("h3", { text: (course.icon || "") + "  " + course.title }),
-            el("span.meta", { text: pr.studied + "/" + pr.total + (pr.mastered ? " · " + pr.mastered + " mastered" : "") }),
-          ]),
-          el("p.hint", { text: course.summary || "" }),
-          el("div.bar", {}, [el("span", { style: "transform:scaleX(" + (pct / 100) + ")" })]),
-          el("div.meta", { style: "margin-top:6px", text: "Source: " + (course.source || "") }),
-        ];
-        if (badge) {
-          cardChildren.push(el("span.curr-rank-badge", {
-            text: badge,
-            style: "margin-top:6px;display:inline-block;font-family:var(--font-mono);font-size:0.7rem;color:color-mix(in srgb, " + badgeColor + " 40%, var(--text));border:1px solid " + badgeColor + ";border-radius:4px;padding:2px 6px;"
-          }));
-        }
-
-        courseGrid.appendChild(el("div.card.click", { role: "button", tabindex: "0",
-          onclick: () => openCourse(mount, course, cache, labels),
-          onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") openCourse(mount, course, cache, labels); }
-        }, cardChildren));
+        const isActive = course.id === activeCourseId;
+        const row = el("button.list-detail-row" + (isActive ? ".active" : ""), {
+          type: "button", role: "option", "aria-selected": String(isActive),
+          "data-course-id": course.id,
+        }, [
+          el("span.ldr-name", { text: (course.icon || "") + "  " + course.title }),
+          el("span.ldr-badge", { text: pr.studied + "/" + pr.total + (pr.mastered ? " · " + pr.mastered + " mastered" : "") }),
+        ]);
+        row.addEventListener("click", () => selectCourse(course));
+        row.addEventListener("keydown", (e) => {
+          if (e.key === "ArrowDown") { e.preventDefault(); focusAdjacentRow(row, 1); }
+          else if (e.key === "ArrowUp") { e.preventDefault(); focusAdjacentRow(row, -1); }
+        });
+        courseList.appendChild(row);
       }
-      mount.appendChild(courseGrid);
+
+      const initialCourse = sortedCourses.find((c) => c.id === activeCourseId) || sortedCourses[0] || null;
+      if (initialCourse) renderCourseLessons(rightPane, mount, initialCourse, cache, labels);
+      else util.clear(rightPane);
     },
   };
 
-  function openCourse(mount, course, cache, labels) {
-    util.clear(mount);
-    mount.appendChild(el("button.btn.ghost.sm.no-print", { text: "‹ All courses", onclick: () => G.learn.render(mount) }));
-    mount.appendChild(el("div.section-title", {}, [el("h2", { text: course.icon + "  " + course.title }), el("div.rule")]));
-    mount.appendChild(el("p.hint", { text: (course.summary || "") + "  ·  Source: " + (course.source || "") }));
+  // Right-pane body for the selected course (Roadmap Tier 6b Sub-step A) -
+  // this is openCourse()'s entire OLD body (see git history), minus the
+  // "‹ All courses" back button a persistent list-detail split no longer
+  // needs (courseList stays visible on the left at all times, same as
+  // Dictionary's entryList never needing a "back" control next to its own
+  // detail pane). Fills `host` (the right-pane container) in place -
+  // util.clear(host), not util.clear(mount) - so courseList is never
+  // touched by a course selection. `mount` is still threaded through only
+  // to hand to openLesson() below, which is unchanged and still expects to
+  // tear down and rebuild the WHOLE page mount, not just this pane.
+  function renderCourseLessons(host, mount, course, cache, labels) {
+    util.clear(host);
+    host.appendChild(el("div.section-title", {}, [el("h2", { text: course.icon + "  " + course.title }), el("div.rule")]));
+    host.appendChild(el("p.hint", { text: (course.summary || "") + "  ·  Source: " + (course.source || "") }));
 
-    mount.appendChild(el("div.btn-row.no-print", {}, [
+    host.appendChild(el("div.btn-row.no-print", {}, [
       el("button.btn.sm.ghost", { gi: "printer", giSize: 14, text: "Print study sheet", onclick: () => printCourse(course) }),
     ]));
 
     (course.lessons || []).forEach((lesson, i) => {
       const p = cache[lesson.id] || { studied: false };
       const mark = p.mastered ? "🔴 by the book" : p.studied ? "✓ studied" : "";
-      mount.appendChild(el("div.card.click", { role: "button", tabindex: "0",
+      host.appendChild(el("div.card.click", { role: "button", tabindex: "0",
         onclick: () => openLesson(mount, course, i, cache, labels),
         onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") openLesson(mount, course, i, cache, labels); } }, [
         el("div.mini-row", { style: "justify-content:space-between;align-items:baseline" }, [
@@ -14935,6 +15018,23 @@ window.G = window.G || {};
         el("div.meta", { text: "~" + (lesson.estMin || 3) + " min · " + (lesson.citation || "") }),
       ]));
     });
+  }
+
+  // Called ONLY by openLesson()'s own "‹ <course title>" back button below
+  // (that function is completely untouched by this change - see the
+  // Roadmap Tier 6b Sub-step A comment above G.learn.render() - and still
+  // calls openCourse(mount, course, cache, labels) with this exact
+  // signature). Used to util.clear(mount) and draw a flat lesson-card list;
+  // now re-renders the full list-detail split fresh with `course`
+  // pre-selected, so "back" from the lesson reader lands on a working
+  // list-detail view with the right course already active - the same
+  // "re-render G.learn.render() fresh" shape its own "Show all courses"
+  // button already uses. cache/labels are intentionally unused here:
+  // render() re-derives its own (a fresh loadAllProgress() scan picks up
+  // whatever openLesson()'s mastery/studied buttons just persisted via
+  // setP(), same as any other fresh render of this view).
+  function openCourse(mount, course, cache, labels) {
+    G.learn.render(mount, course && course.id);
   }
 
   function openLesson(mount, course, idx, cache, labels) {

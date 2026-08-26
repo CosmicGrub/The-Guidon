@@ -266,12 +266,13 @@ jobs:
             tests: "test:rapid-fire-no-srs-writes test:rapid-fire-solo-team test:biometric-lock test:storage-dashboard test:schema-migration test:va-combined-rating test:sgt-ssg-compare test:career-timeline"
           # Chunk 15 was the one chunk still under the documented 8-per-chunk
           # ceiling (this file's own <=8-concurrent-Chromium safety limit,
-          # not an arbitrary round number - see the top-of-file note), so
-          # the new dictionary list-detail suite (roadmap Tier 6b) lands
-          # here rather than forcing a 16th chunk - 7 of 8 slots used, still
-          # room for one more before a new chunk is actually required.
-          - name: "15-focusringslistdetail-hometrendsparkline-currencycareer-seedio-resourceslistdetail-moneylistdetail-dictionarylistdetail"
-            tests: "test:focus-rings-list-detail test:home-trend-sparkline test:currency-career test:seed-io test:resources-list-detail test:money-list-detail test:dictionary-list-detail"
+          # not an arbitrary round number - see the top-of-file note). The
+          # new #/learn course-split suite (roadmap Tier 6b, Sub-step A)
+          # takes its last open slot, bringing it to a full 8/8 - the NEXT
+          # new test:* suite must start a chunk 16 rather than overloading
+          # this one past the documented ceiling.
+          - name: "15-focusringslistdetail-hometrendsparkline-currencycareer-seedio-resourceslistdetail-moneylistdetail-dictionarylistdetail-learncoursesplit"
+            tests: "test:focus-rings-list-detail test:home-trend-sparkline test:currency-career test:seed-io test:resources-list-detail test:money-list-detail test:dictionary-list-detail test:learn-course-split"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
