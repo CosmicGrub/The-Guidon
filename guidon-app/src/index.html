@@ -26001,8 +26001,72 @@ window.G = window.G || {};
 
       const count = el("div.meta", { style: "margin:6px 0" });
       const results = el("div#resources-stage.card-results-grid");
+
+      // List-detail jump list (roadmap Tier 6c, #/resources): a category-
+      // level index mirroring Doctrine's entryList / Board Drill's catList
+      // (see those views' own comments for the full "jump to existing
+      // content, don't replace it with a single-selection view" rationale).
+      // Built once, right here, rather than inside draw(): cats is static -
+      // draw()'s chip/search filtering only ever narrows which ITEMS show
+      // inside a category (activeCat/q), it never removes a whole category
+      // from `cats` itself - so a jump row's target category never
+      // disappears across re-draws the way a per-item row would, and
+      // rebuilding this list on every keystroke/chip click would be pure
+      // waste.
+      const entryList = el("div.list-detail-list", { role: "listbox", "aria-label": "Jump to category" });
+      function jumpToResCategory(catId) {
+        // Targets the matching .search-header divider (tagged with
+        // data-res-cat below), not an item card - draw() only ever renders
+        // headers for categories that currently have at least one matching
+        // item, so a category filtered fully empty by an active chip/search
+        // term simply has no header to find yet; the row itself stays
+        // clickable and just no-ops until its category is back in view.
+        const hdr = results.querySelector('.search-header[data-res-cat="' + catId + '"]');
+        if (!hdr) return;
+        let reduceMotion = false;
+        try { reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
+        hdr.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+        hdr.classList.add("list-detail-jumped");
+        setTimeout(() => hdr.classList.remove("list-detail-jumped"), 1600);
+      }
+      cats.forEach((c) => {
+        const row = el("button.list-detail-row", { type: "button", role: "option" }, [
+          el("span.ldr-name", { text: c.name }),
+          el("span.ldr-badge", { text: String((c.items || []).length) }),
+        ]);
+        row.addEventListener("click", () => jumpToResCategory(c.id));
+        // PC/desktop intuitivism-pass arrow-key nav, same shape as
+        // Doctrine's entryList / Board Drill's catList (see those views'
+        // own comments for the full rationale) - plain next/previous-
+        // ElementSibling is a complete traversal since entryList holds
+        // ONLY row buttons, nothing else. ArrowUp from row 0 returns focus
+        // to the search input above (mirroring Doctrine, which has the
+        // same input-directly-above-the-list shape); Enter/Space needs no
+        // explicit handler since these are real <button> elements.
+        row.addEventListener("keydown", (e) => {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            const next = row.nextElementSibling;
+            if (next) next.focus();
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            const prev = row.previousElementSibling;
+            if (prev) prev.focus(); else search.focus();
+          }
+        });
+        entryList.appendChild(row);
+      });
+
       mount.appendChild(count);
-      mount.appendChild(results);
+      // Known, already-accepted cosmetic wrinkle inherited from Doctrine's
+      // own nested .card-results-grid comment (see that view's near-
+      // identical note): at exactly 1024px, where .list-detail itself
+      // switches from stacked to its two-column split, the nested
+      // .card-results-grid on `results` actually DROPS BACK to 1 column -
+      // the 280px list pane + 16px gap leaves too little room for the
+      // grid's own auto-fill to fit a second 260px track. Not fixed here -
+      // out of scope for this pass, same as Doctrine's.
+      mount.appendChild(el("div.list-detail", {}, [entryList, results]));
 
       // it.url is inert text for every resource here, not just Veterans
       // Crisis Line's - none of these ~200 entries were ever clickable.
@@ -26066,7 +26130,7 @@ window.G = window.G || {};
         let lastCat = null;
         hits.slice(0, CAP).forEach((it) => {
           if (it._cat !== lastCat) {
-            frag.appendChild(el("div.search-header", {}, [el("span.search-count", { text: it._cat })]));
+            frag.appendChild(el("div.search-header", { "data-res-cat": it._catId }, [el("span.search-count", { text: it._cat })]));
             lastCat = it._cat;
           }
           const card = el("div.res-card");
@@ -26080,6 +26144,17 @@ window.G = window.G || {};
 
       let deb;
       search.addEventListener("input", () => { clearTimeout(deb); deb = setTimeout(draw, 120); });
+      // PC/desktop intuitivism-pass arrow-key nav: ArrowDown from the search
+      // input enters the jump list at its first row, mirroring Doctrine's
+      // own search-input keydown handler (see that view's comment for the
+      // full rationale) - the down-direction complement to entryList's own
+      // row-0 ArrowUp-returns-to-search-input handler above.
+      search.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowDown") {
+          const first = entryList.querySelector(".list-detail-row");
+          if (first) { e.preventDefault(); first.focus(); }
+        }
+      });
       // Consume a cross-link seed (e.g. from a global search hit, via
       // G.nav.seed("resources", ...) - see G.nav's own header comment in
       // util.js): pre-fill the search with the matched resource name so the
