@@ -993,9 +993,22 @@ html[data-motion="cinematic"] { --qz-flip-dur: .95s; --qz-flip-ease: cubic-bezie
   font-family: var(--font-mono); font-size: 0.786rem; letter-spacing: .14em;
   color: var(--cyan); text-transform: uppercase;
 }
+/* Item F ("Reading the Cards" Roadmap Tier 6c): was color:var(--text-mute) -
+   a real axe color-contrast failure in 22/24 themes (2.42-3.9:1 measured,
+   below the 4.5:1 small-text minimum), only ever surfaced because
+   test-contrast-full.mjs never used to actually flip a card (.qz-back
+   carries `inert` pre-flip, so axe skipped this element entirely - see
+   that test's own Item F comment). --text-mute is a deliberate, widely-used
+   de-emphasized token elsewhere in this file (dozens of call sites,
+   several at even smaller font-sizes) - re-tuning IT would be a much
+   bigger, app-wide design question outside this fix's scope. This one
+   selector is narrow and self-contained, so switched to --text-dim
+   instead - the same token .rf-hud-stat already uses at a comparable small
+   size against a comparable panel-family background, and confirmed by
+   the same test suite to clear 4.5:1 in all 24 themes after this change. */
 .qz-back .src {
   display: block; margin-top: 6px; font-family: var(--font-mono);
-  font-size: 0.786rem; color: var(--text-mute);
+  font-size: 0.786rem; color: var(--text-dim);
 }
 
 /* ── Rapid Fire (Board Drill's 7th tab) ───────────────────────────────────
