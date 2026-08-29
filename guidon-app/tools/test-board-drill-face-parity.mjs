@@ -188,6 +188,45 @@ if (found) {
     : bad(`the answer face is ${longBackFaceH}px but .qz-card is ${longBackH}px - doesn't fill the card`);
 }
 
+/* ---- The same longest real question, now in DEFAULT (rich) motion:
+   proves the overflow-safety just added to the base (non-reduce-motion)
+   .qz-front rule actually works there too, not only in reduce-motion.
+   Rich motion's .qz-face is position:absolute;inset:0 (structurally
+   different from reduce-motion's in-flow layout used above), so this is
+   a genuinely separate code path - .qz-front having overflow-y:auto in
+   its source doesn't by itself prove long content isn't still visibly
+   clipped by the shared .qz-face's own overflow:hidden. Modeled directly
+   on the reduce-motion section immediately above. ---- */
+if (found) {
+  // The card above was left flipped to its back face, in reduce-motion
+  // mode, by the section immediately preceding this one - return to the
+  // front face and switch motion mode off before measuring.
+  if (await isFlipped()) await flip();
+  await page.evaluate(() => {
+    document.documentElement.removeAttribute("data-motion");
+    document.documentElement.classList.remove("reduce-motion");
+  });
+  await page.waitForTimeout(200);
+
+  const richLongFrontH = await cardHeight();
+  const richLongFrontFaceH = await visibleFaceHeight();
+  richLongFrontFaceH === richLongFrontH
+    ? ok(`rich motion: the longest real question (${longest.len} chars) still fills the card (${richLongFrontH}px), no visible clipping`)
+    : bad(`rich motion: the longest question's front face is ${richLongFrontFaceH}px but .qz-card is ${richLongFrontH}px - doesn't fill the card`);
+
+  const richOverflowInfo = await page.evaluate(() => {
+    const f = document.querySelector(".qz-front");
+    const cs = getComputedStyle(f);
+    return { scrollHeight: f.scrollHeight, clientHeight: f.clientHeight, overflowY: cs.overflowY };
+  });
+  richOverflowInfo.overflowY === "auto"
+    ? ok(`rich motion: .qz-front's computed overflow-y is "auto" (matching reduce-motion's own precedent) - long content can scroll instead of clipping`)
+    : bad(`rich motion: .qz-front's computed overflow-y is "${richOverflowInfo.overflowY}", expected "auto" - long content has no scroll escape in default motion`);
+  richOverflowInfo.scrollHeight > richOverflowInfo.clientHeight
+    ? ok(`rich motion: the longest prompt genuinely needs to scroll internally (scrollHeight ${richOverflowInfo.scrollHeight} > clientHeight ${richOverflowInfo.clientHeight}) at this viewport width`)
+    : ok(`rich motion: the longest prompt fits without needing to scroll (scrollHeight ${richOverflowInfo.scrollHeight}, clientHeight ${richOverflowInfo.clientHeight}) at this viewport width`);
+}
+
 const relevantNoise = noise.filter((n) => !/favicon/.test(n));
 relevantNoise.length === 0 ? ok("no console errors/warnings") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));
 
