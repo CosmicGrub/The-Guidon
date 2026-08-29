@@ -499,6 +499,55 @@ st = await roundState();
   : bad("post-Leave-round fresh-round state: " + JSON.stringify({ correctText: st.correctText, streakText: st.streakText }));
 await tapEndRound();
 
+// ════════════════════════════════════════════════════════════════════
+// 6) Item 10 fix: judge() (the Correct/Pass buttons — Rapid Fire's single
+//    primary interaction) announces the outcome via the real
+//    util.announce()/#a11y-live mechanism this file's other aria-live
+//    coverage (test-a11y-tree.mjs) already confirms exists app-wide.
+//    Before this fix, updateHud() only ever pushed score/streak/timer into
+//    <span> textContent — genuinely silent to a screen reader.
+// ════════════════════════════════════════════════════════════════════
+async function liveRegionText() {
+  return page.evaluate(() => { const r = document.getElementById("a11y-live"); return r ? r.textContent : null; });
+}
+await enterRapidFireFresh();
+await setCategory("Army Fitness Test (AFT)");
+await clickButtonByText("All difficulties");
+await clickButtonByText("Untimed");
+await clickButtonByText("Start Round");
+await dismissExplainerIfShown();
+
+await tapCorrect();
+// util.announce() clears the region then sets the real text after its own
+// 30ms setTimeout (see util.announce in the shared UX helpers) — 150ms
+// matches the margin this same file already uses after tapCorrect/tapPass.
+await page.waitForTimeout(150);
+let liveText = await liveRegionText();
+(/^Correct\./.test(liveText || "") && /Score 1\./.test(liveText || ""))
+  ? ok("tapping Correct announces the outcome + real score via #a11y-live: " + JSON.stringify(liveText))
+  : bad("expected a 'Correct. Score 1. ...' announcement in #a11y-live after tapping Correct, got: " + JSON.stringify(liveText));
+
+await tapPass();
+await page.waitForTimeout(150);
+liveText = await liveRegionText();
+(/^Passed\./.test(liveText || "") && /Score 1\./.test(liveText || ""))
+  ? ok("tapping Pass announces the outcome via the same real #a11y-live region (score unchanged by a Pass): " + JSON.stringify(liveText))
+  : bad("expected a 'Passed. Score 1. ...' announcement in #a11y-live after tapping Pass, got: " + JSON.stringify(liveText));
+
+// Streak is folded into the SAME per-judge announcement rather than a
+// separate debounced mechanism — two more real Corrects (streak was reset
+// to 0 by the Pass above) should mention "2 in a row.", matching the exact
+// visual "🔥 2 in a row" threshold updateHud() already uses.
+await tapCorrect();
+await page.waitForTimeout(150);
+await tapCorrect();
+await page.waitForTimeout(150);
+liveText = await liveRegionText();
+/2 in a row\./.test(liveText || "")
+  ? ok("a real 2-in-a-row streak is folded into judge()'s own announcement, matching the visual '🔥 2 in a row' threshold: " + JSON.stringify(liveText))
+  : bad("expected the announcement to mention '2 in a row.' at the real streak threshold, got: " + JSON.stringify(liveText));
+await tapEndRound();
+
 noise.length === 0 ? ok("no console errors/warnings across the full Solo/Team suite") : bad("console noise: " + noise.slice(0, 8).join(" | "));
 
 await browser.close();
