@@ -9145,9 +9145,14 @@ window.G = window.G || {};
       const prevBtn = el("button.qz-nav-btn", { type: "button", "aria-label": "Previous card" }, [G.util.icon("chevron-left", 20, "‹")]);
       const flipBtn = el("button.qz-nav-btn.qz-nav-flip", { type: "button", "aria-label": "Flip card" }, [G.util.icon("rotate-ccw", 18, "⤾")]);
       const nextBtn = el("button.qz-nav-btn", { type: "button", "aria-label": "Next card" }, [G.util.icon("chevron-right", 20, "›")]);
-      prevBtn.addEventListener("click", () => { idx = (idx - 1 + queue.length) % queue.length; draw(); });
+      // Item 9 fix: draw() rebuilds cardWrap's DOM (see grade()'s own
+      // comment, near its own draw() call, for the full explanation) —
+      // refocus the container afterward so tabbing to these very "Previous
+      // card"/"Next card" buttons and activating them doesn't strand focus
+      // on <body>.
+      prevBtn.addEventListener("click", () => { idx = (idx - 1 + queue.length) % queue.length; draw(); cardWrap.focus(); });
       flipBtn.addEventListener("click", () => doFlip());
-      nextBtn.addEventListener("click", () => { idx = (idx + 1) % queue.length; draw(); });
+      nextBtn.addEventListener("click", () => { idx = (idx + 1) % queue.length; draw(); cardWrap.focus(); });
       const fsOn = document.documentElement.classList.contains("qz-theater");
       const fsBtn = el("button.qz-nav-btn.qz-fs-btn", { type: "button",
         "aria-label": fsOn ? "Exit fullscreen study" : "Fullscreen study",
@@ -9374,6 +9379,23 @@ window.G = window.G || {};
       }
       idx++;
       draw();
+      // Item 9 fix: draw() just tore down and rebuilt cardWrap's entire DOM
+      // (util.clear(cardWrap) above), including whichever grade/nav button
+      // held keyboard focus (on-card buttons, the 1-4 shortcuts here, or the
+      // arrow-key handler below all reach grade()). Without this, focus
+      // silently fell back to <body> on every single grade — a keyboard-only
+      // user tabbed to a grade button instead of using 1-4 lost their place
+      // in page tab order every time they graded a card. cardWrap itself
+      // (tabIndex="0", see its declaration above) survives the rebuild since
+      // only its children are cleared, so refocusing it (mirroring
+      // enterTheater()/exitTheater()'s own target.focus() calls, above) is
+      // enough to restore keyboard continuity. Runs after the announce()
+      // call above rather than before: that call already scheduled the live
+      // region's text update via its own 30ms setTimeout (see util.announce,
+      // in the shared UX helpers) against the separate #a11y-live node, not
+      // cardWrap's subtree — so this focus() neither races nor double-fires
+      // against it.
+      cardWrap.focus();
     }
 
     // Keyboard shortcuts, scoped to the card container (not global) so they
@@ -9400,9 +9422,13 @@ window.G = window.G || {};
         const card = cardWrap.querySelector(".qz-card");
         if (card) card.click();
       } else if (e.key === "ArrowLeft") {
-        e.preventDefault(); idx = (idx - 1 + queue.length) % queue.length; draw();
+        // Item 9 fix: draw() rebuilds cardWrap's DOM (see grade()'s own
+        // comment, above, for the full explanation) — refocus the container
+        // afterward so a Tab-focused prev/next button doesn't strand focus
+        // on <body>.
+        e.preventDefault(); idx = (idx - 1 + queue.length) % queue.length; draw(); cardWrap.focus();
       } else if (e.key === "ArrowRight") {
-        e.preventDefault(); idx = (idx + 1) % queue.length; draw();
+        e.preventDefault(); idx = (idx + 1) % queue.length; draw(); cardWrap.focus();
       } else if (flipped && ["1", "2", "3", "4"].includes(e.key)) {
         e.preventDefault(); grade(q, +e.key - 1);
       } else if (e.key === "f" || e.key === "F") {
@@ -12180,6 +12206,30 @@ window.G = window.G || {};
           if (cfg.soundHaptics) util.haptic("warning");
           if (cfg.passedBehavior === "requeue") queue.push(current);
         }
+        // Item 10 fix: judge() is Rapid Fire's single primary interaction
+        // (the Correct/Pass buttons) yet was entirely silent to screen
+        // readers — updateHud() (above) only ever pushes score/streak/timer
+        // into <span> textContent, which assistive tech has no reason to
+        // notice. util.announce() (see the shared UX helpers, and Board
+        // Drill's own doFlip()/grade() for precedent) is this file's
+        // established aria-live mechanism; reused as-is rather than
+        // reinvented. Announcing on every call (not just at the visual
+        // "🔥 2 in a row" streak threshold, which this message folds in
+        // automatically via the same currentStreak >= 2 check updateHud()
+        // uses) matches Anki/quiz-app convention and keeps this simple —
+        // a fast-paced mode's whole point is one judgment per card, so
+        // "every call" IS "at every meaningful state change" here, not a
+        // noisy over-announcement. Fired after advance()/drawCard() below
+        // rebuild the card and HUD text (correctCount/currentStreak are
+        // already final at this point), and — like grade()'s own announce
+        // call — targets the separate #a11y-live node rather than anything
+        // advance() rebuilds, so the two never race.
+        try {
+          if (G.util.announce) {
+            const streakPart = isCorrect && currentStreak >= 2 ? " " + currentStreak + " in a row." : "";
+            G.util.announce((isCorrect ? "Correct." : "Passed.") + " Score " + correctCount + "." + streakPart + " Next card.");
+          }
+        } catch (e) {}
         advance();
       }
       correctBtn.addEventListener("click", () => judge(true));

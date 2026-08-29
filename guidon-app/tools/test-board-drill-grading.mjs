@@ -97,6 +97,86 @@ if (hasCard) {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Item 9 regression: grade() and the arrow-key nav handlers no longer
+// strand keyboard focus on <body> after draw() tears down and rebuilds
+// cardWrap's entire DOM (util.clear(cardWrap), in draw()). A keyboard-only
+// user who Tabs to a grade/nav button (rather than using the 1-4 number-
+// key shortcut) previously lost their place in page tab order on every
+// single grade/nav action.
+//
+// Uses REAL keyboard Tab presses to reach the target button - not
+// element.focus() on it directly - the same real-:focus-visible/keyboard-
+// modality distinction tools/test-focus-rings-list-detail.mjs's own
+// comment documents verifying (a script .focus() call also sets
+// :focus-visible in this Chromium context, but a genuine Tab walk is used
+// here anyway since what's under test is real Tab-reachability into a
+// freshly-rebuilt subtree, not just "focus can land somewhere").
+async function tabUntil(matchFn, maxTabs) {
+  for (let i = 0; i < maxTabs; i++) {
+    await page.keyboard.press("Tab");
+    if (await page.evaluate(matchFn)) return true;
+  }
+  return false;
+}
+async function activeElementLabel() {
+  return page.evaluate(() => {
+    const a = document.activeElement;
+    if (!a) return "none";
+    if (a === document.querySelector(".qz-wrap")) return "qz-wrap";
+    if (a === document.body) return "body";
+    return a.tagName + "." + Array.from(a.classList || []).join(".");
+  });
+}
+
+if (hasCard) {
+  // Re-anchor on cardWrap (same seed flipAndGrade() above already uses) and
+  // flip via a real Space keypress so the grade row exists to Tab into.
+  await page.evaluate(() => document.querySelector(".qz-wrap")?.focus());
+  await page.keyboard.press("Space");
+  await page.waitForTimeout(400);
+  const flippedForFocusTest = await page.evaluate(() => !!document.querySelector(".qz-card.flipped"));
+  if (flippedForFocusTest) {
+    const reachedGradeBtn = await tabUntil(
+      () => !!(document.activeElement && document.activeElement.classList && document.activeElement.classList.contains("qz-grade-btn")),
+      15
+    );
+    if (reachedGradeBtn) {
+      ok("real Tab navigation (not .focus()) reaches a .qz-grade-btn from cardWrap");
+      await page.keyboard.press("Enter"); // real keyboard activation -> click -> grade() -> draw()
+      await page.waitForTimeout(300);
+      const afterGrade = await activeElementLabel();
+      afterGrade === "qz-wrap"
+        ? ok("Item 9: grading via a real Tab-focused grade button + Enter leaves focus on .qz-wrap, not <body>")
+        : bad("Item 9: expected focus on .qz-wrap after grading, got: " + afterGrade);
+    } else {
+      bad("could not reach a .qz-grade-btn via real Tab navigation within 15 tabs");
+    }
+  } else {
+    bad("could not flip a card to set up the Item 9 focus-after-grade test");
+  }
+
+  // Arrow-key nav: Tab to the real "Next card" button (Board Drill's own
+  // prev/next arrows in .qz-nav-row) and press ArrowRight for real while it
+  // holds focus - draw()'s rebuild previously destroyed that very button
+  // without ever restoring focus afterward.
+  const reachedNextBtn = await tabUntil(
+    () => !!(document.activeElement && document.activeElement.getAttribute && document.activeElement.getAttribute("aria-label") === "Next card"),
+    15
+  );
+  if (reachedNextBtn) {
+    ok("real Tab navigation reaches the 'Next card' nav button from cardWrap");
+    await page.keyboard.press("ArrowRight"); // real keyboard arrow-nav, matches the app's own ArrowLeft/ArrowRight shortcut
+    await page.waitForTimeout(300);
+    const afterNav = await activeElementLabel();
+    afterNav === "qz-wrap"
+      ? ok("Item 9: arrow-key nav (ArrowRight) from a real Tab-focused nav button leaves focus on .qz-wrap, not <body>")
+      : bad("Item 9: expected focus on .qz-wrap after arrow-nav, got: " + afterNav);
+  } else {
+    bad("could not reach the 'Next card' nav button via real Tab navigation within 15 tabs");
+  }
+}
+
 noise.length === 0 ? ok("no console errors/warnings") : bad("console noise: " + noise.join(" | "));
 
 console.log(fails === 0 ? "\nBOARD DRILL GRADING: all passed" : `\nBOARD DRILL GRADING: ${fails} failed`);
