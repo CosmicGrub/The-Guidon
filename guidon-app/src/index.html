@@ -9297,6 +9297,17 @@ window.G = window.G || {};
       // flicker for the rest of the gesture.
       const DEAD_ZONE = 8;
       let startX = 0, startY = 0, dx = 0, dy = 0, dragging = false, dragMoved = false, axis = null;
+      // Item E ("Reading the Cards" Roadmap Tier 6c): the same reduce-motion
+      // check pattern used elsewhere in this file (e.g. doFlip()'s own
+      // cardFlipping-guard comment, above) - checked fresh on every call
+      // rather than cached once, since the setting can change live (OS
+      // preference, or the Settings toggle) between drags on the same card.
+      function reduceMotionActive() {
+        try {
+          return document.documentElement.getAttribute("data-motion") === "minimal" ||
+            (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+        } catch (e) { return false; }
+      }
 
       function begin(x, y) {
         startX = x; startY = y; dx = 0; dy = 0; dragging = true; dragMoved = false; axis = null;
@@ -9312,8 +9323,19 @@ window.G = window.G || {};
         // active, every move event's transform eased in over the full flip
         // duration and the card chased the finger/cursor half a second
         // behind. Set on first real movement, not on begin(), so a plain
-        // tap/click never touches the inline style.
+        // tap/click never touches the inline style. This bookkeeping (and
+        // the axis-lock/threshold math above) is gesture-recognition LOGIC,
+        // not a visual, so it stays unconditional - end() below still needs
+        // dragMoved/axis/dx/dy to decide the flip/grade/browse outcome
+        // regardless of motion setting.
         if (!dragMoved) { dragMoved = true; card.style.transition = "none"; card.classList.add("qz-dragging"); }
+        // The drag-FOLLOW itself (the card visually chasing the finger/
+        // cursor frame by frame) IS the tween - under reduce-motion it's
+        // skipped entirely rather than jumping through a reduced set of
+        // intermediate frames, so the card produces zero intermediate
+        // transform/opacity values during the drag and only reflects the
+        // gesture once it settles (see snapBack()/end(), below).
+        if (reduceMotionActive()) return;
         if (axis === "y") {
           card.style.transform = `translateY(${dy}px) scale(${1 - Math.min(Math.abs(dy), 150) / 1500})`;
           card.style.opacity = String(Math.max(0.55, 1 - Math.abs(dy) / 260));
@@ -9326,6 +9348,13 @@ window.G = window.G || {};
         }
       }
       function snapBack() {
+        // Nothing to animate BACK from under reduce-motion - move() above
+        // never set transform/opacity in the first place - but transition
+        // was still forced to "none" at drag-start (move()'s dragMoved
+        // block, unconditional), so it still needs restoring to stylesheet
+        // control or the card's NEXT real transition (e.g. a click-
+        // triggered flip) would stay silently suppressed.
+        if (reduceMotionActive()) { card.style.transition = ""; card.style.transform = ""; card.style.opacity = ""; return; }
         card.style.transition = "transform .2s ease, opacity .2s ease";
         card.style.transform = ""; card.style.opacity = "";
         setTimeout(() => { card.style.transition = ""; }, 200);
@@ -9341,38 +9370,60 @@ window.G = window.G || {};
         // this handler (or snapBack, for a below-threshold release) already
         // decided what the gesture meant.
         dragState.suppressClick = true;
+        // Item E: under reduce-motion, jump directly to the end-state -
+        // clear the inline styles synchronously and run the real
+        // flip/grade/browse LOGIC immediately, instead of animating a
+        // fly-off transition and delaying that same logic behind a
+        // setTimeout(140/150) purely to let the tween play out first.
+        const reduceMotion = reduceMotionActive();
 
         if (axis === "y") {
           if (Math.abs(dy) >= threshold) {
-            const downward = dy > 0;
-            card.style.transition = "transform .16s ease, opacity .16s ease";
-            card.style.transform = `translateY(${downward ? 60 : -60}px) scale(0.94)`;
-            card.style.opacity = "0.25";
-            setTimeout(() => {
+            if (reduceMotion) {
               card.style.transition = ""; card.style.transform = ""; card.style.opacity = "";
               doFlip();
-            }, 140);
+            } else {
+              const downward = dy > 0;
+              card.style.transition = "transform .16s ease, opacity .16s ease";
+              card.style.transform = `translateY(${downward ? 60 : -60}px) scale(0.94)`;
+              card.style.opacity = "0.25";
+              setTimeout(() => {
+                card.style.transition = ""; card.style.transform = ""; card.style.opacity = "";
+                doFlip();
+              }, 140);
+            }
           } else snapBack();
           return;
         }
         if (isFlipped()) {
           if (Math.abs(dx) >= threshold) {
             const ok = dx > 0;
-            card.style.transition = "transform .2s ease, opacity .2s ease";
-            card.style.transform = `rotateY(180deg) translateX(${(ok ? -1 : 1) * 300}px) rotate(${ok ? -20 : 20}deg)`;
-            card.style.opacity = "0";
-            setTimeout(() => grade(q, ok ? 2 : 0), 150);
+            if (reduceMotion) {
+              card.style.transition = ""; card.style.transform = ""; card.style.opacity = "";
+              grade(q, ok ? 2 : 0);
+            } else {
+              card.style.transition = "transform .2s ease, opacity .2s ease";
+              card.style.transform = `rotateY(180deg) translateX(${(ok ? -1 : 1) * 300}px) rotate(${ok ? -20 : 20}deg)`;
+              card.style.opacity = "0";
+              setTimeout(() => grade(q, ok ? 2 : 0), 150);
+            }
           } else snapBack();
         } else {
           if (Math.abs(dx) >= threshold) {
             const goNext = dx < 0; // swipe left -> next, swipe right -> previous
-            card.style.transition = "transform .18s ease, opacity .18s ease";
-            card.style.transform = `translateX(${goNext ? -280 : 280}px) rotate(${goNext ? -16 : 16}deg)`;
-            card.style.opacity = "0";
-            setTimeout(() => {
+            if (reduceMotion) {
+              card.style.transition = ""; card.style.transform = ""; card.style.opacity = "";
               idx = goNext ? (idx + 1) % queue.length : (idx - 1 + queue.length) % queue.length;
               draw();
-            }, 150);
+            } else {
+              card.style.transition = "transform .18s ease, opacity .18s ease";
+              card.style.transform = `translateX(${goNext ? -280 : 280}px) rotate(${goNext ? -16 : 16}deg)`;
+              card.style.opacity = "0";
+              setTimeout(() => {
+                idx = goNext ? (idx + 1) % queue.length : (idx - 1 + queue.length) % queue.length;
+                draw();
+              }, 150);
+            }
           } else snapBack();
         }
       }

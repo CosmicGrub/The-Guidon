@@ -150,6 +150,87 @@ afterSettled
 await page.keyboard.press("Escape"); // clean up before the suite's final checks
 await page.waitForTimeout(300);
 
+/* ---- Item E ("Reading the Cards" Roadmap Tier 6c) regression: wireSwipe()'s
+   drag-follow/snap-back/fly-off TWEENS (the interpolated transform/opacity
+   writes in move()/end(), not the underlying flip/browse/grade logic - see
+   that function's own comments) must respect reduce-motion, exactly like
+   the main flip transition already does. Before this fix, a scripted drag
+   produced the same intermediate translateX/rotate/opacity values under
+   reduce-motion as under rich motion - only the CSS-driven flip itself was
+   gated. Verified here via the same synthetic Touch/TouchEvent technique
+   the "drag path" section above already uses, with data-motion="minimal"
+   active for the whole gesture: the card should produce ZERO intermediate
+   transform/opacity values while dragging, and the real state change
+   (doFlip()) should land immediately on release rather than waiting behind
+   the normal 140ms fly-off delay. ---- */
+// Make sure theater (entered by the Item 6 section's own "f" press above)
+// is genuinely closed before touching the card directly - belt-and-
+// suspenders alongside that section's own Escape press.
+await page.evaluate(() => { if (document.documentElement.classList.contains("qz-theater") && window.G.board && window.G.board.exitTheater) window.G.board.exitTheater(); });
+await page.waitForTimeout(200);
+await page.evaluate(() => { document.documentElement.setAttribute("data-motion", "minimal"); });
+await page.evaluate(() => document.querySelector(".qz-wrap").focus());
+await page.waitForTimeout(100);
+// Converge to a known UNFLIPPED state regardless of whatever the prior
+// section left the card in - toggle via Space only if currently flipped,
+// rather than assuming a fixed prior state.
+if (await page.evaluate(() => document.querySelector(".qz-card").classList.contains("flipped"))) {
+  await page.keyboard.press("Space");
+  await page.waitForTimeout(150);
+}
+const preDragFlipped = await page.evaluate(() => document.querySelector(".qz-card").classList.contains("flipped"));
+!preDragFlipped
+  ? ok("Item E precondition: card is unflipped before the reduce-motion drag test")
+  : bad("Item E precondition failed: card is still flipped");
+
+const reduceMotionDrag = await page.evaluate(async () => {
+  const card = document.querySelector(".qz-card");
+  const r = card.getBoundingClientRect();
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  const touch = (type, y) => {
+    const t = new Touch({ identifier: 2, target: card, clientX: cx, clientY: y });
+    card.dispatchEvent(new TouchEvent(type, {
+      touches: type === "touchend" ? [] : [t], changedTouches: [t], bubbles: true, cancelable: true }));
+  };
+  const seen = [];
+  const snapshot = () => seen.push({ transform: card.style.transform, opacity: card.style.opacity });
+  touch("touchstart", cy);
+  snapshot();
+  // A vertical drag past the DEAD_ZONE and the 70px flip threshold, sampled
+  // at every intermediate step - a rich-motion drag would set a real
+  // translateY(...)/opacity at each of these under wireSwipe()'s move().
+  for (const dy of [15, 40, 65, 90, 110]) { touch("touchmove", cy + dy); snapshot(); }
+  const transitionDuringDrag = card.style.transition;
+  touch("touchend", cy + 110); // well past the 70px threshold -> triggers doFlip()
+  // Deliberately a SHORT wait (well under the normal 140ms fly-off delay
+  // the rich-motion path uses) - if doFlip() is still gated behind that
+  // delay under reduce-motion, this would catch it not having happened yet.
+  await new Promise((res) => setTimeout(res, 30));
+  const flippedRightAway = card.classList.contains("flipped");
+  await new Promise((res) => setTimeout(res, 300));
+  return {
+    seen,
+    transitionDuringDrag,
+    flippedRightAway,
+    transitionAfter: card.style.transition,
+    transformAfter: card.style.transform,
+    opacityAfter: card.style.opacity,
+  };
+});
+const anyIntermediateVisuals = reduceMotionDrag.seen.some((s) => s.transform !== "" || s.opacity !== "");
+!anyIntermediateVisuals
+  ? ok("reduce-motion drag: zero intermediate transform/opacity values were set during the drag-follow (5 sampled touchmove steps)")
+  : bad("reduce-motion drag: found intermediate transform/opacity value(s) during the drag: " + JSON.stringify(reduceMotionDrag.seen));
+reduceMotionDrag.transitionDuringDrag === "none"
+  ? ok("reduce-motion drag: transition is still forced to \"none\" during the drag (gesture bookkeeping, not a tween, stays unconditional)")
+  : bad(`reduce-motion drag: transition during drag was "${reduceMotionDrag.transitionDuringDrag}", expected "none"`);
+reduceMotionDrag.flippedRightAway
+  ? ok("reduce-motion drag: doFlip() fires immediately on release (jumped straight to the end-state, no 140ms fly-off delay)")
+  : bad("reduce-motion drag: card had not flipped yet 30ms after release - doFlip() appears to still be gated behind the fly-off delay");
+reduceMotionDrag.transitionAfter === "" && reduceMotionDrag.transformAfter === "" && reduceMotionDrag.opacityAfter === ""
+  ? ok("reduce-motion drag: inline transition/transform/opacity are all cleared back to stylesheet control after settling")
+  : bad(`reduce-motion drag: inline styles left behind - transition="${reduceMotionDrag.transitionAfter}", transform="${reduceMotionDrag.transformAfter}", opacity="${reduceMotionDrag.opacityAfter}"`);
+
 const KNOWN = [/Removing XFA form data/];
 const unexpected = noise.filter((n) => !KNOWN.some((k) => k.test(n)));
 unexpected.length === 0 ? ok("no console errors/warnings") : bad(unexpected.length + " console msgs; first: " + unexpected[0]);
