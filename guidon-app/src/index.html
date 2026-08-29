@@ -993,9 +993,22 @@ html[data-motion="cinematic"] { --qz-flip-dur: .95s; --qz-flip-ease: cubic-bezie
   font-family: var(--font-mono); font-size: 0.786rem; letter-spacing: .14em;
   color: var(--cyan); text-transform: uppercase;
 }
+/* Item F ("Reading the Cards" Roadmap Tier 6c): was color:var(--text-mute) -
+   a real axe color-contrast failure in 22/24 themes (2.42-3.9:1 measured,
+   below the 4.5:1 small-text minimum), only ever surfaced because
+   test-contrast-full.mjs never used to actually flip a card (.qz-back
+   carries `inert` pre-flip, so axe skipped this element entirely - see
+   that test's own Item F comment). --text-mute is a deliberate, widely-used
+   de-emphasized token elsewhere in this file (dozens of call sites,
+   several at even smaller font-sizes) - re-tuning IT would be a much
+   bigger, app-wide design question outside this fix's scope. This one
+   selector is narrow and self-contained, so switched to --text-dim
+   instead - the same token .rf-hud-stat already uses at a comparable small
+   size against a comparable panel-family background, and confirmed by
+   the same test suite to clear 4.5:1 in all 24 themes after this change. */
 .qz-back .src {
   display: block; margin-top: 6px; font-family: var(--font-mono);
-  font-size: 0.786rem; color: var(--text-mute);
+  font-size: 0.786rem; color: var(--text-dim);
 }
 
 /* ── Rapid Fire (Board Drill's 7th tab) ───────────────────────────────────
@@ -1022,8 +1035,44 @@ html[data-motion="cinematic"] { --qz-flip-dur: .95s; --qz-flip-ease: cubic-bezie
    only scans the <style> block; it isn't a substitute for actually reasoning
    about contrast, done in updateHud()'s own comment). */
 .rf-timer { font-family: var(--font-head); font-weight: 700; font-size: 1.4rem; margin-left: auto; }
+/* Item C ("Reading the Cards" Roadmap Tier 6c, the load-bearing Rapid Fire
+   fix) - live-confirmed broken on a real Z Fold5 in folded-landscape
+   (882x344): a flat min-height:220px floor doesn't shrink on a short
+   viewport, so total .rf-scene content (this card + .rf-hud + .rf-judge-row
+   + gaps) exceeded the visible height and the Correct/Pass judge buttons
+   rendered below the viewport's bottom edge. .rf-wrap already inherits
+   html.qz-theater .qz-wrap's own overflow-y:auto (see that rule above -
+   confirmed live via computed styles, not just reading the source), so the
+   content was always technically reachable by scrolling, just with no
+   visible cue that scrolling was possible or needed.
+   Unlike .qz-card (Board Drill's own flip card, which needs a FIXED aspect
+   ratio to protect - see that rule's own vh-formula comment), .rf-card has
+   no shape to preserve, so it doesn't need that machinery - just an
+   analogous height-BUDGET so the floor itself shrinks under the same
+   "known chrome" reasoning .qz-card's comment already documents, sized to
+   RAPID FIRE's own chrome instead of Board Drill's: html.qz-theater
+   .qz-wrap's own top+bottom padding (clamp(8px,1.6vw,22px) each; ~32px
+   rounded up for a representative narrow width, see that rule above) +
+   .rf-scene's two 14px gaps (28px, one above and one below this card) +
+   .rf-hud's content-driven height (leaveBtn/endBtn are .btn.sm at ~30px,
+   .rf-timer's 1.4rem/700 text is the tallest sibling - ~40px rounded up)
+   + .rf-judge-row's own min-height:56px (deterministic, from that rule
+   below) = ~156px, rounded up to 180px for margin, the same practice
+   .qz-card's own comment uses. Declared twice (vh, then dvh) for the same
+   graceful-degradation reason .qz-card's formula documents: an unsupported
+   dvh only invalidates the SECOND declaration, keeping the first. The
+   inner max(100px, ...) is a floor against the formula going to zero/
+   negative at a viewport shorter than the chrome budget itself (not a
+   realistic device size, but keeps the card from fully collapsing rather
+   than silently rendering it invisible) - overflow-y:auto (verified
+   working, above) remains the fallback for that genuinely-degenerate case,
+   exactly the "or at minimum confirm overflow-y:auto is functional" bar
+   this item's own scoping note allows for. */
 .rf-card {
-  flex: 1 1 auto; min-height: 220px; border: 1px solid var(--line); border-radius: var(--radius);
+  flex: 1 1 auto; min-height: 220px;
+  min-height: min(220px, max(100px, calc(100vh - 180px)));
+  min-height: min(220px, max(100px, calc(100dvh - 180px)));
+  border: 1px solid var(--line); border-radius: var(--radius);
   background: var(--panel); box-shadow: var(--shadow);
   display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
   padding: clamp(20px, 3vw, 44px); gap: 14px; overflow: hidden;
@@ -4818,6 +4867,47 @@ html.reduce-transparency .feedback.good { background:color-mix(in srgb, var(--gr
 html.reduce-transparency .feedback.bad { background:color-mix(in srgb, var(--red) 12%, var(--panel-2)); }
 html.reduce-transparency .feedback.warn { background:color-mix(in srgb, var(--amber) 12%, var(--panel-2)); }
 
+/* ── Mobile responsiveness sweep (v0.49) — comfortable touch targets by default ──
+   Deliberately placed BEFORE the pointer:coarse block below (Roadmap Tier
+   6c "Reading the Cards" item A / touch-target cascade bug): both blocks
+   carry equal specificity, so whichever comes LAST in source order wins the
+   cascade on any device that is both narrow (<=640px) AND touch-capable -
+   i.e. most phones. That used to be this block (44px), silently overriding
+   the coarse-pointer block's own 48px minimum on exactly the devices it was
+   meant to protect - short of GUIDON's own stated 48px touch-target
+   standard (WCAG's 44px floor was still cleared, so this was never a
+   compliance failure, just short of the app's own bar). Moved this block
+   earlier so pointer:coarse's 48px now wins that tie; see the comment on
+   the coarse-pointer @media block below for the other half of this
+   reasoning. lint-patterns.mjs check (b) verifies the two blocks' selector
+   SETS stay in sync but is deliberately order-agnostic about which one
+   appears first - it does not enforce this ordering, so don't rely on it
+   to catch a future regression here. ── */
+@media (max-width: 640px) {
+  /* WCAG 2.5.5 / Apple HIG: interactive controls ≥44px on touch screens, without needing the opt-in toggle */
+  .btn, .nav :is(button, a), .tab, .segmented button, .choice-btn, .grade-btn,
+  .idp-suggest-chip, .cpdf-modebtn, .cpdf-sigbtn, .fin-calc-row input,
+  select, input[type="text"], input[type="number"], input[type="date"],
+  .topbar-profile-btn, button.chip, .ob-rank-btn,
+  .res-domain-head, .nav-group-header, .due-chip, .qz-star-btn,
+  .appearance-opt, .cpdf-close, .res-copy-btn, .example-chip, .copybtn,
+  .mb-cat-chip, .mb-score-btn { min-height: 44px; }
+  .topbar-profile-btn { width: 44px; }
+  /* tap-friendly spacing so adjacent controls don't collide */
+  .tabbar { gap: 4px; }
+  .idp-actions, .fin-calc-actions, .cpdf-actions { gap: 8px; flex-wrap: wrap; }
+  .idp-actions .btn, .cpdf-actions .btn { flex: 1 1 auto; }
+  /* tables reflow: allow horizontal scroll rather than overflow the viewport */
+  table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  /* modals: never taller than the viewport; scroll inside */
+  .cpdf-modal { max-height: 92vh; overflow-y: auto; width: 96vw; }
+  .cpdf-backdrop { padding: 8px; padding-top: max(8px, env(safe-area-inset-top)); }
+  /* dashboards stack cleanly */
+  .idp-dash-groups, .idp-var-grid { grid-template-columns: 1fr; }
+  /* keep the readable line-length from getting cramped */
+  .empty-state-hint { max-width: 90vw; }
+}
+
 /* ======================================================================
    DEVICE / INPUT-MODE AUTO-DETECTION
    The settings above (hc / large-targets / reduce-transparency) are manual,
@@ -4830,7 +4920,13 @@ html.reduce-transparency .feedback.warn { background:color-mix(in srgb, var(--am
    ====================================================================== */
 
 /* Coarse pointer (touchscreen, incl. phone/tablet/Z Fold in either fold
-   state) — same tap-target sizing as the manual "large targets" toggle. */
+   state) — same tap-target sizing as the manual "large targets" toggle.
+   Deliberately placed AFTER the max-width:640px block above (moved up
+   there for this reason — see its own comment): equal specificity means
+   the LAST block in source order wins the cascade, so this block's 48px
+   now wins over that block's 44px on any device that's both narrow and
+   touch-capable, matching GUIDON's own stated 48px touch-target standard
+   instead of silently falling back to the 44px WCAG floor on most phones. */
 @media (pointer: coarse) {
   .nav :is(button, a) { min-height:48px; padding-top:10px; padding-bottom:10px; }
   /* Session-52 responsive audit: this list used to be a strict subset of the
@@ -5046,31 +5142,6 @@ html.focus-mode .status-chip { opacity:.5; }
 .fin-lim-tips{margin:8px 0 4px;padding-left:20px}
 .fin-lim-tips li{margin:4px 0;font-size:.83rem;line-height:1.45}
 
-/* ── Mobile responsiveness sweep (v0.49) — comfortable touch targets by default ── */
-@media (max-width: 640px) {
-  /* WCAG 2.5.5 / Apple HIG: interactive controls ≥44px on touch screens, without needing the opt-in toggle */
-  .btn, .nav :is(button, a), .tab, .segmented button, .choice-btn, .grade-btn,
-  .idp-suggest-chip, .cpdf-modebtn, .cpdf-sigbtn, .fin-calc-row input,
-  select, input[type="text"], input[type="number"], input[type="date"],
-  .topbar-profile-btn, button.chip, .ob-rank-btn,
-  .res-domain-head, .nav-group-header, .due-chip, .qz-star-btn,
-  .appearance-opt, .cpdf-close, .res-copy-btn, .example-chip, .copybtn,
-  .mb-cat-chip, .mb-score-btn { min-height: 44px; }
-  .topbar-profile-btn { width: 44px; }
-  /* tap-friendly spacing so adjacent controls don't collide */
-  .tabbar { gap: 4px; }
-  .idp-actions, .fin-calc-actions, .cpdf-actions { gap: 8px; flex-wrap: wrap; }
-  .idp-actions .btn, .cpdf-actions .btn { flex: 1 1 auto; }
-  /* tables reflow: allow horizontal scroll rather than overflow the viewport */
-  table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  /* modals: never taller than the viewport; scroll inside */
-  .cpdf-modal { max-height: 92vh; overflow-y: auto; width: 96vw; }
-  .cpdf-backdrop { padding: 8px; padding-top: max(8px, env(safe-area-inset-top)); }
-  /* dashboards stack cleanly */
-  .idp-dash-groups, .idp-var-grid { grid-template-columns: 1fr; }
-  /* keep the readable line-length from getting cramped */
-  .empty-state-hint { max-width: 90vw; }
-}
 @media (max-width: 420px) {
   h1, .section-title h2 { font-size: 1.35rem; }
   .idp-dash-pct { font-size: 1.5rem; }
@@ -6797,6 +6868,23 @@ window.G = window.G || {};
     lightMode: false,          // legacy light flag (kept in sync by G.theme)
     theme: "field-manual",     // v0.42: field-manual|night-vision|topographic|parade-rest|blackout
     motion: "rich",            // v0.42: minimal|standard|rich
+    // Item D ("Reading the Cards" Roadmap Tier 6c): true once the person has
+    // EXPLICITLY touched a motion control themselves - the Appearance ->
+    // Motion picker (theme.set("motion", ...), below) or the legacy
+    // standalone "Reduce motion" checkbox (below) - as opposed to `motion`
+    // just sitting at its untouched "rich" default. Needed because `motion`
+    // alone can't tell those two cases apart (an untouched settings object
+    // and one where the person deliberately re-chose "rich" both read
+    // motion:"rich" identically) - app.start()'s own OS-level
+    // prefers-reduced-motion default (see that init code) needs exactly
+    // this distinction so it can respect an explicit "rich" choice made
+    // despite OS reduce-motion, instead of silently overriding it. See the
+    // settings-load backfill (missingSettings, below) for how this is
+    // seeded true rather than false for any settings row that already
+    // existed before this flag was introduced - a pre-existing row means
+    // the person has already been living with whatever motion behavior
+    // they had, so it isn't re-litigated as if it were a fresh install.
+    motionUserSet: false,
     typePairing: "command",    // v0.42: command|field|humanist|classic
     typeRoles: {},             // v0.42: per-role font overrides {head,body}
     // ── v0.43 appearance + accessibility ──
@@ -6988,6 +7076,18 @@ window.G = window.G || {};
         // visible instead of leaving zero trace.
         const missingSettings = Object.keys(DEFAULT_SETTINGS).filter((k) => !(k in savedSettings));
         state.settings = Object.assign({}, DEFAULT_SETTINGS, savedSettings);
+        // Item D: a settings row that already existed BEFORE motionUserSet
+        // was introduced (i.e. it's in missingSettings, same signal the
+        // self-heal log below already uses) means this person has already
+        // been living with whatever motion behavior their prior `motion`
+        // value gave them - seed motionUserSet true rather than
+        // DEFAULT_SETTINGS's own false, so app.start()'s new OS-level
+        // reduce-motion default (see that init code) never second-guesses
+        // an existing installation's established state. Only a GENUINELY
+        // fresh settings row (savedSettings itself null, the `if` this sits
+        // inside) keeps DEFAULT_SETTINGS's false and is eligible for that
+        // one-time OS-default treatment.
+        if (missingSettings.includes("motionUserSet")) state.settings.motionUserSet = true;
         if (missingSettings.length && G.selfheal) {
           G.selfheal.log("settings-backfill", missingSettings.join(","), missingSettings.length + " field(s) backfilled from defaults: " + missingSettings.join(", "));
         }
@@ -7347,6 +7447,12 @@ window.G = window.G || {};
       if (!obj || obj.kind !== "progress" || !Array.isArray(obj.attempts)) throw new Error("Not a GUIDON progress file.");
       if (obj.settings && typeof obj.settings === "object") {
         state.settings = Object.assign({}, DEFAULT_SETTINGS, obj.settings);
+        // Item D: same reasoning as store.init()'s own settings-backfill
+        // (see motionUserSet's own comment on DEFAULT_SETTINGS, above) - a
+        // restored backup predating this flag already reflects a real
+        // person's established motion behavior, not a fresh install, so it
+        // shouldn't become newly eligible for the OS-default treatment.
+        if (!("motionUserSet" in obj.settings)) state.settings.motionUserSet = true;
         await db.setSetting("settings", state.settings);
       }
       let n = 0;
@@ -7655,7 +7761,7 @@ window.G = window.G || {};
     async set(kind, value, extra) {
       const store = G.store;
       if (kind === "theme") { applyTheme(value); if (store) { await store.setSetting("theme", normTheme(value)); await store.setSetting("lightMode", isLight(value)); } }
-      else if (kind === "motion") { applyMotion(value); if (store) { await store.setSetting("motion", normMotion(value)); await store.setSetting("reduceMotion", value === "minimal"); } }
+      else if (kind === "motion") { applyMotion(value); if (store) { await store.setSetting("motion", normMotion(value)); await store.setSetting("reduceMotion", value === "minimal"); await store.setSetting("motionUserSet", true); } }
       else if (kind === "typePairing") { const roles = (store && store.settings && store.settings().typeRoles) || {}; applyType(value, roles); if (store) await store.setSetting("typePairing", normType(value)); }
       else if (kind === "typeRole") {
         const store2 = G.store; const cur = (store2 && store2.settings && store2.settings().typeRoles) || {};
@@ -9204,6 +9310,17 @@ window.G = window.G || {};
       // flicker for the rest of the gesture.
       const DEAD_ZONE = 8;
       let startX = 0, startY = 0, dx = 0, dy = 0, dragging = false, dragMoved = false, axis = null;
+      // Item E ("Reading the Cards" Roadmap Tier 6c): the same reduce-motion
+      // check pattern used elsewhere in this file (e.g. doFlip()'s own
+      // cardFlipping-guard comment, above) - checked fresh on every call
+      // rather than cached once, since the setting can change live (OS
+      // preference, or the Settings toggle) between drags on the same card.
+      function reduceMotionActive() {
+        try {
+          return document.documentElement.getAttribute("data-motion") === "minimal" ||
+            (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+        } catch (e) { return false; }
+      }
 
       function begin(x, y) {
         startX = x; startY = y; dx = 0; dy = 0; dragging = true; dragMoved = false; axis = null;
@@ -9219,8 +9336,19 @@ window.G = window.G || {};
         // active, every move event's transform eased in over the full flip
         // duration and the card chased the finger/cursor half a second
         // behind. Set on first real movement, not on begin(), so a plain
-        // tap/click never touches the inline style.
+        // tap/click never touches the inline style. This bookkeeping (and
+        // the axis-lock/threshold math above) is gesture-recognition LOGIC,
+        // not a visual, so it stays unconditional - end() below still needs
+        // dragMoved/axis/dx/dy to decide the flip/grade/browse outcome
+        // regardless of motion setting.
         if (!dragMoved) { dragMoved = true; card.style.transition = "none"; card.classList.add("qz-dragging"); }
+        // The drag-FOLLOW itself (the card visually chasing the finger/
+        // cursor frame by frame) IS the tween - under reduce-motion it's
+        // skipped entirely rather than jumping through a reduced set of
+        // intermediate frames, so the card produces zero intermediate
+        // transform/opacity values during the drag and only reflects the
+        // gesture once it settles (see snapBack()/end(), below).
+        if (reduceMotionActive()) return;
         if (axis === "y") {
           card.style.transform = `translateY(${dy}px) scale(${1 - Math.min(Math.abs(dy), 150) / 1500})`;
           card.style.opacity = String(Math.max(0.55, 1 - Math.abs(dy) / 260));
@@ -9233,6 +9361,13 @@ window.G = window.G || {};
         }
       }
       function snapBack() {
+        // Nothing to animate BACK from under reduce-motion - move() above
+        // never set transform/opacity in the first place - but transition
+        // was still forced to "none" at drag-start (move()'s dragMoved
+        // block, unconditional), so it still needs restoring to stylesheet
+        // control or the card's NEXT real transition (e.g. a click-
+        // triggered flip) would stay silently suppressed.
+        if (reduceMotionActive()) { card.style.transition = ""; card.style.transform = ""; card.style.opacity = ""; return; }
         card.style.transition = "transform .2s ease, opacity .2s ease";
         card.style.transform = ""; card.style.opacity = "";
         setTimeout(() => { card.style.transition = ""; }, 200);
@@ -9248,38 +9383,60 @@ window.G = window.G || {};
         // this handler (or snapBack, for a below-threshold release) already
         // decided what the gesture meant.
         dragState.suppressClick = true;
+        // Item E: under reduce-motion, jump directly to the end-state -
+        // clear the inline styles synchronously and run the real
+        // flip/grade/browse LOGIC immediately, instead of animating a
+        // fly-off transition and delaying that same logic behind a
+        // setTimeout(140/150) purely to let the tween play out first.
+        const reduceMotion = reduceMotionActive();
 
         if (axis === "y") {
           if (Math.abs(dy) >= threshold) {
-            const downward = dy > 0;
-            card.style.transition = "transform .16s ease, opacity .16s ease";
-            card.style.transform = `translateY(${downward ? 60 : -60}px) scale(0.94)`;
-            card.style.opacity = "0.25";
-            setTimeout(() => {
+            if (reduceMotion) {
               card.style.transition = ""; card.style.transform = ""; card.style.opacity = "";
               doFlip();
-            }, 140);
+            } else {
+              const downward = dy > 0;
+              card.style.transition = "transform .16s ease, opacity .16s ease";
+              card.style.transform = `translateY(${downward ? 60 : -60}px) scale(0.94)`;
+              card.style.opacity = "0.25";
+              setTimeout(() => {
+                card.style.transition = ""; card.style.transform = ""; card.style.opacity = "";
+                doFlip();
+              }, 140);
+            }
           } else snapBack();
           return;
         }
         if (isFlipped()) {
           if (Math.abs(dx) >= threshold) {
             const ok = dx > 0;
-            card.style.transition = "transform .2s ease, opacity .2s ease";
-            card.style.transform = `rotateY(180deg) translateX(${(ok ? -1 : 1) * 300}px) rotate(${ok ? -20 : 20}deg)`;
-            card.style.opacity = "0";
-            setTimeout(() => grade(q, ok ? 2 : 0), 150);
+            if (reduceMotion) {
+              card.style.transition = ""; card.style.transform = ""; card.style.opacity = "";
+              grade(q, ok ? 2 : 0);
+            } else {
+              card.style.transition = "transform .2s ease, opacity .2s ease";
+              card.style.transform = `rotateY(180deg) translateX(${(ok ? -1 : 1) * 300}px) rotate(${ok ? -20 : 20}deg)`;
+              card.style.opacity = "0";
+              setTimeout(() => grade(q, ok ? 2 : 0), 150);
+            }
           } else snapBack();
         } else {
           if (Math.abs(dx) >= threshold) {
             const goNext = dx < 0; // swipe left -> next, swipe right -> previous
-            card.style.transition = "transform .18s ease, opacity .18s ease";
-            card.style.transform = `translateX(${goNext ? -280 : 280}px) rotate(${goNext ? -16 : 16}deg)`;
-            card.style.opacity = "0";
-            setTimeout(() => {
+            if (reduceMotion) {
+              card.style.transition = ""; card.style.transform = ""; card.style.opacity = "";
               idx = goNext ? (idx + 1) % queue.length : (idx - 1 + queue.length) % queue.length;
               draw();
-            }, 150);
+            } else {
+              card.style.transition = "transform .18s ease, opacity .18s ease";
+              card.style.transform = `translateX(${goNext ? -280 : 280}px) rotate(${goNext ? -16 : 16}deg)`;
+              card.style.opacity = "0";
+              setTimeout(() => {
+                idx = goNext ? (idx + 1) % queue.length : (idx - 1 + queue.length) % queue.length;
+                draw();
+              }, 150);
+            }
           } else snapBack();
         }
       }
@@ -9712,6 +9869,57 @@ window.G = window.G || {};
       clearTimeout(G.board._autoTheaterTimer);
       G.board._autoTheaterTimer = setTimeout(() => { try { G.board.enterTheater(cardWrap); } catch (e) {} }, 220);
     }
+    // Item B ("Reading the Cards" Roadmap Tier 6c/d): the two checks above
+    // (this one and catList's category-click handler's own, above) only run
+    // at ROUTE-MOUNT and CATEGORY-CLICK time - a user already on #/board who
+    // physically rotates a device (or resizes a browser window) into the
+    // same short-landscape shape gets neither re-run, so a card that
+    // started out fine (e.g. loaded in portrait) stays stuck in the broken
+    // fixed-ratio layout after rotating into landscape. This listener
+    // re-evaluates the identical condition on resize/orientationchange and
+    // enters theater if it now applies - but deliberately does NOT
+    // auto-exit theater on rotating back to a safe shape (per this item's
+    // own scoping note: auto-exit needs explicit product confirmation this
+    // pass didn't get, so the existing manual exits - Escape, the
+    // qz-fs-btn toggle, Android Back, Rapid Fire's own "Leave round" -
+    // stay the only way out, unchanged).
+    //
+    // Reuses the SAME G.board._autoTheaterTimer-style convention (a handle
+    // on the shared G.board namespace, not a local variable - see
+    // G.board._autoTheaterResizeHandler's own comment there) because
+    // route() - a DIFFERENT top-level IIFE from renderDrill() - needs to
+    // reach this same handler to remove it on every navigation, exactly
+    // like it already reaches _autoTheaterTimer and G.board.exitTheater.
+    // renderDrill() can also re-run WITHOUT a route()-level teardown in
+    // between: switching Board Drill's own tabs away from Flashcards and
+    // back (G.board.render's set() dispatcher) calls this function again
+    // directly. Any previously-attached handler is removed first, the same
+    // clear-before-set shape _autoTheaterTimer's own two call sites already
+    // use, instead of accumulating a new listener on every tab revisit.
+    if (G.board._autoTheaterResizeHandler) {
+      window.removeEventListener("resize", G.board._autoTheaterResizeHandler);
+      window.removeEventListener("orientationchange", G.board._autoTheaterResizeHandler);
+    }
+    const onAutoTheaterResize = () => {
+      try {
+        // Self-cleans if this render's own card is no longer the one on
+        // screen (e.g. the user switched to another Board Drill tab without
+        // a route()-level teardown running) - the same isConnected
+        // self-check idiom this file already uses elsewhere for views that
+        // can't wait for route()'s centralized cleanup (Rapid Fire's round
+        // tick, Author Map's scheduleMapGraphRefresh). enterTheater() itself
+        // also independently guards against a stray call with no .qz-wrap
+        // anywhere in the DOM at all - this is the belt to that suspenders.
+        if (!cardWrap.isConnected) return;
+        if (theaterOn()) return;
+        if (window.innerWidth > window.innerHeight && window.innerHeight < 460) {
+          G.board.enterTheater(cardWrap);
+        }
+      } catch (e) {}
+    };
+    G.board._autoTheaterResizeHandler = onAutoTheaterResize;
+    window.addEventListener("resize", onAutoTheaterResize);
+    window.addEventListener("orientationchange", onAutoTheaterResize);
   }
 
   // ---------------- Multiple-choice Quiz Mode ----------------
@@ -12533,6 +12741,15 @@ window.G = window.G || {};
     // scheduleMapGraphRefresh's mapRefreshTimer already uses for the Author
     // Map tab (a same-IIFE case, hence a plain local variable there).
     _autoTheaterTimer: null,
+    // Item B ("Reading the Cards" Roadmap Tier 6c/d): handle for the
+    // resize/orientationchange listener that re-evaluates the same short-
+    // landscape condition while the user is ALREADY on #/board (rotating a
+    // device or resizing a window, as opposed to the route-mount/category-
+    // click sites _autoTheaterTimer covers). Same G.board-property
+    // convention as _autoTheaterTimer immediately above, for the same
+    // reason: route() needs to remove this listener on every navigation.
+    // See renderDrill()'s own comment where this is set, below.
+    _autoTheaterResizeHandler: null,
     // Shared "is this card due for review" predicate. Home's aggregate
     // due-count banner and Progress's per-category due tally used to answer
     // this differently - Progress required reps>0 (a card must have been
@@ -28919,6 +29136,11 @@ window.G = window.G || {};
       rmInput.checked = !!s.reduceMotion;
       rmInput.addEventListener("change", () => {
         store.setSetting("reduceMotion", rmInput.checked); document.documentElement.classList.toggle("reduce-motion", rmInput.checked);
+        // Item D: this is an explicit user choice too (see motionUserSet's
+        // own comment on DEFAULT_SETTINGS) - the G.theme-present path above
+        // already sets this via theme.set("motion", ...); this fallback
+        // (G.theme absent) needs its own write since it never calls that.
+        store.setSetting("motionUserSet", true);
       });
       a11yPanel.appendChild(el("div", { style: "margin:12px 0" }, [
         el("div.switch", {}, [el("label.toggle", { style: "margin:0" }, [rmInput, el("span.track")]), el("span", { text: "Reduce motion" })]),
@@ -30277,6 +30499,18 @@ window.G = window.G || {};
     // documented no-op, so this is safe on every route change, not just
     // ones leaving #/board.
     clearTimeout(G.board._autoTheaterTimer);
+    // Item B: same reasoning, for the resize/orientationchange listener
+    // renderDrill() wires up alongside the timer above (see
+    // G.board._autoTheaterResizeHandler's own comment, on G.board above,
+    // and where it's set inside renderDrill) - removeEventListener on a
+    // handler that's already null/removed is a safe no-op, so this runs
+    // unconditionally on every route change exactly like the clearTimeout
+    // immediately above.
+    if (G.board._autoTheaterResizeHandler) {
+      window.removeEventListener("resize", G.board._autoTheaterResizeHandler);
+      window.removeEventListener("orientationchange", G.board._autoTheaterResizeHandler);
+      G.board._autoTheaterResizeHandler = null;
+    }
     // Same reasoning for the "More" drawer (Tier 1(a)) - a click on one of
     // its own nav buttons already closes it (see openNavDrawer), but any
     // OTHER route change while it's open (browser back, search-jump, a
@@ -30397,11 +30631,44 @@ window.G = window.G || {};
       try { await store.init();
       // Apply persisted reduce-motion + theme preference on startup
       const sttgs = store.settings ? store.settings() : {};
+      // Item D ("Reading the Cards" Roadmap Tier 6c): the global CSS
+      // @media(prefers-reduced-motion:reduce) rule only zeroes
+      // transition/animation duration - it never touches the app's OWN
+      // motion setting (data-motion attribute / .reduce-motion class),
+      // which was driven solely by this persisted `motion`/`reduceMotion`
+      // pair. A person with OS-level reduced motion who has never touched
+      // Settings -> Appearance -> Motion (or the legacy checkbox) still got
+      // the full 3D flip. Applied here, at boot, as a LIVE override into a
+      // separate `effectiveSttgs` (never mutating the real `sttgs` read
+      // from storage) - gated on motionUserSet (DEFAULT_SETTINGS, set true
+      // by every explicit write path: theme.set("motion",...), the legacy
+      // checkbox, and backfilled true for any settings row that already
+      // existed before this flag shipped - see motionUserSet's own comment
+      // there) so a person who deliberately chose "rich" despite OS
+      // reduce-motion keeps seeing rich motion, unconditionally. Nothing is
+      // written back to storage here - this recomputes fresh on every boot
+      // from the LIVE matchMedia result, so a later OS-preference change
+      // (or the person finally making an explicit choice) takes effect on
+      // the very next boot instead of being baked in permanently by a
+      // one-time decision.
+      let effectiveSttgs = sttgs;
+      try {
+        if (!sttgs.motionUserSet && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+          effectiveSttgs = Object.assign({}, sttgs, { motion: "minimal", reduceMotion: true });
+        }
+      } catch (e) {}
       // v0.42: unified design-system application (theme + motion + typography)
-      if (G.theme) G.theme.syncFromSettings(sttgs);
-      else { if (sttgs.reduceMotion) document.body.classList.add("reduce-motion"); if (sttgs.lightMode) document.documentElement.classList.add("light"); }
-      // Mirror appearance to a flat localStorage key the pre-paint shell script reads.
-      persistAppearanceMirror(sttgs);
+      if (G.theme) G.theme.syncFromSettings(effectiveSttgs);
+      else { if (effectiveSttgs.reduceMotion) document.body.classList.add("reduce-motion"); if (effectiveSttgs.lightMode) document.documentElement.classList.add("light"); }
+      // Mirror the EFFECTIVE (post OS-default) appearance, not the raw
+      // stored settings - persistAppearanceMirror's whole purpose (see its
+      // own comment) is "what the pre-paint shell script should render
+      // before CSS applies," so it should reflect what was actually just
+      // applied above, not the underlying stored default that was
+      // overridden for this boot. This also means a stable OS preference
+      // across boots stops flashing "rich" at first paint after the very
+      // first boot that applied this override.
+      persistAppearanceMirror(effectiveSttgs);
       // Bi-directional profile ↔ settings sync
       // When settings etsDate/tier change, propagate to profile cache
       if (store.setSetting) {

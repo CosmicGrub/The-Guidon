@@ -19,6 +19,23 @@
  * Guest session only (no personal-profile data needed for a rendering
  * sweep). Reports every axe color-contrast violation with theme, route,
  * selector, and measured ratio.
+ *
+ * Item F ("Reading the Cards" Roadmap Tier 6c) - two real coverage gaps
+ * fixed here, both because the main sweep below only ever NAVIGATES (via
+ * location.hash) with zero interaction:
+ *   1. Board Drill's .qz-back (the answer face) carries `inert` until a
+ *      card is actually flipped - axe skips an inert subtree entirely, so
+ *      the answer face's contrast (and anything theme-specific rendered
+ *      only once flipped) was never checked in any theme.
+ *   2. Rapid Fire isn't a separate route - it's a mode tab INSIDE #/board
+ *      (confirmed this session) - so navigating to #/board only ever
+ *      exercises Board Drill's own flashcard view, never a live round.
+ *      .rf-judge-correct/.rf-judge-pass and the streak/timer colors were
+ *      never checked in any theme.
+ * Both are added as two EXTRA interaction passes after the main sweep,
+ * reusing the exact same per-theme axe-run loop (extracted below into
+ * sweepThemes()) rather than duplicating it three times or restructuring
+ * the main sweep's own route x theme loop.
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
@@ -62,9 +79,14 @@ const HASHES = await page.evaluate(() => window.G.routes.map((r) => r.hash));
 const violations = [];
 let combosRun = 0;
 
-for (const hash of HASHES) {
-  await page.evaluate((h) => { location.hash = h; }, hash);
-  await page.waitForTimeout(350);
+// Runs the color-contrast check across every theme against whatever DOM
+// state the page is CURRENTLY in (no navigation - the caller is responsible
+// for getting the page into the right state first), recording violations
+// under `reportLabel` rather than a raw location.hash - lets the two extra
+// interaction passes below (Board Drill flipped, Rapid Fire live round)
+// share this exact loop with the main route sweep instead of duplicating
+// it three times.
+async function sweepThemes(reportLabel) {
   for (const theme of THEMES) {
     await page.evaluate((t) => document.documentElement.setAttribute("data-theme", t), theme);
     await page.waitForTimeout(40);
@@ -82,22 +104,93 @@ for (const hash of HASHES) {
         }));
       });
     } catch (e) {
-      violations.push({ hash, theme, error: "axe.run threw: " + e.message });
+      violations.push({ hash: reportLabel, theme, error: "axe.run threw: " + e.message });
       continue;
     }
     combosRun++;
     for (const v of result) {
       for (const n of v.nodes) {
-        violations.push({ hash, theme, target: n.target, summary: n.summary, html: n.html });
+        violations.push({ hash: reportLabel, theme, target: n.target, summary: n.summary, html: n.html });
       }
     }
   }
 }
 
+for (const hash of HASHES) {
+  await page.evaluate((h) => { location.hash = h; }, hash);
+  await page.waitForTimeout(350);
+  await sweepThemes(hash);
+}
+
+/* ---- Item F extra pass 1: Board Drill's .qz-back, pre-flip carries
+   `inert` (axe skips an inert subtree entirely - confirmed live via the
+   element's attributes, not just read from source) so its contrast was
+   never checked. Flips a real card via the dedicated .qz-nav-flip button
+   (bypasses the drag-suppression guard the card's own click listener
+   carries) and re-sweeps every theme against the now-flipped DOM state.
+   #/board always shows a real default card with zero clicks needed first
+   (catSel defaults to "All categories" - build()'s own `cat = catSel.value
+   || "All"` - so there is always a .qz-card here already). Global
+   transitions are already killed for the whole page (see the addStyleTag
+   call above), so the flip is instant - no settle wait beyond a short
+   margin. ---- */
+await page.evaluate(() => { location.hash = "#/board"; });
+await page.waitForTimeout(350);
+const flipped = await page.evaluate(() => {
+  const btn = document.querySelector(".qz-nav-flip");
+  if (!btn) return false;
+  btn.click();
+  return document.querySelector(".qz-card")?.classList.contains("flipped") || false;
+});
+if (flipped) {
+  await page.waitForTimeout(150);
+  await sweepThemes("#/board (card flipped, .qz-back visible)");
+} else {
+  violations.push({ hash: "#/board (card flipped, .qz-back visible)", theme: "n/a", error: "could not flip a Board Drill card - .qz-nav-flip missing or flip did not register" });
+}
+
+/* ---- Item F extra pass 2: Rapid Fire is a mode TAB inside #/board, not a
+   separate route, so it's never reached by the hash-only sweep above.
+   Enters a live Solo round (Solo skips Party/Team's one-time explainer
+   screen entirely, per renderRapidFire's own startBtn handler - simplest
+   reliable way to reach a real round with no extra dialog to dismiss) and
+   re-sweeps every theme against .rf-judge-correct/.rf-judge-pass and the
+   streak/timer HUD colors, none of which exist on Board Drill's own
+   flashcard view. ---- */
+await page.evaluate(() => { location.hash = "#/board"; });
+await page.waitForTimeout(350);
+await page.evaluate(() => {
+  const rapidBtn = [...document.querySelectorAll(".segmented button")].find((b) => b.textContent.trim() === "Rapid Fire");
+  if (rapidBtn) rapidBtn.click();
+});
+await page.waitForTimeout(300);
+await page.evaluate(() => {
+  const soloBtn = [...document.querySelectorAll(".segmented button")].find((b) => b.textContent.trim() === "Solo");
+  if (soloBtn) soloBtn.click();
+});
+await page.waitForTimeout(200);
+const rapidFireRoundStarted = await page.evaluate(() => {
+  const startBtn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Start Round");
+  if (!startBtn) return false;
+  startBtn.click();
+  return true;
+});
+if (rapidFireRoundStarted) {
+  await page.waitForTimeout(400);
+  const judgeButtonsPresent = await page.evaluate(() => !!document.querySelector(".rf-judge-correct") && !!document.querySelector(".rf-judge-pass"));
+  if (judgeButtonsPresent) {
+    await sweepThemes("#/board (Rapid Fire live round)");
+  } else {
+    violations.push({ hash: "#/board (Rapid Fire live round)", theme: "n/a", error: "Start Round was clicked but .rf-judge-correct/.rf-judge-pass never appeared" });
+  }
+} else {
+  violations.push({ hash: "#/board (Rapid Fire live round)", theme: "n/a", error: "could not reach the Rapid Fire round screen - Rapid Fire tab, Solo mode, or Start Round button missing" });
+}
+
 await browser.close();
 server.close();
 
-console.log(`Swept ${HASHES.length} routes x ${THEMES.length} themes = ${combosRun} combinations.`);
+console.log(`Swept ${HASHES.length} routes + 2 interaction passes (Board Drill flipped, Rapid Fire live round) x ${THEMES.length} themes = ${combosRun} combinations.`);
 console.log(`Page errors during sweep: ${pageErrors.length}`);
 if (pageErrors.length) console.log("  " + pageErrors.slice(0, 5).join("\n  "));
 console.log(`Color-contrast violations: ${violations.length}`);

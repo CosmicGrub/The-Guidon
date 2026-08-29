@@ -285,6 +285,201 @@ for (const c of shouldNotTrigger) {
   await page.close();
 }
 
+/* ---- Item B regression (2026-08-29): resize/orientationchange while
+   ALREADY on #/board must re-evaluate the same short-landscape condition,
+   not just at route-mount/category-click time. Mounts at a normal-sized
+   (safe) viewport, selects a topic (confirms theater does NOT engage there
+   - sanity precondition), then uses page.setViewportSize() to resize the
+   SAME page into short-landscape territory without any fresh navigation or
+   category click, and asserts theater engages anyway. ---- */
+{
+  const { page, noise } = await bootToBoard({ width: 1024, height: 800 });
+  await clickFirstTopic(page);
+  const before = await page.evaluate(() => document.documentElement.classList.contains("qz-theater"));
+  !before
+    ? ok("Item B precondition: a normal-sized viewport (1024x800) does not auto-enter theater mode")
+    : bad("Item B precondition failed: theater mode unexpectedly active before the resize");
+
+  await page.setViewportSize({ width: 882, height: 344 });
+  // No fresh navigation, no category click - purely a resize on the page
+  // already sitting on #/board. Give the resize/orientationchange listener
+  // a moment to run (it calls enterTheater() synchronously, no delay like
+  // the route-mount/category-click timers have, so this is a generous
+  // margin, not a required settle time).
+  await page.waitForTimeout(300);
+  const afterResize = await page.evaluate(() => document.documentElement.classList.contains("qz-theater"));
+  afterResize
+    ? ok("resizing an already-mounted #/board page into short-landscape (882x344) engages theater mode without a fresh navigation or category click")
+    : bad("resizing into short-landscape on an already-mounted #/board page did NOT engage theater mode");
+
+  const card = await page.evaluate(() => { const r = document.querySelector(".qz-card").getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height) }; });
+  card.h > 200
+    ? ok(`Item B: the resize-triggered theater card (${card.w}x${card.h}) is well past the cramped fixed-ratio size`)
+    : bad(`Item B: the resize-triggered theater card is only ${card.w}x${card.h} - still cramped`);
+
+  // NOTE: deliberately does NOT then setViewportSize() back to a safe shape
+  // on THIS page - the resize above triggered a REAL enterTheater(), which
+  // calls the real Fullscreen API (target.requestFullscreen()), and once
+  // that succeeds Playwright/CDP cannot resize the window again ("To resize
+  // minimized/maximized/fullscreen window, restore it to normal state
+  // first") - the exact same constraint the file's own rotation-persistence
+  // test above already documents and works around by simulating .qz-theater
+  // directly instead of going through a real click. The "must NOT auto-exit
+  // on resize back to a safe shape" behavior is verified in the next block
+  // below using that same simulated-entry technique, to sidestep this
+  // real-fullscreen-lock entirely rather than fight it.
+  const noiseFiltered = noise.filter((n) => !/favicon/.test(n));
+  noiseFiltered.length === 0 ? ok("Item B: no console errors/warnings") : bad("Item B console noise: " + noiseFiltered.slice(0, 5).join(" | "));
+  await page.close();
+}
+
+/* ---- Item B: resizing back to a SAFE shape must NOT auto-exit theater -
+   only the existing manual exits (Escape, qz-fs-btn, Android Back, Rapid
+   Fire's own "Leave round") are confirmed exit paths; auto-exit was
+   explicitly left out of this item's scope pending separate product
+   confirmation (see the scoping doc's own note). Entry is simulated by
+   applying .qz-theater directly (the SAME technique the rotation-
+   persistence test above already uses and documents) rather than through a
+   real click, specifically so this page's real Fullscreen API is never
+   invoked and setViewportSize() stays usable for the "resize back" step. ---- */
+{
+  const { page, noise } = await bootToBoard({ width: 1024, height: 800 });
+  await page.evaluate(() => { const row = document.querySelector(".list-detail-row"); if (row) row.click(); });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { document.documentElement.classList.add("qz-theater"); });
+  await page.waitForTimeout(200);
+
+  // A real resize while simulated-in-theater does not invoke the real
+  // Fullscreen API (enterTheater() itself early-returns immediately via its
+  // own `if (theaterOn()) return;` re-entrancy guard, since qz-theater is
+  // already set) - so this stays freely resizable both ways.
+  await page.setViewportSize({ width: 1200, height: 900 }); // still safe, just a different safe size
+  await page.waitForTimeout(300);
+  const stillOn = await page.evaluate(() => document.documentElement.classList.contains("qz-theater"));
+  stillOn
+    ? ok("resizing between two SAFE shapes while already in theater mode does not touch theater state (no accidental exit path introduced)")
+    : bad("resizing between two safe shapes while in theater mode unexpectedly changed theater state");
+
+  const noiseFiltered = noise.filter((n) => !/favicon/.test(n));
+  noiseFiltered.length === 0 ? ok("Item B no-auto-exit: no console errors/warnings") : bad("Item B no-auto-exit console noise: " + noiseFiltered.slice(0, 5).join(" | "));
+  await page.close();
+}
+
+/* ---- Item B: a resize listener attached during one #/board mount must
+   not leak/duplicate across a tab-away-and-back cycle within Board Drill
+   (Flashcards -> Quiz -> Flashcards, no hashchange in between - route()'s
+   own teardown never runs for a same-route tab switch, so renderDrill()
+   itself has to dedupe on re-mount). Proven indirectly: after two
+   Flashcards->Quiz->Flashcards round-trips, a single resize into
+   short-landscape must still engage theater exactly once (no error thrown
+   by a doubled-up handler, no crash) - and exiting/re-resizing must not
+   misbehave either, which a naive "keep appending listeners" bug would
+   eventually surface as (each stale handler still holding an isConnected
+   check on its own now-detached cardWrap, so this also exercises that
+   guard). ---- */
+{
+  const { page, noise } = await bootToBoard({ width: 1024, height: 800 });
+  await clickFirstTopic(page);
+  for (let i = 0; i < 2; i++) {
+    await page.evaluate(() => {
+      const quizBtn = [...document.querySelectorAll(".segmented button")].find((b) => b.textContent.trim() === "Quiz");
+      if (quizBtn) quizBtn.click();
+    });
+    await page.waitForTimeout(200);
+    await page.evaluate(() => {
+      const drillBtn = [...document.querySelectorAll(".segmented button")].find((b) => b.textContent.trim() === "Board Drill");
+      if (drillBtn) drillBtn.click();
+    });
+    await page.waitForTimeout(200);
+  }
+  await page.setViewportSize({ width: 882, height: 344 });
+  await page.waitForTimeout(300);
+  const afterTabCycle = await page.evaluate(() => ({
+    theaterOn: document.documentElement.classList.contains("qz-theater"),
+    wrapCount: document.querySelectorAll(".qz-wrap").length,
+  }));
+  afterTabCycle.theaterOn
+    ? ok("after two Flashcards<->Quiz tab round-trips, a resize into short-landscape still engages theater mode correctly")
+    : bad("after tab round-trips, a resize into short-landscape failed to engage theater mode - possible listener leak/removal bug");
+  afterTabCycle.wrapCount <= 1
+    ? ok(`exactly one .qz-wrap in the DOM after the tab-cycle + resize (got ${afterTabCycle.wrapCount}) - no duplicate render left behind`)
+    : bad(`${afterTabCycle.wrapCount} .qz-wrap elements found after the tab-cycle + resize - possible duplicate render`);
+  const noiseFiltered = noise.filter((n) => !/favicon/.test(n));
+  noiseFiltered.length === 0 ? ok("Item B tab-cycle: no console errors/warnings") : bad("Item B tab-cycle console noise: " + noiseFiltered.slice(0, 5).join(" | "));
+  await page.close();
+}
+
+/* ---- Item G ("Reading the Cards" Roadmap Tier 6c) - viewport dead-zone /
+   boundary coverage: the innerHeight<460 auto-theater gate has never had
+   its exact boundary values tested (459 vs 461), nor a landscape shape
+   that's short-ish but not short ENOUGH to trip the gate (~600x500 - taller
+   than the Fold5's cover-screen landscape but still noticeably cramped).
+   All three cases confirm the card renders legibly either way - theater
+   engaging isn't itself "correct," staying OUT of theater and still being
+   legible (not cut off) is equally a pass condition here. ---- */
+{
+  // 459px height, landscape: one px inside the gate - theater DOES engage.
+  const { page, noise } = await bootToBoard({ width: 900, height: 459 });
+  await clickFirstTopic(page);
+  const at459 = await page.evaluate(() => document.documentElement.classList.contains("qz-theater"));
+  at459
+    ? ok("boundary: 900x459 (landscape, innerHeight=459, one px inside the <460 gate) DOES engage theater mode")
+    : bad("boundary: 900x459 should have engaged theater mode (459 < 460) but did not");
+  const noiseFiltered459 = noise.filter((n) => !/favicon/.test(n));
+  noiseFiltered459.length === 0 ? ok("boundary 459: no console errors/warnings") : bad("boundary 459 console noise: " + noiseFiltered459.slice(0, 5).join(" | "));
+  await page.close();
+}
+{
+  // 461px height, landscape: one px outside the gate - theater does NOT
+  // engage, but the fixed-ratio card must still render legibly (not cut
+  // off) via the existing height-derived shrink formula (.qz-card's own
+  // vh-formula - see that rule's comment near .qz-card).
+  const { page, noise } = await bootToBoard({ width: 900, height: 461 });
+  await clickFirstTopic(page);
+  const at461 = await page.evaluate(() => document.documentElement.classList.contains("qz-theater"));
+  !at461
+    ? ok("boundary: 900x461 (landscape, innerHeight=461, one px outside the <460 gate) does NOT engage theater mode")
+    : bad("boundary: 900x461 should NOT have engaged theater mode (461 is not < 460) but did");
+  const fit461 = await page.evaluate(() => {
+    const r = document.querySelector(".qz-card").getBoundingClientRect();
+    return { top: r.top, bottom: r.bottom, height: r.height, vh: window.innerHeight };
+  });
+  fit461.bottom <= fit461.vh && fit461.top >= 0
+    ? ok(`boundary 461: the non-theater card (top=${fit461.top}, bottom=${Math.round(fit461.bottom)}) stays fully within the ${fit461.vh}px viewport - legible, not cut off`)
+    : bad(`boundary 461: the non-theater card is cut off (top=${fit461.top}, bottom=${Math.round(fit461.bottom)}, viewport=${fit461.vh})`);
+  fit461.height > 40
+    ? ok(`boundary 461: card height (${Math.round(fit461.height)}px) is well above a collapsed/invisible size`)
+    : bad(`boundary 461: card height is only ${Math.round(fit461.height)}px - looks collapsed`);
+  const noiseFiltered461 = noise.filter((n) => !/favicon/.test(n));
+  noiseFiltered461.length === 0 ? ok("boundary 461: no console errors/warnings") : bad("boundary 461 console noise: " + noiseFiltered461.slice(0, 5).join(" | "));
+  await page.close();
+}
+{
+  // ~600x500 dead zone: landscape, shorter than a typical phone but taller
+  // than the Fold5's cover-screen landscape (344px) and outside the <460
+  // gate - confirms the existing non-theater shrink formula alone (no
+  // auto-theater assist) still produces a legible, non-cut-off card here.
+  const { page, noise } = await bootToBoard({ width: 600, height: 500 });
+  await clickFirstTopic(page);
+  const deadZoneTheater = await page.evaluate(() => document.documentElement.classList.contains("qz-theater"));
+  !deadZoneTheater
+    ? ok("dead-zone: 600x500 (landscape, outside the <460 gate) does NOT engage theater mode, as expected")
+    : bad("dead-zone: 600x500 unexpectedly engaged theater mode");
+  const fitDeadZone = await page.evaluate(() => {
+    const r = document.querySelector(".qz-card").getBoundingClientRect();
+    return { top: r.top, bottom: r.bottom, height: r.height, width: r.width, vh: window.innerHeight };
+  });
+  fitDeadZone.bottom <= fitDeadZone.vh && fitDeadZone.top >= 0
+    ? ok(`dead-zone: the card (top=${fitDeadZone.top}, bottom=${Math.round(fitDeadZone.bottom)}) stays fully within the ${fitDeadZone.vh}px viewport - legible, not cut off`)
+    : bad(`dead-zone: the card is cut off (top=${fitDeadZone.top}, bottom=${Math.round(fitDeadZone.bottom)}, viewport=${fitDeadZone.vh})`);
+  fitDeadZone.height > 40 && fitDeadZone.width > 40
+    ? ok(`dead-zone: card size (${Math.round(fitDeadZone.width)}x${Math.round(fitDeadZone.height)}) is well above a collapsed/invisible size`)
+    : bad(`dead-zone: card size is only ${Math.round(fitDeadZone.width)}x${Math.round(fitDeadZone.height)} - looks collapsed`);
+  const noiseFilteredDZ = noise.filter((n) => !/favicon/.test(n));
+  noiseFilteredDZ.length === 0 ? ok("dead-zone: no console errors/warnings") : bad("dead-zone console noise: " + noiseFilteredDZ.slice(0, 5).join(" | "));
+  await page.close();
+}
+
 await browser.close();
 server.close();
 console.log("\n" + (fails ? `BOARD DRILL AUTO-THEATER: ${fails} FAILURE(S)` : "BOARD DRILL AUTO-THEATER: all passed"));
