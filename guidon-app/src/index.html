@@ -6855,6 +6855,23 @@ window.G = window.G || {};
     lightMode: false,          // legacy light flag (kept in sync by G.theme)
     theme: "field-manual",     // v0.42: field-manual|night-vision|topographic|parade-rest|blackout
     motion: "rich",            // v0.42: minimal|standard|rich
+    // Item D ("Reading the Cards" Roadmap Tier 6c): true once the person has
+    // EXPLICITLY touched a motion control themselves - the Appearance ->
+    // Motion picker (theme.set("motion", ...), below) or the legacy
+    // standalone "Reduce motion" checkbox (below) - as opposed to `motion`
+    // just sitting at its untouched "rich" default. Needed because `motion`
+    // alone can't tell those two cases apart (an untouched settings object
+    // and one where the person deliberately re-chose "rich" both read
+    // motion:"rich" identically) - app.start()'s own OS-level
+    // prefers-reduced-motion default (see that init code) needs exactly
+    // this distinction so it can respect an explicit "rich" choice made
+    // despite OS reduce-motion, instead of silently overriding it. See the
+    // settings-load backfill (missingSettings, below) for how this is
+    // seeded true rather than false for any settings row that already
+    // existed before this flag was introduced - a pre-existing row means
+    // the person has already been living with whatever motion behavior
+    // they had, so it isn't re-litigated as if it were a fresh install.
+    motionUserSet: false,
     typePairing: "command",    // v0.42: command|field|humanist|classic
     typeRoles: {},             // v0.42: per-role font overrides {head,body}
     // ── v0.43 appearance + accessibility ──
@@ -7046,6 +7063,18 @@ window.G = window.G || {};
         // visible instead of leaving zero trace.
         const missingSettings = Object.keys(DEFAULT_SETTINGS).filter((k) => !(k in savedSettings));
         state.settings = Object.assign({}, DEFAULT_SETTINGS, savedSettings);
+        // Item D: a settings row that already existed BEFORE motionUserSet
+        // was introduced (i.e. it's in missingSettings, same signal the
+        // self-heal log below already uses) means this person has already
+        // been living with whatever motion behavior their prior `motion`
+        // value gave them - seed motionUserSet true rather than
+        // DEFAULT_SETTINGS's own false, so app.start()'s new OS-level
+        // reduce-motion default (see that init code) never second-guesses
+        // an existing installation's established state. Only a GENUINELY
+        // fresh settings row (savedSettings itself null, the `if` this sits
+        // inside) keeps DEFAULT_SETTINGS's false and is eligible for that
+        // one-time OS-default treatment.
+        if (missingSettings.includes("motionUserSet")) state.settings.motionUserSet = true;
         if (missingSettings.length && G.selfheal) {
           G.selfheal.log("settings-backfill", missingSettings.join(","), missingSettings.length + " field(s) backfilled from defaults: " + missingSettings.join(", "));
         }
@@ -7405,6 +7434,12 @@ window.G = window.G || {};
       if (!obj || obj.kind !== "progress" || !Array.isArray(obj.attempts)) throw new Error("Not a GUIDON progress file.");
       if (obj.settings && typeof obj.settings === "object") {
         state.settings = Object.assign({}, DEFAULT_SETTINGS, obj.settings);
+        // Item D: same reasoning as store.init()'s own settings-backfill
+        // (see motionUserSet's own comment on DEFAULT_SETTINGS, above) - a
+        // restored backup predating this flag already reflects a real
+        // person's established motion behavior, not a fresh install, so it
+        // shouldn't become newly eligible for the OS-default treatment.
+        if (!("motionUserSet" in obj.settings)) state.settings.motionUserSet = true;
         await db.setSetting("settings", state.settings);
       }
       let n = 0;
@@ -7713,7 +7748,7 @@ window.G = window.G || {};
     async set(kind, value, extra) {
       const store = G.store;
       if (kind === "theme") { applyTheme(value); if (store) { await store.setSetting("theme", normTheme(value)); await store.setSetting("lightMode", isLight(value)); } }
-      else if (kind === "motion") { applyMotion(value); if (store) { await store.setSetting("motion", normMotion(value)); await store.setSetting("reduceMotion", value === "minimal"); } }
+      else if (kind === "motion") { applyMotion(value); if (store) { await store.setSetting("motion", normMotion(value)); await store.setSetting("reduceMotion", value === "minimal"); await store.setSetting("motionUserSet", true); } }
       else if (kind === "typePairing") { const roles = (store && store.settings && store.settings().typeRoles) || {}; applyType(value, roles); if (store) await store.setSetting("typePairing", normType(value)); }
       else if (kind === "typeRole") {
         const store2 = G.store; const cur = (store2 && store2.settings && store2.settings().typeRoles) || {};
@@ -29037,6 +29072,11 @@ window.G = window.G || {};
       rmInput.checked = !!s.reduceMotion;
       rmInput.addEventListener("change", () => {
         store.setSetting("reduceMotion", rmInput.checked); document.documentElement.classList.toggle("reduce-motion", rmInput.checked);
+        // Item D: this is an explicit user choice too (see motionUserSet's
+        // own comment on DEFAULT_SETTINGS) - the G.theme-present path above
+        // already sets this via theme.set("motion", ...); this fallback
+        // (G.theme absent) needs its own write since it never calls that.
+        store.setSetting("motionUserSet", true);
       });
       a11yPanel.appendChild(el("div", { style: "margin:12px 0" }, [
         el("div.switch", {}, [el("label.toggle", { style: "margin:0" }, [rmInput, el("span.track")]), el("span", { text: "Reduce motion" })]),
@@ -30527,11 +30567,44 @@ window.G = window.G || {};
       try { await store.init();
       // Apply persisted reduce-motion + theme preference on startup
       const sttgs = store.settings ? store.settings() : {};
+      // Item D ("Reading the Cards" Roadmap Tier 6c): the global CSS
+      // @media(prefers-reduced-motion:reduce) rule only zeroes
+      // transition/animation duration - it never touches the app's OWN
+      // motion setting (data-motion attribute / .reduce-motion class),
+      // which was driven solely by this persisted `motion`/`reduceMotion`
+      // pair. A person with OS-level reduced motion who has never touched
+      // Settings -> Appearance -> Motion (or the legacy checkbox) still got
+      // the full 3D flip. Applied here, at boot, as a LIVE override into a
+      // separate `effectiveSttgs` (never mutating the real `sttgs` read
+      // from storage) - gated on motionUserSet (DEFAULT_SETTINGS, set true
+      // by every explicit write path: theme.set("motion",...), the legacy
+      // checkbox, and backfilled true for any settings row that already
+      // existed before this flag shipped - see motionUserSet's own comment
+      // there) so a person who deliberately chose "rich" despite OS
+      // reduce-motion keeps seeing rich motion, unconditionally. Nothing is
+      // written back to storage here - this recomputes fresh on every boot
+      // from the LIVE matchMedia result, so a later OS-preference change
+      // (or the person finally making an explicit choice) takes effect on
+      // the very next boot instead of being baked in permanently by a
+      // one-time decision.
+      let effectiveSttgs = sttgs;
+      try {
+        if (!sttgs.motionUserSet && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+          effectiveSttgs = Object.assign({}, sttgs, { motion: "minimal", reduceMotion: true });
+        }
+      } catch (e) {}
       // v0.42: unified design-system application (theme + motion + typography)
-      if (G.theme) G.theme.syncFromSettings(sttgs);
-      else { if (sttgs.reduceMotion) document.body.classList.add("reduce-motion"); if (sttgs.lightMode) document.documentElement.classList.add("light"); }
-      // Mirror appearance to a flat localStorage key the pre-paint shell script reads.
-      persistAppearanceMirror(sttgs);
+      if (G.theme) G.theme.syncFromSettings(effectiveSttgs);
+      else { if (effectiveSttgs.reduceMotion) document.body.classList.add("reduce-motion"); if (effectiveSttgs.lightMode) document.documentElement.classList.add("light"); }
+      // Mirror the EFFECTIVE (post OS-default) appearance, not the raw
+      // stored settings - persistAppearanceMirror's whole purpose (see its
+      // own comment) is "what the pre-paint shell script should render
+      // before CSS applies," so it should reflect what was actually just
+      // applied above, not the underlying stored default that was
+      // overridden for this boot. This also means a stable OS preference
+      // across boots stops flashing "rich" at first paint after the very
+      // first boot that applied this override.
+      persistAppearanceMirror(effectiveSttgs);
       // Bi-directional profile ↔ settings sync
       // When settings etsDate/tier change, propagate to profile cache
       if (store.setSetting) {
