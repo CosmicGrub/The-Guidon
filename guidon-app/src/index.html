@@ -9124,19 +9124,38 @@ window.G = window.G || {};
       const masteryBar = el("div.qz-mastery-bar.qz-mastery-" + masteryState, { "aria-hidden": "true" });
       for (let mi = 0; mi < 5; mi++) masteryBar.appendChild(el("span.qz-mastery-seg" + (mi < masteryFilled ? ".filled" : "")));
       if (masteryState === "mastered") masteryBar.appendChild(el("span.qz-mastery-check", { text: "\u2713", "aria-hidden": "true" }));
-      front.appendChild(el("span.sr-only", { text: "Mastery: " + masteryWords }));
-      front.appendChild(masteryBar);
+      // Product decision: the mastery bar (and its sr-only text) and the
+      // leech badge move to the BACK (post-flip) face — see the
+      // insertBefore block right after `buildBackContent(q)`, below.
+      // Showing "how well you've done on this" before the user has
+      // attempted recall primes their self-assessment, the same UX risk
+      // Anki's own reviewer avoids by hiding ease/interval/lapse data until
+      // after "Show Answer". Category, due/new status, and difficulty stay
+      // on the front — they describe the kind of question, not the user's
+      // performance on it.
+      const masterySrOnly = el("span.sr-only", { text: "Mastery: " + masteryWords });
       if (q.difficulty) {
         const diffMap = { beginner: ["🟢", "Beginner"], intermediate: ["🟡", "Intermediate"], expert: ["🔴", "Expert"] };
         const normDiff = G.board.normDifficulty(q.difficulty);
         const dm = diffMap[normDiff];
         if (dm) front.appendChild(el("div.qz-diff-badge.qz-diff-" + normDiff, { text: dm[0] + " " + dm[1] }));
       }
-      if (G.board.isLeech(s)) front.appendChild(el("div.leech-badge", { gi: "alert-triangle", giSize: 12, text: "LEECH — missed " + s.misses + "× " }));
+      const leechBadge = G.board.isLeech(s) ? el("div.leech-badge", { gi: "alert-triangle", giSize: 12, text: "LEECH — missed " + s.misses + "× " }) : null;
       front.appendChild(el("div.qz-prompt", { text: q.q }));
       front.appendChild(el("div.qz-flip-hint", { "aria-hidden": "true" }, [G.util.icon("rotate-ccw", 13, "⤾"), document.createTextNode(" " + clickVerb() + " card, or press Space, to flip")]));
 
       const back = buildBackContent(q);
+      // Insert the mastery indicator and leech warning at the top of the
+      // answer face, ahead of its scrollable answer content, in the same
+      // visual order they used to have on the front: sr-only mastery text,
+      // then the mastery bar, then the leech warning (if this card is a
+      // leech). `backAnchor` is captured once (the answer scroll region,
+      // `buildBackContent`'s first appended child) so each insertBefore
+      // below lands ahead of it regardless of what's already been inserted.
+      const backAnchor = back.firstChild;
+      back.insertBefore(masterySrOnly, backAnchor);
+      back.insertBefore(masteryBar, backAnchor);
+      if (leechBadge) back.insertBefore(leechBadge, backAnchor);
 
       const starBtn = el("button.qz-star-btn", {
         type: "button",

@@ -151,8 +151,15 @@ await previewBtn.click();
 const spinnerSeen = await page.locator(".pdfprev-loading").count();
 spinnerSeen >= 1 ? ok("a loading spinner appears immediately after clicking Preview") : bad("no loading state seen");
 
+// Wait for the FULL expected page count (2, DA 4856's real length), not just
+// ">0" - PDF.js renders pages progressively, so the first canvas can appear
+// well before the second finishes. Waiting on ">0" let a slow second-page
+// render (observed live: 525ms vs a typical ~50-190ms) race past this check
+// while only page 1 had landed, producing a real, intermittent "expected 2
+// canvases, found 1" failure - not CI contention, a genuine bug in the wait
+// condition itself.
 await page.waitForFunction(
-  () => document.querySelectorAll(".pdfprev-canvas").length > 0 || !!document.querySelector(".pdfprev-backdrop .cpdf-warn"),
+  () => document.querySelectorAll(".pdfprev-canvas").length >= 2 || !!document.querySelector(".pdfprev-backdrop .cpdf-warn"),
   { timeout: 20000 }
 ).catch(() => {});
 
@@ -242,8 +249,15 @@ errorModalClosed ? ok("closing the error-state preview modal removes it from the
 // cleanly a second time in the same session, with exactly one modal, after
 // the previous one fully closed.
 await previewBtn.click();
+// Wait for the FULL expected page count (2, DA 4856's real length), not just
+// ">0" - PDF.js renders pages progressively, so the first canvas can appear
+// well before the second finishes. Waiting on ">0" let a slow second-page
+// render (observed live: 525ms vs a typical ~50-190ms) race past this check
+// while only page 1 had landed, producing a real, intermittent "expected 2
+// canvases, found 1" failure - not CI contention, a genuine bug in the wait
+// condition itself.
 await page.waitForFunction(
-  () => document.querySelectorAll(".pdfprev-canvas").length > 0 || !!document.querySelector(".pdfprev-backdrop .cpdf-warn"),
+  () => document.querySelectorAll(".pdfprev-canvas").length >= 2 || !!document.querySelector(".pdfprev-backdrop .cpdf-warn"),
   { timeout: 20000 }
 ).catch(() => {});
 const reopened = await page.evaluate(() => ({

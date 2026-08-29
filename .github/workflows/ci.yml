@@ -280,9 +280,11 @@ jobs:
           # preview) starts chunk 16 rather than overloading it.
           # test:rapid-fire-card-sizing (item C) and test:motion-os-default
           # (item D) join the same chunk - still well under the 8-per-chunk
-          # ceiling.
-          - name: "16-formspdfpreview-rapidfirecardsizing-motionosdefault"
-            tests: "test:forms-pdf-preview test:rapid-fire-card-sizing test:motion-os-default"
+          # ceiling. test:board-drill-preflip-hiding (Board Drill mastery
+          # bar/LEECH badge moved to the post-flip back face) joins next,
+          # bringing this chunk to 4/8 - still comfortably under the ceiling.
+          - name: "16-formspdfpreview-rapidfirecardsizing-motionosdefault-boarddrillpreflip"
+            tests: "test:forms-pdf-preview test:rapid-fire-card-sizing test:motion-os-default test:board-drill-preflip-hiding"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
