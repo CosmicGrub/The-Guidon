@@ -278,8 +278,11 @@ jobs:
           # Chunk 15 was already full at 8/8 (see its own comment above) -
           # test:forms-pdf-preview (Roadmap Tier 6c, DA 4856 on-demand PDF
           # preview) starts chunk 16 rather than overloading it.
-          - name: "16-formspdfpreview"
-            tests: "test:forms-pdf-preview"
+          # test:rapid-fire-card-sizing ("Reading the Cards" Roadmap Tier 6c
+          # item C) joins the same chunk - still well under the 8-per-chunk
+          # ceiling.
+          - name: "16-formspdfpreview-rapidfirecardsizing"
+            tests: "test:forms-pdf-preview test:rapid-fire-card-sizing"
     steps:
       - name: Checkout
         uses: actions/checkout@v4

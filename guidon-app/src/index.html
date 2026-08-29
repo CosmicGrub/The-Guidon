@@ -1022,8 +1022,44 @@ html[data-motion="cinematic"] { --qz-flip-dur: .95s; --qz-flip-ease: cubic-bezie
    only scans the <style> block; it isn't a substitute for actually reasoning
    about contrast, done in updateHud()'s own comment). */
 .rf-timer { font-family: var(--font-head); font-weight: 700; font-size: 1.4rem; margin-left: auto; }
+/* Item C ("Reading the Cards" Roadmap Tier 6c, the load-bearing Rapid Fire
+   fix) - live-confirmed broken on a real Z Fold5 in folded-landscape
+   (882x344): a flat min-height:220px floor doesn't shrink on a short
+   viewport, so total .rf-scene content (this card + .rf-hud + .rf-judge-row
+   + gaps) exceeded the visible height and the Correct/Pass judge buttons
+   rendered below the viewport's bottom edge. .rf-wrap already inherits
+   html.qz-theater .qz-wrap's own overflow-y:auto (see that rule above -
+   confirmed live via computed styles, not just reading the source), so the
+   content was always technically reachable by scrolling, just with no
+   visible cue that scrolling was possible or needed.
+   Unlike .qz-card (Board Drill's own flip card, which needs a FIXED aspect
+   ratio to protect - see that rule's own vh-formula comment), .rf-card has
+   no shape to preserve, so it doesn't need that machinery - just an
+   analogous height-BUDGET so the floor itself shrinks under the same
+   "known chrome" reasoning .qz-card's comment already documents, sized to
+   RAPID FIRE's own chrome instead of Board Drill's: html.qz-theater
+   .qz-wrap's own top+bottom padding (clamp(8px,1.6vw,22px) each; ~32px
+   rounded up for a representative narrow width, see that rule above) +
+   .rf-scene's two 14px gaps (28px, one above and one below this card) +
+   .rf-hud's content-driven height (leaveBtn/endBtn are .btn.sm at ~30px,
+   .rf-timer's 1.4rem/700 text is the tallest sibling - ~40px rounded up)
+   + .rf-judge-row's own min-height:56px (deterministic, from that rule
+   below) = ~156px, rounded up to 180px for margin, the same practice
+   .qz-card's own comment uses. Declared twice (vh, then dvh) for the same
+   graceful-degradation reason .qz-card's formula documents: an unsupported
+   dvh only invalidates the SECOND declaration, keeping the first. The
+   inner max(100px, ...) is a floor against the formula going to zero/
+   negative at a viewport shorter than the chrome budget itself (not a
+   realistic device size, but keeps the card from fully collapsing rather
+   than silently rendering it invisible) - overflow-y:auto (verified
+   working, above) remains the fallback for that genuinely-degenerate case,
+   exactly the "or at minimum confirm overflow-y:auto is functional" bar
+   this item's own scoping note allows for. */
 .rf-card {
-  flex: 1 1 auto; min-height: 220px; border: 1px solid var(--line); border-radius: var(--radius);
+  flex: 1 1 auto; min-height: 220px;
+  min-height: min(220px, max(100px, calc(100vh - 180px)));
+  min-height: min(220px, max(100px, calc(100dvh - 180px)));
+  border: 1px solid var(--line); border-radius: var(--radius);
   background: var(--panel); box-shadow: var(--shadow);
   display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
   padding: clamp(20px, 3vw, 44px); gap: 14px; overflow: hidden;
