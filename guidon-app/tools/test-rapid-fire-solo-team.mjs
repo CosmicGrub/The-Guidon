@@ -152,6 +152,7 @@ async function tapQzCard() { await page.evaluate(() => document.querySelector(".
 async function tapCorrect() { await page.evaluate(() => document.querySelector(".rf-judge-correct")?.click()); await page.waitForTimeout(150); }
 async function tapPass() { await page.evaluate(() => document.querySelector(".rf-judge-pass")?.click()); await page.waitForTimeout(150); }
 async function tapEndRound() { await clickButtonByText("End Round"); await page.waitForTimeout(200); }
+async function tapLeaveRound() { await clickButtonByText("Leave round"); await page.waitForTimeout(200); }
 async function startBtnDisabled() {
   return page.evaluate(() => {
     const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === "Start Round");
@@ -438,6 +439,65 @@ const hardcodedColorCheck = await page.evaluate(() => {
 hardcodedColorCheck.length === 0
   ? ok("Stage 2's new Setup elements (mode selector, team-name inputs) carry no hardcoded inline color — themed entirely via CSS classes/custom properties, same as the rest of this Setup screen")
   : bad("hardcoded inline colors found on Setup elements: " + JSON.stringify(hardcodedColorCheck));
+
+// ════════════════════════════════════════════════════════════════════
+// 8) "Leave round" exit affordance (item 7 fix, 2026-08-28) — the round
+//    screen is ALWAYS inside theater mode, but built no .qz-fs-btn and
+//    wired no F-key handler, so the only real ways out were an
+//    undiscoverable Escape or End Round (a scoring-relevant "I'm done"
+//    action). Leave round must be a genuine bail-out: real exit theater,
+//    skip the Recap entirely, land back on a sane prior view (Setup), and
+//    leave later round state uncorrupted.
+// ════════════════════════════════════════════════════════════════════
+await enterRapidFireFresh();
+await setCategory("Army Fitness Test (AFT)");
+await clickButtonByText("All difficulties");
+await clickButtonByText("Untimed");
+await clickButtonByText("Start Round");
+await dismissExplainerIfShown();
+
+const leaveBtnInfo = await page.evaluate(() => {
+  const b = document.querySelector(".rf-leave-btn");
+  return b ? { text: b.textContent.trim(), aria: b.getAttribute("aria-label") } : null;
+});
+(leaveBtnInfo && leaveBtnInfo.text === "Leave round" && /without finishing/i.test(leaveBtnInfo.aria || ""))
+  ? ok("Rapid Fire's HUD carries a real 'Leave round' control with an aria-label distinguishing it from End Round")
+  : bad("leave-round control missing or mislabeled: " + JSON.stringify(leaveBtnInfo));
+
+const inTheaterBefore = await page.evaluate(() => document.documentElement.classList.contains("qz-theater"));
+inTheaterBefore ? ok("the round screen is (as documented) always inside theater mode before leaving") : bad("expected theater mode to be active before testing Leave round");
+
+// Score a real Correct first, so there's genuine in-progress round state for
+// Leave round to discard (not just an already-empty round).
+await tapCorrect();
+st = await roundState();
+/Correct:\s*1/.test(st.correctText || "")
+  ? ok("scored a real Correct before leaving, so Leave round has genuine in-progress state to discard")
+  : bad("setup: correct count before Leave round: " + st.correctText);
+
+await tapLeaveRound();
+const afterLeave = await page.evaluate(() => ({
+  theaterOn: document.documentElement.classList.contains("qz-theater"),
+  onRecap: [...document.querySelectorAll("h3")].some((h) => h.textContent.trim() === "Round Recap"),
+  onSetup: !!document.querySelector(".rf-setup-grid"),
+}));
+!afterLeave.theaterOn ? ok("Leave round genuinely exits theater mode") : bad("theater mode is still active after clicking Leave round");
+!afterLeave.onRecap ? ok("Leave round skips the Round Recap screen entirely — a genuine bail-out, not a scored finish") : bad("Leave round incorrectly showed the Round Recap");
+afterLeave.onSetup ? ok("Leave round returns to a sane prior view (the Rapid Fire Setup screen)") : bad("Leave round did not return to the Setup screen");
+
+// A fresh round started right after must begin clean — no leaked
+// score/streak from the round that was just abandoned (state isn't
+// corrupted by the bail-out).
+await setCategory("Army Fitness Test (AFT)");
+await clickButtonByText("All difficulties");
+await clickButtonByText("Untimed");
+await clickButtonByText("Start Round");
+await dismissExplainerIfShown();
+st = await roundState();
+(/Correct:\s*0/.test(st.correctText || "") && st.streakText === "")
+  ? ok("a fresh round started right after Leave round begins with a clean Correct:0/no-streak state — no corrupted carryover from the abandoned round")
+  : bad("post-Leave-round fresh-round state: " + JSON.stringify({ correctText: st.correctText, streakText: st.streakText }));
+await tapEndRound();
 
 noise.length === 0 ? ok("no console errors/warnings across the full Solo/Team suite") : bad("console noise: " + noise.slice(0, 8).join(" | "));
 
