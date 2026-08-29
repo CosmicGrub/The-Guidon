@@ -5312,8 +5312,20 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
    rounded up - see the canonical breakpoint scale comment near line 504
    for the full derivation). Moving the gate without also lifting .main's
    cap (or vice versa) would leave the same bug at a different width. */
-.drill-layout { display:block; }
+.drill-layout { display:flex; flex-direction:column; }
 .drill-readiness-pane { display:none; }
+/* Below 1024px, catList's rows (one per category, 79+ on a real seed)
+   render BEFORE the actual flashcard in DOM order - on a narrow/cover-
+   screen viewport that buries the card thousands of pixels down the
+   page on first load, before any category has been picked. The
+   existing scrollIntoView-on-select (see the catList click handler)
+   only fires AFTER a click - it never helps the very first render.
+   Visually reorder the card first via flex `order` (DOM order is left
+   untouched, so scrollIntoView targets, test selectors, and screen-
+   reader focus order are all unaffected) so the card a user actually
+   came here to study is always the first thing visible, with the
+   jump-index list as an easily-reachable secondary panel below it. */
+.drill-layout > .list-detail-list { order: 2; }
 /* The middle column's minmax(668px, 1fr) floor - not a bare 1fr - exists
    specifically so .qz-card's own width:min(100%,648px) cap (see .qz-card,
    floor = cap + 20px buffer, same margin this pattern has used since the
@@ -5336,6 +5348,10 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
    536px, is now the number both of them track. */
 @media (min-width: 1024px) {
   .drill-layout { display:grid; grid-template-columns: minmax(240px, 280px) minmax(668px, 1fr); gap:16px; align-items:start; }
+  /* Grid respects `order` too - reset it back to source order here so
+     catList stays the LEFT column (its original, intended position)
+     instead of inheriting the narrow-viewport reorder above. */
+  .drill-layout > .list-detail-list { order: 0; }
 }
 @media (min-width: 1360px) {
   .drill-layout { grid-template-columns: minmax(240px, 280px) minmax(668px, 1fr) minmax(220px, 280px); }
@@ -9546,6 +9562,17 @@ window.G = window.G || {};
     ]));
     mount.appendChild(el("div.drill-layout", {}, [catList, drillDetail, readinessPane]));
     build();
+    // Auto-fullscreen on INITIAL MOUNT too, not just after picking a
+    // category (see the identical check inside catList's click handler
+    // below for the full rationale - a fixed-aspect-ratio card becomes
+    // genuinely unreadable, not just cramped, in a folded+landscape Z
+    // Fold5 at 882x344). Without this, a user who lands directly on
+    // #/board already in that orientation - the common case, since this
+    // is the route's own first render - saw the same broken card with no
+    // category click available yet to trigger the existing fix.
+    if (window.innerWidth > window.innerHeight && window.innerHeight < 460) {
+      setTimeout(() => { try { G.board.enterTheater(cardWrap); } catch (e) {} }, 220);
+    }
   }
 
   // ---------------- Multiple-choice Quiz Mode ----------------
