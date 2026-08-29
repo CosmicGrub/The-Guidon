@@ -755,6 +755,34 @@ html.qz-theater .qz-scene {
    stretches to fill .qz-scene's width in theater), but resetting the
    ratio explicitly removes any ambiguity rather than relying on that
    specific browser behavior continuing to hold. */
+/* min-height:280px is a floor against the card being squeezed to near-
+   zero when leftover flex space (.qz-scene's height after the progress
+   track + nav row take theirs, above) computes below it on a short
+   viewport - .qz-wrap's own overflow-y:auto (above) is the actual
+   escape valve at that point, scrolling the overlay instead of letting
+   the card shrink into an unreadably thin sliver.
+
+   Investigated for this comment (2026-08-28): 280px was NOT
+   independently measured when this rule first shipped - `git log -S
+   "min-height: 280px"` shows it introduced verbatim in the same commit
+   that replaced the old `height: clamp(340px, 66vh, 800px)` version of
+   this rule, and that commit's own message documents the flex-fill
+   change but says nothing about why the new floor (280px) is lower than
+   the old clamp's floor (340px). No bug report or regression ties to
+   that drop, so it isn't reverted here, but the number itself should be
+   read as a round, conservative choice rather than a derived one.
+
+   What actually needs to fit at this height: on the back face, .qz-face's
+   own minimum padding (2x20px, theater's clamp(20px,3vw,44px) floor) plus
+   .qz-grade-row's 4 buttons (icon + label + padding, ~50-60px including
+   its own margin-top) - comfortably under 280px even with the answer
+   scroll area between them collapsed to its own min-height:0. The front
+   face's category label + mastery bar + prompt fit in less still. So
+   280px carries real headroom above what content strictly requires, and
+   it sits well above the ~104px this same auto-theater card shape was
+   measured at when genuinely broken (see test-board-drill-face-parity.mjs's
+   own short-viewport section, which treats 200px as "well past" that
+   illegible size) - not a tight fit, just an undocumented one until now. */
 html.qz-theater .qz-card { height: auto; flex: 1 1 auto; min-height: 280px; aspect-ratio: auto; }
 html.qz-theater .qz-face { padding: clamp(20px, 3vw, 44px); font-size: 1.12em; }
 html.qz-theater .qz-nav-row { margin-top: 10px; }
@@ -935,6 +963,15 @@ html[data-motion="cinematic"] { --qz-flip-dur: .95s; --qz-flip-ease: cubic-bezie
 .qz-front {
   align-items: center; justify-content: center; text-align: center;
   gap: 10px;
+  /* Same overflow-safety as the reduce-motion/data-motion="minimal" version
+     of this rule below (see that rule's own comment) - front content is
+     normally short, but "never needed it" isn't "guaranteed": the longest
+     real board-question PROMPT runs 244 characters, easily enough to
+     overflow a narrow card. Rich motion's .qz-face is already
+     position:absolute;inset:0 with overflow:hidden, so without this the
+     default (non-reduce-motion) mode had no scroll escape at all - only
+     the reduce-motion path did. */
+  overflow-y: auto;
 }
 .qz-back {
   transform: rotateY(180deg);
@@ -998,8 +1035,24 @@ html[data-motion="cinematic"] { --qz-flip-dur: .95s; --qz-flip-ease: cubic-bezie
 /* Same responsive-font intent as .qz-prompt above (design spec's own
    "Question/answer length handling" section) — fluid via clamp() rather
    than a breakpoint override, since this screen is always full-bleed
-   (mounted straight into theater, never inline like the flashcard is). */
-.rf-question { font-family: var(--font-head); font-weight: 600; letter-spacing: .01em; font-size: clamp(1.15rem, 4vw, 1.6rem); line-height: 1.35; color: var(--text); max-width: 46ch; }
+   (mounted straight into theater, never inline like the flashcard is).
+   The middle term is `0.5rem + 2.5vw`, not a plain `Nvw` - a pure-vw
+   middle term resolves the same px size for every viewer at a given
+   width regardless of their OS/browser text-size preference, and
+   roughly 460-640px of viewport width is exactly where that middle term
+   (not the rem-based floor/ceiling either side of it) is what actually
+   renders, so a user with larger accessibility text got no benefit from
+   it there - unlike .qz-prompt (Board Drill's own equivalent), which is
+   rem-only end to end. Coefficients were tuned, not guessed: at the
+   default 16px root they land within ~1px of the old `4vw` term's own
+   resolved size at 400/600/900px width (400px and 900px both fall
+   outside this band and were already floor/ceiling-clamped either way,
+   so they're unaffected by construction; 600px is the one point actually
+   governed by this term, old 24.0px vs new 23.0px) - so this reads as an
+   accessibility fix, not a visual redesign, while still giving a bigger
+   root font-size a real (rem-driven) effect at every width instead of
+   only at the floor/ceiling extremes. */
+.rf-question { font-family: var(--font-head); font-weight: 600; letter-spacing: .01em; font-size: clamp(1.15rem, 0.5rem + 2.5vw, 1.6rem); line-height: 1.35; color: var(--text); max-width: 46ch; }
 .rf-answer-panel { width: 100%; max-width: 46ch; margin-top: 6px; border-top: 1px solid var(--line); padding-top: 12px; max-height: 34vh; overflow-y: auto; text-align: left; }
 .rf-answer-label { font-family: var(--font-mono); font-size: .7rem; letter-spacing: .14em; color: var(--cyan); text-transform: uppercase; margin-bottom: 4px; }
 .rf-answer-text { white-space: pre-wrap; line-height: 1.5; }
@@ -1272,10 +1325,15 @@ html[data-motion="minimal"] .qz-back { max-height: 389px; }
 html.qz-theater.reduce-motion .qz-back,
 html.qz-theater[data-motion="minimal"] .qz-back { max-height: none; }
 
-/* Phones: the base rule's width:min(100%,420px) + aspect-ratio already
-   shrinks the card proportionally on a narrow screen with no override
-   needed - only the prompt text gets a touch smaller here, purely a
-   width-driven (not orientation-driven) accommodation for small screens. */
+/* Phones: the base rule's width:min(100%,648px,calc((100vh/100dvh - 240px)
+   * 5 / 3)) + aspect-ratio already shrinks the card proportionally on a
+   narrow screen with no override needed - only the prompt text gets a
+   touch smaller here, purely a width-driven (not orientation-driven)
+   accommodation for small screens. (This comment used to cite the base
+   rule's cap as 420px - that was superseded by 648px back in commit
+   3193cf0; see the extensive derivation comment directly above the base
+   .qz-card rule below for why 648px, not a plain round number, was
+   chosen.) */
 @media (max-width: 420px) {
   .qz-prompt { font-size: 1.1rem; }
 }
