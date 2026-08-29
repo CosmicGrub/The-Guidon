@@ -9654,6 +9654,51 @@ window.G = window.G || {};
     catSel.addEventListener("change", build);
     diffSel.addEventListener("change", build);
 
+    // WCAG 2.4.1 Bypass Blocks: below .drill-layout's 1024px split
+    // breakpoint, catList's ~79-99 category rows sit BEFORE the flashcard
+    // in DOM order (see that rule's own comment a few lines down, and the
+    // flex `order` visual-only reorder in the CSS immediately after it) -
+    // a keyboard-only or linear-navigation screen-reader user has to Tab
+    // through every single row before ever reaching the card. A roving-
+    // tabindex retrofit would fix Tab order directly, but that's a bigger,
+    // separate, app-wide question spanning all 8 routes sharing this same
+    // .list-detail-row pattern - out of scope here. This is the narrower,
+    // standard fix instead: a skip link, the first focusable thing in
+    // .drill-layout, invisible until it receives focus, that jumps
+    // straight to the card. Reuses the app's own top-level "Skip to
+    // content" .skip-link convention verbatim (see that class's own
+    // comment near the top of this file) rather than inventing a second
+    // visually-hidden-until-focus pattern. A sibling BEFORE catList, not a
+    // child of it: catList's role="listbox" means its own children should
+    // really only be its role="option" rows, so nesting a bypass control
+    // inside it would confuse assistive tech about what counts as an
+    // option. Deliberately a <button> with a click handler, not an
+    // <a href="#...">: this SPA's router treats the entire location.hash
+    // as the current route (see route()) - setting it to a fragment like
+    // "#cardWrap" would fire hashchange and misroute to the fallback
+    // route, the same way the top-level "#main" skip link already can.
+    // Always rendered rather than gated to <1024px: at >=1024px the card
+    // already sits immediately beside the list, so activating it there is
+    // a harmless no-op, and staying unconditional means a resize/fold
+    // crossing the breakpoint never needs special-casing.
+    const skipToCardBtn = el("button.skip-link", {
+      type: "button",
+      text: "Skip to flashcard",
+      onclick: () => {
+        // Mirrors catList's own row click handler's reduceMotion check and
+        // scrollIntoView call below verbatim, for the identical scroll
+        // behavior - not factored into a shared helper so that existing,
+        // tested handler stays completely untouched by this addition.
+        let reduceMotion = false;
+        try {
+          reduceMotion = document.documentElement.getAttribute("data-motion") === "minimal" ||
+            (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+        } catch (e) {}
+        cardWrap.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+        cardWrap.focus();
+      },
+    });
+
     // List-detail left pane (Fold5/tablet fidelity wave 1): a real clickable
     // category list next to the card at >=1024px (.list-detail, see CSS),
     // driving the exact same catSel value + change event the dropdown above
@@ -9874,7 +9919,7 @@ window.G = window.G || {};
         build();
       } }),
     ]));
-    mount.appendChild(el("div.drill-layout", {}, [catList, drillDetail, readinessPane]));
+    mount.appendChild(el("div.drill-layout", {}, [skipToCardBtn, catList, drillDetail, readinessPane]));
     build();
     // Auto-fullscreen on INITIAL MOUNT too, not just after picking a
     // category (see the identical check inside catList's click handler
