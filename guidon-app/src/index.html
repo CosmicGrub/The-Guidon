@@ -9562,6 +9562,17 @@ window.G = window.G || {};
     ]));
     mount.appendChild(el("div.drill-layout", {}, [catList, drillDetail, readinessPane]));
     build();
+    // Auto-fullscreen on INITIAL MOUNT too, not just after picking a
+    // category (see the identical check inside catList's click handler
+    // below for the full rationale - a fixed-aspect-ratio card becomes
+    // genuinely unreadable, not just cramped, in a folded+landscape Z
+    // Fold5 at 882x344). Without this, a user who lands directly on
+    // #/board already in that orientation - the common case, since this
+    // is the route's own first render - saw the same broken card with no
+    // category click available yet to trigger the existing fix.
+    if (window.innerWidth > window.innerHeight && window.innerHeight < 460) {
+      setTimeout(() => { try { G.board.enterTheater(cardWrap); } catch (e) {} }, 220);
+    }
   }
 
   // ---------------- Multiple-choice Quiz Mode ----------------

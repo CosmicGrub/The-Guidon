@@ -253,21 +253,27 @@ await narrowPage.close();
    AND rotated to landscape, CDP-confirmed live against the physical
    device on 2026-08-22): a third, distinct bug from the two above. The
    card's width-driven sizing (width:min(100%,648px), height from
-   aspect-ratio) has never checked whether the resulting height actually
-   FITS the viewport - at 882px wide there's easily enough width for the
-   full 648px cap, so the card renders its normal 648x389 regardless of
-   how tall the viewport actually is. At 344px of total viewport height
-   that's a contradiction on its face (the card alone is taller than the
-   whole screen), and live on the device the header/progress-track/nav-
-   row chrome around it left only ~104px - the question was cut off mid-
-   sentence at the bottom edge with no scroll affordance to hint more was
-   below. Fixed with a third, height-derived width candidate in .qz-card's
-   min() (see that rule's own comment) that only engages when the
-   viewport is too short for 648px to fit, shrinking the card
-   (preserving its 5:3 shape) instead of overflowing. This section proves
-   the card's bottom edge stays within the viewport at the exact
-   dimensions that reproduced the live bug, in both motion modes - the
-   other checks above never test a viewport shorter than the card. ---- */
+   aspect-ratio) never checked whether the resulting height actually FITS
+   the viewport - at 882px wide there's easily enough width for the full
+   648px cap, so the card rendered its normal 648x389 regardless of how
+   tall the viewport actually is, cutting the question off mid-sentence
+   with no scroll affordance to hint more was below.
+
+   The FIRST fix tried was a height-derived width candidate in .qz-card's
+   own min() formula, shrinking the card while preserving its 5:3 shape -
+   but that shrunk everything INSIDE the card too (category label, badge,
+   difficulty pill, progress dots), and measured live at a 104px-tall
+   card the answer's own scrollable area collapsed to 0px of usable
+   height. A fixed-ratio card cannot serve both goals (fit the viewport
+   AND stay legible) at this aspect ratio, so the ACTUAL, current fix
+   (see G.board.enterTheater's own auto-trigger, both on the initial
+   #/board mount and on catList category selection) hands the card the
+   whole screen instead: theater mode drops the fixed 5:3 ratio entirely
+   rather than trying to preserve it at an illegible size. This section
+   now proves that fallback engages and produces a genuinely usable card
+   at the exact dimensions that reproduced the live bug, in both motion
+   modes - the other checks above never test a viewport shorter than the
+   card. ---- */
 const shortPage = await (await browser.newContext({ viewport: { width: 882, height: 344 } })).newPage();
 const shortNoise = [];
 shortPage.on("console", (m) => { if (["error", "warning"].includes(m.type())) shortNoise.push(m.type() + ": " + m.text()); });
@@ -317,7 +323,8 @@ async function shortFit(mode) {
       document.documentElement.classList.remove("reduce-motion");
     }
     const r = document.querySelector(".qz-card").getBoundingClientRect();
-    return { w: Math.round(r.width), h: Math.round(r.height), bottom: Math.round(r.bottom), vh: innerHeight };
+    const theaterOn = document.documentElement.classList.contains("qz-theater");
+    return { w: Math.round(r.width), h: Math.round(r.height), bottom: Math.round(r.bottom), vh: innerHeight, theaterOn };
   }, mode);
 }
 
@@ -327,10 +334,17 @@ for (const mode of ["rich", "minimal"]) {
   fit.bottom <= fit.vh
     ? ok(`[${mode} motion] at 882x344 (Z Fold5 folded+landscape), the card (${fit.w}x${fit.h}, bottom ${fit.bottom}px) fits within the viewport (${fit.vh}px tall) - no cut-off`)
     : bad(`[${mode} motion] at 882x344, the card (${fit.w}x${fit.h}) bottom edge is at ${fit.bottom}px but the viewport is only ${fit.vh}px tall - overflowing by ${fit.bottom - fit.vh}px, reproducing the live cut-off bug`);
-  const ratio = fit.w / fit.h;
-  Math.abs(ratio - 5 / 3) < 0.1
-    ? ok(`[${mode} motion] the shrunk card (${fit.w}x${fit.h}) keeps its 5:3 shape (ratio ${ratio.toFixed(2)}), not distorted by the height-driven clamp`)
-    : bad(`[${mode} motion] the shrunk card (${fit.w}x${fit.h}) has ratio ${ratio.toFixed(2)}, expected ~1.67 (5:3) - the height clamp distorted the card instead of scaling it`);
+  // Below 460px of viewport height, theater mode (not the 5:3 shrink
+  // formula) is the app's own chosen fix - see the section comment above.
+  // The formula's fixed-ratio shrink is only still relevant ABOVE that
+  // threshold, tested separately by test-board-drill-auto-theater.mjs's
+  // "not short enough to trigger" cases.
+  fit.theaterOn
+    ? ok(`[${mode} motion] theater mode is active at 882x344 - the app's actual fix for a viewport this short, not a fixed-ratio shrink`)
+    : bad(`[${mode} motion] theater mode did NOT engage at 882x344 (card ${fit.w}x${fit.h}) - the short-viewport fallback failed to trigger`);
+  fit.h >= 200
+    ? ok(`[${mode} motion] the theater-mode card (${fit.w}x${fit.h}) is well past the illegible ~104px-tall broken size`)
+    : bad(`[${mode} motion] the theater-mode card is only ${fit.h}px tall - still cramped, theater mode didn't actually help`);
 }
 
 shortNoise.length === 0 ? ok("no console errors/warnings at 882x344") : bad("console noise at 882x344: " + shortNoise.slice(0, 5).join(" | "));
