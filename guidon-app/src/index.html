@@ -8718,6 +8718,13 @@ window.G = window.G || {};
       // to the wrong place, on top of the trap-tracking risk fixed in
       // trapTheaterFocus() above.
       if (theaterOn()) return;
+      // Guard against a stray/late-firing auto-theater setTimeout (see
+      // G.board._autoTheaterTimer, on G.board above) landing after the route
+      // that scheduled it has already been left - if there's no .qz-wrap
+      // anywhere in the DOM, there's no card to show fullscreen, so adding
+      // qz-theater here would only scroll-lock/pin whatever route the user
+      // is now on for nothing.
+      if (!document.querySelector(".qz-wrap")) return;
       document.documentElement.classList.add("qz-theater");
       const wrap = document.querySelector(".qz-wrap");
       const target = focusEl || wrap;
@@ -8756,6 +8763,14 @@ window.G = window.G || {};
 
     let queue = [], idx = 0, seen = 0, recalled = 0, srsMap = {}, dueOnlyMode = false, leechOnlyMode = false, starOnlyMode = false;
     let flipped = false;
+    // Mid-flip theater-entry guard (item 6): true for the duration of the
+    // .65s (default "rich"; .45s/.95s under standard/cinematic — see the
+    // --qz-flip-dur custom properties near .qz-card) rotateY transition
+    // doFlip() below kicks off, so the F-key handler (below) can ignore a
+    // keypress that lands mid-rotation instead of yanking aspect-ratio/
+    // height/flex out from under an in-progress transform. Left false under
+    // reduced motion, whose instant face-swap has no transition to guard.
+    let cardFlipping = false;
 
     dueChip.addEventListener("click", () => { dueOnlyMode = !dueOnlyMode; dueChip.classList.toggle("active", dueOnlyMode); dueChip.setAttribute("aria-pressed", String(dueOnlyMode)); build(); });
     leechChip.addEventListener("click", () => { leechOnlyMode = !leechOnlyMode; leechChip.classList.toggle("active", leechOnlyMode); leechChip.setAttribute("aria-pressed", String(leechOnlyMode)); build(); });
@@ -9066,6 +9081,35 @@ window.G = window.G || {};
         card.setAttribute("aria-label", flipped ? "Flashcard — showing answer, " + clickVerbLower() + " to flip back" : "Flashcard — " + clickVerbLower() + " to flip");
         if (flipped) back.removeAttribute("inert"); else back.setAttribute("inert", "");
         try { if (flipped && G.util.announce) G.util.announce("Answer revealed."); } catch (e2) {}
+        // Item 6: arm the mid-flip guard for the duration of the CSS
+        // rotateY transition this classList.toggle just kicked off, so the
+        // F-key handler below can't fire theater-mode entry/exit mid-
+        // rotation (aspect-ratio/height/flex change synchronously the
+        // moment theater applies, which is visually janky against an
+        // actively-rotating transform). Skipped entirely under reduced
+        // motion / data-motion="minimal" - html[data-motion="minimal"]
+        // .qz-card sets transition:none (see that rule, near .qz-card), so
+        // the flip is an instant face-swap with no transition to guard and
+        // no transitionend event that would ever fire to clear the flag.
+        let reduceMotionFlip = false;
+        try {
+          reduceMotionFlip = document.documentElement.getAttribute("data-motion") === "minimal" ||
+            (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+        } catch (e3) {}
+        if (!reduceMotionFlip) {
+          cardFlipping = true;
+          const clearFlipGuard = () => { cardFlipping = false; };
+          // transitionend is the real signal the rotation actually
+          // finished; {once:true} self-removes so this never piles up
+          // across repeated flips of the same card.
+          card.addEventListener("transitionend", (ev) => { if (ev.propertyName === "transform") clearFlipGuard(); }, { once: true });
+          // Safety-net fallback in case transitionend never fires (element
+          // removed/replaced mid-transition by a next-card redraw, tab
+          // backgrounded, etc.) - comfortably past the slowest configured
+          // flip duration (cinematic, .95s). Idempotent with the listener
+          // above, so whichever fires first wins and the other is a no-op.
+          setTimeout(clearFlipGuard, 1000);
+        }
       }
       // Real (trusted) pointer/touch input synthesizes a compatibility
       // "click" after mouseup/touchend even when a drag happened first — a
@@ -9373,6 +9417,15 @@ window.G = window.G || {};
         // shortcut uses (see that binding) - cardWrap contains no text
         // inputs, so there's no typing-hijack risk here the way a global
         // letter-key binding would need an input-focus guard for.
+        //
+        // Item 6: no-op while cardFlipping is true (see doFlip()'s own
+        // comment, above) - toggling theater mode mid-rotation changes
+        // aspect-ratio/height/flex synchronously underneath the still-
+        // animating .65s rotateY transform, which reads as a visible glitch.
+        // Silently ignored rather than queued: the user can just press F
+        // again once the flip settles, and there's no reasonable "queued
+        // theater toggle" semantic worth building for a shortcut this minor.
+        if (cardFlipping) return;
         e.preventDefault();
         theaterOn() ? G.board.exitTheater() : G.board.enterTheater(cardWrap);
       }
@@ -9501,7 +9554,8 @@ window.G = window.G || {};
           // Android Back handler) is the existing, already-shipped way out
           // - nothing new needed there.
           if (window.innerWidth > window.innerHeight && window.innerHeight < 460) {
-            setTimeout(() => { try { G.board.enterTheater(cardWrap); } catch (e) {} }, 220);
+            clearTimeout(G.board._autoTheaterTimer);
+            G.board._autoTheaterTimer = setTimeout(() => { try { G.board.enterTheater(cardWrap); } catch (e) {} }, 220);
           }
         });
         // PC/desktop intuitivism pass, Tier 2(d): arrow-key row-to-row nav,
@@ -9629,7 +9683,8 @@ window.G = window.G || {};
     // is the route's own first render - saw the same broken card with no
     // category click available yet to trigger the existing fix.
     if (window.innerWidth > window.innerHeight && window.innerHeight < 460) {
-      setTimeout(() => { try { G.board.enterTheater(cardWrap); } catch (e) {} }, 220);
+      clearTimeout(G.board._autoTheaterTimer);
+      G.board._autoTheaterTimer = setTimeout(() => { try { G.board.enterTheater(cardWrap); } catch (e) {} }, 220);
     }
   }
 
@@ -11933,11 +11988,28 @@ window.G = window.G || {};
       const wrapEl = el("div.qz-wrap.rf-wrap", { tabIndex: "0" });
       const scene = el("div.rf-scene");
       const hud = el("div.rf-hud");
+      // Item 7 fix: enterTheater() (called unconditionally below, since this
+      // screen is ALWAYS inside qz-theater) announces "Press Escape, F, or
+      // the button to exit" - but this HUD builds no .qz-fs-btn (that only
+      // exists in Board Drill's own .qz-nav-row) and wrapEl's own keydown
+      // listener (below) has no F case at all, so two of those three
+      // announced exits don't exist here. The only real ways out were an
+      // undiscoverable Escape keypress, or End Round - a scoring-relevant
+      // "I'm done, show me my recap" action, not a lightweight back-out.
+      // leaveBtn is a genuine "never mind, get me out" affordance, wired to
+      // the SAME already-working exitTheater() finishRound() itself calls -
+      // no new exit mechanism. Placed at the LEFT edge of the HUD,
+      // deliberately away from the score/timer/End Round cluster on the
+      // right (.rf-timer's margin-left:auto pushes those there) so it can't
+      // be misclicked as a variant of End Round sitting right next to it.
+      const leaveBtn = el("button.btn.ghost.sm.rf-leave-btn", { type: "button", text: "Leave round",
+        "aria-label": "Leave round without finishing — exits immediately and skips the round recap",
+        title: "Leave without finishing (skips the recap) — use End Round instead to finish and see your results" });
       const scoreEl = el("span.rf-hud-stat");
       const streakEl = el("span.trend-streak"); // same visual convention as Progress's own trend-chart streak
       const timerEl = el("span.rf-timer");
       const endBtn = el("button.btn.ghost.sm", { type: "button", text: "End Round" });
-      hud.appendChild(scoreEl); hud.appendChild(streakEl); hud.appendChild(timerEl); hud.appendChild(endBtn);
+      hud.appendChild(leaveBtn); hud.appendChild(scoreEl); hud.appendChild(streakEl); hud.appendChild(timerEl); hud.appendChild(endBtn);
       // cardHost: Party keeps Stage 1's own flat .rf-card (built directly
       // into cardHost by drawCardParty() below). Solo reuses Board Drill's
       // real flashcard flip mechanic instead — a .qz-scene hosting a fresh
@@ -12113,6 +12185,30 @@ window.G = window.G || {};
       correctBtn.addEventListener("click", () => judge(true));
       passBtn.addEventListener("click", () => judge(false));
       endBtn.addEventListener("click", () => finishRound());
+      // Item 7: "Leave round" is a genuine bail-out, deliberately distinct
+      // from finishRound() - it tears down the round the same way
+      // (stop the tick, drop the visibilitychange listener, exit theater)
+      // but never calls opts.onFinish (which would otherwise complete THIS
+      // team's turn in Team mode and advance to the next one) and never
+      // shows drawRecap() - just returns to a fresh Setup screen, the same
+      // "sane prior view" beginRound(pool, ...) was itself called from, and
+      // the same view New Deck already lands on from Recap. No confirmation
+      // prompt, deliberately matching End Round's own existing precedent
+      // immediately above (see endBtn) - Rapid Fire's score/streak/passTally
+      // are local, in-memory, per-round state (test-rapid-fire-no-srs-
+      // writes.mjs already establishes nothing here ever reaches SRS/
+      // attempts), so leaving mid-round discards exactly what End Round
+      // already discards the moment its own Recap's "New Deck"/"Play Again"
+      // buttons are used - there's no persisted data a confirm dialog would
+      // actually be protecting.
+      leaveBtn.addEventListener("click", () => {
+        if (finished) return;
+        finished = true;
+        clearInterval(tickHandle);
+        document.removeEventListener("visibilitychange", onVisible);
+        G.board.exitTheater();
+        drawSetup();
+      });
 
       // Error handling (spec): "App backgrounds mid-round — pause the
       // timer on the page's visibilitychange event, resume on return." The
@@ -12372,6 +12468,21 @@ window.G = window.G || {};
   G.pointsMath = { weaponPts, aftPts, WPN_TABLES, PPW };
   G.board = {
     _openReadiness: null,  // set by render to open Readiness tab directly
+    // Handle for the short-landscape auto-theater setTimeout(220) fired from
+    // TWO sites inside renderDrill() (initial mount, and catList's category-
+    // select click handler) - a property on G.board rather than a variable
+    // local to renderDrill's own module IIFE, because route() (a DIFFERENT
+    // top-level IIFE - this file wires cross-module calls through the
+    // shared `G` namespace, not shared lexical scope) needs to reach this
+    // same handle to cancel it on every navigation, the same way it already
+    // reaches G.board.exitTheater. Renders are torn down and rebuilt fresh
+    // on every #/board visit, but this timer can still be in-flight when
+    // the user navigates away before it fires - route()'s existing
+    // navigate-away cleanup (see its own qz-theater exit block) clears
+    // this, the same declare-a-handle/clearTimeout-on-teardown shape
+    // scheduleMapGraphRefresh's mapRefreshTimer already uses for the Author
+    // Map tab (a same-IIFE case, hence a plain local variable there).
+    _autoTheaterTimer: null,
     // Shared "is this card due for review" predicate. Home's aggregate
     // due-count banner and Progress's per-category due tally used to answer
     // this differently - Progress required reps>0 (a card must have been
@@ -30108,6 +30219,14 @@ window.G = window.G || {};
       try { if (G.board && G.board.exitTheater) G.board.exitTheater(); } catch (e) {}
       document.documentElement.classList.remove("qz-theater");
     }
+    // Cancel a still-pending short-landscape auto-theater timer (see
+    // G.board._autoTheaterTimer's own comment, on G.board above) so a stray
+    // 220ms callback firing AFTER the user has already navigated away from
+    // #/board can't force theater mode onto whatever route they landed on
+    // instead. clearTimeout on an already-fired/never-set handle is a
+    // documented no-op, so this is safe on every route change, not just
+    // ones leaving #/board.
+    clearTimeout(G.board._autoTheaterTimer);
     // Same reasoning for the "More" drawer (Tier 1(a)) - a click on one of
     // its own nav buttons already closes it (see openNavDrawer), but any
     // OTHER route change while it's open (browser back, search-jump, a

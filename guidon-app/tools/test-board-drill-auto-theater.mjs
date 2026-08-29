@@ -225,6 +225,66 @@ for (const c of shouldNotTrigger) {
   await page.close();
 }
 
+/* ---- Item 5 regression (2026-08-28): the 220ms auto-theater
+   setTimeout(s) - one right after renderDrill's own initial mount, one
+   inside catList's category-select click handler - used to store no timer
+   handle at all, so navigating away from #/board before the delay elapsed
+   left it dangling: it fired anyway, ~160ms into whatever route the user
+   had already landed on, force-adding html.qz-theater there. Two
+   independent fixes now guard this: (1) the timer handle is tracked in a
+   module-level var route() clears on every navigation (mirroring
+   scheduleMapGraphRefresh's mapRefreshTimer pattern in the Author Map tab),
+   and (2) enterTheater() itself now bails out if no .qz-wrap exists in the
+   DOM at all - belt-and-suspenders, since either alone would stop the
+   force-applied class. Exercised here against the initial-mount timer
+   specifically (unconditional the moment #/board renders in a short-
+   landscape viewport - no click needed to trigger it), navigating to
+   #/home well before the 220ms elapses. ---- */
+{
+  const page = await (await browser.newContext({ viewport: { width: 882, height: 344 } })).newPage();
+  const noise = [];
+  page.on("console", (m) => { if (["error", "warning"].includes(m.type())) noise.push(m.type() + ": " + m.text()); });
+  page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
+  await page.goto(url, { waitUntil: "load" });
+  await page.waitForTimeout(1100);
+  await page.evaluate(() => {
+    const t = [...document.querySelectorAll("button,.ob-mode-card,[role=button],.click")]
+      .find((e) => /guest session/i.test(e.textContent || ""));
+    if (t) t.click();
+  });
+  await page.waitForTimeout(1100);
+
+  // Land on #/board (arms the initial-mount 220ms timer), then jump straight
+  // to #/home well inside that window - the whole point of this test is to
+  // beat the timer, not let it settle first.
+  await page.evaluate(() => { location.hash = "#/board"; });
+  await page.waitForTimeout(60);
+  await page.evaluate(() => { location.hash = "#/home"; });
+  // Wait past the 220ms delay - if the timer is still dangling, it fires
+  // during this wait, against #/home instead of #/board.
+  await page.waitForTimeout(500);
+
+  const after = await page.evaluate(() => ({
+    theaterOn: document.documentElement.classList.contains("qz-theater"),
+    hasWrap: !!document.querySelector(".qz-wrap"),
+    onHome: (location.hash || "").indexOf("#/home") === 0,
+  }));
+  !after.theaterOn
+    ? ok("navigating away from #/board before its 220ms auto-theater timer fires does NOT force theater mode onto the new route")
+    : bad("a dangling auto-theater timer force-applied qz-theater onto #/home after navigating away from #/board");
+  !after.hasWrap
+    ? ok("no stray .qz-wrap overlay left behind on #/home")
+    : bad(".qz-wrap is still in the DOM on #/home, a route that isn't Board Drill");
+  after.onHome
+    ? ok("navigation actually landed on #/home (sanity check the route change itself took effect)")
+    : bad("navigation did not land on #/home as expected");
+  const noiseFiltered = noise.filter((n) => !/favicon/.test(n));
+  noiseFiltered.length === 0
+    ? ok("no error thrown by the dangling timer's late callback")
+    : bad("console noise from the dangling-timer scenario: " + noiseFiltered.slice(0, 5).join(" | "));
+  await page.close();
+}
+
 await browser.close();
 server.close();
 console.log("\n" + (fails ? `BOARD DRILL AUTO-THEATER: ${fails} FAILURE(S)` : "BOARD DRILL AUTO-THEATER: all passed"));

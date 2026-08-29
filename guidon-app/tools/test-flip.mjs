@@ -114,6 +114,42 @@ drag.after === ""
   ? ok("stylesheet transition restored after the drag settles")
   : bad(`inline transition left behind: "${drag.after}"`);
 
+/* ---- Item 6 regression (2026-08-28): pressing F mid-flip must not toggle
+   theater mode while the .65s ("rich") rotateY transition is still playing -
+   doing so used to change aspect-ratio/height/flex synchronously underneath
+   an actively-rotating card. cardFlipping (armed in doFlip(), cleared on the
+   card's transitionend or a 1s fallback) is the guard under test: F should
+   silently no-op while it's true, then work normally once it clears. ---- */
+await page.evaluate(() => { document.documentElement.setAttribute("data-motion", "rich"); });
+await page.evaluate(() => document.querySelector(".qz-wrap").focus());
+// Card is currently flipped (left that way by the minimal-motion section
+// above) — flip it back to a known unflipped state first and let that
+// settle, so the timed press below starts from a clean baseline.
+await page.keyboard.press("Space");
+await page.waitForTimeout(800);
+
+await page.keyboard.press("Space"); // starts a fresh .65s flip
+await page.waitForTimeout(120);     // well inside the transition window
+const midFlipBefore = await page.evaluate(() => document.documentElement.classList.contains("qz-theater"));
+await page.keyboard.press("f");
+await page.waitForTimeout(80);
+const midFlipAfter = await page.evaluate(() => document.documentElement.classList.contains("qz-theater"));
+(midFlipBefore === false && midFlipAfter === false)
+  ? ok("pressing F mid-flip (inside the .65s rotateY transition) does not toggle theater mode")
+  : bad(`theater state around a mid-flip F press: before=${midFlipBefore}, after=${midFlipAfter}`);
+
+// Let the transition fully settle (well past .65s), then confirm F works
+// normally again - the guard must release, not get stuck permanently.
+await page.waitForTimeout(900);
+await page.keyboard.press("f");
+await page.waitForTimeout(300);
+const afterSettled = await page.evaluate(() => document.documentElement.classList.contains("qz-theater"));
+afterSettled
+  ? ok("once the flip transition has settled, F enters theater mode normally")
+  : bad("F did not enter theater mode after the flip transition settled - guard may be stuck");
+await page.keyboard.press("Escape"); // clean up before the suite's final checks
+await page.waitForTimeout(300);
+
 const KNOWN = [/Removing XFA form data/];
 const unexpected = noise.filter((n) => !KNOWN.some((k) => k.test(n)));
 unexpected.length === 0 ? ok("no console errors/warnings") : bad(unexpected.length + " console msgs; first: " + unexpected[0]);
