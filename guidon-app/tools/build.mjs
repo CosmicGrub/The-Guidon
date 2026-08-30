@@ -62,6 +62,28 @@ const DIST = "dist";
  * The safety net is that the literal must be STRICT JSON. If it ever stops
  * being (a trailing comma, a comment, an unquoted key, a Date), JSON.parse
  * throws here and the build fails loudly rather than shipping a broken seed.
+ *
+ * RE-CONFIRMED 2026-08-30 (roadmap-week audit, Performance lens): this
+ * transform is still the only mitigation shipped, and the bulk of the cost
+ * is still live. Ran tools/perf.mjs end-to-end against the current shipped
+ * web/index.html vs. a GUIDON_SEED-surgically-stripped variant (median of 3
+ * cold loads, 412x915 viewport):
+ *
+ *      1x CPU (desktop):        full  241ms DCL vs no-seed  179ms -> seed costs  ~62ms
+ *      4x CPU (mid-range phone): full 1261ms DCL vs no-seed  874ms -> seed costs ~387ms
+ *      6x CPU (budget phone):    full 2118ms DCL vs no-seed 1319ms -> seed costs ~799ms
+ *
+ * At the 6x tier this one inline payload is ~38% of total DOMContentLoaded.
+ * The deferred-async-load lever above is still the real fix and still not
+ * attempted here on purpose - touching all 34 store.*-reading modules for a
+ * study app's correctness is genuinely its own session, not a roadmap-week
+ * bucket item alongside a dozen unrelated fixes. A narrower first step worth
+ * a future session's own dedicated pass: defer only the seed's largest,
+ * least-immediately-needed sub-trees (doctrine's ~210KB of body text, the
+ * board bank's ~611KB of question text) behind a microtask/idle-callback
+ * after first paint, mirroring how build.mjs already extracts pdf-lib/DA4856
+ * to an on-demand sibling file - a smaller-scoped version of the same lever,
+ * rather than deferring the whole seed at once.
  */
 function seedAsJsonParse(html) {
   const START = "window.GUIDON_SEED = ";

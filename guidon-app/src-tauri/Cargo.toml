@@ -18,11 +18,16 @@ tauri-plugin-single-instance = "2"
 tauri-plugin-window-state = "2"
 
 # ---------------------------------------------------------------------------
-# Tracked, unfixed transitive advisories (checked 2026-08-13, task #245/#246)
+# Tracked, unfixed transitive advisories (checked 2026-08-13, task #245/#246;
+# advisory IDs re-verified 2026-08-30, roadmap-week audit)
 #
-# cargo-audit isn't part of this project's toolchain, so these are reviewed
-# by hand against the desktop build's real target rather than gated in CI.
-# Re-check both groups the next time src-tauri's dependency tree moves.
+# `cargo audit` now runs non-blocking in CI (.github/workflows/ci.yml,
+# "cargo audit (src-tauri)" job) so newly-published advisories surface on
+# every PR - but the two informational findings below are still reviewed
+# by hand here, since a non-blocking CI check reports drift, it doesn't
+# replace judging whether a given "unmaintained"/unreachable-target finding
+# needs action. Re-check both groups the next time src-tauri's dependency
+# tree moves.
 #
 # 1) glib/gtk-rs GTK3 bindings (glib 0.18.5, gtk, and their *-sys crates) —
 #    RUSTSEC-2024-0429 (unsound Iterator/DoubleEndedIterator impl on
@@ -38,9 +43,15 @@ tauri-plugin-window-state = "2"
 #    project's Cargo.toml either way — the crate is chosen by Tauri itself,
 #    conditionally per target, not something GUIDON depends on directly.
 #
-# 2) unic-* crates (unic-char-property, unic-char-range, unic-common,
-#    unic-ucd-ident, unic-ucd-version) — RUSTSEC-2025-0100/-0083/-0104/-0098
-#    ("unmaintained", not an active exploit). Unlike glib/gtk above, these
+# 2) unic-* crates — RUSTSEC-2025-0081 (unic-char-property), RUSTSEC-2025-0075
+#    (unic-char-range), RUSTSEC-2025-0080 (unic-common), RUSTSEC-2025-0100
+#    (unic-ucd-ident), RUSTSEC-2025-0098 (unic-ucd-version) — each is its own
+#    advisory ID, not interchangeable; a prior version of this comment cited
+#    -0083 and -0104 here, which are unic-ucd-bidi's and unic-ucd-segment's
+#    IDs respectively — neither crate is in this project's dependency tree at
+#    all (re-confirmed via `cargo audit` against the real Cargo.lock, which
+#    flags exactly these 5 crate/ID pairs and nothing else in this family).
+#    All five are "unmaintained", not an active exploit. Unlike glib/gtk above, these
 #    DO resolve on the real Windows target: `cargo tree -p unic-ucd-ident
 #    --target x86_64-pc-windows-msvc -i` traces them through
 #    urlpattern -> tauri-utils -> tauri (Tauri's own core dependency chain),
