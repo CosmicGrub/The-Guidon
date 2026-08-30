@@ -19,7 +19,10 @@ tauri-plugin-window-state = "2"
 
 # ---------------------------------------------------------------------------
 # Tracked, unfixed transitive advisories (checked 2026-08-13, task #245/#246;
-# advisory IDs re-verified 2026-08-30, roadmap-week audit)
+# advisory IDs re-verified 2026-08-30, roadmap-week audit; group 1 broadened
+# to cover its full 12-crate closure by name/count 2026-08-30, roadmap-week
+# audit 2nd pass — `cargo audit` reports 17 allowed warnings total today,
+# matching this comment's 12 (group 1) + 5 (group 2) breakdown exactly)
 #
 # `cargo audit` now runs non-blocking in CI (.github/workflows/ci.yml,
 # "cargo audit (src-tauri)" job) so newly-published advisories surface on
@@ -29,19 +32,28 @@ tauri-plugin-window-state = "2"
 # needs action. Re-check both groups the next time src-tauri's dependency
 # tree moves.
 #
-# 1) glib/gtk-rs GTK3 bindings (glib 0.18.5, gtk, and their *-sys crates) —
-#    RUSTSEC-2024-0429 (unsound Iterator/DoubleEndedIterator impl on
-#    glib::VariantStrIter, no patched version exists upstream) and
-#    RUSTSEC-2024-0415 (gtk-rs GTK3 bindings themselves are unmaintained).
-#    Pulled in transitively as Tauri's Linux windowing backend. Confirmed via
-#    `cargo tree -p glib --target x86_64-pc-windows-msvc` (prints nothing —
-#    the crate doesn't even resolve for this target) vs.
-#    `--target x86_64-unknown-linux-gnu` (resolves normally): this project
-#    only ships a Windows desktop build (no Linux target in CI or in
-#    tauri.conf.json), so neither advisory's code ever compiles into, let
-#    alone runs in, the shipped binary. No action possible from this
-#    project's Cargo.toml either way — the crate is chosen by Tauri itself,
-#    conditionally per target, not something GUIDON depends on directly.
+# 1) glib/gtk-rs GTK3 bindings and their FULL transitive closure — this
+#    entry summarizes by root cause, not by exhaustively naming every leaf
+#    crate; `cargo audit` currently reports 12 warnings in this family:
+#    glib 0.18.5 itself (RUSTSEC-2024-0429, unsound Iterator/
+#    DoubleEndedIterator impl on glib::VariantStrIter, no patched version
+#    exists upstream), the gtk-rs GTK3 bindings being unmaintained
+#    (RUSTSEC-2024-0415, covering atk/atk-sys/gdk/gdk-sys/gdkwayland-sys/
+#    gdkx11/gdkx11-sys/gtk/gtk-sys/gtk3-macros), and proc-macro-error
+#    (RUSTSEC-2024-0370, unmaintained — a proc-macro dependency of
+#    glib-macros/gtk3-macros, so it rides in on the exact same chain).
+#    All pulled in transitively as Tauri's Linux windowing backend. Confirmed
+#    via `cargo tree -p glib --target x86_64-pc-windows-msvc` (and the same
+#    check repeated for proc-macro-error) printing nothing — the crates
+#    don't even resolve for this target — vs. `--target
+#    x86_64-unknown-linux-gnu` (resolves normally, tracing through
+#    glib-macros/gtk3-macros -> glib/gtk -> tauri): this project only ships
+#    a Windows desktop build (no Linux target in CI or in tauri.conf.json),
+#    so none of these 12 advisories' code ever compiles into, let alone runs
+#    in, the shipped binary. No action possible from this project's
+#    Cargo.toml either way — every one of these crates is chosen by Tauri
+#    itself, conditionally per target, not something GUIDON depends on
+#    directly.
 #
 # 2) unic-* crates — RUSTSEC-2025-0081 (unic-char-property), RUSTSEC-2025-0075
 #    (unic-char-range), RUSTSEC-2025-0080 (unic-common), RUSTSEC-2025-0100

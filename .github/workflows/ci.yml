@@ -154,17 +154,21 @@ jobs:
       - name: Install dependencies (npm ci)
         run: npm ci
 
-      # npm's own advisory database against the resolved lockfile. Dev-only
-      # deps (Playwright, etc.) are excluded on purpose - a vulnerable dev
-      # tool never ships in the built web/+dist/ output, so it's noise for
-      # this check's purpose (drift in what actually reaches a Soldier's
-      # device). NON-BLOCKING for the same reason audit:freshness above is:
-      # this is a discovery/report step surfacing drift for a human to
-      # triage, not a gate - and the roadmap-week audit finding that added
-      # this step found zero real npm vulnerabilities to act on yet, only
-      # the absence of continuous checking itself.
+      # npm's own advisory database against the resolved lockfile. Runs the
+      # FULL audit (no --omit=dev) on purpose - a prior version of this step
+      # scoped out devDependencies on the theory that a vulnerable dev tool
+      # never ships in the built web/+dist/ output, but that scoping made
+      # the step structurally blind to 3 real advisories (a critical
+      # node-tar hardlink/symlink chain plus a high deprecated-package
+      # finding) that lived entirely inside devDependencies the whole time
+      # (pulled in by canvas, pdfjs-dist's own unused optional dependency -
+      # see package.json's overrides/_overrides_note for the actual fix).
+      # The audit step meant to catch exactly this kind of drift instead
+      # hid it from every run. NON-BLOCKING for the same reason
+      # audit:freshness above is: this is a discovery/report step surfacing
+      # drift for a human to triage, not a gate.
       - name: npm audit (non-blocking)
-        run: npm audit --omit=dev
+        run: npm audit
         continue-on-error: true
 
       # Cache the downloaded Chromium binary across runs (keyed on the
@@ -341,10 +345,14 @@ jobs:
           # test:home-dashboard (roadmap-week audit, Test-coverage-gaps
           # bucket - real interaction coverage for the Reference Library and
           # Home dashboard, previously only smoke-swept) join next, bringing
-          # this chunk to 7/8 - the NEXT new test:* suite must start a chunk
-          # 17 rather than overloading this one past the ceiling.
-          - name: "16-formspdfpreview-rapidfirecardsizing-motionosdefault-boarddrillpreflip-boarddrillskiptocard-library-homedashboard"
-            tests: "test:forms-pdf-preview test:rapid-fire-card-sizing test:motion-os-default test:board-drill-preflip-hiding test:board-drill-skip-to-card test:library test:home-dashboard"
+          # this chunk to 7/8. test:risk-worksheet (roadmap-week audit 2nd
+          # pass, Test-coverage-gaps bucket - Risk Worksheet's Delete action
+          # and its _serialize write-race guard, previously untested) takes
+          # this chunk's LAST open slot, bringing it to a full 8/8 - the NEXT
+          # new test:* suite must start a chunk 17 rather than overloading
+          # this one past the documented ceiling.
+          - name: "16-formspdfpreview-rapidfirecardsizing-motionosdefault-boarddrillpreflip-boarddrillskiptocard-library-homedashboard-riskworksheet"
+            tests: "test:forms-pdf-preview test:rapid-fire-card-sizing test:motion-os-default test:board-drill-preflip-hiding test:board-drill-skip-to-card test:library test:home-dashboard test:risk-worksheet"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
