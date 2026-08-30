@@ -35,6 +35,19 @@ const page = await (await browser.newContext()).newPage();
 const noise = [];
 page.on("console", (m) => { if (m.type() === "error") noise.push(m.text()); });
 page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
+// library.js's render() does a one-time same-origin HEAD probe against
+// DOCS[0].pdfAsset to decide whether to offer the "Original PDF" tab at
+// all - when web/docs/ genuinely isn't shipped (this repo's own CI
+// build-artifact upload deliberately excludes it, ~78MB not worth
+// re-uploading/downloading for all 16 test-matrix jobs), that probe 404s
+// and Chromium logs its own unsuppressible "Failed to load resource"
+// console line as a side effect of the network layer - no try/catch in
+// app code can prevent it. Same allowance test-csp.mjs's own
+// docsProbe404/DOCS_PROBE_404 pattern already uses for the identical
+// probe: count the real network-response 404 and forgive exactly that
+// many matching console lines, so a genuinely UNEXPECTED error still fails.
+let docsProbe404 = 0;
+page.on("response", (r) => { if (!r.ok() && /\/docs\/.*\.pdf$/i.test(new URL(r.url()).pathname)) docsProbe404++; });
 
 await page.goto(url, { waitUntil: "load" });
 await page.waitForTimeout(700);
@@ -122,17 +135,39 @@ jumpedToc === true
   : bad("expected .lib-page[data-page=11] to carry list-detail-jumped after TOC-entry click, got " + jumpedToc);
 
 // ==================== 5) "Original PDF" tab ====================
-const pdfTab = page.locator("button.tab", { hasText: "Original PDF" });
-(await pdfTab.count()) ? ok("'Original PDF' tab is offered (this doc has a real pdfAsset)") : bad("Original PDF tab missing");
-await pdfTab.click();
-await page.waitForTimeout(300);
-(await pdfTab.getAttribute("aria-selected")) === "true" ? ok("'Original PDF' tab becomes active on click") : bad("Original PDF tab not marked selected after click");
-const iframeSrc = await page.locator("#library-stage iframe").getAttribute("src").catch(() => null);
-iframeSrc && /docs\/.*\.pdf$/i.test(iframeSrc)
-  ? ok("Original PDF tab renders a real PDF viewer pointed at the doc's own file (" + iframeSrc + ")")
-  : bad("Original PDF iframe src: " + iframeSrc);
-const openNewTab = await page.locator("#library-stage a", { hasText: "Open in a new tab" }).count();
-openNewTab ? ok("Original PDF tab offers an 'Open in a new tab' fallback link") : bad("missing 'Open in a new tab' link");
+// library.js's render() does a one-time same-origin HEAD probe against
+// DOCS[0].pdfAsset to decide whether to offer this tab at all
+// (G.library._pdfAvailable) - true for a real web/Android build that
+// shipped web/docs/*.pdf alongside index.html, false for the standalone
+// single-file build (by design) AND for this repo's own CI build-artifact
+// upload, which deliberately excludes web/docs/** (~78MB, not worth
+// re-uploading/downloading for all 16 test-matrix jobs - see
+// .github/workflows/ci.yml's own comment on this). render() awaits the
+// probe before ever building the tab bar, so by this point in the test
+// _pdfAvailable is already a definite, resolved boolean - reading it
+// directly (rather than guessing from the tab's presence) lets this test
+// assert the CORRECT behavior on both sides of that split, matching the
+// same environment-awareness test-csp.mjs's own docs-probe comment
+// already documents for a different assertion.
+const pdfAvailable = await page.evaluate(() => window.G.library._pdfAvailable);
+if (pdfAvailable) {
+  const pdfTab = page.locator("button.tab", { hasText: "Original PDF" });
+  (await pdfTab.count()) ? ok("'Original PDF' tab is offered (this doc has a real pdfAsset, and web/docs/ shipped)") : bad("Original PDF tab missing despite _pdfAvailable=true");
+  await pdfTab.click();
+  await page.waitForTimeout(300);
+  (await pdfTab.getAttribute("aria-selected")) === "true" ? ok("'Original PDF' tab becomes active on click") : bad("Original PDF tab not marked selected after click");
+  const iframeSrc = await page.locator("#library-stage iframe").getAttribute("src").catch(() => null);
+  iframeSrc && /docs\/.*\.pdf$/i.test(iframeSrc)
+    ? ok("Original PDF tab renders a real PDF viewer pointed at the doc's own file (" + iframeSrc + ")")
+    : bad("Original PDF iframe src: " + iframeSrc);
+  const openNewTab = await page.locator("#library-stage a", { hasText: "Open in a new tab" }).count();
+  openNewTab ? ok("Original PDF tab offers an 'Open in a new tab' fallback link") : bad("missing 'Open in a new tab' link");
+} else {
+  const pdfTabCount = await page.locator("button.tab", { hasText: "Original PDF" }).count();
+  pdfTabCount === 0
+    ? ok("web/docs/*.pdf not available in this build (CI's own artifact trim, or the standalone build) - 'Original PDF' tab correctly stays hidden rather than offering a dead tab")
+    : bad("'Original PDF' tab rendered despite _pdfAvailable=false - hasPdf gating is broken");
+}
 
 // Switching back to "Read in GUIDON" restores the reader (activeMode is
 // remembered across tab switches, not reset).
@@ -156,7 +191,13 @@ await page.waitForTimeout(300);
 // network-layer noise test-csp.mjs's own KNOWN/docsAllowance list documents
 // for a different PDF-related 404.
 const KNOWN = [/bad HTTP response code \(404\).*fetching the script/i, /SW registration failed.*docs\/sw\.js/i];
-const relevantNoise = noise.filter((n) => !/favicon/.test(n) && !KNOWN.some((k) => k.test(n)));
+const DOCS_PROBE_404 = /Failed to load resource: the server responded with a status of 404/;
+let docsAllowance = docsProbe404;
+const relevantNoise = noise.filter((n) => {
+  if (/favicon/.test(n) || KNOWN.some((k) => k.test(n))) return false;
+  if (docsAllowance > 0 && DOCS_PROBE_404.test(n)) { docsAllowance--; return false; }
+  return true;
+});
 relevantNoise.length === 0 ? ok("no console errors/warnings") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));
 
 await browser.close();
