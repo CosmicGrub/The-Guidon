@@ -98,6 +98,36 @@ window.G = window.G || {};
     return null;
   }
 
+  // Enhancement backlog round 1, "Hardcoded content numbers" bucket: two
+  // domains here each carried their own independent literal for a date a
+  // sibling module ALSO hardcodes as its own module-level AS_OF constant -
+  // Assignments ("2026-07" here vs assignments.js's own "July 2026") and
+  // Fitness ("2026-07-07" here vs fitness.js's own "July 2026", not even
+  // the same day-precision) - two or three independently-maintained
+  // stamps for the same policy area that could silently drift apart on a
+  // future content refresh, the exact failure shape careerAsOfStamp() and
+  // financeAsOfStamp() above already exist to prevent. Both source modules
+  // export AS_OF (G.assignments.AS_OF, G.fitness.AS_OF) in the same
+  // "Month YYYY" prose shape - this one shared parser turns that into the
+  // bare YYYY-MM ageOf() expects, so a module's own displayed disclaimer
+  // and this tracker's card can never disagree again.
+  const MONTH_NAMES = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+  const _monthYearWarned = {};
+  function monthYearStamp(moduleName, raw) {
+    try {
+      const m = /^([A-Za-z]+)\s+(\d{4})$/.exec((raw || "").trim());
+      if (m) {
+        const idx = MONTH_NAMES.indexOf(m[1].toLowerCase());
+        if (idx >= 0) return m[2] + "-" + String(idx + 1).padStart(2, "0");
+      }
+    } catch (e) {}
+    if (!_monthYearWarned[moduleName] && G.selfheal) {
+      _monthYearWarned[moduleName] = true;
+      G.selfheal.log("currency-derive-fail", moduleName, "could not parse a \"Month YYYY\" stamp from G." + moduleName + ".AS_OF - the " + moduleName + " Freshness entry will read “unknown” instead of a real age");
+    }
+    return null;
+  }
+
   /* volatility: how fast this area has actually moved, not how important it is.
      "high" = it changed within the last year and could again. */
   const DOMAINS = [
@@ -114,7 +144,9 @@ window.G = window.G || {};
       // link there would be worse than no link.
       libraryId: "ar-600-8-19" },
 
-    { area: "Fitness tests of record", short: "Fitness", asOf: "2026-07-07", volatility: "high",
+    { area: "Fitness tests of record", short: "Fitness",
+      get asOf() { return monthYearStamp("fitness", G.fitness && G.fitness.AS_OF); },
+      volatility: "high",
       basis: "AFT combat standard effective 1 Jan 2026 (RA); Combat Field Test under AD 2026-07 from April 2026; AD 2026-13 rescinded the body-composition exemption on 7 July 2026.",
       implemented: "Both tests, both MOS lists, and the CFT phasing dates.",
       ask: "Your S-3 and your unit's test calendar.", link: "#/fitness" },
@@ -129,7 +161,9 @@ window.G = window.G || {};
       implemented: "BLC, ALC and SLC modules, each carrying its own change warning.",
       ask: "Your NCO Academy and S-3 - course length is the part most likely to be wrong.", link: "#/blc" },
 
-    { area: "Assignments and the Marketplace", short: "Assignments", asOf: "2026-07", volatility: "medium",
+    { area: "Assignments and the Marketplace", short: "Assignments",
+      get asOf() { return monthYearStamp("assignments", G.assignments && G.assignments.AS_OF); },
+      volatility: "medium",
       basis: "HRC Enlisted Manning Cycle guidance. Four cycles a year; dates move and are deliberately not shipped.",
       implemented: "Mechanics only - YMAV, YMAEAT, KDA, preferencing.",
       ask: "Your talent manager or career counsellor.", link: "#/assignments" },
@@ -173,17 +207,43 @@ window.G = window.G || {};
 
     { area: "Acronyms and terms", short: "Terms", asOf: "2021", volatility: "low",
       basis: "DoD Dictionary of Military and Associated Terms, 2021 baseline, with an Army overlay.",
-      implemented: "3,629 terms. The baseline is the oldest thing in the app and is flagged as such.",
+      // Enhancement backlog round 1, "Hardcoded content numbers" bucket:
+      // this hand-typed "3,629 terms" agreed with neither the real
+      // browsable set (terms.length, 3,623 - what Dictionary itself now
+      // shows) nor the upstream metadata field (count, 3,631) - a third,
+      // independently wrong number for the same dataset. Now reads the
+      // same live length Dictionary's own render() displays, via
+      // G.store.acronyms(), so the two screens can never disagree again.
+      get implemented() {
+        try {
+          const terms = (G.store && G.store.acronyms && G.store.acronyms().terms) || [];
+          if (terms.length) return terms.length.toLocaleString() + " terms. The baseline is the oldest thing in the app and is flagged as such.";
+        } catch (e) {}
+        return "An unknown number of terms. The baseline is the oldest thing in the app and is flagged as such.";
+      },
       ask: "The current DoD Dictionary if a term matters legally.", link: "#/dictionary" },
 
     { area: "Doctrine corpus", short: "Doctrine", asOf: "2026-07", volatility: "low",
       basis: "ADP/FM/ATP publications spanning many years. Doctrine changes slowly; the risk here is a superseded edition, not a wrong number.",
-      // Spotted in passing during the rank/MOS scoping pass: this said
-      // "1,014 board cards", a leftover from before the Board Drill count
-      // grew to its current 1,069 (task history: "bump board-card
-      // regression baseline 1014 -> 1069") - this file exists specifically
-      // to catch stale numbers, so it should not be carrying one itself.
-      implemented: "336 entries and 1,069 board cards.",
+      // Enhancement backlog round 1, "Hardcoded content numbers" bucket:
+      // this previously hand-typed "1,069 board cards" - a second stale
+      // literal caught here after the same file already caught and fixed
+      // "1,014 board cards" once before (task history: "bump board-card
+      // regression baseline 1014 -> 1069"). This file exists specifically
+      // to catch stale numbers, so it should not carry one itself - now a
+      // live getter reading the raw seed (state.seed via G.store.seed()),
+      // NOT G.store.boardQuestions(), which applies the Soldier's own
+      // tierFilter setting and would understate the true corpus size for
+      // anyone who has narrowed their tier - the same reasoning
+      // doctrineSeed()'s own unfiltered entries.length already follows.
+      get implemented() {
+        try {
+          const s = G.store && G.store.seed && G.store.seed();
+          const n = (s && s.board && s.board.questions && s.board.questions.length) || null;
+          if (n) return "336 entries and " + n.toLocaleString() + " board cards.";
+        } catch (e) {}
+        return "336 entries and an unknown number of board cards.";
+      },
       ask: "armypubs.army.mil for the current edition of any publication you are quoting.", link: "#/doctrine" },
   ];
 

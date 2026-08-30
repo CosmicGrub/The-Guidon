@@ -7447,6 +7447,17 @@ window.G = window.G || {};
 
     async resetProgress() {
       await db.clear("attempts");
+      // Enhancement backlog round 1, "Scattered small correctness bugs"
+      // bucket: this only ever cleared the "attempts" store - Mandatory
+      // Training's own completion state (state.settings.trainingCompletions,
+      // a separate settings key set by recordTrainingComplete()) survived a
+      // "reset all progress" untouched, so the radar chart and competency
+      // bars zeroed out on the very same re-rendered page while the
+      // Mandatory Training panel directly above still showed prior modules
+      // as "PASS" with their original percentages - two panels on one
+      // screen visibly disagreeing about what "reset" meant.
+      state.settings.trainingCompletions = {};
+      db.setSetting("settings", state.settings);
       // See recordAttempt()'s comment above - the concrete finding this
       // fix scoped from: resetting used to leave the pre-reset numbers
       // cached and visible for up to 5 more seconds on whatever screen
@@ -10201,7 +10212,17 @@ window.G = window.G || {};
         timerBar.appendChild(fill);
         card.appendChild(timerBar);
         let remaining = QUIZ_SECONDS;
+        // Enhancement backlog round 1, "Orphaned timers" bucket: this view
+        // has no route-teardown hook, the same situation Rapid Fire's own
+        // round timer already documents (see its tick()'s own comment,
+        // grep "wrapEl.isConnected" in this file) — without this guard,
+        // switching to another Board sub-tab or navigating away mid-
+        // question left this interval firing every second against a
+        // detached card, and on hitting 0 it called selectOption(-1, ...),
+        // which unconditionally wrote a real "Needs Help" SRS grade to a
+        // question the Soldier never saw or answered.
         timerInterval = setInterval(() => {
+          if (!card.isConnected) { stopTimer(); return; }
           remaining -= 1;
           fill.style.transform = "scaleX(" + Math.max(0, remaining / QUIZ_SECONDS) + ")";
           if (remaining <= 0) { stopTimer(); selectOption(-1, correctIdx, options, card); }
@@ -14485,7 +14506,7 @@ window.G = window.G || {};
       mount.appendChild(el("div.btn-row", { style: "margin-top:14px" }, [
         el("button.btn.sm", { gi: "printer", giSize: 14, text: "Print Report", onclick: () => printProgress(p).catch((e) => console.warn("print report:", e && e.message)) }),
         el("button.btn.ghost.sm", { text: "Reset all progress", onclick: async () => {
-          if (await G.modal.confirm("Reset all recorded attempts and readiness? This cannot be undone.", { danger: true })) {
+          if (await G.modal.confirm("Reset all recorded attempts, readiness, and Mandatory Training completion? This cannot be undone.", { danger: true })) {
             await store.resetProgress();
             util.toast("Progress reset.");
             G.progress.render(mount);
@@ -15221,7 +15242,12 @@ window.G = window.G || {};
       const terms = data.terms || [];
 
       mount.appendChild(el("div.section-title", {}, [el("h2", { text: "Dictionary" }), el("div.rule")]));
-      mount.appendChild(el("p.hint", { text: (data.count || terms.length) + " Army and Army-applicable joint terms — audited to remove single-service (Navy/Air Force/Marine Corps/Coast Guard/Space Force)-only entries. " + (data.generatedFrom || "") }));
+      // Enhancement backlog round 1, "Hardcoded content numbers" bucket:
+      // data.count (an upstream metadata field, 3,631) overstated the real,
+      // searchable/browsable set by 8 - terms.length (3,623) is what's
+      // actually rendered and matchable here, so display that instead of
+      // preferring the upstream count.
+      mount.appendChild(el("p.hint", { text: terms.length + " Army and Army-applicable joint terms — audited to remove single-service (Navy/Air Force/Marine Corps/Coast Guard/Space Force)-only entries. " + (data.generatedFrom || "") }));
 
       const search = el("input", { type: "text", placeholder: "Search acronym or words (e.g. 'NCOER', 'sexual harassment', 'MDMP')…", "aria-label": "Search dictionary" });
       mount.appendChild(el("div.doc-search", {}, [el("div.mini-row", {}, [search])]));
@@ -16024,11 +16050,26 @@ window.G = window.G || {};
     _pendingModel: null,
   };
 
+  // Enhancement backlog round 1, "Scattered small correctness bugs"
+  // bucket: this used to default via toISOString().slice(0,10), which is
+  // the UTC calendar date, not the Soldier's local date - for anyone in a
+  // negative UTC offset (every US time zone) working in the evening, this
+  // pre-filled TOMORROW's date on a printed/saved official-looking DA 7278
+  // worksheet. The same bug shape was already found and fixed for the
+  // daily streak tracker's own isoDate() helper (see its own comment,
+  // grep "which put this streak's day-rollover" in this file); this
+  // reuses the identical local-date formatting expression rather than
+  // importing that helper across module boundaries.
+  function localIsoDate() {
+    const d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+
   function renderWorksheet(mount) {
       const _pending = G.risk._pendingModel || null;
       if (_pending) delete G.risk._pendingModel;
       const model = Object.assign({
-        unit: "", resource: "", location: "", category: "", analyst: "", date: new Date().toISOString().slice(0, 10),
+        unit: "", resource: "", location: "", category: "", analyst: "", date: localIsoDate(),
         valueIdx: 2, valueDesc: "", likelihood: {},
       }, _pending || {});
 
@@ -16046,14 +16087,20 @@ window.G = window.G || {};
       const tmplSel = el("select", { "aria-label": "Load a scenario template" });
       TEMPLATES.forEach((t, i) => tmplSel.appendChild(el("option", { value: i, text: t.label })));
       tmplSel.addEventListener("change", () => {
+        // Enhancement backlog round 1, "Redundant re-renders" bucket: this
+        // used to call G.risk.render(mount) once BEFORE setting
+        // _pendingModel and once after - the first call always rendered
+        // with no pending model at all (a full util.clear(mount)+rebuild
+        // of the tab bar, worksheet, and an async refreshSaved() kv read),
+        // immediately discarded by the second, correctly pre-filled
+        // render one line later. The leftover "if (!G.risk._pending) ..."
+        // line was dead scaffolding for a variable ({_pending}) distinct
+        // from the one actually used ({_pendingModel}) and never read
+        // anywhere - removed along with the first render() call.
         const idx = +tmplSel.value;
         const t = TEMPLATES[idx];
         if (!t || !t.data) return;
         Object.assign(model, t.data);
-        G.risk.render(mount); // re-render with pre-filled model
-        // re-fill fields — workaround: store template and reload
-        // simpler: use a module-level pending model
-        if (!G.risk._pending) G.risk._pending = null;
         G.risk._pendingModel = Object.assign({}, model, t.data);
         G.risk.render(mount);
       });
@@ -16591,6 +16638,16 @@ window.G = window.G || {};
 
   /* ---------- Fill (interactive practice) ---------- */
   function drawFill(f, host, mount) {
+    // Enhancement backlog round 1, "Redundant re-renders" bucket: this
+    // used to rely entirely on drawBody()'s own U.clear(host) before
+    // dispatching here - but exBtn/clearBtn below call drawFill(f, host,
+    // mount) directly on the same host node, bypassing drawBody, so every
+    // toggle appended a second full copy of the toolbar + every field row
+    // on top of the existing one instead of replacing it. The stale
+    // duplicate <input> nodes stayed visible but wired to nothing (only
+    // the newest render's own `inputs` closure fed Save/Print), so typing
+    // into a leftover duplicate field silently lost that input.
+    U.clear(host);
     var values = state.drafts[f.id] || {};
     var inputs = {}; // id -> getter
 
@@ -16918,6 +16975,12 @@ window.G = window.G || {};
   }
 
   function drawReplica(f, host, mount) {
+    // Enhancement backlog round 1, "Redundant re-renders" bucket: same fix
+    // as drawFill() just above - this view's own exBtn/clearBtn call
+    // drawReplica(f, host, mount) directly, bypassing drawBody()'s own
+    // U.clear(host), so repeated toggling appended duplicate copies of
+    // the toolbar + replica sheet on top of each other.
+    U.clear(host);
     var mode = formsMode();
     var values = state.drafts[f.id] || {};
     var lay = replicaBlocks(f);
@@ -17138,7 +17201,7 @@ window.G = window.G || {};
   }
 
   // ---- 2) ROLE-PLAY DRILLS ----
-  function renderDrills(host) {
+  function renderDrills(host, mount) {
     const d = data();
     const scenarios = (G.store && G.store.scenarios && G.store.scenarios()) || [];
     const byId = {}; scenarios.forEach((s) => { byId[s.id] = s; });
@@ -17156,18 +17219,31 @@ window.G = window.G || {};
       card.appendChild(meta);
       if (sc.scene) card.appendChild(el("div.drill-scene", { text: sc.scene }));
       const go = el("button.btn.primary", { type: "button", gi: "play", giSize: 14, text: "Start role-play" });
-      go.addEventListener("click", () => launchDrill(sc, host));
+      go.addEventListener("click", () => launchDrill(sc, host, mount));
       card.appendChild(go);
       list.appendChild(card);
     });
     host.appendChild(list);
   }
 
-  function launchDrill(sc, host) {
+  function launchDrill(sc, host, mount) {
     const stage = document.getElementById("counsel-stage") || host;
     util.clear(stage);
     const back = el("button.btn", { type: "button", text: "‹ Back to drills" });
-    back.addEventListener("click", () => render(document.getElementById("route") || host, "drills"));
+    // Enhancement backlog round 1, "Redundant re-renders" bucket
+    // (corrected per the audit's own follow-up spot-check): this used to
+    // call render(document.getElementById("route") || host, "drills").
+    // "route" IS a real, live element - app.js's own top-level routeEl -
+    // so this always resolved to it, never the "|| host" fallback,
+    // meaning every click appended a full duplicate copy of the entire
+    // Counsel page (title + tabbar + disclaimer + a brand-new
+    // div#counsel-stage) as a fresh sibling INSIDE the app's SHARED
+    // top-level route container, stacking underneath whatever route()
+    // last rendered there - not a self-contained nested duplicate. Now
+    // threads the module's own real mount (the same one render()'s tab
+    // buttons already correctly reuse a few lines up) through
+    // renderDrills()/launchDrill() instead of guessing at a global id.
+    back.addEventListener("click", () => render(mount, "drills"));
     stage.appendChild(back);
     const mode = (sc.defaultMode && util.asArray(sc.renderModes).indexOf(sc.defaultMode) >= 0) ? sc.defaultMode : "text";
     const arena = el("div.counsel-arena");
@@ -17180,7 +17256,7 @@ window.G = window.G || {};
   }
 
   // ---- 3) PLAN-OF-ACTION BUILDER ----
-  function renderPOA(host) {
+  function renderPOA(host, mount) {
     const d = data();
     const form = el("div.counsel-poa");
     form.appendChild(el("div.feedback.warn", { text: "Practice plan of action — SMART and built WITH the Soldier (ATP 6-22.1). Not an official DA 4856; document real counseling on the actual form." }));
@@ -17204,7 +17280,11 @@ window.G = window.G || {};
     const printBtn = el("button.btn.primary", { type: "button", gi: "printer", giSize: 14, text: "Print plan" });
     printBtn.addEventListener("click", () => printPOA(d));
     const clearBtn = el("button.btn", { type: "button", text: "Clear" });
-    clearBtn.addEventListener("click", () => { d.poaFields.forEach((f) => { poa[f.id] = ""; }); persistPOA(); render(document.getElementById("route") || host, "poa"); });
+    // Enhancement backlog round 1, "Redundant re-renders" bucket: same
+    // fix as launchDrill()'s "Back to drills" above - see its own comment
+    // for why document.getElementById("route") was never a safe fallback
+    // pattern here.
+    clearBtn.addEventListener("click", () => { d.poaFields.forEach((f) => { poa[f.id] = ""; }); persistPOA(); render(mount, "poa"); });
     actions.appendChild(printBtn); actions.appendChild(clearBtn);
     form.appendChild(actions);
     host.appendChild(form);
@@ -17340,9 +17420,9 @@ window.G = window.G || {};
     const body = el("div#counsel-stage");
     mount.appendChild(body);
     if (activeTab === "skills") renderSkills(body);
-    else if (activeTab === "drills") renderDrills(body);
+    else if (activeTab === "drills") renderDrills(body, mount);
     else if (activeTab === "examples") renderExamples(body);
-    else renderPOA(body);
+    else renderPOA(body, mount);
   }
 
   G.counsel = {
@@ -21872,6 +21952,13 @@ window.G = window.G || {};
       p.appendChild(clock); p.appendChild(status); p.appendChild(row); stage.appendChild(p);
       function fmt(n){ const m=Math.floor(n/60), s=n%60; return String(m).padStart(2,"0")+":"+String(s).padStart(2,"0"); }
       function tick() {
+        // Enhancement backlog round 1, "Orphaned timers" bucket: this
+        // drill has no route-teardown hook, same situation as Rapid
+        // Fire's own round timer and Board Drill's Quiz timer (see
+        // wrapEl.isConnected in renderRapidFire) - without this guard,
+        // leaving via "All drills" or picking a different drill left this
+        // interval ticking every second forever, once per visit.
+        if (!clock.isConnected) { clearInterval(timer); timer = null; return; }
         t++; clock.textContent = fmt(t);
         if (t < 480) { status.textContent = "Under the window \u2014 " + fmt(480-t) + " until you are in range"; clock.style.color = "var(--ink-amber)"; }
         else if (t <= 720) { status.textContent = "In the acceptable window (8:00\u201312:00)"; clock.style.color = "var(--ink-green)"; }
@@ -22117,9 +22204,28 @@ window.G = window.G || {};
     ["My Board File","mbf.hrc.army.mil","Board packet review and certification, available year-round."]
   ];
 
+  // Enhancement backlog round 1, "Hardcoded content numbers" bucket: SGT
+  // and SSG's TIS column used to read "\u2014", implying no time-in-service
+  // gate exists at either rank - board.js's own SGT-vs-SSG comparison
+  // panel (buildCompareBody(), verified against AR 600-8-19 6 Mar 2026 and
+  // covered by tools/test-sgt-ssg-compare.mjs) documents real TIS/TIG
+  // pin-on thresholds for both. This table's own framing is specifically
+  // about the PIN-ON gate ("PME is a pin-on requirement... you can sit on
+  // the list with the points and still not pin without the school"), so
+  // the primary-zone PIN-ON figures (AR 600-8-19 para 5-5) are used here,
+  // not the lower/earlier board-ELIGIBILITY bar (Table 3-1) - see
+  // buildCompareBody()'s own "Pin-on eligibility - para 5-5 (a higher bar
+  // than board eligibility)" panel for the same two SGT/SSG numbers.
+  // SFC/MSG/SGM's existing TIS/CES figures are left as-is: unlike SGT/SSG,
+  // there is no equivalent verified source anywhere else in this app to
+  // check them against, so touching them would mean either duplicating an
+  // unverified guess or silently discarding data that might already be
+  // correct. The undefined "CES" column is instead flagged explicitly in
+  // the warning note below the table rather than left as an unglossaried
+  // acronym.
   const GATES = [
-    ["SGT (E-5)",  "12 months", "\u2014",       "\u2014",   "\u2014"],
-    ["SSG (E-6)",  "18 months", "\u2014",       "\u2014",   "BLC"],
+    ["SGT (E-5)",  "12 months", "3 years", "\u2014",   "\u2014"],
+    ["SSG (E-6)",  "18 months", "6 years", "\u2014",   "BLC"],
     ["SFC (E-7)",  "36 months", "8 years",  "6 years", "ALC"],
     ["MSG (E-8)",  "36 months", "12 years", "8 years", "SLC"],
     ["SGM (E-9)",  "36 months", "16 years", "10 years","MLC eligibility \u00b7 SGM-A to pin"]
@@ -22168,7 +22274,7 @@ window.G = window.G || {};
     });
     gp.appendChild(tbl);
     gp.appendChild(el("div.feedback.warn", { style:"margin-top:10px", text:
-      "A flag of any type lets the board consider you but blocks selection and promotion until it is lifted. That is not waivable. These TIG/TIS figures were drawn from an ARNG implementation of AR 600-8-19 \u2014 confirm Regular Army primary and secondary zone specifics against the regulation itself." }));
+      "A flag of any type lets the board consider you but blocks selection and promotion until it is lifted. That is not waivable. These TIG/TIS figures were drawn from an ARNG implementation of AR 600-8-19 \u2014 confirm Regular Army primary and secondary zone specifics against the regulation itself. The \"CES\" column for SFC/MSG/SGM is not a term this app defines elsewhere \u2014 confirm its current meaning and figures with S-1 before relying on it." }));
     mount.appendChild(gp);
 
     const sp = el("div.panel");
@@ -23348,7 +23454,15 @@ window.G = window.G || {};
     });
     const resetBtn = el("button.btn.sm.ghost", { type:"button", text:"\u21ba Clear manual ticks" });
     resetBtn.addEventListener("click", async () => {
-      if (!await G.modal.confirm("This clears every manual tick on this device. Automated results are not stored.", { title:"Clear manual ticks?", okText:"Clear", danger:true })) return;
+      // Enhancement backlog round 1, "Hardcoded content numbers" bucket:
+      // "Automated results are not stored" was accurate before the run-
+      // history/trend-chart feature was added - recordRunHistory() now
+      // persists every automated-check pass (guidon:selftest:history:v1,
+      // capped at 200 entries), feeding the pass/fail trend chart rendered
+      // right above this button. This only clears manual ticks either way
+      // (unchanged) - the copy now just stops claiming automated results
+      // leave no trace.
+      if (!await G.modal.confirm("This clears every manual tick on this device. The automated-check history/trend chart is unaffected.", { title:"Clear manual ticks?", okText:"Clear", danger:true })) return;
       saved = {};
       try { await G.db.put("kv", { k: KEY, v: saved }); } catch (e) {}
       util.toast("Manual ticks cleared.");
@@ -23591,7 +23705,16 @@ window.G = window.G || {};
     const facts = el("div.panel");
     facts.appendChild(el("div.eyebrow", { text:"What hosting does and does not change" }));
     [["Still one file","The whole app is a single .html. Any static host works \u2014 no server code, no database, no build step."],
-     ["About 1.5 MB over the wire","4.9 MB raw, roughly 1.5 MB gzipped \u2014 measured, not estimated. Most hosts compress automatically; if yours does not, turn it on."],
+     // Enhancement backlog round 1, "Hardcoded content numbers" bucket:
+     // this used to state a specific "4.9 MB raw, roughly 1.5 MB gzipped"
+     // figure as "measured, not estimated" - the file has grown well past
+     // that since (every content/feature addition adds to the same single
+     // .html), so the claim went stale and, worse, kept asserting it was
+     // freshly measured. Rewritten to describe the shape of the tradeoff
+     // rather than a specific byte count that would need re-measuring and
+     // re-editing by hand on every release - it now cannot silently drift
+     // into a wrong "measured" number again.
+     ["Compression matters here","The single .html file is several megabytes uncompressed \u2014 gzip/brotli typically cuts that to a fraction of the raw size over the wire. Most static hosts compress automatically; if yours does not, turn it on."],
      ["Still no external requests","Verified from a real HTTPS origin on iPhone, Android and iPad profiles: fonts, icons and data are all embedded. After the page loads, nothing else is fetched."],
      ["Your answers stay on your device","Study data lives in your browser's storage, not on the server. Hosting changes how you GET the app, not where your data goes."],
      ["The server can see who fetched it","Any web host logs requests. That is a normal access log, not study data \u2014 but it is not nothing, and you should know it before you post a link."]
@@ -24022,6 +24145,59 @@ window.G = window.G || {};
     return { restored: restored, skipped: skipped, merged: merge };
   }
 
+  // Enhancement backlog round 1, "Settings Import Backup" bucket:
+  // extracted from renderControls()'s own fileIn "change" handler below so
+  // Settings' separate "Import backup" button (index.html, views.settings)
+  // can share the exact same confirm-with-preview-then-import path instead
+  // of calling importAll() directly with no confirmation - previously the
+  // two call sites were described in this file's own comments as "the
+  // exact same feature" but only this one actually confirmed first,
+  // previewed rejected rows, or reloaded the app afterward so other
+  // screens' cached state (Home's greeting, nav rail) picks up the merged
+  // profile. Resolves (never rejects) with { status: "cancelled" } |
+  // { status: "error", message } | { status: "success", restored, skipped }
+  // so every caller handles the same three outcomes the same way.
+  function confirmAndImportFile(file) {
+    return new Promise(function (resolve) {
+      var reader = new FileReader();
+      reader.onload = function () {
+        var obj;
+        try { obj = JSON.parse(reader.result); }
+        catch (e) { resolve({ status: "error", message: "That file couldn't be read as JSON." }); return; }
+        var sum = obj && obj.summary ? obj.summary : null;
+        var hasProfileRow = !!(obj && obj.stores && Array.isArray(obj.stores.kv) &&
+          obj.stores.kv.some(function (row) { return row && row.k === "guidon:profile:v1"; }));
+        var kvRejected = [];
+        if (obj && obj.stores && Array.isArray(obj.stores.kv)) {
+          obj.stores.kv.forEach(function (row) {
+            if (!row || row.k == null) return;
+            if (row.k === "guidon:profile:v1") {
+              var pv = row.v;
+              var pvOk = pv && typeof pv === "object" && typeof pv.onboardingComplete === "boolean" && typeof pv.mode === "string";
+              if (!pvOk) kvRejected.push(row.k);
+            } else if (!validateKvRow(row)) {
+              kvRejected.push(row.k);
+            }
+          });
+        }
+        var msg = "Import this backup?" + (sum ? "\n\nIt contains: " + (sum.kv || 0) + " saved items, " + (sum.userScenarios || 0) + " authored scenarios, " + (sum.attempts || 0) + " quiz attempts." : "") + "\n\nYour existing data will be kept; matching items will be overwritten by the backup." + (hasProfileRow ? " This includes your name, rank, and board date." : "") +
+          (kvRejected.length ? "\n\n" + kvRejected.length + " item(s) in this file are corrupted and will be skipped: " + kvRejected.slice(0, 8).join(", ") + (kvRejected.length > 8 ? ", …" : "") + "." : "");
+        G.modal.confirm(msg, { title: "Import backup" }).then(function (ok) {
+          if (!ok) { resolve({ status: "cancelled" }); return; }
+          importAll(obj, { merge: true }).then(function (res) {
+            var r = res.restored, sk = res.skipped;
+            if (G.selfheal) G.selfheal.log("backup-import", null, "restored " + r.kv + " kv/" + r.userScenarios + " scenarios/" + r.attempts + " attempts, skipped " + (sk.kv || 0) + " kv row(s)");
+            setTimeout(function () { location.reload(); }, 1200);
+            resolve({ status: "success", restored: r, skipped: sk });
+          }).catch(function (e) {
+            resolve({ status: "error", message: e && e.message ? e.message : "unknown error" });
+          });
+        });
+      };
+      reader.readAsText(file);
+    });
+  }
+
   function renderControls(host) {
     var panel = el("div.backup-panel");
     panel.appendChild(el("div.eyebrow", { text: "Backup & restore" }));
@@ -24071,59 +24247,21 @@ window.G = window.G || {};
     fileIn.addEventListener("change", function () {
       var f = fileIn.files && fileIn.files[0];
       if (!f) return;
-      var reader = new FileReader();
-      reader.onload = function () {
-        var obj;
-        try { obj = JSON.parse(reader.result); }
-        catch (e) { status.textContent = "That file couldn't be read as JSON."; status.className = "backup-status hint err"; return; }
-        var sum = obj && obj.summary ? obj.summary : null;
-        // Warn explicitly when the incoming file would replace identity
-        // data - previously this said only "matching items will be
-        // overwritten," which is true but doesn't flag that your name,
-        // rank, and board date are among what "matching items" covers.
-        var hasProfileRow = !!(obj && obj.stores && Array.isArray(obj.stores.kv) &&
-          obj.stores.kv.some(function (row) { return row && row.k === "guidon:profile:v1"; }));
-        // Diagnostics self-repair item 9: run the SAME validation
-        // importAll() itself will run, but BEFORE the confirm rather than
-        // after - previously a Soldier committed to "yes, restore" before
-        // knowing the file was corrupted, and rejected rows were folded
-        // into one generic "N item(s) skipped" count with no names. This
-        // reuses validateKvRow() unmodified, so the preview and the real
-        // outcome can never disagree.
-        var kvRejected = [];
-        if (obj && obj.stores && Array.isArray(obj.stores.kv)) {
-          obj.stores.kv.forEach(function (row) {
-            if (!row || row.k == null) return;
-            if (row.k === "guidon:profile:v1") {
-              var pv = row.v;
-              var pvOk = pv && typeof pv === "object" && typeof pv.onboardingComplete === "boolean" && typeof pv.mode === "string";
-              if (!pvOk) kvRejected.push(row.k);
-            } else if (!validateKvRow(row)) {
-              kvRejected.push(row.k);
-            }
-          });
+      confirmAndImportFile(f).then(function (result) {
+        fileIn.value = "";
+        if (result.status === "cancelled") return;
+        if (result.status === "error") {
+          status.textContent = "Import failed: " + result.message;
+          status.className = "backup-status hint err";
+          return;
         }
-        var msg = "Import this backup?" + (sum ? "\n\nIt contains: " + (sum.kv || 0) + " saved items, " + (sum.userScenarios || 0) + " authored scenarios, " + (sum.attempts || 0) + " quiz attempts." : "") + "\n\nYour existing data will be kept; matching items will be overwritten by the backup." + (hasProfileRow ? " This includes your name, rank, and board date." : "") +
-          (kvRejected.length ? "\n\n" + kvRejected.length + " item(s) in this file are corrupted and will be skipped: " + kvRejected.slice(0, 8).join(", ") + (kvRejected.length > 8 ? ", \u2026" : "") + "." : "");
-        G.modal.confirm(msg, { title: "Import backup" }).then(function (ok) {
-          if (!ok) { fileIn.value = ""; return; }
-          importAll(obj, { merge: true }).then(function (res) {
-            var r = res.restored, sk = res.skipped;
-            if (G.selfheal) G.selfheal.log("backup-import", null, "restored " + r.kv + " kv/" + r.userScenarios + " scenarios/" + r.attempts + " attempts, skipped " + (sk.kv || 0) + " kv row(s)");
-            status.textContent = "Restored " + r.kv + " items, " + r.userScenarios + " scenarios, " + r.attempts + " attempts." +
-              (sk && sk.kv ? " " + sk.kv + " item(s) skipped (malformed profile entry rejected — your existing profile was kept)." : "") +
-              " Reloading…";
-            status.className = "backup-status hint ok";
-            if (G.util.announce) G.util.announce("Backup restored.");
-            setTimeout(function () { location.reload(); }, 1200);
-          }).catch(function (e) {
-            status.textContent = "Import failed: " + (e && e.message ? e.message : "unknown error");
-            status.className = "backup-status hint err";
-          });
-          fileIn.value = "";
-        });
-      };
-      reader.readAsText(f);
+        var r = result.restored, sk = result.skipped;
+        status.textContent = "Restored " + r.kv + " items, " + r.userScenarios + " scenarios, " + r.attempts + " attempts." +
+          (sk && sk.kv ? " " + sk.kv + " item(s) skipped (malformed profile entry rejected — your existing profile was kept)." : "") +
+          " Reloading…";
+        status.className = "backup-status hint ok";
+        if (G.util.announce) G.util.announce("Backup restored.");
+      });
     });
 
     row.appendChild(importBtn);
@@ -24145,7 +24283,7 @@ window.G = window.G || {};
     return "Backup downloaded";
   }
 
-  G.backup = { exportAll: exportAll, downloadAll: downloadAll, importAll: importAll, renderControls: renderControls, validateKvRow: validateKvRow, exportDoneMessage: exportDoneMessage, getLastExportAt: getLastExportAt, formatLastExport: formatLastExport };
+  G.backup = { exportAll: exportAll, downloadAll: downloadAll, importAll: importAll, renderControls: renderControls, confirmAndImportFile: confirmAndImportFile, validateKvRow: validateKvRow, exportDoneMessage: exportDoneMessage, getLastExportAt: getLastExportAt, formatLastExport: formatLastExport };
 })();
 // END backup.js
 
@@ -24609,9 +24747,18 @@ window.G = window.G || {};
 
     // 2) Strong lead verb (not a weak opener)
     const weakOpen = weak.indexOf(firstWord) !== -1;
+    // Enhancement backlog round 1, "Scattered small correctness bugs"
+    // bucket: firstWord strips all non-letter characters, so a bullet
+    // opening with a number ("24 Soldiers managed…") or symbol ("92%
+    // pass rate achieved by…") reduces firstWord to "" - weakOpen is
+    // then false (indexOf("") never matches a real weak-verb entry), so
+    // pass correctly failed via firstWord.length > 0, but detail - keyed
+    // only on weakOpen - stayed empty, leaving a bare failing check with
+    // no explanation, unlike every other check here.
     checks.push({ id: "verb", label: "Starts with a strong action verb", weight: 25,
       pass: !weakOpen && firstWord.length > 0,
-      detail: weakOpen ? "\u201c" + firstWord + "\u201d is a weak opener — lead with a strong past-tense verb." : "" });
+      detail: weakOpen ? "“" + firstWord + "” is a weak opener — lead with a strong past-tense verb."
+        : !firstWord.length ? "Lead with a verb, not a number or symbol." : "" });
 
     // 3) Quantification present (a number / %/$ / count)
     const hasNumber = /\d/.test(raw) || /%|\$/.test(raw);
@@ -27373,8 +27520,15 @@ window.G = window.G || {};
         // rotor problem, not just a cosmetic one. The category makes each
         // instance's aria-label unique without changing the visible text.
         const label = it._cat ? it.name + " (" + it._cat + "): " + u : it.name + ": " + u;
-        const dial = /^dial\s+([\d-]+)/i.exec(u);
-        if (dial) return el("a.res-url", { href: "tel:" + dial[1].replace(/-/g, ""), "aria-label": label, text: u });
+        // Enhancement backlog round 1, "Veterans Crisis Line" bucket: the
+        // number capture alone dropped a trailing "Press N" clause (e.g.
+        // "Dial 988, Press 1" -> tel:988, silently losing the DTMF digit
+        // that routes to the veteran-specific queue even though the link
+        // text still promises "Press 1"). tel: URIs support a comma as a
+        // pause-then-send-DTMF separator (tel:988,1), so a captured Press
+        // digit is appended the same way.
+        const dial = /^dial\s+([\d-]+)(?:,?\s*press\s+(\d+))?/i.exec(u);
+        if (dial) return el("a.res-url", { href: "tel:" + dial[1].replace(/-/g, "") + (dial[2] ? "," + dial[2] : ""), "aria-label": label, text: u });
         if (u && !/\s/.test(u) && /\./.test(u)) {
           return el("a.res-url", { href: /^https?:\/\//i.test(u) ? u : "https://" + u, target: "_blank", rel: "noopener", "aria-label": label, text: u });
         }
@@ -29372,16 +29526,25 @@ window.G = window.G || {};
     const dataPanel = el("div.panel", { style: "margin-top:12px" });
     dataPanel.appendChild(el("label", { text: "Data & Backup" }));
     const importInput = el("input", { type: "file", accept: "application/json,.json", style: "display:none" });
-    importInput.addEventListener("change", async () => {
+    // Enhancement backlog round 1, "Settings Import Backup" bucket: this
+    // used to parse and apply the selected file immediately on change,
+    // with no confirmation, no item-count preview, and no reload after
+    // success - despite Profile's own Backup & restore panel (the exact
+    // same underlying feature, per the comment on the buttons below)
+    // already having all three. Now shares backup.js's own
+    // confirmAndImportFile(), which shows the same confirm-with-preview
+    // dialog and reloads the app on success so other screens' cached
+    // state (Home's greeting, nav rail) can't go stale after an import
+    // that may have overwritten the profile.
+    importInput.addEventListener("change", () => {
       const f = importInput.files[0]; if (!f) return;
-      try {
-        const obj = JSON.parse(await f.text());
-        const res = await G.backup.importAll(obj, { merge: true });
-        const r = res.restored, sk = res.skipped;
-        util.toast("Imported " + r.kv + " item(s), " + r.userScenarios + " scenario(s), " + r.attempts + " attempt(s)." +
-          (sk && sk.kv ? " " + sk.kv + " skipped (malformed profile rejected)." : ""));
-        views.settings(mount);
-      } catch (e) { util.toast("Import failed: " + e.message); }
+      G.backup.confirmAndImportFile(f).then((result) => {
+        if (result.status === "cancelled") return;
+        if (result.status === "error") { util.toast("Import failed: " + result.message); return; }
+        const r = result.restored, sk = result.skipped;
+        util.toast("Restored " + r.kv + " item(s), " + r.userScenarios + " scenario(s), " + r.attempts + " attempt(s)." +
+          (sk && sk.kv ? " " + sk.kv + " skipped (malformed profile rejected)." : "") + " Reloading…");
+      });
     });
     // Same "Export backup"/"Import backup" wording as the Profile view's own
     // Backup & restore panel (backup.js's renderControls()) - this button
@@ -30083,7 +30246,18 @@ window.G = window.G || {};
   // default opened for them) explicitly persists that as [] on their next
   // toggle (see persistNavOpenGroups below), and that choice must stick;
   // only a key that was NEVER written gets the desktop default at all.
-  const isFirstEverVisit = localStorage.getItem("guidon-nav-open-groups") === null;
+  // Enhancement backlog round 1 (completeness-critic follow-up finding):
+  // this ran at module-init scope with no try/catch, unlike every other
+  // localStorage access in this file - including the very next block just
+  // below, which wraps the same key's read. installMemoryFallback()'s own
+  // comment explicitly anticipates file://, private-mode, etc. as real
+  // scenarios where storage access throws; if it threw here specifically,
+  // the whole app.js IIFE would abort before G.app is ever assigned, and
+  // window.onerror's crash-fallback screen would replace the entire app
+  // over what every other localStorage call site in this file treats as a
+  // simple, recoverable "default to false and keep booting" case.
+  let isFirstEverVisit = false;
+  try { isFirstEverVisit = localStorage.getItem("guidon-nav-open-groups") === null; } catch (e) {}
   if (isFirstEverVisit && window.innerWidth >= 1200) navOpenGroups.add("prep");
   try {
     const saved = JSON.parse(localStorage.getItem("guidon-nav-open-groups") || "[]");
