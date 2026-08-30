@@ -113,14 +113,19 @@ const streakBest = await page.locator(".streak-best").textContent().catch(() => 
 streakBest && streakBest.trim() === "Best: 9" ? ok("streak banner shows 'Best: 9' when longestCount exceeds the current count") : bad("streak-best text: " + streakBest);
 
 // ==================== 3) "Due for review" board-cards card ====================
-// isDueSrs(srs, now) = srs.reps > 0 && srs.due <= now. 12 due cards lands in
-// the amber tier (>=10, <20) - a real, non-trivial branch, not just "any
-// count at all".
+// isDueSrs(srs, now) = srs.lastGrade != null && srs.due <= now (lastGrade,
+// not reps - see G.board.isDueSrs's own comment: reps resets to 0 on a
+// "Needs Help" grade, so reps>0 would wrongly exclude a just-failed,
+// due-right-now card). lastGrade is set unconditionally by the real
+// schedule() in every branch, so a real SRS row always carries one -
+// included here too, not just reps/due/misses, so this fixture matches
+// what schedule() actually produces. 12 due cards lands in the amber tier
+// (>=10, <20) - a real, non-trivial branch, not just "any count at all".
 const dueSeed = await page.evaluate(async () => {
   const qs = (window.G.store.boardQuestions() || []).slice(0, 12);
   const now = Date.now();
   for (const q of qs) {
-    await window.G.db.put("kv", { k: "srs:" + q.id, v: { reps: 2, ease: 2.3, interval: 3, due: now - 60000, misses: 0 } });
+    await window.G.db.put("kv", { k: "srs:" + q.id, v: { reps: 2, ease: 2.3, interval: 3, due: now - 60000, misses: 0, lastGrade: 2 } });
   }
   return qs.length;
 });

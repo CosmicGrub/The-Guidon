@@ -87,6 +87,30 @@ window.G = window.G || {};
     for (let i = 0; i < list.length; i++) update(list[i]);
   }
 
+  // Roadmap-week audit finding (2nd pass): a single view navigation rebuilds
+  // its whole subtree via util.clear(mount) + many sequential appendChild()
+  // calls, which fires the document-wide MutationObserver several times
+  // (measured: 4 callback batches for one #/board navigation) - and every
+  // scanAll() call forces a synchronous layout flush (scrollWidth/
+  // clientWidth reads on every .segmented/nav.nav/.tabbar in the document)
+  // against whatever half-rebuilt tree happens to exist at that instant.
+  // Measured cost: 99ms of JS time at 6x CPU throttle for a navigation that
+  // only ever has 2 matching elements - scrollhint's own update() was the
+  // single largest non-idle hotspot in the whole trace, ahead of the
+  // board.js render logic actually doing the work. Coalescing every
+  // mutation batch (and every resize event, previously unthrottled too)
+  // into at most one scanAll() per animation frame collapses those 4
+  // redundant forced-reflow passes into 1, and moves it to fire after the
+  // browser's own paint/layout settles rather than mid-mutation - same
+  // end-state (data-scroll/data-scroll-y are still correct once rendering
+  // is done), just not paid for four times over on every navigation.
+  let _scanScheduled = false;
+  function scheduleScan() {
+    if (_scanScheduled) return;
+    _scanScheduled = true;
+    requestAnimationFrame(function () { _scanScheduled = false; scanAll(); });
+  }
+
   function init() {
     if (typeof ResizeObserver === "function") {
       ro = new ResizeObserver(function (entries) {
@@ -95,10 +119,10 @@ window.G = window.G || {};
     }
     // Views are re-rendered wholesale on navigation, so watch the tree rather
     // than trying to hook every call site that builds a .segmented.
-    const mo = new MutationObserver(function () { scanAll(); });
+    const mo = new MutationObserver(function () { scheduleScan(); });
     mo.observe(document.body, { childList: true, subtree: true });
     scanAll();
-    window.addEventListener("resize", scanAll, { passive: true });
+    window.addEventListener("resize", scheduleScan, { passive: true });
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
