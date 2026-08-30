@@ -154,6 +154,19 @@ jobs:
       - name: Install dependencies (npm ci)
         run: npm ci
 
+      # npm's own advisory database against the resolved lockfile. Dev-only
+      # deps (Playwright, etc.) are excluded on purpose - a vulnerable dev
+      # tool never ships in the built web/+dist/ output, so it's noise for
+      # this check's purpose (drift in what actually reaches a Soldier's
+      # device). NON-BLOCKING for the same reason audit:freshness above is:
+      # this is a discovery/report step surfacing drift for a human to
+      # triage, not a gate - and the roadmap-week audit finding that added
+      # this step found zero real npm vulnerabilities to act on yet, only
+      # the absence of continuous checking itself.
+      - name: npm audit (non-blocking)
+        run: npm audit --omit=dev
+        continue-on-error: true
+
       # Cache the downloaded Chromium binary across runs (keyed on the
       # pinned Playwright version + lockfile) so repeated CI runs, and the
       # other 16 jobs in this workflow, aren't all re-downloading it cold.
@@ -217,6 +230,45 @@ jobs:
             guidon-app/dist
             !guidon-app/web/docs/**
           retention-days: 1
+
+  # ---------------------------------------------------------------------
+  # RustSec advisory scan for the Tauri desktop build's dependency tree
+  # (guidon-app/src-tauri). Independent of and parallel with
+  # lint-build-verify - cargo audit only needs the checked-in Cargo.lock,
+  # not a built web/+dist/ output, so there's no reason to serialize it
+  # behind the npm build. Roadmap-week audit finding: this project's
+  # RustSec posture (see src-tauri/Cargo.toml's own tracked-advisory
+  # comment) was reviewed entirely by hand with no CI step to catch drift
+  # - and a wrong advisory ID cited in that very comment, found the same
+  # audit pass, is direct evidence hand-tracking alone had already drifted
+  # from ground truth. Installs the prebuilt cargo-audit binary (not
+  # `cargo install --locked`, which compiles from source and costs several
+  # minutes per run) via taiki-e/install-action, a standard binstall-style
+  # action for exactly this.
+  # ---------------------------------------------------------------------
+  cargo-audit:
+    name: cargo audit (src-tauri)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+
+      # NON-BLOCKING for the same reason npm audit above is: this project's
+      # own tracked-advisory comment already documents every current
+      # finding (2 informational glib/gtk entries that don't even resolve
+      # for the shipped Windows target, and 5 informational "unmaintained"
+      # unic-* entries with no patched version available upstream) as
+      # reviewed and low-risk, not something a red CI check should force
+      # action on today. This makes newly-published advisories visible on
+      # every PR instead of only at the next manual review pass.
+      - name: cargo audit (non-blocking)
+        working-directory: guidon-app/src-tauri
+        run: cargo audit
+        continue-on-error: true
 
   # ---------------------------------------------------------------------
   # The 121-suite test:* matrix, chunked to <=8 concurrent Playwright/
@@ -285,9 +337,14 @@ jobs:
           # bringing this chunk to 4/8. test:board-drill-skip-to-card (the
           # "Skip to flashcard" WCAG 2.4.1 bypass link, scoped to Board
           # Drill only) joins next, bringing this chunk to 5/8 - still
-          # comfortably under the ceiling.
-          - name: "16-formspdfpreview-rapidfirecardsizing-motionosdefault-boarddrillpreflip-boarddrillskiptocard"
-            tests: "test:forms-pdf-preview test:rapid-fire-card-sizing test:motion-os-default test:board-drill-preflip-hiding test:board-drill-skip-to-card"
+          # comfortably under the ceiling. test:library and
+          # test:home-dashboard (roadmap-week audit, Test-coverage-gaps
+          # bucket - real interaction coverage for the Reference Library and
+          # Home dashboard, previously only smoke-swept) join next, bringing
+          # this chunk to 7/8 - the NEXT new test:* suite must start a chunk
+          # 17 rather than overloading this one past the ceiling.
+          - name: "16-formspdfpreview-rapidfirecardsizing-motionosdefault-boarddrillpreflip-boarddrillskiptocard-library-homedashboard"
+            tests: "test:forms-pdf-preview test:rapid-fire-card-sizing test:motion-os-default test:board-drill-preflip-hiding test:board-drill-skip-to-card test:library test:home-dashboard"
     steps:
       - name: Checkout
         uses: actions/checkout@v4

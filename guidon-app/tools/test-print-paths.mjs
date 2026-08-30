@@ -129,7 +129,33 @@ const planHasEscapedName = /&lt;B&gt;XSSNAME&lt;\/B&gt;/.test(planPrint);
   ? ok("Malicious display name is escaped in the printed Action Plan header (#86 regression)")
   : bad("display-name escaping: rawPresent=" + planHasRawName + " escapedPresent=" + planHasEscapedName);
 
-// ==================== 3) Writing Trainer "Format & print memo" ====================
+// ==================== 3) Profile "Print readiness summary" ====================
+// Roadmap-week audit finding: this button used to build its own raw
+// window.open("","_blank") + document.write() + w.print() flow instead of
+// routing through util.printHTML() - silently dead on the Android build
+// (the popup window.open() there hands back is a bare, unattached WebView
+// proxy, so nothing ever rendered or printed). Fixed to route through the
+// same #print-holder pipeline every other print button uses; this asserts
+// the fix actually produces real #print-holder content, same technique as
+// the two paths above.
+await page.locator("button", { hasText: /Print readiness summary/ }).click();
+await page.waitForTimeout(500);
+const readinessPrint = await page.evaluate(() => {
+  const h = document.querySelector("#print-holder");
+  const html = h ? h.innerHTML : "";
+  if (h) h.remove();
+  return html;
+});
+/Board Readiness Summary/.test(readinessPrint) ? ok("Readiness summary print produces real report content") : bad("Readiness summary print missing title: " + readinessPrint.slice(0, 150));
+/Action plan/.test(readinessPrint) ? ok("Readiness summary print includes the Action plan section") : bad("Readiness summary print missing Action plan section");
+/Your inputs/.test(readinessPrint) && /physical fitness|AFT/.test(readinessPrint) ? ok("Readiness summary print includes the Soldier's stated concerns") : bad("Readiness summary print missing 'Your inputs' concerns section");
+const readinessHasRawName = /<B>XSSNAME<\/B>/.test(readinessPrint);
+const readinessHasEscapedName = /&lt;B&gt;XSSNAME&lt;\/B&gt;/.test(readinessPrint);
+(!readinessHasRawName && readinessHasEscapedName)
+  ? ok("Malicious display name is escaped in the printed readiness summary header")
+  : bad("display-name escaping: rawPresent=" + readinessHasRawName + " escapedPresent=" + readinessHasEscapedName);
+
+// ==================== 4) Writing Trainer "Format & print memo" ====================
 await page.evaluate(() => { location.hash = "#/write"; });
 await page.waitForTimeout(400);
 await page.locator(".tabbar button, .author-tabs button", { hasText: /^Memorandum$/ }).click();
