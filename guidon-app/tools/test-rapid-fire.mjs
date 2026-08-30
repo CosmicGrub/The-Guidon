@@ -40,12 +40,18 @@
  * redundancy-audit merge),
  * "Counseling (ATP 6-22.1)" (19 questions, ALL have acceptableAnswer — the
  * Counseling + ATP 6-22.1 board categories merged, per the board-content
- * redundancy-audit merge). The Reveal-fallback fixture (a category where
- * NONE of the cards have acceptableAnswer) is looked up LIVE at runtime
- * instead of hardcoded, since the exact set of such categories shifts as
- * board content is merged/reorganized (e.g. "Drill and Ceremony" no longer
- * qualifies after merging in the 15 acceptableAnswer-bearing TC 3-21.5
- * cards).
+ * redundancy-audit merge). The Reveal-fallback fixture used to look up a
+ * real category where NONE of the cards had acceptableAnswer, live at
+ * runtime, since which categories qualified shifted as board content was
+ * merged/reorganized. As of the content-authoring pass (2026-08, GUIDON
+ * issue tracker "Reading the Cards" item), that population is intentionally
+ * empty for good: every one of the 984 board cards now has real
+ * acceptableAnswer/boardAnswer content, so no such category can ever be
+ * found live again. The fallback code path (`current.acceptableAnswer ||
+ * current.a`) is still real, load-bearing defensive behavior for any future
+ * card added without it, so this synthesizes the gap on one real card's live
+ * in-memory data instead of searching for one that no longer exists, and
+ * restores it afterward.
  * The zero-writes-to-attempts/SRS regression (the spec's own "load-bearing"
  * test) lives in its own file, test-rapid-fire-no-srs-writes.mjs, so it can
  * be run/re-run in isolation.
@@ -405,44 +411,55 @@ seenFlag === true ? ok("the one-time explainer's 'seen' flag is persisted in the
 await tapEndRound();
 
 // ════════════════════════════════════════════════════════════════════
-// Reveal fallback: pick a REAL category, looked up LIVE (not hardcoded —
-// the exact set of categories where every card lacks acceptableAnswer
-// shifts as board content is merged/reorganized; "Drill and Ceremony" no
-// longer qualifies once merged with TC 3-21.5's acceptableAnswer-bearing
-// cards) where NONE of the cards have acceptableAnswer, so Reveal must
-// show the full `a` field, unaltered.
+// Reveal fallback: every real card now has acceptableAnswer (the content-
+// authoring pass's whole point - see header comment), so synthesize the
+// gap on one real card in a known category's live in-memory data instead
+// of searching for a naturally-occurring one, then restore it. Reveal must
+// show the full `a` field, unaltered, when acceptableAnswer is absent.
 // ════════════════════════════════════════════════════════════════════
-const noAcceptableCat = await page.evaluate(() => {
-  const qs = G.store.boardQuestions();
-  const byCat = new Map();
-  for (const q of qs) {
-    if (!byCat.has(q.category)) byCat.set(q.category, []);
-    byCat.get(q.category).push(q);
-  }
-  for (const [cat, list] of byCat) {
-    if (list.length > 0 && list.every((q) => !q.acceptableAnswer)) return cat;
-  }
-  return null;
-});
-noAcceptableCat
-  ? ok(`found a real category with zero acceptableAnswer coverage to use as the Reveal-fallback fixture: "${noAcceptableCat}"`)
-  : bad("could not find any real category where every card lacks acceptableAnswer — Reveal-fallback scenario can't be exercised");
+// Clear acceptableAnswer on EVERY card in the category (not just one) so
+// the assertion holds regardless of which card the round's own shuffle
+// lands on first - matching the original test's actual invariant (a whole
+// category with zero acceptableAnswer coverage), just synthesized instead
+// of discovered.
+const fallbackCat = "Army Fitness Test (AFT)";
+const saved = await page.evaluate((cat) => {
+  const qs = G.store.boardQuestions().filter((x) => x.category === cat);
+  return qs.map((q) => {
+    const savedAcceptableAnswer = q.acceptableAnswer;
+    q.acceptableAnswer = undefined;
+    return { qText: q.q, savedAcceptableAnswer };
+  });
+}, fallbackCat);
+saved.length > 0
+  ? ok(`synthesized zero acceptableAnswer coverage across all ${saved.length} real "${fallbackCat}" cards to use as the Reveal-fallback fixture`)
+  : bad(`could not find any real cards in "${fallbackCat}" to synthesize the Reveal-fallback fixture`);
 await enterRapidFireFresh();
-await setCategory(noAcceptableCat);
+await setCategory(fallbackCat);
 await clickButtonByText("All difficulties");
 await startRound();
 st = await roundState();
 const realCard2 = await page.evaluate(({ qText, cat }) => {
   const q = G.store.boardQuestions().find((x) => x.q === qText && x.category === cat);
   return q ? { q: q.q, a: q.a, acceptableAnswer: q.acceptableAnswer } : null;
-}, { qText: st.questionText, cat: noAcceptableCat });
-(realCard2 && !realCard2.acceptableAnswer) ? ok(`landed on a real "${noAcceptableCat}" question, confirmed to have no acceptableAnswer field`) : bad("fixture assumption broken — real card: " + JSON.stringify(realCard2));
+}, { qText: st.questionText, cat: fallbackCat });
+(realCard2 && !realCard2.acceptableAnswer) ? ok(`landed on a real "${fallbackCat}" question, confirmed to have no acceptableAnswer field (synthesized)`) : bad("fixture assumption broken — real card: " + JSON.stringify(realCard2));
 await tapReveal();
 st = await roundState();
 (realCard2 && st.answerText === realCard2.a)
   ? ok("Reveal answer falls back to the full `a` field, in full and unaltered, when acceptableAnswer is absent")
   : bad("revealed text vs real `a` field: " + JSON.stringify({ shown: st.answerText, real: realCard2 && realCard2.a }));
 await tapEndRound();
+// Restore every card's real acceptableAnswer - other assertions in this
+// file (and other test files sharing the same page/app instance
+// conventions) should never observe this synthetic gap.
+await page.evaluate(({ cat, saved }) => {
+  const qs = G.store.boardQuestions().filter((x) => x.category === cat);
+  for (const q of qs) {
+    const entry = saved.find((s) => s.qText === q.q);
+    if (entry) q.acceptableAnswer = entry.savedAcceptableAnswer;
+  }
+}, { cat: fallbackCat, saved });
 
 // ════════════════════════════════════════════════════════════════════
 // Passed-cards behavior: Requeue vs Remove, proven by real round length
