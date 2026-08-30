@@ -4552,6 +4552,29 @@ html.reduce-motion .nav-drawer, html[data-motion="minimal"] .nav-drawer { transi
   html.device-fold-narrow .view { max-width: 100%; }
 }
 
+/* ---- Tier 1(narrow-fold): the SAME html.device-fold-narrow class (see the
+   >=800px block above and the UA-Client-Hints check in renderShell) also
+   lands on <html> while this device is FOLDED/portrait (~344px CSS width,
+   the cover screen) - a state that never reaches the >=800px sidebar tier
+   above, so it fell through to the generic narrow-mobile .main
+   padding-bottom (92px + safe-area-inset-bottom, "clears the mobile nav
+   rail" per that rule's own comment, a few dozen lines up). That reserve
+   doesn't apply here: .nav is a genuine CSS Grid sibling of .main
+   (grid-area: nav/main), never position:fixed, so main is never actually
+   overlapped and never needed extra bottom clearance - grid rows already
+   keep them apart. Confirmed live via CDP on the physical device
+   (SM-F946U, folded): the generic rule left ~140px of pure dead space
+   below scrollable content on every route, versus this device's own real
+   bottom-nav-bar height of ~116px - a visible, wasted "gap" on the single
+   most cramped viewport this app supports. Reuses the exact 36px value
+   the >=800px tier above already chose for this identical class, for
+   consistency. 799px is the canonical breakpoint immediately below that
+   tier's own 800px floor (see lint-patterns.mjs check (d) - the canonical
+   width scale). */
+@media (max-width: 799px) {
+  html.device-fold-narrow .main { padding-bottom: calc(36px + env(safe-area-inset-bottom)); }
+}
+
 @media (min-width: 1200px) {
   #app { grid-template-columns: 232px 1fr; }
   .main { padding: 30px 40px 48px; }
