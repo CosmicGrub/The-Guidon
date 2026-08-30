@@ -42,6 +42,22 @@ page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 
 await page.goto(url, { waitUntil: "load" });
 await page.waitForTimeout(700);
+// Roadmap-week audit (3rd pass), following the #app-inert fix: a fresh
+// profile-less context boots straight into onboarding, which now correctly
+// marks #app inert while it's open (see util._pushModalInert's own
+// comment) - and Part 3 below re-renders #/career after mutating the seed,
+// a real interaction inside #app that inert silently blocked. Seeded a
+// completed profile so onboarding never launches, matching every other
+// test's established convention (see test-biometric-lock.mjs).
+await page.evaluate(async () => {
+  await window.G.db.put("kv", { k: "guidon:profile:v1", v: {
+    onboardingComplete: true, mode: "personal", tier: "E5", rank: "SGT",
+    displayName: "SGT CURRENCYTEST", lastName: "CURRENCYTEST", anonymous: false,
+    studyWeakPoints: [], readinessConcerns: [], actionPlan: [], promoPoints: {},
+  } });
+});
+await page.reload({ waitUntil: "load" });
+await page.waitForTimeout(700);
 await page.evaluate(() => { location.hash = "#/currency"; });
 await page.waitForTimeout(700);
 

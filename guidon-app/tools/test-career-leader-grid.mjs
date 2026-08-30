@@ -40,6 +40,24 @@ page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 
 await page.goto(url, { waitUntil: "load" });
 await page.waitForTimeout(700);
+// Roadmap-week audit (3rd pass), following the #app-inert fix: a fresh
+// profile-less context boots straight into onboarding, which now correctly
+// marks #app inert while it's open (see util._pushModalInert's own
+// comment). Every check above the MOS-search sanity check below only ever
+// reads DOM geometry (querySelectorAll/getBoundingClientRect), which
+// inert doesn't affect - but the MOS-search step is a real interaction
+// (fill()) inside #app, and that silently no-ops while inert blocks it.
+// Seeded a completed profile so onboarding never launches, matching every
+// other test's established convention (see test-biometric-lock.mjs).
+await page.evaluate(async () => {
+  await window.G.db.put("kv", { k: "guidon:profile:v1", v: {
+    onboardingComplete: true, mode: "personal", tier: "E5", rank: "SGT",
+    displayName: "SGT GRIDTEST", lastName: "GRIDTEST", anonymous: false,
+    studyWeakPoints: [], readinessConcerns: [], actionPlan: [], promoPoints: {},
+  } });
+});
+await page.reload({ waitUntil: "load" });
+await page.waitForTimeout(700);
 
 async function cardGeometry(selector) {
   return page.evaluate((sel) => {

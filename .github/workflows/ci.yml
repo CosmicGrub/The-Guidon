@@ -353,6 +353,13 @@ jobs:
           # this one past the documented ceiling.
           - name: "16-formspdfpreview-rapidfirecardsizing-motionosdefault-boarddrillpreflip-boarddrillskiptocard-library-homedashboard-riskworksheet"
             tests: "test:forms-pdf-preview test:rapid-fire-card-sizing test:motion-os-default test:board-drill-preflip-hiding test:board-drill-skip-to-card test:library test:home-dashboard test:risk-worksheet"
+          # Chunk 16 was already full at 8/8 (see its own comment above) -
+          # test:resilience-daily-skills (roadmap-week audit 3rd pass,
+          # Test-coverage-gaps bucket - the Practice-of-the-Day log/streak
+          # feature, previously untested) starts a new chunk 17 rather than
+          # overloading it.
+          - name: "17-resiliencedailyskills"
+            tests: "test:resilience-daily-skills"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
