@@ -17066,7 +17066,13 @@ window.G = window.G || {};
         var hits = (d.forms || []).filter(function (f) {
           return (f.title || "").toLowerCase().includes(q) || (f.form || "").toLowerCase().includes(q) || (f.purpose || "").toLowerCase().includes(q);
         });
-        if (!hits.length) { formResultsWrap.appendChild(U.el("div", { class: "empty", role: "status", "aria-live": "polite" }, ["No forms match: " + formSearch.value])); return; }
+        // Roadmap audit round 4, "UX: copy and label polish" bucket: this was a bare
+        // "No forms match: <value>" with no quotes around the typed term and no
+        // suggestion - every sibling search-empty-state (Dictionary, Resources,
+        // Scenario search) echoes the term in curly quotes and offers a "try a
+        // different term" nudge. Matches that wording; role="status"/aria-live
+        // here were already correct and are left as-is.
+        if (!hits.length) { formResultsWrap.appendChild(U.el("div", { class: "empty", role: "status", "aria-live": "polite" }, ["No forms match “" + formSearch.value.trim() + "”. Try a different term."])); return; }
         formResultsWrap.appendChild(U.el("div", { class: "meta", role: "status", "aria-live": "polite" }, [hits.length + " match" + (hits.length === 1 ? "" : "es")]));
         var grid = U.el("div", { class: "grid" });
         hits.forEach(function (f) { grid.appendChild(buildFormCard(f)); });
@@ -24484,7 +24490,12 @@ window.G = window.G || {};
     const linksPanel = el("div.panel");
     linksPanel.appendChild(el("div.eyebrow", { text: "Related" }));
     const linkRow = el("div.btn-row", { style: "margin-top:6px" });
-    const backupBtn = el("button.btn.sm.ghost", { type: "button", gi: "download", giSize: 14, text: "Export a backup" });
+    // Roadmap audit round 4, "UX: copy and label polish" bucket: this read
+    // "Export a backup" but the button it actually routes to on Settings (and
+    // the matching one on Profile) is labeled plain "Export backup" - a
+    // Soldier following this cross-link was looking for a button that didn't
+    // exist under that exact wording. Matches the real button text.
+    const backupBtn = el("button.btn.sm.ghost", { type: "button", gi: "download", giSize: 14, text: "Export backup" });
     backupBtn.addEventListener("click", () => { location.hash = "#/settings"; });
     linkRow.appendChild(backupBtn);
     const diagBtn = el("button.btn.sm.ghost", { type: "button", gi: "check-circle", giSize: 14, text: "Check data validity" });
@@ -29872,8 +29883,13 @@ window.G = window.G || {};
     mount.appendChild(topicBar);
 
     // ── Search + print ────────────────────────────────────────────────────
+    // Roadmap audit round 4, "UX: copy and label polish" bucket: this was the
+    // only search placeholder in the app using three literal ASCII periods
+    // instead of a real ellipsis - every sibling search input (Dictionary,
+    // Forms, Counseling Examples, Resources, Scenario search, global Search,
+    // Library's in-document search) already uses U+2026 "…". Matches them.
     const search = el("input", { type: "text",
-      placeholder: "Search doctrine (e.g., 'values', 'counseling', 'promotion')...",
+      placeholder: "Search doctrine (e.g., 'values', 'counseling', 'promotion')…",
       "aria-label": "Search doctrine" });
     const printBtn = el("button.btn.ghost.sm.no-print", { text: "Print", onclick: () => {
       let list = store.doctrine(search.value.trim());
