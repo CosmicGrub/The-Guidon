@@ -23,6 +23,14 @@
  * index.html) to a stamp 3 years stale, re-renders #/currency, and confirms
  * the card's own age/status/border-color move to match - proving the
  * tracker reads the real field live rather than a value captured once.
+ *
+ * Roadmap audit round 4, "Test coverage gaps for previously-fixed bug
+ * classes" bucket: added coverage for the other two live-getter DOMAINS
+ * entries, Fitness and Assignments, which share ONE parser (monthYearStamp())
+ * distinct from financeAsOfStamp()/careerAsOfStamp() above - and, since that
+ * shared parser's own malformed-stamp/selfheal-dedup fallback path had zero
+ * coverage anywhere (not even for Career/Finance's dedicated functions),
+ * added a case for it too (Part 5).
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
@@ -152,6 +160,116 @@ rendered2.liveAsOf === "2019"
 (rendered1.ageText !== rendered2.ageText)
   ? ok("the displayed age text changed between the two renders (" + JSON.stringify(rendered1.ageText) + " -> " + JSON.stringify(rendered2.ageText) + "), confirming this is computed live, not cached")
   : bad("the displayed age text did not change after the underlying data changed");
+
+// ============================================================================
+// Roadmap audit round 4, "Test coverage gaps for previously-fixed bug
+// classes" bucket: Fitness and Assignments are the other two DOMAINS entries
+// with a live `get asOf()` accessor - but unlike Career/Finance above,
+// neither derives through its own dedicated stamp function. Both share ONE
+// parser, monthYearStamp() (currency.js), which reads G.fitness.AS_OF /
+// G.assignments.AS_OF ("Month YYYY" prose each module already displays as
+// its own in-page disclaimer) and converts it to the bare YYYY-MM ageOf()
+// expects - and, on a parse failure, falls back to null ("unknown" in the
+// UI) and logs via G.selfheal exactly once per moduleName, same dedup-flag
+// shape as financeAsOfStamp()/careerAsOfStamp() above. Until now nothing
+// exercised either domain's own card, nor the shared parser's fallback path
+// at all - not even for Career/Finance's own dedicated functions.
+// ============================================================================
+async function checkMonthYearDomain(linkHash, shortLabel, moduleName) {
+  const state = await page.evaluate(({ linkHash, moduleName }) => {
+    const D = window.G.currency.DOMAINS;
+    const entry = D.find((d) => d.link === linkHash);
+    if (!entry) return { found: false };
+    const desc = Object.getOwnPropertyDescriptor(entry, "asOf");
+    return {
+      found: true,
+      isGetter: !!(desc && typeof desc.get === "function"),
+      asOfValue: entry.asOf,
+      realAsOf: window.G[moduleName] && window.G[moduleName].AS_OF,
+    };
+  }, { linkHash, moduleName });
+  state.found
+    ? ok("DOMAINS has an entry linking to " + linkHash + " (" + shortLabel + ")")
+    : bad("no DOMAINS entry links to " + linkHash);
+  if (state.found) {
+    state.isGetter
+      ? ok("the " + shortLabel + " domain's asOf is a live `get` accessor reading G." + moduleName + ".AS_OF via the shared monthYearStamp() parser")
+      : bad("the " + shortLabel + " domain's asOf is a plain value, not derived live");
+    /^\d{4}-\d{2}$/.test(state.asOfValue)
+      ? ok("the derived asOf resolves to a bare YYYY-MM stamp (" + state.asOfValue + "), parseable by ageOf(), from the real \"" + state.realAsOf + "\" source string")
+      : bad("the derived asOf did not resolve to a bare YYYY-MM: " + JSON.stringify(state.asOfValue));
+  }
+
+  const rendered = await page.evaluate((shortLabel) => {
+    // Match against the button's OWN trimmed text, not the whole card's
+    // concatenated textContent - Fitness's card also carries a "Read the
+    // source" library cross-link button immediately after "Open Fitness"
+    // with no separating whitespace in textContent ("...Open FitnessRead
+    // the source..."), so a trailing \b word-boundary regex against the
+    // full card text silently never matches (s->R is a word-to-word
+    // transition, not a boundary) for any domain that also has a
+    // libraryId, even though the button itself is right there.
+    const cards = [...document.querySelectorAll(".card-results-grid .panel")];
+    const card = cards.find((c) => [...c.querySelectorAll("button")].some((b) => (b.textContent || "").trim() === "Open " + shortLabel));
+    if (!card) return { found: false };
+    const v = card.querySelector(".k + .v, span.v");
+    return { found: true, ageText: v ? v.textContent : null };
+  }, shortLabel);
+  rendered.found
+    ? ok("the Freshness screen renders a card with an 'Open " + shortLabel + "' button")
+    : bad("no card with an 'Open " + shortLabel + "' button found");
+  if (rendered.found) {
+    (/unknown/i.test(rendered.ageText || "") || rendered.ageText === "—")
+      ? bad("the " + shortLabel + " card's age reads unknown/em-dash even though AS_OF is a real \"Month YYYY\" stamp: " + JSON.stringify(rendered.ageText))
+      : ok("the " + shortLabel + " card shows a real computed age, not the 'unknown' fallback: " + JSON.stringify(rendered.ageText));
+  }
+}
+await checkMonthYearDomain("#/fitness", "Fitness", "fitness");
+await checkMonthYearDomain("#/assignments", "Assignments", "assignments");
+
+// ============================================================================
+// Part 5: the shared parser's malformed-stamp fallback. monthYearStamp()
+// only accepts a literal "Month YYYY" string - if G.fitness.AS_OF ever
+// stops matching that shape (a typo, a reformat), the Fitness domain must
+// fall back to "unknown" (not throw, not silently compute a wrong age) AND
+// log via G.selfheal exactly ONCE per session, even though #/currency's own
+// render() reads d.asOf multiple times per call (once per sort comparison,
+// again for display - see monthYearStamp()'s own comment) and even across
+// TWO separate renders here.
+// ============================================================================
+await page.evaluate(() => { window.G.fitness.AS_OF = "not a real month-year stamp"; });
+await page.evaluate(() => { location.hash = "#/home"; });
+await page.waitForTimeout(200);
+await page.evaluate(() => { location.hash = "#/currency"; });
+await page.waitForTimeout(500);
+const malformed1 = await page.evaluate(() => {
+  // Same button-text match as checkMonthYearDomain() above, not a regex
+  // against the whole card's textContent - see that function's own comment.
+  const cards = [...document.querySelectorAll(".card-results-grid .panel")];
+  const card = cards.find((c) => [...c.querySelectorAll("button")].some((b) => (b.textContent || "").trim() === "Open Fitness"));
+  const v = card ? card.querySelector(".k + .v, span.v") : null;
+  return { ageText: v ? v.textContent : null, cardText: card ? card.textContent : null };
+});
+(malformed1.ageText === "—" && /unknown/i.test(malformed1.cardText || ""))
+  ? ok("a malformed Fitness AS_OF ('not a real month-year stamp') falls back to the '—'/unknown card instead of throwing or showing a wrong age")
+  : bad("malformed Fitness AS_OF did not fall back to unknown: " + JSON.stringify(malformed1));
+
+// Re-render a SECOND time with the same malformed value still in place - the
+// per-moduleName dedup flag (_monthYearWarned.fitness) must still have
+// logged only once total, from the first render's several reads, not once
+// per render and not once per read.
+await page.evaluate(() => { location.hash = "#/home"; });
+await page.waitForTimeout(200);
+await page.evaluate(() => { location.hash = "#/currency"; });
+await page.waitForTimeout(500);
+
+const selfhealEntries = await page.evaluate(async () => {
+  const list = (await window.G.selfheal.recent(50)) || [];
+  return list.filter((e) => e.kind === "currency-derive-fail" && e.key === "fitness");
+});
+selfhealEntries.length === 1
+  ? ok("G.selfheal.log fired exactly ONCE for the malformed Fitness stamp, even though it was read multiple times within one render and again across a second, separate render")
+  : bad("expected exactly 1 selfheal entry for currency-derive-fail/fitness, got " + selfhealEntries.length + ": " + JSON.stringify(selfhealEntries));
 
 noise.length === 0 ? ok("no console errors/warnings") : bad(noise.length + " console msgs; first: " + noise[0]);
 
