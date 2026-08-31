@@ -1,8 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Enhancement backlog round 1, "Android allowBackup contradicts the
+         Privacy Policy" bucket: the app's own #/privacy screen states flatly
+         "no cloud sync" / "no network connection of any kind" and separately
+         promises the squad roster - other people's data - is never bundled
+         into a backup without a separate, explicit opt-in. allowBackup=true
+         (the AGP default) with no exclusion rules let Android's OS-level
+         Auto Backup silently copy this WebView's entire private storage -
+         IndexedDB included, where the roster/profile/every record live -
+         into the Soldier's Google Account cloud backup on the OS's own
+         schedule, with none of GUIDON's own opt-in gating. Disabled
+         outright rather than authoring a dataExtractionRules exclusion,
+         since "nothing leaves this device" is this app's whole stated
+         design goal and there is no legitimate use case here for OS-level
+         cloud backup of app data. -->
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
