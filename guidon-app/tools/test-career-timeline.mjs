@@ -71,11 +71,22 @@ disclaimer === 1
 // ── 2) Real dates set (board + ETS) — both plotted, correctly ordered ─────
 const boardDays = 40, etsDays = 120;
 await page.evaluate(([bd, ed]) => {
+  // Local calendar-date components, not .toISOString() (UTC) - board/ets
+  // date setters and every day-count display elsewhere in the app treat
+  // the stored "YYYY-MM-DD" as the Soldier's own local calendar date.
+  // setDate()/getDate() above are already local; serializing via
+  // toISOString() re-introduced a UTC shift that silently rolled the
+  // stored date forward by one whenever local time is late enough that
+  // adding the timezone offset crosses into the next UTC day (most
+  // evening hours in any timezone behind UTC) - the exact hours this ran
+  // in when first caught, off by exactly +1 day (and so +1 in the
+  // rendered day-count) on both dates.
+  const localISO = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
   const board = new Date(); board.setDate(board.getDate() + bd);
   const ets = new Date(); ets.setDate(ets.getDate() + ed);
   return Promise.all([
-    window.G.store.setSetting("boardDate", board.toISOString().slice(0, 10)),
-    window.G.store.setSetting("etsDate", ets.toISOString().slice(0, 10)),
+    window.G.store.setSetting("boardDate", localISO(board)),
+    window.G.store.setSetting("etsDate", localISO(ets)),
   ]);
 }, [boardDays, etsDays]);
 await page.evaluate(() => { location.hash = "#/settings"; });
