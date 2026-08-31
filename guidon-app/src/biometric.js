@@ -93,6 +93,35 @@ window.G = window.G || {};
     }
   }
 
-  G.biometric = { supported, checkAvailability, authenticate };
+  // Roadmap audit round 5, "Native Android: Security & Shortcut Wiring"
+  // bucket: G.biometricGate re-arms the lock on the NEXT resume, but nothing
+  // ever ran at the moment the app was BACKGROUNDED — Android's task
+  // switcher takes a live bitmap snapshot of the window's current content
+  // the instant it backgrounds, before any biometric overlay exists for
+  // that session. A Soldier with biometric lock on who is sitting on a
+  // sensitive Personal Account screen and hits Home/Recents got a
+  // full-resolution OS-level screenshot of that exact screen sitting in the
+  // app-switcher thumbnail, fully bypassing the lock (and the same window
+  // content is what the OS screenshot action would capture, too). Fix:
+  // MainActivity now exposes a tiny custom JS bridge (WebView
+  // addJavascriptInterface, not a full Capacitor plugin — this is a single
+  // boolean toggle, not a real platform API surface) that flips
+  // WindowManager.LayoutParams.FLAG_SECURE on the Activity's own window,
+  // which blanks both screenshots and the recents-thumbnail for the whole
+  // window. G.biometricGate (index.html) is the sole caller — it already
+  // owns "does the lock apply right now" via its own applies() check, so
+  // this file only forwards that yes/no straight to the native side, same
+  // division of labor as the rest of this wrapper. No-op (silently) on
+  // web/Tauri/file:// and on any native build old enough not to have run
+  // `cap sync` since this shipped, so this is always safe to call.
+  function setSecureScreen(secure) {
+    try {
+      if (isNative && window.AndroidSecureScreen && window.AndroidSecureScreen.setSecure) {
+        window.AndroidSecureScreen.setSecure(!!secure);
+      }
+    } catch (e) {}
+  }
+
+  G.biometric = { supported, checkAvailability, authenticate, setSecureScreen };
 })();
 // END biometric.js
