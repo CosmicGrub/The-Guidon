@@ -238,7 +238,14 @@ window.G = window.G || {};
     searchBox.appendChild(searchInput);
     stage.appendChild(searchBox);
 
-    const resultsBox = el("div", { style: "margin:8px 0" });
+    // Roadmap audit round 4, "Accessibility: missing accessible names, live
+    // regions, and toggle state" bucket: runAndShow() below clears and
+    // repopulates resultsBox on every debounced keystroke (the "N matches"/
+    // "No matches" line plus the hit rows), but nothing announced the
+    // update to a screen-reader user typing in the search box - the exact
+    // "N matches" shape that already gets role="status" at Dictionary's and
+    // Doctrine's own search headers elsewhere in this file.
+    const resultsBox = el("div", { style: "margin:8px 0", role: "status", "aria-live": "polite" });
     stage.appendChild(resultsBox);
 
     function runAndShow(query) {
@@ -277,12 +284,20 @@ window.G = window.G || {};
     // can't be reliably mapped back to this reader's page-index array. ──
     if (d.tocEntries.length) {
       let tocOpen = false;
-      const tocToggle = el("button.btn.sm.ghost", { type: "button", text: "Jump to section ▾" });
+      // Roadmap audit round 4, "Accessibility: missing accessible names, live
+      // regions, and toggle state" bucket: this disclosure toggle flipped
+      // tocPanel's display style without ever touching aria-expanded, so a
+      // screen-reader user got no indication the button opens/closes a
+      // panel or which state it's currently in - matching the aria-expanded
+      // pattern sibling toggles (settingsAdvToggle, filtersToggle) already
+      // use elsewhere in this file: "false" at creation, flipped on click.
+      const tocToggle = el("button.btn.sm.ghost", { type: "button", text: "Jump to section ▾", "aria-expanded": "false" });
       const tocPanel = el("div.panel", { style: "margin-top:8px;display:none;max-height:40vh;overflow-y:auto" });
       tocToggle.addEventListener("click", () => {
         tocOpen = !tocOpen;
         tocPanel.style.display = tocOpen ? "" : "none";
         tocToggle.textContent = tocOpen ? "Jump to section ▴" : "Jump to section ▾";
+        tocToggle.setAttribute("aria-expanded", String(tocOpen));
       });
       d.tocEntries.forEach((label) => {
         const row = el("button.list-detail-row", { type: "button", style: "margin-bottom:4px" }, [el("span.ldr-name", { text: label })]);

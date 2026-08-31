@@ -11392,7 +11392,13 @@ window.G = window.G || {};
       // number of questions
       const qRow = el("div.mb-row");
       qRow.appendChild(el("label.mb-label", { text: "Questions" }));
-      const qSel = el("select");
+      // Roadmap audit round 4, "Accessibility: missing accessible names, live
+      // regions, and toggle state" bucket: qSel/tSel below sit next to a
+      // label.mb-label sibling with no for/id link and no aria-label, so a
+      // screen-reader user tabbing through Mock Board setup heard bare
+      // "combo box, 10" / "combo box, 45s" with no indication of which
+      // setting either control changed.
+      const qSel = el("select", { "aria-label": "Questions" });
       [5, 10, 15, 20].filter((n) => n <= bank.length || n === 5).forEach((n) => qSel.appendChild(el("option", { value: String(n), text: String(n), selected: n === sess.count ? "selected" : null })));
       qSel.addEventListener("change", () => { sess.count = parseInt(qSel.value, 10) || 10; });
       qRow.appendChild(qSel);
@@ -11401,7 +11407,7 @@ window.G = window.G || {};
       // time per question
       const tRow = el("div.mb-row");
       tRow.appendChild(el("label.mb-label", { text: "Seconds per question" }));
-      const tSel = el("select");
+      const tSel = el("select", { "aria-label": "Seconds per question" });
       [30, 45, 60, 90, 0].forEach((n) => tSel.appendChild(el("option", { value: String(n), text: n === 0 ? "No limit" : String(n) + "s", selected: n === sess.seconds ? "selected" : null })));
       tSel.addEventListener("change", () => { sess.seconds = parseInt(tSel.value, 10); });
       tRow.appendChild(tSel);
@@ -12089,7 +12095,15 @@ window.G = window.G || {};
 
     // Category filter
     const cats = ["All", ...Array.from(new Set(allQs.map(q => q.category))).sort()];
-    const catSel = el("select", { style: "margin-top:8px;width:100%" });
+    // Roadmap audit round 4, "Accessibility: missing accessible names, live
+    // regions, and toggle state" bucket: this select has no visible label at
+    // all (the search box above it uses aria-label, but this filter select
+    // never got the same treatment) and no aria-label, so a screen-reader
+    // user heard bare "combo box, All" with nothing telling them it filters
+    // by category - matching the aria-label style already used two lines up
+    // for the search input, and the "Filter by category" selects elsewhere
+    // in this file (Quiz/Flashcards).
+    const catSel = el("select", { style: "margin-top:8px;width:100%", "aria-label": "Filter by category" });
     cats.forEach(c => catSel.appendChild(el("option", { value: c, text: c })));
     mount.appendChild(catSel);
     // NOT mount.appendChild(diffSel) here: `diffSel` was a dangling
@@ -17208,9 +17222,22 @@ window.G = window.G || {};
   }
 
   function mkInput(fld, val) {
+    // Roadmap audit round 4, "Accessibility: missing accessible names, live
+    // regions, and toggle state" bucket: the caller (drawFill, above) builds
+    // each row as a plain <label> sibling next to whatever node mkInput
+    // returns, with no "for"/id pairing - so every one of the ~19 fill-in
+    // forms this function drives (DA 4856, counseling forms, etc.) handed
+    // screen-reader users a control with no accessible name at all; only the
+    // sighted layout implied which label went with which field. Every branch
+    // below now stamps its returned control with aria-label: fld.label so
+    // the visible label text becomes the control's accessible name even
+    // without a for/id link, matching the aria-label style already used for
+    // G.modal's prompt input and leader.js's roster inputs elsewhere in this
+    // file. "static" is skipped - it renders a read-only example div, not a
+    // focusable control, so it has nothing for a label to attach to.
     var t = fld.type, node, get, counter = null;
     if (t === "select" || t === "faultpicker") {
-      node = U.el("select", { class: "in" });
+      node = U.el("select", { class: "in", "aria-label": fld.label || "" });
       var opts = fld.options || [];
       if (t === "faultpicker") opts = ["—", "/", "X", "⊗ (circled X)", "initial"];
       opts.forEach(function (o) {
@@ -17228,10 +17255,10 @@ window.G = window.G || {};
       node = U.el("div", { class: "static-note" }, [fld.example || ""]);
       get = function () { return fld.example || ""; };
     } else if (t === "date") {
-      node = U.el("input", { class: "in", type: "date" }); if (val) node.value = val;
+      node = U.el("input", { class: "in", type: "date", "aria-label": fld.label || "" }); if (val) node.value = val;
       get = function () { return node.value; };
     } else if (t === "citation") {
-      node = U.el("textarea", { class: "in", rows: "4" }); if (val) node.value = val;
+      node = U.el("textarea", { class: "in", rows: "4", "aria-label": fld.label || "" }); if (val) node.value = val;
       counter = U.el("div", { class: "cnt" });
       var maxL = fld.maxLines || 6;
       function updc() {
@@ -17242,7 +17269,7 @@ window.G = window.G || {};
       node.addEventListener("input", updc); setTimeout(updc, 0);
       get = function () { return node.value; };
     } else if (t === "bullets") {
-      node = U.el("textarea", { class: "in", rows: "4", placeholder: "One bullet per line" });
+      node = U.el("textarea", { class: "in", rows: "4", placeholder: "One bullet per line", "aria-label": fld.label || "" });
       if (Array.isArray(val)) node.value = val.join("\n"); else if (val) node.value = val;
       counter = U.el("div", { class: "cnt" });
       var maxB = fld.maxLines || 4, maxC = fld.maxChars || 0;
@@ -17262,7 +17289,7 @@ window.G = window.G || {};
       // and 18 more like it across ~19 forms) rendered as a tiny one-line
       // box that could not accept a newline, with no line counter even for
       // the fields that declare their own maxLines expecting one.
-      node = U.el("textarea", { class: "in", rows: "4" }); if (val) node.value = val;
+      node = U.el("textarea", { class: "in", rows: "4", "aria-label": fld.label || "" }); if (val) node.value = val;
       get = function () { return node.value; };
       if (fld.maxLines) {
         counter = U.el("div", { class: "cnt" });
@@ -17275,7 +17302,7 @@ window.G = window.G || {};
         node.addEventListener("input", updt); setTimeout(updt, 0);
       }
     } else { // text
-      node = U.el("input", { class: "in", type: "text" }); if (val) node.value = val;
+      node = U.el("input", { class: "in", type: "text", "aria-label": fld.label || "" }); if (val) node.value = val;
       get = function () { return node.value; };
     }
     return { node: node, get: get, counter: counter };
@@ -19120,7 +19147,14 @@ window.G = window.G || {};
       if (g.target) meta.appendChild(el("span.chip", { gi: "target", giSize: 12, text: g.target }));
       card.appendChild(meta);
       const ctl = el("div.idp-goal-ctl");
-      const sel = el("select", { "data-goal-idx": String(i) });
+      // Roadmap audit round 4, "Accessibility: missing accessible names, live
+      // regions, and toggle state" bucket: this select had no label at all -
+      // visually it sits under the goal-text div with no <label> wired to
+      // it, so a screen-reader user landing on it heard only "combo box,
+      // Not started" with no indication which goal it belonged to among a
+      // list of many. aria-label folds the goal text in, matching the style
+      // used for leader.js's per-row inputs elsewhere in this file.
+      const sel = el("select", { "data-goal-idx": String(i), "aria-label": "Status for goal: " + (g.goal || "") });
       ["Not started", "In progress", "Done"].forEach((st) => sel.appendChild(el("option", { value: st, text: st, selected: g.status === st ? "selected" : null })));
       // Deep-gap follow-up ("Screen-Reader Announcements" bucket): render()
       // rebuilds the entire Develop page from scratch (same as every other
@@ -20441,7 +20475,15 @@ window.G = window.G || {};
       // separated from the field it actually describes - moved down here,
       // next to MOS specifically.
       card.appendChild(el("label.ob-field-label", { text: "MOS (e.g. 92A, 11B, 25U)", style:"margin-top:14px;display:block" }));
-      const mosInp = el("input.ob-input", { type:"text", placeholder:"92A", maxlength:"5", style:"text-transform:uppercase", list:"ob-mos-codes" });
+      // Roadmap audit round 4, "Accessibility: missing accessible names, live
+      // regions, and toggle state" bucket: this label.ob-field-label above
+      // is appended as a plain sibling, never wired via for/id to the input
+      // that follows it (same gap as the ETS/Unit fields below) - a
+      // screen-reader user tabbing in heard only "edit text" with no name.
+      // aria-label restores an accessible name without touching the visual
+      // layout; the MOS placeholder ("92A") was never a substitute since
+      // placeholders clear once a value is typed and aren't read by every AT.
+      const mosInp = el("input.ob-input", { type:"text", placeholder:"92A", maxlength:"5", style:"text-transform:uppercase", list:"ob-mos-codes", "aria-label": "MOS" });
       mosInp.value = data.mos || "";
       mosInp.addEventListener("input", () => { data.mos = mosInp.value.toUpperCase().trim(); refreshLiveSummary(); }); // Tier 2(e)
       card.appendChild(mosInp);
@@ -20455,7 +20497,11 @@ window.G = window.G || {};
 
       // ETS date
       card.appendChild(el("label.ob-field-label", { text: "ETS / separation date (optional)", style:"margin-top:14px;display:block" }));
-      const etsInp = el("input.ob-input", { type:"date" });
+      // Same unlinked label/control gap as MOS above, worse here since a
+      // native date input has no visible placeholder text at all to fall
+      // back on - a screen-reader user heard bare "MM/DD/YYYY" spinbuttons
+      // with nothing identifying them as the ETS date.
+      const etsInp = el("input.ob-input", { type:"date", "aria-label": "ETS / separation date" });
       etsInp.value = data.etsDate || "";
       etsInp.addEventListener("change", () => { data.etsDate = etsInp.value; });
       card.appendChild(etsInp);
@@ -20463,7 +20509,8 @@ window.G = window.G || {};
 
       // Unit
       card.appendChild(el("label.ob-field-label", { text: "Unit (optional)", style:"margin-top:14px;display:block" }));
-      const unitInp = el("input.ob-input", { type:"text", placeholder:"62nd Engineer Bn" });
+      // Same unlinked label/control gap as MOS/ETS above.
+      const unitInp = el("input.ob-input", { type:"text", placeholder:"62nd Engineer Bn", "aria-label": "Unit" });
       unitInp.value = data.unit || "";
       unitInp.addEventListener("input", () => { data.unit = unitInp.value.trim(); });
       card.appendChild(unitInp);
@@ -29486,7 +29533,15 @@ window.G = window.G || {};
         if (extraComps.length || tiers.length || rendModes.length) {
           const detailsRow = el("div", { style: "margin-top:6px" });
           const detailsBody = el("div", { style: "display:none;margin-top:6px" });
-          const detailsBtn = el("button.btn.ghost.sm", { type: "button", text: "Details ▾", style: "padding:2px 8px;font-size:.76rem" });
+          // Roadmap audit round 4, "Accessibility: missing accessible names,
+          // live regions, and toggle state" bucket: this button flips
+          // detailsBody's display style without ever touching aria-expanded
+          // - a screen-reader user got no indication this was a disclosure
+          // control or which state it was in, unlike the moreToggle/
+          // filtersToggle/settingsAdvToggle siblings cited two comments
+          // below, which all set aria-expanded="false" at creation and flip
+          // it in their click handler.
+          const detailsBtn = el("button.btn.ghost.sm", { type: "button", text: "Details ▾", style: "padding:2px 8px;font-size:.76rem", "aria-expanded": "false" });
           detailsBtn.addEventListener("click", (e) => {
             e.stopPropagation();
             const open = detailsBody.style.display !== "none";
@@ -29498,6 +29553,7 @@ window.G = window.G || {};
             // (U+25B4, small) open, matching the pre-existing Theme picker
             // toggle this pass cites as the pattern to follow.
             detailsBtn.textContent = open ? "Details ▾" : "Details ▴";
+            detailsBtn.setAttribute("aria-expanded", String(!open));
           });
           detailsRow.appendChild(detailsBtn);
           const detailsMeta = el("div.sc-meta-row", { style: "margin-top:4px" });
