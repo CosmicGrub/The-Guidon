@@ -15068,8 +15068,18 @@ window.G = window.G || {};
       card.appendChild(el("label", { text: "Tiers" })); card.appendChild(tierWrap);
 
       // competencies
-      const compWrap = el("div.mini-row", { style: "margin-top:6px" });
-      ["Leads", "Develops", "Achieves"].forEach((c) => {
+      // Enhancement backlog round 4, "Isolated feature-parity gaps across
+      // study and career tools" bucket: was hardcoded to a 3-item subset
+      // ["Leads","Develops","Achieves"] of the real 6-value LRM tag
+      // vocabulary - DIMS (module-level const above, shared with
+      // store.DIMS) is the full list, and the Score-deltas grid a couple
+      // hundred lines below this same editor already iterates all 6 of
+      // them per choice. A scenario authored through the Guided tab could
+      // never be tagged Character/Presence/Intellect here even though its
+      // own choices could (and, per the shared scoring engine, ARE) scored
+      // against those same three dimensions - the checkbox row just had no
+      // way to show or set it.
+      DIMS.forEach((c) => {
         const cb = el("input", { type: "checkbox" }); cb.checked = (model.competency || []).includes(c);
         cb.addEventListener("change", () => {
           model.competency = model.competency || [];
@@ -15468,7 +15478,21 @@ window.G = window.G || {};
         if (!v.ok) { msg.appendChild(el("div.feedback.bad", { html: "Cannot save. Fix:<br>• " + v.errors.map(esc).join("<br>• ") })); return; }
         await store.saveUserScenario(deep(m)); util.toast("Scenario saved."); onDone && onDone();
       } }),
-      el("button.btn.ghost", { text: "Cancel", onclick: () => onDone && onDone() }),
+      // Enhancement backlog round 4, "Isolated feature-parity gaps across
+      // study and career tools" bucket: Cancel used to call onDone()
+      // immediately with zero warning, discarding an entire in-progress
+      // scenario edit (every node, choice, and metadata field touched
+      // since opening the editor) in one click - unlike every other
+      // destructive action in this same editor (node delete at ~line
+      // 14932, the ending-node toggle at ~line 14979, choice removal a bit
+      // further down), which all confirm first. Matches those same
+      // G.modal.confirm({danger:true}) + "This can't be undone" call/
+      // wording, confirming unconditionally rather than adding a dirty-
+      // check - the same tradeoff those sibling actions already make.
+      el("button.btn.ghost", { text: "Cancel", onclick: async () => {
+        if (!(await G.modal.confirm("Discard this scenario and any unsaved changes? This can't be undone.", { danger: true }))) return;
+        onDone && onDone();
+      } }),
     ]);
 
     mount.appendChild(body);
@@ -15732,12 +15756,27 @@ window.G = window.G || {};
         // "Related doctrine" link already does (see that call site's onclick
         // in index.html) - reuses Doctrine's own substring search with zero
         // new data/curation, pre-filling it with this term's own acronym.
-        const xlBtn = el("button.btn.ghost.sm.dict-doctrine-link", { type: "button", style: "margin-top:8px", text: "Related doctrine →" });
-        xlBtn.addEventListener("click", () => {
-          if (G.views) G.views._doctrineSeed = selected.a;
-          location.hash = "#/doctrine";
-        });
-        panel.appendChild(xlBtn);
+        //
+        // Enhancement backlog round 4, "Isolated feature-parity gaps across
+        // study and career tools" bucket: that substring search is a plain
+        // case-insensitive .includes() over Doctrine's 336-entry corpus -
+        // fine for a specific multi-word acronym like "METT-TC", but for
+        // this dictionary's many 1-2 char entries (e.g. "CO", "IN", "AR")
+        // it matches nearly every doctrine entry (those two letters appear
+        // inside hundreds of unrelated words/refs), returning what looks
+        // like a targeted cross-reference but is actually close to the
+        // entire corpus. Gating on length >= 3 hides the button rather than
+        // seed Doctrine with a filter indistinguishable from no filter at
+        // all - short acronyms are exactly the ones this substring approach
+        // can't meaningfully narrow down.
+        if (selected.a && selected.a.length >= 3) {
+          const xlBtn = el("button.btn.ghost.sm.dict-doctrine-link", { type: "button", style: "margin-top:8px", text: "Related doctrine →" });
+          xlBtn.addEventListener("click", () => {
+            if (G.views) G.views._doctrineSeed = selected.a;
+            location.hash = "#/doctrine";
+          });
+          panel.appendChild(xlBtn);
+        }
         results.appendChild(panel);
       }
 
@@ -16661,6 +16700,23 @@ window.G = window.G || {};
             el("div.stat", {}, [el("span.k", { text: (w.resource || "Untitled") + " — " + (w.unit || "") }), el("span.v", { text: w.risk || "" })]),
             el("div.meta", { text: (w.category || "") + " · value " + LEVELS[w.valueIdx] + " · " + (w.date || "") }),
             el("div.btn-row", { style: "margin-top:8px" }, [
+              // Enhancement backlog round 4, "Isolated feature-parity gaps
+              // across study and career tools" bucket: saved worksheets
+              // previously had a Delete button only - once saved, a Soldier
+              // could never reopen a worksheet to correct or update it, only
+              // discard it and start over from blank or one of the five
+              // canned templates above. This reuses that exact same
+              // population path (set G.risk._pendingModel, then re-run
+              // G.risk.render(mount) - see the template <select>'s "change"
+              // handler a few dozen lines up) since `rec` already carries
+              // every field renderWorksheet()'s model reads (unit, resource,
+              // location, category, analyst, date, valueIdx, valueDesc,
+              // likelihood); the extra saved-only fields (id, risk, highest,
+              // likeIdx) are simply ignored by the Object.assign default-merge.
+              el("button.btn.sm.ghost", { text: "Load", onclick: () => {
+                G.risk._pendingModel = Object.assign({}, w);
+                G.risk.render(mount);
+              } }),
               el("button.btn.sm.ghost", { text: "Delete", "data-visible-pos": String(visiblePos), onclick: async () => {
                 await _serialize(async () => { const l = await loadAll(); await saveAll(l.filter((x) => x.id !== w.id)); });
                 await refreshSaved();
@@ -26452,6 +26508,18 @@ window.G = window.G || {};
     calc.appendChild(payRow); calc.appendChild(pctRow);
     const out = el("div.fin-calc-out", { role: "status", "aria-live": "polite" });
     calc.appendChild(out);
+    // Enhancement backlog round 4, "Isolated feature-parity gaps across
+    // study and career tools" bucket: set once the compound-growth
+    // projector below exists. Before this, the two calculators sat side by
+    // side (see calcGrid, the shared .panel-grid-2 comment above) but never
+    // actually talked to each other - the projector's "Monthly
+    // contribution" input hardcoded value:"500" regardless of what a
+    // Soldier's own pay/contribution-% actually produced here. recalc()
+    // calls this (a no-op until the projector wires it up, a few dozen
+    // lines down) with the real computed total every time it re-runs, so
+    // the projector always reflects this calculator's own output instead
+    // of an unrelated made-up number.
+    let syncProjectorInput = null;
     function recalc() {
       const m = matchDollars(payIn.value, pctIn.value);
       util.clear(out);
@@ -26470,6 +26538,7 @@ window.G = window.G || {};
       } else {
         out.appendChild(el("div.fin-good", { text: "\u2713 You're capturing the full government match." }));
       }
+      if (syncProjectorInput) syncProjectorInput(m.allTotal);
     }
     let d1 = null;
     [payIn, pctIn].forEach((inp) => inp.addEventListener("input", () => { clearTimeout(d1); d1 = setTimeout(recalc, 60); }));
@@ -26518,6 +26587,20 @@ window.G = window.G || {};
     let d2 = null;
     [mIn, yIn, rIn].forEach((inp) => inp.addEventListener("input", () => { clearTimeout(d2); d2 = setTimeout(reproj, 60); }));
     reproj();
+    // Enhancement backlog round 4, "Isolated feature-parity gaps across
+    // study and career tools" bucket: wires this field to the match-
+    // capture calculator's real output (see syncProjectorInput's
+    // declaration and comment above, next to recalc()) instead of leaving
+    // it at the hardcoded value:"500" set above - re-running recalc() here
+    // immediately overwrites that default with the actual computed total
+    // for the calculator's current payIn/pctIn values, and every future
+    // edit to payIn/pctIn re-syncs it the same way through recalc()'s own
+    // "if (syncProjectorInput) syncProjectorInput(m.allTotal)" call.
+    syncProjectorInput = (total) => {
+      mIn.value = String(Math.max(0, Math.round(Number(total) || 0)));
+      reproj();
+    };
+    recalc();
     calcGrid.appendChild(proj);
     host.appendChild(calcGrid);
   }
@@ -29135,8 +29218,25 @@ window.G = window.G || {};
     // neither, so every keystroke rebuilt up to all 182 rich, multi-element
     // scenario cards synchronously on the main thread.
     const TRAIN_CAP = 60;
+    // Enhancement backlog round 4, "Isolated feature-parity gaps across
+    // study and career tools" bucket: buildGrid() capped the catalogue at
+    // TRAIN_CAP with no way to see the rest - Doctrine and the Definitions/
+    // Glossary tab both solved this exact "N of a bigger list" shape with a
+    // "Load N more" button (see Definitions' own visibleCap/lastFilterKey
+    // pair a few thousand lines up in this file); Train never got the
+    // equivalent, so a catalogue search matching more than 60 scenarios
+    // silently hid everything past the 60th with no indication more exist
+    // beyond the "(showing first 60)" count text. trainVisibleCap mirrors
+    // that same pattern: starts at TRAIN_CAP, resets back to TRAIN_CAP
+    // whenever the active search/tab/chip combination changes (so switching
+    // filters doesn't leave a stale, oversized cap from a previous, broader
+    // search), and grows by TRAIN_CAP each time "Load more" is clicked.
+    let trainVisibleCap = TRAIN_CAP;
+    let lastTrainFilterKey = null;
     function buildGrid() {
       const q = (searchInput.value || "").trim().toLowerCase();
+      const trainFilterKey = q + "::" + activeFilter + "::" + activeComp + "::" + activeDiff;
+      if (trainFilterKey !== lastTrainFilterKey) { trainVisibleCap = TRAIN_CAP; lastTrainFilterKey = trainFilterKey; }
       const modeFiltered = activeFilter === "training"
         ? allScenarios.filter((s) => s.defaultMode === "training")
         : activeFilter === "scenario"
@@ -29182,14 +29282,14 @@ window.G = window.G || {};
       // Result count line
       if (q || activeComp || activeDiff) {
         gridWrap.appendChild(el("div.search-header", { role: "status", "aria-live": "polite" }, [
-          el("span.search-count", { text: filtered.length + " scenario" + (filtered.length===1?"":"s") + (filtered.length > TRAIN_CAP ? " (showing first " + TRAIN_CAP + ")" : "") }),
+          el("span.search-count", { text: filtered.length + " scenario" + (filtered.length===1?"":"s") + (filtered.length > trainVisibleCap ? " (showing first " + trainVisibleCap + ")" : "") }),
           (q ? el("span.search-breakdown", { text: " · " + q }) : null),
           (activeComp ? el("span.search-breakdown", { text: " · " + activeComp }) : null),
           (activeDiff ? el("span.search-breakdown", { text: " · " + activeDiff }) : null),
         ].filter(Boolean)));
       }
       const grid = el("div.grid");
-      filtered.slice(0, TRAIN_CAP).forEach((sc) => {
+      filtered.slice(0, trainVisibleCap).forEach((sc) => {
         const isTraining = sc.defaultMode === "training";
         const primaryComp = (sc.competency || [])[0] || "";
         const compColor = COMP_COLORS[primaryComp] || "var(--text-dim)";
@@ -29272,6 +29372,15 @@ window.G = window.G || {};
         grid.appendChild(card);
       });
       gridWrap.appendChild(grid);
+      if (filtered.length > trainVisibleCap) {
+        const moreBtn = el("button.btn.ghost.sm", { type: "button", style: "margin-top:10px", text: "Load " + Math.min(TRAIN_CAP, filtered.length - trainVisibleCap) + " more" });
+        moreBtn.addEventListener("click", () => {
+          trainVisibleCap += TRAIN_CAP;
+          buildGrid();
+          try { if (G.util.announce) G.util.announce("Showing " + Math.min(filtered.length, trainVisibleCap) + " of " + filtered.length + " scenarios."); } catch (e) {}
+        });
+        gridWrap.appendChild(moreBtn);
+      }
     }
 
     let trainSearchDeb;
