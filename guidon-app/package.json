@@ -159,7 +159,10 @@
     "test:biometric-lock": "node tools/test-biometric-lock.mjs",
     "test:rapid-fire-card-sizing": "node tools/test-rapid-fire-card-sizing.mjs",
     "test:motion-os-default": "node tools/test-motion-os-default.mjs",
-    "test:board-drill-skip-to-card": "node tools/test-board-drill-skip-to-card.mjs"
+    "test:board-drill-skip-to-card": "node tools/test-board-drill-skip-to-card.mjs",
+    "test:gradebullet": "node tools/test-gradebullet.mjs",
+    "test:write-sitrep": "node tools/test-write-sitrep.mjs",
+    "test:essay-drill": "node tools/test-essay-drill.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",

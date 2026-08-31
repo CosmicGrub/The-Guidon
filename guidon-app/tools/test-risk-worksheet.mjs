@@ -14,6 +14,18 @@
  * test-baseline-coverage.mjs's only #/risk block 100% clean, because that
  * block never calls Delete and never fires two mutations concurrently. This
  * file closes that gap.
+ *
+ * Roadmap audit round 5, "Test Coverage Gaps" bucket: two more real gaps
+ * added below, both confirmed missing by grepping every test file before
+ * writing anything here. (1) renderWorksheet()'s "Load" button (sets
+ * G.risk._pendingModel and re-renders so header fields/computed risk band
+ * are pre-filled from a saved record) had zero coverage — only "Delete" was
+ * ever clicked. (2) the "Print / Save" button's hand-assembled DA 7278
+ * report (util.printHTML) had zero coverage, unlike its three sibling
+ * hand-built print paths in test-print-paths.mjs (Progress/Action
+ * Plan/Memo), which that file's own header notes "all three have shipped
+ * real bugs before" — the same class of bug (unescaped field -> stored XSS)
+ * is just as reachable here since every risk-worksheet field is free text.
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
@@ -31,6 +43,12 @@ page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 
 await page.goto(url, { waitUntil: "load" });
 await page.waitForTimeout(700);
+// window.print() is stubbed up front (same technique test-print-paths.mjs
+// uses) for the "Print / Save" case below — real print() can hang/behave
+// oddly headless, and that case only needs the #print-holder DOM
+// util.printHTML() builds before ever calling window.print().
+await page.addInitScript(() => { window.print = () => {}; });
+await page.evaluate(() => { window.print = () => {}; });
 const guestCard = page.locator(".ob-mode-card", { hasText: /guest session/i }).first();
 await guestCard.waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
 if (await guestCard.count()) {
@@ -105,7 +123,103 @@ const afterSingleDelete = await page.evaluate(async () => (await window.G.db.get
   ? ok("the deleted worksheet's card is also removed from the DOM")
   : bad("deleted worksheet's card is still rendered");
 
-// ==================== 4) Concurrent Save + Delete regression test ====================
+// ==================== 4) Load pre-fills the header fields + computed Risk Level from a saved worksheet ====================
+// Roadmap audit round 5, "Test Coverage Gaps" bucket: renderWorksheet()'s
+// "Load" button (el("button.btn.sm.ghost", {text:"Load", onclick: ...})
+// right next to "Delete" on every saved-worksheet card) had never been
+// clicked by any test - only Delete was covered. Seed one saved worksheet
+// with distinctive values in every header field plus a valueIdx/likelihood
+// combination that recomputes to a real, known band (4 + 4 = score 8 ->
+// riskBand()'s High bucket, the same combination test-baseline-coverage.mjs
+// already uses for its own single #/risk assertion), click that card's own
+// "Load" button, and confirm every field actually came from the loaded
+// record - not leftover from whatever the worksheet held before Load was
+// clicked - and that the computed output recomputed fresh from the loaded
+// valueIdx/likelihood rather than just echoing the record's stored `risk`
+// string.
+await page.evaluate(() => window.G.db.put("kv", { k: "risk:all", v: [
+  { id: "rw-loadtest", unit: "3-3 IN", resource: "Load Test Resource", location: "Test FOB", category: "Physical security", analyst: "SGT Test", date: "2026-05-01", valueIdx: 4, valueDesc: "Load-button coverage fixture", likelihood: { "Insider Threat": 4 }, risk: "High", highest: "Insider Threat", likeIdx: 4 },
+] }));
+await goto("#/");
+await goto("#/risk");
+(await page.locator(".card", { hasText: "Load Test Resource" }).count()) === 1 ? ok("the seeded worksheet renders as a saved card before Load is clicked") : bad("seeded 'Load Test Resource' card missing");
+
+await page.locator(".card", { hasText: "Load Test Resource" }).locator("button", { hasText: "Load" }).click();
+await page.waitForTimeout(400);
+
+const loadedFields = {
+  unit: await page.locator('input[aria-label="Unit or Organization"]').inputValue(),
+  resource: await page.locator('input[aria-label="Inspected Resource"]').inputValue(),
+  location: await page.locator('input[aria-label="Resource Location"]').inputValue(),
+  category: await page.locator('input[aria-label="Resource Category"]').inputValue(),
+  analyst: await page.locator('input[aria-label="Analyst"]').inputValue(),
+  date: await page.locator('input[aria-label="Date"]').inputValue(),
+  valueIdx: await page.locator('select[aria-label="Resource Value Rating"]').inputValue(),
+  likelihood: await page.locator('select[aria-label="Aggressor likelihood — Insider Threat"]').inputValue(),
+};
+const expectedFields = { unit: "3-3 IN", resource: "Load Test Resource", location: "Test FOB", category: "Physical security", analyst: "SGT Test", date: "2026-05-01", valueIdx: "4", likelihood: "4" };
+const fieldsMatch = Object.keys(expectedFields).every((k) => loadedFields[k] === expectedFields[k]);
+fieldsMatch
+  ? ok("clicking Load pre-fills every header field from the saved record (unit/resource/location/category/analyst/date/valueIdx/likelihood)")
+  : bad("fields after Load: " + JSON.stringify(loadedFields) + " expected: " + JSON.stringify(expectedFields));
+
+const loadedComputed = await page.locator('[aria-label="Computed risk level"]').textContent();
+/RISK LEVEL: HIGH/.test(loadedComputed)
+  ? ok("the computed RISK LEVEL after Load matches the loaded record's valueIdx+likelihood (score 8 -> High)")
+  : bad("computed risk level after Load: " + JSON.stringify(loadedComputed));
+
+// cleanup before the next section reuses "risk:all"
+await page.evaluate(() => window.G.db.put("kv", { k: "risk:all", v: [] }));
+
+// ==================== 5) "Print / Save" builds a real DA 7278 report with escaped, computed content ====================
+// Roadmap audit round 5, "Test Coverage Gaps" bucket: the "Print / Save"
+// button hand-assembles an HTML string (unit/resource/location/category/
+// analyst/date, aggressor-likelihood table, highest-aggressor summary,
+// computed RISK LEVEL) and hands it straight to util.printHTML() - the same
+// #print-holder pipeline test-print-paths.mjs already proved has shipped
+// real stored-XSS bugs for OTHER hand-built reports in this app (its own
+// header comment: "all three have shipped real bugs before"). Every field
+// here is free text a Soldier types, so the same class of bug is just as
+// reachable. Fills distinctive HTML-special-character text into two fields,
+// drives a known score (4+4=8 -> High, same combination as section 4 above)
+// so the computed band is deterministic, and asserts the printed output
+// both contains the exact ESCAPED field values and does NOT contain the
+// raw unescaped markup (which would mean the payload could execute once
+// actually printed/opened).
+await goto("#/");
+await goto("#/risk");
+await page.fill('input[aria-label="Unit or Organization"]', "<b>1-1 IN</b>");
+await page.fill('input[aria-label="Inspected Resource"]', "<script>window.__riskPrintXss=1</script>Arms Room");
+await page.locator('select[aria-label="Resource Value Rating"]').selectOption("4");
+await page.locator('select[aria-label="Aggressor likelihood — Insider Threat"]').selectOption("4");
+await page.waitForTimeout(300);
+
+await page.locator("button", { hasText: /Print \/ Save/ }).click();
+await page.waitForTimeout(500);
+const riskPrint = await page.evaluate(() => {
+  const h = document.querySelector("#print-holder");
+  const html = h ? h.innerHTML : "";
+  if (h) h.remove();
+  return html;
+});
+/&lt;b&gt;1-1 IN&lt;\/b&gt;/.test(riskPrint) ? ok("Print / Save escapes the Unit field's HTML-special-character text") : bad("escaped Unit text not found in risk print: " + riskPrint.slice(0, 200));
+/&lt;script&gt;window\.__riskPrintXss=1&lt;\/script&gt;Arms Room/.test(riskPrint) ? ok("Print / Save escapes the Inspected Resource field's injected script tag") : bad("escaped Resource text not found in risk print: " + riskPrint.slice(0, 200));
+const riskPrintHasRawTag = /<script>window\.__riskPrintXss=1<\/script>/.test(riskPrint) || /<b>1-1 IN<\/b>/.test(riskPrint);
+!riskPrintHasRawTag ? ok("the raw, unescaped markup is not present anywhere in the printed report") : bad("raw unescaped markup leaked into risk print: " + riskPrint.slice(0, 300));
+const riskPrintXssFired = await page.evaluate(() => !!window.__riskPrintXss);
+!riskPrintXssFired ? ok("the injected script payload did not actually execute") : bad("XSS payload executed - window.__riskPrintXss was set");
+/RISK LEVEL: HIGH/.test(riskPrint) ? ok("the printed report includes the correct computed RISK LEVEL band (High)") : bad("printed risk band missing/wrong: " + riskPrint.slice(0, 300));
+
+// cleanup before the concurrent-write section below reuses "risk:all"
+await page.evaluate(() => window.G.db.put("kv", { k: "risk:all", v: [
+  { id: "rw-bravo", resource: "Worksheet Bravo", unit: "2-2 IN", category: "Test", valueIdx: 1, likelihood: {}, risk: "Low" },
+] }));
+await goto("#/");
+await goto("#/risk");
+await page.locator("button", { hasText: /^Reset$/ }).click();
+await page.waitForTimeout(300);
+
+// ==================== 6) Concurrent Save + Delete regression test ====================
 // This is the actual regression coverage for the _serialize() write-queue
 // guard: fire a Save (of a brand-new worksheet) and a Delete (of the
 // existing Bravo card) close enough together that neither click's async
