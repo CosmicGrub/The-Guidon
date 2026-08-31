@@ -4,4 +4,18 @@
     <string name="title_activity_main">GUIDON</string>
     <string name="package_name">app.guidon.trainer</string>
     <string name="custom_url_scheme">app.guidon.trainer</string>
+    <!-- Roadmap audit round 4, "Native platform deeper integration gaps"
+         bucket: labels for res/xml/shortcuts.xml's 3 launcher shortcuts,
+         kept word-for-word identical to manifest.webmanifest's own
+         "shortcuts" array (src/manifest.webmanifest) so the PWA install and
+         this native APK never describe the same shortcut two different
+         ways. android:shortcutShortLabel/LongLabel must be string
+         resources, not inline literals - the system may read them before
+         the app process is even running. -->
+    <string name="shortcut_board_short">Drill</string>
+    <string name="shortcut_board_long">Board Drill</string>
+    <string name="shortcut_progress_short">Progress</string>
+    <string name="shortcut_progress_long">Progress</string>
+    <string name="shortcut_drills_short">Drills</string>
+    <string name="shortcut_drills_long">NCOPDS Drills</string>
 </resources>

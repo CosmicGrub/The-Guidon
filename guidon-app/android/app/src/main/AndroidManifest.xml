@@ -37,6 +37,19 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- Roadmap audit round 4, "Native platform deeper integration
+                 gaps" bucket: manifest.webmanifest (src/manifest.webmanifest)
+                 declares 3 shortcuts (Board Drill, Progress, NCOPDS Drills)
+                 that Chrome surfaces on an installed PWA icon's long-press
+                 menu - this native APK had no equivalent at all until this
+                 meta-data entry pointed ShortcutManager at
+                 res/xml/shortcuts.xml, whose own header comment covers the
+                 same 3 destinations/labels and why routing them into an
+                 actual in-app navigation is left as a follow-up. -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+
         </activity>
 
         <provider
