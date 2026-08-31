@@ -15079,6 +15079,7 @@ window.G = window.G || {};
       // own choices could (and, per the shared scoring engine, ARE) scored
       // against those same three dimensions - the checkbox row just had no
       // way to show or set it.
+      const compWrap = el("div.mini-row", { style: "margin-top:6px" });
       DIMS.forEach((c) => {
         const cb = el("input", { type: "checkbox" }); cb.checked = (model.competency || []).includes(c);
         cb.addEventListener("change", () => {
