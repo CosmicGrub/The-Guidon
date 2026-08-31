@@ -2,8 +2,13 @@
   "name": "guidon-app",
   "version": "1.4.25",
   "private": true,
+  "license": "UNLICENSED",
   "type": "module",
   "description": "GUIDON packaging: installable PWA bundle, standalone single file, Windows desktop app, Android app",
+  "engines": {
+    "node": ">=24"
+  },
+  "_engines_note": "Roadmap audit round 5, \"Dependency & CI/Build Hygiene\" bucket: added alongside license. ci.yml pins NODE_VERSION 24 explicitly (see its own env block comment on why 24 specifically), and @capacitor/cli - one of this project's own dependencies - already declares its own engines.node >=20.0.0. Without this field a contributor on an older Node got no warning at all from this project's own manifest before hitting a real failure partway through install/build; \">=24\" matches CI exactly rather than the looser >=20 floor some transitive deps accept, since CI is this project's actual source of truth for \"supported Node\".",
   "scripts": {
     "icons": "node tools/make-icons.mjs web/icons",
     "build": "node tools/build.mjs",
