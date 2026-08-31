@@ -66,20 +66,24 @@ async function goto(hash) {
 await page.evaluate(() => window.G.db.put("kv", { k: "risk:all", v: [] }));
 
 // ==================== 1) CRM 5-Step Process tab ====================
+// Roadmap audit round 5, "Content Accuracy" bucket: the tab's own h3 heading
+// was renamed from "Composite Risk Management" to "Risk Management (RM)" -
+// board question rm-5's own citations say ATP 5-19's current (Nov 2021)
+// edition doesn't use "composite" at all. Assertions below updated to match.
 await goto("#/risk");
 (await page.locator("h2", { hasText: "Risk Management" }).count()) ? ok("#/risk view renders") : bad("#/risk heading missing");
-(await page.locator("h3", { hasText: "Composite Risk Management" }).count()) === 0
+(await page.locator("h3", { hasText: "Risk Management (RM)" }).count()) === 0
   ? ok("CRM 5-Step content is not shown by default (Worksheet tab is default)")
   : bad("CRM content shown before switching tabs");
 await page.locator(".tabbar button", { hasText: "CRM 5 Steps" }).click();
 await page.waitForTimeout(300);
-const crmHeading = await page.locator("h3", { hasText: "Composite Risk Management" }).count();
+const crmHeading = await page.locator("h3", { hasText: "Risk Management (RM)" }).count();
 crmHeading ? ok("clicking the 'CRM 5 Steps' tab renders the 5-Step Process content") : bad("CRM tab click did not render its content");
 const crmSteps = await page.locator("b", { hasText: /^(Identify Hazards|Assess Hazards|Develop Controls|Implement Controls|Supervise and Evaluate)$/ }).count();
 crmSteps === 5 ? ok("all 5 real CRM steps render") : bad("expected 5 CRM step titles, found " + crmSteps);
 await page.locator(".tabbar button", { hasText: "DA 7278 Worksheet" }).click();
 await page.waitForTimeout(300);
-(await page.locator("h3", { hasText: "Composite Risk Management" }).count()) === 0
+(await page.locator("h3", { hasText: "Risk Management (RM)" }).count()) === 0
   ? ok("switching back to 'DA 7278 Worksheet' hides the CRM content again")
   : bad("CRM content still present after switching back to the Worksheet tab");
 
