@@ -16629,29 +16629,52 @@ window.G = window.G || {};
   var SAVE_KEY = "forms:saved";
   var state = { tab: "guided", ex: false, drafts: {} };
   var _autoSaveTimer = null;
-  var _pendingAutoSave = null; // {formId, values} still waiting out the debounce window
-  function doAutoSave(formId, values) {
+  var _pendingAutoSave = null; // {formId, values, sid} still waiting out the debounce window
+  // Roadmap audit round 4, "Correctness bugs: data loss, mangled text, and stale
+  // counts" bucket: doAutoSave used to upsert by `arr.findIndex(x => x.formId ===
+  // formId)` - matching by form TYPE only, never by which specific draft was
+  // actually open. state.drafts is itself keyed by formId (one in-memory slot
+  // per form type), so this collision was invisible in a single sitting - the
+  // bug only showed up across separate open sessions of the same form: save a
+  // completed DA 4856 for Soldier A (its own sid), then go back to the catalog
+  // and open a SECOND, blank DA 4856 for Soldier B - the moment autosave fired
+  // for Soldier B it found Soldier A's entry first (same formId) and silently
+  // overwrote it with Soldier B's in-progress values, losing A's saved draft
+  // with no warning. state._currentSid now tracks the specific draft in view -
+  // set to the saved entry's own sid when opened via "Open" on the saved-
+  // drafts list, or minted fresh here on a brand-new draft's first-ever edit -
+  // and is captured at SCHEDULE time (not re-read from state when the
+  // debounced timer fires) so a late-firing autosave from a form the Soldier
+  // has since navigated away from can't attach its stale values to whatever
+  // sid happens to be current by then.
+  function doAutoSave(formId, values, sid) {
     var title = (state._currentForm && state._currentForm.title) || formId;
     // upsert into saved list
     mutateSaved(function (arr) {
       if (!Array.isArray(arr)) arr = []; // defensive: a background autosave should never crash the page on a malformed read
-      var existing = arr.findIndex(function (x) { return x.formId === formId; });
-      // Preserve the existing entry's sid on update - the "Save draft"
-      // button's own entries always carry one (delete matches on x.sid),
-      // so a freshly-created autosave entry needs one too or it can never
-      // be individually deleted from the saved-drafts list.
-      var entry = { sid: existing >= 0 ? arr[existing].sid : U.uid(), formId: formId, title: title, ts: new Date().toISOString(), values: values };
+      // Match by sid (the specific draft) - fall back to the old formId match
+      // only in the defensive case where no sid was ever tracked at all.
+      var existing = sid
+        ? arr.findIndex(function (x) { return x.sid === sid; })
+        : arr.findIndex(function (x) { return x.formId === formId; });
+      var entry = { sid: sid || (existing >= 0 ? arr[existing].sid : U.uid()), formId: formId, title: title, ts: new Date().toISOString(), values: values };
       if (existing >= 0) arr[existing] = entry; else arr.push(entry);
       return arr;
     });
   }
   function scheduleAutoSave(formId, values) {
+    // Mint the identity for a genuinely-new, never-saved draft exactly once,
+    // on its first edit, then keep reusing it for the rest of this open-form
+    // session (further edits, and the "Open" flow below, both feed off the
+    // same state._currentSid).
+    if (!state._currentSid) state._currentSid = U.uid();
+    var sid = state._currentSid;
     if (_autoSaveTimer) clearTimeout(_autoSaveTimer);
-    _pendingAutoSave = { formId: formId, values: values };
+    _pendingAutoSave = { formId: formId, values: values, sid: sid };
     _autoSaveTimer = setTimeout(function () {
       _autoSaveTimer = null;
       _pendingAutoSave = null;
-      doAutoSave(formId, values);
+      doAutoSave(formId, values, sid);
     }, 1500);
   } // ex = prefill-example toggle; drafts keyed by formId
   U.onFlush("forms:autosave", function () {
@@ -16659,7 +16682,7 @@ window.G = window.G || {};
     clearTimeout(_autoSaveTimer);
     _autoSaveTimer = null;
     var p = _pendingAutoSave; _pendingAutoSave = null;
-    if (p) doAutoSave(p.formId, p.values);
+    if (p) doAutoSave(p.formId, p.values, p.sid);
   });
 
   function data() { return (G.store && G.store.forms && G.store.forms()) || { forms: [], libraries: {}, tables: {}, categories: [] }; }
@@ -16804,7 +16827,10 @@ window.G = window.G || {};
           c.appendChild(U.el("div", { class: "hint" }, [new Date(s.ts).toLocaleString()]));
           var row = U.el("div", { class: "btn-row" });
           var open = U.el("button", { class: "btn" }, ["Open"]);
-          open.addEventListener("click", function (e) { e.stopPropagation(); state.drafts[s.formId] = s.values; state.ex = false; openForm(mount, s.formId, "fill"); });
+          // s.sid threaded through so a subsequent autosave in this session
+          // updates THIS saved draft (see doAutoSave's own comment above) -
+          // openForm() below stamps it onto state._currentSid.
+          open.addEventListener("click", function (e) { e.stopPropagation(); state.drafts[s.formId] = s.values; state.ex = false; openForm(mount, s.formId, "fill", s.sid); });
           var del = U.el("button", { class: "btn" }, ["Delete"]);
           del.addEventListener("click", function (e) {
             e.stopPropagation();
@@ -16822,9 +16848,17 @@ window.G = window.G || {};
   }
 
   /* ---------------- form detail ---------------- */
-  function openForm(mount, formId, tab) {
+  function openForm(mount, formId, tab, sid) {
     var f = formById(formId); if (!f) { render(mount); return; }
     state._currentForm = f; // doAutoSave's own title fallback reads this - was never set anywhere, so it always fell through to the raw formId
+    // Roadmap audit round 4, "Correctness bugs: data loss, mangled text, and
+    // stale counts" bucket: bind the specific draft's own identity for this
+    // open-form session - the caller passes s.sid when reopening a saved
+    // draft, or nothing for a brand-new blank form (scheduleAutoSave mints
+    // one on first edit). Without resetting this on every open, a fresh
+    // blank form opened right after closing someone else's draft would keep
+    // that other draft's sid and autosave straight into it.
+    state._currentSid = sid || null;
     state.tab = tab || "replica";
     U.clear(mount);
     var wrap = U.el("div", { class: "forms-view" });
@@ -19240,7 +19274,25 @@ window.G = window.G || {};
                      // catalogue," which pointed a live Guided Tour/Demo Center
                      // presenter at chips that are not on screen.
                      w:"Open Filters to reveal the competency and difficulty chips — together they drive the whole catalogue." },
-    "#/board":     { d:"1,014 deduplicated board cards with 3D flip, spaced repetition and four-level mastery grading.",
+    // Roadmap audit round 4, "Correctness bugs: data loss, mangled text, and
+    // stale counts" bucket: this was a hardcoded "1,014 deduplicated board
+    // cards" literal - the exact stale-count shape currency.js's own Doctrine
+    // card already caught and fixed twice over (task history: "bump
+    // board-card regression baseline 1014 -> 1069"), just relocated to a
+    // second copy this audit never touched. Now a live getter reading the
+    // raw seed (G.store.seed().board.questions.length), NOT
+    // G.store.boardQuestions() - that applies the Soldier's own tierFilter
+    // setting and would understate the true corpus for anyone who has
+    // narrowed their tier - matching currency.js's own Doctrine card's exact
+    // reasoning and field.
+    "#/board":     { get d() {
+                       try {
+                         const s = G.store && G.store.seed && G.store.seed();
+                         const n = (s && s.board && s.board.questions && s.board.questions.length) || null;
+                         if (n) return n.toLocaleString() + " deduplicated board cards with 3D flip, spaced repetition and four-level mastery grading.";
+                       } catch (e) {}
+                       return "Deduplicated board cards with 3D flip, spaced repetition and four-level mastery grading.";
+                     },
                      w:"Two things to show here: the Level filter (beginner/intermediate/expert) and the Points tab — a rank-aware PPW calculator." },
     "#/blc":       { d:"BLC preparation built from the actual Individual Student Assessment Plan — the document that defines how BLC is graded.",
                      w:"Open 'How the honours actually work' — real point values, and the fact that any negative counseling disqualifies you." },
@@ -19254,9 +19306,23 @@ window.G = window.G || {};
                      w:"Search any publication number to see everything in the corpus that cites it." },
     // Audit finding: this pass added 2 acronym entries (SLC, DA 7906) and
     // never updated this hardcoded count - was "3,629-term" (accurate
-    // before this pass; the seed now has 3,631, matching
-    // tools/test-consistency.mjs's own updated assertion).
-    "#/dictionary":{ d:"3,631-term Army and DoD acronym dictionary — instant lookup, fully offline.",
+    // before that pass; the seed had grown to 3,631 by then). Roadmap audit
+    // round 4, "Correctness bugs: data loss, mangled text, and stale counts"
+    // bucket: that fix just replaced one stale literal with ANOTHER, which
+    // has already drifted again since - the exact hardcoded-count shape
+    // currency.js's own Terms card hit and fixed for good (grep "this
+    // hand-typed \"3,629 terms\"" in this file) by reading the count live
+    // instead of hand-typing it. Now does the same here: reads
+    // G.store.acronyms().terms.length, the same field Dictionary's own
+    // render() and currency.js's Terms card both use, so none of the three
+    // can disagree - or go stale - again.
+    "#/dictionary":{ get d() {
+                       try {
+                         const terms = (G.store && G.store.acronyms && G.store.acronyms().terms) || [];
+                         if (terms.length) return terms.length.toLocaleString() + "-term Army and DoD acronym dictionary — instant lookup, fully offline.";
+                       } catch (e) {}
+                       return "Army and DoD acronym dictionary — instant lookup, fully offline.";
+                     },
                      w:"Type a partial acronym; results narrow as you type with no network call." },
     "#/library":   { d:"The real, current-edition text of the core Army publications GUIDON's own content is built on — read natively or view the original PDF.",
                      w:"Open AR 600-8-19 to read the actual promotion regulation GUIDON's own point tables come from." },
@@ -26802,6 +26868,27 @@ window.G = window.G || {};
   }
 
   // ── 2) DAILY SKILLS ────────────────────────────────────────────────────
+  // Roadmap audit round 4, "Correctness bugs: data loss, mangled text, and stale
+  // counts" bucket: the today/yesterday computations below used to come from
+  // new Date().toISOString().slice(0,10) - the UTC calendar date, not the
+  // Soldier's local date. For anyone west of UTC (every US time zone) working
+  // in the evening, that flips the "day" hours before local midnight (e.g.
+  // ~7-8 PM Eastern), so a practice logged late in the evening got tagged as
+  // TOMORROW's date, and the streak's live/lapsed check compared the log
+  // against the wrong day too. Same bug shape already found and fixed for
+  // G.streak's own isoDate() helper (grep "which put this streak's day-
+  // rollover" in this file) - reusing that identical local-date formatting
+  // expression, plus its calendar-based (not ms-subtraction) yesterday so a
+  // DST spring-forward/fall-back night can't shift the result onto the wrong
+  // calendar date either.
+  function localIsoDate(d) {
+    d = d || new Date();
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+  function localYesterdayIso() {
+    const d = new Date();
+    return localIsoDate(new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1));
+  }
   function renderSkills(host) {
     const d = data();
     const skills = (d.skills || []);
@@ -26850,7 +26937,7 @@ window.G = window.G || {};
           text:"✓ Logged for today" });
         logBtn.addEventListener("click", async () => {
           try {
-            const today = new Date().toISOString().slice(0,10);
+            const today = localIsoDate();
             if (!log.some((e) => e.date === today && e.skill === todaySk.name)) {
               log.push({ date: today, skill: todaySk.name, ts: Date.now() });
               if (log.length > 90) log.splice(0, log.length - 90);
@@ -26862,7 +26949,7 @@ window.G = window.G || {};
             util.emit && util.emit("progress:change");
           } catch(e) {}
         });
-        const today = new Date().toISOString().slice(0,10);
+        const today = localIsoDate();
         if (log.some((e) => e.date === today && e.skill === todaySk.name)) {
           logBtn.textContent = "Practiced today ✓";
           logBtn.disabled = true;
@@ -26888,8 +26975,8 @@ window.G = window.G || {};
         const log = await logPromise;
         const dates = [...new Set(log.map((e) => e.date))].sort().reverse();
         if (dates.length >= 2) {
-          const today = new Date().toISOString().slice(0,10);
-          const yest = new Date(Date.now()-86400000).toISOString().slice(0,10);
+          const today = localIsoDate();
+          const yest = localYesterdayIso();
           const isLive = dates[0] === today || dates[0] === yest;
           // This used to display dates.length (the lifetime count of
           // distinct days EVER logged, capped at 90) labeled as an N-day
