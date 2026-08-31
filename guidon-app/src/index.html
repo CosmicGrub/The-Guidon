@@ -23132,9 +23132,22 @@ window.G = window.G || {};
         const routes = G.routes || [];
         if (!routes.length) return { ok:false, detail:"G.routes not exposed" };
         const broken = [];
+        // Enhancement backlog round 4, "Main-thread blocking loops with no
+        // yielding" bucket: this used to await Promise.resolve().then(() =>
+        // r.render(probe)) with no pause between iterations. That's only a
+        // microtask boundary - it resolves before the browser gets a chance
+        // to paint or handle input, so all 30-50+ real routes rendered back
+        // to back in one unbroken synchronous burst. On a mid-range Android
+        // tablet "Run automated checks" visibly froze the whole UI for the
+        // length of the pass. await new Promise(resolve => setTimeout(resolve,
+        // 0)) is a real macrotask boundary, so the browser can paint and
+        // handle taps between every single route render.
         for (const r of routes) {
           const probe = document.createElement("div");
-          try { await Promise.resolve().then(() => r.render(probe)); }
+          try {
+            await new Promise(resolve => setTimeout(resolve, 0));
+            await r.render(probe);
+          }
           catch (e) { broken.push(r.hash + ": " + (e && e.message ? e.message : String(e))); }
         }
         return { ok: !broken.length, detail: broken.length ? broken.length + " route(s) threw: " + broken.slice(0, 5).join(" | ") : routes.length + " routes rendered clean" };

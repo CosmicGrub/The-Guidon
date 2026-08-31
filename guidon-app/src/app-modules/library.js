@@ -163,7 +163,7 @@ window.G = window.G || {};
     setTimeout(() => target.classList.remove("list-detail-jumped"), 1600);
   }
 
-  function renderNative(stage, d) {
+  async function renderNative(stage, d) {
     util.clear(stage);
 
     // ── Search bar — GUIDON's own search, TOC-excluded (see searchDoc) ──
@@ -241,14 +241,41 @@ window.G = window.G || {};
     // hide content from Ctrl+F the way display:none would. ──
     const scroller = el("div.panel", { id: "library-scroller",
       style: "margin-top:10px;white-space:pre-wrap;font-size:0.92rem;line-height:1.6;max-height:70vh;overflow-y:auto" });
-    d.pages.forEach((pageText, i) => {
-      const block = el("div.lib-page", { "data-page": String(i) });
-      block.appendChild(el("div.meta", { style: "font-family:var(--font-mono);font-size:0.75rem;color:var(--text-dim);margin-bottom:6px",
-        text: "Page " + (i + 1) + " / " + d.pageCount }));
-      block.appendChild(document.createTextNode(pageText || "(blank page)"));
-      scroller.appendChild(block);
-    });
     stage.appendChild(scroller);
+
+    // Enhancement backlog round 4, "Main-thread blocking loops with no
+    // yielding" bucket: this used to build every page as its own DOM block
+    // (a full createTextNode of that page's text) in one unbroken
+    // synchronous forEach. Shipped documents like TC 3-21.5 (288 pages /
+    // 571K characters) or FM 7-22 (240 pages / 662K characters) were all
+    // built in a single blocking pass the instant "Read in GUIDON" was
+    // tapped, with no chance for the browser to paint in between - on a
+    // mid-range Android tablet that visibly froze the whole app for the
+    // length of the build. A "Loading document…" placeholder now shows
+    // first, and pages are appended CHUNK at a time with a real yield
+    // (setTimeout(resolve, 0), a macrotask boundary - see the same fix in
+    // selftest.js's route-health check) between chunks, so the browser can
+    // paint and handle taps while a long document is still loading in.
+    const loading = el("p.hint", { text: "Loading document…" });
+    scroller.appendChild(loading);
+    await new Promise((resolve) => setTimeout(resolve, 0)); // let the placeholder above actually paint before the first chunk of work
+    const CHUNK = 20;
+    for (let start = 0; start < d.pages.length; start += CHUNK) {
+      const end = Math.min(start + CHUNK, d.pages.length);
+      const frag = document.createDocumentFragment();
+      for (let i = start; i < end; i++) {
+        const pageText = d.pages[i];
+        const block = el("div.lib-page", { "data-page": String(i) });
+        block.appendChild(el("div.meta", { style: "font-family:var(--font-mono);font-size:0.75rem;color:var(--text-dim);margin-bottom:6px",
+          text: "Page " + (i + 1) + " / " + d.pageCount }));
+        block.appendChild(document.createTextNode(pageText || "(blank page)"));
+        frag.appendChild(block);
+      }
+      scroller.appendChild(frag);
+      if (loading.parentNode) loading.remove();
+      if (end < d.pages.length) await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    if (loading.parentNode) loading.remove(); // covers the (real-world impossible) zero-page case
 
     // Resume near wherever the Soldier last scrolled to (e.g. after
     // switching to the Original PDF tab and back), not back at page 1.
