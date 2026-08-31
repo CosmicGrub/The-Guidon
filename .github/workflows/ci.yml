@@ -142,10 +142,26 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        # Roadmap audit round 4, "CI / supply-chain hardening" bucket: pinned
+        # to the immutable commit SHA behind the v4 tag (resolved via `gh api
+        # repos/actions/checkout/commits/v4`) instead of the mutable tag
+        # itself. A publisher-mutable tag lets whoever controls the upstream
+        # repo (or anyone who compromises their account/token) silently
+        # retarget "v4" to different, potentially malicious code that every
+        # workflow referencing "@v4" then runs on its next trigger with no
+        # diff for anyone to review - the exact supply-chain vector behind
+        # real published incidents (e.g. the 2025 tj-actions/changed-files
+        # compromise). A SHA is content-addressed and can never be
+        # repointed, so this workflow always runs the exact code that was
+        # reviewed here. The version is kept as a trailing comment purely for
+        # human readability; the SHA is what actually gets executed.
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
       - name: Setup Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
+        # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
+        # SHA-pin-over-mutable-tag fix as the Checkout step above, resolved
+        # via `gh api repos/actions/setup-node/commits/v4`.
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -178,7 +194,10 @@ jobs:
       # on the cache hitting, `playwright install` below is a no-op if the
       # requested browser is already present and installs it fresh otherwise.
       - name: Cache Playwright browsers
-        uses: actions/cache@v4
+        # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
+        # SHA-pin-over-mutable-tag fix as the Checkout step above, resolved
+        # via `gh api repos/actions/cache/commits/v4`.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ hashFiles('guidon-app/package-lock.json') }}
@@ -226,7 +245,10 @@ jobs:
       # would be ~78MB of dead weight uploaded once and downloaded by all
       # 16 matrix jobs for nothing.
       - name: Upload build output (web/ + dist/)
-        uses: actions/upload-artifact@v4
+        # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
+        # SHA-pin-over-mutable-tag fix as the Checkout step above, resolved
+        # via `gh api repos/actions/upload-artifact/commits/v4`.
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: build-output
           path: |
@@ -256,10 +278,23 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
+        # SHA-pin-over-mutable-tag fix as the lint-build-verify job's
+        # Checkout step above, resolved via `gh api
+        # repos/actions/checkout/commits/v4`.
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
       - name: Install cargo-audit
-        uses: taiki-e/install-action@cargo-audit
+        # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
+        # SHA-pin-over-mutable-tag fix as the Checkout step above (see the
+        # lint-build-verify job), resolved via `gh api
+        # repos/taiki-e/install-action/commits/cargo-audit`. Unlike the
+        # actions/* pins, "cargo-audit" here isn't a semver tag - it's
+        # install-action's own per-tool moving tag that gets repointed
+        # whenever a new cargo-audit release ships, so there's no "v4.x.x"
+        # equivalent to note; the trailing comment instead records the date
+        # this SHA was resolved so a future bump is easy to reason about.
+        uses: taiki-e/install-action@55ed588c2f0e092949af25ad4c5873185e476b5c  # cargo-audit tag, resolved 2026-08-31
 
       # NON-BLOCKING for the same reason npm audit above is: this project's
       # own tracked-advisory comment already documents every current
@@ -272,6 +307,67 @@ jobs:
       - name: cargo audit (non-blocking)
         working-directory: guidon-app/src-tauri
         run: cargo audit
+        continue-on-error: true
+
+  # ---------------------------------------------------------------------
+  # Roadmap audit round 4, "CI / supply-chain hardening" bucket: OSV.dev
+  # vulnerability scan for the Android/Gradle dependency tree
+  # (guidon-app/android). Before this job, npm had npm audit above and the
+  # Tauri desktop build's Rust tree had cargo-audit above, but the
+  # androidx.*/Capacitor native AAR tree that guidon-app/android/**/
+  # build.gradle pulls in had zero automated CVE scanning of any kind -
+  # the same shape of gap npm audit and cargo audit already close for
+  # their own ecosystems, just left open for this one. Independent of and
+  # parallel with every other job here - it only needs the checked-in
+  # Gradle build files, not a built web/+dist/ output or a Rust toolchain.
+  # google/osv-scanner-action is the low-friction choice: OSV.dev-backed
+  # (no separate account/API key to provision), a single Docker-based
+  # action, and it mirrors cargo-audit's own shape exactly - one checkout,
+  # one scan step, non-blocking. Scoped to guidon-app/android specifically
+  # (not --recursive over the whole repo) so it doesn't re-scan the same
+  # npm/Cargo lockfiles the other two jobs already own.
+  #
+  # COVERAGE CAVEAT, read before treating this as equivalent to cargo-audit:
+  # OSV-Scanner's Java/Gradle extractor reads gradle.lockfile /
+  # buildscript-gradle.lockfile / gradle/verification-metadata.xml (or
+  # pom.xml) - it does not resolve versions out of build.gradle /
+  # variables.gradle text directly the way `cargo audit` reads Cargo.lock.
+  # This project's Gradle build does not turn on Gradle's own dependency
+  # locking anywhere under android/ (no lockfile of any of those names
+  # exists), so today this step has no resolved lockfile to scan against
+  # and will not yet catch a vulnerable *transitive* androidx/Capacitor
+  # version. Turning on dependency locking (`./gradlew :app:dependencies
+  # --write-locks` after a real `npx cap sync android`, then committing the
+  # resulting lockfiles) would close that gap fully, but doing it correctly
+  # needs a working Android SDK + Capacitor sync in CI, which is a
+  # meaningfully bigger change than "add a scan job" - out of scope for
+  # this pass and flagged here rather than silently shipping a scan that
+  # looks like full coverage but isn't yet.
+  # ---------------------------------------------------------------------
+  android-osv-scan:
+    name: OSV-Scanner (android/ dependency tree)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
+        # SHA-pin-over-mutable-tag fix as the lint-build-verify job's
+        # Checkout step above, resolved via `gh api
+        # repos/actions/checkout/commits/v4`.
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+      # NON-BLOCKING for the same reason npm audit and cargo audit above
+      # are: first-pass discovery for a human to triage, not a gate yet -
+      # see this job's own top comment for why coverage is partial today.
+      - name: OSV-Scanner (android/, non-blocking)
+        # Pinned to the immutable commit the "v2.5.1" tag resolves to (`gh
+        # api repos/google/osv-scanner-action/commits/v2.5.1`), same
+        # mutable-tag concern as every actions/* pin above.
+        uses: google/osv-scanner-action/osv-scanner-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67  # v2.5.1
+        with:
+          scan-args: |-
+            --recursive
+            ./guidon-app/android
         continue-on-error: true
 
   # ---------------------------------------------------------------------
@@ -362,10 +458,17 @@ jobs:
             tests: "test:resilience-daily-skills"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
+        # SHA-pin-over-mutable-tag fix as the lint-build-verify job's
+        # Checkout step above, resolved via `gh api
+        # repos/actions/checkout/commits/v4`.
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
 
       - name: Setup Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
+        # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
+        # SHA-pin-over-mutable-tag fix as the Checkout step above, resolved
+        # via `gh api repos/actions/setup-node/commits/v4`.
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -375,7 +478,10 @@ jobs:
         run: npm ci
 
       - name: Cache Playwright browsers
-        uses: actions/cache@v4
+        # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
+        # SHA-pin-over-mutable-tag fix as the Checkout step above, resolved
+        # via `gh api repos/actions/cache/commits/v4`.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ hashFiles('guidon-app/package-lock.json') }}
@@ -389,7 +495,10 @@ jobs:
       # dist/guidon-standalone.html straight off disk; none run against
       # uncompiled src/.
       - name: Download build output (web/ + dist/)
-        uses: actions/download-artifact@v4
+        # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
+        # SHA-pin-over-mutable-tag fix as the Checkout step above, resolved
+        # via `gh api repos/actions/download-artifact/commits/v4`.
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
         with:
           name: build-output
           path: guidon-app
