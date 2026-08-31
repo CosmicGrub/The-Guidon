@@ -186,6 +186,28 @@ window.G = window.G || {};
       ["Army Directive 2026-13", "Rescinded AD 2025-17 and with it the AFT-score body composition exemption, effective 7 July 2026."],
       ["Your S-3 and your chain of command", "For which list your MOS is actually on, and your unit's test calendar. This is a study aid, not an order."]
     ]));
+
+    // Roadmap audit round 4, "UX: cross-links and action feedback" bucket:
+    // Calendar and Money already link INTO #/fitness (calendar.js's AFT/CFT-
+    // due reminder rows, currency.js's BRS/TSP fitness note), but this
+    // render() had no reciprocal links back out - the one inline button
+    // above only goes to #/board for the PPW calculator, so a Soldier who
+    // arrived from Calendar or Money had no way back without the browser
+    // history stack. Every comparable sibling route (assignments.js,
+    // career.js, currency.js, calendar.js, records.js, leader.js) ends its
+    // render with a "Related" panel of nav buttons; this copies that exact
+    // shape rather than inventing a fitness-specific one. Calendar closes
+    // the loop back to the AFT-due reminder that likely pointed here, Health
+    // because body composition and the AFT are the same conversation, and
+    // Career for the promotion-point stakes both tests feed.
+    const related = el("div.panel", { style: "margin-top:10px" });
+    related.appendChild(el("div.eyebrow", { text: "Related" }));
+    [["Calendar", "#/calendar"], ["Health", "#/health"], ["MOS Career Center", "#/career"]].forEach(function (pair) {
+      const b = el("button.btn.sm.ghost", { type: "button", text: pair[0], style: "margin:4px 6px 0 0" });
+      b.addEventListener("click", function () { location.hash = pair[1]; });
+      related.appendChild(b);
+    });
+    mount.appendChild(related);
   }
 
   G.fitness = { render: render, AFT_COMBAT_MOS: AFT_COMBAT_MOS, CFT_EXTRA_MOS: CFT_EXTRA_MOS,
