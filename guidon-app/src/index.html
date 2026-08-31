@@ -6995,9 +6995,9 @@ window.GUIDON_BUILD_DATE = "2026-08-09";
     // installMemoryFallback() for the localStorage/memory backends, same as
     // saveAttempt()/allAttempts() above) instead of a raw IDB
     // transaction/cursor, so this doesn't need its own fallback-aware
-    // reimplementation. Mirrors recordBullet()'s "evict the OLDEST rows,
-    // keep the newest" shape (push, then shift() the front off once length
-    // exceeds its cap) - ts is stamped once in recordAttempt() and never
+    // reimplementation. Uses the classic cap-and-evict shape (push, then
+    // shift() the front off once length exceeds its cap) - ts is stamped
+    // once in recordAttempt() and never
     // mutated after, so sorting ascending by ts puts the oldest attempts
     // first. Called from recordAttempt() right after every write (see
     // ATTEMPTS_CAP below), so the store is only ever transiently one row
@@ -7098,10 +7098,11 @@ window.G = window.G || {};
   const DIMS = ["Leads", "Develops", "Achieves", "Character", "Presence", "Intellect"];
   const COMPS = ["Leads", "Develops", "Achieves", "Character", "Presence", "Intellect"];
   // Retention cap for the "attempts" store (see recordAttempt() and
-  // db.trimAttempts() below). Deliberately much larger than
-  // recordBullet()'s 200-row bulletHistory cap a few hundred lines down:
-  // bulletHistory is a manually-typed writing-practice list, but "attempts"
-  // gets one row per scenario completion automatically, and the seed alone
+  // db.trimAttempts() below). Deliberately much larger than the Bullet
+  // Builder's 20-row practice-history cap (writing.js, HISTORY_KEY
+  // "writing:bulletHistory:v1"): that history is a manually-typed
+  // writing-practice list, but "attempts" gets one row per scenario
+  // completion automatically, and the seed alone
   // ships 182 scenarios (Authoring Studio can add more on top of that) - a
   // 200-cap here would start silently evicting a scenario's ONLY completed
   // attempt (and with it, that scenario's contribution to getProgress()'s
@@ -7385,16 +7386,18 @@ window.G = window.G || {};
       db.setSetting("settings", state.settings);
     },
     trainingCompletions() { return (state.settings && state.settings.trainingCompletions) || {}; },
-    bulletHistory() {
-      const all = (state.settings && state.settings.bulletHistory) || [];
-      return all.slice().reverse().slice(0, 50); // last 50, newest first
-    },
-    recordBullet(text, score, band, wordCount) {
-      if (!state.settings.bulletHistory) state.settings.bulletHistory = [];
-      state.settings.bulletHistory.push({ text, score, band, wordCount, ts: new Date().toISOString() });
-      if (state.settings.bulletHistory.length > 200) state.settings.bulletHistory.shift();
-      debouncedSettingsSave(state.settings);
-    },
+    // Roadmap audit round 5, "Correctness & Data-Integrity Bugs" bucket:
+    // store.recordBullet()/bulletHistory() used to read/write
+    // state.settings.bulletHistory, but nothing ever called recordBullet() -
+    // the real Bullet Builder tab (writing.js) tracks its own practice
+    // history under a completely separate top-level kv key
+    // ("writing:bulletHistory:v1", see HISTORY_KEY in writing.js), so
+    // state.settings.bulletHistory stayed permanently []. Progress's Weekly
+    // Study Goal tracker fetched bulletHistory() into an "attempts" local
+    // and never referenced it again (weekCount was computed purely from
+    // trainingCompletions()) - dead code feeding a dead read. Removed both
+    // functions here; see renderWeeklyGoal() in progress.js for the matching
+    // removal of the unused fetch.
     async setSetting(k, v) {
       state.settings[k] = v;
       debouncedSettingsSave(state.settings);
@@ -7584,9 +7587,8 @@ window.G = window.G || {};
       a.ts = Date.now();
       await db.saveAttempt(a);
       // Retention cap (ATTEMPTS_CAP above, db.trimAttempts() in db.js):
-      // recordBullet() below already caps its own history at 200 rows via
-      // push+shift, but this write path had no equivalent - every scenario
-      // completion added a row here with nothing ever removed, so the
+      // this write path used to have no equivalent cap-and-evict - every
+      // scenario completion added a row here with nothing ever removed, so the
       // store (and getProgress()'s full scan of it, right below) grew
       // without bound for as long as the app was used. Evicting the
       // oldest rows down to ATTEMPTS_CAP on every write keeps both bounded
@@ -11017,23 +11019,41 @@ window.G = window.G || {};
       // Soldier at THIS rank, computed from the real AR 600-8-19 tables.
       const moves = [];
       const room = (cat) => Math.max(0, r.caps[cat] - s[cat]);
+      // Roadmap audit round 5, "Correctness & Data-Integrity Bugs" bucket:
+      // score() caps training = Math.min(wpn + aft, r.caps.training) - weapon
+      // qualification and AFT share ONE category ceiling. This panel used to
+      // call room("training") fresh for both the weapon-requal move and the
+      // AFT-raise move below, capping each suggestion at the FULL remaining
+      // room independently - so a Soldier already close to the training cap
+      // could see two "Worth +N" cards whose combined points overstate what
+      // pursuing both moves together would actually add (the second move
+      // would really only have whatever headroom the first didn't consume).
+      // roomUsed tracks points already claimed by an earlier suggestion in
+      // the same shared-cap category, so a later suggestion sharing that cap
+      // sees only what's genuinely still left.
+      const roomUsed = {};
+      const roomLeft = (cat) => Math.max(0, room(cat) - (roomUsed[cat] || 0));
 
       if (mode === "ppw") {
         const wt2 = WPN_TABLES[v.wpnType] || WPN_TABLES.rifle;
         const nowW = weaponPts(rank, v.wpnHits, v.wpnType);
         const maxW = weaponPts(rank, wt2.maxHits, v.wpnType);
-        if (maxW > nowW && room("training") > 0) {
-          const gain = Math.min(maxW - nowW, room("training"));
+        if (maxW > nowW && roomLeft("training") > 0) {
+          const gain = Math.min(maxW - nowW, roomLeft("training"));
+          roomUsed.training = (roomUsed.training || 0) + gain;
           moves.push({ pts: gain, act: "Requalify at " + wt2.maxHits + "/" + wt2.maxHits +
             " (you logged " + (v.wpnHits || 0) + ")",
             why: "Worth +" + gain + " at your rank. Hit-count scored \u2014 every round on target is points." });
         }
         const nowA = aftPts(v.aftScore), capA = Math.min(120, r.aftMax);
-        if (nowA < capA && room("training") > 0) {
+        if (nowA < capA && roomLeft("training") > 0) {
           const next = Math.min(500, (Math.floor((v.aftScore || 300) / 5) + 1) * 5);
-          const step = Math.min(aftPts(next) - nowA, room("training"));
-          if (step > 0) moves.push({ pts: step, act: "Raise your AFT to " + next,
-            why: "Each 5-point band is worth 3 promotion points, to 120 at a 500." });
+          const step = Math.min(aftPts(next) - nowA, roomLeft("training"));
+          if (step > 0) {
+            roomUsed.training = (roomUsed.training || 0) + step;
+            moves.push({ pts: step, act: "Raise your AFT to " + next,
+              why: "Each 5-point band is worth 3 promotion points, to 120 at a 500." });
+          }
         }
         if (room("milEd") > 0) {
           const hrs = Math.min(room("milEd"), 20) * 5;
@@ -14342,8 +14362,16 @@ window.G = window.G || {};
       const weekKey = weekStart.toISOString().slice(0,10);
 
       // Count completed scenarios this week
+      // Roadmap audit round 5, "Correctness & Data-Integrity Bugs" bucket:
+      // this used to also fetch `const attempts = store.bulletHistory()`
+      // here but never referenced `attempts` again below - weekCount was
+      // (and still is) computed purely from trainingCompletions().
+      // store.bulletHistory() itself was dead code (nothing ever called
+      // store.recordBullet() to populate it - see store.js's own removal
+      // comment where those two functions used to live) reading a settings
+      // key the real Bullet Builder tab never wrote to. Removed the unused
+      // fetch along with the dead functions it called.
       const completions = (store.trainingCompletions && store.trainingCompletions()) || {};
-      const attempts = (store.bulletHistory && store.bulletHistory()) || [];
       let weekCount = 0;
       try {
         Object.values(completions).forEach((c) => {
@@ -15057,8 +15085,29 @@ window.G = window.G || {};
     for (const id in sc.nodes) {
       const node = sc.nodes[id];
       if (node.end) { endCount++; continue; }
-      if (!node.prompt) errors.push("Node '" + id + "' is missing a prompt.");
-      if (!Array.isArray(node.choices) || !node.choices.length) { errors.push("Node '" + id + "' has no choices (and isn't an end node)."); continue; }
+      // Roadmap audit round 5, "Correctness & Data-Integrity Bugs" bucket:
+      // engine.js's render() normalizes node.body into node.prompt at
+      // runtime (its own comment: "a small batch of authored scenarios
+      // wrote a node's narration under 'body' instead of 'prompt'" - a
+      // confirmed real content pattern the engine tolerates), but this
+      // check only ever looked at node.prompt - a scenario the engine
+      // actually renders fine (with body-as-prompt) failed validation here.
+      // Mirror the engine's own tolerance instead of flagging it as broken.
+      if (!node.prompt && !node.body) errors.push("Node '" + id + "' is missing a prompt.");
+      // engine.js's render() also accepts a node with no choices array,
+      // carrying only node.next - a pure-dialogue auto-continue beat that
+      // it synthesizes into a "Continue" choice at runtime (see its own
+      // "Pure-dialogue beat: no choices but a `next` pointer" comment).
+      // Mirror that tolerance here too: a node.next pointing at a real node
+      // satisfies "has choices" the same way it does for the live engine.
+      if (!Array.isArray(node.choices) || !node.choices.length) {
+        if (node.next) {
+          if (!sc.nodes[node.next]) errors.push("Node '" + id + "' 'next' points to missing node '" + node.next + "'.");
+        } else {
+          errors.push("Node '" + id + "' has no choices (and isn't an end node).");
+        }
+        continue;
+      }
       node.choices.forEach((c, i) => {
         if (!c.text) errors.push("Node '" + id + "' choice " + (i + 1) + " missing 'text'.");
         // The engine (advance(), engine.js) accepts a choice's target node id
@@ -16619,6 +16668,25 @@ window.G = window.G || {};
   function renderWorksheet(mount) {
       const _pending = G.risk._pendingModel || null;
       if (_pending) delete G.risk._pendingModel;
+      // Roadmap audit round 5, "Correctness & Data-Integrity Bugs" bucket: Load
+      // used to Object.assign() a saved worksheet straight into _pendingModel
+      // (see the Load button below), so _pending still carried the saved
+      // record's id/risk/highest/likeIdx. Those flowed through untouched into
+      // model via the Object.assign() a few lines down. Save worksheet's
+      // handler builds its record as
+      // Object.assign({ id: util.uid("rw"), risk, highest, likeIdx }, model) -
+      // Object.assign has later sources win, so model.id (the ORIGINAL saved
+      // id) silently overwrote the freshly minted uid. list.push(rec) is
+      // unconditional, so re-saving a loaded worksheet pushed a SECOND record
+      // sharing one id - and Delete's filter (x.id !== w.id) then matched and
+      // removed BOTH rows no matter which card's Delete was clicked, while the
+      // toast implied only one was removed. These four fields are save-record
+      // bookkeeping the editable model never reads (Object.assign default-merge
+      // already ignores unknown keys per the Load button's own comment) - strip
+      // them here so Load always starts from a clean model and Save always
+      // mints a fresh id, keeping ids unique so Delete can never remove more
+      // than one row.
+      if (_pending) { delete _pending.id; delete _pending.risk; delete _pending.highest; delete _pending.likeIdx; }
       const model = Object.assign({
         unit: "", resource: "", location: "", category: "", analyst: "", date: localIsoDate(),
         valueIdx: 2, valueDesc: "", likelihood: {},
@@ -18063,13 +18131,26 @@ window.G = window.G || {};
   }
 
   G.counsel = {
-    render(mount) {
-      // hydrate POA from kv (best-effort, async; render immediately regardless)
+    // Roadmap audit round 5, "Correctness & Data-Integrity Bugs" bucket:
+    // this used to kick off G.db.getSetting("counsel:poa", ...).then(...)
+    // WITHOUT awaiting it, then immediately call the synchronous internal
+    // render(mount). If that resolved to the Plan-of-Action tab before the
+    // getSetting promise settled, renderPOA()'s `input.value = poa[f.id]`
+    // built every field from the still-empty `poa` object - the .then()
+    // callback later mutated `poa` but never re-rendered the
+    // already-created inputs, so a POA with real saved data showed every
+    // field blank until the Soldier navigated away and back. This is the
+    // exact async-first-paint pattern already fixed for
+    // idp.js/resilience.js/selftest.js/library.js (await hydrate before
+    // first paint). route()'s own dispatcher already wraps every route's
+    // render() in Promise.resolve().then(...) specifically to support
+    // sync-or-async views (see its own "render() may be sync or async"
+    // comment), so awaiting here needs no other change.
+    async render(mount) {
       try {
         if (G.db && G.db.getSetting) {
-          G.db.getSetting("counsel:poa", null).then((saved) => {
-            if (saved && typeof saved === "object") { Object.keys(saved).forEach((k) => { poa[k] = saved[k]; }); }
-          }).catch(() => {});
+          const saved = await G.db.getSetting("counsel:poa", null);
+          if (saved && typeof saved === "object") { Object.keys(saved).forEach((k) => { poa[k] = saved[k]; }); }
         }
       } catch (e) {}
       render(mount);
@@ -26104,13 +26185,31 @@ window.G = window.G || {};
     tabs.appendChild(util.tabBtn("SITREP", activeTab === "sitrep", () => render(mount, "sitrep")));
     tabs.appendChild(util.tabBtn("Resume Example", activeTab === "resume", () => render(mount, "resume")));
     mount.appendChild(tabs);
-    try {
-      if (util.printButton) {
-        const pRow = el("div.btn-row.no-print", { style: "margin:8px 0" });
-        pRow.appendChild(util.printButton("GUIDON — Writing", () => document.querySelector("#writing-stage"), { footer: "Study aid only. Fictional example for illustration." }));
-        mount.appendChild(pRow);
-      }
-    } catch (e) {}
+    // Roadmap audit round 5, "Correctness & Data-Integrity Bugs" bucket:
+    // this generic snapshot button used to render unconditionally on all
+    // four tabs, wired to util.printView(), which unconditionally deletes
+    // every input/textarea/select from its clone (see printView's own
+    // "strip things that shouldn't print" comment). On Bullet Builder the
+    // graded bullet lives in a textarea; on Memorandum and SITREP every
+    // field is an input/textarea - clicking this button on any of those
+    // three tabs produced a printout with labels/hints intact but the
+    // Soldier's actual typed content silently missing, while a
+    // correctly-labeled dedicated "Format & print memo"/"Format & print
+    // SITREP" button (renderMemo()/printSitrep() above) sits right on the
+    // same tab and does the real job. Resume Example is the one tab with
+    // no inputs at all (just text/details panels), so it's the only one
+    // where this generic button actually works correctly - scope it there,
+    // matching G.counsel's own precedent of omitting this button entirely
+    // from its input-heavy Plan-of-Action tab.
+    if (activeTab === "resume") {
+      try {
+        if (util.printButton) {
+          const pRow = el("div.btn-row.no-print", { style: "margin:8px 0" });
+          pRow.appendChild(util.printButton("GUIDON — Writing", () => document.querySelector("#writing-stage"), { footer: "Study aid only. Fictional example for illustration." }));
+          mount.appendChild(pRow);
+        }
+      } catch (e) {}
+    }
 
     const body = el("div#writing-stage");
     mount.appendChild(body);
