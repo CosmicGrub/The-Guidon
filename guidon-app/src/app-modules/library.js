@@ -226,10 +226,22 @@ window.G = window.G || {};
     if (!query || query.length < 2) return [];
     const ql = query.toLowerCase();
     const tocSet = new Set(d.tocPageIndices);
+    // Roadmap audit round 5, "Performance: Search Caching & Render Hot Paths"
+    // bucket: this ran on every debounced (150ms) keystroke and did a fresh
+    // pageText.toLowerCase() over EVERY page's full text each time - for a
+    // real shipped document like TC 3-21.5 (571K chars) that's 570K+
+    // characters re-lowercased per keystroke, purely wasted work since a
+    // document's page text never changes mid-session. Cache the lowercase
+    // haystack on the document object itself the first time any search
+    // touches it, and index against that instead - same "compute once,
+    // reuse across keystrokes" fix already applied to Global Search and
+    // Board Prep Definitions (see this file's _defHay/_hay caches) for
+    // datasets far smaller than any one of these documents.
+    d._pagesLower = d._pagesLower || d.pages.map((p) => p.toLowerCase());
     const hits = [];
-    d.pages.forEach((pageText, i) => {
+    d._pagesLower.forEach((pageTextLower, i) => {
       if (tocSet.has(i)) return;
-      const idx = pageText.toLowerCase().indexOf(ql);
+      const idx = pageTextLower.indexOf(ql);
       if (idx === -1) return;
       hits.push({ page: i, matchStart: idx, matchLen: query.length });
     });
