@@ -19609,14 +19609,32 @@ window.G = window.G || {};
     // card already caught and fixed twice over (task history: "bump
     // board-card regression baseline 1014 -> 1069"), just relocated to a
     // second copy this audit never touched. Now a live getter reading the
-    // raw seed (G.store.seed().board.questions.length), NOT
-    // G.store.boardQuestions() - that applies the Soldier's own tierFilter
-    // setting and would understate the true corpus for anyone who has
-    // narrowed their tier - matching currency.js's own Doctrine card's exact
-    // reasoning and field.
+    // raw seed count, NOT G.store.boardQuestions() - that applies the
+    // Soldier's own tierFilter setting and would understate the true corpus
+    // for anyone who has narrowed their tier - matching currency.js's own
+    // Doctrine card's exact reasoning and field.
+    //
+    // Reads window.GUIDON_SEED directly, NOT G.store.seed() - navButton()
+    // (grep it in this file) calls .d exactly ONCE, synchronously, while
+    // building the sidebar, and freezes the result into a static <a title>
+    // attribute; it never re-reads .d again. G.store.seed()'s state.seed is
+    // only populated once app.start()'s own init sequence runs (see this
+    // module's own comment a few lines up on that exact ordering), which is
+    // AFTER the sidebar already rendered - so at the one moment this getter
+    // actually gets read, G.store.seed() was still empty, silently falling
+    // through to the count-less fallback string below and freezing THAT into
+    // every Soldier's nav forever (caught by test-discoverability.mjs's own
+    // "title doesn't match G.demoNotes" check, which re-reads .d later, once
+    // G.store.seed() genuinely IS populated, catching the mismatch). The
+    // seed's own <script> tag is fully executed (window.GUIDON_SEED
+    // completely assigned) before this app-module <script> tag even begins
+    // parsing - ordinary sequential <script> execution - so reading it
+    // directly is always safe, synchronous, and available from the very
+    // first line of app code, unlike the store layer's own lazily-populated
+    // cache.
     "#/board":     { get d() {
                        try {
-                         const s = G.store && G.store.seed && G.store.seed();
+                         const s = window.GUIDON_SEED;
                          const n = (s && s.board && s.board.questions && s.board.questions.length) || null;
                          if (n) return n.toLocaleString() + " deduplicated board cards with 3D flip, spaced repetition and four-level mastery grading.";
                        } catch (e) {}
@@ -19645,9 +19663,13 @@ window.G = window.G || {};
     // G.store.acronyms().terms.length, the same field Dictionary's own
     // render() and currency.js's Terms card both use, so none of the three
     // can disagree - or go stale - again.
+    // Reads window.GUIDON_SEED directly, NOT G.store.acronyms() - same
+    // ordering reason as "#/board" just above (see its own comment): this
+    // getter is read exactly once, synchronously, before G.store's own
+    // state.seed is populated.
     "#/dictionary":{ get d() {
                        try {
-                         const terms = (G.store && G.store.acronyms && G.store.acronyms().terms) || [];
+                         const terms = (window.GUIDON_SEED && window.GUIDON_SEED.acronyms && window.GUIDON_SEED.acronyms.terms) || [];
                          if (terms.length) return terms.length.toLocaleString() + "-term Army and DoD acronym dictionary — instant lookup, fully offline.";
                        } catch (e) {}
                        return "Army and DoD acronym dictionary — instant lookup, fully offline.";

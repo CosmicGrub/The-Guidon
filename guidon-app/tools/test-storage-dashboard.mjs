@@ -98,9 +98,13 @@ async function clickLabeledButton(label) {
   return page.evaluate(() => location.hash);
 }
 
-(await clickLabeledButton("Export a backup")) === "#/settings"
-  ? ok("'Export a backup' cross-link lands on #/settings (the real Export backup button, not a duplicate)")
-  : bad("'Export a backup' click did not land on #/settings");
+// Roadmap audit round 4, "UX: copy and label polish" bucket: this button's
+// text was "Export a backup", which didn't match the real "Export backup"
+// buttons on #/settings and #/profile it points to - now reads "Export
+// backup" to actually match.
+(await clickLabeledButton("Export backup")) === "#/settings"
+  ? ok("'Export backup' cross-link lands on #/settings (the real Export backup button, not a duplicate)")
+  : bad("'Export backup' click did not land on #/settings");
 
 (await clickLabeledButton("Check data validity")) === "#/selftest"
   ? ok("'Check data validity' cross-link lands on #/selftest (Diagnostics)")
