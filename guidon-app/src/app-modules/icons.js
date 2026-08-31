@@ -76,6 +76,14 @@ window.G = window.G || {};
     map: [{ pg: "1 6 8 2 16 6 23 2 23 18 16 22 8 18 1 22" }, { l: [8, 2, 8, 18] }, { l: [16, 6, 16, 22] }],
     archive: [{ pl: "21 8 21 21 3 21 3 8" }, { r: [1, 3, 22, 5] }, { l: [10, 12, 14, 12] }],
     database: [{ e: [12, 5, 9, 3] }, { p: "M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" }, { p: "M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" }],
+    // Roadmap audit round 4, "Test coverage gaps for previously-fixed bug
+    // classes" bucket: the persistent mobile bottom nav's always-visible
+    // "More" button called util.icon("more-horizontal", ...), but that name
+    // was never a key in D - every install was silently rendering the
+    // fallback "⋯" text glyph instead of a real stroke icon, invisible
+    // unless someone actually diffed the rendered DOM node type. Standard
+    // Feather "more-horizontal" geometry: three dots in a horizontal row.
+    "more-horizontal": [{ c: [12, 12, 1] }, { c: [19, 12, 1] }, { c: [5, 12, 1] }],
   };
 
   const NS = "http://www.w3.org/2000/svg";

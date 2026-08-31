@@ -135,6 +135,63 @@ btnAfter && btnAfter.disabled
   : bad("button state after click: " + JSON.stringify(btnAfter));
 if (remindAfter.last) await page.evaluate((id) => window.G.reminders.remove(id), remindAfter.last.id);
 
+// ---- nextCutoff() month-rollover boundary (audit round 4, "test coverage
+// gaps" bucket): nextCutoff() rolls from "26th of this month" to "26th of
+// NEXT month" once today's date passes the 26th, including a December ->
+// January year rollover (new Date(y, 12, 26) relies on JS's own month
+// overflow to land in January of y+1). Until now this branch only ever ran
+// whichever way CI's real wall-clock date happened to fall on any given
+// day, so the rollover arm - and the year-rollover case specifically -
+// could silently break without any test noticing. Freezes the page's Date
+// constructor to three fixed "today"s (a class that SUBCLASSES the real
+// Date rather than replacing it, so every other Date call already running
+// in the app - reminders, calendar, IndexedDB - keeps working normally),
+// then re-renders #/records and reads the exact cutoff string off the
+// "Remind me before the cutoff" panel. The expected string is built
+// independently in-page from a fresh Date the test constructs itself
+// (never by calling nextCutoff()/fmt() directly), so a bug in the real
+// branch can't hide behind a test that just re-runs the same logic. ----
+async function freezeToday(y, m, d) {
+  await page.evaluate(({ y, m, d }) => {
+    const RealDate = Date;
+    // Noon, not midnight, so the frozen instant can't drift onto the
+    // adjacent calendar day under any timezone this test might run in.
+    const fixedMs = new RealDate(y, m, d, 12, 0, 0, 0).getTime();
+    class FrozenDate extends RealDate {
+      constructor(...args) {
+        if (args.length === 0) { super(fixedMs); return; }
+        super(...args);
+      }
+      static now() { return fixedMs; }
+    }
+    window.Date = FrozenDate;
+  }, { y, m, d });
+}
+async function assertCutoff(label, y, m, d, expY, expM) {
+  await freezeToday(y, m, d);
+  await page.evaluate(() => { location.hash = "#/home"; });
+  await page.waitForTimeout(150);
+  await page.evaluate(() => { location.hash = "#/records"; });
+  await page.waitForTimeout(400);
+  const result = await page.evaluate(({ expY, expM }) => {
+    const eyebrow = [...document.querySelectorAll(".eyebrow")].find((n) => /Remind me before the cutoff/i.test(n.textContent || ""));
+    const panel = eyebrow && eyebrow.closest(".panel");
+    const hint = panel ? panel.querySelector("p.hint") : null;
+    const rendered = hint ? hint.textContent : null;
+    const expectedStr = new Date(expY, expM, 26).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+    return { rendered, expectedStr };
+  }, { expY, expM });
+  (result.rendered && result.rendered.indexOf(result.expectedStr) !== -1)
+    ? ok(label + ": cutoff correctly renders \"" + result.expectedStr + "\"")
+    : bad(label + ": expected cutoff \"" + result.expectedStr + "\" not found in \"" + result.rendered + "\"");
+}
+// Same-month branch: the 20th is still before the 26th, so the cutoff stays in March.
+await assertCutoff("today=Mar 20, 2026 (before cutoff, same month)", 2026, 2, 20, 2026, 2);
+// Next-month branch, same year: the 27th has already passed the 26th, so the cutoff rolls to April.
+await assertCutoff("today=Mar 27, 2026 (after cutoff, rolls to next month)", 2026, 2, 27, 2026, 3);
+// Next-month branch, December -> January year rollover.
+await assertCutoff("today=Dec 27, 2025 (after cutoff, rolls into next YEAR)", 2025, 11, 27, 2026, 0);
+
 // cleanup
 await page.evaluate(() => window.G.db.put("kv", { k: "guidon:records:checks:v1", v: {} }));
 

@@ -47,11 +47,15 @@ const noise = [];
   const navState = await page.evaluate(() => {
     const buttons = Array.from(document.querySelectorAll(".nav > a[data-hash]"));
     const more = document.querySelector(".nav-more-btn");
+    const icoWrap = more ? more.querySelector(".ico") : null;
+    const iconChild = icoWrap ? icoWrap.firstElementChild : null;
     return {
       primaryHashes: buttons.map((b) => b.getAttribute("data-hash")),
       hasMore: !!more,
       moreText: more ? more.textContent.trim() : null,
       moreActive: more ? more.classList.contains("active") : null,
+      iconTag: iconChild ? iconChild.tagName.toLowerCase() : null,
+      iconIsGi: iconChild ? iconChild.classList.contains("gi") : false,
     };
   });
   navState.primaryHashes.length === 4
@@ -59,6 +63,15 @@ const noise = [];
     : bad(`<600px flat bar primary route count: ${navState.primaryHashes.length}, expected 4 (${JSON.stringify(navState.primaryHashes)})`);
   navState.hasMore ? ok('a "More" button renders alongside the 4 primaries') : bad('"More" button not found in the <600px flat bar');
   navState.moreActive === false ? ok('"More" is not active while on Home (one of the 4 primaries)') : bad("More active state on Home: " + navState.moreActive);
+  // Roadmap audit round 4, "Test coverage gaps for previously-fixed bug
+  // classes" bucket: util.icon("more-horizontal", ...) used to name an icon
+  // that didn't exist in G.icons' D object, so this always-visible mobile
+  // button silently rendered util.icon's fallback <span> text glyph instead
+  // of a real stroke icon - nothing here ever checked the child's tag name,
+  // only that SOME node was present. Now asserts a real <svg class="gi">.
+  navState.iconTag === "svg" && navState.iconIsGi
+    ? ok('"More" button renders a real <svg class="gi"> icon, not a fallback <span> text glyph')
+    : bad('"More" button icon child: tag=' + navState.iconTag + " gi=" + navState.iconIsGi + " (expected a real svg.gi, not a fallback span)");
 
   // ---- open the drawer ----
   await page.locator(".nav-more-btn").click();
