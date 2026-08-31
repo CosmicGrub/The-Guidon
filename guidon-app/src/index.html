@@ -14790,18 +14790,47 @@ window.G = window.G || {};
           const planPanel = el("div.panel", { style:"margin-top:10px" });
           planPanel.appendChild(el("div.eyebrow", { text: "From your profile" }));
           planPanel.appendChild(el("h3", { text: "Personal action plan" }));
-          profPlan.slice(0,5).forEach(item => {
-            const row = el("div.ob-plan-item.clickable");
-            const pri = item.priority === "high" ? "var(--red)" : "var(--amber)";
-            row.appendChild(el("span.ob-plan-icon", { text: item.icon || "▶", style:"color:"+pri }));
-            const body = el("div.ob-plan-body");
-            body.appendChild(el("div.ob-plan-cat", { text: item.category }));
-            body.appendChild(el("div.ob-plan-action", { text: item.action }));
-            row.appendChild(body);
-            row.tabIndex = 0;
-            const go = () => { location.hash = item.route || "#/home"; };
-            row.addEventListener("click", go); row.addEventListener("keydown", e=>{ if(e.key==="Enter")go(); });
-            planPanel.appendChild(row);
+          // Enhancement backlog round 4, "Keyboard Navigation & Semantic
+          // Roles" bucket: priority (high vs. medium) was conveyed by icon
+          // COLOR alone - pri below picked var(--red) vs var(--amber) but
+          // the glyph itself (item.icon || "▶") was identical either way, a
+          // WCAG 1.4.1 violation for anyone who can't distinguish red from
+          // amber (or is on a grayscale/high-contrast display). Profile's
+          // own renderPlanSection (this same file, "Your priorities" panel)
+          // already solves this correctly with literal "High priority"/
+          // "This week" text headers instead of relying on color - grouped
+          // this teaser under the same two header labels rather than
+          // inventing a different text treatment for the same data.
+          const shownPlan = profPlan.slice(0, 5);
+          const planGroups = [
+            { items: shownPlan.filter(item => item.priority === "high"), label: "High priority" },
+            { items: shownPlan.filter(item => item.priority !== "high"), label: "This week" },
+          ];
+          planGroups.forEach(group => {
+            if (!group.items.length) return;
+            planPanel.appendChild(el("div.ob-plan-label", { text: group.label, style: "margin-top:10px" }));
+            group.items.forEach(item => {
+              const row = el("div.ob-plan-item.clickable");
+              const pri = item.priority === "high" ? "var(--red)" : "var(--amber)";
+              row.appendChild(el("span.ob-plan-icon", { text: item.icon || "▶", style:"color:"+pri }));
+              const body = el("div.ob-plan-body");
+              body.appendChild(el("div.ob-plan-cat", { text: item.category }));
+              body.appendChild(el("div.ob-plan-action", { text: item.action }));
+              row.appendChild(body);
+              row.tabIndex = 0;
+              // Same gap as profile.js's renderPlanSection (see that
+              // function's own comment) - a keyboard-operable div with no
+              // role="button"/aria-label, unlike onboarding mode cards and
+              // Search's .search-hit which set both. Also picked up the
+              // missing Space-key activation here (only Enter fired
+              // before) while touching this handler for the same bucket.
+              row.setAttribute("role", "button");
+              row.setAttribute("aria-label", (item.category ? item.category + ": " : "") + (item.action || ""));
+              const go = () => { location.hash = item.route || "#/home"; };
+              row.addEventListener("click", go);
+              row.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+              planPanel.appendChild(row);
+            });
           });
           const viewAll = el("button.btn.ghost.sm", { text:"Full plan →", type:"button", style:"margin-top:8px" });
           viewAll.addEventListener("click", () => location.hash = "#/profile");
@@ -20932,8 +20961,19 @@ window.G = window.G || {};
           body.appendChild(el("div.ob-plan-cat", { text: item.category }));
           body.appendChild(el("div.ob-plan-action", { text: item.action }));
           row.appendChild(body);
-          row.appendChild(el("span", { style:"color:var(--text-dim);font-size:0.8rem", text:"→" }));
+          // Enhancement backlog round 4, "Keyboard Navigation & Semantic
+          // Roles" bucket: this row already sets tabIndex=0 with correct
+          // Enter+Space keydown handling below, but never set role="button"
+          // or an aria-label - unlike onboarding mode cards and Search's
+          // .search-hit (both index.html, same file), which set both, so a
+          // screen reader landing here announced a plain, unlabeled group of
+          // text rather than an actionable item. aria-hidden on the trailing
+          // arrow glyph stops that purely-decorative "→" from being read out
+          // as its own item on top of the row's own aria-label.
+          row.appendChild(el("span", { style:"color:var(--text-dim);font-size:0.8rem", text:"→", "aria-hidden": "true" }));
           row.tabIndex = 0;
+          row.setAttribute("role", "button");
+          row.setAttribute("aria-label", (item.category ? item.category + ": " : "") + (item.action || ""));
           const go = () => { location.hash = item.route || "#/home"; };
           row.addEventListener("click", go);
           row.addEventListener("keydown", e => { if(e.key==="Enter"||e.key===" ") go(); });
@@ -31115,8 +31155,22 @@ window.G = window.G || {};
 
     app.appendChild(el("a.skip-link", { href: "#main", text: "Skip to content" }));
     app.appendChild(topbar);
-    app.appendChild(navEl);
+    // Enhancement backlog round 4, "Keyboard Navigation & Semantic Roles"
+    // bucket: main used to be appended AFTER navEl here, so on mobile widths
+    // (<800px, #app's own "top"/"main"/"nav" grid-template-areas above -
+    // visually top bar, then content, then the bottom tab bar) a sighted
+    // keyboard-only user tabbed through the ENTIRE bottom nav bar before
+    // ever reaching the route content they landed on, on every single
+    // navigation. #app is a real CSS grid with each of .topbar/.main/.nav
+    // assigned its area by NAME (grid-area: top/main/nav, all three set
+    // unconditionally, not just inside a media query - see those rules
+    // above), so grid-template-areas positions every child by area name
+    // regardless of DOM/source order - reordering the DOM here to
+    // topbar -> main -> navEl fixes tab order to match reading order with
+    // zero visual change at any breakpoint, mobile or the >=800px side-rail
+    // layout alike.
     app.appendChild(main);
+    app.appendChild(navEl);
     app.appendChild(el("div#toast", { role: "status", "aria-live": "polite" }));
   }
 

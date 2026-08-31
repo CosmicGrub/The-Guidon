@@ -235,6 +235,30 @@ window.G = window.G || {};
           worst ? el("span.ldr-badge", { text: worst.over + "d over" }) : null,
         ]);
         row.addEventListener("click", function () { jumpToSoldier(idx); });
+        // Enhancement backlog round 4, "Keyboard Navigation & Semantic Roles"
+        // bucket: rosterList declares role="listbox" with role="option" rows
+        // (below) but never attached a keydown listener anywhere in this
+        // file, so a keyboard user tabbed into the first row and then had
+        // no way to move between the rest without leaving the listbox and
+        // re-tabbing through the whole roster - every sibling list-detail-list
+        // in the app (Doctrine/Dictionary/Resources's entryList, Money's
+        // navList, Board Drill's catList) implements ArrowUp/ArrowDown row
+        // navigation. Copies Money's navList keydown shape exactly (see its
+        // own comment, index.html ~line 26628): no filter/search input sits
+        // immediately above rosterList in this two-pane layout (filterInp is
+        // part of the right-hand controls, not this left jump pane), so
+        // ArrowUp from row 0 simply clamps rather than handing focus off.
+        row.addEventListener("keydown", function (e) {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            const next = row.nextElementSibling;
+            if (next) next.focus();
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            const prev = row.previousElementSibling;
+            if (prev) prev.focus();
+          }
+        });
         rosterList.appendChild(row);
 
         // No margin-bottom here (unlike other .panel usages in this file) -
