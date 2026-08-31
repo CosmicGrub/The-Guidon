@@ -179,9 +179,15 @@ window.G = window.G || {};
     const end = Math.min(pageText.length, matchStart + matchLen + CTX);
     const span = el("span");
     if (start > 0) span.appendChild(document.createTextNode("…"));
-    span.appendChild(document.createTextNode(pageText.slice(start, matchStart).replace(/s+/g, " ")));
+    // Roadmap audit round 4, "Correctness bugs: data loss, mangled text, and stale counts" bucket:
+    // this was `replace(/s+/g, " ")` - one-or-more literal 's' characters, not
+    // whitespace (missing the backslash). Any run of the letter 's' near a
+    // search hit collapsed to a single space, e.g. "discussion" rendered as
+    // "discu ion" in the snippet. Fixed to `\s+` so it collapses actual
+    // whitespace runs (the original intent) instead of eating letters.
+    span.appendChild(document.createTextNode(pageText.slice(start, matchStart).replace(/\s+/g, " ")));
     span.appendChild(el("mark.dict-hi", { text: pageText.slice(matchStart, matchStart + matchLen) }));
-    span.appendChild(document.createTextNode(pageText.slice(matchStart + matchLen, end).replace(/s+/g, " ")));
+    span.appendChild(document.createTextNode(pageText.slice(matchStart + matchLen, end).replace(/\s+/g, " ")));
     if (end < pageText.length) span.appendChild(document.createTextNode("…"));
     return span;
   }
