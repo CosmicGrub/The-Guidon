@@ -98,6 +98,29 @@ window.G = window.G || {};
     return null;
   }
 
+  // Resources' own currency signal, same live-getter shape as
+  // financeAsOfStamp() and careerAsOfStamp() above: G.store.resources().asOf
+  // ("Curated from the DOL VETS Resource Guide, April 2026 - verify at
+  // dol.gov/agencies/vets/programs/tap"), read live via G.store.resources() -
+  // the exact same accessor resources.js's own data() uses, so this can
+  // never see anything resources.js itself couldn't. Prose, not a bare
+  // stamp, same reasoning as Money: pull the embedded year out at render
+  // time rather than hand-typing a second "2026" here that the real field
+  // could silently drift away from.
+  let _resourcesAsOfWarned = false;
+  function resourcesAsOfStamp() {
+    try {
+      const s = (G.store && G.store.resources && G.store.resources()) || {};
+      const m = /\b(20\d{2})\b/.exec(s.asOf || "");
+      if (m) return m[1];
+    } catch (e) {}
+    if (!_resourcesAsOfWarned && G.selfheal) {
+      _resourcesAsOfWarned = true;
+      G.selfheal.log("currency-derive-fail", "resources", "could not find a leading year in G.store.resources().asOf - the Resources Freshness entry will read “unknown” instead of a real age");
+    }
+    return null;
+  }
+
   // Enhancement backlog round 1, "Hardcoded content numbers" bucket: two
   // domains here each carried their own independent literal for a date a
   // sibling module ALSO hardcodes as its own module-level AS_OF constant -
@@ -149,7 +172,17 @@ window.G = window.G || {};
       volatility: "high",
       basis: "AFT combat standard effective 1 Jan 2026 (RA); Combat Field Test under AD 2026-07 from April 2026; AD 2026-13 rescinded the body-composition exemption on 7 July 2026.",
       implemented: "Both tests, both MOS lists, and the CFT phasing dates.",
-      ask: "Your S-3 and your unit's test calendar.", link: "#/fitness" },
+      ask: "Your S-3 and your unit's test calendar.", link: "#/fitness",
+      // Enhancement backlog round 4, "Currency/Freshness tracker missing
+      // entries it already has rules for" bucket: this domain's basis
+      // touches the body-composition exemption, governed by AR 600-9 - one
+      // of the Library's 15 core documents (confirmed via library.js's own
+      // DOCS entry, id "ar-600-9") - the same "single publication in the
+      // core set" criterion the Board Prep domain above already documents
+      // for its own libraryId. Missing here purely by oversight, not by the
+      // documented exclusion (that's for domains citing a whole corpus or
+      // Directives/ALARACTs/EXORDs outside the core set).
+      libraryId: "ar-600-9" },
 
     { area: "Credentialing and tuition assistance", short: "Channels", asOf: "2026-03-19", volatility: "high",
       basis: "ALARACT 102/2025 - CA reduced to $2,000 per fiscal year, officers ineligible, all requests routed through ArmyIgnitED.",
@@ -159,7 +192,15 @@ window.G = window.G || {};
     { area: "NCO professional development", short: "BLC Prep", asOf: "2026-07", volatility: "medium",
       basis: "DLC eliminated as a resident-PME prerequisite 1 Oct 2024; PME course lengths are actively changing across the ladder.",
       implemented: "BLC, ALC and SLC modules, each carrying its own change warning.",
-      ask: "Your NCO Academy and S-3 - course length is the part most likely to be wrong.", link: "#/blc" },
+      ask: "Your NCO Academy and S-3 - course length is the part most likely to be wrong.", link: "#/blc",
+      // Enhancement backlog round 4, "Currency/Freshness tracker missing
+      // entries it already has rules for" bucket: same reasoning as Fitness
+      // above - this domain's subject is DA PAM 600-25 (U.S. Army NCO
+      // Professional Development Guide), a single publication in the
+      // Library's core set (confirmed via library.js's own DOCS entry, id
+      // "da-pam-600-25"), so it qualifies for the same "Read the source"
+      // cross-link the Board Prep domain already has.
+      libraryId: "da-pam-600-25" },
 
     { area: "Assignments and the Marketplace", short: "Assignments",
       get asOf() { return monthYearStamp("assignments", G.assignments && G.assignments.AS_OF); },
@@ -245,6 +286,23 @@ window.G = window.G || {};
         return "336 entries and an unknown number of board cards.";
       },
       ask: "armypubs.army.mil for the current edition of any publication you are quoting.", link: "#/doctrine" },
+
+    // Enhancement backlog round 4, "Currency/Freshness tracker missing
+    // entries it already has rules for" bucket: #/resources carries its own
+    // explicit dated citation (data.resources.asOf, rendered as the tab's
+    // own top hint by resources.js) exactly like Money and Career above do -
+    // but unlike them, it never had a DOMAINS entry here, so a reader could
+    // land on 24 categories of apprenticeship/legal/spouse-employment
+    // program links with no way to see how stale the underlying guide is
+    // without leaving #/currency to go find the in-page stamp themselves.
+    // asOf is a live getter, not a literal, same reasoning as Money/Career -
+    // see resourcesAsOfStamp() above.
+    { area: "Resources directory (apprenticeships, licensing, employment rights, spouse programs)", short: "Resources",
+      get asOf() { return resourcesAsOfStamp(); },
+      volatility: "medium",
+      basis: "DOL VETS Resource Guide, April 2026 - program names, URLs and eligibility figures (e.g. MyCAA's $4,000 cap) are drawn from it - see the Resources tab's own hint for the exact citation text this age is derived from.",
+      implemented: "All 24 categories: apprenticeships, certification/credentialing, employment rights, military spouse employment, mentorship, and the rest of the directory.",
+      ask: "The linked agency (dol.gov, mycaa.militaryonesource.mil, etc.) for the current version of any program you're relying on.", link: "#/resources" },
   ];
 
   function ageOf(stamp) {

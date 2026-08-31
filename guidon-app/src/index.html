@@ -29272,6 +29272,23 @@ window.G = window.G || {};
     mount.appendChild(el("div.section-title", {}, [el("h2", { text: "Doctrine" }), el("div.rule")]));
     const meta = store.doctrineMeta();
     if (meta.note) mount.appendChild(el("div.card", {}, [el("p.hint", { text: meta.note })]));
+    // Enhancement backlog round 4, "Currency/Freshness tracker missing
+    // entries it already has rules for" bucket: meta carries generatedAsOf
+    // ("2026-07") and version ("0.1.0") on the live seed - the exact
+    // edition/vintage stamp the Doctrine Freshness card on #/currency
+    // reports an age against (currency.js's own "Doctrine corpus" domain,
+    // asOf: "2026-07") - but this view itself only ever displayed meta.note
+    // and never its own copy of that stamp. A reader who lands here
+    // directly (bookmark, search, nav) without ever visiting #/currency had
+    // no in-page way to see which edition/date this corpus was built on.
+    // Shown as its own hint line, matching meta.note's small-text styling
+    // just above.
+    if (meta.generatedAsOf || meta.version) {
+      const stampParts = [];
+      if (meta.generatedAsOf) stampParts.push("Generated as of " + meta.generatedAsOf);
+      if (meta.version) stampParts.push("data v" + meta.version);
+      mount.appendChild(el("p.hint", { text: stampParts.join(" · ") }));
+    }
 
     // ── Topic filter chips ─────────────────────────────────────────────────
     const allEntries = store.doctrine("");
