@@ -167,8 +167,25 @@ jobs:
           cache: npm
           cache-dependency-path: guidon-app/package-lock.json
 
+      # Roadmap audit round 5, "Dependency & CI/Build Hygiene" bucket: scoped
+      # --omit=optional to CI's npm ci specifically, not to package.json/
+      # .npmrc project-wide. canvas@2.11.2 (pdfjs-dist's own unused
+      # optionalDependency - see package.json's _pdfjs_dist_note and
+      # _overrides_note) is optional:true + hasInstallScript:true +
+      # dev:true in package-lock.json, so an unscoped `npm ci` runs its
+      # native-binary install script on every single CI job that installs
+      # deps for nothing: this file never runs `cargo build`/`tauri build`/
+      # `tauri dev` in any job (grepped the whole workflow to confirm), so
+      # nothing here ever touches canvas or Node-side pdfjs-dist. Per
+      # package.json's own _overrides_note, a project-wide --omit=optional
+      # is deliberately avoided because @tauri-apps/cli's platform-specific
+      # native binaries are ALSO optionalDependencies and desktop:dev/
+      # desktop:build (which DO need them) run locally, outside this
+      # workflow - so scoping the flag to just these CI steps gets the
+      # skip-canvas's-install-script win without touching that local-build
+      # tradeoff at all.
       - name: Install dependencies (npm ci)
-        run: npm ci
+        run: npm ci --omit=optional
 
       # npm's own advisory database against the resolved lockfile. Runs the
       # FULL audit (no --omit=dev) on purpose - a prior version of this step
@@ -308,6 +325,55 @@ jobs:
         working-directory: guidon-app/src-tauri
         run: cargo audit
         continue-on-error: true
+
+  # ---------------------------------------------------------------------
+  # Roadmap audit round 5, "Dependency & CI/Build Hygiene" bucket: cargo
+  # audit above only ever reads Cargo.lock's crate-version list against the
+  # RustSec advisory DB - it never resolves Cargo.toml against Cargo.lock
+  # and never invokes rustc, so it cannot catch a stale/out-of-sync
+  # lockfile or a dependency bump that simply fails to compile. Grepped the
+  # whole workflow before adding this: no job here ever ran `cargo build`/
+  # `cargo check`/`tauri build`/`tauri dev`, so this project's Rust
+  # dependency tree had never once been compiled by CI. `cargo check
+  # --locked` is used instead of `cargo build`: --locked fails immediately
+  # if Cargo.lock and Cargo.toml have drifted (one bumped without
+  # regenerating the other) rather than silently re-resolving, and `check`
+  # skips codegen entirely - the fast compile-and-drift-check this job
+  # exists for, not a full release build (that stays desktop:build, run
+  # locally/at release time, never in this workflow - same "out of scope
+  # for a hosted CI pass" reasoning as the top-of-file EXCLUDED ON PURPOSE
+  # note for Android).
+  #
+  # runs-on windows-latest, not ubuntu-latest like every other job here:
+  # tauri.conf.json's own bundle.targets is ["nsis", "msi"] only, and
+  # Cargo.toml's own tracked-advisory comment already establishes "this
+  # project only ships a Windows desktop build (no Linux target in CI or
+  # in tauri.conf.json)". On Linux, Tauri's webkit2gtk/gtk3 sys-crate build
+  # scripts need real system packages (libwebkit2gtk, libgtk-3, etc.)
+  # installed via apt before `cargo check` can even run them - packages
+  # this repo has never needed and has no existing install step for
+  # anywhere. windows-latest compiles against the actual shipped target
+  # with zero extra system-dependency setup, keeping this the "lightweight"
+  # check the finding asked for instead of growing into a new Linux
+  # packaging concern. GitHub-hosted windows-latest runners ship a Rust
+  # toolchain already (see actions/runner-images' documented software
+  # list), so no separate toolchain-install step is needed here either.
+  # ---------------------------------------------------------------------
+  cargo-check:
+    name: cargo check --locked (src-tauri)
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
+        # SHA-pin-over-mutable-tag fix as the lint-build-verify job's
+        # Checkout step above, resolved via `gh api
+        # repos/actions/checkout/commits/v4`.
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+      - name: cargo check --locked
+        working-directory: guidon-app/src-tauri
+        run: cargo check --locked
 
   # ---------------------------------------------------------------------
   # Roadmap audit round 4, "CI / supply-chain hardening" bucket: OSV.dev
@@ -474,8 +540,13 @@ jobs:
           cache: npm
           cache-dependency-path: guidon-app/package-lock.json
 
+      # Roadmap audit round 5, "Dependency & CI/Build Hygiene" bucket: same
+      # --omit=optional scoping as the lint-build-verify job's own npm ci
+      # step above - this matrix job installs deps fresh in its own runner
+      # too, so it would otherwise also run canvas's dead-weight native
+      # install script 16 times over (once per chunk) for nothing.
       - name: Install dependencies (npm ci)
-        run: npm ci
+        run: npm ci --omit=optional
 
       - name: Cache Playwright browsers
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same

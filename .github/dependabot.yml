@@ -43,6 +43,22 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      # Roadmap audit round 5, "Dependency & CI/Build Hygiene" bucket:
+      # package.json's own _pdfjs_dist_note is explicit that pdfjs-dist is
+      # exact-pinned on purpose - it isn't actually require()'d by any
+      # Node/build code (GUIDON vendors a pre-built browser bundle straight
+      # into src/index.html instead), so "a routine npm install must never
+      # silently pick up a newer pdfjs-dist without a matching, deliberate
+      # re-vendor of the pasted bundle." The major-version carve-out above
+      # (npm-routine only groups minor/patch) doesn't help here: pdfjs-dist
+      # is pinned to 3.11.174 with no caret, so even a patch-level bump
+      # would need the exact same manual re-vendor a major bump would - the
+      # risk isn't semver-shaped, it's "any version change at all needs a
+      # human to re-paste the bundle." No update-types/versions filter
+      # below on purpose - this ignores every version bump Dependabot would
+      # otherwise propose for this dependency, not just majors.
+      - dependency-name: "pdfjs-dist"
 
   - package-ecosystem: "cargo"
     directory: "/guidon-app/src-tauri"
