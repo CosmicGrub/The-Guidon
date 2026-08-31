@@ -120,11 +120,20 @@ await page.evaluate(async ({ dueIds, masteredIds, etsDateStr, boardDateStr }) =>
   // Settings/onboarding save triggers also runs here.
   await window.G.store.setSetting("etsDate", etsDateStr);
   await window.G.store.setSetting("boardDate", boardDateStr);
-  // Streak: lastActive already "today" (by the app's own today(), which is
-  // UTC-based via toISOString()) so Home's G.streak.tick() is a same-day
-  // no-op and every screen reads the identical seeded count regardless of
-  // visit order.
-  const today = new Date().toISOString().slice(0, 10);
+  // Streak: lastActive already "today" (by the app's own G.streak today(),
+  // which uses LOCAL date parts — getFullYear/getMonth/getDate — not
+  // toISOString(), specifically so day-rollover lands on the Soldier's own
+  // local midnight rather than a fixed UTC instant hours away from it; see
+  // that function's own comment in src/index.html) so Home's
+  // G.streak.tick() is a same-day no-op and every screen reads the
+  // identical seeded count regardless of visit order. Was seeded with the
+  // UTC date instead (a stale mismatch with the app's own local-date
+  // logic) — harmless most of the day, but false-failed this exact
+  // assertion for hours around every UTC midnight in any timezone behind
+  // UTC (i.e. most of the Western Hemisphere's evening), where local date
+  // still reads "yesterday" relative to UTC's date.
+  const d = new Date();
+  const today = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
   await window.G.db.setSetting("streak:v1", { lastActive: today, count: 4, longestCount: 6 });
   // IDP goals — real row shape (goal/status/domain/competency/target).
   await window.G.db.setSetting("idp:goals", [

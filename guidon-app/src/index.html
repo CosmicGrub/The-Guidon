@@ -330,6 +330,12 @@ a:hover { text-decoration: underline; }
 .bar.cyan > span { background: linear-gradient(90deg, #1c8f97, var(--cyan)); box-shadow: 0 0 10px rgba(56,214,224,.4); }
 .bar.green > span { background: linear-gradient(90deg, #2f9e5b, var(--green)); }
 .bar.violet > span { background: linear-gradient(90deg, #6d54c4, var(--violet)); }
+/* Enhancement backlog round 3, "Board Readiness Display Accuracy" bucket:
+   the only color variants that existed were green/cyan/violet - nothing
+   for the red band every other severity scale in this file already uses
+   (readColor/readLabel, band() in currency.js, etc.), so a bar meant to
+   show red fell back to the base (amber-tinted) style above instead. */
+.bar.red > span { background: linear-gradient(90deg, #c23636, var(--red)); box-shadow: 0 0 10px rgba(255,93,93,.4); }
 
 /* ---------- Auto-night 24h window bar (Settings > Interface) ---------- */
 /* Visual companion to the Auto-night start/end <select>s -- the selects stay
@@ -7287,15 +7293,28 @@ window.G = window.G || {};
     },
 
     // ---- doctrine ----
+    // Enhancement backlog round 3, "Redundant IndexedDB reads and
+    // unmemoized re-computation" bucket: Search's runSearch() calls this
+    // on every keystroke (after its own 120ms debounce) - the confidence/
+    // tier-filtered base list can't change mid-typing, only the query
+    // text does, so re-filtering the full entry list from scratch every
+    // call repeated identical work. Memoizes the base list the same way
+    // scenarios() already does above, keyed on the 3 settings that can
+    // actually change it; only the query-text filter re-runs per call.
     doctrine(query) {
       const s = state.settings;
-      let list = (state.seed.doctrine && state.seed.doctrine.entries) || [];
-      list = list.filter((d) => {
-        if (d.confidence === "in_transition" && !s.showInTransition) return false;
-        if (d.confidence === "community" && !s.showCommunity) return false;
-        if (s.tierFilter !== "all" && d.tier && util.asArray(d.tier).indexOf(s.tierFilter) === -1) return false;
-        return true;
-      });
+      const baseKey = (s.tierFilter || "all") + "|" + !!s.showInTransition + "|" + !!s.showCommunity;
+      if (!state._doctrineBaseCache || state._doctrineBaseCache.key !== baseKey) {
+        let base = (state.seed.doctrine && state.seed.doctrine.entries) || [];
+        base = base.filter((d) => {
+          if (d.confidence === "in_transition" && !s.showInTransition) return false;
+          if (d.confidence === "community" && !s.showCommunity) return false;
+          if (s.tierFilter !== "all" && d.tier && util.asArray(d.tier).indexOf(s.tierFilter) === -1) return false;
+          return true;
+        });
+        state._doctrineBaseCache = { key: baseKey, list: base };
+      }
+      let list = state._doctrineBaseCache.list;
       if (query) {
         const q = query.toLowerCase();
         list = list.filter((d) =>
@@ -7373,10 +7392,20 @@ window.G = window.G || {};
     },
 
     // ---- board ----
+    // Enhancement backlog round 3, "Redundant IndexedDB reads and
+    // unmemoized re-computation" bucket: same fix as doctrine() above -
+    // Search's runSearch() calls this on every keystroke, but the result
+    // depends only on tierFilter, which can't change mid-typing. Whole
+    // result is memoized (not just a base slice, since there's no
+    // per-call query argument to filter further here) and invalidated
+    // the moment tierFilter itself changes.
     boardQuestions() {
       const s = state.settings;
+      const key = s.tierFilter || "all";
+      if (state._boardQuestionsCache && state._boardQuestionsCache.key === key) return state._boardQuestionsCache.list;
       let list = (state.seed.board && state.seed.board.questions) || [];
       if (s.tierFilter !== "all") list = list.filter((q) => !q.tier || util.asArray(q.tier).indexOf(s.tierFilter) !== -1);
+      state._boardQuestionsCache = { key, list };
       return list;
     },
     pointsRules() { return state.seed.points || { categories: [], totalMax: 800 }; },
@@ -8901,7 +8930,18 @@ window.G = window.G || {};
       s.misses = (s.misses || 0) + 0.5; // half-weight — not a full miss, but not free either
     } else if (grade === 2) { // Know It
       s.reps += 1;
-      s.ease = Math.min(2.8, s.ease + 0.1);
+      // Enhancement backlog round 3, "Board Engine Correctness" bucket: a
+      // straight Math.min(2.8, s.ease+0.1) forced ease down to 2.8 in one
+      // step for a card that had built ease above 2.8 via a prior grade-3
+      // ("Down Cold") streak (grade 3 caps at 3.2) - a bigger single-step
+      // drop (-0.4) than even the grade-0 "Needs Help" FAILURE path above
+      // produces (-0.3), despite this being a correct recall, not a miss.
+      // Verified by direct simulation (tools/tmp-verify-ease-cap.mjs, since
+      // deleted) that clamping the drop to -0.3 here (never worse than a
+      // genuine downgrade) leaves every ease <= 2.8 - the vast majority of
+      // real cards, which never cross tracks - byte-for-byte identical to
+      // the original formula, and leaves grade 3's own 3.2 ceiling untouched.
+      s.ease = Math.max(Math.min(2.8, s.ease + 0.1), s.ease - 0.3);
       s.interval = s.reps === 1 ? 1 : s.reps === 2 ? 3 : Math.round((s.interval || 3) * s.ease);
       s.due = now + s.interval * DAY;
       s.misses = Math.max(0, (s.misses || 0) - 0.5); // good recall slowly earns a card back out of leech status
@@ -9744,8 +9784,31 @@ window.G = window.G || {};
         // Fixed +3 thrashed on small filtered pools (single-category + due-
         // only + leech combos routinely leave <=3 cards) — scale the
         // reinsertion gap with the actual queue size instead of a constant.
-        const insertAt = Math.min(queue.length, (idx % queue.length) + Math.max(2, Math.ceil(queue.length * 0.15)));
-        queue.splice(insertAt, 0, q);
+        const gap = Math.max(2, Math.ceil(queue.length * 0.15));
+        const curIdx = idx % queue.length;
+        // Enhancement backlog round 3, "Board Engine Correctness" bucket:
+        // when the missed card is the LAST card in the current pass
+        // (curIdx === queue.length-1), min(queue.length, curIdx+gap) always
+        // clamped to exactly queue.length (append). Verified by direct
+        // simulation (tools/tmp-verify-grade-reinsertion.mjs, since deleted)
+        // that this is mathematically unavoidable for that one position, no
+        // matter where the duplicate is spliced in: idx++ lands exactly on
+        // whichever element now occupies the array's new last slot -
+        // draw()'s very next read shows the same card the Soldier just
+        // missed with zero cards in between, defeating the whole point of a
+        // spaced gap. The fix inserts near the START of the fresh pass
+        // instead (where the read naturally continues) and adds one
+        // compensating idx++ so the read actually lands there rather than on
+        // the phantom slot the array's own growth just created - confirmed
+        // via the same simulation to leave every non-boundary case (the vast
+        // majority of misses) byte-for-byte identical to the original
+        // formula.
+        if (curIdx === queue.length - 1) {
+          queue.splice(Math.min(queue.length, gap), 0, q);
+          idx++;
+        } else {
+          queue.splice(Math.min(queue.length, curIdx + gap), 0, q);
+        }
       }
       idx++;
       draw();
@@ -10783,7 +10846,13 @@ window.G = window.G || {};
       const tgtIn = el("input.ob-input", { type:"number", min:"0", max:"800", step:"1",
         value: String(v.target || ""), inputmode:"numeric",
         "aria-label":"Cutoff score for your MOS this month", style:"width:100%;margin-top:4px" });
-      tgtIn.addEventListener("change", () => { v.target = Math.max(0, Math.min(800, +tgtIn.value || 0)); draw(); });
+      // Enhancement backlog round 3, "In-progress work is silently lost"
+      // bucket: every other field on this worksheet (num()/chk() above)
+      // calls persistPPWDebounced() on change - this one didn't, so
+      // v.target (part of the same v object those helpers persist) reset
+      // to blank on every navigation while every other field on the same
+      // screen correctly survived it.
+      tgtIn.addEventListener("change", () => { v.target = Math.max(0, Math.min(800, +tgtIn.value || 0)); draw(); persistPPWDebounced(); });
       tgtCard.appendChild(tgtIn);
       tgtCard.appendChild(el("p.hint", { style:"margin-top:6px", text:
         "From the monthly HQDA cutoff list for your MOS \u2014 ask S-1 or your career counsellor. GUIDON does not ship cutoff numbers because they move every month." }));
@@ -11416,6 +11485,16 @@ window.G = window.G || {};
         timerEl.textContent = sess.remaining + "s";
         fill.style.transform = "scaleX(1)";
         sess.timer = setInterval(() => {
+          // Enhancement backlog round 3, "Board Engine Correctness" bucket:
+          // the one timer in this file missing the isConnected teardown
+          // guard every sibling timer already carries (Board Drill's own
+          // auto-theater timer checks cardWrap.isConnected, Quiz's checks
+          // card.isConnected, Rapid Fire's checks wrapEl.isConnected twice -
+          // grep any of those for the same pattern). Without it, switching
+          // from Mock Board to any other Board sub-tab mid-question detached
+          // mbWrap while this interval kept ticking sess.remaining down and
+          // mutating a now-invisible timerEl/fill forever.
+          if (!mbWrap.isConnected) { stop(); return; }
           sess.remaining--;
           if (sess.remaining <= 0) {
             stop();
@@ -11768,10 +11847,29 @@ window.G = window.G || {};
       el("span.k", { text: "Board Readiness Score" }),
       el("span.v", { style: "color:" + readColor + ";font-weight:700", text: overallPct + "%  " + readLabel }),
     ]));
-    header.appendChild(el("div.bar" + (overallPct >= 85 ? ".green" : overallPct >= 60 ? "" : ""), {},
+    // Enhancement backlog round 3, "Board Readiness Display Accuracy"
+    // bucket: this dead ternary's >=60 branch and final else both
+    // evaluated to the same empty string, so the bar was only ever
+    // ".green" or the base (amber-tinted) style - never amber or red for
+    // the 0-59% bands readColor/readLabel just above explicitly flag as
+    // "Building"/"Getting Started", visually contradicting the text right
+    // next to it. Mapped onto the same bands readColor uses (added a
+    // real .bar.red variant above; .amber isn't needed since the base
+    // .bar style is already amber-tinted).
+    header.appendChild(el("div.bar" + (overallPct >= 85 ? ".green" : overallPct >= 60 ? ".cyan" : overallPct >= 30 ? "" : ".red"), {},
       [el("span", { style: "transform:scaleX(" + (overallPct / 100) + ")" })]));
     header.appendChild(el("div.stat", { style: "margin-top:10px" }, [
-      el("span.k", { text: "Questions mastered (interval ≥ 3 days)" }),
+      // Enhancement backlog round 3, "Board Readiness Display Accuracy"
+      // bucket: this label described the OLD interval-based mastery
+      // signal - totalMastered (via categoryMasteryScores() ->
+      // isMasteredSrs()) has actually keyed off lastGrade != null &&
+      // lastGrade >= 2 for a while now (see isMasteredSrs()'s own
+      // comment on why the interval-based signal was deliberately
+      // replaced), so a card graded "Know It" for the first time
+      // (interval could be as low as 1 day) counted here while the label
+      // still claimed a 3-day bar was cleared. Wording now matches what
+      // isMasteredSrs() actually checks.
+      el("span.k", { text: "Questions mastered (last graded Know It or Down Cold)" }),
       el("span.v", { text: totalMastered + " / " + totalQ }),
     ]));
     header.appendChild(el("div.stat", {}, [
@@ -11789,7 +11887,18 @@ window.G = window.G || {};
     mount.appendChild(header);
 
     // ── Category breakdown ─────────────────────────────────────
-    const weakest = catScores.filter((c) => c.total > 0).sort((a, b) => a.pct - b.pct).slice(0, 3);
+    // Enhancement backlog round 3, "Board Readiness Display Accuracy"
+    // bucket: this used to compute the weakest-3 inline with no anySeen
+    // guard - G.board.weakestCategoriesByMastery() was extracted from
+    // this exact logic specifically so Rapid Fire's Setup option could
+    // reuse the same ranking, and deliberately returns [] when nothing
+    // has been studied yet ("every category sits at a fresh, untouched
+    // 0%... would be meaningless noise"), but this tab - the one this
+    // logic was extracted FROM - never actually called it, so a brand-new
+    // Soldier saw "Needs Work" confidently naming 3 categories at 0% as
+    // their weakest, the exact scenario the shared helper exists to
+    // prevent.
+    const weakest = await G.board.weakestCategoriesByMastery(3, all, srsData);
     if (weakest.length) {
       const weak = el("div.panel", { style: "margin-top:12px" });
       weak.appendChild(el("div.eyebrow", { text: "Needs Work" }));
@@ -13885,7 +13994,15 @@ window.G = window.G || {};
   // thinner than what they were just looking at on screen. Async now -
   // the board-question mastery breakdown needs its own SRS reads, the same
   // way the live page computes it.
-  async function printProgress(p) {
+  // Enhancement backlog round 3, "Redundant IndexedDB reads" bucket:
+  // bqCatStats (optional 2nd param) is the same catStats/tierStats object
+  // render() already computed via one loadAllSrs() cursor scan, hoisted
+  // specifically so sections further down could reuse it instead of
+  // re-scanning - this function's own "mastery by category" block never
+  // received it and ran a second independent scan on every Print Report
+  // click. Falls back to the original re-scan if not passed, so this
+  // stays safe to call from anywhere that doesn't have bqCatStats handy.
+  async function printProgress(p, bqCatStats) {
     const completions = (store.trainingCompletions && store.trainingCompletions()) || {};
     const trainingScs = store.scenarios ? store.scenarios().filter((s) => s.defaultMode === "training") : [];
     const rows = [...COMPS, ...ATTRS].map((d) =>
@@ -13955,17 +14072,27 @@ window.G = window.G || {};
     // Board Drill mastery by category.
     let masteryHtml = "";
     try {
-      const bqs = store.boardQuestions ? store.boardQuestions() : [];
-      if (bqs.length) {
-        const catStats = {};
-        // One db.all("kv") cursor scan instead of one db.get() per question.
-        const srsAll = await G.board.loadAllSrs(bqs.map((q) => q.id));
-        for (const q of bqs) {
-          const srs = srsAll[q.id];
-          if (!catStats[q.category]) catStats[q.category] = { total: 0, mastered: 0 };
-          catStats[q.category].total++;
-          if (G.board.isMasteredSrs(srs)) catStats[q.category].mastered++;
+      let catStats;
+      if (bqCatStats && bqCatStats.catStats) {
+        // Reuse render()'s own already-scanned data - same {total,
+        // mastered} shape this block otherwise computes from scratch
+        // (bqCatStats.catStats also carries reviewed/due, unused here).
+        catStats = bqCatStats.catStats;
+      } else {
+        const bqs = store.boardQuestions ? store.boardQuestions() : [];
+        if (bqs.length) {
+          catStats = {};
+          // One db.all("kv") cursor scan instead of one db.get() per question.
+          const srsAll = await G.board.loadAllSrs(bqs.map((q) => q.id));
+          for (const q of bqs) {
+            const srs = srsAll[q.id];
+            if (!catStats[q.category]) catStats[q.category] = { total: 0, mastered: 0 };
+            catStats[q.category].total++;
+            if (G.board.isMasteredSrs(srs)) catStats[q.category].mastered++;
+          }
         }
+      }
+      if (catStats) {
         const anyMastery = Object.values(catStats).some((c) => c.mastered > 0);
         if (anyMastery) {
           const catRows = Object.keys(catStats).sort().map((c) => {
@@ -14628,7 +14755,7 @@ window.G = window.G || {};
 
       // action bar: print + reset
       mount.appendChild(el("div.btn-row", { style: "margin-top:14px" }, [
-        el("button.btn.sm", { gi: "printer", giSize: 14, text: "Print Report", onclick: () => printProgress(p).catch((e) => console.warn("print report:", e && e.message)) }),
+        el("button.btn.sm", { gi: "printer", giSize: 14, text: "Print Report", onclick: () => printProgress(p, bqCatStats).catch((e) => console.warn("print report:", e && e.message)) }),
         el("button.btn.ghost.sm", { text: "Reset all progress", onclick: async () => {
           if (await G.modal.confirm("Reset all recorded attempts, readiness, and Mandatory Training completion? This cannot be undone.", { danger: true })) {
             await store.resetProgress();
@@ -15263,6 +15390,16 @@ window.G = window.G || {};
       const fileInput = el("input", { type: "file", accept: "application/json,.json", style: "display:none" });
       fileInput.addEventListener("change", async () => {
         const f = fileInput.files[0]; if (!f) return;
+        // Enhancement backlog round 3, "File-picker inputs aren't reset"
+        // bucket: on either failure path below (bad JSON, or "no valid
+        // scenario(s) found"), this never reset fileInput.value - since
+        // the Author list isn't re-rendered on those paths, the same
+        // input node persisted with its value still pointing at the
+        // previous file, and re-selecting the identical file does not
+        // fire a second change event in most browsers, so a retry
+        // produced no toast, no error, and no visible effect at all.
+        // finally{} guarantees the reset on every path (success included,
+        // harmlessly redundant there since back() rebuilds a fresh input).
         try {
           const parsed = JSON.parse(await f.text());
           // "Export All" (below) writes an ARRAY of every authored
@@ -15284,6 +15421,7 @@ window.G = window.G || {};
           util.toast("Imported " + valid.length + " scenario(s)." + (rejected.length ? " (" + rejected.length + " skipped as invalid.)" : ""));
           back();
         } catch (e) { util.toast("Import failed: " + e.message); }
+        finally { fileInput.value = ""; }
       });
 
       const seedSel = el("select", { "aria-label": "Copy a built-in scenario as a template" });
@@ -15948,8 +16086,40 @@ window.G = window.G || {};
     const p = cache[lesson.id] || { studied: false, mastered: false };
     const studiedBtn = el("button.btn", { text: p.studied ? "✓ Studied" : "Mark studied" });
     const masterBtn = el("button.btn.ghost", { text: p.mastered ? "🔴 Know it by the book" : "I know this by the book" });
-    studiedBtn.onclick = async () => { p.studied = !p.studied; if (!p.studied) p.mastered = false; cache[lesson.id] = p; await setP(lesson.id, p); studiedBtn.textContent = p.studied ? "✓ Studied" : "Mark studied"; masterBtn.textContent = p.mastered ? "🔴 Know it by the book" : "I know this by the book"; try { if (G.util.announce) G.util.announce(p.studied ? "Marked studied." : "Unmarked studied."); } catch (e) {} };
-    masterBtn.onclick = async () => { p.mastered = !p.mastered; if (p.mastered) p.studied = true; cache[lesson.id] = p; await setP(lesson.id, p); masterBtn.textContent = p.mastered ? "🔴 Know it by the book" : "I know this by the book"; studiedBtn.textContent = p.studied ? "✓ Studied" : "Mark studied"; try { if (G.util.announce) G.util.announce(p.mastered ? "Marked mastered." : "Unmarked mastered."); } catch (e) {} };
+    // Enhancement backlog round 3, "Failed IndexedDB writes fail
+    // silently" bucket: setP()'s own await had no try/catch, and both
+    // handlers mutated p/cache[lesson.id] (and the course-list mastery
+    // badges read cache within the same page visit) BEFORE the write was
+    // confirmed - a failed db.put() left the UI showing a state that was
+    // never actually persisted, with zero indication anything went wrong.
+    // On failure, revert the in-memory mutation back to its pre-click
+    // value (so cache/course-list badges can't disagree with what's
+    // really on disk) and surface it the same toast+selfheal.log way
+    // G.board's own grade()/noteExternalResult() convention already does.
+    studiedBtn.onclick = async () => {
+      const prevStudied = p.studied, prevMastered = p.mastered;
+      p.studied = !p.studied; if (!p.studied) p.mastered = false; cache[lesson.id] = p;
+      try { await setP(lesson.id, p); }
+      catch (e) {
+        p.studied = prevStudied; p.mastered = prevMastered; cache[lesson.id] = p;
+        util.toast("Couldn't save that.");
+        if (G.selfheal) G.selfheal.log("progress-write-fail", lesson.id, "curriculum.js setP() failed (studiedBtn): " + (e && e.message ? e.message : String(e)));
+        return;
+      }
+      studiedBtn.textContent = p.studied ? "✓ Studied" : "Mark studied"; masterBtn.textContent = p.mastered ? "🔴 Know it by the book" : "I know this by the book"; try { if (G.util.announce) G.util.announce(p.studied ? "Marked studied." : "Unmarked studied."); } catch (e) {}
+    };
+    masterBtn.onclick = async () => {
+      const prevStudied = p.studied, prevMastered = p.mastered;
+      p.mastered = !p.mastered; if (p.mastered) p.studied = true; cache[lesson.id] = p;
+      try { await setP(lesson.id, p); }
+      catch (e) {
+        p.studied = prevStudied; p.mastered = prevMastered; cache[lesson.id] = p;
+        util.toast("Couldn't save that.");
+        if (G.selfheal) G.selfheal.log("progress-write-fail", lesson.id, "curriculum.js setP() failed (masterBtn): " + (e && e.message ? e.message : String(e)));
+        return;
+      }
+      masterBtn.textContent = p.mastered ? "🔴 Know it by the book" : "I know this by the book"; studiedBtn.textContent = p.studied ? "✓ Studied" : "Mark studied"; try { if (G.util.announce) G.util.announce(p.mastered ? "Marked mastered." : "Unmarked mastered."); } catch (e) {}
+    };
 
     mount.appendChild(el("div.btn-row.no-print", { style: "margin-top:14px" }, [studiedBtn, masterBtn]));
 
@@ -18344,10 +18514,18 @@ window.G = window.G || {};
     PVT: "E1", PV2: "E2", PFC: "E3", SPC: "E4", CPL: "E4",
     SGT: "E5", SSG: "E6", "SFC": "E7", "MSG": "E8", "1SG": "E8", "SGM": "E9", "CSM": "E9", "SMA": "E9",
   };
+  // Enhancement backlog round 3, "Async-first-paint panels" bucket: this
+  // used to be fire-and-forget (called with no await, its own promise
+  // never returned to the caller), racing against render()'s own boot()
+  // dispatch below - whichever resolved first won, so the "Suggested for
+  // your grade" strip (gated on `if (userGrade)`) could be silently
+  // skipped on the exact render that would otherwise show it, purely
+  // depending on IndexedDB read-ordering. Now returns its own promise so
+  // G.idp.render's boot() can wait on it before rendering.
   function loadUserGrade() {
     try {
-      if (!G.db || !G.db.get) return;
-      G.db.get("kv", "guidon:profile:v1").then((rec) => {
+      if (!G.db || !G.db.get) return Promise.resolve();
+      return G.db.get("kv", "guidon:profile:v1").then((rec) => {
         const p = rec && rec.v; if (!p) return;
         // Prefer the canonical resolver (reads profile.tier directly, the
         // same authoritative E-code every other screen now reads) over the
@@ -18359,7 +18537,7 @@ window.G = window.G || {};
         const g = (G.rankUtils && G.rankUtils.tierOf(p, settings)) || (p.rank && RANK_TO_GRADE[String(p.rank).toUpperCase()]);
         if (g && g !== userGrade) { userGrade = g; }
       }).catch(() => {});
-    } catch (e) {}
+    } catch (e) { return Promise.resolve(); }
   }
   // Does a goal's rank band include the user's grade? (bands like "E4-E6", "E6")
   function gradeInBand(band, grade) {
@@ -18953,8 +19131,23 @@ window.G = window.G || {};
 
   G.idp = {
     render(mount) {
-      const boot = () => render(mount);
-      loadUserGrade();
+      // gradePromise is threaded through boot() itself (not each of the 3
+      // call sites below) so every existing .then(boot)/.catch(boot) path
+      // stays textually unchanged - boot() now just waits on the grade
+      // read finishing before it actually renders, regardless of which
+      // of the 3 branches got it there.
+      const gradePromise = loadUserGrade();
+      const boot = () => gradePromise.then(() => render(mount));
+      // Enhancement backlog round 3, "Async-first-paint panels" bucket:
+      // the router clears #route into an empty detached frame before
+      // calling render(mount) - this module doesn't append anything to
+      // it until goalsLoaded's own db.getSetting()+getProgress() chain
+      // (two sequential IndexedDB round-trips) resolves and boot() runs,
+      // unlike routes that render synchronously-available content
+      // immediately. A lightweight placeholder here is replaced the
+      // moment boot() -> render(mount) calls util.clear(mount).
+      util.clear(mount);
+      mount.appendChild(el("div.empty", { text: "Loading…" }));
       if (!goalsLoaded && G.db && G.db.getSetting) {
         goalsLoaded = true;
         G.db.getSetting("idp:goals", null).then((saved) => {
@@ -22184,7 +22377,19 @@ window.G = window.G || {};
           saved["brf" + n] = cb.checked;
           total += cb.checked ? pts : -pts;
           (tally.querySelector(".v")||{}).textContent = total + " / 100";
-          try { await G.db.put("kv", { k: KEY, v: saved }); } catch (e) {}
+          // Enhancement backlog round 3, "Failed IndexedDB writes fail
+          // silently" bucket: this in-memory tally/checkbox state updated
+          // unconditionally regardless of whether the write actually
+          // succeeded, so a Soldier who checks off most of this 100-point
+          // rubric on a device with a failing/full IndexedDB got zero
+          // indication anything went wrong. Matches G.board's own
+          // grade()/noteExternalResult() convention (toast + selfheal.log)
+          // for a failed write.
+          try { await G.db.put("kv", { k: KEY, v: saved }); }
+          catch (e) {
+            util.toast("Couldn't save that.");
+            if (G.selfheal) G.selfheal.log("drills-write-fail", "brf" + n, "briefDrill() rubric checkbox save failed: " + (e && e.message ? e.message : String(e)));
+          }
         });
         r2.appendChild(cb);
         r2.appendChild(el("label", { text: label + "  (" + pts + ")", for:id, style:"margin:0;font-weight:400" }));
@@ -22201,13 +22406,26 @@ window.G = window.G || {};
         sharp:{label:"BLC \u2014 SHARP essay (Commandant's Writing Award)",                  min:1,    max:1000, note:"Two pages maximum, two references required." },
         alc: { label:"ALC \u2014 Persuasive essay",                                          min:1,    max:99999, note:"Take a position and defend it with evidence. Check your assignment sheet for the length." }
       };
-      let key = "cc";
+      // Enhancement backlog round 3, "In-progress work is silently lost"
+      // bucket: this textarea's only listener updated the live word count -
+      // nothing ever wrote its value anywhere, so a Soldier drafting a
+      // 250-1250 word essay lost the entire draft the instant they
+      // navigated away. Restores/persists into the same "saved" object and
+      // kv row (KEY) citDrill()/briefDrill() already use for this module,
+      // debounced 1500ms mirroring forms.js's scheduleAutoSave/doAutoSave
+      // (same debounce window, same flush-on-background convention via
+      // util.onFlush) rather than that module's separate named-drafts list,
+      // since an essay draft here is a single in-progress field, not a
+      // library of saved forms.
+      let key = (saved.essayKey && TARGETS[saved.essayKey]) ? saved.essayKey : "cc";
       const p = el("div.panel");
       p.appendChild(el("div.eyebrow", { text:"Essay word count & rubric" }));
       const sel = el("select", { "aria-label":"Assignment" });
       Object.keys(TARGETS).forEach(k => sel.appendChild(el("option", { value:k, text: TARGETS[k].label })));
+      sel.value = key;
       const ta = el("textarea", { rows:"9", "aria-label":"Paste or draft your essay here",
         placeholder:"Paste or draft here \u2014 nothing leaves this device.", style:"width:100%;margin-top:8px" });
+      ta.value = typeof saved.essayText === "string" ? saved.essayText : "";
       const out = el("div.stat", {}, [ el("span.k", { text:"Words" }), el("span.v", { text:"0" }) ]);
       const note = el("p.hint");
       p.appendChild(sel); p.appendChild(ta); p.appendChild(out); p.appendChild(note);
@@ -22222,7 +22440,26 @@ window.G = window.G || {};
                             : "Inside the required range.";
         }
       }
-      ta.addEventListener("input", count); sel.addEventListener("change", () => { key = sel.value; count(); });
+      let _essaySaveTimer = null;
+      function doPersistEssay() {
+        saved.essayKey = key; saved.essayText = ta.value;
+        G.db.put("kv", { k: KEY, v: saved }).catch(() => {});
+      }
+      function persistEssayDebounced() {
+        clearTimeout(_essaySaveTimer);
+        _essaySaveTimer = setTimeout(() => { _essaySaveTimer = null; doPersistEssay(); }, 1500);
+      }
+      // Keyed so a re-render (a fresh visit to this drill) replaces the
+      // previous instance's callback instead of stacking one bound to a
+      // now-detached textarea.
+      util.onFlush("drills:essay", () => {
+        if (!_essaySaveTimer) return;
+        clearTimeout(_essaySaveTimer);
+        _essaySaveTimer = null;
+        doPersistEssay();
+      });
+      ta.addEventListener("input", () => { count(); persistEssayDebounced(); });
+      sel.addEventListener("change", () => { key = sel.value; count(); persistEssayDebounced(); });
       count(); stage.appendChild(p);
 
       const std = el("div.panel", { style:"margin-top:10px" });
@@ -22260,7 +22497,14 @@ window.G = window.G || {};
           saved["cit" + n] = cb.checked;
           done += cb.checked ? 1 : -1;
           (tally.querySelector(".v")||{}).textContent = done + " / 25";
-          try { await G.db.put("kv", { k: KEY, v: saved }); } catch (e) {}
+          // Enhancement backlog round 3, "Failed IndexedDB writes fail
+          // silently" bucket: same fix as briefDrill()'s rubric checkbox
+          // just above - see its own comment.
+          try { await G.db.put("kv", { k: KEY, v: saved }); }
+          catch (e) {
+            util.toast("Couldn't save that.");
+            if (G.selfheal) G.selfheal.log("drills-write-fail", "cit" + n, "citDrill() checklist checkbox save failed: " + (e && e.message ? e.message : String(e)));
+          }
         });
         r.appendChild(cb); r.appendChild(el("label", { text:(n+1)+". "+s, for:id, style:"margin:0;font-weight:400" }));
         p.appendChild(r);
@@ -23823,14 +24067,23 @@ window.G = window.G || {};
 
     (async () => {
       util.clear(rowsMount);
-      for (const s of STORES) {
-        const stat = await storeStats(s.name);
+      // Enhancement backlog round 3, "Redundant IndexedDB reads" bucket:
+      // this used to await storeStats() for each store one after another,
+      // so the total wait was the SUM of all 4 reads rather than the max
+      // of the slowest one. Each read is independent (a different object
+      // store), so there's nothing to serialize here - fetch all 4 in
+      // parallel, then build the rows in the original STORES order once
+      // every result is in, so the displayed order can't jitter based on
+      // which store happened to resolve first.
+      const stats = await Promise.all(STORES.map((s) => storeStats(s.name)));
+      STORES.forEach((s, i) => {
+        const stat = stats[i];
         rowsMount.appendChild(el("div.stat", { style: "margin-top:6px" }, [
           el("span.k", { text: s.label }),
           el("span.v", { text: stat.error ? "—" : stat.count + " row" + (stat.count === 1 ? "" : "s") + " · " + fmtBytes(stat.bytes) }),
         ]));
         rowsMount.appendChild(el("p.hint", { style: "margin:2px 0 8px", text: s.hint }));
-      }
+      });
     })();
 
     // ---- cross-links — point to the real controls, don't duplicate them ----
@@ -25226,7 +25479,51 @@ window.G = window.G || {};
 
   // ---- 2) MEMORANDUM ----
   const memoState = {};
-  function renderMemo(host) {
+  const sitrepState = {};
+  // Enhancement backlog round 3, "In-progress work is silently lost" bucket:
+  // memoState/sitrepState were plain in-memory objects, populated purely by
+  // input listeners and read only at print time - never written to G.db. A
+  // real asymmetry inside this same module: the Bullet Builder tab above
+  // explicitly persists graded bullets via saveToHistory()/G.db.setSetting
+  // specifically so work survives (see HISTORY_KEY above), but a Soldier
+  // filling in a full AR 25-50 memo or SITREP lost everything on any reload
+  // or app restart. Debounced 1500ms mirroring Bullet Builder's own
+  // flushHist()/util.onFlush convention. Loaded once (memoized promise, not
+  // reloaded on every tab switch) so re-opening this tab mid-session never
+  // clobbers an edit still waiting out its own debounce window.
+  const WRITE_DRAFTS_KEY = "writing:drafts:v1";
+  let _writeDraftsLoadPromise = null;
+  function loadWriteDrafts() {
+    if (!_writeDraftsLoadPromise) {
+      _writeDraftsLoadPromise = (async () => {
+        try {
+          const v = await G.db.getSetting(WRITE_DRAFTS_KEY, null);
+          if (v && typeof v === "object" && !Array.isArray(v)) {
+            if (v.memo && typeof v.memo === "object" && !Array.isArray(v.memo)) Object.assign(memoState, v.memo);
+            if (v.sitrep && typeof v.sitrep === "object" && !Array.isArray(v.sitrep)) Object.assign(sitrepState, v.sitrep);
+          }
+        } catch (e) {}
+      })();
+    }
+    return _writeDraftsLoadPromise;
+  }
+  function doPersistWriteDrafts() {
+    G.db.setSetting(WRITE_DRAFTS_KEY, { memo: memoState, sitrep: sitrepState }).catch(() => {});
+  }
+  let _writeDraftsSaveTimer = null;
+  function persistWriteDraftsDebounced() {
+    clearTimeout(_writeDraftsSaveTimer);
+    _writeDraftsSaveTimer = setTimeout(() => { _writeDraftsSaveTimer = null; doPersistWriteDrafts(); }, 1500);
+  }
+  util.onFlush("writing:drafts", () => {
+    if (!_writeDraftsSaveTimer) return;
+    clearTimeout(_writeDraftsSaveTimer);
+    _writeDraftsSaveTimer = null;
+    doPersistWriteDrafts();
+  });
+
+  async function renderMemo(host) {
+    await loadWriteDrafts();
     const d = data(), cfg = d.memo;
     const rules = el("div.panel.wr-rules");
     if (cfg.intro) rules.appendChild(el("p.wr-intro", { text: cfg.intro }));
@@ -25243,7 +25540,7 @@ window.G = window.G || {};
       else if (f.type === "bullets") { input = el("textarea", { rows: "3", placeholder: (f.example || []).join("\n") }); row.appendChild(el("div.wr-hint", { text: "One item per line." })); }
       else input = el("input", { type: "text", placeholder: f.example || "" });
       input.value = memoState[f.id] || "";
-      input.addEventListener("input", () => { memoState[f.id] = input.value; });
+      input.addEventListener("input", () => { memoState[f.id] = input.value; persistWriteDraftsDebounced(); });
       row.appendChild(input);
       form.appendChild(row);
     });
@@ -25307,8 +25604,10 @@ window.G = window.G || {};
   }
 
   // ---- 3) SITREP ----
-  const sitrepState = {};
-  function renderSitrep(host) {
+  // sitrepState is declared above, alongside memoState and the shared
+  // load/persist helpers (see the comment there).
+  async function renderSitrep(host) {
+    await loadWriteDrafts();
     const d = data(), cfg = d.sitrep;
     const intro = el("div.panel.wr-rules");
     if (cfg.intro) intro.appendChild(el("p.wr-intro", { text: cfg.intro }));
@@ -25320,7 +25619,7 @@ window.G = window.G || {};
       row.appendChild(el("label.wr-label", { text: ln.label }));
       const input = el("input", { type: "text", placeholder: ln.example || "" });
       input.value = sitrepState[ln.id] || "";
-      input.addEventListener("input", () => { sitrepState[ln.id] = input.value; });
+      input.addEventListener("input", () => { sitrepState[ln.id] = input.value; persistWriteDraftsDebounced(); });
       row.appendChild(input);
       form.appendChild(row);
     });
@@ -26527,9 +26826,19 @@ window.G = window.G || {};
       const todaySk = skills[dayIdx];
       const potdHost = el("div");
       host.appendChild(potdHost);
+      // Enhancement backlog round 3, "Async-first-paint panels" bucket:
+      // potdHost/streakHost below both append synchronously, then fill
+      // inside their own async IIFE once logPromise resolves - the tab
+      // rendered with two collapsed/empty regions that then expanded once
+      // the read landed, a layout shift on every visit. util.skeleton()
+      // already existed for exactly this (built, never actually called
+      // anywhere in the app until now) - shown here, cleared by the real
+      // content below once it's ready.
+      potdHost.appendChild(util.skeleton(2));
 
       (async () => {
         const log = await logPromise;
+        util.clear(potdHost);
 
         const potd = el("div.panel", { style:"border-left:3px solid var(--cyan);margin-bottom:10px" });
         potd.appendChild(el("div.eyebrow", { text:"Practice of the Day" }));
@@ -26566,6 +26875,12 @@ window.G = window.G || {};
     }
 
     // ── Streak for resilience practice ───────────────────────────────────
+    // No skeleton placeholder here on purpose, unlike potdHost above:
+    // this host stays genuinely, permanently EMPTY (zero children) for
+    // anyone without a real 2+-day streak - the common case - so a
+    // skeleton shown unconditionally would never get cleared for most
+    // Soldiers, becoming a permanent meaningless shimmer rather than a
+    // brief loading state.
     const streakHost = el("div");
     host.appendChild(streakHost);
     (async () => {
@@ -27897,7 +28212,26 @@ window.G = window.G || {};
   // ---------------- HOME ----------------
   views.home = async function (mount) {
     util.clear(mount);
-    const p = await store.getProgress();
+    // Enhancement backlog round 3, "Redundant IndexedDB reads" bucket:
+    // these four independent async reads used to run strictly
+    // sequentially (getProgress, then streak.tick, then profile.current,
+    // then loadAllSrs), each blocking the next section's DOM append even
+    // though none of them depends on another's result - total time-to-
+    // fully-rendered-Home was the SUM of four awaits instead of the max
+    // of the slowest one. store.getProgress()'s own promise is left
+    // unwrapped (a rejection there still propagates and fails the whole
+    // render, exactly as before this change - it never had a try/catch
+    // of its own); the other three are each given their own .catch(),
+    // preserving their existing "catch and skip that section" semantics
+    // (a null result below stands in for what the removed try/catch used
+    // to silently swallow) rather than letting one of THEM take down the
+    // whole Promise.all.
+    const [p, streak, profileData, srsAllFromBatch] = await Promise.all([
+      store.getProgress(),
+      G.streak ? G.streak.tick().catch(() => null) : Promise.resolve(null),
+      G.profile ? G.profile.current().catch(() => null) : Promise.resolve(null),
+      (G.db && G.board && G.board.loadAllSrs) ? G.board.loadAllSrs().catch(() => null) : Promise.resolve(null),
+    ]);
     // Intuitivism pass: shared "has this Soldier done anything yet" signal
     // for the readiness dashboard and competency mini-bars below - both
     // used to render unconditionally, showing a wall of "-"/"0%"
@@ -27987,27 +28321,26 @@ window.G = window.G || {};
     } catch(e) { /* non-fatal */ }
 
     // ── Daily streak ──────────────────────────────────────────────────────────
+    // streak was fetched in the batch above; a null here stands in for
+    // what "if (G.streak)" false or a thrown tick() used to mean.
     try {
-      if (G.streak) {
-        const streak = await G.streak.tick();
-        if (streak.count >= 2) {
-          const streakEl = el("div.streak-banner");
-          streakEl.appendChild(el("span.streak-flame", { text: "🔥" }));
-          streakEl.appendChild(el("div.streak-info", {}, [
-            el("div.streak-count", { text: streak.count + "-day streak" }),
-            el("div.streak-sub", { text: streak.count >= 7 ? "Week strong — keep it locked." : streak.count >= 3 ? "3 days in — building the habit." : "Back-to-back days — don't break the chain." }),
-          ]));
-          if (streak.longestCount > streak.count) {
-            streakEl.appendChild(el("div.streak-best", { text: "Best: " + streak.longestCount }));
-          }
-          mount.appendChild(streakEl);
+      if (streak && streak.count >= 2) {
+        const streakEl = el("div.streak-banner");
+        streakEl.appendChild(el("span.streak-flame", { text: "🔥" }));
+        streakEl.appendChild(el("div.streak-info", {}, [
+          el("div.streak-count", { text: streak.count + "-day streak" }),
+          el("div.streak-sub", { text: streak.count >= 7 ? "Week strong — keep it locked." : streak.count >= 3 ? "3 days in — building the habit." : "Back-to-back days — don't break the chain." }),
+        ]));
+        if (streak.longestCount > streak.count) {
+          streakEl.appendChild(el("div.streak-best", { text: "Best: " + streak.longestCount }));
         }
+        mount.appendChild(streakEl);
       }
     } catch(e) {}
 
     // ── Profile greeting ─────────────────────────────────────────────────────
-    let profileData = null;
-    try { if (G.profile) profileData = await G.profile.current(); } catch(e) {}
+    // profileData was fetched in the batch above (null on failure, same
+    // as the removed try/catch's own default).
     // Never greet by displayName unless it is a real name: guest and kiosk
     // profiles carry placeholder names, and "Welcome back, KIOSK MODE." reads
     // like the machine talking to itself. (Caught in an NVDA transcript.)
@@ -28051,16 +28384,20 @@ window.G = window.G || {};
     // inviting "ready to study" framing below instead of "due for review".
     try {
       const allQs = (G.store && G.store.boardQuestions && G.store.boardQuestions()) || [];
-      if (allQs.length && G.db) {
+      // srsAllFromBatch was fetched in the batch at the top of this
+      // function (one db.all("kv") cursor scan instead of one db.get()
+      // per question) - deliberately NOT passing allQs's ids there: this
+      // site's "graded" count needs to tell "no srs: row exists yet"
+      // apart from "a row exists" (including a shape-corrupted one, still
+      // truthy under the original per-item check) - loadAllSrs() without
+      // an id list returns only rows that actually exist, same presence
+      // semantics. A null value here (the batch's own fetch failed) skips
+      // this whole section, the same as the removed inline await
+      // throwing into this try's own catch used to.
+      if (allQs.length && G.db && srsAllFromBatch) {
         const now = Date.now();
         let dueCount = 0, graded = 0;
-        // One db.all("kv") cursor scan instead of one db.get() per question.
-        // Deliberately NOT passing allQs's ids here: this site's "graded"
-        // count needs to tell "no srs: row exists yet" apart from "a row
-        // exists" (including a shape-corrupted one, still truthy under the
-        // original per-item check) - loadAllSrs() without an id list
-        // returns only rows that actually exist, same presence semantics.
-        const srsAll = await G.board.loadAllSrs();
+        const srsAll = srsAllFromBatch;
         for (const q of allQs) {
           const s = srsAll[q.id];
           if (s) graded++;
@@ -29807,6 +30144,14 @@ window.G = window.G || {};
     importInput.addEventListener("change", () => {
       const f = importInput.files[0]; if (!f) return;
       G.backup.confirmAndImportFile(f).then((result) => {
+        // Enhancement backlog round 3, "File-picker inputs aren't reset"
+        // bucket: this never reset importInput.value on any path - after
+        // "Import failed: …", a Soldier who re-picked the identical file
+        // got no event, no error, and no import (browsers don't re-fire
+        // change when a file input's value is set to the same path it
+        // already holds). Reset unconditionally here (harmless no-op on
+        // the success path too, since that one reloads the whole page).
+        importInput.value = "";
         if (result.status === "cancelled") return;
         if (result.status === "error") { util.toast("Import failed: " + result.message); return; }
         const r = result.restored, sk = result.skipped, fs = result.failedStores || [];
