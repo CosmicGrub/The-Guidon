@@ -10475,7 +10475,19 @@ window.G = window.G || {};
       // drawResults) so the best-score key always matches the level the
       // session was actually run at, the same reason sess.cat is captured
       // here rather than re-read from catSel.
-      sess = { cat, lvl: _lvl, idx: 0, correct: 0, total: pool.length, questions: shuffle(pool), answered: false };
+      // Roadmap audit round 4, "Performance: startup cost, layout thrashing, and memory
+      // leaks" bucket: distractorPool used to be rebuilt from scratch (a full
+      // all.filter().map() pass over the entire board-question bank) inside
+      // drawQuestion() on EVERY single question drawn during a quiz, even though it
+      // deliberately samples from the FULL corpus (`all`, not the session's own
+      // category/level-filtered `pool` above — buildDistractors' cross-category and
+      // full-corpus fallback passes need that breadth) and nothing about the {id, a,
+      // category} shape depends on which question is currently showing. Built ONCE
+      // here per session instead; drawQuestion() below now just excludes the current
+      // question id from this already-built pool, rather than re-mapping all ~1,000
+      // questions into new objects on every draw.
+      const distractorPool = all.map((x) => ({ id: x.id, a: x.acceptableAnswer || x.a, category: x.category }));
+      sess = { cat, lvl: _lvl, idx: 0, correct: 0, total: pool.length, questions: shuffle(pool), answered: false, distractorPool };
       drawQuestion();
     }
 
@@ -10495,7 +10507,10 @@ window.G = window.G || {};
       if (!sess || sess.idx >= sess.total) { drawResults(); return; }
       const q = sess.questions[sess.idx];
       const correctText = q.acceptableAnswer || q.a;
-      const distractorPool = all.filter((x) => x.id !== q.id).map((x) => ({ a: x.acceptableAnswer || x.a, category: x.category }));
+      // distractorPool built once in buildSession() (see its own comment) — only the
+      // current question's id needs excluding per draw, not the whole ~1,000-question
+      // map rebuilt from scratch.
+      const distractorPool = sess.distractorPool.filter((x) => x.id !== q.id);
       const distractors = buildDistractors(correctText, q.category, distractorPool, 3);
       const options = shuffle([correctText].concat(distractors));
       const correctIdx = options.indexOf(correctText);
@@ -12180,80 +12195,104 @@ window.G = window.G || {};
 
     let visibleCap = 150;
     let lastFilterKey = null;
+    // Roadmap audit round 4, "Performance: startup cost, layout thrashing, and memory leaks"
+    // bucket: cachedItems holds the fully filtered+sorted combined list for lastFilterKey, so
+    // clicking "Load more" (below) - which changes visibleCap but NOT filter/cat, hence not
+    // filterKey - reuses it instead of re-walking every board Q/doctrine/dictionary record and
+    // re-running the full localeCompare sort a second time for data that hasn't changed. A real
+    // keystroke or category change still rebuilds it, since filterKey changing means the matched
+    // set itself is different and there's no shortcut around recomputing that.
+    let cachedItems = null;
     function render(filter, cat) {
       const filterKey = filter + "::" + cat;
-      if (filterKey !== lastFilterKey) { visibleCap = 150; lastFilterKey = filterKey; }
+      if (filterKey !== lastFilterKey) { visibleCap = 150; lastFilterKey = filterKey; cachedItems = null; }
       util.clear(listDiv);
       const fl = filter.toLowerCase().trim();
       const catFilter = cat !== "All";
 
-      // Combine board Q concepts + doctrine entries
-      const items = [];
+      let items;
+      if (cachedItems) {
+        items = cachedItems;
+      } else {
+        // Combine board Q concepts + doctrine entries
+        items = [];
 
-      // Board Q concepts
-      allQs.forEach(q => {
-        if (catFilter && q.category !== cat) return;
-        const concept = q.concept || (q.category + " — " + q.q);
-        const haystack = (concept + " " + (q.acceptableAnswer||q.a) + " " + (q.boardAnswer||"") + " " + q.category).toLowerCase();
-        if (fl && !haystack.includes(fl)) return;
-        items.push({
-          type: "boardq",
-          category: q.category,
-          concept: concept,
-          acceptable: q.acceptableAnswer || q.a,
-          byBook: q.boardAnswer || q.a,
-          keyPoints: q.keyPoints || [],
-          source: q.source || "",
-          id: q.id,
-        });
-      });
-
-      // Doctrine entries (if no category filter or matches)
-      if (!catFilter) {
-        (Array.isArray(doctrine) ? doctrine : []).forEach(e => {
-          const haystack = ((e.title||"") + " " + (e.body||"") + " " + (e.topic||"")).toLowerCase();
-          if (fl && !haystack.includes(fl)) return;
+        // Board Q concepts. Each record's haystack (and the derived `concept`
+        // string it's built from) is cached on the record itself as _defHay/
+        // _defConcept the first time it's touched, rather than rebuilt on
+        // every render() call - the concept/category text driving it can't
+        // change mid-session, only which records survive the fl/cat filter
+        // below does. Named distinctly from Global Search's own `_hay` cache
+        // on this same q object (views.search's runSearch(), this file) since
+        // that view's haystack formula (raw q/a text) differs from this one's
+        // (concept-derived text) - same record, two independent caches.
+        allQs.forEach(q => {
+          if (catFilter && q.category !== cat) return;
+          if (q._defHay === undefined) {
+            q._defConcept = q.concept || (q.category + " — " + q.q);
+            q._defHay = (q._defConcept + " " + (q.acceptableAnswer||q.a) + " " + (q.boardAnswer||"") + " " + q.category).toLowerCase();
+          }
+          if (fl && !q._defHay.includes(fl)) return;
           items.push({
-            type: "doctrine",
-            category: e.topic || "Doctrine",
-            concept: e.title,
-            acceptable: e.body,
-            byBook: e.body + (e.source ? " (" + (e.source.ref || "") + ")" : ""),
-            keyPoints: [],
-            source: e.source ? (e.source.ref || "") : "",
-            id: e.id,
+            type: "boardq",
+            category: q.category,
+            concept: q._defConcept,
+            acceptable: q.acceptableAnswer || q.a,
+            byBook: q.boardAnswer || q.a,
+            keyPoints: q.keyPoints || [],
+            source: q.source || "",
+            id: q.id,
           });
         });
-      }
 
-      // Dictionary terms — only surfaced during an active search (not on the
-      // default/blank view) to avoid flooding the list with 3,500+ cards.
-      // Ties board-prep to the Army-centric dictionary so newly-added acronyms
-      // are discoverable from board prep too.
-      if (!catFilter && fl) {
-        acronyms.forEach(t => {
-          const haystack = (t.a + " " + t.d).toLowerCase();
-          if (fl && !haystack.includes(fl)) return;
-          items.push({
-            type: "dict",
-            category: "Dictionary",
-            concept: t.a,
-            acceptable: t.d,
-            byBook: t.d,
-            keyPoints: [],
-            source: "",
-            id: t.a,
+        // Doctrine entries (if no category filter or matches)
+        if (!catFilter) {
+          (Array.isArray(doctrine) ? doctrine : []).forEach(e => {
+            if (e._defHay === undefined) e._defHay = ((e.title||"") + " " + (e.body||"") + " " + (e.topic||"")).toLowerCase();
+            if (fl && !e._defHay.includes(fl)) return;
+            items.push({
+              type: "doctrine",
+              category: e.topic || "Doctrine",
+              concept: e.title,
+              acceptable: e.body,
+              byBook: e.body + (e.source ? " (" + (e.source.ref || "") + ")" : ""),
+              keyPoints: [],
+              source: e.source ? (e.source.ref || "") : "",
+              id: e.id,
+            });
           });
-        });
-      }
+        }
 
-      // Alphabetize the combined list by concept so the section headers
-      // below land in real A-Z order regardless of which of the three
-      // source types (board Q / doctrine / dictionary) a given concept
-      // came from - a board Q and a doctrine entry that happen to start
-      // with the same letter now sit next to each other, not in whatever
-      // order their source array iterated in.
-      items.sort((a, b) => (a.concept || "").localeCompare(b.concept || "", undefined, { sensitivity: "base", numeric: true }));
+        // Dictionary terms — only surfaced during an active search (not on the
+        // default/blank view) to avoid flooding the list with 3,500+ cards.
+        // Ties board-prep to the Army-centric dictionary so newly-added acronyms
+        // are discoverable from board prep too.
+        if (!catFilter && fl) {
+          acronyms.forEach(t => {
+            if (t._defHay === undefined) t._defHay = (t.a + " " + t.d).toLowerCase();
+            if (fl && !t._defHay.includes(fl)) return;
+            items.push({
+              type: "dict",
+              category: "Dictionary",
+              concept: t.a,
+              acceptable: t.d,
+              byBook: t.d,
+              keyPoints: [],
+              source: "",
+              id: t.a,
+            });
+          });
+        }
+
+        // Alphabetize the combined list by concept so the section headers
+        // below land in real A-Z order regardless of which of the three
+        // source types (board Q / doctrine / dictionary) a given concept
+        // came from - a board Q and a doctrine entry that happen to start
+        // with the same letter now sit next to each other, not in whatever
+        // order their source array iterated in.
+        items.sort((a, b) => (a.concept || "").localeCompare(b.concept || "", undefined, { sensitivity: "base", numeric: true }));
+        cachedItems = items;
+      }
 
       if (!items.length) {
         // Previously a flat "No matching definitions." regardless of
@@ -18656,8 +18695,27 @@ window.G = window.G || {};
   // check, not a zoomable viewer.
   var PDF_PREVIEW_SCALE = 1.5;
 
+  // Roadmap audit round 4, "Performance: startup cost, layout thrashing, and memory leaks"
+  // bucket: openPdfPreview() calls pdfjsLib.getDocument() fresh on EVERY Preview click, and
+  // pdfjsLib itself is deliberately kept resident for the whole session once loaded (see
+  // pdfjs-defer.js's header comment) - so a pdf.js document that's never disposed stays
+  // reachable and its decoded-page/font caches accumulate for as long as the app stays open.
+  // Closing the modal used to only remove the DOM (ptrap.close()/backdrop.remove()); it never
+  // called the document proxy's own destroy(). _previewDoc tracks the document opened by the
+  // most recent Preview click, module-scoped (not local to run(), below) so it's reachable both
+  // from a fresh openPdfPreview() call and from the modal's own onClose. Disposed in two places:
+  // the "already open" branch right below (a repeat Preview click bypasses ptrap.close()/
+  // finishClose() entirely via already.remove(), so onClose never fires for THAT document) and
+  // the onClose callback passed to util.modalTrap (fires on X/Escape/backdrop-click - every
+  // other way the modal actually closes).
+  var _previewDoc = null;
+  function _destroyPreviewDoc() {
+    if (_previewDoc) { try { _previewDoc.destroy(); } catch (e) {} _previewDoc = null; }
+  }
+
   function openPdfPreview(vals) {
     var already = document.querySelector(".pdfprev-backdrop"); if (already) already.remove();
+    _destroyPreviewDoc(); // starting a fresh preview supersedes whatever the last one opened
     var pback = el("div.cpdf-backdrop.pdfprev-backdrop");
     var pmodal = el("div.cpdf-modal.pdfprev-modal", { role: "dialog", "aria-modal": "true", "aria-label": "DA 4856 preview" });
     var phead = el("div.cpdf-head");
@@ -18671,8 +18729,9 @@ window.G = window.G || {};
     (document.getElementById("app") || document.body).appendChild(pback);
     // Same shared focus-trap/Escape/click-outside-to-close primitive every
     // other modal in this app uses (DA 4856 wizard, confirm dialogs, nav
-    // drawer) - no new modal machinery invented for this feature.
-    var ptrap = (util.modalTrap ? util.modalTrap(pback, pmodal) : { close: function () { pback.remove(); } });
+    // drawer) - no new modal machinery invented for this feature. onClose
+    // (3rd arg) disposes the pdf.js document once the modal actually closes.
+    var ptrap = (util.modalTrap ? util.modalTrap(pback, pmodal, _destroyPreviewDoc) : { close: function () { pback.remove(); } });
     pclose.addEventListener("click", function () { ptrap.close(); });
     pback.addEventListener("click", function (e) { if (e.target === pback) ptrap.close(); });
 
@@ -18717,7 +18776,16 @@ window.G = window.G || {};
         // deferral mechanism cannot load without a real rework - tracked as
         // a known trade-off, not an oversight.
         var doc = await window.pdfjsLib.getDocument({ data: bytes, isEvalSupported: false }).promise;
-        if (!document.body.contains(pback)) return;
+        if (!document.body.contains(pback)) {
+          // Closed (or superseded by a fresh Preview click - see _destroyPreviewDoc's
+          // call at the top of openPdfPreview()) while getDocument() itself was still
+          // resolving: this document was never assigned to _previewDoc, so nothing else
+          // will ever destroy it - dispose the local reference directly rather than
+          // routing through _previewDoc, which may by now belong to a newer preview.
+          try { doc.destroy(); } catch (e) {}
+          return;
+        }
+        _previewDoc = doc; // tracked so ptrap's onClose (_destroyPreviewDoc) can dispose it
         util.clear(pstage);
         var pagesWrap = el("div.pdfprev-pages");
         pstage.appendChild(pagesWrap);
@@ -31151,11 +31219,26 @@ window.G = window.G || {};
 
       const allHits = { scenario:[], board:[], doctrine:[], lesson:[], resource:[], career:[] };
 
+      // Roadmap audit round 4, "Performance: startup cost, layout thrashing, and memory leaks"
+      // bucket: every one of these six per-record `hay` strings used to be rebuilt from raw
+      // fields on every single runSearch() call - i.e. on every debounced keystroke - even
+      // though store.scenarios()/boardQuestions()/doctrine() above already memoize and return
+      // the SAME record objects call after call (see their own comments) and the underlying
+      // content is static for the session. Across ~1,500+ records from all six datasets that
+      // was a full re-lowercase-and-concatenate pass repeated on every keystroke for work whose
+      // result never changes. Now each record's haystack is computed once and cached directly
+      // on the record as a hidden `_hay` property (undefined check, not a Map, since the
+      // record objects themselves are already the stable, reused instances) - subsequent calls
+      // just read the cached string. A store-level cache invalidation (e.g. scenarios() bumping
+      // state._scenarioRev after an edit) hands back fresh objects with no `_hay` yet, so this
+      // can't go stale the way a query-string-keyed cache could.
       if (activeFilter === "all" || activeFilter === "scenario") {
         sc.forEach((s) => {
-          const hay = ((s.title||"")+" "+(s.summary||"")+" "+(s.learningObjective||"")+" "+
-            (s.competency||[]).join(" ")+" "+(s.tier||[]).join(" ")).toLowerCase();
-          if (hay.includes(ql)) {
+          if (s._hay === undefined) {
+            s._hay = ((s.title||"")+" "+(s.summary||"")+" "+(s.learningObjective||"")+" "+
+              (s.competency||[]).join(" ")+" "+(s.tier||[]).join(" ")).toLowerCase();
+          }
+          if (s._hay.includes(ql)) {
             allHits.scenario.push({ type:"scenario", id:s.id, title:s.title,
               sub:(s.competency||[]).join(" · ")+" · "+s.difficulty,
               meta: (s.tier||[]).join("/"), route:"#/train", scId:s.id });
@@ -31164,15 +31247,16 @@ window.G = window.G || {};
       }
       if (activeFilter === "all" || activeFilter === "board") {
         (bqs.questions || bqs || []).forEach((q2) => {
-          const hay = ((q2.q||"")+" "+(q2.a||"")+" "+(q2.category||"")).toLowerCase();
-          if (hay.includes(ql)) {
+          if (q2._hay === undefined) q2._hay = ((q2.q||"")+" "+(q2.a||"")+" "+(q2.category||"")).toLowerCase();
+          if (q2._hay.includes(ql)) {
             // Enhancement backlog round 4, "Navigation, accessibility, and minor search/home
-            // polish" bucket: the match check two lines up already guards a missing/malformed
-            // q2.q with (q2.q||"") before calling .toLowerCase(), but this title-truncation line
-            // read q2.q.length/.slice directly with no such guard. hay is built from all three
-            // fields (q/a/category), so a board-question record with a null/undefined `q` but a
-            // matching `a` or `category` still passes the hay.includes(ql) check above and then
-            // throws here on q2.q.length. Same (q2.q||"") fallback as the match check uses.
+            // polish" bucket: the match check above already guards a missing/malformed
+            // q2.q with (q2.q||"") before building _hay (see the "Performance" bucket's own
+            // cached-haystack fix right above), but this title-truncation line read
+            // q2.q.length/.slice directly with no such guard. _hay is built from all three
+            // fields (q/a/category), so a board-question record with a null/undefined `q` but
+            // a matching `a` or `category` still passes the _hay.includes(ql) check above and
+            // then throws here on q2.q.length. Same (q2.q||"") fallback the haystack build uses.
             const qText = q2.q || "";
             allHits.board.push({ type:"board", id:q2.id,
               title: qText.length > 80 ? qText.slice(0,80)+"…" : qText,
@@ -31182,8 +31266,8 @@ window.G = window.G || {};
       }
       if (activeFilter === "all" || activeFilter === "doctrine") {
         (Array.isArray(doc) ? doc : []).forEach((e) => {
-          const hay = ((e.title||"")+" "+(e.body||"")+" "+(e.topic||"")).toLowerCase();
-          if (hay.includes(ql)) {
+          if (e._hay === undefined) e._hay = ((e.title||"")+" "+(e.body||"")+" "+(e.topic||"")).toLowerCase();
+          if (e._hay.includes(ql)) {
             // e.source is an object ({ref, para, asOf, ...}, see doctrine.json),
             // never a plain string - same shape store.doctrine()'s own query
             // filter and views.doctrine's draw() unwrap via d.source.ref (this
@@ -31202,9 +31286,11 @@ window.G = window.G || {};
       if (activeFilter === "all" || activeFilter === "lesson") {
         (cur.courses||[]).forEach((c) => {
           (c.lessons||[]).forEach((l) => {
-            const body = l.body || (l.tiers ? Object.values(l.tiers).join(" ") : "");
-            const hay = ((l.title||"")+" "+body).toLowerCase();
-            if (hay.includes(ql)) {
+            if (l._hay === undefined) {
+              const body = l.body || (l.tiers ? Object.values(l.tiers).join(" ") : "");
+              l._hay = ((l.title||"")+" "+body).toLowerCase();
+            }
+            if (l._hay.includes(ql)) {
               allHits.lesson.push({ type:"lesson", id:l.id, title:l.title,
                 sub:"Learn: "+c.title, meta:"", route:"#/learn" });
             }
@@ -31215,8 +31301,8 @@ window.G = window.G || {};
       if (activeFilter === "all" || activeFilter === "resource") {
         (res.categories || []).forEach((c2) => {
           (c2.items || []).forEach((it) => {
-            const hay = ((it.name||"")+" "+(it.d||"")+" "+(c2.name||"")).toLowerCase();
-            if (hay.includes(ql)) {
+            if (it._hay === undefined) it._hay = ((it.name||"")+" "+(it.d||"")+" "+(c2.name||"")).toLowerCase();
+            if (it._hay.includes(ql)) {
               allHits.resource.push({ type:"resource", id:it.name, title:it.name,
                 sub:c2.name+" — "+it.d, meta:c2.name, route:"#/resources", resSeed:it.name });
             }
@@ -31233,12 +31319,16 @@ window.G = window.G || {};
       // used for resources below (goTo(), further down this function).
       if (activeFilter === "all" || activeFilter === "career") {
         (car.mos || []).forEach((m) => {
-          const cmfObj = (car.cmfs || []).find((c) => c.id === m.cmf);
-          const cmfName = cmfObj ? cmfObj.name : "";
-          const hay = ((m.code||"")+" "+(m.title||"")+" "+cmfName+" "+(m.notes||"")).toLowerCase();
-          if (hay.includes(ql)) {
+          // _cmfName is cached alongside _hay (not just recomputed on hit) since it's also
+          // needed for the result's `sub` line below, not only for building the haystack.
+          if (m._hay === undefined) {
+            const cmfObj = (car.cmfs || []).find((c) => c.id === m.cmf);
+            m._cmfName = cmfObj ? cmfObj.name : "";
+            m._hay = ((m.code||"")+" "+(m.title||"")+" "+m._cmfName+" "+(m.notes||"")).toLowerCase();
+          }
+          if (m._hay.includes(ql)) {
             allHits.career.push({ type:"career", id:m.code, title:m.code+" — "+m.title,
-              sub:cmfName, meta:m.status && m.status !== "normal" ? m.status : "", route:"#/career", mosSeed:m.code });
+              sub:m._cmfName, meta:m.status && m.status !== "normal" ? m.status : "", route:"#/career", mosSeed:m.code });
           }
         });
       }
