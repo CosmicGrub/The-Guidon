@@ -15883,10 +15883,22 @@ window.G = window.G || {};
       const results = el("div#dictionary-detail-pane");
       mount.appendChild(el("div.list-detail", {}, [entryList, results]));
 
+      // Roadmap audit round 5, "Performance: Search Caching & Render Hot Paths"
+      // bucket: this ran on every debounced (120ms) keystroke and did a fresh
+      // string concat + toLowerCase() over EVERY one of the dataset's 3,623
+      // terms each time - Dictionary is the largest single dataset in the
+      // app (bigger than all six of Global Search's own categories put
+      // together), yet was the one place this exact haystack-recompute
+      // pattern never got cached. `_hay` is cached directly on each term
+      // object the first time it's touched, matching views.search's own
+      // runSearch() cache (that view's `_hay`, on the same q/a/category
+      // shape) - a term's acronym/definition text can't change mid-session,
+      // only which terms survive the current query/letter filter does.
       function match(t, q) {
         if (activeLetter && !t.a.toUpperCase().startsWith(activeLetter)) return false;
         if (!q) return true;
-        return (t.a + " " + t.d).toLowerCase().includes(q);
+        if (t._hay === undefined) t._hay = (t.a + " " + t.d).toLowerCase();
+        return t._hay.includes(q);
       }
 
       // Exact-acronym first, then prefix, then alpha - same ordering the old
@@ -17425,6 +17437,13 @@ window.G = window.G || {};
 
     function collect() { var o = {}; Object.keys(inputs).forEach(function (k) { o[k] = inputs[k](); }); return o; }
 
+    // Roadmap audit round 5, "Performance: Search Caching & Render Hot Paths"
+    // bucket: host._fillCollect is refreshed on every drawFill() call so the
+    // one delegated listener below (wired only once, see the guard further
+    // down) always reads THIS generation's `inputs`/`collect` instead of a
+    // stale closure from whichever call first attached it.
+    host._fillCollect = collect;
+
     // Autosave-on-type: scheduleAutoSave was already written (debounce +
     // flush-on-background wiring existed since last week) but never
     // actually called from anywhere, so it was permanently dead - a Soldier
@@ -17432,7 +17451,27 @@ window.G = window.G || {};
     // "Save draft" lost everything. One delegated listener on host catches
     // every field's input event via bubbling rather than needing a
     // per-field handler.
-    host.addEventListener("input", function () { scheduleAutoSave(f.id, collect()); });
+    //
+    // Roadmap audit round 5, "Performance: Search Caching & Render Hot Paths"
+    // bucket: this used to attach a fresh delegated listener on EVERY
+    // drawFill() call, but host is the SAME persistent element across the
+    // whole Forms session - created once when a form is opened and only
+    // ever U.clear()'d (which empties its children, not its own listeners)
+    // by drawBody() on a tab switch, plus drawFill re-entering itself
+    // directly from exBtn/clearBtn above. Each call therefore stacked one
+    // more "input" listener on host without removing the previous one, and
+    // every accumulated listener closed over that generation's own
+    // `inputs`/`collect` - pinning that whole detached field-row subtree in
+    // memory for the rest of the session. Sibling drawReplica() avoids this
+    // by attaching per-field on freshly-created nodes that really do get
+    // discarded next U.clear(host); here the fix is to wire the delegated
+    // listener once per host and have it call through host._fillCollect
+    // (kept current above) rather than a fixed closure, so a later
+    // Prefill/Clear re-render doesn't leave autosave reading stale nodes.
+    if (!host._fillInputWired) {
+      host._fillInputWired = true;
+      host.addEventListener("input", function () { scheduleAutoSave(f.id, host._fillCollect()); });
+    }
 
     saveBtn.addEventListener("click", function () {
       var vals = collect();
@@ -23043,7 +23082,23 @@ window.G = window.G || {};
         _essaySaveTimer = null;
         doPersistEssay();
       });
-      ta.addEventListener("input", () => { count(); persistEssayDebounced(); });
+      // Roadmap audit round 5, "Performance: Search Caching & Render Hot
+      // Paths" bucket: count() ran synchronously on every raw keystroke
+      // (a regex word-count plus several string-concat DOM writes) even
+      // though persistEssayDebounced() right beside it on this same
+      // listener line was already properly debounced at 1500ms - the two
+      // just hadn't been made consistent. Bullet Builder's own live grader
+      // (this file's paint(), the writing.js block above) debounces
+      // comparable per-keystroke work at 80ms; count() gets the same
+      // short debounce here, kept separate from the 1500ms save debounce
+      // since one is a visible UI update and the other is a persistence
+      // write with very different acceptable latency.
+      let _essayCountTimer = null;
+      ta.addEventListener("input", () => {
+        clearTimeout(_essayCountTimer);
+        _essayCountTimer = setTimeout(count, 80);
+        persistEssayDebounced();
+      });
       sel.addEventListener("change", () => { key = sel.value; count(); persistEssayDebounced(); });
       count(); stage.appendChild(p);
 
@@ -28924,9 +28979,21 @@ window.G = window.G || {};
         return el("div.res-url", { text: u });
       }
 
+      // Roadmap audit round 5, "Performance: Search Caching & Render Hot Paths"
+      // bucket: allEntries() used to allocate a brand-new flattened array AND
+      // a brand-new Object.assign wrapper per item (~200 of them) on every
+      // debounced (120ms) keystroke, discarding the previous array each
+      // time - pure GC churn, since cats/c.items never change mid-session
+      // (draw()'s own comment above already established this for entryList).
+      // Cached once here (allEntriesCache), the wrappers built on first call
+      // now persist across keystrokes, which also makes it safe to cache a
+      // _hay string directly on each one below.
+      let allEntriesCache = null;
       function allEntries() {
+        if (allEntriesCache) return allEntriesCache;
         const out = [];
         cats.forEach((c) => (c.items || []).forEach((it) => out.push(Object.assign({ _cat: c.name, _catId: c.id }, it))));
+        allEntriesCache = out;
         return out;
       }
 
@@ -28935,7 +29002,16 @@ window.G = window.G || {};
         util.clear(results);
         let hits = allEntries();
         if (activeCat) hits = hits.filter((it) => it._catId === activeCat);
-        if (q) hits = hits.filter((it) => (it.name + " " + it.d + " " + it._cat).toLowerCase().includes(q));
+        // Same haystack-recompute pattern as Library/Dictionary above (this
+        // same audit bucket) and views.search's own runSearch(): _hay is
+        // cached on the (now-persistent, see allEntriesCache above) wrapper
+        // object the first time a query touches it, instead of a fresh
+        // string concat + toLowerCase() over every one of ~200 entries on
+        // every keystroke.
+        if (q) hits = hits.filter((it) => {
+          if (it._hay === undefined) it._hay = (it.name + " " + it.d + " " + it._cat).toLowerCase();
+          return it._hay.includes(q);
+        });
 
         count.textContent = "Showing " + Math.min(hits.length, CAP) + " of " + hits.length + (q || activeCat ? " matches" : " resources");
         if (!hits.length) {
