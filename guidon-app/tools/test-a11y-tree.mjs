@@ -52,6 +52,23 @@ const page = await ctx.newPage();
 const cdp = await ctx.newCDPSession(page);
 await page.goto(url, { waitUntil: "load" });
 await page.waitForTimeout(900);
+// Roadmap-week audit (3rd pass), following the #app-inert fix: a fresh
+// profile-less context boots straight into onboarding, which now correctly
+// marks #app inert while it's open (see util._pushModalInert's own
+// comment) - so every section's landmarks/heading genuinely disappear from
+// the accessibility tree behind it, exactly like a real screen-reader user
+// would find, and every route below failed with "found 0" until this
+// seeded a completed profile first. A real Soldier auditing these routes
+// has already finished onboarding; this fixture now matches that.
+await page.evaluate(async () => {
+  await window.G.db.put("kv", { k: "guidon:profile:v1", v: {
+    onboardingComplete: true, mode: "personal", tier: "E5", rank: "SGT",
+    displayName: "SGT AXTREE", lastName: "AXTREE", anonymous: false,
+    studyWeakPoints: [], readinessConcerns: [], actionPlan: [], promoPoints: {},
+  } });
+});
+await page.reload({ waitUntil: "load" });
+await page.waitForTimeout(900);
 await cdp.send("Accessibility.enable");
 
 const routes = await page.evaluate(() => window.G.routes.map((r) => r.hash));

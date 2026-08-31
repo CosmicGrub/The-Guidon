@@ -236,9 +236,19 @@ const FAVICON_HREF = "data:image/svg+xml," + FAVICON_SVG.replace(/#/g, "%23").re
    browser-tab behaviour is left exactly as it is today. */
 const STANDALONE_CSS = `
 /* ==== installed-app affordances (added by build; see src/pwa.js) ==== */
+/* Roadmap-week audit (3rd pass): detectDisplayMode() (src/pwa.js) sets
+   data-display-mode="native" - not "standalone" - whenever Capacitor or
+   Tauri is detected (isNative overrides any matchMedia result). That value
+   was missing from both selector groups below, so the shipped Android APK
+   and Tauri desktop build - the one platform where "not looking like a
+   wrapped web page" matters most - never actually got the tap-highlight
+   removal or overscroll containment; only a PWA installed via a browser's
+   "Add to Home Screen" did. Verified empirically: getComputedStyle on a
+   mocked-native document matched a plain unmocked browser tab exactly. */
 html[data-display-mode="standalone"],
 html[data-display-mode="fullscreen"],
-html[data-display-mode="minimal-ui"] {
+html[data-display-mode="minimal-ui"],
+html[data-display-mode="native"] {
   /* An accidental downward swipe must not pull-to-refresh a 5 MB app. */
   overscroll-behavior-y: contain;
   /* Removes the tap flash that reads as "web page" rather than "app".
@@ -246,7 +256,9 @@ html[data-display-mode="minimal-ui"] {
   -webkit-tap-highlight-color: transparent;
 }
 html[data-display-mode="standalone"] body,
-html[data-display-mode="standalone"] .main {
+html[data-display-mode="standalone"] .main,
+html[data-display-mode="native"] body,
+html[data-display-mode="native"] .main {
   overscroll-behavior-y: contain;
 }
 `;

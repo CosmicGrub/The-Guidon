@@ -36,10 +36,17 @@ tauri-plugin-window-state = "2"
 #    entry summarizes by root cause, not by exhaustively naming every leaf
 #    crate; `cargo audit` currently reports 12 warnings in this family:
 #    glib 0.18.5 itself (RUSTSEC-2024-0429, unsound Iterator/
-#    DoubleEndedIterator impl on glib::VariantStrIter, no patched version
-#    exists upstream), the gtk-rs GTK3 bindings being unmaintained
-#    (RUSTSEC-2024-0415, covering atk/atk-sys/gdk/gdk-sys/gdkwayland-sys/
-#    gdkx11/gdkx11-sys/gtk/gtk-sys/gtk3-macros), and proc-macro-error
+#    DoubleEndedIterator impl on glib::VariantStrIter — a patched glib
+#    >=0.20.0 DOES exist upstream, per the advisory's own [versions] block;
+#    a prior version of this comment wrongly said no fix exists anywhere).
+#    The real, still-unfixable-from-here blocker is narrower than that: gtk
+#    0.18.2's own unmaintained GTK3 bindings (RUSTSEC-2024-0415, covering
+#    atk/atk-sys/gdk/gdk-sys/gdkwayland-sys/gdkx11/gdkx11-sys/gtk/gtk-sys/
+#    gtk3-macros) pin glib to the 0.18.x line and have never moved past it,
+#    so this project can't reach glib's real fix without gtk-rs itself
+#    resuming GTK3 maintenance first — confirmed via `cargo tree --target
+#    x86_64-unknown-linux-gnu -i glib`, which traces glib 0.18.5 solely
+#    through gtk 0.18.2. Also in this family: proc-macro-error
 #    (RUSTSEC-2024-0370, unmaintained — a proc-macro dependency of
 #    glib-macros/gtk3-macros, so it rides in on the exact same chain).
 #    All pulled in transitively as Tauri's Linux windowing backend. Confirmed
