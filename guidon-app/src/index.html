@@ -21659,7 +21659,17 @@ window.G = window.G || {};
   // ── Kiosk / Demo mode walk-through ────────────────────────────────────────
   async function renderKioskMode(mount) {
     util.clear(mount);
-    mount.appendChild(el("div.section-title", {}, [el("h2", { text: "Demo Center" }), el("div.rule")]));
+    // Roadmap audit round 5, "Kiosk/Demo Center: focus, aria-current, naming,
+    // badge, and test coverage" bucket: this feature is picked at onboarding
+    // as "Kiosk / Demo Mode" (modeBtn label), shows up on Profile as "Kiosk /
+    // demo mode" / "Kiosk Mode", and the nav route itself is labeled "Kiosk" —
+    // but the page's own heading read the unrelated "Demo Center", a fourth
+    // name with nothing tying it back to "Kiosk". Echoing both names here
+    // (matching the slash-joined "Kiosk / demo mode" phrasing already used on
+    // Profile) is the smallest fix that reconciles the heading with every
+    // other name for this feature without having to touch onboarding copy,
+    // Profile's meta strings, or the route label.
+    mount.appendChild(el("div.section-title", {}, [el("h2", { text: "Kiosk / Demo Center" }), el("div.rule")]));
 
     // Every real nav destination gets a stop — kept in the same order as the
     // sidebar groups (Board Prep → Study & Skills → Leadership → Career &
@@ -21710,6 +21720,18 @@ window.G = window.G || {};
       body.appendChild(intro);
       body.appendChild(choiceRow);
       body.appendChild(buildCueSheet());
+      // Roadmap audit round 5, "Kiosk/Demo Center" bucket: "← Choose a
+      // different mode" (in renderGuidedTour() below) used to call
+      // util.clear(body) and rebuild straight into this picker with no
+      // focus() call afterward, dropping focus to document.body — a
+      // keyboard/screen-reader user tabbing or pressing "Choose a different
+      // mode" got no confirmation the switch happened and had to hunt for
+      // where focus landed. Mirrors route()'s own heading-focus convention
+      // (tabindex=-1 + focus({preventScroll:true}) on the new view's landing
+      // content) since this picker has no h1/h2 of its own to reuse — the
+      // page's h2 lives outside `body` and is never rebuilt.
+      intro.setAttribute("tabindex", "-1");
+      try { intro.focus({ preventScroll: true }); } catch (e) {}
     }
 
     // Presenter cheat-sheet on the mode picker: every section with the one thing
@@ -21748,6 +21770,13 @@ window.G = window.G || {};
       backBtn.addEventListener("click", () => {
         chosenMode = null;
         try { sessionStorage.removeItem(STORAGE_MODE_KEY); sessionStorage.removeItem(STORAGE_STEP_KEY); } catch (e) {}
+        // Roadmap audit round 5, "Kiosk/Demo Center" bucket: leaving the
+        // Guided Tour for the mode picker must also drop the "TOUR: Step N
+        // of M" badge renderKioskCard() below raises — otherwise a stale
+        // tour badge (with a "Resume" button pointing at a tour that no
+        // longer exists, its storage keys just having been cleared above)
+        // stays on screen after the person explicitly chose to stop.
+        if (G.kioskBadge) G.kioskBadge.hide();
         renderModePicker();
       });
       switchRow.appendChild(backBtn);
@@ -21807,11 +21836,41 @@ window.G = window.G || {};
           // "guided" for the rest of the session, so re-entering #/kiosk later (e.g. via
           // Settings' "Take a tour" button) silently skipped the mode picker and dropped the
           // user straight back into the Guided Tour at step 1 instead of letting them pick again.
-          doneBtn.addEventListener("click", () => { try { sessionStorage.removeItem(STORAGE_STEP_KEY); sessionStorage.removeItem(STORAGE_MODE_KEY); } catch (e) {} location.hash = "#/home"; });
+          doneBtn.addEventListener("click", () => {
+            try { sessionStorage.removeItem(STORAGE_STEP_KEY); sessionStorage.removeItem(STORAGE_MODE_KEY); } catch (e) {}
+            // Roadmap audit round 5, "Kiosk/Demo Center" bucket: "End tour"
+            // ends the tour entirely (unlike the badge's own "Resume" button,
+            // which deliberately leaves storage intact) — the persistent
+            // "TOUR: Step N of M" badge shown below must come down with it,
+            // the same way Free Mode's Exit button removes its own badge.
+            if (G.kioskBadge) G.kioskBadge.hide();
+            location.hash = "#/home";
+          });
           btnRow.appendChild(doneBtn);
         }
         card.appendChild(btnRow);
         cardsWrap.appendChild(card);
+        // Roadmap audit round 5, "Kiosk/Demo Center" bucket: Next/Prev/dot-jump
+        // all rebuild cardsWrap's contents from scratch via util.clear() with
+        // no focus() call afterward, dropping focus to document.body every
+        // single step — and unlike normal hash-based navigation, none of
+        // these change location.hash, so route()'s own "move focus to the
+        // view heading" step (index.html, near _firstRouteDone) never fires
+        // either. tabindex=-1 + focus({preventScroll:true}) on the fresh
+        // card mirrors both route()'s heading-focus convention and Board
+        // Drill Quiz's draw()/cardWrap.focus() pattern (same file, cardWrap
+        // stays put while draw() replaces its children then refocuses it).
+        card.setAttribute("tabindex", "-1");
+        try { card.focus({ preventScroll: true }); } catch (e) {}
+        // Also (re)raise the persistent tour badge so a presenter who taps
+        // "Open →" and leaves #/kiosk still has an on-screen breadcrumb and a
+        // one-tap way back — previously only Free Mode got this treatment
+        // (see G.kioskBadge below); the Guided Tour silently resumed via
+        // STORAGE_STEP_KEY but gave no on-screen sign that was possible.
+        // Called on every step change (not just tour entry) so the "Step N
+        // of M" count shown in the badge always matches wherever the person
+        // actually left off.
+        if (G.kioskBadge) G.kioskBadge.show({ mode: "guided", step: idx + 1, total: DEMO_STEPS.length });
       }
 
       function renderTracker() {
@@ -21827,6 +21886,23 @@ window.G = window.G || {};
           // Enter/Space keydown handler match the Action Plan row's own fix for this identical
           // gap (see .ob-plan-item.clickable's keydown listener elsewhere in this file).
           dot.setAttribute("role", "button");
+          // Roadmap audit round 5, "Kiosk/Demo Center" bucket: each dot's only
+          // accessible name came from dot.title (a title attribute, never
+          // reliably exposed by screen readers) and the three states
+          // (upcoming/current/done) were distinguished purely by background
+          // color via the .active/.done classes above — a screen-reader user
+          // heard "button, Step 3 of 9" nine times with no way to tell which
+          // one was current. aria-label carries the real accessible name now
+          // (title stays too, as a free mouse-hover tooltip — harmless, and
+          // aria-label wins over title for AT either way), and aria-current
+          // ="step" marks the active dot the same way setActive() already
+          // marks the active nav link elsewhere in this file — cleared on
+          // every other dot exactly the same way (dots are rebuilt fresh each
+          // call, but a plain removeAttribute mirrors that convention rather
+          // than relying on the attribute simply never having been set).
+          const dotState = i === current ? "current" : i < current ? "done" : "not started";
+          dot.setAttribute("aria-label", `Step ${i + 1} of ${DEMO_STEPS.length}: ${s.title} — ${dotState}`);
+          if (i === current) dot.setAttribute("aria-current", "step"); else dot.removeAttribute("aria-current");
           const go = () => { current = i; persistStep(); renderTracker(); renderKioskCard(i); };
           dot.addEventListener("click", go);
           dot.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
@@ -32501,22 +32577,67 @@ window.G = window.G || {};
     if (moreBtn) moreBtn.classList.toggle("active", NAV_PRIMARY_MOBILE.indexOf(hash) === -1);
   }
 
-  // ── Demo Mode badge (Free Mode indicator + one-tap exit) ──────────────────
+  // ── Demo Mode badge (Free Mode + Guided Tour indicator, one-tap return) ────
   // Shown persistently across every screen while someone is in Kiosk/Demo
-  // "Free Mode" (self-guided exploring, as opposed to the step-by-step
-  // Guided Tour). Exists so a person handed the device — or a presenter
-  // showcasing GUIDON to someone else — always has a visible, one-tap way
-  // back out, without hunting for it.
+  // "Free Mode" (self-guided exploring) OR mid Guided Tour after tapping
+  // "Open →" to visit a section (the step-by-step walk-through). Exists so a
+  // person handed the device — or a presenter showcasing GUIDON to someone
+  // else — always has a visible, one-tap way back, without hunting for it.
+  //
+  // Roadmap audit round 5, "Kiosk/Demo Center" bucket: this used to be
+  // Free-Mode-only — show() took no arguments and always rendered "DEMO
+  // MODE" / "Exit". The Guided Tour's own "Open →" button just did
+  // location.hash = s.route with no equivalent call, so leaving #/kiosk
+  // mid-tour showed zero on-screen indication a tour was in progress (the
+  // app DOES silently resume at the right step via profile.js's
+  // STORAGE_STEP_KEY, but nothing on screen ever told anyone that was
+  // possible). show() now takes an optional { mode, step, total } and
+  // reuses the exact same badge element for both modes rather than
+  // inventing a second one — "guided" gets its own "TOUR: Step N of M"
+  // label (the label itself doesn't repeat "Resume" — that's the button's
+  // own text, right next to it, same as "DEMO MODE" / "Exit" below never
+  // says "Exit" twice) and a Resume button that returns to #/kiosk WITHOUT
+  // clearing session storage (unlike Free Mode's Exit), since the point is
+  // to jump back INTO the tour, not leave demo mode.
   G.kioskBadge = {
-    show() {
-      if (document.getElementById("demo-mode-badge")) return;
+    show(opts) {
+      opts = opts || {};
+      const mode = opts.mode === "guided" ? "guided" : "free";
+      const label = mode === "guided"
+        ? `TOUR: Step ${opts.step} of ${opts.total}`
+        : "DEMO MODE";
+      let badge = document.getElementById("demo-mode-badge");
+      if (badge) {
+        // Already on screen — update the mode/label in place instead of
+        // tearing down and rebuilding. renderKioskCard() (profile.js) calls
+        // this on every Next/Prev/dot-jump so the step count stays current,
+        // which would otherwise mean a full rebuild (and a fresh click
+        // listener to leak) on every single step advance.
+        badge.setAttribute("data-mode", mode);
+        const span = badge.querySelector("span");
+        if (span) span.textContent = label;
+        const btn = badge.querySelector("button");
+        if (btn) btn.textContent = mode === "guided" ? "Resume" : "Exit";
+        return;
+      }
       const topbar = document.querySelector(".topbar");
       if (!topbar) return;
-      const badge = el("div#demo-mode-badge", {}, [
-        el("span", { text: "DEMO MODE" }),
+      badge = el("div#demo-mode-badge", { "data-mode": mode }, [
+        el("span", { text: label }),
         (() => {
-          const b = el("button", { type: "button", text: "Exit" });
+          const b = el("button", { type: "button", text: mode === "guided" ? "Resume" : "Exit" });
           b.addEventListener("click", async () => {
+            // Read the CURRENT mode off the live badge rather than closing
+            // over `mode` — the label/mode above is updated in place, not
+            // rebuilt, so a stale closure could fire the wrong branch after
+            // a mode switch.
+            const liveBadge = document.getElementById("demo-mode-badge");
+            const liveMode = liveBadge ? liveBadge.getAttribute("data-mode") : mode;
+            if (liveMode === "guided") {
+              location.hash = "#/kiosk";
+              route();
+              return;
+            }
             try { sessionStorage.removeItem("guidon-demo-mode"); } catch (e) {}
             G.kioskBadge.hide();
             location.hash = "#/kiosk";
@@ -32533,9 +32654,22 @@ window.G = window.G || {};
     },
     async checkOnBoot() {
       try {
-        const inFree = sessionStorage.getItem("guidon-demo-mode") === "free";
+        const savedMode = sessionStorage.getItem("guidon-demo-mode");
+        if (savedMode !== "free" && savedMode !== "guided") return;
         const profile = G.profile && G.profile.current ? await G.profile.current() : null;
-        if (inFree && profile && profile.mode === "kiosk") this.show();
+        if (!(profile && profile.mode === "kiosk")) return;
+        if (savedMode === "guided") {
+          // profile.js's DEMO_STEPS list (and its exact count) lives inside
+          // renderKioskMode()'s own closure, not reachable from here — G.routes
+          // is the same single source of truth DEMO_STEPS derives from (see
+          // the comment at G.routes' own declaration), so this mirrors that
+          // same filter rather than hand-maintaining a second copy of the count.
+          const total = (G.routes || []).filter(r => r.hash !== "#/kiosk" && r.hash !== "#/profile").length;
+          const savedStep = parseInt(sessionStorage.getItem("guidon-demo-step"), 10);
+          this.show({ mode: "guided", step: (isNaN(savedStep) ? 0 : savedStep) + 1, total });
+        } else {
+          this.show({ mode: "free" });
+        }
       } catch (e) {}
     },
   };
