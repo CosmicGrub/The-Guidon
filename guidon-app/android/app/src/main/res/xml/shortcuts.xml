@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Roadmap audit round 4, "Native platform deeper integration gaps" bucket:
+     manifest.webmanifest (src/manifest.webmanifest) declares 3 "shortcuts"
+     that Chrome surfaces on a long-press of the installed PWA icon (Board
+     Drill, Progress, NCOPDS Drills) - this native Capacitor Android build
+     had no equivalent at all: no file here, no android.app.shortcuts
+     meta-data on MainActivity, so a Soldier who installed the APK instead
+     of the PWA never saw any of the 3 launcher shortcuts the PWA users get.
+     This file is Android's own ShortcutManager equivalent of that webmanifest
+     array - same 3 destinations, same short/long labels and descriptions
+     (kept word-for-word identical to manifest.webmanifest's own copy so the
+     two install paths never describe the same shortcut differently), read
+     via the <meta-data android:name="android.app.shortcuts" .../> entry on
+     MainActivity in AndroidManifest.xml.
+
+     Each <intent> below carries a "route" extra naming the in-app hash route
+     the webmanifest shortcut's own "url" field points at (./#/board etc.) -
+     MainActivity has no existing deep-link/intent-extra consumer of any kind
+     to wire this into an actual in-app navigation yet (grepped: no
+     getIntent()/onNewIntent() handling anywhere in this Activity), so for
+     now a tap still opens GUIDON normally rather than jumping straight to
+     the named screen. Declaring the extra here rather than a bare
+     action/targetClass with nothing else is still correct and forward-
+     compatible - it's the same "route" the PWA's shortcut URL carries - but
+     wiring an actual consumer is native-side plumbing (reading the extra in
+     onCreate()/onNewIntent() and pushing it into the WebView) beyond this
+     fix's scope; flagged for a follow-up rather than guessed at here. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="board_drill"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_board_short"
+        android:shortcutLongLabel="@string/shortcut_board_long">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetPackage="app.guidon.trainer"
+            android:targetClass="app.guidon.trainer.MainActivity">
+            <extra android:name="route" android:value="#/board" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="progress"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_progress_short"
+        android:shortcutLongLabel="@string/shortcut_progress_long">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetPackage="app.guidon.trainer"
+            android:targetClass="app.guidon.trainer.MainActivity">
+            <extra android:name="route" android:value="#/progress" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="ncopds_drills"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_drills_short"
+        android:shortcutLongLabel="@string/shortcut_drills_long">
+        <intent
+            android:action="android.intent.action.MAIN"
+            android:targetPackage="app.guidon.trainer"
+            android:targetClass="app.guidon.trainer.MainActivity">
+            <extra android:name="route" android:value="#/drills" />
+        </intent>
+    </shortcut>
+</shortcuts>

@@ -6085,6 +6085,16 @@ window.G = window.G || {};
       return false;
     }
     try {
+      // Roadmap audit round 4, "Native platform deeper integration gaps"
+      // bucket: Share.share() launches Android's real share-sheet Activity,
+      // which fires the same onPause/onResume pair as truly backgrounding
+      // the app - tell G.biometricGate to skip the very next re-lock so
+      // returning from the share sheet doesn't re-prompt for biometrics on
+      // an export the Soldier never actually left the app for. Set right
+      // before the call (not earlier) so a slow FS.writeFile above can't
+      // leave the gate suppressed if the Soldier backgrounds the app while
+      // that write is still in flight.
+      if (G.biometricGate) G.biometricGate.expectReturn();
       await window.Capacitor.Plugins.Share.share({ title: name, dialogTitle: "Save " + name, files: [res.uri] });
       return true;
     } catch (e) {
@@ -15623,7 +15633,13 @@ window.G = window.G || {};
 
       mount.appendChild(el("div.btn-row", {}, [
         el("button.btn.primary", { text: "＋ New Scenario", onclick: () => openEditor(mount, null, back) }),
-        el("button.btn", { gi: "upload", giSize: 14, text: "Import JSON", onclick: () => fileInput.click() }),
+        // Roadmap audit round 4, "Native platform deeper integration gaps"
+        // bucket: fileInput.click() opens Android's native file-picker
+        // Activity, which fires the same onPause/onResume pair as truly
+        // backgrounding the app - see G.biometricGate.expectReturn()'s own
+        // comment (near G.kioskBadge) for why this must be told to skip the
+        // next re-lock, same as every other Share-sheet/file-picker call site.
+        el("button.btn", { gi: "upload", giSize: 14, text: "Import JSON", onclick: () => { if (G.biometricGate) G.biometricGate.expectReturn(); fileInput.click(); } }),
         el("button.btn.ghost.sm", { gi: "download", giSize: 14, text: "Export All", onclick: () => {
           const all = store.userScenarios();
           if (!all.length) { util.toast("No authored scenarios to export."); return; }
@@ -25059,7 +25075,14 @@ window.G = window.G || {};
     // hidden file input for import
     var fileIn = el("input", { type: "file", accept: "application/json,.json", style: "display:none" });
     var importBtn = el("button.btn.ghost.sm", { type: "button", gi: "upload", giSize: 14, text: "Import backup", style: "margin-left:8px" });
-    importBtn.addEventListener("click", function () { fileIn.click(); });
+    // Roadmap audit round 4, "Native platform deeper integration gaps"
+    // bucket: same G.biometricGate.expectReturn() suppression as
+    // util._nativeSave()'s Share.share() call - fileIn.click() opens
+    // Android's native file-picker Activity, which fires the identical
+    // onPause/onResume pair as truly backgrounding the app, so without this
+    // a Soldier who picks their backup file gets re-prompted for biometrics
+    // the instant the picker hands control back.
+    importBtn.addEventListener("click", function () { if (G.biometricGate) G.biometricGate.expectReturn(); fileIn.click(); });
     var status = el("div.backup-status hint");
 
     fileIn.addEventListener("change", function () {
@@ -30833,7 +30856,11 @@ window.G = window.G || {};
     });
     dataPanel.appendChild(el("div.btn-row", { style: "margin-top:8px" }, [
       exportBtn,
-      el("button.btn.sm.ghost", { gi: "upload", giSize: 14, text: "Import backup", onclick: () => importInput.click() }),
+      // Roadmap audit round 4, "Native platform deeper integration gaps"
+      // bucket: same G.biometricGate.expectReturn() suppression as the
+      // Profile view's own Import backup button (backup.js's renderControls())
+      // - see its comment for why the native file picker needs this too.
+      el("button.btn.sm.ghost", { gi: "upload", giSize: 14, text: "Import backup", onclick: () => { if (G.biometricGate) G.biometricGate.expectReturn(); importInput.click(); } }),
     ]));
     dataPanel.appendChild(importInput);
     dataPanel.appendChild(lastBackupHint);
@@ -32019,6 +32046,23 @@ window.G = window.G || {};
     let unlocked = false;          // true once verified for the current foreground session
     let warnedUnavailable = false; // told once per boot, not nagged every gate check
     let pending = null;            // in-flight run() promise — overlapping callers share one overlay
+    // Roadmap audit round 4, "Native platform deeper integration gaps" bucket:
+    // Android fires the same onPause/onResume pair biometric.js's own
+    // appStateChange listener re-arms the lock on not only when the Soldier
+    // truly backgrounds the app, but also whenever the app itself launches a
+    // separate Activity via startActivityForResult - exactly what
+    // util._nativeSave()'s Share.share() (Export backup, every "Print / Save
+    // as PDF" button) and every hidden <input type=file> click() (Import
+    // backup x2, Authoring Studio's Import JSON) do under the hood. Without
+    // this, a Soldier who exports a backup, picks a share target, and
+    // returns got hit with a fresh biometric prompt for an action they never
+    // actually left the app for. expectReturn() is called immediately before
+    // each of those self-initiated launches; the very next onResume() then
+    // skips re-arming exactly once and clears itself, so a REAL backgrounding
+    // (home button, app switcher, phone lock) right after one still gates
+    // normally on the resume after that.
+    let skipNextResume = false;
+    function expectReturn() { skipNextResume = true; }
 
     async function applies() {
       try {
@@ -32114,9 +32158,16 @@ window.G = window.G || {};
     // Called by biometric.js's own "appStateChange" listener every time the
     // native shell reports the app returning to the foreground — never on
     // plain route navigation (see header comment above).
-    function onResume() { unlocked = false; run(); }
+    function onResume() {
+      // See expectReturn()'s own comment above: a self-initiated Share sheet
+      // or file picker fires this same resume event on its own way back in,
+      // and that one return trip is not the "someone else could be holding
+      // this phone now" moment the gate exists for.
+      if (skipNextResume) { skipNextResume = false; return; }
+      unlocked = false; run();
+    }
 
-    return { run, onResume, applies };
+    return { run, onResume, applies, expectReturn };
   })();
 
   function route() {
