@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Roadmap audit round 4, "Native platform quick fixes" bucket: this used to also
+     declare an external-path rooted at the ENTIRE primary shared-storage volume,
+     but nothing in the app ever writes there — every real file write goes through
+     util._nativeSave() (src/index.html) targeting the CACHE directory below, which
+     is what the cache-path entry exposes. That external-path was unused dead
+     scaffold config, and it's inconsistent with the app's otherwise deliberately
+     minimal-exposure posture (allowBackup is already disabled in AndroidManifest.xml
+     for the same reason) — a FileProvider grant should only ever be able to reach
+     files the app actually produces. Removed rather than narrowed, since no code
+     path writes outside the cache directory. -->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <external-path name="my_images" path="." />
     <cache-path name="my_cache_images" path="." />
 </paths>

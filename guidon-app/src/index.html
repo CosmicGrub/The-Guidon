@@ -6058,7 +6058,20 @@ window.G = window.G || {};
   // that platform is to write the file into the app's private cache (no
   // permission needed) via @capacitor/filesystem, then hand it to Android's
   // share sheet via @capacitor/share so the user picks where it lands.
+  // Roadmap audit round 4, "Native platform quick fixes" bucket: writeFile and
+  // Share.share used to share one try/catch, so backing out of the Android
+  // share-sheet chooser — a completely normal thing to do; the Soldier may
+  // just want the file sitting in cache for later, or picked the wrong app by
+  // mistake — rejected the SAME as a genuine Filesystem.writeFile failure
+  // (disk full, storage plugin missing). Every caller then told the Soldier
+  // their report/export had failed even though it was already written to
+  // disk. Splitting the two steps into separate try/catches means a write
+  // failure still resolves false (nothing was saved, so "failed" is correct),
+  // but a share failure/cancellation after a successful write resolves the
+  // string "cancelled" instead, so callers can tell the truth: the file is on
+  // the device, the Soldier just didn't pick a share target.
   util._nativeSave = async function (name, data, isBase64) {
+    let res;
     try {
       const Cap = window.Capacitor;
       const FS = Cap && Cap.Plugins && Cap.Plugins.Filesystem;
@@ -6066,22 +6079,31 @@ window.G = window.G || {};
       if (!FS || !Share) throw new Error("Filesystem/Share plugin unavailable");
       const opts = { path: name, data: data, directory: "CACHE", recursive: true };
       if (!isBase64) opts.encoding = "utf8";
-      const res = await FS.writeFile(opts);
-      await Share.share({ title: name, dialogTitle: "Save " + name, files: [res.uri] });
-      return true;
+      res = await FS.writeFile(opts);
     } catch (e) {
       console.warn("native save failed:", e && e.message);
       return false;
     }
+    try {
+      await window.Capacitor.Plugins.Share.share({ title: name, dialogTitle: "Save " + name, files: [res.uri] });
+      return true;
+    } catch (e) {
+      console.warn("native share failed/cancelled (file was already saved):", e && e.message);
+      return "cancelled";
+    }
   };
 
-  // Both return a Promise<boolean> so callers can tell whether the save
-  // genuinely completed before announcing success to the user — on the
-  // native branch this only resolves once Filesystem.writeFile + Share.share
-  // actually finish (or fails/rejects if the user cancels the share sheet or
-  // the write errors), not the instant the call is made. See task #202: every
-  // native caller previously announced "downloaded" the instant this function
-  // returned, regardless of whether the underlying save had even started.
+  // Both resolve once Filesystem.writeFile (+ Share.share, on the native
+  // branch) actually finish, not the instant the call is made — see task
+  // #202: every native caller previously announced "downloaded" the instant
+  // this function returned, regardless of whether the underlying save had
+  // even started. The resolved value is true (fully saved and shared), false
+  // (the write itself failed — nothing was saved), or, on native only, the
+  // string "cancelled" (the file WAS written but the share sheet was
+  // cancelled/failed — still truthy, so a plain `ok ? … : …` caller treats it
+  // as success, and a caller that wants the more precise "saved, not shared"
+  // message can check `ok === "cancelled"` — see util.printHTML's native
+  // branch below).
   util.download = function (name, text, mime) {
     if (G.native && G.native.isNative && G.native.isNative()) { return util._nativeSave(name, text, false); }
     const blob = new Blob([text], { type: mime || "application/json" });
@@ -6152,8 +6174,15 @@ window.G = window.G || {};
         + "<body><h1>" + util.esc(title) + "</h1>" + innerHTML
         + "<script>window.addEventListener(\"load\",function(){try{window.print();}catch(e){}});<\/script>"
         + "</body></html>";
+      // Roadmap audit round 4, "Native platform quick fixes" bucket: util.download
+      // (-> util._nativeSave) now resolves the string "cancelled" instead of false
+      // when the file was written but the Soldier backed out of the share-sheet
+      // chooser, so that case gets its own honest message instead of the generic
+      // failure toast below implying the report itself was lost.
       util.download(safeName + ".html", doc, "text/html").then((ok) => {
-        if (util.toast) util.toast(ok ? "Report saved — open it to view or print." : "Couldn't save the report. Try again.");
+        if (!util.toast) return;
+        if (ok === "cancelled") util.toast("Report saved to device — share cancelled.");
+        else util.toast(ok ? "Report saved — open it to view or print." : "Couldn't save the report. Try again.");
       });
       return;
     }
