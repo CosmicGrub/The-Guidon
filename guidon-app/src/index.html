@@ -26672,6 +26672,16 @@ window.G = window.G || {};
         // until (if ever) the next cold boot's syncAll() caught it.
         try { if (G.notify) await G.notify.scheduleForReminder(updated[updated.length - 1]); } catch (e) {}
         try { if (G.util.announce) G.util.announce("Reminder set."); } catch (e) {}
+        // Roadmap audit round 4, "UX: cross-links and action feedback"
+        // bucket: announce() only writes a visually-hidden live region, so
+        // a sighted Soldier who clicked "Remind me" saw the inputs go
+        // blank and nothing else - no confirmation the click did anything.
+        // Every other "Remind me" button in the app (calendar.js, records.js,
+        // leader.js) also disables itself and relabels to "Reminder set" for
+        // a visible confirmation; this one and Federal Hiring's copy just
+        // below it were the two left out.
+        addBtn.disabled = true;
+        addBtn.textContent = "Reminder set";
         dateIn.value = ""; labelIn.value = "";
       });
       row.appendChild(dateIn); row.appendChild(labelIn); row.appendChild(addBtn);
@@ -28131,6 +28141,14 @@ window.G = window.G || {};
         // lines up: G.reminders.add() alone never schedules anything.
         try { if (G.notify) await G.notify.scheduleForReminder(updated[updated.length - 1]); } catch (e) {}
         try { if (G.util.announce) G.util.announce("Reminder set."); } catch (e) {}
+        // Roadmap audit round 4, "UX: cross-links and action feedback"
+        // bucket: same fix as the salary-negotiation quick-add a few
+        // thousand lines up - announce() alone is invisible to a sighted
+        // Soldier, so disable + relabel to "Reminder set" the way every
+        // other "Remind me" button (calendar.js, records.js, leader.js)
+        // already does.
+        addBtn.disabled = true;
+        addBtn.textContent = "Reminder set";
         dateIn.value = ""; labelIn.value = "";
       });
       row.appendChild(dateIn); row.appendChild(labelIn); row.appendChild(addBtn);

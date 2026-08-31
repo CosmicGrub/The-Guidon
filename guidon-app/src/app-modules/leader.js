@@ -41,15 +41,24 @@ window.G = window.G || {};
   // doesn't know about); remindLabel is the same short action phrase
   // "counseled" already used ("Counsel " + who), generalized per field so
   // the reminder list reads as an action, not a restated field name.
+  //
+  // Roadmap audit round 4, "UX: cross-links and action feedback" bucket:
+  // buildSummary()'s cross-link button used to build its own text as
+  // "Open " + f.link.replace("#/", "") - i.e. whatever the hash slug
+  // happened to be ("Open counsel", "Open fitness", "Open board", "Open
+  // records"), not a real nav label. Every other cross-link in the app
+  // spells out an actual label. linkLabel gives each entry the label its
+  // button should say, same shape as the rest of this table rather than
+  // deriving UI text from a routing detail.
   const FIELDS = [
     { key: "counseled", label: "Last counselling", days: 30, remindKind: "counseling", remindLabel: "Counsel",
-      note: "Monthly developmental counselling. The most commonly missed leader duty.", link: "#/counsel" },
+      note: "Monthly developmental counselling. The most commonly missed leader duty.", link: "#/counsel", linkLabel: "Counsel" },
     { key: "aft", label: "Last AFT", days: 365, remindKind: "acft", remindLabel: "Schedule AFT for",
-      note: "Feeds their promotion points and their readiness.", link: "#/fitness" },
+      note: "Feeds their promotion points and their readiness.", link: "#/fitness", linkLabel: "Fitness" },
     { key: "wpn", label: "Last weapons qual", days: 730, remindKind: "weapons", remindLabel: "Schedule weapons qual for",
-      note: "Past 24 months it is worth zero promotion points to them.", link: "#/board" },
+      note: "Past 24 months it is worth zero promotion points to them.", link: "#/board", linkLabel: "Board" },
     { key: "ncoer", label: "Last NCOER thru-date", days: 365, remindKind: "other", remindLabel: "Update NCOER thru-date for",
-      note: "NCOs only. A gap in the record is a gap a board sees.", link: "#/records" },
+      note: "NCOs only. A gap in the record is a gap a board sees.", link: "#/records", linkLabel: "Records" },
   ];
 
   function todayMid() {
@@ -180,7 +189,7 @@ window.G = window.G || {};
           c.appendChild(head);
           c.appendChild(el("div.hint", { text: x.worst.label }));
           if (x.worst.f.link) {
-            const b = el("button.btn.sm.ghost", { type: "button", text: "Open " + x.worst.f.link.replace("#/", ""), style: "margin-top:6px" });
+            const b = el("button.btn.sm.ghost", { type: "button", text: "Open " + x.worst.f.linkLabel, style: "margin-top:6px" });
             b.addEventListener("click", function () { location.hash = x.worst.f.link; });
             c.appendChild(b);
           }
