@@ -90,7 +90,11 @@ window.G = window.G || {};
     mount.appendChild(priv);
 
     const summary = el("div.panel", { style: "margin-bottom:10px" });
-    const list = el("div");
+    // tabindex:-1: programmatically focusable (not in the Tab order) so the
+    // roster-Remove focus-restore fallback below has somewhere real to
+    // land when the last visible entry is removed - matching reminders.js's
+    // own listMount, the reference implementation this fix follows.
+    const list = el("div", { tabindex: "-1" });
     // List-detail left pane (Fold5/tablet fidelity wave 1): a real roster
     // list at >=1024px (.list-detail, see index.html) that jumps to and
     // highlights a Soldier's existing edit card rather than replacing the
@@ -223,7 +227,7 @@ window.G = window.G || {};
         return;
       }
       const shown = listExpanded ? visible : visible.slice(0, LIST_CAP);
-      shown.forEach(function (entry) {
+      shown.forEach(function (entry, visiblePos) {
         const sol = entry.sol, idx = entry.idx;
         const worst = overdueFor(sol).filter(function (x) { return x.over !== null; }).sort(function (a, b) { return b.over - a.over; })[0];
         const row = el("button.list-detail-row", { type: "button", role: "option" }, [
@@ -278,12 +282,23 @@ window.G = window.G || {};
         mosIn.addEventListener("change", function () { sol.mos = mosIn.value.trim().toUpperCase(); persist(); });
         head.appendChild(rankIn); head.appendChild(mosIn); head.appendChild(nameIn);
 
-        const del = el("button.btn.sm.ghost", { type: "button", text: "Remove", "aria-label": "Remove roster entry " + (idx + 1) });
+        const del = el("button.btn.sm.ghost", { type: "button", text: "Remove", "aria-label": "Remove roster entry " + (idx + 1), "data-visible-pos": String(visiblePos) });
         del.addEventListener("click", async function () {
           const label = (sol.rank ? sol.rank + " " : "") + (sol.name || "this entry");
           const yes = await G.modal.confirm("Remove " + label + " from the roster?", { okText: "Remove", danger: true });
           if (!yes) return;
           roster.splice(idx, 1); await persist(); buildSummary(); buildList();
+          // Deep-gap follow-up ("Screen-Reader Announcements" bucket): same
+          // fix reminders.js's own row-remove handler already applies (see
+          // its own "redraw() clears and rebuilds every row" comment,
+          // index.html) - buildList() rebuilds every card fresh, so the
+          // just-clicked Remove button no longer exists and keyboard focus
+          // falls through to document.body. Land it on the Remove button
+          // now at this same visible position, or the list container if
+          // nothing remains.
+          const buttons = cardsGrid.querySelectorAll("button[data-visible-pos]");
+          const nextBtn = buttons[Math.min(visiblePos, buttons.length - 1)];
+          if (nextBtn) nextBtn.focus(); else list.focus();
         });
         head.appendChild(del);
         card.appendChild(head);

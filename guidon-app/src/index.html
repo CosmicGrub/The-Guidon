@@ -4910,12 +4910,28 @@ html.reduce-transparency .feedback.warn { background:color-mix(in srgb, var(--am
   /* WCAG 2.5.5 / Apple HIG: interactive controls ≥44px on touch screens, without needing the opt-in toggle */
   .btn, .nav :is(button, a), .tab, .segmented button, .choice-btn, .grade-btn,
   .idp-suggest-chip, .cpdf-modebtn, .cpdf-sigbtn, .fin-calc-row input,
-  select, input[type="text"], input[type="number"], input[type="date"],
+  select, input[type="text"], input[type="number"], input[type="date"], input[type="search"],
   .topbar-profile-btn, button.chip, .ob-rank-btn,
   .res-domain-head, .nav-group-header, .due-chip, .qz-star-btn,
   .appearance-opt, .cpdf-close, .res-copy-btn, .example-chip, .copybtn,
-  .mb-cat-chip, .mb-score-btn { min-height: 44px; }
-  .topbar-profile-btn { width: 44px; }
+  .mb-cat-chip, .mb-score-btn, .list-detail-row { min-height: 44px; }
+  .topbar-profile-btn, .qz-star-btn { width: 44px; }
+  .chip.search-chip { min-width: 44px; }
+  /* Deep-gap follow-up ("Mobile Touch-Target" bucket): scale(1.35) on the
+     checkbox itself (below) only reaches ~17.6px - nowhere near this
+     block's own 44px floor, because a native 13x13 box scaled by the same
+     factor .toggle uses lands far short of a 46x24 pill scaled by it.
+     Rather than reinventing the checkbox as a custom toggle-pill (a much
+     larger visual change across every checklist that uses one), this
+     expands the ACTUAL clickable region via the <label for="..."> every
+     one of these checklists already pairs with its checkbox - a native,
+     universally-supported click target, unlike the checkbox's own
+     replaced-element hit-box, which is why the fix lives on the label
+     rather than the input. input[type=checkbox] + label matches exactly
+     the "checkbox immediately followed by its own label" markup every
+     checklist (Records, ALC/BLC/SLC self-checks, Diagnostics) already
+     uses - the visual checkbox itself is untouched. */
+  input[type="checkbox"] + label { display: inline-flex; align-items: center; min-height: 44px; padding: 6px 0; }
   /* tap-friendly spacing so adjacent controls don't collide */
   .tabbar { gap: 4px; }
   .idp-actions, .fin-calc-actions, .cpdf-actions { gap: 8px; flex-wrap: wrap; }
@@ -4960,22 +4976,35 @@ html.reduce-transparency .feedback.warn { background:color-mix(in srgb, var(--am
      plus every additional class the audit found uncovered by EITHER rule. */
   .btn, .segmented button, .choice-btn, .topbar-profile-btn, .tab, .grade-btn,
   .cpdf-modebtn, .cpdf-sigbtn, .fin-calc-row input, select,
-  input[type="text"], input[type="number"], input[type="date"],
+  input[type="text"], input[type="number"], input[type="date"], input[type="search"],
   button.chip, .ob-rank-btn, .topbar-search-btn,
   .res-domain-head, .nav-group-header, .due-chip, .qz-star-btn,
   .appearance-opt, .cpdf-close, .res-copy-btn, .example-chip, .copybtn,
-  .mb-cat-chip, .mb-score-btn { min-height:48px; }
+  .mb-cat-chip, .mb-score-btn, .list-detail-row { min-height:48px; }
   /* !important: a later, unconditional (non-media-scoped) .topbar-search-btn
      rule sets width:38px and wins this specificity tie on source order alone -
      an accessibility-mandated minimum should not be silently defeated by
-     unrelated component styling added later in the cascade. */
-  .topbar-search-btn, .topbar-profile-btn { width:44px !important; }
+     unrelated component styling added later in the cascade. Deep-gap
+     follow-up ("Mobile Touch-Target" bucket): .qz-star-btn (line 1161,
+     explicit width:36px) and .chip.search-chip (Dictionary's A-Z jump bar,
+     narrow single-letter labels) hit the identical problem - width-only
+     coverage was previously limited to the two topbar icon buttons even
+     though the same later-unconditional-rule risk applies to any control
+     with its own explicit width set elsewhere in the file. */
+  .topbar-search-btn, .topbar-profile-btn, .qz-star-btn { width:44px !important; }
+  .chip.search-chip { min-width:44px !important; }
   .toggle { transform:scale(1.15); transform-origin:left center; }
   /* Checkboxes were the one form control missing from this list - a native
      unstyled box renders around 13x13px, well under the 48px minimum every
      other control here gets. Scaled the same way .toggle already is above,
      rather than inventing a second technique for one more control. */
   input[type="checkbox"] { transform:scale(1.35); transform-origin:left center; margin-right:4px; }
+  /* Deep-gap follow-up ("Mobile Touch-Target" bucket): the scale(1.35)
+     above only reaches ~17.6px, nowhere near this block's 48px - see the
+     matching rule's own comment in the max-width:640px block above for
+     why the fix targets the checkbox's own <label for="..."> instead of
+     trying to enlarge the native checkbox's replaced-element hit-box. */
+  input[type="checkbox"] + label { display: inline-flex; align-items: center; min-height: 48px; padding: 8px 0; }
 }
 
 /* No real hover capability (touchscreens) — a tapped element can otherwise
@@ -5533,7 +5562,14 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
   content-visibility:auto; contain-intrinsic-size:0 900px; }
 .lib-page:last-child { border-bottom:none; }
 .res-name{font-weight:600;font-size:14px}
-.res-url{font-size:12px;color:var(--text-dim);margin:2px 0;display:block;text-decoration:none}
+/* Deep-gap follow-up ("Mobile Touch-Target" bucket): .main's own
+   overflow-x:hidden silently clips a long resource URL rather than
+   scrolling it, invisible-and-unrecoverable at the narrowest supported
+   viewport (measured: over a third of a real URL cut off at 344px wide
+   with no visual indication). overflow-wrap:anywhere matches the same
+   fix Share & Install's own address panel already applies to a
+   comparable long-string case (word-break:break-all, line ~23694). */
+.res-url{font-size:12px;color:var(--text-dim);margin:2px 0;display:block;text-decoration:none;overflow-wrap:anywhere}
 a.res-url:hover{text-decoration:underline}
 .res-d{font-size:13px;color:var(--text-dim)}
 
@@ -11340,6 +11376,7 @@ window.G = window.G || {};
               if (r == null) util.toast("Couldn't save that grade to your review schedule.");
             });
           }
+          try { util.announce && util.announce(sc.label + ". Next question."); } catch (e) {}
           next();
         });
         scoreRow.appendChild(b);
@@ -11361,6 +11398,12 @@ window.G = window.G || {};
         revealBtn.setAttribute("hidden", "hidden");
         timerEl.textContent = "";
         fill.style.transform = "scaleX(0)";
+        // Deep-gap follow-up ("Screen-Reader Announcements" bucket): Mock
+        // Board's whole reveal/score loop had no announce() calls at all,
+        // unlike every sibling Board Drill mode (Drill's doFlip(), Quiz's
+        // selectOption(), Rapid Fire's judge()) - a screen-reader user got
+        // zero non-visual feedback through this entire flow.
+        try { util.announce && util.announce("Answer revealed."); } catch (e) {}
       });
       panel.appendChild(revealBtn);
       sess._revealBtn = revealBtn;
@@ -11385,6 +11428,7 @@ window.G = window.G || {};
               answerWrap.removeAttribute("hidden");
               scoreRow.removeAttribute("hidden");
               revealBtn.setAttribute("hidden", "hidden");
+              try { util.announce && util.announce("Time's up. Answer revealed."); } catch (e) {}
             }
           } else {
             timerEl.textContent = sess.remaining + "s";
@@ -11498,6 +11542,7 @@ window.G = window.G || {};
           const slider = el("input", { type: "range", min: "1", max: "5", step: "1", value: String(sess.selfRating[id]), "aria-label": "Self-rate " + rubricById[id].name, "data-rate-id": id });
           slider.addEventListener("input", () => {
             sess.selfRating[id] = parseInt(slider.value, 10) || 3;
+            try { util.announce && util.announce(rubricById[id].name + ": " + Math.round((sess.selfRating[id] / 5) * 100) + "%."); } catch (e) {}
             draw();
             // draw() rebuilds the whole scorecard from scratch - including
             // the Board rubric bar chart above, which genuinely needs to
@@ -16333,18 +16378,34 @@ window.G = window.G || {};
       mount.appendChild(crmPanel);
 
       // actions
-      const saved = el("div", { style: "margin-top:14px" });
+      // tabindex:-1: programmatically focusable so the Delete focus-restore
+      // fallback below has somewhere real to land once the last saved
+      // worksheet is removed, matching reminders.js's own listMount.
+      const saved = el("div", { style: "margin-top:14px", tabindex: "-1" });
       async function refreshSaved() {
         util.clear(saved);
         const list = await loadAll();
         if (!list.length) return;
         saved.appendChild(el("div.section-title", {}, [el("h2", { text: "Saved Worksheets (" + list.length + ")" }), el("div.rule")]));
-        list.slice().reverse().forEach((w) => {
+        list.slice().reverse().forEach((w, visiblePos) => {
           saved.appendChild(el("div.card", {}, [
             el("div.stat", {}, [el("span.k", { text: (w.resource || "Untitled") + " — " + (w.unit || "") }), el("span.v", { text: w.risk || "" })]),
             el("div.meta", { text: (w.category || "") + " · value " + LEVELS[w.valueIdx] + " · " + (w.date || "") }),
             el("div.btn-row", { style: "margin-top:8px" }, [
-              el("button.btn.sm.ghost", { text: "Delete", onclick: async () => { await _serialize(async () => { const l = await loadAll(); await saveAll(l.filter((x) => x.id !== w.id)); }); refreshSaved(); } }),
+              el("button.btn.sm.ghost", { text: "Delete", "data-visible-pos": String(visiblePos), onclick: async () => {
+                await _serialize(async () => { const l = await loadAll(); await saveAll(l.filter((x) => x.id !== w.id)); });
+                await refreshSaved();
+                // Deep-gap follow-up ("Screen-Reader Announcements" bucket):
+                // same fix as reminders.js's own row-remove handler (see its
+                // "redraw() clears and rebuilds every row" comment) -
+                // refreshSaved() rebuilds every card fresh, dropping
+                // keyboard focus to document.body. Land it on the Delete
+                // button now at this same visible position, or the list
+                // container if nothing remains.
+                const buttons = saved.querySelectorAll("button[data-visible-pos]");
+                const nextBtn = buttons[Math.min(visiblePos, buttons.length - 1)];
+                if (nextBtn) nextBtn.focus(); else saved.focus();
+              } }),
             ]),
           ]));
         });
@@ -18678,7 +18739,10 @@ window.G = window.G || {};
       host.appendChild(dash);
     })();
 
-    const list = el("div.idp-list");
+    // tabindex:-1: programmatically focusable so the goal-Remove focus-
+    // restore fallback below has somewhere real to land once the last
+    // goal is removed, matching reminders.js's own listMount.
+    const list = el("div.idp-list", { tabindex: "-1" });
     goals.forEach((g, i) => {
       const card = el("div.panel.idp-goal.status-" + (String(g.status || "").toLowerCase().replace(/[^a-z]+/g, "-") || "none"));
       card.appendChild(el("div.idp-goal-text", { text: g.goal }));
@@ -18688,12 +18752,46 @@ window.G = window.G || {};
       if (g.target) meta.appendChild(el("span.chip", { gi: "target", giSize: 12, text: g.target }));
       card.appendChild(meta);
       const ctl = el("div.idp-goal-ctl");
-      const sel = el("select");
+      const sel = el("select", { "data-goal-idx": String(i) });
       ["Not started", "In progress", "Done"].forEach((st) => sel.appendChild(el("option", { value: st, text: st, selected: g.status === st ? "selected" : null })));
-      sel.addEventListener("change", () => { goals[i].status = sel.value; persistGoals(); util.announce && util.announce("Status updated to " + sel.value + "."); render(document.getElementById("route") || host, "builder"); });
+      // Deep-gap follow-up ("Screen-Reader Announcements" bucket): render()
+      // rebuilds the entire Develop page from scratch (same as every other
+      // call to this module's own render()), so the just-changed select and
+      // just-clicked Remove button no longer exist afterward and keyboard
+      // focus falls through to document.body - the same class of bug
+      // reminders.js's own row-remove handler already fixes elsewhere in
+      // this file (see its "redraw() clears and rebuilds every row"
+      // comment). A status change doesn't reorder/remove goals, so the
+      // rebuilt select at the same data-goal-idx is the exact same goal;
+      // refocus it directly.
+      sel.addEventListener("change", async () => {
+        goals[i].status = sel.value; persistGoals();
+        util.announce && util.announce("Status updated to " + sel.value + ".");
+        // render() is async (it awaits G.profile.current() before
+        // rebuilding) - must be awaited before querying the fresh DOM
+        // below, or the query runs against the just-cleared-but-not-yet-
+        // rebuilt mount and finds nothing.
+        await render(document.getElementById("route") || host, "builder");
+        const target = document.getElementById("route") || host;
+        const fresh = target && target.querySelector('select[data-goal-idx="' + i + '"]');
+        if (fresh) fresh.focus();
+      });
       ctl.appendChild(sel);
-      const del = el("button.btn.tiny.danger", { type: "button", text: "Remove" });
-      del.addEventListener("click", () => { goals.splice(i, 1); persistGoals(); util.announce && util.announce("Goal removed. " + goals.length + " remaining."); render(document.getElementById("route") || host, "builder"); });
+      const del = el("button.btn.tiny.danger", { type: "button", text: "Remove", "data-goal-idx": String(i) });
+      del.addEventListener("click", async () => {
+        goals.splice(i, 1); persistGoals();
+        util.announce && util.announce("Goal removed. " + goals.length + " remaining.");
+        await render(document.getElementById("route") || host, "builder");
+        // Removal shifts every later goal's index down by one - land on
+        // the Remove button now at this same position, or the goal list
+        // container if nothing remains, same clamped-position pattern
+        // reminders.js/leader.js/risk.js's own equivalent fixes use.
+        const target = document.getElementById("route") || host;
+        const buttons = target ? target.querySelectorAll("button[data-goal-idx]") : [];
+        const nextBtn = buttons[Math.min(i, buttons.length - 1)];
+        const listEl = target ? target.querySelector(".idp-list") : null;
+        if (nextBtn) nextBtn.focus(); else if (listEl) listEl.focus();
+      });
       ctl.appendChild(del);
       card.appendChild(ctl);
       list.appendChild(card);
@@ -19546,6 +19644,15 @@ window.G = window.G || {};
       mode: existingProfile.mode,
       anonymous: existingProfile.anonymous,
       displayName: existingProfile.displayName,
+      // Deep-gap follow-up ("Profile Data-Loss & Persistence Bugs"
+      // bucket): this seed list never carried promoPoints through, so
+      // renderSummaryStep's Save (a full db.put of `data` as the entire
+      // profile row) permanently discarded a Soldier's own Promotion-
+      // Points calculator values the moment they used "Redo my setup" or
+      // "Edit profile" - loadProfile()'s DEFAULT_PROFILE merge then
+      // silently backfilled it to {} on next load (a profile-backfill
+      // selfheal entry is the fingerprint of this exact loss).
+      promoPoints: existingProfile.promoPoints || {},
     } : { rank:"SPC", lastName:"", mos:"", unit:"", etsDate:"",
                    tier:"E4", retirementSystem:"brs", boardDate:"",
                    readinessConcerns:[], studyWeakPoints:[] };
@@ -19810,13 +19917,29 @@ window.G = window.G || {};
         b.addEventListener("click", () => {
           rankRow.querySelectorAll("button").forEach(x => x.classList.remove("active"));
           b.classList.add("active");
+          // Deep-gap follow-up ("Profile Data-Loss & Persistence Bugs"
+          // bucket): this used to unconditionally overwrite data.tier from
+          // RANK_TO_TIER[r] on every rank-chip click, including re-clicking
+          // the already-active rank. A real sequence this silently broke:
+          // pick a rank, go to the Role step and manually override the
+          // pay-grade select (a real scenario for a pending-promotion
+          // Soldier), use Back to return here, click any rank chip again -
+          // the manual override was wiped with zero confirmation, and the
+          // Role step's own select then rendered "reset" on next visit.
+          // Only auto-derive tier from the newly-picked rank if it still
+          // matches what the PREVIOUS rank would auto-derive to - if the
+          // Role step's select has since diverged from that, leave it be.
+          const autoTierForPrevRank = RANK_TO_TIER[data.rank] || "E4";
+          const tierWasAutoderived = !data.tier || data.tier === autoTierForPrevRank;
           data.rank = r;
-          data.tier = RANK_TO_TIER[r] || "E4";
-          // Show rank preview
+          if (tierWasAutoderived) data.tier = RANK_TO_TIER[r] || "E4";
+          // Show rank preview - reads data.tier (the real, possibly
+          // manually-overridden value), not a fresh RANK_TO_TIER[r]
+          // re-derivation, so the preview never claims a tier the wizard
+          // isn't actually about to use.
           const prevEl = card.querySelector(".ob-rank-preview");
           if (prevEl) {
-            const tier = RANK_TO_TIER[r] || "E4";
-            prevEl.textContent = getRankPreviewText(tier);
+            prevEl.textContent = getRankPreviewText(data.tier || "E4");
             prevEl.style.display = "";
           }
           refreshLiveSummary(); // Tier 2(e): this step doesn't advance on rank pick, so the panel needs its own nudge here
@@ -23896,7 +24019,7 @@ window.G = window.G || {};
    Public:
      G.backup.exportAll()            -> Promise<object>  (the backup payload)
      G.backup.downloadAll()          -> triggers a .json download
-     G.backup.importAll(obj, {merge}) -> Promise<{restored, skipped}>
+     G.backup.importAll(obj)          -> Promise<{restored, skipped, failedStores}>
      G.backup.renderControls(host)   -> injects export/import UI into host
 
    Data model note: user data lives in the `kv` store (profile, idp:goals,
@@ -24170,14 +24293,34 @@ window.G = window.G || {};
     };
   }
 
-  async function importAll(obj, opts) {
-    opts = opts || {};
-    var merge = opts.merge !== false; // default merge (don't wipe unmentioned keys)
+  // Deep-gap follow-up ("Profile Data-Loss & Persistence Bugs" bucket):
+  // mirrors logExportFail() above - every OTHER silent-failure path in the
+  // app writes through G.selfheal.log so it survives in the durable
+  // "Self-healing" trail even if the in-the-moment message was missed;
+  // import's own putMany() failures previously had no such trace at all.
+  function logImportFail(store, e) {
+    if (G.selfheal) G.selfheal.log("backup-import-fail", store, "importAll() could not write to the " + store + " store: " + (e && e.message ? e.message : String(e)));
+  }
+
+  async function importAll(obj) {
     if (!obj || obj.schema !== SCHEMA || !obj.stores) {
       throw new Error("This file isn't a GUIDON backup (unexpected format).");
     }
     var restored = { kv: 0, userScenarios: 0, attempts: 0 };
     var skipped = { kv: 0, userScenarios: 0 };
+    // Deep-gap follow-up ("Profile Data-Loss & Persistence Bugs" bucket):
+    // the header comment above used to advertise importAll(obj, {merge})
+    // with a documented "replace" option, and a `merge` flag was computed
+    // from it - but nothing ever branched on that flag anywhere in this
+    // function; every restore always upserted via putMany and never
+    // deleted or wiped anything. Every real call site (this module's own
+    // renderControls(), Settings' confirmAndImportFile(), Diagnostics)
+    // passed {merge:true} explicitly and none ever passed merge:false,
+    // confirming replace mode was never implemented anywhere it was
+    // referenced - removed the dead parameter and doc claim rather than
+    // build a whole unused, unverifiable destructive-mode feature with no
+    // UI anywhere that could ever set merge:false to exercise it.
+    var failedStores = [];
 
     // kv entries are {k, v} (forms:saved is the one exception - see above).
     // Validation still runs per row below; only the WRITE moves out of the
@@ -24221,7 +24364,7 @@ window.G = window.G || {};
         // validation, since that key never had a .v field to begin with.
         kvRows.push(row);
       }
-      if (kvRows.length) { try { await G.db.putMany("kv", kvRows); restored.kv += kvRows.length; } catch (e) {} }
+      if (kvRows.length) { try { await G.db.putMany("kv", kvRows); restored.kv += kvRows.length; } catch (e) { failedStores.push("kv"); logImportFail("kv", e); } }
     }
     if (Array.isArray(obj.stores.userScenarios)) {
       var scRows = [];
@@ -24238,7 +24381,7 @@ window.G = window.G || {};
         if (!v.ok) { skipped.userScenarios++; continue; }
         scRows.push(sc);
       }
-      if (scRows.length) { try { await G.db.putMany("userScenarios", scRows); restored.userScenarios += scRows.length; } catch (e) {} }
+      if (scRows.length) { try { await G.db.putMany("userScenarios", scRows); restored.userScenarios += scRows.length; } catch (e) { failedStores.push("userScenarios"); logImportFail("userScenarios", e); } }
     }
     if (Array.isArray(obj.stores.attempts)) {
       var atRows = [];
@@ -24246,9 +24389,9 @@ window.G = window.G || {};
         var at = obj.stores.attempts[k];
         if (at && at.id != null) atRows.push(at);
       }
-      if (atRows.length) { try { await G.db.putMany("attempts", atRows); restored.attempts += atRows.length; } catch (e) {} }
+      if (atRows.length) { try { await G.db.putMany("attempts", atRows); restored.attempts += atRows.length; } catch (e) { failedStores.push("attempts"); logImportFail("attempts", e); } }
     }
-    return { restored: restored, skipped: skipped, merged: merge };
+    return { restored: restored, skipped: skipped, failedStores: failedStores };
   }
 
   // Enhancement backlog round 1, "Settings Import Backup" bucket:
@@ -24290,11 +24433,17 @@ window.G = window.G || {};
           (kvRejected.length ? "\n\n" + kvRejected.length + " item(s) in this file are corrupted and will be skipped: " + kvRejected.slice(0, 8).join(", ") + (kvRejected.length > 8 ? ", …" : "") + "." : "");
         G.modal.confirm(msg, { title: "Import backup" }).then(function (ok) {
           if (!ok) { resolve({ status: "cancelled" }); return; }
-          importAll(obj, { merge: true }).then(function (res) {
-            var r = res.restored, sk = res.skipped;
-            if (G.selfheal) G.selfheal.log("backup-import", null, "restored " + r.kv + " kv/" + r.userScenarios + " scenarios/" + r.attempts + " attempts, skipped " + (sk.kv || 0) + " kv row(s)");
+          importAll(obj).then(function (res) {
+            var r = res.restored, sk = res.skipped, fs = res.failedStores || [];
+            if (G.selfheal) G.selfheal.log("backup-import", null, "restored " + r.kv + " kv/" + r.userScenarios + " scenarios/" + r.attempts + " attempts, skipped " + (sk.kv || 0) + " kv row(s)" + (fs.length ? ", FAILED to write: " + fs.join(", ") : ""));
             setTimeout(function () { location.reload(); }, 1200);
-            resolve({ status: "success", restored: r, skipped: sk });
+            // Deep-gap follow-up ("Profile Data-Loss & Persistence Bugs"
+            // bucket): failedStores is surfaced here so both callers can
+            // tell a genuine write failure apart from a clean restore -
+            // previously "Restored 0 items, 0 scenarios, 0 attempts."
+            // rendered with the same "ok" styling as a real success,
+            // looking exactly like a no-op restore rather than a failure.
+            resolve({ status: "success", restored: r, skipped: sk, failedStores: fs });
           }).catch(function (e) {
             resolve({ status: "error", message: e && e.message ? e.message : "unknown error" });
           });
@@ -24361,7 +24510,17 @@ window.G = window.G || {};
           status.className = "backup-status hint err";
           return;
         }
-        var r = result.restored, sk = result.skipped;
+        var r = result.restored, sk = result.skipped, fs = result.failedStores || [];
+        // Deep-gap follow-up ("Profile Data-Loss & Persistence Bugs"
+        // bucket): a genuine write failure (quota exceeded, transaction
+        // abort) previously produced "Restored 0 items, 0 scenarios, 0
+        // attempts." styled identically to a real success - looking
+        // exactly like a no-op restore instead of a failure worth retrying.
+        if (fs.length) {
+          status.textContent = "Restore failed to write to this device (" + fs.join(", ") + ") — try again. Reloading…";
+          status.className = "backup-status hint err";
+          return;
+        }
         status.textContent = "Restored " + r.kv + " items, " + r.userScenarios + " scenarios, " + r.attempts + " attempts." +
           (sk && sk.kv ? " " + sk.kv + " item(s) skipped (malformed profile entry rejected — your existing profile was kept)." : "") +
           " Reloading…";
@@ -29650,7 +29809,11 @@ window.G = window.G || {};
       G.backup.confirmAndImportFile(f).then((result) => {
         if (result.status === "cancelled") return;
         if (result.status === "error") { util.toast("Import failed: " + result.message); return; }
-        const r = result.restored, sk = result.skipped;
+        const r = result.restored, sk = result.skipped, fs = result.failedStores || [];
+        // Deep-gap follow-up ("Profile Data-Loss & Persistence Bugs"
+        // bucket): see confirmAndImportFile()'s own comment - a genuine
+        // write failure previously looked identical to a clean restore.
+        if (fs.length) { util.toast("Restore failed to write to this device (" + fs.join(", ") + ") — try again. Reloading…"); return; }
         util.toast("Restored " + r.kv + " item(s), " + r.userScenarios + " scenario(s), " + r.attempts + " attempt(s)." +
           (sk && sk.kv ? " " + sk.kv + " skipped (malformed profile rejected)." : "") + " Reloading…");
       });
