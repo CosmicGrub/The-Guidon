@@ -164,7 +164,7 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",
     "axe-core": "^4.13.0",
-    "pdfjs-dist": "3.11.174",
+    "pdfjs-dist": "6.2.108",
     "playwright": "1.62.1"
   },
   "_pdfjs_dist_note": "Exact-pinned, no caret, on purpose - this is NOT actually imported by any Node/build code (like pdf-lib, GUIDON vendors a pre-built browser bundle from it directly into src/index.html; see that vendoring comment and src/pdfjs-defer.js). It's listed here only for provenance (npm audit/ls, a documented source for re-vendoring), so a routine `npm install` must never silently pick up a newer pdfjs-dist without a matching, deliberate re-vendor of the pasted bundle. Pinned to 3.11.174 specifically: the last release with a classic plain-<script>-tag \"legacy\" global-script build (v4+ is ES-module-only) - carries GHSA-wgrm-67xf-hhpq (fixed upstream in 4.2.67+, which dropped that build), mitigated in-app via isEvalSupported:false (see openPdfPreview() in js/counselpdf.js and the vendoring comment in src/index.html for the full tradeoff).",
