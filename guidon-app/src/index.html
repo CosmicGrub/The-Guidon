@@ -11532,6 +11532,19 @@ window.G = window.G || {};
         sess.idx = 0; sess.results = [];
         sess.phase = "brief";
         draw();
+        // Roadmap audit round 5, "Accessibility: Focus Management on View
+        // Transitions" bucket: draw() does util.clear(mbWrap) and rebuilds
+        // the whole panel from scratch on every phase change, tearing out
+        // whatever button ("Begin board" here) held focus - it silently
+        // reverted to document.body with nothing telling a screen-reader
+        // user setup -> brief just happened. mbWrap already carries
+        // tabIndex="0" for exactly this (see its declaration above), same
+        // as Board Drill's own cardWrap.focus()-after-draw() convention
+        // (search this file for "cardWrap.focus()") - refocusing it here
+        // (and at every other sess.phase assignment below) both announces
+        // the transition and keeps keyboard users from getting dropped out
+        // of the flow.
+        mbWrap.focus();
       });
       panel.appendChild(start);
       mbWrap.appendChild(panel);
@@ -11558,7 +11571,11 @@ window.G = window.G || {};
         panel.appendChild(ul);
       }
       const go = el("button.btn.primary", { type: "button", text: "I've reported — start questions (" + sess.queue.length + ")" });
-      go.addEventListener("click", () => { sess.phase = "quiz"; sess.idx = 0; draw(); });
+      // Roadmap audit round 5, "Accessibility: Focus Management on View
+      // Transitions" bucket: same mbWrap.focus()-after-draw() refocus as
+      // "Begin board" above (see that comment) - without it, brief -> quiz
+      // silently dropped focus to document.body too.
+      go.addEventListener("click", () => { sess.phase = "quiz"; sess.idx = 0; draw(); mbWrap.focus(); });
       panel.appendChild(go);
       mbWrap.appendChild(panel);
     }
@@ -11692,7 +11709,12 @@ window.G = window.G || {};
 
     function next() {
       sess.idx++;
-      if (sess.idx >= sess.queue.length) { sess.phase = "done"; draw(); }
+      // Roadmap audit round 5, "Accessibility: Focus Management on View
+      // Transitions" bucket: same mbWrap.focus()-after-draw() refocus as
+      // "Begin board"/"I've reported" above (see the first comment) -
+      // quiz -> done on the last question is the third sess.phase
+      // assignment that silently dropped focus to document.body.
+      if (sess.idx >= sess.queue.length) { sess.phase = "done"; draw(); mbWrap.focus(); }
       else draw();
     }
 
@@ -11887,6 +11909,11 @@ window.G = window.G || {};
         sess.historySaved = false; sess.mbHistIdx = null;
         sess.selfRating = { bearing: 3, communication: 3, appearance: 3 };
         draw();
+        // Roadmap audit round 5, "Accessibility: Focus Management on View
+        // Transitions" bucket: same mbWrap.focus()-after-draw() refocus as
+        // the other three sess.phase assignments above (see "Begin
+        // board"'s comment) - done -> setup via "New board" is the fourth.
+        mbWrap.focus();
       });
       const printBtn = el("button.btn", { type: "button", gi: "printer", giSize: 14, text: "Print scorecard" });
       printBtn.addEventListener("click", () => printScorecard(pct, label, total, max, byCat, weak, hasRubric ? rubricById : null, dimPct));
@@ -20573,6 +20600,31 @@ window.G = window.G || {};
       // handlers below, since navigating away is never guaranteed to
       // happen right after those.
       refreshLiveSummary();
+      // Roadmap audit round 5, "Accessibility: Focus Management on View
+      // Transitions" bucket: this whole function does util.clear(wrap) and
+      // rebuilds the step from scratch on every Next/Back, but until now
+      // the only .focus() call across all 7 steps was renderIdentityStep's
+      // own bespoke setTimeout(() => nameInp.focus(), 100) - role,
+      // concerns, weak-points, board-date and summary all left focus
+      // wherever it was on the now-removed Next/Back button, which
+      // silently reverts to document.body once that button is gone from
+      // the DOM. The wizard is wrapped in util.modalTrap so a keyboard
+      // user stays trapped inside the overlay regardless, but nothing told
+      // a screen-reader user a new step had replaced the old one. Same
+      // tabindex="-1" + focus({preventScroll:true}) convention route()
+      // already uses for hash-based navigation (and the DA 4856 wizard's
+      // renderWizard() already mirrors for its own step transitions) -
+      // landing on each step's own h3.ob-step-title both announces the
+      // step and keeps focus inside modalTrap's panel. Mode-select (step
+      // 0) has no .ob-step-title (it's the wizard's entry screen, and
+      // already gets its own initial focus from modalTrap's
+      // first-focusable-element logic on mount), so this is a deliberate
+      // no-op there.
+      const stepHeading = wrap.querySelector("h3.ob-step-title");
+      if (stepHeading) {
+        stepHeading.setAttribute("tabindex", "-1");
+        try { stepHeading.focus({ preventScroll: true }); } catch (e) {}
+      }
     }
     mount.appendChild(layoutHost);
     renderStep();
@@ -20711,7 +20763,15 @@ window.G = window.G || {};
         next();
       });
       host.appendChild(btn);
-      setTimeout(() => nameInp.focus(), 100);
+      // Roadmap audit round 5, "Accessibility: Focus Management on View
+      // Transitions" bucket: this used to be the ONLY .focus() call in the
+      // entire 7-step wizard, a setTimeout(() => nameInp.focus(), 100)
+      // bespoke to this one step. Left in place, its 100ms delay would now
+      // fire AFTER renderStep()'s new unified heading-focus and silently
+      // steal focus from h3.ob-step-title back onto this input - making
+      // the identity step announce itself differently from every other
+      // step instead of consistently. Removed so all 7 steps go through
+      // the same renderStep()-level heading-focus.
     }
 
     function renderRoleStep(host, data, next) {
