@@ -1,0 +1,75 @@
+# Roadmap audit round 4, "CI / supply-chain hardening" bucket: this file did
+# not exist before this pass. Every dependency in the repo - npm
+# (guidon-app/package.json), Cargo (guidon-app/src-tauri/Cargo.toml), Gradle
+# (guidon-app/android/**/build.gradle), and now the GitHub Actions pinned in
+# .github/workflows/ci.yml itself - was only ever kept current by a human
+# manually re-running an audit pass every so often (see MEMORY.md's
+# "Roadmap audit status" / "Enhancement backlog status" entries for that
+# cadence). Nothing routine ever proposed a version bump on its own between
+# passes. This adds exactly that: a scheduled PR per ecosystem, grouped so a
+# week of routine patch/minor churn doesn't turn into a wall of one-line PRs.
+#
+# Directories mirror the ecosystem's actual manifest location one-for-one
+# (see the sibling ci.yml, which already treats guidon-app/ and
+# guidon-app/src-tauri/ as independent scan roots for npm audit and cargo
+# audit respectively - this file just extends that same per-ecosystem
+# scoping to routine version bumps, plus adds Gradle and the Actions
+# themselves, neither of which had ANY automated scanning before this
+# bucket's other two fixes in this same commit).
+#
+# Major-version bumps are deliberately left OUT of the grouped PRs below and
+# get their own individual PR per dependency instead - a major bump is far
+# more likely to need a human to actually read a changelog and adjust
+# calling code than a patch/minor bump is, so collapsing majors into the
+# same silent group as routine patch churn would bury exactly the PRs that
+# most need individual attention.
+#
+# github-actions is included specifically because every "uses:" line in
+# ci.yml is now pinned to a full commit SHA (this same bucket's other fix,
+# same commit) rather than a mutable "@v4"-style tag. Dependabot has
+# first-class support for SHA-pinned Actions: it bumps the SHA to the new
+# release's commit and rewrites the trailing "# vX.Y.Z" comment to match,
+# so the SHA-pinning this pass just did by hand keeps itself current
+# automatically instead of silently going stale the next time any of these
+# actions ships a new release.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/guidon-app"
+    schedule:
+      interval: "weekly"
+    groups:
+      npm-routine:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "cargo"
+    directory: "/guidon-app/src-tauri"
+    schedule:
+      interval: "weekly"
+    groups:
+      cargo-routine:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "gradle"
+    directory: "/guidon-app/android"
+    schedule:
+      interval: "weekly"
+    groups:
+      gradle-routine:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions-routine:
+        update-types:
+          - "minor"
+          - "patch"
