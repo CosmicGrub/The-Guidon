@@ -122,6 +122,30 @@ afterClick.btnDisabled === true ? ok("button confirms success in place (disabled
   ? ok("a real 'counseling' reminder was created, naming the Soldier (" + afterClick.entry.label + ", due " + afterClick.entry.date + ")")
   : bad("no counseling reminder found, or it didn't name the Soldier: " + JSON.stringify(afterClick.entry));
 
+// Roadmap audit round 4, "Test coverage gaps for previously-fixed bug
+// classes" bucket: enhancement backlog round 4 extended "Remind me" from the
+// counseling field alone to all 4 FIELDS entries (aft->acft, wpn->weapons,
+// ncoer->other, per FIELDS' own remindKind mapping above) - but this test
+// only ever clicked the FIRST "Remind me" button and asserted the
+// "counseling" kind, so the AFT/weapons/NCOER buttons' own remindKind values
+// were never actually clicked or asserted. A button that has already been
+// clicked flips to "Reminder set" text (see the click handler in leader.js)
+// and stops matching /^Remind me$/, so re-running clickText(/^remind me$/)
+// each time advances to the NEXT field's button, in FIELDS' render order
+// (counseled already clicked above, so aft, then wpn, then ncoer).
+async function remindAndCheckKind(fieldLabel, expectedKind) {
+  await clickText(/^remind me$/);
+  await page.waitForTimeout(500);
+  const list = await page.evaluate(async () => (await window.G.reminders.load()) || []);
+  const entry = list.find((r) => r.kind === expectedKind && /SPC J\.R\./.test(r.label));
+  entry
+    ? ok(fieldLabel + " field's 'Remind me' created a real '" + expectedKind + "' reminder (" + entry.label + ")")
+    : bad(fieldLabel + " field: no '" + expectedKind + "' reminder found after clicking; reminder kinds now: " + JSON.stringify(list.map((r) => r.kind)));
+}
+await remindAndCheckKind("AFT", "acft");
+await remindAndCheckKind("Weapons qual", "weapons");
+await remindAndCheckKind("NCOER thru-date", "other");
+
 const countAfterFirst = await page.evaluate(async () => ((await window.G.reminders.load()) || []).length);
 
 // --- Upgrade-roadmap first wave, item 9: revisiting the page and clicking

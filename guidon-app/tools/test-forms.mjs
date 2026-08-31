@@ -81,7 +81,11 @@ const emptyState = await page.evaluate(() => ({
   cards: document.querySelectorAll(".form-card").length,
   msg: document.querySelector(".empty")?.textContent || "",
 }));
-emptyState.cards === 0 && emptyState.msg === "No forms match: zzzznonexistentxyz"
+// Roadmap audit round 4, "UX: copy and label polish" bucket: this message
+// used to be the bare "No forms match: <term>" with no quoting and no
+// suggestion; now it quotes the term and offers "Try a different term."
+// like every sibling empty-search state in the app.
+emptyState.cards === 0 && emptyState.msg === "No forms match “zzzznonexistentxyz”. Try a different term."
   ? ok("a non-matching search shows the real zero-result empty message naming the query")
   : bad("empty-search state: " + JSON.stringify(emptyState));
 
