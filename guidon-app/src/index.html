@@ -18060,6 +18060,26 @@ window.G = window.G || {};
     else if (activeTab === "drills") renderDrills(body, mount);
     else if (activeTab === "examples") renderExamples(body);
     else renderPOA(body, mount);
+
+    // Roadmap audit round 5, "Cross-Link & Related-Content Gaps" bucket: this
+    // render() built the 4-tab shell and appended nothing after dispatching
+    // to the active tab. G.blc/G.alc/G.slc's own "Work it here" panels all
+    // explicitly link to "#/counsel" ("Counseling & DA 4856"), establishing
+    // it as a real, expected destination - but a Soldier who arrived via any
+    // of those links had no way back except the browser back button. Same
+    // missing-panel gap as #/write, in the same "Study & Skills" nav group.
+    // Same "Related" panel shape career.js/channels.js/fitness.js already
+    // use: one .panel, a "Related" eyebrow, a row of .btn.sm.ghost buttons
+    // that just flip location.hash.
+    const links = el("div.panel", { style: "margin-top:10px" });
+    links.appendChild(el("div.eyebrow", { text: "Related" }));
+    [["BLC Prep", "#/blc"], ["ALC Prep", "#/alc"], ["SLC Prep", "#/slc"],
+     ["Squad Roster", "#/leader"]].forEach(([label, hash]) => {
+      const b = el("button.btn.sm.ghost", { type: "button", text: label, style: "margin:4px 6px 0 0" });
+      b.addEventListener("click", () => { location.hash = hash; });
+      links.appendChild(b);
+    });
+    mount.appendChild(links);
   }
 
   G.counsel = {
@@ -24670,6 +24690,18 @@ window.G = window.G || {};
       "Install GUIDON on that device, then use Import backup and pick the file"
     ]).forEach((t) => steps.appendChild(el("li", { text:t, style:"margin:3px 0" })));
     data.appendChild(steps);
+    // Roadmap audit round 5, "Cross-Link & Related-Content Gaps" bucket: the
+    // step list above named "Profile → Backup & restore" and "Export backup"
+    // only in plain <li> text - none of it was clickable, even though this
+    // whole page's job is walking a Soldier through exactly this kind of
+    // step-by-step flow. Same el("button.btn...") + location.hash pattern
+    // storage.js's own "Related" panel already uses for the identical
+    // destination: a real button, labeled with the target screen's own
+    // button text, so what a Soldier clicks here is what they then
+    // recognize when they land on Settings.
+    const settingsBtn = el("button.btn.sm.ghost", { type:"button", gi:"download", giSize:14, text:"Export backup", style:"margin-top:8px" });
+    settingsBtn.addEventListener("click", () => { location.hash = "#/settings"; });
+    data.appendChild(settingsBtn);
     mount.appendChild(data);
 
     const install = el("div.panel", { style:"margin-bottom:10px" });
@@ -26118,6 +26150,28 @@ window.G = window.G || {};
     else if (activeTab === "memo") renderMemo(body);
     else if (activeTab === "resume") renderResumeExample(body);
     else renderSitrep(body);
+
+    // Roadmap audit round 5, "Cross-Link & Related-Content Gaps" bucket: this
+    // render() built the tabbar, disclaimer and print button, then dispatched
+    // to a tab renderer - that was the whole shell, with no cross-link panel
+    // at the end. Meanwhile G.blc/G.alc/G.slc's own "Work it here" panels
+    // (see blc.js) all explicitly link to "#/write" ("Army writing"), so a
+    // Soldier arriving from any of those had no way back except the browser
+    // back button - #/write never reciprocated. Same "Related" panel shape
+    // storage.js/career.js/channels.js/assignments.js already use: one
+    // .panel, a "Related" eyebrow, a row of .btn.sm.ghost buttons that just
+    // flip location.hash.
+    const links = el("div.panel", { style: "margin-top:10px" });
+    links.appendChild(el("div.eyebrow", { text: "Related" }));
+    [["Leadership Drills — essay rubric", "#/drills"],
+     ["BLC Prep", "#/blc"],
+     ["Board Drill", "#/board"],
+     ["Counseling & DA 4856", "#/counsel"]].forEach(([label, hash]) => {
+      const b = el("button.btn.sm.ghost", { type: "button", text: label, style: "margin:4px 6px 0 0" });
+      b.addEventListener("click", () => { location.hash = hash; });
+      links.appendChild(b);
+    });
+    mount.appendChild(links);
   }
 
   // ── RESUME EXAMPLE (Appendix D worked example) ─────────────────────────────
@@ -31056,10 +31110,23 @@ window.G = window.G || {};
     // covers properly, in more depth. Two same-information-different-panel
     // duplicates on one Settings screen, same fragmentation pattern this
     // pass is fixing elsewhere.
-    dataGrid.appendChild(el("div.panel", { style: "margin-top:12px" }, [
+    // Roadmap audit round 5, "Cross-Link & Related-Content Gaps" bucket: the
+    // Data & Storage panel above this one explicitly follows a "point there,
+    // don't copy it" convention - a real button routing to "#/storage"
+    // instead of duplicating that dashboard's content here (see its own
+    // comment a few panels up). This panel's own comment says it was
+    // trimmed for the identical reason - install instructions belong on
+    // #/share, "in more depth" - but nothing closed the loop: "#/share"
+    // appeared only in that comment, never in an actual el(...) call. Same
+    // button shape the Data & Storage panel above already uses.
+    const aboutPanel = el("div.panel", { style: "margin-top:12px" }, [
       el("div.eyebrow", { text: "About & Disclaimer" }),
       el("p.hint", { text: "GUIDON is an offline study aid for Army leader development. It is not an official U.S. Army or DoD product, awards no real promotion points, and does not connect to IPPS-A or any Army system. Army doctrine is a public-domain U.S. Government work; entries are source-cited and dated. Verify anything policy-related against the current regulation, MILPER, or your chain before acting on it." }),
-    ]));
+    ]);
+    const shareLink = el("button.btn.sm.ghost", { type: "button", gi: "download", giSize: 14, text: "Install / Share this app", style: "margin-top:6px" });
+    shareLink.addEventListener("click", () => { location.hash = "#/share"; });
+    aboutPanel.appendChild(shareLink);
+    dataGrid.appendChild(aboutPanel);
   };
 
 
