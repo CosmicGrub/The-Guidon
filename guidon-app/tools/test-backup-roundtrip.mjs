@@ -45,7 +45,10 @@ await page.waitForTimeout(300);
 // Skip/Next button-row pattern WeakPoints/BoardDate already used.
 await page.locator("button", { hasText: /^Next →$/ }).click();
 await page.waitForTimeout(300);
-await page.locator("button", { hasText: /Build my plan/ }).click();
+// Enhancement backlog round 4, "Profile Minor UX Inconsistencies" bucket:
+// relabeled "Build my plan →" to "Next →" (see test-onboarding.mjs's own
+// comment on this same change for the full rationale).
+await page.locator("button", { hasText: /^Next →$/ }).click();
 await page.waitForTimeout(300);
 await page.locator("button", { hasText: /^Skip$/ }).click();
 await page.waitForTimeout(300);

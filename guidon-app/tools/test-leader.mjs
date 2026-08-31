@@ -93,10 +93,20 @@ flagged.named ? ok("entry appears in the Needs attention summary") : bad("summar
 
 // --- Upgrade-roadmap first wave, item 8: counseling "Remind me" button.
 // "counseling" is a real, pre-existing Reminders kind that had zero
-// integration anywhere before this. ---
+// integration anywhere before this.
+// Enhancement backlog round 4, "Isolated feature-parity gaps" bucket:
+// Remind me used to be gated to the counseling field alone (f.key ===
+// "counseled") - now all 4 FIELDS entries (counseled/aft/wpn/ncoer) get
+// one, so this one Soldier (with only the counseling date actually
+// seeded - AFT/weapons/NCOER are all "never done", which is maximally
+// overdue too) now renders 4 buttons, not 1. clickText below still
+// clicks the FIRST match, which is still the counseling one - FIELDS
+// lists "counseled" first and the row renders in FIELDS order - so
+// every downstream assertion in this test (checking for a real
+// "counseling" reminder specifically) is unaffected. ---
 const remindBtnCount = await page.evaluate(() =>
   [...document.querySelectorAll("button")].filter((b) => /^Remind me$/.test((b.textContent || "").trim())).length);
-remindBtnCount === 1 ? ok("Squad Roster's counseling field has a 'Remind me' button") : bad("expected 1 'Remind me' button, found " + remindBtnCount);
+remindBtnCount === 4 ? ok("Squad Roster's 4 time-boxed fields (counseling/AFT/weapons/NCOER) each have a 'Remind me' button") : bad("expected 4 'Remind me' buttons (one per FIELDS entry), found " + remindBtnCount);
 await clickText(/^remind me$/);
 await page.waitForTimeout(500);
 const afterClick = await page.evaluate(async () => {

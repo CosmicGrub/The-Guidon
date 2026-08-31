@@ -172,7 +172,13 @@ if (/more ▾/.test((await weakMoreToggle.textContent()) || "")) {
 await page.locator("button", { hasText: "Supply / Property Accountability" }).click(); // "Regulations & Safety"
 await page.locator("button", { hasText: "Land Navigation / Map Reading" }).click(); // "Field & Technical Skills"
 await page.waitForTimeout(150);
-await page.locator("button", { hasText: /Build my plan/ }).click(); // weakpoints -> boarddate
+// Enhancement backlog round 4, "Profile Minor UX Inconsistencies" bucket:
+// this button used to read "Build my plan →" despite two more steps
+// (board date, summary) standing between it and generateActionPlan()'s
+// actual call in renderSummaryStep - relabeled to "Next →", matching
+// every other intermediate step's own button text (see the /Next/
+// matches elsewhere in this file).
+await page.locator("button", { hasText: /^Next →$/ }).click(); // weakpoints -> boarddate
 await page.waitForTimeout(300);
 assertStepper(await stepperState(), 5, "board date step"); // was hardcoded "5 of 5"
 await page.locator("button", { hasText: /^Skip$/ }).click(); // boarddate -> summary
