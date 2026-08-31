@@ -22962,7 +22962,16 @@ window.G = window.G || {};
       p.appendChild(el("div.feedback", { text:
         "An information brief is NOT a Q&A. Brief the information, then ask whether anything needs clarification \u2014 the clock stops when you ask for questions." }));
       const clock = el("h2", { text:"00:00", style:"font-family:var(--font-head);margin:10px 0 2px" });
-      const status = el("p.hint", { text:"Target 10:00, acceptable 8:00\u201312:00" });
+      // Roadmap audit round 5, "Accessibility: Missing ARIA Live Regions & Labels"
+      // bucket: this element's text silently flips between "Under the window",
+      // "In the acceptable window" and "Over 12:00 - outside the window, points
+      // lost" as the rehearsal timer crosses thresholds, with no live region to
+      // announce it - exactly the pass/fail-boundary feedback a Soldier rehearsing
+      // a brief out loud (not staring at the screen) needs read aloud. Whole
+      // Leadership Drills route had zero aria-live usage; matching the role=
+      // "status" aria-live="polite" convention already used by this file's other
+      // live output panels (PPW's promo-total, Money's fin-calc-out, etc).
+      const status = el("p.hint", { text:"Target 10:00, acceptable 8:00\u201312:00", role:"status", "aria-live":"polite" });
       const row = el("div.btn-row", { style:"gap:8px" });
       const startBtn = el("button.btn.sm.primary", { type:"button", text:"\u25b6 Start" });
       const stopBtn  = el("button.btn.sm", { type:"button", text:"\u23f8 Stop" });
@@ -23051,7 +23060,12 @@ window.G = window.G || {};
         placeholder:"Paste or draft here \u2014 nothing leaves this device.", style:"width:100%;margin-top:8px" });
       ta.value = typeof saved.essayText === "string" ? saved.essayText : "";
       const out = el("div.stat", {}, [ el("span.k", { text:"Words" }), el("span.v", { text:"0" }) ]);
-      const note = el("p.hint");
+      // Roadmap audit round 5, "Accessibility: Missing ARIA Live Regions & Labels"
+      // bucket: count() rewrites this element's text on every keystroke as the
+      // word count crosses in/under/over-target boundaries ("Short by N words." /
+      // "Inside the required range." / "Over by N words..."), with no live region
+      // to announce the change - same fix as briefDrill()'s status element above.
+      const note = el("p.hint", { role:"status", "aria-live":"polite" });
       p.appendChild(sel); p.appendChild(ta); p.appendChild(out); p.appendChild(note);
       function count() {
         const n = (ta.value.trim().match(/\S+/g) || []).length;
@@ -26014,7 +26028,14 @@ window.G = window.G || {};
     const ta = el("textarea.wr-bullet-input", { rows: "2", placeholder: "e.g. Spearheaded motor-pool overhaul of 24 vehicles; drove OR rate from 71% to 96% in 30 days", "aria-label": "Bullet to grade" });
     grip.appendChild(ta);
 
-    const scoreWrap = el("div.wr-score-wrap");
+    // Roadmap audit round 5, "Accessibility: Missing ARIA Live Regions & Labels" bucket:
+    // paint() rewrites scoreNum's 0-100 score and rebuilds checksList's 6 pass/fail
+    // rows on every debounced keystroke, but scoreWrap carried no role/aria-live so a
+    // screen-reader user editing the textarea heard nothing update - same silent-live-
+    // output bug already fixed for PPW's promo-total, Money's fin-calc-out/fin-budget-
+    // out/fin-proj-out, and the DA 7278 risk-level output (all role="status" aria-live
+    // ="polite"). Bringing this module's own live grader into that convention.
+    const scoreWrap = el("div.wr-score-wrap", { role: "status", "aria-live": "polite" });
     const scoreRing = el("div.wr-score-ring");
     const scoreNum = el("span.wr-score-num", { text: "—" });
     scoreRing.appendChild(scoreNum);
@@ -26209,9 +26230,16 @@ window.G = window.G || {};
       const row = el("div.wr-row");
       row.appendChild(el("label.wr-label", { text: f.label }));
       let input;
-      if (f.type === "date") input = el("input", { type: "date" });
-      else if (f.type === "bullets") { input = el("textarea", { rows: "3", placeholder: (f.example || []).join("\n") }); row.appendChild(el("div.wr-hint", { text: "One item per line." })); }
-      else input = el("input", { type: "text", placeholder: f.example || "" });
+      // Roadmap audit round 5, "Accessibility: Missing ARIA Live Regions & Labels"
+      // bucket: this field-building loop built each row as a plain <label> sibling
+      // next to the input/textarea with no for/id pairing and no aria-label, so a
+      // screen reader tabbing into any of these ~10 memo fields announced only
+      // "edit text" with no accessible name. Same bug class already fixed in
+      // forms.js's mkInput() (aria-label: fld.label on every control it builds) -
+      // this independent field-builder never picked up that convention.
+      if (f.type === "date") input = el("input", { type: "date", "aria-label": f.label || "" });
+      else if (f.type === "bullets") { input = el("textarea", { rows: "3", placeholder: (f.example || []).join("\n"), "aria-label": f.label || "" }); row.appendChild(el("div.wr-hint", { text: "One item per line." })); }
+      else input = el("input", { type: "text", placeholder: f.example || "", "aria-label": f.label || "" });
       input.value = memoState[f.id] || "";
       input.addEventListener("input", () => { memoState[f.id] = input.value; persistWriteDraftsDebounced(); });
       row.appendChild(input);
@@ -26290,7 +26318,11 @@ window.G = window.G || {};
     (cfg.lines || []).forEach((ln) => {
       const row = el("div.wr-row");
       row.appendChild(el("label.wr-label", { text: ln.label }));
-      const input = el("input", { type: "text", placeholder: ln.example || "" });
+      // Roadmap audit round 5, "Accessibility: Missing ARIA Live Regions & Labels"
+      // bucket: same missing-accessible-name bug as renderMemo() above - the label
+      // was a plain sibling with no for/id and the input had no aria-label, so a
+      // screen reader announced only "edit text" for every SITREP line item.
+      const input = el("input", { type: "text", placeholder: ln.example || "", "aria-label": ln.label || "" });
       input.value = sitrepState[ln.id] || "";
       input.addEventListener("input", () => { sitrepState[ln.id] = input.value; persistWriteDraftsDebounced(); });
       row.appendChild(input);
