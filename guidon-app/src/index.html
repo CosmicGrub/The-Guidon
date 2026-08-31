@@ -20528,7 +20528,13 @@ window.G = window.G || {};
       const row = el("div.btn-row");
       const skipBtn = el("button.btn.ghost", { text: "Skip", type:"button" });
       skipBtn.addEventListener("click", () => { next(); });
-      const nextBtn = el("button.btn.primary", { text: "Build my plan →", type:"button" });
+      // Enhancement backlog round 4, "Profile Minor UX Inconsistencies" bucket: this button
+      // was labeled "Build my plan →" but just calls next()/advance() like every other
+      // intermediate step - it lands on the Board-date step (STEPS index 5), not the plan.
+      // generateActionPlan() only actually runs two steps later, in renderSummaryStep. Relabeled
+      // to "Next →" to match the plain label the other intermediate steps already use (see
+      // renderIdentityStep/renderRoleStep/renderBoardDateStep's own "Next →" buttons above).
+      const nextBtn = el("button.btn.primary", { text: "Next →", type:"button" });
       nextBtn.addEventListener("click", () => { next(); });
       row.appendChild(skipBtn); row.appendChild(nextBtn);
       host.appendChild(row);
@@ -21202,7 +21208,13 @@ window.G = window.G || {};
           btnRow.appendChild(nextBtn);
         } else {
           const doneBtn = el("button.btn.ghost", { gi: "check", giSize: 13, text: "End tour", type: "button" });
-          doneBtn.addEventListener("click", () => { try { sessionStorage.removeItem(STORAGE_STEP_KEY); } catch (e) {} location.hash = "#/home"; });
+          // Enhancement backlog round 4, "Profile Minor UX Inconsistencies" bucket: "End tour"
+          // only cleared STORAGE_STEP_KEY, not STORAGE_MODE_KEY — unlike "Choose a different
+          // mode" above, which clears both. That left chosenMode/sessionStorage pointed at
+          // "guided" for the rest of the session, so re-entering #/kiosk later (e.g. via
+          // Settings' "Take a tour" button) silently skipped the mode picker and dropped the
+          // user straight back into the Guided Tour at step 1 instead of letting them pick again.
+          doneBtn.addEventListener("click", () => { try { sessionStorage.removeItem(STORAGE_STEP_KEY); sessionStorage.removeItem(STORAGE_MODE_KEY); } catch (e) {} location.hash = "#/home"; });
           btnRow.appendChild(doneBtn);
         }
         card.appendChild(btnRow);
