@@ -21323,7 +21323,16 @@ window.G = window.G || {};
           const dot = el("div.ob-kiosk-dot" + (i === current ? ".active" : i < current ? ".done" : ""));
           dot.title = s.title;
           dot.tabIndex = 0;
-          dot.addEventListener("click", () => { current = i; persistStep(); renderTracker(); renderKioskCard(i); });
+          // Enhancement backlog round 4, "Navigation, accessibility, and minor search/home
+          // polish" bucket: dot was tabIndex=0 (keyboard-focusable) but had only a click
+          // listener, so a keyboard-only Guided Tour user could Tab onto a step dot and then
+          // had no way to activate it - Enter/Space did nothing. role="button" plus an
+          // Enter/Space keydown handler match the Action Plan row's own fix for this identical
+          // gap (see .ob-plan-item.clickable's keydown listener elsewhere in this file).
+          dot.setAttribute("role", "button");
+          const go = () => { current = i; persistStep(); renderTracker(); renderKioskCard(i); };
+          dot.addEventListener("click", go);
+          dot.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
           tracker.appendChild(dot);
         });
       }
@@ -22844,8 +22853,14 @@ window.G = window.G || {};
 
     const links = el("div.panel", { style:"margin-top:10px" });
     links.appendChild(el("div.eyebrow", { text:"Related" }));
+    // Enhancement backlog round 4, "Navigation, accessibility, and minor search/home polish" bucket:
+    // Records Readiness (records.js) already has an explicit "Open Channels" button pointing here,
+    // but this panel never linked back — a Soldier who arrived from Records had no way back except
+    // browser history. Added "Records Readiness" alongside the other 5 entries so the link is
+    // bidirectional, same pattern as every entry already in this list.
     [["Promotion points / PPW","#/board"],["MOS Career Center","#/career"],
-     ["BLC Prep","#/blc"],["ALC Prep","#/alc"],["Leadership Drills","#/drills"]].forEach(([l,h]) => {
+     ["BLC Prep","#/blc"],["ALC Prep","#/alc"],["Leadership Drills","#/drills"],
+     ["Records Readiness","#/records"]].forEach(([l,h]) => {
       const b = el("button.btn.sm.ghost", { type:"button", text:l, style:"margin:4px 6px 0 0" });
       b.addEventListener("click", () => { location.hash = h; });
       links.appendChild(b);
@@ -26903,6 +26918,17 @@ window.G = window.G || {};
         card.appendChild(el("p.res-domain-d", { text: dom.desc || dom.d }));
       }
 
+      // Enhancement backlog round 4, "Navigation, accessibility, and minor search/home polish"
+      // bucket: the Physical domain card described AFT/CFT-relevant training load and recovery
+      // but never pointed at #/fitness, which has the actual AFT/CFT event standards and scoring
+      // tables this domain only gestures at. Same small btn.tiny.ghost cross-link pattern already
+      // used elsewhere in this file (e.g. the MOS Career Center link off #/board's cert hint).
+      if (dom.name === "Physical") {
+        const fitLink = el("button.btn.tiny.ghost", { type: "button", text: "AFT / CFT standards →", style: "margin-top:4px" });
+        fitLink.addEventListener("click", () => { location.hash = "#/fitness"; });
+        card.appendChild(fitLink);
+      }
+
       // Domain skill accordions — hidden by default
       const skillsWrap = el("div.res-domain-skills", { hidden: "hidden" });
       (dom.skills || []).forEach((sk) => {
@@ -27206,6 +27232,15 @@ window.G = window.G || {};
       }
       if (r.desc || r.d) {
         card.appendChild(el("p.res-resource-d", { text: r.desc || r.d }));
+      }
+      // Enhancement backlog round 4, "Navigation, accessibility, and minor search/home polish"
+      // bucket: the "H2F Performance Teams" resource (type "fitness") described unit-level PT
+      // support but never linked to #/fitness, which has the AFT/CFT reference this resource
+      // exists to support. Same small btn.tiny.ghost cross-link as the Physical domain card above.
+      if (r.type === "fitness") {
+        const fitLink = el("button.btn.tiny.ghost", { type: "button", text: "AFT / CFT standards →", style: "margin-top:6px" });
+        fitLink.addEventListener("click", () => { location.hash = "#/fitness"; });
+        card.appendChild(fitLink);
       }
       resGrid.appendChild(card);
     });
@@ -28147,6 +28182,22 @@ window.G = window.G || {};
       if (ns.note) nsPanel.appendChild(el("p", { style: "margin-top:8px", text: ns.note }));
       mount.appendChild(nsPanel);
     }
+
+    // Enhancement backlog round 4, "Navigation, accessibility, and minor search/home polish" bucket:
+    // every other module in this cluster (leader.js's Squad Roster, assignments.js's Marketplace
+    // prep, currency.js's record-freshness checks) ends its render with a cross-link panel back to
+    // the routes a Soldier would naturally go next - career.js's MOS Career Center was the dead end.
+    // Same "Related" panel shape assignments.js already uses: one .panel with an eyebrow and a row
+    // of .btn.sm.ghost buttons, each just flipping location.hash.
+    const links = el("div.panel", { style: "margin-top:10px" });
+    links.appendChild(el("div.eyebrow", { text: "Related" }));
+    [["Assignments & Marketplace", "#/assignments"], ["Time-in-grade / Currency", "#/currency"],
+     ["IDP / Development", "#/develop"]].forEach(function (pair) {
+      const b = el("button.btn.sm.ghost", { type: "button", text: pair[0], style: "margin:4px 6px 0 0" });
+      b.addEventListener("click", function () { location.hash = pair[1]; });
+      links.appendChild(b);
+    });
+    mount.appendChild(links);
   }
 
   G.career = { render };
@@ -28799,7 +28850,17 @@ window.G = window.G || {};
       // down carry the one "tracking starts once you begin" message for
       // this whole zero-progress state, so this strip is silently absent
       // here rather than repeating it.
-      if (tiles.length >= 2 && hasAnyProgress) {
+      //
+      // Enhancement backlog round 4, "Navigation, accessibility, and minor search/home polish"
+      // bucket: >=2 was doing double duty as BOTH "not a fresh profile" (hasAnyProgress already
+      // covers that on its own, per the comment above) AND an unstated "need multiple tiles to
+      // be worth a strip" rule - the second one has a real false-negative: a Soldier who has set
+      // real IDP goals (hasAnyProgress true) but has no promoPoints on their profile and no
+      // "training" mode scenarios yet gets exactly ONE pushed tile (IDP goals; the promo-points
+      // and training tiles above only push at all when their own data exists), and the whole
+      // strip - including that one genuinely populated tile - was withheld. hasAnyProgress alone
+      // already keeps an all-placeholder fresh profile hidden, so >=1 is the correct floor.
+      if (tiles.length >= 1 && hasAnyProgress) {
         const dash = el("div.readiness-dash", { style: "margin-top:12px", "aria-label": "My readiness at a glance" });
         dash.appendChild(el("div.eyebrow", { text: "My readiness" }));
         const grid = el("div.readiness-grid");
@@ -29735,11 +29796,47 @@ window.G = window.G || {};
       { h: "Changes to this policy", p: ["If GUIDON's data handling ever changes, this policy will be updated first, and the “Last updated” date above will change accordingly. As of that date, GUIDON collects nothing and transmits nothing."] },
       { h: "Contact", p: ["Questions, requests, or concerns about this policy or GUIDON's data handling: ctsolomon95@gmail.com"] },
     ];
+
+    // Enhancement backlog round 4, "Navigation, accessibility, and minor search/home polish"
+    // bucket: this page renders 12 full-text panels as one long unbroken scroll with no way to
+    // jump to a specific one, unlike Doctrine/Search/Settings which all solve this same "many
+    // sections, need to reach one" problem elsewhere in the app. A plain <a href="#anchor"> TOC
+    // won't work here though: this SPA's router treats the ENTIRE location.hash as the current
+    // route (see route()'s own comment on the #main/#cardWrap skip-link gotcha a few thousand
+    // lines up) — setting it to a fragment like "#contact" would fire hashchange and misroute to
+    // the fallback route instead of scrolling. So this reuses that exact skip-link fix instead:
+    // real <button>s that scrollIntoView + focus() the target panel, never touching location.hash.
+    // Each panel gets tabIndex="-1" so it's a valid, non-tab-order focus target for the button to
+    // land on — the same accessibility payoff a real anchor jump would give a keyboard user.
+    const jumpPanel = el("div.panel", { style: "margin-bottom:12px" });
+    jumpPanel.appendChild(el("div.eyebrow", { text: "Jump to a section" }));
+    const jumpRow = el("div", { style: "margin-top:6px" });
+    jumpPanel.appendChild(jumpRow);
+    mount.appendChild(jumpPanel);
+
     SECTIONS.forEach(function (s) {
-      const panel = el("div.panel", { style: "margin-bottom:12px" });
+      const panel = el("div.panel", { style: "margin-bottom:12px", tabIndex: "-1" });
       panel.appendChild(el("h3", { text: s.h, style: "margin-top:0" }));
       s.p.forEach(function (para) { panel.appendChild(el("p.hint", { text: para, style: "margin-top:8px" })); });
+      // Enhancement backlog round 4, "Navigation, accessibility, and minor search/home polish"
+      // bucket: this section describes the on-device stores (IndexedDB/localStorage) in prose but
+      // never linked to #/storage, the live dashboard that shows actual usage and per-store row
+      // counts for those same stores. Settings' own About panel already links to #/storage for
+      // this exact purpose ("View storage details") — same wording/icon, reused here.
+      if (s.h === "Data GUIDON stores, and where") {
+        const storageLink = el("button.btn.sm.ghost", { type: "button", gi: "database", giSize: 14, text: "View storage details", style: "margin-top:6px" });
+        storageLink.addEventListener("click", () => { location.hash = "#/storage"; });
+        panel.appendChild(storageLink);
+      }
       mount.appendChild(panel);
+
+      const jumpBtn = el("button.btn.tiny.ghost", { type: "button", text: s.h, style: "margin:3px 5px 3px 0" });
+      jumpBtn.addEventListener("click", () => {
+        const reduceMotion = util.prefersReducedMotion();
+        panel.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+        panel.focus();
+      });
+      jumpRow.appendChild(jumpBtn);
     });
   };
 
@@ -30656,6 +30753,36 @@ window.G = window.G || {};
     });
     inp.focus();
 
+    // Enhancement backlog round 4, "Navigation, accessibility, and minor search/home polish"
+    // bucket: the empty-query branch of runSearch below was headed by a comment claiming to
+    // "Show recent searches hint" but only ever rendered a static "type more" placeholder - no
+    // recent-searches feature existed at all. Added a real, minimal one rather than just fixing
+    // the comment, since the storage half is a few lines and the payoff (re-running yesterday's
+    // query in one tap) is worth it. RECENT_KEY persists distinct queries in localStorage, capped
+    // at 5, most-recent-first. Recorded on blur rather than on every keystroke: this box runs a
+    // live per-keystroke debounced search (see the "input" listener above), so recording on
+    // "input" would flood the list with every partial fragment typed ("a", "ar", "arm"…) instead
+    // of the finished query. Blur fires both on a normal tab-away/click-away AND when navigating
+    // to a different route (util.clear(mount) on the next render detaches this input, which
+    // blurs it first), so a query the Soldier never explicitly "submitted" (there is no submit
+    // button - this is a live search box) still gets captured on the way out.
+    const RECENT_KEY = "guidon-search-recent";
+    function getRecentSearches() {
+      try {
+        const v = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
+        return Array.isArray(v) ? v.filter((s) => typeof s === "string" && s) : [];
+      } catch (e) { return []; }
+    }
+    function addRecentSearch(term) {
+      if (!term || term.length < 2) return;
+      try {
+        const list = getRecentSearches().filter((s) => s.toLowerCase() !== term.toLowerCase());
+        list.unshift(term);
+        localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 5)));
+      } catch (e) {}
+    }
+    inp.addEventListener("blur", () => addRecentSearch(inp.value.trim()));
+
     function highlight(text, q) {
       const tl = text.toLowerCase(), ql = q.toLowerCase();
       const ti = tl.indexOf(ql);
@@ -30732,11 +30859,29 @@ window.G = window.G || {};
       // data-search-idx, so a per-type index would collide across sections.
       let hitIdx = 0;
       if (!q || q.length < 2) {
-        // Show recent searches hint
+        // Length hint (1 char typed vs. box genuinely empty) — see the recent-searches
+        // block right below for the actual "Show recent searches" feature; this line used
+        // to carry that comment while only ever rendering this static placeholder.
         resultsDiv.appendChild(el("div.search-empty", {
           role: "status", "aria-live": "polite",
           text: q.length === 1 ? "Keep typing…" : "Type at least 2 characters to search."
         }));
+        // Real recent-searches list (see RECENT_KEY/getRecentSearches above) — only when the
+        // box is genuinely empty, not mid-way through a 1-character keystroke, so this never
+        // competes with the "Keep typing…" hint above it.
+        if (!q) {
+          const recent = getRecentSearches();
+          if (recent.length) {
+            const recentPanel = el("div", { style: "margin-top:10px" });
+            recentPanel.appendChild(el("p.hint", { text: "Recent searches:" }));
+            recent.forEach((term) => {
+              const chip = el("button.chip.search-chip", { type: "button", text: term, style: "margin:4px 6px 0 0" });
+              chip.addEventListener("click", () => { inp.value = term; runSearch(term); });
+              recentPanel.appendChild(chip);
+            });
+            resultsDiv.appendChild(recentPanel);
+          }
+        }
         return;
       }
       const ql = q.toLowerCase();
@@ -30764,8 +30909,16 @@ window.G = window.G || {};
         (bqs.questions || bqs || []).forEach((q2) => {
           const hay = ((q2.q||"")+" "+(q2.a||"")+" "+(q2.category||"")).toLowerCase();
           if (hay.includes(ql)) {
+            // Enhancement backlog round 4, "Navigation, accessibility, and minor search/home
+            // polish" bucket: the match check two lines up already guards a missing/malformed
+            // q2.q with (q2.q||"") before calling .toLowerCase(), but this title-truncation line
+            // read q2.q.length/.slice directly with no such guard. hay is built from all three
+            // fields (q/a/category), so a board-question record with a null/undefined `q` but a
+            // matching `a` or `category` still passes the hay.includes(ql) check above and then
+            // throws here on q2.q.length. Same (q2.q||"") fallback as the match check uses.
+            const qText = q2.q || "";
             allHits.board.push({ type:"board", id:q2.id,
-              title: q2.q.length > 80 ? q2.q.slice(0,80)+"…" : q2.q,
+              title: qText.length > 80 ? qText.slice(0,80)+"…" : qText,
               sub:"Board: "+q2.category, meta:q2.category, route:"#/board" });
           }
         });
