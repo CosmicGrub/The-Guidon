@@ -89,7 +89,15 @@ window.G = window.G || {};
       "The roster is deliberately LEFT OUT of GUIDON backup files, so exporting your study data will not quietly carry other people's information with it. That also means it does not follow you to a new device - if you replace this one, you re-enter it." }));
     mount.appendChild(priv);
 
-    const summary = el("div.panel", { style: "margin-bottom:10px" });
+    // Roadmap audit round 4, "Accessibility: missing accessible names, live
+    // regions, and toggle state" bucket: buildSummary() below fully clears
+    // and rebuilds this "Needs attention" panel (util.clear(summary)) on
+    // every roster date-field edit, including flipping cards in/out of the
+    // "over 30 days" red-vs-amber threshold - with no live-region wiring a
+    // screen-reader user editing a Soldier's date heard nothing about the
+    // triage list changing. role="status" aria-live="polite" announces the
+    // rebuilt content, same pattern as calendar.js's "What is next" panel.
+    const summary = el("div.panel", { style: "margin-bottom:10px", role: "status", "aria-live": "polite" });
     // tabindex:-1: programmatically focusable (not in the Tab order) so the
     // roster-Remove focus-restore fallback below has somewhere real to
     // land when the last visible entry is removed - matching reminders.js's

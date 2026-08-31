@@ -148,7 +148,15 @@ window.G = window.G || {};
     try { const r = await G.db.get("kv", KEY); saved = (r && r.v) || {}; } catch (e) { /* offline-safe */ }
 
     const today = todayMidnight();
-    const upcoming = el("div.panel", { style: "margin-bottom:10px" });
+    // Roadmap audit round 4, "Accessibility: missing accessible names, live
+    // regions, and toggle state" bucket: buildUpcoming() below fully clears
+    // and rebuilds this panel (util.clear(upcoming)) on every date edit in
+    // "Your dates", including flipping a row's urgency word to "OVERDUE" -
+    // with no live-region wiring a screen-reader user who just entered a
+    // date heard nothing about "What is next" changing at all. role="status"
+    // aria-live="polite" here announces the rebuilt card list, same pattern
+    // as leader.js's summary panel below.
+    const upcoming = el("div.panel", { style: "margin-bottom:10px", role: "status", "aria-live": "polite" });
     const inputs = el("div.panel", { style: "margin-bottom:10px" });
 
     async function persist() {

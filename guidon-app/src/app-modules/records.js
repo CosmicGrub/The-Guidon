@@ -132,8 +132,19 @@ window.G = window.G || {};
 
     const prog = el("div.panel", { style: "margin-bottom:10px" });
     prog.appendChild(el("div.eyebrow", { text: "Progress" }));
-    const progText = el("div.ob-plan-cat", { text: "" });
-    const bar = el("div", { style: "height:8px;border-radius:4px;background:var(--panel-2);margin-top:6px;overflow:hidden" });
+    // Roadmap audit round 4, "Accessibility: missing accessible names, live
+    // regions, and toggle state" bucket: progText/fill below get rewritten
+    // by every single checkbox toggle in the four groups (refresh() runs on
+    // every "change" listener a few lines down), but neither carried any
+    // live-region wiring - a screen-reader user checking items off heard
+    // nothing update after the initial page load, so the "N of TOTAL
+    // confirmed" count and the fill bar were both silent. role="status"
+    // aria-live="polite" on progText announces each new count; role=
+    // "progressbar" + aria-valuenow/min/max on the track (kept in sync
+    // inside refresh() below) exposes the same fraction to AT that already
+    // gets it visually from the fill width.
+    const progText = el("div.ob-plan-cat", { text: "", role: "status", "aria-live": "polite" });
+    const bar = el("div", { style: "height:8px;border-radius:4px;background:var(--panel-2);margin-top:6px;overflow:hidden", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(TOTAL), "aria-valuenow": "0" });
     const fill = el("div", { style: "height:100%;width:0%;background:var(--amber);transition:width .2s" });
     bar.appendChild(fill);
     prog.appendChild(progText); prog.appendChild(bar);
@@ -148,6 +159,7 @@ window.G = window.G || {};
       done = Math.min(done, TOTAL);
       progText.textContent = done + " of " + TOTAL + " confirmed";
       fill.style.width = (TOTAL ? Math.min(100, Math.round((done / TOTAL) * 100)) : 0) + "%";
+      bar.setAttribute("aria-valuenow", String(done));
     }
 
     async function persist() {
