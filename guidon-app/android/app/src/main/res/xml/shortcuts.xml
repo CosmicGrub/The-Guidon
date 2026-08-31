@@ -14,17 +14,16 @@
      MainActivity in AndroidManifest.xml.
 
      Each <intent> below carries a "route" extra naming the in-app hash route
-     the webmanifest shortcut's own "url" field points at (./#/board etc.) -
-     MainActivity has no existing deep-link/intent-extra consumer of any kind
-     to wire this into an actual in-app navigation yet (grepped: no
-     getIntent()/onNewIntent() handling anywhere in this Activity), so for
-     now a tap still opens GUIDON normally rather than jumping straight to
-     the named screen. Declaring the extra here rather than a bare
-     action/targetClass with nothing else is still correct and forward-
-     compatible - it's the same "route" the PWA's shortcut URL carries - but
-     wiring an actual consumer is native-side plumbing (reading the extra in
-     onCreate()/onNewIntent() and pushing it into the WebView) beyond this
-     fix's scope; flagged for a follow-up rather than guessed at here. -->
+     the webmanifest shortcut's own "url" field points at (./#/board etc.).
+     Roadmap audit round 5, "Native Android: Security & Shortcut Wiring"
+     bucket: MainActivity.onCreate()/onNewIntent() now read this extra and
+     push a matching location.hash into the WebView (once index.html is
+     confirmed loaded - see MainActivity's own pollAndNavigate() comment),
+     closing the follow-up this file originally flagged - a shortcut tap
+     now actually lands on the named screen instead of GUIDON's
+     default/last route, on both a cold launch and a tap while already
+     running (singleTask launchMode redelivers via onNewIntent() for the
+     latter). -->
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
     <shortcut
         android:shortcutId="board_drill"

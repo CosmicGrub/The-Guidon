@@ -30677,6 +30677,13 @@ window.G = window.G || {};
             await store.setSetting("biometricLock", false);
             bioStatus.textContent = "Off " + String.fromCharCode(8212) + " GUIDON will not ask for biometrics.";
           }
+          // Roadmap audit round 5, "Native Android: Security & Shortcut
+          // Wiring" bucket: push the new setting to MainActivity's
+          // FLAG_SECURE toggle right away (see G.biometricGate.syncSecureScreen)
+          // rather than waiting for the next resume — a Soldier who just
+          // flipped this ON and immediately hits Home must already be
+          // protected on that very first backgrounding.
+          if (G.biometricGate) G.biometricGate.syncSecureScreen();
         });
         bio.appendChild(el("div", { style: "margin:12px 0" }, [
           el("div.switch", {}, [el("label.toggle", { style: "margin:0" }, [bioInput, el("span.track")]), el("span", { text: "Biometric lock (Personal Account)" })]),
@@ -32268,6 +32275,7 @@ window.G = window.G || {};
       offLink.addEventListener("click", async () => {
         if (!await G.modal.confirm("You won't be asked for biometrics to open GUIDON on this device until you turn it back on from Settings.", { title: "Turn off biometric lock?", okText: "Turn off", danger: true })) return;
         try { await store.setSetting("biometricLock", false); } catch (e) {}
+        syncSecureScreen();
         unlocked = true;
         trap.close();
         onUnlocked();
@@ -32279,11 +32287,32 @@ window.G = window.G || {};
       attempt();
     }
 
+    // Roadmap audit round 5, "Native Android: Security & Shortcut Wiring"
+    // bucket: keeps MainActivity's FLAG_SECURE window flag (see
+    // biometric.js's setSecureScreen()) in sync with "does the lock apply
+    // to the current settings/profile right now" — the OS only needs this
+    // set BEFORE the Soldier backgrounds the app (recents-thumbnail capture
+    // happens at that instant, not while foregrounded), so this is called
+    // both from every run() (cold launch + every resume, so a stale flag
+    // from a profile/settings change made while backgrounded is corrected
+    // before the next possible backgrounding) and from the two Settings
+    // toggle handlers below (so turning the lock ON takes effect even if
+    // the very next thing the Soldier does is hit Home, without waiting for
+    // a resume that hasn't happened yet).
+    async function syncSecureScreen() {
+      try {
+        const shouldSecure = await applies();
+        if (G.biometric && G.biometric.setSecureScreen) G.biometric.setSecureScreen(shouldSecure);
+      } catch (e) {}
+    }
+
     function run() {
       if (unlocked) return Promise.resolve(true);
       if (pending) return pending;
       pending = (async () => {
-        if (!(await applies())) { unlocked = true; return true; }
+        const shouldApply = await applies();
+        try { if (G.biometric && G.biometric.setSecureScreen) G.biometric.setSecureScreen(shouldApply); } catch (e) {}
+        if (!shouldApply) { unlocked = true; return true; }
         const avail = await G.biometric.checkAvailability();
         if (!avail.available) {
           // Fail OPEN — see this module's header comment.
@@ -32313,7 +32342,7 @@ window.G = window.G || {};
       unlocked = false; run();
     }
 
-    return { run, onResume, applies, expectReturn };
+    return { run, onResume, applies, expectReturn, syncSecureScreen };
   })();
 
   function route() {
