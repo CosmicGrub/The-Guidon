@@ -301,7 +301,12 @@ await gotoSelOnMap.selectOption("good");
 await page.waitForTimeout(400);
 
 // back to the scenario list before the next section
+// Enhancement backlog round 4, "Isolated feature-parity gaps" bucket:
+// Cancel now confirms before discarding an in-progress edit (matching
+// this same editor's other destructive actions), so a plain click no
+// longer returns to the list by itself - accept the confirm dialog too.
 await page.locator("button", { hasText: /^Cancel$/ }).click();
+await acceptModal();
 await page.waitForTimeout(300);
 
 // ---- copy-a-built-in-as-template path ----
@@ -313,6 +318,7 @@ if (seedOptions > 1) {
   const copyTitle = await page.locator(".panel input[type=text]").first().inputValue();
   copyTitle.endsWith(" (Copy)") ? ok("'Copy a built-in as template' opens an editor titled '<original> (Copy)'") : bad("copy title: " + JSON.stringify(copyTitle));
   await page.locator("button", { hasText: /^Cancel$/ }).click();
+  await acceptModal();
   await page.waitForTimeout(300);
 } else {
   bad("no built-in scenarios available to copy as a template");

@@ -221,6 +221,13 @@ window.G = window.G || {};
     refresh();
   }
 
-  G.records = { render: render, GROUPS: GROUPS, TOTAL: TOTAL, KEY: KEY };
+  // VALID_IDS exposed (previously private) so Home's "My readiness"
+  // dashboard strip can tell a real checked item apart from a stale kv
+  // key using this module's OWN validity rule, rather than re-deriving
+  // the "rec-"+groupIndex+"-"+itemIndex id scheme a second time and
+  // risking the two silently disagreeing after a future GROUPS edit -
+  // see the "PME/Records readiness -> dashboard" bucket comment in
+  // views.home's own tiles block.
+  G.records = { render: render, GROUPS: GROUPS, TOTAL: TOTAL, KEY: KEY, VALID_IDS: VALID_IDS };
 })();
 // END records.js

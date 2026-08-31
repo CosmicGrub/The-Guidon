@@ -29,14 +29,26 @@ window.G = window.G || {};
   const DAY = 86400000;
 
   /* Tracked per Soldier. Dates only - deliberately no free-text assessment. */
+  // Enhancement backlog round 4, "Isolated feature-parity gaps across
+  // study and career tools" bucket: added remindKind/remindLabel to all
+  // four entries - see the FIELDS.forEach() render loop below, where
+  // "Remind me" used to be gated to f.key === "counseled" only, leaving
+  // aft/wpn/ncoer (each just as overdue-tracked as counseling, per
+  // overdueFor() above) with no reminder path at all. remindKind maps each
+  // field to the closest existing reminders.js KINDS id (acft/weapons
+  // already exist there; ncoer has no dedicated kind, so it falls back to
+  // "other" rather than inventing a new kind id reminders.js's editor
+  // doesn't know about); remindLabel is the same short action phrase
+  // "counseled" already used ("Counsel " + who), generalized per field so
+  // the reminder list reads as an action, not a restated field name.
   const FIELDS = [
-    { key: "counseled", label: "Last counselling", days: 30,
+    { key: "counseled", label: "Last counselling", days: 30, remindKind: "counseling", remindLabel: "Counsel",
       note: "Monthly developmental counselling. The most commonly missed leader duty.", link: "#/counsel" },
-    { key: "aft", label: "Last AFT", days: 365,
+    { key: "aft", label: "Last AFT", days: 365, remindKind: "acft", remindLabel: "Schedule AFT for",
       note: "Feeds their promotion points and their readiness.", link: "#/fitness" },
-    { key: "wpn", label: "Last weapons qual", days: 730,
+    { key: "wpn", label: "Last weapons qual", days: 730, remindKind: "weapons", remindLabel: "Schedule weapons qual for",
       note: "Past 24 months it is worth zero promotion points to them.", link: "#/board" },
-    { key: "ncoer", label: "Last NCOER thru-date", days: 365,
+    { key: "ncoer", label: "Last NCOER thru-date", days: 365, remindKind: "other", remindLabel: "Update NCOER thru-date for",
       note: "NCOs only. A gap in the record is a gap a board sees.", link: "#/records" },
   ];
 
@@ -235,6 +247,30 @@ window.G = window.G || {};
           worst ? el("span.ldr-badge", { text: worst.over + "d over" }) : null,
         ]);
         row.addEventListener("click", function () { jumpToSoldier(idx); });
+        // Enhancement backlog round 4, "Keyboard Navigation & Semantic Roles"
+        // bucket: rosterList declares role="listbox" with role="option" rows
+        // (below) but never attached a keydown listener anywhere in this
+        // file, so a keyboard user tabbed into the first row and then had
+        // no way to move between the rest without leaving the listbox and
+        // re-tabbing through the whole roster - every sibling list-detail-list
+        // in the app (Doctrine/Dictionary/Resources's entryList, Money's
+        // navList, Board Drill's catList) implements ArrowUp/ArrowDown row
+        // navigation. Copies Money's navList keydown shape exactly (see its
+        // own comment, index.html ~line 26628): no filter/search input sits
+        // immediately above rosterList in this two-pane layout (filterInp is
+        // part of the right-hand controls, not this left jump pane), so
+        // ArrowUp from row 0 simply clamps rather than handing focus off.
+        row.addEventListener("keydown", function (e) {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            const next = row.nextElementSibling;
+            if (next) next.focus();
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            const prev = row.previousElementSibling;
+            if (prev) prev.focus();
+          }
+        });
         rosterList.appendChild(row);
 
         // No margin-bottom here (unlike other .panel usages in this file) -
@@ -362,7 +398,17 @@ window.G = window.G || {};
           // G.notify.scheduleForReminder() pattern records.js's cutoff
           // reminder already established, one row per Soldier (label names
           // them) rather than one shared reminder for the whole roster.
-          if (f.key === "counseled" && G.reminders && G.reminders.add) {
+          //
+          // Enhancement backlog round 4, "Isolated feature-parity gaps
+          // across study and career tools" bucket: this was gated to
+          // f.key === "counseled" only, even though FIELDS tracks four
+          // equally time-boxed, equally overdue-tracked items (see
+          // overdueFor() above, which already treats all four the same
+          // way). Dropping the key check and reading f.remindKind/
+          // f.remindLabel (set on every FIELDS entry above) instead of the
+          // hardcoded "counseling"/"Counsel " turns this into the same
+          // button for aft, wpn and ncoer too, with no other logic change.
+          if (G.reminders && G.reminders.add) {
             const rb = el("button.btn.sm.ghost", { type: "button", text: "Remind me", style: "margin-top:6px" });
             rb.addEventListener("click", async function () {
               const last = parseDate(sol[f.key]);
@@ -370,10 +416,10 @@ window.G = window.G || {};
               const p = function (n) { return (n < 10 ? "0" : "") + n; };
               const dueIso = due.getFullYear() + "-" + p(due.getMonth() + 1) + "-" + p(due.getDate());
               const who = (sol.rank ? sol.rank + " " : "") + (sol.name || "Soldier " + (idx + 1));
-              const updated = await G.reminders.add({ kind: "counseling", label: "Counsel " + who, date: dueIso });
+              const updated = await G.reminders.add({ kind: f.remindKind, label: f.remindLabel + " " + who, date: dueIso });
               if (!updated) { try { util.toast && util.toast("You've reached the " + G.reminders.MAX + "-reminder limit — remove an old one first."); } catch (e) {} return; }
               try { if (G.notify) await G.notify.scheduleForReminder(updated[updated.length - 1]); } catch (e) {}
-              try { if (util.announce) util.announce("Reminder set to counsel " + who + "."); } catch (e) {}
+              try { if (util.announce) util.announce("Reminder set: " + f.remindLabel + " " + who + "."); } catch (e) {}
               rb.disabled = true;
               rb.textContent = "Reminder set";
             });

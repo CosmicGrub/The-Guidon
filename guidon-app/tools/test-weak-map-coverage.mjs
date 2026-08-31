@@ -97,7 +97,10 @@ selectedCount === GAPPED.length
   ? ok(`All ${GAPPED.length} previously-gapped weak-point chips (${GAPPED.map((g) => g.id).join(", ")}) selected`)
   : bad(`only ${selectedCount}/${GAPPED.length} gapped chips ended up selected`);
 
-await page.locator("button", { hasText: /Build my plan/ }).click(); // weakpoints -> boarddate
+// Enhancement backlog round 4, "Profile Minor UX Inconsistencies" bucket:
+// relabeled "Build my plan →" to "Next →" (see test-onboarding.mjs's own
+// comment on this same change for the full rationale).
+await page.locator("button", { hasText: /^Next →$/ }).click(); // weakpoints -> boarddate
 await page.waitForTimeout(300);
 await page.locator("button", { hasText: /^Skip$/ }).click(); // boarddate -> summary
 await page.waitForTimeout(300);

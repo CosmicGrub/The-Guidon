@@ -6622,6 +6622,76 @@ window.G = window.G || {};
     return wrap;
   };
 
+  // Enhancement backlog round 4, "BLC/ALC/SLC self-check widget triplicated"
+  // bucket: blc.js, alc.js and slc.js each hand-copied an essentially
+  // line-for-line "Readiness self-check" block - the defensive kv-load
+  // guard, the refresh() progress-bar function, and the checkbox render+
+  // persist loop - right down to identical inline comments. Three copies
+  // of the same bug surface: a fix to one (e.g. the "(r && r.v) || {}"
+  // hardening already applied to all three independently) had to be
+  // remembered and reapplied by hand in the other two, with nothing
+  // enforcing that they stay in sync. Pulled out here as the one place
+  // all three modules already share - G.util, loaded before any of them -
+  // so blc.js/alc.js/slc.js each call this instead of owning their own
+  // copy. Zero behavior change: same markup, same classes, same kv
+  // shape ("c"+i keyed booleans under one object), same persist-on-change
+  // timing - verified by diffing BLC's rendered self-check panel before
+  // and after this extraction.
+  //
+  // config: { key: kv key string (e.g. "guidon:blc:checks:v1"),
+  //           items: array of checklist label strings,
+  //           idPrefix: short string used to build unique checkbox ids
+  //             ("blc" -> "blc-c0", "blc-c1", ...) so BLC/ALC/SLC's ids
+  //             never collide even though each render() call reuses the
+  //             positional "c"+i key internally,
+  //           note: function(done, total) => string, the module-specific
+  //             progress commentary each of the three already varied
+  //             independently based on its own honours/gates. }
+  // Async because loading the saved checkmarks is itself async (G.db.get);
+  // callers already `await` this exactly where they used to inline the
+  // same read, so render() ordering is unchanged.
+  util.renderSelfCheckWidget = async function (mount, config) {
+    const el = util.el;
+    let saved = {};
+    // (r && r.v) || {} only guards a missing value - a truthy non-object
+    // (from a hand-edited/corrupted backup) passed through untouched, and
+    // the checkbox handler below does saved["c"+i] = box.checked, a
+    // property WRITE that throws under strict mode on a primitive.
+    try { const r = await G.db.get("kv", config.key); const v = r && r.v; saved = (v && typeof v === "object" && !Array.isArray(v)) ? v : {}; } catch (e) {}
+
+    const prog = el("div.panel", { style: "margin:10px 0;border-left:3px solid var(--amber)" });
+    prog.appendChild(el("div.eyebrow", { text: "Readiness self-check" }));
+    const progStat = el("div.stat", {}, [ el("span.k", { text: "Honest answers only" }), el("span.v", { text: "0 / " + config.items.length }) ]);
+    const progBar  = el("div.bar.cyan", {}, [ el("span", { style: "transform:scaleX(0)" }) ]);
+    prog.appendChild(progStat); prog.appendChild(progBar);
+    const progNote = el("p.hint", { text: "" });
+    prog.appendChild(progNote);
+
+    function refresh() {
+      const done = config.items.filter((_, i) => saved["c" + i]).length;
+      (progStat.querySelector(".v") || {}).textContent = done + " / " + config.items.length;
+      progBar.firstChild.style.transform = "scaleX(" + (done / config.items.length) + ")";
+      progNote.textContent = config.note(done, config.items.length);
+    }
+
+    config.items.forEach((txt, i) => {
+      const row = el("div", { style: "display:flex;gap:8px;align-items:flex-start;margin:6px 0" });
+      const id = config.idPrefix + "-c" + i;
+      const box = el("input", { type: "checkbox", id: id, "aria-label": txt });
+      box.checked = !!saved["c" + i];
+      box.addEventListener("change", async () => {
+        saved["c" + i] = box.checked;
+        try { await G.db.put("kv", { k: config.key, v: saved }); } catch (e) {}
+        refresh();
+      });
+      row.appendChild(box);
+      row.appendChild(el("label", { text: txt, for: id, style: "margin:0;font-weight:400" }));
+      prog.appendChild(row);
+    });
+    refresh();
+    mount.appendChild(prog);
+  };
+
   // ── Flush-on-background registry ──────────────────────────────────────
   // A debounced save (Settings, Forms Trainer autosave, Bullet Builder
   // history, the finance widgets) can be sitting in its setTimeout window
@@ -14720,18 +14790,47 @@ window.G = window.G || {};
           const planPanel = el("div.panel", { style:"margin-top:10px" });
           planPanel.appendChild(el("div.eyebrow", { text: "From your profile" }));
           planPanel.appendChild(el("h3", { text: "Personal action plan" }));
-          profPlan.slice(0,5).forEach(item => {
-            const row = el("div.ob-plan-item.clickable");
-            const pri = item.priority === "high" ? "var(--red)" : "var(--amber)";
-            row.appendChild(el("span.ob-plan-icon", { text: item.icon || "▶", style:"color:"+pri }));
-            const body = el("div.ob-plan-body");
-            body.appendChild(el("div.ob-plan-cat", { text: item.category }));
-            body.appendChild(el("div.ob-plan-action", { text: item.action }));
-            row.appendChild(body);
-            row.tabIndex = 0;
-            const go = () => { location.hash = item.route || "#/home"; };
-            row.addEventListener("click", go); row.addEventListener("keydown", e=>{ if(e.key==="Enter")go(); });
-            planPanel.appendChild(row);
+          // Enhancement backlog round 4, "Keyboard Navigation & Semantic
+          // Roles" bucket: priority (high vs. medium) was conveyed by icon
+          // COLOR alone - pri below picked var(--red) vs var(--amber) but
+          // the glyph itself (item.icon || "▶") was identical either way, a
+          // WCAG 1.4.1 violation for anyone who can't distinguish red from
+          // amber (or is on a grayscale/high-contrast display). Profile's
+          // own renderPlanSection (this same file, "Your priorities" panel)
+          // already solves this correctly with literal "High priority"/
+          // "This week" text headers instead of relying on color - grouped
+          // this teaser under the same two header labels rather than
+          // inventing a different text treatment for the same data.
+          const shownPlan = profPlan.slice(0, 5);
+          const planGroups = [
+            { items: shownPlan.filter(item => item.priority === "high"), label: "High priority" },
+            { items: shownPlan.filter(item => item.priority !== "high"), label: "This week" },
+          ];
+          planGroups.forEach(group => {
+            if (!group.items.length) return;
+            planPanel.appendChild(el("div.ob-plan-label", { text: group.label, style: "margin-top:10px" }));
+            group.items.forEach(item => {
+              const row = el("div.ob-plan-item.clickable");
+              const pri = item.priority === "high" ? "var(--red)" : "var(--amber)";
+              row.appendChild(el("span.ob-plan-icon", { text: item.icon || "▶", style:"color:"+pri }));
+              const body = el("div.ob-plan-body");
+              body.appendChild(el("div.ob-plan-cat", { text: item.category }));
+              body.appendChild(el("div.ob-plan-action", { text: item.action }));
+              row.appendChild(body);
+              row.tabIndex = 0;
+              // Same gap as profile.js's renderPlanSection (see that
+              // function's own comment) - a keyboard-operable div with no
+              // role="button"/aria-label, unlike onboarding mode cards and
+              // Search's .search-hit which set both. Also picked up the
+              // missing Space-key activation here (only Enter fired
+              // before) while touching this handler for the same bucket.
+              row.setAttribute("role", "button");
+              row.setAttribute("aria-label", (item.category ? item.category + ": " : "") + (item.action || ""));
+              const go = () => { location.hash = item.route || "#/home"; };
+              row.addEventListener("click", go);
+              row.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+              planPanel.appendChild(row);
+            });
           });
           const viewAll = el("button.btn.ghost.sm", { text:"Full plan →", type:"button", style:"margin-top:8px" });
           viewAll.addEventListener("click", () => location.hash = "#/profile");
@@ -14969,8 +15068,19 @@ window.G = window.G || {};
       card.appendChild(el("label", { text: "Tiers" })); card.appendChild(tierWrap);
 
       // competencies
+      // Enhancement backlog round 4, "Isolated feature-parity gaps across
+      // study and career tools" bucket: was hardcoded to a 3-item subset
+      // ["Leads","Develops","Achieves"] of the real 6-value LRM tag
+      // vocabulary - DIMS (module-level const above, shared with
+      // store.DIMS) is the full list, and the Score-deltas grid a couple
+      // hundred lines below this same editor already iterates all 6 of
+      // them per choice. A scenario authored through the Guided tab could
+      // never be tagged Character/Presence/Intellect here even though its
+      // own choices could (and, per the shared scoring engine, ARE) scored
+      // against those same three dimensions - the checkbox row just had no
+      // way to show or set it.
       const compWrap = el("div.mini-row", { style: "margin-top:6px" });
-      ["Leads", "Develops", "Achieves"].forEach((c) => {
+      DIMS.forEach((c) => {
         const cb = el("input", { type: "checkbox" }); cb.checked = (model.competency || []).includes(c);
         cb.addEventListener("change", () => {
           model.competency = model.competency || [];
@@ -15369,7 +15479,21 @@ window.G = window.G || {};
         if (!v.ok) { msg.appendChild(el("div.feedback.bad", { html: "Cannot save. Fix:<br>• " + v.errors.map(esc).join("<br>• ") })); return; }
         await store.saveUserScenario(deep(m)); util.toast("Scenario saved."); onDone && onDone();
       } }),
-      el("button.btn.ghost", { text: "Cancel", onclick: () => onDone && onDone() }),
+      // Enhancement backlog round 4, "Isolated feature-parity gaps across
+      // study and career tools" bucket: Cancel used to call onDone()
+      // immediately with zero warning, discarding an entire in-progress
+      // scenario edit (every node, choice, and metadata field touched
+      // since opening the editor) in one click - unlike every other
+      // destructive action in this same editor (node delete at ~line
+      // 14932, the ending-node toggle at ~line 14979, choice removal a bit
+      // further down), which all confirm first. Matches those same
+      // G.modal.confirm({danger:true}) + "This can't be undone" call/
+      // wording, confirming unconditionally rather than adding a dirty-
+      // check - the same tradeoff those sibling actions already make.
+      el("button.btn.ghost", { text: "Cancel", onclick: async () => {
+        if (!(await G.modal.confirm("Discard this scenario and any unsaved changes? This can't be undone.", { danger: true }))) return;
+        onDone && onDone();
+      } }),
     ]);
 
     mount.appendChild(body);
@@ -15633,12 +15757,27 @@ window.G = window.G || {};
         // "Related doctrine" link already does (see that call site's onclick
         // in index.html) - reuses Doctrine's own substring search with zero
         // new data/curation, pre-filling it with this term's own acronym.
-        const xlBtn = el("button.btn.ghost.sm.dict-doctrine-link", { type: "button", style: "margin-top:8px", text: "Related doctrine →" });
-        xlBtn.addEventListener("click", () => {
-          if (G.views) G.views._doctrineSeed = selected.a;
-          location.hash = "#/doctrine";
-        });
-        panel.appendChild(xlBtn);
+        //
+        // Enhancement backlog round 4, "Isolated feature-parity gaps across
+        // study and career tools" bucket: that substring search is a plain
+        // case-insensitive .includes() over Doctrine's 336-entry corpus -
+        // fine for a specific multi-word acronym like "METT-TC", but for
+        // this dictionary's many 1-2 char entries (e.g. "CO", "IN", "AR")
+        // it matches nearly every doctrine entry (those two letters appear
+        // inside hundreds of unrelated words/refs), returning what looks
+        // like a targeted cross-reference but is actually close to the
+        // entire corpus. Gating on length >= 3 hides the button rather than
+        // seed Doctrine with a filter indistinguishable from no filter at
+        // all - short acronyms are exactly the ones this substring approach
+        // can't meaningfully narrow down.
+        if (selected.a && selected.a.length >= 3) {
+          const xlBtn = el("button.btn.ghost.sm.dict-doctrine-link", { type: "button", style: "margin-top:8px", text: "Related doctrine →" });
+          xlBtn.addEventListener("click", () => {
+            if (G.views) G.views._doctrineSeed = selected.a;
+            location.hash = "#/doctrine";
+          });
+          panel.appendChild(xlBtn);
+        }
         results.appendChild(panel);
       }
 
@@ -16562,6 +16701,23 @@ window.G = window.G || {};
             el("div.stat", {}, [el("span.k", { text: (w.resource || "Untitled") + " — " + (w.unit || "") }), el("span.v", { text: w.risk || "" })]),
             el("div.meta", { text: (w.category || "") + " · value " + LEVELS[w.valueIdx] + " · " + (w.date || "") }),
             el("div.btn-row", { style: "margin-top:8px" }, [
+              // Enhancement backlog round 4, "Isolated feature-parity gaps
+              // across study and career tools" bucket: saved worksheets
+              // previously had a Delete button only - once saved, a Soldier
+              // could never reopen a worksheet to correct or update it, only
+              // discard it and start over from blank or one of the five
+              // canned templates above. This reuses that exact same
+              // population path (set G.risk._pendingModel, then re-run
+              // G.risk.render(mount) - see the template <select>'s "change"
+              // handler a few dozen lines up) since `rec` already carries
+              // every field renderWorksheet()'s model reads (unit, resource,
+              // location, category, analyst, date, valueIdx, valueDesc,
+              // likelihood); the extra saved-only fields (id, risk, highest,
+              // likeIdx) are simply ignored by the Object.assign default-merge.
+              el("button.btn.sm.ghost", { text: "Load", onclick: () => {
+                G.risk._pendingModel = Object.assign({}, w);
+                G.risk.render(mount);
+              } }),
               el("button.btn.sm.ghost", { text: "Delete", "data-visible-pos": String(visiblePos), onclick: async () => {
                 await _serialize(async () => { const l = await loadAll(); await saveAll(l.filter((x) => x.id !== w.id)); });
                 await refreshSaved();
@@ -20458,7 +20614,13 @@ window.G = window.G || {};
       const row = el("div.btn-row");
       const skipBtn = el("button.btn.ghost", { text: "Skip", type:"button" });
       skipBtn.addEventListener("click", () => { next(); });
-      const nextBtn = el("button.btn.primary", { text: "Build my plan →", type:"button" });
+      // Enhancement backlog round 4, "Profile Minor UX Inconsistencies" bucket: this button
+      // was labeled "Build my plan →" but just calls next()/advance() like every other
+      // intermediate step - it lands on the Board-date step (STEPS index 5), not the plan.
+      // generateActionPlan() only actually runs two steps later, in renderSummaryStep. Relabeled
+      // to "Next →" to match the plain label the other intermediate steps already use (see
+      // renderIdentityStep/renderRoleStep/renderBoardDateStep's own "Next →" buttons above).
+      const nextBtn = el("button.btn.primary", { text: "Next →", type:"button" });
       nextBtn.addEventListener("click", () => { next(); });
       row.appendChild(skipBtn); row.appendChild(nextBtn);
       host.appendChild(row);
@@ -20856,8 +21018,19 @@ window.G = window.G || {};
           body.appendChild(el("div.ob-plan-cat", { text: item.category }));
           body.appendChild(el("div.ob-plan-action", { text: item.action }));
           row.appendChild(body);
-          row.appendChild(el("span", { style:"color:var(--text-dim);font-size:0.8rem", text:"→" }));
+          // Enhancement backlog round 4, "Keyboard Navigation & Semantic
+          // Roles" bucket: this row already sets tabIndex=0 with correct
+          // Enter+Space keydown handling below, but never set role="button"
+          // or an aria-label - unlike onboarding mode cards and Search's
+          // .search-hit (both index.html, same file), which set both, so a
+          // screen reader landing here announced a plain, unlabeled group of
+          // text rather than an actionable item. aria-hidden on the trailing
+          // arrow glyph stops that purely-decorative "→" from being read out
+          // as its own item on top of the row's own aria-label.
+          row.appendChild(el("span", { style:"color:var(--text-dim);font-size:0.8rem", text:"→", "aria-hidden": "true" }));
           row.tabIndex = 0;
+          row.setAttribute("role", "button");
+          row.setAttribute("aria-label", (item.category ? item.category + ": " : "") + (item.action || ""));
           const go = () => { location.hash = item.route || "#/home"; };
           row.addEventListener("click", go);
           row.addEventListener("keydown", e => { if(e.key==="Enter"||e.key===" ") go(); });
@@ -21132,7 +21305,13 @@ window.G = window.G || {};
           btnRow.appendChild(nextBtn);
         } else {
           const doneBtn = el("button.btn.ghost", { gi: "check", giSize: 13, text: "End tour", type: "button" });
-          doneBtn.addEventListener("click", () => { try { sessionStorage.removeItem(STORAGE_STEP_KEY); } catch (e) {} location.hash = "#/home"; });
+          // Enhancement backlog round 4, "Profile Minor UX Inconsistencies" bucket: "End tour"
+          // only cleared STORAGE_STEP_KEY, not STORAGE_MODE_KEY — unlike "Choose a different
+          // mode" above, which clears both. That left chosenMode/sessionStorage pointed at
+          // "guided" for the rest of the session, so re-entering #/kiosk later (e.g. via
+          // Settings' "Take a tour" button) silently skipped the mode picker and dropped the
+          // user straight back into the Guided Tour at step 1 instead of letting them pick again.
+          doneBtn.addEventListener("click", () => { try { sessionStorage.removeItem(STORAGE_STEP_KEY); sessionStorage.removeItem(STORAGE_MODE_KEY); } catch (e) {} location.hash = "#/home"; });
           btnRow.appendChild(doneBtn);
         }
         card.appendChild(btnRow);
@@ -21145,7 +21324,16 @@ window.G = window.G || {};
           const dot = el("div.ob-kiosk-dot" + (i === current ? ".active" : i < current ? ".done" : ""));
           dot.title = s.title;
           dot.tabIndex = 0;
-          dot.addEventListener("click", () => { current = i; persistStep(); renderTracker(); renderKioskCard(i); });
+          // Enhancement backlog round 4, "Navigation, accessibility, and minor search/home
+          // polish" bucket: dot was tabIndex=0 (keyboard-focusable) but had only a click
+          // listener, so a keyboard-only Guided Tour user could Tab onto a step dot and then
+          // had no way to activate it - Enter/Space did nothing. role="button" plus an
+          // Enter/Space keydown handler match the Action Plan row's own fix for this identical
+          // gap (see .ob-plan-item.clickable's keydown listener elsewhere in this file).
+          dot.setAttribute("role", "button");
+          const go = () => { current = i; persistStep(); renderTracker(); renderKioskCard(i); };
+          dot.addEventListener("click", go);
+          dot.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
           tracker.appendChild(dot);
         });
       }
@@ -21583,48 +21771,26 @@ window.G = window.G || {};
     mount.appendChild(el("p.hint", {
       text: "For E-4 promotable and Corporals. Built from the BLC Individual Student Assessment Plan (NCOLCoE, course 600-C44) \u2014 the document that governs how you are actually graded \u2014 with 2025\u201326 changes flagged separately." }));
 
-    let saved = {};
-    // (r && r.v) || {} only guards a missing value - a truthy non-object
-    // (from a hand-edited/corrupted backup) passed through untouched, and
-    // this view's own checkbox handler does saved["c"+i] = box.checked, a
-    // property WRITE that throws under strict mode on a primitive.
-    try { const r = await G.db.get("kv", KEY); const v = r && r.v; saved = (v && typeof v === "object" && !Array.isArray(v)) ? v : {}; } catch (e) {}
-
-    const prog = el("div.panel", { style:"margin:10px 0;border-left:3px solid var(--amber)" });
-    prog.appendChild(el("div.eyebrow", { text:"Readiness self-check" }));
-    const progStat = el("div.stat", {}, [ el("span.k", { text:"Honest answers only" }), el("span.v", { text:"0 / " + SELF_CHECK.length }) ]);
-    const progBar  = el("div.bar.cyan", {}, [ el("span", { style:"transform:scaleX(0)" }) ]);
-    prog.appendChild(progStat); prog.appendChild(progBar);
-    const progNote = el("p.hint", { text:"" });
-    prog.appendChild(progNote);
-
-    function refresh() {
-      const done = SELF_CHECK.filter((_, i) => saved["c" + i]).length;
-      (progStat.querySelector(".v") || {}).textContent = done + " / " + SELF_CHECK.length;
-      progBar.firstChild.style.transform = "scaleX(" + (done / SELF_CHECK.length) + ")";
-      progNote.textContent = done === SELF_CHECK.length
+    // Enhancement backlog round 4, "BLC/ALC/SLC self-check widget
+    // triplicated" bucket: this whole block used to be its own hand-copied
+    // "Readiness self-check" panel (kv load guard, refresh() progress bar,
+    // checkbox loop) - identical in shape to ALC's and SLC's own copies,
+    // down to the comments. Now calls the one shared implementation
+    // (util.renderSelfCheckWidget, see its own header comment in js/util.js
+    // for the config shape) so all three modules stay byte-identical in
+    // BEHAVIOR without needing three copies kept in sync by hand. Only
+    // KEY, SELF_CHECK and the "note" copy below differ per module - that
+    // was always true, and stays true; only the DOM-building code moved.
+    await util.renderSelfCheckWidget(mount, {
+      key: KEY,
+      items: SELF_CHECK,
+      idPrefix: "blc",
+      note: (done, total) => done === total
         ? "That is Commandant's List preparation, not pass-the-course preparation."
         : done >= 9 ? "Strong. You are competing, not just attending."
         : done >= 5 ? "Solid base. The practical rubrics \u2014 drill, PRT, individual training \u2014 are the cheapest remaining points."
-        : "Start with drill and PRT: both are free to practise at your unit and both are graded rubrics.";
-    }
-
-    SELF_CHECK.forEach((txt, i) => {
-      const row = el("div", { style:"display:flex;gap:8px;align-items:flex-start;margin:6px 0" });
-      const id = "blc-c" + i;
-      const box = el("input", { type:"checkbox", id: id, "aria-label": txt });
-      box.checked = !!saved["c" + i];
-      box.addEventListener("change", async () => {
-        saved["c" + i] = box.checked;
-        try { await G.db.put("kv", { k: KEY, v: saved }); } catch (e) {}
-        refresh();
-      });
-      row.appendChild(box);
-      row.appendChild(el("label", { text: txt, for: id, style:"margin:0;font-weight:400" }));
-      prog.appendChild(row);
+        : "Start with drill and PRT: both are free to practise at your unit and both are graded rubrics.",
     });
-    refresh();
-    mount.appendChild(prog);
 
     SECTIONS.forEach((s) => {
       const panel = el("div.panel", { style:"margin-bottom:10px" });
@@ -21664,7 +21830,11 @@ window.G = window.G || {};
       text:"Assessment specifics come from the BLC ISAP (600-C44). Course length, packing lists and local requirements vary by NCO Academy and are actively changing under the Army's PME transformation \u2014 confirm everything with your S-1 and the academy you are scheduled to attend. Your academy's current ISAP is the authority, not this app." }));
   }
 
-  G.blc = { render };
+  // KEY/SELF_CHECK exposed (previously private to this closure) so Home's
+  // "My readiness" dashboard strip can read this checklist's own progress
+  // without duplicating its item list or kv key - see the "PME/Records
+  // readiness -> dashboard" bucket comment in views.home's own tiles block.
+  G.blc = { render, KEY, SELF_CHECK };
 })();
 // END blc.js
 
@@ -21800,48 +21970,20 @@ window.G = window.G || {};
     mount.appendChild(el("p.hint", {
       text: "For sergeants with ALC ahead of them \u2014 and staff sergeants looking at SLC. ALC prepares you for staff sergeant duties and is a pin-on requirement for SFC." }));
 
-    let saved = {};
-    // (r && r.v) || {} only guards a missing value - a truthy non-object
-    // (from a hand-edited/corrupted backup) passed through untouched, and
-    // this view's own checkbox handler does saved["c"+i] = box.checked, a
-    // property WRITE that throws under strict mode on a primitive.
-    try { const r = await G.db.get("kv", KEY); const v = r && r.v; saved = (v && typeof v === "object" && !Array.isArray(v)) ? v : {}; } catch (e) {}
-
-    const prog = el("div.panel", { style:"margin:10px 0;border-left:3px solid var(--amber)" });
-    prog.appendChild(el("div.eyebrow", { text:"Readiness self-check" }));
-    const progStat = el("div.stat", {}, [ el("span.k", { text:"Honest answers only" }), el("span.v", { text:"0 / " + SELF_CHECK.length }) ]);
-    const progBar  = el("div.bar.cyan", {}, [ el("span", { style:"transform:scaleX(0)" }) ]);
-    prog.appendChild(progStat); prog.appendChild(progBar);
-    const progNote = el("p.hint", { text:"" });
-    prog.appendChild(progNote);
-
-    function refresh() {
-      const done = SELF_CHECK.filter((_, i) => saved["c" + i]).length;
-      (progStat.querySelector(".v") || {}).textContent = done + " / " + SELF_CHECK.length;
-      progBar.firstChild.style.transform = "scaleX(" + (done / SELF_CHECK.length) + ")";
-      progNote.textContent = done === SELF_CHECK.length
+    // Enhancement backlog round 4, "BLC/ALC/SLC self-check widget
+    // triplicated" bucket: see the matching comment in blc.js's render() -
+    // same shared util.renderSelfCheckWidget call, only KEY/SELF_CHECK/note
+    // differ per module.
+    await util.renderSelfCheckWidget(mount, {
+      key: KEY,
+      items: SELF_CHECK,
+      idPrefix: "alc",
+      note: (done, total) => done === total
         ? "You are ready to compete rather than just attend. Keep the technical track moving."
         : done >= 7 ? "Strong. The remaining gaps are the ones the graded products will find."
         : done >= 4 ? "Reasonable base. MDMP and the written products are where the grade separation happens."
-        : "Start with MDMP and one piece of persuasive writing \u2014 both are free and both are graded at ALC.";
-    }
-
-    SELF_CHECK.forEach((txt, i) => {
-      const row = el("div", { style:"display:flex;gap:8px;align-items:flex-start;margin:6px 0" });
-      const id = "alc-c" + i;
-      const box = el("input", { type:"checkbox", id: id, "aria-label": txt });
-      box.checked = !!saved["c" + i];
-      box.addEventListener("change", async () => {
-        saved["c" + i] = box.checked;
-        try { await G.db.put("kv", { k: KEY, v: saved }); } catch (e) {}
-        refresh();
-      });
-      row.appendChild(box);
-      row.appendChild(el("label", { text: txt, for: id, style:"margin:0;font-weight:400" }));
-      prog.appendChild(row);
+        : "Start with MDMP and one piece of persuasive writing \u2014 both are free and both are graded at ALC.",
     });
-    refresh();
-    mount.appendChild(prog);
 
     SECTIONS.forEach((s) => {
       const panel = el("div.panel", { style:"margin-bottom:10px" });
@@ -21882,7 +22024,9 @@ window.G = window.G || {};
       text:"Phase lengths, technical-track content and local requirements vary by MOS and by NCO Academy \u2014 confirm specifics with your S-1, your career counsellor, and the academy you are scheduled to attend. Course descriptions here are the published NCO Common Core Competencies text." }));
   }
 
-  G.alc = { render };
+  // KEY/SELF_CHECK exposed for Home's "My readiness" dashboard strip - see
+  // the matching comment on G.blc below (in source order above) for why.
+  G.alc = { render, KEY, SELF_CHECK };
 })();
 // END alc.js
 
@@ -22013,48 +22157,20 @@ window.G = window.G || {};
     mount.appendChild(el("p.hint", {
       text: "For promotable staff sergeants and sergeants first class \u2014 SLC, then the gates above it. SLC is a pin-on requirement for MSG." }));
 
-    let saved = {};
-    // (r && r.v) || {} only guards a missing value - a truthy non-object
-    // (from a hand-edited/corrupted backup) passed through untouched, and
-    // this view's own checkbox handler does saved["c"+i] = box.checked, a
-    // property WRITE that throws under strict mode on a primitive.
-    try { const r = await G.db.get("kv", KEY); const v = r && r.v; saved = (v && typeof v === "object" && !Array.isArray(v)) ? v : {}; } catch (e) {}
-
-    const prog = el("div.panel", { style:"margin:10px 0;border-left:3px solid var(--amber)" });
-    prog.appendChild(el("div.eyebrow", { text:"Readiness self-check" }));
-    const progStat = el("div.stat", {}, [ el("span.k", { text:"Honest answers only" }), el("span.v", { text:"0 / " + SELF_CHECK.length }) ]);
-    const progBar  = el("div.bar.cyan", {}, [ el("span", { style:"transform:scaleX(0)" }) ]);
-    prog.appendChild(progStat); prog.appendChild(progBar);
-    const progNote = el("p.hint", { text:"" });
-    prog.appendChild(progNote);
-
-    function refresh() {
-      const done = SELF_CHECK.filter((_, i) => saved["c" + i]).length;
-      (progStat.querySelector(".v") || {}).textContent = done + " / " + SELF_CHECK.length;
-      progBar.firstChild.style.transform = "scaleX(" + (done / SELF_CHECK.length) + ")";
-      progNote.textContent = done === SELF_CHECK.length
+    // Enhancement backlog round 4, "BLC/ALC/SLC self-check widget
+    // triplicated" bucket: see the matching comment in blc.js's render() -
+    // same shared util.renderSelfCheckWidget call, only KEY/SELF_CHECK/note
+    // differ per module.
+    await util.renderSelfCheckWidget(mount, {
+      key: KEY,
+      items: SELF_CHECK,
+      idPrefix: "slc",
+      note: (done, total) => done === total
         ? "That is senior-NCO preparation, not course preparation. It will show."
         : done >= 7 ? "Strong. The remaining items are the ones the written products will expose."
         : done >= 4 ? "Good base. Build one real training plan and one real leader development plan \u2014 those two close most of the gap."
-        : "Start with the writing and one real platoon training plan. Both are free, and both are graded.";
-    }
-
-    SELF_CHECK.forEach((txt, i) => {
-      const row = el("div", { style:"display:flex;gap:8px;align-items:flex-start;margin:6px 0" });
-      const id = "slc-c" + i;
-      const box = el("input", { type:"checkbox", id: id, "aria-label": txt });
-      box.checked = !!saved["c" + i];
-      box.addEventListener("change", async () => {
-        saved["c" + i] = box.checked;
-        try { await G.db.put("kv", { k: KEY, v: saved }); } catch (e) {}
-        refresh();
-      });
-      row.appendChild(box);
-      row.appendChild(el("label", { text: txt, for: id, style:"margin:0;font-weight:400" }));
-      prog.appendChild(row);
+        : "Start with the writing and one real platoon training plan. Both are free, and both are graded.",
     });
-    refresh();
-    mount.appendChild(prog);
 
     SECTIONS.forEach((s) => {
       const panel = el("div.panel", { style:"margin-bottom:10px" });
@@ -22092,7 +22208,9 @@ window.G = window.G || {};
       text:"Course lengths, phase structure and academy-specific requirements are moving under the Army's PME transformation and vary by MOS and academy. Confirm every specific with your S-1, your career counsellor, and the academy you are scheduled to attend. Nothing here is a substitute for your ATRRS course announcement." }));
   }
 
-  G.slc = { render };
+  // KEY/SELF_CHECK exposed for Home's "My readiness" dashboard strip - see
+  // the matching comment on G.blc above for why.
+  G.slc = { render, KEY, SELF_CHECK };
 })();
 // END slc.js
 
@@ -22736,8 +22854,14 @@ window.G = window.G || {};
 
     const links = el("div.panel", { style:"margin-top:10px" });
     links.appendChild(el("div.eyebrow", { text:"Related" }));
+    // Enhancement backlog round 4, "Navigation, accessibility, and minor search/home polish" bucket:
+    // Records Readiness (records.js) already has an explicit "Open Channels" button pointing here,
+    // but this panel never linked back — a Soldier who arrived from Records had no way back except
+    // browser history. Added "Records Readiness" alongside the other 5 entries so the link is
+    // bidirectional, same pattern as every entry already in this list.
     [["Promotion points / PPW","#/board"],["MOS Career Center","#/career"],
-     ["BLC Prep","#/blc"],["ALC Prep","#/alc"],["Leadership Drills","#/drills"]].forEach(([l,h]) => {
+     ["BLC Prep","#/blc"],["ALC Prep","#/alc"],["Leadership Drills","#/drills"],
+     ["Records Readiness","#/records"]].forEach(([l,h]) => {
       const b = el("button.btn.sm.ghost", { type:"button", text:l, style:"margin:4px 6px 0 0" });
       b.addEventListener("click", () => { location.hash = h; });
       links.appendChild(b);
@@ -23132,9 +23256,22 @@ window.G = window.G || {};
         const routes = G.routes || [];
         if (!routes.length) return { ok:false, detail:"G.routes not exposed" };
         const broken = [];
+        // Enhancement backlog round 4, "Main-thread blocking loops with no
+        // yielding" bucket: this used to await Promise.resolve().then(() =>
+        // r.render(probe)) with no pause between iterations. That's only a
+        // microtask boundary - it resolves before the browser gets a chance
+        // to paint or handle input, so all 30-50+ real routes rendered back
+        // to back in one unbroken synchronous burst. On a mid-range Android
+        // tablet "Run automated checks" visibly froze the whole UI for the
+        // length of the pass. await new Promise(resolve => setTimeout(resolve,
+        // 0)) is a real macrotask boundary, so the browser can paint and
+        // handle taps between every single route render.
         for (const r of routes) {
           const probe = document.createElement("div");
-          try { await Promise.resolve().then(() => r.render(probe)); }
+          try {
+            await new Promise(resolve => setTimeout(resolve, 0));
+            await r.render(probe);
+          }
           catch (e) { broken.push(r.hash + ": " + (e && e.message ? e.message : String(e))); }
         }
         return { ok: !broken.length, detail: broken.length ? broken.length + " route(s) threw: " + broken.slice(0, 5).join(" | ") : routes.length + " routes rendered clean" };
@@ -26387,6 +26524,18 @@ window.G = window.G || {};
     calc.appendChild(payRow); calc.appendChild(pctRow);
     const out = el("div.fin-calc-out", { role: "status", "aria-live": "polite" });
     calc.appendChild(out);
+    // Enhancement backlog round 4, "Isolated feature-parity gaps across
+    // study and career tools" bucket: set once the compound-growth
+    // projector below exists. Before this, the two calculators sat side by
+    // side (see calcGrid, the shared .panel-grid-2 comment above) but never
+    // actually talked to each other - the projector's "Monthly
+    // contribution" input hardcoded value:"500" regardless of what a
+    // Soldier's own pay/contribution-% actually produced here. recalc()
+    // calls this (a no-op until the projector wires it up, a few dozen
+    // lines down) with the real computed total every time it re-runs, so
+    // the projector always reflects this calculator's own output instead
+    // of an unrelated made-up number.
+    let syncProjectorInput = null;
     function recalc() {
       const m = matchDollars(payIn.value, pctIn.value);
       util.clear(out);
@@ -26405,6 +26554,7 @@ window.G = window.G || {};
       } else {
         out.appendChild(el("div.fin-good", { text: "\u2713 You're capturing the full government match." }));
       }
+      if (syncProjectorInput) syncProjectorInput(m.allTotal);
     }
     let d1 = null;
     [payIn, pctIn].forEach((inp) => inp.addEventListener("input", () => { clearTimeout(d1); d1 = setTimeout(recalc, 60); }));
@@ -26453,6 +26603,20 @@ window.G = window.G || {};
     let d2 = null;
     [mIn, yIn, rIn].forEach((inp) => inp.addEventListener("input", () => { clearTimeout(d2); d2 = setTimeout(reproj, 60); }));
     reproj();
+    // Enhancement backlog round 4, "Isolated feature-parity gaps across
+    // study and career tools" bucket: wires this field to the match-
+    // capture calculator's real output (see syncProjectorInput's
+    // declaration and comment above, next to recalc()) instead of leaving
+    // it at the hardcoded value:"500" set above - re-running recalc() here
+    // immediately overwrites that default with the actual computed total
+    // for the calculator's current payIn/pctIn values, and every future
+    // edit to payIn/pctIn re-syncs it the same way through recalc()'s own
+    // "if (syncProjectorInput) syncProjectorInput(m.allTotal)" call.
+    syncProjectorInput = (total) => {
+      mIn.value = String(Math.max(0, Math.round(Number(total) || 0)));
+      reproj();
+    };
+    recalc();
     calcGrid.appendChild(proj);
     host.appendChild(calcGrid);
   }
@@ -26753,6 +26917,17 @@ window.G = window.G || {};
       // Domain description
       if (dom.desc || dom.d) {
         card.appendChild(el("p.res-domain-d", { text: dom.desc || dom.d }));
+      }
+
+      // Enhancement backlog round 4, "Navigation, accessibility, and minor search/home polish"
+      // bucket: the Physical domain card described AFT/CFT-relevant training load and recovery
+      // but never pointed at #/fitness, which has the actual AFT/CFT event standards and scoring
+      // tables this domain only gestures at. Same small btn.tiny.ghost cross-link pattern already
+      // used elsewhere in this file (e.g. the MOS Career Center link off #/board's cert hint).
+      if (dom.name === "Physical") {
+        const fitLink = el("button.btn.tiny.ghost", { type: "button", text: "AFT / CFT standards →", style: "margin-top:4px" });
+        fitLink.addEventListener("click", () => { location.hash = "#/fitness"; });
+        card.appendChild(fitLink);
       }
 
       // Domain skill accordions — hidden by default
@@ -27058,6 +27233,15 @@ window.G = window.G || {};
       }
       if (r.desc || r.d) {
         card.appendChild(el("p.res-resource-d", { text: r.desc || r.d }));
+      }
+      // Enhancement backlog round 4, "Navigation, accessibility, and minor search/home polish"
+      // bucket: the "H2F Performance Teams" resource (type "fitness") described unit-level PT
+      // support but never linked to #/fitness, which has the AFT/CFT reference this resource
+      // exists to support. Same small btn.tiny.ghost cross-link as the Physical domain card above.
+      if (r.type === "fitness") {
+        const fitLink = el("button.btn.tiny.ghost", { type: "button", text: "AFT / CFT standards →", style: "margin-top:6px" });
+        fitLink.addEventListener("click", () => { location.hash = "#/fitness"; });
+        card.appendChild(fitLink);
       }
       resGrid.appendChild(card);
     });
@@ -27421,6 +27605,54 @@ window.G = window.G || {};
     });
   }
 
+  // ── IDES/LDES ─────────────────────────────────────────────────────────
+  // Enhancement backlog round 4, "IDES/LDES content loaded but never
+  // rendered" bucket: data() has read s.ides_ldes off the seed since this
+  // module was written (see data()'s own return object above) - real,
+  // already-authored content (intro, the IDES vs LDES process descriptions,
+  // who each applies to, and a VSO/JAG callout) - but no tabBtn ever
+  // offered it and no render function ever displayed it. This renders
+  // exactly what data() already loads, nothing new written, using the same
+  // .panel/.eyebrow/.tx-intro/.tx-warn-panel patterns renderBdd and
+  // renderDd214 (just above) already use for this same module's other
+  // disability/VA-adjacent tabs.
+  function renderIdesLdes(host) {
+    const d = data();
+    const il = d.ides_ldes;
+    if (!il) { host.appendChild(el("div.empty", { text: "IDES/LDES content not loaded." })); return; }
+
+    const info = el("div.panel");
+    if (il.intro) info.appendChild(el("p.tx-intro", { text: il.intro }));
+    host.appendChild(info);
+
+    if (il.ides) {
+      const ides = el("div.panel");
+      ides.appendChild(el("div.eyebrow", { text: "IDES — Integrated Disability Evaluation System" }));
+      if (il.ides.applies) ides.appendChild(el("p", { text: "Applies to: " + il.ides.applies }));
+      if (il.ides.process) ides.appendChild(el("p", { style: "margin-top:6px", text: il.ides.process }));
+      if (il.ides.benefit) ides.appendChild(el("p.hint", { style: "margin-top:6px", text: il.ides.benefit }));
+      host.appendChild(ides);
+      // The seed's own VSO/JAG contact callout for this process — same
+      // .tx-warn-panel treatment renderBdd/renderDd214 already use for a
+      // must-not-miss line, not a new visual pattern.
+      if (il.ides.key) {
+        host.appendChild(el("div.panel.tx-warn-panel", {}, [
+          el("span.tx-warn-ico", { "aria-hidden": "true", gi: "alert-triangle", giSize: 15 }),
+          el("span", { text: il.ides.key }),
+        ]));
+      }
+    }
+
+    if (il.ldes) {
+      const ldes = el("div.panel");
+      ldes.appendChild(el("div.eyebrow", { text: "LDES — Legacy Disability Evaluation System" }));
+      if (il.ldes.applies) ldes.appendChild(el("p", { text: "Applies to: " + il.ldes.applies }));
+      if (il.ldes.drawback) ldes.appendChild(el("p", { style: "margin-top:6px", text: il.ldes.drawback }));
+      if (il.ldes.note) ldes.appendChild(el("p.hint", { style: "margin-top:6px", text: il.ldes.note }));
+      host.appendChild(ldes);
+    }
+  }
+
   // ── FEDERAL HIRING ────────────────────────────────────────────────────────
   function renderFederalHiring(host) {
     const d = data();
@@ -27646,6 +27878,10 @@ window.G = window.G || {};
     tabs.appendChild(util.tabBtn("DD-214", activeTab === "dd214", () => render(mount, "dd214")));
     tabs.appendChild(util.tabBtn("Career", activeTab === "career", () => render(mount, "career")));
     tabs.appendChild(util.tabBtn("VA Claim", activeTab === "vaclaim", () => render(mount, "vaclaim")));
+    // Enhancement backlog round 4, "IDES/LDES content loaded but never
+    // rendered" bucket: the one tab that was missing entirely - see
+    // renderIdesLdes()'s own header comment above for what it shows.
+    tabs.appendChild(util.tabBtn("IDES/LDES", activeTab === "ideslides", () => render(mount, "ideslides")));
     tabs.appendChild(util.tabBtn("Job Search", activeTab === "jobsearch", () => render(mount, "jobsearch")));
     tabs.appendChild(util.tabBtn("Federal Hiring", activeTab === "federal", () => render(mount, "federal")));
     mount.appendChild(tabs);
@@ -27664,6 +27900,7 @@ window.G = window.G || {};
     else if (activeTab === "bdd") renderBdd(body);
     else if (activeTab === "dd214") renderDd214(body);
     else if (activeTab === "vaclaim") renderVaClaim(body);
+    else if (activeTab === "ideslides") renderIdesLdes(body);
     else if (activeTab === "jobsearch") renderJobSearch(body);
     else if (activeTab === "federal") renderFederalHiring(body);
     else renderCareer(body);
@@ -27946,6 +28183,22 @@ window.G = window.G || {};
       if (ns.note) nsPanel.appendChild(el("p", { style: "margin-top:8px", text: ns.note }));
       mount.appendChild(nsPanel);
     }
+
+    // Enhancement backlog round 4, "Navigation, accessibility, and minor search/home polish" bucket:
+    // every other module in this cluster (leader.js's Squad Roster, assignments.js's Marketplace
+    // prep, currency.js's record-freshness checks) ends its render with a cross-link panel back to
+    // the routes a Soldier would naturally go next - career.js's MOS Career Center was the dead end.
+    // Same "Related" panel shape assignments.js already uses: one .panel with an eyebrow and a row
+    // of .btn.sm.ghost buttons, each just flipping location.hash.
+    const links = el("div.panel", { style: "margin-top:10px" });
+    links.appendChild(el("div.eyebrow", { text: "Related" }));
+    [["Assignments & Marketplace", "#/assignments"], ["Time-in-grade / Currency", "#/currency"],
+     ["IDP / Development", "#/develop"]].forEach(function (pair) {
+      const b = el("button.btn.sm.ghost", { type: "button", text: pair[0], style: "margin:4px 6px 0 0" });
+      b.addEventListener("click", function () { location.hash = pair[1]; });
+      links.appendChild(b);
+    });
+    mount.appendChild(links);
   }
 
   G.career = { render };
@@ -28525,6 +28778,70 @@ window.G = window.G || {};
         }
       } catch (e) {}
 
+      // 4) PME / Records readiness checklists (Enhancement backlog round 4,
+      // "PME/Records self-check completion never feeds the app's own
+      // readiness dashboard" bucket). BLC, ALC, SLC and Records each own a
+      // per-screen "Readiness self-check" progress bar, each persisted
+      // under its own kv key - but before this, none of the four was ever
+      // read by anything outside that module's own render(). A Soldier
+      // could check off all 12 BLC self-check items and Home would never
+      // reflect it anywhere. Deliberately kept as its own separate tile,
+      // NOT folded into p.competencyReadiness / "Promotable Readiness"
+      // above - that score is purely SRS-grade-derived, and silently
+      // blending a checklist-completion signal into it would change what
+      // that existing number means without anyone asking for that. G.blc/
+      // G.alc/G.slc now expose KEY+SELF_CHECK, and G.records exposes
+      // KEY+TOTAL+VALID_IDS (previously all private to their own closures)
+      // specifically so this tile can read each module's real progress
+      // instead of re-deriving its own copy of four different id schemes.
+      try {
+        const checklists = [
+          { mod: G.blc },
+          { mod: G.alc },
+          { mod: G.slc },
+          { mod: G.records },
+        ];
+        let checklistsComplete = 0;
+        let anyChecklistProgress = false;
+        for (const c of checklists) {
+          if (!c.mod || !c.mod.KEY) continue;
+          let csaved = {};
+          try {
+            const r = await G.db.get("kv", c.mod.KEY);
+            const v = r && r.v;
+            csaved = (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
+          } catch (e) {}
+          let done = 0, total = 0;
+          if (c.mod.SELF_CHECK) {
+            // BLC/ALC/SLC: positional "c"+i keys, array length is the total -
+            // same shape util.renderSelfCheckWidget itself persists under.
+            total = c.mod.SELF_CHECK.length;
+            done = c.mod.SELF_CHECK.filter((_, i) => csaved["c" + i]).length;
+          } else if (c.mod.VALID_IDS) {
+            // Records: "rec-"+groupIdx+"-"+itemIdx keys; only count a saved
+            // key that VALID_IDS still recognises, same guard records.js's
+            // own refresh() uses, so a stale key from a prior GROUPS shape
+            // can't inflate this past TOTAL.
+            total = c.mod.TOTAL || 0;
+            Object.keys(csaved).forEach((k) => { if (c.mod.VALID_IDS[k] && csaved[k]) done++; });
+            done = Math.min(done, total);
+          }
+          if (done > 0) anyChecklistProgress = true;
+          if (total > 0 && done === total) checklistsComplete++;
+        }
+        // Same hasAnyProgress reasoning as the IDP-goals tile above: only
+        // counts as "progress" once at least one real box is checked
+        // somewhere, so this doesn't set hasAnyProgress true (and pull the
+        // whole strip up) for a profile that has literally never opened
+        // any of these four checklists.
+        if (anyChecklistProgress) hasAnyProgress = true;
+        tiles.push({
+          label: "PME & Records checklists", value: checklistsComplete + "/4",
+          sub: checklistsComplete === 4 ? "All complete" : anyChecklistProgress ? "Keep going" : "Not started",
+          hash: "#/records", tone: checklistsComplete === 4 ? "green" : "amber",
+        });
+      } catch (e) {}
+
       // hasAnyProgress gate added (intuitivism pass): tiles.length>=2 alone
       // wasn't enough to keep this hidden for a genuinely fresh profile -
       // the IDP-goals and training-completion tiles both push
@@ -28534,7 +28851,17 @@ window.G = window.G || {};
       // down carry the one "tracking starts once you begin" message for
       // this whole zero-progress state, so this strip is silently absent
       // here rather than repeating it.
-      if (tiles.length >= 2 && hasAnyProgress) {
+      //
+      // Enhancement backlog round 4, "Navigation, accessibility, and minor search/home polish"
+      // bucket: >=2 was doing double duty as BOTH "not a fresh profile" (hasAnyProgress already
+      // covers that on its own, per the comment above) AND an unstated "need multiple tiles to
+      // be worth a strip" rule - the second one has a real false-negative: a Soldier who has set
+      // real IDP goals (hasAnyProgress true) but has no promoPoints on their profile and no
+      // "training" mode scenarios yet gets exactly ONE pushed tile (IDP goals; the promo-points
+      // and training tiles above only push at all when their own data exists), and the whole
+      // strip - including that one genuinely populated tile - was withheld. hasAnyProgress alone
+      // already keeps an all-placeholder fresh profile hidden, so >=1 is the correct floor.
+      if (tiles.length >= 1 && hasAnyProgress) {
         const dash = el("div.readiness-dash", { style: "margin-top:12px", "aria-label": "My readiness at a glance" });
         dash.appendChild(el("div.eyebrow", { text: "My readiness" }));
         const grid = el("div.readiness-grid");
@@ -28953,8 +29280,25 @@ window.G = window.G || {};
     // neither, so every keystroke rebuilt up to all 182 rich, multi-element
     // scenario cards synchronously on the main thread.
     const TRAIN_CAP = 60;
+    // Enhancement backlog round 4, "Isolated feature-parity gaps across
+    // study and career tools" bucket: buildGrid() capped the catalogue at
+    // TRAIN_CAP with no way to see the rest - Doctrine and the Definitions/
+    // Glossary tab both solved this exact "N of a bigger list" shape with a
+    // "Load N more" button (see Definitions' own visibleCap/lastFilterKey
+    // pair a few thousand lines up in this file); Train never got the
+    // equivalent, so a catalogue search matching more than 60 scenarios
+    // silently hid everything past the 60th with no indication more exist
+    // beyond the "(showing first 60)" count text. trainVisibleCap mirrors
+    // that same pattern: starts at TRAIN_CAP, resets back to TRAIN_CAP
+    // whenever the active search/tab/chip combination changes (so switching
+    // filters doesn't leave a stale, oversized cap from a previous, broader
+    // search), and grows by TRAIN_CAP each time "Load more" is clicked.
+    let trainVisibleCap = TRAIN_CAP;
+    let lastTrainFilterKey = null;
     function buildGrid() {
       const q = (searchInput.value || "").trim().toLowerCase();
+      const trainFilterKey = q + "::" + activeFilter + "::" + activeComp + "::" + activeDiff;
+      if (trainFilterKey !== lastTrainFilterKey) { trainVisibleCap = TRAIN_CAP; lastTrainFilterKey = trainFilterKey; }
       const modeFiltered = activeFilter === "training"
         ? allScenarios.filter((s) => s.defaultMode === "training")
         : activeFilter === "scenario"
@@ -29000,14 +29344,14 @@ window.G = window.G || {};
       // Result count line
       if (q || activeComp || activeDiff) {
         gridWrap.appendChild(el("div.search-header", { role: "status", "aria-live": "polite" }, [
-          el("span.search-count", { text: filtered.length + " scenario" + (filtered.length===1?"":"s") + (filtered.length > TRAIN_CAP ? " (showing first " + TRAIN_CAP + ")" : "") }),
+          el("span.search-count", { text: filtered.length + " scenario" + (filtered.length===1?"":"s") + (filtered.length > trainVisibleCap ? " (showing first " + trainVisibleCap + ")" : "") }),
           (q ? el("span.search-breakdown", { text: " · " + q }) : null),
           (activeComp ? el("span.search-breakdown", { text: " · " + activeComp }) : null),
           (activeDiff ? el("span.search-breakdown", { text: " · " + activeDiff }) : null),
         ].filter(Boolean)));
       }
       const grid = el("div.grid");
-      filtered.slice(0, TRAIN_CAP).forEach((sc) => {
+      filtered.slice(0, trainVisibleCap).forEach((sc) => {
         const isTraining = sc.defaultMode === "training";
         const primaryComp = (sc.competency || [])[0] || "";
         const compColor = COMP_COLORS[primaryComp] || "var(--text-dim)";
@@ -29090,6 +29434,15 @@ window.G = window.G || {};
         grid.appendChild(card);
       });
       gridWrap.appendChild(grid);
+      if (filtered.length > trainVisibleCap) {
+        const moreBtn = el("button.btn.ghost.sm", { type: "button", style: "margin-top:10px", text: "Load " + Math.min(TRAIN_CAP, filtered.length - trainVisibleCap) + " more" });
+        moreBtn.addEventListener("click", () => {
+          trainVisibleCap += TRAIN_CAP;
+          buildGrid();
+          try { if (G.util.announce) G.util.announce("Showing " + Math.min(filtered.length, trainVisibleCap) + " of " + filtered.length + " scenarios."); } catch (e) {}
+        });
+        gridWrap.appendChild(moreBtn);
+      }
     }
 
     let trainSearchDeb;
@@ -29142,6 +29495,23 @@ window.G = window.G || {};
     mount.appendChild(el("div.section-title", {}, [el("h2", { text: "Doctrine" }), el("div.rule")]));
     const meta = store.doctrineMeta();
     if (meta.note) mount.appendChild(el("div.card", {}, [el("p.hint", { text: meta.note })]));
+    // Enhancement backlog round 4, "Currency/Freshness tracker missing
+    // entries it already has rules for" bucket: meta carries generatedAsOf
+    // ("2026-07") and version ("0.1.0") on the live seed - the exact
+    // edition/vintage stamp the Doctrine Freshness card on #/currency
+    // reports an age against (currency.js's own "Doctrine corpus" domain,
+    // asOf: "2026-07") - but this view itself only ever displayed meta.note
+    // and never its own copy of that stamp. A reader who lands here
+    // directly (bookmark, search, nav) without ever visiting #/currency had
+    // no in-page way to see which edition/date this corpus was built on.
+    // Shown as its own hint line, matching meta.note's small-text styling
+    // just above.
+    if (meta.generatedAsOf || meta.version) {
+      const stampParts = [];
+      if (meta.generatedAsOf) stampParts.push("Generated as of " + meta.generatedAsOf);
+      if (meta.version) stampParts.push("data v" + meta.version);
+      mount.appendChild(el("p.hint", { text: stampParts.join(" · ") }));
+    }
 
     // ── Topic filter chips ─────────────────────────────────────────────────
     const allEntries = store.doctrine("");
@@ -29427,11 +29797,47 @@ window.G = window.G || {};
       { h: "Changes to this policy", p: ["If GUIDON's data handling ever changes, this policy will be updated first, and the “Last updated” date above will change accordingly. As of that date, GUIDON collects nothing and transmits nothing."] },
       { h: "Contact", p: ["Questions, requests, or concerns about this policy or GUIDON's data handling: ctsolomon95@gmail.com"] },
     ];
+
+    // Enhancement backlog round 4, "Navigation, accessibility, and minor search/home polish"
+    // bucket: this page renders 12 full-text panels as one long unbroken scroll with no way to
+    // jump to a specific one, unlike Doctrine/Search/Settings which all solve this same "many
+    // sections, need to reach one" problem elsewhere in the app. A plain <a href="#anchor"> TOC
+    // won't work here though: this SPA's router treats the ENTIRE location.hash as the current
+    // route (see route()'s own comment on the #main/#cardWrap skip-link gotcha a few thousand
+    // lines up) — setting it to a fragment like "#contact" would fire hashchange and misroute to
+    // the fallback route instead of scrolling. So this reuses that exact skip-link fix instead:
+    // real <button>s that scrollIntoView + focus() the target panel, never touching location.hash.
+    // Each panel gets tabIndex="-1" so it's a valid, non-tab-order focus target for the button to
+    // land on — the same accessibility payoff a real anchor jump would give a keyboard user.
+    const jumpPanel = el("div.panel", { style: "margin-bottom:12px" });
+    jumpPanel.appendChild(el("div.eyebrow", { text: "Jump to a section" }));
+    const jumpRow = el("div", { style: "margin-top:6px" });
+    jumpPanel.appendChild(jumpRow);
+    mount.appendChild(jumpPanel);
+
     SECTIONS.forEach(function (s) {
-      const panel = el("div.panel", { style: "margin-bottom:12px" });
+      const panel = el("div.panel", { style: "margin-bottom:12px", tabIndex: "-1" });
       panel.appendChild(el("h3", { text: s.h, style: "margin-top:0" }));
       s.p.forEach(function (para) { panel.appendChild(el("p.hint", { text: para, style: "margin-top:8px" })); });
+      // Enhancement backlog round 4, "Navigation, accessibility, and minor search/home polish"
+      // bucket: this section describes the on-device stores (IndexedDB/localStorage) in prose but
+      // never linked to #/storage, the live dashboard that shows actual usage and per-store row
+      // counts for those same stores. Settings' own About panel already links to #/storage for
+      // this exact purpose ("View storage details") — same wording/icon, reused here.
+      if (s.h === "Data GUIDON stores, and where") {
+        const storageLink = el("button.btn.sm.ghost", { type: "button", gi: "database", giSize: 14, text: "View storage details", style: "margin-top:6px" });
+        storageLink.addEventListener("click", () => { location.hash = "#/storage"; });
+        panel.appendChild(storageLink);
+      }
       mount.appendChild(panel);
+
+      const jumpBtn = el("button.btn.tiny.ghost", { type: "button", text: s.h, style: "margin:3px 5px 3px 0" });
+      jumpBtn.addEventListener("click", () => {
+        const reduceMotion = util.prefersReducedMotion();
+        panel.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+        panel.focus();
+      });
+      jumpRow.appendChild(jumpBtn);
     });
   };
 
@@ -30348,6 +30754,36 @@ window.G = window.G || {};
     });
     inp.focus();
 
+    // Enhancement backlog round 4, "Navigation, accessibility, and minor search/home polish"
+    // bucket: the empty-query branch of runSearch below was headed by a comment claiming to
+    // "Show recent searches hint" but only ever rendered a static "type more" placeholder - no
+    // recent-searches feature existed at all. Added a real, minimal one rather than just fixing
+    // the comment, since the storage half is a few lines and the payoff (re-running yesterday's
+    // query in one tap) is worth it. RECENT_KEY persists distinct queries in localStorage, capped
+    // at 5, most-recent-first. Recorded on blur rather than on every keystroke: this box runs a
+    // live per-keystroke debounced search (see the "input" listener above), so recording on
+    // "input" would flood the list with every partial fragment typed ("a", "ar", "arm"…) instead
+    // of the finished query. Blur fires both on a normal tab-away/click-away AND when navigating
+    // to a different route (util.clear(mount) on the next render detaches this input, which
+    // blurs it first), so a query the Soldier never explicitly "submitted" (there is no submit
+    // button - this is a live search box) still gets captured on the way out.
+    const RECENT_KEY = "guidon-search-recent";
+    function getRecentSearches() {
+      try {
+        const v = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
+        return Array.isArray(v) ? v.filter((s) => typeof s === "string" && s) : [];
+      } catch (e) { return []; }
+    }
+    function addRecentSearch(term) {
+      if (!term || term.length < 2) return;
+      try {
+        const list = getRecentSearches().filter((s) => s.toLowerCase() !== term.toLowerCase());
+        list.unshift(term);
+        localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 5)));
+      } catch (e) {}
+    }
+    inp.addEventListener("blur", () => addRecentSearch(inp.value.trim()));
+
     function highlight(text, q) {
       const tl = text.toLowerCase(), ql = q.toLowerCase();
       const ti = tl.indexOf(ql);
@@ -30424,11 +30860,29 @@ window.G = window.G || {};
       // data-search-idx, so a per-type index would collide across sections.
       let hitIdx = 0;
       if (!q || q.length < 2) {
-        // Show recent searches hint
+        // Length hint (1 char typed vs. box genuinely empty) — see the recent-searches
+        // block right below for the actual "Show recent searches" feature; this line used
+        // to carry that comment while only ever rendering this static placeholder.
         resultsDiv.appendChild(el("div.search-empty", {
           role: "status", "aria-live": "polite",
           text: q.length === 1 ? "Keep typing…" : "Type at least 2 characters to search."
         }));
+        // Real recent-searches list (see RECENT_KEY/getRecentSearches above) — only when the
+        // box is genuinely empty, not mid-way through a 1-character keystroke, so this never
+        // competes with the "Keep typing…" hint above it.
+        if (!q) {
+          const recent = getRecentSearches();
+          if (recent.length) {
+            const recentPanel = el("div", { style: "margin-top:10px" });
+            recentPanel.appendChild(el("p.hint", { text: "Recent searches:" }));
+            recent.forEach((term) => {
+              const chip = el("button.chip.search-chip", { type: "button", text: term, style: "margin:4px 6px 0 0" });
+              chip.addEventListener("click", () => { inp.value = term; runSearch(term); });
+              recentPanel.appendChild(chip);
+            });
+            resultsDiv.appendChild(recentPanel);
+          }
+        }
         return;
       }
       const ql = q.toLowerCase();
@@ -30456,8 +30910,16 @@ window.G = window.G || {};
         (bqs.questions || bqs || []).forEach((q2) => {
           const hay = ((q2.q||"")+" "+(q2.a||"")+" "+(q2.category||"")).toLowerCase();
           if (hay.includes(ql)) {
+            // Enhancement backlog round 4, "Navigation, accessibility, and minor search/home
+            // polish" bucket: the match check two lines up already guards a missing/malformed
+            // q2.q with (q2.q||"") before calling .toLowerCase(), but this title-truncation line
+            // read q2.q.length/.slice directly with no such guard. hay is built from all three
+            // fields (q/a/category), so a board-question record with a null/undefined `q` but a
+            // matching `a` or `category` still passes the hay.includes(ql) check above and then
+            // throws here on q2.q.length. Same (q2.q||"") fallback as the match check uses.
+            const qText = q2.q || "";
             allHits.board.push({ type:"board", id:q2.id,
-              title: q2.q.length > 80 ? q2.q.slice(0,80)+"…" : q2.q,
+              title: qText.length > 80 ? qText.slice(0,80)+"…" : qText,
               sub:"Board: "+q2.category, meta:q2.category, route:"#/board" });
           }
         });
@@ -30956,8 +31418,22 @@ window.G = window.G || {};
 
     app.appendChild(el("a.skip-link", { href: "#main", text: "Skip to content" }));
     app.appendChild(topbar);
-    app.appendChild(navEl);
+    // Enhancement backlog round 4, "Keyboard Navigation & Semantic Roles"
+    // bucket: main used to be appended AFTER navEl here, so on mobile widths
+    // (<800px, #app's own "top"/"main"/"nav" grid-template-areas above -
+    // visually top bar, then content, then the bottom tab bar) a sighted
+    // keyboard-only user tabbed through the ENTIRE bottom nav bar before
+    // ever reaching the route content they landed on, on every single
+    // navigation. #app is a real CSS grid with each of .topbar/.main/.nav
+    // assigned its area by NAME (grid-area: top/main/nav, all three set
+    // unconditionally, not just inside a media query - see those rules
+    // above), so grid-template-areas positions every child by area name
+    // regardless of DOM/source order - reordering the DOM here to
+    // topbar -> main -> navEl fixes tab order to match reading order with
+    // zero visual change at any breakpoint, mobile or the >=800px side-rail
+    // layout alike.
     app.appendChild(main);
+    app.appendChild(navEl);
     app.appendChild(el("div#toast", { role: "status", "aria-live": "polite" }));
   }
 

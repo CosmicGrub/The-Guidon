@@ -79,6 +79,20 @@ window.G = window.G || {};
     return new Date(n.getFullYear(), n.getMonth(), n.getDate());
   }
   function daysBetween(a, b) { return Math.round((b.getTime() - a.getTime()) / DAY); }
+  // Enhancement backlog round 4, "'Arrived at current duty station' date is
+  // collected but never used" bucket: whole completed calendar months
+  // between two LOCAL midnight Dates (a before b). Calendar-month, not
+  // days/30 - matches how "time on station" is actually talked about
+  // (whole months), and stays exact regardless of how many 28/30/31-day
+  // months fall in the range. Decrements when b's day-of-month hasn't yet
+  // reached a's, same logic every "how many months since X" calculator
+  // uses (e.g. someone who arrived on the 20th isn't credited a new whole
+  // month until the 20th comes around again).
+  function monthsBetween(a, b) {
+    let months = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+    if (b.getDate() < a.getDate()) months--;
+    return Math.max(0, months);
+  }
   function fmt(d) {
     return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
   }
@@ -286,10 +300,39 @@ window.G = window.G || {};
         c.appendChild(el("div.k", { text: t.label + (t.months ? "  (valid " + t.months + " months)" : "") }));
         const inp = el("input.ob-input", { type: "date", value: saved[t.key] || "",
           "aria-label": t.label, style: "width:100%;margin-top:4px" });
+        // Enhancement backlog round 4, "'Arrived at current duty station'
+        // date is collected but never used" bucket: "tos" has months:0 and
+        // no `future` flag, so buildUpcoming()'s own "reference-only, no
+        // due date" guard (its comment a few lines up) correctly leaves it
+        // out of "What is next" - an open-ended duration like time-on-
+        // station has no due date to compute. But that guard was the ONLY
+        // place this value was ever read anywhere in the app: once
+        // excluded there, the date just sat in storage while this card
+        // kept telling the Soldier it "matters." Rather than inventing a
+        // threshold or a Marketplace effect this app has no real data for,
+        // this shows the one honest, already-computable fact the date
+        // actually supports - whole months on station, from simple
+        // calendar-month arithmetic against today - right where the date
+        // was entered.
+        let tosStat = null;
+        if (t.key === "tos") {
+          tosStat = el("p.hint", { style: "margin-top:6px;font-weight:600" });
+          c.appendChild(inp);
+          c.appendChild(tosStat);
+        } else {
+          c.appendChild(inp);
+        }
+        function refreshTosStat() {
+          if (!tosStat) return;
+          const arrived = parseDate(saved.tos);
+          if (!arrived) { tosStat.textContent = ""; return; }
+          const n = monthsBetween(arrived, today);
+          tosStat.textContent = "Time on station: " + n + " month" + (n === 1 ? "" : "s") + ".";
+        }
+        refreshTosStat();
         inp.addEventListener("change", function () {
-          saved[t.key] = inp.value; persist(); buildUpcoming();
+          saved[t.key] = inp.value; persist(); buildUpcoming(); refreshTosStat();
         });
-        c.appendChild(inp);
         c.appendChild(el("p.hint", { style: "margin-top:6px", text: t.consequence }));
         cardsGrid.appendChild(c);
       });
