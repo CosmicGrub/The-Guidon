@@ -155,7 +155,7 @@ jobs:
         # repointed, so this workflow always runs the exact code that was
         # reviewed here. The version is kept as a trailing comment purely for
         # human readability; the SHA is what actually gets executed.
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Setup Node ${{ env.NODE_VERSION }}
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
@@ -299,7 +299,7 @@ jobs:
         # SHA-pin-over-mutable-tag fix as the lint-build-verify job's
         # Checkout step above, resolved via `gh api
         # repos/actions/checkout/commits/v4`.
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install cargo-audit
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
@@ -370,7 +370,7 @@ jobs:
         # SHA-pin-over-mutable-tag fix as the lint-build-verify job's
         # Checkout step above, resolved via `gh api
         # repos/actions/checkout/commits/v4`.
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       # Roadmap audit round 5, "Dependency & CI/Build Hygiene" bucket, own
       # follow-up fix: this job's first CI run failed - `cargo check` invokes
@@ -443,7 +443,7 @@ jobs:
         # SHA-pin-over-mutable-tag fix as the lint-build-verify job's
         # Checkout step above, resolved via `gh api
         # repos/actions/checkout/commits/v4`.
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       # NON-BLOCKING for the same reason npm audit and cargo audit above
       # are: first-pass discovery for a human to triage, not a gate yet -
@@ -551,7 +551,7 @@ jobs:
         # SHA-pin-over-mutable-tag fix as the lint-build-verify job's
         # Checkout step above, resolved via `gh api
         # repos/actions/checkout/commits/v4`.
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Setup Node ${{ env.NODE_VERSION }}
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
