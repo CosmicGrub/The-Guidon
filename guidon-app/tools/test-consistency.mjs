@@ -137,7 +137,13 @@ seed.board === 984 ? ok("984 board cards intact") : bad(`board cards: ${seed.boa
 // (Senior Leader Course) and "DA 7906" (the IDP form itself), both real,
 // genuinely missing entries the terminology audit found - not padding.
 seed.acronyms === 3623 ? ok("3,623 acronym terms intact") : bad(`acronyms: ${seed.acronyms}, expected 3623`);
-seed.doctrine === 336 ? ok("336 doctrine entries intact") : bad(`doctrine: ${seed.doctrine}, expected 336`);
+// 338 as of the "Direct/Organizational/Strategic leadership framework"
+// content pass: added doc-levels-4 (Direct Leadership) and doc-levels-5
+// (Organizational Leadership) under the "Levels of Leadership" topic,
+// which previously only had a dedicated card for the Strategic level
+// (doc-levels-2) - real board MOIs assign a 5-7 page essay on exactly
+// this direct/organizational/strategic framework per ADP 6-22.
+seed.doctrine === 338 ? ok("338 doctrine entries intact") : bad(`doctrine: ${seed.doctrine}, expected 338`);
 // 164 as of v1.4.20: task #104 added a real 46T (Visual Information
 // Equipment Operator-Maintainer) entry, previously mentioned only in a
 // note/array with no MOS-list entry of its own.
