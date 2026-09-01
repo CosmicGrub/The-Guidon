@@ -8,11 +8,11 @@ name: CI
 # WHY THIS ISN'T A SINGLE "npm test" STEP (read this before touching batching)
 # ---------------------------------------------------------------------------
 # guidon-app/package.json's "test" script ends in:
-#   node tools/run-parallel.mjs <121 test:* script names>
+#   node tools/run-parallel.mjs <137 test:* script names>
 # tools/run-parallel.mjs launches EVERY name it's given as a fully concurrent
 # child process (`Promise.all(names.map(run))`, no concurrency cap), and most
 # of those test:* scripts each spin up their own Playwright/Chromium
-# instance. Firing all 121 at once means 121 concurrent Chromium
+# instance. Firing all 137 at once means 137 concurrent Chromium
 # instances - that exhausts RAM/disk even on a well-resourced workstation,
 # and a standard GitHub-hosted `ubuntu-latest` runner (2 vCPU, ~7 GB RAM) has
 # far less headroom than that. A naive `npm test` call here would very
@@ -23,25 +23,29 @@ name: CI
 #
 # BATCHING STRATEGY CHOSEN: a GitHub Actions job matrix, not sequential
 # batches in one job.
-#   - The list of 121 test:* names (the exact set `npm test` itself invokes,
-#     in its own order - see note below on test:contrast) is split into 16
-#     chunks of at most 8 names each (15 chunks of 8, 1 final chunk of 1 -
-#     chunk 16 holds only the newest suite added, test:forms-pdf-preview;
-#     every chunk before it was already at the documented 8-per-chunk
-#     ceiling), mirroring this session's own <=8-concurrent-Chromium local
-#     discipline exactly.
+#   - The list of 137 test:* names (the exact set `npm test` itself invokes,
+#     in its own order - see note below on test:contrast) is split into 18
+#     chunks of at most 8 names each (17 chunks of 8, 1 final chunk of 1 -
+#     chunk 18 holds only the newest suite wired in, test:moi-import; every
+#     chunk before it is at the documented 8-per-chunk ceiling), mirroring
+#     this session's own <=8-concurrent-Chromium local discipline exactly.
+#     (Quick-wins CI-hygiene pass, 2026-09-01: this list, and every count in
+#     this comment block, had drifted out of sync with package.json's own
+#     "test" script - see the chunk-17/18 comments below for the specific
+#     8 test:* names that existed in package.json but were never wired into
+#     this matrix at all, so CI silently never ran them.)
 #   - Each chunk becomes its own `strategy.matrix` job, each calling
 #     `node tools/run-parallel.mjs <that chunk's 8ish names>` - so the peak
 #     concurrent Chromium count per job is identical to what's already been
 #     proven safe locally.
 #   - Matrix (parallel, isolated jobs) was chosen over "one job, sequential
 #     batches" because each matrix entry gets its OWN runner VM with its own
-#     dedicated CPU/RAM/disk budget. A single job looping over 16 sequential
+#     dedicated CPU/RAM/disk budget. A single job looping over 18 sequential
 #     batches would still cap concurrency at <=8 per batch (also safe from
 #     the OOM risk), but every batch would compete for the same one runner's
 #     resources for the entire run, any disk/process residue from an earlch
 #     batch lingers for the rest of the job, and total wall-clock time is the
-#     SUM of all 16 batches run one after another. The matrix instead runs
+#     SUM of all 18 batches run one after another. The matrix instead runs
 #     chunks concurrently across GitHub's own runner fleet (bounded by the
 #     account's normal job-concurrency limit, not by us), so wall-clock stays
 #     close to a single chunk's time while keeping the same safe per-chunk
@@ -50,11 +54,11 @@ name: CI
 #     fully parallel, and buys real host-level isolation instead of shared
 #     one-VM resource contention across the whole suite.
 #   - fail-fast is disabled so one failing chunk doesn't hide results from
-#     the other 15 - every chunk's outcome is visible.
+#     the other 17 - every chunk's outcome is visible.
 #
 # lint:patterns, build, and verify run exactly once, in their own job, ahead
 # of the test matrix - they're fast (a few seconds to under a minute locally)
-# and there is no reason to repeat them 16 times.
+# and there is no reason to repeat them 18 times.
 #
 # EXCLUDED ON PURPOSE: test:android, test:android:back, test:android:links
 # (and any android:* build steps). These require a real device/emulator +
@@ -88,9 +92,9 @@ name: CI
 # test-print-native.mjs load dist/guidon-standalone.html (the latter two via
 # a file:// URL), test-csp.mjs reads web/index.html straight off disk. There
 # is no test:* suite that runs against src/ instead of built output. So the
-# 16 test-matrix jobs below cannot just install deps and go - they need the
+# 18 test-matrix jobs below cannot just install deps and go - they need the
 # SAME web/+dist/ the lint-build-verify job already built and verified.
-# Rather than re-running `npm run icons && npm run build` in all 16 jobs
+# Rather than re-running `npm run icons && npm run build` in all 18 jobs
 # (redundant work, and a small risk of testing against a *different* build
 # than the one verify actually checked), the setup job uploads web/+dist/ as
 # a single build artifact and every matrix job downloads it before running
@@ -206,7 +210,7 @@ jobs:
 
       # Cache the downloaded Chromium binary across runs (keyed on the
       # pinned Playwright version + lockfile) so repeated CI runs, and the
-      # other 16 jobs in this workflow, aren't all re-downloading it cold.
+      # other 18 jobs in this workflow, aren't all re-downloading it cold.
       # Purely a speed/bandwidth optimization - correctness never depends
       # on the cache hitting, `playwright install` below is a no-op if the
       # requested browser is already present and installs it fresh otherwise.
@@ -255,12 +259,12 @@ jobs:
         run: npm run verify
 
       # Shared with every test-matrix job below - see the top-of-file note
-      # on why the matrix downloads this instead of rebuilding 16 times.
+      # on why the matrix downloads this instead of rebuilding 18 times.
       # web/docs/ (the Reference Library's ~78MB of source PDFs, copied in
       # by build.mjs) is excluded: verified no tools/test-*.mjs suite reads
       # web/docs or docs-source at all, so shipping it through the artifact
       # would be ~78MB of dead weight uploaded once and downloaded by all
-      # 16 matrix jobs for nothing.
+      # 18 matrix jobs for nothing.
       - name: Upload build output (web/ + dist/)
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
         # SHA-pin-over-mutable-tag fix as the Checkout step above, resolved
@@ -460,7 +464,7 @@ jobs:
         continue-on-error: true
 
   # ---------------------------------------------------------------------
-  # The 121-suite test:* matrix, chunked to <=8 concurrent Playwright/
+  # The 137-suite test:* matrix, chunked to <=8 concurrent Playwright/
   # Chromium instances per job - see the top-of-file comment for the full
   # reasoning behind matrix-of-chunks over a single sequential job.
   # ---------------------------------------------------------------------
@@ -543,8 +547,30 @@ jobs:
           # Test-coverage-gaps bucket - the Practice-of-the-Day log/streak
           # feature, previously untested) starts a new chunk 17 rather than
           # overloading it.
-          - name: "17-resiliencedailyskills"
-            tests: "test:resilience-daily-skills"
+          #
+          # Quick-wins CI-hygiene pass (2026-09-01): diffed every test:*
+          # name in package.json's own "test" aggregate script against every
+          # `tests:` line in this matrix and found 8 real, working
+          # tools/test-*.mjs suites that `npm test` runs locally but that
+          # had never been wired into this workflow at all - so CI silently
+          # never ran them, no matter how long they'd existed. Filled this
+          # chunk to a full 8/8 with 7 of the 8 (test:moi-import, the
+          # newest of the 8, gets its own chunk 18 below instead of
+          # overloading this one past the documented ceiling):
+          # test:doctrine-tier-range-filter (util.expandTierTokens() tier-
+          # range filter), test:rankutils, test:flush-on-background, and
+          # test:gradebullet / test:essay-drill / test:write-sitrep /
+          # test:landnav-drill (four of this session's own newer drill
+          # suites) - each confirmed present as its own tools/test-*.mjs
+          # file, just never added to a chunk here.
+          - name: "17-resiliencedailyskills-doctrinetierrangefilter-rankutils-flushonbackground-gradebullet-essaydrill-writesitrep-landnavdrill"
+            tests: "test:resilience-daily-skills test:doctrine-tier-range-filter test:rankutils test:flush-on-background test:gradebullet test:essay-drill test:write-sitrep test:landnav-drill"
+          # Chunk 17 is now full at 8/8 (see its own comment above) -
+          # test:moi-import (the #/moi MOI Import Phase 1 citation-matching
+          # pipeline suite - also missing from this matrix until this same
+          # pass) starts chunk 18 rather than overloading it.
+          - name: "18-moiimport"
+            tests: "test:moi-import"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
@@ -567,7 +593,7 @@ jobs:
       # --omit=optional scoping as the lint-build-verify job's own npm ci
       # step above - this matrix job installs deps fresh in its own runner
       # too, so it would otherwise also run canvas's dead-weight native
-      # install script 16 times over (once per chunk) for nothing.
+      # install script 18 times over (once per chunk) for nothing.
       - name: Install dependencies (npm ci)
         run: npm ci --omit=optional
 
