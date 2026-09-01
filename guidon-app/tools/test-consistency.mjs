@@ -137,7 +137,12 @@ seed.board === 984 ? ok("984 board cards intact") : bad(`board cards: ${seed.boa
 // (Senior Leader Course) and "DA 7906" (the IDP form itself), both real,
 // genuinely missing entries the terminology audit found - not padding.
 seed.acronyms === 3623 ? ok("3,623 acronym terms intact") : bad(`acronyms: ${seed.acronyms}, expected 3623`);
-seed.doctrine === 336 ? ok("336 doctrine entries intact") : bad(`doctrine: ${seed.doctrine}, expected 336`);
+// 351 as of the citation-mismatch content-gap pass below: added 15 new
+// doctrine.entries cards (336 + 15 = 351) closing 5 topics that had a
+// correctly-cited board.questions self-check category but zero doctrine
+// cards citing the matching publication - see the dedicated block near the
+// end of this file for the per-topic detail.
+seed.doctrine === 351 ? ok("351 doctrine entries intact") : bad(`doctrine: ${seed.doctrine}, expected 351`);
 // 164 as of v1.4.20: task #104 added a real 46T (Visual Information
 // Equipment Operator-Maintainer) entry, previously mentioned only in a
 // note/array with no MOS-list entry of its own.
@@ -158,6 +163,40 @@ present.aftGeneral ? ok("the 300 general standard appears in the corpus") : bad(
 present.aftCombat ? ok("the 350 combat standard appears in the corpus") : bad("350 combat standard missing");
 present.rescission ? ok("AD 2026-13 rescission is documented") : bad("AD 2026-13 not referenced");
 present.fiveEvents ? ok("the five-event AFT is described") : bad("five-event AFT not described");
+
+/* Content-gap pass: 5 board.questions self-check categories were correctly
+ * cited to a real publication (Multidomain Operations (FM 3-0), FM 3-90,
+ * TC 7-22.7, ADP 1, Defense Support of Civil Authorities / ADP 3-28) while
+ * doctrine.entries had ZERO cards citing that same publication for the
+ * matching topic - a Soldier drilling the self-check would see FM 3-0 but
+ * the Doctrine library's "Operations" topic would only ever show ADP 5-0,
+ * for example. Fixed by adding 2-4 new doctrine.entries cards per topic.
+ * This asserts the fix structurally (real topic + real source.ref
+ * substring on real entries), not just a raw string search over the seed -
+ * the same "walk the parsed object" standard the rest of this file uses. */
+const citationFix = await page.evaluate(() => {
+  const entries = (window.GUIDON_SEED.doctrine && window.GUIDON_SEED.doctrine.entries) || [];
+  const citing = (topic, pubSubstring) => entries.filter((e) =>
+    e.topic === topic && e.source && typeof e.source.ref === "string" && e.source.ref.includes(pubSubstring));
+  return {
+    operationsFm30: citing("Operations", "FM 3-0").map((e) => e.id),
+    tacticalFm390: citing("Tactical Operations", "FM 3-90").map((e) => e.id),
+    theNcoTc7227: citing("The NCO", "TC 7-22.7").map((e) => e.id),
+    armyProfessionAdp1: citing("The Army Profession", "ADP 1").map((e) => e.id),
+    dscaAdp328: citing("Defense Support of Civil Authorities", "ADP 3-28").map((e) => e.id),
+  };
+});
+const CITATION_CHECKS = [
+  ["operationsFm30", 'topic "Operations" has a real doctrine.entries card citing FM 3-0 (self-check: "Multidomain Operations (FM 3-0)")'],
+  ["tacticalFm390", 'topic "Tactical Operations" has a real doctrine.entries card citing FM 3-90 (self-check: "FM 3-90")'],
+  ["theNcoTc7227", 'topic "The NCO" has a real doctrine.entries card citing TC 7-22.7 (self-check: "TC 7-22.7")'],
+  ["armyProfessionAdp1", 'topic "The Army Profession" has a real doctrine.entries card citing ADP 1 (self-check: "ADP 1")'],
+  ["dscaAdp328", 'topic "Defense Support of Civil Authorities" has a real doctrine.entries card citing ADP 3-28 (self-check: "Defense Support of Civil Authorities" / "ADP 3-28")'],
+];
+for (const [key, label] of CITATION_CHECKS) {
+  const ids = citationFix[key] || [];
+  ids.length > 0 ? ok(`${label} - ${ids.length} card(s): ${ids.join(", ")}`) : bad(`${label} - none found`);
+}
 
 await browser.close();
 server.close();
