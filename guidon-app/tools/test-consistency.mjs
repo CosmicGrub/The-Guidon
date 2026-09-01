@@ -137,12 +137,17 @@ seed.board === 984 ? ok("984 board cards intact") : bad(`board cards: ${seed.boa
 // (Senior Leader Course) and "DA 7906" (the IDP form itself), both real,
 // genuinely missing entries the terminology audit found - not padding.
 seed.acronyms === 3623 ? ok("3,623 acronym terms intact") : bad(`acronyms: ${seed.acronyms}, expected 3623`);
-// 351 as of the citation-mismatch content-gap pass below: added 15 new
-// doctrine.entries cards (336 + 15 = 351) closing 5 topics that had a
-// correctly-cited board.questions self-check category but zero doctrine
-// cards citing the matching publication - see the dedicated block near the
-// end of this file for the per-topic detail.
-seed.doctrine === 351 ? ok("351 doctrine entries intact") : bad(`doctrine: ${seed.doctrine}, expected 351`);
+// 353 as of round 6's two content-gap passes, both landing the same round:
+// +15 doctrine.entries cards closing 5 topics that had a correctly-cited
+// board.questions self-check category but zero doctrine cards citing the
+// matching publication (336 -> 351, see the dedicated block near the end
+// of this file for the per-topic detail), then +2 more for doc-levels-4
+// (Direct Leadership) and doc-levels-5 (Organizational Leadership) under
+// "Levels of Leadership", which previously only had a dedicated card for
+// the Strategic level (doc-levels-2) - real board MOIs assign a 5-7 page
+// essay on exactly this direct/organizational/strategic framework per
+// ADP 6-22 (351 -> 353).
+seed.doctrine === 353 ? ok("353 doctrine entries intact") : bad(`doctrine: ${seed.doctrine}, expected 353`);
 // 164 as of v1.4.20: task #104 added a real 46T (Visual Information
 // Equipment Operator-Maintainer) entry, previously mentioned only in a
 // note/array with no MOS-list entry of its own.
