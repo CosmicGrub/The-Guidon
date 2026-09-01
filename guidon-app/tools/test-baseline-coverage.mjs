@@ -175,6 +175,79 @@ await selfCheckTest("#/blc", "BLC Prep", "guidon:blc:checks:v1", 12);
 await selfCheckTest("#/alc", "ALC Prep", "guidon:alc:checks:v1", 12);
 await selfCheckTest("#/slc", "SLC & Senior NCO Path", "guidon:slc:checks:v1", 10);
 
+/* ------------------------------------------------------------------------
+ * Roadmap audit round 5, "Test Coverage Gaps" bucket: selfCheckTest() above
+ * only exercises the shared "Readiness self-check" widget that WRAPS each
+ * of these three modules - the module's own substantive content (the
+ * SECTIONS.forEach(...) disclosure accordion right below the self-check
+ * widget in every one of BLC/ALC/SLC's render() functions: a plain
+ * `<button aria-expanded>` head with an icon+title, and a sibling body div
+ * toggled via style.display "none"/"block", containing real reference
+ * prose + a bulleted list) had never had a section header clicked by any
+ * test, nor had any of the "Work it here" cross-link buttons at the bottom
+ * of each module (a `[[label,hash],...].forEach` building buttons whose
+ * onclick just sets `location.hash`). Confirmed identical accordion shape
+ * across all three modules by reading each module's own SECTIONS.forEach
+ * block in src/index.html. Scoped via `div.panel` (has: the section's own
+ * header button) rather than a bare `ul`/`button` selector, since the page
+ * also has other panels/buttons (the self-check widget, nav) - the accordion
+ * panel is the one and only `.panel` whose own header button's text
+ * contains this section's real title.
+ * ------------------------------------------------------------------------ */
+async function accordionTest(hash, sectionTitle, pointSnippet, workLinkLabel, workLinkHash) {
+  console.log(`\n-- ${hash}: SECTIONS accordion + "Work it here" cross-link --`);
+  await goto(hash);
+
+  const panel = page.locator("div.panel", { has: page.locator("button", { hasText: sectionTitle }) });
+  (await panel.count()) === 1 ? ok(`${hash} accordion section "${sectionTitle}" renders`) : bad(`${hash} accordion panel count for "${sectionTitle}": ${await panel.count()}`);
+  const head = panel.locator("button");
+  const body = panel.locator("ul");
+
+  (await head.getAttribute("aria-expanded")) === "false" ? ok("section starts collapsed (aria-expanded=\"false\")") : bad("initial aria-expanded: " + JSON.stringify(await head.getAttribute("aria-expanded")));
+  (await body.isVisible()) === false ? ok("section body is hidden before expanding") : bad("body is visible before expanding it");
+
+  await head.click();
+  await page.waitForTimeout(200);
+  (await head.getAttribute("aria-expanded")) === "true" ? ok("clicking the header flips aria-expanded to \"true\"") : bad("aria-expanded after click: " + JSON.stringify(await head.getAttribute("aria-expanded")));
+  (await body.isVisible()) === true ? ok("section body becomes visible after expanding") : bad("body did not become visible after expanding");
+  const bodyText = (await body.textContent()) || "";
+  bodyText.includes(pointSnippet) ? ok("expanded section shows its own real reference content") : bad(`expanded body missing expected text "${pointSnippet}": ` + bodyText.slice(0, 200));
+
+  await head.click();
+  await page.waitForTimeout(200);
+  (await head.getAttribute("aria-expanded")) === "false" ? ok("clicking the header again collapses it (aria-expanded back to \"false\")") : bad("aria-expanded after second click: " + JSON.stringify(await head.getAttribute("aria-expanded")));
+  (await body.isVisible()) === false ? ok("section body is hidden again after collapsing") : bad("body is still visible after collapsing it");
+
+  const workLink = page.locator("button", { hasText: workLinkLabel });
+  (await workLink.count()) === 1 ? ok(`"Work it here" button "${workLinkLabel}" is unique on the page`) : bad(`"Work it here" button count for "${workLinkLabel}": ${await workLink.count()}`);
+  await workLink.click();
+  await page.waitForTimeout(300);
+  const newHash = await page.evaluate(() => location.hash);
+  newHash === workLinkHash ? ok(`clicking "${workLinkLabel}" navigates to ${workLinkHash}`) : bad(`location.hash after clicking "${workLinkLabel}": ` + JSON.stringify(newHash));
+}
+
+// Real title/point-text/link strings confirmed by reading each module's own
+// SECTIONS/"Work it here" arrays in src/index.html (not guessed):
+//   BLC: SECTIONS[0] = {title:"What BLC actually is", points[0]:"Course
+//     600-C44, historically 22 academic days / 169 academic hours"};
+//     Work-it-here[0] = ["Leadership Drills — rehearse what is graded","#/drills"]
+//   ALC: SECTIONS[0] = {title:"What ALC actually is", points[0]:"Phase I —
+//     NCO-C3 common core, branch-immaterial, typically virtual/distributed"};
+//     Work-it-here[0] = ["Leadership Drills — timer, rubric, MDMP","#/drills"]
+//   SLC: SECTIONS[0] = {title:"Read this first — PME is actively changing",
+//     points[0]:"BLC is being lengthened — reporting has ranged from five
+//     to six weeks, with new land navigation content added"};
+//     Work-it-here[0] is bare "BLC Prep" -> #/blc, which COLLIDES with the
+//     app's own left-nav item of the same exact label ("BLC Prep", the
+//     ROUTES table a few modules down) - a hasText:"BLC Prep" locator on
+//     the SLC page would match two buttons, not one. Uses SLC's Work-it-
+//     here[1] ("ALC Prep — the gate before this") instead, which - like
+//     BLC's and ALC's own links above - carries a longer, nav-label-distinct
+//     suffix and stays genuinely unique.
+await accordionTest("#/blc", "What BLC actually is", "Course 600-C44, historically 22 academic days", "Leadership Drills — rehearse what is graded", "#/drills");
+await accordionTest("#/alc", "What ALC actually is", "Phase I — NCO-C3 common core, branch-immaterial", "Leadership Drills — timer, rubric, MDMP", "#/drills");
+await accordionTest("#/slc", "Read this first — PME is actively changing", "BLC is being lengthened — reporting has ranged from five to six weeks", "ALC Prep — the gate before this", "#/alc");
+
 /* ========================================================================
  * #/drills (G.drills, src/index.html ~15169-15600)
  * Two persisted checklists now share the kv row "guidon:drills:v1", the
@@ -436,6 +509,39 @@ const savedWorksheets = await page.evaluate(async () => {
 const savedEntry = savedWorksheets.find((w) => w.resource === "Test Arms Room");
 savedEntry ? ok("Save worksheet persists a real entry to kv \"risk:all\"") : bad("no risk:all entry found for 'Test Arms Room'; got: " + JSON.stringify(savedWorksheets));
 savedEntry && savedEntry.risk === "High" ? ok("the persisted entry's risk band matches the computed 'High'") : bad("persisted risk band: " + JSON.stringify(savedEntry && savedEntry.risk));
+
+// Roadmap audit round 5, "Test Coverage Gaps" bucket: the block above is
+// the ONLY existing assertion against riskBand(vIdx, lIdx) anywhere in this
+// suite, and it only ever drives score=8 (High). riskBand()'s other two
+// buckets (score<=2 Low, score<=5 Medium) and the exact boundary between
+// Low and Medium (score=2 stays Low, score=3 flips to Medium) were
+// completely unverified - a regression that shifted either cut point (e.g.
+// "<=2" typo'd to "<3") would pass every other test in the suite clean.
+// Drives the same two <select> elements the High case above already
+// proved work, rather than calling riskBand() directly - it is a closured
+// function, never exposed on G.risk (confirmed by grep), so UI-driven is
+// the only way to exercise it at all.
+console.log("\n-- #/risk: riskBand() Low and Medium buckets, plus the exact Low/Medium boundary --");
+await page.locator('select[aria-label="Resource Value Rating"]').selectOption("0"); // Very Low
+await page.locator('select[aria-label="Aggressor likelihood — Insider Threat"]').selectOption("0"); // Very Low
+await page.waitForTimeout(300);
+const computedZero = await page.evaluate(() => (document.querySelector('[aria-label="Computed risk level"]') || {}).textContent || "");
+/RISK LEVEL: LOW/.test(computedZero) ? ok("score=0 (Very Low value + Very Low likelihood) computes 'RISK LEVEL: LOW'") : bad("computed risk output at score=0: " + JSON.stringify(computedZero));
+
+// Boundary: valueIdx=2 (Medium) + likelihood=0 (Very Low) = score 2, the
+// top of riskBand()'s "<=2" Low bucket.
+await page.locator('select[aria-label="Resource Value Rating"]').selectOption("2");
+await page.waitForTimeout(300);
+const computedBoundaryLow = await page.evaluate(() => (document.querySelector('[aria-label="Computed risk level"]') || {}).textContent || "");
+/RISK LEVEL: LOW/.test(computedBoundaryLow) ? ok("score=2 (the top of the Low bucket) still computes 'RISK LEVEL: LOW'") : bad("computed risk output at score=2: " + JSON.stringify(computedBoundaryLow));
+
+// Same fields, likelihood bumped one step to 1 (Low) = score 3, the bottom
+// of riskBand()'s "<=5" Medium bucket - a single-step change proves the
+// exact cut point, not just "some Medium value works".
+await page.locator('select[aria-label="Aggressor likelihood — Insider Threat"]').selectOption("1");
+await page.waitForTimeout(300);
+const computedBoundaryMed = await page.evaluate(() => (document.querySelector('[aria-label="Computed risk level"]') || {}).textContent || "");
+/RISK LEVEL: MEDIUM/.test(computedBoundaryMed) ? ok("score=3 (one step past the Low/Medium boundary) computes 'RISK LEVEL: MEDIUM'") : bad("computed risk output at score=3: " + JSON.stringify(computedBoundaryMed));
 
 // cleanup
 await page.evaluate(() => window.G.db.put("kv", { k: "risk:all", v: [] }));

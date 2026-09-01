@@ -6,6 +6,8 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Message;
+import android.view.WindowManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -16,6 +18,18 @@ import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebChromeClient;
 
 public class MainActivity extends BridgeActivity {
+  // Roadmap audit round 5, "Native Android: Security & Shortcut Wiring"
+  // bucket: the "route" extra a home-screen shortcut tap carries (see
+  // res/xml/shortcuts.xml's own header comment — Board Drill/Progress/
+  // NCOPDS Drills, e.g. "#/board") until it can actually be pushed into the
+  // WebView. That can't happen the instant the Intent arrives — on a cold
+  // launch (app not already running) index.html has not necessarily
+  // finished loading/running its own boot script yet — so this just holds
+  // the value; pollAndNavigate() below is what actually consumes it once
+  // the real page is confirmed loaded. Cleared the moment it's consumed so
+  // an unrelated later recreate()/resume can never replay a stale nav.
+  private String pendingRoute;
+
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     // Capacitor core's SystemBars plugin already computes real safe-area
@@ -79,6 +93,133 @@ public class MainActivity extends BridgeActivity {
     WebView webView = getBridge().getWebView();
     webView.getSettings().setSupportMultipleWindows(true);
     webView.setWebChromeClient(new ExternalLinkWebChromeClient(getBridge()));
+
+    // Roadmap audit round 5, "Native Android: Security & Shortcut Wiring"
+    // bucket: G.biometricGate (src/index.html) protects a Soldier's
+    // "Personal Account" behind a biometric prompt, but re-arms only on the
+    // NEXT resume — nothing ran at the moment the app was BACKGROUNDED, and
+    // Android's task switcher takes a live bitmap snapshot of the window's
+    // current content the instant it backgrounds, before any biometric
+    // overlay exists for that session. Grepping the whole native tree for
+    // FLAG_SECURE turned up zero hits: a Soldier with biometric lock on who
+    // is sitting on a sensitive screen and hits Home/Recents got a
+    // full-resolution OS-level screenshot of that exact screen sitting in
+    // the app-switcher thumbnail, fully bypassing the lock.
+    //
+    // Fix: expose a tiny custom JS bridge (a plain WebView
+    // addJavascriptInterface — this is one boolean toggle, not a real
+    // platform surface, so a full Capacitor plugin registration is more
+    // machinery than this needs) that flips WindowManager.LayoutParams.
+    // FLAG_SECURE on this Activity's own window. FLAG_SECURE blanks both
+    // screenshots and the recents-thumbnail for the whole window. JS side
+    // (src/biometric.js's setSecureScreen(), called from
+    // G.biometricGate.run()/syncSecureScreen() in index.html) owns the
+    // actual "does the lock apply right now" policy — biometricLock setting
+    // AND current profile is a completed Personal Account — and pushes
+    // that yes/no here every time it might have changed, not just while
+    // the lock overlay itself is showing, since the sensitive content is
+    // on screen for the entire foregrounded session, not only while locked.
+    webView.addJavascriptInterface(new NativeSecurityBridge(), "AndroidSecureScreen");
+
+    // Roadmap audit round 5, "Native Android: Security & Shortcut Wiring"
+    // bucket: shortcuts.xml declares 3 home-screen shortcuts (Board Drill,
+    // Progress, NCOPDS Drills), each carrying a "route" intent extra naming
+    // the in-app hash the equivalent PWA shortcut already jumps straight to
+    // - but until now nothing here ever read it, so a long-press shortcut
+    // tap opened GUIDON's default/last route like a plain icon tap instead
+    // of the named screen. This is the cold-launch half of the fix;
+    // onNewIntent() below is the other half (singleTask launchMode means a
+    // shortcut tap while already running never reaches onCreate() at all).
+    captureRouteExtra(getIntent());
+  }
+
+  @Override
+  protected void onNewIntent(Intent intent) {
+    // android:launchMode="singleTask" on this Activity (AndroidManifest.xml)
+    // means a shortcut tap while GUIDON is already running delivers the new
+    // Intent here instead of a fresh onCreate() - confirmed by reading the
+    // manifest, which is exactly why shortcut taps kept landing on whatever
+    // route was already on screen instead of the shortcut's own
+    // destination. super.onNewIntent() runs first because BridgeActivity's
+    // own override forwards this Intent into Capacitor's Bridge (the App
+    // plugin's appUrlOpen/appRestoredResult listeners depend on that
+    // happening) - skipping it to add our own handling first would silently
+    // break that.
+    super.onNewIntent(intent);
+    setIntent(intent);
+    captureRouteExtra(intent);
+  }
+
+  // Reads (and consumes) the shortcut's "route" extra, if this Intent
+  // carries one, and kicks off pollAndNavigate() to push it into the
+  // WebView as soon as the page is actually ready for it.
+  private void captureRouteExtra(Intent intent) {
+    if (intent == null) return;
+    String route = intent.getStringExtra("route");
+    if (route == null || route.isEmpty()) return;
+    // Consume once - a MAIN/LAUNCHER Intent like this can get redelivered
+    // to onCreate() by things unrelated to the Soldier tapping the
+    // shortcut again (e.g. a process-death restore replaying the last
+    // Intent), and this extra must not re-fire a navigation nobody asked
+    // for a second time.
+    intent.removeExtra("route");
+    pendingRoute = route;
+    pollAndNavigate(40); // ~4s ceiling at 100ms/attempt - see this method's own comment
+  }
+
+  // index.html is one big inline script; on a cold launch (shortcut tapped
+  // with GUIDON not already running) it has not necessarily finished
+  // loading/running yet the instant captureRouteExtra() above runs, and
+  // Capacitor's own WebViewClient/local-server plumbing is not something
+  // this fix touches or assumes the internals of. Rather than guess a fixed
+  // delay, this polls the WebView's own document.readyState/location -
+  // both meaningless on the transient about:blank Capacitor starts every
+  // load from, both real once the bundled index.html has actually loaded -
+  // and only commits location.hash once that's confirmed. Bounded so a
+  // WebView that somehow never finishes loading can't retry forever.
+  private void pollAndNavigate(final int attemptsLeft) {
+    if (pendingRoute == null) return;
+    Bridge bridge = getBridge();
+    final WebView webView = bridge != null ? bridge.getWebView() : null;
+    if (webView == null) return;
+    webView.evaluateJavascript(
+        "(document.readyState === 'complete' && location.href.indexOf('about:blank') === -1)",
+        (result) -> {
+          if (pendingRoute == null) return; // a later intent already consumed it
+          if ("true".equals(result)) {
+            final String route = pendingRoute;
+            pendingRoute = null;
+            // Minimal escaping for embedding inside a single-quoted JS
+            // string literal - every route this ships with is a fixed
+            // "#/xyz" hash from shortcuts.xml, never Soldier-entered text,
+            // but this stays correct even so.
+            String safe = route.replace("\\", "\\\\").replace("'", "\\'");
+            webView.evaluateJavascript("location.hash='" + safe + "';", null);
+          } else if (attemptsLeft > 0) {
+            webView.postDelayed(() -> pollAndNavigate(attemptsLeft - 1), 100);
+          }
+        });
+  }
+
+  // Roadmap audit round 5, "Native Android: Security & Shortcut Wiring"
+  // bucket: minimal JS-callable bridge for the FLAG_SECURE toggle described
+  // on the addJavascriptInterface() call site above. Non-static so it can
+  // reach this Activity's getWindow()/runOnUiThread() directly, same as
+  // NativeSecurityBridge's sibling inner classes in this file.
+  private class NativeSecurityBridge {
+    @JavascriptInterface
+    public void setSecure(final boolean secure) {
+      // addJavascriptInterface() callbacks land on a WebCore thread, not
+      // the UI thread - touching this Activity's window from there is
+      // undefined at best, so every call is hopped back over.
+      runOnUiThread(() -> {
+        if (secure) {
+          getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        } else {
+          getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        }
+      });
+    }
   }
 
   private static class ExternalLinkWebChromeClient extends BridgeWebChromeClient {

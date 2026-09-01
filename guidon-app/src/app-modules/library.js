@@ -143,14 +143,31 @@ window.G = window.G || {};
       "Study aid only — not an official Army or DoD publication. If anything here disagrees with a current regulation, the regulation wins. Verify anything decision-critical at armypubs.army.mil." }));
   }
 
-  function openDoc(mount, id) {
-    activeDoc = id; activeMode = "native"; activePage = 0;
-    render(mount);
+  // Roadmap audit round 5, "Accessibility: Focus Management on View
+  // Transitions" bucket: openDoc()/backToList() both rebuild `mount` via
+  // render(mount) without ever touching location.hash, so the router's own
+  // "focus the new h1/h2 after navigating" logic (route(), see its own
+  // heading-focus comment) never runs for this in-place transition - a
+  // keyboard/screen-reader user who activates a document card or clicks
+  // "Reference Library" got the whole view replaced under them with no
+  // indication a new document (or the list) had loaded. Same tabindex="-1"
+  // + focus({preventScroll:true}) on mount's own h1/h2 that route() already
+  // uses, so this behaves like a real route change even though it isn't one.
+  function focusViewHeading(mount) {
+    const heading = mount.querySelector("h1, h2");
+    if (heading) { heading.setAttribute("tabindex", "-1"); try { heading.focus({ preventScroll: true }); } catch (e) {} }
   }
 
-  function backToList(mount) {
+  async function openDoc(mount, id) {
+    activeDoc = id; activeMode = "native"; activePage = 0;
+    await render(mount);
+    focusViewHeading(mount);
+  }
+
+  async function backToList(mount) {
     activeDoc = null;
-    render(mount);
+    await render(mount);
+    focusViewHeading(mount);
   }
 
   function renderDetail(mount) {
@@ -226,10 +243,22 @@ window.G = window.G || {};
     if (!query || query.length < 2) return [];
     const ql = query.toLowerCase();
     const tocSet = new Set(d.tocPageIndices);
+    // Roadmap audit round 5, "Performance: Search Caching & Render Hot Paths"
+    // bucket: this ran on every debounced (150ms) keystroke and did a fresh
+    // pageText.toLowerCase() over EVERY page's full text each time - for a
+    // real shipped document like TC 3-21.5 (571K chars) that's 570K+
+    // characters re-lowercased per keystroke, purely wasted work since a
+    // document's page text never changes mid-session. Cache the lowercase
+    // haystack on the document object itself the first time any search
+    // touches it, and index against that instead - same "compute once,
+    // reuse across keystrokes" fix already applied to Global Search and
+    // Board Prep Definitions (see this file's _defHay/_hay caches) for
+    // datasets far smaller than any one of these documents.
+    d._pagesLower = d._pagesLower || d.pages.map((p) => p.toLowerCase());
     const hits = [];
-    d.pages.forEach((pageText, i) => {
+    d._pagesLower.forEach((pageTextLower, i) => {
       if (tocSet.has(i)) return;
-      const idx = pageText.toLowerCase().indexOf(ql);
+      const idx = pageTextLower.indexOf(ql);
       if (idx === -1) return;
       hits.push({ page: i, matchStart: idx, matchLen: query.length });
     });

@@ -75,7 +75,22 @@ window.G = window.G || {};
         id: notifId(r.id),
         title: "GUIDON — " + r.label,
         body: r.note || "Due today.",
+        // Roadmap audit round 5, "Native Platform: Quick Config Fixes" bucket:
+        // @capacitor/local-notifications defaults isExactNotification to true,
+        // which on Android requires the SCHEDULE_EXACT_ALARM permission. If
+        // that permission isn't already granted, scheduling an exact alarm
+        // kicks the Soldier straight to the OS's "Alarms & reminders" system
+        // settings screen, outside GUIDON's own UI entirely - and since this
+        // function runs from the setTimeout(syncAll, 1500) native-boot hook
+        // above (not just the Settings toggle-on handler), that redirect
+        // could fire on EVERY app launch, directly contradicting this file's
+        // own header comment ("never at launch, only from that one
+        // contextual moment"). A study reminder due "today at 09:00" doesn't
+        // need alarm-clock precision - an inexact alarm within the OS's
+        // normal batching window is fine, and it never touches
+        // SCHEDULE_EXACT_ALARM or the settings-screen redirect at all.
         schedule: { at: when },
+        isExactNotification: false,
       }] });
       return true;
     } catch (e) { console.warn("notify: schedule failed:", e && e.message); return false; }

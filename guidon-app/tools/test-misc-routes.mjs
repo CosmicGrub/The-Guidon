@@ -163,6 +163,94 @@ const back2 = await readStep();
 const sessionStep = await page.evaluate(() => sessionStorage.getItem("guidon-demo-step"));
 sessionStep === "1" ? ok("Guided Tour: current step (index 1 = step 2) is persisted to sessionStorage for back/resume") : bad('Guided Tour: sessionStorage step was "' + sessionStep + '", expected "1"');
 
+// Roadmap audit round 5, "Kiosk/Demo Center" bucket: a persistent "TOUR:
+// Step N of M" badge now shows in the topbar while mid Guided Tour (see
+// G.kioskBadge in index.html) - confirm it tracks the real current step
+// and that its Resume button returns to #/kiosk without touching either
+// sessionStorage key (unlike Free Mode's Exit, tested further below).
+const tourBadgeText = await page.evaluate(() => (document.querySelector("#demo-mode-badge") || {}).textContent || "");
+/TOUR: Step 2 of \d+/.test(tourBadgeText)
+  ? ok(`Guided Tour: the persistent tour badge reads "${tourBadgeText}", matching the real current step (2)`)
+  : bad(`Guided Tour: tour badge text was "${tourBadgeText}", expected it to match /TOUR: Step 2 of \\d+/`);
+await page.locator("#demo-mode-badge button", { hasText: "Resume" }).click();
+await page.waitForTimeout(400);
+const hashAfterResume = await page.evaluate(() => location.hash);
+const stepKeyAfterResume = await page.evaluate(() => sessionStorage.getItem("guidon-demo-step"));
+hashAfterResume === "#/kiosk" ? ok("Guided Tour badge: 'Resume' returns to #/kiosk") : bad(`Guided Tour badge: 'Resume' navigated to "${hashAfterResume}", expected "#/kiosk"`);
+stepKeyAfterResume === "1"
+  ? ok("Guided Tour badge: 'Resume' leaves sessionStorage untouched, landing back on the same step (2) — not a fresh Exit")
+  : bad(`Guided Tour badge: 'guidon-demo-step' was "${stepKeyAfterResume}" after Resume, expected "1" (unchanged)`);
+
+// ============================================================
+// #/kiosk -> Guided Tour: advance all the way to the final step and click
+// "End tour", then verify BOTH sessionStorage keys clear. Regression test
+// for the fix documented in profile.js's doneBtn comment (enhancement
+// backlog round 4): "End tour" originally cleared only guidon-demo-step,
+// not guidon-demo-mode, which silently skipped the mode picker on the next
+// visit to #/kiosk and dropped the user straight back into a resumed tour.
+// ============================================================
+while (await page.locator("button", { hasText: "Next →" }).count()) {
+  await page.locator("button", { hasText: "Next →" }).click();
+  await page.waitForTimeout(150);
+}
+const endTourBtn = page.locator("button", { hasText: "End tour" });
+(await endTourBtn.count()) > 0 ? ok("Guided Tour: reaching the final step swaps 'Next →' for 'End tour'") : bad("Guided Tour: 'End tour' button not found at the final step");
+await endTourBtn.click();
+await page.waitForTimeout(400);
+
+const hashAfterEndTour = await page.evaluate(() => location.hash);
+const stepKeyAfterEnd = await page.evaluate(() => sessionStorage.getItem("guidon-demo-step"));
+const modeKeyAfterEnd = await page.evaluate(() => sessionStorage.getItem("guidon-demo-mode"));
+const badgeGoneAfterEnd = await page.evaluate(() => !document.getElementById("demo-mode-badge"));
+hashAfterEndTour === "#/home" ? ok("Guided Tour: 'End tour' navigates to #/home") : bad(`Guided Tour: 'End tour' navigated to "${hashAfterEndTour}", expected "#/home"`);
+stepKeyAfterEnd === null ? ok("Guided Tour: 'End tour' clears sessionStorage 'guidon-demo-step'") : bad(`Guided Tour: 'guidon-demo-step' was "${stepKeyAfterEnd}" after End tour, expected null`);
+modeKeyAfterEnd === null
+  ? ok("Guided Tour: 'End tour' clears sessionStorage 'guidon-demo-mode' too (regression test for the round-4 fix - previously only guidon-demo-step was cleared)")
+  : bad(`Guided Tour: 'guidon-demo-mode' was "${modeKeyAfterEnd}" after End tour, expected null (regression: round-4 fix)`);
+badgeGoneAfterEnd ? ok("Guided Tour: 'End tour' removes the persistent tour badge") : bad("Guided Tour: #demo-mode-badge still present after 'End tour'");
+
+// Re-visiting #/kiosk after "End tour" must show the mode picker again, not
+// silently resume a tour - the exact failure mode the round-4 fix prevents.
+await page.evaluate(() => { location.hash = "#/kiosk"; });
+await page.waitForTimeout(400);
+const showsPickerAfterEnd = await page.evaluate(() => !!document.querySelector(".ob-mode-grid") && !document.querySelector(".ob-kiosk-card"));
+showsPickerAfterEnd
+  ? ok("#/kiosk after 'End tour': shows the mode picker again, not a resumed tour")
+  : bad("#/kiosk after 'End tour': did not show the mode picker (tour resumed silently — the round-4 regression)");
+
+// ============================================================
+// #/kiosk -> Free Mode: picking Free Mode drops straight into #/home and
+// raises the persistent "DEMO MODE" badge with a one-tap Exit — neither the
+// mode itself nor the badge previously had any test coverage.
+// ============================================================
+const freeCard = page.locator("button.ob-mode-card", { hasText: /Explore on your own/i });
+(await freeCard.count()) > 0 ? ok("#/kiosk shows the 'Free Mode' mode-picker card") : bad("#/kiosk: 'Free Mode' card not found");
+await freeCard.click();
+await page.waitForTimeout(400);
+
+const hashAfterFree = await page.evaluate(() => location.hash);
+hashAfterFree === "#/home" ? ok("Free Mode: choosing it navigates to #/home") : bad(`Free Mode: navigated to "${hashAfterFree}", expected "#/home"`);
+
+const badgeTextAfterFree = await page.evaluate(() => (document.querySelector("#demo-mode-badge") || {}).textContent || "");
+/DEMO MODE/.test(badgeTextAfterFree)
+  ? ok('Free Mode: the persistent "DEMO MODE" badge appears in the topbar')
+  : bad(`Free Mode: #demo-mode-badge text was "${badgeTextAfterFree}", expected it to include "DEMO MODE"`);
+
+const modeKeyAfterFree = await page.evaluate(() => sessionStorage.getItem("guidon-demo-mode"));
+modeKeyAfterFree === "free" ? ok('Free Mode: sessionStorage "guidon-demo-mode" is "free"') : bad(`Free Mode: sessionStorage "guidon-demo-mode" was "${modeKeyAfterFree}", expected "free"`);
+
+// Badge's one-tap Exit: clears session storage, removes itself, and returns
+// to #/kiosk.
+await page.locator("#demo-mode-badge button", { hasText: "Exit" }).click();
+await page.waitForTimeout(400);
+
+const hashAfterExit = await page.evaluate(() => location.hash);
+const modeKeyAfterExit = await page.evaluate(() => sessionStorage.getItem("guidon-demo-mode"));
+const badgeGoneAfterExit = await page.evaluate(() => !document.getElementById("demo-mode-badge"));
+hashAfterExit === "#/kiosk" ? ok("Free Mode Exit: returns to #/kiosk") : bad(`Free Mode Exit: hash was "${hashAfterExit}", expected "#/kiosk"`);
+modeKeyAfterExit === null ? ok('Free Mode Exit: clears sessionStorage "guidon-demo-mode"') : bad(`Free Mode Exit: sessionStorage "guidon-demo-mode" was "${modeKeyAfterExit}", expected null`);
+badgeGoneAfterExit ? ok("Free Mode Exit: removes the DEMO MODE badge from the topbar") : bad("Free Mode Exit: #demo-mode-badge still present after clicking Exit");
+
 // ============================================================
 // #/search -> global search: a query chosen after reading the real filter
 // logic in views.search, verified against real content read directly from
