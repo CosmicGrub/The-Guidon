@@ -124,6 +124,19 @@ async function focusedId(page) {
       newPage.url().endsWith("#/doctrine") ? ok("Ctrl+click on a sidebar item opens a real new tab at the right route") : bad("Ctrl+click new tab URL: " + newPage.url());
       hashAfter === hashBefore ? ok("Ctrl+click leaves the original tab's route untouched") : bad(`Ctrl+click changed the original tab's hash: ${hashBefore} -> ${hashAfter}`);
       await newPage.close();
+      // Closing a just-opened tab and immediately arming another
+      // context.waitForEvent("page") for the very next interaction was a
+      // real, CI-load-sensitive race (confirmed: "middle-click on a
+      // sidebar item did not open a new tab" failed 2 CI runs in a row on
+      // this exact PR, passed every time locally uncontended) - the
+      // browser context needs a moment to actually finish tearing down
+      // the closed tab before it reliably fires a fresh "page" event for
+      // the next one under load. A short settle here, not a longer
+      // timeout on the wait itself, is the fix: the new-tab event either
+      // fires quickly once armed or it doesn't fire at all, so padding
+      // the 5s wait wouldn't help a genuinely-missed event, only masking
+      // how close to the edge this already runs.
+      await page.waitForTimeout(300);
     } else {
       bad("Ctrl+click on a sidebar item did not open a new tab");
     }
