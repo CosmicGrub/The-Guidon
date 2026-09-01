@@ -357,7 +357,10 @@ drillShown ? ok("A practice-drill section rendered as part of the result view") 
 const drillHasQuestion = await page.evaluate(() => !!document.querySelector(".card p"));
 drillHasQuestion ? ok("The practice drill shows an actual question") : bad("practice drill rendered but no question text found");
 
-// ---- Delete clears the plan back to the empty state ----
+// ---- Delete must confirm first (matches every other destructive action's
+// G.modal.confirm({danger:true}) gate - grep test-leader.mjs's own
+// "Remove must confirm" case for the same click-through pattern), then
+// clears the plan back to the empty state ----
 const deleteClicked = await page.evaluate(() => {
   const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Delete");
   if (btn) { btn.click(); return true; }
@@ -365,6 +368,13 @@ const deleteClicked = await page.evaluate(() => {
 });
 deleteClicked ? ok("'Delete' button found and clicked") : bad("'Delete' button not found");
 await page.waitForTimeout(300);
+const confirmShown = await page.evaluate(() => !!document.querySelector(".gm-back"));
+confirmShown ? ok("Delete opens a confirm dialog before deleting") : bad("Delete removed the plan without confirming");
+await page.evaluate(() => {
+  const b = [...document.querySelectorAll(".gm-back button")].find((x) => /delete/i.test(x.textContent || ""));
+  if (b) b.click();
+});
+await page.waitForTimeout(400);
 const backToEmpty = await page.evaluate(() => /No MOI imported yet/.test(document.body.textContent || ""));
 backToEmpty ? ok("Deleting the plan returns Landing to the empty-state pitch") : bad("Landing did not return to the empty state after Delete");
 const clearedInDb = await page.evaluate(async () => {

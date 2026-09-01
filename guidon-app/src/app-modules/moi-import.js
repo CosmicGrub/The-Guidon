@@ -422,6 +422,13 @@ window.G = window.G || {};
       viewBtn.addEventListener("click", () => renderAlreadyImported(plan, !expanded));
       const deleteBtn = el("button.btn.sm.ghost", { type: "button", text: "Delete" });
       deleteBtn.addEventListener("click", async () => {
+        // Roadmap audit lens (a11y/UX polish): every other destructive
+        // delete in the app (scenario delete, profile delete, backup-clear
+        // actions - grep "modal.confirm" for the danger:true convention)
+        // gates on G.modal.confirm first. This one deleted the whole saved
+        // MOI plan on a single click with no confirmation - the one
+        // sibling delete action that skipped the app's own guard.
+        if (!(await G.modal.confirm("Delete your imported MOI plan? This can't be undone.", { okText: "Delete", danger: true }))) return;
         try { await G.db.put("kv", { k: KEY, v: null }); } catch (e) {}
         saved = null;
         try { util.toast("MOI plan deleted."); } catch (e) {}
@@ -720,7 +727,14 @@ window.G = window.G || {};
       const btnRow = el("div.btn-row", { style: "gap:8px;margin-top:6px" });
       const acceptBtn = el("button.btn.sm", { type: "button", text: "Accept" });
       const dismissBtn = el("button.btn.sm.ghost", { type: "button", text: "Dismiss" });
-      const searchBtn = el("button.btn.sm.ghost", { type: "button", text: "Search for the right topic" });
+      // Roadmap audit lens (a11y/UX polish): this button flips searchWrap's
+      // display style without touching aria-expanded - the same disclosure-
+      // toggle gap a prior audit round fixed for detailsBtn/moreToggle/
+      // filtersToggle/settingsAdvToggle (see index.html, grep "aria-expanded"
+      // convention comment near "detailsBtn"). moi-import.js was added after
+      // that round so it never got the same treatment. Matches that pattern:
+      // aria-expanded="false" at creation, flipped in the click handler.
+      const searchBtn = el("button.btn.sm.ghost", { type: "button", text: "Search for the right topic", "aria-expanded": "false" });
       btnRow.appendChild(acceptBtn); btnRow.appendChild(dismissBtn); btnRow.appendChild(searchBtn);
       card.appendChild(btnRow);
 
@@ -741,6 +755,7 @@ window.G = window.G || {};
       searchBtn.addEventListener("click", () => {
         const isOpen = searchWrap.style.display !== "none";
         searchWrap.style.display = isOpen ? "none" : "";
+        searchBtn.setAttribute("aria-expanded", String(!isOpen));
         if (!isOpen && !searchWrap.firstChild) buildInlineTopicSearch(searchWrap, it, refreshStatus);
       });
       refreshStatus();
