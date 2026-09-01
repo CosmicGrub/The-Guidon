@@ -97,7 +97,20 @@ async function enterRapidFireFresh() {
   await clickButtonByText("Board Drill");
   await page.waitForTimeout(150);
   const clicked = await clickButtonByText("Rapid Fire");
-  await page.waitForTimeout(300);
+  // A fixed waitForTimeout here raced the Rapid Fire tab's own content swap
+  // under CI's slower/contended runs: ".segmented button" is used by BOTH
+  // the outer Board Drill tab bar AND the inner Party/Solo/Team selector,
+  // so a query that fires before the tab's content has actually mounted
+  // silently matches the wrong .segmented (the outer tab bar) instead of
+  // failing loudly - reproduced 2/2 times in CI, 0/1 locally uncontended,
+  // exactly the shape of a race a fixed timeout loses under load but wins
+  // when nothing else is competing for the event loop. Poll for the real
+  // condition (a "Party" button inside .segmented actually exists) instead
+  // of assuming 300ms was enough.
+  await page.waitForFunction(
+    () => [...document.querySelectorAll(".segmented button")].some((b) => b.textContent.trim() === "Party"),
+    { timeout: 5000 }
+  ).catch(() => {}); // let the assertions below report a clear failure rather than throwing here
   return clicked;
 }
 async function setMode(mode) {

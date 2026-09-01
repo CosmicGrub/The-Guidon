@@ -105,7 +105,17 @@ async function enterRapidFireFresh() {
   await page.evaluate(() => { location.hash = "#/board"; });
   await page.waitForTimeout(300);
   await clickButtonByText("Rapid Fire");
-  await page.waitForTimeout(300);
+  // A fixed waitForTimeout here can race the Rapid Fire tab's own content
+  // swap under CI load: ".segmented button" is used by both the outer
+  // Board Drill tab bar and the inner Party/Solo/Team selector, so a query
+  // that fires before the tab's content has actually mounted can silently
+  // match the wrong .segmented instead of failing loudly (reproduced in
+  // test-rapid-fire-solo-team.mjs's own CI runs). Poll for the real
+  // condition instead of assuming a fixed delay was enough.
+  await page.waitForFunction(
+    () => [...document.querySelectorAll(".segmented button")].some((b) => b.textContent.trim() === "Party"),
+    { timeout: 5000 }
+  ).catch(() => {});
 }
 
 // ── Baseline: real row counts, before Rapid Fire is ever touched ────────
