@@ -569,8 +569,19 @@ jobs:
           # test:moi-import (the #/moi MOI Import Phase 1 citation-matching
           # pipeline suite - also missing from this matrix until this same
           # pass) starts chunk 18 rather than overloading it.
-          - name: "18-moiimport"
-            tests: "test:moi-import"
+          #
+          # test:icon-registry added same-round, same integration pass: a
+          # parallel quick-wins bucket added this suite (and its package.json
+          # aggregate-string entry) to the SAME round that wrote chunk 18
+          # above, in an isolated worktree that couldn't see this file's own
+          # edit - textbook instance of this file's own documented lesson
+          # (a per-bucket build check can't catch an integration-time wiring
+          # gap between two otherwise-correct buckets). Caught by re-diffing
+          # package.json's aggregate string against this matrix at merge
+          # time rather than assuming both buckets' own "build succeeded"
+          # reports meant the combination was complete.
+          - name: "18-moiimport-iconregistry"
+            tests: "test:moi-import test:icon-registry"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
