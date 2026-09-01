@@ -79,6 +79,24 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      # Session cleanup, 2026-09-01: Dependabot's own major-bump PR #103
+      # (8.14.3 -> 9.7.1) merged clean through CI - OSV-Scanner and cargo
+      # checks don't exercise a real Android Gradle build, so nothing
+      # caught that Gradle 9.6.0+ removed an internal API
+      # (org.gradle.api.problems.internal.InternalProblems) that AGP 8.x's
+      # 'com.android.internal.library' plugin still depends on. A real
+      # `npm run android:release` failed immediately after merge:
+      # "Plugin 'com.android.internal.library' relies on ... a Gradle
+      # internal API that was removed in Gradle 9.6.0." Reverted to
+      # 8.14.3 (the known-working, hash-verified version - see this same
+      # properties file's own header comment) and ignoring gradle-wrapper
+      # major bumps here until this project's AGP version is confirmed
+      # compatible with Gradle 9.x - re-test with a REAL
+      # `npm run android:release`, not just CI, before removing this.
+      - dependency-name: "gradle-wrapper"
+        update-types:
+          - "version-update:semver-major"
 
   - package-ecosystem: "github-actions"
     directory: "/"
