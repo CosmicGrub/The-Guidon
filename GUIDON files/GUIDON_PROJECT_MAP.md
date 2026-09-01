@@ -1,10 +1,10 @@
 # GUIDON — Project Map
 
 **One-page-ish orientation to the whole project: every document, every feature, and exactly how the app is wired together.**
-Read this first if you're new to the project. Read `GUIDON_MASTERFILE.md` for the full session-by-session *why*.
+Read this first if you're new to the project. Read `GUIDON_MASTERFILE.md` for the full session-by-session *why*, and `ROADMAP.md` for what's next.
 
-**Current build:** `guidon-app/` v1.2.0 — built from `src/`, not a single hand-edited file any more.
-`npm run build` produces `dist/guidon-standalone.html` (5.07 MB, `file://` ready) and `web/` (4.24 MB, installable).
+**Current build:** `guidon-app/` v1.5.0 — built from `src/`, not a single hand-edited file any more.
+`npm run build` produces `dist/guidon-standalone.html` (~14.9 MB, `file://` ready) and `web/` (~12.6 MB, installable).
 Also ships as a Windows `.exe`/`.msi` and an Android APK/AAB. See `GUIDON_DEPLOY.md`.
 
 ---
@@ -15,6 +15,7 @@ Also ships as a Windows `.exe`/`.msi` and an Android APK/AAB. See `GUIDON_DEPLOY
 |---|---|---|
 | **`guidon-app/`** | The app and its build. `src/index.html` + `src/app-modules/` → two artifacts. | You want to run, build or ship it. |
 | **`GUIDON_MASTERFILE.md`** | Full architectural history, 42 numbered sections, one per major work session, with reasoning. | You need to know *why* something is built the way it is. |
+| **`ROADMAP.md`** | Forward-looking: completed initiatives, the audit cadence as a standing practice, what's deliberately not built and why, what's next. | You're starting a new session and need to know where to pick up. |
 | **`CHANGELOG.md`** | Session-by-session change log, newest first, more granular than the masterfile. | You want a chronological diff of what changed and when. |
 | **`GUIDON_STATE.json`** | Machine-readable current state: build lineage, open items, content inventories. | You (or a script) need structured facts rather than prose. |
 | **`GUIDON_PROMOTION_RESEARCH.md`** | Sourced research on AR 600-8-19 promotion points, with confidence levels per claim. | You're touching the Points/PPW calculator or need to verify a promotion-policy fact. |
@@ -30,8 +31,8 @@ Also ships as a Windows `.exe`/`.msi` and an Android APK/AAB. See `GUIDON_DEPLOY
 The app organizes its **35 sections** into **5 collapsible nav groups**:
 
 ### Board Prep
-`Train` · `Board` · `Records` · `Calendar` · `Doctrine` · `Terms`
-Scenario-based leadership training, 1,014-card spaced-repetition flashcard drill with 4-level mastery grading, a rank-aware Promotion Points / PPW worksheet, a 290-entry doctrine reference, and a 3,629-term acronym dictionary.
+`Train` · `Board` · `Records` · `Calendar` · `Doctrine` · `Terms` · `MOI Import`
+Scenario-based leadership training, a 984-card spaced-repetition flashcard drill with 4-level mastery grading, a rank-aware Promotion Points / PPW worksheet, a 353-entry doctrine reference, a 3,623-term acronym dictionary, and MOI Import — paste or upload a real board's Memorandum of Instruction and get a study dashboard plus an optional practice drill built from exactly the citations it assigns.
 
 ### Study & Skills
 `Learn` · `Forms` · `Write`
@@ -39,7 +40,7 @@ Structured study paths, interactive replica DA forms (4856, 638, 31, and more), 
 
 ### Leadership
 `BLC Prep` · `ALC Prep` · `SLC & Beyond` · `NCOPDS Drills` · `Squad` · `Counsel` · `Develop` · `Risk`
-The full NCOPDS ladder — **BLC → ALC → SLC → MLC → SMC** — each with its own prep module built from authoritative source documents (the BLC module specifically from the actual grading ISAP), plus a drills section that rehearses the real graded assessments (squad drill, PRT, information brief, essay rubrics, MDMP), a counseling skill-builder, an IDP builder, and a risk-assessment worksheet.
+The full NCOPDS ladder — **BLC → ALC → SLC → MLC → SMC** — each with its own prep module built from authoritative source documents (the BLC module specifically from the actual grading ISAP), plus a drills section that rehearses the real graded assessments (squad drill, PRT, information brief, essay rubrics, MDMP, and an interactive Land Navigation drill — azimuth, pace-count, grid-coordinate reading, all generated-and-checked), a counseling skill-builder, an IDP builder, and a risk-assessment worksheet.
 
 ### Career & Life
 `MOS` · `Assignments` · `Channels` · `Money` · `Health` · `Fitness` · `ETS` · `Resources`
@@ -171,24 +172,26 @@ Light themes require **both** `data-theme="name"` on `<html>` **and** the `.ligh
 
 ---
 
-## 7. Quick-reference numbers (live, from the current build)
+## 7. Quick-reference numbers (re-verified live 2026-09-01, v1.5.0)
 
 | | |
 |---|---|
-| Routes / sections | 35 |
+| Routes / sections | 39 |
 | Nav groups | 5 |
-| Modules on `window.G` | 50 |
+| Modules on `window.G` | *not re-verified this pass — see note below* |
 | Themes | 24 (14 Standard + 10 Focus) |
-| CSS custom properties | 33 |
-| CSS classes | ~1,048 |
-| Media queries | 46 |
-| Board study cards | 1,014 |
-| Acronym dictionary | 3,629 terms |
-| Doctrine entries | 336 |
-| MOS entries | 163 |
+| CSS custom properties | *not re-verified this pass* |
+| CSS classes | *not re-verified this pass* |
+| Media queries | *not re-verified this pass* |
+| Board study cards | 984 |
+| Acronym dictionary | 3,623 terms |
+| Doctrine entries | 353 |
+| MOS entries | 164 |
 | Scenarios | 182 |
-| File size (installable bundle) | 4.24 MB raw · 1.06 MB gzip · 0.81 MB brotli |
-| Accessibility | 0 WCAG 2 A/AA violations, plus a computed-accessibility-tree audit across all 35 sections |
+| File size (installable bundle) | 12.64 MB raw · 3.44 MB gzip |
+| Accessibility | 0 console errors/warnings across all 39 sections at 6 real device viewports (`verify.mjs`) |
+
+**Note:** only the rows above with a real number were re-derived live for this pass (seed-content counts via direct JSON parse of `window.GUIDON_SEED`, route count and accessibility result from `tools/verify.mjs`'s own live output). The three rows marked "not re-verified" were carried forward unchanged from the last pass rather than guessed — re-derive them the same way (grep/count against the actual current build) before trusting them for a real decision, per this document's own §8 rule 1 and its own §9 correction history.
 | Test suites | 11, all passing |
 
 ---
