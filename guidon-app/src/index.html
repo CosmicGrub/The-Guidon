@@ -22932,7 +22932,18 @@ window.G = window.G || {};
     { id:"cit",    icon:"\u25a4", name:"Conduct Individual Training", for:"BLC",
       blurb:"All 25 performance steps. \u22124 points each \u2014 miss eight and you have failed." },
     { id:"mdmp",   icon:"\u25c8", name:"MDMP step trainer",       for:"ALC",
-      blurb:"The seven steps and what each produces. Introduced at ALC and now at MLC too." }
+      blurb:"The seven steps and what each produces. Introduced at ALC and now at MLC too." },
+    // New feature: GUIDON had a 25-item Land Navigation self-check question
+    // bank (category "Land Navigation (TC 3-25.26)") plus a couple of
+    // doctrine cards on MGRS/pace count/marginal info, but no hands-on
+    // practice tool -- every bit of it was static read/recall text, unlike
+    // squad drill/PRT/MDMP above, which are all rehearsable. This closes
+    // that confirmed practice-tool gap with three generated-and-checked
+    // exercises: azimuth<->back-azimuth (the \u00b1180\u00b0/\u00b13,200-mil
+    // rule), a pace-count word problem, and grid-coordinate component
+    // reading -- each sourced to a specific TC 3-25.26 paragraph.
+    { id:"landnav", icon:"\u2316", name:"Land Navigation practice drill", for:"BLC",
+      blurb:"Generated azimuth/back-azimuth, pace-count and grid-coordinate problems you solve and check, not another card to read. TC 3-25.26: the \u00b1180\u00b0/\u00b13,200-mil rule (Ch. 6, Direction), pace count (para 5-3), and reading a grid right-then-up (paras 4-15\u20134-16)." }
   ];
 
   const KEY = "guidon:drills:v1";
@@ -22981,6 +22992,7 @@ window.G = window.G || {};
       if (id === "essay") return essayDrill();
       if (id === "cit")   return citDrill();
       if (id === "mdmp")  return mdmpDrill();
+      if (id === "landnav") return landNavDrill();
     }
 
     // ---- Squad drill: sequential recall ----
@@ -23285,6 +23297,204 @@ window.G = window.G || {};
       rev.addEventListener("click", () => { revealed = !revealed; draw(); });
       nxt.addEventListener("click", () => { i = (i+1) % MDMP.length; revealed = false; draw(); });
       draw(); stage.appendChild(p);
+    }
+
+    // ---- Land Navigation: generated, checked practice (TC 3-25.26) ----
+    // Three independent generators behind a mode switch, each following the
+    // same generate -> answer -> check -> reveal-the-rule -> next shape as
+    // the squad/MDMP drills above, but with a real typed answer that gets
+    // checked against a computed value instead of a fixed reveal-only card.
+    function landNavDrill() {
+      let mode = "azimuth";
+      const p = el("div.panel");
+      p.appendChild(el("div.eyebrow", { text:"Land Navigation — TC 3-25.26" }));
+      p.appendChild(el("p.hint", { text:"Generated problems, not flashcards — work each one out, then check your answer against the doctrine rule." }));
+      const seg = el("div.segmented", { style:"margin:8px 0" });
+      const body = el("div");
+      p.appendChild(seg); p.appendChild(body);
+      stage.appendChild(p);
+
+      const MODES = [ ["azimuth","Back azimuth"], ["pace","Pace count"], ["grid","Grid coordinate"] ];
+      function drawSeg() {
+        util.clear(seg);
+        MODES.forEach(([k, label]) => {
+          const b = el("button", { type:"button", text:label, "aria-pressed": String(k === mode) });
+          if (k === mode) b.classList.add("active");
+          b.addEventListener("click", () => { if (mode !== k) { mode = k; drawSeg(); drawBody(); } });
+          seg.appendChild(b);
+        });
+      }
+      function drawBody() {
+        util.clear(body);
+        if (mode === "azimuth") azimuthMode(body);
+        else if (mode === "pace") paceMode(body);
+        else gridMode(body);
+      }
+
+      // Shared row-builder: a numeric/text input, a Check button and a New
+      // Problem button, plus a score tally and a feedback slot -- the four
+      // pieces every mode below wires up the same way.
+      function scoreRow(mount) {
+        const stat = el("div.stat", {}, [ el("span.k", { text:"Score" }), el("span.v", { text:"0 / 0" }) ]);
+        mount.appendChild(stat);
+        return stat;
+      }
+
+      // ---- (a) Azimuth ↔ back azimuth: the ±180° / ±3,200-mil rule ----
+      function azimuthMode(mount) {
+        let unit = "deg", az = 0, correct = 0, attempts = 0, right = 0;
+        const box = el("div"); mount.appendChild(box);
+        function gen() {
+          if (unit === "deg") { az = 1 + Math.floor(Math.random() * 359); correct = az <= 180 ? az + 180 : az - 180; }
+          else {
+            az = 100 * (1 + Math.floor(Math.random() * 63)); // 100-6300 mils, in 100-mil steps
+            if (az === 3200) az = 3300; // dodge the 3,200 boundary -- its "back azimuth" is 6,400, which reads as 0/north and just confuses the drill
+            correct = az <= 3200 ? az + 3200 : az - 3200;
+          }
+        }
+        gen();
+        function draw() {
+          util.clear(box);
+          const unitSeg = el("div.segmented", { style:"margin-bottom:8px" });
+          [["deg","Degrees"],["mil","Mils"]].forEach(([k, label]) => {
+            const b = el("button", { type:"button", text:label, "aria-pressed": String(k === unit) });
+            if (k === unit) b.classList.add("active");
+            b.addEventListener("click", () => { if (unit !== k) { unit = k; attempts = 0; right = 0; gen(); draw(); } });
+            unitSeg.appendChild(b);
+          });
+          box.appendChild(unitSeg);
+          const stat = scoreRow(box);
+          const unitLabel = unit === "deg" ? "°" : " mils";
+          box.appendChild(el("h3", { text: "Azimuth: " + az + unitLabel }));
+          box.appendChild(el("p.hint", { text:"What is the back azimuth?" }));
+          const row = el("div.btn-row", { style:"gap:8px;align-items:center" });
+          const input = el("input", { type:"number", "aria-label":"Back azimuth answer", style:"max-width:140px" });
+          const checkBtn = el("button.btn.sm", { type:"button", text:"Check" });
+          const nextBtn = el("button.btn.sm.ghost", { type:"button", text:"New azimuth →" });
+          row.appendChild(input); row.appendChild(checkBtn); row.appendChild(nextBtn);
+          box.appendChild(row);
+          const fb = el("div", { style:"margin-top:8px" }); box.appendChild(fb);
+          input.addEventListener("keydown", (e) => { if (e.key === "Enter") checkBtn.click(); });
+          checkBtn.addEventListener("click", () => {
+            const ok = input.value.trim() !== "" && Number(input.value) === correct;
+            attempts++; if (ok) right++;
+            (stat.querySelector(".v")||{}).textContent = right + " / " + attempts;
+            util.clear(fb);
+            const rule = unit === "deg"
+              ? (az <= 180 ? "180° or less, so add 180°: " + az + " + 180 = " + correct
+                            : "greater than 180°, so subtract 180°: " + az + " − 180 = " + correct)
+              : (az <= 3200 ? "3,200 mils or less, so add 3,200: " + az + " + 3,200 = " + correct
+                             : "greater than 3,200 mils, so subtract 3,200: " + az + " − 3,200 = " + correct);
+            const msg = (ok ? "Correct. " : "Not quite — the back azimuth is " + correct + unitLabel + ". ")
+              + "TC 3-25.26 (Chapter 6, Direction): this azimuth is " + rule + unitLabel + ". "
+              + "Doctrine cautions extreme care doing this step — a simple arithmetic slip sends you the wrong direction.";
+            fb.appendChild(el("div.feedback " + (ok ? "good" : "bad"), { role:"status", "aria-live":"polite", text: msg }));
+            try { if (G.util.announce) G.util.announce((ok ? "Correct. " : "Incorrect. ") + msg); } catch (e) {}
+          });
+          nextBtn.addEventListener("click", () => { gen(); draw(); });
+        }
+        draw();
+      }
+
+      // ---- (b) Pace count word problem (TC 3-25.26, para 5-3) ----
+      function paceMode(mount) {
+        let paceCount = 0, distance = 0, correct = 0, attempts = 0, right = 0;
+        const box = el("div"); mount.appendChild(box);
+        function gen() {
+          // Personal pace count is individual, not a fixed Army number (para
+          // 5-3) -- 55-75 paces/100m is an illustrative range for the drill,
+          // not a doctrinal figure.
+          paceCount = 55 + Math.floor(Math.random() * 21);
+          distance = 50 * (2 + Math.floor(Math.random() * 40)); // 100-2000m, 50m steps
+          correct = Math.round(paceCount * distance / 100);
+        }
+        gen();
+        function draw() {
+          util.clear(box);
+          const stat = scoreRow(box);
+          box.appendChild(el("h3", { text: "Pace count: " + paceCount + " paces per 100 m" }));
+          box.appendChild(el("p.hint", { text: "How many total paces to cover " + distance + " meters?" }));
+          const row = el("div.btn-row", { style:"gap:8px;align-items:center" });
+          const input = el("input", { type:"number", "aria-label":"Total paces answer", style:"max-width:140px" });
+          const checkBtn = el("button.btn.sm", { type:"button", text:"Check" });
+          const nextBtn = el("button.btn.sm.ghost", { type:"button", text:"New problem →" });
+          row.appendChild(input); row.appendChild(checkBtn); row.appendChild(nextBtn);
+          box.appendChild(row);
+          const fb = el("div", { style:"margin-top:8px" }); box.appendChild(fb);
+          input.addEventListener("keydown", (e) => { if (e.key === "Enter") checkBtn.click(); });
+          checkBtn.addEventListener("click", () => {
+            const ok = input.value.trim() !== "" && Number(input.value) === correct;
+            attempts++; if (ok) right++;
+            (stat.querySelector(".v")||{}).textContent = right + " / " + attempts;
+            util.clear(fb);
+            const raw = paceCount * distance / 100;
+            const msg = (ok ? "Correct. " : "Not quite — " + correct + " paces. ")
+              + "TC 3-25.26, para 5-3: " + paceCount + " paces/100 m × (" + distance + " m ÷ 100 m) = "
+              + paceCount + " × " + (distance / 100) + " = " + raw + " → " + correct + " paces (round to the nearest whole pace).";
+            fb.appendChild(el("div.feedback " + (ok ? "good" : "bad"), { role:"status", "aria-live":"polite", text: msg }));
+            try { if (G.util.announce) G.util.announce((ok ? "Correct. " : "Incorrect. ") + msg); } catch (e) {}
+          });
+          nextBtn.addEventListener("click", () => { gen(); draw(); });
+        }
+        draw();
+      }
+
+      // ---- (c) Grid coordinate component reading (TC 3-25.26, paras 4-15/4-16) ----
+      function gridMode(mount) {
+        // MGRS 100,000-m square identifiers skip I and O -- too easily
+        // misread as 1 and 0 -- matching the letter set this app's own
+        // MGRS doctrine card and board questions describe.
+        const SQ_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+        let square = "", easting = "", northing = "", attempts = 0, right = 0;
+        const box = el("div"); mount.appendChild(box);
+        function gen() {
+          square = SQ_LETTERS[Math.floor(Math.random() * SQ_LETTERS.length)] + SQ_LETTERS[Math.floor(Math.random() * SQ_LETTERS.length)];
+          easting = String(1000 + Math.floor(Math.random() * 9000));
+          northing = String(1000 + Math.floor(Math.random() * 9000));
+        }
+        gen();
+        function draw() {
+          util.clear(box);
+          const stat = scoreRow(box);
+          box.appendChild(el("h3", { text: square + easting + northing, style:"font-family:var(--font-mono);letter-spacing:.05em" }));
+          box.appendChild(el("p.hint", { text:"That's an 8-digit grid coordinate with its 100,000-m square identifier, written as one continuous string. Break it into its three parts." }));
+          const row = el("div", { style:"display:flex;gap:8px;flex-wrap:wrap;margin:8px 0" });
+          const sqIn = el("input", { type:"text", maxlength:"2", "aria-label":"100,000-meter square identifier (2 letters)", placeholder:"Square", style:"max-width:90px;text-transform:uppercase" });
+          const eIn  = el("input", { type:"text", maxlength:"4", inputmode:"numeric", "aria-label":"Easting (4 digits)", placeholder:"Easting", style:"max-width:110px" });
+          const nIn  = el("input", { type:"text", maxlength:"4", inputmode:"numeric", "aria-label":"Northing (4 digits)", placeholder:"Northing", style:"max-width:110px" });
+          row.appendChild(sqIn); row.appendChild(eIn); row.appendChild(nIn);
+          box.appendChild(row);
+          const btnRow = el("div.btn-row", { style:"gap:8px" });
+          const checkBtn = el("button.btn.sm", { type:"button", text:"Check" });
+          const nextBtn = el("button.btn.sm.ghost", { type:"button", text:"New coordinate →" });
+          btnRow.appendChild(checkBtn); btnRow.appendChild(nextBtn);
+          box.appendChild(btnRow);
+          const fb = el("div", { style:"margin-top:8px" }); box.appendChild(fb);
+          nIn.addEventListener("keydown", (e) => { if (e.key === "Enter") checkBtn.click(); });
+          checkBtn.addEventListener("click", () => {
+            const okSq = sqIn.value.trim().toUpperCase() === square;
+            const okE  = eIn.value.trim() === easting;
+            const okN  = nIn.value.trim() === northing;
+            const ok = okSq && okE && okN;
+            attempts++; if (ok) right++;
+            (stat.querySelector(".v")||{}).textContent = right + " / " + attempts;
+            util.clear(fb);
+            const parts = [];
+            if (!okSq) parts.push("square identifier is " + square);
+            if (!okE) parts.push("easting is " + easting);
+            if (!okN) parts.push("northing is " + northing);
+            const msg = (ok ? "Correct. " : "Not quite — the " + parts.join("; the ") + ". ")
+              + "TC 3-25.26, para 4-16: always read RIGHT then UP — the first half of the digits is the easting, the second half is the northing. "
+              + "Para 4-15: report it as one continuous string, an even number of digits, with the two-letter 100,000-m square identifier included.";
+            fb.appendChild(el("div.feedback " + (ok ? "good" : "bad"), { role:"status", "aria-live":"polite", text: msg }));
+            try { if (G.util.announce) G.util.announce((ok ? "Correct. " : "Incorrect. ") + msg); } catch (e) {}
+          });
+          nextBtn.addEventListener("click", () => { gen(); draw(); });
+        }
+        draw();
+      }
+
+      drawSeg(); drawBody();
     }
 
     mount.appendChild(stage);
