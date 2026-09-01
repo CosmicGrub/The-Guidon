@@ -99,11 +99,12 @@ const noise = [];
   JSON.stringify(drawerOpen.groupHeaders) === JSON.stringify(["Board Prep", "Study & Skills", "Leadership", "Career & Life", "Account", "Advanced"])
     ? ok("drawer renders all 6 labeled groups, same order as the sidebar")
     : bad("drawer group headers: " + JSON.stringify(drawerOpen.groupHeaders));
-  // 34 as of the Data & Storage dashboard (#/storage, roadmap Tier 8) - was
-  // 33 before that route existed.
-  drawerOpen.totalButtons === 34
-    ? ok("drawer renders all 34 non-hidden routes (same set the >=600px sidebar shows)")
-    : bad("drawer route button count: " + drawerOpen.totalButtons + ", expected 34");
+  // 35 as of round 6's MOI Import Engine (#/moi, added to the "Board Prep"
+  // group) - was 34 before that route existed (itself added for #/storage,
+  // Data & Storage dashboard, roadmap Tier 8).
+  drawerOpen.totalButtons === 35
+    ? ok("drawer renders all 35 non-hidden routes (same set the >=600px sidebar shows)")
+    : bad("drawer route button count: " + drawerOpen.totalButtons + ", expected 35");
   drawerOpen.demoted.length === 0
     ? ok("drawer has no .nav-demoted items - Author/Diagnostics moved to their own real group instead of in-place dimming")
     : bad("drawer still has .nav-demoted items: " + JSON.stringify(drawerOpen.demoted));
@@ -249,9 +250,9 @@ const noise = [];
       .map((b) => b.getAttribute("data-hash"))
       .filter((h) => ["#/progress", "#/currency", "#/settings", "#/share"].includes(h)),
   }));
-  // 34 as of the Data & Storage dashboard (#/storage) - see the drawer
-  // assertion above for the same count and its own provenance note.
-  sidebar.totalButtons === 34 ? ok("sidebar renders all 34 non-hidden routes") : bad("sidebar route button count: " + sidebar.totalButtons + ", expected 34");
+  // 35 as of round 6's #/moi - see the drawer assertion above for the same
+  // count and its own provenance note.
+  sidebar.totalButtons === 35 ? ok("sidebar renders all 35 non-hidden routes") : bad("sidebar route button count: " + sidebar.totalButtons + ", expected 35");
   sidebar.hasMoreBtn === false ? ok("no More button at >=600px - the sidebar shows everything directly") : bad("unexpected More button in the sidebar");
   // 6 labeled groups now (Board Prep/Study & Skills/Leadership/Career &
   // Life/Account/Advanced) = 6 between-group dividers, + 3 in-group

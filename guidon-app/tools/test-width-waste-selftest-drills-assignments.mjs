@@ -8,12 +8,15 @@
  * own numbers are from some time ago and this project's roadmap docs have
  * repeatedly had stale claims):
  *
- *   #/drills   - ALREADY FIXED, before this session touched anything. The 6
+ *   #/drills   - ALREADY FIXED, before this session touched anything. The
  *                overview cards in G.drills' own menu() are already wrapped
  *                in .card-results-grid ("Fold5/tablet fidelity wave 2" - a
  *                prior tier). This file only asserts that still holds, so a
  *                future regression here gets caught - no source change was
- *                made for this route.
+ *                made for this route. Card count was 6 as of that tier; the
+ *                Land Navigation practice drill (new feature) made it 7 -
+ *                updated below, still asserting the SAME grid/stacking
+ *                behavior, not a source change to menu() itself.
  *   #/selftest - was genuinely open: Diagnostics' "Manual protocol" panel
  *                (G.selftest, js/selftest.js's MANUAL array, exactly 9
  *                items) appended each of its 9 cards straight into the
@@ -201,18 +204,20 @@ function allStacked(items) {
   await narrow.ctx.close();
 }
 
-// ── #/drills: 6 overview cards - confirm this was ALREADY fixed (prior
+// ── #/drills: 7 overview cards - confirm this was ALREADY fixed (prior
 // tier's .card-results-grid wiring in menu()), so no source change was made
 // here - this just guards against a future regression silently reverting it.
+// (Count updated 6 -> 7 for the new Land Navigation practice drill card;
+// the grid/stacking wiring under test is unchanged.)
 {
   const sel = "#route .card-results-grid > .panel";
 
   const wide = await newPage(768);
   await goTo(wide.page, "#/drills");
   const wideCards = await rects(wide.page, sel);
-  wideCards.length === 6
-    ? ok("#/drills: exactly 6 drill-picker cards render inside .card-results-grid (already wired by a prior tier)")
-    : bad("#/drills: expected 6 drill-picker cards in .card-results-grid, found " + wideCards.length);
+  wideCards.length === 7
+    ? ok("#/drills: exactly 7 drill-picker cards render inside .card-results-grid (already wired by a prior tier)")
+    : bad("#/drills: expected 7 drill-picker cards in .card-results-grid, found " + wideCards.length);
   if (wideCards.length >= 2 && sameRow(wideCards[0], wideCards[1])) {
     ok(`#/drills @768px: drill-picker cards 1 and 2 already share a row (top=${wideCards[0].top}) - confirms this route needed NO change this tier`);
   } else {
@@ -229,8 +234,8 @@ function allStacked(items) {
   const narrow = await newPage(375);
   await goTo(narrow.page, "#/drills");
   const narrowCards = await rects(narrow.page, sel);
-  narrowCards.length === 6 && allStacked(narrowCards)
-    ? ok("#/drills @375px: all 6 drill-picker cards remain a clean single column")
+  narrowCards.length === 7 && allStacked(narrowCards)
+    ? ok("#/drills @375px: all 7 drill-picker cards remain a clean single column")
     : bad("#/drills @375px: drill-picker cards not cleanly single-column - " + JSON.stringify(narrowCards));
   await narrow.ctx.close();
 }
