@@ -396,7 +396,10 @@ jobs:
 
       - name: cargo check --locked
         working-directory: guidon-app/src-tauri
-        run: cargo check --locked
+        run: |
+          cargo --version
+          rustc --version
+          cargo check --locked
 
   # ---------------------------------------------------------------------
   # Roadmap audit round 4, "CI / supply-chain hardening" bucket: OSV.dev
