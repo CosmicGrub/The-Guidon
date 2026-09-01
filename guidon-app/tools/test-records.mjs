@@ -1,11 +1,13 @@
 /**
  * Records Readiness (#/records, G.records): the pre-board paperwork
- * checklist (23 items across 5 groups). The generic route sweep only loads
- * it once and never checks a box, so its actual persistence, live progress
- * math, and the VALID_IDS staleness guard (which ignores any kv key that
- * doesn't name a checklist item the CURRENT GROUPS shape can produce - the
- * defense against a future reorder/resize silently misapplying or
- * over-counting an orphaned key) had no interactive coverage at all.
+ * checklist (30 items across 6 groups - see the "Board Packet Checklist"
+ * feature comment in records.js above the 6th group for where the 23 -> 30
+ * jump came from). The generic route sweep only loads it once and never
+ * checks a box, so its actual persistence, live progress math, and the
+ * VALID_IDS staleness guard (which ignores any kv key that doesn't name a
+ * checklist item the CURRENT GROUPS shape can produce - the defense against
+ * a future reorder/resize silently misapplying or over-counting an orphaned
+ * key) had no interactive coverage at all.
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
@@ -40,10 +42,10 @@ const heading = await page.evaluate(() => /Records Readiness/.test(document.body
 heading ? ok("Records Readiness view renders") : bad("heading not found");
 
 const checkboxCount = await page.evaluate(() => document.querySelectorAll('input[type="checkbox"]').length);
-checkboxCount === 23 ? ok("Renders all 23 checklist items across 5 groups") : bad("checkbox count: " + checkboxCount);
+checkboxCount === 30 ? ok("Renders all 30 checklist items across 6 groups") : bad("checkbox count: " + checkboxCount);
 
 const progressInitial = await page.evaluate(() => (document.querySelector(".ob-plan-cat") || {}).textContent || "");
-progressInitial === "0 of 23 confirmed" ? ok("Progress starts at '0 of 23 confirmed'") : bad("initial progress text: " + progressInitial);
+progressInitial === "0 of 30 confirmed" ? ok("Progress starts at '0 of 30 confirmed'") : bad("initial progress text: " + progressInitial);
 
 const fillWidthInitial = await page.evaluate(() => document.querySelector(".panel div[style*='width']")?.style.width || "");
 fillWidthInitial === "0%" ? ok("Progress bar fill starts at 0%") : bad("initial fill width: " + fillWidthInitial);
@@ -53,7 +55,7 @@ const firstBox = page.locator('input[type="checkbox"]').first();
 await firstBox.check();
 await page.waitForTimeout(200);
 const progressAfterOne = await page.evaluate(() => (document.querySelector(".ob-plan-cat") || {}).textContent || "");
-progressAfterOne === "1 of 23 confirmed" ? ok("Checking one item updates progress to '1 of 23 confirmed'") : bad("progress after one check: " + progressAfterOne);
+progressAfterOne === "1 of 30 confirmed" ? ok("Checking one item updates progress to '1 of 30 confirmed'") : bad("progress after one check: " + progressAfterOne);
 
 const persistedAfterOne = await page.evaluate(async () => {
   const r = await window.G.db.get("kv", "guidon:records:checks:v1");
@@ -69,13 +71,13 @@ await page.waitForTimeout(500);
 const firstBoxCheckedAfterRerender = await page.locator('input[type="checkbox"]').first().isChecked();
 firstBoxCheckedAfterRerender ? ok("Checked state survives a full re-render of the view") : bad("checkbox did not survive re-render");
 const progressAfterRerender = await page.evaluate(() => (document.querySelector(".ob-plan-cat") || {}).textContent || "");
-progressAfterRerender === "1 of 23 confirmed" ? ok("Progress count is correct on re-render") : bad("progress after re-render: " + progressAfterRerender);
+progressAfterRerender === "1 of 30 confirmed" ? ok("Progress count is correct on re-render") : bad("progress after re-render: " + progressAfterRerender);
 
 // ---- unchecking decrements ----
 await page.locator('input[type="checkbox"]').first().uncheck();
 await page.waitForTimeout(200);
 const progressAfterUncheck = await page.evaluate(() => (document.querySelector(".ob-plan-cat") || {}).textContent || "");
-progressAfterUncheck === "0 of 23 confirmed" ? ok("Unchecking the item returns progress to '0 of 23 confirmed'") : bad("progress after uncheck: " + progressAfterUncheck);
+progressAfterUncheck === "0 of 30 confirmed" ? ok("Unchecking the item returns progress to '0 of 30 confirmed'") : bad("progress after uncheck: " + progressAfterUncheck);
 
 // ---- VALID_IDS staleness guard: an orphaned/malformed key must not be
 // counted or crash the view, even though it's a real truthy entry in the kv row ----
@@ -89,11 +91,61 @@ await page.evaluate(() => { location.hash = "#/records"; });
 await page.waitForTimeout(500);
 const progressWithStaleKey = await page.evaluate(() => (document.querySelector(".ob-plan-cat") || {}).textContent || "");
 // rec-0-0 is a real, currently-valid id (counts) - rec-99-99 doesn't name any
-// real item under the current 5x{5,5,5,4,4} GROUPS shape (ignored) -
+// real item under the current 6x{5,5,5,4,4,7} GROUPS shape (ignored) -
 // rec-0-1's truthy-but-non-boolean value still counts (the guard only
 // checks VALID_IDS[k], not typeof saved[k] - matches the module's own
 // documented "if (VALID_IDS[k] && saved[k])" check).
-progressWithStaleKey === "2 of 23 confirmed" ? ok("Orphaned key (rec-99-99) is silently ignored, not counted or crashing (VALID_IDS guard)") : bad("progress with stale key present: " + progressWithStaleKey);
+progressWithStaleKey === "2 of 30 confirmed" ? ok("Orphaned key (rec-99-99) is silently ignored, not counted or crashing (VALID_IDS guard)") : bad("progress with stale key present: " + progressWithStaleKey);
+
+// ---- the new "Board Packet Checklist" group (rec-5-*, appended at the END
+// of GROUPS - see records.js's comment on why it's appended rather than
+// inserted): every one of the 7 real board-packet requirements is present,
+// checking one of them persists under its own positional id, and the group
+// isn't just folded silently into an existing one. ----
+await page.evaluate(() => window.G.db.put("kv", { k: "guidon:records:checks:v1", v: {} }));
+await page.evaluate(() => { location.hash = "#/home"; });
+await page.waitForTimeout(150);
+await page.evaluate(() => { location.hash = "#/records"; });
+await page.waitForTimeout(500);
+
+const packetGroup = await page.evaluate(() => {
+  const eyebrow = [...document.querySelectorAll(".eyebrow")].find((n) => /The board packet/i.test(n.textContent || ""));
+  const panel = eyebrow && eyebrow.closest(".panel");
+  if (!panel) return null;
+  return [...panel.querySelectorAll("label")].map((l) => l.textContent);
+});
+const expectedPacketSubstrings = [
+  /biography/i,
+  /Soldier Talent Profile/i,
+  /head-to-toe/i,
+  /leadership essay/i,
+  /APA/i,
+  /ADP 6-22/i,
+  /AFT scorecard/i,
+  /DA Form 5500\/5501/i,
+  /qualification score sheet/i,
+  /NCOER/i,
+];
+packetGroup && packetGroup.length === 7
+  ? ok("The 'board packet' group renders all 7 packet items")
+  : bad("packet group items: " + JSON.stringify(packetGroup));
+const packetText = (packetGroup || []).join(" | ");
+const missingPacketTerms = expectedPacketSubstrings.filter((re) => !re.test(packetText));
+missingPacketTerms.length === 0
+  ? ok("Packet items cover biography, STP, ASU photo, ADP 6-22 essay in APA format, AFT/DA 5500-5501, weapons qual, and NCOERs")
+  : bad("packet items missing terms: " + missingPacketTerms.map(String).join(", ") + " (text: " + packetText + ")");
+
+const packetFirstBox = page.locator('.panel:has(.eyebrow:has-text("The board packet")) input[type="checkbox"]').first();
+await packetFirstBox.check();
+await page.waitForTimeout(200);
+const packetPersisted = await page.evaluate(async () => {
+  const r = await window.G.db.get("kv", "guidon:records:checks:v1");
+  return r && r.v && r.v["rec-5-0"] === true;
+});
+packetPersisted ? ok("Checking a packet item persists it under its own group's id (rec-5-0: true)") : bad("packet checkbox state not persisted under rec-5-0");
+const progressAfterPacketCheck = await page.evaluate(() => (document.querySelector(".ob-plan-cat") || {}).textContent || "");
+progressAfterPacketCheck === "1 of 30 confirmed" ? ok("Packet group items count toward the same shared progress total") : bad("progress after packet check: " + progressAfterPacketCheck);
+await page.evaluate(() => window.G.db.put("kv", { k: "guidon:records:checks:v1", v: {} }));
 
 // ---- "Remind me before the cutoff" (audit finding #11, ux-consistency):
 // the one date-sensitive fact this checklist page can't let a Soldier tick
