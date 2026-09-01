@@ -361,6 +361,7 @@ jobs:
   # ---------------------------------------------------------------------
   cargo-check:
     name: cargo check --locked (src-tauri)
+    needs: lint-build-verify
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
@@ -370,6 +371,28 @@ jobs:
         # Checkout step above, resolved via `gh api
         # repos/actions/checkout/commits/v4`.
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+
+      # Roadmap audit round 5, "Dependency & CI/Build Hygiene" bucket, own
+      # follow-up fix: this job's first CI run failed - `cargo check` invokes
+      # `tauri::generate_context!()` at COMPILE time (src-tauri/src/main.rs's
+      # own .run(tauri::generate_context!()) call), and that proc macro reads
+      # tauri.conf.json's frontendDist ("../web", i.e. guidon-app/web/) right
+      # then - "error: proc macro panicked ... The `frontendDist`
+      # configuration is set to `"../web"` but this path doesn't exist". This
+      # job only ever checked out source, it never built web/ - added
+      # needs:lint-build-verify above and download the exact same
+      # build-output artifact the test matrix jobs already consume below,
+      # rather than re-running a second, redundant `npm ci && npm run build`
+      # on a Windows runner (heavier: full Node/Playwright toolchain setup
+      # for a step that only needs the already-built HTML to exist on disk).
+      - name: Download build output (web/ + dist/)
+        # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
+        # SHA-pin-over-mutable-tag fix as the Checkout step above, resolved
+        # via `gh api repos/actions/download-artifact/commits/v4`.
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: build-output
+          path: guidon-app
 
       - name: cargo check --locked
         working-directory: guidon-app/src-tauri
