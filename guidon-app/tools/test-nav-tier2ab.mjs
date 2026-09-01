@@ -65,9 +65,10 @@ async function focusedId(page) {
   await pastOnboarding(page);
 
   // ---- 2(a): DOM contract - every leaf item is a real <a href> whose
-  // href resolves to its own data-hash. 34 is the same non-hidden route
-  // count test-nav-tier1.mjs already established for this sidebar (was 33
-  // before the Data & Storage dashboard, #/storage, added a route). ----
+  // href resolves to its own data-hash. 35 is the same non-hidden route
+  // count test-nav-tier1.mjs already established for this sidebar (was 34
+  // before round 6's #/moi, itself was 33 before the Data & Storage
+  // dashboard, #/storage, added a route). ----
   const leafContract = await page.evaluate(() => {
     const els = Array.from(document.querySelectorAll(".nav a[data-hash]"));
     return {
@@ -77,7 +78,7 @@ async function focusedId(page) {
       headersStillButtons: Array.from(document.querySelectorAll(".nav .nav-group-header")).every((e) => e.tagName === "BUTTON"),
     };
   });
-  leafContract.total === 34 ? ok("sidebar still renders all 34 non-hidden routes as leaf items") : bad("sidebar leaf item count: " + leafContract.total + ", expected 34");
+  leafContract.total === 35 ? ok("sidebar still renders all 35 non-hidden routes as leaf items") : bad("sidebar leaf item count: " + leafContract.total + ", expected 35");
   leafContract.allAnchors ? ok("every sidebar leaf item is a real <a> element") : bad("some sidebar leaf items are not <a> elements");
   leafContract.hrefMismatches.length === 0
     ? ok("every sidebar leaf item's href resolves to its own #/... hash")
@@ -194,11 +195,15 @@ async function focusedId(page) {
     downSequence.push(await focusedId(page));
   }
   // From #/records (Board Prep: train, board, records, calendar, doctrine,
-  // dictionary, library): +1 -> calendar, +2 -> doctrine, +3 -> dictionary.
+  // dictionary, library, moi): +1 -> calendar, +2 -> doctrine, +3 -> dictionary.
   JSON.stringify(downSequence) === JSON.stringify(["#/calendar", "#/doctrine", "#/dictionary"])
     ? ok("ArrowDown roves forward through the open 'Board Prep' group in order")
     : bad("ArrowDown sequence from #/records (x3): " + JSON.stringify(downSequence));
-  await page.keyboard.press("ArrowDown"); // -> library (last of Board Prep)
+  await page.keyboard.press("ArrowDown"); // -> library
+  // Round 6 appended #/moi to the end of "Board Prep" (after library), so
+  // it's now the group's last item - one more ArrowDown than before this
+  // round to actually reach it.
+  await page.keyboard.press("ArrowDown"); // -> moi (last of Board Prep, as of round 6)
   await page.keyboard.press("ArrowDown"); // -> Study & Skills header (skips its collapsed members entirely)
   const afterSkip = await focusedId(page);
   afterSkip === "Study & Skills"
@@ -265,7 +270,7 @@ async function focusedId(page) {
       hrefMismatches: els.filter((e) => e.getAttribute("href") !== e.getAttribute("data-hash")).map((e) => e.getAttribute("data-hash")),
     };
   });
-  drawerContract.total === 34 ? ok("drawer still renders all 34 non-hidden routes as leaf items") : bad("drawer leaf item count: " + drawerContract.total + ", expected 34");
+  drawerContract.total === 35 ? ok("drawer still renders all 35 non-hidden routes as leaf items") : bad("drawer leaf item count: " + drawerContract.total + ", expected 35");
   drawerContract.allAnchors ? ok("every drawer leaf item is a real <a> element") : bad("some drawer leaf items are not <a> elements");
   drawerContract.hrefMismatches.length === 0
     ? ok("every drawer leaf item's href resolves to its own #/... hash")
