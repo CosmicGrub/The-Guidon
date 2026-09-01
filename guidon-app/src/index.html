@@ -6264,6 +6264,43 @@ window.G = window.G || {};
     return [x];
   };
 
+  // Roadmap audit, "Doctrine tier-range strings never match a specific-tier
+  // filter" bucket: doctrine.entries (and, in principle, any other tier-
+  // tagged corpus) uses a hyphenated "E4-E6"-shape string as shorthand for
+  // "every rank from E4 through E6", the same convention doc-tccc-style
+  // entries elsewhere in the seed already spell out as a real array
+  // (["E4","E5","E6"]). asArray's own literal-string wrapping treated that
+  // shorthand as one opaque token (`"E4-E6"` -> `["E4-E6"]`), so
+  // `.indexOf(s.tierFilter)` below - tierFilter is always a single "E1".."E6"
+  // rank, never a range - could never match: every range-tagged entry was
+  // silently hidden from every specific-tier filter selection and only ever
+  // showed under "all". 68 doctrine entries carry "E4-E6" and 34 carry
+  // "E5-E6" as of this pass (scenarios.scenarios and board.questions carry
+  // no hyphenated tier strings today, but share this exact filtering
+  // pattern - see store.scenarios()/boardQuestions() below - so this is
+  // scoped to cover them too rather than to doctrine alone).
+  // Deliberately a small dedicated helper, not a change to asArray itself:
+  // asArray is shared by several unrelated fields (answerScale, rubric,
+  // goalTemplates, renderModes, ...) that must keep a hyphenated string
+  // intact as-is, and no UI prints d.tier/sc.tier/q.tier as a literal range
+  // badge that this would disturb - the Doctrine card footer shows topic/
+  // source only (no tier badge at all), and the scenario/board tier badges
+  // that do exist already read tier as a real array, never through asArray.
+  util.expandTierTokens = function (x) {
+    return util.asArray(x).reduce(function (acc, t) {
+      var m = typeof t === "string" && t.match(/^([A-Za-z]+)(\d+)-([A-Za-z]*)(\d+)$/);
+      if (m && (!m[3] || m[3] === m[1])) {
+        var lo = parseInt(m[2], 10), hi = parseInt(m[4], 10);
+        if (!isNaN(lo) && !isNaN(hi) && lo <= hi) {
+          for (var i = lo; i <= hi; i++) acc.push(m[1] + i);
+          return acc;
+        }
+      }
+      acc.push(t);
+      return acc;
+    }, []);
+  };
+
   util.competencyClass = function (name) {
     const n = String(name || "").toLowerCase();
     if (n.startsWith("lead")) return "leads";
@@ -7432,7 +7469,7 @@ window.G = window.G || {};
         base = base.filter((d) => {
           if (d.confidence === "in_transition" && !s.showInTransition) return false;
           if (d.confidence === "community" && !s.showCommunity) return false;
-          if (s.tierFilter !== "all" && d.tier && util.asArray(d.tier).indexOf(s.tierFilter) === -1) return false;
+          if (s.tierFilter !== "all" && d.tier && util.expandTierTokens(d.tier).indexOf(s.tierFilter) === -1) return false;
           return true;
         });
         state._doctrineBaseCache = { key: baseKey, list: base };
@@ -7461,7 +7498,7 @@ window.G = window.G || {};
       seed.forEach((sc) => map.set(sc.id, Object.assign({ _origin: "seed" }, sc)));
       state.userScenarios.forEach((sc) => map.set(sc.id, Object.assign({ _origin: "user" }, sc)));
       let list = Array.from(map.values());
-      if (s.tierFilter !== "all") list = list.filter((sc) => !sc.tier || util.asArray(sc.tier).indexOf(s.tierFilter) !== -1);
+      if (s.tierFilter !== "all") list = list.filter((sc) => !sc.tier || util.expandTierTokens(sc.tier).indexOf(s.tierFilter) !== -1);
       const byId = new Map();
       list.forEach((sc) => byId.set(sc.id, sc));
       state._scenarioCache = { key, list, byId };
@@ -7527,7 +7564,7 @@ window.G = window.G || {};
       const key = s.tierFilter || "all";
       if (state._boardQuestionsCache && state._boardQuestionsCache.key === key) return state._boardQuestionsCache.list;
       let list = (state.seed.board && state.seed.board.questions) || [];
-      if (s.tierFilter !== "all") list = list.filter((q) => !q.tier || util.asArray(q.tier).indexOf(s.tierFilter) !== -1);
+      if (s.tierFilter !== "all") list = list.filter((q) => !q.tier || util.expandTierTokens(q.tier).indexOf(s.tierFilter) !== -1);
       state._boardQuestionsCache = { key, list };
       return list;
     },
