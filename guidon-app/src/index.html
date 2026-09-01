@@ -26153,10 +26153,23 @@ window.G = window.G || {};
     // this view (renderEditor() runs again on navigation).
     var CAP = 25;
     var expanded = false;
-    async function redraw() {
+    // Perf fix (roadmap audit, small-fixes pass): add()/remove() below both
+    // already return the freshly-mutated, saved list as their resolved
+    // value (load -> mutate -> save -> return list, all inside their own
+    // _serialize() queue) - but every call site immediately handed that
+    // value to util.toast/announce and then called bare redraw(), which
+    // turned around and re-issued its OWN G.db.get("kv", KEY) via load()
+    // to fetch the exact same rows a microtask later. That is a second
+    // IndexedDB read for data already sitting in hand, on every single
+    // add/remove click. redraw(preloadedList) now accepts that already-
+    // known list and skips load() entirely when it's given one; the two
+    // call sites that have no fresher list on hand (the initial render,
+    // and the "Show all" expander, which mutates nothing) still pass
+    // nothing and fall through to load() exactly as before.
+    async function redraw(preloadedList) {
       util.clear(listMount);
       util.clear(timelineMount);
-      var list = await load();
+      var list = preloadedList || await load();
       var b = bucket(list);
       var totalCount = b.overdue.length + b.soon.length + b.later.length;
       if (!totalCount) {
@@ -26191,10 +26204,10 @@ window.G = window.G || {};
         var del = el("button.btn.ghost.sm", { type: "button", text: "Remove", "aria-label": "Remove reminder " + r.label, "data-row-index": String(rowIndex) });
         del.addEventListener("click", async function () {
           try { if (G.notify) await G.notify.cancelForReminder(r.id); } catch (e) {}
-          await remove(r.id);
+          var updatedList = await remove(r.id); // already the post-removal list — see redraw()'s own comment above
           try { util.toast && util.toast("Reminder removed."); } catch (e) {}
           try { if (G.util.announce) G.util.announce("Reminder removed."); } catch (e) {}
-          await redraw();
+          await redraw(updatedList);
           // redraw() clears and rebuilds every row, so the just-clicked
           // button no longer exists and keyboard focus falls through to
           // document.body - land it on the Remove button that's now at this
@@ -26247,7 +26260,7 @@ window.G = window.G || {};
       labelIn.value = ""; noteIn.value = ""; dateIn.value = "";
       try { util.toast && util.toast("Reminder added for " + label + "."); } catch (e) {}
       try { if (G.util.announce) G.util.announce("Reminder added for " + label + "."); } catch (e) {}
-      redraw();
+      redraw(updated); // already the post-add list — see redraw()'s own comment above
     });
     form.appendChild(kindSel);
     form.appendChild(labelIn);
