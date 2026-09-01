@@ -19927,6 +19927,12 @@ window.G = window.G || {};
                      w:"Deliberately honest about what it can't prove — the manual checklist exists because some things only a human on the real device can confirm." },
     "#/search":    { d:"One search box across every scenario, board question, doctrine entry, lesson and resource, with type filters to narrow it.",
                      w:"" },
+    // MOI Import Engine, Phase 1: new route, added alongside its ROUTES/
+    // NAV_GROUPS entries above rather than left to fall back to the
+    // tour's generic "see this section" line (see the "these 8 routes"
+    // comment a few lines up for that fallback's own reasoning).
+    "#/moi":       { d:"Import your board's MOI and get a study plan built from exactly what it assigns.",
+                     w:"Paste or upload the MOI, then Find my topics — Review shows exactly what matched, needs a second look, or wasn't found." },
   };
   G.demoNotes = DEMO_NOTES;
 
@@ -32087,6 +32093,11 @@ window.G = window.G || {};
     { hash: "#/doctrine", label: "Doctrine", ico: "book", render: (m) => G.views.doctrine(m) },
     { hash: "#/dictionary", label: "Terms", ico: "book-open", render: (m) => G.dictionary.render(m) },
     { hash: "#/library", label: "Reference Library", ico: "archive", render: (m) => G.library.render(m) },
+    // MOI Import Engine, Phase 1: import a board MOI (memorandum of
+    // instruction) and get a study plan built from exactly what it
+    // assigns. A plain route like every other entry here - no wizard, no
+    // modal - see src/app-modules/moi-import.js's own header comment.
+    { hash: "#/moi", label: "MOI Import", ico: "upload", render: (m) => G.moiImport.render(m) },
     { hash: "#/board", label: "Board", ico: "layers", render: (m) => G.board.render(m) },
     { hash: "#/risk", label: "Risk", ico: "alert-triangle", render: (m) => G.risk.render(m) },
     { hash: "#/progress", label: "Progress", ico: "bar-chart", render: (m) => G.progress.render(m) },
@@ -32131,7 +32142,7 @@ window.G = window.G || {};
     { id: "home",    label: null,             hashes: ["#/home"] },
     // Practice & tracking (Train/Board Drill/Records/Calendar) | reference
     // library (Doctrine/Dictionary/Library).
-    { id: "prep",    label: "Board Prep",     hashes: ["#/train", "#/board", "#/records", "#/calendar", "#/doctrine", "#/dictionary", "#/library"],
+    { id: "prep",    label: "Board Prep",     hashes: ["#/train", "#/board", "#/records", "#/calendar", "#/doctrine", "#/dictionary", "#/library", "#/moi"],
       subdivideAfter: "#/calendar" },
     // Counsel moved here from Leadership (intuitivism pass) - its own
     // DEMO_NOTES tooltip already calls it a "skill-builder," closer in
