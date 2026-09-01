@@ -90,7 +90,40 @@ window.G = window.G || {};
         "My board letter is correctly formatted and free of grammatical errors",
         "My photograph, if my board requires one, is current and correct",
         "I have no flags",
-        "I have physically read my own record end to end, recently" ] }
+        "I have physically read my own record end to end, recently" ] },
+
+    // Board Packet Checklist (new feature): sourced from real Battalion board
+    // MOIs, which uniformly require ALL of the items below to be SUBMITTED
+    // ahead of the board, on top of whatever is already on file - a
+    // biography, a Soldier Talent Profile dated within 30 days, a printed
+    // head-to-toe photo in ASU, a 5-to-7-page essay on direct, organizational,
+    // and strategic leadership (ADP 6-22) in APA format (3-5 pages of content
+    // plus cover/reference pages), a current AFT scorecard plus DA Form
+    // 5500/5501 where applicable, the primary-weapon qualification score
+    // sheet, and (for NCOs) the last three NCOERs where available. Packets
+    // that are late or incomplete get returned without action - the same
+    // "the clock is working against you" stakes as the group above, which is
+    // why this gets its own group rather than folding into "The board file
+    // itself": that group is about what's already on file being presentable,
+    // this one is about assembling and submitting a distinct packet by a
+    // deadline. Item text is deliberately unit-agnostic - no battalion name,
+    // no MOI-specific numbering - so it stays correct across different
+    // units' actual MOIs, which vary in the specifics but not in requiring
+    // these documents. Appended as a NEW group at the END of GROUPS (not
+    // inserted between existing ones) so every earlier group keeps its
+    // index - and therefore every Soldier's already-saved
+    // "rec-<groupIndex>-<itemIndex>" checkmark keeps pointing at the same
+    // item it always did (see the VALID_IDS positional-id comment above).
+    { title: "The board packet",
+      why: "This is a distinct submission with its own deadline, ahead of the board itself - not something you bring with you. A packet that's late or missing an item is returned without action, so this has to be done early, not the week of.",
+      items: [
+        "My Soldier/NCO biography is written and ready to submit",
+        "My Soldier Talent Profile is dated within 30 days of my board",
+        "My printed photo is a full head-to-toe shot in ASU, not a headshot",
+        "My leadership essay (direct, organizational, and strategic, per ADP 6-22) is 5-7 pages in APA format - 3-5 pages of content plus cover and reference pages",
+        "My current AFT scorecard is in the packet, with DA Form 5500/5501 attached if I'm on a body-composition program",
+        "The most recent qualification score sheet for my primary weapon is in the packet",
+        "If I'm an NCO, my last three NCOERs are copied into the packet where available" ] }
   ];
 
   const TOTAL = GROUPS.reduce(function (n, g) { return n + g.items.length; }, 0);
