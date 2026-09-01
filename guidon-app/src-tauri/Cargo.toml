@@ -1,6 +1,6 @@
 [package]
 name = "guidon"
-version = "1.4.25"
+version = "1.5.0"
 description = "GUIDON - Army Leader Development Trainer"
 authors = ["GUIDON"]
 edition = "2021"
