@@ -2,7 +2,7 @@
 
 **Read this to know: what's shipped, what's deliberately not built (and why), and what actually comes next.** `GUIDON_PROJECT_MAP.md` is the 10,000-foot *what is this app* orientation; `CHANGELOG.md` is the session-by-session *what changed*; this document is the forward-looking one — pull from it to pick up where the last session left off, and keep it current going forward rather than letting it drift the way the other canonical docs already have once.
 
-**Current version:** v1.5.0 (2026-09-01)
+**Current version:** v1.5.1 (2026-09-01)
 
 ---
 
@@ -14,9 +14,12 @@ These are done — not "paused," not "mostly done." Nothing queued against them.
 |---|---|---|
 | Board-card content-accuracy project | All 984 board-question cards independently researched; zero duplicated/faked answer content remains | PRs #86–#88 |
 | Enhancement backlog (2-pass full-app audit) | 86 findings across 2 audit passes, every tier (do-first through long-term) implemented | PRs #93, #95, #96, #97 |
-| Roadmap-audit cadence, rounds 1–6 | Six 8-lens audit rounds (correctness, a11y, content-accuracy, native-platform, dependencies, test-coverage, performance, UX) | PRs #90–#92, #98, #106, #107 |
+| Roadmap-audit cadence, rounds 1–7 | Seven audit rounds — six full 8-lens sweeps plus round 7 (scoped to fast/small/low-risk fixes only) | PRs #90–#92, #98, #106, #107, round 7 |
 | MOI Import Engine, Phase 1 | `#/moi` — import a board MOI, get a matched study dashboard + a disposable practice drill | PR #107 |
-| Session-close cleanup | Hyphenated-tier-range filter bug, one mis-filed self-check question, 6 dependency bumps, 2 CI races root-caused (not just re-run) | PR #108 |
+| Session-close cleanup (round 6) | Hyphenated-tier-range filter bug, one mis-filed self-check question, 6 dependency bumps, 2 CI races root-caused (not just re-run) | PR #108 |
+| v1.5.0 release | First tagged GitHub Release — all 4 platform artifacts (standalone, web, Windows, Android), version bump, this document's own creation | v1.5.0 tag |
+| Gradle-wrapper regression, caught and fixed live on `main` | A Dependabot major bump broke real Android builds despite passing CI clean (no job actually exercises a real Gradle build); reverted, dependabot.yml now ignores that specific bump | PR #110 |
+| Round 7 (quick wins) | A real doctrine error, 2 a11y/UX gaps on `#/moi`, a new icon-registry test closing a real silent-fallback class, a Reminders double-read fix, and 9 test suites (including `test:moi-import` itself) found silently never running in CI, now wired in | v1.5.1 |
 
 See `CHANGELOG.md`'s v1.5.0 entry for the detailed version of all of the above.
 
