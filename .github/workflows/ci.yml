@@ -400,7 +400,20 @@ jobs:
 
       - name: cargo check --locked
         working-directory: guidon-app/src-tauri
-        run: cargo check --locked
+        # `cargo --version`/`rustc --version` printed first, for diagnosis:
+        # this job has failed repeatedly with "cannot update the lock file
+        # ... because --locked was passed" while the identical Cargo.lock/
+        # Cargo.toml pass `cargo check --locked` cleanly every time locally
+        # (cargo 1.96.0), including after a forced fresh crates.io index
+        # fetch. There is no rust-toolchain.toml and no explicit toolchain-
+        # install step here, so this runs whatever cargo happens to be
+        # preinstalled on the windows-latest runner image - a moving target.
+        # Knowing the actual version is the fastest way to find out whether
+        # that's the real variable, rather than guessing further blind.
+        run: |
+          cargo --version
+          rustc --version
+          cargo check --locked
 
   # ---------------------------------------------------------------------
   # Roadmap audit round 4, "CI / supply-chain hardening" bucket: OSV.dev
