@@ -14154,10 +14154,17 @@ window.G = window.G || {};
   // 0, so a Soldier looking at this on a Tuesday doesn't see a misleading
   // "zero" for Wednesday-through-Saturday that simply haven't happened yet.
   function renderActivityHeatmap(mount, last12Weeks) {
-    const DAY = 86400000, WEEKS = 12;
+    const WEEKS = 12;
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    const currentWeekStart = new Date(today.getTime() - today.getDay() * DAY);
-    const gridStart = new Date(currentWeekStart.getTime() - (WEEKS - 1) * 7 * DAY);
+    // Calendar-based (not ms-subtraction) so a DST spring-forward/fall-back
+    // night can't shift these onto the wrong weekday - same pattern as
+    // G.streak's isoDate()/yesterday() helpers above. Row index r is used as
+    // a bare index into WEEKDAY_LABELS below (row 0 must always be Sunday),
+    // so every date here has to land on its true calendar day-of-week even
+    // across a DST transition; Date's y/m/d constructor normalizes
+    // out-of-range day values into the previous/next month correctly.
+    const currentWeekStart = new Date(today.getFullYear(), today.getMonth(), today.getDate() - today.getDay());
+    const gridStart = new Date(currentWeekStart.getFullYear(), currentWeekStart.getMonth(), currentWeekStart.getDate() - (WEEKS - 1) * 7);
 
     // Real attempts per calendar day, local-time date key - same
     // toDateString() convention the trend chart above uses for its own
@@ -14176,10 +14183,10 @@ window.G = window.G || {};
     let totalCount = 0, activeDays = 0, pastDays = 0, longestGap = 0, curGap = 0;
 
     for (let c = 0; c < WEEKS; c++) {
-      const weekStart = new Date(gridStart.getTime() + c * 7 * DAY);
+      const weekStart = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + c * 7);
       weekLabels.push(weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" }));
       for (let r = 0; r < 7; r++) {
-        const d = new Date(weekStart.getTime() + r * DAY);
+        const d = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + r);
         if (d.getTime() > today.getTime()) {
           values[r][c] = null;
           tooltips[r][c] = "Upcoming — " + d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
@@ -30014,11 +30021,17 @@ window.G = window.G || {};
       // Build last 7 days buckets (oldest first)
       const buckets = Array.from({length:7}, (_,i) => {
         const dayStart = new Date(now - (6-i)*DAY); dayStart.setHours(0,0,0,0);
-        const dayEnd   = dayStart.getTime() + DAY;
+        // Calendar-based (not ms-addition) so a DST transition day - a real
+        // 23h or 25h local day - can't make dayEnd land short of or past the
+        // next real midnight; same pattern as G.streak's isoDate()/
+        // yesterday() helpers above. Date's y/m/d constructor normalizes
+        // day+1 into the correct next month on its own.
+        const dayEnd   = new Date(dayStart.getFullYear(), dayStart.getMonth(), dayStart.getDate() + 1);
+        dayEnd.setHours(0,0,0,0);
         const dayLabel = dayStart.toLocaleDateString("en-US",{weekday:"short"}).slice(0,1);
         const count = Object.values(completions).filter((c) => c && c.lastAt &&
           new Date(c.lastAt).getTime() >= dayStart.getTime() &&
-          new Date(c.lastAt).getTime() <  dayEnd
+          new Date(c.lastAt).getTime() <  dayEnd.getTime()
         ).length;
         return { label: dayLabel, count, isToday: i === 6 };
       });
