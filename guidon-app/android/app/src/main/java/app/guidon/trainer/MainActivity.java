@@ -241,10 +241,14 @@ public class MainActivity extends BridgeActivity {
           // Only genuine external navigation (http/https) gets handed off.
           // The app's own two `window.open("", "_blank")` popups (the
           // board-readiness print summary and the self-test's clipboard-
-          // copy fallback, both in src/index.html) never navigate anywhere
-          // - they document.write generated HTML straight into this popup
-          // - so they never reach this branch and are unaffected by this
-          // fix either way.
+          // copy fallback, both in src/index.html) were migrated to
+          // util.printHTML()/util.copyText() in an earlier round - see
+          // src/index.html's own comments at those call sites (~line 21446
+          // and ~line 24946) for why: window.open("", "_blank") handed back
+          // an unattached, invisible WebView proxy whose document.write()/
+          // print() never reached a screen, a silent dead button. Neither
+          // call site invokes window.open() anymore, so this method's only
+          // remaining real callers are genuine external-link taps.
           if ("http".equals(scheme) || "https".equals(scheme)) {
             try {
               context.startActivity(new Intent(Intent.ACTION_VIEW, uri));
