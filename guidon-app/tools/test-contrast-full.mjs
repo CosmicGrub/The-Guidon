@@ -40,6 +40,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import fs from "node:fs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 const THEMES = ["blackout","bone-neutral","clay-warm","desert-cadence","field-manual","graphite-calm",
       "harbor-mid","ink-paper","nautical-dusk","night-vision","overcast-glare","parade-rest",
@@ -57,12 +58,7 @@ page.on("pageerror", (e) => pageErrors.push(e.message));
 await page.goto(url, { waitUntil: "load" });
 await page.waitForTimeout(1100);
 await page.addStyleTag({ content: "*, *::before, *::after { transition: none !important; animation: none !important; }" });
-await page.evaluate(() => {
-  const t = [...document.querySelectorAll("button,.ob-mode-card,[role=button],.click")]
-    .find((e) => /guest session/i.test(e.textContent || ""));
-  if (t) t.click();
-});
-await page.waitForTimeout(1100);
+await dismissOnboarding(page);
 await page.addScriptTag({ content: axeSrc });
 
 // Derived live from the app's own ROUTES array (window.G.routes, same

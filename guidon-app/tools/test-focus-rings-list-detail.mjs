@@ -37,6 +37,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -51,13 +52,20 @@ async function bootTo(hash, viewport) {
   page.on("console", (m) => { if (["error", "warning"].includes(m.type())) noise.push(m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
   await page.goto(url, { waitUntil: "load" });
-  await page.waitForTimeout(1000);
-  await page.evaluate(() => {
-    const t = [...document.querySelectorAll("button,.ob-mode-card,[role=button],.click")]
-      .find((e) => /guest session/i.test(e.textContent || ""));
-    if (t) t.click();
-  });
-  await page.waitForTimeout(1000);
+  await dismissOnboarding(page);
+  // dismissOnboarding() clicks the guest-session card via a real (trusted)
+  // Playwright mouse click, which flips Chromium's own input-modality
+  // heuristic to "pointer" for the rest of this page/context - a later
+  // *programmatic* row.focus() in assertRingOnFirstRow() below would then
+  // report :focus-visible === false purely because of that earlier click,
+  // not because the app's own CSS/focus handling regressed (confirmed by
+  // diffing against this suite's pre-migration onboarding dismissal, which
+  // used an untrusted script .click() and never touched the modality flag).
+  // One real keypress here flips the modality back to "keyboard" before any
+  // row is ever focused, restoring this suite's own documented assumption
+  // (see the file header) that a script-triggered .focus() sets a real
+  // :focus-visible state.
+  await page.keyboard.press("Tab");
   await page.evaluate((h) => { location.hash = h; }, hash);
   await page.waitForTimeout(1000);
   return { page, noise };

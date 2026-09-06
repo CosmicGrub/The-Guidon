@@ -18,13 +18,17 @@
  * a pre-existing feature - height:auto;flex:1 1 auto, no fixed ratio) when
  * the viewport is short AND landscape. This suite proves: it engages exactly
  * there and nowhere else (not folded-portrait at the same width, not the Tab
- * in any orientation, not desktop), that it actually fixes the content
+ * in any orientation, not desktop - and, since S3 on the desktop roadmap,
+ * not a short landscape DESKTOP window either: the gate is pointer-aware,
+ * see the TOUCH/assertCoarsePointer helpers and the desktop-negative
+ * section below), that it actually fixes the content
  * collapse it exists to fix, and that both existing exit paths (Escape, the
  * qz-fs-btn toggle) still work when theater was entered this way rather than
  * by the manual button click it was originally built for.
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -33,19 +37,49 @@ const bad = (m) => { fails++; console.log("  FAIL  " + m); };
 const { server, url } = await serve("web");
 const browser = await chromium.launch();
 
-async function bootToBoard(viewport) {
-  const page = await (await browser.newContext({ viewport })).newPage();
+// S3 (desktop roadmap, 2026-09-04): auto-theater is pointer-gated - it only
+// engages on a coarse pointer (a real phone/fold in the hand), never in a
+// short DESKTOP window. Playwright's hasTouch:true flips the app's own
+// pointer idiom, window.matchMedia("(hover: hover) and (pointer: fine)"), to
+// false (measured 2026-09-04: hasTouch:true at 882x344 -> fine=false,
+// maxTouchPoints=1; hasTouch:false at 1280x430 -> fine=true,
+// maxTouchPoints=0), so every must-theater case below boots with TOUCH and
+// proves that flip in-page (assertCoarsePointer) before trusting its theater
+// read - a positive case that silently ran on a fine pointer would pass or
+// fail for the wrong reason.
+const TOUCH = { hasTouch: true, isMobile: true };
+const POINTER_MQ = "(hover: hover) and (pointer: fine)";
+async function pointerState(page) {
+  return page.evaluate((mq) => ({ fine: window.matchMedia(mq).matches, touchPoints: navigator.maxTouchPoints }), POINTER_MQ);
+}
+async function assertCoarsePointer(page, label) {
+  const p = await pointerState(page);
+  p.fine === false
+    ? ok(`${label}: in-page matchMedia("${POINTER_MQ}").matches === false (maxTouchPoints=${p.touchPoints}) - coarse pointer, auto-theater may engage`)
+    : bad(`${label}: in-page matchMedia("${POINTER_MQ}").matches is ${p.fine} in a hasTouch:true context (maxTouchPoints=${p.touchPoints}) - the touch context did not flip the pointer query`);
+}
+async function assertFinePointer(page, label) {
+  const p = await pointerState(page);
+  p.fine === true
+    ? ok(`${label}: in-page matchMedia("${POINTER_MQ}").matches === true (maxTouchPoints=${p.touchPoints}) - fine pointer, auto-theater must stay out`)
+    : bad(`${label}: in-page matchMedia("${POINTER_MQ}").matches is ${p.fine} in a hasTouch:false context (maxTouchPoints=${p.touchPoints}) - not a desktop pointer`);
+}
+
+async function bootToBoard(viewport, ctxOpts = {}) {
+  const ctx = await browser.newContext({ viewport, ...ctxOpts });
+  // Count Fullscreen API calls without changing their behaviour: automatic
+  // theater entry must not call requestFullscreen (manual entry keeps it).
+  await ctx.addInitScript(() => {
+    window.__rfsCalls = 0;
+    const orig = Element.prototype.requestFullscreen;
+    Element.prototype.requestFullscreen = function () { window.__rfsCalls++; return orig ? orig.apply(this, arguments) : Promise.resolve(); };
+  });
+  const page = await ctx.newPage();
   const noise = [];
   page.on("console", (m) => { if (["error", "warning"].includes(m.type())) noise.push(m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
   await page.goto(url, { waitUntil: "load" });
-  await page.waitForTimeout(1100);
-  await page.evaluate(() => {
-    const t = [...document.querySelectorAll("button,.ob-mode-card,[role=button],.click")]
-      .find((e) => /guest session/i.test(e.textContent || ""));
-    if (t) t.click();
-  });
-  await page.waitForTimeout(1100);
+  await dismissOnboarding(page);
   await page.evaluate(() => { location.hash = "#/board"; });
   await page.waitForTimeout(1100);
   return { page, noise };
@@ -58,12 +92,19 @@ async function clickFirstTopic(page) {
 
 /* ---- The trigger case: folded AND landscape ---- */
 {
-  const { page, noise } = await bootToBoard({ width: 882, height: 344 });
+  const { page, noise } = await bootToBoard({ width: 882, height: 344 }, TOUCH);
+  await assertCoarsePointer(page, "folded+landscape (882x344)");
   await clickFirstTopic(page);
   const theaterOn = await page.evaluate(() => document.documentElement.classList.contains("qz-theater"));
   theaterOn
     ? ok("folded+landscape (882x344): selecting a topic auto-enters theater mode")
     : bad("folded+landscape (882x344): selecting a topic did NOT auto-enter theater mode");
+  // S3: automatic entry is the CSS overlay + immersive bars only; the
+  // Fullscreen API stays reserved for the user's own button press.
+  const rfsAuto = await page.evaluate(() => window.__rfsCalls);
+  rfsAuto === 0
+    ? ok("automatic theater entry does NOT call requestFullscreen (0 calls)")
+    : bad(`automatic theater entry called requestFullscreen ${rfsAuto} time(s) - automatic entry must skip the Fullscreen API (manual entry keeps it)`);
 
   const card = await page.evaluate(() => { const r = document.querySelector(".qz-card").getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height) }; });
   card.h > 200
@@ -99,7 +140,8 @@ async function clickFirstTopic(page) {
    resolved against came apart internally, so the answer face rendered
    short inside a much taller card. ---- */
 {
-  const { page } = await bootToBoard({ width: 882, height: 344 });
+  const { page } = await bootToBoard({ width: 882, height: 344 }, TOUCH);
+  await assertCoarsePointer(page, "theater+reduce-motion (882x344)");
   await clickFirstTopic(page);
   await page.evaluate(() => {
     document.documentElement.setAttribute("data-motion", "minimal");
@@ -183,7 +225,8 @@ async function clickFirstTopic(page) {
    state the feature was originally built for - a different entry path
    could plausibly leave state inconsistent even if entry itself works) ---- */
 {
-  const { page } = await bootToBoard({ width: 882, height: 344 });
+  const { page } = await bootToBoard({ width: 882, height: 344 }, TOUCH);
+  await assertCoarsePointer(page, "exit paths (882x344)");
   await clickFirstTopic(page);
   const before = await page.evaluate(() => document.documentElement.classList.contains("qz-theater"));
   await page.keyboard.press("Escape");
@@ -204,17 +247,89 @@ async function clickFirstTopic(page) {
   await page.close();
 }
 
+/* ---- S3 (desktop roadmap, 2026-09-04): pointer-gated auto-theater. A
+   short landscape DESKTOP window (fine pointer - a laptop window dragged
+   short, a half-height Tauri window) must NOT auto-enter theater, even at
+   the exact shape that engages it on a folded phone: the fixed-ratio card
+   is cramped there too, but hijacking a mouse-driven window into a
+   fullscreen overlay is worse than a small card, and the user has the
+   manual fullscreen button (F / .qz-fs-btn) if they want it. Both entry
+   paths are covered: (a) landing on #/board already short (mount-time
+   timer, then the category-click timer), (b) resizing an already-mounted
+   #/board page with a card active into the short shape (the
+   resize/orientationchange listener). The manual path must keep working
+   unchanged - and it is the only path that still calls requestFullscreen.
+   RED before the gate landed (2026-09-04): both (a) reads and the (b)
+   resize read came back in theater on the unpatched build. ---- */
+{
+  const { page, noise } = await bootToBoard({ width: 1280, height: 430 }, { hasTouch: false });
+  await assertFinePointer(page, "desktop-short (1280x430)");
+  const atMount = await page.evaluate(() => document.documentElement.classList.contains("qz-theater"));
+  !atMount
+    ? ok("desktop-short (1280x430, fine pointer): landing on #/board does NOT auto-enter theater mode (mount-time timer is pointer-gated)")
+    : bad("desktop-short (1280x430, fine pointer): landing on #/board auto-entered theater mode - the mount-time timer is not pointer-gated");
+  await clickFirstTopic(page);
+  const afterClick = await page.evaluate(() => document.documentElement.classList.contains("qz-theater"));
+  !afterClick
+    ? ok("desktop-short (1280x430, fine pointer): selecting a topic with a card active does NOT auto-enter theater mode (category-click timer is pointer-gated)")
+    : bad("desktop-short (1280x430, fine pointer): selecting a topic auto-entered theater mode - the category-click timer is not pointer-gated");
+  const rfsAuto = await page.evaluate(() => window.__rfsCalls);
+  rfsAuto === 0
+    ? ok("desktop-short: no requestFullscreen call was made without the user asking")
+    : bad(`desktop-short: requestFullscreen was called ${rfsAuto} time(s) without the user asking`);
+  // Manual entry is untouched: the fullscreen button still enters theater
+  // AND still asks for true fullscreen.
+  await page.evaluate(() => { const b = document.querySelector(".qz-fs-btn"); if (b) b.click(); });
+  await page.waitForTimeout(300);
+  const manual = await page.evaluate(() => ({ theater: document.documentElement.classList.contains("qz-theater"), rfs: window.__rfsCalls }));
+  manual.theater
+    ? ok("desktop-short: the manual .qz-fs-btn still enters theater mode on a fine pointer")
+    : bad("desktop-short: the manual .qz-fs-btn did not enter theater mode (or auto-theater was already on and the toggle exited it)");
+  manual.rfs === 1
+    ? ok("desktop-short: manual entry still calls requestFullscreen exactly once")
+    : bad(`desktop-short: manual entry called requestFullscreen ${manual.rfs} time(s) in total, expected exactly 1`);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+  const noiseFiltered = noise.filter((n) => !/favicon/.test(n));
+  noiseFiltered.length === 0 ? ok("desktop-short: no console errors/warnings") : bad("desktop-short console noise: " + noiseFiltered.slice(0, 5).join(" | "));
+  await page.close();
+}
+{
+  const { page, noise } = await bootToBoard({ width: 1280, height: 880 }, { hasTouch: false });
+  await assertFinePointer(page, "desktop resize (1280x880)");
+  await clickFirstTopic(page);
+  const before = await page.evaluate(() => document.documentElement.classList.contains("qz-theater"));
+  !before
+    ? ok("desktop resize precondition: 1280x880 with a card active is not in theater mode")
+    : bad("desktop resize precondition failed: theater mode active at 1280x880 before the resize");
+  await page.setViewportSize({ width: 1280, height: 430 });
+  await page.waitForTimeout(500);
+  const afterResize = await page.evaluate(() => ({ theater: document.documentElement.classList.contains("qz-theater"), rfs: window.__rfsCalls, h: window.innerHeight, w: window.innerWidth }));
+  !afterResize.theater
+    ? ok(`desktop (fine pointer): resizing an already-mounted #/board page with a card active to ${afterResize.w}x${afterResize.h} does NOT enter theater mode (resize listener is pointer-gated)`)
+    : bad(`desktop (fine pointer): resizing an already-mounted #/board page with a card active to ${afterResize.w}x${afterResize.h} entered theater mode - the resize listener is not pointer-gated`);
+  afterResize.rfs === 0
+    ? ok("desktop resize: no requestFullscreen call was made without the user asking")
+    : bad(`desktop resize: requestFullscreen was called ${afterResize.rfs} time(s) without the user asking`);
+  const noiseFiltered = noise.filter((n) => !/favicon/.test(n));
+  noiseFiltered.length === 0 ? ok("desktop resize: no console errors/warnings") : bad("desktop resize console noise: " + noiseFiltered.slice(0, 5).join(" | "));
+  await page.close();
+}
+
 /* ---- Must NOT engage outside the specific folded+landscape case - a
    feature this assertive needs an equally explicit negative-space guard,
    or it risks hijacking normal desktop/tablet use into unwanted fullscreen. ---- */
 const shouldNotTrigger = [
-  { viewport: { width: 344, height: 882 }, label: "Fold folded PORTRAIT (344x882) - short, but not landscape" },
-  { viewport: { width: 823, height: 1317 }, label: "Tab S9 FE portrait (823x1317)" },
-  { viewport: { width: 1317, height: 823 }, label: "Tab S9 FE landscape (1317x823) - landscape, but not short (vh 823 > 460)" },
-  { viewport: { width: 1440, height: 900 }, label: "Desktop (1440x900)" },
+  // The device shapes run as coarse-pointer contexts so each one stays a
+  // test of the SHAPE gate (S3's pointer gate would otherwise keep them out
+  // of theater for a reason unrelated to their label).
+  { viewport: { width: 344, height: 882 }, ctx: TOUCH, label: "Fold folded PORTRAIT (344x882) - short, but not landscape" },
+  { viewport: { width: 823, height: 1317 }, ctx: TOUCH, label: "Tab S9 FE portrait (823x1317)" },
+  { viewport: { width: 1317, height: 823 }, ctx: TOUCH, label: "Tab S9 FE landscape (1317x823) - landscape, but not short (vh 823 > 460)" },
+  { viewport: { width: 1440, height: 900 }, ctx: { hasTouch: false }, label: "Desktop (1440x900)" },
 ];
 for (const c of shouldNotTrigger) {
-  const { page, noise } = await bootToBoard(c.viewport);
+  const { page, noise } = await bootToBoard(c.viewport, c.ctx);
   await clickFirstTopic(page);
   const theaterOn = await page.evaluate(() => document.documentElement.classList.contains("qz-theater"));
   !theaterOn
@@ -241,18 +356,13 @@ for (const c of shouldNotTrigger) {
    landscape viewport - no click needed to trigger it), navigating to
    #/home well before the 220ms elapses. ---- */
 {
-  const page = await (await browser.newContext({ viewport: { width: 882, height: 344 } })).newPage();
+  const page = await (await browser.newContext({ viewport: { width: 882, height: 344 }, ...TOUCH })).newPage();
   const noise = [];
   page.on("console", (m) => { if (["error", "warning"].includes(m.type())) noise.push(m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
   await page.goto(url, { waitUntil: "load" });
-  await page.waitForTimeout(1100);
-  await page.evaluate(() => {
-    const t = [...document.querySelectorAll("button,.ob-mode-card,[role=button],.click")]
-      .find((e) => /guest session/i.test(e.textContent || ""));
-    if (t) t.click();
-  });
-  await page.waitForTimeout(1100);
+  await dismissOnboarding(page);
+  await assertCoarsePointer(page, "dangling-timer (882x344)");
 
   // Land on #/board (arms the initial-mount 220ms timer), then jump straight
   // to #/home well inside that window - the whole point of this test is to
@@ -293,7 +403,8 @@ for (const c of shouldNotTrigger) {
    SAME page into short-landscape territory without any fresh navigation or
    category click, and asserts theater engages anyway. ---- */
 {
-  const { page, noise } = await bootToBoard({ width: 1024, height: 800 });
+  const { page, noise } = await bootToBoard({ width: 1024, height: 800 }, TOUCH);
+  await assertCoarsePointer(page, "Item B resize (1024x800 -> 882x344)");
   await clickFirstTopic(page);
   const before = await page.evaluate(() => document.documentElement.classList.contains("qz-theater"));
   !before
@@ -378,7 +489,8 @@ for (const c of shouldNotTrigger) {
    check on its own now-detached cardWrap, so this also exercises that
    guard). ---- */
 {
-  const { page, noise } = await bootToBoard({ width: 1024, height: 800 });
+  const { page, noise } = await bootToBoard({ width: 1024, height: 800 }, TOUCH);
+  await assertCoarsePointer(page, "Item B tab-cycle (1024x800 -> 882x344)");
   await clickFirstTopic(page);
   for (let i = 0; i < 2; i++) {
     await page.evaluate(() => {
@@ -419,7 +531,8 @@ for (const c of shouldNotTrigger) {
    legible (not cut off) is equally a pass condition here. ---- */
 {
   // 459px height, landscape: one px inside the gate - theater DOES engage.
-  const { page, noise } = await bootToBoard({ width: 900, height: 459 });
+  const { page, noise } = await bootToBoard({ width: 900, height: 459 }, TOUCH);
+  await assertCoarsePointer(page, "boundary 459");
   await clickFirstTopic(page);
   const at459 = await page.evaluate(() => document.documentElement.classList.contains("qz-theater"));
   at459
@@ -434,7 +547,8 @@ for (const c of shouldNotTrigger) {
   // engage, but the fixed-ratio card must still render legibly (not cut
   // off) via the existing height-derived shrink formula (.qz-card's own
   // vh-formula - see that rule's comment near .qz-card).
-  const { page, noise } = await bootToBoard({ width: 900, height: 461 });
+  const { page, noise } = await bootToBoard({ width: 900, height: 461 }, TOUCH);
+  await assertCoarsePointer(page, "boundary 461");
   await clickFirstTopic(page);
   const at461 = await page.evaluate(() => document.documentElement.classList.contains("qz-theater"));
   !at461
@@ -459,7 +573,8 @@ for (const c of shouldNotTrigger) {
   // than the Fold5's cover-screen landscape (344px) and outside the <460
   // gate - confirms the existing non-theater shrink formula alone (no
   // auto-theater assist) still produces a legible, non-cut-off card here.
-  const { page, noise } = await bootToBoard({ width: 600, height: 500 });
+  const { page, noise } = await bootToBoard({ width: 600, height: 500 }, TOUCH);
+  await assertCoarsePointer(page, "dead-zone 600x500");
   await clickFirstTopic(page);
   const deadZoneTheater = await page.evaluate(() => document.documentElement.classList.contains("qz-theater"));
   !deadZoneTheater

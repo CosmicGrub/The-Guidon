@@ -19,12 +19,16 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { declaredNavRoutes } from "./declared-routes.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
 const bad = (m) => { fails++; console.log("  FAIL  " + m); };
 
 const { server, url } = await serve("web");
+/* Expected sidebar/drawer leaf count, derived from the build (see tools/declared-routes.mjs). */
+const NAV = await declaredNavRoutes("web/index.html");
 const browser = await chromium.launch();
 const noise = [];
 
@@ -36,12 +40,14 @@ const noise = [];
   page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push("[<600px] " + m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("[<600px] pageerror: " + e.message));
   await page.goto(url, { waitUntil: "load" });
-  await page.waitForTimeout(700);
-  await page.evaluate(() => {
-    const t = [...document.querySelectorAll("button,.ob-mode-card,[role=button],.click")]
-      .find((e) => /guest session/i.test(e.textContent || ""));
-    if (t) t.click();
-  });
+  // Wait for onboarding's guest card, never a fixed 700 ms: in the FIRST
+  // context of a cold browser the overlay mounts after the app's first
+  // IndexedDB read, more than 700 ms after load (measured 2026-09-05:
+  // booted but no #ob-overlay at 700 ms, present at 1400 ms; warm
+  // contexts have it at 700 ms), so a timed click found nothing, the
+  // overlay stayed up and the next real click timed out behind it
+  // (2 of 5 runs). Same idiom as tools/dismiss-onboarding.mjs.
+  await dismissOnboarding(page);
   await page.waitForTimeout(700);
 
   const navState = await page.evaluate(() => {
@@ -99,12 +105,14 @@ const noise = [];
   JSON.stringify(drawerOpen.groupHeaders) === JSON.stringify(["Board Prep", "Study & Skills", "Leadership", "Career & Life", "Account", "Advanced"])
     ? ok("drawer renders all 6 labeled groups, same order as the sidebar")
     : bad("drawer group headers: " + JSON.stringify(drawerOpen.groupHeaders));
-  // 35 as of round 6's MOI Import Engine (#/moi, added to the "Board Prep"
-  // group) - was 34 before that route existed (itself added for #/storage,
-  // Data & Storage dashboard, roadmap Tier 8).
-  drawerOpen.totalButtons === 35
-    ? ok("drawer renders all 35 non-hidden routes (same set the >=600px sidebar shows)")
-    : bad("drawer route button count: " + drawerOpen.totalButtons + ", expected 35");
+  // Derived from the build, never a literal: declaredNavRoutes() reads the
+  // NAV_GROUPS hashes minus NAV_HIDDEN out of web/index.html. This was the
+  // hand-copied number 35 (34 before #/moi, 33 before #/storage) and went
+  // red the day #/group joined "Board Prep" - the exact drift a literal
+  // count cannot see.
+  drawerOpen.totalButtons === NAV.count
+    ? ok("drawer renders all " + NAV.count + " non-hidden routes NAV_GROUPS declares (same set the >=600px sidebar shows)")
+    : bad("drawer route button count: " + drawerOpen.totalButtons + ", expected " + NAV.count + " (NAV_GROUPS minus NAV_HIDDEN in the build)");
   drawerOpen.demoted.length === 0
     ? ok("drawer has no .nav-demoted items - Author/Diagnostics moved to their own real group instead of in-place dimming")
     : bad("drawer still has .nav-demoted items: " + JSON.stringify(drawerOpen.demoted));
@@ -232,12 +240,14 @@ const noise = [];
   page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push("[sidebar] " + m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("[sidebar] pageerror: " + e.message));
   await page.goto(url, { waitUntil: "load" });
-  await page.waitForTimeout(700);
-  await page.evaluate(() => {
-    const t = [...document.querySelectorAll("button,.ob-mode-card,[role=button],.click")]
-      .find((e) => /guest session/i.test(e.textContent || ""));
-    if (t) t.click();
-  });
+  // Wait for onboarding's guest card, never a fixed 700 ms: in the FIRST
+  // context of a cold browser the overlay mounts after the app's first
+  // IndexedDB read, more than 700 ms after load (measured 2026-09-05:
+  // booted but no #ob-overlay at 700 ms, present at 1400 ms; warm
+  // contexts have it at 700 ms), so a timed click found nothing, the
+  // overlay stayed up and the next real click timed out behind it
+  // (2 of 5 runs). Same idiom as tools/dismiss-onboarding.mjs.
+  await dismissOnboarding(page);
   await page.waitForTimeout(700);
 
   const sidebar = await page.evaluate(() => ({
@@ -250,9 +260,8 @@ const noise = [];
       .map((b) => b.getAttribute("data-hash"))
       .filter((h) => ["#/progress", "#/currency", "#/settings", "#/share"].includes(h)),
   }));
-  // 35 as of round 6's #/moi - see the drawer assertion above for the same
-  // count and its own provenance note.
-  sidebar.totalButtons === 35 ? ok("sidebar renders all 35 non-hidden routes") : bad("sidebar route button count: " + sidebar.totalButtons + ", expected 35");
+  // Same derived count as the drawer assertion above (declaredNavRoutes()).
+  sidebar.totalButtons === NAV.count ? ok("sidebar renders all " + NAV.count + " non-hidden routes NAV_GROUPS declares") : bad("sidebar route button count: " + sidebar.totalButtons + ", expected " + NAV.count + " (NAV_GROUPS minus NAV_HIDDEN in the build)");
   sidebar.hasMoreBtn === false ? ok("no More button at >=600px - the sidebar shows everything directly") : bad("unexpected More button in the sidebar");
   // 6 labeled groups now (Board Prep/Study & Skills/Leadership/Career &
   // Life/Account/Advanced) = 6 between-group dividers, + 3 in-group

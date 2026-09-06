@@ -6,6 +6,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { mkdir, rm } from "node:fs/promises";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 const OUT = "dist/ux-shots";
 const VIEWPORTS = [
@@ -33,11 +34,7 @@ for (const vp of VIEWPORTS) {
   await page.screenshot({ path: `${OUT}/onboarding-${vp.name}.png` });
 
   // Continue as Guest so views carry normal (empty-profile) state.
-  await page.evaluate(() => {
-    const t = [...document.querySelectorAll("button,.ob-mode-card,[role=button],.click")]
-      .find((e) => /guest session/i.test(e.textContent || ""));
-    if (t) t.click();
-  });
+  await dismissOnboarding(page);
   await page.waitForTimeout(1500);
 
   for (const hash of SECTIONS) {

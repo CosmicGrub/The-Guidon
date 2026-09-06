@@ -14,6 +14,7 @@ import { chromium, devices } from "playwright";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { serve } from "./server.mjs";
+import { probeViaPlaywright, writeProbe } from "./caps-probe.mjs";
 
 const WEB = process.argv[2] || "web";
 const SETTLE_NAV = 250;
@@ -41,11 +42,54 @@ const VIEWPORTS = [
   { name: "tabS9-portrait", width: 823, height: 1317 },
   { name: "tabS9-landscape", width: 1152, height: 720 },
   { name: "desktop", width: 1440, height: 900 },
+  // Desktop window shapes (added 2026-09-03): a short laptop window, a
+  // half-snapped 1366x768 laptop, and the Tauri minimum. They are desktop
+  // pointer shapes, so touch: false overrides section 5's width<900 touch
+  // heuristic (which exists for the phone/fold rows above).
+  { name: "desktop-short", width: 1280, height: 450, touch: false },
+  { name: "snap-half-1366", width: 683, height: 728, touch: false },
+  { name: "win-min", width: 360, height: 480, touch: false },
 ];
 
-const results = { pass: [], fail: [], info: {} };
+const results = { pass: [], fail: [], known: [], info: {} };
+// Measured defects that are pinned, not fixed (same mechanism as
+// tools/test-resize-storm.mjs): a bad() whose message matches a pin is
+// printed as KNOWN and counted in results.known so the tree stays runnable
+// end to end. A pin that matches nothing is itself a FAIL (the defect no
+// longer reproduces - remove the pin). Exit code ignores known.
+const EXPECTED_DEFECTS = [
+  // (empty) The desktop-short auto-theater pin (1280x450, no touch, #/board
+  // load entered theater) was closed by S3, pointer-gated auto-theater,
+  // 2026-09-04 - that row is now an ordinary PASS/FAIL like every other.
+];
+// One overflow probe for sections 1 and 5. wide>0 names the widest offender
+// (tag, first class, rounded px) in the message itself, so a failure is
+// self-diagnosing: measured 2026-09-04, a bare "wide=1" at win-min @#/board
+// took a full per-card sweep to attribute (that sweep is now
+// tools/test-board-card-overflow.mjs, which steps every card).
+// Message prefixes ("<vp> overflow @<route>", "overflow at <route>:") are
+// unchanged; the detail is appended in parentheses only when wide > 0.
+const OVERFLOW_PROBE = () => {
+  const iw = window.innerWidth;
+  let wide = 0, widest = null;
+  for (const el of document.querySelectorAll("body *")) {
+    const w = el.getBoundingClientRect().width;
+    if (w > iw + 1) { wide++; if (!widest || w > widest.w) widest = { el, w }; }
+  }
+  const cls = widest ? (widest.el.getAttribute("class") || "").split(/\s+/).filter(Boolean)[0] : "";
+  return {
+    doc: document.documentElement.scrollWidth - iw,
+    wide,
+    widest: widest ? widest.el.tagName.toLowerCase() + (cls ? "." + cls : "") + " " + Math.round(widest.w) + "px" : "",
+  };
+};
+const fmtWide = (o) => (o.wide > 0 ? ` (${o.widest})` : "");
 const ok = (m) => { results.pass.push(m); console.log("  PASS  " + m); };
-const bad = (m) => { results.fail.push(m); console.log("  FAIL  " + m); };
+const bad = (m) => {
+  const pin = EXPECTED_DEFECTS.find((p) => p.match.test(m));
+  if (pin) { pin.hits = (pin.hits || 0) + 1; results.known.push(m); console.log("  KNOWN " + m); return; }
+  results.fail.push(m); console.log("  FAIL  " + m);
+};
 
 async function main() {
   const { server, url } = await serve(WEB);
@@ -85,20 +129,54 @@ async function main() {
     else ok(`G.routes exposed: ${routes.length} sections`);
     results.info.routes = routes || [];
 
-    // Every route: no overflow, no console noise.
+    // Every route: no overflow, no console noise, and a per-route document
+    // title (S5, 2026-09-04): route() sets "GUIDON - <label>" from the
+    // matched ROUTES entry, so the expected label is read from the live
+    // G.routes entry in-page - never a hand list here.
     let overflow = 0;
+    let badTitles = 0;
     for (const r of results.info.routes) {
       await page.evaluate((h) => { location.hash = h; }, r);
       await page.waitForTimeout(SETTLE_NAV);
-      const o = await page.evaluate(() => ({
-        doc: document.documentElement.scrollWidth - window.innerWidth,
-        wide: [...document.querySelectorAll("body *")].filter(
-          (el) => el.getBoundingClientRect().width > window.innerWidth + 1
-        ).length,
-      }));
-      if (o.doc > 1 || o.wide > 0) { overflow++; bad(`overflow at ${r}: doc=${o.doc} wideEls=${o.wide}`); }
+      const o = await page.evaluate(OVERFLOW_PROBE);
+      if (o.doc > 1 || o.wide > 0) { overflow++; bad(`overflow at ${r}: doc=${o.doc} wideEls=${o.wide}${fmtWide(o)}`); }
+      const label = await page.evaluate((h) => {
+        const e = (window.G.routes || []).find((x) => x.hash === h);
+        return e && e.label ? String(e.label) : "";
+      }, r);
+      const title = await page.title();
+      const expected = label ? "GUIDON - " + label : "GUIDON";
+      if (title !== expected || (label && !title.endsWith(label))) {
+        badTitles++;
+        bad(`document.title at ${r}: got ${JSON.stringify(title)}, expected ${JSON.stringify(expected)}`);
+      }
     }
     if (!overflow) ok(`no horizontal overflow across ${results.info.routes.length} sections @1440px`);
+    if (!badTitles) ok(`document.title is "GUIDON - <label>" on every one of ${results.info.routes.length} routes`);
+
+    // ---------- 1b. fork marker + capability probe (collective P2) ----------
+    // The fork marker is stamped by tools/build.mjs per output, never by the
+    // shared src/index.html: "web" here, "standalone" in dist/ (asserted by
+    // tools/test-standalone.mjs). The probe is the app's own GUIDON_CAPS
+    // console sentinel from #/selftest?probe=1, written as
+    // artifacts/caps/chromium-web.json for tools/caps-matrix.mjs (artifacts/
+    // is gitignored - confirmed in guidon-app/.gitignore). Playwright's
+    // Chromium is the shipping engine family for web/pwa/tauri/android, so
+    // this file IS ship evidence; loopback:false because the page under test
+    // is the real build, not a fixture.
+    const fork = await page.evaluate(() => window.GUIDON_FORK);
+    fork === "web" ? ok('GUIDON_FORK === "web" (stamped by build.mjs into web/index.html)') : bad("GUIDON_FORK = " + JSON.stringify(fork) + ' in web/index.html (expected "web")');
+    const capsPayload = await probeViaPlaywright(page);
+    if (!capsPayload) bad("no GUIDON_CAPS sentinel within 8s of #/selftest?probe=1 - the build lacks the capability probe");
+    else {
+      const n = Object.keys(capsPayload.caps || {}).length;
+      const supported = Object.values(capsPayload.caps || {}).filter(Boolean).length;
+      const file = await writeProbe({ engine: "chromium", device: "web", collector: "tools/verify.mjs", payload: capsPayload });
+      ok(`capability probe captured (${supported}/${n} supported, fork ${capsPayload.fork}, sha ${String(capsPayload.sha).slice(0, 7)}) -> ${file}`);
+      results.info.caps = capsPayload;
+    }
+    await page.evaluate(() => { location.hash = "#/home"; });
+    await page.waitForTimeout(SETTLE_NAV);
 
     // ---------- 2. installability / PWA ----------
     console.log("\n[2] PWA installability");
@@ -251,6 +329,15 @@ async function main() {
     }
 
     // ---------- 4. no external network requests (offline guarantee) ----------
+    // "No server, ever" promise, P1 (desktop roadmap, locked decision Q1):
+    // this audit is scoped to OUTSIDE A STUDY SESSION - it loads the app
+    // with study groups at their default (off) and fails on any request
+    // not served from this origin. P4 (the first LAN study-room socket)
+    // must teach this audit to allow ONLY the room's ws:// origin while a
+    // session is open (studyGroups on + a G.netLedger entry naming that
+    // peer), and keep failing on everything else, in the same change that
+    // adds the socket. The in-app twin of this rule is the Diagnostics
+    // "No external requests" check (selftest AUTO id "offline").
     console.log("\n[4] External request audit");
     const extCtx = await browser.newContext();
     const extPage = await extCtx.newPage();
@@ -261,14 +348,38 @@ async function main() {
     });
     await extPage.goto(url, { waitUntil: "load" });
     await extPage.waitForTimeout(1500);
-    external.length === 0 ? ok("zero external requests") : bad("external requests: " + external.slice(0, 5).join(", "));
+    // PRIVACY.md ("What GUIDON is") promises this audit walks EVERY screen,
+    // not just the boot route: a lazy view that references an outside URL
+    // only when it renders would pass a root-only load. Same route list as
+    // section 1 (derived from G.routes in-page, never a hand list).
+    for (const r of results.info.routes) {
+      await extPage.evaluate((h) => { location.hash = h; }, r);
+      await extPage.waitForTimeout(SETTLE_NAV);
+    }
+    await extPage.waitForTimeout(500);
+    external.length === 0
+      ? ok(`zero external requests across boot + all ${results.info.routes.length} sections`)
+      : bad("external requests: " + external.slice(0, 5).join(", "));
     await extCtx.close();
 
     // ---------- 5. responsive sweep ----------
     console.log("\n[5] Responsive sweep across real viewports");
     for (const vp of VIEWPORTS) {
-      const c = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, hasTouch: vp.width < 900 });
-      const p = await c.newPage();
+      const ctxOpts = { viewport: { width: vp.width, height: vp.height }, hasTouch: vp.touch ?? (vp.width < 900) };
+      let c, p;
+      try { c = await browser.newContext(ctxOpts); p = await c.newPage(); }
+      catch (e) {
+        // Measured 2026-09-04 inside npm test: one Chromium renderer target
+        // crashed while opening the 4th viewport context (this laptop's GPU is
+        // a known hazard; the same run passed alone). Retry ONCE, visibly, so a
+        // single transient crash is recorded rather than fatal; a second crash
+        // still throws and fails the run.
+        if (!/crashed/i.test(String(e))) throw e;
+        console.log("  WARN  " + vp.name + ": browser target crashed opening the context - retrying once (" + String(e).split(String.fromCharCode(10))[0] + ")");
+        results.info.targetCrashes = (results.info.targetCrashes || 0) + 1;
+        try { if (c) await c.close(); } catch (_) {}
+        c = await browser.newContext(ctxOpts); p = await c.newPage();
+      }
       const vmsgs = [];
       p.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") vmsgs.push(m.text()); });
       p.on("pageerror", (e) => vmsgs.push("pageerror: " + e.message));
@@ -278,13 +389,55 @@ async function main() {
       for (const r of results.info.routes) {
         await p.evaluate((h) => { location.hash = h; }, r);
         await p.waitForTimeout(120);
-        const o = await p.evaluate(() => ({
-          doc: document.documentElement.scrollWidth - window.innerWidth,
-          wide: [...document.querySelectorAll("body *")].filter(
-            (el) => el.getBoundingClientRect().width > window.innerWidth + 1
-          ).length,
-        }));
-        if (o.doc > 1 || o.wide > 0) { badCount++; bad(`${vp.name} overflow @${r} doc=${o.doc} wide=${o.wide}`); }
+        // At-load overflow. This read is deliberately the FIRST thing done
+        // on a route, before the theater read and before the #/board card
+        // activation + exitTheater() further down, so a card open/close
+        // transition can never contaminate the at-load number; the card-
+        // open path has its own, separately named read below.
+        const o = await p.evaluate(OVERFLOW_PROBE);
+        if (o.doc > 1 || o.wide > 0) { badCount++; bad(`${vp.name} overflow @${r} doc=${o.doc} wide=${o.wide}${fmtWide(o)}`); }
+        // Board Drill theater mode must never engage on its own at load.
+        // Marker is the one the app itself toggles (src/index.html
+        // theaterOn(): html.qz-theater), same as the resize storm's SNAP.
+        // Board Drill's mount-time auto-theater is a 220ms setTimeout
+        // (src/index.html G.board._autoTheaterTimer), longer than the 120ms
+        // route settle above - wait past it on #/board or the at-load read
+        // can never see it (measured 2026-09-03: 1280x450 marker is set
+        // ~220ms after the hash change, no card click needed).
+        if (r === "#/board") await p.waitForTimeout(300);
+        const theaterAtLoad = await p.evaluate(() => document.documentElement.classList.contains("qz-theater"));
+        if (theaterAtLoad) { badCount++; bad(`${vp.name} auto-theater engaged @${r}`); }
+        if (r === "#/board") {
+          // Activate the first card the way the storm does, then re-check:
+          // the category-click path has its own auto-theater check.
+          const clicked = await p.evaluate(() => { const row = document.querySelector(".list-detail-row"); if (row) { row.click(); return true; } return false; });
+          await p.waitForTimeout(800);
+          if (!clicked) bad(`${vp.name}: no .list-detail-row on #/board to activate a card`);
+          const theaterActive = await p.evaluate(() => document.documentElement.classList.contains("qz-theater"));
+          if (theaterActive && !theaterAtLoad) { badCount++; bad(`${vp.name} auto-theater engaged @${r} after card activation`); }
+          // The card-open path is overflow-checked as its own assertion so
+          // it is never mistaken for the at-load read above.
+          const oc = await p.evaluate(OVERFLOW_PROBE);
+          if (oc.doc > 1 || oc.wide > 0) { badCount++; bad(`${vp.name} overflow after card activation @${r} doc=${oc.doc} wide=${oc.wide}${fmtWide(oc)}`); }
+          await p.evaluate(() => { if (window.G && window.G.board && window.G.board.exitTheater) window.G.board.exitTheater(); });
+          // Bounded settle, not a fixed sleep: poll every 50ms (up to
+          // 1000ms) until html.qz-theater is gone AND nothing is wider
+          // than the viewport, so the next route's at-load read never
+          // starts on top of a still-collapsing overlay. A theater class
+          // that survives the whole window is a failure in its own right;
+          // a still-wide element is not re-reported here (the named read
+          // just above already owns it).
+          const settle = await p.evaluate(async () => {
+            for (let t = 0; t <= 1000; t += 50) {
+              const theater = document.documentElement.classList.contains("qz-theater");
+              const wide = [...document.querySelectorAll("body *")].some((el) => el.getBoundingClientRect().width > window.innerWidth + 1);
+              if (!theater && !wide) return { t, theater };
+              await new Promise((res) => setTimeout(res, 50));
+            }
+            return { t: -1, theater: document.documentElement.classList.contains("qz-theater") };
+          });
+          if (settle.t < 0 && settle.theater) { badCount++; bad(`${vp.name}: html.qz-theater still set 1000ms after exitTheater() @${r}`); }
+        }
       }
       if (!badCount) ok(`${vp.name} (${vp.width}x${vp.height}): clean across ${results.info.routes.length} sections`);
       if (vmsgs.length) bad(`${vp.name}: ${vmsgs.length} console error/warning -> ${vmsgs[0]}`);
@@ -303,8 +456,14 @@ async function main() {
     server.close();
   }
 
+  for (const pin of EXPECTED_DEFECTS) {
+    if (pin.hits) continue;
+    const m = "expected defect did not reproduce - remove its pin: " + pin.why;
+    results.fail.push(m); console.log("  FAIL  " + m);
+  }
   console.log("\n" + "=".repeat(64));
-  console.log(`RESULT: ${results.pass.length} pass, ${results.fail.length} fail`);
+  console.log(`RESULT: ${results.pass.length} pass, ${results.fail.length} fail, ${results.known.length} known`);
+  if (results.known.length) results.known.forEach((k) => console.log("  known: " + k));
   if (results.fail.length) { console.log("\nFAILURES:"); results.fail.forEach((f) => console.log("  - " + f)); }
   console.log("=".repeat(64));
   process.exit(results.fail.length ? 1 : 0);

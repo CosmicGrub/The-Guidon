@@ -13,6 +13,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -31,12 +32,7 @@ await page.waitForTimeout(1100);
 // versions of this suite report phantom failures. Kill all transitions so
 // every measurement is the steady-state value.
 await page.addStyleTag({ content: "*, *::before, *::after { transition: none !important; animation: none !important; }" });
-await page.evaluate(() => {
-  const t = [...document.querySelectorAll("button,.ob-mode-card,[role=button],.click")]
-    .find((e) => /guest session/i.test(e.textContent || ""));
-  if (t) t.click();
-});
-await page.waitForTimeout(1100);
+await dismissOnboarding(page);
 
 // Probe: the trainer surfaces, built from the app's own classes so the real
 // stylesheet (including the color-mix token derivations) is what's measured.

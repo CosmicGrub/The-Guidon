@@ -29,6 +29,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -43,13 +44,7 @@ async function boot(viewport) {
   page.on("console", (m) => { if (["error", "warning"].includes(m.type())) noise.push(m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
   await page.goto(url, { waitUntil: "load" });
-  await page.waitForTimeout(1100);
-  await page.evaluate(() => {
-    const t = [...document.querySelectorAll("button,.ob-mode-card,[role=button],.click")]
-      .find((e) => /guest session/i.test(e.textContent || ""));
-    if (t) t.click();
-  });
-  await page.waitForTimeout(1100);
+  await dismissOnboarding(page);
   await page.evaluate(() => { location.hash = "#/doctrine"; });
   await page.waitForTimeout(700);
   return { page, noise };
@@ -167,6 +162,96 @@ for (const width of [768, 1280]) {
     ? ok(`375px: all ${info.rectCount} sampled cards have distinct top edges - clean single column preserved`)
     : bad(`375px: expected ${info.rectCount} distinct row tops, got ${info.uniqueTops} - cards unexpectedly sharing rows on a phone viewport`);
   noise.length === 0 ? ok("375px: no console errors/warnings") : bad(`375px console noise: ${noise.join(" | ")}`);
+  await page.close();
+}
+
+/* ---- list-detail jump still lands a DEEP card in the viewport ----
+ * Regression guard for the .doc-entry-card content-visibility:auto pass
+ * (desktop roadmap S1): jumpToDocEntry (src/index.html, views.doctrine)
+ * scrollIntoView()s the card matching a clicked .list-detail-row and pulses
+ * it with .list-detail-jumped. content-visibility:auto skips layout for
+ * off-screen cards, and a scrollIntoView aimed at a not-yet-rendered card
+ * whose size is only an estimate can land short. So: click the LAST row
+ * (the card farthest from the initial viewport, off-screen before the
+ * click at every viewport), poll the card's top every 100ms until it has
+ * held still for three consecutive GENUINE samples (measured live: the
+ * default smooth scroll over the ~37k/~72k px .main scroller settles at
+ * ~1.4-1.5s, so a fixed short wait reads a mid-flight position and fails
+ * spuriously; hard cap 8s of real elapsed time). "Genuine" matters because
+ * this poll runs via setTimeout inside the SAME page whose main thread a
+ * concurrent test run can starve: under contention, setTimeout callbacks
+ * coalesce and fire back-to-back with no repaint between them, so two
+ * "identical" reads either side of a stall prove the page was frozen, not
+ * that the animation settled (reproduced: a full 149-suite run failed here
+ * at settleMs=400 with the card still 700+px short; the same suite alone
+ * passes every time) - each poll's real elapsed gap is measured and a read
+ * only counts toward stability when that gap is close to the requested
+ * 100ms. Then assert with real geometry that the card's top edge
+ * is inside the viewport and that most of it is visible. The pulse class
+ * is read synchronously right after the click, because jumpToDocEntry
+ * removes it again at 1600ms - within the same window the smooth scroll
+ * is still settling. Both a wide viewport (row list beside the cards) and
+ * a phone viewport (row list stacked above them, where the skipped-layout
+ * window is largest) are covered. */
+for (const viewport of [{ width: 1280, height: 900 }, { width: 360, height: 780 }]) {
+  const { page, noise } = await boot(viewport);
+  const r = await page.evaluate(async () => {
+    const rows = Array.from(document.querySelectorAll(".list-detail-row"));
+    const cardCount = document.querySelectorAll(".doc-entry-card").length;
+    const idx = rows.length - 1;
+    const row = rows[idx];
+    const card = document.querySelector('[data-doc-idx="' + idx + '"]');
+    if (!row || !card) return { rows: rows.length, cardCount, missing: true };
+    const before = card.getBoundingClientRect();
+    row.click();
+    const jumped = card.classList.contains("list-detail-jumped");
+    let last = null, stable = 0, settleMs = 0, prevT = performance.now();
+    for (let i = 0; i < 60 && stable < 3 && settleMs < 8000; i++) {
+      await new Promise((res) => setTimeout(res, 100));
+      const nowT = performance.now();
+      const gap = nowT - prevT;
+      prevT = nowT;
+      settleMs += gap;
+      const top = Math.round(card.getBoundingClientRect().top);
+      // gap far above the requested 100ms means this tick was coalesced/
+      // delayed by main-thread contention - not proof the animation held
+      // still, so it can't count toward the 3-in-a-row stability streak.
+      const genuineTick = gap < 250;
+      stable = (genuineTick && top === last) ? stable + 1 : 0;
+      last = top;
+    }
+    settleMs = Math.round(settleMs);
+    const rect = card.getBoundingClientRect();
+    const visible = Math.min(rect.bottom, innerHeight) - Math.max(rect.top, 0);
+    return {
+      rows: rows.length, cardCount, idx, settleMs,
+      beforeTop: Math.round(before.top),
+      top: Math.round(rect.top), bottom: Math.round(rect.bottom), height: Math.round(rect.height),
+      innerHeight,
+      visibleFrac: rect.height > 0 ? visible / Math.min(rect.height, innerHeight) : 0,
+      jumped,
+      cv: getComputedStyle(card).contentVisibility,
+    };
+  });
+  const tag = `${viewport.width}px jump-to-last (idx ${r.idx}, content-visibility=${r.cv})`;
+  (!r.missing && r.rows === r.cardCount && r.rows >= 2)
+    ? ok(`${tag}: ${r.rows} index rows match ${r.cardCount} cards`)
+    : bad(`${tag}: index rows (${r.rows}) vs cards (${r.cardCount}) mismatch or missing`);
+  if (!r.missing) {
+    r.beforeTop >= r.innerHeight
+      ? ok(`${tag}: card started off-screen (top=${r.beforeTop}px, innerHeight=${r.innerHeight}) - the jump has real work to do`)
+      : bad(`${tag}: card was already on-screen before the click (top=${r.beforeTop}px) - the jump is not being exercised`);
+    (r.top >= 0 && r.top < r.innerHeight)
+      ? ok(`${tag}: card top edge inside the viewport after the jump settled at ${r.settleMs}ms (top=${r.top}px, bottom=${r.bottom}px, innerHeight=${r.innerHeight})`)
+      : bad(`${tag}: card top edge NOT inside the viewport after the jump settled at ${r.settleMs}ms (top=${r.top}px, bottom=${r.bottom}px, innerHeight=${r.innerHeight})`);
+    r.visibleFrac >= 0.5
+      ? ok(`${tag}: ${Math.round(r.visibleFrac * 100)}% of the card (height ${r.height}px) is visible`)
+      : bad(`${tag}: only ${Math.round(r.visibleFrac * 100)}% of the card (height ${r.height}px) is visible - scrollIntoView landed short`);
+    r.jumped
+      ? ok(`${tag}: card carried .list-detail-jumped immediately after the click`)
+      : bad(`${tag}: card did NOT carry .list-detail-jumped immediately after the click`);
+  }
+  noise.length === 0 ? ok(`${tag}: no console errors/warnings`) : bad(`${tag} console noise: ${noise.join(" | ")}`);
   await page.close();
 }
 
