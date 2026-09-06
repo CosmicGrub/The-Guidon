@@ -710,7 +710,7 @@ html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after 
    points on the back), with deck-progress bar, shuffle, star/bookmark,
    swipe-to-grade once flipped, and keyboard shortcuts. Token-only (every
    color pulls from the active theme's CSS vars), so it re-skins correctly
-   across all 14 themes with zero extra work here.
+   across all 24 themes with zero extra work here.
    ====================================================================== */
 .qz-shuffle-btn { white-space: nowrap; }
 
@@ -990,6 +990,22 @@ html[data-motion="cinematic"] { --qz-flip-dur: .95s; --qz-flip-ease: cubic-bezie
   align-items: stretch; text-align: left;
   overflow: hidden;
 }
+/* Desktop roadmap T5 (tools/perf-routes.mjs, the blocking 4x budget): before
+   a flip the answer face is invisible (backface-visibility:hidden, rotated
+   180deg, `inert` from renderDrill's doFlip and Rapid Fire's drawCardSolo)
+   yet its whole subtree - the longest text on the route, about 2,100
+   characters across five font faces - was still laid out and text-shaped
+   on every #/board entry. Measured cold (fresh context) at 4x CPU throttle:
+   the route's first layout ran 102-127 ms (212 cold shaping runs plus the
+   first load of segoeui.ttf and seguisym.ttf), inside one 163-261 ms task
+   against the 200 ms budget; the same board HTML with this face removed or
+   with its rendering skipped both lay out in about 60 ms. The card's box
+   never depended on this content (aspect-ratio on .qz-card, position:
+   absolute;inset:0 on .qz-face), so nothing moves; the flip toggles
+   .flipped, which lays the face out in that same frame, ahead of the
+   rotation's first frame. Reduce-motion/minimal already display:none this
+   face pre-flip (their rules further down). */
+.qz-card:not(.flipped) .qz-back { content-visibility: hidden; /* floor-ok: WebKit < 18 ignores it - the face lays out on entry as before, nothing is hidden */ }
 .qz-back-scroll { overflow-y: auto; flex: 1; min-height: 0; padding-right: 2px; }
 .qz-prompt {
   font-family: var(--font-head); font-weight: 600; letter-spacing: .01em;
@@ -1022,6 +1038,19 @@ html[data-motion="cinematic"] { --qz-flip-dur: .95s; --qz-flip-ease: cubic-bezie
   display: block; margin-top: 6px; font-family: var(--font-mono);
   font-size: 0.786rem; color: var(--text-dim);
 }
+/* Back-face cross-link row ("Related doctrine (<pub>) ->" / "Practice
+   scenario ->"): the shared .btn-row rule (further down, home quick-nav
+   polish) pins every .btn at flex-shrink:0, which is right for a row of
+   short nav buttons but wrong inside a 276px-wide card face - a long
+   publication name ("Army Center of Military History", "National
+   Response Framework") produced a 400-409px button that the card's
+   overflow:hidden silently clipped, on 7 of 984 cards at 344/360px
+   viewports (measured 2026-09-04 by stepping the whole deck; see
+   tools/test-board-card-overflow.mjs). Let these buttons shrink and
+   wrap to the row instead. Scoped to .qz-back so no other .btn-row
+   changes; white-space is already normal on .btn, so shrinking just
+   wraps the label. No theme tokens involved. */
+.qz-back .btn-row .btn { flex-shrink: 1; min-width: 0; max-width: 100%; }
 
 /* ── Rapid Fire (Board Drill's 7th tab) ───────────────────────────────────
    The round screen mounts INSIDE the same html.qz-theater overlay Board
@@ -1872,7 +1901,10 @@ select.in { appearance:none; }
 .wr-ex.good { border-left:3px solid var(--green); }
 .wr-ex.bad { border-left:3px solid var(--red); }
 .wr-ex-tag { font-family:var(--font-mono); font-size:.66rem; letter-spacing:.08em; padding:2px 7px; border-radius:10px; }
-.wr-ex.good .wr-ex-tag { color:var(--green); border:1px solid var(--green); }
+/* --ink-green, not raw --green, for the accent-as-text case (the .bad twin
+   below already uses --ink-red): tools/test-contrast-full.mjs measured
+   STRONG under sepia-study at 4.29:1 (#5a6b3a on #e7dcc8, 4.5:1 required). */
+.wr-ex.good .wr-ex-tag { color:var(--ink-green); border:1px solid var(--green); }
 .wr-ex.bad .wr-ex-tag { color:var(--ink-red); border:1px solid var(--red); }
 .wr-ex-text { color:var(--text); margin:7px 0 5px; line-height:1.4; font-size:.92rem; }
 .wr-ex-why { color:var(--text-mute); font-size:.8rem; line-height:1.4; margin-bottom:8px; }
@@ -3828,7 +3860,23 @@ html.light .feedback.error { background: rgba(220,53,69,0.1); }
    to a shared base class). */
 .doc-entry-card { border-left:3px solid var(--text-dim); padding:12px 14px 10px;
   margin-bottom:0; border-radius:0 6px 6px 0; background:var(--bg-2);
-  transition:border-color 0.15s; }
+  transition:border-color 0.15s;
+  /* Desktop roadmap S1: the same content-visibility:auto idiom the Reference
+     Library's .lib-page reader already uses (see that rule's own comment),
+     so the up-to-DOC_CAP=150 off-screen cards skip layout/paint instead of
+     being laid out on every route entry and on every debounced search
+     keystroke's full draw() - measured at 4x CPU throttle before this: a
+     295ms layout task (3,601 objects) on #/doctrine entry and 150-173ms of
+     layout per keystroke, all of it off-screen cards. The placeholder size
+     seeds the scroller's geometry only until a card is first rendered
+     (the `auto` keyword then remembers its real size): 360px sits between
+     the measured median rendered card height at 1280x880 (383px - grid
+     rows stretch to the taller card of each pair) and at 360x780 (340px);
+     150 cards, live offsetHeight, not the plan's assumed 260px. The
+     list-detail jump (jumpToDocEntry's scrollIntoView on a possibly
+     not-yet-rendered card) is guarded by tools/test-doctrine-card-grid.mjs
+     with real landing geometry at both viewports. */
+  content-visibility:auto; contain-intrinsic-size:auto 360px; /* floor-ok: WebKit < 18 ignores both - every card lays out and paints on entry, the pre-S1 behavior, nothing is hidden */ }
 .doc-topic-row { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
 .doc-topic-badge { font-family:var(--font-mono); font-size:0.68rem; font-weight:700;
   text-transform:uppercase; letter-spacing:0.07em; }
@@ -4645,7 +4693,23 @@ html.reduce-motion .nav-drawer, html[data-motion="minimal"] .nav-drawer { transi
   html.board-drill-active .nav-group-header { font-size: .68rem !important; padding: 8px 12px 4px !important; }
   html.board-drill-active .nav-group-header .ico { font-size: .7rem !important; }
 }
-@media (min-width: 1360px) {
+/* Desktop roadmap S2 (2026-09-04): this lift was gated at >=1360px, the
+   tier sized for .drill-layout's THIRD column, while .drill-layout itself
+   already splits into two columns at >=1024px (see that rule). Between
+   the two gates the cap still bound - measured by
+   tools/test-resize-storm.mjs (phase A card-column probe, 4px steps): the
+   card column overhung .main's CONTENT box at every step 1024..1359px -
+   52px at 1024 (928px cell minus 2x28px padding = 872px against the
+   grid's old 924px hard minimum), 20px at 1088..1152 (the 960px cap
+   binding: 960 - 56 = 904px), 44px at 1216..1359 (40px side padding from
+   the >=1200px tier: 960 - 80 = 880px) - clean only from 1360px, where
+   this lift used to start. Gated at the SAME >=1024px tier as the grid
+   split, the cap can never bind while the grid is split; paired with the
+   grid's 180px list-column floor (see .drill-layout's >=1024px rule) so
+   the split row also fits the 872px available at exactly 1024px. The
+   general >=1360px cap immediately below is untouched - this override
+   out-specifies it regardless of source order. */
+@media (min-width: 1024px) {
   /* .main's own cap (above) isn't the only one in the way - .view (the
      per-route wrapper every route renders into, including this one) has
      its own separate max-width:960px at >=800px (see that rule) that
@@ -4684,11 +4748,14 @@ html.reduce-motion .nav-drawer, html[data-motion="minimal"] .nav-drawer { transi
    canonical scale comment near line 504) rather than picking a new
    number for the CONTENT width specifically - the same value already
    meant "genuinely wide desktop" elsewhere in this file. Gated at the
-   same >=1360px tier as Board Drill's own lift, for one reason: that's
-   the width this file has already measured and picked for "board-drill-
-   active's 96px rail leaves enough room" - reusing it here keeps every
+   >=1360px tier for one reason: that's the width this file has already
+   measured and picked for "board-drill-active's 96px rail leaves enough
+   room for the three-column drill row" - reusing it here keeps every
    route transitioning to its wider layout at the same, single canonical
-   point rather than each route inventing its own threshold. */
+   point rather than each route inventing its own threshold. (Board
+   Drill's own unbounded lift above originally shared this gate; S2 moved
+   it down to >=1024px to match its two-column split - see its comment.
+   That is a Board-Drill-only change; this shared cap stays at 1360.) */
 @media (min-width: 1360px) {
   .main { max-width: 1200px; }
   .view { max-width: 1200px; }
@@ -5130,8 +5197,14 @@ html.focus-mode .status-chip { opacity:.5; }
 @media (prefers-reduced-motion:reduce){.pdfprev-spinner{animation-duration:2.4s}}
 
 /* ── v0.46 UX helpers: empty states + skeletons ── */
-.empty-state{text-align:center;padding:32px 20px;color:var(--dim,#5b5344)}
-.empty-state-title{font-family:"Oswald",system-ui;font-size:1.05rem;letter-spacing:.02em;margin-bottom:4px;color:var(--ink,#2c2a22)}
+/* tools/test-contrast-full.mjs: --dim and --ink were never defined by any
+   theme (zero definitions in this file), so both fallbacks always applied
+   and every dark theme drew this block in light-theme ink - measured on
+   #/moi under blackout and signal-amber: title #2c2a22 on #000000 = 1.46:1,
+   hint #5b5344 on #000000 = 2.76:1 (4.5:1 required). --text / --text-dim
+   are the tokens every theme block sets for exactly these two roles. */
+.empty-state{text-align:center;padding:32px 20px;color:var(--text-dim,#5b5344)}
+.empty-state-title{font-family:"Oswald",system-ui;font-size:1.05rem;letter-spacing:.02em;margin-bottom:4px;color:var(--text,#2c2a22)}
 .empty-state-hint{font-size:.88rem;max-width:44ch;margin:0 auto;line-height:1.45}
 .skeleton-wrap{display:flex;flex-direction:column;gap:8px;padding:8px 0}
 .skeleton-row{height:16px;border-radius:5px;background:linear-gradient(90deg,rgba(0,0,0,.06) 25%,rgba(0,0,0,.11) 37%,rgba(0,0,0,.06) 63%);background-size:400% 100%;animation:guidon-shimmer 1.4s ease infinite}
@@ -5504,7 +5577,19 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
    canonical tier sized to the real requirement (96 + 80 + 1160 = 1336px,
    rounded up - see the canonical breakpoint scale comment near line 504
    for the full derivation). Moving the gate without also lifting .main's
-   cap (or vice versa) would leave the same bug at a different width. */
+   cap (or vice versa) would leave the same bug at a different width.
+
+   The same mistake, one tier down (desktop roadmap S2, 2026-09-04): the
+   cap-lift was gated at 1360px with the third column, but the TWO-column
+   split below starts at 1024px, so from 1024 through 1359px the grid was
+   split while .main was still capped - the card column overhung .main's
+   content box by 20-52px at every one of those widths (see the cap-lift
+   rule's comment for the per-tier numbers). The lift now starts at
+   1024px too, and the two-column list track floors at 180px (not
+   .list-detail's 240px) so the split row's hard minimum, 180 + 16 + 668
+   = 864px, fits the 872px .main actually has at exactly 1024px. The
+   three-column row at >=1360px keeps its 240px list floor and 1160px
+   derivation unchanged. */
 .drill-layout { display:flex; flex-direction:column; }
 .drill-readiness-pane { display:none; }
 /* Below 1024px, catList's rows (one per category, 79+ on a real seed)
@@ -5540,7 +5625,12 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
    with .qz-card's own cap - see that rule's comment for why 648px, not
    536px, is now the number both of them track. */
 @media (min-width: 1024px) {
-  .drill-layout { display:grid; grid-template-columns: minmax(240px, 280px) minmax(668px, 1fr); gap:16px; align-items:start; }
+  /* 180px list floor, not .list-detail's 240px: 180 + 16 + 668 = 864px is
+     the largest hard minimum that fits at exactly 1024px (S2, see the
+     comment above). The list still grows to 280px whenever there is
+     room again (280px from about 1116px, where .main has 964px), so only
+     the tight 1024..1115px band renders a narrower list. */
+  .drill-layout { display:grid; grid-template-columns: minmax(180px, 280px) minmax(668px, 1fr); gap:16px; align-items:start; }
   /* Grid respects `order` too - reset it back to source order here so
      catList stays the LEFT column (its original, intended position)
      instead of inheriting the narrow-viewport reorder above. */
@@ -7478,9 +7568,12 @@ window.G = window.G || {};
     // removal of the unused fetch.
     async setSetting(k, v) {
       state.settings[k] = v;
+      _dirtySettings.add(k);
       debouncedSettingsSave(state.settings);
       util.emit("settings:change", { k, v });
     },
+    // Read by src/xwin.js's receipt path - see _dirtySettings above.
+    _dirtySettingsKeys() { return Array.from(_dirtySettings); },
 
     // ---- doctrine ----
     // Enhancement backlog round 3, "Redundant IndexedDB reads and
@@ -7628,12 +7721,19 @@ window.G = window.G || {};
     career() { return state.seed.career || { mos: [], cmfs: [], woFeeder: [], civilianCertsByCMF: {}, reclassPolicy: {}, fy26Snapshot: {}, ncoesStep: {} }; },
 
     // ---- authored scenarios ----
-    async saveUserScenario(sc) {
-      sc._origin = "user";
-      await db.saveUserScenario(sc);
+    // The one rescan every write below ends with, and the only way the
+    // cross-context bus (src/xwin.js, web builds only) picks up a scenario
+    // ANOTHER page saved or deleted: rescan the store, bump the rev that
+    // keys the tier/list caches, tell the Train/Author screens.
+    async reloadUserScenarios() {
       state.userScenarios = (await db.allUserScenarios()) || [];
       state._scenarioRev++;
       util.emit("scenarios:change");
+    },
+    async saveUserScenario(sc) {
+      sc._origin = "user";
+      await db.saveUserScenario(sc);
+      await store.reloadUserScenarios();
     },
     // Bulk sibling of saveUserScenario(): one db.putMany() transaction, one
     // rescan, one cache-invalidating rev bump, and one "scenarios:change"
@@ -7647,15 +7747,11 @@ window.G = window.G || {};
       if (!scenarios || !scenarios.length) return;
       scenarios.forEach((sc) => { sc._origin = "user"; });
       await db.putMany("userScenarios", scenarios);
-      state.userScenarios = (await db.allUserScenarios()) || [];
-      state._scenarioRev++;
-      util.emit("scenarios:change");
+      await store.reloadUserScenarios();
     },
     async deleteUserScenario(id) {
       await db.delUserScenario(id);
-      state.userScenarios = (await db.allUserScenarios()) || [];
-      state._scenarioRev++;
-      util.emit("scenarios:change");
+      await store.reloadUserScenarios();
     },
     userScenarios() { return state.userScenarios.slice(); },
 
@@ -9247,7 +9343,14 @@ window.G = window.G || {};
       theaterInertEls.forEach((n) => n.removeAttribute("inert"));
       theaterInertEls = [];
     }
-    G.board.enterTheater = function (focusEl) {
+    // opts.auto: set by the three AUTOMATIC short-landscape entry sites
+    // (see the S3 comment inside catList's click handler below). Automatic
+    // entry is the CSS overlay + immersive bars only - it never calls
+    // requestFullscreen, which stays reserved for the user's own button
+    // press (a fullscreen request nobody asked for is the one part of
+    // theater mode a desktop user cannot simply ignore).
+    G.board.enterTheater = function (focusEl, opts) {
+      const auto = !!(opts && opts.auto);
       // Re-entrancy guard mirroring exitTheater()'s own `if (!theaterOn())
       // return;` - without it, a double-tap on the fullscreen button before
       // the first call's requestFullscreen() promise settles (or a re-render
@@ -9270,7 +9373,8 @@ window.G = window.G || {};
       theaterReturnFocus = document.activeElement;
       if (wrap) trapTheaterFocus(wrap);
       // True fullscreen where the runtime allows it; failure is fine.
-      try { if (target && target.requestFullscreen) target.requestFullscreen().catch(() => {}); } catch (e) {}
+      // Skipped for automatic entry (opts.auto, above).
+      try { if (!auto && target && target.requestFullscreen) target.requestFullscreen().catch(() => {}); } catch (e) {}
       try { if (G.native && G.native.setImmersive) G.native.setImmersive(true); } catch (e) {}
       if (target && target.focus) target.focus();
       if (util.announce) util.announce("Fullscreen study. Press Escape, F, or the button to exit.");
@@ -10248,9 +10352,23 @@ window.G = window.G || {};
           // qz-fs-btn toggle already in the card's own nav row, or the
           // Android Back handler) is the existing, already-shipped way out
           // - nothing new needed there.
-          if (window.innerWidth > window.innerHeight && window.innerHeight < 460) {
+          //
+          // S3 (desktop roadmap, 2026-09-04): pointer-gated. The same short
+          // landscape shape is an ordinary DESKTOP window dragged short (a
+          // 1280x450 laptop window, a half-height Tauri window), where a
+          // mouse user never asked for a fullscreen overlay and can reach
+          // the manual button (F / .qz-fs-btn) if they want one - so the
+          // automatic path only engages on a coarse pointer, using the
+          // app's own pointer idiom (clickVerb, elsewhere in this file).
+          // The identical clause guards all three automatic entry sites
+          // (this click handler, the initial-mount check, the resize
+          // listener); the manual button is untouched. Automatic entry
+          // also skips requestFullscreen (enterTheater's auto option) -
+          // the CSS overlay and Android immersive bars are the whole of
+          // what engages on its own.
+          if (window.innerWidth > window.innerHeight && window.innerHeight < 460 && !window.matchMedia("(hover: hover) and (pointer: fine)").matches) {
             clearTimeout(G.board._autoTheaterTimer);
-            G.board._autoTheaterTimer = setTimeout(() => { try { G.board.enterTheater(cardWrap); } catch (e) {} }, 220);
+            G.board._autoTheaterTimer = setTimeout(() => { try { G.board.enterTheater(cardWrap, { auto: true }); } catch (e) {} }, 220);
           }
         });
         // PC/desktop intuitivism pass, Tier 2(d): arrow-key row-to-row nav,
@@ -10378,9 +10496,9 @@ window.G = window.G || {};
     // #/board already in that orientation - the common case, since this
     // is the route's own first render - saw the same broken card with no
     // category click available yet to trigger the existing fix.
-    if (window.innerWidth > window.innerHeight && window.innerHeight < 460) {
+    if (window.innerWidth > window.innerHeight && window.innerHeight < 460 && !window.matchMedia("(hover: hover) and (pointer: fine)").matches) {
       clearTimeout(G.board._autoTheaterTimer);
-      G.board._autoTheaterTimer = setTimeout(() => { try { G.board.enterTheater(cardWrap); } catch (e) {} }, 220);
+      G.board._autoTheaterTimer = setTimeout(() => { try { G.board.enterTheater(cardWrap, { auto: true }); } catch (e) {} }, 220);
     }
     // Item B ("Reading the Cards" Roadmap Tier 6c/d): the two checks above
     // (this one and catList's category-click handler's own, above) only run
@@ -10425,8 +10543,8 @@ window.G = window.G || {};
         // anywhere in the DOM at all - this is the belt to that suspenders.
         if (!cardWrap.isConnected) return;
         if (theaterOn()) return;
-        if (window.innerWidth > window.innerHeight && window.innerHeight < 460) {
-          G.board.enterTheater(cardWrap);
+        if (window.innerWidth > window.innerHeight && window.innerHeight < 460 && !window.matchMedia("(hover: hover) and (pointer: fine)").matches) {
+          G.board.enterTheater(cardWrap, { auto: true });
         }
       } catch (e) {}
     };
@@ -19975,7 +20093,7 @@ window.G = window.G || {};
                      w:"The mastery panel is a one-stat teaser now — select 'Open Board → Readiness' for the full beginner/intermediate/expert breakdown." },
     "#/author":    { d:"Build your own scenarios, cards and reference material.",
                      w:"Custom content persists alongside the built-in corpus." },
-    "#/settings":  { d:"14 themes, accessibility controls, About panel and account management.",
+    "#/settings":  { d:G.theme.THEMES.length + " themes, accessibility controls, About panel and account management.",
                      w:"Account controls — rename, redo setup, switch or delete — live at the top of the profile screen." },
     "#/currency":  { d:"Content freshness tracker — flags perishable facts (PME lengths, pay rates, shortage data) that are due for re-verification. Not related to money.",
                      w:"" },
@@ -23831,7 +23949,7 @@ window.G = window.G || {};
 
 /* ==== js/modal.js ==== */
 /* GUIDON — modal.js : themed confirm/prompt dialogs (G.modal)
-   Native prompt()/confirm() ignore the 14 themes, look wrong on a tablet, and
+   Native prompt()/confirm() ignore the 24 themes, look wrong on a tablet, and
    on some Android browsers are suppressed entirely. These return Promises and
    are keyboard-accessible: Escape cancels, Enter confirms, focus is trapped.
 */
@@ -30762,7 +30880,45 @@ window.G = window.G || {};
       if (!card) return;
       let reduceMotion = false;
       try { reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
-      card.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+      // Desktop roadmap S1: .doc-entry-card is content-visibility:auto (see
+      // its CSS comment), so every card outside the viewport's neighbourhood
+      // is laid out at its contain-intrinsic-size ESTIMATE until it scrolls
+      // near. A smooth scrollIntoView animates toward a target computed
+      // from those estimates at click time, and each skipped card that
+      // re-lays-out at its true height mid-flight shifts the target - the
+      // jump-to-last landed 4,500-6,000px short at 360/1280px viewports,
+      // caught by tools/test-doctrine-card-grid.mjs's landing-geometry
+      // guard. So: a card the browser is already rendering (near the
+      // viewport, nothing skipped in between) keeps the smooth scroll;
+      // a skipped card gets an instant jump re-issued over a few frames
+      // until its position holds still - each instant jump reveals the
+      // cards around it, they render at true size, and the next pass
+      // corrects for the shift (measured: one pass lands, scroll anchoring
+      // absorbs the neighbours' resize; the extra passes are insurance for
+      // engines without scroll anchoring). checkVisibility's
+      // contentVisibilityAuto option is the standard "am I inside skipped
+      // contents?" query - and it is the card's CONTENTS that are skipped,
+      // so it must be asked of a child: asked of the card itself it answers
+      // true for all 150 cards with the whole list off-screen (measured),
+      // which silently kept the broken smooth path. Where it is missing,
+      // assume skipped - the instant path is correct for a rendered card
+      // too, it only forgoes the animation.
+      const probe = card.firstElementChild || card;
+      const rendered = typeof probe.checkVisibility === "function"
+        ? probe.checkVisibility({ contentVisibilityAuto: true }) : false;
+      if (rendered) {
+        card.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+      } else {
+        let passes = 4;
+        const settle = () => {
+          card.scrollIntoView({ behavior: "auto", block: "start" });
+          const top = card.getBoundingClientRect().top;
+          requestAnimationFrame(() => requestAnimationFrame(() => {
+            if (--passes > 0 && Math.abs(card.getBoundingClientRect().top - top) > 1) settle();
+          }));
+        };
+        settle();
+      }
       card.classList.add("list-detail-jumped");
       setTimeout(() => card.classList.remove("list-detail-jumped"), 1600);
     }
@@ -32639,7 +32795,7 @@ window.G = window.G || {};
     // Spotlight search button in topbar (always one tap from anywhere)
     const searchBtn = el("button.topbar-search-btn", {
       "aria-label": "Search GUIDON",
-      title: "Search everything (press /)",
+      title: "Press / to search",
     });
     searchBtn.appendChild(G.util.icon("search", 19, "⌕"));
     searchBtn.addEventListener("click", () => {
@@ -33580,11 +33736,39 @@ window.G = window.G || {};
       // module excluded from the single-file build, so it never needs a
       // GUIDON_SINGLEFILE check of its own). This file used to carry a SECOND,
       // permanently-dead registerSW() gated on `if (window.GUIDON_SINGLEFILE)
-      // return` — GUIDON_SINGLEFILE is set to true unconditionally at the top
-      // of every build (standalone AND the installable web/ PWA), so that
-      // branch never ran its real registration logic in any build. Removed
+      // return` — GUIDON_SINGLEFILE was, at the time, set to true unconditionally
+      // at the top of every build (standalone AND the installable web/ PWA),
+      // so that branch never ran its real registration logic in any build.
+      // (Since collective P2, 2026-09-04, tools/build.mjs stamps it per
+      // output - true in dist/, false in web/ - beside window.GUIDON_FORK;
+      // see the comment at the literal itself, and G.caps.fork().) Removed
       // rather than left as a trap for a future refactor (task #207).
       if (G.kioskBadge) G.kioskBadge.checkOnBoot();
+      // Engine-floor notice (collective Q11; tools/engine-floor.json, stamped
+      // into window.GUIDON_ENGINE_FLOOR by tools/build.mjs). color-mix() is the
+      // floor's defining feature: without it the five --ink-* text tokens fall
+      // back to the build-generated static blends (see injectInkFallbacks() in
+      // build.mjs), so text stays readable but a few accents and fills look
+      // plainer. One line, non-blocking, the same util.toast idiom every other
+      // one-line notice uses; delayed so it never collides with a boot toast
+      // (storage-limited, biometrics). Sits BEFORE the onboarding decision below
+      // because that branch returns early - this runs once on every boot path.
+      // Guarded by tools/test-ink-fallbacks.mjs part (f), which stubs
+      // CSS.supports before load.
+      try {
+        const fl = window.GUIDON_ENGINE_FLOOR || {};
+        const hasMix = typeof CSS !== "undefined" && typeof CSS.supports === "function" && CSS.supports("color", "color-mix(in srgb, red, blue)");
+        if (!hasMix) {
+          // Withheld while the onboarding overlay is up: .ob-overlay (z-index
+          // 9000) covers #toast (z-index 50), so a first-boot notice would
+          // spend its whole 9 s behind it (measured in test-ink-fallbacks (f)).
+          const showFloorNotice = () => {
+            if (document.getElementById("ob-overlay")) { setTimeout(showFloorNotice, 1000); return; }
+            util.toast("This browser is older than GUIDON's engine floor (Chromium " + fl.chromium + " / WebKit " + fl.webkit + " / Firefox " + fl.gecko + ") - some colors will look plain.", 9000);
+          };
+          setTimeout(showFloorNotice, 1200);
+        }
+      } catch (e) { /* a notice must never take the app down */ }
       // Check if onboarding is needed on first launch
       if (G.profile && G.profile.needsOnboarding) {
         const needsOB = await G.profile.needsOnboarding();
