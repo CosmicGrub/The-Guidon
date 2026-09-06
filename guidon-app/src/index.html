@@ -17518,7 +17518,11 @@ window.G = window.G || {};
       }, function () { U.toast("Draft saved"); });
     });
     printBtn.addEventListener("click", function () { U.printHTML(f.form + " (practice)", printMarkup(f, collect())); });
-    clearBtn.addEventListener("click", function () { state.ex = false; state.drafts[f.id] = {}; drawFill(f, host, mount); });
+    clearBtn.addEventListener("click", async function () {
+      if (!(await G.modal.confirm("Clear this form? Your typed answers will be lost.", { okText: "Clear", danger: true }))) return;
+      state.ex = false; state.drafts[f.id] = {}; drawFill(f, host, mount);
+      U.toast("Form cleared.");
+    });
 
     // per-form dynamics
     if (DYNAMICS[f.id]) DYNAMICS[f.id](f, host, inputs, noteHost);
@@ -17910,7 +17914,11 @@ window.G = window.G || {};
     printBtn.addEventListener("click", function () {
       U.printHTML(f.form + " (practice replica)", replicaPrintMarkup(f, collect(), lay));
     });
-    clearBtn.addEventListener("click", function () { state.ex = false; state.drafts[f.id] = {}; drawReplica(f, host, mount); });
+    clearBtn.addEventListener("click", async function () {
+      if (!(await G.modal.confirm("Clear this sheet? Your typed answers will be lost.", { okText: "Clear", danger: true }))) return;
+      state.ex = false; state.drafts[f.id] = {}; drawReplica(f, host, mount);
+      U.toast("Sheet cleared.");
+    });
   }
 
   // PDF hook scaffold — mode 2 (overlay-ready) only.
@@ -18114,7 +18122,11 @@ window.G = window.G || {};
     // fix as launchDrill()'s "Back to drills" above - see its own comment
     // for why document.getElementById("route") was never a safe fallback
     // pattern here.
-    clearBtn.addEventListener("click", () => { d.poaFields.forEach((f) => { poa[f.id] = ""; }); persistPOA(); render(mount, "poa"); });
+    clearBtn.addEventListener("click", async () => {
+      if (!(await G.modal.confirm("Clear this plan? Your typed answers will be lost.", { okText: "Clear", danger: true }))) return;
+      d.poaFields.forEach((f) => { poa[f.id] = ""; }); persistPOA(); render(mount, "poa");
+      util.toast("Plan cleared.");
+    });
     actions.appendChild(printBtn); actions.appendChild(clearBtn);
     form.appendChild(actions);
     host.appendChild(form);
