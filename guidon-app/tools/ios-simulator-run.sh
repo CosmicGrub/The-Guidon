@@ -23,7 +23,7 @@
 #   APP_PATH  absolute path to the built App.app            (required)
 #   DEVICES   comma-separated Simulator device names        (required)
 #   BUNDLE_ID app bundle identifier                         (default app.guidon.trainer)
-#   SETTLE    seconds to wait for the corpus to parse+paint (default 12)
+#   SETTLE    seconds to wait for the corpus to parse+paint (default 30)
 #
 # Output: artifacts/ios/<device>/ screenshots + logs, and artifacts/ios/summary.md
 # Exit:   0 every device rendered · 1 any device failed
@@ -39,7 +39,7 @@ if [ -z "$BUNDLE_ID" ] && [ -f "$APP_PATH/Info.plist" ]; then
   BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw "$APP_PATH/Info.plist" 2>/dev/null || true)"
 fi
 BUNDLE_ID="${BUNDLE_ID:-app.guidon.trainer}"
-SETTLE="${SETTLE:-12}"
+SETTLE="${SETTLE:-30}"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT="$(cd "$HERE/.." && pwd)/artifacts/ios"
@@ -223,8 +223,24 @@ for raw in "${DEVICE_LIST[@]}"; do
   early="$dir/launch-early.png"
   xcrun simctl io "$udid" screenshot "$early" >/dev/null 2>&1 || true
 
-  # web/index.html is ~4.3 MB with a 1,014-card seed to parse before first
-  # paint; on a cold simulator that is not instant.
+  # web/index.html was ~4.3 MB with a 1,014-card seed when SETTLE=12 was
+  # picked; the collective/desktop work landed since then grew it to
+  # ~12.8 MB (measured 2026-09-05/06 - room core, capability registry,
+  # onboarding/callsign work, all single-source and inline), and this
+  # pipeline's first real CI run (2026-09-06) failed exactly the way a too-
+  # short settle would: 2 of 4 Simulators (iPhone 16, iPhone 16 Pro Max)
+  # never progressed past the launch screen (0.00% change between the early
+  # and late screenshot - see the "progress" check below) while the other
+  # two (iPhone SE 3rd gen, iPad 10th gen) rendered fine. console.log for
+  # the failing pair shows a real "JS Eval error" logged by Capacitor's
+  # bridge during initial script evaluation, ahead of GUIDON_CAPS still
+  # printing moments later - consistent with a WKWebView still working
+  # through a much larger inline script than this budget assumed, on a
+  # shared GitHub-hosted macOS runner, not a deterministic per-device
+  # difference (Simulators do not throttle CPU by device model). Not fully
+  # confirmed without an interactive WebKit inspector on the runner itself,
+  # so this is the best-supported fix from the evidence available - watch
+  # the next real run.
   sleep "$SETTLE"
 
   # Is the process still alive? launchctl must run INSIDE the simulator via
