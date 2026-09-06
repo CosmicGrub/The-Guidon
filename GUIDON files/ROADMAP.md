@@ -2,7 +2,7 @@
 
 **Read this to know: what's shipped, what's deliberately not built (and why), and what actually comes next.** `GUIDON_PROJECT_MAP.md` is the 10,000-foot *what is this app* orientation; `CHANGELOG.md` is the session-by-session *what changed*; this document is the forward-looking one — pull from it to pick up where the last session left off, and keep it current going forward rather than letting it drift the way the other canonical docs already have once.
 
-**Current version:** v1.5.1 (2026-09-01)
+**Current version:** v1.5.1 (released 2026-09-01; round 7's own PR merged to `main` 2026-09-06 — main and the published release now match exactly)
 
 ---
 
@@ -19,17 +19,19 @@ These are done — not "paused," not "mostly done." Nothing queued against them.
 | Session-close cleanup (round 6) | Hyphenated-tier-range filter bug, one mis-filed self-check question, 6 dependency bumps, 2 CI races root-caused (not just re-run) | PR #108 |
 | v1.5.0 release | First tagged GitHub Release — all 4 platform artifacts (standalone, web, Windows, Android), version bump, this document's own creation | v1.5.0 tag |
 | Gradle-wrapper regression, caught and fixed live on `main` | A Dependabot major bump broke real Android builds despite passing CI clean (no job actually exercises a real Gradle build); reverted, dependabot.yml now ignores that specific bump | PR #110 |
-| Round 7 (quick wins) | A real doctrine error, 2 a11y/UX gaps on `#/moi`, a new icon-registry test closing a real silent-fallback class, a Reminders double-read fix, and 9 test suites (including `test:moi-import` itself) found silently never running in CI, now wired in | v1.5.1 |
+| Round 7 (quick wins) | A real doctrine error, 2 a11y/UX gaps on `#/moi`, a new icon-registry test closing a real silent-fallback class, a Reminders double-read fix, and 9 test suites (including `test:moi-import` itself) found silently never running in CI, now wired in | PR #112 |
+| `cargo check --locked` CI mystery, fully resolved | Two distinct, stacked root causes, each confirmed via direct evidence rather than assumed: (1) CI's Windows runner tracked whatever cargo shipped that week (1.98.0) while `Cargo.lock` had been generated locally by 1.96.0 — fixed with `rust-toolchain.toml` pinning the channel; (2) even after the pin, the *committed* `Cargo.lock`'s own `guidon` package version had silently been left at the pre-bump value while `Cargo.toml` moved on — fixed by committing that one-line diff. A version diagnostic step added to the CI job is what surfaced cause #1 after several blind re-runs. | PR #112 |
+| Gradle-wrapper patch bump, verified before merge (not on CI-green alone) | 8.14.3 → 8.14.5, same major line as the reverted 9.7.1 regression above — checksum verified against Gradle's own published SHA256, plus a real `npm run android:debug` build run before merging, precisely because CI's own checks don't exercise a real Gradle build | PR #111 |
 
-See `CHANGELOG.md`'s v1.5.0 entry for the detailed version of all of the above.
+See `CHANGELOG.md`'s v1.5.0 and v1.5.1 entries for the detailed version of all of the above.
 
 ---
 
 ## 2. The roadmap-audit cadence is a standing practice, not a finished project
 
-Whenever the backlog above is exhausted and someone asks "what's next," the answer is: run another round. This has held for 6 consecutive rounds and has no natural end.
+Whenever the backlog above is exhausted and someone asks "what's next," the answer is: run another round. This has held for 7 consecutive rounds and has no natural end.
 
-**The pattern**, refined across all 6 rounds:
+**The pattern**, refined across all 7 rounds:
 1. An 8-lens audit (correctness / accessibility / content-accuracy / native-platform / dependency-hygiene / test-coverage / performance / UX-consistency), each lens explicitly primed with everything every prior round already fixed, so it doesn't waste a pass rediscovering settled work.
 2. Raw findings synthesized into buckets — before dispatch, manually scan for any file/route mentioned 3+ times across different buckets and consolidate those into one dedicated bucket (cuts merge-conflict risk at the highest-collision area; empirically took one round from 3 manual conflicts to zero).
 3. Each bucket implemented by an independent Workflow agent in its own isolated git worktree, all dispatched in parallel.
