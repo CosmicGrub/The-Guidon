@@ -42,9 +42,25 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod desktop;
-mod room;
-mod room_schema_gen;
 mod selftest;
+
+// room and room_schema_gen moved to a shared lib (src/lib.rs) so the
+// fuzz_validate binary can call the real guidon::room::validate() instead of
+// a second copy. Every `room::...` call site below is unchanged - the path
+// segment is the same either way. main.rs itself never names
+// room_schema_gen:: directly (only room.rs does, via `crate::` inside the
+// lib now) - kept in this `use` for symmetry with the pitch doc's own
+// wording, allow(unused_imports) so that keeps cargo build's warning output
+// byte-identical to before this split.
+#[allow(unused_imports)]
+use guidon::{room, room_schema_gen};
+
+// One test that used to live inside room.rs's own #[cfg(test)] mod moved
+// here instead (bin-hosted, not reachable through the lib's `pub mod room`)
+// - see src/room_gate_test.rs's header for why.
+#[cfg(test)]
+#[path = "room_gate_test.rs"]
+mod room_gate_test;
 
 use tauri::{Manager, WebviewWindowBuilder};
 

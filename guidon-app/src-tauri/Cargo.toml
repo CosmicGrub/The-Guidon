@@ -5,6 +5,29 @@ description = "GUIDON - Army Leader Development Trainer"
 authors = ["GUIDON"]
 edition = "2021"
 rust-version = "1.77"
+# src/bin/fuzz_validate.rs (the differential fuzzer, room-tls-and-discovery-
+# pitch.md section 3) is a second [[bin]] target in this package now.
+# Without this, `cargo run` picks ambiguously and - measured this session -
+# `tauri build`/`tauri dev` picked fuzz_validate.exe as "the application"
+# instead of the real shipped guidon.exe, silently, with no error (only
+# `npx tauri build --debug --no-bundle`'s own "Built application at:" line
+# gave it away). default-run is Cargo's own, standard field for exactly
+# this ambiguity; tauri-cli's own binary discovery respects it, so
+# tauri.conf.json (pinned byte-for-byte against HEAD by
+# tests/config.rs::tauri_conf_is_byte_identical_to_head_apart_from_the_
+# desktop_plan_keys, apart from two named R1 keys) needs no new key and
+# stays untouched.
+default-run = "guidon"
+
+[lib]
+# Split for the differential fuzzer (room-tls-and-discovery-pitch.md
+# section 3): src/bin/fuzz_validate.rs is a second [[bin]] target that needs
+# to call the real room::validate() through this lib, not a second copy.
+# Name defaults to the package name ("guidon"), spelled out here for
+# clarity. main.rs still builds the same binary it always did - only reaches
+# room/room_schema_gen through `use guidon::{room, room_schema_gen}` now.
+name = "guidon"
+path = "src/lib.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

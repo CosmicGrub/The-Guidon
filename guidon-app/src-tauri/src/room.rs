@@ -1766,14 +1766,32 @@ pub fn room_stats<R: Runtime>(window: WebviewWindow<R>, state: State<'_, RoomSta
 
 /* ---------------------------------------------------------------- tests */
 
+// room-tls-and-discovery-pitch.md section 3 (the fuzzer's mechanical lib
+// split, this session): moving this module behind `pub mod room;` in the
+// new src/lib.rs means its OWN #[cfg(test)] tests now run via `cargo test
+// --lib` instead of riding along inside the "guidon" bin's unittest binary
+// - fine for every test below except one. The single test that built a
+// REAL tauri::test::mock_builder() app and a real WebviewWindowBuilder
+// window (commands_refuse_without_the_gate_and_run_a_room_on_the_mock_
+// runtime) crashed the `--lib` test binary at process START (Windows
+// STATUS_ENTRYPOINT_NOT_FOUND, 0xC0000139 - a loader failure before any
+// test code runs, not a panic), verified NOT specific to this lib split:
+// the same construction crashes from a brand-new tests/*.rs integration
+// binary too, and from the pre-existing tests/config.rs once the same two
+// lines are appended to it - every standalone test binary in this package
+// other than the "guidon" bin's own unittest exe hits it. That one test
+// therefore moved to src/room_gate_test.rs, `mod`-included from main.rs
+// (never from lib.rs) so it keeps running in the one binary proven to
+// tolerate a real mock WebviewWindow here - see that file's own header.
+// Its two exclusively-local helpers (a duplicated ROOM/frame() pair - not
+// validate() or anything protocol-bearing) moved with it; nothing else
+// in this module used tauri::test or tauri::webview, so no other test here
+// changed.
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
     use std::process::Command;
-    use tauri::ipc::{CallbackFn, InvokeBody};
-    use tauri::test::{get_ipc_response, mock_builder, mock_context, noop_assets, INVOKE_KEY};
-    use tauri::webview::InvokeRequest;
 
     const ROOM: &str = "ALPHA-BRAVO-42";
 
@@ -2233,83 +2251,9 @@ mod tests {
         assert!(guard_stop("tauri", "other").unwrap_err().contains("main"));
     }
 
-    fn invoke(cmd: &str, body: Value) -> InvokeRequest {
-        InvokeRequest {
-            cmd: cmd.into(),
-            callback: CallbackFn(0),
-            error: CallbackFn(1),
-            url: "http://tauri.localhost".parse().unwrap(),
-            body: InvokeBody::Json(body),
-            headers: Default::default(),
-            invoke_key: INVOKE_KEY.to_string(),
-        }
-    }
-
-    #[test]
-    fn commands_refuse_without_the_gate_and_run_a_room_on_the_mock_runtime() {
-        let app = mock_builder()
-            .manage(RoomState::default())
-            .invoke_handler(tauri::generate_handler![room_start, room_send, room_stop, room_stats])
-            .build(mock_context(noop_assets()))
-            .expect("mock app");
-        let webview = tauri::WebviewWindowBuilder::new(&app, WINDOW_LABEL, Default::default()).build().expect("mock window");
-
-        let err = get_ipc_response(&webview, invoke("room_stats", json!({ "studyGroups": false, "fork": "tauri" }))).expect_err("setting off must reject");
-        assert!(err.to_string().contains("off"), "{err}");
-        let err = get_ipc_response(&webview, invoke("room_start", json!({ "port": null, "code": ROOM, "studyGroups": true, "fork": "web" }))).expect_err("fork web must reject");
-        assert!(err.to_string().contains("fork"), "{err}");
-        let err = get_ipc_response(&webview, invoke("room_send", json!({ "to": null, "frame": {}, "studyGroups": true, "fork": "tauri" }))).expect_err("no room open");
-        assert!(err.to_string().contains("no room"), "{err}");
-
-        let closed = get_ipc_response(&webview, invoke("room_stats", json!({ "studyGroups": true, "fork": "tauri" }))).expect("stats").deserialize::<Value>().unwrap();
-        assert_eq!(closed["open"], json!(false));
-        assert_eq!(closed["keepAwake"], json!(false));
-
-        let info = get_ipc_response(&webview, invoke("room_start", json!({ "port": null, "code": "alpha-bravo-42", "studyGroups": true, "fork": "tauri" })))
-            .expect("room_start resolves")
-            .deserialize::<RoomInfo>()
-            .unwrap();
-        assert_eq!(info.room, ROOM);
-        assert!(info.port > 0);
-        assert_eq!(info.url, format!("http://{}:{}/j/{ROOM}", info.ip, info.port));
-
-        // the listener is real: a Node-style client would see the guest page
-        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
-        let body = rt.block_on(async {
-            let mut s = TcpStream::connect(("127.0.0.1", info.port)).await.expect("connect");
-            s.write_all(b"GET /j/ALPHA-BRAVO-42 HTTP/1.1\r\nHost: x\r\n\r\n").await.unwrap();
-            let mut out = Vec::new();
-            s.read_to_end(&mut out).await.unwrap();
-            out
-        });
-        let text = String::from_utf8_lossy(&body);
-        assert!(text.starts_with("HTTP/1.1 200 OK\r\n"), "{}", &text[..text.len().min(80)]);
-        assert!(body.ends_with(GUEST_HTML), "the guest page bytes end the response");
-
-        let open = get_ipc_response(&webview, invoke("room_stats", json!({ "studyGroups": true, "fork": "tauri" }))).expect("stats").deserialize::<Value>().unwrap();
-        assert_eq!(open["open"], json!(true));
-        assert_eq!(open["room"], json!(ROOM));
-        assert_eq!(open["seatCap"], json!(schema::SEAT_CAP));
-        if cfg!(windows) {
-            assert_eq!(open["keepAwake"], json!(true), "X13: SetThreadExecutionState held while the room is open");
-        }
-
-        let sent = get_ipc_response(&webview, invoke("room_send", json!({ "to": "NOBODY22", "frame": frame("NODEHOST", "ping", json!({ "n": 1 })), "studyGroups": true, "fork": "tauri" }))).expect("send").deserialize::<Value>().unwrap();
-        assert_eq!(sent, json!({ "sent": 0, "dropped": "unknown-to" }));
-
-        // Settings -> Study groups goes OFF first, then the page's settings:change handler calls leave():
-        // the stop request therefore carries studyGroups:false and MUST still stop (measured stuck-bound otherwise).
-        let stopped = get_ipc_response(&webview, invoke("room_stop", json!({ "studyGroups": false, "fork": "tauri" }))).expect("room_stop works with the setting OFF").deserialize::<Value>().unwrap();
-        assert_eq!(stopped, json!({ "stopped": true }));
-        let after = get_ipc_response(&webview, invoke("room_stats", json!({ "studyGroups": true, "fork": "tauri" }))).expect("stats").deserialize::<Value>().unwrap();
-        assert_eq!(after["open"], json!(false));
-        assert_eq!(after["keepAwake"], json!(false));
-        std::thread::sleep(Duration::from_millis(150)); // the aborted accept task drops the listener on its next poll
-        let refused = rt.block_on(async { tokio::time::timeout(Duration::from_secs(2), TcpStream::connect(("127.0.0.1", info.port))).await });
-        assert!(!matches!(refused, Ok(Ok(_))), "the port is closed after room_stop");
-        let again = get_ipc_response(&webview, invoke("room_stop", json!({ "studyGroups": true, "fork": "tauri" }))).expect("stop").deserialize::<Value>().unwrap();
-        assert_eq!(again, json!({ "stopped": false }));
-    }
+    // commands_refuse_without_the_gate_and_run_a_room_on_the_mock_runtime
+    // moved to src/room_gate_test.rs (bin-hosted) - see the header comment
+    // above `mod tests` for why.
 
     /* ---- address advertising (the IPv4 listing) ---- */
 
