@@ -66,6 +66,22 @@ const APP = resolve(HERE, "..");
 const EXE = process.env.GUIDON_EXE || join(APP, "src-tauri", "target", "debug", "guidon.exe");
 const PORT = Number(process.env.GUIDON_CDP_PORT || 9223);
 const CDP = "http://127.0.0.1:" + PORT;
+// This suite is heavier than a normal suite - it launches BOTH a native exe
+// (with its own WebView2 process) AND a second full browser engine
+// (xeng-harness, for the phone side), while run-parallel.mjs's scheduler
+// counts it as one slot the same as every single-Chromium suite. Reproduced
+// 2026-09-05/06: standalone, window.G boots in well under 30s every time;
+// clustered with several other browser-heavy suites at GUIDON_TEST_CONCURRENCY
+// 6+, CDP itself still answers fast (the exe process is alive and its I/O
+// thread is responsive) but the page's own ~13 MB inline-script bootstrap -
+// competing for the same CPU cores as five-plus other Chromiums - has
+// intermittently not finished by 30s. Not a hang (it does finish; a rerun
+// alone always finishes well inside 30s) and not this suite's own bug - a
+// real environmental contention window this scheduler doesn't account for.
+// Widen the boot budget specifically when GUIDON_TEST_CONCURRENCY signals a
+// shared run, so a solo run keeps its tight 30s feedback loop.
+const CONCURRENT_RUN = Number(process.env.GUIDON_TEST_CONCURRENCY || "") > 1 || !!process.env.CI;
+const BOOT_TIMEOUT_MS = Number(process.env.GUIDON_ROOM_BOOT_TIMEOUT_MS) || (CONCURRENT_RUN ? 90000 : 30000);
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -82,7 +98,10 @@ async function until(pred, limit = 8000, step = 50) {
     await sleep(step);
   }
 }
-const WATCHDOG_MS = 240000;
+// Two full launches each budget up to BOOT_TIMEOUT_MS for the boot check
+// alone (see its comment); the watchdog must clear both plus the relay/
+// validation/HTTP/WS work in between with real headroom, not just barely.
+const WATCHDOG_MS = 240000 + (CONCURRENT_RUN ? 2 * (BOOT_TIMEOUT_MS - 30000) : 0);
 setTimeout(() => { console.log("  FAIL  suite watchdog: no verdict after " + WATCHDOG_MS + " ms"); console.log("\nROOM TAURI: WATCHDOG TIMEOUT"); process.exit(99); }, WATCHDOG_MS).unref();
 
 await import(pathToFileURL(resolve(APP, "src/app-modules/room-schema.js")).href);
@@ -157,8 +176,15 @@ try {
   const target = await until(async () => { const list = await (await fetch(CDP + "/json/list", { signal: AbortSignal.timeout(1500) })).json(); return list.find((t) => t.type === "page" && t.url && t.url !== "about:blank") || null; }, 30000, 300);
   if (!target.hit) { bad("(1) no app page target within 30 s"); throw new Error("no page"); }
   page = await attachToPage(CDP, (t) => t.url === target.value.url);
-  const booted = await until(() => page.evaluate(() => !!(window.G && window.G.routes && window.G.routes.length && window.G.studyGroup && window.G.roomSchema && window.G.store)), 30000, 250);
-  booted.hit ? ok("(1) attached to " + page.target.url + "; app shell booted (G.routes, G.studyGroup, G.roomSchema) after " + booted.ms + " ms") : bad("(1) app shell not booted within 30 s");
+  const booted = await until(() => page.evaluate(() => !!(window.G && window.G.routes && window.G.routes.length && window.G.studyGroup && window.G.roomSchema && window.G.store)), BOOT_TIMEOUT_MS, 250);
+  // Every other until() above bails out immediately on a miss (its very next
+  // line assumes success). This one used to fall through instead, so a boot
+  // timeout under contention (see BOOT_TIMEOUT_MS's comment) produced a
+  // second, unrelated-looking crash right below - window.G.caps read off an
+  // undefined window.G - that buried the real, accurate diagnosis under a
+  // confusing "suite error: TypeError ... reading 'caps'". Bail here too.
+  if (!booted.hit) { bad("(1) app shell not booted within " + BOOT_TIMEOUT_MS + " ms"); throw new Error("app shell not booted"); }
+  ok("(1) attached to " + page.target.url + "; app shell booted (G.routes, G.studyGroup, G.roomSchema) after " + booted.ms + " ms");
   const ident = await page.evaluate(() => ({ fork: window.G.caps && window.G.caps.fork ? window.G.caps.fork() : null, sha: window.GUIDON_BUILD_SHA || null, app: window.GUIDON_APP_VERSION || null, tauri: !!window.__TAURI_INTERNALS__, origin: location.origin, adapter: !!window.__GUIDON_ROOM__ }));
   ident.fork === "tauri" && ident.tauri ? ok("(1) the page is the tauri fork (G.caps.fork() = tauri, __TAURI_INTERNALS__ present, origin " + ident.origin + ", sha " + (ident.sha ? ident.sha.slice(0, 7) : "none") + ")") : bad("(1) page identity: " + JSON.stringify(ident));
   ident.adapter ? ok("(1) src/room-tauri.js is in the embedded web/ (window.__GUIDON_ROOM__ present)") : bad("(1) window.__GUIDON_ROOM__ is absent - room-tauri.js is not injected into the web/ this exe embeds (rebuild: npm run build && npx tauri build --debug --no-bundle)");
@@ -455,7 +481,13 @@ try {
     const t2 = await until(async () => { const list = await (await fetch(CDP + "/json/list", { signal: AbortSignal.timeout(1500) })).json(); return list.find((t) => t.type === "page" && t.url && t.url !== "about:blank") || null; }, 30000, 300);
     if (!t2.hit) { bad("(10) no app page target within 30 s"); throw new Error("no page"); }
     page = await attachToPage(CDP, (t) => t.url === t2.value.url);
-    await until(() => page.evaluate(() => !!(window.G && window.G.routes && window.G.routes.length && window.G.studyGroup && window.G.store && window.__GUIDON_ROOM__)), 30000, 250);
+    const booted2 = await until(() => page.evaluate(() => !!(window.G && window.G.routes && window.G.routes.length && window.G.studyGroup && window.G.store && window.__GUIDON_ROOM__)), BOOT_TIMEOUT_MS, 250);
+    // Same class of bug as (1)'s boot check, and worse here: the result used
+    // to be discarded outright (not even a bad() on a miss), so the very
+    // next line's window.G.store access threw straight through to the
+    // catch-all "suite error" with no clue which of the ten sections it
+    // came from.
+    if (!booted2.hit) { bad("(10) second launch: app shell not booted within " + BOOT_TIMEOUT_MS + " ms"); throw new Error("app shell not booted (second launch)"); }
     await page.evaluate(async () => { location.hash = "#/group"; await window.G.store.setSetting("studyGroups", true); });
     await until(() => page.evaluate(() => window.__GUIDON_ROOM__.attached() ? true : null), 5000);
     const h3 = await page.evaluate(() => window.G.studyGroup.host({ mode: "board", name: "DESK-HOST", count: 2, category: "All" }));
