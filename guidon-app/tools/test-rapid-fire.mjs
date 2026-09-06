@@ -110,9 +110,16 @@ async function enterRapidFireFresh() {
   // match the wrong .segmented instead of failing loudly (reproduced in
   // test-rapid-fire-solo-team.mjs's own CI runs). Poll for the real
   // condition instead of assuming a fixed delay was enough.
+  //
+  // Round 8 (2026-09-06): widened 5000ms -> 15000ms - test-rapid-fire-solo-
+  // team.mjs's own first-in-run call to this same helper timed out at
+  // 5000ms twice in a row in CI (heavy contention right after fresh page
+  // boot), while every later call in the same run passed in well under a
+  // second. Matched here for consistency since all 3 duplicated copies
+  // share the exact same risk profile.
   await page.waitForFunction(
     () => [...document.querySelectorAll(".segmented button")].some((b) => b.textContent.trim() === "Party"),
-    { timeout: 5000 }
+    { timeout: 15000 }
   ).catch(() => {});
   return clicked;
 }

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Enhancement backlog round 1, "Android allowBackup contradicts the
          Privacy Policy" bucket: the app's own #/privacy screen states flatly
@@ -72,4 +73,17 @@
          resulting SecurityException, so every haptic buzz was a no-op on the
          shipped APK without it (task #204). -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Roadmap audit round 8, "Native Platform Fixes" bucket:
+         @capacitor/local-notifications' own bundled library manifest
+         unconditionally declares SCHEDULE_EXACT_ALARM, but notify.js
+         (~lines 78-93) hardcodes isExactNotification: false specifically so
+         reminder scheduling never needs Android 12+'s "Alarms & reminders"
+         special permission. With no override here, the manifest merger let
+         that unused permission merge straight into the built APK — a real
+         Play Console friction point, since Google requires written
+         justification for SCHEDULE_EXACT_ALARM in the Permissions
+         Declaration form and this app has no legitimate use to justify.
+         Suppress it at merge time rather than carry a permission the app's
+         own code deliberately never exercises. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" tools:node="remove"/>
 </manifest>
