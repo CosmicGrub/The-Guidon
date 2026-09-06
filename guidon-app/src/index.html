@@ -7244,17 +7244,34 @@ window.G = window.G || {};
     // route navigation; Guest and Kiosk sessions are never gated regardless
     // of this flag - see that module's own header comment.
     biometricLock: false,
+    // P1 of the "No server, ever" promise (desktop roadmap, locked decision
+    // Q1): the kill switch for study groups (LAN rooms) lands BEFORE the
+    // feature. Off until the Soldier opts in from Settings -> Study groups.
+    // Nothing reads it for a socket yet (rooms are P3/P4) - today it only
+    // drives the Diagnostics "No external requests" check, which fails on
+    // any G.netLedger entry while this is false. P4's first socket must
+    // gate on this flag and record itself in G.netLedger.
+    studyGroups: false,
   };
 
   let _settingsDebounce = null;
+  // Keys this page has changed via setSetting() whose debounced whole-row
+  // save has not landed yet. The cross-context bus (src/xwin.js, web builds
+  // only) merges another page's freshly written settings row into
+  // state.settings per key and must skip exactly these - otherwise the
+  // other page's row, written while ours is still pending, reverts our edit
+  // before our own save gets to write it. Cleared the moment the pending
+  // save is issued (timer or flush): from then on the row carries our edit.
+  const _dirtySettings = new Set();
   function debouncedSettingsSave(s) {
     if (_settingsDebounce) clearTimeout(_settingsDebounce);
-    _settingsDebounce = setTimeout(() => { db.setSetting("settings", s); _settingsDebounce = null; }, 300);
+    _settingsDebounce = setTimeout(() => { db.setSetting("settings", s); _settingsDebounce = null; _dirtySettings.clear(); }, 300);
   }
   util.onFlush("settings", () => {
     if (!_settingsDebounce) return;
     clearTimeout(_settingsDebounce);
     _settingsDebounce = null;
+    _dirtySettings.clear();
     db.setSetting("settings", state.settings);
   });
 
@@ -24208,15 +24225,32 @@ window.G = window.G || {};
         return { ok: cards > 900 && acr > 3000, detail: cards + " board cards \u00b7 " + acr + " acronyms \u00b7 " + doc + " doctrine entries" };
       } },
     { id:"offline", name:"No external requests",
-      why:"This app must work with no signal. Any external URL is a bug.",
-      next:"Note the exact URL(s) listed in the detail above and report them. This is a packaging bug — a reference to an outside resource slipped into what is supposed to be an offline-only build — not something fixable from the device.",
+      // P1 of the "No server, ever" promise (desktop roadmap, locked
+      // decision Q1). Two rules in one check: the page must reference no
+      // external resource at all (the attribute scan, unchanged), and
+      // G.netLedger - the in-memory record of every connection GUIDON
+      // itself opened on this page - must be EMPTY unless Settings ->
+      // Study groups (LAN rooms) is on; while it is on, the detail reports
+      // how many connections this page opened (0 is fine). Nothing writes
+      // the ledger yet (rooms are P3/P4); the rule ships first so the first
+      // socket can never land without being audited here.
+      // tools/test-privacy.mjs plants an entry and asserts both branches.
+      why:"No server, ever. Outside a study session this app must make no network request at all, so any external URL is a bug. Study groups (LAN rooms) are the one opt-in exception: while that Settings switch is off, any connection GUIDON opened on this page fails this check; while it is on, this reports how many it opened.",
+      next:"If the detail names a session connection, GUIDON opened one while Study groups was off: report it with the peer shown - that is a bug in the app, not in your device. If it lists URLs: Note the exact URL(s) listed in the detail above and report them. This is a packaging bug — a reference to an outside resource slipped into what is supposed to be an offline-only build — not something fixable from the device.",
       run: async () => {
         const bad = [];
         document.querySelectorAll("link[href],script[src],img[src]").forEach(n => {
           const u = n.getAttribute("href") || n.getAttribute("src") || "";
-          if (/^https?:\/\//i.test(u)) bad.push(u.slice(0, 44));
+          if (/^https?:\/\//i.test(u)) bad.push("external ref " + u.slice(0, 44));
         });
-        return { ok: !bad.length, detail: bad.length ? "External refs: " + bad.join(", ") : "No external resource references" };
+        const led = (G.netLedger && G.netLedger.list()) || [];
+        const rooms = !!((G.store && G.store.settings && G.store.settings()) || {}).studyGroups;
+        if (!rooms && led.length) bad.push("session connection with study groups OFF: " + led[0].kind + " " + led[0].peer);
+        const count = led.length + " session connection" + (led.length === 1 ? "" : "s") + " this page";
+        return { ok: !bad.length,
+                 detail: bad.length ? bad.join(" \u00b7 ")
+                       : rooms ? "No external resource references \u00b7 study groups ON \u00b7 " + count
+                       : "No external resource references" };
       } },
     { id:"themeSync", name:"Theme registry / pre-paint sync",
       // Roadmap Tier 3. The pre-paint bootstrap <script> (top of <head>, runs
@@ -30922,35 +30956,51 @@ window.G = window.G || {};
   views.privacy = function (mount) {
     util.clear(mount);
     mount.appendChild(el("div.section-title", {}, [ el("h2", { text: "Privacy Policy" }), el("div.rule") ]));
-    mount.appendChild(el("p.hint", { text: "Last updated August 8, 2026. Applies to every version of GUIDON — standalone, PWA, desktop, and Android — since they all run from the same source." }));
+    mount.appendChild(el("p.hint", { text: "Last updated September 4, 2026. Applies to every version of GUIDON — standalone, PWA, desktop, and Android — since they all run from the same source." }));
     const SECTIONS = [
-      { h: "The short version", p: ["GUIDON does not collect, transmit, sell, or share any personal data, because GUIDON has no server to send it to. There is no account, no sign-in, no analytics, no advertising, and no network connection of any kind between the app and anyone — including the developer. Everything GUIDON knows about you stays in storage on your own device, under your control, until you delete it."] },
-      { h: "What GUIDON is", p: ["GUIDON is an offline, single-user reference and study tool for enlisted Soldiers preparing for promotion boards. It runs entirely client-side — there is no backend server, no cloud sync, and no remote database. The app's content-security policy blocks it from making any outbound network request, verified automatically before every release."] },
+      // P1 of the "No server, ever" promise (desktop roadmap, locked decision
+      // Q1): the second "short version" paragraph is THE unified sentence -
+      // it names the only four ways any fork can touch a network (LAN study
+      // rooms, GitHub Pages delivery, OS voice packs, iCloud/device backups)
+      // in one breath. tools/test-privacy.mjs asserts every paragraph here
+      // is a verbatim copy of GUIDON files/PRIVACY.md and that the four
+      // exceptions are named here, there and in the root README.
+      { h: "The short version", p: [
+        "GUIDON does not collect, transmit, sell, or share any personal data, because GUIDON has no server to send it to. There is no server, ever: no account, no sign-in, no analytics, no advertising, and nothing about you is ever sent to anyone — including the developer. Everything GUIDON knows about you stays in storage on your own device, under your control, until you delete it.",
+        "The only ways any version of GUIDON can touch a network are these four, and none of them sends your study data to a server: study groups (LAN rooms), which are off by default behind a switch in Settings and, once they exist, connect only to other devices on the same Wi-Fi or hotspot; GitHub Pages, the file server the web version will be delivered from (today, whichever static host serves it), which is contacted only to fetch or update the app itself (the service worker checks it for a newer copy when you open the app online); a future read-aloud feature, for which your operating system may download a voice pack the first time it is used; and, on a future iOS build, iCloud or device backups run by the operating system, which may include the app's data under the backup settings you control on your device.",
+      ] },
+      { h: "What GUIDON is", p: ["GUIDON is an offline-first, single-user reference and study tool for enlisted Soldiers preparing for promotion boards. It runs entirely client-side — there is no backend server, no cloud sync, and no remote database. Before every release the app is checked automatically by walking every screen and confirming it makes no network request outside a study session."] },
       { h: "Data GUIDON stores, and where", p: [
         "Everything below is stored only on your device — never on a server, because no server exists.",
-        "Storage locations: an on-device database (IndexedDB) holding your profile, saved answers, quiz/board-drill history, and progress; plus a small amount of on-device browser storage (localStorage) for interface preferences like your selected theme.",
-        "Profile information you enter: name, rank, MOS, ETS date, target board date, study weak points, and readiness answers.",
+        "Storage locations: an on-device database (IndexedDB, database name guidon) holding your profile, saved answers, quiz/board-drill history, and progress; plus a small amount of on-device browser storage (localStorage) for interface preferences like your selected theme.",
+        "Profile information you enter: things like your name, rank, MOS, ETS date, target board date, study weak points, and readiness answers, which you type in to personalize your action plan and drills.",
         "Practice and progress data: quiz attempts, Mock Board results, streaks, and scenario progress, generated as you use the app.",
-        "Squad roster (optional, leader-facing only): if you use the roster feature, you may enter the names, ranks, and counseling dates of Soldiers you lead. This is the one place GUIDON stores information about people other than you, so it gets extra protection — see below.",
+        "Squad roster (optional, leader-facing only): if you use the roster feature, you may enter the names, ranks, and counseling dates of Soldiers you lead. This is the one place GUIDON stores information about people other than you, so it gets extra protection — see the next section.",
+        "None of the above ever leaves your device on its own. Nothing here is ever sent to a server.",
       ] },
       { h: "The squad roster gets extra protection", p: [
-        "If you export a backup of your GUIDON data, the squad roster is excluded by default. Your own profile, progress, and drill history are included; roster entries about other people are not.",
-        "Including the roster in a backup requires a separate, explicit opt-in action — it is never bundled in by accident. This default-exclude behavior is checked automatically before every release.",
+        "Because the roster feature is the only place GUIDON stores data about someone other than the app's user, it is treated differently from everything else:",
+        "If you ever export a backup of your GUIDON data (a JSON file you create yourself, entirely on-device, for your own safekeeping), the squad roster is excluded by default. Your own profile, progress, and drill history are included; roster entries about other people are not.",
+        "Including the roster in a backup requires a separate, explicit opt-in action — it is never bundled in by accident.",
+        "This default-exclude / explicit-opt-in behavior is checked automatically before every release.",
       ] },
-      { h: "Backups are yours, not ours", p: ["GUIDON can generate a backup file (JSON) of your data on request. This file is created locally in your browser and saved to your device. GUIDON does not upload it anywhere; the developer never sees it. What you do with that file afterward is entirely your choice."] },
+      { h: "Backups are yours, not ours", p: ["GUIDON can generate a backup file (JSON) of your data on request. This file is created locally in your browser and saved to your device, the same way any file download works. GUIDON does not upload it anywhere; the developer never sees it. What you do with that file afterward (keep it, delete it, email it to yourself, put it on a shared drive) is entirely your choice and outside GUIDON's control. If you choose to share a backup file that includes the optional squad roster data, you are sharing information about other people, so consider that before doing so."] },
       { h: "No accounts, no analytics, no ads, no third parties", p: [
-        "No sign-up, login, or account system of any kind — the “profile” in GUIDON is just a local save file.",
-        "No analytics, usage tracking, advertising, ad SDKs, crash-reporting, or telemetry of any kind.",
-        "No third-party code that phones home, and no tracking cookies.",
+        "No sign-up, login, or account system of any kind — the “profile” in GUIDON is just a local save file, not an identity tied to you.",
+        "No analytics or usage tracking of any kind.",
+        "No advertising and no ad SDKs.",
+        "No crash-reporting or telemetry services.",
+        "No third-party code that phones home. GUIDON does not embed any third-party analytics, advertising, or tracking libraries.",
+        "No cookies used for tracking (GUIDON isn't a website with a backend to set them against).",
       ] },
-      { h: "Why the Android app lists an “Internet” permission", p: ["The Android build declares the standard INTERNET permission because its embedded WebView component needs it to serve the app's own interface to itself over your device's internal loopback connection — the same mechanism every WebView-based app uses. It is not used, and cannot be used under the app's security policy, to send data to any external server."] },
+      { h: "Why the Android app lists an “Internet” permission", p: ["The Android build declares the standard INTERNET permission because its embedded WebView component (Capacitor) needs it to serve the app's own interface to itself over your device's internal loopback connection — the same mechanism every WebView-based app uses to render its screens. Once study groups (LAN rooms) exist, the same permission is what lets the app talk to other devices on the same Wi-Fi or hotspot, and only while that switch is on. It is never used to send your data to any server: if you inspect network activity while using GUIDON outside a study session, you will see no outbound traffic."] },
       { h: "Deleting your data", p: [
-        "Delete your profile from inside the app: Settings → Manage account → Delete erases your name, rank, MOS, action plan, and readiness answers immediately.",
-        "Delete everything: uninstalling the app or clearing site data for GUIDON in your browser permanently erases the on-device database and all locally stored preferences — a complete, permanent deletion with no server-side copy anywhere.",
+        "Delete your profile from inside the app: Settings → Manage account → Delete erases your name, rank, MOS, action plan, and readiness answers immediately. (Your board-drill practice history is kept separate from your profile and is not affected by this action; see the next option to remove everything.)",
+        "Delete everything: uninstalling the app (Android/desktop) or clearing site data for GUIDON in your browser (PWA/standalone) permanently erases the on-device database and all locally stored preferences — a complete and permanent deletion, because nothing is stored anywhere else: there is no server-side copy for the developer to retain, and no way for the developer to recover or access it afterward. (On a future iOS build, a copy may also sit in your own iCloud or device backup, which you delete through your device's backup settings.)",
       ] },
-      { h: "Security", p: ["Because GUIDON never transmits your data, there is no “in transit” exposure to secure — your data simply never leaves the device. On-device storage security is provided by your operating system and browser, the same as any other locally stored app data."] },
+      { h: "Security", p: ["Because GUIDON never sends your data to a server, there is no “in transit” exposure to secure — outside a study session your data simply never leaves the device. On-device storage security (encryption at rest, device lock, etc.) is provided by your operating system and browser, the same as for any other locally stored app data."] },
       { h: "Children's privacy", p: ["GUIDON is a professional reference tool built for enlisted U.S. Army Soldiers and is not directed at children. It does not knowingly collect data from anyone, of any age, because it does not collect data at all."] },
-      { h: "Changes to this policy", p: ["If GUIDON's data handling ever changes, this policy will be updated first, and the “Last updated” date above will change accordingly. As of that date, GUIDON collects nothing and transmits nothing."] },
+      { h: "Changes to this policy", p: ["If GUIDON's data handling ever changes (for example, when study groups actually ship, or if a future version adds any other optional network feature), this policy will be updated first, and the “Last updated” date above will change accordingly. As of that date, GUIDON collects nothing and sends nothing to a server."] },
       { h: "Contact", p: ["Questions, requests, or concerns about this policy or GUIDON's data handling: ctsolomon95@gmail.com"] },
     ];
 
@@ -31005,8 +31055,11 @@ window.G = window.G || {};
       const pn = el("div.panel", { style: "margin-bottom:14px" });
       pn.appendChild(el("div.fin-h", { text: "About GUIDON" }));
       pn.appendChild(el("p.hint", { text: "Version " + (window.GUIDON_APP_VERSION || "unknown") + " \u00b7 Built " + (window.GUIDON_BUILD_DATE || "unknown") }));
-      pn.appendChild(el("p.hint", { text: "Fully offline single-file app \u00b7 No account, no network calls, all data stays on this device." }));
-      pn.appendChild(el("p.hint", { text: "Privacy Policy: GUIDON collects nothing and transmits nothing." }));
+      // P1 of the "No server, ever" promise: the short form of #/privacy's
+      // unified sentence. tools/test-privacy.mjs reads this panel and fails
+      // if it ever credits a Content Security Policy again (no build ships one).
+      pn.appendChild(el("p.hint", { text: "No server, ever \u00b7 No account, no analytics, all data stays on this device \u00b7 Future study groups (LAN rooms) will be opt-in and stay on your own Wi-Fi or hotspot." }));
+      pn.appendChild(el("p.hint", { text: "Privacy Policy: GUIDON collects nothing and sends nothing to a server." }));
       // Was plain, non-interactive text pointing at a PRIVACY.md that was
       // never bundled into the shipped app - no real user could ever reach
       // it. Reads the full policy in-app instead (#/privacy), matching how
@@ -31604,6 +31657,18 @@ window.G = window.G || {};
     togglePanel.appendChild(toggleRow("Show 'in transition' doctrine", "showInTransition", "Includes policy that's actively changing (PME lengths, the fitness test). Clearly flagged and dated."));
     togglePanel.appendChild(toggleRow("Show community / supplementary content", "showCommunity", "Board-prep framing beyond primary doctrine."));
     prefGrid.appendChild(togglePanel);
+
+    // P1 of the "No server, ever" promise (desktop roadmap, locked decision
+    // Q1): the study-groups kill switch ships before study groups do, so
+    // the first LAN-room socket (P3/P4) can never land without an off-by-
+    // default switch already in front of it. Same toggleRow idiom as the
+    // Content panel above (writes store.setSetting("studyGroups", bool));
+    // tools/test-privacy.mjs finds it by this exact label and flips it.
+    const sgPanel = el("div.panel", { style: "margin-top:12px" });
+    sgPanel.appendChild(el("label", { text: "Study groups" }));
+    sgPanel.appendChild(toggleRow("Study groups (LAN rooms)", "studyGroups",
+      "Off by default. While this is off it hosts nothing, joins nothing and opens no connection. Joining a room from inside GUIDON works now, on any device on the same Wi-Fi or hotspot - paste the link the host's screen shows, or type the code; rooms will only ever connect to other devices on that network, never to a server (see the Privacy Policy)."));
+    prefGrid.appendChild(sgPanel);
 
     // Intuitivism pass: this standalone toggle was a literal functional
     // duplicate of Appearance -> Motion -> Minimal whenever G.theme is
@@ -33051,6 +33116,31 @@ window.G = window.G || {};
   // exists for), but the lock screen always offers a deliberately-confirmed
   // way to turn the lock off from right there, for the exact same
   // never-lock-a-Soldier-out-of-their-own-device reason.
+  // ---------------- NET LEDGER ----------------
+  // P1 of the "No server, ever" promise (desktop roadmap, locked decision
+  // Q1). An in-memory record of every network connection GUIDON itself
+  // opens on this page. Today NOTHING calls record(): study groups (LAN
+  // rooms) are P3/P4 and no socket exists. The ledger lands first so the
+  // first socket can never ship unaudited - the Diagnostics "No external
+  // requests" check (selftest AUTO, id "offline") FAILS on any entry while
+  // Settings -> Study groups is off and reports the count while it is on.
+  // Never persisted, never exported, empty on every page load; shared by
+  // all four forks (the standalone gets the same no-op ledger).
+  // P4 must call G.netLedger.record({ kind:"ws", peer:"<host:port>", at })
+  // for every socket it opens, in the same change that adds the socket.
+  G.netLedger = (function () {
+    let entries = [];
+    return {
+      record(e) {
+        const x = { kind: String((e && e.kind) || ""), peer: String((e && e.peer) || ""), at: Number(e && e.at) || Date.now() };
+        entries.push(x);
+        return x;
+      },
+      list() { return entries.slice(); },
+      clear() { entries = []; },
+    };
+  })();
+
   G.biometricGate = (function () {
     let unlocked = false;          // true once verified for the current foreground session
     let warnedUnavailable = false; // told once per boot, not nagged every gate check
