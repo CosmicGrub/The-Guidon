@@ -16,6 +16,52 @@ tauri = { version = "2", features = [] }
 tauri-plugin-single-instance = "2"
 # Remember window size/position/maximised state between runs.
 tauri-plugin-window-state = "2"
+# R11 self-test report (src/selftest.rs): the page's {routes, themes, hash,
+# fork, buildSha} arrive as a typed command argument and leave as one JSON
+# file. Both crates were already in Cargo.lock through tauri itself (serde
+# 1.0.229, serde_json 1.0.151); this only names them as direct dependencies.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# R-ROOM (collective P4): the LAN room listener (src/room.rs) is a tokio
+# task on tauri's own async runtime. tokio 1.53.1 was already in Cargo.lock
+# through tauri (features rt, rt-multi-thread, sync, fs, io-util); this
+# names it directly and adds the "net" (TcpListener/TcpStream) and "time"
+# (heartbeat, probe timeout) features. No new crate: net's optional deps
+# (mio, socket2, windows-sys) were already resolved in the lock. The
+# WebSocket layer is a minimal RFC 6455 server written here to mirror
+# tools/room-server.mjs frame for frame (SHA-1 + base64 for the handshake
+# are ~60 lines in room.rs, tested against the RFC vectors) - no
+# tokio-tungstenite, no sha1 crate, no new dependency of any kind.
+# Keep-awake (X13) is one kernel32 FFI declaration, not the windows crate.
+tokio = { version = "1", features = ["rt", "net", "io-util", "time", "sync"] }
+
+# Windows-only desktop-shell integration (R3 selective accelerator guard,
+# R-ROOM's non-loopback IPv4 listing). Target-gated because both are Win32
+# APIs with nothing to bind to elsewhere, even though this project only
+# ships a Windows build today (see the cargo-audit notes below).
+[target.'cfg(windows)'.dependencies]
+# R3: ICoreWebView2Controller::add_AcceleratorKeyPressed. Already resolved
+# in Cargo.lock (0.38.2) through tauri-runtime-wry/wry; this only names it
+# as a direct dependency so main.rs can call it.
+webview2-com = "0.38"
+# The plain `windows::core::Result`/`BOOL` webview2-com's own closures need
+# - NOT the full `windows` crate (which webview2-com does not re-export):
+# `windows::core` is itself a re-export of `windows-core`, already resolved
+# at 0.61.2 in Cargo.lock through webview2-com/windows-core itself, so this
+# is the same type either way with far fewer features to compile.
+windows-core = "0.61"
+# R-ROOM: GetAdaptersAddresses (iphlpapi), the same API `ipconfig` is built
+# on - real interface enumeration for the non-loopback IPv4 listing.
+# windows-sys 0.60 was already resolved in Cargo.lock (tao's own Win32
+# calls); this adds the IP-Helper/Ndis/WinSock feature set directly.
+windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock"] }
+
+[dev-dependencies]
+# R13: tauri's "test" feature exposes tauri::test::{mock_builder, mock_context,
+# noop_assets, get_ipc_response} and the MockRuntime, so the self-test command
+# runs under `cargo test` without a window. Same crate and version as above;
+# the feature is unified only into test builds.
+tauri = { version = "2", features = ["test"] }
 
 # ---------------------------------------------------------------------------
 # Tracked, unfixed transitive advisories (checked 2026-08-13, task #245/#246;

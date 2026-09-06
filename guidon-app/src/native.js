@@ -35,9 +35,23 @@ window.G = window.G || {};
   // Capacitor plugin; use G.pwa.isNative() for "is this installed at all,
   // regardless of which shell" (task #251 - these are two intentionally
   // different questions, not an accidental duplicate).
-  const isNative = !!(Cap && (Cap.isNativePlatform ? Cap.isNativePlatform() : Cap.isNative));
+  //
+  // Collective P2: the expression itself now lives in src/app-modules/
+  // caps.js as G.caps.isCapacitor() - byte-for-byte the same check
+  // (Cap.isNativePlatform ? Cap.isNativePlatform() : Cap.isNative),
+  // evaluated at the same moment (this module's load), so the answer is
+  // identical; build.mjs asserts caps.js precedes this file in web/, the
+  // only output that carries it. The narrower meaning above is unchanged.
+  const isNative = G.caps.isCapacitor();
   const state = { platform: isNative ? (Cap.getPlatform ? Cap.getPlatform() : "unknown") : "web",
                   lastBarColor: null, applied: 0 };
+
+  // Single canonical fallback for the app's --bg token when it can't be read
+  // (no stylesheet yet, or a non-browser test harness). Both the Capacitor
+  // status-bar path (applySystemBars) and the Tauri desktop path
+  // (applyNativeTheme) read this same literal via token(), rather than each
+  // hand-typing their own copy - one canonical value per fact.
+  const DEFAULT_BG = "#0a0e12";
 
   function plugin(name) {
     return (Cap && Cap.Plugins && Cap.Plugins[name]) || null;
@@ -101,7 +115,7 @@ window.G = window.G || {};
     const sb = plugin("StatusBar");
     if (!sb) return null;
 
-    const raw = token("--bg", "#0a0e12");
+    const raw = token("--bg", DEFAULT_BG);
     const rgb = parseColor(raw) || [10, 14, 18];
     const hex = toHex(rgb);
     const light = luminance(rgb) > 0.5; // light background needs dark icons
@@ -223,6 +237,49 @@ window.G = window.G || {};
 
   function backButtonPolicy() {
     return "guidon: close dialog -> history.back() while depth>0 -> exitApp";
+  }
+
+  /* --------------------------------------------------- Tauri desktop (S6) */
+
+  /* Desktop-shell counterpart of applySystemBars()/watchTheme() above: the
+     Tauri window has no Android status bar, but it does have a native
+     titlebar (Window::set_theme) and a WebView2 resize-lag gap that paints
+     whatever background colour was last set (Window::set_background_color)
+     - cream under a dark theme otherwise, since tauri.conf.json's window
+     config only has one, light backgroundColor. Both are set together by
+     the desktop shell's set_native_theme command (src-tauri/src/
+     desktop.rs). Mutually exclusive with the Capacitor branch above
+     (G.caps.fork() is one value at a time) and a plain no-op everywhere
+     else - there is no window.__TAURI_INTERNALS__ in a browser or from
+     file://. */
+  var Tauri = window.__TAURI_INTERNALS__;
+
+  function applyNativeTheme() {
+    if (!Tauri || typeof Tauri.invoke !== "function") return;
+    var dark = !document.documentElement.classList.contains("light");
+    var ground = token("--bg", DEFAULT_BG);
+    try {
+      Tauri.invoke("set_native_theme", { dark: dark, ground: ground }).catch(function (e) {
+        console.warn("native: set_native_theme:", e && e.message);
+      });
+    } catch (e) { console.warn("native: set_native_theme:", e && e.message); }
+  }
+
+  /* Same debounce as watchTheme() above, for the same reason: settle past
+     the app's colour transition before sampling --bg. */
+  function watchTauriTheme() {
+    if (!Tauri) return;
+    var t = null;
+    var mo = new MutationObserver(function () {
+      clearTimeout(t);
+      t = setTimeout(applyNativeTheme, 260);
+    });
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "class"] });
+  }
+
+  if (Tauri) {
+    applyNativeTheme();
+    watchTauriTheme();
   }
 
   /* ----------------------------------------------------------------- boot */
