@@ -429,7 +429,13 @@ window.G = window.G || {};
             const rb = el("button.btn.sm.ghost", { type: "button", text: "Remind me", style: "margin-top:6px" });
             rb.addEventListener("click", async function () {
               const last = parseDate(sol[f.key]);
-              const due = last ? new Date(last.getTime() + f.days * DAY) : todayMid();
+              // Calendar-based (not ms-addition) so a DST transition between
+              // `last` and the due date can't drift the result onto the
+              // wrong calendar day - same pattern as G.streak's isoDate()/
+              // yesterday() helpers in src/index.html. Date's y/m/d
+              // constructor normalizes an out-of-range day (e.g. Feb 35)
+              // into the correct following month on its own.
+              const due = last ? new Date(last.getFullYear(), last.getMonth(), last.getDate() + f.days) : todayMid();
               const p = function (n) { return (n < 10 ? "0" : "") + n; };
               const dueIso = due.getFullYear() + "-" + p(due.getMonth() + 1) + "-" + p(due.getDate());
               const who = (sol.rank ? sol.rank + " " : "") + (sol.name || "Soldier " + (idx + 1));
