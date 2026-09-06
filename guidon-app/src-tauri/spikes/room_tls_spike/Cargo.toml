@@ -1,0 +1,15 @@
+[package]
+name = "room_tls_spike"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rcgen = "0.14"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+rustls-pki-types = "1"
+tokio = { version = "1", features = ["full"] }
+sha2 = "0.10"
+base32 = "0.5"
+hex = "0.4"
+x509-parser = "0.18"

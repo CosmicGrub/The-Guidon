@@ -3,6 +3,11 @@ apply plugin: 'com.android.application'
 // build.gradle) and wires it into this module's release build so ART can
 // ahead-of-time compile the hot paths it records - Roadmap Tier 7.
 apply plugin: 'androidx.baselineprofile'
+// RoomTlsPlugin.kt (TLS room-join spike, 2026-09-06): the first in-tree
+// Kotlin source :app has ever had - see android/build.gradle's classpath
+// comment for why this wasn't needed before (every bundled Capacitor
+// plugin ships its Kotlin pre-compiled in its own AAR).
+apply plugin: 'kotlin-android'
 
 // Release signing. Loaded from android/keystore.properties, which is
 // git-ignored along with keys/ — signing material must never be committed.
@@ -30,6 +35,21 @@ android {
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
+    }
+    // RoomTlsPlugin.kt needs a matching JVM target for its Kotlin and Java
+    // compile tasks (kotlinc/javac must agree, or compileDebugKotlin fails
+    // with "Inconsistent JVM-target compatibility" - hit this for real: AGP
+    // 8.13.0 at this project's compileSdk (36) already resolves javac to 21
+    // on its own (see tools/android-gradle.mjs's own header comment on WHY
+    // - "AGP 8.13.0 at this project's compileSdk resolves a Java toolchain
+    // that needs a JDK 21+ compiler"), so kotlinc has to be told 21 too,
+    // not left at some other "sounds standard" default.
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+    kotlinOptions {
+        jvmTarget = "21"
     }
     signingConfigs {
         if (hasSigning) {
@@ -66,6 +86,9 @@ repositories {
 
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
+    // RoomTlsPlugin.kt's own runtime dependency, now that :app compiles
+    // Kotlin at all (see the 'kotlin-android' plugin above).
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"

@@ -6,6 +6,11 @@ android/app/build/
 android/.gradle/
 android/local.properties
 src-tauri/target/
+# Standalone spike crates under src-tauri/spikes/ each have their own
+# Cargo.toml (not workspace members - src-tauri/Cargo.toml has no
+# [workspace] table, confirmed 2026-09-06) and so each gets its own
+# target/ that the rule above, an exact path, does not reach.
+src-tauri/spikes/*/target/
 # Signing material must never be committed.
 keys/
 android/keystore.properties

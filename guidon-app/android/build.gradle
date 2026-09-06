@@ -39,6 +39,19 @@ buildscript {
         // 8.13.0 above already lives under.
         classpath 'androidx.benchmark:benchmark-baseline-profile-gradle-plugin:1.4.1'
 
+        // Kotlin Android Gradle plugin (RoomTlsPlugin.kt, TLS room-join spike,
+        // 2026-09-06): :app was Java-only until this - every bundled Capacitor
+        // plugin AAR (@capacitor/filesystem etc.) ships its OWN Kotlin already
+        // compiled, which is why `compileDebugKotlin` showed up UP-TO-DATE for
+        // those modules with no classpath entry here at all; :app's own
+        // in-tree .kt sources need this declared for real. Same "buildscript{}
+        // evaluates before variables.gradle" constraint as the baseline-profile
+        // classpath above - version hardcoded here, kept in sync with
+        // variables.gradle's kotlinVersion by hand. 2.0.21 is the latest
+        // stable release compatible with AGP 8.13.0 / compileSdk 36 at the
+        // time this was added.
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.21'
+
         // NOTE: Do not place your application dependencies here; they belong
         // in the individual module build.gradle files
     }

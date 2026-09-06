@@ -332,12 +332,29 @@
     if (o.to != null && (typeof o.to !== "string" || (o.to !== "*" && !isFingerprint(o.to)))) return null;
     return { to: o.to == null ? null : o.to, frame: o.f };
   }
-  /** ws://<host:port>/ws?room=<code>&role=host|peer - the room server's socket. */
-  function wsUrl(hostPort, room, role) {
-    return "ws://" + hostPort + ENDPOINTS.ws + "?room=" + encodeURIComponent(String(room || "")) + "&role=" + (role === "host" ? "host" : "peer");
+  /** ws://<host:port>/ws?room=<code>&role=host|peer - the room server's socket.
+      SPIKE SCAFFOLD (TLS design, 2026-09-06): a 4th, optional `secure` arg
+      switches the scheme to wss:// with NO other change - callers that never
+      pass it (every caller today) get byte-for-byte the same string as
+      before. This is a TRANSPORT choice, not a wire-protocol one: the frames
+      wsUrl's socket carries are identical either way, so this does NOT touch
+      PROTOCOL_VERSION (see the design writeup for why a transport switch and
+      a wire-shape change are different kinds of "version"). Which scheme to
+      ask for is decided by the caller from the JOIN LINK's own scheme
+      (isSecureOrigin below) - never guessed. */
+  function wsUrl(hostPort, room, role, secure) {
+    return (secure ? "wss://" : "ws://") + hostPort + ENDPOINTS.ws + "?room=" + encodeURIComponent(String(room || "")) + "&role=" + (role === "host" ? "host" : "peer");
   }
-  /** <origin>/j/<code> - the join link a host shows; the room server serves the guest page there. */
+  /** <origin>/j/<code> - the join link a host shows; the room server serves the guest page there.
+      `origin` already carries its own scheme (http:// or, once a host is
+      TLS-capable, https://) - joinUrl never adds or assumes one. */
   function joinUrl(origin, room) { return String(origin || "").replace(/[/]+$/, "") + ENDPOINTS.join + String(room || ""); }
+  /** True when a join link's origin is https:// - the ONE signal a joiner
+      uses to decide "dial wss:// and this room has a TLS identity to pin
+      against" vs. "dial ws:// as today, nothing to pin." Never throws. */
+  function isSecureOrigin(origin) {
+    try { return new URL(String(origin || "")).protocol === "https:"; } catch (e) { return false; }
+  }
   /** "GUIDON 1.5.0 build abc1234 (protocol 1)" from { app, build, v }. */
   function buildLabel(x) {
     x = x || {};
@@ -358,7 +375,7 @@
        src-tauri/src/room_schema_gen.rs from THIS object (never a typed copy). */
     REQUIRED_BODY_KEYS: REQUIRED_BODY_KEYS, MAX_TOKEN: MAX_TOKEN, MAX_REASON: MAX_REASON, MAX_ID: MAX_ID,
     VERSION_MISMATCH_TEXT: VERSION_MISMATCH_TEXT, NATO: NATO, ENDPOINTS: ENDPOINTS, MAX_WIRE_BYTES: MAX_WIRE_BYTES, MAX_BUILD: MAX_BUILD, MAX_APP: MAX_APP,
-    wireEncode: wireEncode, wireDecode: wireDecode, wsUrl: wsUrl, joinUrl: joinUrl, buildLabel: buildLabel, skewText: skewText,
+    wireEncode: wireEncode, wireDecode: wireDecode, wsUrl: wsUrl, joinUrl: joinUrl, isSecureOrigin: isSecureOrigin, buildLabel: buildLabel, skewText: skewText,
     validate: validate, validateSnapshot: validateSnapshot, bankSig: bankSig, roomCode: roomCode,
     isRoomCode: isRoomCode, isFingerprint: isFingerprint, byteLength: byteLength, hasKeyDeep: hasKeyDeep,
   };
