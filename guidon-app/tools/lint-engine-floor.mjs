@@ -63,6 +63,14 @@ const SRC_DIR = path.join(APP, "src");
 const MOD_DIR = path.join(APP, "src", "app-modules");
 const MAX_LINE = 20000;
 const MARK = "FLOOR_OK_MARK";
+// Agnosticism audit, 6 Sep 2026 (P2): mirrors caps-matrix.mjs's own
+// MAX_AGE_DAYS=90 for probe freshness, but longer - the floor is a
+// deliberate multi-year commitment (raising it drops real issued
+// hardware), not a fast-changing empirical measurement, so forcing a
+// re-decision every 90 days would just train everyone to bump the date
+// without actually reviewing. A year is long enough to matter, short
+// enough that "still correct" gets said out loud at least once a year.
+const FLOOR_REVIEW_MAX_DAYS = 365;
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -235,10 +243,30 @@ let floor = null;
 try { floor = JSON.parse(await readFile(FLOOR_FILE, "utf-8")); }
 catch (e) { bad(`${rel(FLOOR_FILE)} unreadable: ${e.message}`); }
 if (floor) {
-  const want = ["chromium", "webview", "webkit", "gecko", "rationale", "decidedBy"];
+  const want = ["chromium", "webview", "webkit", "gecko", "rationale", "decidedBy", "lastReviewed"];
   const missing = want.filter((k) => !(k in floor));
   if (missing.length) bad(`${rel(FLOOR_FILE)} lacks: ${missing.join(", ")}`);
   else ok(`floor declared in ${rel(FLOOR_FILE)}: Chromium ${floor.chromium} / WebView ${floor.webview} / WebKit ${floor.webkit} / Gecko ${floor.gecko} (${floor.decidedBy})`);
+  // Agnosticism audit, 6 Sep 2026 (platform-agnostic P2): the floor itself
+  // used to carry no review cadence at all - declared once, then read as
+  // fixed input forever, with nothing ever proposing a re-decision even as
+  // old devices age out and new engine versions ship. Mirrors caps-matrix.
+  // mjs's own MAX_AGE_DAYS staleness rule (there: for a capability PROBE's
+  // freshness; here: for the floor VALUE's own freshness) - a hard fail
+  // forces a conscious "still correct" or "raise it" decision on a real
+  // cadence, rather than the floor quietly rotting as an unreviewed
+  // assumption for years.
+  if ("lastReviewed" in floor) {
+    const reviewed = new Date(floor.lastReviewed + "T00:00:00Z");
+    if (isNaN(reviewed.getTime())) {
+      bad(`${rel(FLOOR_FILE)}.lastReviewed is not a parseable date: ${JSON.stringify(floor.lastReviewed)}`);
+    } else {
+      const days = (Date.now() - reviewed.getTime()) / 86400000;
+      days > FLOOR_REVIEW_MAX_DAYS
+        ? bad(`${rel(FLOOR_FILE)} was last reviewed ${Math.round(days)} days ago (${floor.lastReviewed}), over the ${FLOOR_REVIEW_MAX_DAYS}-day cadence - re-decide the floor (raise it, keep it, or lower it) and bump lastReviewed even if the answer is "no change"`)
+        : ok(`floor last reviewed ${Math.round(days)} day(s) ago (${floor.lastReviewed}), within the ${FLOOR_REVIEW_MAX_DAYS}-day cadence`);
+    }
+  }
 }
 if (!floor || fails) finish();
 

@@ -4,5 +4,6 @@
   "webkit": "16.2",
   "gecko": 113,
   "rationale": "The five --ink-* text tokens (src/index.html, html { --ink-*: color-mix(...) }) are the app's contrast guarantee for accent-coloured text, and color-mix() first shipped in Chromium 111 (March 2023; Android System WebView tracks the same number), WebKit 16.2 (Safari/iOS 16.2, December 2022) and Gecko 113 (Firefox, May 2023). Below this floor the build's generated static --ink-* fallbacks (tools/build.mjs, @supports not (color: color-mix(...))) keep text readable and app.start() shows a one-line notice. Nothing above this floor may be used unguarded: tools/lint-engine-floor.mjs scans the app source against a table of JS/CSS features and their Chromium/WebKit minimums and fails on an unguarded use (guards: typeof / CSS.supports / a typeof helper on the same or adjacent line, an @supports block, a -webkit- prefixed twin, or a comment carrying floor-ok: <reason>).",
-  "decidedBy": "collective roadmap Q11, 2026-09-04"
+  "decidedBy": "collective roadmap Q11, 2026-09-04",
+  "lastReviewed": "2026-09-06"
 }
