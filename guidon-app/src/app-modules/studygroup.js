@@ -820,7 +820,7 @@
     try {
       if (!(root.navigator && root.navigator.wakeLock && typeof root.navigator.wakeLock.request === "function")) return;
       if (rt.wakeLock) return;
-      rt.wakeLock = await root.navigator.wakeLock.request("screen");
+      rt.wakeLock = await root.navigator.wakeLock.request("screen"); // floor-ok: the typeof check just above already returned on an engine without the API
       rt.wakeLock.addEventListener("release", function () { rt.wakeLock = null; });
     } catch (e) { rt.wakeLock = null; }
   }
