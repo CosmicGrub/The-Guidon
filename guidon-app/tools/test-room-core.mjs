@@ -124,6 +124,20 @@ const bytes = (o) => Buffer.byteLength(JSON.stringify(o), "utf8");
   const sig = schema.bankSig({ board: { version: "0.1.0", questions: new Array(984) } });
   typeof sig === "string" && /984/.test(sig) && /0\.1\.0/.test(sig) && schema.bankSig({ board: { version: "0.1.0", questions: new Array(983) } }) !== sig
     ? ok("(a) bankSig(seed) derives from count + seed version: " + sig) : bad("(a) bankSig = " + JSON.stringify(sig));
+  // Agnosticism audit, 6 Sep 2026: board.version alone is a hand-typed
+  // literal that never changes on a real content edit (it stayed "0.1.0"
+  // across real corpus rewrites this session), so two boards with the SAME
+  // count and version but different QUESTION TEXT used to produce an
+  // identical bankSig - the exact silent-drift case this signature exists
+  // to catch. tools/build.mjs now stamps a real content hash onto the
+  // built seed as board.contentHash; bankSig must prefer it over version
+  // whenever it's present, and only fall back to version for an unbuilt/
+  // synthetic seed (never a real served build, which always carries one).
+  const hashA = schema.bankSig({ board: { version: "0.1.0", contentHash: "aaaa1111", questions: new Array(984) } });
+  const hashB = schema.bankSig({ board: { version: "0.1.0", contentHash: "bbbb2222", questions: new Array(984) } });
+  hashA !== hashB && /aaaa1111/.test(hashA) && /bbbb2222/.test(hashB) && !/0\.1\.0/.test(hashA)
+    ? ok("(a) bankSig prefers a real contentHash over the frozen version literal, so same-id content edits are detected: " + hashA + " vs " + hashB)
+    : bad("(a) bankSig contentHash precedence: " + JSON.stringify({ hashA, hashB }));
 
   const snap = { phase: "lobby", mode: "relay", seq: 1, room: ROOM, hostSeat: 1, cardId: null, cardText: null, turnSeat: null, lock: null, deadline: null, round: { idx: 0, total: 0 }, seats: [{ seatNo: 1, name: "HOST", fp: "HOSTHOST", score: 0, online: true, ready: true }], bankSig: sig };
   const bodies = {

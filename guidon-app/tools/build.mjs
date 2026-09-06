@@ -128,6 +128,22 @@ function seedAsJsonParse(html) {
       "JSON.parse (" + e.message + "). Either restore strict JSON or remove this transform."
     );
   }
+  // Agnosticism audit, 6 September 2026 ("bankSig content-hash gap"): the
+  // study-room wire protocol's bankSig() (room-schema.js) used to be card
+  // count + board.version, and board.version is a hand-typed literal that
+  // stays frozen across real content edits (measured: it was still "0.1.0"
+  // after real corpus rewrites this session) - so two devices whose
+  // question text has silently diverged on a shared id agree on a signature
+  // that says "same bank", and the room never inlines corrective text for a
+  // peer running stale wording. A real, deterministic content hash closes
+  // this at the one place both host and peer read from: the built seed,
+  // never hand-typed. contentHash covers only board.questions (the field
+  // bankSig cares about) so an unrelated edit elsewhere in the seed - a
+  // doctrine entry, a dictionary term - can't needlessly force every
+  // existing session's bankSig to disagree.
+  if (parsed.board && Array.isArray(parsed.board.questions)) {
+    parsed.board.contentHash = createHash("sha256").update(JSON.stringify(parsed.board.questions)).digest("hex").slice(0, 16);
+  }
   // JSON.stringify produces a correctly-escaped JS string literal. Hand-rolling
   // that escaping produced a variant that measured 37% faster because it had
   // silently stopped booting — the kind of result that reads as a win.

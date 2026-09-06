@@ -270,14 +270,27 @@
   }
 
   /** bankSig(seed): what "the same question bank" means on the wire -
-      card count + the seed's board version. Two devices with equal sigs
-      exchange card ids only; a differing sig makes the host inline the
-      card text. Accepts the whole GUIDON_SEED or its board object. */
+      card count + a real content hash of board.questions, stamped at
+      build time (tools/build.mjs's seedAsJsonParse -> board.contentHash).
+      Two devices with equal sigs exchange card ids only; a differing sig
+      makes the host inline the card text. Accepts the whole GUIDON_SEED or
+      its board object.
+
+      Agnosticism audit, 6 Sep 2026: this used to be count + board.version,
+      a hand-typed literal that stays frozen across real content edits (it
+      was still "0.1.0" after real corpus rewrites this session) - so a
+      same-id, edited-wording change was invisible to every device, and
+      nothing ever inlined corrective text for a peer running stale
+      wording. contentHash is deterministic and covers only the field this
+      signature is about; falls back to board.version (then "0") only for
+      an un-built seed a test harness constructs by hand, never for a real
+      served build. */
   function bankSig(seed) {
     var board = seed && seed.board ? seed.board : seed;
     var qs = board && Array.isArray(board.questions) ? board.questions : [];
-    var ver = board && board.version != null ? String(board.version) : "0";
-    return "bank:" + qs.length + ":" + ver.replace(/[^0-9A-Za-z.-]/g, "");
+    var mark = board && board.contentHash ? String(board.contentHash)
+      : board && board.version != null ? String(board.version) : "0";
+    return "bank:" + qs.length + ":" + mark.replace(/[^0-9A-Za-z.-]/g, "");
   }
 
   /** roomCode(rand): two NATO words + two digits, e.g. "ALPHA-BRAVO-42".

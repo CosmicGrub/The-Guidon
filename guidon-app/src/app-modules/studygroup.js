@@ -1135,9 +1135,19 @@
   }
   function cardFor(st) {
     if (!st.cardId) return null;
+    // Agnosticism audit, 6 Sep 2026: st.cardText is the host's inlined
+    // text, sent specifically BECAUSE refreshCardText() detected a bankSig
+    // mismatch across the room. Checking the local corpus lookup first (as
+    // this used to) meant the host's correction was silently discarded
+    // whenever the id still happened to exist locally - the common case
+    // for a same-id, edited-wording change - which made cardText's whole
+    // inlining mechanism a no-op for exactly the drift it exists to catch.
+    // Host-supplied text now wins whenever it's present; the local index
+    // is the fallback for a truly missing id (a structurally different
+    // bank), not the default.
+    if (st.cardText) return { q: st.cardText.q, a: st.cardText.a, category: st.cardText.category || "", source: "" };
     var q = cardIndex()[st.cardId];
     if (q) return { q: q.q, a: q.a, category: q.category, source: q.source || "" };
-    if (st.cardText) return { q: st.cardText.q, a: st.cardText.a, category: st.cardText.category || "", source: "" };
     return null;
   }
   function mySeatNo(st) { return st.role === "host" ? st.self.seatNo : st.self.seatNo; }

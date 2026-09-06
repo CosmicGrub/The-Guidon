@@ -287,6 +287,29 @@ try {
   const cardFrames = log.filter((x) => x.frame && x.frame.t === "snapshot" && x.frame.body.snapshot.cardText);
   cardFrames.length === 0 ? ok("same bankSig everywhere: no snapshot carried inline card text") : bad(cardFrames.length + " snapshot(s) carried inline card text");
 
+  /* Agnosticism audit, 6 Sep 2026 (bankSig content-hash gap, cardFor
+     precedence): the host inlines cardText specifically because it
+     detected a bank mismatch - a receiving peer must show that text over
+     its own local copy for the SAME card id, or the whole inlining
+     mechanism is a no-op for exactly the drift it exists to catch. Rather
+     than standing up a second peer with a genuinely different bank (its
+     own real integration path, exercised by refreshCardText's own byte-
+     shrinking logic elsewhere), this drives cardFor() directly: mutate
+     P2's live state (the object state() already hands back by reference)
+     to carry a sentinel cardText for the SAME cardId P2 already has a
+     real local card for, force a redraw, and read what actually painted. */
+  const sentinelCheck = await P2.evaluate(() => {
+    const s = G.studyGroup.state();
+    const localQ = (G.store.seed().board.questions.find((q) => q.id === s.cardId) || {}).q || "";
+    s.cardText = { q: "SENTINEL-INLINE-TEXT-" + s.cardId, a: "sentinel-a", category: "sentinel-cat" };
+    G.studyGroup._redraw();
+    return { cardId: s.cardId, localQ };
+  });
+  const sentinelRendered = await until(() => P2.evaluate((sentinel) => { const q = document.querySelector(".sg-card .sg-q"); return q && q.textContent.trim() === sentinel ? true : null; }, "SENTINEL-INLINE-TEXT-" + sentinelCheck.cardId), 3000);
+  sentinelRendered.hit
+    ? ok("cardFor() prefers host-supplied cardText over the local corpus lookup for the same card id (was backwards before this session's fix)")
+    : bad("cardFor() precedence: sentinel cardText never rendered - " + JSON.stringify(await P2.evaluate(() => { const q = document.querySelector(".sg-card .sg-q"); return q ? q.textContent.trim() : null; })));
+
   /* card 1: candidate answers, three scorers score, candidate self-scores, host advances */
   const scoreOnce = async (p, sel) => { const r = await until(() => p.evaluate((s) => { const b = document.querySelector(s); if (!b) return null; b.click(); return true; }, sel)); return r.hit; };
   const ans = await scoreOnce(P1, "button.sg-answer");
