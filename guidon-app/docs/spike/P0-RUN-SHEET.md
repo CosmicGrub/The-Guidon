@@ -118,6 +118,24 @@ on Android until then.
 Record: the two JSON files, plus the exact capacitor.config.json diff in
 the `label`.
 
+**Result (2026-09-06, ahead of schedule — real Fold5 hardware via
+tools/probe-android-ws.mjs over adb-forwarded CDP):**
+
+- `allowMixedContent=false`: matches Expected — `throw`, `SecurityError`,
+  from the app's `https://localhost` origin. Evidence:
+  `docs/evidence/2026-09-06-s1-android-ws-mixed-false.json`.
+- `allowMixedContent=true`: **diverges from Expected.** The prediction was
+  `open`; the measured result is still blocked, but one layer lower —
+  `closed`/`net::ERR_CLEARTEXT_NOT_PERMITTED` from Android's OS-level
+  cleartext-traffic policy (default since API 28, independent of the
+  WebView's own mixed-content setting). Evidence:
+  `docs/evidence/2026-09-06-s1-android-ws-mixed-true.json`.
+
+Conclusion: no Android-side config flip (this file's own knob) closes
+step 1 alone — a real transport change (a native socket or a wss://
+endpoint) is required. This closes step 1 of the Q2 spike gate; steps
+2–8 remain open for 09-08/09.
+
 ## 2. ws://127.0.0.1 from the same origin
 
 Same probe, target 127.0.0.1 - the tool refuses loopback on purpose
@@ -228,7 +246,9 @@ text and which profile (private/public) the hotspot was classed as.
 
 The decision the spike feeds (Q2, the spike gate, postponed to 2026-09-08/
 09): which transport carries the first shipped room. Step 1 decides
-whether the APK can be a plain-WebSocket client at all; step 3(c) decides
+whether the APK can be a plain-WebSocket client at all — answered
+2026-09-06: it cannot, under either `allowMixedContent` setting; see
+Section 1's Result block; step 3(c) decides
 whether a laptop can ever host for phones on a phone hotspot; step 4 says
 whether RTCDataChannel is a P7 option or a dead end on Android; steps 5-7
 shape the host-screen ladder copy (X9) - every tier's sentence should
