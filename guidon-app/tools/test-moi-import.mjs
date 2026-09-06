@@ -397,6 +397,76 @@ const clearedInDb = await page.evaluate(async () => {
 });
 clearedInDb ? ok("Delete actually clears the persisted plan in IndexedDB") : bad("plan still persisted in IndexedDB after Delete");
 
+// ---- unsaved-build warning: renderAlreadyImported() runs its own
+// util.clear(stage) as its first statement, so a warning appended to the
+// stage BEFORE calling it gets wiped before ever painting - a real bug
+// caught live (unchecking "Save as my study plan" and inspecting the
+// rendered DOM showed the warning text absent, even though it was present
+// in this module's own source), fixed by inserting the warning AFTER the
+// call instead. Regression-covered here by checking a scoped
+// ".feedback.warn" element rather than raw body.textContent - the latter
+// is a false-positive trap on this exact page, since it naturally
+// includes this module's own inline <script> source, which contains the
+// same string literal, regardless of whether the div actually rendered.
+await page.evaluate(() => { location.hash = "#/moi"; });
+await page.waitForTimeout(300);
+const reimportClicked = await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => /Import an MOI/.test(b.textContent || ""));
+  if (btn) { btn.click(); return true; }
+  return false;
+});
+reimportClicked ? ok("(unsaved-build case) 'Import an MOI' reopened from the empty state") : bad("(unsaved-build case) could not reopen Capture");
+await page.waitForTimeout(200);
+await page.evaluate((text) => {
+  const ta = document.querySelector("textarea");
+  ta.value = text;
+  ta.dispatchEvent(new Event("input", { bubbles: true }));
+}, MOI_TEXT);
+await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => /Find my topics/.test(b.textContent || ""));
+  if (btn) btn.click();
+});
+// Wait for the checkbox itself, not just the "Review your matches" heading
+// text - on this second pass the citation registry is already warm from
+// the first Build above, so matching resolves fast enough that the
+// heading can paint a beat before the options row (checkboxes + Build
+// button) finishes rendering beneath it. Gating on the heading alone was
+// an observed source of flakiness the first Review check upstream never
+// hit, since its slower cold-registry build happened to leave enough of a
+// natural buffer.
+await page.waitForFunction(
+  () => /Review your matches/.test(document.body.textContent || "") && !!document.getElementById("moi-opt-save"),
+  { timeout: 5000 }
+).catch(() => {});
+const saveUnchecked = await page.evaluate(() => {
+  const cb = document.getElementById("moi-opt-save");
+  if (!cb) return false;
+  cb.checked = false;
+  return cb.checked === false;
+});
+saveUnchecked ? ok("(unsaved-build case) 'Save as my study plan' unchecked before Build") : bad("(unsaved-build case) could not uncheck 'Save as my study plan'");
+const unsavedBuildClicked = await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => /^Build/.test((b.textContent || "").trim()));
+  if (btn) { btn.click(); return true; }
+  return false;
+});
+unsavedBuildClicked ? ok("(unsaved-build case) 'Build →' clicked with save unchecked") : bad("(unsaved-build case) 'Build →' button not found");
+await page.waitForTimeout(400);
+
+const warnVisible = await page.evaluate(() => {
+  const w = document.querySelector(".feedback.warn");
+  return !!w && /Not saved/.test(w.textContent || "") && !!w.offsetParent;
+});
+warnVisible
+  ? ok("Unchecking 'Save as my study plan' actually shows the 'Not saved' warning in the rendered result view (regression: renderAlreadyImported's own util.clear used to wipe it before paint)")
+  : bad("'Not saved' warning did not render after an unsaved Build");
+
+const notPersisted = await page.evaluate(async () => {
+  const r = await window.G.db.get("kv", window.G.moiImport.KEY);
+  return !(r && r.v && Array.isArray(r.v.topics) && r.v.topics.length);
+});
+notPersisted ? ok("Unsaved Build does not persist a plan to IndexedDB") : bad("Unsaved Build persisted a plan anyway");
+
 // cleanup
 await page.evaluate(async () => { await window.G.db.put("kv", { k: window.G.moiImport.KEY, v: null }); });
 
