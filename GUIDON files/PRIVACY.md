@@ -1,6 +1,6 @@
 # Privacy Policy — GUIDON
 
-**Last updated:** August 8, 2026
+**Last updated:** September 4, 2026
 
 This is the Privacy Policy for **GUIDON** (Army Leader Development Trainer), distributed as a standalone HTML app, an installable web app (PWA), a Windows desktop app, and an Android app (package `app.guidon.trainer`). It applies to every version of GUIDON, since they all run from the same source and behave identically with respect to data.
 
@@ -10,11 +10,13 @@ This is the Privacy Policy for **GUIDON** (Army Leader Development Trainer), dis
 
 ## The short version
 
-GUIDON does not collect, transmit, sell, or share any personal data, because GUIDON has no server to send it to. There is no account, no sign-in, no analytics, no advertising, and no network connection of any kind between the app and anyone — including the developer. Everything GUIDON knows about you stays in storage on your own device, under your control, until you delete it.
+GUIDON does not collect, transmit, sell, or share any personal data, because GUIDON has no server to send it to. There is no server, ever: no account, no sign-in, no analytics, no advertising, and nothing about you is ever sent to anyone — including the developer. Everything GUIDON knows about you stays in storage on your own device, under your control, until you delete it.
+
+The only ways any version of GUIDON can touch a network are these four, and none of them sends your study data to a server: study groups (LAN rooms), which are off by default behind a switch in Settings and, once they exist, connect only to other devices on the same Wi-Fi or hotspot; GitHub Pages, the file server the web version will be delivered from (today, whichever static host serves it), which is contacted only to fetch or update the app itself (the service worker checks it for a newer copy when you open the app online); a future read-aloud feature, for which your operating system may download a voice pack the first time it is used; and, on a future iOS build, iCloud or device backups run by the operating system, which may include the app's data under the backup settings you control on your device.
 
 ## What GUIDON is
 
-GUIDON is an offline, single-user reference and study tool for enlisted Soldiers preparing for promotion boards. It runs entirely client-side — there is no backend server, no cloud sync, and no remote database. The app's content-security policy (`connect-src 'self'`, no external origins permitted) technically blocks the app from making any outbound network request, and this is verified automatically before every release by walking every screen in the app and confirming zero network calls and zero policy violations occur.
+GUIDON is an offline-first, single-user reference and study tool for enlisted Soldiers preparing for promotion boards. It runs entirely client-side — there is no backend server, no cloud sync, and no remote database. Before every release the app is checked automatically by walking every screen and confirming it makes no network request outside a study session.
 
 ## Data GUIDON stores, and where
 
@@ -23,9 +25,9 @@ Everything below is stored **only on your device** — never on a server, becaus
 - **Storage locations:** an on-device database (IndexedDB, database name `guidon`) holding your profile, saved answers, quiz/board-drill history, and progress; plus a small amount of on-device browser storage (localStorage) for interface preferences like your selected theme.
 - **Profile information you enter:** things like your name, rank, MOS, ETS date, target board date, study weak points, and readiness answers, which you type in to personalize your action plan and drills.
 - **Practice and progress data:** quiz attempts, Mock Board results, streaks, and scenario progress, generated as you use the app.
-- **Squad roster (optional, leader-facing feature only):** if you use the roster feature, you may enter the names, ranks, and counseling dates of Soldiers you lead. This is the one place GUIDON stores information about people other than you, so it is handled with an extra layer of care — see the next section.
+- **Squad roster (optional, leader-facing only):** if you use the roster feature, you may enter the names, ranks, and counseling dates of Soldiers you lead. This is the one place GUIDON stores information about people other than you, so it gets extra protection — see the next section.
 
-None of the above ever leaves your device automatically. GUIDON has no way to transmit it anywhere.
+None of the above ever leaves your device on its own. Nothing here is ever sent to a server.
 
 ## The squad roster gets extra protection
 
@@ -37,7 +39,7 @@ Because the roster feature is the only place GUIDON stores data about someone ot
 
 ## Backups are yours, not ours
 
-GUIDON can generate a backup file (JSON) of your data on request. This file is created locally in your browser and saved to your device — the same way any file download works. GUIDON does not upload it anywhere; the developer never sees it. What you do with that file afterward — keep it, delete it, email it to yourself, put it on a shared drive — is entirely your choice and outside GUIDON's control. If you choose to share a backup file that includes the optional squad roster data, you are sharing information about other people, so consider that before doing so.
+GUIDON can generate a backup file (JSON) of your data on request. This file is created locally in your browser and saved to your device, the same way any file download works. GUIDON does not upload it anywhere; the developer never sees it. What you do with that file afterward (keep it, delete it, email it to yourself, put it on a shared drive) is entirely your choice and outside GUIDON's control. If you choose to share a backup file that includes the optional squad roster data, you are sharing information about other people, so consider that before doing so.
 
 ## No accounts, no analytics, no ads, no third parties
 
@@ -50,16 +52,16 @@ GUIDON can generate a backup file (JSON) of your data on request. This file is c
 
 ## Why the Android app lists an "Internet" permission
 
-The Android build declares the standard `INTERNET` permission because its embedded WebView component (Capacitor) needs it to serve the app's own interface to itself over your device's internal loopback connection — the same mechanism every WebView-based app uses to render its screens. It is not used, and cannot be used under the app's security policy, to send any data to any external server. If you inspect network activity while using GUIDON, you will see no outbound traffic.
+The Android build declares the standard `INTERNET` permission because its embedded WebView component (Capacitor) needs it to serve the app's own interface to itself over your device's internal loopback connection — the same mechanism every WebView-based app uses to render its screens. Once study groups (LAN rooms) exist, the same permission is what lets the app talk to other devices on the same Wi-Fi or hotspot, and only while that switch is on. It is never used to send your data to any server: if you inspect network activity while using GUIDON outside a study session, you will see no outbound traffic.
 
 ## Deleting your data
 
-- **Delete your profile from inside the app:** Settings → Manage account → Delete lets you erase your name, rank, MOS, action plan, and readiness answers immediately. (Your board-drill practice history is kept separate from your profile and is not affected by this action — see the next option to remove everything.)
-- **Delete everything:** uninstalling the app (Android/desktop) or clearing site data for GUIDON in your browser (PWA/standalone) permanently erases the on-device database and all locally stored preferences. Because nothing is stored anywhere else, this is a complete and permanent deletion — there is no server-side copy for the developer to retain, and no way for the developer to recover or access it afterward.
+- **Delete your profile from inside the app:** Settings → Manage account → Delete erases your name, rank, MOS, action plan, and readiness answers immediately. (Your board-drill practice history is kept separate from your profile and is not affected by this action; see the next option to remove everything.)
+- **Delete everything:** uninstalling the app (Android/desktop) or clearing site data for GUIDON in your browser (PWA/standalone) permanently erases the on-device database and all locally stored preferences — a complete and permanent deletion, because nothing is stored anywhere else: there is no server-side copy for the developer to retain, and no way for the developer to recover or access it afterward. (On a future iOS build, a copy may also sit in your own iCloud or device backup, which you delete through your device's backup settings.)
 
 ## Security
 
-Because GUIDON never transmits your data, there is no "in transit" exposure to secure — your data simply never leaves the device. On-device storage security (encryption at rest, device lock, etc.) is provided by your operating system and browser, the same as for any other locally stored app data.
+Because GUIDON never sends your data to a server, there is no "in transit" exposure to secure — outside a study session your data simply never leaves the device. On-device storage security (encryption at rest, device lock, etc.) is provided by your operating system and browser, the same as for any other locally stored app data.
 
 ## Children's privacy
 
@@ -67,7 +69,7 @@ GUIDON is a professional reference tool built for enlisted U.S. Army Soldiers an
 
 ## Changes to this policy
 
-If GUIDON's data handling ever changes (for example, if a future version adds an optional online feature), this policy will be updated first, and the "Last updated" date above will change accordingly. As of the date above, GUIDON collects nothing and transmits nothing.
+If GUIDON's data handling ever changes (for example, when study groups actually ship, or if a future version adds any other optional network feature), this policy will be updated first, and the "Last updated" date above will change accordingly. As of that date, GUIDON collects nothing and sends nothing to a server.
 
 ## Contact
 

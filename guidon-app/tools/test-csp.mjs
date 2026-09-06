@@ -29,6 +29,16 @@ const CSP = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
+  // "No server, ever" promise, P1 (desktop roadmap, locked decision Q1):
+  // NO build ships a CSP - not web/PWA (no <meta>, no header from
+  // tools/server.mjs), not Tauri (see above), not Android, not the
+  // standalone. This header exists only in this test. PRIVACY.md and the
+  // in-app #/privacy used to credit "connect-src 'self'" as the thing that
+  // blocks outbound requests; tools/test-privacy.mjs now fails any
+  // user-facing text that credits a CSP. P4 (the first LAN study-room
+  // socket) must widen connect-src here to the room's ws:// origin in the
+  // SAME change that adds the socket, or this suite fails under a strict
+  // self-hoster policy the moment a room connects.
   "connect-src 'self'",
   "object-src 'none'",
   "base-uri 'self'",
