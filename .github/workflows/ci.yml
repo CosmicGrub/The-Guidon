@@ -542,8 +542,8 @@ jobs:
             tests: "test:risk-worksheet test:resilience-daily-skills test:rankutils test:flush-on-background test:gradebullet test:essay-drill test:write-sitrep test:landnav-drill"
           - name: "18-moiimport-resizestorm-boardcardoverflow-xwinsync-caps-inkfallbacks-roomcore-roomsession"
             tests: "test:moi-import test:resize-storm test:board-card-overflow test:xwin-sync test:caps test:ink-fallbacks test:room-core test:room-session"
-          - name: "19-roomprivacy-roomserver-roomxeng-guestpage-roomtauri-roomweb-studygroupcallsigns"
-            tests: "test:room-privacy test:room-server test:room-xeng test:guest-page test:room-tauri test:room-web test:studygroup-callsigns"
+          - name: "19-roomprivacy-roomserver-roomservertls-roomxeng-guestpage-roomtauri-roomweb-studygroupcallsigns"
+            tests: "test:room-privacy test:room-server test:room-server-tls test:room-xeng test:guest-page test:room-tauri test:room-web test:studygroup-callsigns"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
