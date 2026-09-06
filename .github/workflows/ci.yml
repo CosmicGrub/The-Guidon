@@ -570,6 +570,27 @@ jobs:
       - name: Install dependencies (npm ci)
         run: npm ci --omit=optional
 
+      # tools/test-resize-storm.mjs's first real CI run (2026-09-06) found
+      # overflow that never reproduces locally: --font-mono lists "JetBrains
+      # Mono", "Cascadia Code", "Consolas", "Roboto Mono" before the generic
+      # `monospace` keyword, and a bare ubuntu-latest runner has NONE of the
+      # named ones (`npx playwright install --with-deps` below pulls in
+      # Chromium's own runtime libs, not brand-name fonts) - so text that
+      # renders in the app's intended mono font on every dev/user machine
+      # this was ever tested on falls back to whatever generic `monospace`
+      # resolves to on this runner, which measurably widens a few
+      # mono-font-styled elements (test:resize-storm's #/train diff-badge
+      # band, test:resize-storm's 683x768 #/transition shape) just past
+      # their container at a handful of narrow widths. Installing the actual
+      # first-choice font makes the runner render what a real device would,
+      # rather than papering over a font gap with extra CSS slack that would
+      # only be correct for THIS substitution. `|| true` via the warning
+      # below: a missing/renamed apt package must not fail the whole job
+      # over a rendering nicety - the suites above stay the real gate; this
+      # only removes a false positive specific to this runner's font set.
+      - name: Install JetBrains Mono (matches --font-mono's first choice)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-jetbrains-mono || echo "::warning::fonts-jetbrains-mono unavailable on this runner image - mono-font-width CI/local mismatches may persist"
+
       - name: Cache Playwright browsers
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
         # SHA-pin-over-mutable-tag fix as the Checkout step above, resolved
