@@ -37,6 +37,19 @@ const page = await (await browser.newContext()).newPage();
 const noise = [];
 page.on("console", (m) => { if (m.type() === "error") noise.push(m.text()); });
 page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
+// library.js's render() (reached via this suite's #/library deep-link
+// check) does a one-time same-origin HEAD probe against a doc's pdfAsset -
+// when web/docs/ genuinely isn't shipped (this repo's own CI build-
+// artifact upload deliberately excludes it, ~78MB not worth re-uploading
+// for every test-matrix job), that probe 404s and Chromium logs its own
+// unsuppressible "Failed to load resource" console line as a side effect
+// of the network layer - no try/catch in app code can prevent it. Same
+// allowance tools/test-library.mjs and tools/test-csp.mjs already use for
+// the identical probe: count the real network-response 404 and forgive
+// exactly that many matching console lines, so a genuinely UNEXPECTED
+// error still fails.
+let docsProbe404 = 0;
+page.on("response", (r) => { if (!r.ok() && /\/docs\/.*\.pdf$/i.test(new URL(r.url()).pathname)) docsProbe404++; });
 
 await page.goto(url, { waitUntil: "load" });
 await page.waitForTimeout(700);
@@ -372,7 +385,13 @@ clearedInDb ? ok("Delete actually clears the persisted plan in IndexedDB") : bad
 // cleanup
 await page.evaluate(async () => { await window.G.db.put("kv", { k: window.G.moiImport.KEY, v: null }); });
 
-const relevantNoise = noise.filter((n) => !/favicon/.test(n));
+const DOCS_PROBE_404 = /Failed to load resource: the server responded with a status of 404/;
+let docsAllowance = docsProbe404;
+const relevantNoise = noise.filter((n) => {
+  if (/favicon/.test(n)) return false;
+  if (docsAllowance > 0 && DOCS_PROBE_404.test(n)) { docsAllowance--; return false; }
+  return true;
+});
 relevantNoise.length === 0 ? ok("no console errors/warnings") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));
 
 await browser.close();

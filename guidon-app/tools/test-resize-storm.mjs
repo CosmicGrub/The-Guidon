@@ -79,6 +79,19 @@ async function boot(ctxOpts = {}, { stubFullscreen = false } = {}) {
   const noise = [];
   page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push(m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
+  // library.js's render() does a one-time same-origin HEAD probe against a
+  // doc's pdfAsset - when web/docs/ genuinely isn't shipped (this repo's own
+  // CI build-artifact upload deliberately excludes it, ~78MB not worth
+  // re-uploading for every test-matrix job), that probe 404s and Chromium
+  // logs its own unsuppressible "Failed to load resource" console line as a
+  // side effect of the network layer. Phases that sweep every route (C/D)
+  // or otherwise land on a doc entry can hit this - same allowance tools/
+  // test-library.mjs and tools/test-csp.mjs already use: count the real
+  // network-response 404 and forgive exactly that many matching console
+  // lines at each phase's own assertion, so a genuinely UNEXPECTED error
+  // still fails there.
+  const docsProbe = { count: 0 };
+  page.on("response", (r) => { if (!r.ok() && /\/docs\/.*\.pdf$/i.test(new URL(r.url()).pathname)) docsProbe.count++; });
   await page.goto(url, { waitUntil: "load" });
   // Dismiss onboarding via the shared helper: waits for the guest-session
   // card, clicks it, waits for #ob-overlay to detach - throwing loudly (with
@@ -94,7 +107,19 @@ async function boot(ctxOpts = {}, { stubFullscreen = false } = {}) {
     window.__lt = [];
     try { new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__lt.push(Math.round(e.duration)); }).observe({ type: "longtask", buffered: false }); } catch (e) {}
   });
-  return { ctx, page, noise };
+  return { ctx, page, noise, docsProbe };
+}
+const DOCS_PROBE_404 = /Failed to load resource: the server responded with a status of 404/;
+// Filters `noise` the same way every phase already does (drop favicon 404s),
+// plus forgiving up to docsProbe.count real doc-PDF-probe 404s - see boot()'s
+// own comment. Call once per phase, right before that phase's own assertion.
+function filterNoise(noise, docsProbe) {
+  let docsAllowance = docsProbe.count;
+  return noise.filter((x) => {
+    if (/favicon/.test(x)) return false;
+    if (docsAllowance > 0 && DOCS_PROBE_404.test(x)) { docsAllowance--; return false; }
+    return true;
+  });
 }
 
 const go = async (page, hash, settle = 500) => { await page.evaluate((h) => { location.hash = h; }, hash); await page.waitForTimeout(settle); };
@@ -327,7 +352,7 @@ if (!SKIP.includes("B")) {
 
 /* ============ C. split-screen shapes + D. ultra-wide ============ */
 if (!SKIP.includes("C")) {
-  const { ctx, page, noise } = await boot();
+  const { ctx, page, noise, docsProbe } = await boot();
   const routes = await page.evaluate(() => window.G.routes.map((r) => r.hash || r));
   const SHAPES = [[1152, 350], [960, 400], [683, 768], [640, 720], [1280, 480], [2560, 1440], [3440, 1440], [1920, 1080]];
   for (const [w, h] of SHAPES) {
@@ -361,7 +386,7 @@ if (!SKIP.includes("C")) {
       note(w + "x" + h + ": routes whose widest long-text block exceeds 90ch: " + over.length + "/" + measure.length + " -> " + over.slice(0, 14).map((m) => m.r + " " + m.ch + "ch(" + m.tag + ")").join(", "));
     }
   }
-  const n = noise.filter((x) => !/favicon/.test(x));
+  const n = filterNoise(noise, docsProbe);
   n.length === 0 ? ok("C/D: no console errors/warnings") : bad("C/D: console noise: " + n.slice(0, 3).join(" | "));
   await ctx.close();
 }
@@ -389,7 +414,7 @@ if (!SKIP.includes("E")) {
 
 /* ============ F. keyboard reachability ============ */
 if (!SKIP.includes("F")) {
-  const { ctx, page, noise } = await boot({ viewport: { width: 1440, height: 900 } });
+  const { ctx, page, noise, docsProbe } = await boot({ viewport: { width: 1440, height: 900 } });
   const routes = await page.evaluate(() => window.G.routes.map((r) => r.hash || r));
   await page.evaluate(() => { document.querySelectorAll(".nav .nav-group-header[aria-expanded='false']").forEach((h) => h.click()); });
   await page.waitForTimeout(600); // let the max-height transition finish before reading it
@@ -445,7 +470,7 @@ if (!SKIP.includes("F")) {
   const drawerOpen = await page.evaluate(() => !!document.querySelector(".nav-drawer"));
   drawerOpen ? ok("F: at 500px the More drawer opens from keyboard (Enter on the focused button)") : bad("F: More drawer did not open from keyboard at 500px");
   await page.keyboard.press("Escape");
-  const n = noise.filter((x) => !/favicon/.test(x));
+  const n = filterNoise(noise, docsProbe);
   n.length === 0 ? ok("F: no console errors/warnings") : bad("F: console noise: " + n.slice(0, 3).join(" | "));
   await ctx.close();
 }
