@@ -12684,7 +12684,7 @@ window.G = window.G || {};
   };
   const RF_PASS_FREQUENT = 2; // "came up as Pass a lot" threshold — passed at least this many times this round
 
-  async function renderRapidFire(mount) {
+  async function renderRapidFire(mount, renderOpts) {
     util.clear(mount);
     const all = store.boardQuestions();
     const categories = ["All", ...Array.from(new Set(all.map((q) => q.category)))];
@@ -13263,7 +13263,10 @@ window.G = window.G || {};
         clearInterval(tickHandle);
         document.removeEventListener("visibilitychange", onVisible);
         G.board.exitTheater();
-        drawSetup();
+        // Collective P3a: opts.onLeave is the study-room seam for this bail-out
+        // (the relay must send its score and return to the room screen, not
+        // to Rapid Fire's Setup); absent, behaviour is exactly as before.
+        if (opts.onLeave) opts.onLeave(); else drawSetup();
       });
 
       // Error handling (spec): "App backgrounds mid-round — pause the
@@ -13513,6 +13516,13 @@ window.G = window.G || {};
       root.appendChild(panel);
     }
 
+    // Collective P3a: G.board.rapidFireEngine(mount) (below, beside
+    // noteExternalResult) asks for the round engine WITHOUT drawing Setup -
+    // the study-room relay (src/app-modules/studygroup.js) runs each seat's
+    // Party turn through this SAME beginRound closure, bound to its own
+    // mount, with cfg set by the room instead of the Setup screen. Nothing
+    // above this line branches on renderOpts: the engine is identical.
+    if (renderOpts && renderOpts.engineOnly) return { beginRound, cfg, drawSetup };
     await drawSetup();
   }
 
@@ -13765,6 +13775,15 @@ window.G = window.G || {};
   // quiz is only recognition, so it can DEMOTE a card (a miss makes it due
   // now) but never advance one - recognizing the right answer among four
   // options is not evidence you can produce it at a board.
+  // Collective P3a: the ONE hook the study-room relay uses to play a seat's
+  // turn - Rapid Fire's own round engine (beginRound inside renderRapidFire,
+  // above), bound to `mount`, Setup screen skipped. Resolves to
+  // { beginRound(pool, mode, opts), cfg, drawSetup }; the caller sets
+  // cfg.timerSec / passedBehavior / soundHaptics and supplies opts.onFinish
+  // (stats) and opts.onLeave. The engine writes nothing to SRS or attempts
+  // (tools/test-rapid-fire-no-srs-writes.mjs), and neither does the room.
+  G.board.rapidFireEngine = function (mount) { return renderRapidFire(mount, { engineOnly: true }); };
+
   G.board.noteExternalResult = async function (id, gradeLevel) {
     try {
       const rec = schedule(await loadSrs(id), gradeLevel);
@@ -21003,7 +21022,7 @@ window.G = window.G || {};
       diceBtn.addEventListener("click", () => {
         let pick = _lastSpin;
         let guard = 0;
-        while (pick === _lastSpin && guard++ < 12) pick = CALLSIGNS[Math.floor(Math.random()*CALLSIGNS.length)];
+        while (pick === _lastSpin && guard++ < 12) pick = G.profile.CALLSIGNS[Math.floor(Math.random()*G.profile.CALLSIGNS.length)];
         _lastSpin = pick;
         nameInp.value = pick;
         data.lastName = pick;
@@ -21508,7 +21527,7 @@ window.G = window.G || {};
           const cur = profile.lastName || "";
           const entered = await G.modal.prompt(
             "New last name \u2014 leave blank to go anonymous (rank only).\n\nTip: try a call sign such as " +
-            CALLSIGNS[Math.floor(Math.random()*CALLSIGNS.length)] + ".",
+            G.profile.CALLSIGNS[Math.floor(Math.random()*G.profile.CALLSIGNS.length)] + ".",
             cur, { title:"Rename profile", okText:"Save", inputLabel:"Last name" });
           if (entered === null) return; // cancelled
           const clean = String(entered).toUpperCase().trim();
@@ -22299,6 +22318,13 @@ window.G = window.G || {};
   }
 
   G.profile = {
+    // The ONE call-sign source of truth (see the CALLSIGNS comment above,
+    // near RANKS): exported here, not copied, so the study-group seat-name
+    // dice (src/app-modules/studygroup.js) draws from the exact same array
+    // the onboarding wizard's own dice button uses below - never a second
+    // literal. Read-only in spirit: nothing in this module or studygroup.js
+    // mutates it.
+    CALLSIGNS: CALLSIGNS,
     async current() {
       if (_cache !== null) return _cache;
       _cache = await loadProfile();
@@ -32654,6 +32680,14 @@ window.G = window.G || {};
     // modal - see src/app-modules/moi-import.js's own header comment.
     { hash: "#/moi", label: "MOI Import", ico: "upload", render: (m) => G.moiImport.render(m) },
     { hash: "#/board", label: "Board", ico: "layers", render: (m) => G.board.render(m) },
+    // Collective P3a: LAN study rooms (src/app-modules/studygroup.js). The
+    // route renders the kill-switch-off "Pass the device" panel while
+    // Settings -> Study groups is off, and never opens a connection itself
+    // (G.studyGroup.attach() is the only place one is opened, and it
+    // records G.netLedger). Placed in the "Board Prep" NAV_GROUPS entry
+    // right after #/board (P3b nav placement), so verify.mjs and the nav
+    // suites reach it like every other grouped route.
+    { hash: "#/group", label: "Study group", ico: "users", render: (m) => G.studyGroup.render(m) },
     { hash: "#/risk", label: "Risk", ico: "alert-triangle", render: (m) => G.risk.render(m) },
     { hash: "#/progress", label: "Progress", ico: "bar-chart", render: (m) => G.progress.render(m) },
     { hash: "#/author", label: "Author", ico: "plus-square", render: (m) => G.author.render(m) },
@@ -32697,7 +32731,9 @@ window.G = window.G || {};
     { id: "home",    label: null,             hashes: ["#/home"] },
     // Practice & tracking (Train/Board Drill/Records/Calendar) | reference
     // library (Doctrine/Dictionary/Library).
-    { id: "prep",    label: "Board Prep",     hashes: ["#/train", "#/board", "#/records", "#/calendar", "#/doctrine", "#/dictionary", "#/library", "#/moi"],
+    // Collective P3b: #/group (Study group, LAN rooms) sits right after
+    // #/board - it is Board Drill with other devices in the room.
+    { id: "prep",    label: "Board Prep",     hashes: ["#/train", "#/board", "#/group", "#/records", "#/calendar", "#/doctrine", "#/dictionary", "#/library", "#/moi"],
       subdivideAfter: "#/calendar" },
     // Counsel moved here from Leadership (intuitivism pass) - its own
     // DEMO_NOTES tooltip already calls it a "skill-builder," closer in
