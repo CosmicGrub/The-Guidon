@@ -906,11 +906,16 @@ window.G = window.G || {};
         // separate step. Starts expanded (unlike a routine later visit,
         // which defaults collapsed behind "View") so the Soldier
         // immediately sees what was just built, saved or not.
-        util.clear(stage);
-        if (!savePlan) {
-          stage.appendChild(el("div.feedback.warn", { text: "Not saved — “Save as my study plan” was unchecked, so this view will be gone once you navigate away." }));
-        }
+        // renderAlreadyImported() does its own util.clear(stage) as its
+        // first statement, which would wipe a warning appended before
+        // calling it - so the warning has to be inserted AFTER, not
+        // before (confirmed live via Playwright: the pre-call ordering
+        // left the warning text absent from the rendered DOM even though
+        // it was present in this file's source).
         renderAlreadyImported(plan, true);
+        if (!savePlan) {
+          stage.insertBefore(el("div.feedback.warn", { text: "Not saved — “Save as my study plan” was unchecked, so this view will be gone once you navigate away." }), stage.firstChild);
+        }
       })();
     }
 
