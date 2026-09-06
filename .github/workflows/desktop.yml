@@ -197,6 +197,20 @@ jobs:
           if (Test-Path $out) { Get-Content $out }
           if ($code -ne 1) { Write-Output "expected exit 1, got $code"; exit 1 }
           Write-Output "verify-the-verifier ok: exit 1"
+          # Measured 2026-09-06 (this step's first ever real run): $LASTEXITCODE
+          # is still guidon.exe's own 1 here - Write-Output does not touch it,
+          # and nothing else in this script has run an external command since.
+          # pwsh's Actions runner treats a script that falls off the end with
+          # a nonzero $LASTEXITCODE as a FAILED step, with no message of its
+          # own - so the step reported failure right under a line that says
+          # "ok". This is the one branch where the exit code we want to
+          # ASSERT ON (guidon.exe's 1, deliberately) and the exit code that
+          # reports THIS STEP's own result (0, because that assertion held)
+          # are different numbers - every other script in this file only
+          # hits this custom exit-1 path (via Write-Output + exit 1) when it
+          # is genuinely failing, so this is the only place that needs the
+          # explicit reset.
+          exit 0
 
       # upload-artifact paths are workspace-relative (the working-directory
       # default above does not apply to `with:` inputs).
