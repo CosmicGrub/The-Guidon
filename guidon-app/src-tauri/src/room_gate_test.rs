@@ -78,6 +78,13 @@ fn commands_refuse_without_the_gate_and_run_a_room_on_the_mock_runtime() {
     assert_eq!(closed["open"], json!(false));
     assert_eq!(closed["keepAwake"], json!(false));
 
+    // `tlsPort` is deliberately omitted here (matching room-tauri.js's own
+    // real call site, which this test's invoke() bodies otherwise mirror
+    // exactly - see hostStart() in that file) to prove the room-tls-and-
+    // discovery-pitch.md Section 1 addition doesn't change the existing
+    // plaintext-path behavior: an absent optional command argument must
+    // still resolve (Tauri treats a missing `Option<T>` key as `None`),
+    // getting the default TLS-port convention rather than an error.
     let info = get_ipc_response(&webview, invoke("room_start", json!({ "port": null, "code": "alpha-bravo-42", "studyGroups": true, "fork": "tauri" })))
         .expect("room_start resolves")
         .deserialize::<RoomInfo>()
@@ -85,6 +92,11 @@ fn commands_refuse_without_the_gate_and_run_a_room_on_the_mock_runtime() {
     assert_eq!(info.room, ROOM);
     assert!(info.port > 0);
     assert_eq!(info.url, format!("http://{}:{}/j/{ROOM}", info.ip, info.port));
+    // room-tls-and-discovery-pitch.md Section 1: the second, TLS-wrapped
+    // listener, bound and advertised alongside the unchanged plaintext one.
+    assert!(info.tls_port > 0 && info.tls_port != info.port, "an independent TLS port must be bound");
+    assert_eq!(info.identity.fp.len(), 8, "the human-comparable fp");
+    assert_eq!(info.identity.spki_sha256.len(), 64, "the full-strength SPKI pin, never truncated");
 
     // the listener is real: a Node-style client would see the guest page
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
@@ -120,6 +132,13 @@ fn commands_refuse_without_the_gate_and_run_a_room_on_the_mock_runtime() {
     std::thread::sleep(std::time::Duration::from_millis(150)); // the aborted accept task drops the listener on its next poll
     let refused = rt.block_on(async { tokio::time::timeout(std::time::Duration::from_secs(2), TcpStream::connect(("127.0.0.1", info.port))).await });
     assert!(!matches!(refused, Ok(Ok(_))), "the port is closed after room_stop");
+    // The TLS listener's accept task must be aborted exactly as thoroughly
+    // as the plaintext one's (room-tls-and-discovery-pitch.md Section 1) -
+    // a leaked TLS listener task after room_stop would be a real, silent
+    // resource leak. Same proof-of-closure shape as the plaintext check
+    // just above, ported to the TLS port.
+    let tls_refused = rt.block_on(async { tokio::time::timeout(std::time::Duration::from_secs(2), TcpStream::connect(("127.0.0.1", info.tls_port))).await });
+    assert!(!matches!(tls_refused, Ok(Ok(_))), "the TLS port is closed after room_stop");
     let again = get_ipc_response(&webview, invoke("room_stop", json!({ "studyGroups": true, "fork": "tauri" }))).expect("stop").deserialize::<Value>().unwrap();
     assert_eq!(again, json!({ "stopped": false }));
 }

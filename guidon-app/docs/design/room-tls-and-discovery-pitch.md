@@ -144,9 +144,13 @@ Still to build, in build order:
 2. **`src-tauri/Cargo.toml`** — pin the exact versions the spike proved
    compatible together: `rcgen 0.14`, `rustls 0.23` (features
    `ring, std, tls12`), `tokio-rustls 0.26` (features `ring, tls12`),
-   `rustls-pki-types 1`, `x509-parser 0.18` (already resolved transitively
-   through `rcgen` — confirmed in the spike's build log, so naming it
-   directly costs nothing new in the dependency tree).
+   `rustls-pki-types 1`, `x509-parser 0.18`. **Correction, checked not
+   assumed when this actually landed**: `x509-parser` is *not* free via
+   `rcgen` — `cargo tree -i -p x509-parser` against the real package
+   Cargo.lock shows it parented only under the direct dependency, never
+   under `rcgen` (its default features never pull x509-parser in). Naming
+   it directly is required, not a no-op; the spike's own build log gave a
+   false positive because the spike *also* named it directly.
 3. **`src-tauri/src/room.rs`** — generalize `serve_conn(stream: TcpStream, ...)`
    to `serve_conn<S: AsyncRead+AsyncWrite+Unpin+Send+'static>` via
    `tokio::io::split(stream)` (the only reason it's currently

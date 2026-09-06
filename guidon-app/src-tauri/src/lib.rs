@@ -30,3 +30,4 @@
 
 pub mod room;
 pub mod room_schema_gen;
+pub mod room_tls;

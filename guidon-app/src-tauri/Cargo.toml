@@ -58,6 +58,34 @@ serde_json = "1"
 # Keep-awake (X13) is one kernel32 FFI declaration, not the windows crate.
 tokio = { version = "1", features = ["rt", "net", "io-util", "time", "sync"] }
 
+# room-tls-and-discovery-pitch.md Section 1 (the pinned self-signed WSS
+# design for the Android room-join blocker, confirmed 2026-09-06): a
+# second, TLS-wrapped accept loop alongside the existing plaintext one in
+# room.rs, sharing the exact same serve_conn/relay logic - never a second
+# implementation of it. Exact versions and feature sets the spike
+# (src-tauri/spikes/room_tls_spike/) proved compatible together.
+rcgen = "0.14"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+rustls-pki-types = "1"
+# NOT free via rcgen - checked, not assumed, and the spike's own comment
+# (src-tauri/spikes/room_tls_spike/) claiming otherwise does not hold here:
+# `cargo tree -i -p x509-parser` against THIS package's own Cargo.lock
+# shows it parented ONLY under `guidon` (this direct dependency), never
+# under rcgen. rcgen 0.14's default features (crypto, pem, ring) never pull
+# it in; x509-parser sits behind rcgen's own optional, non-default
+# "x509-parser" feature, which this project does not enable. Named here
+# because room_tls.rs needs its own copy to re-parse OUR OWN freshly-minted
+# certificate (see that file's header for why re-parsing, not trusting
+# rcgen's own key export, is the whole point) - a real, required dependency
+# edge, not a free one.
+x509-parser = "0.18"
+# SHA-256/hex/base32 for the SPKI pin and the human-read fp are hand-rolled
+# in room_tls.rs (same reason room.rs already hand-rolls SHA-1 + base64 for
+# the WebSocket handshake instead of depending on a crate for it) - no
+# sha2/hex/base32 crate is added here, deliberately, even though sha2
+# happens to already be resolved transitively for unrelated reasons.
+
 # Windows-only desktop-shell integration (R3 selective accelerator guard,
 # R-ROOM's non-loopback IPv4 listing). Target-gated because both are Win32
 # APIs with nothing to bind to elsewhere, even though this project only

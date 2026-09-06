@@ -66,6 +66,21 @@
 //! probe, so a suite can make the probe fail on purpose - 192.0.2.1 never
 //! answers - and prove the "host from a phone instead" path on the host
 //! screen); it unlocks nothing.
+//!
+//! room-tls-and-discovery-pitch.md Section 1 (the confirmed Android
+//! WebView Mixed Content/cleartext room-join blocker): `start_room()` also
+//! binds a SECOND, TLS-wrapped listener on an independent port, serving the
+//! exact same `serve_conn`/relay logic as the plaintext one above - never a
+//! second implementation of it (`serve_conn` is generic over
+//! `AsyncRead + AsyncWrite`, not `TcpStream`-specific, for exactly this
+//! reason). One ephemeral, self-signed ECDSA P-256 identity is minted per
+//! `start_room()` call (room_tls.rs); its `fp`/`spkiSha256` and the bound
+//! TLS port are exposed on `RoomInfo` (`tlsPort`/`identity`), mirroring
+//! tools/room-server.mjs's own resolved-object shape. No `PROTOCOL_VERSION`
+//! bump, no `validate()`/wire-shape change - TLS-vs-plaintext is a
+//! transport choice, decided entirely by which port/scheme a joiner used.
+//! The join-side consumer of this (a pinning client on Android/Tauri) is a
+//! later pitch-doc stage, explicitly out of scope here.
 
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
@@ -76,11 +91,12 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use tauri::{AppHandle, Manager, Runtime, State, WebviewWindow};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 
 use crate::room_schema_gen as schema;
+use crate::room_tls;
 
 /// The guest page, byte for byte (P3's build artifact; build.rs guards it).
 pub const GUEST_HTML: &[u8] = include_bytes!("../../dist/guest.html");
@@ -1170,6 +1186,7 @@ pub fn http_response(status: u16, text: &str, ctype: &str, extra: &str, body: &[
 /* ------------------------------------------------------------- the host */
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RoomInfo {
     pub room: String,
     pub ip: String,
@@ -1181,6 +1198,36 @@ pub struct RoomInfo {
     /// `choose_advertised()` picked. The host screen (room-tauri.js) shows
     /// the rest so a laptop with a VPN adapter up can be corrected by eye.
     pub addresses: Vec<AddressInfo>,
+    /// room-tls-and-discovery-pitch.md Section 1: the SECOND, TLS-wrapped
+    /// listener bound alongside `port` above, serving the exact same
+    /// `serve_conn`/relay logic (never a second implementation). Mirrors
+    /// room-server.mjs's resolved object shape (`.tlsPort` /
+    /// `.identity.{fp,spkiSha256}`) exactly - see `start_room()` for the
+    /// port-selection convention (default `port + 1`, or an independent
+    /// ephemeral port when `port` itself was ephemeral) and room_tls.rs for
+    /// the identity itself.
+    ///
+    /// Deliberately NO `secureUrl` field: room-schema.js's `wsUrl()` /
+    /// `joinUrl()` build a URL from an already-scheme-decided origin
+    /// string or a `(hostPort, secure)` pair, never from a raw port + fp -
+    /// there is no natural, schema-consistent shape to invent here ahead
+    /// of the JS-side consumer that would build one (pitch doc stage 4,
+    /// explicitly out of scope for this change). Raw `tlsPort` + identity
+    /// only; URL construction is left to that later stage.
+    pub tls_port: u16,
+    pub identity: RoomIdentity,
+}
+
+/// The room's native TLS identity, both halves exposed (pitch doc Section
+/// 1.4: `fp` and `spki_sha256` are NOT interchangeable - `fp` is the
+/// human-comparable "proof of place" alongside the phonetic room code;
+/// `spki_sha256` is the full-strength hash a joiner's pinning check must
+/// actually compare byte for byte, never the truncated `fp`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoomIdentity {
+    pub fp: String,
+    pub spki_sha256: String,
 }
 
 /// One advertisable IPv4 address: the adapter's name and the address.
@@ -1240,7 +1287,7 @@ pub fn page_deliverer<R: Runtime>(app: AppHandle<R>) -> Deliver {
     })
 }
 
-async fn read_head(rd: &mut tokio::net::tcp::OwnedReadHalf) -> Option<(Head, Vec<u8>)> {
+async fn read_head<R: AsyncRead + Unpin>(rd: &mut R) -> Option<(Head, Vec<u8>)> {
     let mut buf: Vec<u8> = Vec::with_capacity(2048);
     let mut chunk = [0u8; 2048];
     loop {
@@ -1261,13 +1308,24 @@ async fn read_head(rd: &mut tokio::net::tcp::OwnedReadHalf) -> Option<(Head, Vec
     }
 }
 
-async fn write_all(wr: &mut tokio::net::tcp::OwnedWriteHalf, bytes: &[u8]) -> bool {
+async fn write_all<W: AsyncWrite + Unpin>(wr: &mut W, bytes: &[u8]) -> bool {
     wr.write_all(bytes).await.is_ok() && wr.flush().await.is_ok()
 }
 
-async fn serve_conn(stream: TcpStream, addr: SocketAddr, ctx: Arc<Ctx>) {
-    let _ = stream.set_nodelay(true);
-    let (mut rd, mut wr) = stream.into_split();
+/// Serves one already-accepted connection - plaintext `TcpStream` or a
+/// `tokio_rustls::server::TlsStream<TcpStream>`, generalized over
+/// `AsyncRead + AsyncWrite` (room-tls-and-discovery-pitch.md Section 1.3
+/// step 3) so the TLS accept loop below can hand this the SAME function the
+/// plaintext one always has, never a second implementation of the
+/// HTTP/WebSocket/relay logic. `tokio::io::split` replaces the old
+/// `TcpStream`-only `.into_split()` - the only reason this was ever
+/// `TcpStream`-specific; TCP-only setup (`set_nodelay`) moved to each
+/// accept loop, which still holds the raw `TcpStream` before any TLS wrap.
+async fn serve_conn<S>(stream: S, addr: SocketAddr, ctx: Arc<Ctx>)
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    let (mut rd, mut wr) = tokio::io::split(stream);
     let (head, rest) = match read_head(&mut rd).await {
         Some(x) => x,
         None => return,
@@ -1397,10 +1455,41 @@ async fn accept_loop(listener: TcpListener, ctx: Arc<Ctx>) {
     loop {
         match listener.accept().await {
             Ok((stream, addr)) => {
+                let _ = stream.set_nodelay(true);
                 let _ = tauri::async_runtime::spawn(serve_conn(stream, addr, ctx.clone()));
             }
             Err(e) => {
                 say(format!("accept error: {e}"));
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        }
+    }
+}
+
+/// The TLS-wrapped twin of `accept_loop`: same listener/accept shape, the
+/// SAME `serve_conn` (never a second relay implementation), the only
+/// difference is `TlsAcceptor::accept()` between the raw TCP accept and
+/// handing the socket to `serve_conn`. A TLS handshake failure (bad pin
+/// attempt aside - rustls itself has no notion of "pin", that lives in the
+/// PEER's verifier; a malformed/aborted handshake here is just a dead
+/// socket) drops that one connection and keeps the loop serving others -
+/// mirroring `accept_loop`'s own per-connection error containment.
+async fn accept_loop_tls(listener: TcpListener, acceptor: tokio_rustls::TlsAcceptor, ctx: Arc<Ctx>) {
+    loop {
+        match listener.accept().await {
+            Ok((stream, addr)) => {
+                let _ = stream.set_nodelay(true);
+                let acceptor = acceptor.clone();
+                let ctx = ctx.clone();
+                let _ = tauri::async_runtime::spawn(async move {
+                    match acceptor.accept(stream).await {
+                        Ok(tls) => serve_conn(tls, addr, ctx).await,
+                        Err(e) => say(format!("tls handshake error from {addr}: {e}")),
+                    }
+                });
+            }
+            Err(e) => {
+                say(format!("tls accept error: {e}"));
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
         }
@@ -1641,6 +1730,11 @@ pub struct Live {
     pub info: RoomInfo,
     pub ctx: Arc<Ctx>,
     accept: tauri::async_runtime::JoinHandle<()>,
+    /// The TLS accept loop's task, aborted on stop exactly as thoroughly as
+    /// `accept` above - a leaked TLS listener task after `room_stop` would
+    /// be a real, silent resource leak (a bound port and a live accept loop
+    /// nothing is using), so this is stored and cancelled the same way.
+    tls_accept: tauri::async_runtime::JoinHandle<()>,
     heartbeat: tauri::async_runtime::JoinHandle<()>,
     keep: KeepAwake,
 }
@@ -1649,8 +1743,9 @@ impl Live {
     pub fn stop(self) {
         self.ctx.with_relay(|r| r.close_all(4000, "host-left", STOP_GRACE_MS));
         self.accept.abort();
+        self.tls_accept.abort();
         self.heartbeat.abort();
-        say(format!("stop {} on port {}", self.info.room, self.info.port));
+        say(format!("stop {} on port {} (tls {})", self.info.room, self.info.port, self.info.tls_port));
         drop(self.keep);
     }
 }
@@ -1666,7 +1761,17 @@ impl RoomState {
 }
 
 /// Starts the listener for `code`. Any earlier room is stopped first.
-pub async fn start_room(state: &RoomState, port: Option<u16>, code: &str, deliver: Deliver) -> Result<RoomInfo, String> {
+///
+/// `tls_port` is the parallel override to `port` above (room-tls-and-
+/// discovery-pitch.md Section 1.3 step 4): `None` means "use the default
+/// convention", mirroring room-server.mjs's own `--tls-port` handling
+/// exactly - default to `port + 1`, EXCEPT when `port` itself was ephemeral
+/// (`None`/0, what every test in this file and tools/test-room-tauri.mjs
+/// asks for), in which case the TLS port is an independent ephemeral port
+/// too, since "+1" is meaningless before the OS has even chosen the
+/// plaintext one. `Some(n)` (including `Some(0)`) always wins outright,
+/// exactly like the Node side's explicit `--tls-port` flag.
+pub async fn start_room(state: &RoomState, port: Option<u16>, tls_port: Option<u16>, code: &str, deliver: Deliver) -> Result<RoomInfo, String> {
     let code = code.trim().to_ascii_uppercase();
     if !is_room_code(&code) {
         return Err(format!("{code:?} is not a room code (two phonetic words and two digits)"));
@@ -1674,19 +1779,51 @@ pub async fn start_room(state: &RoomState, port: Option<u16>, code: &str, delive
     if let Some(prev) = state.lock().take() {
         prev.stop();
     }
-    let want = SocketAddr::from(([0, 0, 0, 0], port.unwrap_or(0)));
+    let requested_port = port.unwrap_or(0);
+    let want = SocketAddr::from(([0, 0, 0, 0], requested_port));
     let listener = TcpListener::bind(want).await.map_err(|e| format!("bind {want}: {e}"))?;
     let bound = listener.local_addr().map_err(|e| format!("local_addr: {e}"))?.port();
+
+    let tls_want_port = tls_port.unwrap_or(if requested_port == 0 { 0 } else { requested_port + 1 });
+    let tls_want = SocketAddr::from(([0, 0, 0, 0], tls_want_port));
+    let tls_listener = TcpListener::bind(tls_want).await.map_err(|e| format!("bind tls {tls_want}: {e}"))?;
+    let tls_bound = tls_listener.local_addr().map_err(|e| format!("tls local_addr: {e}"))?.port();
+    // One ephemeral, self-signed identity per room_start() call - matching
+    // room-server.mjs's own "one identity per startRoomServer() call"
+    // choice and its documented reasoning: every other piece of a room's
+    // state here (the listeners, the relay, the keep-awake handle) is
+    // already scoped one-per-`start_room`, never shared across rooms or
+    // re-created mid-room, so a per-room identity is the shape-consistent
+    // choice, not a finer- or coarser-grained lifecycle invented for TLS
+    // alone.
+    let identity = room_tls::generate_identity();
+    let tls_acceptor = room_tls::acceptor(&identity).map_err(|e| format!("tls identity: {e}"))?;
+
     let addresses = list_ipv4_interfaces();
     let ip = choose_advertised(&addresses).map(|a| a.ip.clone()).unwrap_or_else(|| "127.0.0.1".to_string());
     let ctx = Arc::new(Ctx::new(&code, bound, ping_ms(), deliver));
     let accept = tauri::async_runtime::spawn(accept_loop(listener, ctx.clone()));
+    let tls_accept = tauri::async_runtime::spawn(accept_loop_tls(tls_listener, tls_acceptor, ctx.clone()));
     let heartbeat = tauri::async_runtime::spawn(heartbeat_loop(ctx.clone()));
     let reachable = self_probe(&ip, bound).await;
     let keep = KeepAwake::start();
-    let info = RoomInfo { room: code.clone(), ip: ip.clone(), port: bound, url: format!("http://{ip}:{bound}{}{code}", schema::ENDPOINT_JOIN), reachable, addresses };
-    say(format!("start {code} on 0.0.0.0:{bound}, advertised {ip}, reachable {reachable}, keep-awake {} ({})", keep.held(), keep.mode));
-    *state.lock() = Some(Live { info: info.clone(), ctx, accept, heartbeat, keep });
+    let info = RoomInfo {
+        room: code.clone(),
+        ip: ip.clone(),
+        port: bound,
+        url: format!("http://{ip}:{bound}{}{code}", schema::ENDPOINT_JOIN),
+        reachable,
+        addresses,
+        tls_port: tls_bound,
+        identity: RoomIdentity { fp: identity.fp, spki_sha256: identity.spki_sha256 },
+    };
+    say(format!(
+        "start {code} on 0.0.0.0:{bound} (tls 0.0.0.0:{tls_bound}, fp {}), advertised {ip}, reachable {reachable}, keep-awake {} ({})",
+        info.identity.fp,
+        keep.held(),
+        keep.mode
+    ));
+    *state.lock() = Some(Live { info: info.clone(), ctx, accept, tls_accept, heartbeat, keep });
     Ok(info)
 }
 
@@ -1696,12 +1833,13 @@ pub async fn room_start<R: Runtime>(
     window: WebviewWindow<R>,
     state: State<'_, RoomState>,
     port: Option<u16>,
+    tls_port: Option<u16>,
     code: String,
     study_groups: bool,
     fork: String,
 ) -> Result<RoomInfo, String> {
     guard(study_groups, &fork, window.label())?;
-    start_room(&state, port, &code, page_deliverer(app)).await
+    start_room(&state, port, tls_port, &code, page_deliverer(app)).await
 }
 
 #[tauri::command]
@@ -2341,10 +2479,218 @@ mod tests {
             url: "http://192.168.1.42:1234/j/ALPHA-BRAVO-42".into(),
             reachable: true,
             addresses: vec![addr("Wi-Fi", "192.168.1.42"), addr("Tailscale", "10.5.0.2")],
+            tls_port: 1235,
+            identity: RoomIdentity { fp: "ABCDEFGH".into(), spki_sha256: "0".repeat(64) },
         };
         let v = serde_json::to_value(&info).unwrap();
         assert_eq!(v["addresses"], json!([{ "name": "Wi-Fi", "ip": "192.168.1.42" }, { "name": "Tailscale", "ip": "10.5.0.2" }]));
+        assert_eq!(v["tlsPort"], json!(1235), "RoomInfo serializes camelCase, matching room-server.mjs's resolved object shape");
+        assert_eq!(v["identity"], json!({ "fp": "ABCDEFGH", "spkiSha256": "0".repeat(64) }));
         let back: RoomInfo = serde_json::from_value(v).unwrap();
         assert_eq!(back, info);
+    }
+
+    /* ---- TLS: room-tls-and-discovery-pitch.md Section 1 ------------- */
+    // Mirrors tools/test-room-server-tls.mjs's own coverage (already landed
+    // against the Node reference host this session) against room.rs
+    // directly: a real TLS listener, a client that pins the CORRECT SPKI
+    // hash completing a real hello -> welcome round trip, and a client
+    // pinning the WRONG hash rejected before any relay session exists.
+
+    fn ws_upgrade_request(room: &str, role: &str) -> Vec<u8> {
+        format!("GET /ws?room={room}&role={role} HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n").into_bytes()
+    }
+
+    async fn ws_client_upgrade<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S, room: &str, role: &str) {
+        stream.write_all(&ws_upgrade_request(room, role)).await.expect("write upgrade request");
+        let mut buf = Vec::new();
+        let mut chunk = [0u8; 512];
+        loop {
+            let n = stream.read(&mut chunk).await.expect("read upgrade response");
+            assert!(n > 0, "server closed before completing the WS upgrade");
+            buf.extend_from_slice(&chunk[..n]);
+            if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                break;
+            }
+        }
+        let text = String::from_utf8_lossy(&buf);
+        assert!(text.starts_with("HTTP/1.1 101"), "expected 101 Switching Protocols, got: {text}");
+    }
+
+    fn ws_client_mask_frame(op: u8, payload: &[u8]) -> Vec<u8> {
+        let mask = [0x11u8, 0x22, 0x33, 0x44];
+        let mut out = vec![0x80 | op];
+        let len = payload.len();
+        if len < 126 {
+            out.push(0x80 | len as u8);
+        } else if len < 65536 {
+            out.push(0x80 | 126);
+            out.extend_from_slice(&(len as u16).to_be_bytes());
+        } else {
+            out.push(0x80 | 127);
+            out.extend_from_slice(&(len as u64).to_be_bytes());
+        }
+        out.extend_from_slice(&mask);
+        for (i, b) in payload.iter().enumerate() {
+            out.push(b ^ mask[i & 3]);
+        }
+        out
+    }
+
+    async fn ws_client_send_text<S: AsyncWrite + Unpin>(stream: &mut S, text: &str) {
+        stream.write_all(&ws_client_mask_frame(0x1, text.as_bytes())).await.expect("write text frame");
+    }
+
+    async fn ws_client_recv_text<S: AsyncRead + Unpin>(stream: &mut S) -> String {
+        let mut hdr = [0u8; 2];
+        stream.read_exact(&mut hdr).await.expect("read frame header");
+        let op = hdr[0] & 0x0f;
+        let mut len = (hdr[1] & 0x7f) as usize;
+        if len == 126 {
+            let mut b = [0u8; 2];
+            stream.read_exact(&mut b).await.expect("read 16-bit len");
+            len = u16::from_be_bytes(b) as usize;
+        } else if len == 127 {
+            let mut b = [0u8; 8];
+            stream.read_exact(&mut b).await.expect("read 64-bit len");
+            len = u64::from_be_bytes(b) as usize;
+        }
+        let mut payload = vec![0u8; len];
+        stream.read_exact(&mut payload).await.expect("read frame payload");
+        assert_eq!(op, 0x1, "expected a text frame from the server (server frames are never masked)");
+        String::from_utf8_lossy(&payload).into_owned()
+    }
+
+    /// The SAME shape as the standalone spike's `PinnedVerifier`
+    /// (src-tauri/spikes/room_tls_spike/src/main.rs) and what a real joiner
+    /// (Kotlin plugin / Tauri-native join client, a later pitch-doc stage)
+    /// must do: no CA, no hostname check, accept ONLY a certificate whose
+    /// SPKI SHA-256 matches the expected pin - via the SAME extraction
+    /// (`room_tls::spki_sha256_of`) `generate_identity()` used to derive it.
+    #[derive(Debug)]
+    struct TestPinnedVerifier {
+        expected_spki_sha256_hex: String,
+    }
+    impl rustls::client::danger::ServerCertVerifier for TestPinnedVerifier {
+        fn verify_server_cert(
+            &self,
+            end_entity: &rustls_pki_types::CertificateDer<'_>,
+            _intermediates: &[rustls_pki_types::CertificateDer<'_>],
+            _server_name: &rustls_pki_types::ServerName<'_>,
+            _ocsp_response: &[u8],
+            _now: rustls_pki_types::UnixTime,
+        ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+            match room_tls::spki_sha256_of(end_entity.as_ref()) {
+                Ok(got) if got == self.expected_spki_sha256_hex => Ok(rustls::client::danger::ServerCertVerified::assertion()),
+                _ => Err(rustls::Error::General("room fingerprint did not match - possible impersonation".into())),
+            }
+        }
+        fn verify_tls12_signature(&self, _m: &[u8], _c: &rustls_pki_types::CertificateDer<'_>, _dss: &rustls::DigitallySignedStruct) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+            Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+        }
+        fn verify_tls13_signature(&self, _m: &[u8], _c: &rustls_pki_types::CertificateDer<'_>, _dss: &rustls::DigitallySignedStruct) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+            Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+        }
+        fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+            vec![rustls::SignatureScheme::ECDSA_NISTP256_SHA256]
+        }
+    }
+
+    fn pinned_client_config(expected_spki_sha256_hex: &str) -> rustls::ClientConfig {
+        room_tls::ensure_crypto_provider();
+        rustls::ClientConfig::builder().dangerous().with_custom_certificate_verifier(Arc::new(TestPinnedVerifier { expected_spki_sha256_hex: expected_spki_sha256_hex.to_string() })).with_no_client_auth()
+    }
+
+    #[test]
+    fn tls_listener_completes_a_hello_welcome_round_trip_for_a_correctly_pinned_client_and_rejects_a_wrong_pin() {
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        rt.block_on(async {
+            let state = RoomState::default();
+            let delivered: Arc<Mutex<Vec<Value>>> = Arc::new(Mutex::new(Vec::new()));
+            let d2 = delivered.clone();
+            let deliver: Deliver = Box::new(move |v: Value| {
+                d2.lock().unwrap().push(v);
+            });
+            let info = start_room(&state, Some(0), Some(0), ROOM, deliver).await.expect("start_room");
+            assert!(info.tls_port > 0 && info.tls_port != info.port, "the TLS listener binds an independent, non-zero port");
+            assert_eq!(info.identity.fp.len(), 8);
+            assert_eq!(info.identity.spki_sha256.len(), 64);
+
+            /* case 1: a CORRECTLY pinned client completes hello -> welcome */
+            let connector = tokio_rustls::TlsConnector::from(Arc::new(pinned_client_config(&info.identity.spki_sha256)));
+            let tcp = TcpStream::connect(("127.0.0.1", info.tls_port)).await.expect("tcp connect (tls port)");
+            let server_name = rustls_pki_types::ServerName::try_from("localhost").unwrap();
+            let mut tls = tokio::time::timeout(Duration::from_secs(5), connector.connect(server_name, tcp)).await.expect("tls handshake timed out (correct pin)").expect("tls handshake failed (correct pin)");
+            ws_client_upgrade(&mut tls, ROOM, "peer").await;
+
+            let hello = frame("PEERAAAA", "hello", json!({ "name": "A", "bankSig": "b" }));
+            ws_client_send_text(&mut tls, &wire_encode(&hello, None)).await;
+
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                if delivered.lock().unwrap().iter().any(|v| v["type"] == "room:frame" && v["from"] == "PEERAAAA") {
+                    break;
+                }
+                assert!(Instant::now() < deadline, "the host never saw the hello frame over the TLS-wrapped socket");
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+
+            // The "page"'s reply, sent the exact way the room_send command does it.
+            let welcome = frame(
+                "NODEHOST",
+                "welcome",
+                json!({ "seatNo": 2, "token": "tok", "snapshot": { "phase": "lobby", "mode": "relay", "seq": 1, "room": ROOM, "hostSeat": 1, "seats": [], "bankSig": "b" } }),
+            );
+            let ctx = { state.0.lock().unwrap().as_ref().unwrap().ctx.clone() };
+            let sent = ctx.with_relay(|r| r.host_send(Some("PEERAAAA"), &welcome));
+            assert_eq!(sent, Ok(1));
+            let got = tokio::time::timeout(Duration::from_secs(5), ws_client_recv_text(&mut tls)).await.expect("welcome frame never arrived over TLS");
+            let decoded = wire_decode(&got).expect("valid wire envelope");
+            assert_eq!(decoded.to.as_deref(), Some("PEERAAAA"));
+            assert_eq!(decoded.frame["t"], "welcome");
+
+            /* case 2: a WRONG pin is rejected before any data flows */
+            let before = ctx.with_relay(|r| r.stats.connections);
+            let wrong_pin = "0".repeat(64); // 64 hex chars - never the real SHA-256 of anything minted here
+            let bad_connector = tokio_rustls::TlsConnector::from(Arc::new(pinned_client_config(&wrong_pin)));
+            let tcp2 = TcpStream::connect(("127.0.0.1", info.tls_port)).await.expect("tcp connect (tls port) 2");
+            let server_name2 = rustls_pki_types::ServerName::try_from("localhost").unwrap();
+            let result = tokio::time::timeout(Duration::from_secs(5), bad_connector.connect(server_name2, tcp2)).await.expect("a wrong-pin attempt must fail promptly, never hang");
+            assert!(result.is_err(), "a wrong-pin client must be REJECTED, not accepted - this is the property the whole design rests on");
+            tokio::time::sleep(Duration::from_millis(150)).await; // let the server's accept task observe the failed handshake
+            let after = ctx.with_relay(|r| r.stats.connections);
+            assert_eq!(after, before, "a rejected TLS handshake must never reach the relay - no session established for it, ever");
+
+            state.0.lock().unwrap().take().unwrap().stop();
+        });
+    }
+
+    /// Mirrors `commands_refuse_without_the_gate_and_run_a_room_on_the_mock_
+    /// runtime`'s own "the port is closed after room_stop" check
+    /// (src/room_gate_test.rs), ported to the TLS port: `Live::stop()` must
+    /// abort the TLS accept task exactly as thoroughly as the plaintext one
+    /// - a leaked TLS listener task after `room_stop` would be a real,
+    /// silent resource leak (measured methodology: a raw TCP connect
+    /// refusing/timing out is the same proof-of-closure the existing
+    /// plaintext test uses, since a still-bound-but-unaccepted port and a
+    /// truly-closed port are told apart by whether the OS still completes
+    /// the three-way handshake at all).
+    #[test]
+    fn room_stop_frees_the_tls_port_exactly_as_the_plaintext_port() {
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        rt.block_on(async {
+            let state = RoomState::default();
+            let deliver: Deliver = Box::new(|_v: Value| {});
+            let info = start_room(&state, Some(0), Some(0), ROOM, deliver).await.expect("start_room");
+            assert!(self_probe("127.0.0.1", info.tls_port).await, "the TLS port must be reachable while the room is open");
+
+            let prev = state.0.lock().unwrap().take();
+            assert!(prev.is_some());
+            prev.unwrap().stop();
+
+            tokio::time::sleep(Duration::from_millis(150)).await; // the aborted accept task drops the listener on its next poll
+            let refused = tokio::time::timeout(Duration::from_secs(2), TcpStream::connect(("127.0.0.1", info.tls_port))).await;
+            assert!(!matches!(refused, Ok(Ok(_))), "the TLS port must be closed after room_stop, exactly like the plaintext one");
+        });
     }
 }
