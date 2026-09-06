@@ -243,9 +243,18 @@ const runBtn = page.locator("button", { hasText: /Run automated checks/ });
 const runAgainBtn = page.locator("button", { hasText: /Run again/ });
 let trapClosed = { ranBaseline: false, ranBroken: false };
 
+// Poll for the "Status bar theming" card to actually be rendered rather
+// than assuming a fixed sleep outlasts a full Diagnostics run - reproduced
+// on a real CI run (ci.yml's genuinely unbounded per-shard concurrency):
+// a 400ms sleep read the card before the suite had finished, as null.
+const waitForCard = () => page.waitForFunction(
+  () => Array.from(document.querySelectorAll(".ob-plan-cat")).some((n) => /status bar theming/i.test(n.textContent || "")),
+  null, { timeout: 8000 },
+).catch(() => {});
+
 if (await runBtn.count()) {
   await runBtn.click();
-  await page.waitForTimeout(400);
+  await waitForCard();
   trapClosed.ranBaseline = true;
   trapClosed.baselineText = await statusBarCardText();
 
@@ -257,7 +266,7 @@ if (await runBtn.count()) {
     dbg.parseColor = () => ["not", "a", "number"]; // invalid triple -> validRgb should be false
   });
   await runAgainBtn.click();
-  await page.waitForTimeout(400);
+  await waitForCard();
   trapClosed.ranBroken = true;
   trapClosed.brokenText = await statusBarCardText();
 

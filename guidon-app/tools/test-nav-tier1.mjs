@@ -206,7 +206,15 @@ const noise = [];
   await page.locator(".nav-more-btn").click();
   await page.waitForTimeout(400);
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.waitForTimeout(300);
+  // SIDEBAR_MQ's "change" listener closes the drawer essentially
+  // synchronously with the viewport flip - but that still means "as soon as
+  // the main thread gets to run it," and a fixed 300ms sleep assumes that
+  // happens fast. Reproduced on a real CI run (ci.yml's genuinely unbounded
+  // per-shard concurrency, several Chromiums contending for the runner's
+  // CPU): the callback hadn't run yet at 300ms. Poll for the real end state
+  // instead of guessing a bigger fixed delay; .catch keeps this from
+  // throwing on a genuine miss so the assertion below still reports it.
+  await page.waitForFunction(() => !document.querySelector(".nav-drawer-back"), null, { timeout: 5000 }).catch(() => {});
   const afterResize = await page.evaluate(() => {
     const back = document.querySelector(".nav-drawer-back");
     // #/home specifically: it's the one nav item NAV_GROUPS leaves
