@@ -30935,12 +30935,32 @@ window.G = window.G || {};
       if (rendered) {
         card.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
       } else {
-        let passes = 4;
+        // Re-check (2026-09-06), two rounds. First: a fixed pass count
+        // (originally 4) ran out before converging under ci.yml's own
+        // genuinely unbounded per-shard concurrency - each pass's two rAFs
+        // can be delayed or dropped when several Chromiums contend for the
+        // runner's CPU, so 4 passes bought far fewer real frames than an
+        // uncontended machine gets. Bounding by real elapsed time instead
+        // of a pass count fixed that, but a SECOND, contention-independent
+        // gap remained at a narrow (single-column, ~150-card-tall) viewport:
+        // a single pass landing within 1px of the pass before it is a weak
+        // signal there - a long tail of still-estimated cards further down
+        // the column each correct by a shrinking fraction of a px per pass,
+        // so consecutive passes can look "stable" while the position is
+        // still creeping (measured: settled 9px short at 360px with zero
+        // contention, no other suite running). Require three passes in a
+        // row within 1px of each other, not just the one before it; the
+        // wall-clock deadline (generous, not a pass count) is the only
+        // other way out, as a backstop against a pathological loop.
+        const deadline = performance.now() + 2000;
+        let stableStreak = 0;
         const settle = () => {
           card.scrollIntoView({ behavior: "auto", block: "start" });
           const top = card.getBoundingClientRect().top;
           requestAnimationFrame(() => requestAnimationFrame(() => {
-            if (--passes > 0 && Math.abs(card.getBoundingClientRect().top - top) > 1) settle();
+            const settled = Math.abs(card.getBoundingClientRect().top - top) <= 1;
+            stableStreak = settled ? stableStreak + 1 : 0;
+            if (stableStreak < 3 && performance.now() < deadline) settle();
           }));
         };
         settle();
