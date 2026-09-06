@@ -37,12 +37,33 @@ await page.waitForTimeout(700);
 const editorVisible = await page.evaluate(() => /Reminders/.test(document.body.textContent || "") && !!document.querySelector('input[aria-label="Reminder date"]'));
 editorVisible ? ok("Reminders editor renders on the Profile view") : bad("Reminders editor / date input not found");
 
+// --- instrument G.db.get to count reads of the "reminders:v1" row ---
+// Perf fix verification: add()/remove() already return the freshly-mutated
+// list they just saved, but their button handlers used to hand that value
+// to redraw() ANYWAY and let redraw() re-fetch the identical row from
+// IndexedDB via its own load() call - one wasted "kv"/"reminders:v1" read
+// per add/remove click. G.db.get is wrapped here (not spied via network,
+// since IndexedDB access never crosses the network layer) to count real
+// calls for that exact store+key across a single click, so a regression
+// back to "redraw() always reloads" fails this test instead of merely
+// looking plausible.
+await page.evaluate(() => {
+  window.__kvGetCount = 0;
+  const origGet = window.G.db.get.bind(window.G.db);
+  window.G.db.get = function (store, key) {
+    if (store === "kv" && key === "reminders:v1") window.__kvGetCount++;
+    return origGet(store, key);
+  };
+});
+
 // --- add one ---
 const future = new Date(Date.now() + 10 * 86400000).toISOString().slice(0, 10);
 await page.fill('input[aria-label="Reminder label"]', "Test reminder");
 await page.fill('input[aria-label="Reminder date"]', future);
+await page.evaluate(() => { window.__kvGetCount = 0; });
 await page.locator("button", { hasText: /^Add reminder$/ }).click();
 await page.waitForTimeout(500);
+const addReadCount = await page.evaluate(() => window.__kvGetCount);
 
 const afterAdd = await page.evaluate(async () => (await window.G.db.get("kv", "reminders:v1")).v || []);
 afterAdd.length === 1 ? ok("Add reminder persists a new entry") : bad("reminders:v1 length after add: " + afterAdd.length);
@@ -51,11 +72,19 @@ afterAdd[0] && afterAdd[0].label === "Test reminder" ? ok("the persisted entry's
 const rowVisible = await page.evaluate(() => /Test reminder/.test(document.body.textContent || ""));
 rowVisible ? ok("the new reminder appears in the on-screen list") : bad("new reminder not shown in list");
 
+addReadCount === 1 ? ok("Add reminder reads \"reminders:v1\" from IndexedDB exactly once (add()'s own load(), not a second one in redraw())")
+  : bad("Add reminder read \"reminders:v1\" " + addReadCount + " time(s) - expected exactly 1 (redraw() should reuse add()'s already-fetched list, not re-fetch it)");
+
 // --- remove it ---
+await page.evaluate(() => { window.__kvGetCount = 0; });
 await page.locator("button", { hasText: /^Remove$/ }).first().click();
 await page.waitForTimeout(500);
+const removeReadCount = await page.evaluate(() => window.__kvGetCount);
 const afterRemove = await page.evaluate(async () => (await window.G.db.get("kv", "reminders:v1")).v || []);
 afterRemove.length === 0 ? ok("Remove deletes the reminder") : bad("reminders:v1 length after remove: " + afterRemove.length);
+
+removeReadCount === 1 ? ok("Remove reads \"reminders:v1\" from IndexedDB exactly once (remove()'s own load(), not a second one in redraw())")
+  : bad("Remove read \"reminders:v1\" " + removeReadCount + " time(s) - expected exactly 1 (redraw() should reuse remove()'s already-fetched list, not re-fetch it)");
 
 // --- storage cap: seed MAX_REMINDERS entries directly, confirm add() rejects one more ---
 const capResult = await page.evaluate(async () => {
