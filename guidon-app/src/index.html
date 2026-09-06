@@ -23286,6 +23286,33 @@ window.G = window.G || {};
       sel.addEventListener("change", () => { key = sel.value; count(); persistEssayDebounced(); });
       count(); stage.appendChild(p);
 
+      // Roadmap audit round 6, content-accuracy pass: a real board MOI
+      // literally assigns "a 5-7 page essay on direct, organizational, and
+      // strategic leadership, per ADP 6-22" - none of the four presets
+      // above name that prompt, and a Soldier who lands here to check word
+      // count against it had no signpost back to the doctrine that actually
+      // structures the essay. Reuses the same _doctrineSeed cross-link
+      // pattern board questions' "Related doctrine" links already use (see
+      // views.doctrine's draw(), which consumes and clears the seed) to
+      // pre-fill the Doctrine search rather than duplicating that content
+      // here - the doctrine card (topic "Levels of Leadership") is the
+      // must-have for this task; this link is the low-risk nice-to-have.
+      //
+      // Round 8 note: this hunk shipped once already (commit a03dff9,
+      // 2026-08-31) but was silently lost when round 6 was re-merged to
+      // main through a different integration path (PR #107) that carried
+      // the doctrine cards but not this cross-link. Restored here, this
+      // time with real test coverage (test-essay-drill.mjs) so a future
+      // re-merge divergence can't drop it silently again.
+      const levelsLink = el("div.panel", { style:"margin-top:10px" });
+      levelsLink.appendChild(el("div.eyebrow", { text:"Assigned the direct / organizational / strategic leadership essay?" }));
+      levelsLink.appendChild(el("p.hint", { text:"Some board MOIs assign a 5–7 page essay on direct, organizational, and strategic leadership per ADP 6-22. Structure it around what genuinely distinguishes the three levels — not just define them." }));
+      levelsLink.appendChild(el("button.btn.ghost.sm", { type:"button", text:"Review the Levels of Leadership doctrine →", onclick: () => {
+        if (G.views) G.views._doctrineSeed = "Levels of Leadership";
+        location.hash = "#/doctrine";
+      } }));
+      stage.appendChild(levelsLink);
+
       const std = el("div.panel", { style:"margin-top:10px" });
       std.appendChild(el("div.eyebrow", { text:"The five writing standards you are scored on" }));
       [["Purpose","Bottom line up front. Advanced places the main point inside the top 2% of the document and frontloads within every section."],
