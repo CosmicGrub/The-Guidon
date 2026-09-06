@@ -17,6 +17,7 @@
  */
 import { chromium, devices } from "playwright";
 import { serve } from "./server.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -31,13 +32,7 @@ async function bootToActiveCard(viewport) {
   page.on("console", (m) => { if (["error", "warning"].includes(m.type())) noise.push(m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
   await page.goto(url, { waitUntil: "load" });
-  await page.waitForTimeout(1000);
-  await page.evaluate(() => {
-    const t = [...document.querySelectorAll("button,.ob-mode-card,[role=button],.click")]
-      .find((e) => /guest session/i.test(e.textContent || ""));
-    if (t) t.click();
-  });
-  await page.waitForTimeout(1000);
+  await dismissOnboarding(page);
   await page.evaluate(() => { location.hash = "#/board"; });
   await page.waitForTimeout(1000);
   await page.evaluate(() => { const row = document.querySelector(".list-detail-row"); if (row) row.click(); });
@@ -210,9 +205,7 @@ async function bootToActiveCard(viewport) {
   const desktopCtx = await browser.newContext({ viewport: { width: 1440, height: 900 }, hasTouch: false });
   const desktopPage = await desktopCtx.newPage();
   await desktopPage.goto(url, { waitUntil: "load" });
-  await desktopPage.waitForTimeout(700);
-  const dGuest = desktopPage.locator(".ob-mode-card", { hasText: /guest session/i }).first();
-  if (await dGuest.count()) { await dGuest.click(); await desktopPage.waitForTimeout(700); }
+  await dismissOnboarding(desktopPage);
   await desktopPage.evaluate(() => { location.hash = "#/board"; });
   await desktopPage.waitForTimeout(700);
   const desktopHint = await desktopPage.evaluate(() => ({
@@ -237,9 +230,7 @@ async function bootToActiveCard(viewport) {
   const touchCtx = await browser.newContext({ ...devices["Pixel 7"], viewport: { width: 412, height: 915 } });
   const touchPage = await touchCtx.newPage();
   await touchPage.goto(url, { waitUntil: "load" });
-  await touchPage.waitForTimeout(700);
-  const tGuest = touchPage.locator(".ob-mode-card", { hasText: /guest session/i }).first();
-  if (await tGuest.count()) { await tGuest.click(); await touchPage.waitForTimeout(700); }
+  await dismissOnboarding(touchPage);
   await touchPage.evaluate(() => { location.hash = "#/board"; });
   await touchPage.waitForTimeout(700);
   const touchText = await touchPage.evaluate(() => ({

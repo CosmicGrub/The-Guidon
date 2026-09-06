@@ -30,6 +30,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -43,14 +44,7 @@ page.on("console", (m) => { if (m.type() === "error") noise.push(m.text()); });
 page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 
 await page.goto(url, { waitUntil: "load" });
-await page.waitForTimeout(700);
-const guestCard = page.locator(".ob-mode-card", { hasText: /guest session/i }).first();
-await guestCard.waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
-if (await guestCard.count()) {
-  await guestCard.click();
-  await page.locator("#ob-overlay").waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
-}
-await page.waitForTimeout(400);
+await dismissOnboarding(page);
 
 // ── Seed deterministic srs: rows across two real categories ─────────────
 // Picks the first two categories (alphabetical, same order renderReadiness

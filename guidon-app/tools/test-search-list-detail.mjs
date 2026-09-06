@@ -25,6 +25,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -39,13 +40,7 @@ async function boot(viewport) {
   page.on("console", (m) => { if (["error", "warning"].includes(m.type())) noise.push(m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
   await page.goto(url, { waitUntil: "load" });
-  await page.waitForTimeout(1100);
-  await page.evaluate(() => {
-    const t = [...document.querySelectorAll("button,.ob-mode-card,[role=button],.click")]
-      .find((e) => /guest session/i.test(e.textContent || ""));
-    if (t) t.click();
-  });
-  await page.waitForTimeout(1100);
+  await dismissOnboarding(page);
   await page.evaluate(() => { location.hash = "#/search"; });
   await page.waitForTimeout(500);
   return { page, noise };

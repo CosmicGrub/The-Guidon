@@ -32,6 +32,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -45,12 +46,7 @@ async function newPageAtSelftest() {
   const page = await context.newPage();
   await page.goto(url, { waitUntil: "load" });
   await page.waitForTimeout(700);
-  const guestCard = page.locator(".ob-mode-card", { hasText: /guest session/i }).first();
-  await guestCard.waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
-  if (await guestCard.count()) {
-    await guestCard.click();
-    await page.locator("#ob-overlay").waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
-  }
+  await dismissOnboarding(page);
   await page.waitForTimeout(300);
   await page.evaluate(() => { location.hash = "#/selftest"; });
   await page.waitForTimeout(500);

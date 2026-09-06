@@ -45,6 +45,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -60,12 +61,7 @@ async function bootTo(hash) {
   page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
   await page.goto(url, { waitUntil: "load" });
   await page.waitForTimeout(800);
-  const guest = page.locator(".ob-mode-card", { hasText: /guest session/i }).first();
-  await guest.waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
-  if (await guest.count()) {
-    await guest.click();
-    await page.locator("#ob-overlay").waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
-  }
+  await dismissOnboarding(page);
   await page.waitForTimeout(300);
   if (hash) { await page.evaluate((h) => { location.hash = h; }, hash); await page.waitForTimeout(600); }
   return { page, noise };
@@ -339,6 +335,27 @@ async function launchCounselGrowth(page) {
 
   const noiseFiltered = noise.filter((n) => !/favicon/.test(n));
   noiseFiltered.length === 0 ? ok("Mock Board: no console errors/warnings") : bad("Mock Board console noise: " + noiseFiltered.slice(0, 5).join(" | "));
+  await page.close();
+}
+
+// ---- S13 (2026-09-04): the topbar search button's hover/tooltip hint names
+// the "/" shortcut plainly. Read from the live built DOM, not the source.
+{
+  console.log("\n[S13] topbar search button hint");
+  const { page, noise } = await bootTo("#/home");
+  const attrs = await page.evaluate(() => {
+    const b = document.querySelector(".topbar-search-btn");
+    return b ? { title: b.getAttribute("title"), aria: b.getAttribute("aria-label") } : null;
+  });
+  if (!attrs) bad("no .topbar-search-btn in the topbar");
+  else {
+    attrs.title === "Press / to search"
+      ? ok("topbar search button title is " + JSON.stringify(attrs.title))
+      : bad("topbar search button title: got " + JSON.stringify(attrs.title) + ', expected "Press / to search"');
+    attrs.aria ? ok("topbar search button keeps an aria-label (" + JSON.stringify(attrs.aria) + ")") : bad("topbar search button lost its aria-label");
+  }
+  const noiseFiltered = noise.filter((n) => !/favicon/.test(n));
+  noiseFiltered.length === 0 ? ok("S13: no console errors/warnings") : bad("S13 console noise: " + noiseFiltered.slice(0, 5).join(" | "));
   await page.close();
 }
 

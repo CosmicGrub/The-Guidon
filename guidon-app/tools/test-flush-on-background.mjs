@@ -31,6 +31,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -43,19 +44,8 @@ const noise = [];
 page.on("console", (m) => { if (m.type() === "error") noise.push(m.text()); });
 page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 
-async function dismissOnboarding() {
-  const guestCard = page.locator(".ob-mode-card", { hasText: /guest session/i }).first();
-  await guestCard.waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
-  if (await guestCard.count()) {
-    await guestCard.click();
-    await page.locator("#ob-overlay").waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
-  }
-  await page.waitForTimeout(300);
-}
-
 await page.goto(url, { waitUntil: "load" });
-await page.waitForTimeout(700);
-await dismissOnboarding();
+await dismissOnboarding(page);
 
 async function gotoFullPPW() {
   await page.evaluate(() => { location.hash = "#/board"; });
@@ -95,14 +85,13 @@ await page.evaluate(() => {
 await page.waitForTimeout(150);
 
 await page.reload({ waitUntil: "load" });
-await page.waitForTimeout(1000);
 // A reload re-runs onboarding for a guest session (the profile is
 // in-memory only, unlike guidon:ppw:v1 itself, which is real IndexedDB and
 // survives) - dismiss it again, same as the very first page load above,
 // before touching the Points/Full PPW view underneath it (same idiom
 // test-ppw.mjs's own persistence check and test-settings-toggles.mjs both
 // already establish).
-await dismissOnboarding();
+await dismissOnboarding(page);
 await gotoFullPPW();
 
 const czAfterFlushReload = await page.locator('input[aria-label="Months of combat-zone service"]').inputValue();

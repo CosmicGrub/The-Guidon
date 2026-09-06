@@ -70,6 +70,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -99,16 +100,9 @@ const scaleHelperSrc = `
 
 await page.goto(url, { waitUntil: "load" });
 await page.addScriptTag({ content: scaleHelperSrc });
-await page.waitForTimeout(700);
 
 // Bypass onboarding via a guest session.
-const guestCard = page.locator(".ob-mode-card", { hasText: /guest session/i }).first();
-await guestCard.waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
-if (await guestCard.count()) {
-  await guestCard.click();
-  await page.locator("#ob-overlay").waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
-}
-await page.waitForTimeout(300);
+await dismissOnboarding(page);
 
 /* ------------------------------------------------------------------ *
  * (0) Confirm the un-touched, no-transition siblings really have no

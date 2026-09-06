@@ -20,6 +20,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -34,9 +35,7 @@ async function bootTo(hash, viewport, { clearStorage = true } = {}) {
   page.on("console", (m) => { if (["error", "warning"].includes(m.type())) noise.push(m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
   await page.goto(url, { waitUntil: "load" });
-  await page.waitForTimeout(800);
-  const guest = page.locator(".ob-mode-card", { hasText: /guest session/i }).first();
-  if (await guest.count()) { await guest.click(); await page.waitForTimeout(800); }
+  await dismissOnboarding(page);
   if (hash) { await page.evaluate((h) => { location.hash = h; }, hash); await page.waitForTimeout(800); }
   return { page, noise };
 }

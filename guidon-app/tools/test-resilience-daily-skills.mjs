@@ -11,13 +11,30 @@
  * day-increment (d.setUTCDate(d.getUTCDate() + 1) -> + 2), rebuilt, and
  * reran every existing test touching this route - all still passed 100%
  * clean. This file closes that gap.
+ *
+ * Calendar day = the Soldier's LOCAL day. The app keys the log by
+ * localIsoDate() (local year-month-day) and lights the streak only when the
+ * newest entry is the local today or yesterday. This suite used to compute
+ * its expected dates with toISOString() (UTC), which is tomorrow's date
+ * from 19:00 local in Central Daylight Time, so it went red every evening
+ * ("persisted date ... 2026-09-04" while it expected 2026-09-05, and the
+ * seeded "today" was a day the app had not reached yet, so no streak). The
+ * expectation is now computed IN THE PAGE with local getters, and the
+ * straddle is provable on demand: GUIDON_CLOCK=<local date-time> installs a
+ * Playwright page clock at that instant (time then flows normally), e.g.
+ *   GUIDON_CLOCK=2026-09-04T23:30:00 node tools/test-resilience-daily-skills.mjs
+ *   GUIDON_CLOCK=2026-09-05T00:30:00 node tools/test-resilience-daily-skills.mjs
+ * The INFO line prints the page's local day next to its UTC day so a
+ * straddling run is visible in the output.
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
 const bad = (m) => { fails++; console.log("  FAIL  " + m); };
+const info = (m) => console.log("  INFO  " + m);
 
 const { server, url } = await serve("web");
 const browser = await chromium.launch();
@@ -26,14 +43,32 @@ const noise = [];
 page.on("console", (m) => { if (m.type() === "error") noise.push(m.text()); });
 page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 
+const FAKE_CLOCK = process.env.GUIDON_CLOCK || "";
+if (FAKE_CLOCK) {
+  const at = new Date(FAKE_CLOCK);
+  if (Number.isNaN(at.getTime())) { bad("GUIDON_CLOCK is not a date: " + FAKE_CLOCK); process.exit(1); }
+  await page.clock.install({ time: at });
+  info("page clock installed at " + at.toString());
+}
+/* The page's own calendar: local day strings, computed with the same local
+   getters a Soldier's device uses. Read fresh each time (the clock flows). */
+async function pageDays() {
+  return page.evaluate(() => {
+    const iso = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    const t = new Date();
+    return {
+      today: iso(t),
+      yest: iso(new Date(t.getFullYear(), t.getMonth(), t.getDate() - 1)),
+      twoAgo: iso(new Date(t.getFullYear(), t.getMonth(), t.getDate() - 2)),
+      utc: t.toISOString().slice(0, 10),
+      clock: t.toString(),
+    };
+  });
+}
+
 await page.goto(url, { waitUntil: "load" });
 await page.waitForTimeout(700);
-const guestCard = page.locator(".ob-mode-card", { hasText: /guest session/i }).first();
-await guestCard.waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
-if (await guestCard.count()) {
-  await guestCard.click();
-  await page.locator("#ob-overlay").waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
-}
+await dismissOnboarding(page);
 await page.waitForTimeout(400);
 
 const LOG_KEY = "resilience:practiceLog:v1";
@@ -65,8 +100,9 @@ await logBtn.click();
 await page.waitForTimeout(300);
 const afterClickLog = await getLog();
 afterClickLog.length === 1 ? ok("clicking the button persists exactly one entry to kv 'resilience:practiceLog:v1'") : bad("log after click: " + JSON.stringify(afterClickLog));
-const todayStr = new Date().toISOString().slice(0, 10);
-(afterClickLog[0] && afterClickLog[0].date === todayStr) ? ok("the persisted entry's date is today (" + todayStr + ")") : bad("persisted date: " + JSON.stringify(afterClickLog[0]));
+const days = await pageDays();
+info("page clock " + days.clock + " -> local day " + days.today + ", UTC day " + days.utc + (days.today === days.utc ? "" : " (STRADDLE: the two calendars disagree right now)"));
+(afterClickLog[0] && afterClickLog[0].date === days.today) ? ok("the persisted entry's date is the LOCAL today (" + days.today + ")") : bad("persisted date: " + JSON.stringify(afterClickLog[0]) + ", expected local today " + days.today);
 (await logBtn.isVisible()) === false ? ok("the log button hides itself immediately after a successful log") : bad("log button is still visible after clicking it");
 const confirmMsg = page.locator('[role="status"][aria-live="polite"]', { hasText: "Logged for today" });
 (await confirmMsg.isVisible()) ? ok("a visible '✓ Logged for today' confirmation appears in its place") : bad("post-click confirmation message not visible");
@@ -92,17 +128,16 @@ await setLog([
   { date: "2026-08-29", skill: "seed-b", ts: 2 },
 ]);
 // The streak only lights up when the most recent log is "live" (today or
-// yesterday) - anchor the seeded dates to the real current day so this
-// assertion holds regardless of when the suite runs.
-await page.evaluate(async (key) => {
-  const today = new Date(); today.setUTCHours(0, 0, 0, 0);
-  const yest = new Date(today.getTime() - 86400000);
-  const iso = (d) => d.toISOString().slice(0, 10);
-  await window.G.db.setSetting(key, [
-    { date: iso(yest), skill: "seed-a", ts: 1 },
-    { date: iso(today), skill: "seed-b", ts: 2 },
+// yesterday) - anchor the seeded dates to the page's LOCAL current day so
+// this assertion holds regardless of when the suite runs (UTC-anchored
+// seeds put "today" one day ahead of the app every evening in CDT).
+{
+  const d = await pageDays();
+  await setLog([
+    { date: d.yest, skill: "seed-a", ts: 1 },
+    { date: d.today, skill: "seed-b", ts: 2 },
   ]);
-}, LOG_KEY);
+}
 await gotoHealth();
 const streakText = await page.locator("span", { hasText: /resilience practice streak/ }).textContent().catch(() => null);
 /^🌱 2-day resilience practice streak$/.test((streakText || "").trim())
@@ -110,15 +145,13 @@ const streakText = await page.locator("span", { hasText: /resilience practice st
   : bad("streak banner text for 2 consecutive days: " + JSON.stringify(streakText));
 
 // ==================== 5) A one-day gap correctly suppresses the streak ====================
-await page.evaluate(async (key) => {
-  const today = new Date(); today.setUTCHours(0, 0, 0, 0);
-  const twoAgo = new Date(today.getTime() - 2 * 86400000); // gap: yesterday is missing
-  const iso = (d) => d.toISOString().slice(0, 10);
-  await window.G.db.setSetting(key, [
-    { date: iso(twoAgo), skill: "seed-a", ts: 1 },
-    { date: iso(today), skill: "seed-b", ts: 2 },
+{
+  const d = await pageDays();
+  await setLog([
+    { date: d.twoAgo, skill: "seed-a", ts: 1 }, // gap: yesterday is missing
+    { date: d.today, skill: "seed-b", ts: 2 },
   ]);
-}, LOG_KEY);
+}
 await gotoHealth();
 const noStreakText = await page.locator("span", { hasText: /resilience practice streak/ }).count();
 noStreakText === 0 ? ok("a one-day gap in the log correctly suppresses the streak banner entirely") : bad("streak banner rendered despite a real gap in the log");

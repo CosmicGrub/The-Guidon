@@ -22,6 +22,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -34,16 +35,6 @@ const noise = [];
 page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push(m.type() + ": " + m.text()); });
 page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 
-async function openGuestSession() {
-  const guestCard = page.locator(".ob-mode-card", { hasText: /guest session/i }).first();
-  await guestCard.waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
-  if (await guestCard.count()) {
-    await guestCard.click();
-    await page.locator("#ob-overlay").waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
-  }
-  await page.waitForTimeout(300);
-}
-
 async function openAdvanced() {
   const btn = page.getByRole("button", { name: /advanced settings/i });
   const expanded = await btn.getAttribute("aria-expanded").catch(() => null);
@@ -52,8 +43,7 @@ async function openAdvanced() {
 }
 
 await page.goto(url, { waitUntil: "load" });
-await page.waitForTimeout(700);
-await openGuestSession();
+await dismissOnboarding(page);
 
 // ============================================================
 // 0) FIXTURE SANITY - re-verify the roadmap's own headline claim against
@@ -170,8 +160,7 @@ await page.evaluate(async () => {
   await window.G.db.put("kv", { k: "settings", v: sv });
 });
 await page.reload({ waitUntil: "load" });
-await page.waitForTimeout(1000);
-await openGuestSession();
+await dismissOnboarding(page);
 await page.evaluate(() => { location.hash = "#/forms"; });
 await page.waitForTimeout(600);
 await page.fill('input[aria-label="Search forms"]', "authority for leave");

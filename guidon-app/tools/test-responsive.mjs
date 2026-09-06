@@ -15,6 +15,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -30,13 +31,7 @@ async function topbarState(width) {
   page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push(m.text()); });
   page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
   await page.goto(url, { waitUntil: "load" });
-  await page.waitForTimeout(700);
-  await page.evaluate(() => {
-    const t = [...document.querySelectorAll("button,.ob-mode-card,[role=button],.click")]
-      .find((e) => /guest session/i.test(e.textContent || ""));
-    if (t) t.click();
-  });
-  await page.waitForTimeout(700);
+  await dismissOnboarding(page);
   const s = await page.evaluate(() => {
     const h1 = document.querySelector(".topbar .brand h1");
     const chip = document.querySelector(".status-chip");
