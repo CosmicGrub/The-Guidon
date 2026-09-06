@@ -170,11 +170,21 @@ try {
   child.stdout.on("data", () => {});
   const exited = new Promise((res) => child.on("exit", (code, signal) => { exitInfo = { code, signal, at: Date.now() }; res(exitInfo); }));
   info("(1) launched pid " + child.pid + " with GUIDON_ROOM_TEST=1, WEBVIEW2_USER_DATA_FOLDER=" + dataDir);
-  const up = await until(cdpUp, 30000, 300);
-  if (!up.hit) { bad("(1) " + CDP + "/json/version never answered within 30 s" + (exitInfo ? " (the exe exited " + JSON.stringify(exitInfo) + ")" : "")); throw new Error("no CDP"); }
+  // Agnosticism audit, 6 Sep 2026 (sleep-baseline rule, D1): these two waits
+  // sat right next to the boot check below and never got the same
+  // concurrency-aware scaling when BOOT_TIMEOUT_MS was introduced earlier
+  // this session, on the theory that this specific reproduction's
+  // bottleneck was the in-page JS boot, not CDP/process startup (CDP
+  // answered in 636ms even under the contention that broke the boot
+  // check). That's a real distinction for THIS measured case, not a
+  // principled reason to leave these two unscaled for every future,
+  // possibly-worse-contended run - the standing rule is scale every wait
+  // in the file the same way once one of them is found to need it.
+  const up = await until(cdpUp, BOOT_TIMEOUT_MS, 300);
+  if (!up.hit) { bad("(1) " + CDP + "/json/version never answered within " + BOOT_TIMEOUT_MS + " ms" + (exitInfo ? " (the exe exited " + JSON.stringify(exitInfo) + ")" : "")); throw new Error("no CDP"); }
   ok("(1) WebView2 remote debugging answered after " + up.ms + " ms: " + (up.value.Browser || "?"));
-  const target = await until(async () => { const list = await (await fetch(CDP + "/json/list", { signal: AbortSignal.timeout(1500) })).json(); return list.find((t) => t.type === "page" && t.url && t.url !== "about:blank") || null; }, 30000, 300);
-  if (!target.hit) { bad("(1) no app page target within 30 s"); throw new Error("no page"); }
+  const target = await until(async () => { const list = await (await fetch(CDP + "/json/list", { signal: AbortSignal.timeout(1500) })).json(); return list.find((t) => t.type === "page" && t.url && t.url !== "about:blank") || null; }, BOOT_TIMEOUT_MS, 300);
+  if (!target.hit) { bad("(1) no app page target within " + BOOT_TIMEOUT_MS + " ms"); throw new Error("no page"); }
   page = await attachToPage(CDP, (t) => t.url === target.value.url);
   const booted = await until(() => page.evaluate(() => !!(window.G && window.G.routes && window.G.routes.length && window.G.studyGroup && window.G.roomSchema && window.G.store)), BOOT_TIMEOUT_MS, 250);
   // Every other until() above bails out immediately on a miss (its very next
@@ -476,10 +486,11 @@ try {
     const exited2 = new Promise((res) => child2.on("exit", (code, signal) => res({ code, signal })));
     child = child2; dataDir = dataDir2;
     info("(10) second launch pid " + child2.pid + " with GUIDON_ROOM_LAN_IP=192.0.2.1 (TEST-NET-1: the X10 probe must fail)");
-    const up2 = await until(cdpUp, 30000, 300);
-    if (!up2.hit) { bad("(10) second launch: " + CDP + "/json/version never answered within 30 s"); throw new Error("no CDP"); }
-    const t2 = await until(async () => { const list = await (await fetch(CDP + "/json/list", { signal: AbortSignal.timeout(1500) })).json(); return list.find((t) => t.type === "page" && t.url && t.url !== "about:blank") || null; }, 30000, 300);
-    if (!t2.hit) { bad("(10) no app page target within 30 s"); throw new Error("no page"); }
+    // Same sleep-baseline scaling as the first launch's up/target waits above.
+    const up2 = await until(cdpUp, BOOT_TIMEOUT_MS, 300);
+    if (!up2.hit) { bad("(10) second launch: " + CDP + "/json/version never answered within " + BOOT_TIMEOUT_MS + " ms"); throw new Error("no CDP"); }
+    const t2 = await until(async () => { const list = await (await fetch(CDP + "/json/list", { signal: AbortSignal.timeout(1500) })).json(); return list.find((t) => t.type === "page" && t.url && t.url !== "about:blank") || null; }, BOOT_TIMEOUT_MS, 300);
+    if (!t2.hit) { bad("(10) no app page target within " + BOOT_TIMEOUT_MS + " ms"); throw new Error("no page"); }
     page = await attachToPage(CDP, (t) => t.url === t2.value.url);
     const booted2 = await until(() => page.evaluate(() => !!(window.G && window.G.routes && window.G.routes.length && window.G.studyGroup && window.G.store && window.__GUIDON_ROOM__)), BOOT_TIMEOUT_MS, 250);
     // Same class of bug as (1)'s boot check, and worse here: the result used
