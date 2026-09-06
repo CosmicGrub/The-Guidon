@@ -1,10 +1,15 @@
 /**
- * Static pattern lint for GUIDON's three most-repeated bug shapes (full
- * history in GUIDON_MASTERFILE.md, roughly sessions 52-62 - v1.4.0's
- * legibility pass, v1.4.4's 49-agent audit, the follow-up 122-agent sweep).
- * Pure regex/string checks against src/index.html - no browser, no build,
- * runs in milliseconds. Wired in as the FIRST step of `npm test` so a bad
- * pattern fails fast, before any Playwright suite even spins up a browser.
+ * Static pattern lint, originally for GUIDON's three most-repeated bug
+ * shapes (full history in GUIDON_MASTERFILE.md, roughly sessions 52-62 -
+ * v1.4.0's legibility pass, v1.4.4's 49-agent audit, the follow-up
+ * 122-agent sweep), joined by a fourth check (f) from the 6 September 2026
+ * agnosticism audit that isn't a repeat-bug-shape guard so much as a
+ * standing drift guard for a design promise (no RTCPeerConnection config
+ * anywhere may carry a non-empty iceServers list). Pure regex/string
+ * checks against src/index.html and src/app-modules/*.js - no browser, no
+ * build, runs in milliseconds. Wired in as the FIRST step of `npm test` so
+ * a bad pattern fails fast, before any Playwright suite even spins up a
+ * browser.
  */
 import { readFile, readdir } from "node:fs/promises";
 import { MODE_TEXT } from "./dismiss-onboarding.mjs";
@@ -669,6 +674,51 @@ console.log("lint-patterns: static regression guard for 3 repeat bug shapes\n");
     } else {
       ok("(e) no old onboarding-dismissal idiom found in tools/*.mjs (all use the shared tools/dismiss-onboarding.mjs helper)");
     }
+  }
+}
+
+/* ======================================================================
+   (f) No RTCPeerConnection configuration anywhere in src/ may carry a
+   non-empty iceServers list. Agnosticism audit, 6 Sep 2026 (network-
+   agnostic, N2): the "no server, ever" promise and the network-priority-
+   order rule (roadmap lock-in Q15 - local link first, internet/carrier
+   connectivity never relied on) are enforced today only by being written
+   down and by the fact that nothing currently calls RTCPeerConnection at
+   all (a direct source search found zero hits, same as this check's own
+   baseline). Nothing catches the day a well-intentioned "add a STUN
+   server for reliability" patch quietly reintroduces an internet
+   dependency - this is that catch, the transport-layer equivalent of
+   test-room-privacy.mjs's wire-schema allowlist test. Scans every source
+   file a future WebRTC transport could plausibly live in; a bare
+   `new RTCPeerConnection()` (no config, or a config with no iceServers
+   key, or an empty array) is fine - anything with a non-empty array is a
+   FAIL, no exceptions, because the whole point is that this never needs a
+   judgment call at the point someone adds one. */
+{
+  const RTC_SRC_FILES = [FILE, ...(await readdir("src/app-modules").catch(() => [])).filter((f) => f.endsWith(".js")).map((f) => "src/app-modules/" + f)];
+  const RTC_CALL_RE = /new\s+RTCPeerConnection\s*\(([^)]*)\)/g;
+  let rtcHits = 0, rtcOffenders = [];
+  for (const f of RTC_SRC_FILES) {
+    const text = f === FILE ? html : await readFile(f, "utf-8").catch(() => "");
+    if (!text) continue;
+    let m;
+    while ((m = RTC_CALL_RE.exec(text))) {
+      rtcHits++;
+      const arg = m[1].trim();
+      // A non-empty iceServers array: iceServers:[ followed by anything
+      // other than immediate whitespace + ]. Deliberately loose (matches
+      // even a commented-out or malformed attempt) - a false positive here
+      // just means double-checking a line by eye, which is cheap; a false
+      // negative would defeat the whole point of the check.
+      const iceMatch = /iceServers\s*:\s*\[\s*([^\]])/.exec(arg);
+      if (iceMatch) rtcOffenders.push({ file: f, line: text.slice(0, m.index).split("\n").length, snippet: m[0].slice(0, 140) });
+    }
+  }
+  if (rtcOffenders.length) {
+    bad(`(f) ${rtcOffenders.length} RTCPeerConnection call(s) with a non-empty iceServers list - this reintroduces an internet/carrier dependency the roadmap's network-priority-order rule (Q15) explicitly rules out`);
+    for (const o of rtcOffenders) console.log(`         ${o.file}:${o.line}: ${o.snippet}`);
+  } else {
+    ok(`(f) no RTCPeerConnection config with a non-empty iceServers list (${rtcHits} RTCPeerConnection call(s) found, all local-only or none at all)`);
   }
 }
 
