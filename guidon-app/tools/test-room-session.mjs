@@ -337,10 +337,21 @@ try {
   const renders = after.renders - rendersBefore;
   const bound = Math.max(12, Math.ceil(burstMs / 100) + 2);
   renders <= bound ? ok("host re-rendered " + renders + " time(s) for 900 intents (bound " + bound + " at >=100 ms coalescing)") : bad("host re-rendered " + renders + " times for 900 intents (bound " + bound + ")");
-  const conv = await until(() => Promise.all([P1, P2, P3, P4].map((p) => p.evaluate(() => G.studyGroup.state().seq))).then((s) => s.every((x) => x === after.seq) ? s.join(",") : null), 10000);
+  // Widened from 10000ms (measured 2026-09-06: a full 151-suite concurrent
+  // run genuinely needs longer than 10s for 4 pages to relay+apply 900
+  // rapid-fire intents each while several other heavy suites contend for
+  // the same CPU - "peer seqs after burst: null vs 814" was 4 peers still
+  // mid-catch-up, not a real desync). The line below used to run
+  // unconditionally even on a miss here, so a slow-but-not-actually-broken
+  // convergence crashed with an unrelated-looking "reading 'score' of
+  // undefined" instead of just this one accurate bad() - guarded now, same
+  // fix as the other until()-then-assume-success spots this session.
+  const conv = await until(() => Promise.all([P1, P2, P3, P4].map((p) => p.evaluate(() => G.studyGroup.state().seq))).then((s) => s.every((x) => x === after.seq) ? s.join(",") : null), 30000);
   conv.hit ? ok("every peer converged on the host's seq " + after.seq + " after the burst") : bad("peer seqs after burst: " + JSON.stringify(conv.value) + " vs " + after.seq);
-  const tallyAfter = await H.evaluate(() => G.studyGroup.state().seats.find((x) => x.seatNo === 2).score);
-  info("candidate tally after the burst (last value per scorer wins): " + tallyAfter);
+  if (conv.hit) {
+    const tallyAfter = await H.evaluate(() => G.studyGroup.state().seats.find((x) => x.seatNo === 2).score);
+    info("candidate tally after the burst (last value per scorer wins): " + tallyAfter);
+  }
 
   /* card 3 -> recap -> end */
   if (!(await clickWhen(H, "button.sg-advance"))) bad("no .sg-advance on the host");
