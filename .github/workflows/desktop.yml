@@ -1,0 +1,346 @@
+name: Desktop
+
+# GUIDON desktop (Tauri 2) bundle-and-smoke workflow - desktop plan T10.
+#
+# STATUS: AUTHORED-BUT-UNRUN. Written 2026-09-05 on a Windows laptop with no
+# CI access; no job below has ever executed on a GitHub runner, and NO PUSH
+# HAS BEEN AUTHORISED for this file or for anything else in the working
+# tree (standing rule: GUIDON work stays local until Chris says otherwise,
+# each time). Every job repeats that label in its own comment so a reader
+# landing on one job sees it.
+#
+# What WAS verified locally on 2026-09-05 against a from-tree debug build
+# (the same commands these jobs run, in the same order):
+#   - npm run build, then npx tauri build --debug --no-bundle
+#       -> src-tauri/target/debug/guidon.exe, 35.8 s wall (incremental)
+#   - powershell -File tools/desktop-smoke.ps1 src-tauri/target/debug/guidon.exe
+#       -> exit 0 twice: "Tauri Window" visible 112 / 113 ms after launch,
+#          centred 312,60 1296x919 then maximized at +521 / +530 ms, first
+#          frame flat #e8dfc9 (the configured backgroundColor), late frame
+#          882 colours, frames differ, 6 top-level windows (4 visible),
+#          exit 205 / 220 ms after WM_CLOSE with code 0, .window-state.json
+#          rewritten, WEBVIEW2_USER_DATA_FOLDER honoured (real profile
+#          untouched)
+#   - GUIDON_SELFTEST_OUT=<file> guidon.exe
+#       -> exit 0, routes 40, themes 24, windows ["main"], fork "tauri"
+#   - GUIDON_SELFTEST_EXPECT_ROUTES=999 -> exit 1 "routes 40 < expected 999"
+#   - cargo test --locked (src-tauri) -> 13 unit + 9 config tests passed,
+#     0 failed, 9.9 s wall on a warm target/
+#   - the smoke script's own RED: an exe with no "Tauri Window" exits 1
+#     after the 5 s window timeout; an exe stem already running exits 2
+# Nothing about macOS has been verified: there is no Mac here. bundle-macos
+# is authored from tauri.macos.conf.json (targets app+dmg, minimum 12.3,
+# ad-hoc identity "-") and the tauri-cli 2.11.4 --help text only.
+#
+# Action pins are copied byte-for-byte from ci.yml (SHA over mutable tag,
+# resolved there via `gh api repos/<owner>/<repo>/commits/<tag>`).
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'guidon-app/src-tauri/**'
+      - 'guidon-app/src/**'
+      - 'guidon-app/tools/build.mjs'
+      - 'guidon-app/tools/make-icons.mjs'
+      - 'guidon-app/tools/icon-spec.mjs'
+      - 'guidon-app/tools/desktop-smoke.ps1'
+      - 'guidon-app/tools/png-render-check.py'
+      - 'guidon-app/package.json'
+      - 'guidon-app/package-lock.json'
+      - '.github/workflows/desktop.yml'
+  pull_request:
+    paths:
+      - 'guidon-app/src-tauri/**'
+      - 'guidon-app/src/**'
+      - 'guidon-app/tools/build.mjs'
+      - 'guidon-app/tools/make-icons.mjs'
+      - 'guidon-app/tools/icon-spec.mjs'
+      - 'guidon-app/tools/desktop-smoke.ps1'
+      - 'guidon-app/tools/png-render-check.py'
+      - 'guidon-app/package.json'
+      - 'guidon-app/package-lock.json'
+      - '.github/workflows/desktop.yml'
+
+# One run per ref; a newer push to the same PR/branch cancels the older
+# run, main is never cancelled (same shape as ci.yml).
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  # Same pin and reasoning as ci.yml's env block.
+  NODE_VERSION: "24"
+  # Route floor for the R11 self-test gate. The page reported 40 routes on
+  # 2026-09-05; 35 leaves room for a route to be retired without a red
+  # build, while a broken route table (0, or a partial load) still fails.
+  GUIDON_SELFTEST_MIN_ROUTES: "35"
+
+defaults:
+  run:
+    working-directory: guidon-app
+
+jobs:
+  # ---------------------------------------------------------------------
+  # bundle-windows: AUTHORED-BUT-UNRUN. Debug build on purpose - it is the
+  # build the smoke script and the self-test were measured against, and a
+  # debug exe keeps its console (no windows_subsystem), which is what the
+  # smoke's window-class filter was written around. Artifacts are labelled
+  # smoke-only: nothing here is a release, nothing is signed.
+  # ---------------------------------------------------------------------
+  bundle-windows:
+    name: bundle-windows (debug, smoke-only)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Setup Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: guidon-app/package-lock.json
+
+      # PLAIN npm ci - NOT ci.yml's `--omit=optional`. @tauri-apps/cli's
+      # platform binary (cli-win32-x64-msvc) is an optionalDependency in
+      # this lockfile; omitting optionals leaves `tauri build` with no CLI
+      # (package.json's _overrides_note records the same constraint).
+      - name: Install dependencies (npm ci)
+        run: npm ci
+
+      # tools/make-icons.mjs renders web/icons/*.png with Playwright
+      # Chromium; the same cache key and install step as ci.yml.
+      - name: Cache Playwright browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('guidon-app/package-lock.json') }}
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Icons BEFORE build, as ci.yml's lint-build-verify job does and its
+      # header note explains (build only references web/icons/*.png; it
+      # never generates them). Order matters more here than there: tauri's
+      # generate_context! embeds frontendDist at COMPILE time, so anything
+      # missing from web/ when cargo runs is missing from the exe.
+      - name: Generate icons
+        run: npm run icons
+
+      - name: Build web/ + dist/
+        run: npm run build
+
+      - name: Record Rust toolchain
+        run: rustup show
+
+      # Debug build with the installers tauri.conf.json declares (nsis, msi;
+      # installMode currentUser). The tauri-cli 2.11.4 flag is `--debug`
+      # (`-d`); `--ci` skips prompts (also implied by CI=true).
+      - name: tauri build --debug
+        run: npx tauri build --debug --ci
+
+      # T9 smoke: the npm script is the SAME entry an operator uses locally
+      # (powershell.exe 5.1, tools/desktop-smoke.ps1, the debug exe). Exit 0
+      # is "baseline recorded" - every finding is INFO except a window that
+      # never appears (exit 1) or a precondition (exit 2).
+      - name: Desktop smoke (tools/desktop-smoke.ps1)
+        run: npm run desktop:smoke
+
+      # R11 self-test, gated: the page must report at least
+      # GUIDON_SELFTEST_MIN_ROUTES routes, exactly 24 themes and one window
+      # labelled "main". The hash is recorded but NOT gated: measured
+      # 2026-09-05 the probe reports at readyMs ~158, before the router has
+      # written location.hash (hash was ""). The gate is written in
+      # PowerShell itself, not as a `node -e "..."` one-liner: PowerShell has
+      # no backslash escape inside a double-quoted string, so the JSON
+      # quotes of '["main"]' ended the string early and node received a
+      # truncated script (measured 2026-09-05 with powershell 5.1: SyntaxError,
+      # exit 1 on every run, good report or not).
+      - name: Self-test (GUIDON_SELFTEST_OUT, gated on routes)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts/desktop-smoke | Out-Null
+          $out = Join-Path $PWD 'artifacts/desktop-smoke/selftest.json'
+          $env:GUIDON_SELFTEST_OUT = $out
+          $env:GUIDON_SELFTEST_EXPECT_ROUTES = $env:GUIDON_SELFTEST_MIN_ROUTES
+          & src-tauri/target/debug/guidon.exe
+          $code = $LASTEXITCODE
+          if (Test-Path $out) { Get-Content $out }
+          if ($code -ne 0) { Write-Output "self-test exit $code"; exit 1 }
+          $r = Get-Content $out -Raw | ConvertFrom-Json
+          $min = [int]$env:GUIDON_SELFTEST_MIN_ROUTES
+          $wins = @($r.windows)
+          $bad = @()
+          if (-not ($r.routes -ge $min)) { $bad += "routes $($r.routes) < $min" }
+          if ($r.themes -ne 24) { $bad += "themes $($r.themes) != 24" }
+          if ($wins.Count -ne 1 -or $wins[0] -ne 'main') { $bad += ("windows [" + ($wins -join ',') + "]") }
+          if ($r.fork -ne 'tauri') { $bad += "fork $($r.fork)" }
+          if ($bad.Count -gt 0) { Write-Output ("self-test gate: " + ($bad -join '; ')); exit 1 }
+          Write-Output ("self-test gate ok: routes {0}, themes {1}, windows [{2}], hash '{3}'" -f $r.routes, $r.themes, ($wins -join ','), $r.hash)
+
+      # Verify-the-verifier: an impossible route floor MUST exit 1, or the
+      # gate above proves nothing.
+      - name: Self-test must fail on EXPECT_ROUTES=999
+        shell: pwsh
+        run: |
+          $out = Join-Path $PWD 'artifacts/desktop-smoke/selftest-999.json'
+          $env:GUIDON_SELFTEST_OUT = $out
+          $env:GUIDON_SELFTEST_EXPECT_ROUTES = '999'
+          & src-tauri/target/debug/guidon.exe
+          $code = $LASTEXITCODE
+          if (Test-Path $out) { Get-Content $out }
+          if ($code -ne 1) { Write-Output "expected exit 1, got $code"; exit 1 }
+          Write-Output "verify-the-verifier ok: exit 1"
+
+      # upload-artifact paths are workspace-relative (the working-directory
+      # default above does not apply to `with:` inputs).
+      - name: Upload exe, installers, smoke output (smoke-only)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: guidon-desktop-windows-debug-smoke-only
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            guidon-app/src-tauri/target/debug/guidon.exe
+            guidon-app/src-tauri/target/debug/bundle/nsis/*.exe
+            guidon-app/src-tauri/target/debug/bundle/msi/*.msi
+            guidon-app/artifacts/desktop-smoke/**
+
+  # ---------------------------------------------------------------------
+  # bundle-macos: AUTHORED-BUT-UNRUN, and unverifiable from here (no Mac).
+  # Universal release build through the tauri.macos.conf.json overlay
+  # (merged automatically by tauri-cli for the platform file name): bundle
+  # targets app + dmg, LSMinimumSystemVersion 12.3, ad-hoc signing identity
+  # "-". Three facts are RECORDED into the artifact, not assumed: lipo's
+  # architecture list, plutil's minimum-version key, codesign's verdict.
+  # ---------------------------------------------------------------------
+  bundle-macos:
+    name: bundle-macos (universal, ad-hoc signed, smoke-only)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Setup Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: guidon-app/package-lock.json
+
+      # Plain npm ci for the same reason as bundle-windows (the CLI's
+      # darwin binaries are optionalDependencies too).
+      - name: Install dependencies (npm ci)
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/Library/Caches/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('guidon-app/package-lock.json') }}
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Generate icons
+        run: npm run icons
+
+      - name: Build web/ + dist/
+        run: npm run build
+
+      # Both halves of the universal binary; tauri-cli's --help says the
+      # universal target needs both installed.
+      - name: rustup target add (both macOS halves)
+        run: |
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          rustup show
+
+      - name: tauri build --target universal-apple-darwin
+        run: npx tauri build --target universal-apple-darwin --ci
+
+      # Record, never assume: which slices lipo sees, which minimum version
+      # the Info.plist carries, and whether the ad-hoc signature verifies.
+      # Each check writes to the record AND fails the step on a mismatch.
+      - name: Record lipo / plutil / codesign
+        run: |
+          set -eu
+          BUNDLE=src-tauri/target/universal-apple-darwin/release/bundle
+          APP=$(find "$BUNDLE/macos" -maxdepth 1 -name '*.app' | head -n 1)
+          test -n "$APP" || { echo "no .app under $BUNDLE/macos"; ls -R "$BUNDLE" || true; exit 1; }
+          BIN=$(find "$APP/Contents/MacOS" -maxdepth 1 -type f | head -n 1)
+          mkdir -p artifacts/desktop-macos
+          REC=artifacts/desktop-macos/record.txt
+          {
+            echo "app: $APP"
+            echo "bin: $BIN"
+            echo "lipo -archs: $(lipo -archs "$BIN")"
+            echo "LSMinimumSystemVersion: $(plutil -extract LSMinimumSystemVersion raw -o - "$APP/Contents/Info.plist")"
+            echo "codesign --verify --deep --strict --verbose=2:"
+            codesign --verify --deep --strict --verbose=2 "$APP" 2>&1 || echo "codesign verify FAILED"
+            echo "codesign -dv:"
+            codesign -dv "$APP" 2>&1 || true
+            echo "dmg: $(find "$BUNDLE/dmg" -maxdepth 1 -name '*.dmg' | head -n 1)"
+          } | tee "$REC"
+          ARCHS=$(lipo -archs "$BIN")
+          case "$ARCHS" in
+            *x86_64*arm64*|*arm64*x86_64*) ;;
+            *) echo "expected a universal binary, lipo says: $ARCHS"; exit 1 ;;
+          esac
+          MIN=$(plutil -extract LSMinimumSystemVersion raw -o - "$APP/Contents/Info.plist")
+          test "$MIN" = "12.3" || { echo "LSMinimumSystemVersion $MIN != 12.3"; exit 1; }
+          codesign --verify --deep --strict "$APP"
+
+      - name: Upload dmg + record (smoke-only, ad-hoc signed)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: guidon-desktop-macos-universal-smoke-only
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            guidon-app/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            guidon-app/artifacts/desktop-macos/**
+
+  # ---------------------------------------------------------------------
+  # cargo-test: AUTHORED-BUT-UNRUN on a runner; the same command passed
+  # locally on 2026-09-05 (rustc 1.98.1 MSVC): src/main.rs unit tests
+  # 13 passed, tests/config.rs 9 passed, 0 failed, 9.9 s wall on a warm
+  # target/. windows-latest for the reason ci.yml's
+  # cargo-check job gives (no apt-installed GTK/WebKit dev packages needed)
+  # and because the R13 tests read tauri.conf.json's Windows-shaped facts.
+  # `npm run build` runs first because generate_context! reads frontendDist
+  # at compile time and `tests/config.rs` compares the working tree to HEAD
+  # with `git show`, which the checkout provides.
+  # ---------------------------------------------------------------------
+  cargo-test:
+    name: cargo test --locked (src-tauri)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Setup Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: guidon-app/package-lock.json
+
+      - name: Install dependencies (npm ci)
+        run: npm ci
+
+      - name: Build web/ + dist/ (frontendDist must exist for generate_context!)
+        run: npm run build
+
+      - name: cargo test --locked
+        working-directory: guidon-app/src-tauri
+        run: cargo test --locked
