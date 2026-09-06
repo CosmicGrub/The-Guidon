@@ -579,7 +579,7 @@
       // Join are independent fields with independent no-repeat guards.
       hostName: null, hostLastSpin: "", joinName: null, joinLastSpin: "",
     },
-    byId: null, clock: null, skew: null,
+    byId: null, clock: null, skew: null, wakeLock: null,
   };
   var util = function () { return G.util; };
   var el = function (a, b, c) { return G.util.el(a, b, c); };
@@ -797,6 +797,40 @@
   }
 
   /* ------------------------------------------------------ entry points */
+  /* Agnosticism audit, 6 Sep 2026 (device-agnostic): G.caps.js has probed
+     for navigator.wakeLock since P2, but nothing ever CALLED request() -
+     the Windows/Tauri host already holds a real OS-level keep-awake
+     (src-tauri/src/room.rs, SetThreadExecutionState), so the gap was
+     specifically the browser guest page, Android, iOS, and the peer role
+     generally, all of which rely only on the ping/pong heartbeat's fixed
+     5000ms x 3-missed-ping liveness window - a screen that sleeps mid-
+     session can silently violate that with no warning. Requesting one
+     more time on visibilitychange is required by the API itself: the OS
+     releases a screen wake lock the instant the document goes hidden
+     (tab-switch, phone locked with the app still "open"), and there is no
+     event for "please hold it anyway" - only re-request once visible
+     again, which is exactly this session's own recurring lesson (measure
+     the real end-state, do not assume one request lasts the whole room). */
+  async function requestWakeLock() {
+    try {
+      if (!(root.navigator && root.navigator.wakeLock && typeof root.navigator.wakeLock.request === "function")) return;
+      if (rt.wakeLock) return;
+      rt.wakeLock = await root.navigator.wakeLock.request("screen");
+      rt.wakeLock.addEventListener("release", function () { rt.wakeLock = null; });
+    } catch (e) { rt.wakeLock = null; }
+  }
+  function releaseWakeLock() {
+    try { if (rt.wakeLock) rt.wakeLock.release(); } catch (e) {}
+    rt.wakeLock = null;
+  }
+  try {
+    if (root.document && root.document.addEventListener) {
+      root.document.addEventListener("visibilitychange", function () {
+        if (root.document.visibilityState === "visible" && rt.state && !rt.state.terminal) requestWakeLock();
+      });
+    }
+  } catch (e) {}
+
   async function host(opts) {
     opts = opts || {};
     if (!available()) return { ok: false, reason: "Study groups are off in Settings." };
@@ -822,6 +856,7 @@
     transportHostStart(st.room);
     startTimers();
     scheduleRender();
+    requestWakeLock();
     return { ok: true, room: st.room, fp: st.self.fp, identity: rt.identity.kind };
   }
   async function join(opts) {
@@ -837,6 +872,7 @@
     sendHello(null);
     startTimers();
     scheduleRender();
+    requestWakeLock();
     return { ok: true, fp: st.self.fp, identity: rt.identity.kind };
   }
   function sendHello(resume) {
@@ -861,6 +897,7 @@
     var sent = sendHello(rt.state.self.token || null);
     startTimers();
     scheduleRender();
+    requestWakeLock();
     return { ok: sent, reason: sent ? "" : "Could not send." };
   }
   function leave() {
@@ -880,6 +917,7 @@
     endEngine();
     if (st && st.role === "host") transportHostStop();
     transportOnEnded();
+    releaseWakeLock();
     rt.state = null; rt.selfScored = {}; rt.myScores = {};
     scheduleRender();
     return { ok: true };
