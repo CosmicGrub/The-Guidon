@@ -193,9 +193,19 @@ await page.waitForTimeout(200);
 const captureShown = await page.evaluate(() => !!document.querySelector("textarea"));
 captureShown ? ok("Capture screen shows a paste textarea") : bad("Capture textarea not found");
 
-// A small synthetic MOI-like block: a detectable unit line, two headed
-// blocks each citing a real, distinct corpus citation (one clean, one with
-// a chapter suffix), and a fabricated citation for the Not-found bucket.
+// A small synthetic MOI-like block: a detectable unit line, headed blocks
+// citing real, distinct corpus citations (one clean, one with a chapter
+// suffix), a glyph-confused citation for the Needs Review bucket, and a
+// fabricated citation for the Not-found bucket.
+//
+// Round 8 roadmap-audit bucket A, fix #6: "AR GOO-9" is this same suite's
+// own glyph-folded unit-test citation from part (a) above (it normalizes to
+// AR 600-9 and is guaranteed to land in tier 'glyph-folded' - see the
+// glyphResult assertions near the top of this file). Before this round the
+// fixture was deliberately built to produce "0 need a look" (a comment here
+// said so), leaving the entire "Needs a look" manual-review branch -
+// including the viewBtn/searchBtn aria-expanded disclosure toggle and the
+// inline topic-search flow - completely untested.
 const MOI_TEXT = [
   "1st Battalion, 5th Infantry Regiment",
   "BOARD MOI - ASSIGNED STUDY TOPICS",
@@ -205,6 +215,9 @@ const MOI_TEXT = [
   "",
   "RECORDS:",
   "Review AR 623-3, Ch 2 before the board.",
+  "",
+  "REVIEW:",
+  "Double-check AR GOO-9 before the board.",
   "",
   "UNKNOWN:",
   "See AR 999-99 for details.",
@@ -233,9 +246,9 @@ const summaryText = await page.evaluate(() => {
   const hint = h3 && h3.nextElementSibling;
   return hint ? hint.textContent : null;
 });
-summaryText && /2 matched/.test(summaryText) && /0 need a look/.test(summaryText) && /1 not found/.test(summaryText)
-  ? ok("Summary strip reads '2 matched · 0 need a look · 1 not found': \"" + summaryText + "\"")
-  : bad("Summary strip text: \"" + summaryText + "\" (expected 2 matched / 0 needs review / 1 not found)");
+summaryText && /2 matched/.test(summaryText) && /1 need a look/.test(summaryText) && /1 not found/.test(summaryText)
+  ? ok("Summary strip reads '2 matched · 1 need a look · 1 not found': \"" + summaryText + "\"")
+  : bad("Summary strip text: \"" + summaryText + "\" (expected 2 matched / 1 needs review / 1 not found)");
 
 const matchedText = await page.evaluate(() => {
   const segBtns = [...document.querySelectorAll(".segmented button")];
@@ -260,6 +273,88 @@ const notFoundText = await page.evaluate(() => {
 notFoundText.indexOf("AR 999-99") !== -1
   ? ok("Not-found list includes the fabricated citation AR 999-99")
   : bad("Not-found list missing AR 999-99");
+
+/* ------------------------------------------------------------------------
+   Needs Review (glyph-folded) manual-review flow - round 8 roadmap-audit
+   bucket A, fix #6. AR GOO-9 folds to AR 600-9 and lands in "Needs a look".
+   Exercises the row's Accept/Dismiss/Search controls, the searchBtn
+   aria-expanded disclosure toggle (fix #2), and the inline topic-search
+   accept path end to end.
+   ------------------------------------------------------------------------ */
+await page.evaluate(() => {
+  const segBtns = [...document.querySelectorAll(".segmented button")];
+  const needsBtn = segBtns.find((b) => /^Needs review/.test(b.textContent || ""));
+  if (needsBtn) needsBtn.click();
+});
+
+function findNeedsPanelSnippet() {
+  const panel = [...document.querySelectorAll(".panel")].find((p) => /AR GOO-9/.test(p.textContent || ""));
+  if (!panel) return null;
+  const btnTexts = [...panel.querySelectorAll("button")].map((b) => b.textContent.trim());
+  const searchBtn = [...panel.querySelectorAll("button")].find((b) => /Search for the right topic/.test(b.textContent || ""));
+  return { btnTexts: btnTexts, searchAriaExpanded: searchBtn ? searchBtn.getAttribute("aria-expanded") : null };
+}
+const needsRowInitial = await page.evaluate(findNeedsPanelSnippet);
+needsRowInitial && needsRowInitial.btnTexts.includes("Accept") && needsRowInitial.btnTexts.includes("Dismiss") && needsRowInitial.btnTexts.some((t) => /Search for the right topic/.test(t))
+  ? ok("Needs-review row for AR GOO-9 (glyph-folded) renders Accept/Dismiss/Search controls")
+  : bad("Needs-review row for AR GOO-9 missing expected controls: " + JSON.stringify(needsRowInitial));
+needsRowInitial && needsRowInitial.searchAriaExpanded === "false"
+  ? ok("Needs-review row's search toggle starts collapsed with aria-expanded=\"false\"")
+  : bad("Needs-review row's search toggle initial aria-expanded: " + JSON.stringify(needsRowInitial && needsRowInitial.searchAriaExpanded));
+
+// Click "Search for the right topic" - aria-expanded should flip and the
+// inline search input should appear.
+await page.evaluate(() => {
+  const panel = [...document.querySelectorAll(".panel")].find((p) => /AR GOO-9/.test(p.textContent || ""));
+  const btn = panel && [...panel.querySelectorAll("button")].find((b) => /Search for the right topic/.test(b.textContent || ""));
+  if (btn) btn.click();
+});
+await page.waitForTimeout(150);
+const afterToggle = await page.evaluate(() => {
+  const panel = [...document.querySelectorAll(".panel")].find((p) => /AR GOO-9/.test(p.textContent || ""));
+  const btn = panel && [...panel.querySelectorAll("button")].find((b) => /Search for the right topic/.test(b.textContent || ""));
+  const input = panel && panel.querySelector('input[aria-label="Search for the right topic"]');
+  return { ariaExpanded: btn ? btn.getAttribute("aria-expanded") : null, inputPresent: !!input };
+});
+afterToggle.ariaExpanded === "true"
+  ? ok("Clicking 'Search for the right topic' flips its aria-expanded from \"false\" to \"true\"")
+  : bad("aria-expanded after clicking the search toggle: " + JSON.stringify(afterToggle.ariaExpanded));
+afterToggle.inputPresent
+  ? ok("The inline topic-search input appears once the disclosure is open")
+  : bad("inline topic-search input did not appear after opening the disclosure");
+
+// Type a query, then click a matching result (falls back to an empty query
+// if the first one happens to match nothing, to avoid flakiness against the
+// real, non-fixture topic corpus).
+const pickedTopic = await page.evaluate(() => {
+  const panel = [...document.querySelectorAll(".panel")].find((p) => /AR GOO-9/.test(p.textContent || ""));
+  const input = panel.querySelector('input[aria-label="Search for the right topic"]');
+  function firstResultBtn() { return input.nextElementSibling ? input.nextElementSibling.querySelector("button") : null; }
+  input.value = "e";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  let btn = firstResultBtn();
+  if (!btn) {
+    input.value = "";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    btn = firstResultBtn();
+  }
+  if (!btn) return null;
+  const text = btn.textContent;
+  btn.click();
+  return text;
+});
+pickedTopic
+  ? ok("Typed a search query and clicked a matching topic result: \"" + pickedTopic + "\"")
+  : bad("No topic-search result was available to click for AR GOO-9");
+
+const afterPick = await page.evaluate(() => {
+  const panel = [...document.querySelectorAll(".panel")].find((p) => /AR GOO-9/.test(p.textContent || ""));
+  const status = panel && panel.querySelector(".badge");
+  return { statusText: status ? status.textContent : null, statusClass: status ? status.className : null };
+});
+afterPick.statusText === "Accepted" && /(^|\s)green(\s|$)/.test(afterPick.statusClass || "")
+  ? ok("Picking a search result marks the AR GOO-9 item Accepted and its status badge reflects the change")
+  : bad("status badge after picking a search result: " + JSON.stringify(afterPick));
 
 // Switch back to Matched before building, just to leave the UI in a sane
 // state (not load-bearing for the assertions below).
@@ -313,6 +408,38 @@ persisted && /1st Battalion|MOI imported/.test(persisted.name || "")
 
 const resultViewShown = await page.evaluate(() => /Replace/.test(document.body.textContent || "") && /Delete/.test(document.body.textContent || ""));
 resultViewShown ? ok("Build redraws Landing's own 'already imported' branch (Replace/Delete actions visible) as the result view") : bad("result view (Replace/Delete) not shown after Build");
+
+// ---- viewBtn's own aria-expanded disclosure state (fix #2): Build's
+// success path starts expanded ("Hide details"/aria-expanded="true"),
+// toggling to collapsed ("View"/aria-expanded="false") and back exercises
+// both directions of the same accessible-disclosure convention searchBtn
+// already had before this round.
+const viewBtnInitial = await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Hide details" || b.textContent.trim() === "View");
+  return btn ? { text: btn.textContent.trim(), ariaExpanded: btn.getAttribute("aria-expanded") } : null;
+});
+viewBtnInitial && viewBtnInitial.text === "Hide details" && viewBtnInitial.ariaExpanded === "true"
+  ? ok("Build's success path starts expanded: the toggle reads 'Hide details' with aria-expanded=\"true\"")
+  : bad("view/hide-details toggle state right after Build: " + JSON.stringify(viewBtnInitial));
+await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Hide details" || b.textContent.trim() === "View");
+  if (btn) btn.click();
+});
+await page.waitForTimeout(150);
+const viewBtnAfterCollapse = await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Hide details" || b.textContent.trim() === "View");
+  return btn ? { text: btn.textContent.trim(), ariaExpanded: btn.getAttribute("aria-expanded") } : null;
+});
+viewBtnAfterCollapse && viewBtnAfterCollapse.text === "View" && viewBtnAfterCollapse.ariaExpanded === "false"
+  ? ok("Clicking the toggle collapses it: reads 'View' with aria-expanded=\"false\"")
+  : bad("view/hide-details toggle state after collapsing: " + JSON.stringify(viewBtnAfterCollapse));
+// Re-expand so the deep-link checks below (which need the full result view
+// visible) find their buttons.
+await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Hide details" || b.textContent.trim() === "View");
+  if (btn) btn.click();
+});
+await page.waitForTimeout(150);
 
 const coverageBadgesShown = await page.evaluate(() => {
   const text = document.body.textContent || "";
