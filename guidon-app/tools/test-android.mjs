@@ -10,6 +10,8 @@
    WebView does not implement, so this talks to the page target directly. */
 import { attachToPage } from "./cdp.mjs";
 import { declaredRoutes } from "./declared-routes.mjs";
+import { probeViaCdp, writeProbe } from "./caps-probe.mjs";
+import { execFileSync } from "node:child_process";
 
 const DECLARED = await declaredRoutes("web/index.html");
 
@@ -17,7 +19,30 @@ let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
 const bad = (m) => { fails++; console.log("  FAIL  " + m); };
 
-const page = await attachToPage("http://127.0.0.1:9222");
+/* Graceful skip (collective P2): with no adb forward in place the fetch of
+   /json/list used to die as an unhandled rejection. A missing device is not
+   a failing app - it is "nothing proven", said plainly, exit 0, and no
+   artifacts/caps/android-*.json is written (tools/caps-matrix.mjs then shows
+   the Android column as absent rather than inventing one). GUIDON_CDP
+   overrides the endpoint, ADB the adb binary (both env). */
+const BASE = process.env.GUIDON_CDP || "http://127.0.0.1:9222";
+const ADB = process.env.ADB || "adb";
+let cdpErr = null;
+try { await fetch(BASE + "/json/version", { signal: AbortSignal.timeout(3000) }); }
+catch (e) { cdpErr = (e && e.cause && e.cause.code) || (e && e.message) || String(e); }
+if (cdpErr) {
+  let devices;
+  try { devices = execFileSync(ADB, ["devices"], { encoding: "utf8", timeout: 10000 }).trim().replace(/\r?\n/g, " | "); }
+  catch (e) { devices = "adb not runnable (" + ((e && e.code) || (e && e.message) || "?") + ") - set ADB=<path to adb>"; }
+  console.log("  SKIP  no CDP page target at " + BASE + " (" + cdpErr + ")");
+  console.log("        adb devices: " + devices);
+  console.log("        to run: start the debug APK on a device/emulator, then");
+  console.log("        adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>");
+  console.log("\nANDROID: skipped - no device attached, nothing proven, no probe file written");
+  process.exit(0);
+}
+
+const page = await attachToPage(BASE);
 
 /* Capture console error AND warning, per this project's standing rule — an
    error-only filter once hid a ReferenceError for two full sessions. */
@@ -161,6 +186,22 @@ const pdf = await page.evaluate(async () => {
 pdf.head === "%PDF-"
   ? ok(`DA 4856 export works on Android (${pdf.len.toLocaleString()} bytes, deferred assets loaded from APK)`)
   : bad("PDF export failed on Android: " + (pdf.error || JSON.stringify(pdf)));
+
+/* Capability probe (collective P2): the app's own GUIDON_CAPS sentinel from
+   #/selftest?probe=1 inside the SHIPPED WebView, written as
+   artifacts/caps/android-<model>.json - real device evidence for the
+   android column of docs/generated/capability-matrix.md (an emulator UA is
+   detected by the probe itself and labelled, never counted as a device). */
+const model = (ua.match(/;\s*([^;)]+?)\s+Build\//) || [])[1] || "unknown-model";
+const capsPayload = await probeViaCdp(page);
+if (!capsPayload) bad("no GUIDON_CAPS sentinel within 8s of #/selftest?probe=1 - the installed APK predates the capability probe");
+else {
+  const n = Object.keys(capsPayload.caps || {}).length;
+  const supported = Object.values(capsPayload.caps || {}).filter(Boolean).length;
+  const file = await writeProbe({ engine: "android", device: model, collector: "tools/test-android.mjs", payload: capsPayload,
+    note: "shipped WebView over adb-forwarded CDP; model from the UA" });
+  ok(`capability probe captured on ${model} (${supported}/${n} supported, fork ${capsPayload.fork}${capsPayload.isVirtual ? ", emulator" : ""}) -> ${file}`);
+}
 
 await page.evaluate(() => { location.hash = "#/home"; });
 await page.sleep(300);
