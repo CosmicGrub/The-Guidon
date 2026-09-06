@@ -23393,7 +23393,16 @@ window.G = window.G || {};
       // ---- (a) Azimuth ↔ back azimuth: the ±180° / ±3,200-mil rule ----
       function azimuthMode(mount) {
         let unit = "deg", az = 0, correct = 0, attempts = 0, right = 0;
-        const box = el("div"); mount.appendChild(box);
+        // Round 8 landnav-focus fix: box is rebuilt from scratch on every
+        // Check/New-azimuth click and on the deg/mils toggle (draw() below
+        // calls util.clear(box) then re-appends everything, including
+        // whichever button was just clicked). tabIndex="-1" makes it
+        // programmatically focusable without joining the Tab order (it's
+        // not itself a control) — draw()'s own box.focus() call, below,
+        // uses that to restore keyboard position after every rebuild,
+        // mirroring Board Drill Quiz's cardWrap.focus()-after-draw()
+        // pattern (search this file for "Item 9 fix").
+        const box = el("div", { tabIndex: "-1" }); mount.appendChild(box);
         function gen() {
           if (unit === "deg") { az = 1 + Math.floor(Math.random() * 359); correct = az <= 180 ? az + 180 : az - 180; }
           else {
@@ -23442,6 +23451,15 @@ window.G = window.G || {};
             try { if (G.util.announce) G.util.announce((ok ? "Correct. " : "Incorrect. ") + msg); } catch (e) {}
           });
           nextBtn.addEventListener("click", () => { gen(); draw(); });
+          // Round 8 landnav-focus fix: box.focus() runs AFTER every rebuild
+          // above (util.clear(box) at the top of this same draw(), then the
+          // unit toggle/input/checkBtn/nextBtn all get re-appended) so
+          // keyboard focus — thrown to <body> the instant the just-clicked
+          // nextBtn or unit-toggle button got destroyed — lands back inside
+          // the drill instead of stranding a keyboard/screen-reader user at
+          // the top of the document. Covers the deg/mils toggle above too,
+          // since its click handler calls this same draw().
+          box.focus({ preventScroll: true });
         }
         draw();
       }
@@ -23449,7 +23467,9 @@ window.G = window.G || {};
       // ---- (b) Pace count word problem (TC 3-25.26, para 5-3) ----
       function paceMode(mount) {
         let paceCount = 0, distance = 0, correct = 0, attempts = 0, right = 0;
-        const box = el("div"); mount.appendChild(box);
+        // Round 8 landnav-focus fix: see azimuthMode()'s own comment on its
+        // matching box declaration, above, for the full explanation.
+        const box = el("div", { tabIndex: "-1" }); mount.appendChild(box);
         function gen() {
           // Personal pace count is individual, not a fixed Army number (para
           // 5-3) -- 55-75 paces/100m is an illustrative range for the drill,
@@ -23485,6 +23505,9 @@ window.G = window.G || {};
             try { if (G.util.announce) G.util.announce((ok ? "Correct. " : "Incorrect. ") + msg); } catch (e) {}
           });
           nextBtn.addEventListener("click", () => { gen(); draw(); });
+          // Round 8 landnav-focus fix: see azimuthMode()'s own comment on
+          // its matching box.focus() call, above, for the full explanation.
+          box.focus({ preventScroll: true });
         }
         draw();
       }
@@ -23496,7 +23519,9 @@ window.G = window.G || {};
         // MGRS doctrine card and board questions describe.
         const SQ_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ";
         let square = "", easting = "", northing = "", attempts = 0, right = 0;
-        const box = el("div"); mount.appendChild(box);
+        // Round 8 landnav-focus fix: see azimuthMode()'s own comment on its
+        // matching box declaration, above, for the full explanation.
+        const box = el("div", { tabIndex: "-1" }); mount.appendChild(box);
         function gen() {
           square = SQ_LETTERS[Math.floor(Math.random() * SQ_LETTERS.length)] + SQ_LETTERS[Math.floor(Math.random() * SQ_LETTERS.length)];
           easting = String(1000 + Math.floor(Math.random() * 9000));
@@ -23540,6 +23565,9 @@ window.G = window.G || {};
             try { if (G.util.announce) G.util.announce((ok ? "Correct. " : "Incorrect. ") + msg); } catch (e) {}
           });
           nextBtn.addEventListener("click", () => { gen(); draw(); });
+          // Round 8 landnav-focus fix: see azimuthMode()'s own comment on
+          // its matching box.focus() call, above, for the full explanation.
+          box.focus({ preventScroll: true });
         }
         draw();
       }
