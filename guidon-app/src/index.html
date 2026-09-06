@@ -33296,6 +33296,9 @@ window.G = window.G || {};
     // tolerate trailing params (e.g. deep links); match on the base
     let r = ROUTES.find((x) => x.hash === hash) || ROUTES.find((x) => hash.indexOf(x.hash) === 0);
     if (!r) { r = ROUTES[0]; hash = r.hash; }
+    // Per-route tab/window title (S5, 2026-09-04): the label comes from the
+    // matched ROUTES entry, so it can never drift from the nav.
+    document.title = r.label ? "GUIDON - " + r.label : "GUIDON";
     const grp = groupForHash(r.hash);
     if (grp && grp.label !== null && !navOpenGroups.has(grp.id)) {
       navOpenGroups.add(grp.id);
