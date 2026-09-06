@@ -1209,8 +1209,28 @@
     if (url) {
       box.appendChild(el("div.eyebrow", { text: "Join link" }));
       box.appendChild(el("div.sg-join-url", { text: url, style: "font-size:1.4rem;font-weight:700;line-height:1.25;word-break:break-all;margin:4px 0 8px" }));
-      box.appendChild(el("div.sg-qr-slot", { text: url, "aria-label": "QR code placeholder", style: "border:2px dashed currentColor;border-radius:8px;padding:14px;font-family:var(--mono, monospace);font-size:.8rem;word-break:break-all;max-width:22rem;margin-bottom:6px" }));
-      box.appendChild(hint("Joiners type this link or the code. A scannable QR code lands in a later phase - the dashed box is where it goes."));
+      /* Room-networking pitch, Stage 1.5 ("QR render on the host screen"):
+         a real ISO/IEC 18004 QR code (src/app-modules/qrcode.js), encoding
+         this SAME url string already shown as plain text one line above.
+         render() never throws and returns null for anything it cannot
+         represent (module missing, or a future join link too long for the
+         encoder's supported version range) - falling back to the original
+         dashed-box plain-text placeholder is the correct, deliberate
+         behaviour in that case, not a bug: the link/code above always
+         still works even when the QR does not render. */
+      var qrNode = null;
+      try { if (G.qrcode && typeof G.qrcode.render === "function") qrNode = G.qrcode.render(url, { ariaLabel: "QR code for the join link" }); } catch (e) {}
+      if (qrNode) {
+        var qrWrap = el("div.sg-qr-wrap", { style: "display:inline-block;padding:8px;background:#fff;border-radius:8px;margin-bottom:6px;line-height:0" });
+        qrNode.style.maxWidth = "14rem";
+        qrNode.style.height = "auto";
+        qrWrap.appendChild(qrNode);
+        box.appendChild(qrWrap);
+        box.appendChild(hint("Joiners can scan this QR code, or type the link or the code by hand."));
+      } else {
+        box.appendChild(el("div.sg-qr-slot", { text: url, "aria-label": "QR code placeholder", style: "border:2px dashed currentColor;border-radius:8px;padding:14px;font-family:var(--mono, monospace);font-size:.8rem;word-break:break-all;max-width:22rem;margin-bottom:6px" }));
+        box.appendChild(hint("Joiners type this link or the code. No scannable QR code on this build."));
+      }
     } else {
       box.appendChild(hint("No join link on this build - read the code out."));
     }

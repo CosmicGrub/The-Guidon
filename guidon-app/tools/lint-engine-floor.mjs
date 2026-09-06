@@ -143,7 +143,19 @@ const FEATURES = [
   ["anchor positioning (CSS)", "css", /\b(anchor-name|position-anchor|position-area)\s*:/g, 125, "26"],
   ["light-dark() (CSS)", "css", /light-dark\(/g, 123, "17.5"],
   ["field-sizing (CSS)", "css", /field-sizing\s*:/g, 123, "none"],
-  ["mask-image / mask unprefixed (CSS)", "css", /(?<![-\w])mask(-image|-size|-position|-repeat|-composite)?\s*:/g, 120, "15.4"],
+  // The bare "mask" branch (no -image/-size/... suffix) collides with a
+  // plain JS object-literal property of that name - found for real this
+  // session (src/app-modules/qrcode.js's `{ mask: bestMask, ... }`, the
+  // QR spec's own masking-pattern id, nothing to do with CSS). Every
+  // legitimate use in this codebase is "mask-image:" - src/index.html's
+  // -webkit-mask-image twins - never bare "mask:". The trailing negative
+  // lookahead excludes exactly the JS-object-literal shape (a bare
+  // identifier immediately followed by "," or "}", with no CSS-value
+  // punctuation in between - a real CSS value is a function call, a
+  // keyword ending in ";" or a hyphenated token, never that) without
+  // narrowing the CSS-side match at all; same technique already used a
+  // few lines below for clamp() to tell it apart from a JS Math.clamp() call.
+  ["mask-image / mask unprefixed (CSS)", "css", /(?<![-\w])mask(-image|-size|-position|-repeat|-composite)?\s*:(?!\s*\w+\s*[,}])/g, 120, "15.4"],
   ["@scope (CSS)", "css", /@scope\b/g, 118, "17.4"],
   ["@starting-style (CSS)", "css", /@starting-style\b/g, 117, "17.5"],
   ["transition-behavior (CSS)", "css", /transition-behavior\s*:/g, 117, "17.4"],

@@ -30,7 +30,9 @@
  *     the host's hold, a hello from that fp WITHOUT its token is rejected,
  *     reconnect() with the token re-seats; tokens unique/random/never the sha
  *   - P3b X9: the host screen shows the join URL (large), the phonetic
- *     code, a bordered QR placeholder slot, the 60 s no-joiners ladder
+ *     code, a real rendered QR code (Stage 1.5, src/app-modules/qrcode.js -
+ *     a from-scratch ISO/IEC 18004 encoder; see tools/test-qrcode.mjs for
+ *     its own dedicated round-trip verification), the 60 s no-joiners ladder
  *     (walked with a mocked clock), the hotspot toggle disabling the
  *     gateway auto-detect text, and the hotspot-cap warning at seat 8
 
@@ -466,8 +468,19 @@ try {
     urlShown.hit && urlShown.value.includes(ROOM4) && /^https?:\/\//.test(urlShown.value) ? ok("(X9) the join URL is shown and carries the room code: " + urlShown.value) : bad("(X9) join URL: " + JSON.stringify(urlShown.value));
     const urlBig = await H.evaluate(() => { const u = document.querySelector(".sg-join-url"); return u ? parseFloat(getComputedStyle(u).fontSize) : 0; });
     urlBig >= 20 ? ok("(X9) the join URL is large type (" + urlBig + "px)") : bad("(X9) join URL font-size " + urlBig + "px");
-    const qr = await H.evaluate(() => { const q = document.querySelector(".sg-qr-slot"); if (!q) return null; const cs = getComputedStyle(q); return { text: q.textContent.trim(), border: parseFloat(cs.borderTopWidth) }; });
-    qr && qr.text.includes(urlShown.value || "@@") && qr.border > 0 ? ok("(X9) the QR placeholder slot is a bordered box carrying the URL text (encoder is P6, no hand-rolled encoder)") : bad("(X9) qr slot: " + JSON.stringify(qr));
+    // Stage 1.5: a valid join URL must render as a REAL <svg> QR code (not
+    // the dashed-box fallback) - src/app-modules/qrcode.js's own
+    // tools/test-qrcode.mjs proves the encoding is correct; this just
+    // proves the UI actually calls it and wires up the fallback contract.
+    const qr = await H.evaluate(() => {
+      const svg = document.querySelector(".sg-qr-wrap svg.sg-qr");
+      const slotPresent = !!document.querySelector(".sg-qr-slot");
+      if (!svg) return { svg: null, slotPresent };
+      return { svg: { viewBox: svg.getAttribute("viewBox"), width: Number(svg.getAttribute("width")), ariaLabel: svg.getAttribute("aria-label") }, slotPresent };
+    });
+    qr.svg && qr.svg.viewBox && qr.svg.width > 0 && qr.svg.ariaLabel && !qr.slotPresent
+      ? ok("(X9) a real QR code (inline <svg>, hand-rolled ISO/IEC 18004 encoder) renders for the join link - no dashed placeholder shown")
+      : bad("(X9) qr: " + JSON.stringify(qr));
     const codeShown = await H.evaluate(() => (document.querySelector(".sg-room-code") || { textContent: "" }).textContent.trim());
     codeShown === ROOM4 ? ok("(X9) the phonetic code is shown beside the URL") : bad("(X9) code shown: " + codeShown);
     const tierAt = async (ms, want, re, label) => {
