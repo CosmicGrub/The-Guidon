@@ -41,6 +41,7 @@ pub const SNAPSHOT_KEYS: &[&str] = &["phase", "mode", "seq", "room", "hostSeat",
 pub const SEAT_KEYS: &[&str] = &["seatNo", "name", "fp", "score", "online", "ready", "done"];
 pub const PHASES: &[&str] = &["lobby", "play", "recap", "ended"];
 pub const MODES: &[&str] = &["relay", "board"];
+pub const CARD_TEXT_KINDS: &[&str] = &["text"];
 pub const MAX_FRAME_BYTES: usize = 4096;
 pub const MAX_WIRE_BYTES: usize = 4160;
 pub const MAX_NAME: usize = 24;

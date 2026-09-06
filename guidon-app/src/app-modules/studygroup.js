@@ -184,6 +184,11 @@
        below 40 chars each - that peer then shows the update-one-device line. */
     var S = schema(), limit = S.MAX_FRAME_BYTES - 220;
     var text = clone(s.cards[s.cardId]);
+    // Agnosticism audit, 6 Sep 2026 (F8): stamp the discriminator even
+    // though it's optional on the wire (an older peer without this fix
+    // just never reads it) - every NEW frame should say what it is rather
+    // than relying on absence-means-text forever.
+    text.kind = "text";
     for (var guard = 0; guard < 60; guard++) {
       s.cardText = text;
       if (S.byteLength(JSON.stringify(snapshotOf(s))) <= limit) return;

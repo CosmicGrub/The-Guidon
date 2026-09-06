@@ -73,6 +73,7 @@ export function generate() {
     rsStrList("SEAT_KEYS", S.SEAT_KEYS),
     rsStrList("PHASES", S.PHASES),
     rsStrList("MODES", S.MODES),
+    rsStrList("CARD_TEXT_KINDS", S.CARD_TEXT_KINDS),
     rsInt("MAX_FRAME_BYTES", "usize", S.MAX_FRAME_BYTES),
     rsInt("MAX_WIRE_BYTES", "usize", S.MAX_WIRE_BYTES),
     rsInt("MAX_NAME", "usize", S.MAX_NAME),

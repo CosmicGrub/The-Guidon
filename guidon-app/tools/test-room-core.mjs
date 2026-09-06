@@ -176,6 +176,10 @@ const bytes = (o) => Buffer.byteLength(JSON.stringify(o), "utf8");
     ["null frame", null],
     ["array frame", []],
     ["string body", mk("bye", "x")],
+    // Agnosticism audit, 6 Sep 2026 (F8): cardText.kind is a new optional
+    // discriminator - an unrecognized kind must still reject, the same as
+    // any other closed-allowlist field on the wire.
+    ["cardText with an unrecognized kind", mk("snapshot", { snapshot: Object.assign({}, snap, { cardId: "q1", cardText: { q: "Q", a: "A", kind: "image" } }) })],
   ];
   let rj = true;
   for (const [label, f] of rejects) {
@@ -185,6 +189,16 @@ const bytes = (o) => Buffer.byteLength(JSON.stringify(o), "utf8");
   if (rj) ok("(a) validate rejects all " + rejects.length + " hostile shapes (unknown type/kind, v mismatch, extra/missing/unknown keys, grade anywhere, bad room/fp, negative score, oversize)");
   const vr = schema.validate(mk("hello", bodies.hello, { v: V + 1 }));
   vr.reason === "version" ? ok("(a) v mismatch is reported with reason \"version\" so the host can answer with the reject sentence") : bad("(a) v mismatch reason = " + vr.reason);
+
+  // Agnosticism audit, 6 Sep 2026 (F8): the discriminator is additive, not
+  // a breaking change - both an explicit "text" kind and no kind field at
+  // all (an older peer's frame, or any frame built before this fix) must
+  // still validate cleanly.
+  const withKind = schema.validate(mk("snapshot", { snapshot: Object.assign({}, snap, { cardId: "q1", cardText: { q: "Q", a: "A", kind: "text" } }) }));
+  const withoutKind = schema.validate(mk("snapshot", { snapshot: Object.assign({}, snap, { cardId: "q1", cardText: { q: "Q", a: "A" } }) }));
+  withKind.ok && withoutKind.ok
+    ? ok("(a) cardText.kind accepts an explicit \"text\" and tolerates absence (backward compatible)")
+    : bad("(a) cardText.kind acceptance: " + JSON.stringify({ withKind, withoutKind }));
 }
 
 /* ------------------------------------------------------- (b) property */

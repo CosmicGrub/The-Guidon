@@ -89,6 +89,12 @@
   var SEAT_KEYS = ["seatNo", "name", "fp", "score", "online", "ready", "done"];
   var PHASES = ["lobby", "play", "recap", "ended"];
   var MODES = ["relay", "board"];
+  /* cardText.kind allowlist (agnosticism audit F8, 6 Sep 2026): "text" is
+     the only kind that has ever existed - a future richer kind (image-
+     based, multi-part) is referenced by id against a pre-shared asset,
+     never inlined raw (a 4 KB frame has no room for it), and gets added
+     here one at a time alongside the receiver logic that understands it. */
+  var CARD_TEXT_KINDS = ["text"];
   var MAX_FRAME_BYTES = 4096;
   var MAX_NAME = 24;
   var MAX_SEATS = 20;
@@ -162,8 +168,18 @@
     if (s.cardId != null && !isStr(s.cardId, MAX_ID)) return "snapshot-card";
     if (s.cardText != null) {
       if (!isObj(s.cardText)) return "snapshot-text";
-      var tx = onlyKeys(s.cardText, ["q", "a", "category"]);
+      // Agnosticism audit, 6 Sep 2026 (F8): cardText used to be a closed
+      // {q, a, category} object with no type discriminator - any future
+      // richer card kind (image-based, multi-part) would have been a hard
+      // rejection on every unupdated peer, not an extensible branch.
+      // "kind" is optional (absent means "text", the only kind that has
+      // ever existed on the wire) so this is not itself a breaking change;
+      // CARD_TEXT_KINDS is the allowlist a future kind gets added to, one
+      // at a time, alongside the receiver logic that knows what to do with
+      // it - never a bare string accepted on faith.
+      var tx = onlyKeys(s.cardText, ["q", "a", "category", "kind"]);
       if (tx) return "snapshot-text-key:" + tx;
+      if ("kind" in s.cardText && CARD_TEXT_KINDS.indexOf(s.cardText.kind) === -1) return "snapshot-text-kind";
       if (!isStr(s.cardText.q, MAX_TEXT) || !isStr(s.cardText.a, MAX_TEXT)) return "snapshot-text-size";
       if ("category" in s.cardText && !isStr(s.cardText.category, 80)) return "snapshot-text-cat";
     }
@@ -336,7 +352,7 @@
   var schema = {
     PROTOCOL_VERSION: PROTOCOL_VERSION,
     TYPES: TYPES, INTENT_KINDS: INTENT_KINDS, ENVELOPE_KEYS: ENVELOPE_KEYS, BODY_KEYS: BODY_KEYS,
-    SNAPSHOT_KEYS: SNAPSHOT_KEYS, SEAT_KEYS: SEAT_KEYS, PHASES: PHASES, MODES: MODES,
+    SNAPSHOT_KEYS: SNAPSHOT_KEYS, SEAT_KEYS: SEAT_KEYS, PHASES: PHASES, MODES: MODES, CARD_TEXT_KINDS: CARD_TEXT_KINDS,
     MAX_FRAME_BYTES: MAX_FRAME_BYTES, MAX_NAME: MAX_NAME, MAX_SEATS: MAX_SEATS, MAX_SCORE: MAX_SCORE, MAX_TEXT: MAX_TEXT,
     /* Exported for tools/gen-room-schema-rs.mjs, which emits the Rust host's
        src-tauri/src/room_schema_gen.rs from THIS object (never a typed copy). */

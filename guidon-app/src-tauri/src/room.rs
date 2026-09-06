@@ -329,8 +329,16 @@ pub fn validate_snapshot(s: &Value) -> Option<String> {
             Some(t) => t,
             None => return Some("snapshot-text".into()),
         };
-        if let Some(k) = only_keys(tx, &["q", "a", "category"]) {
+        // Agnosticism audit, 6 Sep 2026 (F8): "kind" is optional (absent
+        // means "text", the only kind that has ever existed) - a future
+        // richer card kind gets added to schema::CARD_TEXT_KINDS one at a
+        // time, alongside the receiver logic that understands it, never
+        // accepted on faith.
+        if let Some(k) = only_keys(tx, &["q", "a", "category", "kind"]) {
             return Some(format!("snapshot-text-key:{k}"));
+        }
+        if tx.get("kind").is_some_and(|v| !v.as_str().is_some_and(|k| schema::CARD_TEXT_KINDS.contains(&k))) {
+            return Some("snapshot-text-kind".into());
         }
         if !tx.get("q").map(|v| is_str(v, schema::MAX_TEXT)).unwrap_or(false) || !tx.get("a").map(|v| is_str(v, schema::MAX_TEXT)).unwrap_or(false) {
             return Some("snapshot-text-size".into());
@@ -1943,6 +1951,22 @@ mod tests {
         let mut bad = snap.clone();
         bad["phase"] = json!("secret");
         assert_eq!(validate(&frame("NODEHOST", "snapshot", json!({ "snapshot": bad }))).reason, "snapshot-phase");
+
+        // Agnosticism audit, 6 Sep 2026 (F8): cardText.kind is optional and
+        // additive - both an explicit "text" and no kind at all must
+        // validate, but any kind outside schema::CARD_TEXT_KINDS must not.
+        let mut ok_with_kind = snap.clone();
+        ok_with_kind["cardId"] = json!("q1");
+        ok_with_kind["cardText"] = json!({ "q": "Q", "a": "A", "kind": "text" });
+        assert!(validate(&frame("NODEHOST", "snapshot", json!({ "snapshot": ok_with_kind }))).ok);
+        let mut ok_without_kind = snap.clone();
+        ok_without_kind["cardId"] = json!("q1");
+        ok_without_kind["cardText"] = json!({ "q": "Q", "a": "A" });
+        assert!(validate(&frame("NODEHOST", "snapshot", json!({ "snapshot": ok_without_kind }))).ok);
+        let mut bad_kind = snap.clone();
+        bad_kind["cardId"] = json!("q1");
+        bad_kind["cardText"] = json!({ "q": "Q", "a": "A", "kind": "image" });
+        assert_eq!(validate(&frame("NODEHOST", "snapshot", json!({ "snapshot": bad_kind }))).reason, "snapshot-text-kind");
     }
 
     #[test]
