@@ -33572,6 +33572,117 @@ window.G = window.G || {};
     },
   };
 
+  // ── What's New (release notes, shown once per update) ──────────────────────
+  // Standing product rule: whenever GUIDON updates, the Soldier should see a
+  // short, plain-language summary of what changed the next time they open
+  // the app - never the technical changelog developers use (that stays in
+  // this repo's own CHANGELOG.md), and never phrased like an engineering
+  // log. RELEASE_NOTES below is the ONE place that user-facing summary
+  // lives; tools/lint-patterns.mjs check (h) fails the build if a version
+  // bump ever ships without a matching entry here, so this can't silently
+  // go stale the way a hand-maintained "remember to update this" comment
+  // could.
+  //
+  // Writing a new entry: plain language only - no protocol/security/CI/
+  // codebase terms, no bug-report phrasing. State what changed from the
+  // Soldier's own point of view and why it matters to them, not how it was
+  // built or fixed.
+  G.whatsNew = {
+    RELEASE_NOTES: [
+      {
+        version: "1.6.0",
+        date: "September 2026",
+        title: "Study with a buddy",
+        highlights: [
+          "New: Study Rooms — create or join a private study session with other Soldiers nearby, right from the app.",
+          "Share a room instantly with a QR code or a simple link, no typing required.",
+          "Study Rooms are now noticeably safer and more reliable, with extra protections added behind the scenes.",
+          "Removing someone from a Study Room now asks you to confirm first, so an accidental tap can't remove a study partner.",
+          "Screen readers now announce Study Room updates out loud, like someone joining, being let in, or it becoming your turn.",
+        ],
+      },
+    ],
+    // guidon:whatsnew:v1 stores { lastSeenVersion }. A profile that has NO
+    // record at all is treated as "existed before this feature shipped" and
+    // shown the latest entry once (rather than skipped) - the only way a
+    // real, already-onboarded Soldier updating into this release would ever
+    // see it. A brand-new profile never reaches this path with no record:
+    // the onboarding-completion handler in app.start() seeds this the
+    // moment onboarding finishes, so a fresh install never gets shown
+    // release notes for the exact version it just installed.
+    async checkOnBoot() {
+      try {
+        const notes = this.RELEASE_NOTES;
+        if (!notes.length) return;
+        const latest = notes[notes.length - 1];
+        const current = window.GUIDON_APP_VERSION;
+        if (!current || latest.version !== current) return; // build/notes out of sync - never show a stale or future entry
+        const profile = G.profile && G.profile.current ? await G.profile.current() : null;
+        if (!profile || (G.profile.isGuest && G.profile.isGuest()) || profile.mode === "kiosk") return; // session-only modes have nothing persistent to compare against
+        const KEY = "guidon:whatsnew:v1";
+        const rec = await G.db.get("kv", KEY);
+        const seenVersion = rec && rec.v && rec.v.lastSeenVersion;
+        if (seenVersion === current) return; // already shown for this exact version
+        await G.db.put("kv", { k: KEY, v: { lastSeenVersion: current } });
+        this.show(latest);
+      } catch (e) {}
+    },
+    // Called once, at the moment onboarding completes for a brand-new
+    // profile - see app.start()'s onboarding callback. Marks "already
+    // caught up" immediately so a fresh install is never shown release
+    // notes for the version it just installed.
+    async markCurrentSeen() {
+      try { await G.db.put("kv", { k: "guidon:whatsnew:v1", v: { lastSeenVersion: window.GUIDON_APP_VERSION } }); } catch (e) {}
+    },
+    show(entry) {
+      const prev = document.activeElement;
+      const back = el("div.gm-back", { role: "presentation" });
+      const box = el("div.gm-box", { role: "dialog", "aria-modal": "true", "aria-label": "What's new" });
+      box.appendChild(el("div.eyebrow", { text: "What's new · " + entry.date }));
+      box.appendChild(el("h3", { text: entry.title, style: "margin:2px 0 8px" }));
+      const list = el("ul", { style: "margin:0 0 10px;padding-left:20px;display:flex;flex-direction:column;gap:6px" });
+      entry.highlights.forEach((h) => list.appendChild(el("li", { text: h, style: "font-size:.92rem;line-height:1.4" })));
+      box.appendChild(list);
+      const row = el("div.btn-row", { style: "justify-content:flex-end" });
+      const closeBtn = el("button.btn.sm.primary", { type: "button", text: "Got it" });
+      row.appendChild(closeBtn);
+      box.appendChild(row);
+      back.appendChild(box);
+      function motionOK() { return !util.prefersReducedMotion(); }
+      function finishClose() {
+        back.remove();
+        util._popModalInert(inertTracked);
+        try { if (prev && prev.focus) prev.focus(); } catch (e) {}
+      }
+      function close() {
+        document.removeEventListener("keydown", onKey, true);
+        if (motionOK()) {
+          back.classList.remove("modaltrap-open");
+          let done = false;
+          const finish = () => { if (done) return; done = true; finishClose(); };
+          back.addEventListener("transitionend", finish, { once: true });
+          setTimeout(finish, 400);
+        } else {
+          finishClose();
+        }
+      }
+      function onKey(e) {
+        if (e.key === "Escape") { e.preventDefault(); close(); }
+        else if (e.key === "Tab") {
+          e.preventDefault();
+          closeBtn.focus(); // exactly one focusable control - Tab always returns to it
+        }
+      }
+      closeBtn.addEventListener("click", close);
+      back.addEventListener("click", (e) => { if (e.target === back) close(); });
+      const inertTracked = util._pushModalInert(back);
+      document.addEventListener("keydown", onKey, true);
+      document.body.appendChild(back);
+      requestAnimationFrame(() => requestAnimationFrame(() => back.classList.add("modaltrap-open")));
+      setTimeout(() => closeBtn.focus(), 40);
+    },
+  };
+
   // ── Biometric lock gate (Personal Account) ─────────────────────────────────
   // Opt-in privacy screen, default OFF (DEFAULT_SETTINGS.biometricLock, store.js
   // above). Extends the same "shared-device" boundary #/kiosk already draws for
@@ -34117,6 +34228,12 @@ window.G = window.G || {};
               // Update topbar greeting
               const greet = document.getElementById("topbar-username");
               if (greet && profile.displayName) greet.textContent = profile.displayName;
+              // Mark this brand-new profile "caught up" on the current
+              // version RIGHT NOW - see G.whatsNew's own header comment.
+              // Without this, a fresh install would see "What's new" for
+              // the exact version it just installed the very next time it
+              // opens the app.
+              if (G.whatsNew) G.whatsNew.markCurrentSeen();
               // Re-render current view to pick up profile
               route();
             });
@@ -34141,6 +34258,7 @@ window.G = window.G || {};
       }
       if (!location.hash) { const dv=(store.settings&&store.settings().defaultView)||"home"; location.hash="#/"+dv; }
       route();
+      if (G.whatsNew) G.whatsNew.checkOnBoot();
       } catch (e) {
         console.error("app.start() failed:", e);
         try { window.__guidonErrorLog && window.__guidonErrorLog.push({ time: new Date().toISOString(), context: "app.start()", message: e && e.message != null ? String(e.message) : String(e), stack: e && e.stack ? String(e.stack).slice(0, 800) : null }); } catch (e2) {}
