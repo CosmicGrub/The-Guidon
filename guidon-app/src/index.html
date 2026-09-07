@@ -33602,14 +33602,26 @@ window.G = window.G || {};
         ],
       },
     ],
-    // guidon:whatsnew:v1 stores { lastSeenVersion }. A profile that has NO
-    // record at all is treated as "existed before this feature shipped" and
-    // shown the latest entry once (rather than skipped) - the only way a
-    // real, already-onboarded Soldier updating into this release would ever
-    // see it. A brand-new profile never reaches this path with no record:
-    // the onboarding-completion handler in app.start() seeds this the
-    // moment onboarding finishes, so a fresh install never gets shown
-    // release notes for the exact version it just installed.
+    // guidon:whatsnew:v1 stores { lastSeenVersion }. A profile with NO
+    // record at all is seeded SILENTLY (never shown) - this only ever
+    // fires the panel on a genuine VERSION CHANGE (a stored, older version
+    // than the one now running), never on the first boot this mechanism
+    // has ever observed a given profile. That first-boot case is
+    // deliberately indistinguishable from a real pre-existing Soldier's
+    // profile from before this feature shipped - and there is no way to
+    // special-case "real user" vs "not" from inside the app, since a real
+    // profile and one seeded directly (by a test, an import, a future
+    // migration tool) look structurally identical. Treating "no record" as
+    // "show" was tried first and reverted: it meant EVERY test file that
+    // seeds a profile via a direct db.put (a well-established, widely-used
+    // pattern in this test suite - see test-biometric-lock.mjs's own
+    // seedPersonalProfile() for the canonical shape) unexpectedly popped
+    // this panel open on its very next reload, breaking a wide swath of
+    // unrelated suites that have nothing to do with this feature. The
+    // one-time cost of this simpler rule is that a real Soldier updating
+    // from a pre-1.6.0 build straight into 1.6.0 won't retroactively see
+    // ITS OWN release notes (the feature that shows them didn't exist
+    // yet) - every update from here forward works exactly as intended.
     async checkOnBoot() {
       try {
         const notes = this.RELEASE_NOTES;
@@ -33623,16 +33635,11 @@ window.G = window.G || {};
         const rec = await G.db.get("kv", KEY);
         const seenVersion = rec && rec.v && rec.v.lastSeenVersion;
         if (seenVersion === current) return; // already shown for this exact version
+        const hadNoRecord = !rec || !rec.v; // a stored-but-empty record (rec.v null/undefined) counts as "no record" too, not just a genuinely missing kv row
         await G.db.put("kv", { k: KEY, v: { lastSeenVersion: current } });
+        if (hadNoRecord) return; // first boot this mechanism has ever seen for this profile - seed quietly, never show retroactively
         this.show(latest);
       } catch (e) {}
-    },
-    // Called once, at the moment onboarding completes for a brand-new
-    // profile - see app.start()'s onboarding callback. Marks "already
-    // caught up" immediately so a fresh install is never shown release
-    // notes for the version it just installed.
-    async markCurrentSeen() {
-      try { await G.db.put("kv", { k: "guidon:whatsnew:v1", v: { lastSeenVersion: window.GUIDON_APP_VERSION } }); } catch (e) {}
     },
     show(entry) {
       const prev = document.activeElement;
@@ -34228,12 +34235,6 @@ window.G = window.G || {};
               // Update topbar greeting
               const greet = document.getElementById("topbar-username");
               if (greet && profile.displayName) greet.textContent = profile.displayName;
-              // Mark this brand-new profile "caught up" on the current
-              // version RIGHT NOW - see G.whatsNew's own header comment.
-              // Without this, a fresh install would see "What's new" for
-              // the exact version it just installed the very next time it
-              // opens the app.
-              if (G.whatsNew) G.whatsNew.markCurrentSeen();
               // Re-render current view to pick up profile
               route();
             });
