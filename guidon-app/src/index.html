@@ -13365,6 +13365,12 @@ window.G = window.G || {};
   G.pointsMath = { weaponPts, aftPts, WPN_TABLES, PPW };
   G.board = {
     _openReadiness: null,  // set by render to open Readiness tab directly
+    // Same convention, for the Guided Tour's Highlights track (profile.js's
+    // TOUR_HIGHLIGHTS): Rapid Fire and Mock Board are tabs inside this
+    // route, not routes of their own, so a tour stop for either needs a
+    // hook to open the right tab after landing here — not just a hash.
+    _openRapidFire: null,
+    _openMockBoard: null,
     // Handle for the short-landscape auto-theater setTimeout(220) fired from
     // TWO sites inside renderDrill() (initial mount, and catList's category-
     // select click handler) - a property on G.board rather than a variable
@@ -13569,6 +13575,8 @@ window.G = window.G || {};
       drillBtn.onclick = () => set("drill");
       quizBtn.onclick = () => set("quiz");
       G.board._openReadiness = () => set("readiness");
+      G.board._openMockBoard = () => set("mock");
+      G.board._openRapidFire = () => set("rapid");
       mockBtn.onclick = () => set("mock");
       ptsBtn.onclick = () => set("points");
       readBtn.onclick = () => set("readiness");
@@ -19981,6 +19989,11 @@ window.G = window.G || {};
                      w:"The iPhone warning: plain Safari deletes site data after ~7 days idle — installing is what makes card grades and board date actually stick." },
     "#/selftest":  { d:"On-device QA — automated checks (storage round-trip, contrast, landmarks) plus a guided manual protocol for what no script can verify: TalkBack, S Pen hover, true airplane-mode offline.",
                      w:"Deliberately honest about what it can't prove — the manual checklist exists because some things only a human on the real device can confirm." },
+    // lint-patterns.mjs check (e) added 2026-09 to catch exactly this class
+    // of gap - this entry was the first real hit: #/storage had a route and
+    // a real page, but no tour content at all until this pass.
+    "#/storage":   { d:"The real numbers behind GUIDON's own privacy claim — total on-device storage used, plus a per-store IndexedDB breakdown, with nothing hidden or estimated.",
+                     w:"Point at the per-store breakdown, not just the total — it's a live read of the same real rows Board Drill/Progress/Reminders actually keep, not a synthetic figure." },
     "#/search":    { d:"One search box across every scenario, board question, doctrine entry, lesson and resource, with type filters to narrow it.",
                      w:"" },
     // MOI Import Engine, Phase 1: new route, added alongside its ROUTES/
@@ -19991,6 +20004,60 @@ window.G = window.G || {};
                      w:"Paste or upload the MOI, then Find my topics — Review shows exactly what matched, needs a second look, or wasn't found." },
   };
   G.demoNotes = DEMO_NOTES;
+
+  // ── Guided Tour, Highlights track ────────────────────────────────────────
+  // DEMO_STEPS (renderKioskMode(), below) walks EVERY route in G.routes, in
+  // sidebar order — mechanically complete (a route can't be forgotten), but
+  // that also means Settings/Diagnostics/Search sit as equal-weight stops
+  // right alongside Board Drill, and the app's single most recognizable
+  // feature can land a dozen-plus stops deep depending on how many routes
+  // exist. Good for a unit trainer who genuinely wants the exhaustive walk;
+  // a poor fit for the other 90% of the time someone opens Kiosk mode and
+  // has five minutes, not twenty. This is a second, hand-curated, hand-
+  // ordered list for exactly that case — written to the same "specific
+  // mechanic, specific thing to point at" bar as DEMO_NOTES above, not
+  // auto-derived, because curation is a judgment call DEMO_STEPS' own
+  // "never forget a route" guarantee can't make for us.
+  //
+  // Two entries (Rapid Fire, Mock Board) aren't routes of their own — they're
+  // modes/tabs inside #/board — so they carry an `open` override instead of
+  // a bare `route`; renderGuidedTour()'s "Open →" button calls it directly
+  // instead of just setting location.hash. Both reuse the exact same
+  // hash-then-setTimeout hand-off G.board._openReadiness's own callers
+  // already use elsewhere in this file (grep it) — the setTimeout gives
+  // #/board's own render() a moment to run and populate the hook before it's
+  // called, since the hook doesn't exist until that render has happened once.
+  function openBoardTab(open) {
+    location.hash = "#/board";
+    setTimeout(() => { if (G.board && G.board[open]) G.board[open](); }, 100);
+  }
+  const TOUR_HIGHLIGHTS = [
+    { title: "Home", route: "#/home",
+      desc: "Readiness snapshot, board countdown, and the mandatory-training tracker — everything that matters about where a Soldier stands, on one screen.",
+      watch: "Point at the readiness card — it's live, not decorative. It moves as the account is actually used." },
+    { title: "Train — Adventure mode", route: "#/train",
+      desc: "Leadership scenarios that branch on the choice actually made, not a quiz with one right answer.",
+      watch: "Pick a branch and let it resolve — then show the ADP 6-22 competency it just scored against." },
+    { title: "Board Drill", route: "#/board",
+      desc: "984 board cards, a real 3D flip, spaced repetition scheduling the next review.",
+      watch: "Flip a card and grade it Down Cold — show the review interval it just set, out loud." },
+    { title: "Rapid Fire", open: () => openBoardTab("_openRapidFire"),
+      desc: "The pass-the-device party mode living inside Board Drill — Party, Solo, or head-to-head Team play on the same real card deck.",
+      watch: "Start a 2-team round: teams alternate turns, then Final Recap compares both teams' scores side by side." },
+    { title: "Mock Board", open: () => openBoardTab("_openMockBoard"),
+      desc: "A timed oral-board simulation on the same real card corpus — pressure and pacing, not just recall.",
+      watch: "Run one question under the clock, then the reporting-statement template it grades you against — the actual board format, not a guess at it." },
+    { title: "Doctrine", route: "#/doctrine",
+      desc: "Entries cross-referenced to their real ADP, FM, TC, and AR sources — not paraphrased and unsourced.",
+      watch: "Search a publication number, not a topic — everything in the corpus that cites it comes back at once." },
+    { title: "BLC Prep", route: "#/blc",
+      desc: "Built from the actual Individual Student Assessment Plan — the document that defines how BLC is really graded. ALC and SLC Prep, right next to it in the sidebar, do the same for their own courses.",
+      watch: "Open ‘How the honors actually work’ for real point values — swap to ALC or SLC Prep instead if that's the audience in the room." },
+    { title: "Progress", route: "#/progress",
+      desc: "Readiness tracked against the real Army Leadership Requirements Model — a picture that builds over time, not a vanity percentage.",
+      watch: "On a freshly-entered kiosk session this starts empty by design — no fabricated history — so frame it as 'here's what fills in as you actually use it.'" },
+  ];
+  G.tourHighlights = TOUR_HIGHLIGHTS;
 
   // ── Rank-to-curriculum mapping (shown during onboarding summary) ─────────
   const RANK_CURRICULUM_MAP = {
@@ -21753,8 +21820,18 @@ window.G = window.G || {};
 
     const STORAGE_MODE_KEY = "guidon-demo-mode"; // "guided" | "free" — session-local, not persisted to profile
     const STORAGE_STEP_KEY = "guidon-demo-step"; // which tour stop to resume at after visiting a section and pressing back
-    let chosenMode = null;
-    try { chosenMode = sessionStorage.getItem(STORAGE_MODE_KEY); } catch (e) {}
+    // Orthogonal to STORAGE_MODE_KEY on purpose, not a third mode value:
+    // "guided" already means "the DEMO_STEPS-shaped renderGuidedTour() flow"
+    // to checkOnBoot() and everything else downstream — adding a track
+    // dimension alongside it (rather than a "highlights" mode value) means
+    // nothing that already switches on STORAGE_MODE_KEY needs to change to
+    // stay correct; it only needs to also ask which track when mode is
+    // "guided". Absent (any pre-existing session, or Free Mode) reads as
+    // "full" - the tour behaves exactly as it always has by default.
+    const STORAGE_TRACK_KEY = "guidon-demo-track"; // "highlights" | "full"
+    let chosenMode = null, chosenTrack = null;
+    try { chosenMode = sessionStorage.getItem(STORAGE_MODE_KEY); chosenTrack = sessionStorage.getItem(STORAGE_TRACK_KEY); } catch (e) {}
+    function stepsForTrack(track) { return track === "highlights" ? TOUR_HIGHLIGHTS : DEMO_STEPS; }
 
     const body = el("div");
     mount.appendChild(body);
@@ -21762,14 +21839,24 @@ window.G = window.G || {};
     function renderModePicker() {
       util.clear(body);
       const intro = el("div.panel");
-      intro.appendChild(el("p.view-intro", { text: "Two ways to see everything GUIDON does — for yourself, or to show someone else." }));
+      intro.appendChild(el("p.view-intro", { text: "Three ways to see what GUIDON does — for yourself, or to show someone else." }));
       const choiceRow = el("div.ob-mode-grid", { style: "margin-top:10px" });
+
+      // Listed first: for a live demo or a quick first look, a hand-picked
+      // walk beats a mechanically-complete one - see TOUR_HIGHLIGHTS' own
+      // header comment for why this is a second, curated list rather than
+      // a shorter slice of DEMO_STEPS.
+      const highlightsCard = el("button.panel.ob-mode-card", { type: "button", style: "text-align:left;cursor:pointer" });
+      highlightsCard.appendChild(el("div.eyebrow", { text: "Highlights" }));
+      highlightsCard.appendChild(el("h3", { gi: "star", giSize: 14, text: "The best of GUIDON, fast" }));
+      highlightsCard.appendChild(el("p.hint", { text: `A hand-picked walk through ${TOUR_HIGHLIGHTS.length} of the most distinctive sections, in the order worth showing them. Best for a live demo or a first five minutes.` }));
+      highlightsCard.addEventListener("click", () => { setMode("guided", "highlights"); });
 
       const guidedCard = el("button.panel.ob-mode-card", { type: "button", style: "text-align:left;cursor:pointer" });
       guidedCard.appendChild(el("div.eyebrow", { text: "Guided Tour" }));
       guidedCard.appendChild(el("h3", { gi: "play", giSize: 14, text: "Step through every section" }));
-      guidedCard.appendChild(el("p.hint", { text: `A narrated walk through all ${DEMO_STEPS.length} sections, in order, with a short explanation at each stop. Best for a first look or a hands-off showcase.` }));
-      guidedCard.addEventListener("click", () => { setMode("guided"); });
+      guidedCard.appendChild(el("p.hint", { text: `A narrated walk through all ${DEMO_STEPS.length} sections, in order, with a short explanation at each stop. Best for a unit trainer who wants the exhaustive tour.` }));
+      guidedCard.addEventListener("click", () => { setMode("guided", "full"); });
 
       const freeCard = el("button.panel.ob-mode-card", { type: "button", style: "text-align:left;cursor:pointer" });
       freeCard.appendChild(el("div.eyebrow", { text: "Free Mode" }));
@@ -21777,6 +21864,7 @@ window.G = window.G || {};
       freeCard.appendChild(el("p.hint", { text: "Drop straight into the app and click around at your own pace. A small Demo Mode badge stays on screen so it's obvious you're in a walk-through, with one click to exit." }));
       freeCard.addEventListener("click", () => { setMode("free"); });
 
+      choiceRow.appendChild(highlightsCard);
       choiceRow.appendChild(guidedCard);
       choiceRow.appendChild(freeCard);
       body.appendChild(intro);
@@ -21814,24 +21902,28 @@ window.G = window.G || {};
       return panel;
     }
 
-    function setMode(m) {
+    function setMode(m, track) {
       chosenMode = m;
-      try { sessionStorage.setItem(STORAGE_MODE_KEY, m); } catch (e) {}
+      chosenTrack = m === "guided" ? (track || "full") : null;
+      try {
+        sessionStorage.setItem(STORAGE_MODE_KEY, m);
+        if (chosenTrack) sessionStorage.setItem(STORAGE_TRACK_KEY, chosenTrack); else sessionStorage.removeItem(STORAGE_TRACK_KEY);
+      } catch (e) {}
       if (m === "free") {
         if (G.kioskBadge) G.kioskBadge.show();
         location.hash = "#/home";
         return;
       }
-      renderGuidedTour();
+      renderGuidedTour(stepsForTrack(chosenTrack));
     }
 
-    function renderGuidedTour() {
+    function renderGuidedTour(steps) {
       util.clear(body);
       const switchRow = el("div.btn-row", { style: "margin-bottom:10px" });
       const backBtn = el("button.btn.ghost.sm", { text: "← Choose a different mode", type: "button" });
       backBtn.addEventListener("click", () => {
-        chosenMode = null;
-        try { sessionStorage.removeItem(STORAGE_MODE_KEY); sessionStorage.removeItem(STORAGE_STEP_KEY); } catch (e) {}
+        chosenMode = null; chosenTrack = null;
+        try { sessionStorage.removeItem(STORAGE_MODE_KEY); sessionStorage.removeItem(STORAGE_STEP_KEY); sessionStorage.removeItem(STORAGE_TRACK_KEY); } catch (e) {}
         // Roadmap audit round 5, "Kiosk/Demo Center" bucket: leaving the
         // Guided Tour for the mode picker must also drop the "TOUR: Step N
         // of M" badge renderKioskCard() below raises — otherwise a stale
@@ -21851,7 +21943,7 @@ window.G = window.G || {};
       let current = 0;
       try {
         const saved = parseInt(sessionStorage.getItem(STORAGE_STEP_KEY), 10);
-        if (!isNaN(saved) && saved >= 0 && saved < DEMO_STEPS.length) current = saved;
+        if (!isNaN(saved) && saved >= 0 && saved < steps.length) current = saved;
       } catch (e) {}
       function persistStep() { try { sessionStorage.setItem(STORAGE_STEP_KEY, String(current)); } catch (e) {} }
 
@@ -21862,10 +21954,10 @@ window.G = window.G || {};
 
       function renderKioskCard(idx) {
         util.clear(cardsWrap);
-        const s = DEMO_STEPS[idx];
+        const s = steps[idx];
         if (!s) { cardsWrap.appendChild(el("p.hint", { text:"No tour stops available." })); return; }
         const card = el("div.panel.ob-kiosk-card");
-        card.appendChild(el("div.ob-step-num", { text: `Step ${idx + 1} of ${DEMO_STEPS.length}` }));
+        card.appendChild(el("div.ob-step-num", { text: `Step ${idx + 1} of ${steps.length}` }));
         card.appendChild(el("h3", { text: s.title }));
         card.appendChild(el("p.view-intro", { text: s.desc }));
         // Per-stop "what to watch for" callout. During a live demo the presenter
@@ -21879,14 +21971,17 @@ window.G = window.G || {};
         }
         const btnRow = el("div.btn-row", { style: "margin-top:14px" });
         const goBtn = el("button.btn.primary", { text: "Open →", type: "button" });
-        goBtn.addEventListener("click", () => location.hash = s.route);
+        // Highlights-track entries for a mode/tab that isn't a route of its
+        // own (Rapid Fire, Mock Board - see TOUR_HIGHLIGHTS) carry `open`
+        // instead of `route`; every DEMO_STEPS entry still just sets the hash.
+        goBtn.addEventListener("click", () => { if (s.open) s.open(); else location.hash = s.route; });
         btnRow.appendChild(goBtn);
         if (idx > 0) {
           const prevBtn = el("button.btn.ghost", { text: "← Prev", type: "button" });
           prevBtn.addEventListener("click", () => { current--; persistStep(); renderTracker(); renderKioskCard(current); });
           btnRow.appendChild(prevBtn);
         }
-        if (idx < DEMO_STEPS.length - 1) {
+        if (idx < steps.length - 1) {
           const nextBtn = el("button.btn", { text: "Next →", type: "button" });
           nextBtn.addEventListener("click", () => { current++; persistStep(); renderTracker(); renderKioskCard(current); });
           btnRow.appendChild(nextBtn);
@@ -21899,7 +21994,7 @@ window.G = window.G || {};
           // Settings' "Take a tour" button) silently skipped the mode picker and dropped the
           // user straight back into the Guided Tour at step 1 instead of letting them pick again.
           doneBtn.addEventListener("click", () => {
-            try { sessionStorage.removeItem(STORAGE_STEP_KEY); sessionStorage.removeItem(STORAGE_MODE_KEY); } catch (e) {}
+            try { sessionStorage.removeItem(STORAGE_STEP_KEY); sessionStorage.removeItem(STORAGE_MODE_KEY); sessionStorage.removeItem(STORAGE_TRACK_KEY); } catch (e) {}
             // Roadmap audit round 5, "Kiosk/Demo Center" bucket: "End tour"
             // ends the tour entirely (unlike the badge's own "Resume" button,
             // which deliberately leaves storage intact) — the persistent
@@ -21932,12 +22027,12 @@ window.G = window.G || {};
         // Called on every step change (not just tour entry) so the "Step N
         // of M" count shown in the badge always matches wherever the person
         // actually left off.
-        if (G.kioskBadge) G.kioskBadge.show({ mode: "guided", step: idx + 1, total: DEMO_STEPS.length });
+        if (G.kioskBadge) G.kioskBadge.show({ mode: "guided", step: idx + 1, total: steps.length });
       }
 
       function renderTracker() {
         util.clear(tracker);
-        DEMO_STEPS.forEach((s, i) => {
+        steps.forEach((s, i) => {
           const dot = el("div.ob-kiosk-dot" + (i === current ? ".active" : i < current ? ".done" : ""));
           dot.title = s.title;
           dot.tabIndex = 0;
@@ -21963,7 +22058,7 @@ window.G = window.G || {};
           // call, but a plain removeAttribute mirrors that convention rather
           // than relying on the attribute simply never having been set).
           const dotState = i === current ? "current" : i < current ? "done" : "not started";
-          dot.setAttribute("aria-label", `Step ${i + 1} of ${DEMO_STEPS.length}: ${s.title} — ${dotState}`);
+          dot.setAttribute("aria-label", `Step ${i + 1} of ${steps.length}: ${s.title} — ${dotState}`);
           if (i === current) dot.setAttribute("aria-current", "step"); else dot.removeAttribute("aria-current");
           const go = () => { current = i; persistStep(); renderTracker(); renderKioskCard(i); };
           dot.addEventListener("click", go);
@@ -21976,7 +22071,7 @@ window.G = window.G || {};
       renderKioskCard(current);
     }
 
-    if (chosenMode === "guided") renderGuidedTour();
+    if (chosenMode === "guided") renderGuidedTour(stepsForTrack(chosenTrack));
     else renderModePicker();
   }
 
@@ -33033,7 +33128,13 @@ window.G = window.G || {};
           // is the same single source of truth DEMO_STEPS derives from (see
           // the comment at G.routes' own declaration), so this mirrors that
           // same filter rather than hand-maintaining a second copy of the count.
-          const total = (G.routes || []).filter(r => r.hash !== "#/kiosk" && r.hash !== "#/profile").length;
+          // TOUR_HIGHLIGHTS (the curated track) IS reachable from here, via
+          // G.tourHighlights — it's a plain hand-written literal, not derived
+          // from anything only renderKioskMode's closure can see.
+          const track = sessionStorage.getItem("guidon-demo-track"); // "highlights" | "full" (absent = full)
+          const total = track === "highlights"
+            ? (G.tourHighlights || []).length
+            : (G.routes || []).filter(r => r.hash !== "#/kiosk" && r.hash !== "#/profile").length;
           const savedStep = parseInt(sessionStorage.getItem("guidon-demo-step"), 10);
           this.show({ mode: "guided", step: (isNaN(savedStep) ? 0 : savedStep) + 1, total });
         } else {
