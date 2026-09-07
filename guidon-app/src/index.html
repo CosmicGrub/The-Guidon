@@ -5498,6 +5498,19 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
    next to an expanded one would otherwise stretch to match, leaving a
    stretched-but-empty panel rather than just sitting shorter. */
 .card-results-grid { display:grid; gap:10px; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); align-items:start; }
+/* min-width:0 on direct children - the Grid analog of the flex min-width:auto
+   overflow bug already fixed once in this codebase (topbar's .brand > div,
+   and #/train's scenario cards). A `1fr` track's automatic minimum size
+   defaults to the item's own min-content size, not 0 - so a card whose
+   content has a slightly wider intrinsic min-content than the 260px floor
+   (font-metric-dependent: a badge/label pairing that doesn't wrap the same
+   way on every engine) can force the whole track, and so the grid and its
+   ancestors up to .main, wider than the container. Caught by
+   tools/test-resize-storm.mjs's #/transition case failing in CI (594px vs
+   a ~569px .main) while never reproducing locally - exactly the kind of
+   engine-dependent min-content difference this rule exists to make
+   impossible regardless of which engine's font metrics are in play. */
+.card-results-grid > * { min-width: 0; }
 .card-results-grid .search-header { grid-column:1 / -1; }
 .card-results-grid .empty { grid-column:1 / -1; }
 .card-results-grid .curr-group-label { grid-column:1 / -1; }
