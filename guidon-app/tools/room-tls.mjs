@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 /**
- * room-tls.mjs (SPIKE SCAFFOLD - not wired into tools/room-server.mjs yet).
+ * room-tls.mjs - load-bearing: wired into and imported by
+ * tools/room-server.mjs (createSelfSignedIdentity()) in production, not a
+ * scaffold. See src-tauri/src/room_tls.rs for the Tauri-side counterpart
+ * implementing the equivalent TLS logic in Rust.
  *
  * Mints one ephemeral, self-signed X.509v1 certificate for an ECDSA P-256
  * keypair, using ONLY Node's built-in `node:crypto` - no `node-forge`, no

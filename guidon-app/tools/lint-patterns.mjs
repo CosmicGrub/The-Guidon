@@ -691,7 +691,7 @@ console.log("lint-patterns: static regression guard for 5 repeat bug shapes\n");
    FAIL, no exceptions, because the whole point is that this never needs a
    judgment call at the point someone adds one. */
 {
-  const RTC_SRC_FILES = [FILE, ...(await readdir("src/app-modules").catch(() => [])).filter((f) => f.endsWith(".js")).map((f) => "src/app-modules/" + f)];
+  const RTC_SRC_FILES = [FILE, "src/room-web.js", "src/room-tauri.js", ...(await readdir("src/app-modules").catch(() => [])).filter((f) => f.endsWith(".js")).map((f) => "src/app-modules/" + f)];
   const RTC_CALL_RE = /new\s+RTCPeerConnection\s*\(([^)]*)\)/g;
   let rtcHits = 0, rtcOffenders = [];
   for (const f of RTC_SRC_FILES) {

@@ -211,11 +211,24 @@ PC+Fold5 session per this project's existing rhythm.
   riskiest, least-verified piece of the whole design. OkHttp trades a real
   dependency for materially lower implementation risk. Worth Chris's call
   before stage 8 starts, not mid-build.
-- **Not verified in this environment at all**: any real device behavior
-  of `RoomTlsPlugin`, and the interaction between its raw `SSLSocket` and
-  Android's Network Security Config defaults for non-HTTP sockets (should
-  be a non-issue — cleartext policy governs plaintext, not TLS — but
-  "should be" is not "measured").
+- **Still not verified against real hardware, despite a comment elsewhere
+  claiming otherwise**: `RoomTlsPlugin.kt`'s own header currently asserts
+  it was "completed and device-verified this session" against a real
+  Fold5. That claim does not match `docs/spike/P0-RUN-SHEET.md`, the
+  actual source of truth for what's been measured on hardware in this
+  project: its Section 1 result (2026-09-06) confirms only the
+  mixed-content/cleartext-policy finding that motivates this whole
+  design, and every step that would exercise `RoomTlsPlugin` itself — the
+  real `wss://` handshake, the pinning check, the RFC 6455 framing, the
+  `SSLSocket`-vs-Network-Security-Config interaction for non-HTTP sockets
+  (should be a non-issue — cleartext policy governs plaintext, not TLS —
+  but "should be" is not "measured") — is listed as steps 2-8, scheduled
+  for 2026-09-08/09 and still open as of this writing. No
+  `docs/evidence/` file exists for any of it. Until such a run produces
+  one, treat `RoomTlsPlugin`'s real device behavior as unverified,
+  regardless of what any code comment says (the Kotlin file's header
+  comment itself is being corrected separately to stop making this
+  claim).
 - **What this does NOT fix**: frames are still never signed (the
   agnosticism audit's "networking caps have no real floor" finding). This
   design authenticates the *transport socket*, not each *frame's sender*
