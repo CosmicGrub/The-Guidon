@@ -125,7 +125,7 @@ webview2-com = "0.38"
 # `windows::core` is itself a re-export of `windows-core`, already resolved
 # at 0.61.2 in Cargo.lock through webview2-com/windows-core itself, so this
 # is the same type either way with far fewer features to compile.
-windows-core = "0.61"
+windows-core = "0.62"
 # R-ROOM: GetAdaptersAddresses (iphlpapi), the same API `ipconfig` is built
 # on - real interface enumeration for the non-loopback IPv4 listing.
 # windows-sys 0.60 was already resolved in Cargo.lock (tao's own Win32
