@@ -37,19 +37,20 @@ const page = await (await browser.newContext()).newPage();
 const noise = [];
 page.on("console", (m) => { if (m.type() === "error") noise.push(m.text()); });
 page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
-// library.js's render() (reached via this suite's #/library deep-link
-// check) does a one-time same-origin HEAD probe against a doc's pdfAsset -
-// when web/docs/ genuinely isn't shipped (this repo's own CI build-
-// artifact upload deliberately excludes it, ~78MB not worth re-uploading
-// for every test-matrix job), that probe 404s and Chromium logs its own
-// unsuppressible "Failed to load resource" console line as a side effect
-// of the network layer - no try/catch in app code can prevent it. Same
-// allowance tools/test-library.mjs and tools/test-csp.mjs already use for
-// the identical probe: count the real network-response 404 and forgive
-// exactly that many matching console lines, so a genuinely UNEXPECTED
-// error still fails.
+// This suite's #/library deep-link check (below) opens a real Reference
+// Library document, which fires G.library's own PDF-availability probe. When
+// web/docs/ genuinely isn't shipped - this repo's own CI build-output
+// artifact deliberately excludes web/docs/** (~78MB of source PDFs) - that
+// probe 404s and the app correctly sets _pdfAvailable=false and carries on,
+// but the 404 still lands in the console as noise. Same environment-aware
+// forgiveness test-library.mjs already uses for the identical probe: count
+// the real network-response 404s on /docs/*.pdf and forgive exactly that
+// many console entries, never a blanket 404 allowance. First surfaced the
+// very first time this suite ran in CI at all (it had been one of 8 suites
+// silently never wired into the matrix) - passed locally every time because
+// web/docs/ is present here.
 let docsProbe404 = 0;
-page.on("response", (r) => { if (!r.ok() && /\/docs\/.*\.pdf$/i.test(new URL(r.url()).pathname)) docsProbe404++; });
+page.on("response", (r) => { try { if (!r.ok() && /\/docs\/.*\.pdf$/i.test(new URL(r.url()).pathname)) docsProbe404++; } catch (e) {} });
 
 await page.goto(url, { waitUntil: "load" });
 await page.waitForTimeout(700);
@@ -188,9 +189,19 @@ await page.waitForTimeout(200);
 const captureShown = await page.evaluate(() => !!document.querySelector("textarea"));
 captureShown ? ok("Capture screen shows a paste textarea") : bad("Capture textarea not found");
 
-// A small synthetic MOI-like block: a detectable unit line, two headed
-// blocks each citing a real, distinct corpus citation (one clean, one with
-// a chapter suffix), and a fabricated citation for the Not-found bucket.
+// A small synthetic MOI-like block: a detectable unit line, headed blocks
+// citing real, distinct corpus citations (one clean, one with a chapter
+// suffix), a glyph-confused citation for the Needs Review bucket, and a
+// fabricated citation for the Not-found bucket.
+//
+// Round 8 roadmap-audit bucket A, fix #6: "AR GOO-9" is this same suite's
+// own glyph-folded unit-test citation from part (a) above (it normalizes to
+// AR 600-9 and is guaranteed to land in tier 'glyph-folded' - see the
+// glyphResult assertions near the top of this file). Before this round the
+// fixture was deliberately built to produce "0 need a look" (a comment here
+// said so), leaving the entire "Needs a look" manual-review branch -
+// including the viewBtn/searchBtn aria-expanded disclosure toggle and the
+// inline topic-search flow - completely untested.
 const MOI_TEXT = [
   "1st Battalion, 5th Infantry Regiment",
   "BOARD MOI - ASSIGNED STUDY TOPICS",
@@ -200,6 +211,9 @@ const MOI_TEXT = [
   "",
   "RECORDS:",
   "Review AR 623-3, Ch 2 before the board.",
+  "",
+  "REVIEW:",
+  "Double-check AR GOO-9 before the board.",
   "",
   "UNKNOWN:",
   "See AR 999-99 for details.",
@@ -228,9 +242,9 @@ const summaryText = await page.evaluate(() => {
   const hint = h3 && h3.nextElementSibling;
   return hint ? hint.textContent : null;
 });
-summaryText && /2 matched/.test(summaryText) && /0 need a look/.test(summaryText) && /1 not found/.test(summaryText)
-  ? ok("Summary strip reads '2 matched · 0 need a look · 1 not found': \"" + summaryText + "\"")
-  : bad("Summary strip text: \"" + summaryText + "\" (expected 2 matched / 0 needs review / 1 not found)");
+summaryText && /2 matched/.test(summaryText) && /1 need a look/.test(summaryText) && /1 not found/.test(summaryText)
+  ? ok("Summary strip reads '2 matched · 1 need a look · 1 not found': \"" + summaryText + "\"")
+  : bad("Summary strip text: \"" + summaryText + "\" (expected 2 matched / 1 needs review / 1 not found)");
 
 const matchedText = await page.evaluate(() => {
   const segBtns = [...document.querySelectorAll(".segmented button")];
@@ -255,6 +269,88 @@ const notFoundText = await page.evaluate(() => {
 notFoundText.indexOf("AR 999-99") !== -1
   ? ok("Not-found list includes the fabricated citation AR 999-99")
   : bad("Not-found list missing AR 999-99");
+
+/* ------------------------------------------------------------------------
+   Needs Review (glyph-folded) manual-review flow - round 8 roadmap-audit
+   bucket A, fix #6. AR GOO-9 folds to AR 600-9 and lands in "Needs a look".
+   Exercises the row's Accept/Dismiss/Search controls, the searchBtn
+   aria-expanded disclosure toggle (fix #2), and the inline topic-search
+   accept path end to end.
+   ------------------------------------------------------------------------ */
+await page.evaluate(() => {
+  const segBtns = [...document.querySelectorAll(".segmented button")];
+  const needsBtn = segBtns.find((b) => /^Needs review/.test(b.textContent || ""));
+  if (needsBtn) needsBtn.click();
+});
+
+function findNeedsPanelSnippet() {
+  const panel = [...document.querySelectorAll(".panel")].find((p) => /AR GOO-9/.test(p.textContent || ""));
+  if (!panel) return null;
+  const btnTexts = [...panel.querySelectorAll("button")].map((b) => b.textContent.trim());
+  const searchBtn = [...panel.querySelectorAll("button")].find((b) => /Search for the right topic/.test(b.textContent || ""));
+  return { btnTexts: btnTexts, searchAriaExpanded: searchBtn ? searchBtn.getAttribute("aria-expanded") : null };
+}
+const needsRowInitial = await page.evaluate(findNeedsPanelSnippet);
+needsRowInitial && needsRowInitial.btnTexts.includes("Accept") && needsRowInitial.btnTexts.includes("Dismiss") && needsRowInitial.btnTexts.some((t) => /Search for the right topic/.test(t))
+  ? ok("Needs-review row for AR GOO-9 (glyph-folded) renders Accept/Dismiss/Search controls")
+  : bad("Needs-review row for AR GOO-9 missing expected controls: " + JSON.stringify(needsRowInitial));
+needsRowInitial && needsRowInitial.searchAriaExpanded === "false"
+  ? ok("Needs-review row's search toggle starts collapsed with aria-expanded=\"false\"")
+  : bad("Needs-review row's search toggle initial aria-expanded: " + JSON.stringify(needsRowInitial && needsRowInitial.searchAriaExpanded));
+
+// Click "Search for the right topic" - aria-expanded should flip and the
+// inline search input should appear.
+await page.evaluate(() => {
+  const panel = [...document.querySelectorAll(".panel")].find((p) => /AR GOO-9/.test(p.textContent || ""));
+  const btn = panel && [...panel.querySelectorAll("button")].find((b) => /Search for the right topic/.test(b.textContent || ""));
+  if (btn) btn.click();
+});
+await page.waitForTimeout(150);
+const afterToggle = await page.evaluate(() => {
+  const panel = [...document.querySelectorAll(".panel")].find((p) => /AR GOO-9/.test(p.textContent || ""));
+  const btn = panel && [...panel.querySelectorAll("button")].find((b) => /Search for the right topic/.test(b.textContent || ""));
+  const input = panel && panel.querySelector('input[aria-label="Search for the right topic"]');
+  return { ariaExpanded: btn ? btn.getAttribute("aria-expanded") : null, inputPresent: !!input };
+});
+afterToggle.ariaExpanded === "true"
+  ? ok("Clicking 'Search for the right topic' flips its aria-expanded from \"false\" to \"true\"")
+  : bad("aria-expanded after clicking the search toggle: " + JSON.stringify(afterToggle.ariaExpanded));
+afterToggle.inputPresent
+  ? ok("The inline topic-search input appears once the disclosure is open")
+  : bad("inline topic-search input did not appear after opening the disclosure");
+
+// Type a query, then click a matching result (falls back to an empty query
+// if the first one happens to match nothing, to avoid flakiness against the
+// real, non-fixture topic corpus).
+const pickedTopic = await page.evaluate(() => {
+  const panel = [...document.querySelectorAll(".panel")].find((p) => /AR GOO-9/.test(p.textContent || ""));
+  const input = panel.querySelector('input[aria-label="Search for the right topic"]');
+  function firstResultBtn() { return input.nextElementSibling ? input.nextElementSibling.querySelector("button") : null; }
+  input.value = "e";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  let btn = firstResultBtn();
+  if (!btn) {
+    input.value = "";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    btn = firstResultBtn();
+  }
+  if (!btn) return null;
+  const text = btn.textContent;
+  btn.click();
+  return text;
+});
+pickedTopic
+  ? ok("Typed a search query and clicked a matching topic result: \"" + pickedTopic + "\"")
+  : bad("No topic-search result was available to click for AR GOO-9");
+
+const afterPick = await page.evaluate(() => {
+  const panel = [...document.querySelectorAll(".panel")].find((p) => /AR GOO-9/.test(p.textContent || ""));
+  const status = panel && panel.querySelector(".badge");
+  return { statusText: status ? status.textContent : null, statusClass: status ? status.className : null };
+});
+afterPick.statusText === "Accepted" && /(^|\s)green(\s|$)/.test(afterPick.statusClass || "")
+  ? ok("Picking a search result marks the AR GOO-9 item Accepted and its status badge reflects the change")
+  : bad("status badge after picking a search result: " + JSON.stringify(afterPick));
 
 // Switch back to Matched before building, just to leave the UI in a sane
 // state (not load-bearing for the assertions below).
@@ -308,6 +404,38 @@ persisted && /1st Battalion|MOI imported/.test(persisted.name || "")
 
 const resultViewShown = await page.evaluate(() => /Replace/.test(document.body.textContent || "") && /Delete/.test(document.body.textContent || ""));
 resultViewShown ? ok("Build redraws Landing's own 'already imported' branch (Replace/Delete actions visible) as the result view") : bad("result view (Replace/Delete) not shown after Build");
+
+// ---- viewBtn's own aria-expanded disclosure state (fix #2): Build's
+// success path starts expanded ("Hide details"/aria-expanded="true"),
+// toggling to collapsed ("View"/aria-expanded="false") and back exercises
+// both directions of the same accessible-disclosure convention searchBtn
+// already had before this round.
+const viewBtnInitial = await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Hide details" || b.textContent.trim() === "View");
+  return btn ? { text: btn.textContent.trim(), ariaExpanded: btn.getAttribute("aria-expanded") } : null;
+});
+viewBtnInitial && viewBtnInitial.text === "Hide details" && viewBtnInitial.ariaExpanded === "true"
+  ? ok("Build's success path starts expanded: the toggle reads 'Hide details' with aria-expanded=\"true\"")
+  : bad("view/hide-details toggle state right after Build: " + JSON.stringify(viewBtnInitial));
+await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Hide details" || b.textContent.trim() === "View");
+  if (btn) btn.click();
+});
+await page.waitForTimeout(150);
+const viewBtnAfterCollapse = await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Hide details" || b.textContent.trim() === "View");
+  return btn ? { text: btn.textContent.trim(), ariaExpanded: btn.getAttribute("aria-expanded") } : null;
+});
+viewBtnAfterCollapse && viewBtnAfterCollapse.text === "View" && viewBtnAfterCollapse.ariaExpanded === "false"
+  ? ok("Clicking the toggle collapses it: reads 'View' with aria-expanded=\"false\"")
+  : bad("view/hide-details toggle state after collapsing: " + JSON.stringify(viewBtnAfterCollapse));
+// Re-expand so the deep-link checks below (which need the full result view
+// visible) find their buttons.
+await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Hide details" || b.textContent.trim() === "View");
+  if (btn) btn.click();
+});
+await page.waitForTimeout(150);
 
 const coverageBadgesShown = await page.evaluate(() => {
   const text = document.body.textContent || "";
@@ -366,7 +494,10 @@ drillShown ? ok("A practice-drill section rendered as part of the result view") 
 const drillHasQuestion = await page.evaluate(() => !!document.querySelector(".card p"));
 drillHasQuestion ? ok("The practice drill shows an actual question") : bad("practice drill rendered but no question text found");
 
-// ---- Delete clears the plan back to the empty state ----
+// ---- Delete must confirm first (matches every other destructive action's
+// G.modal.confirm({danger:true}) gate - grep test-leader.mjs's own
+// "Remove must confirm" case for the same click-through pattern), then
+// clears the plan back to the empty state ----
 const deleteClicked = await page.evaluate(() => {
   const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Delete");
   if (btn) { btn.click(); return true; }
@@ -374,6 +505,13 @@ const deleteClicked = await page.evaluate(() => {
 });
 deleteClicked ? ok("'Delete' button found and clicked") : bad("'Delete' button not found");
 await page.waitForTimeout(300);
+const confirmShown = await page.evaluate(() => !!document.querySelector(".gm-back"));
+confirmShown ? ok("Delete opens a confirm dialog before deleting") : bad("Delete removed the plan without confirming");
+await page.evaluate(() => {
+  const b = [...document.querySelectorAll(".gm-back button")].find((x) => /delete/i.test(x.textContent || ""));
+  if (b) b.click();
+});
+await page.waitForTimeout(400);
 const backToEmpty = await page.evaluate(() => /No MOI imported yet/.test(document.body.textContent || ""));
 backToEmpty ? ok("Deleting the plan returns Landing to the empty-state pitch") : bad("Landing did not return to the empty state after Delete");
 const clearedInDb = await page.evaluate(async () => {
@@ -381,6 +519,76 @@ const clearedInDb = await page.evaluate(async () => {
   return !(r && r.v && Array.isArray(r.v.topics) && r.v.topics.length);
 });
 clearedInDb ? ok("Delete actually clears the persisted plan in IndexedDB") : bad("plan still persisted in IndexedDB after Delete");
+
+// ---- unsaved-build warning: renderAlreadyImported() runs its own
+// util.clear(stage) as its first statement, so a warning appended to the
+// stage BEFORE calling it gets wiped before ever painting - a real bug
+// caught live (unchecking "Save as my study plan" and inspecting the
+// rendered DOM showed the warning text absent, even though it was present
+// in this module's own source), fixed by inserting the warning AFTER the
+// call instead. Regression-covered here by checking a scoped
+// ".feedback.warn" element rather than raw body.textContent - the latter
+// is a false-positive trap on this exact page, since it naturally
+// includes this module's own inline <script> source, which contains the
+// same string literal, regardless of whether the div actually rendered.
+await page.evaluate(() => { location.hash = "#/moi"; });
+await page.waitForTimeout(300);
+const reimportClicked = await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => /Import an MOI/.test(b.textContent || ""));
+  if (btn) { btn.click(); return true; }
+  return false;
+});
+reimportClicked ? ok("(unsaved-build case) 'Import an MOI' reopened from the empty state") : bad("(unsaved-build case) could not reopen Capture");
+await page.waitForTimeout(200);
+await page.evaluate((text) => {
+  const ta = document.querySelector("textarea");
+  ta.value = text;
+  ta.dispatchEvent(new Event("input", { bubbles: true }));
+}, MOI_TEXT);
+await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => /Find my topics/.test(b.textContent || ""));
+  if (btn) btn.click();
+});
+// Wait for the checkbox itself, not just the "Review your matches" heading
+// text - on this second pass the citation registry is already warm from
+// the first Build above, so matching resolves fast enough that the
+// heading can paint a beat before the options row (checkboxes + Build
+// button) finishes rendering beneath it. Gating on the heading alone was
+// an observed source of flakiness the first Review check upstream never
+// hit, since its slower cold-registry build happened to leave enough of a
+// natural buffer.
+await page.waitForFunction(
+  () => /Review your matches/.test(document.body.textContent || "") && !!document.getElementById("moi-opt-save"),
+  { timeout: 5000 }
+).catch(() => {});
+const saveUnchecked = await page.evaluate(() => {
+  const cb = document.getElementById("moi-opt-save");
+  if (!cb) return false;
+  cb.checked = false;
+  return cb.checked === false;
+});
+saveUnchecked ? ok("(unsaved-build case) 'Save as my study plan' unchecked before Build") : bad("(unsaved-build case) could not uncheck 'Save as my study plan'");
+const unsavedBuildClicked = await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => /^Build/.test((b.textContent || "").trim()));
+  if (btn) { btn.click(); return true; }
+  return false;
+});
+unsavedBuildClicked ? ok("(unsaved-build case) 'Build →' clicked with save unchecked") : bad("(unsaved-build case) 'Build →' button not found");
+await page.waitForTimeout(400);
+
+const warnVisible = await page.evaluate(() => {
+  const w = document.querySelector(".feedback.warn");
+  return !!w && /Not saved/.test(w.textContent || "") && !!w.offsetParent;
+});
+warnVisible
+  ? ok("Unchecking 'Save as my study plan' actually shows the 'Not saved' warning in the rendered result view (regression: renderAlreadyImported's own util.clear used to wipe it before paint)")
+  : bad("'Not saved' warning did not render after an unsaved Build");
+
+const notPersisted = await page.evaluate(async () => {
+  const r = await window.G.db.get("kv", window.G.moiImport.KEY);
+  return !(r && r.v && Array.isArray(r.v.topics) && r.v.topics.length);
+});
+notPersisted ? ok("Unsaved Build does not persist a plan to IndexedDB") : bad("Unsaved Build persisted a plan anyway");
 
 // cleanup
 await page.evaluate(async () => { await window.G.db.put("kv", { k: window.G.moiImport.KEY, v: null }); });

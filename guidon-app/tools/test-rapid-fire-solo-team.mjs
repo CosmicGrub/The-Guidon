@@ -103,9 +103,21 @@ async function enterRapidFireFresh() {
   // when nothing else is competing for the event loop. Poll for the real
   // condition (a "Party" button inside .segmented actually exists) instead
   // of assuming 300ms was enough.
+  //
+  // Round 8 (2026-09-06): the poll itself is correct but 5000ms wasn't
+  // enough margin specifically for the FIRST call in a run - confirmed via
+  // the CI log that only the very first enterRapidFireFresh() (right after
+  // fresh page boot, competing with 7 other concurrent Chromium instances
+  // in this same chunk) ever times out; every later call in the same run
+  // succeeds in well under a second once the page/JS engine is warmed up.
+  // Reproduced identically 2/2 times on the same commit; 0/1 locally
+  // uncontended (same signature as the original bug, one layer deeper).
+  // Widened to 15000ms - this only matters on a genuinely slow run, since
+  // waitForFunction resolves the instant the condition becomes true rather
+  // than waiting out the full budget.
   await page.waitForFunction(
     () => [...document.querySelectorAll(".segmented button")].some((b) => b.textContent.trim() === "Party"),
-    { timeout: 5000 }
+    { timeout: 15000 }
   ).catch(() => {}); // let the assertions below report a clear failure rather than throwing here
   return clicked;
 }

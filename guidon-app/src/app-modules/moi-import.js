@@ -399,11 +399,19 @@ window.G = window.G || {};
     function landing() {
       util.clear(stage);
       if (!hasPlan(saved)) {
-        stage.appendChild(util.emptyState(
+        const empty = util.emptyState(
           "No MOI imported yet",
           "Paste or upload your board's MOI and GUIDON builds a study dashboard from exactly what it assigns — nothing added, nothing assumed.",
           "Import an MOI",
-          capture));
+          capture);
+        stage.appendChild(empty);
+        // Roadmap audit lens (a11y, HIGH): matches review()'s own
+        // tabindex="-1" + focus({preventScroll:true}) convention below -
+        // this is an in-page state swap inside the SAME route (e.g. after
+        // Delete, or Capture's own Cancel), not a fresh route() call the
+        // router would announce on its own.
+        empty.setAttribute("tabindex", "-1");
+        try { empty.focus({ preventScroll: true }); } catch (e) {}
         return;
       }
       renderAlreadyImported(saved, false);
@@ -418,10 +426,23 @@ window.G = window.G || {};
       const row = el("div.btn-row", { style: "gap:8px;flex-wrap:wrap;margin-top:6px" });
       const replaceBtn = el("button.btn.sm", { type: "button", text: "Replace" });
       replaceBtn.addEventListener("click", capture);
-      const viewBtn = el("button.btn.sm.ghost", { type: "button", text: expanded ? "Hide details" : "View" });
+      // Roadmap audit lens (a11y, Medium): matches searchBtn's own
+      // disclosure-toggle convention below (grep "aria-expanded" in this
+      // file) - aria-expanded set here from the current `expanded` state;
+      // a click re-renders this whole function with `expanded` flipped, so
+      // the freshly-created viewBtn below always carries the right value
+      // rather than needing a separate flip-in-place.
+      const viewBtn = el("button.btn.sm.ghost", { type: "button", text: expanded ? "Hide details" : "View", "aria-expanded": String(expanded) });
       viewBtn.addEventListener("click", () => renderAlreadyImported(plan, !expanded));
       const deleteBtn = el("button.btn.sm.ghost", { type: "button", text: "Delete" });
       deleteBtn.addEventListener("click", async () => {
+        // Roadmap audit lens (a11y/UX polish): every other destructive
+        // delete in the app (scenario delete, profile delete, backup-clear
+        // actions - grep "modal.confirm" for the danger:true convention)
+        // gates on G.modal.confirm first. This one deleted the whole saved
+        // MOI plan on a single click with no confirmation - the one
+        // sibling delete action that skipped the app's own guard.
+        if (!(await G.modal.confirm("Delete your imported MOI plan? This can't be undone.", { okText: "Delete", danger: true }))) return;
         try { await G.db.put("kv", { k: KEY, v: null }); } catch (e) {}
         saved = null;
         try { util.toast("MOI plan deleted."); } catch (e) {}
@@ -431,6 +452,14 @@ window.G = window.G || {};
       head.appendChild(row);
       stage.appendChild(head);
       if (expanded) stage.appendChild(buildResultView(plan));
+      // Roadmap audit lens (a11y, HIGH): matches review()'s own
+      // tabindex="-1" + focus({preventScroll:true}) convention below - this
+      // is an in-page state swap inside the SAME route (Delete's return to
+      // Landing, Build's success path, and this function's own
+      // View/Hide-details re-invocation just above all land here), not a
+      // fresh route() call the router would announce on its own.
+      head.setAttribute("tabindex", "-1");
+      try { head.focus({ preventScroll: true }); } catch (e) {}
     }
 
     function buildResultView(plan) {
@@ -487,11 +516,32 @@ window.G = window.G || {};
     function capture() {
       util.clear(stage);
       const backBtn = el("button.btn.sm.ghost", { type: "button", text: "← Cancel" });
-      backBtn.addEventListener("click", landing);
+      // Roadmap audit lens (UX consistency): this used to discard whatever
+      // was pasted/uploaded with zero warning - the one capture/edit screen
+      // in the app that skipped the confirm-before-discard guard every
+      // sibling screen already has. Matches the Author Studio scenario
+      // editor's own Cancel button (index.html, grep "Discard this
+      // scenario") precisely: confirm unconditionally rather than adding a
+      // dirty-check, the same tradeoff that button already makes for the
+      // identical problem shape.
+      backBtn.addEventListener("click", async () => {
+        if (!(await G.modal.confirm("Discard this MOI and any pasted/uploaded text? This can't be undone.", { danger: true }))) return;
+        landing();
+      });
       stage.appendChild(backBtn);
 
-      stage.appendChild(el("p.hint", { style: "margin-top:8px", text:
-        "Add your MOI below — upload a PDF, paste text, or both. A Soldier might have a clean PDF for part of an MOI and need to hand-paste an OCR'd or garbled part; both get combined before matching." }));
+      const intro = el("p.hint", { style: "margin-top:8px", text:
+        "Add your MOI below — upload a PDF, paste text, or both. A Soldier might have a clean PDF for part of an MOI and need to hand-paste an OCR'd or garbled part; both get combined before matching." });
+      stage.appendChild(intro);
+      // Roadmap audit lens (a11y, HIGH): matches review()'s own
+      // tabindex="-1" + focus({preventScroll:true}) convention below - this
+      // is an in-page state swap inside the SAME route (Landing's "Import
+      // an MOI"/"Replace" buttons both land here), not a fresh route() call
+      // the router would announce on its own. Focuses this intro text
+      // rather than the "← Cancel" button just above it - that button is
+      // page chrome, not the content this transition needs to announce.
+      intro.setAttribute("tabindex", "-1");
+      try { intro.focus({ preventScroll: true }); } catch (e) {}
 
       let pdfText = "";
       const fileInput = el("input", { type: "file", accept: "application/pdf,.pdf,text/plain,.txt", "aria-label": "Upload MOI file (PDF or text)" });
@@ -517,12 +567,22 @@ window.G = window.G || {};
             // not just as a copy-pasted precaution. getTextContent(), not
             // render() - this only ever needs the text, never a canvas.
             const doc = await window.pdfjsLib.getDocument({ data: bytes, isEvalSupported: false }).promise;
-            let text = "";
-            for (let p = 1; p <= doc.numPages; p++) {
-              const page = await doc.getPage(p);
-              const content = await page.getTextContent();
-              text += content.items.map((it) => it.str).join(" ") + "\n";
+            // Roadmap audit lens (Performance): each page's extraction has
+            // no data dependency on any other page, so awaiting them one at
+            // a time in a loop serialized work that can run concurrently.
+            // Promise.all preserves page order in its results array
+            // regardless of resolution order, so the join below still comes
+            // out in the right sequence.
+            const pagePromises = [];
+            for (let i = 0; i < doc.numPages; i++) {
+              pagePromises.push(
+                doc.getPage(i + 1)
+                  .then((page) => page.getTextContent())
+                  .then((content) => content.items.map((it) => it.str).join(" "))
+              );
             }
+            const pageTexts = await Promise.all(pagePromises);
+            let text = pageTexts.join("\n") + "\n";
             try { doc.destroy(); } catch (e2) {}
             pdfText = text;
             fileStatus.textContent = "Read " + doc.numPages + " page" + (doc.numPages === 1 ? "" : "s") + " from " + f.name + ".";
@@ -720,7 +780,14 @@ window.G = window.G || {};
       const btnRow = el("div.btn-row", { style: "gap:8px;margin-top:6px" });
       const acceptBtn = el("button.btn.sm", { type: "button", text: "Accept" });
       const dismissBtn = el("button.btn.sm.ghost", { type: "button", text: "Dismiss" });
-      const searchBtn = el("button.btn.sm.ghost", { type: "button", text: "Search for the right topic" });
+      // Roadmap audit lens (a11y/UX polish): this button flips searchWrap's
+      // display style without touching aria-expanded - the same disclosure-
+      // toggle gap a prior audit round fixed for detailsBtn/moreToggle/
+      // filtersToggle/settingsAdvToggle (see index.html, grep "aria-expanded"
+      // convention comment near "detailsBtn"). moi-import.js was added after
+      // that round so it never got the same treatment. Matches that pattern:
+      // aria-expanded="false" at creation, flipped in the click handler.
+      const searchBtn = el("button.btn.sm.ghost", { type: "button", text: "Search for the right topic", "aria-expanded": "false" });
       btnRow.appendChild(acceptBtn); btnRow.appendChild(dismissBtn); btnRow.appendChild(searchBtn);
       card.appendChild(btnRow);
 
@@ -741,6 +808,7 @@ window.G = window.G || {};
       searchBtn.addEventListener("click", () => {
         const isOpen = searchWrap.style.display !== "none";
         searchWrap.style.display = isOpen ? "none" : "";
+        searchBtn.setAttribute("aria-expanded", String(!isOpen));
         if (!isOpen && !searchWrap.firstChild) buildInlineTopicSearch(searchWrap, it, refreshStatus);
       });
       refreshStatus();
@@ -824,7 +892,13 @@ window.G = window.G || {};
 
       (async () => {
         if (savePlan) {
-          try { await G.db.put("kv", { k: KEY, v: plan }); } catch (e) { try { util.toast("Couldn't save your plan."); } catch (e2) {} }
+          // Roadmap audit lens (UX consistency): the failure path already
+          // toasted "Couldn't save your plan." - success was silent, the
+          // one save action in this file with no positive confirmation.
+          try {
+            await G.db.put("kv", { k: KEY, v: plan });
+            try { util.toast("MOI plan saved."); } catch (e2) {}
+          } catch (e) { try { util.toast("Couldn't save your plan."); } catch (e2) {} }
           saved = plan;
         }
         // "Redraw Landing's own already-imported branch AS the result
@@ -832,11 +906,16 @@ window.G = window.G || {};
         // separate step. Starts expanded (unlike a routine later visit,
         // which defaults collapsed behind "View") so the Soldier
         // immediately sees what was just built, saved or not.
-        util.clear(stage);
-        if (!savePlan) {
-          stage.appendChild(el("div.feedback.warn", { text: "Not saved — “Save as my study plan” was unchecked, so this view will be gone once you navigate away." }));
-        }
+        // renderAlreadyImported() does its own util.clear(stage) as its
+        // first statement, which would wipe a warning appended before
+        // calling it - so the warning has to be inserted AFTER, not
+        // before (confirmed live via Playwright: the pre-call ordering
+        // left the warning text absent from the rendered DOM even though
+        // it was present in this file's source).
         renderAlreadyImported(plan, true);
+        if (!savePlan) {
+          stage.insertBefore(el("div.feedback.warn", { text: "Not saved — “Save as my study plan” was unchecked, so this view will be gone once you navigate away." }), stage.firstChild);
+        }
       })();
     }
 
