@@ -372,4 +372,10 @@ jobs:
 
       - name: cargo test --locked
         working-directory: guidon-app/src-tauri
-        run: cargo test --locked
+        # --features fuzz-validate: src/bin/fuzz_validate.rs is now gated
+        # behind this feature (see Cargo.toml's own comment - the bundle-
+        # macos job's bundler otherwise expects it in the universal-binary
+        # output and it's never there) so a default `cargo test` no longer
+        # compiles it at all; passing the feature here keeps this job's own
+        # coverage of it exactly as before.
+        run: cargo test --locked --features fuzz-validate

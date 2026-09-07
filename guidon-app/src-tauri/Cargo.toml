@@ -29,6 +29,31 @@ default-run = "guidon"
 name = "guidon"
 path = "src/lib.rs"
 
+# BUNDLING FIX (2026-09-07, found on bundle-macos's own first real run on a
+# GitHub runner): tauri-cli's bundler enumerates every [[bin]] target this
+# package declares (via cargo_metadata) and tries to copy each one into the
+# app bundle - not just the shipped "guidon" binary. `tauri build --target
+# universal-apple-darwin` failed with "Failed to copy binary ... fuzz_validate
+# ... does not exist", because tauri-cli's universal-binary lipo-merge step
+# only produces the ONE binary it treats as "the app" (default-run above),
+# never a second, unrelated dev-tool binary living in the same package -
+# fuzz_validate was never lipo-merged into target/universal-apple-darwin/
+# release/ in the first place, even though it built fine per-arch on its own.
+# required-features gates it out of a DEFAULT `cargo build --release` (what
+# tauri invokes) entirely, so there is nothing for the bundler to expect -
+# `cargo build --features fuzz-validate --bin fuzz_validate` (or `cargo test
+# --features fuzz-validate`) still builds/tests it explicitly, matching how
+# tools/fuzz-room-validate.mjs already tells you to build it by hand (an
+# opt-in dev tool, never part of the shipped app either way - this just makes
+# that already-true fact visible to Cargo/tauri too, not a behavior change).
+[[bin]]
+name = "fuzz_validate"
+path = "src/bin/fuzz_validate.rs"
+required-features = ["fuzz-validate"]
+
+[features]
+fuzz-validate = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

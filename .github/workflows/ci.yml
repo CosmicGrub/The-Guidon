@@ -464,7 +464,7 @@ jobs:
         run: |
           cargo --version
           rustc --version
-          cargo check --locked
+          cargo check --locked --features fuzz-validate
 
   # ---------------------------------------------------------------------
   # Roadmap audit round 4, "CI / supply-chain hardening" bucket: OSV.dev

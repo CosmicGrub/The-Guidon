@@ -17,7 +17,8 @@
  *     hidden state, no Date.now()/Math.random() anywhere in it (a fixed
  *     default seed makes a full run CI-deterministic; `--replay <seed>
  *     <index>` regenerates exactly one case standalone for a human to
- *     inspect or hand to `cargo run --bin fuzz_validate` directly).
+ *     inspect or hand to `cargo run --features fuzz-validate --bin
+ *     fuzz_validate` directly).
  *   - Two generation strategies, chosen deterministically per case:
  *       (a) "random"  - coarse-grained, varying shape/depth/type JSON, most
  *           of which never gets past validate()'s early object/key checks -
@@ -399,7 +400,7 @@ async function replay(seed, index) {
   console.log("js verdict:  " + JSON.stringify(jsVerdict));
   const bin = findRustBinary();
   if (!bin) {
-    console.error("(no fuzz_validate binary found under src-tauri/target/{debug,release} - build it first: `cargo build --bin fuzz_validate` from src-tauri/)");
+    console.error("(no fuzz_validate binary found under src-tauri/target/{debug,release} - build it first: `cargo build --features fuzz-validate --bin fuzz_validate` from src-tauri/)");
     process.exit(2);
   }
   const [verdict] = await runBatch(bin, [c]);
@@ -429,7 +430,7 @@ async function main() {
   const bin = findRustBinary();
   if (!bin) {
     console.error("fuzz-room-validate: no fuzz_validate binary found under src-tauri/target/{debug,release}/.");
-    console.error("Build it first: cd src-tauri && cargo build --bin fuzz_validate");
+    console.error("Build it first: cd src-tauri && cargo build --features fuzz-validate --bin fuzz_validate");
     process.exit(2);
   }
   console.log(`fuzz-room-validate: seed=${JSON.stringify(args.seed)} count=${args.count} binary=${bin}`);
