@@ -6,11 +6,16 @@
 //
 // CONCURRENCY. Local runs (CI unset) default to a cap of 6 workers. CI=true
 // keeps the unbounded behaviour because ci.yml shards the list into chunks of
-// at most 8, so a shard is only ~8 browsers. Run the UNSHARDED list locally
-// with no cap, though, and that is every suite in the list at once - well
-// over a hundred Chromium instances, each parsing a 12+ MB document, each
-// with its own GPU process. On the dev laptop (RTX 4050, 6 GB VRAM per nvidia-smi) that
-// produced a video-memory crash mid-run on 2026-09-03.
+// at most PER_CHUNK (tools/lint-ci-matrix.mjs) - 4 as of 2026-09-07, so a
+// shard is only ~4 browsers on a 2-vCPU runner. Was 8, unmeasured the whole
+// time it stood; lowered after that unmeasured ceiling produced a repeat-
+// offender class of CI flake across three separate suites, all the same
+// CPU-starvation shape under an 8-wide shard (see PER_CHUNK's own comment
+// in lint-ci-matrix.mjs for the full history). Run the UNSHARDED list
+// locally with no cap, though, and that is every suite in the list at once
+// - well over a hundred Chromium instances, each parsing a 12+ MB document,
+// each with its own GPU process. On the dev laptop (RTX 4050, 6 GB VRAM per
+// nvidia-smi) that produced a video-memory crash mid-run on 2026-09-03.
 // GUIDON_TEST_CONCURRENCY=N overrides either way; 0 means unbounded.
 //
 //     GUIDON_TEST_CONCURRENCY=6 npm test          (bash)
