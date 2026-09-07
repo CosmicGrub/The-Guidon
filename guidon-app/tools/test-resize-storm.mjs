@@ -420,55 +420,73 @@ if (!SKIP.includes("C")) {
           out.sort((a, b) => a.w - b.w);
           return out.slice(0, 4);
         });
-        // Diagnostic (2026-09-07), round 3: the round-2 fix (min-width:0 on
-        // .card-results-grid's direct children - the grid analog of the
-        // established flex min-width:auto bug) shipped and CI reported the
-        // EXACT same numbers again (#/transition, 594px, main=25) - meaning
-        // that theory was wrong, or at least incomplete, and guessing a
-        // second time without more data would be the same mistake twice.
-        // This walks the actual narrowest offender's own ancestor chain
-        // (display/width/min-width/flex-shrink at each level) and, if a
-        // .card-results-grid is anywhere in that chain, also dumps its
-        // resolved grid-template-columns and each direct child's own
-        // rendered width - enough to tell whether the grid itself is being
-        // sized wide by an ancestor (e.g. a flex/grid parent .view isn't
-        // shrinking below the grid's min-content) versus a child refusing
-        // to shrink despite min-width:0, without guessing a third time.
+        // Diagnostic (2026-09-07), round 5: rounds 3-4 both misdiagnosed this
+        // because the round-3 chain-walker had a real bug - it found the
+        // narrowest OFFENDER (div.view, flagged because Math.max(scrollWidth,
+        // rectWidth) = 594 exceeds .main's limit) and then walked UPWARD
+        // toward .main looking for an ancestor refusing to shrink. But
+        // div.view's own rendered width was a separate 551px (fits fine) -
+        // its SCROLLWIDTH is what's 594, meaning the overflow is INSIDE
+        // div.view's own subtree, not above it. .closest(".card-results-
+        // grid") on div.view then correctly returned null every time (the
+        // grid is a descendant of .view, not an ancestor - .closest() only
+        // ever looks upward), which is why gridDebug was always empty and
+        // why round 4's font-swap theory, built on that same "it must be
+        // above/around .view" framing, also didn't move CI's numbers: the
+        // real content was never inspected at all, four rounds running.
+        // This descends INSTEAD of ascending: re-runs the identical
+        // find-the-narrowest-overflowing-element algorithm, but re-rooted
+        // one level down, INSIDE div.view's own subtree, with view's own
+        // clientWidth as the new limit - the correct next step into the
+        // same DOM region this test has been trying to see for two rounds.
         const chainDebug = await page.evaluate(() => {
           const main = document.querySelector(".main");
           if (!main) return null;
           const limit = main.clientWidth;
-          let narrowest = null, narrowestW = Infinity;
+          let outer = null, outerW = Infinity;
           main.querySelectorAll("*").forEach((el) => {
             const w = Math.max(el.scrollWidth, el.getBoundingClientRect().width);
-            if (w > limit + 1 && w < narrowestW) { narrowestW = w; narrowest = el; }
+            if (w > limit + 1 && w < outerW) { outerW = w; outer = el; }
           });
-          if (!narrowest) return null;
-          const chain = [];
-          let node = narrowest;
-          while (node && node !== main.parentElement) {
-            const cs = getComputedStyle(node);
-            chain.push({
-              tag: node.tagName.toLowerCase() + (node.className && typeof node.className === "string" ? "." + node.className.split(" ").slice(0, 2).join(".") : ""),
-              display: cs.display, w: Math.round(node.getBoundingClientRect().width),
-              minWidth: cs.minWidth, flexShrink: cs.flexShrink,
+          if (!outer) return null;
+          const describe = (el) => ({
+            tag: el.tagName.toLowerCase() + (el.className && typeof el.className === "string" ? "." + el.className.split(" ").slice(0, 2).join(".") : ""),
+            ownW: Math.round(el.getBoundingClientRect().width), scrollW: el.scrollWidth, clientW: el.clientWidth,
+            display: getComputedStyle(el).display, minWidth: getComputedStyle(el).minWidth,
+          });
+          // Descend from `outer` (its own rendered box may fit fine - the
+          // problem is its DESCENDANTS' scrollWidth pushing it) to find the
+          // deepest, narrowest element that still itself exceeds ITS OWN
+          // parent's clientWidth - the actual leaf responsible, not just
+          // "somewhere in here."
+          let node = outer, trail = [describe(outer)], guard = 0;
+          for (;;) {
+            if (++guard > 20) break;
+            const innerLimit = node.clientWidth;
+            let next = null, nextW = Infinity;
+            Array.from(node.querySelectorAll("*")).forEach((el) => {
+              if (el.children.length === 0 && !el.textContent.trim()) return; // skip empty leaves
+              const w = Math.max(el.scrollWidth, el.getBoundingClientRect().width);
+              if (w > innerLimit + 1 && w < nextW) { nextW = w; next = el; }
             });
-            node = node.parentElement;
+            if (!next || next === node) break;
+            trail.push(describe(next));
+            node = next;
           }
-          const grid = narrowest.closest(".card-results-grid");
+          const grid = outer.querySelector(".card-results-grid") || node.closest(".card-results-grid");
           let gridDebug = null;
           if (grid) {
             const gcs = getComputedStyle(grid);
             gridDebug = {
               gridTemplateColumns: gcs.gridTemplateColumns,
-              gridW: Math.round(grid.getBoundingClientRect().width),
+              gridW: Math.round(grid.getBoundingClientRect().width), gridScrollW: grid.scrollWidth,
               kids: Array.from(grid.children).map((k) => ({
                 tag: k.tagName.toLowerCase() + (k.className && typeof k.className === "string" ? "." + k.className.split(" ")[0] : ""),
                 w: Math.round(k.getBoundingClientRect().width), scrollW: k.scrollWidth,
               })),
             };
           }
-          return { mainLimit: limit, chain, gridDebug };
+          return { mainLimit: limit, leafText: (node.textContent || "").trim().slice(0, 80), trail, gridDebug };
         });
         overflowRoutes.push(r + "(doc=" + s.docOverX + ",main=" + s.mainOverX + (mainWide.length ? ",mainWide=" + mainWide.map((x) => x.tag + ":" + x.w).join("|") : ",mainWide=none-found") + ")");
         if (chainDebug) console.log("  DEBUG " + r + " @" + w + "x" + h + ": " + JSON.stringify(chainDebug));
