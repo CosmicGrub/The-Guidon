@@ -94,7 +94,12 @@
     kind: "tauri-listener", peer: "0.0.0.0 (Rust LAN listener)",
     send: function (frame, to) {
       rt.sends++;
-      invoke("room_send", { frame: frame, to: to == null ? null : String(to) }).catch(function (e) { rt.sendErrors++; rt.lastError = String(e && e.message ? e.message : e); });
+      invoke("room_send", { frame: frame, to: to == null ? null : String(to) }).catch(function (e) {
+        rt.sendErrors++;
+        rt.lastError = String(e && e.message ? e.message : e);
+        rt.notice = "A message could not be sent: " + rt.lastError;
+        redraw();
+      });
       return true;
     },
     onmessage: function (h) { rt.handler = typeof h === "function" ? h : null; },
@@ -188,6 +193,15 @@
     addresses: addresses,
     notice: function () { return rt.notice; },
     lastError: function () { return rt.lastError; },
+    /* General-purpose getter for the native TLS identity's fingerprint
+       (rt.info.identity.fp - see secureJoinUrl()'s own comment above for
+       where rt.info.identity comes from), for callers that just want the
+       fp rather than a built join-link string. Returns the fingerprint
+       string when a room is active and the native side reported an
+       identity, null otherwise (no room started yet, or a pre-rebuild
+       Rust binary with no identity on RoomInfo). To be consumed by
+       src/app-modules/studygroup.js in a later, separate change. */
+    fp: function () { return (rt.info && rt.info.identity && rt.info.identity.fp) || null; },
     peers: function () { return { open: rt.peers.open, close: rt.peers.close, frames: rt.frames, sends: rt.sends, sendErrors: rt.sendErrors }; },
     stats: function () { return invoke("room_stats", {}); },
     transport: transport,
