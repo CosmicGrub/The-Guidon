@@ -31158,7 +31158,7 @@ window.G = window.G || {};
   views.privacy = function (mount) {
     util.clear(mount);
     mount.appendChild(el("div.section-title", {}, [ el("h2", { text: "Privacy Policy" }), el("div.rule") ]));
-    mount.appendChild(el("p.hint", { text: "Last updated September 4, 2026. Applies to every version of GUIDON — standalone, PWA, desktop, and Android — since they all run from the same source." }));
+    mount.appendChild(el("p.hint", { text: "Last updated September 6, 2026. Applies to every version of GUIDON — standalone, PWA, desktop, and Android — since they all run from the same source." }));
     const SECTIONS = [
       // P1 of the "No server, ever" promise (desktop roadmap, locked decision
       // Q1): the second "short version" paragraph is THE unified sentence -
@@ -31169,7 +31169,7 @@ window.G = window.G || {};
       // exceptions are named here, there and in the root README.
       { h: "The short version", p: [
         "GUIDON does not collect, transmit, sell, or share any personal data, because GUIDON has no server to send it to. There is no server, ever: no account, no sign-in, no analytics, no advertising, and nothing about you is ever sent to anyone — including the developer. Everything GUIDON knows about you stays in storage on your own device, under your control, until you delete it.",
-        "The only ways any version of GUIDON can touch a network are these four, and none of them sends your study data to a server: study groups (LAN rooms), which are off by default behind a switch in Settings and, once they exist, connect only to other devices on the same Wi-Fi or hotspot; GitHub Pages, the file server the web version will be delivered from (today, whichever static host serves it), which is contacted only to fetch or update the app itself (the service worker checks it for a newer copy when you open the app online); a future read-aloud feature, for which your operating system may download a voice pack the first time it is used; and, on a future iOS build, iCloud or device backups run by the operating system, which may include the app's data under the backup settings you control on your device.",
+        "The only ways any version of GUIDON can touch a network are these four, and none of them sends your study data to a server: study groups (LAN rooms), which are off by default behind a switch in Settings and, once they exist, connect only to other devices on the same Wi-Fi or hotspot — including when that connection is secured with a self-signed, device-generated certificate — and never to any server; GitHub Pages, the file server the web version will be delivered from (today, whichever static host serves it), which is contacted only to fetch or update the app itself (the service worker checks it for a newer copy when you open the app online); a future read-aloud feature, for which your operating system may download a voice pack the first time it is used; and, on a future iOS build, iCloud or device backups run by the operating system, which may include the app's data under the backup settings you control on your device.",
       ] },
       { h: "What GUIDON is", p: ["GUIDON is an offline-first, single-user reference and study tool for enlisted Soldiers preparing for promotion boards. It runs entirely client-side — there is no backend server, no cloud sync, and no remote database. Before every release the app is checked automatically by walking every screen and confirming it makes no network request outside a study session."] },
       { h: "Data GUIDON stores, and where", p: [

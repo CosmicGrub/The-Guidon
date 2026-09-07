@@ -1,6 +1,6 @@
 # Privacy Policy — GUIDON
 
-**Last updated:** September 4, 2026
+**Last updated:** September 6, 2026
 
 This is the Privacy Policy for **GUIDON** (Army Leader Development Trainer), distributed as a standalone HTML app, an installable web app (PWA), a Windows desktop app, and an Android app (package `app.guidon.trainer`). It applies to every version of GUIDON, since they all run from the same source and behave identically with respect to data.
 
@@ -12,7 +12,7 @@ This is the Privacy Policy for **GUIDON** (Army Leader Development Trainer), dis
 
 GUIDON does not collect, transmit, sell, or share any personal data, because GUIDON has no server to send it to. There is no server, ever: no account, no sign-in, no analytics, no advertising, and nothing about you is ever sent to anyone — including the developer. Everything GUIDON knows about you stays in storage on your own device, under your control, until you delete it.
 
-The only ways any version of GUIDON can touch a network are these four, and none of them sends your study data to a server: study groups (LAN rooms), which are off by default behind a switch in Settings and, once they exist, connect only to other devices on the same Wi-Fi or hotspot; GitHub Pages, the file server the web version will be delivered from (today, whichever static host serves it), which is contacted only to fetch or update the app itself (the service worker checks it for a newer copy when you open the app online); a future read-aloud feature, for which your operating system may download a voice pack the first time it is used; and, on a future iOS build, iCloud or device backups run by the operating system, which may include the app's data under the backup settings you control on your device.
+The only ways any version of GUIDON can touch a network are these four, and none of them sends your study data to a server: study groups (LAN rooms), which are off by default behind a switch in Settings and, once they exist, connect only to other devices on the same Wi-Fi or hotspot — including when that connection is secured with a self-signed, device-generated certificate — and never to any server; GitHub Pages, the file server the web version will be delivered from (today, whichever static host serves it), which is contacted only to fetch or update the app itself (the service worker checks it for a newer copy when you open the app online); a future read-aloud feature, for which your operating system may download a voice pack the first time it is used; and, on a future iOS build, iCloud or device backups run by the operating system, which may include the app's data under the backup settings you control on your device.
 
 ## What GUIDON is
 
