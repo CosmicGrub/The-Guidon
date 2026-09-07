@@ -396,7 +396,58 @@ if (!SKIP.includes("C")) {
           out.sort((a, b) => a.w - b.w);
           return out.slice(0, 4);
         });
+        // Diagnostic (2026-09-07), round 3: the round-2 fix (min-width:0 on
+        // .card-results-grid's direct children - the grid analog of the
+        // established flex min-width:auto bug) shipped and CI reported the
+        // EXACT same numbers again (#/transition, 594px, main=25) - meaning
+        // that theory was wrong, or at least incomplete, and guessing a
+        // second time without more data would be the same mistake twice.
+        // This walks the actual narrowest offender's own ancestor chain
+        // (display/width/min-width/flex-shrink at each level) and, if a
+        // .card-results-grid is anywhere in that chain, also dumps its
+        // resolved grid-template-columns and each direct child's own
+        // rendered width - enough to tell whether the grid itself is being
+        // sized wide by an ancestor (e.g. a flex/grid parent .view isn't
+        // shrinking below the grid's min-content) versus a child refusing
+        // to shrink despite min-width:0, without guessing a third time.
+        const chainDebug = await page.evaluate(() => {
+          const main = document.querySelector(".main");
+          if (!main) return null;
+          const limit = main.clientWidth;
+          let narrowest = null, narrowestW = Infinity;
+          main.querySelectorAll("*").forEach((el) => {
+            const w = Math.max(el.scrollWidth, el.getBoundingClientRect().width);
+            if (w > limit + 1 && w < narrowestW) { narrowestW = w; narrowest = el; }
+          });
+          if (!narrowest) return null;
+          const chain = [];
+          let node = narrowest;
+          while (node && node !== main.parentElement) {
+            const cs = getComputedStyle(node);
+            chain.push({
+              tag: node.tagName.toLowerCase() + (node.className && typeof node.className === "string" ? "." + node.className.split(" ").slice(0, 2).join(".") : ""),
+              display: cs.display, w: Math.round(node.getBoundingClientRect().width),
+              minWidth: cs.minWidth, flexShrink: cs.flexShrink,
+            });
+            node = node.parentElement;
+          }
+          const grid = narrowest.closest(".card-results-grid");
+          let gridDebug = null;
+          if (grid) {
+            const gcs = getComputedStyle(grid);
+            gridDebug = {
+              gridTemplateColumns: gcs.gridTemplateColumns,
+              gridW: Math.round(grid.getBoundingClientRect().width),
+              kids: Array.from(grid.children).map((k) => ({
+                tag: k.tagName.toLowerCase() + (k.className && typeof k.className === "string" ? "." + k.className.split(" ")[0] : ""),
+                w: Math.round(k.getBoundingClientRect().width), scrollW: k.scrollWidth,
+              })),
+            };
+          }
+          return { mainLimit: limit, chain, gridDebug };
+        });
         overflowRoutes.push(r + "(doc=" + s.docOverX + ",main=" + s.mainOverX + (mainWide.length ? ",mainWide=" + mainWide.map((x) => x.tag + ":" + x.w).join("|") : ",mainWide=none-found") + ")");
+        if (chainDebug) console.log("  DEBUG " + r + " @" + w + "x" + h + ": " + JSON.stringify(chainDebug));
       }
       widest.view = Math.max(widest.view, s.viewW || 0); widest.main = Math.max(widest.main, s.mainW || 0);
       if (w >= 1920) {
