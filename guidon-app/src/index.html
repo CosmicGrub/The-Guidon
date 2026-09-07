@@ -2233,7 +2233,21 @@ select.in { appearance:none; }
 .tx-days       { font-family:var(--font-head); font-weight:700; font-size:1rem; }
 .tx-ms-label   { color:var(--text-dim); font-size:.85rem; }
 .tx-items      { margin:0; padding-left:18px; display:flex; flex-direction:column; gap:5px; }
-.tx-items li   { color:var(--text); font-size:.86rem; line-height:1.4; }
+/* overflow-wrap:anywhere (2026-09-07): resize-storm's #/transition
+   overflow, chased across four earlier rounds before a corrected
+   descend-based diagnostic finally named the real element - milestone
+   index 1's "PACT Act burn pit registry" item embeds the plain-text
+   URL www.publichealth.va.gov/exposures, a single 34-char run with no
+   spaces to wrap at. Normal word-wrap can't break it, so it forced its
+   <li>, .tx-items, the milestone card, and the whole single-column
+   .card-results-grid row 42px wider than the 271px column had -
+   reproduced as CI's card-results-grid scrollWidth (594px) exceeding
+   its own rendered width (551px) by almost exactly that 42-43px, on
+   the one panel (of 14) whose scrollWidth didn't match its box. Same
+   established fix as .res-url's own identical long-string case (see
+   its comment) rather than another CSS-grid-sizing theory - the token
+   itself is what refuses to shrink, not the grid or its ancestors. */
+.tx-items li   { color:var(--text); font-size:.86rem; line-height:1.4; overflow-wrap:anywhere; }
 .tx-items li.tx-urgent { color:color-mix(in srgb, var(--red) 40%, var(--text) 60%); font-weight:600; }
 .tx-elig       { background:rgba(56,214,224,.07); border-left:3px solid var(--cyan);
                  border-radius:0 var(--radius-sm) var(--radius-sm) 0; padding:9px 12px; margin:10px 0; }
