@@ -1,15 +1,11 @@
 /**
- * Static pattern lint, originally for GUIDON's three most-repeated bug
- * shapes (full history in GUIDON_MASTERFILE.md, roughly sessions 52-62 -
- * v1.4.0's legibility pass, v1.4.4's 49-agent audit, the follow-up
- * 122-agent sweep), joined by a fourth check (f) from the 6 September 2026
- * agnosticism audit that isn't a repeat-bug-shape guard so much as a
- * standing drift guard for a design promise (no RTCPeerConnection config
- * anywhere may carry a non-empty iceServers list). Pure regex/string
- * checks against src/index.html and src/app-modules/*.js - no browser, no
- * build, runs in milliseconds. Wired in as the FIRST step of `npm test` so
- * a bad pattern fails fast, before any Playwright suite even spins up a
- * browser.
+ * Static pattern lint for GUIDON's most-repeated bug shapes (full history in
+ * GUIDON_MASTERFILE.md, roughly sessions 52-62 - v1.4.0's legibility pass,
+ * v1.4.4's 49-agent audit, the follow-up 122-agent sweep; (e) added
+ * 2026-09 alongside the Guided Tour's Highlights track).
+ * Pure regex/string checks against src/index.html - no browser, no build,
+ * runs in milliseconds. Wired in as the FIRST step of `npm test` so a bad
+ * pattern fails fast, before any Playwright suite even spins up a browser.
  */
 import { readFile, readdir } from "node:fs/promises";
 import { MODE_TEXT } from "./dismiss-onboarding.mjs";
@@ -35,7 +31,7 @@ let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
 const bad = (m) => { fails++; console.log("  FAIL  " + m); };
 
-console.log("lint-patterns: static regression guard for 3 repeat bug shapes\n");
+console.log("lint-patterns: static regression guard for 5 repeat bug shapes\n");
 
 /* ======================================================================
    (a) Raw accent custom properties (var(--cyan), var(--violet), var(--red),
@@ -719,6 +715,60 @@ console.log("lint-patterns: static regression guard for 3 repeat bug shapes\n");
     for (const o of rtcOffenders) console.log(`         ${o.file}:${o.line}: ${o.snippet}`);
   } else {
     ok(`(f) no RTCPeerConnection config with a non-empty iceServers list (${rtcHits} RTCPeerConnection call(s) found, all local-only or none at all)`);
+  }
+}
+
+/* ======================================================================
+   (g) Every route in ROUTES has a matching entry in DEMO_NOTES. The Guided
+   Tour's own DEMO_STEPS (renderKioskMode(), profile.js) already solved
+   "a route can silently be forgotten from the walk" by deriving the WALK
+   itself from ROUTES instead of hand-maintaining a second list - but the
+   per-stop COPY still comes from DEMO_NOTES, a separately hand-keyed
+   dictionary nothing cross-checks against ROUTES. A route with no matching
+   key doesn't break anything - DEMO_STEPS' own `n.d || (r.label + " — see
+   this section in the app.")` fallback covers it - but it means a brand
+   new section can ship with a tour stop that has nothing to say about it,
+   the same "forgotten route" failure one layer down. Root-caused during
+   the Highlights-track pitch (2026-09) when #/group, a route on a separate
+   branch, was found in exactly this state.
+
+   #/kiosk and #/profile are deliberately excluded here, matching DEMO_STEPS'
+   own filter (`r.hash !== "#/kiosk" && r.hash !== "#/profile"`) - neither
+   ever becomes a tour stop, so neither needs an entry.
+   ====================================================================== */
+{
+  function extractBalanced(text, openIdx, openChar, closeChar) {
+    let depth = 0;
+    for (let i = openIdx; i < text.length; i++) {
+      if (text[i] === openChar) depth++;
+      else if (text[i] === closeChar) { depth--; if (depth === 0) return text.slice(openIdx + 1, i); }
+    }
+    return null;
+  }
+  const routesDeclIdx = html.indexOf("const ROUTES = [");
+  const notesDeclIdx = html.indexOf("const DEMO_NOTES = {");
+  if (routesDeclIdx === -1 || notesDeclIdx === -1) {
+    bad("(g) could not locate ROUTES and/or DEMO_NOTES declarations");
+  } else {
+    const routesBody = extractBalanced(html, html.indexOf("[", routesDeclIdx), "[", "]");
+    const notesBody = extractBalanced(html, html.indexOf("{", notesDeclIdx), "{", "}");
+    if (routesBody == null || notesBody == null) {
+      bad("(g) could not extract the balanced ROUTES/DEMO_NOTES body");
+    } else {
+      const EXCLUDED = new Set(["#/kiosk", "#/profile"]);
+      const routeHashes = [...routesBody.matchAll(/hash:\s*"(#\/[a-z0-9-]+)"/g)].map((m) => m[1]).filter((h) => !EXCLUDED.has(h));
+      // DEMO_NOTES keys are the object's own top-level `"#/xxx":` entries -
+      // matched directly against notesBody (already balanced/scoped to just
+      // this object), not the whole file, so a route hash appearing
+      // elsewhere in the file's prose/comments can't produce a false match.
+      const noteKeys = new Set([...notesBody.matchAll(/"(#\/[a-z0-9-]+)":/g)].map((m) => m[1]));
+      const missing = routeHashes.filter((h) => !noteKeys.has(h));
+      if (missing.length) {
+        bad(`(g) ${missing.length} route(s) with no matching DEMO_NOTES entry - the Guided Tour's Highlights/full tracks will fall back to generic copy for: ${missing.join(", ")}`);
+      } else {
+        ok(`(g) every route has a matching DEMO_NOTES entry (${routeHashes.length} routes, ${EXCLUDED.size} intentionally excluded)`);
+      }
+    }
   }
 }
 

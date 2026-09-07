@@ -19,6 +19,12 @@
  * "guidon:drills:v1") the CIT/brief-rubric checklists already use,
  * debounced 1500ms via persistEssayDebounced() and also registered as
  * util.onFlush("drills:essay", ...) so a backgrounded tab still saves.
+ *
+ * Round 8 addition: the "Review the Levels of Leadership doctrine ->"
+ * cross-link (G.views._doctrineSeed -> #/doctrine, same mechanism as the
+ * board-question and dictionary cross-links) now has real coverage here -
+ * see the section-4 comment below for why this needed restoring, not just
+ * adding fresh.
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
@@ -132,6 +138,58 @@ taAfterReload === DRAFT_TEXT
   : bad("essay textarea after flush+reload: expected the distinctive draft text, got: " + JSON.stringify(taAfterReload.slice(0, 80)));
 const selAfterReload = await page.locator('select[aria-label="Assignment"]').inputValue();
 selAfterReload === "cc" ? ok("the selected assignment ('cc') also survived the flush+reload") : bad("assignment select after flush+reload: " + JSON.stringify(selAfterReload));
+
+// ==================== 4) "Review the Levels of Leadership doctrine" cross-link ====================
+// Round 8 roadmap-audit note: this button (and this exact test) shipped once
+// already in commit a03dff9 (2026-08-31), but the button hunk was silently
+// lost when round 6 was re-merged to main through a different integration
+// path (PR #107) that carried the doc-levels-* doctrine cards but not this
+// cross-link. Restored in round 8, this time with the test that should have
+// existed from the start - modeled on test-dictionary-list-detail.mjs's own
+// doctrine cross-link check (section 5) and test-doctrine-card-grid.mjs's
+// board-question cross-link check, same _doctrineSeed-consumption pattern,
+// different trigger button.
+const levelsBtn = page.locator("button", { hasText: /Review the Levels of Leadership doctrine/ });
+(await levelsBtn.count()) === 1
+  ? ok('the "Review the Levels of Leadership doctrine →" cross-link button is present')
+  : bad('the cross-link button was not found (count: ' + (await levelsBtn.count()) + ")");
+
+if (await levelsBtn.count()) {
+  await levelsBtn.click();
+  await page.waitForTimeout(500);
+
+  const landed = await page.evaluate(() => ({
+    hash: location.hash,
+    searchValue: document.querySelector('input[aria-label="Search doctrine"]')?.value || null,
+    seedCleared: window.G.views._doctrineSeed === null,
+    // Derived from the app's own live store/filter, not hardcoded, so this
+    // doesn't go stale if the doctrine seed's Levels-of-Leadership content
+    // ever changes - same discipline test-dictionary-list-detail.mjs's own
+    // "alphabetically-first term" check uses.
+    expectedTitles: (window.G.store.doctrine("Levels of Leadership") || []).map((d) => d.title).sort(),
+    renderedTitles: [...document.querySelectorAll(".doc-entry-card .doc-title")].map((h) => h.textContent).sort(),
+  }));
+
+  landed.hash === "#/doctrine"
+    ? ok("the cross-link navigated to #/doctrine")
+    : bad(`the cross-link landed on hash="${landed.hash}", expected "#/doctrine"`);
+  landed.searchValue === "Levels of Leadership"
+    ? ok('#/doctrine\'s own search box is pre-filled with "Levels of Leadership"')
+    : bad(`#/doctrine's search box value is "${landed.searchValue}", expected "Levels of Leadership"`);
+  landed.seedCleared
+    ? ok("G.views._doctrineSeed was consumed (cleared) after use")
+    : bad("G.views._doctrineSeed was not cleared after use");
+  landed.expectedTitles.length >= 5
+    ? ok(`the app's own doctrine store resolves >=5 real "Levels of Leadership" entries (${landed.expectedTitles.length}) to check against`)
+    : bad(`expected >=5 real doctrine entries for "Levels of Leadership", the app's own store only returned ${landed.expectedTitles.length}`);
+  JSON.stringify(landed.renderedTitles) === JSON.stringify(landed.expectedTitles)
+    ? ok(`the filtered results show exactly the app's real "Levels of Leadership" doctrine cards (${landed.renderedTitles.length}), matching the app's own store output`)
+    : bad(`rendered doctrine cards: ${JSON.stringify(landed.renderedTitles)}, expected ${JSON.stringify(landed.expectedTitles)}`);
+
+  // Return to the essay drill so this doesn't leak route state to whatever
+  // runs next in this same page/process.
+  await openEssayDrill();
+}
 
 const relevantNoise = noise.filter((n) => !/favicon/.test(n));
 relevantNoise.length === 0 ? ok("no console errors/warnings") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));

@@ -1,0 +1,26 @@
+# Pins the Rust toolchain rustup uses for this crate, so local builds and CI
+# resolve dependencies with the SAME cargo and Cargo.lock means the same
+# thing in both places.
+#
+# Why this exists (2026-09): CI's "cargo check --locked" job failed
+# repeatedly with "cannot update the lock file ... because --locked was
+# passed" while the identical Cargo.lock/Cargo.toml passed cleanly every
+# time locally. Nothing pinned the toolchain, so CI ran whatever cargo
+# happened to be preinstalled on the windows-latest runner image (cargo
+# 1.98.0 at the time - a moving target that updates on GitHub's schedule,
+# not ours) while the lockfile had been generated locally by cargo 1.96.0.
+# The newer cargo decided the lockfile needed rewriting, and --locked
+# correctly refused. A version diagnostic added to the CI job is what
+# finally surfaced the skew after several blind re-runs.
+#
+# rustup reads this file automatically from the project directory and
+# auto-installs the named toolchain if it's missing, so no CI step change
+# is needed - windows-latest already has rustup. Cargo.toml's rust-version
+# (MSRV) is 1.77; 1.96.0 is well above it.
+#
+# When bumping: change the channel here, run `cargo check --locked` locally
+# to confirm Cargo.lock still resolves cleanly under the new version (or
+# regenerate it deliberately with `cargo update` and commit both together),
+# and expect CI to match exactly from then on.
+[toolchain]
+channel = "1.96.0"

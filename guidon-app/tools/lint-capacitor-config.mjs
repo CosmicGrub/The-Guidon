@@ -45,6 +45,19 @@ const ALLOWED_PERMISSIONS = [
   "android.permission.INTERNET",  // WebView loopback today; LAN study rooms (P3/P4) tomorrow
   "android.permission.VIBRATE",   // haptic feedback on drill grading (task #204)
 ];
+// Same discipline as ALLOWED_PERMISSIONS, for <uses-permission ...
+// tools:node="remove"> entries: a permission actively suppressed from the
+// merged manifest, never a real grant. Edit alongside the manifest change
+// that adds/removes one, with the reason.
+const ALLOWED_SUPPRESSIONS = [
+  // @capacitor/local-notifications' own bundled manifest unconditionally
+  // declares this even though notify.js's scheduleForReminder() always sets
+  // isExactNotification:false (round 8, Kiosk/Demo Center pitch) - the app
+  // never actually needs the Android 12+ "Alarms & reminders" special
+  // permission, and shipping it unused is a real Play Console friction
+  // point (Google requires written justification for it).
+  "android.permission.SCHEDULE_EXACT_ALARM",
+];
 const FORBIDDEN = [/^android\.permission\.CAMERA$/, /^android\.permission\.RECORD_AUDIO$/,
   /^android\.permission\.ACCESS_FINE_LOCATION$/, /BLUETOOTH/];
 
@@ -80,8 +93,23 @@ console.log("lint-capacitor-config: the Android shell may not widen the network 
     // Comments are not declarations.
     const live = xml.replace(/<!--[\s\S]*?-->/g, "");
     const declared = [];
-    const re = /<uses-permission(?:-sdk-23)?\b[^>]*?android:name\s*=\s*"([^"]+)"/g;
-    let m; while ((m = re.exec(live))) declared.push(m[1]);
+    const suppressed = []; // tools:node="remove" - actively narrows the merged
+    // manifest, the opposite of "widening the network/permission promise"
+    // this whole lint exists to catch. A library's own bundled manifest can
+    // pull a permission in transitively (e.g. @capacitor/local-notifications
+    // always declares SCHEDULE_EXACT_ALARM even when isExactNotification is
+    // never set - see notify.js) with nothing in THIS file to show for it;
+    // this project's own convention for suppressing that (round 8,
+    // src/index.html's Kiosk/Demo Center pitch) is a <uses-permission> entry
+    // carrying tools:node="remove", which must not be mistaken for a grant.
+    const re = /<uses-permission(?:-sdk-23)?\b([^>]*?)android:name\s*=\s*"([^"]+)"[^>]*>/g;
+    let m;
+    while ((m = re.exec(live))) {
+      const [, attrsBefore, name] = m;
+      const fullTag = m[0];
+      if (/tools:node\s*=\s*"remove"/.test(attrsBefore) || /tools:node\s*=\s*"remove"/.test(fullTag)) suppressed.push(name);
+      else declared.push(name);
+    }
     const internet = declared.filter((p) => p === "android.permission.INTERNET").length;
     internet === 1 ? ok(`(b) ${rel(MANIFEST)} declares android.permission.INTERNET exactly once`)
                    : bad(`(b) ${rel(MANIFEST)} declares android.permission.INTERNET ${internet} time(s), must be exactly 1`);
@@ -93,6 +121,14 @@ console.log("lint-capacitor-config: the Android shell may not widen the network 
     if (missing.length) bad(`(c) ${rel(MANIFEST)} no longer declares: ${missing.join(", ")} - remove them from this lint's allow-list in the same change`);
     if (!forbidden.length && !extra.length && !missing.length)
       ok(`(c) ${rel(MANIFEST)} permission set is exactly [${declared.join(", ")}]; no CAMERA / RECORD_AUDIO / ACCESS_FINE_LOCATION / BLUETOOTH*`);
+
+    // Suppressions get the same exact-allow-list discipline as real grants -
+    // an unexpected tools:node="remove" entry is just as worth a second look
+    // as an unexpected declaration would be, even though it narrows rather
+    // than widens the manifest.
+    const unexpectedSuppressions = suppressed.filter((p) => !ALLOWED_SUPPRESSIONS.includes(p));
+    if (unexpectedSuppressions.length) bad(`(c) ${rel(MANIFEST)} suppresses (tools:node="remove") permission(s) not in this lint's allow-list: ${unexpectedSuppressions.join(", ")} - add them here, with the reason, in the same change`);
+    else if (suppressed.length) ok(`(c) ${rel(MANIFEST)} correctly suppresses [${suppressed.join(", ")}] pulled in transitively by a Capacitor plugin - not a real grant`);
   }
 }
 

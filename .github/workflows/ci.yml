@@ -451,7 +451,20 @@ jobs:
 
       - name: cargo check --locked
         working-directory: guidon-app/src-tauri
-        run: cargo check --locked
+        # `cargo --version`/`rustc --version` printed first, for diagnosis:
+        # this job has failed repeatedly with "cannot update the lock file
+        # ... because --locked was passed" while the identical Cargo.lock/
+        # Cargo.toml pass `cargo check --locked` cleanly every time locally
+        # (cargo 1.96.0), including after a forced fresh crates.io index
+        # fetch. There is no rust-toolchain.toml and no explicit toolchain-
+        # install step here, so this runs whatever cargo happens to be
+        # preinstalled on the windows-latest runner image - a moving target.
+        # Knowing the actual version is the fastest way to find out whether
+        # that's the real variable, rather than guessing further blind.
+        run: |
+          cargo --version
+          rustc --version
+          cargo check --locked
 
   # ---------------------------------------------------------------------
   # Roadmap audit round 4, "CI / supply-chain hardening" bucket: OSV.dev
@@ -579,8 +592,8 @@ jobs:
             tests: "test:moi-import test:resize-storm test:board-card-overflow test:xwin-sync test:caps test:ink-fallbacks test:room-core test:room-session"
           - name: "19-roomprivacy-roomserver-roomservertls-roomxeng-guestpage-roomtauri-roomweb-studygroupcallsigns"
             tests: "test:room-privacy test:room-server test:room-server-tls test:room-xeng test:guest-page test:room-tauri test:room-web test:studygroup-callsigns"
-          - name: "20-qrcode-tlsadversarial"
-            tests: "test:qrcode test:tls-adversarial"
+          - name: "20-qrcode-tlsadversarial-iconregistry"
+            tests: "test:qrcode test:tls-adversarial test:icon-registry"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same

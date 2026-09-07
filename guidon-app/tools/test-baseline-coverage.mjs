@@ -144,8 +144,23 @@ poaPersisted === "Carter, T. J. / SPC / 11B"
   ? ok("typing in the POA soldier_name field persists it to kv \"counsel:poa\"")
   : bad("counsel:poa.soldier_name after typing: " + JSON.stringify(poaPersisted));
 
-// Clear wipes every field, both on screen and in the persisted object.
+// Round 8 "Clear confirm gates" bucket: the POA Clear button now gates
+// through G.modal.confirm({okText:"Clear", danger:true}) like every other
+// destructive Clear action in the app, so clicking it just opens the
+// dialog - the actual wipe only happens once the dialog's own "Clear"
+// button (scoped to .gm-box so it can't collide with the trigger button
+// of the same name) is clicked, matching the click-through-confirm
+// pattern used elsewhere in this suite (see test-train-mode-guard.mjs).
 await page.locator("button", { hasText: /^Clear$/ }).click();
+await page.waitForTimeout(300);
+const poaConfirmText = await page.evaluate(() => (document.querySelector(".gm-box") || {}).textContent || "");
+/Clear this plan\?/.test(poaConfirmText)
+  ? ok("POA Clear button shows a confirm dialog before wiping typed answers")
+  : bad("POA clear confirm dialog text: " + JSON.stringify(poaConfirmText));
+await page.evaluate(() => {
+  const b = [...document.querySelectorAll(".gm-box button")].find((x) => /^Clear$/.test((x.textContent || "").trim()));
+  if (b) b.click();
+});
 await page.waitForTimeout(500);
 const clearedOnScreen = await page.locator(".counsel-poa input[type=text]").first().inputValue();
 clearedOnScreen === "" ? ok("Clear empties the field on screen") : bad("field value after Clear: " + JSON.stringify(clearedOnScreen));
