@@ -363,17 +363,40 @@ if (!SKIP.includes("C")) {
       await go(page, r, 150);
       const s = await snapAt(page, w, h);
       if (s.docOverX > 1 || s.mainOverX > 1) {
-        // Diagnostic (2026-09-07): this exact check failed identically twice
-        // in a row in CI (#/transition at 683x768, main=25px) but passed
-        // clean in a full local run both times - never reproduced locally,
-        // so the actual offending element(s) were unknown. WIDE() already
-        // exists (phase A uses it) and correctly excludes anything sitting
-        // inside its own legitimately-scrollable ancestor (e.g. .tabbar's
-        // own overflow-x:auto), so it's the right tool to point at the real
-        // culprit instead of guessing again - reusing it here rather than
-        // re-running blind a third time.
-        const wide = await page.evaluate(WIDE);
-        overflowRoutes.push(r + "(doc=" + s.docOverX + ",main=" + s.mainOverX + (wide.length ? ",wide=" + wide.join("|") : "") + ")");
+        // Diagnostic (2026-09-07), round 2: this exact check failed
+        // identically in CI (#/transition at 683x768, main=25px) but passed
+        // clean in a full local run every time - never reproduced locally.
+        // Round 1 tried WIDE() (viewport-relative: flags an element whose
+        // own getBoundingClientRect().right exceeds innerWidth) and it came
+        // back empty on the next CI failure - a real, useful negative
+        // result: .main has overflow-x:hidden (see its own CSS comment on
+        // the BFC this establishes), which CLIPS visual overflow rather
+        // than letting it bleed past the viewport, so nothing there ever
+        // trips WIDE()'s own check even though .main's scrollWidth still
+        // reports the true, clipped-away content width - exactly what
+        // mainOverX already measures. This is the corrected diagnostic:
+        // walk .main's own descendants directly (not viewport-relative)
+        // for the first one whose own content is wider than .main's real
+        // clientWidth, which a clipping ancestor can't hide from this check
+        // the way it hides from WIDE()'s.
+        const mainWide = await page.evaluate(() => {
+          const main = document.querySelector(".main");
+          if (!main) return [];
+          const limit = main.clientWidth;
+          const out = [];
+          main.querySelectorAll("*").forEach((el) => {
+            const w = Math.max(el.scrollWidth, el.getBoundingClientRect().width);
+            if (w > limit + 1) out.push({ tag: el.tagName.toLowerCase() + (el.className && typeof el.className === "string" ? "." + el.className.split(" ").slice(0, 2).join(".") : ""), w: Math.round(w) });
+          });
+          // Widest first, but only the shallowest/first few - a genuine
+          // culprit's own ancestors up to .main will also all read "too
+          // wide" (they contain it), so the interesting signal is the
+          // narrowest reported width among the widest handful: the element
+          // actually causing the overflow, not everything it's nested in.
+          out.sort((a, b) => a.w - b.w);
+          return out.slice(0, 4);
+        });
+        overflowRoutes.push(r + "(doc=" + s.docOverX + ",main=" + s.mainOverX + (mainWide.length ? ",mainWide=" + mainWide.map((x) => x.tag + ":" + x.w).join("|") : ",mainWide=none-found") + ")");
       }
       widest.view = Math.max(widest.view, s.viewW || 0); widest.main = Math.max(widest.main, s.mainW || 0);
       if (w >= 1920) {

@@ -115,9 +115,26 @@ async function enterRapidFireFresh() {
   // Widened to 15000ms - this only matters on a genuinely slow run, since
   // waitForFunction resolves the instant the condition becomes true rather
   // than waiting out the full budget.
+  //
+  // 2026-09-07: widened again, 15000ms -> 30000ms. Timed out at its full
+  // budget a second time, on main, in the same chunk - but this time NOT
+  // because the same margin was still too tight in isolation: PR #113 just
+  // landed a much larger CI pipeline on this repo (bundle-windows/-macos,
+  // an iOS Simulator build+launch job, WebKit pre-flight, cargo test, all
+  // now running alongside the existing 20-chunk test matrix on every push).
+  // Shared GitHub-hosted runner capacity is demonstrably tighter now than
+  // when 15000ms was set, evidenced across multiple unrelated jobs the same
+  // day (the iOS Simulator job's own "stuck on launch screen" verdict and
+  // this repo's bundle-windows smoke test both intermittently failed then
+  // passed on a bare re-run with zero code changes). Same mechanism as
+  // before, a real condition-based poll simply needing more patience under
+  // load - not a new fixed-wait guess, and not free-standing evidence this
+  // exact number is now "enough" either; if it recurs again, that's the
+  // signal the margin needs to scale with the pipeline's own growth rather
+  // than being bumped ad hoc a third time.
   await page.waitForFunction(
     () => [...document.querySelectorAll(".segmented button")].some((b) => b.textContent.trim() === "Party"),
-    { timeout: 15000 }
+    { timeout: 30000 }
   ).catch(() => {}); // let the assertions below report a clear failure rather than throwing here
   return clicked;
 }

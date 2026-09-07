@@ -115,7 +115,7 @@ async function enterRapidFireFresh() {
   // share the exact same risk profile.
   await page.waitForFunction(
     () => [...document.querySelectorAll(".segmented button")].some((b) => b.textContent.trim() === "Party"),
-    { timeout: 15000 }
+    { timeout: 30000 }
   ).catch(() => {});
   return clicked;
 }
