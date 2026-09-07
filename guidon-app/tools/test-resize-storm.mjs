@@ -362,7 +362,19 @@ if (!SKIP.includes("C")) {
     for (const r of routes) {
       await go(page, r, 150);
       const s = await snapAt(page, w, h);
-      if (s.docOverX > 1 || s.mainOverX > 1) overflowRoutes.push(r + "(doc=" + s.docOverX + ",main=" + s.mainOverX + ")");
+      if (s.docOverX > 1 || s.mainOverX > 1) {
+        // Diagnostic (2026-09-07): this exact check failed identically twice
+        // in a row in CI (#/transition at 683x768, main=25px) but passed
+        // clean in a full local run both times - never reproduced locally,
+        // so the actual offending element(s) were unknown. WIDE() already
+        // exists (phase A uses it) and correctly excludes anything sitting
+        // inside its own legitimately-scrollable ancestor (e.g. .tabbar's
+        // own overflow-x:auto), so it's the right tool to point at the real
+        // culprit instead of guessing again - reusing it here rather than
+        // re-running blind a third time.
+        const wide = await page.evaluate(WIDE);
+        overflowRoutes.push(r + "(doc=" + s.docOverX + ",main=" + s.mainOverX + (wide.length ? ",wide=" + wide.join("|") : "") + ")");
+      }
       widest.view = Math.max(widest.view, s.viewW || 0); widest.main = Math.max(widest.main, s.mainW || 0);
       if (w >= 1920) {
         const m = await page.evaluate(() => {

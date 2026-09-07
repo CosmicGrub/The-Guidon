@@ -107,9 +107,23 @@ async function focusedId(page) {
   // Playwright's actionability check needs a genuinely visible target,
   // and a collapsed .nav-group-body's children are 0-height/overflow-
   // hidden, not just "not yet clicked open". ----
+  //
+  // Round 8 follow-up (2026-09-07): widened 5000ms -> 15000ms. This is the
+  // FIRST tab/popup-opening interaction anywhere in this test run - unlike
+  // middle-click below (already a SECOND tab-open, with its own settle
+  // fix for the specific close-then-immediately-arm-again race), there is
+  // no preceding tab to close here. Failed once in CI with the wait
+  // consuming its full budget (timed out at exactly 5000ms), while the
+  // very next subtest (middle-click, a SECOND tab-open in the same
+  // context) succeeded in ~1.4s - the same "first attempt in a fresh
+  // context needs more patience than a later one" profile already proven
+  // for Rapid Fire's own enterRapidFireFresh() (see that file's own
+  // comment), applied here to tab/popup creation specifically rather than
+  // app-render warmup. Widening costs nothing on a normal run since
+  // waitForEvent resolves the instant its condition is met.
   {
     const hashBefore = await page.evaluate(() => location.hash);
-    const newPagePromise = context.waitForEvent("page", { timeout: 5000 }).catch(() => null);
+    const newPagePromise = context.waitForEvent("page", { timeout: 15000 }).catch(() => null);
     await page.locator('.nav a[data-hash="#/doctrine"]').click({ modifiers: ["Control"] });
     const newPage = await newPagePromise;
     if (newPage) {
@@ -126,10 +140,11 @@ async function focusedId(page) {
       // browser context needs a moment to actually finish tearing down
       // the closed tab before it reliably fires a fresh "page" event for
       // the next one under load. A short settle here, not a longer
-      // timeout on the wait itself, is the fix: the new-tab event either
-      // fires quickly once armed or it doesn't fire at all, so padding
-      // the 5s wait wouldn't help a genuinely-missed event, only masking
-      // how close to the edge this already runs.
+      // timeout on the wait itself, is the fix for THIS transition
+      // specifically: the new-tab event either fires quickly once armed or
+      // it doesn't fire at all, so padding the wait wouldn't help a
+      // genuinely-missed event here, only mask how close to the edge this
+      // already runs.
       await page.waitForTimeout(300);
     } else {
       bad("Ctrl+click on a sidebar item did not open a new tab");
@@ -142,7 +157,7 @@ async function focusedId(page) {
   // code. Same real-trusted-click reasoning as the Ctrl+click check. ----
   {
     const hashBefore = await page.evaluate(() => location.hash);
-    const newPagePromise = context.waitForEvent("page", { timeout: 5000 }).catch(() => null);
+    const newPagePromise = context.waitForEvent("page", { timeout: 15000 }).catch(() => null);
     await page.locator('.nav a[data-hash="#/calendar"]').click({ button: "middle" });
     const newPage = await newPagePromise;
     if (newPage) {
