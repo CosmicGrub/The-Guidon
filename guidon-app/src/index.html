@@ -12820,7 +12820,18 @@ window.G = window.G || {};
       // second partial-update pattern just for this one control.
       const modeRow = el("div.rf-setup-row");
       modeRow.appendChild(el("label", { text: "Mode" }));
-      const modeSeg = el("div.segmented");
+      // rf-mode-seg (2026-09-07): plain .segmented is ALSO the outer Board
+      // Drill tab bar's own class (the Board Drill/Quiz/Mock Board/Points/
+      // Readiness/Definitions/Rapid Fire switcher that hosts this whole
+      // view) - a query for ".segmented button" run before this Setup
+      // screen has actually mounted silently matches the OUTER bar instead
+      // of failing loudly, since both exist under the same .main at once
+      // for a moment during the tab switch. tools/test-rapid-fire-solo-
+      // team.mjs hit exactly this ambiguity in CI (caught the outer bar's
+      // 7 tab names where it expected Party/Solo/Team) - this extra class
+      // gives the test something to target that can never resolve to the
+      // wrong control, independent of how long the actual mount takes.
+      const modeSeg = el("div.segmented.rf-mode-seg");
       [["party", "Party"], ["solo", "Solo"], ["team", "Team"]].forEach(([val, text]) => {
         const b = el("button", { type: "button", text: text, "aria-pressed": String(cfg.mode === val) });
         if (cfg.mode === val) b.classList.add("active");

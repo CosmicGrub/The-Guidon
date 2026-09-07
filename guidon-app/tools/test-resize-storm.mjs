@@ -122,7 +122,31 @@ function filterNoise(noise, docsProbe) {
   });
 }
 
-const go = async (page, hash, settle = 500) => { await page.evaluate((h) => { location.hash = h; }, hash); await page.waitForTimeout(settle); };
+// Diagnostic (2026-09-07), round 4: rounds 2 and 3 assumed #/transition's
+// overflow was a stable CSS bug (a grid item, then something up its ancestor
+// chain, refusing to shrink) and neither fix changed CI's numbers by a
+// single pixel - because it isn't stable. Round 3's own richer diagnostic
+// caught it directly: the failing snapAt() measured .view at 594px, but a
+// SEPARATE measurement of the same element a few seconds later (still the
+// same route, same viewport) read 551px - comfortably under .main's 587px
+// limit. That's not a layout that's wrong, it's a layout caught mid-settle.
+// The likeliest real mechanism is a web-font swap (FOUT): `settle` below is
+// a fixed wait with no actual signal that a requested @font-face has
+// resolved, and under CI's per-shard 8-concurrent-Chromium contention (see
+// tools/run-parallel.mjs's own header comment) a custom font can still be
+// loading when a short 150ms settle (this suite's own route-sweep value)
+// elapses - text set in it briefly measures with fallback-font metrics,
+// which are wider, until the real font swaps in and the width drops back
+// down. document.fonts.ready is the actual condition to wait for instead of
+// guessing a bigger fixed number a third time; the extra animation-frame
+// wait after it resolves gives the resulting layout invalidation one paint
+// to actually apply before the next measurement reads stale geometry.
+const go = async (page, hash, settle = 500) => {
+  await page.evaluate((h) => { location.hash = h; }, hash);
+  await page.waitForTimeout(settle);
+  await page.evaluate(() => (document.fonts && document.fonts.ready) ? document.fonts.ready : true).catch(() => {});
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))).catch(() => {});
+};
 
 // One layout-state snapshot. Cheap enough to call hundreds of times.
 const SNAP = () => {

@@ -132,8 +132,32 @@ async function enterRapidFireFresh() {
   // exact number is now "enough" either; if it recurs again, that's the
   // signal the margin needs to scale with the pipeline's own growth rather
   // than being bumped ad hoc a third time.
+  //
+  // 2026-09-07, later the same day: it recurred a third time, at 30000ms -
+  // the exact "non-ad-hoc approach" trigger named above. NOT bumping this a
+  // fourth time. Two real things changed instead:
+  //   1) The poll's own query was ambiguous (see the class comment on
+  //      modeSeg in src/index.html, "rf-mode-seg") - ".segmented button"
+  //      matches the outer Board Drill tab bar too, so a timeout here could
+  //      silently mean "matched the wrong element the whole time," not
+  //      necessarily "still mounting." Scoped to .rf-mode-seg so a timeout
+  //      from here on means what it says.
+  //   2) The actual root cause is very likely this chunk's own per-shard
+  //      concurrency: run-parallel.mjs runs CI chunks at 8 concurrent
+  //      Chromium instances on a standard 2-vCPU ubuntu-latest runner (see
+  //      its own header comment) - a ceiling measured safe BEFORE PR #113
+  //      substantially grew the single-file app bundle every instance has
+  //      to parse and execute (web/index.html now ~13MB). Three unrelated
+  //      tests in two different chunks (this one, nav-tier2ab's Ctrl+click,
+  //      and test:kvscan-entry-download's fixed-wait scan check) all showed
+  //      the same CPU-starvation shape on the same days - not a coincidence
+  //      three different suites raced independently. Fixing that needs a
+  //      chunk-size change in tools/lint-ci-matrix.mjs (PER_CHUNK), which
+  //      roughly doubles the test matrix's job count/CI-minutes - a cost
+  //      tradeoff outside an autonomous test-fix's scope to decide alone,
+  //      flagged to the user instead of applied here.
   await page.waitForFunction(
-    () => [...document.querySelectorAll(".segmented button")].some((b) => b.textContent.trim() === "Party"),
+    () => [...document.querySelectorAll(".rf-mode-seg button")].some((b) => b.textContent.trim() === "Party"),
     { timeout: 30000 }
   ).catch(() => {}); // let the assertions below report a clear failure rather than throwing here
   return clicked;
@@ -202,12 +226,12 @@ async function startBtnDisabled() {
 // 1) Mode selector — defaults to Party, real per-mode round-screen shape
 // ════════════════════════════════════════════════════════════════════
 await enterRapidFireFresh();
-const modeButtons = await page.evaluate(() => [...document.querySelectorAll(".segmented button")].map((b) => b.textContent.trim()));
+const modeButtons = await page.evaluate(() => [...document.querySelectorAll(".rf-mode-seg button")].map((b) => b.textContent.trim()));
 ["Party", "Solo", "Team"].every((m) => modeButtons.includes(m))
   ? ok("Setup shows a real Party/Solo/Team mode selector")
   : bad("mode selector buttons: " + JSON.stringify(modeButtons));
 const defaultActive = await page.evaluate(() => {
-  const partyBtn = [...document.querySelectorAll(".segmented button")].find((b) => b.textContent.trim() === "Party");
+  const partyBtn = [...document.querySelectorAll(".rf-mode-seg button")].find((b) => b.textContent.trim() === "Party");
   return partyBtn ? partyBtn.classList.contains("active") : false;
 });
 defaultActive ? ok("Party is the default active mode on a fresh visit (Stage 1's only shipped mode)") : bad("Party button not active by default");
