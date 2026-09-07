@@ -271,8 +271,23 @@ jobs:
         run: npm run build
 
       # Both halves of the universal binary; tauri-cli's --help says the
-      # universal target needs both installed.
+      # universal target needs both installed. working-directory pinned to
+      # guidon-app/src-tauri (overriding this job's own guidon-app default,
+      # same override the "cargo test --locked" step below already uses and
+      # for the identical reason): src-tauri/rust-toolchain.toml pins cargo
+      # 1.96.0, and rustup only auto-discovers a rust-toolchain.toml by
+      # walking UP from the current directory, never down into a
+      # subdirectory - running this from guidon-app/ (this job's default)
+      # added the targets to whatever toolchain happened to be active there
+      # instead of the pinned one, so the later `tauri build` step (which
+      # DOES end up running cargo from inside src-tauri/, picking up the pin
+      # correctly) found x86_64-apple-darwin missing even though this step
+      # reported success - confirmed live: aarch64-apple-darwin was already
+      # present on 1.96.0 as its own native host target once installed
+      # (macos-latest runners are arm64), but x86_64-apple-darwin, which
+      # only ever gets added by this explicit step, was not.
       - name: rustup target add (both macOS halves)
+        working-directory: guidon-app/src-tauri
         run: |
           rustup target add aarch64-apple-darwin x86_64-apple-darwin
           rustup show
