@@ -495,6 +495,48 @@ function fpFrom(rnd) { let s = ""; for (let i = 0; i < 8; i++) s += B32[Math.flo
   !late.effects.some((e) => e.frame.t === "welcome") && late.state.pending.some((p) => p.fp === "HELDPEER") ? ok("(e) a resume after the window closed is a fresh join (pending, no welcome)") : bad("(e) post-window resume: " + JSON.stringify({ reason: late.reason, effects: late.effects.map((e) => e.frame.t) }));
 }
 
+/* (g) M8: the pendingMs stale-join-request expiry is a WINDOW too, exactly
+   like (e)'s holdMs above, measured against the host's configured pendingMs
+   with a controlled clock - a still-waiting s.pending entry (never admitted)
+   AND an s.admitted entry (admitted mid-round, waiting for the next round
+   boundary to be seated) are each kept up to and including the window, and
+   BOTH are dropped by "tick" the instant the window closes. pingMs/missLimit/
+   holdMs are set absurdly high here so the seat-timeout and seat-hold paths
+   in the same "tick" case never fire and muddy the assertions - only the
+   pendingMs filter (line ~474) is under test. Added by the audit pass: this
+   filter had zero test coverage before this case (M8). */
+{
+  const PM = 3000, PINGMS = 1000000, MISS = 5, HOLD = 10000000;
+  let t = 200000;
+  const ctx = { now: () => t, token: () => "pend-tok" };
+  const mk = (fp, t2, body) => ({ v: V, t: t2, room: ROOM, seq: 0, from: fp, body });
+  let st = sg.initHost({ room: ROOM, mode: "relay", self: { fp: "HOSTHOST", name: "H" }, bankSig: "b", deck: { ids: [], count: 0 }, cards: {}, now: t, pendingMs: PM, pingMs: PINGMS, missLimit: MISS, holdMs: HOLD });
+  st.cfg.pendingMs === PM ? ok(`(g) initHost({ pendingMs: ${PM} }) is applied to cfg.pendingMs`) : bad("(g) cfg.pendingMs = " + st.cfg.pendingMs + " (asked for " + PM + ")");
+  /* seat one peer normally (phase lobby) so "start" has an online seat to seat next to */
+  st = sg.reduce(st, mk("SEATPEER", "hello", { name: "S", bankSig: "b" }), ctx).state;
+  st = sg.act(st, { type: "admit", fp: "SEATPEER" }, ctx).state;
+  st = sg.act(st, { type: "start" }, ctx).state;
+  st.phase === "play" ? ok("(g) round started (phase play): admit during play now goes to s.admitted, not straight to a seat") : bad("(g) phase after start: " + st.phase);
+  /* a hello mid-round that is never admitted: s.pending, .at stamped "now" */
+  st = sg.reduce(st, mk("PENDPEER", "hello", { name: "P", bankSig: "b" }), ctx).state;
+  /* a hello mid-round that IS admitted: since phase is "play" this lands in s.admitted (not seated yet), .at stamped "now" */
+  st = sg.reduce(st, mk("ADMTPEER", "hello", { name: "A", bankSig: "b" }), ctx).state;
+  st = sg.act(st, { type: "admit", fp: "ADMTPEER" }, ctx).state;
+  st.pending.some((p) => p.fp === "PENDPEER") && st.admitted.some((p) => p.fp === "ADMTPEER")
+    ? ok("(g) seeded: PENDPEER in s.pending (never admitted), ADMTPEER in s.admitted (admitted mid-round)")
+    : bad("(g) seed failed: pending=" + JSON.stringify(st.pending) + " admitted=" + JSON.stringify(st.admitted));
+  t += PM - 1;
+  st = sg.act(st, { type: "tick" }, ctx).state;
+  st.pending.some((p) => p.fp === "PENDPEER") && st.admitted.some((p) => p.fp === "ADMTPEER")
+    ? ok(`(g) ${PM - 1} ms into the pendingMs window both entries are still held`)
+    : bad("(g) an entry was dropped INSIDE the pendingMs window (pendingMs " + st.cfg.pendingMs + "): pending=" + JSON.stringify(st.pending) + " admitted=" + JSON.stringify(st.admitted));
+  t += 2; // now PM + 1 ms past the seed's .at
+  st = sg.act(st, { type: "tick" }, ctx).state;
+  !st.pending.some((p) => p.fp === "PENDPEER") && !st.admitted.some((p) => p.fp === "ADMTPEER")
+    ? ok(`(g) ${PM + 1} ms past .at ("tick" right after the window closes): both the stale pending AND the stale admitted entry are expired and removed`)
+    : bad("(g) an entry survived past the pendingMs window: pending=" + JSON.stringify(st.pending) + " admitted=" + JSON.stringify(st.admitted));
+}
+
 {
   /* joinUrl()'s optional pin + pinFromUrl()/isSpkiPin() (room-tls-and-
      discovery-pitch.md Section 1, JS-wiring stage): the FULL SHA-256(SPKI)
