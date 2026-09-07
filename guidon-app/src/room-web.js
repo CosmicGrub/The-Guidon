@@ -215,6 +215,7 @@
       sock.onclose = function () {
         if (ws !== sock) return;
         ws = null;
+        queue = [];
         if (closedForGood) return;
         /* An unexpected drop - not this module's own onended() closing on
            purpose (that sets closedForGood first). studygroup.js's
@@ -326,6 +327,7 @@
     function onClosed() {
       if (id != null) nativeIdHandlers.delete(id);
       id = null; opened = false; connecting = false;
+      queue = [];
       if (closedForGood) return;
       /* An unexpected drop, mirroring makeTransport()'s onclose comment
          verbatim: studygroup.js's onTransportClosed turns this into the
