@@ -32,6 +32,35 @@ public class MainActivity extends BridgeActivity {
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
+    // room-tls-and-discovery-pitch.md Section 1.3 stage 7: RoomTlsPlugin.kt
+    // is app-local, not npm-packaged, so Capacitor's normal node_modules
+    // plugin auto-discovery never sees it - unlike NativeSecurityBridge
+    // below (a plain WebView addJavascriptInterface, a different and
+    // simpler mechanism for a one-boolean JS bridge), this IS a real
+    // Capacitor plugin (@CapacitorPlugin-annotated, PluginCall-based).
+    //
+    // MUST run before super.onCreate(), and MUST be this Activity's own
+    // (BridgeActivity-inherited) registerPlugin(Class), not
+    // getBridge().registerPlugin(Class) - traced and confirmed the hard
+    // way (device-verified: window.Capacitor.PluginHeaders came back
+    // without "RoomTls" the first time this was wired up the other way).
+    // BridgeActivity.onCreate() builds the real Bridge via
+    // bridgeBuilder.create() and, inside that, Bridge.loadWebView() calls
+    // getJSInjector() to snapshot plugins.values() into the ONE-TIME
+    // "document start" JS payload (WebViewCompat.addDocumentStartJavaScript)
+    // that becomes window.Capacitor.PluginHeaders on the JS side - and all
+    // of that happens synchronously inside super.onCreate() itself, before
+    // this method's own body would resume. Calling
+    // getBridge().registerPlugin(...) AFTER super.onCreate() mutates the
+    // live native Bridge.plugins map (so it's not silently a no-op) but
+    // that map was already read and baked into the injected script by
+    // then, so the JS-side proxy Capacitor.Plugins.RoomTls never
+    // materializes and window.Capacitor.PluginHeaders never lists it -
+    // this Activity's OWN registerPlugin(Class) instead queues the class
+    // into bridgeBuilder itself, which create() reads from moments later,
+    // in time to be captured in that same snapshot.
+    registerPlugin(RoomTlsPlugin.class);
+
     // Capacitor core's SystemBars plugin already computes real safe-area
     // insets (viewport-fit=cover is set in src/index.html) and injects
     // env(safe-area-inset-*) on every change - that machinery just never
