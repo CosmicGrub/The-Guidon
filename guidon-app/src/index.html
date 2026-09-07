@@ -30884,7 +30884,14 @@ window.G = window.G || {};
         card.style.cssText += ";border-left:3px solid " + compColor;
         if (isTraining) card.appendChild(el("div.tr-mandatory-badge", { text: "MANDATORY TRAINING" }));
         const titleRow = el("div", { style:"display:flex;align-items:flex-start;justify-content:space-between;gap:8px" });
-        titleRow.appendChild(el("h3", { text: sc.title, style:"margin:0;flex:1" }));
+        // min-width:0 is the actual fix, not flex:1 alone: a flex item's
+        // default min-width is "auto" (its own content's intrinsic minimum),
+        // so without this a long/unbreakable title can force titleRow wider
+        // than its card instead of shrinking - the same established fix
+        // shape as the topbar's own ".brand > div { min-width: 0; }" (grep
+        // it in this file). Caught by tools/test-resize-storm.mjs at 628-
+        // 632px on #/train.
+        titleRow.appendChild(el("h3", { text: sc.title, style:"margin:0;flex:1;min-width:0" }));
         const diffBadge = el("span.sc-diff-badge", { text: sc.difficulty || "" });
         diffBadge.style.color = "color-mix(in srgb, " + diffColor + " 40%, var(--text))";
         titleRow.appendChild(diffBadge);
