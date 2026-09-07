@@ -1202,37 +1202,76 @@
     try { var loc = root.location; if (loc && /^https?:$/.test(loc.protocol) && loc.host) return schema().joinUrl(loc.protocol + "//" + loc.host, st.room); } catch (e) {}
     return "";
   }
+  /* room-tls-and-discovery-pitch.md Section 1.3.6/stage 4-5. "" (never a
+     throw) on every fork/build that has no secure link to offer: a
+     transport with no secureJoinUrl() hook at all (every harness fake,
+     room-web.js's own transports, a Tauri build whose Rust side predates
+     tlsPort/identity) is exactly as silent as a missing joinUrl() above -
+     drawHostLadder() below treats empty as "nothing to add", never a
+     broken half-rendered section. */
+  function secureJoinUrlFor(st) {
+    var t = rt.transport;
+    try { if (t && typeof t.secureJoinUrl === "function") return String(t.secureJoinUrl(st.room) || ""); } catch (e) {}
+    return "";
+  }
   function isLaptop() { try { return !(root.matchMedia && root.matchMedia("(pointer: coarse)").matches); } catch (e) { return true; } }
+  /* Shared by drawHostLadder() for BOTH the plain and the secure join link -
+     factored out so a second link block doesn't just duplicate the QR-vs-
+     dashed-placeholder branch verbatim. Appends eyebrow + large URL text +
+     (a real QR via G.qrcode.render(), or the dashed placeholder) + the
+     matching hint line into `box`; `wrapClass` scopes each block's own
+     .sg-join-url/.sg-qr-wrap/.sg-qr-slot under a distinct wrapper class so
+     a page with both blocks present still has exactly one of each selector
+     PER block, never two indistinguishable top-level matches. */
+  function appendJoinLinkBlock(box, wrapClass, label, url, ariaLabel, hintWithQr, hintNoQr) {
+    var inner = el("div." + wrapClass, { style: "margin-bottom:10px" });
+    inner.appendChild(el("div.eyebrow", { text: label }));
+    inner.appendChild(el("div.sg-join-url", { text: url, style: "font-size:1.4rem;font-weight:700;line-height:1.25;word-break:break-all;margin:4px 0 8px" }));
+    /* Room-networking pitch, Stage 1.5 ("QR render on the host screen"):
+       a real ISO/IEC 18004 QR code (src/app-modules/qrcode.js), encoding
+       this SAME url string already shown as plain text one line above.
+       render() never throws and returns null for anything it cannot
+       represent (module missing, or a future join link too long for the
+       encoder's supported version range) - falling back to the original
+       dashed-box plain-text placeholder is the correct, deliberate
+       behaviour in that case, not a bug: the link/code above always
+       still works even when the QR does not render. */
+    var qrNode = null;
+    try { if (G.qrcode && typeof G.qrcode.render === "function") qrNode = G.qrcode.render(url, { ariaLabel: ariaLabel }); } catch (e) {}
+    if (qrNode) {
+      var qrWrap = el("div.sg-qr-wrap", { style: "display:inline-block;padding:8px;background:#fff;border-radius:8px;margin-bottom:6px;line-height:0" });
+      qrNode.style.maxWidth = "14rem";
+      qrNode.style.height = "auto";
+      qrWrap.appendChild(qrNode);
+      inner.appendChild(qrWrap);
+      inner.appendChild(hint(hintWithQr));
+    } else {
+      inner.appendChild(el("div.sg-qr-slot", { text: url, "aria-label": "QR code placeholder", style: "border:2px dashed currentColor;border-radius:8px;padding:14px;font-family:var(--mono, monospace);font-size:.8rem;word-break:break-all;max-width:22rem;margin-bottom:6px" }));
+      inner.appendChild(hint(hintNoQr));
+    }
+    box.appendChild(inner);
+  }
   function drawHostLadder(head, st) {
+    var t = rt.transport;
     var url = joinUrlFor(st);
+    var secureUrl = secureJoinUrlFor(st);
     var box = el("div.sg-invite", { style: "margin-top:10px" });
     if (url) {
-      box.appendChild(el("div.eyebrow", { text: "Join link" }));
-      box.appendChild(el("div.sg-join-url", { text: url, style: "font-size:1.4rem;font-weight:700;line-height:1.25;word-break:break-all;margin:4px 0 8px" }));
-      /* Room-networking pitch, Stage 1.5 ("QR render on the host screen"):
-         a real ISO/IEC 18004 QR code (src/app-modules/qrcode.js), encoding
-         this SAME url string already shown as plain text one line above.
-         render() never throws and returns null for anything it cannot
-         represent (module missing, or a future join link too long for the
-         encoder's supported version range) - falling back to the original
-         dashed-box plain-text placeholder is the correct, deliberate
-         behaviour in that case, not a bug: the link/code above always
-         still works even when the QR does not render. */
-      var qrNode = null;
-      try { if (G.qrcode && typeof G.qrcode.render === "function") qrNode = G.qrcode.render(url, { ariaLabel: "QR code for the join link" }); } catch (e) {}
-      if (qrNode) {
-        var qrWrap = el("div.sg-qr-wrap", { style: "display:inline-block;padding:8px;background:#fff;border-radius:8px;margin-bottom:6px;line-height:0" });
-        qrNode.style.maxWidth = "14rem";
-        qrNode.style.height = "auto";
-        qrWrap.appendChild(qrNode);
-        box.appendChild(qrWrap);
-        box.appendChild(hint("Joiners can scan this QR code, or type the link or the code by hand."));
-      } else {
-        box.appendChild(el("div.sg-qr-slot", { text: url, "aria-label": "QR code placeholder", style: "border:2px dashed currentColor;border-radius:8px;padding:14px;font-family:var(--mono, monospace);font-size:.8rem;word-break:break-all;max-width:22rem;margin-bottom:6px" }));
-        box.appendChild(hint("Joiners type this link or the code. No scannable QR code on this build."));
-      }
+      /* Once a secure option exists, the plain link needs its own label so
+         it isn't mistaken for THE join link - it's now specifically the
+         browser/guest-page path, and the secure one below is what the
+         GUIDON app itself should use. With no secure link on this build,
+         it stays exactly "Join link", unchanged. */
+      appendJoinLinkBlock(box, "sg-invite-plain", secureUrl ? "Join link (browser or guest page)" : "Join link", url, "QR code for the join link",
+        "Joiners can scan this QR code, or type the link or the code by hand.",
+        "Joiners type this link or the code. No scannable QR code on this build.");
     } else {
       box.appendChild(hint("No join link on this build - read the code out."));
+    }
+    if (secureUrl) {
+      appendJoinLinkBlock(box, "sg-invite-secure", "Secure join link (for the GUIDON app)", secureUrl, "QR code for the secure join link",
+        "The GUIDON app can scan this QR code to join over a pinned, encrypted connection.",
+        "The GUIDON app can join over this secure link. No scannable QR code on this build.");
     }
     // R-ROOM address listing: when this device has more than one advertisable
     // IPv4 (a VPN adapter up alongside real Wi-Fi, say), show the rest so the

@@ -345,15 +345,52 @@
   function wsUrl(hostPort, room, role, secure) {
     return (secure ? "wss://" : "ws://") + hostPort + ENDPOINTS.ws + "?room=" + encodeURIComponent(String(room || "")) + "&role=" + (role === "host" ? "host" : "peer");
   }
-  /** <origin>/j/<code> - the join link a host shows; the room server serves the guest page there.
-      `origin` already carries its own scheme (http:// or, once a host is
-      TLS-capable, https://) - joinUrl never adds or assumes one. */
-  function joinUrl(origin, room) { return String(origin || "").replace(/[/]+$/, "") + ENDPOINTS.join + String(room || ""); }
+  /** <origin>/j/<code>[#pin=<64-hex>] - the join link a host shows; the room
+      server serves the guest page there. `origin` already carries its own
+      scheme (http:// or, once a host is TLS-capable, https://) - joinUrl
+      never adds or assumes one.
+
+      `pin` (optional, 4th arg): the room's full SHA-256(SPKI) hex (64
+      chars) - the ACTUAL pinning comparison a secure joiner's native
+      transport must make, never the truncated 8-char `fp` a human reads
+      aloud (see room-tls-and-discovery-pitch.md Section 1.4: the two are
+      not interchangeable). Carried as a URL FRAGMENT, deliberately:
+      fragments are never sent in an HTTP request (so a joiner's own pin
+      never reaches the network, even by accident, before the TLS
+      handshake it is meant to verify has even happened), and a fragment
+      survives being pasted into any UI text field exactly like the rest of
+      the link does. Omitting `pin` (every caller before this session's TLS
+      work, and every plaintext-only host today) produces byte-for-byte the
+      same string as before - this is additive, not a breaking change to
+      the link shape. See pinFromUrl() below for the joiner-side read. */
+  function joinUrl(origin, room, pin) {
+    var base = String(origin || "").replace(/[/]+$/, "") + ENDPOINTS.join + String(room || "");
+    return pin ? base + "#pin=" + String(pin) : base;
+  }
   /** True when a join link's origin is https:// - the ONE signal a joiner
       uses to decide "dial wss:// and this room has a TLS identity to pin
       against" vs. "dial ws:// as today, nothing to pin." Never throws. */
   function isSecureOrigin(origin) {
     try { return new URL(String(origin || "")).protocol === "https:"; } catch (e) { return false; }
+  }
+  var SPKI_PIN_RE = /^[0-9a-f]{64}$/;
+  /** True for a well-formed full SHA-256(SPKI) pin - lowercase hex, exactly
+      64 chars (matching every producer of one: tools/room-tls.mjs,
+      src-tauri/src/room_tls.rs, and studygroup.js's own makeIdentity() all
+      emit createHash("sha256")/hex()-shaped lowercase hex). */
+  function isSpkiPin(s) { return typeof s === "string" && SPKI_PIN_RE.test(s); }
+  /** Extracts a well-formed pin from a join link's own #pin=<hex> fragment
+      (see joinUrl() above), or null - a link with no fragment, a malformed
+      one, or an unparseable URL are all indistinguishable "no pin here"
+      cases to the caller (room-web.js's parse()): a secure (https://)
+      target with no valid pin is an incomplete/corrupted link, never a
+      reason to guess or fall back to an insecure connection. Never throws. */
+  function pinFromUrl(url) {
+    try {
+      var hash = new URL(String(url || "")).hash || "";
+      var m = /^#pin=([0-9a-f]{64})$/.exec(hash);
+      return m && isSpkiPin(m[1]) ? m[1] : null;
+    } catch (e) { return null; }
   }
   /** "GUIDON 1.5.0 build abc1234 (protocol 1)" from { app, build, v }. */
   function buildLabel(x) {
@@ -375,7 +412,7 @@
        src-tauri/src/room_schema_gen.rs from THIS object (never a typed copy). */
     REQUIRED_BODY_KEYS: REQUIRED_BODY_KEYS, MAX_TOKEN: MAX_TOKEN, MAX_REASON: MAX_REASON, MAX_ID: MAX_ID,
     VERSION_MISMATCH_TEXT: VERSION_MISMATCH_TEXT, NATO: NATO, ENDPOINTS: ENDPOINTS, MAX_WIRE_BYTES: MAX_WIRE_BYTES, MAX_BUILD: MAX_BUILD, MAX_APP: MAX_APP,
-    wireEncode: wireEncode, wireDecode: wireDecode, wsUrl: wsUrl, joinUrl: joinUrl, isSecureOrigin: isSecureOrigin, buildLabel: buildLabel, skewText: skewText,
+    wireEncode: wireEncode, wireDecode: wireDecode, wsUrl: wsUrl, joinUrl: joinUrl, isSecureOrigin: isSecureOrigin, isSpkiPin: isSpkiPin, pinFromUrl: pinFromUrl, buildLabel: buildLabel, skewText: skewText,
     validate: validate, validateSnapshot: validateSnapshot, bankSig: bankSig, roomCode: roomCode,
     isRoomCode: isRoomCode, isFingerprint: isFingerprint, byteLength: byteLength, hasKeyDeep: hasKeyDeep,
   };

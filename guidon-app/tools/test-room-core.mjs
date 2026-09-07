@@ -495,6 +495,30 @@ function fpFrom(rnd) { let s = ""; for (let i = 0; i < 8; i++) s += B32[Math.flo
   !late.effects.some((e) => e.frame.t === "welcome") && late.state.pending.some((p) => p.fp === "HELDPEER") ? ok("(e) a resume after the window closed is a fresh join (pending, no welcome)") : bad("(e) post-window resume: " + JSON.stringify({ reason: late.reason, effects: late.effects.map((e) => e.frame.t) }));
 }
 
+{
+  /* joinUrl()'s optional pin + pinFromUrl()/isSpkiPin() (room-tls-and-
+     discovery-pitch.md Section 1, JS-wiring stage): the FULL SHA-256(SPKI)
+     hex a secure joiner's native transport must pin to, carried as a URL
+     fragment so it never reaches the network and survives a paste exactly
+     like the rest of the link. */
+  const PIN = "a".repeat(64);
+  schema.joinUrl("http://192.168.1.42:8787", "ALPHA-BRAVO-42") === "http://192.168.1.42:8787/j/ALPHA-BRAVO-42"
+    ? ok("(f) joinUrl() with no pin is byte-identical to before this session's TLS work")
+    : bad("(f) joinUrl() no-pin regressed: " + schema.joinUrl("http://192.168.1.42:8787", "ALPHA-BRAVO-42"));
+  const secureLink = schema.joinUrl("https://192.168.1.42:8788", "ALPHA-BRAVO-42", PIN);
+  secureLink === "https://192.168.1.42:8788/j/ALPHA-BRAVO-42#pin=" + PIN
+    ? ok("(f) joinUrl() with a pin appends #pin=<hex>: " + secureLink)
+    : bad("(f) joinUrl() with pin: " + secureLink);
+  schema.pinFromUrl(secureLink) === PIN ? ok("(f) pinFromUrl() reads back the exact pin it was given") : bad("(f) pinFromUrl() round-trip: " + schema.pinFromUrl(secureLink));
+  schema.pinFromUrl("https://192.168.1.42:8788/j/ALPHA-BRAVO-42") === null ? ok("(f) pinFromUrl() is null for a link with no fragment at all") : bad("(f) no-fragment link should be null");
+  schema.pinFromUrl("https://192.168.1.42:8788/j/ALPHA-BRAVO-42#pin=nothex") === null ? ok("(f) pinFromUrl() rejects a non-hex fragment") : bad("(f) malformed pin should be null");
+  schema.pinFromUrl("https://192.168.1.42:8788/j/ALPHA-BRAVO-42#pin=" + "a".repeat(63)) === null ? ok("(f) pinFromUrl() rejects a pin one char short of 64") : bad("(f) short pin should be null");
+  schema.pinFromUrl("not a url at all") === null ? ok("(f) pinFromUrl() never throws on an unparseable string") : bad("(f) unparseable input should be null, not throw");
+  schema.isSpkiPin(PIN) && !schema.isSpkiPin(PIN.toUpperCase()) && !schema.isSpkiPin(PIN.slice(0, 63)) && !schema.isSpkiPin(123)
+    ? ok("(f) isSpkiPin() accepts exactly 64 lowercase hex chars, nothing else")
+    : bad("(f) isSpkiPin() shape check");
+}
+
 finish();
 
 function finish() {

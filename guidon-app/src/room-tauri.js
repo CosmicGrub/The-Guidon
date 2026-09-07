@@ -106,6 +106,31 @@
     hostStart: function (room) { return start(room); },
     hostStop: function () { return stop(); },
     joinUrl: function (room) { return rt.info && rt.info.room === String(room || "") ? String(rt.info.url || "") : ""; },
+    /* room-tls-and-discovery-pitch.md Section 1.3.6/stage 4-5. RoomInfo
+       (Rust, room.rs) has carried tlsPort/identity.{fp,spkiSha256} since
+       this session's earlier TLS work - room_start()'s whole response is
+       stored untouched as rt.info above, so those fields are ALREADY on
+       rt.info with zero change to start()/invoke() themselves. What was
+       missing is a way for studygroup.js to reach them: the transport seam
+       only ever exposed joinUrl()/addresses()/notice() (narrow getters),
+       and studygroup.js never touches window.__GUIDON_ROOM__ directly (it
+       goes through the seam exclusively, by design - see this file's own
+       header) - so a secure link never reached the host screen without
+       ONE more getter here. Deliberately mirrors joinUrl()'s own shape
+       (same room-match guard, same "" on anything not ready) and reuses
+       the SAME rt.info.ip choose_advertised() already picked for the
+       plain link above - never a second IP-selection - so the two links
+       always name the same device. "" (not a thrown error) for a
+       pre-rebuild Rust binary that has no tlsPort/identity yet, or any
+       other transport that never had this getter at all: drawHostLadder()
+       (studygroup.js) treats a missing/empty result as "no secure link on
+       this build" and shows only the plain link, additive and silent. */
+    secureJoinUrl: function (room) {
+      if (!rt.info || rt.info.room !== String(room || "")) return "";
+      if (typeof rt.info.tlsPort !== "number" || !rt.info.identity || !rt.info.identity.spkiSha256) return "";
+      try { return schema().joinUrl("https://" + rt.info.ip + ":" + rt.info.tlsPort, String(room || ""), rt.info.identity.spkiSha256); }
+      catch (e) { return ""; }
+    },
     notice: function () { return rt.notice; },
     addresses: addresses,
   };

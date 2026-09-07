@@ -99,6 +99,33 @@ if (RW) {
     const eq = got.kind === c.want.kind && got.room === c.want.room && got.hostPort === c.want.hostPort;
     eq ? ok(`(1) parse(${JSON.stringify(c.in)}) [${c.label}] -> ${JSON.stringify(got)}`) : bad(`(1) parse(${JSON.stringify(c.in)}) [${c.label}] -> ${JSON.stringify(got)}, expected ${JSON.stringify(c.want)}`);
   }
+
+  /* -------------------------------------------------------------------
+     (1b) secure-link routing signal (room-tls-and-discovery-pitch.md
+     Section 1.3.6, 2026-09-06): the THREE states parse() must distinguish
+     for a URL-kind target - secure:false/pin:null (plain, unchanged), the
+     complete secure:true/pin:<hex> case, and secure:true/pin:null for a
+     secure link missing its pin or carrying a malformed one. Also proves
+     an http:// link never gets a pin read even if one is stapled onto it
+     (a pin only ever means something once isSecureOrigin() is already
+     true), and that a schemeless paste of an otherwise-secure link is
+     treated as plain http:// (never upgraded to https:// by guessing).
+     ------------------------------------------------------------------- */
+  const S = globalThis.G.roomSchema;
+  const REAL_PIN = "ab".repeat(32); // 64 lowercase hex chars, isSpkiPin-shaped
+  const secureCases = [
+    { in: S.joinUrl("https://192.168.1.5:8443", "ALPHA-BRAVO-42", REAL_PIN), want: { secure: true, pin: REAL_PIN }, label: "a secure link with a valid pin" },
+    { in: "https://192.168.1.5:8443/j/ALPHA-BRAVO-42", want: { secure: true, pin: null }, label: "a secure link with NO pin fragment at all" },
+    { in: "https://192.168.1.5:8443/j/ALPHA-BRAVO-42#pin=deadbeef", want: { secure: true, pin: null }, label: "a secure link with a malformed pin (too short)" },
+    { in: "https://192.168.1.5:8443/j/ALPHA-BRAVO-42#pin=" + "ZZ".repeat(32), want: { secure: true, pin: null }, label: "a secure link with a malformed pin (right length, non-hex)" },
+    { in: S.joinUrl("http://192.168.1.5:8787", "ALPHA-BRAVO-42", REAL_PIN), want: { secure: false, pin: null }, label: "a PLAIN link that happens to carry a #pin fragment - not secure, pin ignored" },
+    { in: "192.168.1.5:8443/j/ALPHA-BRAVO-42#pin=" + REAL_PIN, want: { secure: false, pin: null }, label: "a secure-looking link pasted with NO scheme - treated as plain http:// (never upgraded by guessing)" },
+  ];
+  for (const c of secureCases) {
+    const got = RW.parse(c.in);
+    const eq = got.kind === "url" && got.secure === c.want.secure && got.pin === c.want.pin;
+    eq ? ok(`(1b) parse(${JSON.stringify(c.in)}) [${c.label}] -> secure:${got.secure} pin:${got.pin ? got.pin.slice(0, 8) + "..." : got.pin}`) : bad(`(1b) parse(${JSON.stringify(c.in)}) [${c.label}] -> ${JSON.stringify(got)}, expected secure:${c.want.secure} pin:${c.want.pin}`);
+  }
 }
 
 /* ---------------------------------------------------------------------
@@ -225,6 +252,67 @@ try {
   await P.evaluate(() => G.studyGroup.leave());
   host2.close();
   await srv2.close();
+
+  /* ---------------- (3d/e/f) secure-link routing + honest refusal (Section 1.3.6) ----------------
+     A raw WebSocket constructor spy proves the honest-refusal path NEVER
+     attempts one (the doc's own rule: no doomed wss:// attempt, no silent
+     ws:// downgrade); a stub window.Capacitor.Plugins.RoomTls proves the
+     valid-pin path routes through connect() instead. */
+  await P.evaluate(() => {
+    window.__wsCallCount = 0;
+    window.__RealWS = window.WebSocket;
+    window.WebSocket = function (...a) { window.__wsCallCount++; return new window.__RealWS(...a); };
+    window.WebSocket.prototype = window.__RealWS.prototype;
+  });
+  const SECURE_PIN = "ab".repeat(32);
+
+  /* (3d) secure link, NO native capability (plain browser tab - this test's own page never had window.Capacitor) */
+  {
+    await P.evaluate(() => { try { delete window.Capacitor; } catch (e) { window.Capacitor = undefined; } });
+    const link = S.joinUrl("https://198.51.100.5:9443", "CHARLIE-DELTA-01", SECURE_PIN);
+    const r = await P.evaluate((l) => window.__GUIDON_ROOM_WEB__.joinAt(l, "PEER-SECURE"), link);
+    const wsCount = await P.evaluate(() => window.__wsCallCount);
+    (!r.ok && /secure/i.test(r.reason) && /native|Android|GUIDON app/i.test(r.reason) && wsCount === 0)
+      ? ok("(3d) a secure join link with NO native TLS capability refuses immediately, no WebSocket ever attempted: \"" + r.reason + "\"")
+      : bad("(3d) secure link, no native capability: " + JSON.stringify(r) + " wsCount=" + wsCount);
+  }
+
+  /* (3e) native capability present, but the pin is missing/malformed */
+  {
+    await P.evaluate(() => {
+      window.Capacitor = { Plugins: { RoomTls: {
+        connect: () => Promise.resolve({ id: "should-not-be-called" }),
+        send: () => {}, close: () => {}, addListener: () => {},
+      } } };
+    });
+    const badLink = "https://198.51.100.5:9443/j/ECHO-FOXTROT-02"; // no #pin fragment at all
+    const r = await P.evaluate((l) => window.__GUIDON_ROOM_WEB__.joinAt(l, "PEER-SECURE"), badLink);
+    const wsCount = await P.evaluate(() => window.__wsCallCount);
+    (!r.ok && /pin/i.test(r.reason) && wsCount === 0)
+      ? ok("(3e) a secure join link with a missing/malformed pin refuses even WITH native capability present, never dials: \"" + r.reason + "\"")
+      : bad("(3e) secure link, native present but bad pin: " + JSON.stringify(r) + " wsCount=" + wsCount);
+  }
+
+  /* (3f) native capability present AND a valid pin: routes through RoomTls.connect(), never a raw WebSocket */
+  {
+    await P.evaluate(() => {
+      window.__connectCalls = [];
+      window.Capacitor = { Plugins: { RoomTls: {
+        connect: (args) => { window.__connectCalls.push(args); return Promise.resolve({ id: "fake-native-1" }); },
+        send: () => {}, close: () => {}, addListener: () => {},
+      } } };
+    });
+    const link = S.joinUrl("https://198.51.100.5:9443", "GOLF-HOTEL-03", SECURE_PIN);
+    const r = await P.evaluate((l) => window.__GUIDON_ROOM_WEB__.joinAt(l, "PEER-SECURE-2"), link);
+    const calls = await P.evaluate(() => window.__connectCalls);
+    const wsCount = await P.evaluate(() => window.__wsCallCount);
+    (r && r.ok && calls.length === 1 && calls[0].pin === SECURE_PIN && calls[0].url === "wss://198.51.100.5:9443/ws?room=GOLF-HOTEL-03&role=peer" && wsCount === 0)
+      ? ok("(3f) a valid secure join link with native capability present routes through RoomTls.connect(" + JSON.stringify(calls[0]) + "), never a raw WebSocket")
+      : bad("(3f) secure link routing: r=" + JSON.stringify(r) + " calls=" + JSON.stringify(calls) + " wsCount=" + wsCount);
+    await P.evaluate(() => G.studyGroup.leave());
+  }
+
+  await P.evaluate(() => { window.WebSocket = window.__RealWS; delete window.__RealWS; try { delete window.Capacitor; } catch (e) { window.Capacitor = undefined; } });
 
   const total = room1.noise.reduce((n, a) => n + a.length, 0);
   total === 0 ? ok("zero page errors / console errors on the app page") : bad("noise: " + room1.noise.map((a) => a.slice(0, 3)).flat().join(" | "));

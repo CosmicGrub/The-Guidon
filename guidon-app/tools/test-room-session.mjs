@@ -35,6 +35,13 @@
  *     its own dedicated round-trip verification), the 60 s no-joiners ladder
  *     (walked with a mocked clock), the hotspot toggle disabling the
  *     gateway auto-detect text, and the hotspot-cap warning at seat 8
+ *   - room-tls-and-discovery-pitch.md Section 1.3.6/stage 4-5 (2026-09-06):
+ *     a SECOND, labeled secure join link + its own QR code appears once the
+ *     host's transport offers secureJoinUrl() (the real room-tauri.js does,
+ *     once RoomInfo carries tlsPort/identity), the plain link is relabeled
+ *     to clarify it is the browser/guest-page option, and removing the
+ *     capability drops the secure block again cleanly - never a broken
+ *     half-rendered section
 
  *
  * Every positive assertion is a bounded poll (until()), never a bare sleep.
@@ -483,6 +490,46 @@ try {
       : bad("(X9) qr: " + JSON.stringify(qr));
     const codeShown = await H.evaluate(() => (document.querySelector(".sg-room-code") || { textContent: "" }).textContent.trim());
     codeShown === ROOM4 ? ok("(X9) the phonetic code is shown beside the URL") : bad("(X9) code shown: " + codeShown);
+
+    /* ---------------- secure join link (room-tls-and-discovery-pitch.md Section 1.3.6/stage 4-5) ---------------- */
+    {
+      // Default: the fake transport (room-harness.mjs) has no secureJoinUrl() at all - the SAME "a transport without the hook changes nothing" contract as joinUrl()/addresses() - so only the plain link shows, still labeled bare "Join link".
+      const noSecure = await H.evaluate(() => ({
+        secureBox: !!document.querySelector(".sg-invite-secure"),
+        plainLabel: (document.querySelector(".sg-invite-plain .eyebrow") || {}).textContent || null,
+      }));
+      !noSecure.secureBox && noSecure.plainLabel === "Join link"
+        ? ok("(X9) with no secureJoinUrl() on the transport (RoomInfo has no tlsPort/identity), only the plain join link shows, labeled plain \"Join link\" - a clean, additive fallback, not a broken half-rendered section")
+        : bad("(X9) no-secure-link fallback: " + JSON.stringify(noSecure));
+
+      // Stand in for a Rust rebuild whose RoomInfo carries tlsPort/identity: room-tauri.js's real secureJoinUrl() builds this same shape from rt.info.ip/tlsPort/identity.spkiSha256 - here the fake transport is given the getter directly, proving studygroup.js's OWN reactive rendering of it.
+      const SECURE_URL = "https://198.51.100.7:8443/j/" + ROOM4 + "#pin=" + "cd".repeat(32);
+      await H.evaluate((url) => { window.__roomTransport.secureJoinUrl = function () { return url; }; G.studyGroup._redraw(); }, SECURE_URL);
+      const withSecure = await until(() => H.evaluate((url) => {
+        const secureBox = document.querySelector(".sg-invite-secure");
+        if (!secureBox) return null;
+        const secureUrlText = (secureBox.querySelector(".sg-join-url") || {}).textContent || null;
+        if (secureUrlText !== url) return null;
+        return {
+          plainLabel: (document.querySelector(".sg-invite-plain .eyebrow") || {}).textContent || null,
+          secureLabel: (secureBox.querySelector(".eyebrow") || {}).textContent || null,
+          secureUrlText,
+          hasSvg: !!secureBox.querySelector(".sg-qr-wrap svg.sg-qr"),
+          plainStillShown: (document.querySelector(".sg-invite-plain .sg-join-url") || {}).textContent || null,
+        };
+      }, SECURE_URL));
+      withSecure.hit && withSecure.value.plainLabel === "Join link (browser or guest page)" && /secure/i.test(withSecure.value.secureLabel) && withSecure.value.hasSvg && withSecure.value.plainStillShown === urlShown.value
+        ? ok("(X9) once RoomInfo carries tlsPort/identity (secureJoinUrl() present), a SECOND join link + its own QR code renders labeled \"" + withSecure.value.secureLabel + "\", the plain link stays (relabeled \"" + withSecure.value.plainLabel + "\"): " + withSecure.value.secureUrlText)
+        : bad("(X9) secure join link block: " + JSON.stringify(withSecure.value));
+
+      // Removing the capability again drops the secure block and restores the plain bare label - proves this is reactive, not a one-shot render.
+      await H.evaluate(() => { delete window.__roomTransport.secureJoinUrl; G.studyGroup._redraw(); });
+      const backToPlain = await until(() => H.evaluate(() => document.querySelector(".sg-invite-secure") ? null : ((document.querySelector(".sg-invite-plain .eyebrow") || {}).textContent || "")));
+      backToPlain.hit && backToPlain.value === "Join link"
+        ? ok("(X9) removing secureJoinUrl() drops the secure block again and restores the plain \"Join link\" label")
+        : bad("(X9) after removing secureJoinUrl(): " + JSON.stringify(backToPlain));
+    }
+
     const tierAt = async (ms, want, re, label) => {
       await setClock(ms);
       const r = await until(() => H.evaluate((w) => { const l = document.querySelector(".sg-ladder"); return l && l.getAttribute("data-tier") === w ? l.textContent : null; }, want));
