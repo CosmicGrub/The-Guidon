@@ -25,25 +25,18 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { declaredNavRoutes } from "./declared-routes.mjs";
+import { pastOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
 const bad = (m) => { fails++; console.log("  FAIL  " + m); };
 
 const { server, url } = await serve("web");
+/* Expected sidebar/drawer leaf count, derived from the build (see tools/declared-routes.mjs). */
+const NAV = await declaredNavRoutes("web/index.html");
 const browser = await chromium.launch();
 const noise = [];
-
-async function pastOnboarding(page) {
-  await page.goto(url, { waitUntil: "load" });
-  await page.waitForTimeout(700);
-  await page.evaluate(() => {
-    const t = [...document.querySelectorAll("button,.ob-mode-card,[role=button],.click")]
-      .find((e) => /guest session/i.test(e.textContent || ""));
-    if (t) t.click();
-  });
-  await page.waitForTimeout(700);
-}
 
 // Focused element's identity, for asserting roving sequences.
 async function focusedId(page) {
@@ -62,13 +55,14 @@ async function focusedId(page) {
   const page = await context.newPage();
   page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push("[sidebar] " + m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("[sidebar] pageerror: " + e.message));
-  await pastOnboarding(page);
+  await pastOnboarding(page, url);
 
   // ---- 2(a): DOM contract - every leaf item is a real <a href> whose
-  // href resolves to its own data-hash. 35 is the same non-hidden route
-  // count test-nav-tier1.mjs already established for this sidebar (was 34
-  // before round 6's #/moi, itself was 33 before the Data & Storage
-  // dashboard, #/storage, added a route). ----
+  // href resolves to its own data-hash. The expected count is derived from
+  // the build by declaredNavRoutes() (NAV_GROUPS minus NAV_HIDDEN), the
+  // same source test-nav-tier1.mjs uses; it was the literal 35 here (34
+  // before #/moi, 33 before #/storage) and went red when #/group joined
+  // "Board Prep". ----
   const leafContract = await page.evaluate(() => {
     const els = Array.from(document.querySelectorAll(".nav a[data-hash]"));
     return {
@@ -78,7 +72,7 @@ async function focusedId(page) {
       headersStillButtons: Array.from(document.querySelectorAll(".nav .nav-group-header")).every((e) => e.tagName === "BUTTON"),
     };
   });
-  leafContract.total === 35 ? ok("sidebar still renders all 35 non-hidden routes as leaf items") : bad("sidebar leaf item count: " + leafContract.total + ", expected 35");
+  leafContract.total === NAV.count ? ok("sidebar still renders all " + NAV.count + " non-hidden routes NAV_GROUPS declares as leaf items") : bad("sidebar leaf item count: " + leafContract.total + ", expected " + NAV.count + " (NAV_GROUPS minus NAV_HIDDEN in the build)");
   leafContract.allAnchors ? ok("every sidebar leaf item is a real <a> element") : bad("some sidebar leaf items are not <a> elements");
   leafContract.hrefMismatches.length === 0
     ? ok("every sidebar leaf item's href resolves to its own #/... hash")
@@ -269,7 +263,7 @@ async function focusedId(page) {
   const page = await context.newPage();
   page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push("[drawer] " + m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("[drawer] pageerror: " + e.message));
-  await pastOnboarding(page);
+  await pastOnboarding(page, url);
 
   await page.locator(".nav-more-btn").click();
   await page.waitForTimeout(400);
@@ -283,7 +277,7 @@ async function focusedId(page) {
       hrefMismatches: els.filter((e) => e.getAttribute("href") !== e.getAttribute("data-hash")).map((e) => e.getAttribute("data-hash")),
     };
   });
-  drawerContract.total === 35 ? ok("drawer still renders all 35 non-hidden routes as leaf items") : bad("drawer leaf item count: " + drawerContract.total + ", expected 35");
+  drawerContract.total === NAV.count ? ok("drawer still renders all " + NAV.count + " non-hidden routes NAV_GROUPS declares as leaf items") : bad("drawer leaf item count: " + drawerContract.total + ", expected " + NAV.count + " (NAV_GROUPS minus NAV_HIDDEN in the build)");
   drawerContract.allAnchors ? ok("every drawer leaf item is a real <a> element") : bad("some drawer leaf items are not <a> elements");
   drawerContract.hrefMismatches.length === 0
     ? ok("every drawer leaf item's href resolves to its own #/... hash")

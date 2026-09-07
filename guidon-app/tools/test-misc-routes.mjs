@@ -10,6 +10,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -25,12 +26,7 @@ page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 
 await page.goto(url, { waitUntil: "load" });
 await page.waitForTimeout(700);
-const guestCard = page.locator(".ob-mode-card", { hasText: /guest session/i }).first();
-await guestCard.waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
-if (await guestCard.count()) {
-  await guestCard.click();
-  await page.locator("#ob-overlay").waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
-}
+await dismissOnboarding(page);
 await page.waitForTimeout(300);
 
 // ============================================================
@@ -163,15 +159,18 @@ const back2 = await readStep();
 const sessionStep = await page.evaluate(() => sessionStorage.getItem("guidon-demo-step"));
 sessionStep === "1" ? ok("Guided Tour: current step (index 1 = step 2) is persisted to sessionStorage for back/resume") : bad('Guided Tour: sessionStorage step was "' + sessionStep + '", expected "1"');
 
-// Roadmap audit round 5, "Kiosk/Demo Center" bucket: a persistent "TOUR:
-// Step N of M" badge now shows in the topbar while mid Guided Tour (see
+// Roadmap audit round 5, "Kiosk/Demo Center" bucket: a persistent "TOUR
+// N/M" badge now shows in the topbar while mid Guided Tour (see
 // G.kioskBadge in index.html) - confirm it tracks the real current step
 // and that its Resume button returns to #/kiosk without touching either
 // sessionStorage key (unlike Free Mode's Exit, tested further below).
+// Label kept deliberately short (not "TOUR: Step N of M") so it can never
+// starve the brand wordmark of width on a real narrow device - see the
+// #demo-mode-badge shrink/ellipsis fix, same commit.
 const tourBadgeText = await page.evaluate(() => (document.querySelector("#demo-mode-badge") || {}).textContent || "");
-/TOUR: Step 2 of \d+/.test(tourBadgeText)
+/TOUR 2\/\d+/.test(tourBadgeText)
   ? ok(`Guided Tour: the persistent tour badge reads "${tourBadgeText}", matching the real current step (2)`)
-  : bad(`Guided Tour: tour badge text was "${tourBadgeText}", expected it to match /TOUR: Step 2 of \\d+/`);
+  : bad(`Guided Tour: tour badge text was "${tourBadgeText}", expected it to match /TOUR 2\\/\\d+/`);
 await page.locator("#demo-mode-badge button", { hasText: "Resume" }).click();
 await page.waitForTimeout(400);
 const hashAfterResume = await page.evaluate(() => location.hash);

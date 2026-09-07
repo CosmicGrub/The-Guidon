@@ -24,6 +24,17 @@
 *.yml    text eol=lf
 gradlew  text eol=lf
 
+# CI tooling that executes on the macOS runner. These were previously uncovered
+# and fell through to `* text=auto`, which with core.autocrlf=true (the setting
+# on the Windows dev machine) checks them out as CRLF. A shell script with CRLF
+# fails on macOS with `$'\r': command not found`, and a CRLF shebang breaks a
+# directly-executed Python script. Same class of bug as the §46 build breakage
+# this file was written for.
+*.sh     text eol=lf
+*.py     text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
 # Windows-native scripts keep CRLF
 *.ps1    text eol=crlf
 *.bat    text eol=crlf

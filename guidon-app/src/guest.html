@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="referrer" content="no-referrer" />
+<meta name="color-scheme" content="dark" />
+<title>GUIDON guest</title>
+<!--
+  GUIDON guest page TEMPLATE (collective P3b, X2 / Q5). tools/build.mjs
+  fills the slots below and writes dist/guest.html: the schema module
+  (src/app-modules/room-schema.js, verbatim), the room module's pure core
+  (the block between the GUEST-CORE markers in src/app-modules/
+  studygroup.js, verbatim, exposed as G.roomCore) and the build stamps.
+  This is what a room host serves to a phone that has nothing installed:
+  plain http, an insecure context, no Web Crypto key API, no camera, no
+  wake lock, nothing stored - the page holds its seat in memory and forgets it
+  on reload. The build asserts the artifact is under 200 KB, carries the
+  fork marker exactly once and names none of those APIs.
+-->
+<style>
+:root { --bg: #0f1318; --panel: #171d25; --line: #2a333f; --text: #e7edf3; --muted: #9aa7b4; --amber: #f2b632; --green: #5fd38d; --red: #ff6b6b; --cyan: #5cc8ff; --mono: ui-monospace, "Cascadia Mono", Consolas, monospace; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.wrap { max-width: 40rem; margin: 0 auto; padding: 16px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+.panel.warn { border-left: 4px solid var(--red); }
+.eyebrow { font-family: var(--mono); font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--cyan); margin-bottom: 6px; }
+.hint { color: var(--muted); font-size: .9rem; margin: 6px 0; }
+.feedback { color: var(--amber); margin: 6px 0; }
+label { display: block; font-size: .85rem; color: var(--muted); margin-top: 8px; }
+input { width: 100%; font: inherit; padding: 12px; border-radius: 8px; border: 1px solid var(--line); background: #0b0f14; color: var(--text); margin-top: 4px; }
+button { font: inherit; font-weight: 600; min-height: 48px; padding: 10px 16px; border-radius: 10px; border: 1px solid var(--line); background: #222b36; color: var(--text); cursor: pointer; margin: 8px 8px 0 0; }
+button.primary { background: var(--amber); color: #1a1200; border-color: var(--amber); }
+button.ghost { background: transparent; }
+button[aria-pressed="true"] { outline: 3px solid var(--amber); outline-offset: 1px; }
+.code { font-family: var(--mono); font-size: 1.5rem; font-weight: 700; letter-spacing: .06em; margin: 4px 0 8px; }
+.seat { display: flex; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.seat .n { font-family: var(--mono); min-width: 1.6em; color: var(--muted); }
+.seat .name { flex: 1; }
+.seat[data-online="false"] { opacity: .55; }
+.gp-cat { font-family: var(--mono); font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
+.gp-q { font-size: 1.2rem; margin: 8px 0; }
+.gp-a { color: var(--green); margin: 8px 0; padding-top: 8px; border-top: 1px dashed var(--line); }
+.count { font-size: 3.2rem; font-weight: 800; text-align: center; font-family: var(--mono); margin: 6px 0; }
+.row { display: flex; flex-wrap: wrap; }
+footer { color: var(--muted); font-size: .8rem; padding: 12px 0; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<script>
+window.GUIDON_FORK = "guest";
+window.GUIDON_SINGLEFILE = false;
+window.GUIDON_APP_VERSION = "@@APP_VERSION@@";
+window.GUIDON_BUILD_DATE = "@@BUILD_DATE@@";
+window.GUIDON_BUILD_SHA = "@@BUILD_SHA@@";
+window.GUIDON_BUILD_DIRTY = @@BUILD_DIRTY@@;
+</script>
+<script>
+/*@@ROOM_SCHEMA@@*/
+</script>
+<script>
+/*@@ROOM_CORE@@*/
+</script>
+<script>
+/* ==== guest.html : the guest page's own view ==== */
+(function () {
+  "use strict";
+  var G = window.G;
+  var S = G.roomSchema, C = G.roomCore;
+  /* The same in-memory ledger shape the app keeps (G.netLedger in
+     src/index.html): every socket this page opens is recorded here and
+     nowhere else. Empty on every load. */
+  G.netLedger = (function () {
+    var entries = [];
+    return {
+      record: function (e) { var x = { kind: String((e && e.kind) || ""), peer: String((e && e.peer) || ""), at: Number(e && e.at) || Date.now() }; entries.push(x); return x; },
+      list: function () { return entries.slice(); },
+      clear: function () { entries = []; },
+    };
+  })();
+  var app = document.getElementById("app");
+  var rt = { ws: null, state: null, code: codeFromUrl(), name: "GUEST", msg: "", timers: [], count: 0, myScore: {}, selfScored: {}, renderTimer: null, lastRender: 0 };
+  var ctx = { now: function () { return Date.now(); }, token: function () { return C.randomToken(); } };
+  window.__guestState = function () { return rt.state; };
+
+  function codeFromUrl() {
+    var m = /\/j\/([A-Za-z]+-[A-Za-z]+-[0-9]{2})/.exec(location.pathname);
+    if (m) return m[1].toUpperCase();
+    var q = /[?&]room=([^&]+)/.exec(location.search);
+    return q ? decodeURIComponent(q[1]).toUpperCase() : "";
+  }
+  function el(tag, attrs, kids) {
+    var parts = tag.split("."), node = document.createElement(parts[0] || "div");
+    if (parts.length > 1) node.className = parts.slice(1).join(" ");
+    if (attrs) for (var k in attrs) { if (k === "text") node.textContent = attrs[k]; else if (k === "onclick") node.addEventListener("click", attrs[k]); else if (attrs[k] != null) node.setAttribute(k, attrs[k]); }
+    if (kids) for (var i = 0; i < kids.length; i++) if (kids[i]) node.appendChild(kids[i]);
+    return node;
+  }
+  function hint(t) { return el("p.hint", { text: t }); }
+  function btn(cls, text, onclick, attrs) { var a = attrs || {}; a.type = "button"; a.text = text; a.onclick = onclick; return el("button" + (cls ? "." + cls : ""), a); }
+  function localBuild() { return { build: window.GUIDON_BUILD_SHA || "", app: window.GUIDON_APP_VERSION || "", v: S.PROTOCOL_VERSION }; }
+  function clone(x) { return JSON.parse(JSON.stringify(x)); }
+
+  /* ---------------------------------------------------------- socket */
+  function send(frame) {
+    if (!rt.ws || rt.ws.readyState !== 1) return false;
+    var v = S.validate(frame);
+    if (!v.ok) return false;
+    rt.ws.send(S.wireEncode(frame, null));
+    return true;
+  }
+  function sendHello(resume) {
+    var st = rt.state;
+    var body = { name: st.self.name, bankSig: st.bankSig };
+    var lb = localBuild();
+    if (lb.build) body.build = lb.build.slice(0, S.MAX_BUILD);
+    if (lb.app) body.app = lb.app.slice(0, S.MAX_APP);
+    if (resume) body.resume = resume;
+    return send(C.frameOf(st, "hello", body));
+  }
+  function connect(resume) {
+    var url = S.wsUrl(location.host, rt.state.room, "peer");
+    var ws;
+    try { ws = new WebSocket(url); } catch (e) { rt.msg = "This browser could not open the room socket: " + (e && e.message ? e.message : e); render(); return; }
+    rt.ws = ws;
+    G.netLedger.record({ kind: "ws", peer: location.host, at: Date.now() });
+    ws.onopen = function () { if (rt.ws !== ws) return; sendHello(resume); startTimers(); render(); };
+    ws.onmessage = function (ev) {
+      if (rt.ws !== ws || !rt.state) return;
+      var d = S.wireDecode(String(ev.data));
+      if (!d) return;
+      apply(C.reduce(rt.state, d.frame, ctx));
+    };
+    ws.onclose = function (ev) {
+      if (rt.ws !== ws) return;
+      rt.ws = null;
+      stopTimers();
+      if (rt.state && !rt.state.terminal) {
+        rt.state = clone(rt.state);
+        rt.state.terminal = ev.code === 4000 ? { kind: "host-left", reason: "" } : { kind: "network-lost", reason: "The connection closed" + (ev.reason ? " (" + ev.reason + ")" : "") + "." };
+        render();
+      }
+    };
+    ws.onerror = function () { /* onclose follows and carries the state */ };
+  }
+  function apply(res) {
+    if (!res) return;
+    rt.state = res.state;
+    for (var i = 0; i < res.effects.length; i++) send(res.effects[i].frame);
+    if (res.render) render();
+    if (rt.state && rt.state.terminal) { stopTimers(); if (rt.ws) { var w = rt.ws; rt.ws = null; try { w.close(1000, "done"); } catch (e) {} } }
+  }
+  function startTimers() {
+    stopTimers();
+    rt.timers.push(setInterval(function () { if (rt.state && !rt.state.terminal) apply(C.act(rt.state, { type: "tick" }, ctx)); }, 500));
+  }
+  function stopTimers() { for (var i = 0; i < rt.timers.length; i++) clearInterval(rt.timers[i]); rt.timers = []; }
+
+  /* ---------------------------------------------------------- actions */
+  function join(code, name) {
+    code = String(code || "").trim().toUpperCase().replace(/\s+/g, "-");
+    if (!S.isRoomCode(code)) { rt.msg = "A room code is two phonetic words and two digits, like ALPHA-BRAVO-42."; render(); return; }
+    name = String(name || "").trim().slice(0, S.MAX_NAME) || "GUEST";
+    rt.msg = ""; rt.count = 0; rt.myScore = {}; rt.selfScored = {};
+    rt.state = C.initPeer({ room: code, self: { fp: C.randomToken().slice(0, 8), name: name }, bankSig: "guest", now: Date.now() });
+    render();
+    connect(null);
+  }
+  function reconnect() {
+    var st = rt.state;
+    if (!st || !st.terminal || st.terminal.kind !== "network-lost") return;
+    rt.state = clone(st); rt.state.terminal = null; rt.state.lastSeen = Date.now();
+    if (!rt.state.self.token) rt.state.joinState = "hello";
+    render();
+    connect(rt.state.self.token || null);
+  }
+  function leave() {
+    var st = rt.state;
+    if (st && !st.terminal && (st.hostFp || st.joinState !== "hello")) send(C.frameOf(st, "bye", {}));
+    stopTimers();
+    if (rt.ws) { var w = rt.ws; rt.ws = null; try { w.close(1000, "bye"); } catch (e) {} }
+    rt.state = null; rt.msg = "";
+    render();
+  }
+  function intent(body) { var st = rt.state; if (!st || st.terminal || st.joinState !== "seated") return false; return send(C.frameOf(st, "intent", body)); }
+
+  /* ---------------------------------------------------------- views */
+  function render() {
+    var st = rt.state;
+    while (app.firstChild) app.removeChild(app.firstChild);
+    var root = el("div.gp-root", { "data-status": st ? (st.terminal ? st.terminal.kind : st.joinState) : "idle" });
+    if (!st) drawIdle(root);
+    else if (st.terminal) drawTerminal(root, st);
+    else if (st.joinState !== "seated") drawWaiting(root, st);
+    else drawRoom(root, st);
+    root.appendChild(el("footer", { text: "GUIDON guest page " + (window.GUIDON_APP_VERSION || "") + " - nothing is saved on this page; close the tab and it forgets everything." }));
+    app.appendChild(root);
+  }
+  function drawIdle(root) {
+    var p = el("div.panel");
+    p.appendChild(el("div.eyebrow", { text: "Join a GUIDON study room" }));
+    p.appendChild(hint("The host reads out a code: two phonetic words and two digits. You need nothing installed - this page is served by the host's device on this Wi-Fi or hotspot."));
+    if (rt.msg) p.appendChild(el("p.feedback", { text: rt.msg }));
+    var code = el("input.gp-code", { type: "text", "aria-label": "Room code", placeholder: "ALPHA-BRAVO-42", value: rt.code, autocapitalize: "characters", autocomplete: "off" });
+    var name = el("input.gp-name", { type: "text", "aria-label": "Your seat name", value: rt.name, maxlength: String(S.MAX_NAME), autocomplete: "off" });
+    p.appendChild(el("label", { text: "Room code" })); p.appendChild(code);
+    p.appendChild(el("label", { text: "Seat name" })); p.appendChild(name);
+    p.appendChild(btn("primary gp-join", "Join", function () { rt.code = code.value; rt.name = name.value; join(code.value, name.value); }));
+    root.appendChild(p);
+    var pv = el("div.panel");
+    pv.appendChild(el("div.eyebrow", { text: "What leaves this phone" }));
+    pv.appendChild(hint("Only the room's own frames: your seat name, a random per-session fingerprint and the scores of the round. Nothing is stored on this page, no camera, no microphone, no account."));
+    root.appendChild(pv);
+  }
+  function drawWaiting(root, st) {
+    var p = el("div.panel.gp-waiting", { "data-join": st.joinState });
+    p.appendChild(el("div.eyebrow", { text: "Room " + st.room }));
+    p.appendChild(el("div.code", { text: st.room }));
+    if (st.joinState === "hello") p.appendChild(el("p", { text: rt.ws && rt.ws.readyState === 1 ? "Reaching the host..." : "Connecting to " + location.host + "..." }));
+    else if (st.joinState === "pending") p.appendChild(el("p", { text: "Waiting for the host to admit you. Your seat name: " + st.self.name + " (" + st.self.fp + ")." }));
+    else p.appendChild(el("p", { text: "Admitted - you get a seat at the next card." }));
+    p.appendChild(hint("The host admits each joiner by hand."));
+    p.appendChild(btn("ghost gp-leave", "Leave", leave));
+    root.appendChild(p);
+  }
+  function drawTerminal(root, st) {
+    var k = st.terminal.kind;
+    var p = el("div.panel.warn.gp-terminal", { "data-kind": k });
+    var title = k === "host-left" ? "The host left the room" : k === "network-lost" ? "Connection to the host was lost" : k === "rejected" ? "The host turned this join down" : k === "kicked" ? "Removed from the room" : "The session has ended";
+    p.appendChild(el("div.eyebrow", { text: title }));
+    if (st.terminal.reason) p.appendChild(el("p", { text: st.terminal.reason }));
+    if (k === "rejected" && st.terminal.reason === S.VERSION_MISMATCH_TEXT) p.appendChild(hint("This page: " + S.buildLabel(localBuild()) + "."));
+    if (k === "network-lost") p.appendChild(hint("Your seat is held for " + Math.round((st.holdMs || C.DEFAULTS.holdMs) / 1000) + " s. Move back into range and try to reconnect."));
+    if (k === "ended" && st.seats && st.seats.length) p.appendChild(roster(st));
+    var row = el("div.row");
+    if (k === "network-lost") row.appendChild(btn("primary gp-reconnect", "Try to reconnect", reconnect));
+    row.appendChild(btn("gp-leave", "Back", leave));
+    p.appendChild(row);
+    root.appendChild(p);
+  }
+  function roster(st) {
+    var wrap = el("div.gp-roster");
+    var sorted = st.seats.slice().sort(function (a, b) { return a.seatNo - b.seatNo; });
+    for (var i = 0; i < sorted.length; i++) {
+      var x = sorted[i];
+      var row = el("div.seat.gp-seat", { "data-seat": String(x.seatNo), "data-online": String(!!x.online) });
+      row.appendChild(el("span.n", { text: String(x.seatNo) }));
+      row.appendChild(el("span.name", { text: x.name + (x.seatNo === st.hostSeat ? " (host)" : "") + (x.seatNo === st.self.seatNo ? " - you" : "") }));
+      if (st.phase === "play" && st.turnSeat === x.seatNo) row.appendChild(el("span", { text: st.mode === "board" ? "candidate" : "playing" }));
+      if (st.phase === "lobby") row.appendChild(el("span", { text: x.ready ? "ready" : "" }));
+      if (st.phase !== "lobby") row.appendChild(el("span", { text: (st.mode === "board" && x.seatNo !== st.turnSeat && st.phase !== "recap") ? "" : String(x.score) }));
+      if (!x.online) row.appendChild(el("span", { text: "held" }));
+      wrap.appendChild(row);
+    }
+    return wrap;
+  }
+  function drawRoom(root, st) {
+    var head = el("div.panel");
+    head.appendChild(el("div.eyebrow", { text: (st.mode === "board" ? "Mock Board Live" : "Rapid-Fire relay") + " - room " + st.room }));
+    head.appendChild(el("div.code", { text: st.room }));
+    if (st.phase === "lobby") head.appendChild(hint("Waiting for the host to start."));
+    if (rt.msg) head.appendChild(el("p.feedback", { text: rt.msg }));
+    root.appendChild(head);
+    if (st.phase === "play") { if (st.mode === "relay") drawRelay(root, st); else drawBoard(root, st); }
+    else if (st.phase === "recap") {
+      var rp = el("div.panel.gp-recap");
+      rp.appendChild(el("div.eyebrow", { text: st.mode === "board" ? "Board complete" : "Relay complete" }));
+      rp.appendChild(hint("Scores are on the seats below. Nothing from this session is saved on this page."));
+      root.appendChild(rp);
+    }
+    var seats = el("div.panel");
+    seats.appendChild(el("div.eyebrow", { text: "Seats" }));
+    seats.appendChild(roster(st));
+    root.appendChild(seats);
+    var ctl = el("div.row");
+    if (st.phase === "lobby") {
+      var me = null;
+      for (var i = 0; i < st.seats.length; i++) if (st.seats[i].seatNo === st.self.seatNo) me = st.seats[i];
+      if (me && !me.ready) ctl.appendChild(btn("primary gp-ready", "Ready", function () { intent({ kind: "ready" }); }));
+    }
+    ctl.appendChild(btn("ghost gp-leave", "Leave room", leave));
+    root.appendChild(ctl);
+  }
+  function drawRelay(root, st) {
+    var p = el("div.panel.gp-relay");
+    var mine = st.turnSeat != null && st.turnSeat === st.self.seatNo;
+    var turn = null;
+    for (var i = 0; i < st.seats.length; i++) if (st.seats[i].seatNo === st.turnSeat) turn = st.seats[i];
+    if (mine) {
+      p.appendChild(el("div.eyebrow", { text: "Your round" }));
+      p.appendChild(hint("This page has no question bank: the host reads the cards aloud" + (st.deck && st.deck.timerSec ? " for " + st.deck.timerSec + " s" : "") + ". Count your correct answers here, then send the count."));
+      p.appendChild(el("div.count.gp-count", { text: String(rt.count) }));
+      var row = el("div.row");
+      row.appendChild(btn("primary gp-plus", "Correct +1", function () { rt.count = Math.min(S.MAX_SCORE, rt.count + 1); render(); }));
+      row.appendChild(btn("gp-minus", "-1", function () { rt.count = Math.max(0, rt.count - 1); render(); }));
+      row.appendChild(btn("gp-send", "Send my score", function () { if (intent({ kind: "score", value: rt.count })) { rt.count = 0; render(); } }));
+      p.appendChild(row);
+    } else {
+      p.appendChild(el("div.eyebrow", { text: turn ? turn.name + "'s round" : "Between rounds" }));
+      p.appendChild(hint(turn ? "Waiting for " + turn.name + " to finish. Seats play in order." : "Waiting for the host."));
+    }
+    root.appendChild(p);
+  }
+  function drawBoard(root, st) {
+    var candidate = null;
+    for (var i = 0; i < st.seats.length; i++) if (st.seats[i].seatNo === st.turnSeat) candidate = st.seats[i];
+    var amCandidate = st.turnSeat != null && st.turnSeat === st.self.seatNo;
+    var idx = st.round ? st.round.idx : 0, total = st.round ? st.round.total : 0;
+    var p = el("div.panel.gp-board");
+    p.appendChild(el("div.eyebrow", { text: "Card " + (idx + 1) + " of " + total + " - candidate: " + (candidate ? candidate.name : "?") }));
+    if (st.cardText) {
+      if (st.cardText.category) p.appendChild(el("div.gp-cat", { text: st.cardText.category }));
+      p.appendChild(el("div.gp-q", { text: st.cardText.q }));
+      if (st.lock) p.appendChild(el("div.gp-a", { text: st.cardText.a }));
+    } else {
+      p.appendChild(el("div.gp-q", { text: st.cardId ? "Card " + st.cardId + " - the host reads it aloud." : "Waiting for the card." }));
+    }
+    if (amCandidate) {
+      if (!st.lock) {
+        p.appendChild(hint("Answer out loud, as you would to the board. Then tap below so the board can score you."));
+        p.appendChild(btn("primary gp-answer", "I've answered - reveal", function () { intent({ kind: "answer" }); }));
+      } else if (rt.selfScored[idx] == null) {
+        p.appendChild(hint("Score yourself honestly. On this guest page nothing is saved - the count is for the room only."));
+        var srow = el("div.row");
+        [["Missed", 0], ["Partial", 1], ["Nailed it", 2]].forEach(function (o) {
+          srow.appendChild(btn("gp-self", o[0], function () { rt.selfScored[idx] = o[1]; intent({ kind: "advance-request" }); render(); }, { "data-level": String(o[1]) }));
+        });
+        p.appendChild(srow);
+      } else {
+        p.appendChild(hint("Waiting for the host to advance."));
+      }
+    } else if (!st.lock) {
+      p.appendChild(hint((candidate ? candidate.name : "The candidate") + " is answering aloud. The doctrinal answer appears when they tap \"I've answered\"."));
+    } else {
+      var scored = st.lock.scored || [];
+      var mine = rt.myScore[idx];
+      p.appendChild(hint("Score the answer you just heard. You can change it until the host advances." + (scored.length ? " Scored so far: " + scored.length + "." : "")));
+      var row = el("div.row");
+      [["0 points", 0], ["1 point", 1], ["2 points", 2]].forEach(function (o) {
+        var b = btn("gp-score", o[0], function () { rt.myScore[idx] = o[1]; var body = { kind: "score", value: o[1] }; if (st.cardId) body.cardId = st.cardId; intent(body); render(); }, { "data-value": String(o[1]), "aria-pressed": String(mine === o[1]) });
+        row.appendChild(b);
+      });
+      p.appendChild(row);
+    }
+    root.appendChild(p);
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>

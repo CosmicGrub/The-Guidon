@@ -27,6 +27,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -40,13 +41,7 @@ page.on("console", (m) => { if (["error", "warning"].includes(m.type())) noise.p
 page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 
 await page.goto(url, { waitUntil: "load" });
-await page.waitForTimeout(1100);
-await page.evaluate(() => {
-  const t = [...document.querySelectorAll("button,.ob-mode-card,[role=button],.click")]
-    .find((e) => /guest session/i.test(e.textContent || ""));
-  if (t) t.click();
-});
-await page.waitForTimeout(1100);
+await dismissOnboarding(page);
 
 const longest = await page.evaluate(() => {
   const qs = G.store.boardQuestions();
@@ -252,13 +247,7 @@ const narrowNoise = [];
 narrowPage.on("console", (m) => { if (["error", "warning"].includes(m.type())) narrowNoise.push(m.type() + ": " + m.text()); });
 narrowPage.on("pageerror", (e) => narrowNoise.push("pageerror: " + e.message));
 await narrowPage.goto(url, { waitUntil: "load" });
-await narrowPage.waitForTimeout(1100);
-await narrowPage.evaluate(() => {
-  const t = [...document.querySelectorAll("button,.ob-mode-card,[role=button],.click")]
-    .find((e) => /guest session/i.test(e.textContent || ""));
-  if (t) t.click();
-});
-await narrowPage.waitForTimeout(1100);
+await dismissOnboarding(narrowPage);
 await narrowPage.evaluate(() => { location.hash = "#/board"; });
 await narrowPage.waitForTimeout(1100);
 
@@ -313,18 +302,20 @@ await narrowPage.close();
    at the exact dimensions that reproduced the live bug, in both motion
    modes - the other checks above never test a viewport shorter than the
    card. ---- */
-const shortPage = await (await browser.newContext({ viewport: { width: 882, height: 344 } })).newPage();
+// S3 (desktop roadmap, 2026-09-04) pointer-gated the automatic theater
+// entry: it engages only on a coarse pointer, never in a short landscape
+// DESKTOP window (see test-board-drill-auto-theater.mjs for the positive
+// and negative pointer cases). The physical Z Fold5 this section models is
+// a touch device, so the context declares one - hasTouch:true flips the
+// app's own "(hover: hover) and (pointer: fine)" query to false. Without
+// it, the default fine-pointer context is exactly the desktop shape S3
+// keeps theater mode OUT of, and this section fails for the right reason.
+const shortPage = await (await browser.newContext({ viewport: { width: 882, height: 344 }, hasTouch: true })).newPage();
 const shortNoise = [];
 shortPage.on("console", (m) => { if (["error", "warning"].includes(m.type())) shortNoise.push(m.type() + ": " + m.text()); });
 shortPage.on("pageerror", (e) => shortNoise.push("pageerror: " + e.message));
 await shortPage.goto(url, { waitUntil: "load" });
-await shortPage.waitForTimeout(1100);
-await shortPage.evaluate(() => {
-  const t = [...document.querySelectorAll("button,.ob-mode-card,[role=button],.click")]
-    .find((e) => /guest session/i.test(e.textContent || ""));
-  if (t) t.click();
-});
-await shortPage.waitForTimeout(1100);
+await dismissOnboarding(shortPage);
 await shortPage.evaluate(() => { location.hash = "#/board"; });
 await shortPage.waitForTimeout(1100);
 // Explicitly select a category (same mechanism findByPrompt uses above) -

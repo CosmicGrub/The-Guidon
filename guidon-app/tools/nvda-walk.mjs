@@ -16,6 +16,7 @@ import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { readFileSync, existsSync, appendFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 const LOG = `${process.env.TEMP}\\nvda.log`;
 const OUT = "dist/nvda-walk.txt";
@@ -98,12 +99,8 @@ console.log(String(foreground()).trim());
 await page.waitForTimeout(1500);
 
 /* Dismiss onboarding as a Guest so the app is in a normal studying state. */
-await page.evaluate(() => {
-  const t = [...document.querySelectorAll("button, .ob-mode-card, [role=button], .click")]
-    .find((e) => /guest session/i.test(e.textContent || ""));
-  if (t) t.click();
-});
-await page.waitForTimeout(1800);
+await dismissOnboarding(page);
+await page.waitForTimeout(1800); /* settle so NVDA finishes speaking before the next capture */
 console.log(String(foreground()).trim());
 await page.waitForTimeout(800);
 

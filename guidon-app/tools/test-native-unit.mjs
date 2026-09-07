@@ -25,10 +25,38 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
 const bad = (m) => { fails++; console.log("  FAIL  " + m); };
+
+// -1) GAP A (parallel-literal): "#0a0e12" is the app's ground-colour fallback
+//    for BOTH the Capacitor status-bar path (applySystemBars) and the Tauri
+//    desktop path (applyNativeTheme). It must be hand-typed exactly ONCE, in
+//    the DEFAULT_BG constant, with both call sites referencing that constant
+//    rather than each carrying their own copy of the literal - one canonical
+//    value per fact. A static source check, not a runtime one: the failure
+//    mode (a second hand-typed "#0a0e12" creeping back in) would not show up
+//    in any of the runtime assertions below, which only ever observe the
+//    resolved colour, never how many places typed it.
+{
+  const nativeJsPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "native.js");
+  const src = fs.readFileSync(nativeJsPath, "utf8");
+  const literalCount = (src.match(/#0a0e12/gi) || []).length;
+  literalCount === 1
+    ? ok("src/native.js hand-types the ground-colour fallback \"#0a0e12\" exactly once (in DEFAULT_BG)")
+    : bad(`src/native.js contains ${literalCount} occurrences of "#0a0e12" (expected exactly 1, in DEFAULT_BG) - a parallel-literal regression`);
+  const usesDefaultBg = /const DEFAULT_BG\s*=\s*"#0a0e12"/.test(src)
+    && /applySystemBars[\s\S]*?token\(\s*"--bg"\s*,\s*DEFAULT_BG\s*\)/.test(src)
+    && /applyNativeTheme[\s\S]*?token\(\s*"--bg"\s*,\s*DEFAULT_BG\s*\)/.test(src);
+  usesDefaultBg
+    ? ok("both applySystemBars() and applyNativeTheme() read the fallback via the shared DEFAULT_BG constant")
+    : bad("applySystemBars()/applyNativeTheme() do not both reference DEFAULT_BG via token(\"--bg\", DEFAULT_BG)");
+}
 
 // native.js is injected only into web/index.html by build.mjs (packaging
 // content, alongside pdf-defer.js/notify.js/pwa.js) - NOT into
@@ -68,12 +96,7 @@ await page.goto(url, { waitUntil: "load" });
 await page.waitForTimeout(700);
 // web/index.html boots into onboarding on a fresh profile - skip through it
 // via the Guest Session card, same pattern as tools/test-selftest.mjs.
-const guestCard = page.locator(".ob-mode-card", { hasText: /guest session/i }).first();
-await guestCard.waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
-if (await guestCard.count()) {
-  await guestCard.click();
-  await page.locator("#ob-overlay").waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
-}
+await dismissOnboarding(page);
 await page.waitForTimeout(300);
 await page.waitForFunction(() => window.G && window.G.native && window.G.native._debug);
 
@@ -220,9 +243,18 @@ const runBtn = page.locator("button", { hasText: /Run automated checks/ });
 const runAgainBtn = page.locator("button", { hasText: /Run again/ });
 let trapClosed = { ranBaseline: false, ranBroken: false };
 
+// Poll for the "Status bar theming" card to actually be rendered rather
+// than assuming a fixed sleep outlasts a full Diagnostics run - reproduced
+// on a real CI run (ci.yml's genuinely unbounded per-shard concurrency):
+// a 400ms sleep read the card before the suite had finished, as null.
+const waitForCard = () => page.waitForFunction(
+  () => Array.from(document.querySelectorAll(".ob-plan-cat")).some((n) => /status bar theming/i.test(n.textContent || "")),
+  null, { timeout: 8000 },
+).catch(() => {});
+
 if (await runBtn.count()) {
   await runBtn.click();
-  await page.waitForTimeout(400);
+  await waitForCard();
   trapClosed.ranBaseline = true;
   trapClosed.baselineText = await statusBarCardText();
 
@@ -234,7 +266,7 @@ if (await runBtn.count()) {
     dbg.parseColor = () => ["not", "a", "number"]; // invalid triple -> validRgb should be false
   });
   await runAgainBtn.click();
-  await page.waitForTimeout(400);
+  await waitForCard();
   trapClosed.ranBroken = true;
   trapClosed.brokenText = await statusBarCardText();
 

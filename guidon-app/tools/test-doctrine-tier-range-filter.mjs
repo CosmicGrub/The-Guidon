@@ -32,6 +32,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -45,13 +46,7 @@ page.on("console", (m) => { if (["error", "warning"].includes(m.type())) noise.p
 page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 
 await page.goto(url, { waitUntil: "load" });
-await page.waitForTimeout(700);
-await page.evaluate(() => {
-  const t = [...document.querySelectorAll("button,.ob-mode-card,[role=button],.click")]
-    .find((e) => /guest session/i.test(e.textContent || ""));
-  if (t) t.click();
-});
-await page.waitForTimeout(700);
+await dismissOnboarding(page);
 
 // ---- Ground truth straight from the live seed, not hardcoded titles ----
 const truth = await page.evaluate(() => {

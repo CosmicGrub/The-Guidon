@@ -47,6 +47,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -114,14 +115,7 @@ function fireAppStateChange(isActive) {
   }, isActive);
 }
 async function dismissOnboardingVia(mode) {
-  await page.waitForTimeout(700);
-  const card = page.locator(".ob-mode-card", { hasText: mode === "kiosk" ? /kiosk/i : /guest session/i }).first();
-  await card.waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
-  if (await card.count()) {
-    await card.click();
-    await page.locator("#ob-overlay").waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
-  }
-  await page.waitForTimeout(300);
+  await dismissOnboarding(page, { mode });
 }
 /** Wipes any stored profile so the next load/reload needs onboarding again. */
 async function clearStoredProfile() {
@@ -451,14 +445,7 @@ webPage.on("pageerror", (e) => webNoise.push("pageerror: " + e.message));
 webPage.on("console", (m) => { if (m.type() === "error") webNoise.push("console.error: " + m.text()); });
 
 await webPage.goto(url, { waitUntil: "load" });
-await webPage.waitForTimeout(700);
-const webGuestCard = webPage.locator(".ob-mode-card", { hasText: /guest session/i }).first();
-await webGuestCard.waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
-if (await webGuestCard.count()) {
-  await webGuestCard.click();
-  await webPage.locator("#ob-overlay").waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
-}
-await webPage.waitForTimeout(300);
+await dismissOnboarding(webPage);
 
 const webBoot = await webPage.evaluate(() => ({
   hasCapacitor: !!window.Capacitor,

@@ -5,6 +5,54 @@ description = "GUIDON - Army Leader Development Trainer"
 authors = ["GUIDON"]
 edition = "2021"
 rust-version = "1.77"
+# src/bin/fuzz_validate.rs (the differential fuzzer, room-tls-and-discovery-
+# pitch.md section 3) is a second [[bin]] target in this package now.
+# Without this, `cargo run` picks ambiguously and - measured this session -
+# `tauri build`/`tauri dev` picked fuzz_validate.exe as "the application"
+# instead of the real shipped guidon.exe, silently, with no error (only
+# `npx tauri build --debug --no-bundle`'s own "Built application at:" line
+# gave it away). default-run is Cargo's own, standard field for exactly
+# this ambiguity; tauri-cli's own binary discovery respects it, so
+# tauri.conf.json (pinned byte-for-byte against HEAD by
+# tests/config.rs::tauri_conf_is_byte_identical_to_head_apart_from_the_
+# desktop_plan_keys, apart from two named R1 keys) needs no new key and
+# stays untouched.
+default-run = "guidon"
+
+[lib]
+# Split for the differential fuzzer (room-tls-and-discovery-pitch.md
+# section 3): src/bin/fuzz_validate.rs is a second [[bin]] target that needs
+# to call the real room::validate() through this lib, not a second copy.
+# Name defaults to the package name ("guidon"), spelled out here for
+# clarity. main.rs still builds the same binary it always did - only reaches
+# room/room_schema_gen through `use guidon::{room, room_schema_gen}` now.
+name = "guidon"
+path = "src/lib.rs"
+
+# BUNDLING FIX (2026-09-07, found on bundle-macos's own first real run on a
+# GitHub runner): tauri-cli's bundler enumerates every [[bin]] target this
+# package declares (via cargo_metadata) and tries to copy each one into the
+# app bundle - not just the shipped "guidon" binary. `tauri build --target
+# universal-apple-darwin` failed with "Failed to copy binary ... fuzz_validate
+# ... does not exist", because tauri-cli's universal-binary lipo-merge step
+# only produces the ONE binary it treats as "the app" (default-run above),
+# never a second, unrelated dev-tool binary living in the same package -
+# fuzz_validate was never lipo-merged into target/universal-apple-darwin/
+# release/ in the first place, even though it built fine per-arch on its own.
+# required-features gates it out of a DEFAULT `cargo build --release` (what
+# tauri invokes) entirely, so there is nothing for the bundler to expect -
+# `cargo build --features fuzz-validate --bin fuzz_validate` (or `cargo test
+# --features fuzz-validate`) still builds/tests it explicitly, matching how
+# tools/fuzz-room-validate.mjs already tells you to build it by hand (an
+# opt-in dev tool, never part of the shipped app either way - this just makes
+# that already-true fact visible to Cargo/tauri too, not a behavior change).
+[[bin]]
+name = "fuzz_validate"
+path = "src/bin/fuzz_validate.rs"
+required-features = ["fuzz-validate"]
+
+[features]
+fuzz-validate = []
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -16,6 +64,80 @@ tauri = { version = "2", features = [] }
 tauri-plugin-single-instance = "2"
 # Remember window size/position/maximised state between runs.
 tauri-plugin-window-state = "2"
+# R11 self-test report (src/selftest.rs): the page's {routes, themes, hash,
+# fork, buildSha} arrive as a typed command argument and leave as one JSON
+# file. Both crates were already in Cargo.lock through tauri itself (serde
+# 1.0.229, serde_json 1.0.151); this only names them as direct dependencies.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# R-ROOM (collective P4): the LAN room listener (src/room.rs) is a tokio
+# task on tauri's own async runtime. tokio 1.53.1 was already in Cargo.lock
+# through tauri (features rt, rt-multi-thread, sync, fs, io-util); this
+# names it directly and adds the "net" (TcpListener/TcpStream) and "time"
+# (heartbeat, probe timeout) features. No new crate: net's optional deps
+# (mio, socket2, windows-sys) were already resolved in the lock. The
+# WebSocket layer is a minimal RFC 6455 server written here to mirror
+# tools/room-server.mjs frame for frame (SHA-1 + base64 for the handshake
+# are ~60 lines in room.rs, tested against the RFC vectors) - no
+# tokio-tungstenite, no sha1 crate, no new dependency of any kind.
+# Keep-awake (X13) is one kernel32 FFI declaration, not the windows crate.
+tokio = { version = "1", features = ["rt", "net", "io-util", "time", "sync"] }
+
+# room-tls-and-discovery-pitch.md Section 1 (the pinned self-signed WSS
+# design for the Android room-join blocker, confirmed 2026-09-06): a
+# second, TLS-wrapped accept loop alongside the existing plaintext one in
+# room.rs, sharing the exact same serve_conn/relay logic - never a second
+# implementation of it. Exact versions and feature sets the spike
+# (src-tauri/spikes/room_tls_spike/) proved compatible together.
+rcgen = "0.14"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+rustls-pki-types = "1"
+# NOT free via rcgen - checked, not assumed, and the spike's own comment
+# (src-tauri/spikes/room_tls_spike/) claiming otherwise does not hold here:
+# `cargo tree -i -p x509-parser` against THIS package's own Cargo.lock
+# shows it parented ONLY under `guidon` (this direct dependency), never
+# under rcgen. rcgen 0.14's default features (crypto, pem, ring) never pull
+# it in; x509-parser sits behind rcgen's own optional, non-default
+# "x509-parser" feature, which this project does not enable. Named here
+# because room_tls.rs needs its own copy to re-parse OUR OWN freshly-minted
+# certificate (see that file's header for why re-parsing, not trusting
+# rcgen's own key export, is the whole point) - a real, required dependency
+# edge, not a free one.
+x509-parser = "0.18"
+# SHA-256/hex/base32 for the SPKI pin and the human-read fp are hand-rolled
+# in room_tls.rs (same reason room.rs already hand-rolls SHA-1 + base64 for
+# the WebSocket handshake instead of depending on a crate for it) - no
+# sha2/hex/base32 crate is added here, deliberately, even though sha2
+# happens to already be resolved transitively for unrelated reasons.
+
+# Windows-only desktop-shell integration (R3 selective accelerator guard,
+# R-ROOM's non-loopback IPv4 listing). Target-gated because both are Win32
+# APIs with nothing to bind to elsewhere, even though this project only
+# ships a Windows build today (see the cargo-audit notes below).
+[target.'cfg(windows)'.dependencies]
+# R3: ICoreWebView2Controller::add_AcceleratorKeyPressed. Already resolved
+# in Cargo.lock (0.38.2) through tauri-runtime-wry/wry; this only names it
+# as a direct dependency so main.rs can call it.
+webview2-com = "0.38"
+# The plain `windows::core::Result`/`BOOL` webview2-com's own closures need
+# - NOT the full `windows` crate (which webview2-com does not re-export):
+# `windows::core` is itself a re-export of `windows-core`, already resolved
+# at 0.61.2 in Cargo.lock through webview2-com/windows-core itself, so this
+# is the same type either way with far fewer features to compile.
+windows-core = "0.61"
+# R-ROOM: GetAdaptersAddresses (iphlpapi), the same API `ipconfig` is built
+# on - real interface enumeration for the non-loopback IPv4 listing.
+# windows-sys 0.60 was already resolved in Cargo.lock (tao's own Win32
+# calls); this adds the IP-Helper/Ndis/WinSock feature set directly.
+windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock"] }
+
+[dev-dependencies]
+# R13: tauri's "test" feature exposes tauri::test::{mock_builder, mock_context,
+# noop_assets, get_ipc_response} and the MockRuntime, so the self-test command
+# runs under `cargo test` without a window. Same crate and version as above;
+# the feature is unified only into test builds.
+tauri = { version = "2", features = ["test"] }
 
 # ---------------------------------------------------------------------------
 # Tracked, unfixed transitive advisories (checked 2026-08-13, task #245/#246;

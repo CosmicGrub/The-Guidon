@@ -20,6 +20,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -42,13 +43,7 @@ async function railWidthFor(model, { hasUAData = true } = {}) {
     });
   }, { m: model, has: hasUAData });
   await page.goto(url, { waitUntil: "load" });
-  await page.waitForTimeout(900);
-  await page.evaluate(() => {
-    const t = [...document.querySelectorAll("button,.ob-mode-card,[role=button],.click")]
-      .find((e) => /guest session/i.test(e.textContent || ""));
-    if (t) t.click();
-  });
-  await page.waitForTimeout(900);
+  await dismissOnboarding(page);
   const info = await page.evaluate(() => {
     const app = document.querySelector("#app");
     const cs = getComputedStyle(app);

@@ -5,6 +5,12 @@
   "android": {
     "allowMixedContent": false
   },
+  "ios": {
+    "allowsLinkPreview": false,
+    "backgroundColor": "#e8dfc9",
+    "contentInset": "never",
+    "scrollEnabled": true
+  },
   "server": {
     "androidScheme": "https"
   },

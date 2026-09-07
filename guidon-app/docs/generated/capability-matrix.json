@@ -1,0 +1,956 @@
+{
+  "schema": 1,
+  "generatedAt": "2026-09-05T15:03:17.932Z",
+  "head": "38c2f225b9ebd3f86fdd8e90bd8c60293ecd9c25",
+  "maxAgeDays": 90,
+  "registry": [
+    {
+      "id": "indexeddb",
+      "group": "storage",
+      "required": true,
+      "expects": {
+        "web": true,
+        "pwa": true,
+        "tauri": true,
+        "android": true,
+        "ios": true,
+        "standalone": true,
+        "guest": true
+      },
+      "degrade": "Nothing persists: grades, board dates and settings are lost on reload. The app cannot ship without it."
+    },
+    {
+      "id": "storagePersist",
+      "group": "storage",
+      "required": false,
+      "expects": {
+        "web": true,
+        "pwa": true,
+        "tauri": true,
+        "android": true,
+        "ios": null,
+        "standalone": true,
+        "guest": false
+      },
+      "degrade": "The browser may evict IndexedDB after ~7 days idle (iOS); Diagnostics' Storage durability check reports it, Share & Install mitigates it."
+    },
+    {
+      "id": "share",
+      "group": "io",
+      "required": false,
+      "expects": {
+        "web": null,
+        "pwa": null,
+        "tauri": false,
+        "android": true,
+        "ios": true,
+        "standalone": false,
+        "guest": false
+      },
+      "degrade": "Share buttons fall back to copy-to-clipboard or a plain download."
+    },
+    {
+      "id": "download",
+      "group": "io",
+      "required": true,
+      "expects": {
+        "web": true,
+        "pwa": true,
+        "tauri": true,
+        "android": true,
+        "ios": true,
+        "standalone": true,
+        "guest": true
+      },
+      "degrade": "Backups, PDFs and self-heal logs cannot be saved as files (Android/iOS route through Filesystem+Share instead, see util.download)."
+    },
+    {
+      "id": "print",
+      "group": "io",
+      "required": true,
+      "expects": {
+        "web": true,
+        "pwa": true,
+        "tauri": true,
+        "android": true,
+        "ios": true,
+        "standalone": true,
+        "guest": true
+      },
+      "degrade": "Readiness summary and DA 4856 flatten-and-print are unavailable (Android uses the native print path, see test-print-native)."
+    },
+    {
+      "id": "haptics",
+      "group": "device",
+      "required": false,
+      "expects": {
+        "web": null,
+        "pwa": null,
+        "tauri": false,
+        "android": "Capacitor.Haptics",
+        "ios": "Capacitor.Haptics",
+        "standalone": null,
+        "guest": null
+      },
+      "degrade": "Board-drill grade feedback is visual only."
+    },
+    {
+      "id": "notifications",
+      "group": "device",
+      "required": false,
+      "expects": {
+        "web": null,
+        "pwa": null,
+        "tauri": null,
+        "android": "LocalNotifications",
+        "ios": "LocalNotifications",
+        "standalone": null,
+        "guest": null
+      },
+      "degrade": "Reminder alerts only show inside the app; nothing fires while it is closed."
+    },
+    {
+      "id": "biometric",
+      "group": "device",
+      "required": false,
+      "expects": {
+        "web": false,
+        "pwa": false,
+        "tauri": false,
+        "android": true,
+        "ios": true,
+        "standalone": false,
+        "guest": false
+      },
+      "degrade": "Personal Account biometric lock is not offered (Settings hides the toggle)."
+    },
+    {
+      "id": "fullscreen",
+      "group": "display",
+      "required": false,
+      "expects": {
+        "web": true,
+        "pwa": true,
+        "tauri": true,
+        "android": true,
+        "ios": null,
+        "standalone": true,
+        "guest": true
+      },
+      "degrade": "Board-drill theater mode uses a fixed overlay instead of true fullscreen (iPhone WKWebView)."
+    },
+    {
+      "id": "broadcastChannel",
+      "group": "platform",
+      "required": false,
+      "expects": {
+        "web": true,
+        "pwa": true,
+        "tauri": true,
+        "android": true,
+        "ios": true,
+        "standalone": "unknown",
+        "guest": true
+      },
+      "degrade": "Two windows of the same origin do not sync (src/xwin.js is inert); each window still works alone."
+    },
+    {
+      "id": "webCrypto",
+      "group": "platform",
+      "required": false,
+      "expects": {
+        "web": true,
+        "pwa": true,
+        "tauri": true,
+        "android": true,
+        "ios": true,
+        "standalone": true,
+        "guest": false
+      },
+      "degrade": "Unused today; a future room key exchange (P3/P4) needs it. Absent on plain http:// origins."
+    },
+    {
+      "id": "webSocket",
+      "group": "network",
+      "required": false,
+      "expects": {
+        "web": true,
+        "pwa": true,
+        "tauri": true,
+        "android": true,
+        "ios": "probable",
+        "standalone": true,
+        "guest": true
+      },
+      "degrade": "Study groups (LAN rooms, P3/P4) cannot connect; everything else is offline by design. The API existing is not a LAN room: page JS on any https:// origin (a hosted web or pwa page, android's https://localhost WebView) opening ws:// to a LAN IP is blocked as mixed content, so rooms from those origins need a native socket (the Capacitor side) or a wss:// endpoint; the plain http:// guest page and http://tauri.localhost are not blocked."
+    },
+    {
+      "id": "rtcDataChannel",
+      "group": "network",
+      "required": false,
+      "expects": {
+        "web": true,
+        "pwa": true,
+        "tauri": true,
+        "android": true,
+        "ios": "probable",
+        "standalone": "unknown",
+        "guest": "n/a"
+      },
+      "degrade": "Peer-to-peer rooms (P4 option) unavailable; a LAN WebSocket room still works."
+    },
+    {
+      "id": "getUserMedia",
+      "group": "device",
+      "required": false,
+      "expects": {
+        "web": true,
+        "pwa": true,
+        "tauri": true,
+        "android": true,
+        "ios": true,
+        "standalone": null,
+        "guest": false
+      },
+      "degrade": "Unused today; recorded so a future camera/mic feature has a measured floor."
+    },
+    {
+      "id": "wakeLock",
+      "group": "device",
+      "required": false,
+      "expects": {
+        "web": true,
+        "pwa": true,
+        "tauri": true,
+        "android": true,
+        "ios": true,
+        "standalone": true,
+        "guest": false
+      },
+      "degrade": "The screen may dim during a long drill; nothing else changes."
+    },
+    {
+      "id": "colorMix",
+      "group": "css",
+      "required": true,
+      "expects": {
+        "web": true,
+        "pwa": true,
+        "tauri": true,
+        "android": true,
+        "ios": true,
+        "standalone": true,
+        "guest": true
+      },
+      "degrade": "The five --ink-* text tokens (src/index.html) resolve to nothing: accent-coloured text renders in the build-generated static fallback colour. Engine floor Q11: Chromium 111 / WebKit 16.2 / Gecko 113 (window.GUIDON_ENGINE_FLOOR, from tools/engine-floor.json)."
+    },
+    {
+      "id": "containerQueries",
+      "group": "css",
+      "required": false,
+      "expects": {
+        "web": true,
+        "pwa": true,
+        "tauri": true,
+        "android": true,
+        "ios": true,
+        "standalone": true,
+        "guest": true
+      },
+      "degrade": "Unused today (0 container-type rules); recorded for the engine floor."
+    },
+    {
+      "id": "hasSelector",
+      "group": "css",
+      "required": false,
+      "expects": {
+        "web": true,
+        "pwa": true,
+        "tauri": true,
+        "android": true,
+        "ios": true,
+        "standalone": true,
+        "guest": true
+      },
+      "degrade": "Unused today (0 :has() rules); recorded for the engine floor."
+    },
+    {
+      "id": "dialog",
+      "group": "platform",
+      "required": false,
+      "expects": {
+        "web": true,
+        "pwa": true,
+        "tauri": true,
+        "android": true,
+        "ios": true,
+        "standalone": true,
+        "guest": true
+      },
+      "degrade": "G.modal draws its own overlay and never depends on <dialog>; recorded for the engine floor."
+    },
+    {
+      "id": "viewTransitions",
+      "group": "display",
+      "required": false,
+      "expects": {
+        "web": true,
+        "pwa": true,
+        "tauri": true,
+        "android": true,
+        "ios": null,
+        "standalone": true,
+        "guest": true
+      },
+      "degrade": "Route changes cut instead of cross-fading; unused today."
+    },
+    {
+      "id": "speechSynthesis",
+      "group": "device",
+      "required": false,
+      "expects": {
+        "web": true,
+        "pwa": true,
+        "tauri": true,
+        "android": true,
+        "ios": true,
+        "standalone": true,
+        "guest": true
+      },
+      "degrade": "Unused today; recorded so a read-aloud drill option has a measured floor."
+    },
+    {
+      "id": "serviceWorker",
+      "group": "platform",
+      "required": false,
+      "expects": {
+        "web": true,
+        "pwa": true,
+        "tauri": null,
+        "android": true,
+        "ios": true,
+        "standalone": null,
+        "guest": false
+      },
+      "degrade": "No offline precache for the hosted build; native shells never register one (assets ship locally), the standalone file needs none."
+    },
+    {
+      "id": "secureContext",
+      "group": "platform",
+      "required": false,
+      "expects": {
+        "web": true,
+        "pwa": true,
+        "tauri": true,
+        "android": true,
+        "ios": true,
+        "standalone": true,
+        "guest": false
+      },
+      "degrade": "Web Crypto, storage persistence and share are gated on it; a plain http:// host loses them (localhost and file:// count as secure)."
+    },
+    {
+      "id": "origin",
+      "group": "platform",
+      "required": false,
+      "expects": {
+        "web": "http(s)://<host>",
+        "pwa": "https://<host>",
+        "tauri": "http://tauri.localhost",
+        "android": "https://localhost",
+        "ios": "capacitor://localhost",
+        "standalone": "null",
+        "guest": "http://<lan-ip>:<port>"
+      },
+      "degrade": "Recorded value, not a capability: \"null\" is the file:// standalone origin, so same-origin features (BroadcastChannel sync) are off there."
+    }
+  ],
+  "ships": {
+    "web": true,
+    "pwa": true,
+    "tauri": true,
+    "android": true,
+    "standalone": true,
+    "ios": false
+  },
+  "columns": [
+    {
+      "key": "chromium-web",
+      "file": "artifacts/caps/chromium-web.json",
+      "engine": "chromium",
+      "device": "web",
+      "fork": "web",
+      "engineFamily": "chromium",
+      "engineVersion": 151,
+      "collectedAt": "2026-09-05T14:48:38.087Z",
+      "collector": "tools/verify.mjs",
+      "sha": "38c2f225b9ebd3f86fdd8e90bd8c60293ecd9c25",
+      "dirty": true,
+      "isVirtual": false,
+      "engineOnly": false,
+      "evidence": true,
+      "labels": [
+        "dirty tree"
+      ],
+      "note": "",
+      "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+      "viewport": {
+        "w": 1440,
+        "h": 900,
+        "dpr": 1
+      }
+    },
+    {
+      "key": "webkit-ipad-10th-gen",
+      "file": "artifacts/caps/webkit-ipad-10th-gen.json",
+      "engine": "webkit",
+      "device": "ipad-10th-gen",
+      "fork": "web",
+      "engineFamily": "webkit",
+      "engineVersion": 26,
+      "collectedAt": "2026-09-04T22:10:48.129Z",
+      "collector": "tools/verify-ios-webkit.mjs",
+      "sha": "38c2f225b9ebd3f86fdd8e90bd8c60293ecd9c25",
+      "dirty": true,
+      "isVirtual": false,
+      "engineOnly": true,
+      "evidence": false,
+      "labels": [
+        "engine only",
+        "dirty tree"
+      ],
+      "note": "Playwright WebKit 26 on win32 emulating ipad-10th-gen - engine only, not iOS",
+      "ua": "Mozilla/5.0 (iPad; CPU OS 12_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Mobile/15E148 Safari/604.1",
+      "viewport": {
+        "w": 820,
+        "h": 1180,
+        "dpr": 2
+      }
+    },
+    {
+      "key": "webkit-iphone-13mini",
+      "file": "artifacts/caps/webkit-iphone-13mini.json",
+      "engine": "webkit",
+      "device": "iphone-13mini",
+      "fork": "web",
+      "engineFamily": "webkit",
+      "engineVersion": 26,
+      "collectedAt": "2026-09-04T22:10:20.142Z",
+      "collector": "tools/verify-ios-webkit.mjs",
+      "sha": "38c2f225b9ebd3f86fdd8e90bd8c60293ecd9c25",
+      "dirty": true,
+      "isVirtual": false,
+      "engineOnly": true,
+      "evidence": false,
+      "labels": [
+        "engine only",
+        "dirty tree"
+      ],
+      "note": "Playwright WebKit 26 on win32 emulating iphone-13mini - engine only, not iOS",
+      "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Mobile/15E148 Safari/604.1",
+      "viewport": {
+        "w": 375,
+        "h": 629,
+        "dpr": 3
+      }
+    },
+    {
+      "key": "webkit-iphone-16-pro-max",
+      "file": "artifacts/caps/webkit-iphone-16-pro-max.json",
+      "engine": "webkit",
+      "device": "iphone-16-pro-max",
+      "fork": "web",
+      "engineFamily": "webkit",
+      "engineVersion": 26,
+      "collectedAt": "2026-09-04T22:10:38.737Z",
+      "collector": "tools/verify-ios-webkit.mjs",
+      "sha": "38c2f225b9ebd3f86fdd8e90bd8c60293ecd9c25",
+      "dirty": true,
+      "isVirtual": false,
+      "engineOnly": true,
+      "evidence": false,
+      "labels": [
+        "engine only",
+        "dirty tree"
+      ],
+      "note": "Playwright WebKit 26 on win32 emulating iphone-16-pro-max - engine only, not iOS",
+      "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Mobile/15E148 Safari/604.1",
+      "viewport": {
+        "w": 440,
+        "h": 763,
+        "dpr": 3
+      }
+    },
+    {
+      "key": "webkit-iphone-16",
+      "file": "artifacts/caps/webkit-iphone-16.json",
+      "engine": "webkit",
+      "device": "iphone-16",
+      "fork": "web",
+      "engineFamily": "webkit",
+      "engineVersion": 26,
+      "collectedAt": "2026-09-04T22:10:29.476Z",
+      "collector": "tools/verify-ios-webkit.mjs",
+      "sha": "38c2f225b9ebd3f86fdd8e90bd8c60293ecd9c25",
+      "dirty": true,
+      "isVirtual": false,
+      "engineOnly": true,
+      "evidence": false,
+      "labels": [
+        "engine only",
+        "dirty tree"
+      ],
+      "note": "Playwright WebKit 26 on win32 emulating iphone-16 - engine only, not iOS",
+      "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Mobile/15E148 Safari/604.1",
+      "viewport": {
+        "w": 393,
+        "h": 659,
+        "dpr": 3
+      }
+    },
+    {
+      "key": "webkit-iphone-se3",
+      "file": "artifacts/caps/webkit-iphone-se3.json",
+      "engine": "webkit",
+      "device": "iphone-se3",
+      "fork": "web",
+      "engineFamily": "webkit",
+      "engineVersion": 26,
+      "collectedAt": "2026-09-04T22:10:10.880Z",
+      "collector": "tools/verify-ios-webkit.mjs",
+      "sha": "38c2f225b9ebd3f86fdd8e90bd8c60293ecd9c25",
+      "dirty": true,
+      "isVirtual": false,
+      "engineOnly": true,
+      "evidence": false,
+      "labels": [
+        "engine only",
+        "dirty tree"
+      ],
+      "note": "Playwright WebKit 26 on win32 emulating iphone-se3 - engine only, not iOS",
+      "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/603.1.30 (KHTML, like Gecko) Version/26.5 Mobile/19E241 Safari/602.1",
+      "viewport": {
+        "w": 375,
+        "h": 667,
+        "dpr": 2
+      }
+    },
+    {
+      "key": "webview2-desktop",
+      "file": "artifacts/caps/webview2-desktop.json",
+      "engine": "webview2",
+      "device": "desktop",
+      "fork": "tauri",
+      "engineFamily": "chromium",
+      "engineVersion": 152,
+      "collectedAt": "2026-09-05T15:03:16.447Z",
+      "collector": "tools/caps-webview2.mjs",
+      "sha": "38c2f225b9ebd3f86fdd8e90bd8c60293ecd9c25",
+      "dirty": true,
+      "isVirtual": false,
+      "engineOnly": false,
+      "evidence": true,
+      "labels": [
+        "dirty tree"
+      ],
+      "note": "installed exe C:/Users/User/Documents/GitHub/The-Guidon/guidon-app/src-tauri/target/debug/guidon.exe (GUIDON 1.5.0 built 2026-09-05), WebView2 Edg/152.0.4191.62; obtained via sentinel",
+      "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36 Edg/152.0.0.0",
+      "viewport": {
+        "w": 1920,
+        "h": 1009,
+        "dpr": 1
+      }
+    }
+  ],
+  "cells": {
+    "indexeddb": {
+      "chromium-web": true,
+      "webkit-ipad-10th-gen": true,
+      "webkit-iphone-13mini": true,
+      "webkit-iphone-16-pro-max": true,
+      "webkit-iphone-16": true,
+      "webkit-iphone-se3": true,
+      "webview2-desktop": true
+    },
+    "storagePersist": {
+      "chromium-web": true,
+      "webkit-ipad-10th-gen": false,
+      "webkit-iphone-13mini": false,
+      "webkit-iphone-16-pro-max": false,
+      "webkit-iphone-16": false,
+      "webkit-iphone-se3": false,
+      "webview2-desktop": true
+    },
+    "share": {
+      "chromium-web": false,
+      "webkit-ipad-10th-gen": false,
+      "webkit-iphone-13mini": false,
+      "webkit-iphone-16-pro-max": false,
+      "webkit-iphone-16": false,
+      "webkit-iphone-se3": false,
+      "webview2-desktop": "navigator.share"
+    },
+    "download": {
+      "chromium-web": true,
+      "webkit-ipad-10th-gen": true,
+      "webkit-iphone-13mini": true,
+      "webkit-iphone-16-pro-max": true,
+      "webkit-iphone-16": true,
+      "webkit-iphone-se3": true,
+      "webview2-desktop": true
+    },
+    "print": {
+      "chromium-web": true,
+      "webkit-ipad-10th-gen": true,
+      "webkit-iphone-13mini": true,
+      "webkit-iphone-16-pro-max": true,
+      "webkit-iphone-16": true,
+      "webkit-iphone-se3": true,
+      "webview2-desktop": true
+    },
+    "haptics": {
+      "chromium-web": "navigator.vibrate",
+      "webkit-ipad-10th-gen": false,
+      "webkit-iphone-13mini": false,
+      "webkit-iphone-16-pro-max": false,
+      "webkit-iphone-16": false,
+      "webkit-iphone-se3": false,
+      "webview2-desktop": "navigator.vibrate"
+    },
+    "notifications": {
+      "chromium-web": "Notification",
+      "webkit-ipad-10th-gen": false,
+      "webkit-iphone-13mini": false,
+      "webkit-iphone-16-pro-max": false,
+      "webkit-iphone-16": false,
+      "webkit-iphone-se3": false,
+      "webview2-desktop": "Notification"
+    },
+    "biometric": {
+      "chromium-web": false,
+      "webkit-ipad-10th-gen": false,
+      "webkit-iphone-13mini": false,
+      "webkit-iphone-16-pro-max": false,
+      "webkit-iphone-16": false,
+      "webkit-iphone-se3": false,
+      "webview2-desktop": false
+    },
+    "fullscreen": {
+      "chromium-web": true,
+      "webkit-ipad-10th-gen": false,
+      "webkit-iphone-13mini": false,
+      "webkit-iphone-16-pro-max": false,
+      "webkit-iphone-16": false,
+      "webkit-iphone-se3": false,
+      "webview2-desktop": true
+    },
+    "broadcastChannel": {
+      "chromium-web": true,
+      "webkit-ipad-10th-gen": true,
+      "webkit-iphone-13mini": true,
+      "webkit-iphone-16-pro-max": true,
+      "webkit-iphone-16": true,
+      "webkit-iphone-se3": true,
+      "webview2-desktop": true
+    },
+    "webCrypto": {
+      "chromium-web": true,
+      "webkit-ipad-10th-gen": true,
+      "webkit-iphone-13mini": true,
+      "webkit-iphone-16-pro-max": true,
+      "webkit-iphone-16": true,
+      "webkit-iphone-se3": true,
+      "webview2-desktop": true
+    },
+    "webSocket": {
+      "chromium-web": true,
+      "webkit-ipad-10th-gen": true,
+      "webkit-iphone-13mini": true,
+      "webkit-iphone-16-pro-max": true,
+      "webkit-iphone-16": true,
+      "webkit-iphone-se3": true,
+      "webview2-desktop": true
+    },
+    "rtcDataChannel": {
+      "chromium-web": true,
+      "webkit-ipad-10th-gen": false,
+      "webkit-iphone-13mini": false,
+      "webkit-iphone-16-pro-max": false,
+      "webkit-iphone-16": false,
+      "webkit-iphone-se3": false,
+      "webview2-desktop": true
+    },
+    "getUserMedia": {
+      "chromium-web": true,
+      "webkit-ipad-10th-gen": false,
+      "webkit-iphone-13mini": false,
+      "webkit-iphone-16-pro-max": false,
+      "webkit-iphone-16": false,
+      "webkit-iphone-se3": false,
+      "webview2-desktop": true
+    },
+    "wakeLock": {
+      "chromium-web": true,
+      "webkit-ipad-10th-gen": true,
+      "webkit-iphone-13mini": true,
+      "webkit-iphone-16-pro-max": true,
+      "webkit-iphone-16": true,
+      "webkit-iphone-se3": true,
+      "webview2-desktop": true
+    },
+    "colorMix": {
+      "chromium-web": true,
+      "webkit-ipad-10th-gen": true,
+      "webkit-iphone-13mini": true,
+      "webkit-iphone-16-pro-max": true,
+      "webkit-iphone-16": true,
+      "webkit-iphone-se3": true,
+      "webview2-desktop": true
+    },
+    "containerQueries": {
+      "chromium-web": true,
+      "webkit-ipad-10th-gen": true,
+      "webkit-iphone-13mini": true,
+      "webkit-iphone-16-pro-max": true,
+      "webkit-iphone-16": true,
+      "webkit-iphone-se3": true,
+      "webview2-desktop": true
+    },
+    "hasSelector": {
+      "chromium-web": true,
+      "webkit-ipad-10th-gen": true,
+      "webkit-iphone-13mini": true,
+      "webkit-iphone-16-pro-max": true,
+      "webkit-iphone-16": true,
+      "webkit-iphone-se3": true,
+      "webview2-desktop": true
+    },
+    "dialog": {
+      "chromium-web": true,
+      "webkit-ipad-10th-gen": true,
+      "webkit-iphone-13mini": true,
+      "webkit-iphone-16-pro-max": true,
+      "webkit-iphone-16": true,
+      "webkit-iphone-se3": true,
+      "webview2-desktop": true
+    },
+    "viewTransitions": {
+      "chromium-web": true,
+      "webkit-ipad-10th-gen": true,
+      "webkit-iphone-13mini": true,
+      "webkit-iphone-16-pro-max": true,
+      "webkit-iphone-16": true,
+      "webkit-iphone-se3": true,
+      "webview2-desktop": true
+    },
+    "speechSynthesis": {
+      "chromium-web": true,
+      "webkit-ipad-10th-gen": false,
+      "webkit-iphone-13mini": false,
+      "webkit-iphone-16-pro-max": false,
+      "webkit-iphone-16": false,
+      "webkit-iphone-se3": false,
+      "webview2-desktop": true
+    },
+    "serviceWorker": {
+      "chromium-web": true,
+      "webkit-ipad-10th-gen": true,
+      "webkit-iphone-13mini": true,
+      "webkit-iphone-16-pro-max": true,
+      "webkit-iphone-16": true,
+      "webkit-iphone-se3": true,
+      "webview2-desktop": true
+    },
+    "secureContext": {
+      "chromium-web": true,
+      "webkit-ipad-10th-gen": true,
+      "webkit-iphone-13mini": true,
+      "webkit-iphone-16-pro-max": true,
+      "webkit-iphone-16": true,
+      "webkit-iphone-se3": true,
+      "webview2-desktop": true
+    },
+    "origin": {
+      "chromium-web": "http://127.0.0.1:56309",
+      "webkit-ipad-10th-gen": "http://127.0.0.1:54370",
+      "webkit-iphone-13mini": "http://127.0.0.1:54370",
+      "webkit-iphone-16-pro-max": "http://127.0.0.1:54370",
+      "webkit-iphone-16": "http://127.0.0.1:54370",
+      "webkit-iphone-se3": "http://127.0.0.1:54370",
+      "webview2-desktop": "http://tauri.localhost"
+    }
+  },
+  "deviations": [
+    {
+      "id": "storagePersist",
+      "column": "webkit-ipad-10th-gen",
+      "expected": true,
+      "measured": false
+    },
+    {
+      "id": "storagePersist",
+      "column": "webkit-iphone-13mini",
+      "expected": true,
+      "measured": false
+    },
+    {
+      "id": "storagePersist",
+      "column": "webkit-iphone-16-pro-max",
+      "expected": true,
+      "measured": false
+    },
+    {
+      "id": "storagePersist",
+      "column": "webkit-iphone-16",
+      "expected": true,
+      "measured": false
+    },
+    {
+      "id": "storagePersist",
+      "column": "webkit-iphone-se3",
+      "expected": true,
+      "measured": false
+    },
+    {
+      "id": "share",
+      "column": "webview2-desktop",
+      "expected": false,
+      "measured": "navigator.share"
+    },
+    {
+      "id": "haptics",
+      "column": "webview2-desktop",
+      "expected": false,
+      "measured": "navigator.vibrate"
+    },
+    {
+      "id": "fullscreen",
+      "column": "webkit-ipad-10th-gen",
+      "expected": true,
+      "measured": false
+    },
+    {
+      "id": "fullscreen",
+      "column": "webkit-iphone-13mini",
+      "expected": true,
+      "measured": false
+    },
+    {
+      "id": "fullscreen",
+      "column": "webkit-iphone-16-pro-max",
+      "expected": true,
+      "measured": false
+    },
+    {
+      "id": "fullscreen",
+      "column": "webkit-iphone-16",
+      "expected": true,
+      "measured": false
+    },
+    {
+      "id": "fullscreen",
+      "column": "webkit-iphone-se3",
+      "expected": true,
+      "measured": false
+    },
+    {
+      "id": "rtcDataChannel",
+      "column": "webkit-ipad-10th-gen",
+      "expected": true,
+      "measured": false
+    },
+    {
+      "id": "rtcDataChannel",
+      "column": "webkit-iphone-13mini",
+      "expected": true,
+      "measured": false
+    },
+    {
+      "id": "rtcDataChannel",
+      "column": "webkit-iphone-16-pro-max",
+      "expected": true,
+      "measured": false
+    },
+    {
+      "id": "rtcDataChannel",
+      "column": "webkit-iphone-16",
+      "expected": true,
+      "measured": false
+    },
+    {
+      "id": "rtcDataChannel",
+      "column": "webkit-iphone-se3",
+      "expected": true,
+      "measured": false
+    },
+    {
+      "id": "getUserMedia",
+      "column": "webkit-ipad-10th-gen",
+      "expected": true,
+      "measured": false
+    },
+    {
+      "id": "getUserMedia",
+      "column": "webkit-iphone-13mini",
+      "expected": true,
+      "measured": false
+    },
+    {
+      "id": "getUserMedia",
+      "column": "webkit-iphone-16-pro-max",
+      "expected": true,
+      "measured": false
+    },
+    {
+      "id": "getUserMedia",
+      "column": "webkit-iphone-16",
+      "expected": true,
+      "measured": false
+    },
+    {
+      "id": "getUserMedia",
+      "column": "webkit-iphone-se3",
+      "expected": true,
+      "measured": false
+    },
+    {
+      "id": "speechSynthesis",
+      "column": "webkit-ipad-10th-gen",
+      "expected": true,
+      "measured": false
+    },
+    {
+      "id": "speechSynthesis",
+      "column": "webkit-iphone-13mini",
+      "expected": true,
+      "measured": false
+    },
+    {
+      "id": "speechSynthesis",
+      "column": "webkit-iphone-16-pro-max",
+      "expected": true,
+      "measured": false
+    },
+    {
+      "id": "speechSynthesis",
+      "column": "webkit-iphone-16",
+      "expected": true,
+      "measured": false
+    },
+    {
+      "id": "speechSynthesis",
+      "column": "webkit-iphone-se3",
+      "expected": true,
+      "measured": false
+    }
+  ],
+  "refused": [],
+  "gate": {
+    "ok": true,
+    "failures": [],
+    "evidenceColumns": [
+      "chromium-web",
+      "webview2-desktop"
+    ]
+  }
+}

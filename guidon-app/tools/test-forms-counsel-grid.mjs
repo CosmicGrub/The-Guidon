@@ -30,6 +30,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -38,16 +39,6 @@ const bad = (m) => { fails++; console.log("  FAIL  " + m); };
 const { server, url } = await serve("web");
 const browser = await chromium.launch();
 
-async function openGuestSession(page) {
-  const guestCard = page.locator(".ob-mode-card", { hasText: /guest session/i }).first();
-  await guestCard.waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
-  if (await guestCard.count()) {
-    await guestCard.click();
-    await page.locator("#ob-overlay").waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
-  }
-  await page.waitForTimeout(300);
-}
-
 async function newPageAt(width, hash) {
   const ctx = await browser.newContext({ viewport: { width, height: 1000 } });
   const page = await ctx.newPage();
@@ -55,8 +46,7 @@ async function newPageAt(width, hash) {
   page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push(m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
   await page.goto(url, { waitUntil: "load" });
-  await page.waitForTimeout(600);
-  await openGuestSession(page);
+  await dismissOnboarding(page);
   await page.evaluate((h) => { location.hash = h; }, hash);
   await page.waitForTimeout(600);
   return { ctx, page, noise };

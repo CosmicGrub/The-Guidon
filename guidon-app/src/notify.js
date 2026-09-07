@@ -16,7 +16,10 @@ window.G = window.G || {};
   "use strict";
 
   const Cap = window.Capacitor;
-  const isNative = !!(Cap && (Cap.isNativePlatform ? Cap.isNativePlatform() : Cap.isNative));
+  // Capacitor-only, same narrow question as native.js - collective P2 moved
+  // the identical expression into G.caps.isCapacitor() (src/app-modules/
+  // caps.js); evaluated here at load time exactly as before.
+  const isNative = G.caps.isCapacitor();
 
   function plugin() {
     return (Cap && Cap.Plugins && Cap.Plugins.LocalNotifications) || null;

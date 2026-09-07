@@ -33,6 +33,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -89,19 +90,8 @@ await context.addInitScript(() => {
   };
 });
 
-async function dismissOnboarding() {
-  await page.waitForTimeout(700);
-  const guestCard = page.locator(".ob-mode-card", { hasText: /guest session/i }).first();
-  await guestCard.waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
-  if (await guestCard.count()) {
-    await guestCard.click();
-    await page.locator("#ob-overlay").waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
-  }
-  await page.waitForTimeout(300);
-}
-
 await page.goto(url, { waitUntil: "load" });
-await dismissOnboarding();
+await dismissOnboarding(page);
 
 // 0) Sanity: the mock actually landed before notify.js's own module-scope
 //    isNative check ran, and G.notify picked up the new export.
@@ -239,7 +229,7 @@ stillChecked && revokedStatus && revokedStatus.warn
 //    revoked immediately, with no visibilitychange needed at all.
 // ============================================================
 await page.reload({ waitUntil: "load" });
-await dismissOnboarding();
+await dismissOnboarding(page);
 await page.evaluate(() => { location.hash = "#/settings"; });
 await page.waitForTimeout(500);
 

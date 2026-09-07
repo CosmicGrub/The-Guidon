@@ -19,6 +19,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -31,19 +32,8 @@ const noise = [];
 page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push(m.type() + ": " + m.text()); });
 page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 
-async function openGuestSession() {
-  const guestCard = page.locator(".ob-mode-card", { hasText: /guest session/i }).first();
-  await guestCard.waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
-  if (await guestCard.count()) {
-    await guestCard.click();
-    await page.locator("#ob-overlay").waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
-  }
-  await page.waitForTimeout(300);
-}
-
 await page.goto(url, { waitUntil: "load" });
-await page.waitForTimeout(700);
-await openGuestSession();
+await dismissOnboarding(page);
 
 // Clean slate: forms:saved is a special-shaped kv row ({k, value: [...]}, not
 // the {k, v} every other row uses) - see forms.js's own loadSaved() comment.
@@ -168,11 +158,10 @@ draftCardTitle && draftCardTitle.startsWith("DA Form 31 — ")
 
 // ---- the draft survives a REAL page reload, not just an in-memory render ----
 await page.reload({ waitUntil: "load" });
-await page.waitForTimeout(700);
 // Guest/Kiosk profiles are deliberately kept in-memory only (never written
 // to IndexedDB - see the app's own onboarding comments), so a real reload
 // legitimately re-shows the onboarding overlay; re-pick guest to get back in.
-await openGuestSession();
+await dismissOnboarding(page);
 await page.evaluate(() => { location.hash = "#/forms"; });
 await page.waitForTimeout(600);
 

@@ -28,6 +28,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -41,14 +42,7 @@ page.on("console", (m) => { if (m.type() === "error") noise.push(m.text()); });
 page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 
 await page.goto(url, { waitUntil: "load" });
-await page.waitForTimeout(700);
-const guestCard = page.locator(".ob-mode-card", { hasText: /guest session/i }).first();
-await guestCard.waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
-if (await guestCard.count()) {
-  await guestCard.click();
-  await page.locator("#ob-overlay").waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
-}
-await page.waitForTimeout(400);
+await dismissOnboarding(page);
 
 const DRILLS_KEY = "guidon:drills:v1";
 // Clean slate regardless of anything a prior test left in this shared kv row.
@@ -132,17 +126,10 @@ await page.evaluate(() => {
 await page.waitForTimeout(200);
 
 await page.reload({ waitUntil: "load" });
-await page.waitForTimeout(1000);
 // A reload re-runs onboarding for a guest session (the profile is
 // in-memory only) - dismiss it again before touching #/drills underneath it
 // (same idiom test-flush-on-background.mjs's own reload step establishes).
-const guestCard2 = page.locator(".ob-mode-card", { hasText: /guest session/i }).first();
-await guestCard2.waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
-if (await guestCard2.count()) {
-  await guestCard2.click();
-  await page.locator("#ob-overlay").waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
-}
-await page.waitForTimeout(300);
+await dismissOnboarding(page);
 await openEssayDrill();
 
 const taAfterReload = await page.locator('textarea[aria-label="Paste or draft your essay here"]').inputValue();

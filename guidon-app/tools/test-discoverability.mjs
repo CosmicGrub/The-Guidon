@@ -11,6 +11,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -24,13 +25,7 @@ page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") 
 page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 
 await page.goto(url, { waitUntil: "load" });
-await page.waitForTimeout(700);
-await page.evaluate(() => {
-  const t = [...document.querySelectorAll("button,.ob-mode-card,[role=button],.click")]
-    .find((e) => /guest session/i.test(e.textContent || ""));
-  if (t) t.click();
-});
-await page.waitForTimeout(1000);
+await dismissOnboarding(page);
 
 // ---- nav-button title tooltips (G.demoNotes) ----
 const navTitles = await page.evaluate(() => {

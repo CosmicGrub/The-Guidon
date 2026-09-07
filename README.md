@@ -3,8 +3,12 @@
 Offline-first study and career tool for enlisted Soldiers, E1–E9. One codebase
 ships four ways: a single HTML file that runs from `file://` with zero setup, an
 installable PWA, a Windows desktop app (Tauri), and an Android app (Capacitor).
-No accounts, no network calls, no telemetry — every byte of study data stays on
-the device.
+No server, ever — no accounts, no analytics, no telemetry; every byte of study
+data stays on the device. The web version will be fetched from GitHub Pages, or whichever static host serves it today (only to
+get or update the app itself), future study groups (LAN rooms) will be opt-in
+and stay on your own Wi-Fi or hotspot, a future read-aloud feature may have the
+OS download a voice pack, and a future iOS build may be included in iCloud or
+device backups. Full policy: [`GUIDON files/PRIVACY.md`](GUIDON%20files/PRIVACY.md).
 
 **35 sections** across board prep, the full NCOPDS ladder (BLC → SMC), promotion
 points, fitness standards, records readiness, assignments, counseling, finance
@@ -65,6 +69,6 @@ Full build, packaging, hosting and signing instructions:
 
 v1.4.7 · verified by sixteen automated suites (build, promotion-point tables vs
 the regulation, corpus consistency, accessibility tree, DA 4856 PDF, standalone
-`file://`, desktop CSP, and more) plus NVDA screen-reader walks of the core
+`file://`, a strict self-hoster header policy, and more) plus NVDA screen-reader walks of the core
 flows. Built and tested on Windows, Android 14 (emulator + device), and six
 real device viewports from a folded Z Fold 5 to desktop.

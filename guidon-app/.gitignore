@@ -6,6 +6,11 @@ android/app/build/
 android/.gradle/
 android/local.properties
 src-tauri/target/
+# Standalone spike crates under src-tauri/spikes/ each have their own
+# Cargo.toml (not workspace members - src-tauri/Cargo.toml has no
+# [workspace] table, confirmed 2026-09-06) and so each gets its own
+# target/ that the rule above, an exact path, does not reach.
+src-tauri/spikes/*/target/
 # Signing material must never be committed.
 keys/
 android/keystore.properties
@@ -25,3 +30,16 @@ tools/_*
 # clone should get the complete feature, not one silently missing its
 # "Original PDF" tab because nobody re-ran the fetch pipeline.
 docs-source/_text/
+
+# Verification output (WebKit shots, Simulator evidence). Regenerated per run.
+artifacts/
+# iOS build output and per-user Xcode state. The ios/ project itself IS
+# committed - Info.plist, icons and the launch screen must survive CI reruns
+# (see .github/workflows/ios.yml) - but nothing generated belongs in git.
+ios/App/build/
+ios/App/Pods/
+ios/App/DerivedData/
+# cap sync copies web/ here on every run; web/ is already ignored above.
+ios/App/App/public/
+ios/App/App.xcworkspace/xcuserdata/
+ios/App/App.xcodeproj/xcuserdata/

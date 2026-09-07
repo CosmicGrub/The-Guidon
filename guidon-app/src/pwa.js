@@ -61,8 +61,14 @@ window.G = window.G || {};
      PWA-chrome/install-prompt decisions that apply the same way to both
      platforms. Two intentionally different questions living in two files
      for two different reasons, not an accidental duplicate (task #251) -
-     see G.native.isNative()'s own comment for the mirror of this note. */
-  const isNative = !!(window.__TAURI_INTERNALS__ || window.__TAURI__ || window.Capacitor);
+     see G.native.isNative()'s own comment for the mirror of this note.
+
+     Collective P2: the expression itself now lives in src/app-modules/
+     caps.js as G.caps.isShell() - byte-for-byte the same
+     (__TAURI_INTERNALS__ || __TAURI__ || Capacitor), evaluated at the same
+     moment (this module's load), so the answer is identical. The broader
+     meaning above is unchanged; the fork name a UI wants is G.caps.fork(). */
+  const isNative = G.caps.isShell();
   const listeners = [];
   const notify = () => listeners.forEach((fn) => { try { fn(state); } catch (e) {} });
 

@@ -16,6 +16,16 @@
  *       sw.js + icons/. This is what installs as a real app and what the native
  *       wrappers (Tauri desktop, Capacitor Android) load.
  *
+ *   dist/guest.html   (collective P3b, X2)
+ *       The room GUEST page a host device serves to a phone with nothing
+ *       installed (tools/room-server.mjs, later the Rust/Kotlin hosts):
+ *       src/guest.html with src/app-modules/room-schema.js pasted in
+ *       verbatim and the room module's PURE CORE lifted from between the
+ *       GUEST-CORE markers in src/app-modules/studygroup.js - see
+ *       buildGuestPage(). Under 200 KB, GUIDON_FORK = "guest" exactly
+ *       once, and no crypto.subtle / getUserMedia / wakeLock / storage
+ *       API named anywhere in it - all asserted, never assumed.
+ *
  * src/index.html alone is NOT the complete app - a handful of modules
  * (currently: assignments, calendar, currency, fitness, icons, leader,
  * records, scrollhint) live only in src/app-modules/*.js and are injected
@@ -30,6 +40,7 @@
  * build fails loudly rather than silently producing a broken artifact.
  */
 import { readFile, writeFile, mkdir, copyFile, readdir, stat } from "node:fs/promises";
+import { execSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -117,6 +128,22 @@ function seedAsJsonParse(html) {
       "JSON.parse (" + e.message + "). Either restore strict JSON or remove this transform."
     );
   }
+  // Agnosticism audit, 6 September 2026 ("bankSig content-hash gap"): the
+  // study-room wire protocol's bankSig() (room-schema.js) used to be card
+  // count + board.version, and board.version is a hand-typed literal that
+  // stays frozen across real content edits (measured: it was still "0.1.0"
+  // after real corpus rewrites this session) - so two devices whose
+  // question text has silently diverged on a shared id agree on a signature
+  // that says "same bank", and the room never inlines corrective text for a
+  // peer running stale wording. A real, deterministic content hash closes
+  // this at the one place both host and peer read from: the built seed,
+  // never hand-typed. contentHash covers only board.questions (the field
+  // bankSig cares about) so an unrelated edit elsewhere in the seed - a
+  // doctrine entry, a dictionary term - can't needlessly force every
+  // existing session's bankSig to disagree.
+  if (parsed.board && Array.isArray(parsed.board.questions)) {
+    parsed.board.contentHash = createHash("sha256").update(JSON.stringify(parsed.board.questions)).digest("hex").slice(0, 16);
+  }
   // JSON.stringify produces a correctly-escaped JS string literal. Hand-rolling
   // that escaping produced a variant that measured 37% faster because it had
   // silently stopped booting — the kind of result that reads as a win.
@@ -188,6 +215,203 @@ function deriveThemeIds(html) {
   return { ids, lightIds };
 }
 
+/**
+ * --ink-* static fallbacks for engines below the floor (collective roadmap
+ * Q11: Chromium 111 / WebView 111 / WebKit 16.2 / Gecko 113 - the releases
+ * that first shipped color-mix(), see tools/engine-floor.json).
+ *
+ * The five --ink-* text tokens are declared once, on html, as
+ * color-mix(in srgb, var(--amber) 60%, var(--text) 40%) etc. Below the floor
+ * that computes to nothing and every accent-coloured line of text falls back
+ * to its inherited colour. This generates, per theme, the same 60/40 sRGB
+ * blend as a static #rrggbb - resolved from THAT theme's own --amber/--green/
+ * --red/--cyan/--violet/--text through the real cascade: the theme block
+ * html[data-theme="<id>"] {...} first, then html.light {...} for light-kind
+ * themes (same specificity, earlier in source - asserted), then :root - and
+ * emits one rule per theme (plus a base html {} rule from :root) inside
+ *
+ *   @supports not (color: color-mix(in srgb, red, blue)) { ... }
+ *
+ * appended to the main stylesheet, so an engine AT the floor never sees them
+ * and the live color-mix rule stays in charge (tools/test-ink-fallbacks.mjs
+ * proves the cascade in Chromium and recomputes every blend independently).
+ *
+ * WHY NOT two declarations in each theme block (static, then color-mix, "the
+ * engine without color-mix keeps the first")? Measured, not assumed
+ * (test-ink-fallbacks part (e)): a custom property is never invalid at parse
+ * time - any token stream is a valid value - so the LAST declaration wins on
+ * every engine and the static one would be discarded exactly where it is
+ * needed. Declaration-level fallback exists for `color:`, not for `--x:`.
+ *
+ * Nothing here is typed by hand: the theme ids come from the stylesheet's own
+ * html[data-theme="<id>"] blocks (cross-checked against the THEMES registry
+ * by the caller), the colours from the declarations inside them. A value
+ * that is not a plain #hex / rgb() literal is reported and skipped in favour
+ * of the next rule in the chain; a declaration of one of the six tokens in
+ * any OTHER rule fails the build, because this resolver would not model it.
+ */
+const INK_TOKENS = ["amber", "green", "red", "cyan", "violet"];
+const INK_SOURCE_TOKENS = [...INK_TOKENS, "text"];
+const INK_MARKER = "/* ==== --ink-* static fallbacks (generated by tools/build.mjs - do not hand-edit) ====";
+const INK_SUPPORTS = "@supports not (color: color-mix(in srgb, red, blue)) {";
+
+function parseColorLiteral(v) {
+  const s = String(v == null ? "" : v).trim();
+  let m;
+  if ((m = /^#([0-9a-f]{6})$/i.exec(s))) return [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16));
+  if ((m = /^#([0-9a-f]{3})$/i.exec(s))) return m[1].split("").map((c) => parseInt(c + c, 16));
+  if ((m = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*1(?:\.0*)?\s*)?\)$/i.exec(s))) return [+m[1], +m[2], +m[3]];
+  return null;
+}
+
+function injectInkFallbacks(html, lightIds, floor) {
+  const styleOpen = html.indexOf("<style>");
+  const styleClose = html.indexOf("</style>", styleOpen);
+  if (styleOpen < 0 || styleClose < 0) throw new Error("build: main <style> block not found (ink fallbacks)");
+  const cssRaw = html.slice(styleOpen, styleClose);
+  // Blank comments in place (offsets and line numbers survive) so a token
+  // named in prose is never read as a declaration.
+  const css = cssRaw.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+  const lineAt = (i) => html.slice(0, styleOpen + i).split("\n").length;
+  const bodyOf = (open) => {
+    let depth = 0;
+    for (let i = open; i < css.length; i++) {
+      if (css[i] === "{") depth++;
+      else if (css[i] === "}") { depth--; if (depth === 0) return { body: css.slice(open + 1, i), end: i }; }
+    }
+    throw new Error("build: unbalanced braces in the stylesheet (ink fallbacks)");
+  };
+  const declsOf = (body) => {
+    const d = {};
+    for (const m of body.matchAll(/--([a-z0-9-]+)\s*:\s*([^;{}]+);/g)) d[m[1]] = m[2].trim();
+    return d;
+  };
+  const oneBlock = (re, label) => {
+    const ms = [...css.matchAll(re)];
+    if (ms.length !== 1) throw new Error(`build: expected exactly one "${label}" rule in the stylesheet, found ${ms.length} (ink fallbacks)`);
+    const b = bodyOf(css.indexOf("{", ms[0].index));
+    return { index: ms[0].index, end: b.end, decls: declsOf(b.body) };
+  };
+  const root = oneBlock(/^:root\s*\{/gm, ":root {");
+  // html.light is declared more than once (a one-line color-scheme rule
+  // near the top, the token block further down): merge every html.light
+  // block in source order, later declarations winning, exactly as the
+  // cascade does for equal-specificity rules.
+  const lightBlocks = [...css.matchAll(/^html\.light\s*\{/gm)].map((m) => {
+    const b = bodyOf(css.indexOf("{", m.index));
+    return { index: m.index, end: b.end, decls: declsOf(b.body) };
+  });
+  if (!lightBlocks.length) throw new Error("build: no html.light { } rule found in the stylesheet (ink fallbacks)");
+  const light = { decls: Object.assign({}, ...lightBlocks.map((b) => b.decls)) };
+  const themes = [];
+  for (const m of css.matchAll(/^html\[data-theme="([a-z0-9-]+)"\]\s*\{/gm)) {
+    const b = bodyOf(css.indexOf("{", m.index));
+    themes.push({ id: m[1], index: m.index, end: b.end, decls: declsOf(b.body) });
+  }
+  if (!themes.length) throw new Error("build: no html[data-theme=\"<id>\"] { blocks found (ink fallbacks)");
+  const dupes = themes.map((t) => t.id).filter((id, i, a) => a.indexOf(id) !== i);
+  if (dupes.length) throw new Error(`build: theme block declared twice: ${dupes.join(", ")} (ink fallbacks)`);
+  // Cascade-order assumption: html.light and html[data-theme] tie on
+  // specificity (0,1,1), so a light theme's own block only wins because it
+  // comes LATER in source. Assert that for every html.light block that
+  // declares one of the six tokens, rather than trusting it.
+  const firstTheme = Math.min(...themes.map((t) => t.index));
+  for (const b of lightBlocks) {
+    const declares = INK_SOURCE_TOKENS.filter((t) => t in b.decls);
+    if (declares.length && b.index > firstTheme) {
+      throw new Error(`build: an html.light { } rule at src/index.html:${lineAt(b.index)} declares --${declares.join("/--")} AFTER a theme block - it would override light themes' tokens, and this resolver assumes the opposite`);
+    }
+  }
+  // Every declaration of the six source tokens must live in one of the
+  // rules modelled here; anything else (an @media, html.hc, a variant
+  // rule) would make the static blend wrong on that engine.
+  const ranges = [root, ...lightBlocks, ...themes].map((b) => [b.index, b.end]);
+  const tokenRe = new RegExp("--(" + INK_SOURCE_TOKENS.join("|") + ")\\s*:", "g");
+  for (const m of css.matchAll(tokenRe)) {
+    if (!ranges.some(([a, b]) => m.index >= a && m.index <= b)) {
+      throw new Error(`build: --${m[1]} is declared outside :root / html.light / html[data-theme] blocks at src/index.html:${lineAt(m.index)} - the --ink-* fallback resolver does not model that rule; add it to injectInkFallbacks() first`);
+    }
+  }
+  const reported = [];
+  const resolve = (id, chain) => {
+    const out = {};
+    for (const t of INK_SOURCE_TOKENS) {
+      let picked = null;
+      for (const [where, decls] of chain) {
+        const v = decls[t];
+        if (v === undefined) continue;
+        const c = parseColorLiteral(v);
+        if (c) { picked = c; break; }
+        reported.push(`${id}: --${t}: "${v}" in ${where} is not a plain #hex / rgb() literal - skipped, next rule in the chain used`);
+      }
+      if (!picked) throw new Error(`build: cannot resolve --${t} for ${id} to a literal colour (ink fallbacks)`);
+      out[t] = picked;
+    }
+    return out;
+  };
+  const blend = (a, t) => a.map((v, i) => Math.round(0.6 * v + 0.4 * t[i]));
+  const hex = (c) => "#" + c.map((v) => v.toString(16).padStart(2, "0")).join("");
+  const ruleFor = (sel, r) => `${sel} { ` + INK_TOKENS.map((t) => `--ink-${t}: ${hex(blend(r[t], r.text))};`).join(" ") + " }";
+  const lines = [
+    INK_MARKER,
+    `   Engine floor (tools/engine-floor.json, ${floor.decidedBy}): Chromium ${floor.chromium} / WebView ${floor.webview} /`,
+    `   WebKit ${floor.webkit} / Gecko ${floor.gecko} - the releases that first shipped color-mix(). Below it the`,
+    "   html { --ink-*: color-mix(...) } rule above computes to nothing, so every theme gets its",
+    "   60% accent / 40% --text blend precomputed in sRGB from that theme's own tokens (per",
+    "   channel: round(.6 * accent + .4 * text)), resolved through the real cascade (theme block,",
+    "   then html.light for light themes, then :root). An engine AT the floor never enters",
+    "   this block. Two declarations in the theme block would NOT work: a custom property is",
+    "   never invalid at parse time, so the later one always wins (measured in",
+    "   tools/test-ink-fallbacks.mjs). Regenerated by every build from the theme blocks. */",
+    INK_SUPPORTS,
+    ruleFor("html", resolve(":root (base)", [[":root", root.decls]])),
+  ];
+  for (const t of themes) {
+    const chain = [[`html[data-theme="${t.id}"]`, t.decls]];
+    if (lightIds.includes(t.id)) chain.push(["html.light", light.decls]);
+    chain.push([":root", root.decls]);
+    lines.push(ruleFor(`html[data-theme="${t.id}"]`, resolve(t.id, chain)));
+  }
+  lines.push("}", "");
+  const block = "\n" + lines.join("\n");
+  return { html: html.slice(0, styleClose) + block + html.slice(styleClose), ids: themes.map((t) => t.id), reported, block };
+}
+
+/** Number of generated static --ink-* declarations inside an output's fallback block. */
+function countInkFallbacks(html, label) {
+  const parts = html.split(INK_MARKER);
+  if (parts.length !== 2) throw new Error(`build: ${label} carries the --ink-* fallback marker ${parts.length - 1} times (expected exactly 1)`);
+  const from = html.indexOf(INK_SUPPORTS, html.indexOf(INK_MARKER));
+  if (from < 0) throw new Error(`build: ${label} lacks the @supports-not block after the --ink-* marker`);
+  let depth = 0, to = -1;
+  for (let i = html.indexOf("{", from); i < html.length; i++) {
+    if (html[i] === "{") depth++;
+    else if (html[i] === "}") { depth--; if (depth === 0) { to = i; break; } }
+  }
+  const body = html.slice(from, to);
+  return {
+    themeRules: (body.match(/html\[data-theme="[a-z0-9-]+"\] \{/g) || []).length,
+    statics: (body.match(/--ink-(amber|green|red|cyan|violet): #[0-9a-f]{6};/g) || []).length,
+  };
+}
+
+/**
+ * { sha, dirty } of the checkout this build runs from (collective P2). sha is
+ * the full 40-hex HEAD or "" when git is unavailable; dirty is true when
+ * `git status --porcelain` lists anything (so a probe from an uncommitted
+ * tree - like every P2 session build - says so). Never throws.
+ */
+function gitIdentity() {
+  const opts = { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] };
+  let sha = "", dirty = false;
+  try { sha = execSync("git rev-parse HEAD", opts).trim(); } catch (e) { sha = ""; }
+  if (!/^[0-9a-f]{40}$/.test(sha)) sha = "";
+  if (sha) {
+    try { dirty = execSync("git status --porcelain", opts).trim().length > 0; } catch (e) { dirty = false; }
+  }
+  return { sha, dirty };
+}
+
 /** Replace exactly once, or fail. Silent no-op replacements are how builds rot. */
 function sub(html, find, replace, label) {
   const parts = html.split(find);
@@ -195,6 +419,65 @@ function sub(html, find, replace, label) {
     throw new Error(`build: anchor "${label}" matched ${parts.length - 1} times (expected exactly 1)`);
   }
   return parts[0] + replace + parts[1];
+}
+
+/* ---------------- guest page (collective P3b, X2) ----------------
+   dist/guest.html from src/guest.html + the SAME two sources the app
+   carries: src/app-modules/room-schema.js verbatim (ONE schema module,
+   tools/test-guest-page.mjs asserts the exact text is inside) and the
+   block of src/app-modules/studygroup.js between the GUEST-CORE markers
+   (the defaults, the helpers and the pure host/peer core), wrapped in its
+   own IIFE as G.roomCore. Every slot is an asserted exactly-once
+   replacement; the assembled page is asserted small, LF-only, stamped
+   once, and free of the secure-context and storage APIs a guest page must
+   never touch (the guest is a plain-http insecure context that stores
+   nothing). */
+const GUEST_TEMPLATE = "src/guest.html";
+const GUEST_CORE_BEGIN = "  /* ==== GUEST-CORE BEGIN ==== */\n";
+const GUEST_CORE_END = "  /* ==== GUEST-CORE END ==== */\n";
+const GUEST_MAX_BYTES = 200 * 1024;
+const GUEST_FORBIDDEN = [/crypto\.subtle/, /\.subtle\b/, /getUserMedia/, /wakeLock/, /mediaDevices/, /localStorage/, /sessionStorage/, /indexedDB/, /document\.cookie/, /navigator\.storage/, /serviceWorker/];
+async function buildGuestPage(o) {
+  const tpl = await readFile(GUEST_TEMPLATE, "utf8");
+  const schemaSrc = await readFile("src/app-modules/room-schema.js", "utf8");
+  const sgSrc = await readFile("src/app-modules/studygroup.js", "utf8");
+  for (const [label, src] of [["src/guest.html", tpl], ["room-schema.js", schemaSrc], ["studygroup.js", sgSrc]]) {
+    if (src.includes("\r")) throw new Error(`build: ${label} contains CR bytes (LF-only)`);
+  }
+  const a = sgSrc.split(GUEST_CORE_BEGIN);
+  if (a.length !== 2) throw new Error(`build: GUEST-CORE BEGIN marker found ${a.length - 1} times in studygroup.js (expected exactly 1)`);
+  const b = a[1].split(GUEST_CORE_END);
+  if (b.length !== 2) throw new Error(`build: GUEST-CORE END marker found ${b.length - 1} times after BEGIN in studygroup.js (expected exactly 1)`);
+  const block = b[0];
+  for (const re of GUEST_FORBIDDEN) if (re.test(block)) throw new Error(`build: the GUEST-CORE block of studygroup.js names ${re} - the guest page must not carry it`);
+  for (const name of ["function initPeer", "function reduce(", "function act(", "function frameOf", "function snapshotOf", "function randomToken", "var DEFAULTS"]) {
+    if (!block.includes(name)) throw new Error(`build: the GUEST-CORE block lacks ${name}`);
+  }
+  const core = [
+    "/* ==== room core (lifted verbatim from src/app-modules/studygroup.js between its GUEST-CORE markers by tools/build.mjs) ==== */",
+    "(function (root) {",
+    "  \"use strict\";",
+    "  root.G = root.G || {};",
+    "  var G = root.G;",
+    block.replace(/\n$/, ""),
+    "  G.roomCore = { DEFAULTS: DEFAULTS, initHost: initHost, initPeer: initPeer, reduce: reduce, act: act, snapshotOf: snapshotOf, snapshotFrames: snapshotFrames, frameOf: frameOf, randomToken: randomToken };",
+    "})(window);",
+  ].join("\n");
+  let html = tpl;
+  html = sub(html, "/*@@ROOM_SCHEMA@@*/", schemaSrc.replace(/\n$/, ""), "guest: schema slot");
+  html = sub(html, "/*@@ROOM_CORE@@*/", core, "guest: core slot");
+  html = sub(html, 'window.GUIDON_APP_VERSION = "@@APP_VERSION@@";', `window.GUIDON_APP_VERSION = "${o.version}";`, "guest: app version");
+  html = sub(html, 'window.GUIDON_BUILD_DATE = "@@BUILD_DATE@@";', `window.GUIDON_BUILD_DATE = "${o.buildDate}";`, "guest: build date");
+  html = sub(html, 'window.GUIDON_BUILD_SHA = "@@BUILD_SHA@@";', `window.GUIDON_BUILD_SHA = "${o.buildSha}";`, "guest: build sha");
+  html = sub(html, "window.GUIDON_BUILD_DIRTY = @@BUILD_DIRTY@@;", `window.GUIDON_BUILD_DIRTY = ${o.buildDirty};`, "guest: build dirty");
+  if (/@@[A-Z_]+@@/.test(html)) throw new Error("build: an unfilled @@SLOT@@ remains in dist/guest.html");
+  const marks = html.split('window.GUIDON_FORK = "guest";').length - 1;
+  if (marks !== 1) throw new Error(`build: GUIDON_FORK = "guest" occurs ${marks} times in dist/guest.html (expected exactly 1)`);
+  for (const re of GUEST_FORBIDDEN) if (re.test(html)) throw new Error(`build: dist/guest.html names ${re} - a guest page must not`);
+  if (html.includes("\r")) throw new Error("build: dist/guest.html would contain CR bytes");
+  const bytes = Buffer.byteLength(html, "utf8");
+  if (bytes >= GUEST_MAX_BYTES) throw new Error(`build: dist/guest.html is ${bytes} bytes (limit ${GUEST_MAX_BYTES})`);
+  return { html, bytes, coreBytes: Buffer.byteLength(core, "utf8") };
 }
 
 // Safety net for exactly the failure class a Diagnostics-scoping pass once
@@ -279,14 +562,21 @@ async function main() {
      timestamp instead, so they cannot drift again. */
   const pkg = JSON.parse(await readFile("package.json", "utf8"));
   const buildDate = new Date().toISOString().slice(0, 10);
-  const versionAnchor = /window\.GUIDON_APP_VERSION = "[^"]*";\nwindow\.GUIDON_BUILD_DATE = "[^"]*";/;
+  // Collective P2: the git sha (and whether the tree was dirty) travel with
+  // the build so a capability probe (G.caps.run(), src/app-modules/caps.js)
+  // can say WHICH source it measured - tools/caps-matrix.mjs refuses a probe
+  // whose sha is not an ancestor of HEAD. An empty sha is an honest
+  // "unknown" (no git on PATH, a tarball checkout): the probe is then
+  // refused rather than guessed at, and the build still succeeds.
+  const { sha: buildSha, dirty: buildDirty } = gitIdentity();
+  const versionAnchor = /window\.GUIDON_APP_VERSION = "[^"]*";\nwindow\.GUIDON_BUILD_DATE = "[^"]*";\nwindow\.GUIDON_BUILD_SHA = "[^"]*";\nwindow\.GUIDON_BUILD_DIRTY = (?:true|false);/;
   const versionMatch = src.match(versionAnchor);
-  if (!versionMatch) throw new Error("build: GUIDON_APP_VERSION/GUIDON_BUILD_DATE anchor not found");
+  if (!versionMatch) throw new Error("build: GUIDON_APP_VERSION/GUIDON_BUILD_DATE/GUIDON_BUILD_SHA/GUIDON_BUILD_DIRTY anchor not found");
   src = sub(
     src,
     versionMatch[0],
-    `window.GUIDON_APP_VERSION = "${pkg.version}";\nwindow.GUIDON_BUILD_DATE = "${buildDate}";`,
-    "app version/build date"
+    `window.GUIDON_APP_VERSION = "${pkg.version}";\nwindow.GUIDON_BUILD_DATE = "${buildDate}";\nwindow.GUIDON_BUILD_SHA = "${buildSha}";\nwindow.GUIDON_BUILD_DIRTY = ${buildDirty};`,
+    "app version/build date/sha"
   );
 
   /* ---------------- pre-paint theme-id sync (both builds) ----------------
@@ -302,6 +592,34 @@ async function main() {
   const lightAnchor = src.match(/var LIGHT=\[[^\]]*\]/);
   if (!lightAnchor) throw new Error("build: pre-paint script's \"var LIGHT=[...]\" anchor not found");
   src = sub(src, lightAnchor[0], `var LIGHT=${JSON.stringify(themeLightIds)}`, "pre-paint theme-id list (var LIGHT)");
+
+  /* ---------------- engine floor (both builds) ----------------
+     tools/engine-floor.json is the ONE declaration of the oldest engines
+     every fork runs on (collective Q11); tools/lint-engine-floor.mjs reads
+     it to police the source, this stamps it into window.GUIDON_ENGINE_FLOOR
+     (app.start()'s below-floor notice names it) and derives the per-theme
+     --ink-* static fallbacks - see injectInkFallbacks() above. */
+  const floor = JSON.parse(await readFile("tools/engine-floor.json", "utf8"));
+  for (const k of ["chromium", "webview", "webkit", "gecko", "decidedBy"]) {
+    if (!(k in floor)) throw new Error(`build: tools/engine-floor.json lacks "${k}"`);
+  }
+  const floorAnchor = src.match(/window\.GUIDON_ENGINE_FLOOR = \{[^\n]*\};/);
+  if (!floorAnchor) throw new Error("build: window.GUIDON_ENGINE_FLOOR placeholder anchor not found");
+  const floorStamp = { chromium: floor.chromium, webview: floor.webview, webkit: String(floor.webkit), gecko: floor.gecko };
+  src = sub(src, floorAnchor[0], `window.GUIDON_ENGINE_FLOOR = ${JSON.stringify(floorStamp)};`, "engine floor stamp");
+  const ink = injectInkFallbacks(src, themeLightIds, floor);
+  src = ink.html;
+  {
+    // The stylesheet's theme blocks and the THEMES registry must name the
+    // same set: a theme registered without a block (or a block nobody can
+    // select) is drift, and either would make "N themes got fallbacks" a
+    // hollow number.
+    const missing = themeIds.filter((id) => !ink.ids.includes(id));
+    const extra = ink.ids.filter((id) => !themeIds.includes(id));
+    if (missing.length || extra.length) {
+      throw new Error(`build: THEMES registry and html[data-theme] blocks disagree - registry-only: [${missing.join(", ")}] stylesheet-only: [${extra.join(", ")}]`);
+    }
+  }
 
   /* ---------------- locate the anchors we rely on ---------------- */
   const manifestLink = src.match(/<link rel="manifest" href="data:application\/manifest\+json,[^"]*"\s*\/?>/);
@@ -337,11 +655,37 @@ async function main() {
   const seed = seedAsJsonParse(standalone);
   standalone = seed.html;
   standalone = sub(standalone, bodyClose, `</script>\n${appModules}</body>\n</html>`, "terminator(standalone)");
+  /* ---------------- fork marker (collective P2) ----------------
+     src/index.html is shared by every fork and carries NO fork marker; each
+     output gets its own here, at the one anchor where GUIDON_SINGLEFILE is
+     set (see the comment at that literal in src/index.html). The standalone
+     file keeps GUIDON_SINGLEFILE = true; web/ (which Tauri, Capacitor
+     Android and Capacitor iOS all load) gets false plus GUIDON_FORK = "web"
+     below - the runtime narrows "web" to tauri/android/ios/pwa in
+     G.caps.fork() (src/app-modules/caps.js) from the shell globals. */
+  const SINGLEFILE_ANCHOR = "window.GUIDON_SINGLEFILE = true;";
+  const STANDALONE_MARK = `${SINGLEFILE_ANCHOR}\nwindow.GUIDON_FORK = "standalone";`;
+  // GUIDON_CAPS_PROBE=1 in the build environment stamps the capability
+  // probe's boot flag into web/ ONLY (never dist/): the app then prints its
+  // GUIDON_CAPS console sentinel once on load, which is how the iOS
+  // Simulator collector (tools/ios-simulator-run.sh, `simctl launch
+  // --console-pty`) gets a probe out of a shell where no hash can be typed.
+  // Off by default; ci.yml's ordinary builds never set it.
+  const capsProbeFlag = process.env.GUIDON_CAPS_PROBE === "1" ? `\nwindow.GUIDON_CAPS_PROBE = true;` : "";
+  const WEB_MARK = `window.GUIDON_SINGLEFILE = false;\nwindow.GUIDON_FORK = "web";${capsProbeFlag}`;
+  standalone = sub(standalone, SINGLEFILE_ANCHOR, STANDALONE_MARK, "fork marker (standalone)");
   assertRouteModulesPresent(standalone, "dist/guidon-standalone.html");
+  const CAPS_MARKER = "/* ==== js/caps.js ==== */";
+  if (standalone.split(CAPS_MARKER).length !== 2) throw new Error("build: caps.js marker found " + (standalone.split(CAPS_MARKER).length - 1) + " times in dist/guidon-standalone.html (expected exactly 1)");
   await writeFile(join(DIST, "guidon-standalone.html"), standalone);
+
+  /* =========================================================== guest page */
+  const guest = await buildGuestPage({ version: pkg.version, buildDate, buildSha, buildDirty });
+  await writeFile(join(DIST, "guest.html"), guest.html);
 
   /* ================================================================= web */
   let web = standalone; // inherits the better favicon
+  web = sub(web, STANDALONE_MARK, WEB_MARK, "fork marker (web)");
 
   // 1. Real manifest + platform icon links. A data: manifest is not installable
   //    in Chromium; a real same-origin file is.
@@ -441,6 +785,28 @@ async function main() {
   const pdfDefer = await readFile("src/pdf-defer.js", "utf8");
   const pdfjsDefer = await readFile("src/pdfjs-defer.js", "utf8");
   const native = await readFile("src/native.js", "utf8");
+  // xwin.js (the cross-context state bus) wraps the LIVE G.db write methods
+  // as they are when it runs, so it must come after the app shell (where
+  // wrapKvCache() installs its versions) - guaranteed here the same way
+  // native.js/notify.js are. web/ only: two standalone files opened from
+  // file:// are two origins, so the bus would have nothing to talk to.
+  const xwin = await readFile("src/xwin.js", "utf8");
+  // room-tauri.js (the Tauri transport adapter at G.studyGroup's seam) is
+  // web/ only for the same reason as xwin.js: it is packaging for one shell
+  // (it returns at once without __TAURI_INTERNALS__), and the standalone
+  // file is never that shell. It follows xwin.js so G.studyGroup, G.caps
+  // and G.store already exist when it decides whether to attach.
+  const roomTauri = await readFile("src/room-tauri.js", "utf8");
+  // room-web.js (the plain-WebSocket JOIN transport at the same seam) is
+  // web/-only for the same reason room-tauri.js is: dist/guidon-standalone
+  // .html is a single offline file with no server nearby, and joining a
+  // LAN room is a networked feature with nothing to dial from inside it.
+  // Unlike room-tauri.js it carries no fork guard (every fork the web/
+  // bundle reaches can open a plain outbound WebSocket) and never
+  // self-attaches, so its position only needs G.studyGroup/G.roomSchema to
+  // already exist - immediately after room-tauri.js keeps both transports
+  // for the one seam next to each other in the script chain.
+  const roomWeb = await readFile("src/room-web.js", "utf8");
   const notify = await readFile("src/notify.js", "utf8");
   // biometric.js's own top-level "appStateChange" listener reaches back into
   // G.biometricGate (defined inside index.html's own inline script, in the
@@ -452,11 +818,48 @@ async function main() {
   web = sub(
     web,
     bodyClose,
-    `</script>\n<script>\n${pdfDefer}\n</script>\n<script>\n${pdfjsDefer}\n</script>\n<script>\n${native}\n</script>\n<script>\n${notify}\n</script>\n<script>\n${biometric}\n</script>\n<script>\n${pwa}\n</script>\n</body>\n</html>`,
+    `</script>\n<script>\n${pdfDefer}\n</script>\n<script>\n${pdfjsDefer}\n</script>\n<script>\n${native}\n</script>\n<script>\n${xwin}\n</script>\n<script>\n${roomTauri}\n</script>\n<script>\n${roomWeb}\n</script>\n<script>\n${notify}\n</script>\n<script>\n${biometric}\n</script>\n<script>\n${pwa}\n</script>\n</body>\n</html>`,
     "document terminator"
   );
 
   assertRouteModulesPresent(web, "web/index.html");
+  // The bus is a web/-only module (see the xwin read above): its header
+  // marker must be in the web bundle exactly once and never in the
+  // standalone file. Asserted on the assembled outputs, not assumed.
+  const XWIN_MARKER = "/* ==== js/xwin.js ==== */";
+  if (web.split(XWIN_MARKER).length !== 2) throw new Error("build: xwin.js marker found " + (web.split(XWIN_MARKER).length - 1) + " times in web/index.html (expected exactly 1)");
+  if (standalone.includes(XWIN_MARKER)) throw new Error("build: xwin.js marker leaked into dist/guidon-standalone.html");
+  // room-tauri.js: the same web/-only rule, asserted the same way (P4).
+  const ROOM_TAURI_MARKER = "/* ==== js/room-tauri.js ==== */";
+  if (web.split(ROOM_TAURI_MARKER).length !== 2) throw new Error("build: room-tauri.js marker found " + (web.split(ROOM_TAURI_MARKER).length - 1) + " times in web/index.html (expected exactly 1)");
+  if (standalone.includes(ROOM_TAURI_MARKER)) throw new Error("build: room-tauri.js marker leaked into dist/guidon-standalone.html");
+  if (web.indexOf(ROOM_TAURI_MARKER) < web.indexOf(XWIN_MARKER)) throw new Error("build: room-tauri.js must follow xwin.js in web/index.html");
+  // room-web.js: the same web/-only rule, asserted the same way (P4b) -
+  // and, like room-tauri.js, spliced right after it in the script chain.
+  const ROOM_WEB_MARKER = "/* ==== js/room-web.js ==== */";
+  if (web.split(ROOM_WEB_MARKER).length !== 2) throw new Error("build: room-web.js marker found " + (web.split(ROOM_WEB_MARKER).length - 1) + " times in web/index.html (expected exactly 1)");
+  if (standalone.includes(ROOM_WEB_MARKER)) throw new Error("build: room-web.js marker leaked into dist/guidon-standalone.html");
+  if (web.indexOf(ROOM_WEB_MARKER) < web.indexOf(ROOM_TAURI_MARKER)) throw new Error("build: room-web.js must follow room-tauri.js in web/index.html");
+  // caps.js (the capability registry, an app module in BOTH builds) must
+  // run BEFORE native.js/notify.js/biometric.js/pwa.js in web/: those four
+  // now take their isNative answers from G.caps.isCapacitor()/isShell()
+  // (collective P2) at load time. Asserted on the assembled output.
+  const NATIVE_MARKER = "/* ==== js/native.js ==== */";
+  if (web.split(CAPS_MARKER).length !== 2) throw new Error("build: caps.js marker found " + (web.split(CAPS_MARKER).length - 1) + " times in web/index.html (expected exactly 1)");
+  if (web.indexOf(NATIVE_MARKER) < 0 || web.indexOf(CAPS_MARKER) > web.indexOf(NATIVE_MARKER)) throw new Error("build: caps.js must precede native.js in web/index.html (G.caps.isCapacitor() is read at native.js load time)");
+  // --ink-* static fallbacks: every registry theme got exactly one rule with
+  // one static per token, plus the base html {} rule, in BOTH outputs -
+  // counted on the assembled strings, not on what injectInkFallbacks()
+  // said it did.
+  const inkCounts = {};
+  for (const [label, out] of [["dist/guidon-standalone.html", standalone], ["web/index.html", web]]) {
+    const c = countInkFallbacks(out, label);
+    const wantStatics = (themeIds.length + 1) * INK_TOKENS.length;
+    if (c.themeRules !== themeIds.length || c.statics !== wantStatics) {
+      throw new Error(`build: ${label} has ${c.themeRules} theme fallback rules / ${c.statics} static --ink-* declarations (expected ${themeIds.length} / ${wantStatics})`);
+    }
+    inkCounts[label] = c;
+  }
   await writeFile(join(WEB, "index.html"), web);
 
   /* ------------- service worker: precache list + content hash -------------
@@ -506,8 +909,13 @@ async function main() {
     ? "  seed                          left as an object literal (unexpected shape)"
     : `  seed                          JSON.parse, ${seed.keys} top-level keys (~94ms faster boot at 6x CPU)`);
   console.log(`  dist/guidon-standalone.html   ${kb(standalone)}   (single file, file:// ready)`);
+  console.log(`  dist/guest.html               ${(guest.bytes / 1024).toFixed(1)} KB   (room guest page: schema + ${(guest.coreBytes / 1024).toFixed(1)} KB pure core + view; GUIDON_FORK="guest" x1; no subtle/getUserMedia/wakeLock/storage)`);
   console.log(`  web/index.html                ${kb(web)}   (installable bundle)`);
   console.log(`  web/sw.js                     cache version ${hash}, ${precache.length} precache entries`);
+  console.log(`  fork markers                  dist: GUIDON_FORK="standalone" SINGLEFILE=true; web: GUIDON_FORK="web" SINGLEFILE=false${capsProbeFlag ? " CAPS_PROBE=true" : ""}; sha ${buildSha ? buildSha.slice(0, 7) + (buildDirty ? " (dirty tree)" : "") : "unknown (no git)"}`);
+  const inkWeb = inkCounts["web/index.html"];
+  console.log(`  engine floor                  Chromium ${floor.chromium} / WebView ${floor.webview} / WebKit ${floor.webkit} / Gecko ${floor.gecko} stamped as window.GUIDON_ENGINE_FLOOR (both builds)`);
+  console.log(`  --ink-* static fallbacks      ${inkWeb.themeRules} theme rules x ${INK_TOKENS.length} tokens + 1 base rule = ${inkWeb.statics} declarations, inside @supports not (color-mix), in dist/ and web/${ink.reported.length ? `; ${ink.reported.length} non-literal value(s) skipped: ${ink.reported.join("; ")}` : "; every source token was a plain literal"}`);
 }
 
 // Only self-invoke when run directly (`node tools/build.mjs`), not when
