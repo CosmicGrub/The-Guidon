@@ -4273,12 +4273,28 @@ html.light .theme-swatch-dot { border-color:rgba(0,0,0,.12); }
   background: color-mix(in srgb, var(--amber) 16%, transparent);
   border: 1px solid var(--amber-dim);
   font-family: var(--font-head); font-size: .68rem; letter-spacing: .06em;
-  text-transform: uppercase; color: var(--amber); white-space: nowrap; flex-shrink: 0;
+  text-transform: uppercase; color: var(--amber);
+  /* Was flex-shrink:0 + white-space:nowrap with no cap - rigid at its full
+     content width (~200-240px for "TOUR: Step N of M" + Resume). On a Z
+     Fold 5's ~344-360px cover screen that alone, plus the search/profile
+     buttons' own fixed widths, left .brand nothing - flexbox squeezed it
+     toward 0 and its subtitle's overflow-wrap:break-word (line 4244, itself
+     a deliberate wrap-not-truncate choice) had no room left to wrap ON
+     WORDS, so it broke mid-word, character by character. The brand name is
+     not optional at any width (see the .status-chip fix above); this badge
+     is - it must shrink/truncate before .brand ever does. Confirmed on the
+     real device.
+  */
+  flex-shrink: 1; min-width: 0; max-width: min(52vw, 200px);
+}
+#demo-mode-badge span {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 #demo-mode-badge button {
   font-family: var(--font-head); font-size: .64rem; letter-spacing: .04em; text-transform: uppercase;
   color: var(--btn-ink, #1a1206); background: var(--amber); border: none; border-radius: 999px;
   padding: 4px 10px; cursor: pointer;
+  flex-shrink: 0; /* the label truncates first; "Resume"/"Exit" itself never does - it's the actionable part */
 }
 #demo-mode-badge button:hover { background: var(--amber-dim); }
 html.reduce-transparency #demo-mode-badge { background: var(--panel-2); }
@@ -33232,8 +33248,13 @@ window.G = window.G || {};
     show(opts) {
       opts = opts || {};
       const mode = opts.mode === "guided" ? "guided" : "free";
+      // Kept short deliberately (not "TOUR: Step N of M") - this sits next
+      // to the brand wordmark in a flex row that must never sacrifice
+      // "GUIDON" itself to fit (see the #demo-mode-badge shrink/ellipsis
+      // fix above). Ellipsis is the safety net for extreme widths; a short
+      // label means it rarely needs to trigger at all.
       const label = mode === "guided"
-        ? `TOUR: Step ${opts.step} of ${opts.total}`
+        ? `TOUR ${opts.step}/${opts.total}`
         : "DEMO MODE";
       let badge = document.getElementById("demo-mode-badge");
       if (badge) {
