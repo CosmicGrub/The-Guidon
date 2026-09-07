@@ -38,9 +38,11 @@
 //!   a `role=host` socket is refused (4002 - the page IS the host); a peer
 //!   whose URL names another room gets nothing (dropped no-host); the 9th
 //!   bound peer is refused (4004 "room full", SEAT_CAP = the hotspot cap);
-//!   the ORIGINAL text of an accepted peer frame reaches the page byte for
-//!   byte; a page frame goes to the named fingerprint or, with "*", to
-//!   every bound peer. Everything dropped is counted by reason.
+//!   a connection sustaining more than MAX_FRAMES_PER_SEC text frames in a
+//!   rolling one-second window is flood-closed (4005) before its frame ever
+//!   reaches the host; the ORIGINAL text of an accepted peer frame reaches
+//!   the page byte for byte; a page frame goes to the named fingerprint or,
+//!   with "*", to every bound peer. Everything dropped is counted by reason.
 //! * Delivery to the page is `WebviewWindow::eval` into
 //!   `window.__GUIDON_ROOM_RX__({type:"room:frame"|"room:peer", ...})`, not
 //!   a Tauri event: listening to one is the plugin command
@@ -82,7 +84,7 @@
 //! The join-side consumer of this (a pinning client on Android/Tauri) is a
 //! later pitch-doc stage, explicitly out of scope here.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -107,6 +109,13 @@ pub const DEFAULT_PING_MS: u64 = 15_000;
 pub const MISS_LIMIT: u32 = 3;
 /// A wire message is < 4.2 KB; anything near 1 MB is hostile (Node: MAX_PAYLOAD).
 pub const MAX_PAYLOAD: usize = 1 << 20;
+/// M1: per-connection flood guard. A real client's own traffic (hello, a
+/// handful of intents, one heartbeat pong) comes nowhere near this many
+/// text frames inside a rolling one-second window; a bound-but-unadmitted
+/// peer sustaining more than this is hostile, not a real client - same
+/// "generous headroom over real usage, hostile beyond it" spirit as
+/// MAX_PAYLOAD above.
+pub const MAX_FRAMES_PER_SEC: usize = 20;
 pub const MAX_HEAD: usize = 16 * 1024;
 pub const HEAD_TIMEOUT: Duration = Duration::from_secs(10);
 pub const PROBE_TIMEOUT: Duration = Duration::from_millis(1500);
@@ -755,6 +764,10 @@ pub struct Conn {
     pub frames_in: u64,
     pub frames_out: u64,
     pub dropped: u64,
+    /// M1: timestamps of text frames received in roughly the last second,
+    /// oldest first - a rolling window `on_text()` evicts from and checks
+    /// against `MAX_FRAMES_PER_SEC` before forwarding to the host.
+    frame_times: VecDeque<Instant>,
     tx: mpsc::UnboundedSender<Out>,
 }
 
@@ -787,7 +800,7 @@ impl Relay {
         self.stats.connections += 1;
         self.conns.insert(
             id,
-            Conn { id, remote: remote.to_string(), url_room: url_room.to_string(), role_host, fp: None, close_sent: false, close_code: None, frag: None, last_in: Instant::now(), missed: 0, frames_in: 0, frames_out: 0, dropped: 0, tx },
+            Conn { id, remote: remote.to_string(), url_room: url_room.to_string(), role_host, fp: None, close_sent: false, close_code: None, frag: None, last_in: Instant::now(), missed: 0, frames_in: 0, frames_out: 0, dropped: 0, frame_times: VecDeque::new(), tx },
         );
         if role_host {
             self.close(id, 4002, "room already has a host", CLOSE_GRACE_MS);
@@ -938,15 +951,34 @@ impl Relay {
     /// One complete text message from a socket (the Node onText()).
     pub fn on_text(&mut self, id: u64, text: &str) -> Inbound {
         self.stats.frames_in += 1;
-        let (url_room, role_host, remote, closing, bound) = match self.conns.get_mut(&id) {
+        let now = Instant::now();
+        let (url_room, role_host, remote, closing, bound, flooding) = match self.conns.get_mut(&id) {
             Some(c) => {
                 c.frames_in += 1;
-                (c.url_room.clone(), c.role_host, c.remote.clone(), c.close_sent, c.fp.clone())
+                // M1: rolling one-second frame-rate window, evicted here so
+                // it never grows unbounded even for a socket that's silent
+                // afterward.
+                c.frame_times.push_back(now);
+                while let Some(&t) = c.frame_times.front() {
+                    if now.duration_since(t) > Duration::from_secs(1) {
+                        c.frame_times.pop_front();
+                    } else {
+                        break;
+                    }
+                }
+                let flooding = c.frame_times.len() > MAX_FRAMES_PER_SEC;
+                (c.url_room.clone(), c.role_host, c.remote.clone(), c.close_sent, c.fp.clone(), flooding)
             }
             None => return Inbound::Dropped("gone"),
         };
         if closing {
             return self.drop_frame(id, "closing");
+        }
+        if flooding {
+            // A bound-but-unadmitted peer sustaining more than
+            // MAX_FRAMES_PER_SEC is treated as hostile, never forwarded.
+            self.close(id, 4005, "flood", CLOSE_GRACE_MS);
+            return self.drop_frame(id, "flood");
         }
         if text.len() > schema::MAX_WIRE_BYTES {
             return self.drop_frame(id, "oversize");
@@ -1078,16 +1110,21 @@ fn pct_decode(s: &str) -> String {
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;
     while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() {
-            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
-                out.push(v);
-                i += 3;
-                continue;
-            }
+        if b[i] == b'%' && i + 2 < b.len() && b[i + 1].is_ascii_hexdigit() && b[i + 2].is_ascii_hexdigit() {
+            // b[i+1..i+3] are two bytes already proven ASCII hex digits above,
+            // so this slice of the *byte* array (never the original &str) is
+            // always valid UTF-8 - no char-boundary panic is possible here,
+            // unlike slicing `s` itself, which could land inside a multi-byte
+            // UTF-8 character that happens to follow a literal '%'.
+            let v = u8::from_str_radix(std::str::from_utf8(&b[i + 1..i + 3]).unwrap(), 16).unwrap();
+            out.push(v);
+            i += 3;
+        } else {
+            out.push(if b[i] == b'+' { b' ' } else { b[i] });
+            i += 1;
         }
-        out.push(if b[i] == b'+' { b' ' } else { b[i] });
-        i += 1;
     }
+    // Only decode the fully-assembled byte buffer to UTF-8 once, at the end.
     String::from_utf8_lossy(&out).into_owned()
 }
 
@@ -1746,17 +1783,66 @@ impl Live {
         self.tls_accept.abort();
         self.heartbeat.abort();
         say(format!("stop {} on port {} (tls {})", self.info.room, self.info.port, self.info.tls_port));
-        drop(self.keep);
+        // `self.keep` (KeepAwake) drops right here, at the end of this
+        // function's scope - it used to be dropped explicitly
+        // (`drop(self.keep)`), but `Live` now implements `Drop` (below),
+        // and a type with a manual `Drop` impl can no longer have a field
+        // moved out of it individually (E0509). Nothing ran between the old
+        // explicit drop and this function returning anyway, so the timing
+        // is unchanged.
+    }
+}
+
+/// M2: `Live` holds three long-running background tasks. If a `Live` value
+/// is ever dropped WITHOUT going through `.stop()` above - e.g. the
+/// check-then-act race this module used to have in `start_room()` (see the
+/// `starting` flag below), where a losing concurrent call's `Live` got
+/// silently overwritten and dropped by `*state.lock() = Some(new_live)` -
+/// this is the only thing standing between that and an orphaned listener
+/// still accepting real LAN connections forever. Defense in depth: closing
+/// the race in `start_room()` should make this path unreachable in
+/// practice, but `stop()` already aborts these same handles today, and a
+/// future change to how `Live` gets replaced should not have to remember to
+/// re-derive that guarantee.
+impl Drop for Live {
+    fn drop(&mut self) {
+        self.accept.abort();
+        self.tls_accept.abort();
+        self.heartbeat.abort();
     }
 }
 
 /// Managed state: `None` until the page starts a room.
+///
+/// `starting`: `start_room()` binds two listeners, mints an identity, and
+/// probes reachability across several `.await` points, all AFTER releasing
+/// the lock on field 0 (a `std::sync::Mutex` can't be held across `.await`
+/// without making the enclosing future non-`Send`, which tauri's async
+/// command runtime requires). Without this flag, two concurrent
+/// `room_start` calls could both see "no previous room" (or both stop the
+/// same one), each proceed to bind its own listener/identity/heartbeat
+/// loop, and race to store the final `Live` - silently dropping whichever
+/// one lost, per the struct doc above. `starting` is checked-and-set
+/// atomically at the very top of `start_room()`, so a concurrent second
+/// call bails out immediately instead of racing; it is cleared by
+/// `StartingGuard`'s `Drop` no matter which path `start_room()` returns by.
 #[derive(Default)]
-pub struct RoomState(pub Mutex<Option<Live>>);
+pub struct RoomState(pub Mutex<Option<Live>>, AtomicBool);
 
 impl RoomState {
     fn lock(&self) -> std::sync::MutexGuard<'_, Option<Live>> {
         self.0.lock().unwrap_or_else(|p| p.into_inner())
+    }
+}
+
+/// RAII half of the `starting` flag: clears it when `start_room()` returns,
+/// by any path - success, an early `?`/`return` on a bind failure, anything
+/// - so a failed or completed attempt never leaves a later `start_room()`
+/// call permanently locked out.
+struct StartingGuard<'a>(&'a AtomicBool);
+impl Drop for StartingGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
     }
 }
 
@@ -1776,6 +1862,14 @@ pub async fn start_room(state: &RoomState, port: Option<u16>, tls_port: Option<u
     if !is_room_code(&code) {
         return Err(format!("{code:?} is not a room code (two phonetic words and two digits)"));
     }
+    // M2: close the check-then-act race across this function's many
+    // `.await` points below (see RoomState's `starting` doc comment) -
+    // `swap` is the check-and-set in one atomic step, so two concurrent
+    // callers can never both observe "not starting" and both proceed.
+    if state.1.swap(true, Ordering::SeqCst) {
+        return Err("a room is already starting".to_string());
+    }
+    let _starting = StartingGuard(&state.1);
     if let Some(prev) = state.lock().take() {
         prev.stop();
     }
@@ -2293,6 +2387,40 @@ mod tests {
         assert_eq!(r.bound_peers(), schema::SEAT_CAP);
     }
 
+    /// M1: a bound-but-unadmitted peer flooding the host gets cut off at
+    /// MAX_FRAMES_PER_SEC within the rolling one-second window, instead of
+    /// every frame reaching the host forever.
+    #[test]
+    fn relay_rate_limits_a_flooding_connection() {
+        let mut r = Relay::new(ROOM, 8);
+        let (a, mut arx) = pair(&mut r, "127.0.0.1:1", ROOM, false);
+        let msg = |n: u32| wire_encode(&frame("PEERAAAA", "ping", json!({ "n": n })), None);
+        for n in 0..MAX_FRAMES_PER_SEC as u32 {
+            assert!(matches!(r.on_text(a, &msg(n)), Inbound::ToHost { .. }), "frame {n} is within budget");
+        }
+        assert_eq!(r.on_text(a, &msg(MAX_FRAMES_PER_SEC as u32)), Inbound::Dropped("flood"), "one frame over budget in the same window is refused");
+        assert_eq!(drain(&mut arx), vec![Out::Close { code: 4005, reason: "flood".into(), grace_ms: CLOSE_GRACE_MS }]);
+        assert_eq!(r.stats.dropped_by["flood"], 1);
+        // once closing, further frames are dropped as "closing", not double-counted as "flood"
+        assert_eq!(r.on_text(a, &msg(999)), Inbound::Dropped("closing"));
+
+        // Frames older than the window are evicted, not just accumulated
+        // forever: stuff the deque with stale timestamps from two seconds
+        // ago and confirm one new frame is neither flooded nor left stuck
+        // behind them - the window stays bounded to what's actually recent.
+        let (b, mut brx) = pair(&mut r, "127.0.0.1:2", ROOM, false);
+        if let Some(c) = r.conns.get_mut(&b) {
+            let stale = Instant::now() - Duration::from_secs(2);
+            for _ in 0..(MAX_FRAMES_PER_SEC * 3) {
+                c.frame_times.push_back(stale);
+            }
+        }
+        let msg_b = wire_encode(&frame("PEERBBBB", "ping", json!({ "n": 0 })), None);
+        assert!(matches!(r.on_text(b, &msg_b), Inbound::ToHost { .. }), "timestamps from over a second ago must not count toward the budget");
+        assert_eq!(r.conns[&b].frame_times.len(), 1, "the stale entries are evicted, not just ignored - the window stays bounded");
+        assert!(drain(&mut brx).is_empty());
+    }
+
     #[test]
     fn relay_control_frames_and_heartbeat() {
         let mut r = Relay::new(ROOM, 8);
@@ -2358,6 +2486,37 @@ mod tests {
         let r = http_response(200, "OK", "text/html; charset=utf-8", "X-Guidon-Fork: guest\r\n", b"<html>", true);
         let s = String::from_utf8(r).unwrap();
         assert!(s.starts_with("HTTP/1.1 200 OK\r\n") && s.contains("Content-Length: 6\r\n") && s.contains("X-Guidon-Fork: guest\r\n") && s.ends_with("\r\n\r\n"));
+    }
+
+    /* ---- H1: pct_decode must never panic on a multi-byte UTF-8 char ---- */
+
+    #[test]
+    fn pct_decode_does_not_panic_on_percent_before_a_multibyte_char() {
+        // A literal '%' immediately followed by a 3-byte UTF-8 character
+        // (EURO SIGN, U+20AC = 0xE2 0x82 0xAC in UTF-8). The old
+        // byte-offset-into-&str slicing (`&s[i+1..i+3]`) would slice into
+        // the middle of that character and panic with "byte index N is not
+        // a char boundary". Neither byte after '%' is an ASCII hex digit,
+        // so this must fall through to the literal-byte path instead.
+        let out = pct_decode("%\u{20AC}");
+        assert_eq!(out, "%\u{20AC}", "not a valid %XX escape, so '%' and the euro sign pass through unchanged");
+
+        // Same shape, but the multi-byte char sits deeper in the string so
+        // the panic-prone slice would land mid-character rather than at the
+        // very end.
+        let out2 = pct_decode("room=%\u{20AC}&x=1");
+        assert_eq!(out2, "room=%\u{20AC}&x=1");
+
+        // A real %XX escape still decodes normally alongside the above.
+        assert_eq!(pct_decode("a%20b"), "a b");
+        assert_eq!(pct_decode("a+b"), "a b");
+        assert_eq!(pct_decode("%2F%2f"), "//");
+        // Trailing '%' with too few bytes left, and '%' followed by
+        // non-hex-digit bytes, both fall through unchanged rather than
+        // panicking or misparsing.
+        assert_eq!(pct_decode("100%"), "100%");
+        assert_eq!(pct_decode("50%%"), "50%%");
+        assert_eq!(pct_decode("%zz"), "%zz");
     }
 
     /* ---- X10: the self-probe's verdict, both ways ---- */
@@ -2665,6 +2824,41 @@ mod tests {
         });
     }
 
+    /// H2: `room_tls::server_config` pins the listener to TLS 1.3 only (see
+    /// its doc comment). A TLS-1.2-only client - even one presenting the
+    /// EXACT correct pin - must never complete a handshake: if a downgrade
+    /// to TLS 1.2 were still accepted, the "pinned TLS 1.3 identity" design
+    /// this whole module rests on would be silently weakened for any
+    /// attacker willing to offer only TLS 1.2. This mirrors the "wrong pin"
+    /// case just above (assert the connection attempt fails), but the
+    /// client here offers a correct pin and an incompatible protocol
+    /// version instead of a bad pin.
+    #[test]
+    fn tls_listener_refuses_a_tls12_only_client_even_with_the_correct_pin() {
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        rt.block_on(async {
+            let state = RoomState::default();
+            let deliver: Deliver = Box::new(|_v: Value| {});
+            let info = start_room(&state, Some(0), Some(0), ROOM, deliver).await.expect("start_room");
+
+            room_tls::ensure_crypto_provider();
+            let tls12_only_client_config = rustls::ClientConfig::builder_with_protocol_versions(&[&rustls::version::TLS12])
+                .dangerous()
+                .with_custom_certificate_verifier(Arc::new(TestPinnedVerifier { expected_spki_sha256_hex: info.identity.spki_sha256.clone() }))
+                .with_no_client_auth();
+            let connector = tokio_rustls::TlsConnector::from(Arc::new(tls12_only_client_config));
+            let tcp = TcpStream::connect(("127.0.0.1", info.tls_port)).await.expect("tcp connect (tls port)");
+            let server_name = rustls_pki_types::ServerName::try_from("localhost").unwrap();
+            let result = tokio::time::timeout(Duration::from_secs(5), connector.connect(server_name, tcp)).await;
+            match result {
+                Ok(handshake) => assert!(handshake.is_err(), "a TLS-1.2-only client must be REJECTED even with the correct pin - the server now only speaks TLS 1.3"),
+                Err(_) => {} // timed out waiting for the handshake to finish - also never a completed connection, which is the property under test
+            }
+
+            state.0.lock().unwrap().take().unwrap().stop();
+        });
+    }
+
     /// Mirrors `commands_refuse_without_the_gate_and_run_a_room_on_the_mock_
     /// runtime`'s own "the port is closed after room_stop" check
     /// (src/room_gate_test.rs), ported to the TLS port: `Live::stop()` must
@@ -2691,6 +2885,82 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(150)).await; // the aborted accept task drops the listener on its next poll
             let refused = tokio::time::timeout(Duration::from_secs(2), TcpStream::connect(("127.0.0.1", info.tls_port))).await;
             assert!(!matches!(refused, Ok(Ok(_))), "the TLS port must be closed after room_stop, exactly like the plaintext one");
+        });
+    }
+
+    /// M2: two `start_room()` calls racing on the SAME `RoomState` must
+    /// never both proceed - one wins outright, the other is rejected before
+    /// it binds anything of its own. This is REAL concurrency (two OS
+    /// threads, each on its own tokio runtime, released together by a
+    /// `Barrier`) rather than a single-runtime interleaving trick - this
+    /// crate's tokio dependency has no "macros" feature enabled (no
+    /// `tokio::join!` available), and a genuine two-thread race is a truer
+    /// reproduction of two concurrent `room_start` IPC calls anyway. The
+    /// `starting` flag's check-and-set happens synchronously before any
+    /// `.await` in `start_room()`, so whichever thread's `swap()` the OS
+    /// scheduler happens to run first always wins outright; the other must
+    /// see `true` and bail out immediately, never racing ahead to bind its
+    /// own listener/identity/heartbeat loop.
+    #[test]
+    fn start_room_rejects_a_concurrent_second_call_instead_of_racing() {
+        let state = RoomState::default();
+        let barrier = std::sync::Barrier::new(2);
+        let run = |barrier: &std::sync::Barrier| {
+            barrier.wait(); // both threads reach start_room() as close to together as the OS allows
+            let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+            let deliver: Deliver = Box::new(|_v: Value| {});
+            rt.block_on(start_room(&state, Some(0), Some(0), ROOM, deliver))
+        };
+        let (r1, r2) = std::thread::scope(|scope| {
+            let t1 = scope.spawn(|| run(&barrier));
+            let t2 = scope.spawn(|| run(&barrier));
+            (t1.join().unwrap(), t2.join().unwrap())
+        });
+        let (ok, err) = match (r1, r2) {
+            (Ok(a), Err(b)) => (a, b),
+            (Err(a), Ok(b)) => (b, a),
+            (Ok(a), Ok(b)) => panic!("both concurrent calls succeeded - the race was never closed: {a:?} and {b:?} both bound real listeners"),
+            (Err(a), Err(b)) => panic!("both concurrent calls failed: {a:?} / {b:?}"),
+        };
+        assert!(err.contains("already starting"), "the loser's error should say so plainly, got {err:?}");
+        assert!(ok.tls_port > 0, "the winner completed a real start_room, tls port included");
+
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        rt.block_on(async {
+            state.0.lock().unwrap().take().unwrap().stop();
+
+            // The flag clears once start_room() returns (win or lose), so a
+            // later, non-concurrent call on the same state succeeds normally.
+            let deliver: Deliver = Box::new(|_v: Value| {});
+            let again = start_room(&state, Some(0), Some(0), ROOM, deliver).await;
+            assert!(again.is_ok(), "the starting flag must not stay stuck true after either branch returns");
+            state.0.lock().unwrap().take().unwrap().stop();
+        });
+    }
+
+    /// M2 (part a): a `Live` dropped WITHOUT going through `.stop()` - the
+    /// exact shape of the race this module used to have, where the loser's
+    /// `Live` got silently overwritten by `*state.lock() = Some(new_live)`
+    /// - must still have its background tasks aborted by `Live`'s own
+    /// `Drop` impl, not leak them running forever.
+    #[test]
+    fn dropping_a_live_without_stop_still_aborts_its_listener() {
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        rt.block_on(async {
+            let state = RoomState::default();
+            let deliver: Deliver = Box::new(|_v: Value| {});
+            let info = start_room(&state, Some(0), Some(0), ROOM, deliver).await.expect("start_room");
+            assert!(self_probe("127.0.0.1", info.port).await, "the plaintext port is reachable while the room is open");
+
+            // Take the Live out and drop it directly - never calling
+            // .stop() - exactly what the old check-then-act race did to
+            // whichever concurrent start_room() call lost.
+            let live = state.0.lock().unwrap().take().unwrap();
+            drop(live);
+
+            tokio::time::sleep(Duration::from_millis(150)).await; // the aborted accept task drops the listener on its next poll
+            let refused = tokio::time::timeout(Duration::from_secs(2), TcpStream::connect(("127.0.0.1", info.port))).await;
+            assert!(!matches!(refused, Ok(Ok(_))), "Live::drop() must close the listener even when .stop() is never called");
         });
     }
 }

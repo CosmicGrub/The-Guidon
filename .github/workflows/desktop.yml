@@ -379,3 +379,43 @@ jobs:
         # compiles it at all; passing the feature here keeps this job's own
         # coverage of it exactly as before.
         run: cargo test --locked --features fuzz-validate
+
+      # Security audit M3: until now, nothing in CI ever actually RAN the
+      # differential JS/Rust protocol fuzzer - ci.yml's cargo-check job only
+      # compiles src-tauri (a `cargo check` never produces a runnable
+      # optimized binary the way `cargo build`/`cargo test` do), and the
+      # step just above only ran the *unit tests* the `fuzz-validate`
+      # feature happens to gate in, never invoking the fuzz_validate binary
+      # itself. That step's own `cargo test --locked --features
+      # fuzz-validate` already built the real, runnable fuzz_validate.exe
+      # as a side effect, per Cargo.toml's own comment on the [[bin]] target
+      # above ("`cargo build --features fuzz-validate --bin fuzz_validate`
+      # (or `cargo test --features fuzz-validate`) still builds/tests it
+      # explicitly") - Cargo always builds `[[bin]]` targets in their
+      # ordinary form during `cargo test`, not just as test harnesses, so
+      # there is nothing left to build here.
+      #
+      # This lives in desktop.yml (the windows-latest job, matching this
+      # crate's Windows-only shipping target per Cargo.toml's own tracked-
+      # advisory comment) rather than ci.yml, because it needs a compiled
+      # fuzz_validate binary and ci.yml's cargo-check job deliberately never
+      # produces one (see that job's own header comment: `cargo check` on
+      # purpose, never `cargo build`, to stay the fast compile-and-drift
+      # check it exists for). Running the fuzzer after a full `cargo test`
+      # in this job is the natural fit, not a second toolchain/build step
+      # invented for it.
+      #
+      # tools/fuzz-room-validate.mjs's own findRustBinary() looks for the
+      # compiled binary under src-tauri/target/{release,debug}/ (release
+      # first) with no env var needed - `cargo test` above built the debug
+      # one since no --release was passed, so it's found there. No
+      # working-directory override here: this step inherits the
+      # workflow-level `defaults: run: working-directory: guidon-app`
+      # above, which is exactly where `npm run fuzz:room-validate` (=
+      # `node tools/fuzz-room-validate.mjs`, per package.json) expects to
+      # run from. The script itself already exits non-zero on a fatal
+      # JS/Rust validator mismatch (see its own `process.exit(mismatches >
+      # 0 ? 1 : 0)`), which fails this step - and the job - the normal way;
+      # no extra failure handling is needed here.
+      - name: Fuzz-validate room::validate() against the JS reference (differential)
+        run: npm run fuzz:room-validate
