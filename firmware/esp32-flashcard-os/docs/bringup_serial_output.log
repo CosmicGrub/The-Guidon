@@ -1,0 +1,38 @@
+ets Jul 29 2019 12:21:46
+
+rst:0x1 (POWERON_RESET),boot:0x17 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:2
+load:0x3fff0030,len:1184
+load:0x40078000,len:13232
+load:0x40080400,len:3028
+entry 0x400805e4
+ets Jul 29 2019 12:21:46
+
+rst:0x1 (POWERON_RESET),boot:0x17 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:2
+load:0x3fff0030,len:1184
+load:0x40078000,len:13232
+load:0x40080400,len:3028
+entry 0x400805e4
+
+=========================================================
+ GUIDON Flashcard OS - ST7796/320x480 GRAM round-trip test
+ TFT_eSPI compiled for: 320x480
+=========================================================
+
+---- write -> read-back per point ----
+  top-left     (0,0)   wrote 0xF800 read 0xF800  MATCH
+  top-right  (319,0)   wrote 0x07E0 read 0x07E0  MATCH
+  center   (160,240)   wrote 0xFFE0 read 0xFFE0  MATCH
+  bot-left   (0,479)   wrote 0x001F read 0x001F  MATCH
+  bot-right(319,479)   wrote 0xF81F read 0xF81F  MATCH
+
+  ALL FIVE POINTS MATCH, including both row-479 corners.
+  CONCLUSION: this panel genuinely has 320x480 addressable GRAM
+  under the ST7796 driver. Pin table's spec (ST7796S, 320x480)
+  is CONFIRMED. Do not use ILI9341/240x320 for the real firmware.
+=========================================================

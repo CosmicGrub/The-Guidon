@@ -1,0 +1,42 @@
+device: GUIDON Flashcard OS - SD loader ready.
+device: Sweeping candidate SD_CS pins (see sdloader_main.cpp header for why):
+device: trying SD_CS=5 (attempt 1/5) ... OK
+device: SD card OK on SD_CS=5, size ~488156 MB. Waiting for PUT commands.
+-> PUT /cards.ndjson (662534 bytes)
+   662534/662534 bytes (100%)
+   device: ... 23552/662534 bytes written
+   device: ... 47104/662534 bytes written
+   device: ... 70656/662534 bytes written
+   device: ... 94208/662534 bytes written
+   device: ... 117760/662534 bytes written
+   device: ... 141312/662534 bytes written
+   device: ... 164864/662534 bytes written
+   device: ... 188416/662534 bytes written
+   device: ... 211968/662534 bytes written
+   device: ... 235520/662534 bytes written
+   device: ... 259072/662534 bytes written
+   device: ... 282624/662534 bytes written
+   device: ... 306176/662534 bytes written
+   device: ... 329728/662534 bytes written
+   device: ... 353280/662534 bytes written
+   device: ... 376832/662534 bytes written
+   device: ... 400384/662534 bytes written
+   device: ... 423936/662534 bytes written
+   device: ... 447488/662534 bytes written
+   device: ... 471040/662534 bytes written
+   device: ... 494592/662534 bytes written
+   device: ... 518144/662534 bytes written
+   device: ... 541696/662534 bytes written
+   device: ... 565248/662534 bytes written
+   device: ... 588800/662534 bytes written
+   device: ... 612352/662534 bytes written
+   device: ... 635904/662534 bytes written
+   device: ... 659456/662534 bytes written
+   device: DONE 662534
+   OK - 662534 bytes in 57.7s (11 KB/s)
+-> PUT /categories.json (4331 bytes)
+   4331/4331 bytes (100%)
+   device: DONE 4331
+   OK - 4331 bytes in 0.4s (11 KB/s)
+device: BYE
+All files pushed. Reflash env:flashcardos now.

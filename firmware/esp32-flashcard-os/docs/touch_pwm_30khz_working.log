@@ -1,0 +1,44 @@
+ets Jul 29 2019 12:21:46
+
+rst:0x1 (POWERON_RESET),boot:0x17 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:2
+load:0x3fff0030,len:1184
+load:0x40078000,len:13232
+load:0x40080400,len:3028
+entry 0x400805e4
+GUIDON Flashcard OS booting...
+TFT init done (ST7796S/320x480).
+Touch calibration ready.
+[touch-probe] tap now - polling for 4s BEFORE SD init...
+[touch-probe] HIT x=115 y=359
+[touch-probe] HIT x=142 y=386
+[touch-probe] HIT x=235 y=335
+[touch-probe] HIT x=238 y=331
+[touch-probe] HIT x=266 y=227
+[touch-probe] HIT x=281 y=147
+[touch-probe] HIT x=275 y=148
+[touch-probe] HIT x=254 y=67
+[touch-probe] HIT x=199 y=61
+[touch-probe] HIT x=130 y=66
+[touch-probe] HIT x=130 y=68
+[touch-probe] HIT x=88 y=100
+[touch-probe] HIT x=82 y=99
+[touch-probe] HIT x=69 y=211
+[touch-probe] HIT x=85 y=329
+[touch-probe] HIT x=132 y=420
+[touch-probe] HIT x=102 y=259
+[touch-probe] HIT x=130 y=114
+[touch-probe] HIT x=217 y=61
+[touch-probe] HIT x=270 y=97
+[touch-probe] HIT x=251 y=205
+[touch-probe] HIT x=237 y=328
+[touch-probe] HIT x=214 y=420
+[touch-probe] done, 23 hits in 4s (pre-SD)
+[  5353][E][esp32-hal-cpu.c:110] addApbChangeCallback(): duplicate func=0x400db9c8 arg=0x3ffbdc48
+SD: card found on CS=5.
+Loaded 78 categories.
+[touch-probe] tap now - polling for 4s AFTER SD init...
+[touch-probe] done, 0 hits in 4s (post-SD)
+Ready - showing subject list.
