@@ -25653,6 +25653,57 @@ window.G = window.G || {};
     const isFile = location.protocol === "file:";
     const url = isFile ? "" : location.href.split("#")[0];
 
+    // ── "Get the app for this device" ──────────────────────────────────────
+    // Added for the QR-code distribution path (2026-09-08): a Soldier who
+    // scans the install QR lands here with nothing installed yet and no idea
+    // which of "read the iPhone steps below" / "download the .apk" / "download
+    // the .exe" applies to them. This answers that FIRST, before any of the
+    // page's existing generic content, then gets out of the way - it's a
+    // recommendation, not a gate; every section below still renders for
+    // whoever wants to read everything or is on a platform it doesn't call
+    // out by name (a desktop/Mac/Linux browser, an unrecognized UA).
+    //
+    // Deliberately skipped on file:// (isFile, handled in its own branch
+    // above/below) - "download the app" is a non-sequitur for someone who
+    // already has a copy of the .html open locally.
+    if (!isFile) {
+      const onIOS = !!(G.pwa && G.pwa.isIOS && G.pwa.isIOS());
+      const onAndroid = !onIOS && !!(G.pwa && G.pwa.isAndroid && G.pwa.isAndroid());
+      // /releases/latest/download/<name> is GitHub's own permalink - it
+      // always resolves to whichever release is current, forever, PROVIDED
+      // the asset is re-uploaded under this exact version-less name on every
+      // release (see the release-distribution standing rule memory - the
+      // versioned names like GUIDON-1.6.0-android.apk stay too, for anyone
+      // who wants that specific build, but never these links).
+      const RELEASES_LATEST = "https://github.com/CosmicGrub/The-Guidon/releases/latest";
+      const dl = (name) => RELEASES_LATEST + "/download/" + name;
+
+      const rec = el("div.panel", { style: "margin-bottom:10px;border-left:3px solid var(--cyan)" });
+      rec.appendChild(el("div.eyebrow", { text: "Get the app for this device" }));
+      if (onIOS) {
+        rec.appendChild(el("p", { text:
+          "You're on an iPhone or iPad. This page IS the GUIDON app for iOS — there's no separate download. Follow the “iPhone / iPad” steps below to add it to your Home Screen; everything else on this page still applies if you'd rather read it all first." }));
+      } else if (onAndroid) {
+        rec.appendChild(el("p", { text:
+          "You're on Android. The full app — offline extras, Study Rooms, and (where supported) fingerprint lock — is a direct download, not this browser tab:" }));
+        rec.appendChild(el("a.btn.primary", {
+          href: dl("GUIDON-android.apk"), target: "_blank", rel: "noopener",
+          text: "⭳ Download the Android app (.apk)", style: "text-decoration:none;display:inline-block",
+        }));
+        rec.appendChild(el("p.hint", { style: "margin-top:8px", text:
+          "Your phone will warn about installing from outside the Play Store — that's expected for a direct download; allow it for this file. Prefer not to install anything? Adding this exact page to your Home Screen (see “Android” below) still works, just without those extras." }));
+      } else {
+        rec.appendChild(el("p", { text: "You're on a computer. The full Windows desktop app is a direct download:" }));
+        rec.appendChild(el("a.btn.primary", {
+          href: dl("GUIDON-windows-setup.exe"), target: "_blank", rel: "noopener",
+          text: "⭳ Download for Windows (.exe)", style: "text-decoration:none;display:inline-block",
+        }));
+        rec.appendChild(el("p.hint", { style: "margin-top:8px", text:
+          "Mac and Linux don't have a native build yet — this hosted page works fully in any browser there, and can still be installed for an app-like window (see “What hosting does and does not change” below)." }));
+      }
+      mount.appendChild(rec);
+    }
+
     if (isFile) {
       mount.appendChild(el("div.feedback.warn", { text:
         "This copy is open from a local file, so there is no link to share yet. Put the .html file on any static host \u2014 GitHub Pages, Netlify, Cloudflare Pages, or a unit web server \u2014 then open it from that address and the link will appear here." }));
