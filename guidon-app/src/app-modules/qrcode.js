@@ -347,14 +347,27 @@
   function drawFormat(g, bits) {
     var n = g.n;
     function bit(i) { return ((bits >>> i) & 1) !== 0; }
-    for (var i = 0; i <= 5; i++) setFn(g, 8, i, bit(i));
-    setFn(g, 8, 7, bit(6));
+    // Copy A (wraps the top-left finder): column 8 carries bits 0-7 going
+    // down rows 0-5,7,8 (row 6 is the timing track); row 8 carries bits
+    // 8-14 going left from column 7 through column 0 (again skipping the
+    // timing column). Getting this transposed - row 8 for the low bits,
+    // column 8 for the high bits - is a silent, self-consistent-looking
+    // bug: every internal check that re-derives the SAME (wrong) mapping
+    // still agrees with itself, but a real scanner reading the spec
+    // positions gets garbage format info and cannot unmask/decode at all.
+    for (var i = 0; i <= 5; i++) setFn(g, i, 8, bit(i));
+    setFn(g, 7, 8, bit(6));
     setFn(g, 8, 8, bit(7));
-    setFn(g, 7, 8, bit(8));
-    for (var i = 9; i < 15; i++) setFn(g, 14 - i, 8, bit(i));
-    for (var i = 0; i < 8; i++) setFn(g, n - 1 - i, 8, bit(i));
-    for (var i = 8; i < 15; i++) setFn(g, 8, n - 15 + i, bit(i));
-    setFn(g, 8, n - 8, true); // fixed dark module
+    setFn(g, 8, 7, bit(8));
+    for (var i = 9; i < 15; i++) setFn(g, 8, 14 - i, bit(i));
+    // Copy B (bottom-left + top-right): row 8 carries bits 0-7 across
+    // columns n-1 down to n-8; column 8 carries bits 8-14 up rows n-7
+    // through n-1. The fixed dark module is a SEPARATE always-dark cell
+    // at (n-8, 8) - not one of the 15 format bits, and not the same cell
+    // as (8, n-8) above (row/col are not interchangeable here).
+    for (var i = 0; i < 8; i++) setFn(g, 8, n - 1 - i, bit(i));
+    for (var i = 8; i < 15; i++) setFn(g, n - 15 + i, 8, bit(i));
+    setFn(g, n - 8, 8, true); // fixed dark module
   }
   function drawVersionInfo(g, bits, v) {
     if (v < 7) return;
