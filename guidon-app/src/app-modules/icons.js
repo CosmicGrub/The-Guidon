@@ -84,6 +84,12 @@ window.G = window.G || {};
     // unless someone actually diffed the rendered DOM node type. Standard
     // Feather "more-horizontal" geometry: three dots in a horizontal row.
     "more-horizontal": [{ c: [12, 12, 1] }, { c: [19, 12, 1] }, { c: [5, 12, 1] }],
+    // iOS/browser Study Rooms limitation notice (2026-09-08): swapped in for
+    // the Study group nav icon (in place of "users") when G.caps.isShell()
+    // is false - see navButton() in src/index.html - to signal at a glance
+    // that the feature needs the installed app. Standard Feather "lock"
+    // geometry: a padlock body with its shackle.
+    lock: [{ r: [3, 11, 18, 11, 2] }, { p: "M7 11V7a5 5 0 0 1 10 0v4" }],
   };
 
   const NS = "http://www.w3.org/2000/svg";

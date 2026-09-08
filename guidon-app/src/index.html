@@ -4421,6 +4421,16 @@ html.reduce-motion .nav-group-body, html[data-motion="minimal"] .nav-group-body 
   opacity: 1;
 }
 
+/* Study Rooms, browser/PWA build only (2026-09-08) - a real, structural
+   limitation (see navButton()'s roomsNeedShell comment), not "less common"
+   like .nav-demoted above, so it gets its own, more visibly dimmed
+   treatment and a not-allowed cursor rather than reusing that class's
+   subtler .82 opacity. Still legible, not hidden - the lock icon swap plus
+   the tooltip/aria-label/toast (all set in navButton()) carry the actual
+   explanation; this is just the at-a-glance "this one's different" cue. */
+.nav :is(button, a).nav-shell-only { opacity: .45; cursor: not-allowed; }
+.nav :is(button, a).nav-shell-only:hover, .nav :is(button, a).nav-shell-only:focus-visible { opacity: .6; }
+
 /* ---- Mobile nav drawer ("More" - Tier 1(a)) ----
    Below 600px the flat bar shows only 4 curated routes + this "More"
    button, which opens the SAME NAV_GROUPS accordion the sidebar renders
@@ -4488,6 +4498,8 @@ html.reduce-motion .nav-drawer, html[data-motion="minimal"] .nav-drawer { transi
 .nav-drawer .nav-group-header .ico { font-size: .7rem !important; width: 12px; }
 .nav-drawer :is(button, a).nav-demoted { opacity: .82; } /* same contrast fix as .nav :is(button, a).nav-demoted above */
 .nav-drawer :is(button, a).nav-demoted:hover, .nav-drawer :is(button, a).nav-demoted:focus-visible, .nav-drawer :is(button, a).nav-demoted.active { opacity: 1; }
+.nav-drawer :is(button, a).nav-shell-only { opacity: .45; cursor: not-allowed; } /* same treatment as .nav :is(button, a).nav-shell-only above */
+.nav-drawer :is(button, a).nav-shell-only:hover, .nav-drawer :is(button, a).nav-shell-only:focus-visible { opacity: .6; }
 
 /* "More" button itself, in the <600px flat bar - same base .nav :is(button, a)
    look, including its icon size (both fully inherited from .nav/.nav .ico
@@ -33243,6 +33255,21 @@ window.G = window.G || {};
     // narration) rather than authoring separate tooltip copy that would
     // just drift out of sync with it.
     const note = G.demoNotes && G.demoNotes[r.hash];
+
+    // Collective Study Rooms needs a native TLS listener/connector to host or
+    // join a secure room (see src/room-web.js's own SECURE_NO_NATIVE_TEXT and
+    // nativeTlsPlugin()) - Tauri on PC and the Capacitor plugin on Android
+    // both provide one; a plain browser tab never can (there is no way to
+    // accept or pin a TLS connection from page JS). That's the ONLY way
+    // GUIDON ever runs on iOS - no Capacitor build ships for it, see
+    // caps.js's SHIPS.ios - so this is a structural browser limitation, not
+    // unfinished work, and it's honest to say so in the nav rather than let
+    // a Soldier tap in and hit a dead end. Android and PC are untouched by
+    // this: G.caps.isShell() is true on both (Capacitor/Tauri respectively),
+    // so this branch is provably inert there - checked fresh on every
+    // render (matches room-web.js's own nativeTlsPlugin(), never cached).
+    const roomsNeedShell = r.hash === "#/group" && !(G.caps && G.caps.isShell());
+
     // Tier 2(a) (PC/desktop intuitivism pass): a real <a href>, not a plain
     // <button onclick> - the ONLY way to get right-click "open in new tab",
     // middle-click, Ctrl/Cmd+click, and the browser's own status-bar URL
@@ -33269,12 +33296,24 @@ window.G = window.G || {};
     // hash-set on the CURRENT tab. Middle-click doesn't even reach this
     // handler in the first place in most browsers (it fires "auxclick", not
     // "click"), so it already opens a background tab with zero extra code.
-    return el("a", {
+    return el("a" + (roomsNeedShell ? ".nav-shell-only" : ""), {
       href: r.hash,
       "data-hash": r.hash,
-      "aria-label": r.label,
-      title: note ? note.d : undefined,
+      "aria-label": roomsNeedShell ? r.label + " — needs the GUIDON app; Study Rooms can't run in a browser" : r.label,
+      "aria-disabled": roomsNeedShell ? "true" : undefined,
+      title: roomsNeedShell
+        ? "Study Rooms works in the GUIDON app on Android or a PC, but a browser has no way to make the secure connection this feature needs."
+        : (note ? note.d : undefined),
       onclick: (e) => {
+        if (roomsNeedShell) {
+          // No modifier-click exception here (unlike the normal path below) -
+          // there is nothing more to see in a new tab; every path into this
+          // route hits the same structural wall, so this is a real dead end
+          // to explain, not a click to let through.
+          e.preventDefault();
+          util.toast("Study Rooms needs the GUIDON app on Android or a PC — it can't run in a browser tab.", 4000);
+          return;
+        }
         if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
         e.preventDefault();
         // Re-tapping the section you are already in previously did nothing,
@@ -33283,7 +33322,7 @@ window.G = window.G || {};
         if (location.hash === r.hash) { try { route(); } catch (err) {} }
         else location.hash = r.hash;
       },
-    }, [el("span.ico", { "aria-hidden": "true" }, [G.util.icon(r.ico, 18)]), document.createTextNode(r.label)]);
+    }, [el("span.ico", { "aria-hidden": "true" }, [G.util.icon(roomsNeedShell ? "lock" : r.ico, 18)]), document.createTextNode(r.label)]);
   }
 
   // Tier 2 (intuitivism pass) - the plan's own words: "Only worth it if the
