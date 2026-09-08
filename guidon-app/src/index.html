@@ -7652,7 +7652,14 @@ window.G = window.G || {};
     // JSON) to add Competence back in and say seven, matching the other card and ADP 6-0.
     doctrine(query) {
       const s = state.settings;
-      const baseKey = (s.tierFilter || "all") + "|" + !!s.showInTransition + "|" + !!s.showCommunity;
+      // Same first-boot content race as boardQuestions() below (root-cause
+      // hunt 2026-09-06/07: "no-cards" ~50% boot failure) - see its comment.
+      // state.seed.doctrine is null until loadContent() runs; without the
+      // !!state.seed.doctrine key component, a call reached via the same
+      // unconditional hashchange->route() path before then would cache an
+      // empty base list under this key FOREVER, with nothing to ever
+      // invalidate it once real content actually loaded.
+      const baseKey = (s.tierFilter || "all") + "|" + !!s.showInTransition + "|" + !!s.showCommunity + "|" + !!state.seed.doctrine;
       if (!state._doctrineBaseCache || state._doctrineBaseCache.key !== baseKey) {
         let base = (state.seed.doctrine && state.seed.doctrine.entries) || [];
         base = base.filter((d) => {
@@ -7680,7 +7687,11 @@ window.G = window.G || {};
     // the inputs that can change it and invalidated by _bumpScenarios().
     scenarios() {
       const s = state.settings;
-      const key = (s.tierFilter || "all") + "|" + state.userScenarios.length + "|" + state._scenarioRev;
+      // Same first-boot content race as boardQuestions()/doctrine() -
+      // see boardQuestions()'s comment. !!state.seed.scenarios flips false
+      // -> true exactly once, the moment loadContent() runs, which is what
+      // invalidates a cache entry poisoned by a call that landed before then.
+      const key = (s.tierFilter || "all") + "|" + state.userScenarios.length + "|" + state._scenarioRev + "|" + !!state.seed.scenarios;
       if (state._scenarioCache && state._scenarioCache.key === key) return state._scenarioCache.list;
       const seed = (state.seed.scenarios && state.seed.scenarios.scenarios) || [];
       const map = new Map();
@@ -7750,7 +7761,26 @@ window.G = window.G || {};
     // the moment tierFilter itself changes.
     boardQuestions() {
       const s = state.settings;
-      const key = s.tierFilter || "all";
+      // First-boot content race (root-cause hunt 2026-09-06/07, "no-cards"
+      // ~50% boot failure): state.seed.board is null until loadContent()
+      // (awaited inside store.init(), itself awaited by app.start() before
+      // its OWN route() call) actually runs. But window.addEventListener
+      // ("hashchange", route) is wired unconditionally at the very top of
+      // app.start(), before that await - so a hashchange fired by anything
+      // else (a deep link, a test driver setting location.hash right after
+      // the shell's globals exist, confirmed via tools/test-room-tauri.mjs
+      // stress-launches - see that file's own header) can call route() and
+      // reach this function while state.seed.board is still null. The key
+      // used to be JUST tierFilter, so that early call cached {key:"all",
+      // list:[]} - and with no signal anywhere for "content has since
+      // loaded," every later call with the same tierFilter kept returning
+      // that empty list FOREVER, even 984-strong real content sitting right
+      // there in state.seed.board. Folding !!state.seed.board into the key
+      // makes that flip (false -> true, exactly once, the moment
+      // loadContent() runs) itself invalidate the stale empty entry, so the
+      // very next call recomputes for real and caches correctly - same fix
+      // as doctrine()/scenarios() below, which shared this exact pattern.
+      const key = (s.tierFilter || "all") + "|" + !!state.seed.board;
       if (state._boardQuestionsCache && state._boardQuestionsCache.key === key) return state._boardQuestionsCache.list;
       let list = (state.seed.board && state.seed.board.questions) || [];
       if (s.tierFilter !== "all") list = list.filter((q) => !q.tier || util.expandTierTokens(q.tier).indexOf(s.tierFilter) !== -1);
