@@ -67,6 +67,16 @@
      after the END marker. */
   var DEFAULTS = { pingMs: 5000, missLimit: 3, holdMs: 60000, pendingMs: 300000, renderMs: 100, snapshotMs: 50 };
   var HOTSPOT_CAP = 8;
+  /* Single source of truth for "Study Rooms needs a native shell" (2026-09-08)
+     - a plain browser tab has no way to host a LAN listener or complete a
+     pinned TLS handshake (see room-web.js's own nativeTlsPlugin()/
+     SECURE_NO_NATIVE_TEXT for the secure-join-specific case this is the
+     feature-level generalization of), so this is the ONLY way GUIDON ever
+     runs on iOS. Read by src/index.html's navButton() (the greyed-out nav
+     entry) and share.js's "Study solo or with others?" fork, so the exact
+     same sentence appears everywhere this limitation is explained rather
+     than three independently-typed copies drifting apart over time. */
+  var NEEDS_SHELL_TEXT = "Study Rooms needs the GUIDON app on Android or a PC — it can't run in a browser tab.";
   var HELD_SEAT_TEXT = "That seat is held for its own resume token. Reconnect from the device that holds it, or wait for the hold to end.";
   var B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
@@ -1667,7 +1677,7 @@
   }
 
   G.studyGroup = {
-    DEFAULTS: DEFAULTS,
+    DEFAULTS: DEFAULTS, NEEDS_SHELL_TEXT: NEEDS_SHELL_TEXT,
     initHost: initHost, initPeer: initPeer, reduce: reduce, act: act, snapshotOf: snapshotOf, snapshotFrames: snapshotFrames, frameOf: frameOf,
     available: available, attach: attach, host: host, join: join, leave: leave, reconnect: reconnect, sendIntent: sendIntent, hostAction: hostAction,
     state: function () { return rt.state; }, session: session, counters: function () { return rt.counters; }, identity: function () { return rt.identity ? { fp: rt.identity.fp, kind: rt.identity.kind } : null; },

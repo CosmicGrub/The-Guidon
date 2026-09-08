@@ -592,8 +592,8 @@ jobs:
             tests: "test:moi-import test:resize-storm test:board-card-overflow test:xwin-sync test:caps test:ink-fallbacks test:room-core test:room-session"
           - name: "19-roomprivacy-roomserver-roomservertls-roomxeng-guestpage-roomtauri-roomweb-studygroupcallsigns"
             tests: "test:room-privacy test:room-server test:room-server-tls test:room-xeng test:guest-page test:room-tauri test:room-web test:studygroup-callsigns"
-          - name: "20-qrcode-tlsadversarial-iconregistry-whatsnew-studyroomsshellgate"
-            tests: "test:qrcode test:tls-adversarial test:icon-registry test:whats-new test:study-rooms-shell-gate"
+          - name: "20-qrcode-tlsadversarial-iconregistry-whatsnew-studyroomsshellgate-shareosaware"
+            tests: "test:qrcode test:tls-adversarial test:icon-registry test:whats-new test:study-rooms-shell-gate test:share-os-aware"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
