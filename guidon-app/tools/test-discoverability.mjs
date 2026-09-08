@@ -33,13 +33,23 @@ const navTitles = await page.evaluate(() => {
   if (!dn) return null;
   const els = Array.from(document.querySelectorAll("a[data-hash]"));
   const results = els.map((elx) => ({ hash: elx.dataset.hash, title: elx.getAttribute("title"), expected: dn[elx.dataset.hash] && dn[elx.dataset.hash].d }));
-  return { total: results.length, withTitle: results.filter((r) => r.title).length, mismatches: results.filter((r) => r.title && r.expected && r.title !== r.expected) };
+  // #/group is a deliberate, documented exception (2026-09-08): navButton()
+  // (src/index.html) replaces its title with an honest "needs the GUIDON
+  // app" explanation whenever G.caps.isShell() is false - which this plain
+  // Chromium test context always is - instead of the generic demoNotes
+  // blurb, exactly BECAUSE Study Rooms cannot host or join anything from a
+  // browser tab. That's the intended, tested behavior (see
+  // tools/test-study-rooms-shell-gate.mjs), not a regression in this
+  // system - filtered out here rather than weakening the real invariant
+  // this check exists to enforce for every other route.
+  const mismatches = results.filter((r) => r.hash !== "#/group" && r.title && r.expected && r.title !== r.expected);
+  return { total: results.length, withTitle: results.filter((r) => r.title).length, mismatches };
 });
 navTitles ? ok("G.demoNotes is exposed") : bad("G.demoNotes is not exposed on window.G");
 if (navTitles) {
   navTitles.total > 0 ? ok(navTitles.total + " nav buttons found") : bad("no nav buttons with data-hash found");
   navTitles.withTitle > 0 ? ok(navTitles.withTitle + " nav buttons carry a title tooltip") : bad("no nav buttons carry a title attribute");
-  navTitles.mismatches.length === 0 ? ok("no nav button title mismatches its G.demoNotes entry") : bad(navTitles.mismatches.length + " nav button(s) have a title that doesn't match G.demoNotes");
+  navTitles.mismatches.length === 0 ? ok("no nav button title mismatches its G.demoNotes entry (except #/group's documented Study Rooms exception)") : bad(navTitles.mismatches.length + " nav button(s) have a title that doesn't match G.demoNotes");
 }
 
 // ---- Currency -> Freshness rename ----

@@ -7652,7 +7652,14 @@ window.G = window.G || {};
     // JSON) to add Competence back in and say seven, matching the other card and ADP 6-0.
     doctrine(query) {
       const s = state.settings;
-      const baseKey = (s.tierFilter || "all") + "|" + !!s.showInTransition + "|" + !!s.showCommunity;
+      // Same first-boot content race as boardQuestions() below (root-cause
+      // hunt 2026-09-06/07: "no-cards" ~50% boot failure) - see its comment.
+      // state.seed.doctrine is null until loadContent() runs; without the
+      // !!state.seed.doctrine key component, a call reached via the same
+      // unconditional hashchange->route() path before then would cache an
+      // empty base list under this key FOREVER, with nothing to ever
+      // invalidate it once real content actually loaded.
+      const baseKey = (s.tierFilter || "all") + "|" + !!s.showInTransition + "|" + !!s.showCommunity + "|" + !!state.seed.doctrine;
       if (!state._doctrineBaseCache || state._doctrineBaseCache.key !== baseKey) {
         let base = (state.seed.doctrine && state.seed.doctrine.entries) || [];
         base = base.filter((d) => {
@@ -7680,7 +7687,11 @@ window.G = window.G || {};
     // the inputs that can change it and invalidated by _bumpScenarios().
     scenarios() {
       const s = state.settings;
-      const key = (s.tierFilter || "all") + "|" + state.userScenarios.length + "|" + state._scenarioRev;
+      // Same first-boot content race as boardQuestions()/doctrine() -
+      // see boardQuestions()'s comment. !!state.seed.scenarios flips false
+      // -> true exactly once, the moment loadContent() runs, which is what
+      // invalidates a cache entry poisoned by a call that landed before then.
+      const key = (s.tierFilter || "all") + "|" + state.userScenarios.length + "|" + state._scenarioRev + "|" + !!state.seed.scenarios;
       if (state._scenarioCache && state._scenarioCache.key === key) return state._scenarioCache.list;
       const seed = (state.seed.scenarios && state.seed.scenarios.scenarios) || [];
       const map = new Map();
@@ -7750,7 +7761,26 @@ window.G = window.G || {};
     // the moment tierFilter itself changes.
     boardQuestions() {
       const s = state.settings;
-      const key = s.tierFilter || "all";
+      // First-boot content race (root-cause hunt 2026-09-06/07, "no-cards"
+      // ~50% boot failure): state.seed.board is null until loadContent()
+      // (awaited inside store.init(), itself awaited by app.start() before
+      // its OWN route() call) actually runs. But window.addEventListener
+      // ("hashchange", route) is wired unconditionally at the very top of
+      // app.start(), before that await - so a hashchange fired by anything
+      // else (a deep link, a test driver setting location.hash right after
+      // the shell's globals exist, confirmed via tools/test-room-tauri.mjs
+      // stress-launches - see that file's own header) can call route() and
+      // reach this function while state.seed.board is still null. The key
+      // used to be JUST tierFilter, so that early call cached {key:"all",
+      // list:[]} - and with no signal anywhere for "content has since
+      // loaded," every later call with the same tierFilter kept returning
+      // that empty list FOREVER, even 984-strong real content sitting right
+      // there in state.seed.board. Folding !!state.seed.board into the key
+      // makes that flip (false -> true, exactly once, the moment
+      // loadContent() runs) itself invalidate the stale empty entry, so the
+      // very next call recomputes for real and caches correctly - same fix
+      // as doctrine()/scenarios() below, which shared this exact pattern.
+      const key = (s.tierFilter || "all") + "|" + !!state.seed.board;
       if (state._boardQuestionsCache && state._boardQuestionsCache.key === key) return state._boardQuestionsCache.list;
       let list = (state.seed.board && state.seed.board.questions) || [];
       if (s.tierFilter !== "all") list = list.filter((q) => !q.tier || util.expandTierTokens(q.tier).indexOf(s.tierFilter) !== -1);
@@ -25648,6 +25678,87 @@ window.G = window.G || {};
   "use strict";
   const util = G.util, el = util.el;
 
+  /* Install QR code (2026-09-08) - encodes https://cosmicgrub.github.io/The-Guidon/#/share,
+     the OS-detecting Share & Install page. Deliberately a pre-baked, hardcoded PNG
+     data: URI generated ONCE with the real, well-tested qrcode npm package and
+     verified by independently decoding it back with jsQR before it was ever embedded
+     here - NOT the app's own G.qrcode module (src/app-modules/qrcode.js). That module
+     was tested during this same session and found to produce QR codes that do not
+     actually scan (a genuine, since-flagged bug, unrelated to this one) - see the
+     spawned follow-up task. This file's own header comment already records an earlier,
+     different QR encoder that was pulled before shipping for the exact same reason
+     (an unscannable QR that fails in front of a formation is worse than no QR at
+     all) - a hardcoded, externally-verified image is what actually keeps that
+     promise, since nothing about it can regress at runtime.
+     To regenerate (only ever needed if the target URL changes): encode the URL with
+     the qrcode package (errorCorrectionLevel H, type png), decode the result back
+     with jsQR to confirm it matches exactly, THEN base64 the bytes and paste them here. */
+  const INSTALL_QR_DATA_URI = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA4QAAAOECAYAAAD5Tv87AAAaBUlEQVR4AezBgY0c2I4EsJLg/FOu+xGMF7iHQbtFcvo/AQAA4JwNAAAAJ20AAAA4aQMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASRsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADhpAwAAwEkbAAAATtoAAABw0gYAAICTNgAAAJy0AQAA4KQNAAAAJ20AAAA4aQMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASRsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADhpAwAAwEkbAAAATtoAAABw0gYAAICTNgAAAJy0AQAA4KQNAAAAJ20AAAA4aQMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASRsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADhpAwAAwEkbAAAATtoAAABw0gYAAICTNgAAAJy0AQAA4KQNAAAAJ/0J/8nMhNva5lvNTPgdbfPKzOTTtM23mpm80DYvzExeaZsXZiavtM0nmZm80jYvzEy+Vdu8MDPhtrbhZxsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADhpAwAAwEkbAAAATtoAAABw0gYAAICTNgAAAJy0AQAA4KQNAAAAJ20AAAA4aQMAAMBJGwAAAE76E35V2/B7ZibfambC37XNJ5mZ8G9qm0/SNq/MTPg9M5MX2obf0zb8npkJv2MDAADASRsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADhpAwAAwEkbAAAATtoAAABw0gYAAICTNgAAAJy0AQAA4KQNAAAAJ20AAAA4aQMAAMBJGwAAAE76E/5ZM5Nv1TbwSWYmL7TNKzOTF9qGf8/M5NO0zaeZmXyatnlhZvJC27wyM3mhbb7VzORbtQ3/ng0AAAAnbQAAADhpAwAAwEkbAAAATtoAAABw0gYAAICTNgAAAJy0AQAA4KQNAAAAJ20AAAA4aQMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACf9CfBPaptXZib8e9rm08xM+B1t881mJp+kbb7VzAS4awMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASRsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADhpAwAAwEl/AvyqmcmnaZtPMjP5NG3zwszk07TNK23zSWYmr7QNvDAz+VZtA/xbNgAAAJy0AQAA4KQNAAAAJ20AAAA4aQMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASRsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpD/hn9U2/Hvahp+1zaeZmbzQNvzdzISfzUw+Tdu80jb8rG1emJnwe9oGPskGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASRsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADhpAwAAwEkbAAAATtoAAABw0gYAAICT/oRfNTPhtpnJC23zyszkhbZ5YWbyStt8q5nJC23zyszkhbZ5YWbyaWYmL7TNKzOTTzMzeaFtXpiZvNI2L8xMXmibV2YmL7TNp5mZwDfaAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASRsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADhpAwAAwEkbAAAATtoAAABw0gYAAICT/oT/pG3gk8xMXmmbT9I2r8xMXmgb/q5tPknbfKuZCX83M/k0MxN+R9sAP9sAAABw0gYAAICTNgAAAJy0AQAA4KQNAAAAJ20AAAA4aQMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASRsAAABO2gAAAHDS9H/CP2lm8kna5tPMTPg9bfPCzOSVtnlhZvJC23yamckrbfNJZibfqm0+zczklbZ5YWbCz9rm08xMPk3bvDAzeaVt4P9rAwAAwEkbAAAATtoAAABw0gYAAICTNgAAAJy0AQAA4KQNAAAAJ20AAAA4aQMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASdP/Cf+kmQk/axt+z8zkhbb5NDOTT9M2n2Zm8kna5pWZyQtt88LM5JW24Wczk1fa5oWZybdqmxdmJt+sbV6YmbzQNq/MTF5oG362AQAA4KQNAAAAJ20AAAA4aQMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASRsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAnTf8n/NXMhNva5pPMTPi7tvlWM5MX2uaVmQl3tc0rM5MX2uaFmcm3aht+z8zklbZ5YWbyadqG37EBAADgpA0AAAAnbQAAADhpAwAAwEkbAAAATtoAAABw0gYAAICTNgAAAJy0AQAA4KQNAAAAJ20AAAA4aQMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACctAEAAOCkP+Gf1TafZGbyStt8mpnJJ2mbV2YmL7TNp5mZvNA2L8xMvlnb8DtmJp9mZsLftc0LM5NPMzPhZ23zadrmhZnJKzOTF9qGn20AAAA4aQMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASRsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADjpT/hVbfNpZiYvtM0rM5NP0zYvzEw+Tdu8MDP5NG3zSdrm08xMPk3bvDAz+VZt82lmJq+0zbeambzQNi/MTF5pmxdmJi+0zTebmXyrtuF3bAAAADhpAwAAwEkbAAAATtoAAABw0gYAAICTNgAAAJy0AQAA4KQNAAAAJ20AAAA4aQMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASX/Cf9I2n2Zmws/a5tO0zaeZmbzQNvxsZvJK23DXzOSVtnmhbb5V23yrtuHf1DYvzExeaJtXZiYvtA0/2wAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADhpAwAAwEkbAAAATtoAAABw0gYAAICTNgAAAJy0AQAA4KQNAAAAJ20AAAA4aQMAAMBJGwAAAE7aAAAAcNL0f8KvmZl8mrZ5YWbyzdoGPsnM5IW24ffMTL5V2/B3M5NP0jbfambyStu8MDPh97QNP9sAAABw0gYAAICTNgAAAJy0AQAA4KQNAAAAJ20AAAA4aQMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASRsAAABO2gAAAHDS9H/Cr5mZfKu2eWVm8kLbvDIz+SRt82lmJi+0zSszkxfa5lvNTF5pm08yM3mlbfjZzORbtc2nmZl8q7Z5YWbyadrmlZnJC23zwszklbbhd2wAAAA4aQMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASRsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADhpAwAAwEl/wq9qm1dmJp9kZvJpZiavtM0LM5Nv1TYvzEwAXmibF2Ymr7TNC23zwszkW7XNp5mZwCfZAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASRsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADhpAwAAwEkbAAAATtoAAABw0p/wn8xMvlXb8Hczkxfa5lvNTPjZzOSVtvlWM5MX2ubTzExeaJtP0zafZmbyQtu8MjN5oW1eaJtXZiYvzExeaJtXZiYvtM0rM5MXZibctQEAAOCkDQAAACdtAAAAOGkDAADASRsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADhpAwAAwEkbAAAATtoAAABw0gYAAICTNgAAAJy0AQAA4KQNAAAAJ/0J/0nbfKuZCXyrtuH3zEz4Wdt8mpnJC23zrWYm/F3bfKu2eWFm8krbwP/XBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADhpAwAAwEkbAAAATtoAAABw0gYAAICTNgAAAJy0AQAA4KQNAAAAJ20AAAA4aQMAAMBJGwAAAE7aAAAAcNIGAACAk/6EXzUz+VZt88rM5IW24e9mJi+0zQszk08zM3mhbV6ZmXyrtvk0MxN+NjN5pW2+Vdvws5nJt2qbV2Ym/Kxt+NkGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASRsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADhpAwAAwEkbAAAATtoAAABw0gYAAICT/oR/Vtu8MDP5NG3zwszklbZ5YWbyadrmhZnJp5mZvNA2L8xMXmkbfjYzeaVtPsnM5NO0Db9nZvJp2uZbtQ18ow0AAAAnbQAAADhpAwAAwEkbAAAATtoAAABw0gYAAICTNgAAAJy0AQAA4KQNAAAAJ20AAAA4aQMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGn6P+HXzExeaRv+PTOTF9qG3zMz+TRtw10zk1fahp/NTOCFtvlWM5NP0zb8bAMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASRsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADhpAwAAwEl/wn8yM/lWM5NP0zYvzExeaZsX2uaFmcmnaZsXZiavtM23mpm80DafZmbyQtu8MjN5oW1eaJtPMzN5pW2+Vdu8MDN5oW1emZl8krZ5ZWbywszklbb5Vm3D79gAAABw0gYAAICTNgAAAJy0AQAA4KQNAAAAJ20AAAA4aQMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASRsAAABO2gAAAHDSn/Cr2uaVmcm3mpm80DavzExeaBt+1jbfqm1emZl8q7Z5YWbyStt8kpnJK23DXTOTbzUzAX62AQAA4KQNAAAAJ20AAAA4aQMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASRsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAn/Qm/ambyadrm08xMXpiZ8Hdtw8/a5lvNTD5N27zQNt+qbfg9bfPKzOSFtuHfMzP5NDOTF9rmlZnJC23DzzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASRsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADhpAwAAwEkbAAAATtoAAABw0gYAAICTNgAAAJz0J/wnbfPCzOSVtuFnbfOt2uaVmckLbcPPZiavtM0LM5NPMzN5oW0+zczkW7XNKzMTfjYz+VZt88LM5JW2eaFtXpmZwP/XBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADhpAwAAwEkbAAAATtoAAABw0gYAAICTNgAAAJy0AQAA4KQNAAAAJ20AAAA4aQMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACc9Cf8JzMTfjYzeaVtXpiZfJq2+TRt88LM5NO0zQszk08zM/k0bfOtZibfqm2+Vdt8mpnJC23zwszk08xMXmibV2YmL7TNp2mbF2Ym/Hs2AAAAnLQBAADgpA0AAAAnbQAAADhpAwAAwEkbAAAATtoAAABw0gYAAICTNgAAAJy0AQAA4KQNAAAAJ20AAAA4aQMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACc9Cf8qrZ5ZWbyrWYmL7TNKzOTF2YmL7TNKzOTF9rmhZnJt2qbTzMz4e/a5pPMTF6ZmXyrmcmnaZsXZib8bGbCv6lt+B0bAAAATtoAAABw0gYAAICTNgAAAJy0AQAA4KQNAAAAJ20AAAA4aQMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASRsAAABOmv5P+CfNTD5J27wyM+H3tM0LM5MX2uaVmcm3apsXZib8Xdu8MDP5Vm3zyszkk7TNt5qZvNI2L8xM+D1t82lmJi+0DT/bAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASRsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADhpAwAAwEkbAAAATtoAAABw0gYAAICT/oRfNTN5pW0+yczklbbhZzOTV2Ym/I62+TRt88rM5JO0zbdqm1dmJp+mbb7VzOSFtvlWbfPCzOSVtuFnMxP+PRsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADhpAwAAwEkbAAAATtoAAABw0gYAAICTNgAAAJy0AQAA4KQNAAAAJ20AAAA4aQMAAMBJGwAAAE76E/6TmckLbfPKzOSFtnmhbV6ZmfB72uZbtc23mpm80DavtM0LMxPgd7TNKzMTfs/M5IW2eaFt+PdsAAAAOGkDAADASRsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADhpAwAAwEkbAAAATtoAAABw0gYAAICTNgAAAJy0AQAA4KQNAAAAJ20AAAA46U/4T9rmW81MvlXbvDIz+SRt88rMhN/RNvxd2/CzmckrbfOtZibfambyQtt8mrZ5YWbyyszkhbb5NDOTb9U2/GwDAADASRsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADhpAwAAwEkbAAAATtoAAABw0gYAAICTNgAAAJy0AQAA4KQNAAAAJ20AAAA4aQMAAMBJGwAAAE76E37VzIS/a5sXZiafpm34Wdvwd23zwszklbb5JDOTV9rmW81MPk3b8LO2eWFm8mlmJt9qZsLftQ2/YwMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASRsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADhpAwAAwEl/wq9qG35P23yamckLbfNp2uaFmcmnaZsXZiavtM0LbcO/p21emZm80DavzExeaJtvNTN5oW1emZm80DbfambyadrmhZnJKzOTF9qGn20AAAA4aQMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASRsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADjpT/hPZibc1jafZGbyStu8MDP5NG3zwszkhbZ5ZWbyQtvw75mZvNI2L8xMvtXM5NO0zQszk281M3mlbb7VzOTTtA2/YwMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASRsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADhpAwAAwEkbAAAATvoTflXb8HtmJp+mbT7NzOSTtA3/ppnJt5qZfJK2eWVm8kLbvDIzeWFm8mna5oWZyQtt88rM5JO0DX/XNi/MTPj3bAAAADhpAwAAwEkbAAAATtoAAABw0gYAAICTNgAAAJy0AQAA4KQNAAAAJ20AAAA4aQMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOOlP+GfNTL5V23DXzOSVtuFnM5NX2oafzUw+Tdvws7bh98xM+Lu2eWFmwl0bAAAATtoAAABw0gYAAICTNgAAAJy0AQAA4KQNAAAAJ20AAAA4aQMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASRsAAABO2gAAAHDSnwC/ambyadqGn7XNCzOTV9rmhZnJp5mZfKu2+TQzk0/TNi/MTF6YmXyrmcmnaZtvNTN5ZWbySdrmlZnJC23DzzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASRsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADhpAwAAwEkbAAAATtoAAABw0gYAAICTNgAAAJz0J8A/qW1emZnws7b5NDOTF9rmlZnJJ2mbbzUzeaVtvlXbvDAz+TRt88LMhL+bmbzQNvBJNgAAAJy0AQAA4KQNAAAAJ20AAAA4aQMAAMBJGwAAAE7aAAAAcNIGAACAkzYAAACctAEAAOCkDQAAACdtAAAAOGkDAADASRsAAABO2gAAAHDSBgAAgJM2AAAAnPQn/LPahn9P27wwM3mlbT7JzORbtc0rM5MXZiafpm1emJm80jYvzEw+zczkhbbh79qGn81MPk3bvDAzeaVtPsnM5JW24XdsAAAAOGkDAADASRsAAABO2gAAAHDSBgAAgJM2AAAAnLQBAADgpA0AAAAnbQAAADhpAwAAwEkbAAAATtoAAABw0gYAAICTNgAAAJy0AQAA4KQNAAAAJ20AAAA4aQMAAMBJf8KvmpkAP2ubV2YmL8xMvlXbvDIz+VYzk2/VNp9mZvJJ2ubTzEz4Wdt8mrb5NDMT7toAAABw0gYAAID/qTTSbAAAAdpJREFUaw8OCAAAARAAmf8/Vz8EJjUAAABMagAAAJjUAAAAMKkBAABgUgMAAMCkBgAAgEkNAAAAkxoAAAAmNQAAAExqAAAAmNQAAAAwqQEAAGBSAwAAwKQGAACASQ0AAACTzv0CAADAnAYAAIBJDQAAAJMaAAAAJjUAAABMagAAAJjUAAAAMKkBAABgUgMAAMCkBgAAgEkNAAAAkxoAAAAmNQAAAExqAAAAmNQAAAAwqQEAAGBSAwAAwKQGAACASQ0AAACTGgAAACY1AAAATGoAAACY1AAAADCpAQAAYFIDAADApAYAAIBJDQAAAJMaAAAAJjUAAABMagAAAJjUAAAAMKkBAABgUgMAAMCkBgAAgEkNAAAAkxoAAAAmNQAAAExqAAAAmNQAAAAwqQEAAGBSAwAAwKQGAACASQ0AAACTGgAAACY1AAAATGoAAACY1AAAADCpAQAAYFIDAADApAYAAIBJDQAAAJMaAAAAJjUAAABMagAAAJjUAAAAMKkBAABgUgMAAMCkBgAAgEkNAAAAkxoAAAAmNQAAAExqAAAAmNQAAAAwqQEAAGBSAwAAwKQGAACASQ0AAACTGgAAACY1AAAATGoAAACY1AAAADCpAQAAYFIDAADApAfl1401aDBilwAAAABJRU5ErkJggg==";
+
+  // Reuses the exact show/hide toggle idiom already established in
+  // views.settings' theme picker (a ghost button + a hidden wrapper div,
+  // aria-expanded kept in sync) rather than inventing a second collapsible
+  // pattern - collapses a platform-specific panel's body behind one tap
+  // when it doesn't match the visitor's detected device, so a QR-scanning
+  // arrival isn't shown every platform's steps at once. Pass defaultOpen
+  // true to skip wrapping entirely (used for the visitor's own detected
+  // platform, and for every platform on desktop, per the standing
+  // feedback that a PC visitor is more often distributing the app to
+  // someone else than installing for themselves on that machine).
+  function makeCollapsible(panel, defaultOpen, closedLabel, openLabel) {
+    if (defaultOpen) return panel;
+    const body = Array.from(panel.children).slice(1); // keep the .eyebrow, collapse the rest
+    const wrap = el("div", { style: "display:none" });
+    body.forEach((n) => wrap.appendChild(n));
+    const toggle = el("button.btn.sm.ghost", { type: "button", text: closedLabel, "aria-expanded": "false", style: "margin:4px 0 0" });
+    toggle.addEventListener("click", () => {
+      const open = wrap.style.display !== "none";
+      wrap.style.display = open ? "none" : "";
+      toggle.textContent = open ? closedLabel : openLabel;
+      toggle.setAttribute("aria-expanded", String(!open));
+    });
+    panel.appendChild(toggle);
+    panel.appendChild(wrap);
+    return panel;
+  }
+
+  const SHARE_URL = "https://cosmicgrub.github.io/The-Guidon/#/share";
+
+  /* Shared by BOTH render() (the hosted browser/PWA page) and renderNative()
+     (the already-installed Android/desktop app) - one panel, one copy of the
+     text, so a future wording change can't drift between the two. Deliberately
+     just the QR + link + copy button, not a re-statement of the iPhone/
+     Android/Windows steps already on the hosted page itself: whoever scans
+     this lands on that SAME page, which already does its own OS-detection
+     (see the "Get the app for this device" panel above/below) - repeating
+     those steps here would be a second copy of content that page already
+     owns, not a new capability. */
+  function buildQrPanel() {
+    const p = el("div.panel", { style: "margin-bottom:10px;text-align:center" });
+    p.appendChild(el("div.eyebrow", { text: "Know someone who wants GUIDON?", style: "text-align:left" }));
+    p.appendChild(el("p.hint", { style: "text-align:left", text: "Have them scan this, or send them the link below — it figures out their phone or computer on its own." }));
+    p.appendChild(el("img", {
+      src: INSTALL_QR_DATA_URI, width: "220", height: "220", alt: "QR code linking to " + SHARE_URL,
+      style: "display:block;margin:10px auto;border-radius:8px;width:220px;height:220px",
+    }));
+    p.appendChild(el("p", { text: SHARE_URL, style: "font-family:var(--font-mono);word-break:break-all;margin:4px 0 8px;font-size:.85rem" }));
+    // Distinct label from the pre-existing "This app's address" panel's own
+    // "Copy link" button below (which copies THIS page's own current URL -
+    // possibly a self-hosted mirror, not necessarily this exact address) -
+    // two identically-labeled "Copy link" buttons on the same page is a
+    // real ambiguity for a sighted user and an even worse one read aloud by
+    // a screen reader, not just a Playwright strict-mode collision (which
+    // is what actually caught it - test:baseline-coverage's own #/share
+    // check, unrelated to anything this session touched, started matching
+    // 2 elements instead of 1 the moment this button existed).
+    const copyBtn = el("button.btn.sm", { type: "button", text: "⎘ Copy install link" });
+    copyBtn.addEventListener("click", () => {
+      util.copyText(SHARE_URL, () => util.toast && util.toast("Link copied."));
+    });
+    p.appendChild(copyBtn);
+    return p;
+  }
+
   async function render(mount) {
     util.clear(mount);
     mount.appendChild(el("div.section-title", {}, [ el("h2", { text:"Share & Install" }), el("div.rule") ]));
@@ -25664,6 +25775,12 @@ window.G = window.G || {};
 
     const isFile = location.protocol === "file:";
     const url = isFile ? "" : location.href.split("#")[0];
+    // Hoisted out of the "Get the app" block below so the collapsible
+    // iPhone/Android panels further down (and the solo/group fork) can
+    // read the same two booleans without recomputing or duplicating them.
+    const onIOS = !isFile && !!(G.pwa && G.pwa.isIOS && G.pwa.isIOS());
+    const onAndroid = !isFile && !onIOS && !!(G.pwa && G.pwa.isAndroid && G.pwa.isAndroid());
+    const onDesktop = !isFile && !onIOS && !onAndroid;
 
     // ── "Get the app for this device" ──────────────────────────────────────
     // Added for the QR-code distribution path (2026-09-08): a Soldier who
@@ -25679,8 +25796,6 @@ window.G = window.G || {};
     // above/below) - "download the app" is a non-sequitur for someone who
     // already has a copy of the .html open locally.
     if (!isFile) {
-      const onIOS = !!(G.pwa && G.pwa.isIOS && G.pwa.isIOS());
-      const onAndroid = !onIOS && !!(G.pwa && G.pwa.isAndroid && G.pwa.isAndroid());
       // /releases/latest/download/<name> is GitHub's own permalink - it
       // always resolves to whichever release is current, forever, PROVIDED
       // the asset is re-uploaded under this exact version-less name on every
@@ -25714,6 +25829,44 @@ window.G = window.G || {};
           "Mac and Linux don't have a native build yet — this hosted page works fully in any browser there, and can still be installed for an app-like window (see “What hosting does and does not change” below)." }));
       }
       mount.appendChild(rec);
+
+      // ── "Study solo or with others?" ────────────────────────────────────
+      // A one-tap routing shortcut, not a gate - the app's own Personal/
+      // Guest/Kiosk onboarding is completely untouched by this, and every
+      // other section on this page still renders underneath either way.
+      // Exists specifically for the QR-landing case: someone arrives with
+      // no established routine yet and no reason to already know where
+      // "Study Rooms" lives in the nav.
+      const fork = el("div.panel", { style: "margin-bottom:10px" });
+      fork.appendChild(el("div.eyebrow", { text: "What do you want to do right now?" }));
+      const forkRow = el("div.btn-row", { style: "margin-top:6px;flex-wrap:wrap" });
+      forkRow.appendChild(el("button.btn", { type: "button", text: "Study solo", onclick: () => { location.hash = "#/home"; } }));
+      const groupBtn = el("button.btn", { type: "button", text: "Study with others", style: "margin-left:8px" });
+      groupBtn.addEventListener("click", () => {
+        // Same structural wall as the greyed-out nav entry (navButton() in
+        // this file) and the SAME shared copy (G.studyGroup.NEEDS_SHELL_TEXT)
+        // - asking this question and then silently landing on a route that
+        // cannot host or join anything would be worse than not asking.
+        //
+        // The isShell()-true branch below is defensive, not currently
+        // reachable: render() (a few lines up in this same file) already
+        // early-returns via renderNative() the moment G.pwa.isNative() -
+        // which IS G.caps.isShell() - is true, so this fork panel is only
+        // ever built at all once isShell() is already known false. Kept
+        // rather than removed in case that dispatch ever changes; verified
+        // genuinely unreachable (not silently broken) by
+        // tools/test-share-os-aware.mjs's simulated-Tauri case.
+        if (G.caps && G.caps.isShell()) { location.hash = "#/group"; return; }
+        util.toast((G.studyGroup && G.studyGroup.NEEDS_SHELL_TEXT) || "Study Rooms needs the GUIDON app on Android or a PC — it can't run in a browser tab.", 4000);
+      });
+      forkRow.appendChild(groupBtn);
+      fork.appendChild(forkRow);
+      if (!(G.caps && G.caps.isShell())) {
+        fork.appendChild(el("p.hint", { style: "margin-top:8px", text:
+          "“Study with others” needs the installed app (Android or PC) - it isn't available from a browser tab, including this one." }));
+      }
+      mount.appendChild(fork);
+      mount.appendChild(buildQrPanel());
     }
 
     if (isFile) {
@@ -25751,7 +25904,12 @@ window.G = window.G || {};
      "Scroll down and tap \u201cAdd to Home Screen\u201d",
      "Open GUIDON from that icon from then on"].forEach(t => ios.appendChild(el("li", { text:t, style:"margin:3px 0" })));
     warn.appendChild(ios);
-    mount.appendChild(warn);
+    // Expanded unchanged for the visitor it actually applies to (iOS) and
+    // for a desktop visitor who's more likely reading this to hand it to
+    // someone else than to install it on this exact machine; collapsed one
+    // tap away for everyone in between (an Android visitor doesn't need
+    // iPhone steps in front of them by default).
+    mount.appendChild(makeCollapsible(warn, onIOS || onDesktop, "Show iPhone / iPad steps \u25be", "Hide iPhone / iPad steps \u25b4"));
 
     const and = el("div.panel", { style:"margin-bottom:10px" });
     and.appendChild(el("div.eyebrow", { text:"Android" }));
@@ -25760,7 +25918,7 @@ window.G = window.G || {};
     ["Open the link in Chrome","Tap the three-dot menu","Tap \u201cAdd to Home screen\u201d or \u201cInstall app\u201d"]
       .forEach(t => al.appendChild(el("li", { text:t, style:"margin:3px 0" })));
     and.appendChild(al);
-    mount.appendChild(and);
+    mount.appendChild(makeCollapsible(and, onAndroid || onDesktop, "Show Android steps \u25be", "Hide Android steps \u25b4"));
 
     const facts = el("div.panel");
     facts.appendChild(el("div.eyebrow", { text:"What hosting does and does not change" }));
@@ -25843,6 +26001,20 @@ window.G = window.G || {};
     install.appendChild(el("p.hint", { style:"margin-top:6px", text:
       "There's no in-app updater — a newer version means installing a newer build the same way you installed this one. Your data isn't touched by reinstalling; only Export/Import backup moves it between separate installations." }));
     mount.appendChild(install);
+
+    // Everything above this point is "moving THIS SAME build to another
+    // device on the same platform" - this is the other direction: a Soldier
+    // standing next to someone on a DIFFERENT platform (an iPhone if this is
+    // Android, say), with nothing installed at all yet. buildQrPanel() sends
+    // them to the hosted page, which detects THEIR device and answers that
+    // question on its own - this build never needs to know what iOS or a
+    // browser install even looks like.
+    const otherPlatform = el("div.panel", { style: "margin-bottom:10px" });
+    otherPlatform.appendChild(el("div.eyebrow", { text: "Someone on a different device wants GUIDON too" }));
+    otherPlatform.appendChild(el("p.hint", { text:
+      "Not " + (isAndroid ? "Android" : "a PC") + "? This won't help them - have them scan the code below instead. It opens a page that already knows what to offer an iPhone, an Android phone, or a computer." }));
+    mount.appendChild(otherPlatform);
+    mount.appendChild(buildQrPanel());
 
     mount.appendChild(el("p.hint", { style:"margin-top:12px", text:
       "Want a browser-hosted copy instead — for someone without the installer, or to study from a device you don't want to install anything on? Put src/index.html (or the web/ folder) on any static host; see the project's own README for the two build outputs." }));
@@ -33311,7 +33483,7 @@ window.G = window.G || {};
           // route hits the same structural wall, so this is a real dead end
           // to explain, not a click to let through.
           e.preventDefault();
-          util.toast("Study Rooms needs the GUIDON app on Android or a PC — it can't run in a browser tab.", 4000);
+          util.toast((G.studyGroup && G.studyGroup.NEEDS_SHELL_TEXT) || "Study Rooms needs the GUIDON app on Android or a PC — it can't run in a browser tab.", 4000);
           return;
         }
         if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
