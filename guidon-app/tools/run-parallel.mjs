@@ -6,7 +6,9 @@
 //
 // CONCURRENCY. Local runs (CI unset) default to a cap of 6 workers. CI=true
 // keeps the unbounded behaviour because ci.yml shards the list into chunks of
-// at most 8, so a shard is only ~8 browsers. Run the UNSHARDED list locally
+// at most 6 (2026-09-08: was 8, dropped to match this file's own measured-safe
+// local cap - see ci.yml's own batching-strategy comment), so a shard is only
+// ~6 browsers. Run the UNSHARDED list locally
 // with no cap, though, and that is every suite in the list at once - well
 // over a hundred Chromium instances, each parsing a 12+ MB document, each
 // with its own GPU process. On the dev laptop (RTX 4050, 6 GB VRAM per nvidia-smi) that
