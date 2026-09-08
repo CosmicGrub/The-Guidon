@@ -12,6 +12,7 @@ import { MODE_TEXT } from "./dismiss-onboarding.mjs";
 
 const FILE = "src/index.html";
 const html = await readFile(FILE, "utf-8");
+const PKG = JSON.parse(await readFile("package.json", "utf-8"));
 
 /* --tools-dir=<path> (or --tools-dir <path>) overrides which directory
    check (e) scans below, for mutation-testing the check itself against a
@@ -31,7 +32,7 @@ let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
 const bad = (m) => { fails++; console.log("  FAIL  " + m); };
 
-console.log("lint-patterns: static regression guard for 5 repeat bug shapes\n");
+console.log("lint-patterns: static regression guard for repeat bug shapes and release hygiene\n");
 
 /* ======================================================================
    (a) Raw accent custom properties (var(--cyan), var(--violet), var(--red),
@@ -767,6 +768,58 @@ console.log("lint-patterns: static regression guard for 5 repeat bug shapes\n");
         bad(`(g) ${missing.length} route(s) with no matching DEMO_NOTES entry - the Guided Tour's Highlights/full tracks will fall back to generic copy for: ${missing.join(", ")}`);
       } else {
         ok(`(g) every route has a matching DEMO_NOTES entry (${routeHashes.length} routes, ${EXCLUDED.size} intentionally excluded)`);
+      }
+    }
+  }
+}
+
+/* ======================================================================
+   (h) G.whatsNew.RELEASE_NOTES (src/index.html) must have an entry whose
+   `version` matches package.json's own "version" - the only way a release
+   can ship without its in-app "What's new" panel silently going stale
+   (still showing the PREVIOUS release's notes, or none at all, to a
+   Soldier who just updated). This is a standing product requirement, not
+   a style preference: see G.whatsNew's own header comment in index.html.
+   A version bump with no matching entry, or an entry whose `highlights`
+   array is empty, both fail loudly here instead of shipping quietly wrong.
+   ====================================================================== */
+{
+  function extractBalanced(text, openIdx, openChar, closeChar) {
+    let depth = 0;
+    for (let i = openIdx; i < text.length; i++) {
+      if (text[i] === openChar) depth++;
+      else if (text[i] === closeChar) { depth--; if (depth === 0) return text.slice(openIdx + 1, i); }
+    }
+    return null;
+  }
+  const declIdx = html.indexOf("G.whatsNew = {");
+  if (declIdx === -1) {
+    bad("(h) could not locate the G.whatsNew declaration");
+  } else {
+    const notesDeclIdx = html.indexOf("RELEASE_NOTES: [", declIdx);
+    const body = notesDeclIdx === -1 ? null : extractBalanced(html, html.indexOf("[", notesDeclIdx), "[", "]");
+    if (body == null) {
+      bad("(h) could not extract G.whatsNew.RELEASE_NOTES's balanced array body");
+    } else {
+      const versions = [...body.matchAll(/version:\s*"([^"]+)"/g)].map((m) => m[1]);
+      const pkgVersion = PKG.version;
+      if (!versions.length) {
+        bad(`(h) G.whatsNew.RELEASE_NOTES is empty - package.json is at ${pkgVersion} with no matching "what's new" entry`);
+      } else if (versions[versions.length - 1] !== pkgVersion) {
+        bad(`(h) G.whatsNew.RELEASE_NOTES's last entry is ${versions[versions.length - 1]}, but package.json is ${pkgVersion} - add a release-notes entry for ${pkgVersion} (see G.whatsNew's own header comment for the plain-language style this needs)`);
+      } else {
+        // Confirm the CURRENT version's own entry actually has highlights -
+        // catches a bump that added the version key but left the array
+        // empty (e.g. a stub committed to satisfy this check literally).
+        const currentBlockIdx = body.lastIndexOf('version: "' + pkgVersion + '"');
+        const highlightsIdx = body.indexOf("highlights:", currentBlockIdx);
+        const highlightsBody = highlightsIdx === -1 ? null : extractBalanced(body, body.indexOf("[", highlightsIdx), "[", "]");
+        const highlightCount = highlightsBody == null ? 0 : (highlightsBody.match(/"(?:[^"\\]|\\.)*"/g) || []).length;
+        if (!highlightCount) {
+          bad(`(h) G.whatsNew.RELEASE_NOTES's entry for ${pkgVersion} has no highlights - a Soldier updating to this release would see an empty "What's new" panel`);
+        } else {
+          ok(`(h) G.whatsNew.RELEASE_NOTES has a real entry for the current version (${pkgVersion}, ${versions.length} total entries, ${highlightCount} highlight(s) for this one)`);
+        }
       }
     }
   }

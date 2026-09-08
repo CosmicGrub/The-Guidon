@@ -640,6 +640,8 @@ jobs:
             tests: "test:room-xeng test:guest-page test:room-tauri test:room-web"
           - name: "39-studygroupcallsigns-qrcode-tlsadversarial-iconregistry"
             tests: "test:studygroup-callsigns test:qrcode test:tls-adversarial test:icon-registry"
+          - name: "40-whatsnew-studyroomsshellgate-shareosaware"
+            tests: "test:whats-new test:study-rooms-shell-gate test:share-os-aware"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
