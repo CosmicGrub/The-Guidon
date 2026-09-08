@@ -35,6 +35,18 @@
 
 #include "qr_install.h"
 
+// Defense-in-depth on top of drawCard()'s qLines/aLines fix below: the
+// ESP32 Arduino core's default loop-task stack is 8192 bytes
+// (cores/esp32/main.cpp), and this override (a weak symbol the core
+// explicitly provides for exactly this) doubles it. qLines/aLines being
+// static already removed the one bug that actually bit this fork during
+// bring-up (see that comment for the full story), but ArduinoJson's
+// document handling and the nested wordWrap()/tft.draw* call chains
+// during a card render still use real stack, and the margin on an 8KB
+// budget was too thin to trust further UI growth against without
+// re-litigating this exact failure mode.
+size_t getArduinoLoopTaskStackSize(void) { return 16384; }
+
 // ---- SD card pins -------------------------------------------------------
 // NOT part of the user's own confirmed pin-mapping table (that table only
 // covered display + touch). Inferred from the Sunton ESP32-3248S035 board
@@ -74,7 +86,13 @@ static bool beginSdCard() {
 
 // ---- Backlight (PWM, TFT_BL from platformio.ini's build_flags = 27) ----
 static const int BL_PWM_CHANNEL = 0;
-static const int BL_PWM_FREQ = 5000;
+// 5kHz (the original value here) measurably desensitized the resistive
+// touch ADC - confirmed empirically on the physical device: 0/4s touch
+// hits with 5kHz PWM active, 12/4s with the backlight held plain digital
+// HIGH (no PWM at all). Testing a much higher frequency, well outside
+// XPT2046's own sampling range, before falling back to no-PWM/no-dimming
+// as the safe default. See HARDWARE.md's "Backlight PWM vs. touch" section.
+static const int BL_PWM_FREQ = 30000;
 static const int BL_PWM_RES_BITS = 8; // 0-255
 
 TFT_eSPI tft = TFT_eSPI();
@@ -121,9 +139,17 @@ static char cardA[2200];
 
 static uint8_t backlightPct = 80; // persisted in NVS, default 80%
 
-// touch debounce
-static uint32_t lastTouchMs = 0;
-static const uint32_t TOUCH_DEBOUNCE_MS = 180;
+// Edge-triggered touch, not time-debounced: a fixed 180ms cooldown after
+// every touch put an artificial floor under how fast two taps could ever
+// register, even a firm, deliberate double-tap - the wrong tool for "don't
+// fire twice from one held press", which is what it was actually guarding
+// against. wasTouched tracks the touch-down edge instead: an action fires
+// once when a press starts, not again until it's released and pressed
+// again, however long the finger lingers in between. TFT_eSPI's own
+// getTouch()/validTouch() already settle-filters spurious XPT2046 contact
+// bounce at the read level (Touch.h), so no additional debounce delay is
+// needed on top of that.
+static bool wasTouched = false;
 
 // ---------------------------------------------------------------------------
 // Backlight
@@ -361,6 +387,19 @@ static const int BODY_BOTTOM = SCREEN_H - FOOTER_H - 4;
 static const int LINE_H = 20;
 static const int BODY_W = SCREEN_W - 44; // leaves room for scroll chevrons
 
+// static, NOT stack-local: 40*80 + 80*80 = 9600 bytes, which alone already
+// exceeds the ESP32 Arduino core's default 8KB loop-task stack. This was
+// the real bug behind "touch does nothing" - the touch controller itself
+// is fine (see HARDWARE.md's Touch section); the FIRST tap that opened a
+// card overflowed the stack inside this function and the device silently
+// rebooted before finishing the redraw, landing back on the subject list
+// fast enough to look exactly like the tap was never registered. Safe as
+// static here: each call fully repopulates exactly qN/aN entries via
+// wordWrap() before anything reads them, and nothing ever reads past
+// qN/aN, so stale content from a previous card is never visible.
+static char qLines[40][80];
+static char aLines[80][80];
+
 static void drawCard() {
   tft.fillScreen(COL_BG);
   char hdr[48];
@@ -368,9 +407,7 @@ static void drawCard() {
   drawHeader(categories[currentCategory].name, true);
 
   tft.setTextFont(2);
-  char qLines[40][80];
   int qN = wordWrap(cardQ, BODY_W, qLines, 40);
-  char aLines[80][80];
   int aN = answerRevealed ? wordWrap(cardA, BODY_W, aLines, 80) : 0;
 
   // Build one combined layout: question (accent color), a rule, then answer
@@ -553,6 +590,10 @@ void setup() {
   // stage actually ran rather than silently hanging.
   Serial.println("GUIDON Flashcard OS booting...");
 
+  // 30kHz, not the 5kHz this originally shipped with - see BL_PWM_FREQ's
+  // own comment for the empirical A/B/C test (5kHz: 0/4s touch hits,
+  // plain digital no-PWM: 12/4s, 30kHz PWM: 23/4s) that found 5kHz was
+  // genuinely desensitizing the resistive touch ADC via switching noise.
   ledcSetup(BL_PWM_CHANNEL, BL_PWM_FREQ, BL_PWM_RES_BITS);
   ledcAttachPin(TFT_BL, BL_PWM_CHANNEL);
 
@@ -600,20 +641,21 @@ void setup() {
 
 void loop() {
   uint16_t tx, ty;
-  if (tft.getTouch(&tx, &ty)) {
-    uint32_t now = millis();
-    if (now - lastTouchMs > TOUCH_DEBOUNCE_MS) {
-      lastTouchMs = now;
-      switch (state) {
-        case STATE_SUBJECTS: handleSubjectsTouch(tx, ty); break;
-        case STATE_CARD:     handleCardTouch(tx, ty); break;
-        case STATE_SETTINGS: handleSettingsTouch(tx, ty); break;
-      }
-      switch (state) {
-        case STATE_SUBJECTS: drawSubjects(); break;
-        case STATE_CARD:     drawCard(); break;
-        case STATE_SETTINGS: drawSettings(); break;
-      }
+  bool touched = tft.getTouch(&tx, &ty);
+  if (touched && !wasTouched) {
+    // Rising edge only - fires once per press, immediately, regardless of
+    // how long the finger lingers afterward. See wasTouched's own comment
+    // for why this replaced a fixed post-touch cooldown.
+    switch (state) {
+      case STATE_SUBJECTS: handleSubjectsTouch(tx, ty); break;
+      case STATE_CARD:     handleCardTouch(tx, ty); break;
+      case STATE_SETTINGS: handleSettingsTouch(tx, ty); break;
+    }
+    switch (state) {
+      case STATE_SUBJECTS: drawSubjects(); break;
+      case STATE_CARD:     drawCard(); break;
+      case STATE_SETTINGS: drawSettings(); break;
     }
   }
+  wasTouched = touched;
 }

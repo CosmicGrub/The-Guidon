@@ -103,19 +103,36 @@ Full end-to-end bring-up against the physical device, in order:
   and a silent write stall from UART RX buffer overflow during content
   push. Full story in HARDWARE.md's "SD card" section; the actual push
   succeeded end to end — [`docs/sdloader_success.log`](docs/sdloader_success.log).
-- `flashcardos` compiles clean (RAM 9.7%, flash 30.3% on a 4MB/no-PSRAM
+- `flashcardos` compiles clean (RAM 12.6%, flash 30.3% on a 4MB/no-PSRAM
   target), was flashed to the physical device with real content already
   on its microSD card, and its own serial log confirms a clean full boot:
   display init, touch calibration loaded, SD card found, **all 78
   categories loaded**, subject list shown —
   [`docs/flashcardos_boot_output.log`](docs/flashcardos_boot_output.log).
+- Touch: physically diagnosed live on the real device after taps appeared
+  to do nothing. Two real, separate bugs found and fixed, both confirmed
+  against actual hardware, not guessed: (1) a stack overflow in
+  `drawCard()` that crashed the device the instant a card was opened, and
+  (2) the backlight's 5kHz PWM was genuinely desensitizing the resistive
+  touch ADC via switching noise (0 touch hits/4s at 5kHz vs. 23/4s at
+  30kHz, measured directly) — which is why taps failed even on the
+  subject list, a screen bug (1) never touched. Touch handling also
+  switched to edge-triggered (no more fixed post-touch cooldown). Full
+  root-cause writeup, including the raw comparison logs, in HARDWARE.md's
+  "Touch" section.
+- Display SPI clock pushed to 80MHz — the ESP32's undivided APB clock,
+  the literal fastest its SPI peripheral can produce — and verified
+  clean via the same GRAM round-trip test, not assumed safe. See
+  HARDWARE.md's "Display SPI clock" section.
 
 **Not directly observed by this session** (no camera on the physical
-device): the actual on-screen rendering and touch interaction — subject
-list layout, card view, settings/QR screen — haven't been visually
-confirmed correct here, only that the firmware reaches and reports each
-state correctly over serial. Worth a visual pass on the physical device
-before calling the UI itself (as opposed to its boot path) fully done.
+device): the actual on-screen rendering — subject list layout, card view,
+settings/QR screen — hasn't been visually confirmed correct here, only
+that the firmware reaches and reports each state correctly over serial,
+and (for touch) that raw+calibrated readings track real contact
+correctly. Worth a visual pass on the physical device to confirm layout
+looks right, on top of the "does it respond at all" question this session
+already answered.
 
 ## Repo layout
 

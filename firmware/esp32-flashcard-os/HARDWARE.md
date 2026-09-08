@@ -171,6 +171,122 @@ successful push) and [`docs/flashcardos_boot_output.log`](docs/flashcardos_boot_
 (the real firmware's own boot, with real content: `SD: card found on
 CS=5.` / `Loaded 78 categories.` / `Ready - showing subject list.`).
 
+## Touch — a real firmware bug, not a hardware fault
+
+The real firmware shipped with taps that appeared to do nothing at all -
+finger and stylus, hard and soft, repeatedly. Diagnosed against the
+physical device with a dedicated raw-SPI touch probe (`env:touchtest`,
+`src/touchtest_main.cpp`) that prints both `tft.getTouchRaw()`/
+`getTouchRawZ()` (straight XPT2046 ADC, no calibration math) and the
+calibrated `tft.getTouch()` result continuously, while the screen was
+actually tapped, dragged and pressed across its full surface with both
+finger and stylus.
+
+**Result: the touch controller works perfectly.** Baseline (untouched) `z`
+sits at 10-20; under real contact it jumped to 1000-2300+, and raw x/y
+swept smoothly across their full range in direct correlation with where
+the screen was actually touched. `getTouch()` returned sane, in-range
+calibrated coordinates throughout - a stylus not helping was the correct
+tell that this was never a "resistive panel needs firmer point pressure"
+problem (the one failure mode a stylus reliably fixes); it ruled that out
+in favor of something in software, not the panel itself.
+
+**Root cause: a stack overflow in `drawCard()`.** That function declared
+`char qLines[40][80]` (3200 bytes) and `char aLines[80][80]` (6400 bytes)
+as stack-local variables - 9600 bytes alone, before its other locals or
+the call chain through `loop()`/`wordWrap()`/TFT_eSPI's own drawing calls,
+against the ESP32 Arduino core's default 8192-byte loop-task stack. The
+FIRST tap that actually opened a card (transitioning off the subject
+list, where `drawCard()` had never yet run) overflowed the stack and the
+device silently rebooted mid-redraw - fast enough, and landing right back
+on the same subject list, to look exactly like the tap had never
+registered. Every subsequent tap hit the same fate the instant it tried
+to open a card, which is exactly the reported symptom.
+
+Fixed two ways, both in `src/main.cpp`:
+1. `qLines`/`aLines` are now `static`, not stack-local - the actual fix.
+   Safe because every call fully repopulates exactly `qN`/`aN` entries via
+   `wordWrap()` before anything reads them, and nothing ever reads past
+   that count.
+2. `getArduinoLoopTaskStackSize()` (a weak symbol `cores/esp32/main.cpp`
+   provides for exactly this) overridden to return 16384 instead of the
+   8192 default, as headroom against this exact failure mode recurring as
+   the UI grows, not as the fix itself.
+
+**Also improved while diagnosing:** touch handling switched from a fixed
+180ms post-touch cooldown to edge-triggered detection (`loop()`'s
+`wasTouched` bool - an action fires once on the touch-DOWN edge, not
+again until release-then-repress, however long a press is held). The old
+cooldown was guarding against one held press firing twice, which
+edge-triggering solves structurally instead of with a timer, removing an
+artificial floor on how fast two deliberate taps could ever register.
+
+### Second, more fundamental bug: PWM backlight noise desensitizing touch
+
+The stack-overflow fix above turned out not to be the whole story - after
+shipping it, the user reported taps STILL not registering at all,
+including on the subject list itself (a screen `drawCard()`'s bug never
+touched). Rather than theorize further, this was instrumented directly in
+`main.cpp`'s own `setup()`/`loop()` (not a side sketch) with a live
+touch-poll window run against the physical device in real time, tapped by
+the user on request:
+
+| Backlight config | Touch hits in 4s of active tapping |
+|---|---|
+| PWM @ 5kHz (original) | **0** |
+| Plain digital HIGH (no PWM at all) | 12 |
+| PWM @ 30kHz | 23 |
+
+That's conclusive: the original 5kHz `ledcSetup()` backlight PWM was
+genuinely desensitizing the resistive touch controller's ADC via
+switching noise - a real, documented interaction on cheaper boards where
+backlight and touch share power/ground planes without generous
+decoupling. 5kHz sits close enough to the touch read's own sampling
+cadence to alias badly; 30kHz (still well within the ESP32 LEDC
+peripheral's normal range at 8-bit duty resolution) sits far enough
+outside it to leave touch fully clean while keeping real PWM dimming
+(not just an on/off backlight). Fixed by raising `BL_PWM_FREQ` from 5000
+to 30000 in `src/main.cpp` - one constant, no structural change. Full
+raw logs for all three configurations:
+[`docs/touch_pwm_5khz_broken.log`](docs/touch_pwm_5khz_broken.log),
+[`docs/touch_pwm_disabled_working.log`](docs/touch_pwm_disabled_working.log),
+[`docs/touch_pwm_30khz_working.log`](docs/touch_pwm_30khz_working.log).
+
+This also resolves an apparent contradiction from earlier bring-up: a
+touch calibration was already sitting in NVS the very first time this
+session checked, despite 5kHz PWM being active from that firmware's
+first boot too. Calibration's own retry-until-you-hit-it interaction
+(the user pressing repeatedly until a corner target registers) can still
+occasionally get a clean reading through 5kHz-level noise; a single
+un-repeated UI tap, the normal interaction this app actually needs, much
+less reliably can - which is exactly why calibration once succeeded
+while every-day taps afterward did not.
+
+## Display SPI clock — pushed to the chip's actual ceiling, verified
+
+Bring-up originally shipped a conservative `SPI_FREQUENCY` (27MHz) with a
+"raise once bring-up is clean" note. Once it was: rather than pick a
+commonly-cited "safe" number for ST7796 boards without testing it against
+*this* physical unit (the same mistake the original ILI9341-vs-ST7796
+question would have been, had it not been tested), `env:bringup`'s GRAM
+read/write round-trip test (see above) was re-run at increasing clocks
+against the real device.
+
+**80MHz - the ESP32's undivided APB clock, the fastest SPI clock the
+chip's peripheral can produce at all - passed cleanly**, all five
+round-trip points matching exactly. That's not a conservative choice
+raised as far as felt comfortable; it's the literal hardware ceiling,
+confirmed reliable on this unit, so `SPI_FREQUENCY=80000000` is what
+`platformio.ini` ships. (`SPI_READ_FREQUENCY` stays at 16MHz - reads only
+matter for this verification test itself, not for anything the UI does at
+runtime, so there was no reason to risk destabilizing the test that
+proves the write clock is trustworthy. `SPI_TOUCH_FREQUENCY` stays at
+2.5MHz for a different reason: that's the XPT2046 touch controller's own
+commonly-reliable ceiling, a genuinely different piece of silicon on a
+separate SPI transaction pattern from the ST7796 display bus - already
+confirmed reliable during touch bring-up above, and touch responsiveness
+turned out to be a software problem (see above), not a clock-speed one.)
+
 ## Backlight
 
 GPIO 27, active-HIGH, driven via `ledcWrite` PWM (not a bare digital

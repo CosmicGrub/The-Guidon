@@ -1,0 +1,418 @@
+ets Jul 29 2019 12:21:46
+
+rst:0x1 (POWERON_RESET),boot:0x17 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:2
+load:0x3fff0030,len:1184
+load:0x40078000,len:13232
+load:0x40080400,len:3028
+entry 0x400805e4
+
+GUIDON Flashcard OS - touch diagnostic
+Printing raw ADC (x,y,z) + calibrated getTouch() every 150ms.
+Commands: C = clear + recalibrate now, R = show stored calibration
+
+Loaded existing calibration: [282, 3493, 302, 3557, 4]
+raw x=   0 y=3335 z=  16 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3412 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3421 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3357 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3375 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3423 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3475 z=   6 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3442 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3419 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3410 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3403 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3389 z=  16 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3545 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3417 z=  18 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3511 z=   6 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3420 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3407 z=  16 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3414 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3418 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3399 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3427 z=  17 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3407 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3410 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3412 z=   9 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3422 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3358 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3385 z=  21 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3407 z=  16 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3410 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3423 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3438 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3416 z=  17 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3433 z=   9 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3407 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3410 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3391 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3373 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3400 z=  39 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3377 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3532 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3403 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3431 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3389 z=   9 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3374 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3380 z=  24 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3422 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3436 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3406 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3427 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3375 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3405 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3419 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3405 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3423 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3413 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3418 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3372 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3422 z=   9 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3430 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3427 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3420 z=  17 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3416 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3422 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3414 z=  16 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3420 z=  17 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3417 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3403 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3508 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3444 z=   8 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3415 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3413 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3411 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3402 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3412 z=  18 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3418 z=  16 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3421 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3435 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3409 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3438 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3417 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3453 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3422 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3411 z=  16 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3365 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3431 z=   7 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3426 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3412 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3414 z=  17 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3327 z=   6 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3478 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3422 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3420 z=  16 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3418 z=  19 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3362 z=   9 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3396 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3415 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3431 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3407 z=   9 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3447 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3434 z=  20 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3427 z=  16 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3406 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3421 z=  18 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3410 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3407 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3340 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3400 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3438 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3410 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3447 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3421 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3410 z=  16 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3407 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3398 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3323 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3418 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3418 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3428 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3399 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3348 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3410 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3411 z=   9 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3412 z=  16 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3423 z=  19 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3417 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3387 z=  46 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3428 z=  16 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3367 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3418 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3421 z=  16 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3415 z=  16 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3417 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3449 z=  16 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3347 z=  16 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3462 z=   3 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3411 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3359 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3539 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3363 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3501 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3435 z=  17 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3448 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3411 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3413 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3348 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3508 z=   5 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3409 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3436 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3452 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3411 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3411 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3487 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3407 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3409 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3420 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3419 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3421 z=  16 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3410 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3418 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3435 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3417 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3414 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3418 z=  19 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3423 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3430 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3524 z=   8 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3451 z=  16 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3422 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3434 z=   9 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3401 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3536 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3426 z=  17 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3405 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3331 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3443 z=  17 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3379 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3409 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3443 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3423 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3420 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3419 z=  17 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3423 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3442 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3407 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3421 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3412 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3417 z=  16 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3412 z=  17 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3365 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3408 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3413 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3405 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3396 z=  20 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3462 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3449 z=   9 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3414 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3437 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3454 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3532 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3421 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3470 z=  21 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3478 z=   3 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3421 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3444 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3409 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3533 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3415 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3455 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3423 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3371 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3374 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3324 z=   8 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3419 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3410 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3444 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3433 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3400 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3419 z=  16 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3419 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3417 z=  16 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3402 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3411 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3407 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3383 z=  32 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3418 z=  16 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3417 z=   9 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3429 z=   9 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3409 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3409 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3450 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3407 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3406 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3410 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3423 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3437 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3419 z=  18 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3411 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3399 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3470 z=   6 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3380 z=   7 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3414 z=   9 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3418 z=  17 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3408 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3342 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3414 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3414 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3402 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3411 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3413 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3405 z=   9 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3422 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3435 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3409 z=  16 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3419 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3414 z=  18 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3422 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3526 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3379 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3446 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3397 z=   8 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3414 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3412 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3412 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3325 z=   7 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3416 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3412 z=  17 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3445 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3404 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3414 z=  13 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3410 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3414 z=  17 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3396 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3477 z=   7 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3419 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3419 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3414 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3411 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3408 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3411 z=  16 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3412 z=  12 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3426 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3421 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3420 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3460 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3475 z=   6 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3413 z=  10 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3406 z=   9 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3418 z=  17 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3371 z=  11 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3400 z=  15 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3502 z=   3 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=   0 y=3410 z=  14 rawTouched=1  |  cal x=   0 y= 282 touched=0
+raw x=1699 y=1132 z=2197 rawTouched=1  |  cal x= 128 y= 362 touched=5
+raw x=1698 y=1592 z=2066 rawTouched=1  |  cal x= 131 y= 296 touched=5
+raw x=1924 y=2134 z=1749 rawTouched=1  |  cal x= 154 y= 220 touched=5
+raw x=2196 y=2727 z=1417 rawTouched=1  |  cal x= 175 y= 152 touched=1
+raw x=2382 y=3102 z=1405 rawTouched=1  |  cal x= 195 y=  99 touched=4
+raw x=   0 y=3443 z=  14 rawTouched=1  |  cal x= 195 y=  99 touched=0
+raw x=   0 y=3414 z=  15 rawTouched=1  |  cal x= 195 y=  99 touched=0
+raw x=1397 y=3023 z=1167 rawTouched=1  |  cal x= 101 y= 114 touched=2
+raw x=   0 y=3464 z=  12 rawTouched=1  |  cal x= 101 y= 114 touched=0
+raw x=   0 y=3417 z=  13 rawTouched=1  |  cal x= 101 y= 114 touched=0
+raw x=   0 y=3427 z=  13 rawTouched=1  |  cal x= 101 y= 114 touched=0
+raw x=   0 y=3405 z=  22 rawTouched=1  |  cal x= 101 y= 114 touched=0
+raw x=   0 y=3424 z=  16 rawTouched=1  |  cal x= 101 y= 114 touched=0
+raw x=1991 y=3128 z=1538 rawTouched=1  |  cal x= 156 y=  99 touched=4
+raw x=1995 y=3125 z=1541 rawTouched=1  |  cal x= 156 y=  99 touched=5
+raw x=   0 y=3455 z=  13 rawTouched=1  |  cal x= 156 y=  99 touched=0
+raw x=1420 y=2632 z=1493 rawTouched=1  |  cal x= 101 y= 168 touched=4
+raw x=1390 y=2621 z=1656 rawTouched=1  |  cal x= 101 y= 168 touched=4
+raw x=1372 y=2610 z=1667 rawTouched=1  |  cal x=  99 y= 169 touched=5
+raw x=1256 y=2508 z=1543 rawTouched=1  |  cal x=  84 y= 186 touched=4
+raw x= 914 y=2256 z=1673 rawTouched=1  |  cal x=  55 y= 222 touched=3
+raw x= 755 y=2065 z=1695 rawTouched=1  |  cal x=  41 y= 247 touched=4
+raw x= 676 y=1704 z=1765 rawTouched=1  |  cal x=  37 y= 290 touched=5
+raw x= 721 y=1579 z=1885 rawTouched=1  |  cal x=  40 y= 309 touched=5
+raw x= 790 y=1524 z=1883 rawTouched=1  |  cal x=  50 y= 318 touched=4
+raw x=1009 y=1429 z=2011 rawTouched=1  |  cal x=  70 y= 329 touched=5
+raw x=1296 y=1444 z=2065 rawTouched=1  |  cal x=  95 y= 325 touched=4
+raw x=1657 y=1493 z=1979 rawTouched=1  |  cal x= 133 y= 320 touched=4
+raw x=2116 y=1490 z=2153 rawTouched=1  |  cal x= 172 y= 323 touched=5
+raw x=2475 y=1410 z=2235 rawTouched=1  |  cal x= 203 y= 332 touched=4
+raw x=2810 y=1275 z=2252 rawTouched=1  |  cal x= 234 y= 351 touched=5
+raw x=3109 y=1125 z=2296 rawTouched=1  |  cal x= 261 y= 372 touched=4
+raw x=3243 y= 885 z=2343 rawTouched=1  |  cal x= 270 y= 405 touched=4
+raw x=2945 y= 597 z=2355 rawTouched=1  |  cal x= 237 y= 445 touched=5
+raw x=2420 y= 441 z=2282 rawTouched=1  |  cal x= 188 y= 462 touched=5
+raw x=1773 y= 409 z=2208 rawTouched=1  |  cal x= 128 y= 459 touched=4
+raw x=1272 y= 562 z=2195 rawTouched=1  |  cal x=  87 y= 442 touched=5
+raw x=1275 y= 850 z=2188 rawTouched=1  |  cal x=  94 y= 397 touched=5
+raw x=1699 y=1157 z=2251 rawTouched=1  |  cal x= 136 y= 362 touched=5
+raw x=2299 y=1390 z=2205 rawTouched=1  |  cal x= 196 y= 329 touched=4
+raw x=3061 y=1720 z=2128 rawTouched=1  |  cal x= 261 y= 281 touched=5
+raw x=3397 y=2147 z=1987 rawTouched=1  |  cal x= 288 y= 225 touched=5
+raw x=3580 y=2619 z=1888 rawTouched=1  |  cal x= 302 y= 164 touched=4
+raw x=3533 y=3014 z=1705 rawTouched=1  |  cal x= 294 y= 108 touched=4
+raw x=3141 y=3334 z=1479 rawTouched=1  |  cal x= 256 y=  67 touched=4
+raw x=2673 y=3484 z=1350 rawTouched=1  |  cal x= 211 y=  51 touched=5
+raw x=2267 y=3487 z=1254 rawTouched=1  |  cal x= 174 y=  52 touched=4
+raw x=1749 y=3461 z=1094 rawTouched=1  |  cal x= 130 y=  54 touched=2
+raw x=1288 y=3396 z=1077 rawTouched=1  |  cal x=  86 y=  63 touched=4
+raw x= 913 y=3246 z=1132 rawTouched=1  |  cal x=  54 y=  84 touched=5
+raw x= 790 y=2989 z=1185 rawTouched=1  |  cal x=  48 y= 121 touched=4
+raw x=1149 y=2771 z=1469 rawTouched=1  |  cal x=  86 y= 155 touched=5
+raw x=1753 y=2790 z=1665 rawTouched=1  |  cal x= 147 y= 143 touched=5
+raw x=2442 y=2841 z=1703 rawTouched=1  |  cal x= 204 y= 138 touched=5
+raw x=2948 y=2679 z=1860 rawTouched=1  |  cal x= 247 y= 164 touched=3
+raw x=3181 y=2322 z=1965 rawTouched=1  |  cal x= 265 y= 215 touched=4
+raw x=3157 y=1987 z=2011 rawTouched=1  |  cal x= 261 y= 261 touched=5
+raw x=2870 y=1807 z=2074 rawTouched=1  |  cal x= 230 y= 280 touched=4
+raw x=2478 y=1740 z=2056 rawTouched=1  |  cal x= 194 y= 291 touched=5
+raw x=1993 y=1612 z=2040 rawTouched=1  |  cal x= 148 y= 313 touched=5
+raw x=1413 y=1403 z=1969 rawTouched=1  |  cal x=  97 y= 334 touched=4
+raw x= 944 y=1210 z=2013 rawTouched=1  |  cal x=  55 y= 363 touched=4
+raw x= 781 y=1024 z=2005 rawTouched=1  |  cal x=  47 y= 389 touched=5
+raw x=1142 y= 800 z=2218 rawTouched=1  |  cal x=  87 y= 414 touched=5
+raw x=1749 y= 875 z=2247 rawTouched=1  |  cal x= 142 y= 401 touched=5
+raw x=2238 y=1218 z=2210 rawTouched=1  |  cal x= 180 y= 350 touched=3
+raw x=2412 y=1834 z=2032 rawTouched=1  |  cal x= 195 y= 265 touched=3
+raw x=2339 y=2167 z=1901 rawTouched=1  |  cal x= 186 y= 226 touched=5
+raw x=2189 y=2366 z=1786 rawTouched=1  |  cal x= 173 y= 199 touched=4
+raw x=2169 y=2754 z=1620 rawTouched=1  |  cal x= 173 y= 146 touched=4
+raw x=2680 y=2691 z=1840 rawTouched=1  |  cal x= 225 y= 164 touched=4
+raw x=2836 y=2370 z=1836 rawTouched=1  |  cal x= 231 y= 205 touched=5
+raw x=2319 y=2371 z=1835 rawTouched=1  |  cal x= 181 y= 200 touched=4
+raw x=1798 y=2442 z=1801 rawTouched=1  |  cal x= 134 y= 191 touched=5
+raw x=1432 y=2372 z=1604 rawTouched=1  |  cal x=  99 y= 204 touched=5
+raw x=1280 y=2221 z=1775 rawTouched=1  |  cal x=  94 y= 234 touched=4
+raw x=   0 y=3340 z=  19 rawTouched=1  |  cal x= 148 y= 248 touched=4
+raw x=2461 y=2139 z=1943 rawTouched=1  |  cal x= 205 y= 232 touched=4
+raw x=3052 y=2030 z=2001 rawTouched=1  |  cal x= 258 y= 249 touched=5
+raw x=3087 y=1874 z=2075 rawTouched=1  |  cal x= 247 y= 273 touched=4
+raw x=2603 y=1764 z=2032 rawTouched=1  |  cal x= 207 y= 283 touched=4
+raw x=1885 y=1807 z=1865 rawTouched=1  |  cal x= 135 y= 279 touched=5
+raw x=1144 y=1741 z=1881 rawTouched=1  |  cal x=  74 y= 290 touched=4
+raw x= 924 y=1478 z=1914 rawTouched=1  |  cal x=  61 y= 329 touched=5
+raw x=1187 y=1066 z=2053 rawTouched=1  |  cal x=  87 y= 369 touched=5
+raw x=1606 y=1035 z=2203 rawTouched=1  |  cal x= 126 y= 382 touched=5
+raw x=2145 y=1147 z=2246 rawTouched=1  |  cal x= 176 y= 363 touched=5
+raw x=2524 y=1309 z=2294 rawTouched=1  |  cal x= 208 y= 348 touched=5
+raw x=2682 y=1100 z=2262 rawTouched=1  |  cal x= 220 y= 379 touched=5
+raw x=2684 y= 961 z=2318 rawTouched=1  |  cal x= 221 y= 394 touched=5
+raw x=2692 y= 859 z=2338 rawTouched=1  |  cal x= 220 y= 408 touched=4
+raw x=   0 y=3365 z=  10 rawTouched=1  |  cal x= 220 y= 408 touched=0
+raw x=   0 y=3350 z=  45 rawTouched=1  |  cal x= 220 y= 408 touched=0
+raw x=   0 y=3382 z=  15 rawTouched=1  |  cal x= 220 y= 408 touched=0
+raw x=   0 y=3349 z=  13 rawTouched=1  |  cal x= 220 y= 408 touched=0
+raw x=   0 y=3375 z=  10 rawTouched=1  |  cal x= 220 y= 408 touched=0
+raw x=   0 y=3368 z=  11 rawTouched=1  |  cal x= 220 y= 408 touched=0
+raw x=   0 y=3370 z=  13 rawTouched=1  |  cal x= 220 y= 408 touched=0
+raw x=   0 y=3418 z=  22 rawTouched=1  |  cal x= 220 y= 408 touched=0
+raw x=   0 y=3375 z=  11 rawTouched=1  |  cal x= 220 y= 408 touched=0
+raw x=   0 y=3420 z=  10 rawTouched=1  |  cal x= 220 y= 408 touched=0
+raw x=   0 y=3394 z=  11 rawTouched=1  |  cal x= 220 y= 408 touched=0
+raw x=   0 y=3374 z=  18 rawTouched=1  |  cal x= 220 y= 408 touched=0
+raw x=   0 y=3371 z=  14 rawTouched=1  |  cal x= 220 y= 408 touched=0
+raw x=   0 y=3368 z=  12 rawTouched=1  |  cal x= 220 y= 408 touched=0
+raw x=   0 y=3371 z=  11 rawTouched=1  |  cal x= 220 y= 408 touched=0
+raw x=   0 y=3405 z=  16 rawTouched=1  |  cal x= 220 y= 408 touched=0
+raw x=   0 y=3375 z=  18 rawTouched=1  |  cal x= 220 y= 408 touched=0
+raw x=   0 y=3381 z=  13 rawTouched=1  |  cal x= 220 y= 408 touched=0
+raw x=   0 y=3370 z=   9 rawTouched=1  |  cal x= 220 y= 408 touched=
