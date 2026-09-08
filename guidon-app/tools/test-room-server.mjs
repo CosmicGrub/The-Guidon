@@ -150,6 +150,42 @@ try {
     bad3.hit && bad3.value.status === 426 && /Sec-WebSocket-Version: 13/.test(bad3.value.text) ? ok("(2) a bad Sec-WebSocket-Version is refused with 426 + Sec-WebSocket-Version: 13") : bad("(2) bad version -> " + JSON.stringify(bad3.value && bad3.value.text.slice(0, 120)));
   }
 
+  /* ---------------- (2b) M9: mid-handshake disconnect ----------------
+     A client that opens the TCP socket, sends a PARTIAL Upgrade request
+     (headers with no terminating blank line - deliberately incomplete, so
+     Node's http parser is still waiting for more) and then abruptly
+     destroys the socket before ever completing it. handleUpgrade() in
+     tools/room-server.mjs only calls conns.add() (the Set that srv.stats()
+     .connections reports the live size of) AFTER it has written the 101
+     response, which itself only happens once Node's own request parser has
+     seen a COMPLETE request - so a socket that never finishes the request
+     should never be counted, and its abrupt end should surface as an
+     ordinary socket close, not an exception anywhere in this process.
+     This suite only reaches the plain (Node http) listener raw-socket-style
+     (as (2) above does) - the TLS listener has its own dedicated suite
+     (tools/test-room-server-tls.mjs) and there is no Tauri/Rust listener in
+     this file to reach, so only the plain listener is exercised here. */
+  {
+    const before = srv.stats().connections;
+    let uncaught = null;
+    const onUncaught = (e) => { uncaught = uncaught || e; };
+    const onRejection = (e) => { uncaught = uncaught || e; };
+    process.on("uncaughtException", onUncaught);
+    process.on("unhandledRejection", onRejection);
+    const key4 = Buffer.from("mid-handshake-key").toString("base64");
+    const sock4 = connect({ host: "127.0.0.1", port: srv.port });
+    await new Promise((res, rej) => { sock4.on("connect", res); sock4.on("error", rej); });
+    sock4.on("error", () => {}); // destroy() below can raise ECONNRESET locally; not the exception under test
+    sock4.write("GET " + S.ENDPOINTS.ws + "?room=" + ROOM + "&role=peer HTTP/1.1\r\nHost: 127.0.0.1:" + srv.port + "\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: " + key4 + "\r\nSec-WebSocket-Version: 13\r\n");
+    await sleep(150); // give the server a moment to (not) act on the incomplete request
+    sock4.destroy();
+    const settled = await until(() => srv.stats().connections === before ? true : null, 3000);
+    process.removeListener("uncaughtException", onUncaught);
+    process.removeListener("unhandledRejection", onRejection);
+    !uncaught ? ok("(2b) a mid-handshake disconnect (partial Upgrade request, no terminating blank line, socket destroyed) raised no unhandled exception") : bad("(2b) mid-handshake disconnect threw: " + (uncaught && uncaught.stack ? uncaught.stack.split("\n").slice(0, 3).join(" ") : String(uncaught)));
+    settled.hit ? ok("(2b) srv.stats().connections returned to " + before + " shortly after the half-open socket was destroyed (no leaked counted slot)") : bad("(2b) srv.stats().connections stuck at " + srv.stats().connections + " (before " + before + ") - the half-open connection leaked a counted slot");
+  }
+
   /* ---------------- (3) relay ---------------- */
   {
     const HOST = "NODEHOST", A = "PEERAAAA", B = "PEERBBBB";

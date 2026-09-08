@@ -94,7 +94,12 @@
     kind: "tauri-listener", peer: "0.0.0.0 (Rust LAN listener)",
     send: function (frame, to) {
       rt.sends++;
-      invoke("room_send", { frame: frame, to: to == null ? null : String(to) }).catch(function (e) { rt.sendErrors++; rt.lastError = String(e && e.message ? e.message : e); });
+      invoke("room_send", { frame: frame, to: to == null ? null : String(to) }).catch(function (e) {
+        rt.sendErrors++;
+        rt.lastError = String(e && e.message ? e.message : e);
+        rt.notice = "A message could not be sent: " + rt.lastError;
+        redraw();
+      });
       return true;
     },
     onmessage: function (h) { rt.handler = typeof h === "function" ? h : null; },
@@ -133,6 +138,20 @@
     },
     notice: function () { return rt.notice; },
     addresses: addresses,
+    /* General-purpose getter for the native TLS identity's fingerprint
+       (rt.info.identity.fp - see secureJoinUrl()'s own comment above for
+       where rt.info.identity comes from). Added here on the transport
+       object itself, NOT on window.__GUIDON_ROOM__ below (a first attempt
+       put it there, which studygroup.js can never reach per this file's
+       own header comment a few lines up: "studygroup.js never touches
+       window.__GUIDON_ROOM__ directly... it goes through the seam
+       exclusively" - the exact convention secureJoinUrl() just above
+       already follows correctly). Consumed by studygroup.js's host(),
+       which awaits hostStart() before calling this so rt.info is already
+       populated by the time it does. Returns null when no room is active
+       or the native side reported no identity (a pre-rebuild Rust binary,
+       say) - host() falls back to its own local identity in that case. */
+    fp: function () { return (rt.info && rt.info.identity && rt.info.identity.fp) || null; },
   };
 
   /* Rust -> page. msg is one of
@@ -188,6 +207,17 @@
     addresses: addresses,
     notice: function () { return rt.notice; },
     lastError: function () { return rt.lastError; },
+    /* General-purpose getter for the native TLS identity's fingerprint,
+       for anything inspecting window.__GUIDON_ROOM__ directly (a debug
+       console, a diagnostic script). studygroup.js does NOT read this one
+       - per this file's own header, it never touches window.__GUIDON_ROOM__
+       directly, only the `transport` object below via the seam - so its
+       actual consumer is the identically-named fp() getter ON `transport`
+       (see that object's own comment for why it had to live there
+       instead). Both read the same rt.info.identity.fp; kept as two
+       getters rather than one because they serve two different, real
+       access paths, not because of a mistake. */
+    fp: function () { return (rt.info && rt.info.identity && rt.info.identity.fp) || null; },
     peers: function () { return { open: rt.peers.open, close: rt.peers.close, frames: rt.frames, sends: rt.sends, sendErrors: rt.sendErrors }; },
     stats: function () { return invoke("room_stats", {}); },
     transport: transport,

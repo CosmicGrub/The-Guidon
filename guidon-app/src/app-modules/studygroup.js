@@ -67,6 +67,16 @@
      after the END marker. */
   var DEFAULTS = { pingMs: 5000, missLimit: 3, holdMs: 60000, pendingMs: 300000, renderMs: 100, snapshotMs: 50 };
   var HOTSPOT_CAP = 8;
+  /* Single source of truth for "Study Rooms needs a native shell" (2026-09-08)
+     - a plain browser tab has no way to host a LAN listener or complete a
+     pinned TLS handshake (see room-web.js's own nativeTlsPlugin()/
+     SECURE_NO_NATIVE_TEXT for the secure-join-specific case this is the
+     feature-level generalization of), so this is the ONLY way GUIDON ever
+     runs on iOS. Read by src/index.html's navButton() (the greyed-out nav
+     entry) and share.js's "Study solo or with others?" fork, so the exact
+     same sentence appears everywhere this limitation is explained rather
+     than three independently-typed copies drifting apart over time. */
+  var NEEDS_SHELL_TEXT = "Study Rooms needs the GUIDON app on Android or a PC — it can't run in a browser tab.";
   var HELD_SEAT_TEXT = "That seat is held for its own resume token. Reconnect from the device that holds it, or wait for the hold to end.";
   var B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
@@ -622,6 +632,21 @@
     } catch (e) { /* fall through to the random token */ }
     return { fp: base32(randomBytes(16).slice(0, 5)), kind: "random128", key: null };
   }
+  /* room-tls-and-discovery-pitch.md Section 1.1/1.3.6: when the attached
+     transport already has a native, TLS-pinned identity (room-tauri.js's
+     fp() getter, wired to rt.info.identity.fp - the same SPKI-derived
+     value the "Secure join link" QR/text already pins to), host() should
+     read THAT fp instead of minting a second, unrelated one via
+     makeIdentity() - the whole point of the doc's channel-binding design
+     is that the fp a human compares IS the TLS pin, not a coincidentally
+     similar-looking but cryptographically unrelated JS keypair's own
+     digest. Peers are unaffected (per the doc's own carve-out), so only
+     host() calls this. */
+  function nativeIdentityFp() {
+    var t = rt.transport;
+    try { if (t && typeof t.fp === "function") { var v = t.fp(); if (v) return String(v); } } catch (e) {}
+    return null;
+  }
   function displayName() {
     try { var p = G.profile && G.profile.cached ? G.profile.cached() : null; if (p && p.displayName) return String(p.displayName); } catch (e) {}
     return "GUEST";
@@ -688,11 +713,63 @@
   function onTransportClosed(t) {
     if (rt.transport !== t || !rt.state) return;
     if (rt.state.role === "peer" && !rt.state.terminal) {
+      var prev = rt.state;
       rt.state = clone(rt.state);
       rt.state.terminal = { kind: "network-lost", reason: "The connection closed." };
+      announceStateTransition(prev, rt.state);
       stopTimers();
       scheduleRender();
     }
+  }
+  /* Accessibility audit finding (H5): drawWaiting()/rosterTable()/
+     drawTerminal() only ever rewrite DOM text on a join/leave/admit/kick/
+     host-left/turn transition - with no aria-live region anywhere in this
+     file and no util().announce() call for any of it (the only two
+     announce() calls that existed were for the cosmetic call-sign dice
+     spin). A blind/low-vision user gets no indication anything changed
+     until they manually re-navigate the panel. Hooked at apply()/
+     onTransportClosed() - the two places rt.state is actually REPLACED
+     with a new value from a real state transition - rather than inside
+     draw(), which re-renders the SAME state repeatedly and would announce
+     on every redundant redraw, not just on a real change. Diffs prev vs
+     next explicitly (never re-announces something already true) and only
+     covers the specific transitions the audit named: admitted/seated,
+     terminal reasons, your-turn, and seat join/online-offline - not every
+     conceivable field change (e.g. per-card score ticks), which would be
+     noisy rather than useful for a live multi-round session. */
+  function announceStateTransition(prev, next) {
+    if (!next) return;
+    try {
+      if (!util().announce) return;
+      if (next.role === "peer" && (!prev || prev.joinState !== next.joinState)) {
+        if (next.joinState === "pending") util().announce("Reaching the host. Waiting to be admitted.");
+        else if (next.joinState === "admitted") util().announce("Admitted to the room. Waiting for the next card.");
+        else if (next.joinState === "seated") util().announce("Seated in the room.");
+      }
+      var prevKind = prev && prev.terminal ? prev.terminal.kind : null;
+      var nextKind = next.terminal ? next.terminal.kind : null;
+      if (nextKind && nextKind !== prevKind) {
+        var msg = nextKind === "host-left" ? "The host left the room."
+          : nextKind === "network-lost" ? "Connection to the host was lost."
+          : nextKind === "kicked" ? "You were removed from the room."
+          : nextKind === "rejected" ? "The host turned down your request to join."
+          : "The session has ended.";
+        util().announce(msg);
+      }
+      if (next.phase === "play" && next.self && next.turnSeat === next.self.seatNo && (!prev || prev.turnSeat !== next.turnSeat)) {
+        util().announce("Your turn.");
+      }
+      if (next.seats && next.self) {
+        var prevMap = {};
+        (prev && prev.seats ? prev.seats : []).forEach(function (s) { prevMap[s.seatNo] = s; });
+        next.seats.forEach(function (s) {
+          if (s.fp === next.self.fp) return; // don't announce the local user's own seat to themselves
+          var p = prevMap[s.seatNo];
+          if (!p) { util().announce(s.name + " joined the room."); return; }
+          if (!!p.online !== !!s.online) util().announce(s.name + (s.online ? " reconnected." : " went offline."));
+        });
+      }
+    } catch (e) {}
   }
   /* Optional seam hooks a transport MAY implement (src/room-tauri.js does;
      the harness transports do not): hostStart(room) when this device
@@ -700,7 +777,18 @@
      hostStop() when it leaves, notice() for one line the host screen
      shows under the join link (X10: "host from a phone instead"). Every
      call is guarded: a transport without the hook changes nothing. */
-  function transportHostStart(room) { var t = rt.transport; try { if (t && typeof t.hostStart === "function") t.hostStart(room); } catch (e) {} }
+  /* Returns (and lets a caller await) hostStart()'s own promise - needed by
+     host()'s nativeIdentityFp() check below, which otherwise reads
+     rt.transport.fp() before room-tauri.js's room_start response has ever
+     arrived to populate rt.info.identity (a real, measured bug in this
+     session's own first pass at H7: the fire-and-forget version of this
+     call meant nativeIdentityFp() always saw null and silently, always
+     fell back to makeIdentity() - caught by test-room-tauri.mjs reporting
+     "identity ecdsa-p256" against a REAL Tauri exe instead of the expected
+     "native-tls"). A transport with no hostStart (room-web.js, every
+     harness fake) still resolves this immediately via the guarded
+     try/catch below, so awaiting it changes nothing for those forks. */
+  function transportHostStart(room) { var t = rt.transport; try { if (t && typeof t.hostStart === "function") return t.hostStart(room); } catch (e) {} }
   function transportHostStop() { var t = rt.transport; try { if (t && typeof t.hostStop === "function") t.hostStop(); } catch (e) {} }
   function transportNotice() { var t = rt.transport; try { if (t && typeof t.notice === "function") return String(t.notice() || ""); } catch (e) {} return ""; }
   /* onended: the room is over for THIS transport - leave(), or a peer
@@ -733,7 +821,9 @@
        reconnect" (reconnect() reuses the seam's CURRENT transport and
        never re-attaches one). */
     var wasTerminal = !!(rt.state && (rt.state.terminal || rt.state.phase === "ended"));
+    var prevState = rt.state;
     rt.state = res.state;
+    announceStateTransition(prevState, rt.state);
     if (res.accepted) rt.counters.accepted++; else countIgnored(res.reason || "?");
     if (res.skew) { rt.skew = res.skew; rt.msg = schema().skewText(res.skew, localBuild()); scheduleRender(); }
     for (var i = 0; i < res.effects.length; i++) send(res.effects[i].frame, res.effects[i].to);
@@ -841,7 +931,15 @@
     if (!available()) return { ok: false, reason: "Study groups are off in Settings." };
     if (!rt.transport) return { ok: false, reason: "No room connection is attached on this build yet." };
     if (rt.state) leave();
-    rt.identity = await makeIdentity();
+    // Room code minted first (not inline inside initHost() below, as this
+    // used to be) so it can be handed to transportHostStart() before any
+    // local room state exists - awaiting that call is what makes
+    // nativeIdentityFp() below actually see a populated identity, instead
+    // of racing ahead of room-tauri.js's own room_start response.
+    var room = schema().roomCode();
+    await transportHostStart(room);
+    var nativeFp = nativeIdentityFp();
+    rt.identity = nativeFp ? { fp: nativeFp, kind: "native-tls", key: null } : await makeIdentity();
     var mode = opts.mode === "board" ? "board" : "relay";
     var category = opts.category == null ? "All" : opts.category;
     var pool = poolFor(category);
@@ -852,13 +950,12 @@
     }
     var timerSec = opts.timerSec === undefined ? 60 : (opts.timerSec == null ? null : Number(opts.timerSec) || null);
     var st = initHost({
-      room: schema().roomCode(), mode: mode, self: { fp: rt.identity.fp, name: clip(opts.name || displayName(), schema().MAX_NAME), rank: opts.rank || "" },
+      room: room, mode: mode, self: { fp: rt.identity.fp, name: clip(opts.name || displayName(), schema().MAX_NAME), rank: opts.rank || "" },
       bankSig: bankSigLocal(), deck: { category: category === "All" ? null : category, timerSec: timerSec, ids: ids }, cards: cards, now: Date.now(),
       pingMs: opts.pingMs, missLimit: opts.missLimit, holdMs: opts.holdMs, pendingMs: opts.pendingMs, token: randomToken,
     });
     st.scaleMax = scaleMax();
     rt.state = st; rt.selfScored = {}; rt.myScores = {}; rt.msg = "";
-    transportHostStart(st.room);
     startTimers();
     scheduleRender();
     requestWakeLock();
@@ -968,20 +1065,68 @@
     mount.appendChild(rootEl);
     draw();
   }
+  /* Focus preservation (audit finding M7): draw() fully clears and rebuilds
+     `view` on every accepted frame, INCLUDING ones triggered purely by a
+     remote peer's action, with zero focus/activeElement handling - worse
+     here than leader.js's own already-fixed identical bug class (see its
+     "Deep-gap follow-up" comment) since rebuilds here fire at unpredictable
+     times driven by remote peers, not just the local user's own click.
+     captureFocusKey()/restoreFocus() bracket the clear/rebuild in draw()
+     below, keyed off the stable data-seat/data-fp attributes rosterTable()/
+     pendingList() already stamp on their rows (so a "Remove"/"Admit" button
+     re-lands focus on the SAME seat/joiner across a rebuild, not merely the
+     same DOM position, which would be wrong the instant the sorted seat
+     list reorders around it) - falling back to matching by CSS class for
+     any other singleton control (Leave, Try to reconnect, etc.), and
+     finally to the view container itself so focus never silently falls
+     through to document.body when nothing else matches. */
+  function captureFocusKey(view) {
+    var el = document.activeElement;
+    if (!el || !view.contains(el)) return null;
+    var seatRow = el.closest ? el.closest("[data-seat]") : null;
+    if (seatRow) return { kind: "seat", seat: seatRow.getAttribute("data-seat"), cls: el.className || "" };
+    var fpEl = el.hasAttribute && el.hasAttribute("data-fp") ? el : (el.closest ? el.closest("[data-fp]") : null);
+    if (fpEl) return { kind: "fp", fp: fpEl.getAttribute("data-fp") };
+    if (el.className) return { kind: "class", cls: el.className };
+    return { kind: "view" };
+  }
+  function restoreFocus(view, key) {
+    if (!key) return;
+    try {
+      var target = null;
+      if (key.kind === "seat") {
+        var row = view.querySelector('[data-seat="' + key.seat + '"]');
+        target = row ? row.querySelector("button") : null;
+      } else if (key.kind === "fp") {
+        target = view.querySelector('[data-fp="' + key.fp + '"]');
+      } else if (key.kind === "class" && key.cls) {
+        target = view.querySelector("." + String(key.cls).trim().split(/\s+/).join("."));
+      }
+      if (target && typeof target.focus === "function") { target.focus(); return; }
+      // Nothing matching survived the rebuild (the row/control is gone,
+      // e.g. the peer just got kicked or the screen changed entirely) -
+      // land focus on the view container rather than losing it to
+      // document.body silently.
+      if (!view.hasAttribute("tabindex")) view.setAttribute("tabindex", "-1");
+      view.focus();
+    } catch (e) {}
+  }
   function draw() {
     rt.lastRender = Date.now();
     if (!rt.mount || !rt.mount.isConnected || !rt.view) return;
     rt.counters.renders++;
     var view = rt.view;
+    var focusKey = captureFocusKey(view);
     util().clear(view);
     var rootEl = view.parentElement;
     var st = rt.state;
     if (rootEl) { rootEl.setAttribute("data-sg-status", session().status || "idle"); rootEl.setAttribute("data-sg-phase", st ? st.phase : ""); }
-    if (!available()) { drawOff(view); return; }
-    if (!st) { drawIdle(view); return; }
-    if (st.terminal) { drawTerminal(view, st); return; }
-    if (st.role === "peer" && st.joinState !== "seated") { drawWaiting(view, st); return; }
+    if (!available()) { drawOff(view); restoreFocus(view, focusKey); return; }
+    if (!st) { drawIdle(view); restoreFocus(view, focusKey); return; }
+    if (st.terminal) { drawTerminal(view, st); restoreFocus(view, focusKey); return; }
+    if (st.role === "peer" && st.joinState !== "seated") { drawWaiting(view, st); restoreFocus(view, focusKey); return; }
     drawRoom(view, st);
+    restoreFocus(view, focusKey);
   }
   function hint(text) { return el("p.hint", { text: text }); }
   function btn(cls, text, onClick, extra) {
@@ -1155,7 +1300,17 @@
       if (st.phase === "lobby") row.appendChild(el("span", { text: x.ready ? "ready" : "", style: "color:var(--ink-green)" }));
       if (st.phase !== "lobby") row.appendChild(el("span.sg-score-cell", { text: (st.mode === "board" && x.seatNo !== st.turnSeat && st.phase !== "recap") ? "" : String(x.score), style: "min-width:2em;text-align:right" }));
       row.appendChild(el("span", { text: x.online ? "" : "held", style: "color:var(--ink-red)" }));
-      if (st.role === "host" && x.fp !== st.self.fp) row.appendChild(btn("btn.sm.ghost.sg-kick", "Remove", function () { hostAction({ type: "kick", seatNo: x.seatNo }); }, { "aria-label": "Remove " + x.name + " from the room" }));
+      // Confirmation gate added per audit finding H6: this was the one
+      // destructive roster control in this file skipping the app's shared
+      // confirm-dialog convention (leader.js:338-341 gates its identically-
+      // labeled "Remove" button the same way for a far less consequential
+      // local-only removal) - a mis-tap here instantly, irreversibly
+      // ejects a live participant with no undo.
+      if (st.role === "host" && x.fp !== st.self.fp) row.appendChild(btn("btn.sm.ghost.sg-kick", "Remove", async function () {
+        var yes = await G.modal.confirm("Remove " + x.name + " from the room?", { okText: "Remove", danger: true });
+        if (!yes) return;
+        hostAction({ type: "kick", seatNo: x.seatNo });
+      }, { "aria-label": "Remove " + x.name + " from the room" }));
       wrap.appendChild(row);
     });
     return wrap;
@@ -1522,7 +1677,7 @@
   }
 
   G.studyGroup = {
-    DEFAULTS: DEFAULTS,
+    DEFAULTS: DEFAULTS, NEEDS_SHELL_TEXT: NEEDS_SHELL_TEXT,
     initHost: initHost, initPeer: initPeer, reduce: reduce, act: act, snapshotOf: snapshotOf, snapshotFrames: snapshotFrames, frameOf: frameOf,
     available: available, attach: attach, host: host, join: join, leave: leave, reconnect: reconnect, sendIntent: sendIntent, hostAction: hostAction,
     state: function () { return rt.state; }, session: session, counters: function () { return rt.counters; }, identity: function () { return rt.identity ? { fp: rt.identity.fp, kind: rt.identity.kind } : null; },

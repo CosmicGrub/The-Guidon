@@ -212,6 +212,16 @@ window.G = window.G || {};
            (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   }
 
+  // Plain UA sniff for "this is an Android browser tab" - deliberately NOT
+  // G.caps.fork() === "android" (that only ever answers true inside the
+  // installed Capacitor build, never for a phone visiting the hosted web
+  // build in Chrome, which is the exact case share.js's "Get the app for
+  // this device" panel needs to catch so it can point that visitor at the
+  // real native .apk instead of just the browser-tab PWA install).
+  function isAndroid() {
+    return /Android/.test(navigator.userAgent);
+  }
+
   /* Builds the live install/offline panel injected at the top of Share & Install. */
   function buildPanel() {
     const p = el("div.panel", { style: "margin-bottom:10px;border-left:3px solid var(--amber)" });
@@ -346,6 +356,12 @@ window.G = window.G || {};
     // every visit is a browser tab that might still need hosting/PWA-install
     // instructions.
     isNative: () => isNative,
+    // Exposed so share.js's "Get the app for this device" panel reuses the
+    // exact same predicates this module already computed for its own iOS
+    // storage-eviction warning, instead of a second, possibly-diverging UA
+    // check living in a different file.
+    isIOS: () => isIOS(),
+    isAndroid: () => isAndroid(),
   };
 })();
 // END pwa.js

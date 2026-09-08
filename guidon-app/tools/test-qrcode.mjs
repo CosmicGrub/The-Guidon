@@ -3,6 +3,31 @@
  * screen"), Node only - no browser, no build. Mirrors tools/test-room-core.mjs's
  * own structure and PASS/FAIL/INFO convention.
  *
+ * HISTORY - why this file imports a real third-party decoder (jsQR) as of
+ * the 2026-09 investigation: every code src/app-modules/qrcode.js produced
+ * failed to decode with jsQR, a real camera-grade decoder, 100% of the time
+ * (a 120-length sweep, every version/mask the encoder reaches), even though
+ * this file's own from-scratch decoder (part (c) below) reported a clean
+ * round-trip for every single case. Root cause: drawFormat() had the row-8
+ * and column-8 format-info runs TRANSPOSED (using bits 0-7 where the ISO
+ * spec puts bits 8-14 and vice versa, in both copies) and placed the fixed
+ * dark module at the wrong cell entirely. That is a silent, self-consistent
+ * bug class: this file's "independent" decoder (buildFunctionMap/
+ * readFormatBits below) had been transcribed from the SAME incorrect
+ * mental model as the encoder rather than from the spec text itself, so it
+ * silently agreed with the encoder's wrong format-info layout instead of
+ * catching it - two hand-written implementations sharing no code can still
+ * share a human error. "Written fresh in this file, calls no placement
+ * function from qrcode.js" is necessary but was NOT sufficient. jsQR is
+ * independent in the way that actually matters: different author, tested
+ * against real cameras, zero shared assumptions with this codebase. Its
+ * decode is now the authoritative check (part (f)); the hand-written
+ * decoder below has been corrected to match the true ISO layout and stays
+ * as a second, STRICTER check - it requires exact RS syndromes with no
+ * error correction, which is more sensitive to a placement bug than jsQR
+ * alone (jsQR's own Reed-Solomon error correction can paper over a bug
+ * small enough to stay inside the EC budget).
+ *
  * What is proved:
  *   (a) The Reed-Solomon engine (GF(256) tables + generator polynomial +
  *       systematic encoder) is checked against the widely-published
@@ -14,12 +39,11 @@
  *       sequence (26, 44, 70, 100, 134, 172, 196, 242, 292, 346).
  *   (c) A from-scratch decoder - written in THIS file, re-deriving the
  *       finder/timing/alignment/format/version function-pattern positions
- *       and the zigzag bit order independently rather than calling any
- *       placement/masking function from src/app-modules/qrcode.js - reads
- *       the rendered module grid back to bytes and confirms EVERY test
- *       string round-trips to the exact original bytes. This is what the
- *       task's verification section calls "BEST": full decode, not just
- *       "some pixels rendered". Covers the shortest and longest realistic
+ *       and the zigzag bit order from the ISO/IEC 18004 spec text (not from
+ *       reading qrcode.js) rather than calling any placement/masking
+ *       function from src/app-modules/qrcode.js - reads the rendered module
+ *       grid back to bytes and confirms EVERY test string round-trips to
+ *       the exact original bytes. Covers the shortest and longest realistic
  *       join URLs (worked from room-schema.js's own MAX_* constants and
  *       ENDPOINTS.join), version-capacity boundaries (forces versions
  *       1/2/7/10), and the literal example URL from the task brief.
@@ -34,11 +58,20 @@
  *       (never throw) for a non-Latin1 character and for input far past
  *       version 10's capacity, and render() also returns null with no
  *       throw when no DOM is present.
+ *   (f) REAL image-based decode: every module grid encode() produces is
+ *       rasterized to a raw RGBA pixel buffer (the same pixels a rendered
+ *       <svg> turns into once a camera photographs it - see rasterize()
+ *       below) and handed to jsQR, a genuine third-party QR decoder this
+ *       project does not author or control. This is the only check in this
+ *       file that can catch a bug BOTH src/app-modules/qrcode.js and this
+ *       file's own hand-written decoder happen to agree on. Run across a
+ *       0-213-byte sweep (every byte length version 10-M can hold).
  *
  * Usage: node tools/test-qrcode.mjs   (exit code = number of FAIL lines)
  */
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
+import jsQR from "jsqr";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -132,12 +165,12 @@ function buildFunctionMap(n, version) {
       for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) mark(pos[i] + dr, pos[j] + dc);
     }
   }
-  for (let i = 0; i <= 5; i++) mark(8, i);
-  mark(8, 7); mark(8, 8); mark(7, 8);
-  for (let i = 9; i < 15; i++) mark(14 - i, 8);
-  for (let i = 0; i < 8; i++) mark(n - 1 - i, 8);
-  for (let i = 8; i < 15; i++) mark(8, n - 15 + i);
-  mark(8, n - 8);
+  for (let i = 0; i <= 5; i++) mark(i, 8);
+  mark(7, 8); mark(8, 8); mark(8, 7);
+  for (let i = 9; i < 15; i++) mark(8, 14 - i);
+  for (let i = 0; i < 8; i++) mark(8, n - 1 - i);
+  for (let i = 8; i < 15; i++) mark(n - 15 + i, 8);
+  mark(n - 8, 8);
   if (version >= 7) {
     for (let i = 0; i < 18; i++) {
       const a = n - 11 + (i % 3), b = Math.floor(i / 3);
@@ -147,7 +180,7 @@ function buildFunctionMap(n, version) {
   return isFn;
 }
 function readFormatBits(mods) {
-  const idx = [[8, 0], [8, 1], [8, 2], [8, 3], [8, 4], [8, 5], [8, 7], [8, 8], [7, 8], [5, 8], [4, 8], [3, 8], [2, 8], [1, 8], [0, 8]];
+  const idx = [[0, 8], [1, 8], [2, 8], [3, 8], [4, 8], [5, 8], [7, 8], [8, 8], [8, 7], [8, 5], [8, 4], [8, 3], [8, 2], [8, 1], [8, 0]];
   let bits = 0;
   for (let i = 0; i < 15; i++) bits |= (mods[idx[i][0]][idx[i][1]] ? 1 : 0) << i;
   return (bits ^ 0x5412) >>> 0;
@@ -383,6 +416,72 @@ function decodeQR(qr) {
     bad("(e) render() threw for a too-long string with a DOM present: " + e.message);
   }
   delete globalThis.document;
+}
+
+/* ================================================ (f) real image decode */
+// Rasterizes encode()'s module grid to a raw RGBA pixel buffer - the same
+// black/white pixels a rendered <svg> becomes once a camera photographs
+// it - and hands that buffer to jsQR, a real third-party QR decoder this
+// project neither authors nor controls. This is the check that actually
+// caught the 2026-09 bug (see the file header): both src/app-modules/
+// qrcode.js and this file's own hand-written decoder above independently
+// agreed on a wrong format-info layout, so only a decoder with zero shared
+// provenance could expose it.
+function rasterize(qr, scale, margin) {
+  scale = scale || 6; margin = margin == null ? 4 : margin;
+  const dim = (qr.size + margin * 2) * scale;
+  const data = new Uint8ClampedArray(dim * dim * 4).fill(255);
+  for (let r = 0; r < qr.size; r++) {
+    for (let c = 0; c < qr.size; c++) {
+      if (!qr.modules[r][c]) continue;
+      const x0 = (c + margin) * scale, y0 = (r + margin) * scale;
+      for (let y = y0; y < y0 + scale; y++) {
+        for (let x = x0; x < x0 + scale; x++) {
+          const i = (y * dim + x) * 4;
+          data[i] = data[i + 1] = data[i + 2] = 0;
+          data[i + 3] = 255;
+        }
+      }
+    }
+  }
+  return { data, dim };
+}
+{
+  // Every byte length version 10-M can hold (pickVersion's whole reachable
+  // range), plus 0 - not a handful of cherry-picked cases: the original
+  // bug was a 100% failure rate across every version/mask the encoder
+  // reaches, and only a sweep this wide would have caught it reliably.
+  let pass = 0, failLines = [];
+  for (let len = 0; len <= 213; len++) {
+    const text = "x".repeat(len);
+    const qr = QR.encode(text);
+    if (!qr) { failLines.push(`len=${len}: encode() unexpectedly returned null`); continue; }
+    const { data, dim } = rasterize(qr);
+    const result = jsQR(data, dim, dim);
+    if (result && result.data === text) pass++;
+    else failLines.push(`len=${len} (v${qr.version} mask${qr.mask}): jsQR ${result ? "decoded " + JSON.stringify(result.data) : "FAILED to decode"}`);
+  }
+  failLines.length === 0
+    ? ok(`(f) jsQR decodes every byte length 0-213 (all versions 1-10 at level M) back to the exact original text`)
+    : bad(`(f) jsQR sweep: ${failLines.length}/214 failed - ` + failLines.slice(0, 5).join("; ") + (failLines.length > 5 ? ` ... (+${failLines.length - 5} more)` : ""));
+
+  // The literal task-brief URL and a couple of realistic join links too -
+  // uniform "x" repeats alone wouldn't catch a bug tied to specific byte
+  // values (e.g. a mask chosen differently for structured vs. uniform data).
+  const realistic = [
+    "http://192.168.1.42:59331/j/LIMA-WHISKEY-81",
+    "https://255.255.255.255:65535/j/NOVEMBER-NOVEMBER-99",
+    "http://10.0.0.2:80/j/ALPHA-BRAVO-00",
+  ];
+  for (const text of realistic) {
+    const qr = QR.encode(text);
+    if (!qr) { bad(`(f) encode("${text}") unexpectedly returned null`); continue; }
+    const { data, dim } = rasterize(qr);
+    const result = jsQR(data, dim, dim);
+    (result && result.data === text)
+      ? ok(`(f) jsQR decodes realistic join URL "${text}" (v${qr.version} mask${qr.mask}) exactly`)
+      : bad(`(f) jsQR on "${text}": ` + (result ? "decoded " + JSON.stringify(result.data) : "FAILED to decode"));
+  }
 }
 
 /* ============================================== defensive-input sweep */

@@ -1,12 +1,25 @@
 package app.guidon.trainer
 
-// RFC 6455 CLIENT (2026-09-06) - completed and device-verified this
-// session. Was a scaffold (illustrative, not gradle-built or device-tested,
-// truncated-fingerprint pinning bug, close/ping-pong/fragmentation left as
-// TODO); this pass fixes the pinning bug for real, completes the RFC 6455
-// client, registers the plugin in MainActivity, and verifies against a real
-// Gradle build + a real Fold5 device. See this session's report for the
-// exact verification method and results for each piece.
+// RFC 6455 CLIENT (2026-09-06) - completed, and verified this session
+// against a real Gradle build (:app:compileDebugKotlin / assembleDebug
+// green) plus tools/tls-adversarial/Harness.kt's adversarial suite
+// (compiled together with this real file in one kotlinc invocation - see
+// that harness's own header for why). Was a scaffold (illustrative, not
+// gradle-built or device-tested, truncated-fingerprint pinning bug,
+// close/ping-pong/fragmentation left as TODO); this pass fixes the pinning
+// bug for real, completes the RFC 6455 client, and registers the plugin in
+// MainActivity.
+// CORRECTION (2026-09-07, security audit M11): this header previously also
+// claimed "device-verified this session" against a real Fold5. That
+// overstated things - docs/design/room-tls-and-discovery-pitch.md's own
+// residual-risk section (Section 1's "Not verified in this environment at
+// all" bullet) lists "any real device behavior of RoomTlsPlugin" as
+// unverified, and docs/spike/P0-RUN-SHEET.md schedules the actual
+// PC<->Fold5/Tab-S9 on-device study-room verification for 2026-09-08/09 -
+// still ahead as of this file's last edit, not something already done. So:
+// implemented and Gradle/adversarially verified on this machine, YES;
+// verified against a real physical device, NOT YET. See this session's
+// report for the exact verification method and results for each piece.
 //
 // WHY THIS FILE HAS TO EXIST AT ALL (the "biggest unknown" the design
 // brief calls out, addressed head-on): a plain `new WebSocket("wss://...")`
@@ -55,6 +68,8 @@ import com.getcapacitor.annotation.CapacitorPlugin
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.IOException
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.net.URI
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -92,6 +107,20 @@ class RoomTlsPlugin : Plugin() {
         val pin = call.getString("pin") ?: return call.reject("pin required")
         if (!SPKI_PIN_RE.matches(pin)) {
             return call.reject("pin is not a well-formed full SHA-256(SPKI) hex pin (expected 64 lowercase hex chars)")
+        }
+        // CRLF-INJECTION FIX (M5, 2026-09-07): `pin` was already validated
+        // above but `url` never was - see findCrlfInjection()'s own doc
+        // comment below for the actual attack this closes. Parse and check
+        // it here, synchronously, so a malicious/malformed url is rejected
+        // the same way a malformed pin already is, instead of only
+        // surfacing as an async "error" event after a thread is spawned.
+        val parsedUrl = try {
+            URI(urlStr)
+        } catch (e: Exception) {
+            return call.reject("url is not a well-formed URI: ${e.message}")
+        }
+        findCrlfInjection(parsedUrl)?.let { component ->
+            return call.reject("url's $component contains a CR or LF character - refusing (possible request-splitting attempt)")
         }
         val id = nextId.getAndIncrement()
         thread(name = "guidon-room-tls-$id") {
@@ -215,6 +244,37 @@ class RoomTlsPlugin : Plugin() {
             // tools/tls-adversarial/Harness.kt's "multi-cert chain" case
             // exercises.
         }
+
+        // CRLF-INJECTION FIX (M5, 2026-09-07): java.net.URI's getPath()/
+        // getHost()/getQuery() all auto-percent-DECODE, so a join url whose
+        // path segment carries a percent-encoded CR/LF (e.g. "%0D%0A")
+        // decodes back to a literal CR/LF right where
+        // PinnedWsClient.performHandshake() used to build the raw HTTP
+        // Upgrade request text from `uri.path` - meanwhile `uri.rawQuery`
+        // was left encoded, so path and query got inconsistent treatment.
+        // Request splitting into the pinned TLS socket followed. Checked
+        // from BOTH connect() above (reject the PluginCall synchronously,
+        // before a background thread is even spawned) and
+        // PinnedWsClient.performHandshake() (defense in depth, in case a
+        // future caller ever constructs PinnedWsClient some other way) -
+        // same function both places, so neither check can silently drift
+        // from the other. Examines the DECODED form of every component
+        // regardless of which one carried the encoded CR/LF, not just the
+        // path where this was first found - a decoded host or query
+        // carrying a literal CR/LF is refused too, even though today's
+        // fixed request-line format never writes a decoded host or query
+        // onto the wire either.
+        internal fun findCrlfInjection(uri: URI): String? {
+            val path = uri.path
+            val host = uri.host
+            val query = uri.query // decodes, unlike uri.rawQuery
+            return when {
+                path != null && (path.contains('\r') || path.contains('\n')) -> "path"
+                host != null && (host.contains('\r') || host.contains('\n')) -> "host"
+                query != null && (query.contains('\r') || query.contains('\n')) -> "query"
+                else -> null
+            }
+        }
     }
 }
 
@@ -237,6 +297,14 @@ private class PinnedWsClient(
 ) {
     private val uri = URI(urlStr)
     @Volatile private var socket: SSLSocket? = null
+    // CONNECT/HANDSHAKE TIMEOUT FIX (M4, 2026-09-07): the plain TCP socket,
+    // stashed here the instant connectAndPump()'s own socket.connect()
+    // returns - well before `socket` above is ever assigned (that happens
+    // only once the TLS wrapping AND handshake both finish). close() reads
+    // this so a connect/handshake stuck for any reason is still always
+    // forcibly cancellable, not just flagged and left to block until
+    // CONNECT_TIMEOUT_MS elapses on its own.
+    @Volatile private var underlyingSocket: Socket? = null
     @Volatile private var closed = false
     // Set the instant EITHER side's close frame has been sent, so the other
     // direction's handler knows whether an incoming close frame is a fresh
@@ -275,7 +343,24 @@ private class PinnedWsClient(
         val ctx = SSLContext.getInstance("TLSv1.3")
         ctx.init(null, arrayOf(trustManager), SecureRandom())
         val factory = ctx.socketFactory
-        val raw = factory.createSocket(host, port) as SSLSocket
+        // CONNECT/HANDSHAKE TIMEOUT FIX (M4, 2026-09-07): factory.createSocket(host, port)
+        // is a one-shot call with NO timeout of its own - a peer that never
+        // completes the TCP handshake (or a routing black hole) used to
+        // block this thread forever, and `socket` above was only assigned
+        // AFTER startHandshake() returned, so close() called during a stuck
+        // connect/handshake had no real socket to reach (see close()'s own
+        // comment below). Fix: build the plain TCP socket ourselves with an
+        // explicit bounded connect timeout, stash the raw reference in
+        // `underlyingSocket` the instant it succeeds - BEFORE wrapping for
+        // TLS or starting the handshake - then wrap it.
+        val plain = Socket()
+        plain.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS.toInt())
+        underlyingSocket = plain // close() can now always reach a real socket, even mid-handshake below
+        val raw = factory.createSocket(plain, host, port, true) as SSLSocket // autoClose=true: closing `raw` also closes `plain`
+        // Same bounded timeout also guards the handshake itself: a peer that
+        // completes the TCP connect but then stalls mid-handshake
+        // (slow-loris) would otherwise block startHandshake() forever too.
+        raw.soTimeout = CONNECT_TIMEOUT_MS.toInt()
         // DOWNGRADE FIX (2026-09-06, found by tools/tls-adversarial/Harness.kt's
         // downgrade case): SSLContext.getInstance("TLSv1.3") only selects an
         // engine CAPABLE of TLS 1.3 - it does NOT restrict the socket's own
@@ -290,6 +375,7 @@ private class PinnedWsClient(
         // the handshake outright instead of silently negotiating down.
         raw.setEnabledProtocols(arrayOf("TLSv1.3"))
         raw.startHandshake() // checkServerTrusted() above runs synchronously inside this call
+        raw.soTimeout = 0 // handshake done - back to blocking reads for readLoop's lifetime, same as before this fix
         socket = raw
         onEvent("open", null)
 
@@ -328,11 +414,22 @@ private class PinnedWsClient(
                 }
             } catch (_: Exception) {}
         } else {
-            // Never got as far as a live socket (e.g. close() raced connect()
-            // before the TLS handshake finished) - nothing to send, nothing
-            // to wait for, and readLoop will never run to fire "close" on
-            // its own, so mark this closed directly.
+            // Never got as far as a live (fully-handshaked) socket - either
+            // still mid-connect/mid-handshake inside connectAndPump(), or it
+            // hasn't run yet at all. Nothing to send (no WS layer exists
+            // yet) and readLoop will never run to fire "close" on its own,
+            // so mark this closed directly - but CONNECT/HANDSHAKE TIMEOUT
+            // FIX (M4, 2026-09-07): a pending connect/handshake must always
+            // be actually cancellable right now, not just flagged and left
+            // to block until CONNECT_TIMEOUT_MS elapses on its own. Forcibly
+            // close whatever raw socket reference IS available -
+            // `underlyingSocket` is stashed the instant the plain TCP
+            // connect succeeds in connectAndPump(), well before `socket`
+            // above is ever set - which kills the underlying stream out
+            // from under a thread blocked in socket.connect() or
+            // raw.startHandshake(), unblocking it immediately.
             closed = true
+            try { underlyingSocket?.close() } catch (_: Exception) {}
             return
         }
         try { closedLatch.await(CLOSE_WAIT_MS, TimeUnit.MILLISECONDS) } catch (_: InterruptedException) {}
@@ -345,10 +442,19 @@ private class PinnedWsClient(
     // ---- RFC 6455 handshake (mirrors src-tauri/src/room.rs's accept_key(),
     //      same SHA-1 + base64 + the fixed WS_GUID, client side of it) ----
     private fun performHandshake(uri: URI, out: DataOutputStream, input: DataInputStream) {
+        // CRLF-INJECTION FIX (M5, 2026-09-07) - see RoomTlsPlugin.findCrlfInjection()'s
+        // own doc comment. connect() already rejects this up front before a
+        // thread is even spawned; this is defense in depth. Never build the
+        // request line below from a DECODING accessor - `uri.rawPath` stays
+        // exactly as the caller wrote it (still percent-encoded), unlike
+        // the `uri.path` this used to read.
+        RoomTlsPlugin.findCrlfInjection(uri)?.let { component ->
+            throw IOException("url's $component contains a CR or LF character - refusing (possible request-splitting attempt)")
+        }
         val keyBytes = ByteArray(16)
         SecureRandom().nextBytes(keyBytes)
         val key = Base64.encodeToString(keyBytes, Base64.NO_WRAP)
-        val path = if (uri.rawQuery != null) "${uri.path}?${uri.rawQuery}" else uri.path
+        val path = if (uri.rawQuery != null) "${uri.rawPath}?${uri.rawQuery}" else uri.rawPath
         val req = buildString {
             append("GET $path HTTP/1.1\r\n")
             append("Host: ${uri.host}:${uri.port}\r\n")
@@ -464,6 +570,32 @@ private class PinnedWsClient(
                 var len = (b1 and 0x7f).toLong()
                 if (len == 126L) len = input.readShort().toLong() and 0xffffL
                 else if (len == 127L) len = input.readLong()
+                // UNBOUNDED-ALLOCATION FIX (H3, 2026-09-07): a malicious or
+                // corrupted peer can declare any len up to 2^63-1 here before
+                // this client has any other way to know the frame is
+                // garbage - `ByteArray(len.toInt())` below used to allocate
+                // that many bytes UNCONDITIONALLY, so a single hostile frame
+                // header could OOM-crash the whole app before a single
+                // payload byte was even read. Mirrors the same cap and
+                // close-code convention src-tauri/src/room.rs's
+                // parse_frames() and tools/room-server.mjs's parse() both
+                // already enforce server-side: MAX_PAYLOAD (1 MiB) is
+                // already generous for this protocol (room.rs's own comment:
+                // "a wire message is < 4.2 KB; anything near 1 MB is
+                // hostile"), and a declared len over it gets the connection
+                // closed with WS code 1009 ("too big") instead of an
+                // allocation. `len < 0` alongside it: readLong() reads the
+                // 8-byte extended length as a SIGNED Long, so a peer setting
+                // that field's top bit produces a negative `len` that a
+                // plain `len > MAX_PAYLOAD` signed comparison would miss
+                // entirely (Rust's mirrored check doesn't have this gap -
+                // room.rs's own `big` is an unsigned u64) - reject that
+                // shape outright too rather than letting it fall through to
+                // `len.toInt()` truncation below.
+                if (len < 0 || len > MAX_PAYLOAD) {
+                    abortWithProtocolError(out, 1009, "too big")
+                    return
+                }
                 val payload = ByteArray(len.toInt())
                 input.readFully(payload)
                 when (op) {
@@ -481,6 +613,18 @@ private class PinnedWsClient(
                             return
                         }
                         fragmentBuffer.write(payload)
+                        // UNBOUNDED-ALLOCATION FIX (H3, 2026-09-07): the single-frame
+                        // check above only bounds ONE frame's declared len - a
+                        // series of small, individually-legal fragments whose
+                        // CUMULATIVE total exceeds MAX_PAYLOAD must be rejected
+                        // too, same as room.rs's own continuation-frame handling
+                        // (`frag.extend_from_slice` then `if frag.len() > MAX_PAYLOAD`).
+                        // Otherwise fragmentBuffer grows unbounded across an
+                        // arbitrarily long sequence of frames.
+                        if (fragmentBuffer.size() > MAX_PAYLOAD) {
+                            abortWithProtocolError(out, 1009, "too big")
+                            return
+                        }
                         if (fin) {
                             val full = fragmentBuffer.toByteArray()
                             fragmentBuffer.reset()
@@ -503,6 +647,17 @@ private class PinnedWsClient(
                             fragmentedOpcode = 0x1
                             fragmentBuffer.reset()
                             fragmentBuffer.write(payload)
+                            // UNBOUNDED-ALLOCATION FIX (H3, 2026-09-07): same
+                            // cumulative-total bound as the continuation-frame
+                            // case above, checked here too (defense in depth) -
+                            // this first fragment alone can never exceed
+                            // MAX_PAYLOAD on its own (already bounded above),
+                            // but keeps this check symmetric with every later
+                            // continuation frame's own write to fragmentBuffer.
+                            if (fragmentBuffer.size() > MAX_PAYLOAD) {
+                                abortWithProtocolError(out, 1009, "too big")
+                                return
+                            }
                         }
                     }
                     0x8 -> { // close - see handlePeerClose()'s own doc comment
@@ -559,6 +714,23 @@ private class PinnedWsClient(
         // frame before giving up and forcing the socket shut - "briefly",
         // per RFC 6455 7.1.5, not indefinitely.
         private const val CLOSE_WAIT_MS = 1500L
+        // UNBOUNDED-ALLOCATION FIX (H3, 2026-09-07): SAME numeric cap as
+        // src-tauri/src/room.rs's and tools/room-server.mjs's own
+        // MAX_PAYLOAD (both `1 << 20`, i.e. 1 MiB) - room.rs's own comment
+        // on it applies here unchanged: "a wire message is < 4.2 KB;
+        // anything near 1 MB is hostile". Enforced in readLoop() below
+        // against both a single frame's declared len AND the cumulative
+        // total across a fragmented message's reassembly buffer.
+        private const val MAX_PAYLOAD = 1 shl 20
+        // CONNECT/HANDSHAKE TIMEOUT FIX (M4, 2026-09-07): bounds BOTH the
+        // plain TCP connect (Socket.connect()) and the TLS handshake
+        // (SSLSocket.soTimeout) in connectAndPump() - neither had any
+        // timeout before this fix, so a peer that never completes either
+        // step (routing black hole, slow-loris) blocked the connection
+        // thread forever. 10s is generous for a LAN join (this protocol's
+        // whole point) while still bounding the worst case to something a
+        // human waiting on a "joining..." spinner will actually notice.
+        private const val CONNECT_TIMEOUT_MS = 10_000L
         // SAME convention as tools/room-tls.mjs and src-tauri/src/room_tls.rs's
         // own hex(): lowercase, exactly two hex chars per byte, no separator.
         // Full SHA-256 digest (32 bytes) in -> 64 lowercase hex chars out,

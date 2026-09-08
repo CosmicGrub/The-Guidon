@@ -5,16 +5,17 @@
  * `npm test` (guidon-app/package.json) ends in
  *   node tools/run-parallel.mjs <test:* names>
  * and ci.yml's `test` job splits that same list into strategy.matrix.chunk
- * entries of at most 6 names each (the <=6-concurrent-Chromium ceiling the
- * top of ci.yml explains). Nothing enforced that the two lists agreed, so
+ * entries of at most PER_CHUNK names each (4 as of 2026-09-07, down from an
+ * unmeasured 8 - see PER_CHUNK's own comment; the <=N-concurrent-Chromium
+ * ceiling the top of ci.yml explains). Nothing enforced that the two lists agreed, so
  * they drifted: suites added to package.json never reached CI. This tool
  * makes the drift a `npm run lint:patterns` failure, and can regenerate the
  * chunk block from package.json so nobody hand-maintains the copy.
  *
  * Checks (PASS/FAIL lines, exit 1 on any FAIL, style of lint-patterns.mjs):
  *   (a) every run-parallel name in package.json is in exactly one chunk,
- *       every chunk name is in package.json, no chunk exceeds 6 names, and
- *       the chunk block is byte-for-byte what --write would generate.
+ *       every chunk name is in package.json, no chunk exceeds PER_CHUNK
+ *       names, and the chunk block is byte-for-byte what --write generates.
  *   (b) header-count guard: ci.yml COMMENT lines that hard-code a suite or
  *       chunk/job count must match the live counts (or carry no count).
  *   (c) one-browser guard: no tools/test-*.mjs launches more than one
@@ -22,8 +23,9 @@
  *
  * `node tools/lint-ci-matrix.mjs --write` regenerates ONLY the lines between
  * `        chunk:` and the `    steps:` that follows it, from package.json's
- * list in its own order, 6 names per chunk; every other byte of ci.yml is
- * left alone, output is LF-only, and a second --write changes nothing.
+ * list in its own order, PER_CHUNK names per chunk; every other byte of
+ * ci.yml is left alone, output is LF-only, and a second --write changes
+ * nothing.
  * `--ci <path>` points the checks at another copy of ci.yml so the verifier
  * can be verified (a copy with one suite removed from a chunk fails, naming
  * it); package.json and tools/ still come from the tree.
@@ -41,17 +43,23 @@ const argOf = (flag) => { const i = process.argv.indexOf(flag); return i > 0 && 
 const CI = argOf("--ci") || path.join(REPO, ".github", "workflows", "ci.yml");
 const TOOLS = path.join(APP, "tools");
 const CI_REL = ".github/workflows/ci.yml";
-// 2026-09-08: 8 -> 6. run-parallel.mjs's own local default cap has been 6
-// (not 8) since it was introduced - 8 concurrent Chromium instances per CI
-// chunk was never actually measured safe, only assumed identical to the
-// unmeasured 8-wide local ceiling. test:rapid-fire-solo-team's own
-// enterRapidFireFresh() (tools/test-rapid-fire-solo-team.mjs) documents
-// three separate CPU-starvation timeouts on this exact 8-suite chunk
-// shape, the last of which explicitly concluded the fix belongs here, not
-// in another timeout bump. Dropping to 6 (package.json order shifts every
-// chunk after the first byte-for-byte via --write, no other change) aligns
-// every CI chunk with the concurrency this repo has actually verified safe.
-const PER_CHUNK = 6;
+// Root-cause hunt 2026-09-07 ("no-cards" boot-race PR, CI stabilization):
+// 8 was flagged as "never measured" the whole time it stood (see
+// run-parallel.mjs's own comment) - it was carried over from a LOCAL
+// laptop discipline, never validated against a real 2-vCPU GitHub-hosted
+// runner. It has now caused a documented, repeat-offender class of CI
+// flake: enterRapidFireFresh()'s own poll (tools/test-rapid-fire-solo-team.mjs)
+// was bumped 300ms -> 5000ms -> 15000ms -> 30000ms across three separate
+// rounds chasing this exact shape, with the THIRD round explicitly
+// concluding the real fix is fewer concurrent Chromiums per shard, not a
+// fourth timeout bump - flagged then as a cost tradeoff (more CI jobs)
+// outside an autonomous fix's scope to decide alone. Lowered to 4, the
+// ONE concurrency figure in this codebase that has an actual measurement
+// behind it (run-parallel.mjs: "the then-137-suite list green at cap 4 in
+// 473s" on the dev laptop) - roughly doubles the chunk/job count but
+// removes the per-shard contention class outright rather than gambling on
+// a fifth timeout number.
+const PER_CHUNK = 4;
 const WRITE = process.argv.includes("--write");
 
 const CHUNK_HEAD = /^\s{8}chunk:\s*$/;

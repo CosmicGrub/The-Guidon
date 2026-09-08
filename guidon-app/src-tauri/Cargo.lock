@@ -1468,7 +1468,7 @@ dependencies = [
 
 [[package]]
 name = "guidon"
-version = "1.5.1"
+version = "1.7.0"
 dependencies = [
  "rcgen",
  "rustls",
@@ -1482,7 +1482,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "webview2-com",
- "windows-core 0.61.2",
+ "windows-core 0.62.2",
  "windows-sys 0.60.2",
  "x509-parser",
 ]

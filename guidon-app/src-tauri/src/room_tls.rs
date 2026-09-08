@@ -201,11 +201,20 @@ pub fn ensure_crypto_provider() {
 /// Builds the server-side TLS config for one identity - `with_no_client_auth`
 /// because a joiner authenticates the ROOM (pins its cert), not the other
 /// way around; no CA, no hostname check, matching the spike exactly.
+///
+/// Pinned to TLS 1.3 only: the "pinned identity" design this listener
+/// implements only makes sense if the negotiated handshake is TLS 1.3 (no
+/// downgrade to TLS 1.2's weaker properties is acceptable for a
+/// pre-authentication LAN listener). The `tls12` Cargo feature stays enabled
+/// on the rustls/tokio-rustls dependencies so tests can still build a
+/// TLS-1.2-only client to prove this server refuses it.
 pub fn server_config(identity: &Identity) -> Result<rustls::ServerConfig, rustls::Error> {
     ensure_crypto_provider();
     let cert = CertificateDer::from(identity.cert_der.clone());
     let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(identity.key_der.clone()));
-    rustls::ServerConfig::builder().with_no_client_auth().with_single_cert(vec![cert], key)
+    rustls::ServerConfig::builder_with_protocol_versions(&[&rustls::version::TLS13])
+        .with_no_client_auth()
+        .with_single_cert(vec![cert], key)
 }
 
 /// Wraps `server_config()` in a ready-to-use `TlsAcceptor`.
