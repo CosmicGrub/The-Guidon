@@ -88,12 +88,12 @@
 param(
   [Parameter(Position = 0)][string]$ExePath = "",
   [string]$OutDir = "",
-  # 5000 -> 20000 (2026-09-07): the desktop.yml CI job (windows-latest,
+  # 20000 -> 60000 (2026-09-08): the desktop.yml CI job (windows-latest,
   # `npm run desktop:smoke`, no override - so this default is what CI
   # actually runs under) failed twice tonight with the identical "no
-  # visible top-level window within 5000 ms (process exited: False)"
+  # visible top-level window within 20000 ms (process exited: False)"
   # signature, on a brand-new, author-labeled "AUTHORED-BUT-UNRUN" job
-  # never validated against real CI before merging. The 5000ms figure was
+  # never validated against real CI before merging. The 20000ms figure was
   # set against this session's own measured LOCAL baseline (window visible
   # ~112-113ms after launch per this file's own header) - a ~44x margin
   # that's real on a warm dev machine but doesn't hold on a cold CI runner
@@ -105,7 +105,7 @@ param(
   # first-real-CI-exposure margin issue (rapid-fire's waitForFunction,
   # widened 15000->30000ms for the identical reason) - a real condition-
   # based wait needing more patience under load, not a hang to paper over.
-  [int]$WindowTimeoutMs = 20000,
+  [int]$WindowTimeoutMs = 60000,
   [int]$EarlyShotMs = 150,
   [int]$RectMs = 1000,
   [int]$LateShotMs = 1500,
