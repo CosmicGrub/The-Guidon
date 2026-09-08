@@ -1,0 +1,106 @@
+ets Jul 29 2019 12:21:46
+
+rst:0x1 (POWERON_RESET),boot:0x17 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:2
+load:0x3fff0030,len:1184
+load:0x40078000,len:13232
+load:0x40080400,len:3028
+entry 0x400805e4
+ets Jul 29 2019 12:21:46
+
+rst:0x1 (POWERON_RESET),boot:0x17 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:2
+load:0x3fff0030,len:1184
+load:0x40078000,len:13232
+load:0x40080400,len:3028
+entry 0x400805e4
+
+=========================================================
+ GUIDON Flashcard OS - display controller probe
+ Pins: MOSI=13 SCLK=14 CS=15 DC=2 MISO=12 BL=27 (active-HIGH)
+ No hardware reset line (tied to EN) - reading immediately.
+=========================================================
+
+---- raw read-back (first byte after each cmd is the MIPI dummy byte) ----
+  RDDID     (cmd 0x04): 0xFF 0xFF 0xFF 0xFF 
+  RDDST     (cmd 0x09): 0x00 0x71 0x80 0x00 0x00 
+  RDDPM     (cmd 0x0A): 0x18 0x00 
+  COLMOD    (cmd 0x0C): 0xEE 0x00 
+  RDDSDR    (cmd 0x0F): 0x00 0x00 
+  RDID1     (cmd 0xDA): 0xFF 0xFF 
+  RDID2     (cmd 0xDB): 0xFF 0xFF 
+  RDID3     (cmd 0xDC): 0xFF 0xFF 
+---- interpretation ----
+  Non-trivial, non-floating response - the pin mapping is wiring real SPI
+  to a real, responding display controller. Good sign for the pin table.
+  No ILI9341 signature found and no other conclusive ID either. See raw
+  bytes above; report them back rather than guessing further.
+=========================================================
+
+---- raw read-back (first byte after each cmd is the MIPI dummy byte) ----
+  RDDID     (cmd 0x04): 0xFF 0xFF 0xFF 0xFF 
+  RDDST     (cmd 0x09): 0x00 0x71 0x80 0x00 0x00 
+  RDDPM     (cmd 0x0A): 0x18 0x00 
+  COLMOD    (cmd 0x0C): 0xEE 0x00 
+  RDDSDR    (cmd 0x0F): 0x00 0x00 
+  RDID1     (cmd 0xDA): 0xFF 0xFF 
+  RDID2     (cmd 0xDB): 0xFF 0xFF 
+  RDID3     (cmd 0xDC): 0xFF 0xFF 
+---- interpretation ----
+  Non-trivial, non-floating response - the pin mapping is wiring real SPI
+  to a real, responding display controller. Good sign for the pin table.
+  No ILI9341 signature found and no other conclusive ID either. See raw
+  bytes above; report them back rather than guessing further.
+=========================================================
+
+---- raw read-back (first byte after each cmd is the MIPI dummy byte) ----
+  RDDID     (cmd 0x04): 0xFF 0xFF 0xFF 0xFF 
+  RDDST     (cmd 0x09): 0x00 0x71 0x80 0x00 0x00 
+  RDDPM     (cmd 0x0A): 0x18 0x00 
+  COLMOD    (cmd 0x0C): 0xEE 0x00 
+  RDDSDR    (cmd 0x0F): 0x00 0x00 
+  RDID1     (cmd 0xDA): 0xFF 0xFF 
+  RDID2     (cmd 0xDB): 0xFF 0xFF 
+  RDID3     (cmd 0xDC): 0xFF 0xFF 
+---- interpretation ----
+  Non-trivial, non-floating response - the pin mapping is wiring real SPI
+  to a real, responding display controller. Good sign for the pin table.
+  No ILI9341 signature found and no other conclusive ID either. See raw
+  bytes above; report them back rather than guessing further.
+=========================================================
+
+---- raw read-back (first byte after each cmd is the MIPI dummy byte) ----
+  RDDID     (cmd 0x04): 0xFF 0xFF 0xFF 0xFF 
+  RDDST     (cmd 0x09): 0x00 0x71 0x80 0x00 0x00 
+  RDDPM     (cmd 0x0A): 0x18 0x00 
+  COLMOD    (cmd 0x0C): 0xEE 0x00 
+  RDDSDR    (cmd 0x0F): 0x00 0x00 
+  RDID1     (cmd 0xDA): 0xFF 0xFF 
+  RDID2     (cmd 0xDB): 0xFF 0xFF 
+  RDID3     (cmd 0xDC): 0xFF 0xFF 
+---- interpretation ----
+  Non-trivial, non-floating response - the pin mapping is wiring real SPI
+  to a real, responding display controller. Good sign for the pin table.
+  No ILI9341 signature found and no other conclusive ID either. See raw
+  bytes above; report them back rather than guessing further.
+=========================================================
+
+---- raw read-back (first byte after each cmd is the MIPI dummy byte) ----
+  RDDID     (cmd 0x04): 0xFF 0xFF 0xFF 0xFF 
+  RDDST     (cmd 0x09): 0x00 0x71 0x80 0x00 0x00 
+  RDDPM     (cmd 0x0A): 0x18 0x00 
+  COLMOD    (cmd 0x0C): 0xEE 0x00 
+  RDDSDR    (cmd 0x0F): 0x00 0x00 
+  RDID1     (cmd 0xDA): 0xFF 0xFF 
+  RDID2     (cmd 0xDB): 0xFF 0xFF 
+  RDID3     (cmd 0xDC): 0xFF 0xFF 
+---- interpretation ----
+  Non-trivial, non-floating response - the pin mapping is wiring real SPI
+  to a real, responding display controller. Good sign for the pin table.
+  No ILI9341 signature found and no other conclusive ID either. See raw
+  bytes above; report them back rather than guessing further.
+=========================================================
