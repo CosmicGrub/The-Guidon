@@ -169,8 +169,26 @@ if (/more ▾/.test((await weakMoreToggle.textContent()) || "")) {
 // is two sibling <span>s with no text-node separator (e.g. "Composite Risk
 // ManagementATP 5-19" as raw textContent), so a plain hasText string match
 // stays simple and unambiguous here.
-await page.locator("button", { hasText: "Supply / Property Accountability" }).click(); // "Regulations & Safety"
-await page.locator("button", { hasText: "Land Navigation / Map Reading" }).click(); // "Field & Technical Skills"
+// Each click toggles the chip's own .active class synchronously in its
+// handler, but under CI's real multi-suite CPU contention (unlike this
+// sandbox, which never reproduced it locally even at a simulated 20x CPU
+// slowdown) a click can land before the browser has finished laying out
+// the freshly-expanded "+more" clusters, so Playwright's own actionability
+// wait resolves against a stale box and the click is swallowed with no
+// error - the observed failure mode was exactly this, silently saving only
+// the first chip. Re-click (bounded) until the chip actually reports
+// .active rather than trusting a single click + fixed sleep.
+async function clickWeakChip(label) {
+  const btn = page.locator("button", { hasText: label });
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await btn.click();
+    if (await btn.evaluate((b) => b.classList.contains("active"))) return;
+    await page.waitForTimeout(100);
+  }
+  bad("clicking the '" + label + "' WeakPoints chip never registered as active after 5 attempts");
+}
+await clickWeakChip("Supply / Property Accountability"); // "Regulations & Safety"
+await clickWeakChip("Land Navigation / Map Reading"); // "Field & Technical Skills"
 await page.waitForTimeout(150);
 // Enhancement backlog round 4, "Profile Minor UX Inconsistencies" bucket:
 // this button used to read "Build my plan →" despite two more steps
@@ -188,12 +206,20 @@ await page.waitForTimeout(300);
 // segments should read done/current now (doneCount === stepIndex === 6).
 assertStepper(await stepperState(), 6, "summary step");
 await page.locator("button", { hasText: /Save profile & start/ }).click();
-await page.waitForTimeout(500);
+// Poll instead of a single fixed sleep - saveProfile() runs async after the
+// click event itself already resolved (Playwright's click() only waits for
+// the browser to dispatch the event, not for an async handler awaiting an
+// IndexedDB write to finish), so a fixed 500ms could read back a stale/
+// missing row under the exact same CI CPU contention clickWeakChip() above
+// guards against.
+let savedRow = null;
+for (let attempt = 0; attempt < 20; attempt++) {
+  savedRow = await page.evaluate(async () => window.G.db.get("kv", "guidon:profile:v1"));
+  if (savedRow && savedRow.v && savedRow.v.onboardingComplete) break;
+  await page.waitForTimeout(100);
+}
 
-const savedWeakPoints = await page.evaluate(async () => {
-  const row = await window.G.db.get("kv", "guidon:profile:v1");
-  return (row && row.v && row.v.studyWeakPoints) || [];
-});
+const savedWeakPoints = (savedRow && savedRow.v && savedRow.v.studyWeakPoints) || [];
 savedWeakPoints.includes("supply") && savedWeakPoints.includes("land nav")
   ? ok("selecting chips from WeakPoints' collapsed '+more' clusters (Supply, Land Navigation) saves them to the real profile")
   : bad("studyWeakPoints after save: " + JSON.stringify(savedWeakPoints));
