@@ -171,7 +171,21 @@ successful push) and [`docs/flashcardos_boot_output.log`](docs/flashcardos_boot_
 (the real firmware's own boot, with real content: `SD: card found on
 CS=5.` / `Loaded 78 categories.` / `Ready - showing subject list.`).
 
-## Touch — a real firmware bug, not a hardware fault
+## Touch — STILL UNRESOLVED as of this session's last test, despite two real, confirmed fixes below
+
+**Status honestly: after the two fixes documented below, the user's own
+live re-test of the actual shipped `flashcardos` firmware still showed
+no taps registering in normal use.** Both fixes below are real, each
+independently confirmed with measured before/after data against the
+physical device - they are not wrong, and are worth keeping - but
+together they did not fully resolve the reported symptom, and this
+session paused (host token budget) before finding what else is wrong.
+The next session picking this up should NOT assume touch works from this
+document alone; re-test on the physical device first, and treat the
+`env:touchtest` diagnostic (below) as the starting tool, not a solved
+problem to skip past.
+
+### First bug (fixed, confirmed): a real firmware bug, not a hardware fault
 
 The real firmware shipped with taps that appeared to do nothing at all -
 finger and stylus, hard and soft, repeatedly. Diagnosed against the
@@ -221,7 +235,7 @@ cooldown was guarding against one held press firing twice, which
 edge-triggering solves structurally instead of with a timer, removing an
 artificial floor on how fast two deliberate taps could ever register.
 
-### Second, more fundamental bug: PWM backlight noise desensitizing touch
+### Second bug (fixed, confirmed, but NOT sufficient on its own): PWM backlight noise desensitizing touch
 
 The stack-overflow fix above turned out not to be the whole story - after
 shipping it, the user reported taps STILL not registering at all,
@@ -261,6 +275,39 @@ occasionally get a clean reading through 5kHz-level noise; a single
 un-repeated UI tap, the normal interaction this app actually needs, much
 less reliably can - which is exactly why calibration once succeeded
 while every-day taps afterward did not.
+
+### Where this actually stands, and what to try next
+
+The 30kHz PWM fix is real (measured 23/4s vs 0/4s in a synthetic poll
+loop) and should stay - reverting it would reintroduce a confirmed
+regression. But it was not sufficient: re-testing the real, shipped
+`flashcardos` firmware end-to-end afterward, the user still could not
+get taps to register in normal use. That gap was not root-caused before
+this session paused. Worth trying next, roughly in order of likelihood:
+
+- Re-run `env:touchtest` (the standalone diagnostic, not the real app)
+  fresh on the current firmware and watch RAW (`getTouchRaw`/
+  `getTouchRawZ`) values specifically, not just `getTouch()`'s calibrated
+  result - if raw z still spikes on contact but `getTouch()` doesn't
+  report it, the stored NVS calibration itself may be bad (touchtest's
+  serial `C` command wipes and redoes it interactively - genuinely retry
+  this rather than trust the existing stored data, which was never
+  confirmed good, only inferred plausible from one earlier sweep).
+- Check whether `main.cpp`'s tight, undelayed `loop()` polling
+  `getTouch()` as fast as possible (no `delay()` at all, unlike
+  `touchtest_main.cpp`'s `delay(150)`) interacts badly with the display
+  now running at 80MHz - e.g. a touch read landing awkwardly relative to
+  a display SPI transaction on the shared bus. Test by temporarily adding
+  a small `delay(10-20)` in `loop()` and re-checking.
+  - **Note:** 80MHz was verified via `env:bringup`'s GRAM round-trip
+    test, which never exercises touch at all. If backing off the display
+    clock (e.g. back to 27MHz) makes touch usable again, that's real
+    evidence they interact on the shared bus even though each tested
+    fine independently.
+- Re-verify the touch pin mapping itself was never actually in question
+  (it's part of the "confirmed hardware" table, not inferred like SD's
+  CS pin) - but if everything above is exhausted, it's worth a multimeter
+  continuity check anyway rather than assuming.
 
 ## Display SPI clock — pushed to the chip's actual ceiling, verified
 

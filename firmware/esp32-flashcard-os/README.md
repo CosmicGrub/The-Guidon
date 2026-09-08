@@ -109,17 +109,21 @@ Full end-to-end bring-up against the physical device, in order:
   display init, touch calibration loaded, SD card found, **all 78
   categories loaded**, subject list shown —
   [`docs/flashcardos_boot_output.log`](docs/flashcardos_boot_output.log).
-- Touch: physically diagnosed live on the real device after taps appeared
-  to do nothing. Two real, separate bugs found and fixed, both confirmed
-  against actual hardware, not guessed: (1) a stack overflow in
-  `drawCard()` that crashed the device the instant a card was opened, and
-  (2) the backlight's 5kHz PWM was genuinely desensitizing the resistive
-  touch ADC via switching noise (0 touch hits/4s at 5kHz vs. 23/4s at
-  30kHz, measured directly) — which is why taps failed even on the
-  subject list, a screen bug (1) never touched. Touch handling also
-  switched to edge-triggered (no more fixed post-touch cooldown). Full
-  root-cause writeup, including the raw comparison logs, in HARDWARE.md's
-  "Touch" section.
+- **Touch: STILL UNRESOLVED as of this session's last test** — read
+  HARDWARE.md's "Touch" section before assuming anything below is fixed.
+  Two real, separate bugs WERE found and fixed, each independently
+  confirmed against physical hardware with measured before/after data:
+  (1) a stack overflow in `drawCard()` that crashed the device the
+  instant a card was opened, and (2) the backlight's 5kHz PWM was
+  genuinely desensitizing the resistive touch ADC via switching noise (0
+  touch hits/4s at 5kHz vs. 23/4s at 30kHz, measured directly). Both fixes
+  are real and worth keeping. **But together they did not fully resolve
+  the reported symptom** — the user's own live re-test of the shipped
+  firmware afterward still showed no taps registering in normal use, and
+  this session paused (host token budget) before finding the remaining
+  cause. HARDWARE.md's "Where this actually stands" subsection has
+  concrete next steps, roughly in order of likelihood, for whoever picks
+  this up next.
 - Display SPI clock pushed to 80MHz — the ESP32's undivided APB clock,
   the literal fastest its SPI peripheral can produce — and verified
   clean via the same GRAM round-trip test, not assumed safe. See
