@@ -25742,7 +25742,16 @@ window.G = window.G || {};
       style: "display:block;margin:10px auto;border-radius:8px;width:220px;height:220px",
     }));
     p.appendChild(el("p", { text: SHARE_URL, style: "font-family:var(--font-mono);word-break:break-all;margin:4px 0 8px;font-size:.85rem" }));
-    const copyBtn = el("button.btn.sm", { type: "button", text: "⎘ Copy link" });
+    // Distinct label from the pre-existing "This app's address" panel's own
+    // "Copy link" button below (which copies THIS page's own current URL -
+    // possibly a self-hosted mirror, not necessarily this exact address) -
+    // two identically-labeled "Copy link" buttons on the same page is a
+    // real ambiguity for a sighted user and an even worse one read aloud by
+    // a screen reader, not just a Playwright strict-mode collision (which
+    // is what actually caught it - test:baseline-coverage's own #/share
+    // check, unrelated to anything this session touched, started matching
+    // 2 elements instead of 1 the moment this button existed).
+    const copyBtn = el("button.btn.sm", { type: "button", text: "⎘ Copy install link" });
     copyBtn.addEventListener("click", () => {
       util.copyText(SHARE_URL, () => util.toast && util.toast("Link copied."));
     });
