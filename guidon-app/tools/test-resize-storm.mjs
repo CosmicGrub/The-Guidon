@@ -568,8 +568,15 @@ if (!SKIP.includes("F")) {
     }
     return [...out];
   });
-  const missing = navInfo.hashes.filter((h) => !reached.includes(h));
-  missing.length === 0 ? ok("F: every nav route (" + navInfo.hashes.length + ") activates from keyboard focus + Enter") : bad("F: " + missing.length + " nav routes not reached by keyboard: " + missing.join(", "));
+  // #/group is a deliberate, documented exception (2026-09-08): navButton()
+  // (src/index.html) always preventDefault()s its click/Enter-activation
+  // when G.caps.isShell() is false - which this plain Chromium test context
+  // always is - and shows a toast instead of navigating, because Study
+  // Rooms cannot host or join anything from a browser tab. It is correctly
+  // NEVER reached this way here; on Android/Tauri (where isShell() is true)
+  // it activates normally, covered by tools/test-study-rooms-shell-gate.mjs.
+  const missing = navInfo.hashes.filter((h) => h !== "#/group" && !reached.includes(h));
+  missing.length === 0 ? ok("F: every keyboard-activatable nav route (" + (navInfo.hashes.length - 1) + " of " + navInfo.hashes.length + ", excluding #/group's documented Study Rooms exception) activates from keyboard focus + Enter") : bad("F: " + missing.length + " nav routes not reached by keyboard: " + missing.join(", "));
   await go(page, "#/home");
   await page.evaluate(() => document.querySelector(".nav a[data-hash]").focus());
   const before = await page.evaluate(() => document.activeElement && document.activeElement.textContent.trim());
