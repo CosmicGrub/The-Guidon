@@ -69,6 +69,20 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      # PR #122 (a routine cargo-routine minor bump, 0.38.2 -> 0.39.1) broke
+      # the Windows desktop build: webview2-com/windows-core are pinned in
+      # guidon-app/src-tauri/Cargo.toml's `[target.'cfg(windows)'.dependencies]`
+      # to the EXACT line tauri-runtime-wry/wry resolve internally (see that
+      # section's own comments) so there is only ONE copy of each crate in
+      # the dependency graph. Bumping either one here alone - even a "routine"
+      # 0.x minor bump - reintroduces a second, incompatible windows_core in
+      # the graph and fails with E0277 on `add_AcceleratorKeyPressed`
+      # (`cargo check --locked` on Windows CI, "bundle-windows" job). These
+      # can only move in lockstep with whatever version wry itself bumps to,
+      # which needs a human to re-verify, not a routine auto-merge.
+      - dependency-name: "webview2-com"
+      - dependency-name: "windows-core"
 
   - package-ecosystem: "gradle"
     directory: "/guidon-app/android"
