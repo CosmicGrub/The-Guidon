@@ -1,0 +1,106 @@
+name: Deploy to GitHub Pages
+
+# Deploys the installable web/ PWA build (guidon-app/web/) to GitHub Pages on
+# every push to main that could change it - the standing project rule
+# established 2026-09-07 is that every release/update gets pushed to every
+# device fork it applies to (Android via adb + a signed APK/AAB release
+# asset, PC via an installer + release asset, iOS via... nothing native, no
+# ios/ Capacitor project exists in this repo and this dev environment is
+# Windows-only with no Xcode/macOS access at all, ever).
+#
+# This is the actual answer for iOS specifically: no App Store, no Xcode, no
+# Mac - a Soldier on an iPhone visits the deployed URL in Safari and taps
+# Share -> Add to Home Screen, and gets a real standalone, offline-capable
+# app (web/index.html already carries every Apple PWA meta tag it needs -
+# apple-mobile-web-app-capable, apple-touch-icon, the manifest link - see
+# tools/build.mjs's own injection of them; nothing here had to be added for
+# this to work, only a public HTTPS host, which is what this workflow is).
+#
+# web/ is deliberately gitignored (see guidon-app/.gitignore) - a build
+# artifact, never committed - so this workflow builds it fresh from source
+# on every run rather than deploying a possibly-stale committed copy.
+#
+# KNOWN GAP, stated plainly rather than silently worked around: Collective
+# Study Rooms will not work for a visitor using this deployed PWA - the
+# feature needs a native TLS listener (Tauri desktop or the Android plugin)
+# to host, and src/room-web.js's own browser-fork code explicitly refuses a
+# secure (wss://) join link with no native connector to dial it - a plain
+# (non-TLS) link can't be opened from an HTTPS-hosted page either (mixed-
+# content blocking). Everything else in the app is unaffected.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'guidon-app/src/**'
+      - 'guidon-app/tools/build.mjs'
+      - 'guidon-app/tools/icon-spec.mjs'
+      - 'guidon-app/tools/make-icons.mjs'
+      - 'guidon-app/web/docs/**'
+      - 'guidon-app/package.json'
+      - 'guidon-app/package-lock.json'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one Pages deployment can be in flight at once; never cancel one that's
+# already live-deploying mid-way (cancel-in-progress: false), only queue
+# behind it - the same reasoning ci.yml's own concurrency notes give for not
+# leaving a half-applied state.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build web/ and upload the Pages artifact
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: guidon-app
+    steps:
+      - name: Checkout
+        # SHA-pin-over-mutable-tag, same convention and same pinned commit
+        # ci.yml's own Checkout steps already use throughout this repo.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Setup Node
+        # Same pinned commit as ci.yml's own lint-build-verify job.
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: guidon-app/package-lock.json
+
+      - name: Install dependencies (npm ci)
+        run: npm ci
+
+      - name: Build (produces guidon-app/web/, the installable PWA)
+        run: npm run build
+
+      - name: Configure Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d  # v6.0.0
+
+      - name: Upload Pages artifact
+        # path: is resolved from the repo root regardless of this job's own
+        # working-directory default above (that default only applies to
+        # `run:` shell steps, not an action's own `with:` inputs).
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5.0.0
+        with:
+          path: guidon-app/web
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346  # v5.0.1
