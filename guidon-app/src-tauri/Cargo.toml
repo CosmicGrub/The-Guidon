@@ -116,16 +116,25 @@ x509-parser = "0.18"
 # APIs with nothing to bind to elsewhere, even though this project only
 # ships a Windows build today (see the cargo-audit notes below).
 [target.'cfg(windows)'.dependencies]
-# R3: ICoreWebView2Controller::add_AcceleratorKeyPressed. Already resolved
-# in Cargo.lock (0.38.2) through tauri-runtime-wry/wry; this only names it
-# as a direct dependency so main.rs can call it.
-webview2-com = "0.39"
+# R3: ICoreWebView2Controller::add_AcceleratorKeyPressed. Pinned to the
+# SAME 0.38.x line that tauri-runtime-wry/wry themselves depend on (see
+# `cargo tree -d` below), not just "whatever resolves" - a second,
+# newer webview2-com (0.39.x previously) resolves to its OWN windows-core,
+# so the ICoreWebView2Controller wry hands back through
+# `webview.controller()` and the ICoreWebView2AcceleratorKeyPressedEventHandler
+# built here are two DIFFERENT, incompatible `windows_core::Interface` impls
+# even though both crates print the same Rust type name - `add_
+# AcceleratorKeyPressed`'s `Param<...>` bound then fails with E0277 ("there
+# are multiple different versions of crate `windows_core` in the dependency
+# graph"), the exact CI failure this comment now documents. Matching wry's
+# own version is what makes it ONE crate, not two.
+webview2-com = "=0.38.2"
 # The plain `windows::core::Result`/`BOOL` webview2-com's own closures need
 # - NOT the full `windows` crate (which webview2-com does not re-export):
-# `windows::core` is itself a re-export of `windows-core`, already resolved
-# at 0.61.2 in Cargo.lock through webview2-com/windows-core itself, so this
-# is the same type either way with far fewer features to compile.
-windows-core = "0.62"
+# `windows::core` is itself a re-export of `windows-core`. Pinned to the
+# same 0.61.x line webview2-com 0.38.2 itself resolves to, for the same
+# single-version reason as above.
+windows-core = "0.61"
 # R-ROOM: GetAdaptersAddresses (iphlpapi), the same API `ipconfig` is built
 # on - real interface enumeration for the non-loopback IPv4 listing.
 # windows-sys 0.60 was already resolved in Cargo.lock (tao's own Win32
