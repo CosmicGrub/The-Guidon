@@ -654,7 +654,7 @@ void loop() {
 #endif
 
   uint16_t tx, ty;
-  bool touched = tft.getTouch(&tx, &ty);
+  bool touched = tft.getTouch(&tx, &ty, 600);
 
 #ifdef DEBUG_TOUCH
   uint32_t touchReadDurUs = micros() - touchReadStartUs;
