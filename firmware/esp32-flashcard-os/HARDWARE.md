@@ -321,10 +321,11 @@ this session paused. Worth trying next, roughly in order of likelihood:
 2. Open serial monitor and tap the panel with finger and stylus.
 3. If needed, type `R` to inspect stored `touchcal`, then type `C` to wipe
    and re-run calibration live (touch all corner targets when prompted).
-4. Build `flashcardos` with debug touch logs enabled:
+4. Build `flashcardos` with debug touch logs enabled (off by default):
 
    ```
-   pio run -e flashcardos --define DEBUG_TOUCH=1 -t upload --upload-port COM12
+   # In platformio.ini ([env:flashcardos] build_flags), add/uncomment: -DDEBUG_TOUCH=1
+   pio run -e flashcardos -t upload --upload-port COM12
    ```
 
 5. Re-test taps in the real UI and compare `touchtest` behavior vs
