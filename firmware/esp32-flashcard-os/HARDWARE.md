@@ -309,6 +309,62 @@ this session paused. Worth trying next, roughly in order of likelihood:
   CS pin) - but if everything above is exhausted, it's worth a multimeter
   continuity check anyway rather than assuming.
 
+#### Diagnostic workflow (current recommended order)
+
+1. Build and flash the standalone touch diagnostic:
+
+   ```
+   cd firmware/esp32-flashcard-os
+   pio run -e touchtest -t upload --upload-port COM12
+   ```
+
+2. Open serial monitor and tap the panel with finger and stylus.
+3. If needed, type `R` to inspect stored `touchcal`, then type `C` to wipe
+   and re-run calibration live (touch all corner targets when prompted).
+4. Build `flashcardos` with debug touch logs enabled (off by default):
+
+   ```
+   # In platformio.ini ([env:flashcardos] build_flags), add/uncomment: -DDEBUG_TOUCH=1
+   pio run -e flashcardos -t upload --upload-port COM12
+   ```
+
+5. Re-test taps in the real UI and compare `touchtest` behavior vs
+   `flashcardos` behavior.
+
+#### Serial log interpretation (what each case means)
+
+- `touchtest` raw z stays flat (for example ~10-20) while tapping:
+  controller is not answering (wiring/bus-level fault).
+- `touchtest` raw z jumps high on contact (for example 1000+) but
+  calibrated touch stays false or coordinates are nonsense:
+  calibration is bad; wipe/recalibrate with `C`.
+- `touchtest` looks healthy, but `flashcardos` with `DEBUG_TOUCH` reports
+  repeated
+  `RAW pressure high but getTouch() failed`:
+  controller is alive but calibrated reads are failing in real app timing,
+  consistent with display/touch shared-bus interaction.
+
+#### Clock revert test (to isolate 80MHz display interaction)
+
+If calibration is known-good and raw touch still drops out only in the
+real app, temporarily lower display SPI clock and retest:
+
+```ini
+; platformio.ini ([display_flags] block)
+-DSPI_FREQUENCY=27000000
+```
+
+If touch suddenly becomes reliable at 27MHz (especially while `touchtest`
+already looked good), treat that as direct evidence the 80MHz display bus
+timing is interacting with touch transactions on this unit.
+
+#### Decision tree
+
+- `touchtest` bad raw -> wiring/power/shared-bus hardware issue.
+- `touchtest` good raw, bad calibrated -> reset/rebuild calibration data.
+- `touchtest` good raw+cal, `flashcardos` bad -> display/touch interaction
+  in normal UI path (poll timing and/or 80MHz clock pressure).
+
 ## Display SPI clock — pushed to the chip's actual ceiling, verified
 
 Bring-up originally shipped a conservative `SPI_FREQUENCY` (27MHz) with a

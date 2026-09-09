@@ -151,6 +151,12 @@ static uint8_t backlightPct = 80; // persisted in NVS, default 80%
 // needed on top of that.
 static bool wasTouched = false;
 
+#ifdef DEBUG_TOUCH
+static uint32_t lastDrawStartUs = 0;
+static uint32_t lastDrawEndUs = 0;
+static uint32_t lastDrawDurUs = 0;
+#endif
+
 // ---------------------------------------------------------------------------
 // Backlight
 // ---------------------------------------------------------------------------
@@ -640,12 +646,37 @@ void setup() {
 }
 
 void loop() {
+#ifdef DEBUG_TOUCH
+  uint16_t rawX = 0, rawY = 0;
+  uint8_t rawTouched = tft.getTouchRaw(&rawX, &rawY);
+  uint16_t rawZ = tft.getTouchRawZ();
+  uint32_t touchReadStartUs = micros();
+#endif
+
   uint16_t tx, ty;
-  bool touched = tft.getTouch(&tx, &ty);
+  bool touched = tft.getTouch(&tx, &ty, 600);
+
+#ifdef DEBUG_TOUCH
+  uint32_t touchReadDurUs = micros() - touchReadStartUs;
+  uint16_t calX = touched ? tx : 0;
+  uint16_t calY = touched ? ty : 0;
+  uint32_t sinceLastDrawUs = lastDrawEndUs ? (micros() - lastDrawEndUs) : 0;
+  Serial.printf("[DEBUG_TOUCH] raw(x=%u y=%u z=%u touched=%u) cal(x=%u y=%u touched=%u) getTouch_us=%lu draw_us=%lu since_draw_us=%lu\n",
+                rawX, rawY, rawZ, rawTouched, calX, calY, touched,
+                (unsigned long)touchReadDurUs, (unsigned long)lastDrawDurUs,
+                (unsigned long)sinceLastDrawUs);
+  if (rawZ >= 600 && !touched) {
+    Serial.println("[DEBUG_TOUCH] RAW pressure high but getTouch() failed -> likely bad calibration or read timing collision.");
+  }
+#endif
+
   if (touched && !wasTouched) {
     // Rising edge only - fires once per press, immediately, regardless of
     // how long the finger lingers afterward. See wasTouched's own comment
     // for why this replaced a fixed post-touch cooldown.
+#ifdef DEBUG_TOUCH
+    lastDrawStartUs = micros();
+#endif
     switch (state) {
       case STATE_SUBJECTS: handleSubjectsTouch(tx, ty); break;
       case STATE_CARD:     handleCardTouch(tx, ty); break;
@@ -656,6 +687,14 @@ void loop() {
       case STATE_CARD:     drawCard(); break;
       case STATE_SETTINGS: drawSettings(); break;
     }
+#ifdef DEBUG_TOUCH
+    lastDrawEndUs = micros();
+    lastDrawDurUs = lastDrawEndUs - lastDrawStartUs;
+#endif
   }
   wasTouched = touched;
+
+  // Shared SPI bus mitigation: touch and display use the same MOSI/MISO/SCLK
+  // lines. A small poll throttle reduces touch/display transaction overlap.
+  delay(10);
 }

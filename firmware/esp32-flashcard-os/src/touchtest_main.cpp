@@ -77,7 +77,9 @@ void setup() {
   Serial.println();
   Serial.println("GUIDON Flashcard OS - touch diagnostic");
   Serial.println("Printing raw ADC (x,y,z) + calibrated getTouch() every 150ms.");
-  Serial.println("Commands: C = clear + recalibrate now, R = show stored calibration");
+  Serial.println("---- Serial commands (type command then Enter) ----");
+  Serial.println("  C : clear NVS touch calibration and re-run calibrateTouch()");
+  Serial.println("  R : print stored touch calibration array from NVS");
   Serial.println();
 
   prefs.begin("guidon", false);
@@ -121,8 +123,11 @@ void loop() {
   // matter what happens at the physical screen is itself the diagnosis
   // (touch controller not answering SPI at all), and that absence is only
   // visible if "nothing changed" is actually logged, not suppressed.
-  Serial.printf("raw x=%4u y=%4u z=%4u rawTouched=%u  |  cal x=%4u y=%4u touched=%u\n",
+  Serial.printf("[RAW] x=%4u y=%4u z=%4u touched=%u  |  [CAL] x=%4u y=%4u touched=%u\n",
                 rawX, rawY, rawZ, rawTouched, calX, calY, calTouched);
+  if (rawZ >= 600 && !calTouched) {
+    Serial.println("[HINT] Raw pressure is high but calibrated touch is false -> stored calibration likely bad; send 'C'.");
+  }
 
   if (calTouched) {
     tft.fillCircle(calX, calY, 4, TFT_GREEN);
