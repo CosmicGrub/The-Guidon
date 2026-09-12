@@ -47,9 +47,11 @@ buildscript {
         // in-tree .kt sources need this declared for real. Same "buildscript{}
         // evaluates before variables.gradle" constraint as the baseline-profile
         // classpath above - version hardcoded here, kept in sync with
-        // variables.gradle's kotlinVersion by hand. 2.0.21 is the latest
-        // stable release compatible with AGP 8.13.0 / compileSdk 36 at the
-        // time this was added.
+        // variables.gradle's kotlinVersion by hand (round 9 caught and fixed
+        // a real drift between the two, plus this comment repeating the
+        // pre-bump number; tools/lint-kotlin-version.mjs, wired into `npm
+        // test`, is the mechanical backstop against a repeat - see its own
+        // header for why).
         classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.10'
 
         // NOTE: Do not place your application dependencies here; they belong
