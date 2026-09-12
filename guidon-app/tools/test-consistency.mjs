@@ -155,8 +155,15 @@ seed.acronyms === 3623 ? ok("3,623 acronym terms intact") : bad(`acronyms: ${see
 // ADP 6-22 (351 -> 353). Then +1 for doc-boardconduct-1 (Milestone 3 of
 // docs/design/content-education-roadmap.md - "Board room posture: Position
 // of Attention and Parade Rest", sourced verbatim from TC 3-21.5 paras
-// 4-4 through 4-6) (353 -> 354).
-seed.doctrine === 354 ? ok("354 doctrine entries intact") : bad(`doctrine: ${seed.doctrine}, expected 354`);
+// 4-4 through 4-6) (353 -> 354). Then +1 for doc-cc-adv-3 (round 10,
+// doctrine-content-accuracy bucket): doc-cc-adv-2's old body cited TC 3-21.5
+// for a "reporting as ordered" script that TC 3-21.5 does not contain -
+// TC 3-21.5 Appendix A-2's real verbatim line is "Sir/Ma'am, [Rank] [Name]
+// reports". "Reporting as ordered" is a real, separately-taught board/summons
+// convention (see board.questions "boardprocedu-4"), so it was split into
+// its own community-tier entry rather than left mis-attributed to the TC
+// 3-21.5 office-reporting procedure (354 -> 355).
+seed.doctrine === 355 ? ok("355 doctrine entries intact") : bad(`doctrine: ${seed.doctrine}, expected 355`);
 // 164 as of v1.4.20: task #104 added a real 46T (Visual Information
 // Equipment Operator-Maintainer) entry, previously mentioned only in a
 // note/array with no MOS-list entry of its own.
@@ -222,6 +229,58 @@ const CITATION_CHECKS = [
 for (const [key, label] of CITATION_CHECKS) {
   const ids = citationFix[key] || [];
   ids.length > 0 ? ok(`${label} - ${ids.length} card(s): ${ids.join(", ")}`) : bad(`${label} - none found`);
+}
+
+/* PRT rep-rule drift guard (round 10, doctrine-content-accuracy bucket):
+ * prt.drills[0].repRule.standalone/combinedSameSession and the two board
+ * cards that restate those same numbers in prose (board.questions
+ * "prt-drills-1" and "prt-drills-12") are three independent copies of the
+ * same two facts, hand-authored in three different places. Nothing before
+ * this enforced that they agree - a future edit to one copy (e.g. fixing
+ * the citation further, or a real doctrine correction) could silently drift
+ * from the other two. This extracts the "up to N reps" (standalone) and
+ * "reduc[ed/tion] ... N rep(s)" (combinedSameSession) figures out of each
+ * card's own text and asserts they equal the live repRule values - a
+ * structural check on real field values, not a hardcoded expectation, so it
+ * stays correct if the numbers themselves are ever revised together. */
+const prtRepRuleCheck = await page.evaluate(() => {
+  const seed = window.GUIDON_SEED;
+  const repRule = seed.prt && seed.prt.drills && seed.prt.drills[0] && seed.prt.drills[0].repRule;
+  const questions = (seed.board && seed.board.questions) || [];
+  const q1 = questions.find((q) => q.id === "prt-drills-1");
+  const q12 = questions.find((q) => q.id === "prt-drills-12");
+
+  const textOf = (q) => [q && q.a, q && q.acceptableAnswer, q && q.boardAnswer, ...((q && q.keyPoints) || [])]
+    .filter((s) => typeof s === "string").join(" \n ");
+
+  const firstMatch = (re, text) => { const m = text.match(re); return m ? Number(m[1]) : null; };
+  const standaloneOf = (text) => firstMatch(/up to (\d+)\s*rep/i, text);
+  const combinedOf = (text) => firstMatch(/reduc\w*\s*(?:to\s*)?(\d+)[\s-]*rep/i, text);
+
+  const q1Text = textOf(q1);
+  const q12Text = textOf(q12);
+
+  return {
+    repRuleStandalone: repRule ? repRule.standalone : null,
+    repRuleCombined: repRule ? repRule.combinedSameSession : null,
+    q1Standalone: standaloneOf(q1Text),
+    q1Combined: combinedOf(q1Text),
+    q12Standalone: standaloneOf(q12Text),
+    q12Combined: combinedOf(q12Text),
+  };
+});
+const PRT_REPRULE_CHECKS = [
+  ["q1Standalone", "repRuleStandalone", 'board.questions "prt-drills-1" states the same standalone rep count as prt.drills[0].repRule.standalone'],
+  ["q1Combined", "repRuleCombined", 'board.questions "prt-drills-1" states the same combined-session rep count as prt.drills[0].repRule.combinedSameSession'],
+  ["q12Standalone", "repRuleStandalone", 'board.questions "prt-drills-12" states the same standalone rep count as prt.drills[0].repRule.standalone'],
+  ["q12Combined", "repRuleCombined", 'board.questions "prt-drills-12" states the same combined-session rep count as prt.drills[0].repRule.combinedSameSession'],
+];
+for (const [gotKey, wantKey, label] of PRT_REPRULE_CHECKS) {
+  const got = prtRepRuleCheck[gotKey];
+  const want = prtRepRuleCheck[wantKey];
+  (got !== null && got === want)
+    ? ok(`${label} (${got})`)
+    : bad(`${label} - card says ${JSON.stringify(got)}, repRule says ${JSON.stringify(want)}`);
 }
 
 await browser.close();
