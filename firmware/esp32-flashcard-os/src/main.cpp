@@ -693,8 +693,4 @@ void loop() {
 #endif
   }
   wasTouched = touched;
-
-  // Shared SPI bus mitigation: touch and display use the same MOSI/MISO/SCLK
-  // lines. A small poll throttle reduces touch/display transaction overlap.
-  delay(10);
 }
