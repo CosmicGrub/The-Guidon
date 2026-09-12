@@ -150,8 +150,11 @@ seed.acronyms === 3623 ? ok("3,623 acronym terms intact") : bad(`acronyms: ${see
 // "Levels of Leadership", which previously only had a dedicated card for
 // the Strategic level (doc-levels-2) - real board MOIs assign a 5-7 page
 // essay on exactly this direct/organizational/strategic framework per
-// ADP 6-22 (351 -> 353).
-seed.doctrine === 353 ? ok("353 doctrine entries intact") : bad(`doctrine: ${seed.doctrine}, expected 353`);
+// ADP 6-22 (351 -> 353). Then +1 for doc-boardconduct-1 (Milestone 3 of
+// docs/design/content-education-roadmap.md - "Board room posture: Position
+// of Attention and Parade Rest", sourced verbatim from TC 3-21.5 paras
+// 4-4 through 4-6) (353 -> 354).
+seed.doctrine === 354 ? ok("354 doctrine entries intact") : bad(`doctrine: ${seed.doctrine}, expected 354`);
 // 164 as of v1.4.20: task #104 added a real 46T (Visual Information
 // Equipment Operator-Maintainer) entry, previously mentioned only in a
 // note/array with no MOS-list entry of its own.
