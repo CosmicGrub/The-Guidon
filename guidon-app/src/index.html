@@ -4396,6 +4396,32 @@ html.reduce-transparency #demo-mode-badge { background: var(--panel-2); }
 .nav :is(button, a):hover { color: var(--text); background: var(--panel-2); }
 .nav :is(button, a).active { color: color-mix(in srgb, var(--amber) 55%, var(--text)); background: color-mix(in srgb, var(--amber) 12%, transparent); }
 .nav .ico { font-size: 1.15rem; line-height: 1; }
+/* ---- Nav overhaul Milestone 2: pin toggles + the "Pinned" section.
+   .nav-item-row wraps a grouped route's own navButton()-built <a> plus its
+   pin toggle - a SIBLING wrapper, not a change to the <a> itself, so every
+   existing ".nav-group-body a[data-hash]"/".nav-drawer a[data-hash]" rule
+   (all descendant selectors) still matches the link with no changes of
+   its own. Appears only inside .nav-group-body/.nav-pinned-section (the
+   phone-portrait dock's own buttons - Home/Sections/etc. - never get a
+   pin toggle, so this shape never appears there). ---- */
+.nav-item-row { display: flex; align-items: stretch; gap: 2px; flex: 0 0 auto; }
+.nav-item-row > a[data-hash] { flex: 1; min-width: 0; }
+.nav-pin-btn {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+  width: 32px; background: transparent; border: 1px solid transparent; border-radius: var(--radius-sm);
+  color: var(--text-dim); cursor: pointer; opacity: .55; transition: opacity .15s, color .15s, border-color .15s;
+}
+.nav-pin-btn:hover, .nav-pin-btn:focus-visible { opacity: 1; color: var(--text); border-color: var(--line); }
+.nav-pin-btn.pinned { opacity: 1; color: var(--amber); }
+.nav-pin-btn svg { width: 14px; height: 14px; }
+/* Not a collapsible group (see renderPinnedInto's own comment) - no
+   header/chevron/open-close state, so this reuses .nav-group-body's own
+   column/gap shape directly rather than duplicating it under a new name. */
+.nav-pinned-section { display: flex; flex-direction: column; gap: 2px; margin-bottom: 4px; }
+.nav-pinned-label {
+  font-family: var(--font-head); font-size: .62rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--amber); padding: 6px 10px 2px;
+}
 .nav-divider { flex: 0 0 auto; width: 1px; align-self: center; height: 22px; background: var(--line); margin: 0 4px; }
 .nav-group-header {
   cursor: pointer; user-select: none;
@@ -4497,6 +4523,16 @@ html.reduce-motion .nav-drawer, html[data-motion="minimal"] .nav-drawer { transi
      the drawer without needing a persistently-visible header. */
 }
 .nav-drawer-head h2 { font-family: var(--font-head); font-size: .95rem; margin: 0; text-transform: uppercase; letter-spacing: .04em; }
+/* Nav overhaul Milestone 2: a stable node openNavDrawer()/
+   refreshNavDrawerIfOpen() can clear and repopulate on its own (a pin
+   toggle needs to refresh the drawer's content WITHOUT closing the whole
+   modal) - display:contents makes it invisible to .nav-drawer's own grid
+   layout, so its children (tiles, pinned rows) lay out exactly as if
+   they were direct children of .nav-drawer, same as before this wrapper
+   existed. */
+.nav-drawer-body { display: contents; }
+.nav-drawer .nav-pinned-section { grid-column: 1 / -1; margin-bottom: 0; }
+.nav-drawer .nav-pinned-label { font-size: .68rem; padding: 4px 4px 2px; }
 .nav-drawer .nav-group-body {
   grid-column: 1 / -1; gap: 2px;
   /* was a plain block-level list item under a vertical accordion; now a
@@ -34525,6 +34561,100 @@ window.G = window.G || {};
   function persistNavOpenGroups() { try { localStorage.setItem("guidon-nav-open-groups", JSON.stringify(Array.from(navOpenGroups))); } catch (e) {} }
   function groupForHash(hash) { return NAV_GROUPS.find((g) => g.hashes.indexOf(hash) !== -1); }
 
+  // Nav overhaul Milestone 2 (docs/design/nav-adaptive-rail.md §3/§4.4):
+  // pinned favorites. An ORDERED array, not a Set - order is meaningful
+  // (oldest pin first) both for the "Pinned" section's own display order
+  // and because the phone-portrait dock (renderNav()'s DOCK_MQ branch,
+  // below) fills its slots from this same array, first-pinned-first,
+  // falling back to NAV_PRIMARY_MOBILE's defaults for any slots a Soldier
+  // hasn't personalized yet. One mechanism, not two - the design doc's
+  // own §7 sketched a second, separate "dock slot" array with its own
+  // edit-mode UI; pinning already IS the personalization action a Soldier
+  // takes, and deriving the dock from it directly means there's no second
+  // control surface to build, explain, or keep in sync with the first.
+  // Same try/catch-wrapped read/write shape as guidon-nav-open-groups
+  // immediately above.
+  let navPinned = [];
+  try {
+    const savedPins = JSON.parse(localStorage.getItem("guidon-nav-pinned-routes") || "[]");
+    if (Array.isArray(savedPins)) navPinned = savedPins.filter((h) => typeof h === "string");
+  } catch (e) {}
+  function persistNavPinned() { try { localStorage.setItem("guidon-nav-pinned-routes", JSON.stringify(navPinned)); } catch (e) {} }
+  function isPinned(hash) { return navPinned.indexOf(hash) !== -1; }
+  // Home is never given a pin toggle (see renderGroupsInto's g.label===null
+  // branch) so it can never reach here through the UI - the "#/home"
+  // guard is defensive insurance, not a reachable path today.
+  function togglePin(hash) {
+    if (hash === "#/home") return;
+    const i = navPinned.indexOf(hash);
+    if (i === -1) navPinned.push(hash); else navPinned.splice(i, 1);
+    persistNavPinned();
+    onNavPinsChanged();
+  }
+  // A pin toggle can be tapped from either the >=600px sidebar (navEl) or
+  // the <600px-portrait Sections drawer (a separate DOM subtree appended
+  // to document.body) - both need to reflect the new pin state, and the
+  // phone dock's own slots may have just changed too. renderNav() handles
+  // the sidebar/dock; refreshNavDrawerIfOpen() (declared further down,
+  // alongside openNavDrawer) is a safe no-op when the drawer isn't open.
+  function onNavPinsChanged() {
+    renderNav();
+    if (typeof refreshNavDrawerIfOpen === "function") refreshNavDrawerIfOpen();
+  }
+  // Shared star-toggle button for both the "Pinned" section (unpin) and
+  // every grouped route row (pin) - one element shape, one aria contract,
+  // so a screen-reader user hears the identical control either way.
+  function pinToggleButton(hash) {
+    const r = ROUTES.find((x) => x.hash === hash);
+    const label = r ? r.label : hash;
+    const pinned = isPinned(hash);
+    const btn = el("button.nav-pin-btn" + (pinned ? ".pinned" : ""), {
+      type: "button",
+      "aria-pressed": pinned ? "true" : "false",
+      "aria-label": (pinned ? "Unpin " : "Pin ") + label,
+      title: (pinned ? "Unpin " : "Pin ") + label,
+      onclick: (e) => {
+        // Stops this from being interpreted as anything other than a pin
+        // toggle - the button is a SIBLING of the row's <a data-hash>, not
+        // its child (a <button> nested inside an <a> is invalid HTML/ARIA
+        // and would make the whole row a single confused control), so a
+        // click here never reaches navButton()'s own onclick regardless -
+        // this guards against ANCESTOR click delegation instead, e.g. the
+        // Sections drawer's own panel-level "close on route click"
+        // listener (openNavDrawer, below), which only matches
+        // e.target.closest("a[data-hash]") and so already ignores this
+        // button - stopPropagation is defensive belt-and-suspenders, not
+        // covering a bug reproduced today.
+        e.preventDefault();
+        e.stopPropagation();
+        togglePin(hash);
+      },
+    }, [G.util.icon("star", 14)]);
+    return btn;
+  }
+  // The "Pinned" section: every currently-pinned route, oldest-first,
+  // rendered as a full row (navButton()'s own <a> + an unpin star) - NOT
+  // a collapsible group (no header/chevron/open-close state to persist),
+  // since the whole point is these stay visible at a glance. Called from
+  // renderGroupsInto's g.label===null branch, right after Home, so it
+  // always sits between Home and the labeled groups in both the sidebar
+  // and the drawer. Renders nothing at all when there are no pins yet -
+  // a fresh install shows no empty "Pinned" husk.
+  function renderPinnedInto(container) {
+    if (!navPinned.length) return;
+    const section = el("div.nav-pinned-section");
+    section.appendChild(el("div.nav-pinned-label", { "aria-hidden": "true" }, ["Pinned"]));
+    navPinned.forEach((hash) => {
+      const b = navButton(hash);
+      if (!b) return; // a pinned route hidden/removed since (NAV_HIDDEN, etc.) - skip rather than render a dead row
+      const row = el("div.nav-item-row");
+      row.appendChild(b);
+      row.appendChild(pinToggleButton(hash));
+      section.appendChild(row);
+    });
+    container.appendChild(section);
+  }
+
   function buildShell() {
     const app = document.getElementById("app");
     util.clear(app);
@@ -34763,16 +34893,21 @@ window.G = window.G || {};
   // than inventing a third visual treatment.
   const DOCK_MQ = window.matchMedia ? window.matchMedia("(max-width: 599px) and (orientation: portrait)") : { matches: false };
 
-  // Tier 1(a): the <600px flat bar used to render all 33 routes in one
-  // horizontally-scrolling strip - the single highest-leverage finding of
-  // the intuitivism pass. Curated to 4 primary routes + "More" below,
-  // which opens the exact same NAV_GROUPS accordion the >=600px sidebar
-  // renders (renderGroupsInto), as a drawer. Zero new routes.
-  // Chosen (confirmed with the user, morning check-in): the dashboard
-  // (Home), the two highest-traffic daily-prep tools (Train, Board
-  // Drill), and Settings - quick theme/account access one tap away
-  // rather than through "More", swapped in over the original draft's
-  // Progress (still fully reachable via More, same as every other route).
+  // Tier 1(a): the <600px-portrait dock used to render all 33 routes in
+  // one horizontally-scrolling strip - the single highest-leverage
+  // finding of the intuitivism pass. Curated to 4 primary routes +
+  // "Sections" below, which opens the exact same NAV_GROUPS accordion the
+  // >=600px sidebar renders (renderGroupsInto), as a drawer. Zero new
+  // routes. Chosen (confirmed with the user, morning check-in): the
+  // dashboard (Home), the two highest-traffic daily-prep tools (Train,
+  // Board Drill), and Settings - quick theme/account access one tap away
+  // rather than through Sections, swapped in over the original draft's
+  // Progress (still fully reachable via Sections, same as every other
+  // route). Nav overhaul Milestone 2: this array is now the FALLBACK
+  // dockSlots() (below) backfills with, not the dock's literal, always-
+  // used content - a Soldier who pins routes sees those in slots 2-4
+  // instead. A fresh install with zero pins still renders exactly this
+  // array, unchanged.
   const NAV_PRIMARY_MOBILE = ["#/home", "#/train", "#/board", "#/settings"];
 
   // Tier 2(b): shared roving-tabindex config (see util.rovingList) for
@@ -34803,6 +34938,12 @@ window.G = window.G || {};
     NAV_GROUPS.forEach((g) => {
       if (g.label === null) {
         g.hashes.forEach((h) => { const b = navButton(h); if (b) container.appendChild(b); });
+        // Nav overhaul Milestone 2: the "Pinned" section renders right
+        // after Home (NAV_GROUPS[0] is always this g.label===null entry -
+        // one Home hash, guaranteed by the data), before any labeled
+        // group - same "always visible, never collapsed" treatment Home
+        // itself already gets, in both the sidebar and the drawer.
+        renderPinnedInto(container);
         return;
       }
       container.appendChild(el("div.nav-divider"));
@@ -34816,7 +34957,17 @@ window.G = window.G || {};
         const b = navButton(h);
         if (!b) return;
         if (g.demoted && g.demoted.indexOf(h) !== -1) b.classList.add("nav-demoted");
-        body.appendChild(b);
+        // Nav overhaul Milestone 2: wrap the route link with its own pin
+        // toggle. A <button> nested inside navButton()'s own <a> would be
+        // invalid HTML/ARIA (nested interactive controls), so this is a
+        // sibling wrapper, not a change to navButton() itself - every
+        // existing ".nav-group-body a[data-hash]"/".nav-drawer a[data-hash]"
+        // selector is a descendant combinator, so it still matches through
+        // this new wrapper with no CSS changes needed for the link itself.
+        const row = el("div.nav-item-row");
+        row.appendChild(b);
+        row.appendChild(pinToggleButton(h));
+        body.appendChild(row);
         // In-group divider (Tier 1(b)): same .nav-divider element already
         // used between groups, just placed inside this one's body too.
         if (g.subdivideAfter === h) body.appendChild(el("div.nav-divider"));
@@ -34851,8 +35002,68 @@ window.G = window.G || {};
   // match - internal names, not user-visible copy, and renaming risked
   // missing one of the many call sites this shared drawer has accumulated.
   let navDrawerTrap = null;
+  // Nav overhaul Milestone 2: kept at this same outer scope as
+  // navDrawerTrap (not local to openNavDrawer) so a pin toggle tapped
+  // from EITHER the sidebar or the drawer can refresh whichever one is
+  // actually live - see onNavPinsChanged/refreshNavDrawerIfOpen below.
+  let navDrawerPanel = null;
+  let navDrawerBody = null;
   function closeNavDrawer() {
-    if (navDrawerTrap) { navDrawerTrap.close(); navDrawerTrap = null; }
+    if (navDrawerTrap) { navDrawerTrap.close(); navDrawerTrap = null; navDrawerPanel = null; navDrawerBody = null; }
+  }
+  // Re-renders just the group/pinned content inside an OPEN drawer, in
+  // place, without closing and reopening the modal (which would replay
+  // its open animation and drop scroll position for what should be a
+  // lightweight star-tap). navDrawerBody is a plain <div display:contents>
+  // (see .nav-drawer-body CSS) - invisible to the .nav-drawer grid layout,
+  // so its children (tiles, pinned rows) still lay out exactly as if they
+  // were direct children of the grid, but this function has one stable
+  // node to clear and repopulate instead of needing to preserve/rebuild
+  // .nav-drawer-head alongside everything else. A safe no-op when the
+  // drawer isn't currently open.
+  function refreshNavDrawerIfOpen() {
+    if (!navDrawerTrap || !navDrawerBody) return;
+    // Bugfix (found live while writing tools/test-nav-pinned-favorites.mjs):
+    // util.clear() below destroys the currently-focused pin-toggle button -
+    // the exact one a Soldier just tapped - so the browser drops focus to
+    // <body>, outside the panel entirely. util.modalTrap's own Tab-cycle
+    // only ever checks document.activeElement against ITS panel's current
+    // first/last focusable, so a focus already outside the panel breaks the
+    // trap silently (Tab/Shift+Tab stop cycling back in) rather than
+    // throwing anything visible. Capture which route's star had focus
+    // before clearing, and hand focus to that SAME route's star again once
+    // it's back in the DOM (it may have moved between the Pinned section
+    // and its group's body, but a pin toggle for that hash always exists
+    // somewhere post-refresh) - focus follows the control the Soldier was
+    // just using, the same contract every other in-place refresh in this
+    // app already honors.
+    let refocusHash = null;
+    if (document.activeElement && navDrawerBody.contains(document.activeElement) && document.activeElement.classList.contains("nav-pin-btn")) {
+      const row = document.activeElement.closest(".nav-item-row");
+      const link = row ? row.querySelector("a[data-hash]") : null;
+      refocusHash = link ? link.getAttribute("data-hash") : null;
+    }
+    util.clear(navDrawerBody);
+    renderGroupsInto(navDrawerBody, { showCounts: true });
+    setActive(location.hash || "#/home", navDrawerPanel);
+    if (refocusHash) {
+      const newRow = Array.from(navDrawerBody.querySelectorAll(".nav-item-row")).find((r) => {
+        const a = r.querySelector("a[data-hash]");
+        return a && a.getAttribute("data-hash") === refocusHash;
+      });
+      const newBtn = newRow ? newRow.querySelector(".nav-pin-btn") : null;
+      if (newBtn) newBtn.focus();
+    }
+    // Re-sync roving tabindex onto the freshly-rebuilt items. Safe to call
+    // again on the same panel: util.rovingList's own keydown/click
+    // listener binding is guarded by container._rovingBound (already true
+    // here, from the original openNavDrawer() call) and skipped on
+    // repeat calls - only its unconditional sync()/rAF-sync() at the top
+    // actually re-runs, which is exactly what's needed: without this, the
+    // brand-new <a> elements this refresh just created would all default
+    // back to their natural tabbable state (every route a Tab stop again)
+    // until some LATER arrow-key press happened to recompute it.
+    if (util.rovingList) util.rovingList(navDrawerPanel, NAV_ROVING_SEL);
   }
   function openNavDrawer() {
     if (navDrawerTrap) return;
@@ -34862,8 +35073,12 @@ window.G = window.G || {};
     closeBtn.appendChild(G.util.icon("x", 16, "✕"));
     closeBtn.addEventListener("click", () => closeNavDrawer());
     panel.appendChild(el("div.nav-drawer-head", {}, [el("h2", { text: "Sections" }), closeBtn]));
-    renderGroupsInto(panel, { showCounts: true });
+    const body = el("div.nav-drawer-body");
+    panel.appendChild(body);
+    renderGroupsInto(body, { showCounts: true });
     setActive(location.hash || "#/home", panel);
+    navDrawerPanel = panel;
+    navDrawerBody = body;
     // Tier 2(b): same roving-tabindex arrow nav as the >=600px sidebar -
     // always active (no isActive gate needed) since the drawer only ever
     // exists in the <600px flat-bar tier, where it's the sole accordion-
@@ -34881,13 +35096,29 @@ window.G = window.G || {};
     back.appendChild(panel);
     back.addEventListener("click", (e) => { if (e.target === back) closeNavDrawer(); });
     document.body.appendChild(back);
-    navDrawerTrap = util.modalTrap(back, panel, () => { navDrawerTrap = null; });
+    navDrawerTrap = util.modalTrap(back, panel, () => { navDrawerTrap = null; navDrawerPanel = null; navDrawerBody = null; });
   }
 
+  // Nav overhaul Milestone 2: the phone-portrait dock's 4 icons - Home
+  // always first (unremovable - it's never given a pin toggle, see
+  // renderGroupsInto's g.label===null branch, so it can only ever fill
+  // this fixed slot, never one of the 3 below), then up to 3 more filled
+  // from the Soldier's own pinned routes (oldest-pin-first, deduped),
+  // backfilled with NAV_PRIMARY_MOBILE's original 3 defaults for any
+  // slot nobody has personalized yet. A fresh install with zero pins
+  // produces this exact function's output byte-identical to the old
+  // hardcoded NAV_PRIMARY_MOBILE array - zero behavior change until a
+  // Soldier actually pins something.
+  function dockSlots() {
+    const slots = ["#/home"];
+    navPinned.forEach((h) => { if (h !== "#/home" && slots.length < 4 && slots.indexOf(h) === -1) slots.push(h); });
+    NAV_PRIMARY_MOBILE.slice(1).forEach((h) => { if (slots.length < 4 && slots.indexOf(h) === -1) slots.push(h); });
+    return slots;
+  }
   function renderNav() {
     util.clear(navEl);
     if (DOCK_MQ.matches) {
-      NAV_PRIMARY_MOBILE.forEach((h) => { const b = navButton(h); if (b) navEl.appendChild(b); });
+      dockSlots().forEach((h) => { const b = navButton(h); if (b) navEl.appendChild(b); });
       const moreBtn = el("button.nav-more-btn", {
         type: "button", "aria-label": "Sections", title: "Sections",
         onclick: () => openNavDrawer(),

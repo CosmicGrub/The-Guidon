@@ -71,7 +71,16 @@ console.log("lint-patterns: static regression guard for repeat bug shapes and re
     const css = html.slice(styleStart, styleEnd);
     const RAW_COLOR = /(?<![\w-])color\s*:\s*var\(--(cyan|violet|red|green|amber)\)/g;
     const hits = [...css.matchAll(RAW_COLOR)];
-    const BASELINE = 119; // audited count as of 2026-08-23 (Rapid Fire,
+    const BASELINE = 120; // audited count as of 2026-09-12 (nav overhaul
+    // Milestone 2: added .nav-pin-btn.pinned and .nav-pinned-label, both
+    // color:var(--amber) - the pin-toggle star's "pinned" tint and the
+    // "Pinned" section's own small uppercase label, matching the same
+    // mono-uppercase-label/icon-tint treatment already audited above
+    // (.mode-course .kc-label, .qz-front .kc-label). Verified via a real
+    // per-theme axe-core sweep (all 24 real theme ids, not a guessed
+    // subset) with a route actually pinned so both rules genuinely
+    // render: 0 color-contrast violations, sidebar and Sections-drawer
+    // contexts alike. Previously 119 as of 2026-08-23 (Rapid Fire,
     // Stage 1: added .rf-card .kc-label and .rf-answer-label, both
     // color:var(--cyan) - the SAME mono-uppercase-label-on-var(--panel)
     // treatment .qz-front .kc-label already uses (already inside this
