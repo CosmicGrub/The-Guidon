@@ -45,7 +45,32 @@ Whenever the backlog above is exhausted and someone asks "what's next," the answ
 
 ---
 
-## 3. Deliberately not built — and why
+## 3. Next up: Content & Educational Materials expansion (design doc, not started)
+
+A full design-and-pitch document exists at
+`guidon-app/docs/design/content-education-roadmap.md` (written 2026-09-10/11)
+proposing four connected additions: a Physical Readiness Training module
+(`#/prt`, the Preparation Drill's 10 exercises — already present as prose
+in the seed today, but with no dedicated feature), a Creeds & Branch
+Identities reading pillar (`#/creeds` — an audit found 3 of the requested
+creeds already exist verbatim as `board.questions` rows, but 11 of 15
+requested branch/unit identities, including every combat-arms and
+sustainment branch motto, do not exist in any form today), a recitation
+study-tools module (`#/recite` — first-letter mnemonics, chunking/
+backwards-chaining, timed recitation, all built on existing SRS/timer
+plumbing with no new engine), and the Global Search/nav/citation wiring to
+make all of it findable. **Nothing in it is implemented** — no route or
+seed key it names exists in `src/index.html` yet. One real, confirmed
+blocker before the PRT module's per-exercise detail can ship: ATP 7-22.02
+(the actual exercise-by-exercise PRT manual FM 7-22 defers to) is not yet
+in `guidon-app/docs-source/` and needs to be acquired first; every other
+piece of this initiative is unblocked. Read that document for the full
+architecture, phased milestones, and open decisions before starting any of
+this work.
+
+---
+
+## 4. Deliberately not built — and why
 
 Not gaps. Each of these was scoped, considered, and declined on its own merits. Revisit only if the stated condition changes.
 
@@ -63,20 +88,20 @@ Repo configuration, not code — outside the standing session authorization that
 
 ---
 
-## 4. Known, tracked, low-priority
+## 5. Known, tracked, low-priority
 
 Small, real items — not urgent, not forgotten.
 
 - **ADP 7-0 self-check category**: audited in full (all 15 items) as of v1.5.0; one genuine mis-file found and fixed. Closed, not open — listed here only so a future pass doesn't re-audit it from scratch without checking this file first.
 - **`GUIDON_MASTERFILE.md` and `GUIDON_PROJECT_MAP.md` numbers drift between updates** — both documents say so about themselves. Prefer deriving a figure live (`tools/declared-routes.mjs`, or a direct seed query) over trusting a hand-written count in either document, this one included, if the figure matters for a real decision.
-- **Dependabot alerts and security updates are disabled repo-wide** (confirmed round 8, `gh api repos/.../security_and_analysis`) — the repo is public, so this costs nothing to enable, but it's a GitHub repo setting, not code, so it falls under the same standing exclusion as other repo-security-settings recommendations (§3 above): flagged for the user, never auto-toggled. This is *why* the `@xmldom/xmldom` advisory below sat unnoticed — a transitive dev-only advisory that never generated a scheduled-bump PR because it's a security-triggered update and those are off.
+- **Dependabot alerts and security updates are disabled repo-wide** (confirmed round 8, `gh api repos/.../security_and_analysis`) — the repo is public, so this costs nothing to enable, but it's a GitHub repo setting, not code, so it falls under the same standing exclusion as other repo-security-settings recommendations (§4 above): flagged for the user, never auto-toggled. This is *why* the `@xmldom/xmldom` advisory below sat unnoticed — a transitive dev-only advisory that never generated a scheduled-bump PR because it's a security-triggered update and those are off.
 - **`@xmldom/xmldom` 0.9.10→0.9.12** (dev-only, via `@capacitor/cli`→`plist`; GHSA-6gmq-8vp8-gcm6) — likely-unreachable in practice (this repo has no `ios:` scripts, never runs `cap add ios`), zero-risk, free lockfile-only bump (`plist` already allows `^0.9.10`). Not yet applied — low urgency, listed here so it isn't lost.
 - **Two content claims flagged in round 8's content-accuracy pass but deliberately NOT auto-corrected**, both near/past the auditing model's own knowledge-cutoff confidence range: `doc-abcp-1`/`doc-abcp-2`'s claimed 7 July 2026 WHtR (waist-to-height ratio) body-composition standard replacing the tape test (specific date/directive/"no sex adjustment" detail unconfirmed), and an unnamed "BRS overview" entry's claimed continuation-pay eligibility window shift (8–12 years → 7–12 years, "as of 1 Jan 2026"). Worth a human subject-matter re-check next time either policy area comes up — do not treat silence here as confirmation either claim is correct.
 - **MOI Import's "Not saved" warning is silently unreachable** (found during round 8's bucket A work, not one of that bucket's assigned fixes): `build()`'s warning text is appended to `stage` and then immediately wiped by `renderAlreadyImported()`'s own clear, so a Soldier never actually sees it. Spun off as its own follow-up task rather than expanding round 8's scope — check whether it's been picked up before re-flagging.
 
 ---
 
-## 5. Picking this up in a new session
+## 6. Picking this up in a new session
 
 - Read this file, then the latest `CHANGELOG.md` entry, before starting anything — both exist so a new session doesn't have to re-derive context a prior one already has.
 - The parallel-Workflow-agent implementation pattern (§2 above) is the default for any multi-part round, not just roadmap audits — it scales cleanly to this codebase's single-file size, including genuinely concurrent edits to the same giant file, as long as bucket boundaries are drawn so overlaps land in different functions where possible.
