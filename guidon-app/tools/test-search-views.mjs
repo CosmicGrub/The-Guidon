@@ -122,6 +122,94 @@ await page.waitForTimeout(250);
 const resCountAfterClear = await page.evaluate(() => (document.querySelector(".meta") || {}).textContent || "");
 /Showing \d+ of \d+ resources/.test(resCountAfterClear) ? ok("Clearing search + chip filter returns to the full resource list") : bad("Resources count after clearing filters: " + resCountAfterClear);
 
+// ==================== Global Search: creed & PRT hit types ====================
+// Global Search's Creeds & Identities / Physical Readiness Training hit types
+// (docs/design/content-education-roadmap.md Milestone 1 wiring, src/index.html
+// ~33661-33686) were indexed and filter-chip-wired from day one, but had zero
+// content until Milestone 3 and zero interactive test coverage even after:
+// the generic route sweep only loads #/search once and never types a query,
+// and test-search-dist-bar.mjs's SECTION_ORDER predates Milestone 3 and still
+// only lists the original six domains. This exercises a real creed hit and a
+// real PRT hit end to end - the card renders, its filter chip actually
+// toggles activeFilter (not just visually), clicking the card navigates to
+// the domain's own view, and the distribution bar shows a segment for the
+// type. "Ranger Creed" and "Bend and Reach" were verified against the live
+// seed to each span exactly two domains (a Board Question plus the creed/prt
+// hit) at 1+1 results - real cross-domain queries the distribution bar
+// actually has something proportional to show, not queries that happen to
+// hit only one domain (which renders no bar at all - see
+// test-search-dist-bar.mjs's own single-domain case).
+await page.evaluate(() => { location.hash = "#/search"; });
+await page.waitForTimeout(500);
+const gsInput = page.locator('input[aria-label="Global search"]');
+
+// ---- creed ----
+await gsInput.fill("Ranger Creed");
+await page.waitForTimeout(250);
+const creedBarSegs = await page.evaluate(() => [...document.querySelectorAll(".search-dist-seg")].map((s) => s.title));
+creedBarSegs.some((t) => /Creeds & Identities/.test(t))
+  ? ok("Global Search distribution bar shows a Creeds & Identities segment for a query spanning creed + board (" + creedBarSegs.join(" | ") + ")")
+  : bad("no Creeds & Identities segment in distribution bar: " + JSON.stringify(creedBarSegs));
+
+const creedChip = page.locator(".search-chip", { hasText: "Creeds & Identities" });
+await creedChip.click();
+await page.waitForTimeout(150);
+const creedChipActive = await creedChip.evaluate((el) => el.classList.contains("active") && el.getAttribute("aria-pressed") === "true");
+creedChipActive ? ok("Creeds & Identities filter chip activates (class + aria-pressed) on click") : bad("Creeds & Identities chip did not activate");
+
+const creedFiltered = await page.evaluate(() => ({
+  hits: document.querySelectorAll(".search-hit").length,
+  sections: document.querySelectorAll(".search-section").length,
+  title: (document.querySelector(".search-hit-title") || {}).textContent || "",
+}));
+(creedFiltered.hits === 1 && creedFiltered.sections === 1)
+  ? ok("Creeds & Identities chip filters results down to the creed hit only (1 result)")
+  : bad("after Creeds & Identities filter: " + creedFiltered.hits + " hit(s) in " + creedFiltered.sections + " section(s)");
+/Ranger Creed/i.test(creedFiltered.title)
+  ? ok('a creed-typed result renders for "Ranger Creed" (title: "' + creedFiltered.title + '")')
+  : bad("unexpected creed hit title: " + creedFiltered.title);
+
+await page.locator(".search-hit").first().click();
+await page.waitForTimeout(150);
+const creedNavHash = await page.evaluate(() => location.hash);
+creedNavHash === "#/creeds" ? ok("clicking a creed search hit navigates to #/creeds") : bad("clicking a creed search hit navigated to " + creedNavHash + ", expected #/creeds");
+
+// ---- prt ----
+// Fresh mount of #/search resets activeFilter back to "all" (it's a local
+// closure variable re-initialized every render), so no manual reset needed.
+await page.evaluate(() => { location.hash = "#/search"; });
+await page.waitForTimeout(500);
+const gsInput2 = page.locator('input[aria-label="Global search"]');
+await gsInput2.fill("Bend and Reach");
+await page.waitForTimeout(250);
+const prtBarSegs = await page.evaluate(() => [...document.querySelectorAll(".search-dist-seg")].map((s) => s.title));
+prtBarSegs.some((t) => /Physical Readiness/.test(t))
+  ? ok("Global Search distribution bar shows a Physical Readiness segment for a query spanning prt + board (" + prtBarSegs.join(" | ") + ")")
+  : bad("no Physical Readiness segment in distribution bar: " + JSON.stringify(prtBarSegs));
+
+const prtChip = page.locator(".search-chip", { hasText: "Physical Readiness" });
+await prtChip.click();
+await page.waitForTimeout(150);
+const prtChipActive = await prtChip.evaluate((el) => el.classList.contains("active") && el.getAttribute("aria-pressed") === "true");
+prtChipActive ? ok("Physical Readiness filter chip activates (class + aria-pressed) on click") : bad("Physical Readiness chip did not activate");
+
+const prtFiltered = await page.evaluate(() => ({
+  hits: document.querySelectorAll(".search-hit").length,
+  sections: document.querySelectorAll(".search-section").length,
+  title: (document.querySelector(".search-hit-title") || {}).textContent || "",
+}));
+(prtFiltered.hits === 1 && prtFiltered.sections === 1)
+  ? ok("Physical Readiness chip filters results down to the prt hit only (1 result)")
+  : bad("after Physical Readiness filter: " + prtFiltered.hits + " hit(s) in " + prtFiltered.sections + " section(s)");
+/Bend and Reach/i.test(prtFiltered.title)
+  ? ok('a prt-typed result renders for "Bend and Reach" (title: "' + prtFiltered.title + '")')
+  : bad("unexpected prt hit title: " + prtFiltered.title);
+
+await page.locator(".search-hit").first().click();
+await page.waitForTimeout(150);
+const prtNavHash = await page.evaluate(() => location.hash);
+prtNavHash === "#/prt" ? ok("clicking a prt search hit navigates to #/prt") : bad("clicking a prt search hit navigated to " + prtNavHash + ", expected #/prt");
+
 const relevantNoise = noise.filter((n) => !/favicon/.test(n));
 relevantNoise.length === 0 ? ok("no console errors/warnings") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));
 

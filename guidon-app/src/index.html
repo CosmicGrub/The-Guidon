@@ -7814,7 +7814,7 @@ window.G = window.G || {};
     // ---- prt (Physical Readiness Training) ----
     // New in Milestone 1 of docs/design/content-education-roadmap.md.
     // GUIDON_SEED.prt is {drills:[{id,name,cadence,repRule,exercises:[...]}]}
-    // - no content yet, only the empty `drills` array as of this commit.
+    // - the Preparation Drill (1 drill, 10 exercises) landed in Milestone 2.
     // prt() flattens every drill's exercises into one array (mirroring
     // doctrine()'s flat-entries shape, since Global Search's haystack
     // wants one flat pool of records, not a grouped structure); prtMeta()
@@ -7826,10 +7826,25 @@ window.G = window.G || {};
     // Reference Library already establish for content that isn't rank-
     // gated - every Soldier performs the same PD sequence regardless of
     // grade, so there is nothing to filter.
+    // Memoized on state._prtBaseCache the same way creeds() above memoizes
+    // on state._creedsBaseCache: with no tierFilter to key on, the flatten
+    // is only ever invalidated by !!state.seed.prt flipping false -> true
+    // (the same first-boot content race boardQuestions()/doctrine()/
+    // creeds() already guard against - see creeds()'s own comment). Before
+    // this, every call - including every keystroke of a Global Search query,
+    // since runSearch() calls store.prt("") on each debounced re-render -
+    // re-walked and re-concat()'d every drill's exercises array from
+    // scratch, work whose result cannot change within a session once the
+    // seed has loaded.
     prt(query) {
-      const drills = (state.seed.prt && state.seed.prt.drills) || [];
-      let list = [];
-      drills.forEach((d) => { list = list.concat(d.exercises || []); });
+      const baseKey = !!state.seed.prt;
+      if (!state._prtBaseCache || state._prtBaseCache.key !== baseKey) {
+        const drills = (state.seed.prt && state.seed.prt.drills) || [];
+        let base = [];
+        drills.forEach((d) => { base = base.concat(d.exercises || []); });
+        state._prtBaseCache = { key: baseKey, list: base };
+      }
+      let list = state._prtBaseCache.list;
       if (query) {
         const q = query.toLowerCase();
         list = list.filter((p) =>
