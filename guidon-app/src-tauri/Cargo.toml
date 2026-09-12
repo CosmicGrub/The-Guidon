@@ -152,8 +152,18 @@ tauri = { version = "2", features = ["test"] }
 # Tracked, unfixed transitive advisories (checked 2026-08-13, task #245/#246;
 # advisory IDs re-verified 2026-08-30, roadmap-week audit; group 1 broadened
 # to cover its full 12-crate closure by name/count 2026-08-30, roadmap-week
-# audit 2nd pass — `cargo audit` reports 17 allowed warnings total today,
-# matching this comment's 12 (group 1) + 5 (group 2) breakdown exactly)
+# audit 2nd pass — at that point `cargo audit` reported 17 allowed warnings
+# total, matching this comment's 12 (group 1) + 5 (group 2) breakdown exactly.
+# Re-run 2026-09-12, roadmap-audit round 9: RUSTSEC-2024-0415 (gtk 0.18.2's
+# "unmaintained GTK3 bindings" advisory, group 1 below) was WITHDRAWN
+# upstream 2026-08-14 and no longer appears in the advisory database at all
+# — `cargo audit` against this same Cargo.lock now reports only 7 allowed
+# warnings: glib + proc-macro-error from group 1, plus all 5 of group 2's
+# unic-* crates, unchanged. Group 1's prose below still names the withdrawn
+# advisory and its 10-crate closure for context (atk/atk-sys/gdk/etc. still
+# resolve into the dependency tree via gtk - withdrawal of the advisory
+# doesn't remove the crates, just the warning), but only glib and
+# proc-macro-error still actually warn as of this count.)
 #
 # `cargo audit` now runs non-blocking in CI (.github/workflows/ci.yml,
 # "cargo audit (src-tauri)" job) so newly-published advisories surface on
@@ -165,7 +175,9 @@ tauri = { version = "2", features = ["test"] }
 #
 # 1) glib/gtk-rs GTK3 bindings and their FULL transitive closure — this
 #    entry summarizes by root cause, not by exhaustively naming every leaf
-#    crate; `cargo audit` currently reports 12 warnings in this family:
+#    crate; `cargo audit` reported 12 warnings in this family as of the
+#    2026-08-30 count above, but as of the 2026-09-12 re-run only 2 of
+#    those 12 still warn:
 #    glib 0.18.5 itself (RUSTSEC-2024-0429, unsound Iterator/
 #    DoubleEndedIterator impl on glib::VariantStrIter — a patched glib
 #    >=0.20.0 DOES exist upstream, per the advisory's own [versions] block;
@@ -173,13 +185,16 @@ tauri = { version = "2", features = ["test"] }
 #    The real, still-unfixable-from-here blocker is narrower than that: gtk
 #    0.18.2's own unmaintained GTK3 bindings (RUSTSEC-2024-0415, covering
 #    atk/atk-sys/gdk/gdk-sys/gdkwayland-sys/gdkx11/gdkx11-sys/gtk/gtk-sys/
-#    gtk3-macros) pin glib to the 0.18.x line and have never moved past it,
-#    so this project can't reach glib's real fix without gtk-rs itself
-#    resuming GTK3 maintenance first — confirmed via `cargo tree --target
-#    x86_64-unknown-linux-gnu -i glib`, which traces glib 0.18.5 solely
-#    through gtk 0.18.2. Also in this family: proc-macro-error
+#    gtk3-macros — 10 crates, WITHDRAWN upstream 2026-08-14 and no longer
+#    surfaced by `cargo audit` at all, though the crates themselves are
+#    still in the tree) pin glib to the 0.18.x line and have never moved
+#    past it, so this project can't reach glib's real fix without gtk-rs
+#    itself resuming GTK3 maintenance first — confirmed via `cargo tree
+#    --target x86_64-unknown-linux-gnu -i glib`, which traces glib 0.18.5
+#    solely through gtk 0.18.2. Also in this family: proc-macro-error
 #    (RUSTSEC-2024-0370, unmaintained — a proc-macro dependency of
-#    glib-macros/gtk3-macros, so it rides in on the exact same chain).
+#    glib-macros/gtk3-macros, so it rides in on the exact same chain;
+#    still warns today, unaffected by RUSTSEC-2024-0415's withdrawal).
 #    All pulled in transitively as Tauri's Linux windowing backend. Confirmed
 #    via `cargo tree -p glib --target x86_64-pc-windows-msvc` (and the same
 #    check repeated for proc-macro-error) printing nothing — the crates
@@ -187,7 +202,7 @@ tauri = { version = "2", features = ["test"] }
 #    x86_64-unknown-linux-gnu` (resolves normally, tracing through
 #    glib-macros/gtk3-macros -> glib/gtk -> tauri): this project only ships
 #    a Windows desktop build (no Linux target in CI or in tauri.conf.json),
-#    so none of these 12 advisories' code ever compiles into, let alone runs
+#    so none of these advisories' code ever compiles into, let alone runs
 #    in, the shipped binary. No action possible from this project's
 #    Cargo.toml either way — every one of these crates is chosen by Tauri
 #    itself, conditionally per target, not something GUIDON depends on
