@@ -6486,7 +6486,7 @@ window.G = window.G || {};
     // its own flag, so pause()/resume() and onVisible() can't stomp on
     // each other.
     var manualPaused = false, hiddenPaused = false, finished = false, elapsedMs = 0, remaining = opts.totalSec;
-    var wakeLock = null;
+    var wakeLock = null, wakeLockPending = false;
     function isPaused() { return manualPaused || hiddenPaused; }
     // Item 4: keep the screen on for the life of an active round - a PRT
     // exercise, or an untimed Timed Recitation run, can easily outlast a
@@ -6502,24 +6502,45 @@ window.G = window.G || {};
     // allows releasing on visibilitychange to hidden) keeps our own
     // reference in sync without a second code path.
     function acquireWakeLock() {
-      if (wakeLock || isPaused() || finished) return;
+      // Roadmap audit round 10, "Shared util-layer fixes" bucket, item c:
+      // the old guard only checked the settled `wakeLock` variable, not a
+      // request already in flight - a zero-delay pause() then resume()
+      // (both synchronous) calls acquireWakeLock() again before the first
+      // navigator.wakeLock.request() has resolved, firing a second real
+      // request. Both eventually resolve with isPaused()/finished false, so
+      // the second .then() silently overwrites `wakeLock` with its own
+      // sentinel and the first one is never released - a permanent leak.
+      // wakeLockPending closes that window: only one request() call can
+      // ever be outstanding at a time.
+      if (wakeLock || wakeLockPending || isPaused() || finished) return;
       try {
         if (!(navigator.wakeLock && typeof navigator.wakeLock.request === "function")) return;
+        wakeLockPending = true;
         navigator.wakeLock.request("screen").then(function (lock) { // floor-ok: the typeof check just above already returned on an engine without the API
+          wakeLockPending = false;
           // The request is async - if the round paused/finished/tore down
           // while it was in flight, don't hang onto a lock nothing wants.
           if (isPaused() || finished) { try { lock.release(); } catch (e) {} return; }
           wakeLock = lock;
           wakeLock.addEventListener("release", function () { wakeLock = null; });
-        }, function () {});
-      } catch (e) {}
+        }, function () { wakeLockPending = false; });
+      } catch (e) { wakeLockPending = false; }
     }
     function releaseWakeLock() {
       if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
     }
     function cleanup() { clearInterval(handle); document.removeEventListener("visibilitychange", onVisible); releaseWakeLock(); }
     function tick() {
-      if (!opts.anchorEl.isConnected) { cleanup(); return; }
+      // Roadmap audit round 10, "Shared util-layer fixes" bucket, item b:
+      // must set finished = true here too, mirroring stop() below - this
+      // branch fires on ordinary navigation away from the view (the anchor
+      // element is torn down without anyone calling stop()/pause() first),
+      // and without it a wake-lock request already in flight resolves into
+      // acquireWakeLock()'s .then() with isPaused()===false/finished===false
+      // and happily assigns to `wakeLock` - a grant nothing will ever
+      // release, since cleanup() below only calls releaseWakeLock() once,
+      // synchronously, before that async .then() has even run.
+      if (!opts.anchorEl.isConnected) { finished = true; cleanup(); return; }
       if (isPaused() || finished) return;
       elapsedMs += 1000;
       if (remaining != null) {
@@ -6901,6 +6922,16 @@ window.G = window.G || {};
         if (window.console) console.error(err);
       }).then(function () {
         btn.disabled = false; btn.removeAttribute("aria-busy"); btn.textContent = label;
+        // Roadmap audit round 10, "Shared util-layer fixes" bucket, item a:
+        // disabling btn while it's still the focused element triggers the
+        // browser's own focus-fixup to <body> (nothing else claims focus in
+        // the meantime for a same-tick async handler) - and nothing used to
+        // reclaim it once btn was re-enabled here, silently dropping a
+        // keyboard/screen-reader user off the page they were just on. Only
+        // steps in when focus really did fall all the way to <body> - never
+        // steals it back from something the user clicked/tabbed to while
+        // the handler was running.
+        if (document.activeElement === document.body) btn.focus();
       });
     });
     return btn;
