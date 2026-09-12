@@ -31598,6 +31598,18 @@ window.G = window.G || {};
     box.appendChild(inp);
     mount.appendChild(box);
     inp.addEventListener("input", function () { query = inp.value.trim().toLowerCase(); renderList(); renderDetail(); });
+    // Roadmap audit round 10, "Creeds view fixes" bucket: mirrors Doctrine's
+    // search-input keydown (same file) - ArrowDown from the search box
+    // enters listPane at its first row, the down-direction complement to
+    // the row keydown handler's ArrowUp-from-row-0-returns-here below
+    // (renderList()). Guards for an empty/filtered-to-zero list ("No
+    // matches." rendered instead of rows - querySelector then returns null).
+    inp.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowDown") {
+        var first = listPane.querySelector(".list-detail-row");
+        if (first) { e.preventDefault(); first.focus(); }
+      }
+    });
 
     var selectedId = all[0].id;
     var listPane = el("div.list-detail-list", { role: "listbox", "aria-label": "Creeds and branch identities" });
