@@ -116,7 +116,11 @@ const seed = await page.evaluate(() => {
   };
 });
 seed.isObject ? ok("GUIDON_SEED parsed to an object") : bad("GUIDON_SEED is not an object");
-seed.topKeys === 17 ? ok("seed has all 17 top-level sections") : bad(`expected 17 top-level keys, got ${seed.topKeys}`);
+// 19 as of Milestone 1 of docs/design/content-education-roadmap.md: added
+// `creeds` ([]) and `prt` ({drills:[]}) as new empty top-level keys - no
+// content yet, that's Milestone 2/3, but the keys themselves are real from
+// this commit forward.
+seed.topKeys === 19 ? ok("seed has all 19 top-level sections") : bad(`expected 19 top-level keys, got ${seed.topKeys}`);
 // 984 as of the quick-win internal-redundancy pass: General Orders (bq21,
 // bq22 - strict subsets of go-1/go-3), Weapons TC 3-22.9 (m4-1 duplicate
 // of wpn-8; m4-2 duplicate of wpn-9), and TCCC/First Aid (bq-tccc-01,

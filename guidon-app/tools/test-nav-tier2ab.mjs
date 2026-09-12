@@ -217,14 +217,22 @@ async function focusedId(page) {
     downSequence.push(await focusedId(page));
   }
   // From #/records (Board Prep: train, board, records, calendar, doctrine,
-  // dictionary, library, moi): +1 -> calendar, +2 -> doctrine, +3 -> dictionary.
-  JSON.stringify(downSequence) === JSON.stringify(["#/calendar", "#/doctrine", "#/dictionary"])
+  // creeds, prt, recite, dictionary, library, moi - #/group excluded, see
+  // this file's own comment above): +1 -> calendar, +2 -> doctrine,
+  // +3 -> creeds. Milestone 1 of docs/design/content-education-roadmap.md
+  // inserted creeds/prt/recite between doctrine and dictionary
+  // (NAV_GROUPS' own "prep" hashes array) - this sequence and the named
+  // presses below were re-derived from that real array, not just
+  // re-counted blindly.
+  JSON.stringify(downSequence) === JSON.stringify(["#/calendar", "#/doctrine", "#/creeds"])
     ? ok("ArrowDown roves forward through the open 'Board Prep' group in order")
     : bad("ArrowDown sequence from #/records (x3): " + JSON.stringify(downSequence));
+  await page.keyboard.press("ArrowDown"); // -> prt
+  await page.keyboard.press("ArrowDown"); // -> recite
+  await page.keyboard.press("ArrowDown"); // -> dictionary
   await page.keyboard.press("ArrowDown"); // -> library
   // Round 6 appended #/moi to the end of "Board Prep" (after library), so
-  // it's now the group's last item - one more ArrowDown than before this
-  // round to actually reach it.
+  // it's now the group's last item.
   await page.keyboard.press("ArrowDown"); // -> moi (last of Board Prep, as of round 6)
   await page.keyboard.press("ArrowDown"); // -> Study & Skills header (skips its collapsed members entirely)
   const afterSkip = await focusedId(page);
