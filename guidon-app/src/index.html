@@ -17508,7 +17508,11 @@ window.G = window.G || {};
             "<p style='font-size:12px;color:#555'>DA Form 7278 practice worksheet (DA PAM 190-51). GUIDON training aid — not an official determination.</p>";
           util.printHTML("Risk Level Worksheet — " + (model.resource || ""), html);
         } }),
-        el("button.btn.ghost", { text: "Reset", onclick: () => G.risk.render(mount) }),
+        el("button.btn.ghost", { text: "Reset", onclick: async () => {
+          if (!(await G.modal.confirm("Reset this worksheet? Your typed answers will be lost.", { okText: "Reset", danger: true }))) return;
+          G.risk.render(mount);
+          util.toast("Worksheet reset.");
+        } }),
       ]));
       mount.appendChild(saved);
 
@@ -33372,7 +33376,7 @@ window.G = window.G || {};
     mount.appendChild(el("div.section-title", {}, [el("h2", { text: "Search" }), el("div.rule")]));
 
     const panel = el("div.panel");
-    panel.appendChild(el("p.hint", { text: "Search across all scenarios, doctrine, board questions, creeds & branch identities, physical readiness training, curriculum lessons, and MOS/career data. Use filters to narrow results." }));
+    panel.appendChild(el("p.hint", { text: "Search across all scenarios, doctrine, board questions, creeds & branch identities, physical readiness training, curriculum lessons, resources, and MOS/career data. Use filters to narrow results." }));
 
     // Search input
     const box = el("div.search-box");

@@ -58,6 +58,31 @@ async function goto(hash) {
   await page.waitForTimeout(500);
 }
 
+// Roadmap audit round 9, "quick low-risk fixes" bucket: the "Reset" button
+// now gates through G.modal.confirm({okText:"Reset", danger:true}) like
+// every other destructive Clear/Reset action in the app (Forms Trainer,
+// POA Planner - see test-baseline-coverage.mjs's own "Clear confirm gates"
+// comment for the same pattern), so a plain click on "Reset" no longer
+// wipes the worksheet by itself - it only opens the dialog. assertDialog
+// is opt-in (default true) so callers that already asserted the dialog
+// text once don't need to re-assert it on every subsequent Reset in this
+// same file.
+async function clickReset(assertDialog = true) {
+  await page.locator("button", { hasText: /^Reset$/ }).click();
+  await page.waitForTimeout(300);
+  if (assertDialog) {
+    const dialogText = await page.evaluate(() => (document.querySelector(".gm-box") || {}).textContent || "");
+    /Reset this worksheet\?/.test(dialogText)
+      ? ok("Reset button shows a confirm dialog before wiping typed answers")
+      : bad("Reset confirm dialog text: " + JSON.stringify(dialogText));
+  }
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll(".gm-box button")].find((x) => /^Reset$/.test((x.textContent || "").trim()));
+    if (b) b.click();
+  });
+  await page.waitForTimeout(300);
+}
+
 // Start clean regardless of anything a prior test left behind.
 await page.evaluate(() => window.G.db.put("kv", { k: "risk:all", v: [] }));
 
@@ -97,8 +122,7 @@ valueRating === "3" ? ok("the template's own valueIdx (3, 'High') is pre-filled 
 
 // Reset back to a blank worksheet before the write-race tests below, so
 // stray template data doesn't leak into the saved rows they assert on.
-await page.locator("button", { hasText: /^Reset$/ }).click();
-await page.waitForTimeout(300);
+await clickReset();
 
 // ==================== 3) Delete removes the correct saved worksheet ====================
 await page.evaluate(() => window.G.db.put("kv", { k: "risk:all", v: [
@@ -216,8 +240,7 @@ await page.evaluate(() => window.G.db.put("kv", { k: "risk:all", v: [
 ] }));
 await goto("#/");
 await goto("#/risk");
-await page.locator("button", { hasText: /^Reset$/ }).click();
-await page.waitForTimeout(300);
+await clickReset(false);
 
 // ==================== 6) Concurrent Save + Delete regression test ====================
 // This is the actual regression coverage for the _serialize() write-queue
