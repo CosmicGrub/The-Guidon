@@ -6475,11 +6475,52 @@ window.G = window.G || {};
   util.makeRoundTimer = function (opts) {
     // opts: { anchorEl, totalSec (null = count up, never auto-finishes),
     //         onTick(elapsedMs, remainingSecOrNull), onDone() }
-    var paused = false, finished = false, elapsedMs = 0, remaining = opts.totalSec;
-    function cleanup() { clearInterval(handle); document.removeEventListener("visibilitychange", onVisible); }
+    // Roadmap audit round 9, "Shared round-timer & PRT drill-runner fixes"
+    // bucket, item 1: a single `paused` boolean used to be written by BOTH
+    // pause()/resume() (a person's deliberate choice) and onVisible() (an
+    // automatic reaction to the tab/app being backgrounded) - so a manual
+    // Pause survived only until the next visibility toggle, which silently
+    // flipped the one shared flag back to false and resumed a round the
+    // person had stopped on purpose. Split into two independent flags, OR'd
+    // together below for the actual gate: each writer now only ever touches
+    // its own flag, so pause()/resume() and onVisible() can't stomp on
+    // each other.
+    var manualPaused = false, hiddenPaused = false, finished = false, elapsedMs = 0, remaining = opts.totalSec;
+    var wakeLock = null;
+    function isPaused() { return manualPaused || hiddenPaused; }
+    // Item 4: keep the screen on for the life of an active round - a PRT
+    // exercise, or an untimed Timed Recitation run, can easily outlast a
+    // phone's screen-off timeout, and a dark screen means nobody can see
+    // the clock counting. Mirrors studygroup.js's own requestWakeLock()/
+    // releaseWakeLock() (search src/app-modules/studygroup.js for
+    // "requestWakeLock") - same typeof-guarded detect-then-check idiom
+    // lint-engine-floor.mjs's own doc comment names explicitly, same
+    // try/catch (Safari <16.4 and older WebViews have no Wake Lock API at
+    // all, and even where it exists the request can reject, e.g. low
+    // battery - none of that should ever be allowed to fail a round), and
+    // the same "release" listener so an OS-triggered release (the spec
+    // allows releasing on visibilitychange to hidden) keeps our own
+    // reference in sync without a second code path.
+    function acquireWakeLock() {
+      if (wakeLock || isPaused() || finished) return;
+      try {
+        if (!(navigator.wakeLock && typeof navigator.wakeLock.request === "function")) return;
+        navigator.wakeLock.request("screen").then(function (lock) { // floor-ok: the typeof check just above already returned on an engine without the API
+          // The request is async - if the round paused/finished/tore down
+          // while it was in flight, don't hang onto a lock nothing wants.
+          if (isPaused() || finished) { try { lock.release(); } catch (e) {} return; }
+          wakeLock = lock;
+          wakeLock.addEventListener("release", function () { wakeLock = null; });
+        }, function () {});
+      } catch (e) {}
+    }
+    function releaseWakeLock() {
+      if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
+    }
+    function cleanup() { clearInterval(handle); document.removeEventListener("visibilitychange", onVisible); releaseWakeLock(); }
     function tick() {
       if (!opts.anchorEl.isConnected) { cleanup(); return; }
-      if (paused || finished) return;
+      if (isPaused() || finished) return;
       elapsedMs += 1000;
       if (remaining != null) {
         remaining--;
@@ -6495,14 +6536,16 @@ window.G = window.G || {};
     }
     function onVisible() {
       if (!opts.anchorEl.isConnected) { document.removeEventListener("visibilitychange", onVisible); return; }
-      paused = document.visibilityState === "hidden";
+      hiddenPaused = document.visibilityState === "hidden";
+      if (hiddenPaused) releaseWakeLock(); else acquireWakeLock();
     }
     document.addEventListener("visibilitychange", onVisible);
     var handle = setInterval(tick, 1000);
+    acquireWakeLock();
     return {
       stop: function () { finished = true; cleanup(); },
-      pause: function () { paused = true; },
-      resume: function () { paused = false; },
+      pause: function () { manualPaused = true; releaseWakeLock(); },
+      resume: function () { manualPaused = false; acquireWakeLock(); },
     };
   };
 
@@ -31835,16 +31878,30 @@ window.G = window.G || {};
         checklist.appendChild(el("h4", { text: "Before you start" }));
         ["Position of attention, chin drawn in, shoulders square", "Eye contact with the panel, not the floor",
           "Speak from the diaphragm — project, don't shout", "Set your own pace; do not rush the closing lines"]
-          .forEach(function (item) {
-            var label = el("label", { style: "display:flex;gap:8px;align-items:center;margin:4px 0" });
-            label.appendChild(el("input", { type: "checkbox" }));
-            label.appendChild(el("span", { text: item }));
-            checklist.appendChild(label);
+          .forEach(function (item, i) {
+            // Item 5: sibling `<input id> + <label for>` shape, not a
+            // checkbox nested inside its label - the coarse-pointer 48px
+            // touch-target rule (`input[type="checkbox"] + label`, see the
+            // stylesheet's own comment on it) is a CSS adjacent-sibling
+            // selector and only matches when the label immediately FOLLOWS
+            // the checkbox as a real DOM sibling. Same shape as the
+            // Readiness self-check's own checklist (search this file for
+            // "idPrefix + \"-c\" + i").
+            var row = el("div", { style: "display:flex;gap:8px;align-items:center;margin:4px 0" });
+            var id = "recite-timed-" + q.id + "-c" + i;
+            row.appendChild(el("input", { type: "checkbox", id: id }));
+            row.appendChild(el("label", { text: item, for: id, style: "margin:0;font-weight:400" }));
+            checklist.appendChild(row);
           });
         checklist.appendChild(el("p.hint", { text: "Full stance breakdown: Doctrine → “Board room posture” (TC 3-21.5)." }));
         modeBody.appendChild(checklist);
 
-        var clock = el("div.rf-timer", { text: "0:00", "aria-live": "polite" });
+        // Item 2: no aria-live here - this clock ticks every second
+        // (potentially for minutes), which would spam a screen reader with
+        // a re-announcement every tick. Matches the pre-existing Rapid Fire
+        // timer (.rf-timer in renderDrill, search this file for "const
+        // timerEl"), which deliberately has none either.
+        var clock = el("div.rf-timer", { text: "0:00" });
         var startBtn = el("button.btn.primary", { type: "button", text: "▶ Start timing" });
         var stopBtn = el("button.btn.ghost", { type: "button", text: "Stop" });
         stopBtn.disabled = true;
@@ -31900,10 +31957,21 @@ window.G = window.G || {};
   function prtRunDrill(mount, drill, exercises, repContext) {
     util.clear(mount);
     var idx = 0, timer = null, paused = false;
-    var wrap = el("div.panel");
+    // Item 3: tabIndex="-1" makes wrap a valid, non-tab-order focus target
+    // (same technique as Settings' About-page section jump, search this
+    // file for `tabIndex: "-1"`) - startExercise() and finishDrill() below
+    // both call wrap.focus() after (re)building its content, since neither
+    // ever runs through the router's own view-heading auto-focus (that
+    // fires on hashchange, and this whole drill stays on #/prt throughout).
+    var wrap = el("div.panel", { tabIndex: "-1" });
     var title = el("h2");
     var sub = el("p.hint");
-    var clock = el("div.rf-timer", { "aria-live": "polite" });
+    // Item 2: no aria-live here - this clock ticks every second for minutes
+    // at a time, which would spam a screen reader with a re-announcement
+    // every tick. Matches the pre-existing Rapid Fire timer (.rf-timer in
+    // renderDrill, search this file for "const timerEl"), which deliberately
+    // has none either.
+    var clock = el("div.rf-timer");
     var progress = el("p.hint");
     var controls = el("div", { style: "display:flex;gap:8px;margin-top:14px;flex-wrap:wrap" });
     var pauseBtn = el("button.btn", { type: "button", text: "Pause" });
@@ -31913,7 +31981,22 @@ window.G = window.G || {};
     wrap.appendChild(title); wrap.appendChild(sub); wrap.appendChild(clock); wrap.appendChild(progress); wrap.appendChild(controls);
     mount.appendChild(wrap);
 
-    function backToHub() { if (timer) timer.stop(); views.prt(mount); }
+    // "Back to Physical Readiness" and Pause's End button both return to
+    // the Hub by calling views.prt(mount) directly rather than via a hash
+    // change - the whole "Hub -> Run the drill -> Hub" round trip never
+    // leaves #/prt, so there's no hashchange for route() to react to.
+    // That means route()'s own end-of-render heading-focus (queries for
+    // "h1, h2" and focuses it - see route()'s comment on _firstRouteDone)
+    // never runs for this transition, because route() itself never runs.
+    // Mirrored here by hand so returning to the Hub still announces itself
+    // to screen-reader/keyboard users exactly like every real navigation
+    // does elsewhere in the app.
+    function focusHubHeading() {
+      var heading = mount.querySelector("h1, h2");
+      if (heading) { heading.setAttribute("tabindex", "-1"); try { heading.focus({ preventScroll: true }); } catch (e) {} }
+    }
+
+    function backToHub() { if (timer) timer.stop(); views.prt(mount); focusHubHeading(); }
 
     function startExercise() {
       var ex = exercises[idx];
@@ -31937,14 +32020,27 @@ window.G = window.G || {};
         onTick: function (elapsedMs, remainingSec) { clock.textContent = util.fmtClock(remainingSec); },
         onDone: function () { idx++; if (idx < exercises.length) startExercise(); else finishDrill(); },
       });
+      // Item 3: this same function runs both for the very first exercise
+      // (prtRunDrill's own last line, below) and for every exercise after
+      // it (onDone/Skip above) - one focus call here covers "drill screen
+      // first built" AND "each new exercise" without a separate call site
+      // for either. wrap itself (not title) is the target: its own text
+      // content just changed above, so focusing it re-announces the new
+      // exercise name/cadence/reps to a screen reader same as any other
+      // in-place content swap in this app.
+      wrap.focus();
     }
     function finishDrill() {
       util.clear(wrap);
       wrap.appendChild(el("h2", { text: "Drill complete" }));
       wrap.appendChild(el("p.hint", { text: "All " + exercises.length + " exercises done." }));
       var back = el("button.btn", { type: "button", text: "← Back to Physical Readiness" });
-      back.addEventListener("click", function () { views.prt(mount); });
+      back.addEventListener("click", function () { views.prt(mount); focusHubHeading(); });
       wrap.appendChild(back);
+      // Item 3: wrap was just torn down and rebuilt with the "Drill
+      // complete" summary - refocus it so that announces itself too,
+      // same reasoning as startExercise()'s own wrap.focus() call above.
+      wrap.focus();
     }
     pauseBtn.addEventListener("click", function () {
       paused = !paused;
