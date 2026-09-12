@@ -113,6 +113,8 @@ const seed = await page.evaluate(() => {
     doctrine: (S.doctrine && S.doctrine.entries || []).length,
     career: (S.career && S.career.mos || []).length,
     scenarios: (S.scenarios && S.scenarios.scenarios || []).length,
+    creeds: (S.creeds || []).length,
+    prt: (S.prt && S.prt.drills || []).reduce((n, d) => n + (d.exercises || []).length, 0),
   };
 });
 seed.isObject ? ok("GUIDON_SEED parsed to an object") : bad("GUIDON_SEED is not an object");
@@ -160,6 +162,18 @@ seed.doctrine === 354 ? ok("354 doctrine entries intact") : bad(`doctrine: ${see
 // note/array with no MOS-list entry of its own.
 seed.career === 164 ? ok("164 MOS entries intact") : bad(`MOS: ${seed.career}, expected 164`);
 seed.scenarios === 182 ? ok("182 scenarios intact") : bad(`scenarios: ${seed.scenarios}, expected 182`);
+// creeds/prt existed as empty skeleton keys from Milestone 1 (see the
+// topKeys===19 comment above) with no content until Milestone 2 (PRT Hub -
+// the Preparation Drill, 1 drill / 10 exercises) and Milestone 3 (Creeds
+// reading pillar, 18 creeds/identities: the Soldier's/NCO/Ranger/Cadet
+// creeds, the Combat Medic Prayer, the Night Stalker Creed, the seven Army
+// Values, and 11 branch mottoes/nicknames) of
+// docs/design/content-education-roadmap.md. These two counts were never
+// added to this file's seed-integrity check when that content landed - the
+// same silent-truncation gap the 984/3623/354/164/182 checks above already
+// guard every other section against.
+seed.creeds === 18 ? ok("18 creeds/identities intact") : bad(`creeds: ${seed.creeds}, expected 18`);
+seed.prt === 10 ? ok("10 PRT exercises intact") : bad(`prt exercises: ${seed.prt}, expected 10`);
 
 /* The positive half: the corrected facts must actually be present. */
 const present = await page.evaluate(() => {
