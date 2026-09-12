@@ -32191,7 +32191,7 @@ window.G = window.G || {};
     var clock = el("div.rf-timer");
     var progress = el("p.hint");
     var controls = el("div", { style: "display:flex;gap:8px;margin-top:14px;flex-wrap:wrap" });
-    var pauseBtn = el("button.btn", { type: "button", text: "Pause" });
+    var pauseBtn = el("button.btn", { type: "button", text: "Pause", "aria-pressed": "false" });
     var skipBtn = el("button.btn", { type: "button", text: "Skip →" });
     var endBtn = el("button.btn.ghost", { type: "button", text: "End" });
     controls.appendChild(pauseBtn); controls.appendChild(skipBtn); controls.appendChild(endBtn);
@@ -32232,6 +32232,7 @@ window.G = window.G || {};
       // actually running this in a browser, not just reading the code).
       paused = false;
       pauseBtn.textContent = "Pause";
+      pauseBtn.setAttribute("aria-pressed", "false");
       timer = util.makeRoundTimer({
         anchorEl: wrap, totalSec: totalSec,
         onTick: function (elapsedMs, remainingSec) { clock.textContent = util.fmtClock(remainingSec); },
@@ -32263,6 +32264,7 @@ window.G = window.G || {};
       paused = !paused;
       if (paused) { if (timer) timer.pause(); pauseBtn.textContent = "Resume"; }
       else { if (timer) timer.resume(); pauseBtn.textContent = "Pause"; }
+      pauseBtn.setAttribute("aria-pressed", String(paused));
     });
     skipBtn.addEventListener("click", function () {
       if (timer) timer.stop();
