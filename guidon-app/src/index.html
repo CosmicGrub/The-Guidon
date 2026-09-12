@@ -31614,14 +31614,49 @@ window.G = window.G || {};
       });
     }
 
+    // Roadmap audit round 9, "List-detail selection focus fix" bucket: a
+    // row click/Enter/Space used to call renderList(), which util.clear()'d
+    // listPane and rebuilt every row from scratch on every single
+    // selection - destroying the very button the keypress came from and
+    // dropping keyboard focus to <body>. selectCreed() below instead
+    // updates classList/aria-selected on the EXISTING row nodes in place
+    // (Dictionary's selectTerm() / Courses' selectCourse() convention,
+    // this same file) so the just-activated row keeps focus. renderList()
+    // is still the right tool when the row SET actually changes (group
+    // filter/search query below) - that's the only case still calling it.
+    function selectCreed(id) {
+      selectedId = id;
+      Array.prototype.forEach.call(listPane.querySelectorAll(".list-detail-row"), function (r) {
+        var on = r.dataset.creedId === id;
+        r.classList.toggle("active", on);
+        r.setAttribute("aria-selected", String(on));
+      });
+      renderDetail();
+    }
+
     function renderList() {
       util.clear(listPane);
       var list = visible();
       if (!list.some(function (c) { return c.id === selectedId; }) && list.length) selectedId = list[0].id;
       list.forEach(function (c) {
-        var row = el("button.list-detail-row", { type: "button", role: "option",
-          "aria-selected": String(c.id === selectedId) }, [el("span.ldr-name", { text: c.officialTitle })]);
-        row.addEventListener("click", function () { selectedId = c.id; renderList(); renderDetail(); });
+        var isSelected = c.id === selectedId;
+        var row = el("button.list-detail-row" + (isSelected ? ".active" : ""), { type: "button", role: "option",
+          "aria-selected": String(isSelected), "data-creed-id": c.id }, [el("span.ldr-name", { text: c.officialTitle })]);
+        row.addEventListener("click", function () { selectCreed(c.id); });
+        // ArrowUp/ArrowDown row-to-row (Dictionary's entryList row idiom,
+        // this same file) - clamps at the bottom; ArrowUp from row 0
+        // returns focus to the search input directly above this list.
+        row.addEventListener("keydown", function (e) {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            var next = row.nextElementSibling;
+            if (next) next.focus();
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            var prev = row.previousElementSibling;
+            if (prev) prev.focus(); else inp.focus();
+          }
+        });
         listPane.appendChild(row);
       });
       if (!list.length) listPane.appendChild(el("p.hint", { text: "No matches." }));
@@ -31737,12 +31772,43 @@ window.G = window.G || {};
     var detailPane = el("div");
     mount.appendChild(el("div.list-detail", {}, [listPane, detailPane]));
 
+    // Roadmap audit round 9, "List-detail selection focus fix" bucket: see
+    // Creeds' selectCreed() above for the destroy-and-rebuild bug this
+    // replaces - same fix, same convention. This list is never
+    // re-filtered after first paint (no search box/chips above it), so
+    // renderList() itself now only ever runs once, at the bottom of this
+    // view.
+    function selectRecite(id) {
+      selectedId = id;
+      Array.prototype.forEach.call(listPane.querySelectorAll(".list-detail-row"), function (r) {
+        var on = r.dataset.reciteId === id;
+        r.classList.toggle("active", on);
+        r.setAttribute("aria-selected", String(on));
+      });
+      renderDetail();
+    }
+
     function renderList() {
       util.clear(listPane);
       items.forEach(function (q) {
-        var row = el("button.list-detail-row", { type: "button", role: "option",
-          "aria-selected": String(q.id === selectedId) }, [el("span.ldr-name", { text: titleFor(q) })]);
-        row.addEventListener("click", function () { selectedId = q.id; renderList(); renderDetail(); });
+        var isSelected = q.id === selectedId;
+        var row = el("button.list-detail-row" + (isSelected ? ".active" : ""), { type: "button", role: "option",
+          "aria-selected": String(isSelected), "data-recite-id": q.id }, [el("span.ldr-name", { text: titleFor(q) })]);
+        row.addEventListener("click", function () { selectRecite(q.id); });
+        // ArrowUp/ArrowDown row-to-row (Dictionary's entryList row idiom,
+        // this same file) - clamps at both ends, no input sits directly
+        // above this list to hand focus off to.
+        row.addEventListener("keydown", function (e) {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            var next = row.nextElementSibling;
+            if (next) next.focus();
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            var prev = row.previousElementSibling;
+            if (prev) prev.focus();
+          }
+        });
         listPane.appendChild(row);
       });
     }
@@ -32158,14 +32224,44 @@ window.G = window.G || {};
     var detailPane = el("div");
     mount.appendChild(el("div.list-detail", {}, [listPane, detailPane]));
 
+    // Roadmap audit round 9, "List-detail selection focus fix" bucket: see
+    // Creeds' selectCreed() above (this file) for the destroy-and-rebuild
+    // bug this replaces - same fix, same convention. This list is never
+    // re-filtered after first paint, so renderList() itself now only ever
+    // runs once, at the bottom of this view.
+    function selectExercise(id) {
+      selectedId = id;
+      Array.prototype.forEach.call(listPane.querySelectorAll(".list-detail-row"), function (r) {
+        var on = r.dataset.exerciseId === id;
+        r.classList.toggle("active", on);
+        r.setAttribute("aria-selected", String(on));
+      });
+      renderDetail();
+    }
+
     function renderList() {
       util.clear(listPane);
       exercises.forEach(function (ex) {
-        var row = el("button.list-detail-row", { type: "button", role: "option",
-          "aria-selected": String(ex.id === selectedId) }, [
+        var isSelected = ex.id === selectedId;
+        var row = el("button.list-detail-row" + (isSelected ? ".active" : ""), { type: "button", role: "option",
+          "aria-selected": String(isSelected), "data-exercise-id": ex.id }, [
           el("span.ldr-name", { text: ex.order + ". " + ex.name }),
         ]);
-        row.addEventListener("click", function () { selectedId = ex.id; renderList(); renderDetail(); });
+        row.addEventListener("click", function () { selectExercise(ex.id); });
+        // ArrowUp/ArrowDown row-to-row (Dictionary's entryList row idiom,
+        // this same file) - clamps at both ends, no input sits directly
+        // above this list to hand focus off to.
+        row.addEventListener("keydown", function (e) {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            var next = row.nextElementSibling;
+            if (next) next.focus();
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            var prev = row.previousElementSibling;
+            if (prev) prev.focus();
+          }
+        });
         listPane.appendChild(row);
       });
     }
