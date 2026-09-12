@@ -169,8 +169,13 @@ function openChunkMode() {
 function readChunkState() {
   return page.evaluate(() => {
     const hint = [...document.querySelectorAll(".hint")].find((h) => /line\(s\) locked in/.test(h.textContent || ""));
-    const backActive = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Backwards chaining")?.classList.contains("primary");
-    const fwdActive = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Forward")?.classList.contains("primary");
+    // Round 9's list-detail-focus/UX-consistency bucket restyled these as a
+    // chip pair (button.chip.search-chip.active + a real aria-pressed),
+    // matching every other toggle group in the app - not the earlier plain
+    // button.btn.primary markup. Check aria-pressed, the authoritative,
+    // accessibility-relevant signal that fix was specifically about.
+    const backActive = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Backwards chaining")?.getAttribute("aria-pressed") === "true";
+    const fwdActive = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Forward")?.getAttribute("aria-pressed") === "true";
     // Line rows are .card elements nested INSIDE the outer exercise-detail
     // .card (unlike that outer card, which is a direct child of the
     // detail pane) - ".card .card" isolates exactly the per-line rows.
