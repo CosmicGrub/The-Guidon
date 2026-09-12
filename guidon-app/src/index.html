@@ -31822,7 +31822,18 @@ window.G = window.G || {};
       card.appendChild(el("h3", { text: titleFor(q) }));
       card.appendChild(el("p.hint", { text: "Source: " + q.source }));
 
-      var mode = "full";
+      // `timer` is hoisted up here (sibling to `mode`) rather than declared
+      // fresh inside renderTimed() each time it runs, so the mode-bar click
+      // handler below can reach whichever Timed Recitation run is currently
+      // active and stop it BEFORE tearing down modeBody for a different
+      // mode - mirrors prtRunDrill's own stop-before-transition discipline
+      // (this same file, search for "if (timer) timer.stop()"). Without
+      // this, leaving Timed Recitation via a mode-chip click (as opposed to
+      // its own Stop button) left the interval and screen wake-lock running
+      // indefinitely - util.makeRoundTimer()'s cleanup only ever ran from
+      // Stop's own handler or the round finishing on its own, and Timed
+      // Recitation's round never finishes on its own (totalSec: null).
+      var mode = "full", timer = null;
       var modeBar = el("div.search-filters", { "aria-label": "Study mode" });
       var modeBtns = {};
       [
@@ -31834,6 +31845,12 @@ window.G = window.G || {};
         var btn = el("button.chip.search-chip" + (m.id === "full" ? ".active" : ""),
           { type: "button", text: m.label, "aria-pressed": String(m.id === "full") });
         btn.addEventListener("click", function () {
+          // Stop any active Timed Recitation run before switching away from
+          // it - same "stop, then transition" order as prtRunDrill's
+          // backToHub/skipBtn handlers (this same file). timer is null for
+          // every mode but Timed, and null for Timed itself until Start is
+          // actually pressed, so this is a no-op the rest of the time.
+          if (timer) timer.stop();
           mode = m.id;
           Object.keys(modeBtns).forEach(function (k) {
             modeBtns[k].classList.toggle("active", k === mode);
@@ -31931,7 +31948,11 @@ window.G = window.G || {};
         function build(rs) {
           if (mode !== renderMode) return;
           util.clear(modeBody);
-          var dirRow = el("div", { style: "display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap" });
+          // .search-filters + a descriptive aria-label, matching every other
+          // toggle-chip group in this file (this view's own outer mode
+          // selector above, Creeds' group chips ~line 31511, PRT's
+          // rep-context toggle ~line 32200) - not a bare styled div.
+          var dirRow = el("div.search-filters", { style: "margin-bottom:10px", "aria-label": "Recitation direction" });
           // Two-option chip toggle, matching every other two-option toggle
           // this milestone shipped (Recite's own outer mode selector above,
           // Creeds' group chips ~line 31511, PRT's rep-context toggle
@@ -31940,13 +31961,36 @@ window.G = window.G || {};
             { type: "button", text: "Forward", "aria-pressed": String(rs.direction !== "backward") });
           var backBtn = el("button.chip.search-chip" + (rs.direction === "backward" ? ".active" : ""),
             { type: "button", text: "Backwards chaining", "aria-pressed": String(rs.direction === "backward") });
+          // Capture the mode this click means to update BEFORE
+          // saveReciteState()'s async IndexedDB round-trip starts, not after
+          // it resolves - a person can switch study modes while that write
+          // is still in flight, and renderChunk()'s own `renderMode` guard
+          // (above) only protects against that if it's compared against
+          // what `mode` actually was AT CLICK TIME. Calling renderChunk()
+          // unconditionally once the save resolves captures `renderMode`
+          // from whatever `mode` is by then - always "now" - so that guard
+          // was trivially always satisfied and never actually caught a mode
+          // switch mid-save. Mirrors how the cold-load path already gets
+          // this right: loadReciteState(q.id).then(build) captures its own
+          // renderMode at renderChunk()'s synchronous invocation time (mode
+          // switches happen synchronously, before renderModeBody() ever
+          // runs), well before its async read resolves. Same fix shape as
+          // each "Mark learned" button below.
           fwdBtn.addEventListener("click", function () {
             rs.direction = "forward";
-            saveReciteState(q.id, rs).then(function () { renderChunk(rs, { dir: "forward" }); });
+            var modeAtClick = mode;
+            saveReciteState(q.id, rs).then(function () {
+              if (mode !== modeAtClick) return;
+              renderChunk(rs, { dir: "forward" });
+            });
           });
           backBtn.addEventListener("click", function () {
             rs.direction = "backward";
-            saveReciteState(q.id, rs).then(function () { renderChunk(rs, { dir: "backward" }); });
+            var modeAtClick = mode;
+            saveReciteState(q.id, rs).then(function () {
+              if (mode !== modeAtClick) return;
+              renderChunk(rs, { dir: "backward" });
+            });
           });
           dirRow.appendChild(fwdBtn); dirRow.appendChild(backBtn);
           modeBody.appendChild(dirRow);
@@ -31965,7 +32009,14 @@ window.G = window.G || {};
               text: isLearned ? "✓ Learned" : "Mark learned" });
             btn.addEventListener("click", function () {
               rs.chunksLearned = isLearned ? learned.filter(function (x) { return x !== i; }) : learned.concat([i]);
-              saveReciteState(q.id, rs).then(function () { renderChunk(rs, { line: i }); });
+              // Same click-time-mode capture as the direction toggle above -
+              // see its comment for why this can't just check `mode` inside
+              // renderChunk() once the save resolves.
+              var modeAtClick = mode;
+              saveReciteState(q.id, rs).then(function () {
+                if (mode !== modeAtClick) return;
+                renderChunk(rs, { line: i });
+              });
             });
             lineButtons[i] = btn;
             row.appendChild(btn);
@@ -32019,10 +32070,18 @@ window.G = window.G || {};
         var startBtn = el("button.btn.primary", { type: "button", text: "▶ Start timing" });
         var stopBtn = el("button.btn.ghost", { type: "button", text: "Stop" });
         stopBtn.disabled = true;
-        var timer = null;
+        // `timer` itself is renderDetail()'s outer-scope variable (declared
+        // alongside `mode`, above) rather than a fresh local here - see that
+        // declaration's comment for why.
         startBtn.addEventListener("click", function () {
           startBtn.disabled = true;
           stopBtn.disabled = false;
+          // Move focus to the button that's now the usable one - without
+          // this, the just-disabled Start button drops keyboard focus to
+          // <body>. Same "focus whatever's next" idea as the direction-
+          // toggle/Mark-learned focusHint above, just for a fixed pair of
+          // buttons instead of a set keyed by index.
+          stopBtn.focus();
           timer = util.makeRoundTimer({
             anchorEl: modeBody, totalSec: null,
             onTick: function (elapsedMs) { clock.textContent = util.fmtClock(elapsedMs / 1000); },
@@ -32032,6 +32091,7 @@ window.G = window.G || {};
           if (timer) timer.stop();
           startBtn.disabled = false;
           stopBtn.disabled = true;
+          startBtn.focus();
           util.toast("Recited in " + clock.textContent + ".");
         });
         var btnRow = el("div", { style: "display:flex;gap:8px;margin-top:10px" });
