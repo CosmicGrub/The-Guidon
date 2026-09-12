@@ -308,11 +308,20 @@ console.log("lint-patterns: static regression guard for repeat bug shapes and re
    at risk of shrinking. See the canonical breakpoint scale comment in
    src/index.html for the full measured derivation.
 
+   599 added (nav overhaul Milestone 1, docs/design/nav-adaptive-rail.md
+   §4.1/§5, 2026-09-12): the same adjacent-pair convention 799/800 already
+   established two entries up - a landscape phone under 600px needs its
+   own "max-width: 599px" tier (paired with the JS-side DOCK_MQ, which
+   gates the portrait-only bottom dock to exactly the same threshold) so
+   it falls through to the existing 600-799px compact-rail CSS instead of
+   the portrait-only bottom dock. Not a new stray value - 600px itself was
+   already canonical and had no "just under it" companion until this.
+
    `prefers-*`, `hover`, `pointer`, and `print` are feature queries, not
    layout breakpoints, and are intentionally out of scope.
    ====================================================================== */
 {
-  const CANONICAL = new Set([420, 480, 600, 640, 768, 799, 800, 1024, 1200, 1360, 1500]);
+  const CANONICAL = new Set([420, 480, 599, 600, 640, 768, 799, 800, 1024, 1200, 1360, 1500]);
   // Not anchored to a literal "@media" prefix: compound conditions like
   // "@media (min-width: 600px) and (max-width: 859px)" put the second
   // clause after "and (", not "@media (", so anchoring would silently
