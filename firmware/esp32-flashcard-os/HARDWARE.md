@@ -171,19 +171,13 @@ successful push) and [`docs/flashcardos_boot_output.log`](docs/flashcardos_boot_
 (the real firmware's own boot, with real content: `SD: card found on
 CS=5.` / `Loaded 78 categories.` / `Ready - showing subject list.`).
 
-## Touch — STILL UNRESOLVED as of this session's last test, despite two real, confirmed fixes below
+## Touch — RESOLVED, confirmed against the physical device with real content
 
-**Status honestly: after the two fixes documented below, the user's own
-live re-test of the actual shipped `flashcardos` firmware still showed
-no taps registering in normal use.** Both fixes below are real, each
-independently confirmed with measured before/after data against the
-physical device - they are not wrong, and are worth keeping - but
-together they did not fully resolve the reported symptom, and this
-session paused (host token budget) before finding what else is wrong.
-The next session picking this up should NOT assume touch works from this
-document alone; re-test on the physical device first, and treat the
-`env:touchtest` diagnostic (below) as the starting tool, not a solved
-problem to skip past.
+Three real, separate bugs stacked on top of each other, each masking
+whether the next one existed until it was fixed. All three are fixed and
+confirmed: the shipped firmware boots with real content (78 categories,
+984 cards) from the microSD card, and every tap registers correctly -
+opening a subject, moving through a card, going back.
 
 ### First bug (fixed, confirmed): a real firmware bug, not a hardware fault
 
@@ -235,7 +229,7 @@ cooldown was guarding against one held press firing twice, which
 edge-triggering solves structurally instead of with a timer, removing an
 artificial floor on how fast two deliberate taps could ever register.
 
-### Second bug (fixed, confirmed, but NOT sufficient on its own): PWM backlight noise desensitizing touch
+### Second bug (fixed, confirmed): PWM backlight noise desensitizing touch
 
 The stack-overflow fix above turned out not to be the whole story - after
 shipping it, the user reported taps STILL not registering at all,
@@ -276,94 +270,78 @@ un-repeated UI tap, the normal interaction this app actually needs, much
 less reliably can - which is exactly why calibration once succeeded
 while every-day taps afterward did not.
 
-### Where this actually stands, and what to try next
+### Third bug (fixed, confirmed): SD and the display/touch fighting over the same SPI peripheral
 
-The 30kHz PWM fix is real (measured 23/4s vs 0/4s in a synthetic poll
-loop) and should stay - reverting it would reintroduce a confirmed
-regression. But it was not sufficient: re-testing the real, shipped
-`flashcardos` firmware end-to-end afterward, the user still could not
-get taps to register in normal use. That gap was not root-caused before
-this session paused. Worth trying next, roughly in order of likelihood:
+The 30kHz PWM fix was real but not sufficient on its own: re-testing the
+shipped firmware end-to-end afterward, taps still didn't register in
+normal use, including on the subject list - a screen the earlier
+stack-overflow bug never touched either. The pattern across every test
+run that session was stark in hindsight: **every test that ran AFTER
+`beginSdCard()` had executed showed zero touch hits, regardless of PWM
+state; every test BEFORE it showed real hits once PWM was fixed.**
 
-- Re-run `env:touchtest` (the standalone diagnostic, not the real app)
-  fresh on the current firmware and watch RAW (`getTouchRaw`/
-  `getTouchRawZ`) values specifically, not just `getTouch()`'s calibrated
-  result - if raw z still spikes on contact but `getTouch()` doesn't
-  report it, the stored NVS calibration itself may be bad (touchtest's
-  serial `C` command wipes and redoes it interactively - genuinely retry
-  this rather than trust the existing stored data, which was never
-  confirmed good, only inferred plausible from one earlier sweep).
-- Check whether `main.cpp`'s tight, undelayed `loop()` polling
-  `getTouch()` as fast as possible (no `delay()` at all, unlike
-  `touchtest_main.cpp`'s `delay(150)`) interacts badly with the display
-  now running at 80MHz - e.g. a touch read landing awkwardly relative to
-  a display SPI transaction on the shared bus. Test by temporarily adding
-  a small `delay(10-20)` in `loop()` and re-checking.
-  - **Note:** 80MHz was verified via `env:bringup`'s GRAM round-trip
-    test, which never exercises touch at all. If backing off the display
-    clock (e.g. back to 27MHz) makes touch usable again, that's real
-    evidence they interact on the shared bus even though each tested
-    fine independently.
-- Re-verify the touch pin mapping itself was never actually in question
-  (it's part of the "confirmed hardware" table, not inferred like SD's
-  CS pin) - but if everything above is exhausted, it's worth a multimeter
-  continuity check anyway rather than assuming.
+That was isolated directly: a build that skipped `beginSdCard()`/
+`loadCategories()` entirely (faked two placeholder categories instead)
+showed touch working perfectly at the exact same point in `setup()` -
+proving it wasn't about timing, polling delay, or the 80MHz display
+clock (all three had been the leading theories). It was SD initialization
+itself.
 
-#### Diagnostic workflow (current recommended order)
+**Root cause:** `TFT_eSPI` defaults to the **VSPI** hardware peripheral
+unless `USE_HSPI_PORT` is defined - which this project's `build_flags`
+never did. `main.cpp`'s SD code ALSO used VSPI, via `SD.begin(cs, SPI,
+...)` where `SPI` is the Arduino core's global default object, which on
+this core is ALSO VSPI. Two separate `SPIClass` C++ objects - TFT_eSPI's
+own internal one (pins 13/14/15/12) and the SD code's (pins 18/19/23 +
+CS) - both pointed at the SAME physical VSPI peripheral. `SD.begin()`
+reconfigures that peripheral's GPIO-matrix pin routing to its own pins,
+which silently steals it out from under whatever TFT_eSPI had already
+set up. Touch reads (`getTouch()`/`getTouchRaw()`) then talk to nothing,
+consistently, from that point in boot onward - matching every single
+observation.
 
-1. Build and flash the standalone touch diagnostic:
+(Display *writes* were never visibly broken by this, which is why it
+looked like only touch was affected. The most likely explanation is that
+TFT_eSPI's write path re-asserts enough SPI transaction state per call to
+tolerate the stolen pin routing well enough to still work, while touch's
+read path - a different internal code path with its own settle-time/
+threshold logic - does not. This wasn't chased further once the fix
+below made the distinction moot.)
 
-   ```
-   cd firmware/esp32-flashcard-os
-   pio run -e touchtest -t upload --upload-port COM12
-   ```
+**Fix:** one build flag. `-DUSE_HSPI_PORT=1` added to `platformio.ini`'s
+`[display_flags]` block moves TFT_eSPI onto the **HSPI** peripheral
+instead - a natural fit, since the display's own pins (13/14/15/12) are
+HSPI's hardware defaults anyway - leaving VSPI entirely to SD's exclusive
+use. No pin, driver, or SD-side code changed at all.
 
-2. Open serial monitor and tap the panel with finger and stylus.
-3. If needed, type `R` to inspect stored `touchcal`, then type `C` to wipe
-   and re-run calibration live (touch all corner targets when prompted).
-4. Build `flashcardos` with debug touch logs enabled (off by default):
+Confirmed with the real, shipped firmware and real content: boots with
+all 78 categories loaded from the microSD card, and taps register
+correctly through multiple screens (subject list -> card view and back).
+The earlier `delay(10)` "shared SPI bus mitigation" from an earlier,
+wrong theory about this was removed once the real fix landed - it was
+masking nothing once the actual peripheral conflict was gone, and the
+user had specifically asked for tighter, more responsive touch, not
+slower polling.
 
-   ```
-   # In platformio.ini ([env:flashcardos] build_flags), add/uncomment: -DDEBUG_TOUCH=1
-   pio run -e flashcardos -t upload --upload-port COM12
-   ```
+#### If this ever regresses on a future board revision
 
-5. Re-test taps in the real UI and compare `touchtest` behavior vs
-   `flashcardos` behavior.
-
-#### Serial log interpretation (what each case means)
-
-- `touchtest` raw z stays flat (for example ~10-20) while tapping:
-  controller is not answering (wiring/bus-level fault).
-- `touchtest` raw z jumps high on contact (for example 1000+) but
-  calibrated touch stays false or coordinates are nonsense:
-  calibration is bad; wipe/recalibrate with `C`.
-- `touchtest` looks healthy, but `flashcardos` with `DEBUG_TOUCH` reports
-  repeated
-  `RAW pressure high but getTouch() failed`:
-  controller is alive but calibrated reads are failing in real app timing,
-  consistent with display/touch shared-bus interaction.
-
-#### Clock revert test (to isolate 80MHz display interaction)
-
-If calibration is known-good and raw touch still drops out only in the
-real app, temporarily lower display SPI clock and retest:
-
-```ini
-; platformio.ini ([display_flags] block)
--DSPI_FREQUENCY=27000000
-```
-
-If touch suddenly becomes reliable at 27MHz (especially while `touchtest`
-already looked good), treat that as direct evidence the 80MHz display bus
-timing is interacting with touch transactions on this unit.
-
-#### Decision tree
-
-- `touchtest` bad raw -> wiring/power/shared-bus hardware issue.
-- `touchtest` good raw, bad calibrated -> reset/rebuild calibration data.
-- `touchtest` good raw+cal, `flashcardos` bad -> display/touch interaction
-  in normal UI path (poll timing and/or 80MHz clock pressure).
+- `env:touchtest` (`src/touchtest_main.cpp`) is still the right first
+  diagnostic - it prints raw (`getTouchRaw`/`getTouchRawZ`) and
+  calibrated (`getTouch()`) readings continuously, and can wipe/redo
+  stored calibration via a serial `C` command if calibration itself is
+  ever in question again.
+- `DEBUG_TOUCH` (uncomment `-DDEBUG_TOUCH=1` in `[env:flashcardos]`) adds
+  verbose raw+calibrated+timing logging directly in the shipped app's own
+  `setup()`/`loop()` - useful for a NEW mystery, but note it adds its own
+  extra touch-bus SPI reads every loop iteration on top of the app's
+  normal single `getTouch()` call, which can itself look like noise if
+  something ELSE is marginal - isolate with a minimal single-call edge
+  print (like this session's own diagnostic) before trusting `DEBUG_TOUCH`
+  output at face value.
+- If a future symptom looks like "works before X, stops after X" the way
+  this one did, suspect a shared-peripheral conflict first, the way this
+  one turned out to be - it's a very repeatable, deterministic signature
+  once you know to look for it.
 
 ## Display SPI clock — pushed to the chip's actual ceiling, verified
 

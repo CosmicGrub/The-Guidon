@@ -14,3 +14,13 @@ Touch calibration ready.
 SD: card found on CS=5.
 Loaded 78 categories.
 Ready - showing subject list.
+[edge] touched=1 x=122 y=47 state=0
+[edge] touched=0 x=122 y=47 state=0
+[edge] touched=1 x=140 y=45 state=0
+[edge] touched=0 x=140 y=45 state=0
+[edge] touched=1 x=159 y=56 state=0
+[edge] touched=0 x=159 y=56 state=1
+[edge] touched=1 x=165 y=69 state=1
+[edge] touched=0 x=165 y=69 state=1
+[edge] touched=1 x=190 y=67 state=1
+[edge] touched=0 x=190 y=67 state=1

@@ -1,0 +1,61 @@
+ets Jul 29 2019 12:21:46
+
+rst:0x1 (POWERON_RESET),boot:0x17 (SPI_FAST_FLASH_BOOT)
+configsip: 0, SPIWP:0xee
+clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+mode:DIO, clock div:2
+load:0x3fff0030,len:1184
+load:0x40078000,len:13232
+load:0x40080400,len:3028
+entry 0x400805e4
+GUIDON Flashcard OS booting...
+TFT init done (ST7796S/320x480).
+Touch calibration ready.
+[sd-skip-test] SD access skipped entirely for this test.
+Ready - showing subject list.
+[edge] touched=1 x=163 y=44 state=0
+[edge] touched=0 x=163 y=44 state=0
+[edge] touched=1 x=154 y=61 state=0
+[  2173][E][vfs_api.cpp:24] open(): File system is not mounted
+[edge] touched=0 x=154 y=61 state=1
+[edge] touched=1 x=155 y=102 state=1
+[edge] touched=0 x=155 y=102 state=1
+[edge] touched=1 x=223 y=56 state=1
+[edge] touched=0 x=204 y=157 state=1
+[edge] touched=1 x=253 y=65 state=1
+[edge] touched=0 x=259 y=154 state=1
+[edge] touched=1 x=215 y=84 state=1
+[edge] touched=0 x=215 y=84 state=1
+[edge] touched=1 x=157 y=99 state=1
+[edge] touched=0 x=157 y=99 state=1
+[edge] touched=1 x=94 y=70 state=1
+[edge] touched=0 x=94 y=70 state=1
+[edge] touched=1 x=77 y=48 state=1
+[edge] touched=0 x=77 y=48 state=1
+[edge] touched=1 x=83 y=60 state=1
+[edge] touched=0 x=83 y=60 state=1
+[edge] touched=1 x=281 y=462 state=1
+[  8476][E][vfs_api.cpp:24] open(): File system is not mounted
+[edge] touched=0 x=281 y=462 state=1
+[edge] touched=1 x=277 y=456 state=1
+[  9744][E][vfs_api.cpp:24] open(): File system is not mounted
+[edge] touched=0 x=277 y=456 state=1
+[edge] touched=1 x=273 y=466 state=1
+[ 10071][E][vfs_api.cpp:24] open(): File system is not mounted
+[edge] touched=0 x=273 y=466 state=1
+[edge] touched=1 x=270 y=458 state=1
+[ 10333][E][vfs_api.cpp:24] open(): File system is not mounted
+[edge] touched=0 x=270 y=458 state=1
+[edge] touched=1 x=271 y=459 state=1
+[edge] touched=0 x=271 y=459 state=1
+[edge] touched=1 x=37 y=25 state=1
+[edge] touched=0 x=37 y=25 state=0
+[edge] touched=1 x=95 y=102 state=0
+[ 12455][E][vfs_api.cpp:24] open(): File system is not mounted
+[edge] touched=0 x=95 y=102 state=1
+[edge] touched=1 x=60 y=53 state=1
+[edge] touched=0 x=60 y=53 state=1
+[edge] touched=1 x=38 y=16 state=1
+[edge] touched=0 x=38 y=16 state=0
+[edge] touched=1 x=289 y=458 state=0
+[edge] touched=0 x=289 y=458 state=0
