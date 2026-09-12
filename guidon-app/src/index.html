@@ -31840,14 +31840,48 @@ window.G = window.G || {};
       function saveReciteState(id, s) {
         return G.db.put("kv", { k: "recite:" + id, v: s });
       }
-      function renderChunk() {
-        loadReciteState(q.id).then(function (rs) {
+      // renderChunk(preloadedState, focusHint) - preloadedState lets a
+      // mutation that already holds the just-written state in memory (the
+      // direction toggle, each "Mark learned" button, below) skip
+      // loadReciteState()'s IndexedDB read entirely instead of re-reading
+      // the very row it just put(); loadReciteState() only runs on a cold
+      // entry into Chunk & Memorize (renderModeBody() calling renderChunk()
+      // with no args). focusHint says which control to re-focus once
+      // modeBody is rebuilt, since a click's own button gets destroyed and
+      // recreated by the clear-and-rebuild below (otherwise keyboard focus
+      // silently drops to <body> on every click).
+      function renderChunk(preloadedState, focusHint) {
+        // Captured at invocation time so build() can tell, once its async
+        // read resolves, whether Chunk & Memorize is still the active study
+        // mode - `mode` is the same closure variable the mode-bar buttons
+        // above reassign synchronously, before renderModeBody() ever runs,
+        // so a tab switch mid-load has already moved it on by the time
+        // build() would otherwise clobber modeBody with stale content. Same
+        // stale-async-render guard idiom as onAutoTheaterResize's
+        // `cardWrap.isConnected` check (~line 10803), adapted here because
+        // modeBody itself stays connected across a mode switch - only its
+        // contents get swapped - so isConnected alone can't detect this.
+        var renderMode = mode;
+        function build(rs) {
+          if (mode !== renderMode) return;
           util.clear(modeBody);
           var dirRow = el("div", { style: "display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap" });
-          var fwdBtn = el("button.btn" + (rs.direction !== "backward" ? ".primary" : ""), { type: "button", text: "Forward" });
-          var backBtn = el("button.btn" + (rs.direction === "backward" ? ".primary" : ""), { type: "button", text: "Backwards chaining" });
-          fwdBtn.addEventListener("click", function () { rs.direction = "forward"; saveReciteState(q.id, rs).then(renderChunk); });
-          backBtn.addEventListener("click", function () { rs.direction = "backward"; saveReciteState(q.id, rs).then(renderChunk); });
+          // Two-option chip toggle, matching every other two-option toggle
+          // this milestone shipped (Recite's own outer mode selector above,
+          // Creeds' group chips ~line 31511, PRT's rep-context toggle
+          // ~line 31948) - not the bare btn/btn.primary pair this replaced.
+          var fwdBtn = el("button.chip.search-chip" + (rs.direction !== "backward" ? ".active" : ""),
+            { type: "button", text: "Forward", "aria-pressed": String(rs.direction !== "backward") });
+          var backBtn = el("button.chip.search-chip" + (rs.direction === "backward" ? ".active" : ""),
+            { type: "button", text: "Backwards chaining", "aria-pressed": String(rs.direction === "backward") });
+          fwdBtn.addEventListener("click", function () {
+            rs.direction = "forward";
+            saveReciteState(q.id, rs).then(function () { renderChunk(rs, { dir: "forward" }); });
+          });
+          backBtn.addEventListener("click", function () {
+            rs.direction = "backward";
+            saveReciteState(q.id, rs).then(function () { renderChunk(rs, { dir: "backward" }); });
+          });
           dirRow.appendChild(fwdBtn); dirRow.appendChild(backBtn);
           modeBody.appendChild(dirRow);
 
@@ -31856,6 +31890,7 @@ window.G = window.G || {};
 
           var indices = q.lines.map(function (_, i) { return i; });
           if (rs.direction === "backward") indices = indices.slice().reverse();
+          var lineButtons = {};
           indices.forEach(function (i) {
             var isLearned = learned.indexOf(i) !== -1;
             var row = el("div.card", { style: "margin-bottom:8px" + (isLearned ? ";opacity:.65" : "") });
@@ -31864,14 +31899,27 @@ window.G = window.G || {};
               text: isLearned ? "✓ Learned" : "Mark learned" });
             btn.addEventListener("click", function () {
               rs.chunksLearned = isLearned ? learned.filter(function (x) { return x !== i; }) : learned.concat([i]);
-              saveReciteState(q.id, rs).then(renderChunk);
+              saveReciteState(q.id, rs).then(function () { renderChunk(rs, { line: i }); });
             });
+            lineButtons[i] = btn;
             row.appendChild(btn);
             modeBody.appendChild(row);
           });
 
           if (learned.length === q.lines.length) renderGradeRow(modeBody);
-        });
+
+          // Re-focus the equivalent freshly-built control in place of the
+          // one the click above just destroyed, so keyboard users aren't
+          // dropped back to <body> after every direction toggle or
+          // Mark-learned click.
+          if (focusHint) {
+            if (focusHint.dir === "forward") fwdBtn.focus();
+            else if (focusHint.dir === "backward") backBtn.focus();
+            else if (focusHint.line !== undefined && lineButtons[focusHint.line]) lineButtons[focusHint.line].focus();
+          }
+        }
+        if (preloadedState) build(preloadedState);
+        else loadReciteState(q.id).then(build);
       }
       function renderTimed() {
         var checklist = el("div.card");
