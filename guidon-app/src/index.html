@@ -4540,7 +4540,19 @@ html.reduce-motion .nav-drawer, html[data-motion="minimal"] .nav-drawer { transi
   transition: border-color .15s, background .15s;
 }
 .nav-drawer .nav-group-header:hover { border-color: color-mix(in srgb, var(--amber) 45%, var(--line)); }
-.nav-drawer .nav-group-header.open { border-color: var(--amber); background: color-mix(in srgb, var(--amber) 10%, var(--panel-2)); }
+/* color explicitly set here (not left to the base .nav-group-header.open
+   rule's own `color: var(--text-dim)`, a few hundred lines up) - that
+   value was tuned against a plain --panel-2 background, and this rule's
+   own amber-tinted background darkens --panel-2 just enough in some
+   light themes (found via a real per-theme axe-core contrast sweep:
+   parade-rest specifically, whose --amber is a dark navy, not the usual
+   warm amber) to drop text-dim-on-tinted-panel below the 4.5:1 AA floor.
+   Uses the SAME color-mix(amber, text) formula this file's own
+   .nav :is(button, a).active rule already establishes for exactly this
+   "active state, amber-tinted text over an amber-tinted background"
+   shape - re-verified 0 violations across all 24 themes after this
+   change, sidebar and drawer contexts alike. */
+.nav-drawer .nav-group-header.open { border-color: var(--amber); background: color-mix(in srgb, var(--amber) 10%, var(--panel-2)); color: color-mix(in srgb, var(--amber) 55%, var(--text)); }
 /* The expand/collapse chevron moves to a small corner badge instead of
    sitting inline before the label - inline made sense in a left-to-right
    list row; centered inside a square tile, it read as part of the label
