@@ -39,6 +39,13 @@
  * matching tools/test-landnav-drill.mjs/tools/test-moi-import.mjs's own
  * "launch, route to the hash, assert real DOM/state, plus a targeted
  * Node-level check of the pure functions underneath" structure.
+ *
+ * Round 10 roadmap-audit, "Creeds view fixes" bucket adds (a2) below: the
+ * three detail-pane cross-link buttons round 9 introduced ("Also tested in
+ * Board Drill →" / "Practice reciting this →" / "View in Doctrine →") had
+ * zero coverage of their own - see that section's own comment for why no
+ * single creed renders all three at once, and how this suite covers each
+ * pairing on the creed that actually has it.
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
@@ -106,6 +113,123 @@ await page.evaluate(() => {
   const inp = document.querySelector('input[aria-label="Search creeds and branch identities"]');
   if (inp) { inp.value = ""; inp.dispatchEvent(new Event("input", { bubbles: true })); }
 });
+
+/* ========================================================================
+   (a2) Detail-pane cross-link buttons (round 9's "Also tested in Board
+   Drill →" / "Practice reciting this →" / "View in Doctrine →" additions to
+   renderDetail() - src/index.html) - zero prior coverage until now. Rows
+   are selected by their real data-creed-id (the list is unfiltered here,
+   both group and search reset above) rather than by list position, so a
+   future seed reorder can't silently make this click the wrong row.
+
+   Ground truth re-checked directly against the live seed before writing
+   this (this project's own discipline of re-verifying an audit's claim
+   against the actual data, per ROADMAP.md's cadence notes): no single
+   creed in today's corpus renders all three buttons at once. Army Values
+   (creed-army-values) carries linkedDoctrineId but no linkedBoardId, so it
+   renders ONLY the doctrine cross-link; the three re-homed full creeds
+   (creed-soldiers/creed-nco/creed-ranger) carry linkedBoardId to a
+   recitable board.questions row but no linkedDoctrineId, so they render
+   the other two but never the doctrine one. This suite covers each
+   pairing on the creed that actually has it, plus the negative case (the
+   cross-link that should NOT appear) on both, mirroring how
+   tools/test-dictionary-list-detail.mjs and tools/test-doctrine-card-
+   grid.mjs verify the analogous doctrine cross-link elsewhere in the app.
+   ======================================================================== */
+await page.evaluate(() => { document.querySelector('.list-detail-row[data-creed-id="creed-army-values"]')?.click(); });
+await page.waitForTimeout(200);
+
+const armyValuesButtons = await page.evaluate(() => {
+  const detail = document.getElementById("creeds-detail");
+  return detail ? Array.from(detail.querySelectorAll("button")).map((b) => b.textContent) : [];
+});
+armyValuesButtons.some((t) => /View in Doctrine/.test(t))
+  ? ok(`Army Values' detail pane shows the "View in Doctrine →" cross-link button: ${JSON.stringify(armyValuesButtons)}`)
+  : bad(`Army Values' detail pane is missing the "View in Doctrine →" button: ${JSON.stringify(armyValuesButtons)}`);
+armyValuesButtons.some((t) => /Also tested in Board Drill/.test(t) || /Practice reciting this/.test(t))
+  ? bad(`Army Values unexpectedly shows a Board Drill/Recite cross-link (it carries no linkedBoardId in the seed): ${JSON.stringify(armyValuesButtons)}`)
+  : ok("Army Values correctly shows no Board Drill/Recite cross-link (it carries no linkedBoardId)");
+
+const expectedDoctrineTitle = await page.evaluate(() => {
+  const entry = (window.G.store.doctrineMeta().entries || []).find((e) => e.id === "army-values");
+  return entry ? entry.title : null;
+});
+expectedDoctrineTitle
+  ? ok(`ground truth: the "army-values" doctrine entry exists ("${expectedDoctrineTitle}")`)
+  : bad('the "army-values" doctrine entry was not found via store.doctrineMeta() - has the seed changed shape?');
+
+await page.evaluate(() => {
+  const btn = Array.from(document.getElementById("creeds-detail").querySelectorAll("button")).find((b) => /View in Doctrine/.test(b.textContent || ""));
+  if (btn) btn.click();
+});
+await page.waitForTimeout(400);
+
+const doctrineLanded = await page.evaluate(() => ({
+  hash: location.hash,
+  searchValue: document.querySelector('input[aria-label="Search doctrine"]')?.value || null,
+  seedCleared: window.G.views._doctrineSeed === null,
+}));
+doctrineLanded.hash === "#/doctrine"
+  ? ok('clicking "View in Doctrine →" navigated to #/doctrine')
+  : bad(`clicking "View in Doctrine →" landed on hash="${doctrineLanded.hash}", expected "#/doctrine"`);
+doctrineLanded.searchValue === expectedDoctrineTitle
+  ? ok(`#/doctrine's search box is pre-filled with the linked entry's own title ("${doctrineLanded.searchValue}")`)
+  : bad(`#/doctrine's search box value is "${doctrineLanded.searchValue}", expected "${expectedDoctrineTitle}"`);
+doctrineLanded.seedCleared
+  ? ok("G.views._doctrineSeed was consumed (cleared) after use")
+  : bad("G.views._doctrineSeed was not cleared after use");
+
+// Back to #/creeds, unfiltered, for the Board Drill / Recite button checks
+// on The Ranger Creed (linkedBoardId:"creed-7", which store.recitable()
+// includes).
+await page.evaluate(() => { location.hash = "#/creeds"; });
+await page.waitForTimeout(400);
+await page.evaluate(() => { document.querySelector('.list-detail-row[data-creed-id="creed-ranger"]')?.click(); });
+await page.waitForTimeout(200);
+
+const rangerButtons = await page.evaluate(() => {
+  const detail = document.getElementById("creeds-detail");
+  return detail ? Array.from(detail.querySelectorAll("button")).map((b) => b.textContent) : [];
+});
+rangerButtons.some((t) => /Also tested in Board Drill/.test(t))
+  ? ok(`The Ranger Creed's detail pane shows "Also tested in Board Drill →": ${JSON.stringify(rangerButtons)}`)
+  : bad(`The Ranger Creed's detail pane is missing "Also tested in Board Drill →": ${JSON.stringify(rangerButtons)}`);
+rangerButtons.some((t) => /Practice reciting this/.test(t))
+  ? ok(`The Ranger Creed's detail pane shows "Practice reciting this →": ${JSON.stringify(rangerButtons)}`)
+  : bad(`The Ranger Creed's detail pane is missing "Practice reciting this →": ${JSON.stringify(rangerButtons)}`);
+rangerButtons.some((t) => /View in Doctrine/.test(t))
+  ? bad(`The Ranger Creed unexpectedly shows a "View in Doctrine →" cross-link (it carries no linkedDoctrineId): ${JSON.stringify(rangerButtons)}`)
+  : ok("The Ranger Creed correctly shows no doctrine cross-link (it carries no linkedDoctrineId)");
+
+await page.evaluate(() => {
+  const btn = Array.from(document.getElementById("creeds-detail").querySelectorAll("button")).find((b) => /Also tested in Board Drill/.test(b.textContent || ""));
+  if (btn) btn.click();
+});
+await page.waitForTimeout(300);
+const boardHash = await page.evaluate(() => location.hash);
+boardHash === "#/board"
+  ? ok('clicking "Also tested in Board Drill →" navigated to #/board')
+  : bad(`clicking "Also tested in Board Drill →" landed on hash="${boardHash}", expected "#/board"`);
+
+// Re-select The Ranger Creed after the navigation above and exercise the
+// remaining "Practice reciting this →" button on its own.
+await page.evaluate(() => { location.hash = "#/creeds"; });
+await page.waitForTimeout(400);
+await page.evaluate(() => { document.querySelector('.list-detail-row[data-creed-id="creed-ranger"]')?.click(); });
+await page.waitForTimeout(200);
+await page.evaluate(() => {
+  const btn = Array.from(document.getElementById("creeds-detail").querySelectorAll("button")).find((b) => /Practice reciting this/.test(b.textContent || ""));
+  if (btn) btn.click();
+});
+await page.waitForTimeout(300);
+const reciteHash = await page.evaluate(() => location.hash);
+reciteHash === "#/recite"
+  ? ok('clicking "Practice reciting this →" navigated to #/recite')
+  : bad(`clicking "Practice reciting this →" landed on hash="${reciteHash}", expected "#/recite"`);
+
+// Back to #/creeds, unfiltered, for the tier-filter checks below.
+await page.evaluate(() => { location.hash = "#/creeds"; });
+await page.waitForTimeout(400);
 
 /* ========================================================================
    (b) store.creeds()'s tier:"all" guard, with a specific-rank tierFilter
