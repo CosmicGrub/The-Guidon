@@ -2,7 +2,7 @@
 
 **Read this to know: what's shipped, what's deliberately not built (and why), and what actually comes next.** `GUIDON_PROJECT_MAP.md` is the 10,000-foot *what is this app* orientation; `CHANGELOG.md` is the session-by-session *what changed*; this document is the forward-looking one — pull from it to pick up where the last session left off, and keep it current going forward rather than letting it drift the way the other canonical docs already have once.
 
-**Current version:** v1.5.1 (released 2026-09-01; round 7's own PR merged to `main` 2026-09-06, round 8 merged the same day — main is ahead of the published release's code by round 8's fixes, no new release cut yet)
+**Current version:** v1.7.0 was released after this line was last updated (round 8 / v1.5.1 was the last accurate stamp here) — `main` has since shipped the v1.6.0 "What's New" feature, v1.7.0 (iOS PWA, install QR distribution), the ESP32 Flashcard OS firmware fork, and the Content & Educational Materials expansion (§1 above), none of which are reflected in this line or in §1's table above round 8. See `guidon-app/package.json` for the real current version and `git log` for what's actually landed since — flagged in §5 below as a real backfill this file needs, not fixed here to keep this edit scoped to what it was actually asked to answer.
 
 ---
 
@@ -23,6 +23,7 @@ These are done — not "paused," not "mostly done." Nothing queued against them.
 | `cargo check --locked` CI mystery, fully resolved | Two distinct, stacked root causes, each confirmed via direct evidence rather than assumed: (1) CI's Windows runner tracked whatever cargo shipped that week (1.98.0) while `Cargo.lock` had been generated locally by 1.96.0 — fixed with `rust-toolchain.toml` pinning the channel; (2) even after the pin, the *committed* `Cargo.lock`'s own `guidon` package version had silently been left at the pre-bump value while `Cargo.toml` moved on — fixed by committing that one-line diff. A version diagnostic step added to the CI job is what surfaced cause #1 after several blind re-runs. | PR #112 |
 | Gradle-wrapper patch bump, verified before merge (not on CI-green alone) | 8.14.3 → 8.14.5, same major line as the reverted 9.7.1 regression above — checksum verified against Gradle's own published SHA256, plus a real `npm run android:debug` build run before merging, precisely because CI's own checks don't exercise a real Gradle build | PR #111 |
 | Round 8 (full 8-lens sweep) | 20 real findings, 7 buckets: 3 DST-boundary date-math bugs (Progress heatmap, Leader reminders, Home sparkline), a Land Nav Drill keyboard-focus bug, 4 doctrine self-contradictions fixed against the app's own other content (M4 burst-fire, SGT/SSG semi-centralized promotions + retired-APFT reference, an Article 15 forfeiture-limit error, one last "DA Form 2977"→"DD Form 2977" instance), MOI Import hardened across 4 lenses at once (focus management, `aria-expanded`, confirm-before-discard, save toast, parallelized PDF extraction, new test coverage), 3 native-platform cleanups (an unused Android permission, a dead push-notification stub, a stale comment), 2 destructive Forms/POA "Clear" buttons gated to match the app's own confirm convention, and a genuine feature regression caught by bucket G's own test-coverage work (the Essay Drill → Doctrine cross-link had been left behind on an orphaned branch during round 6's merge and never actually reached `main` — restored, with real test coverage this time) | PR #114 |
+| Content & Educational Materials expansion, Milestones 1–3 | Full design doc at `guidon-app/docs/design/content-education-roadmap.md`, all three build milestones shipped: (1) `GUIDON_SEED.creeds`/`.prt` data model + Global Search wiring; (2) `#/prt` Physical Readiness Hub — all 10 Preparation Drill exercises with real FM-7-22-sourced order/cadence/rep-rule, a cadence-paced drill timer, self-grading into the real SRS (per-exercise starting-position/movement text intentionally deferred, see §3 below); (3) `#/creeds` reading pillar (18 creeds/branch identities — 4 re-homed from existing verbatim content, 14 newly researched AND independently adversarially re-verified via a second live web-search pass before shipping, catching 2 real errors in the process) plus `#/recite` Recitation Drill (First-Letter Mnemonics, Chunk & Memorize with forward/backwards chaining, Timed Recitation, all reusing the existing SRS/timer plumbing). Verified live in a real browser each milestone, not just headlessly — caught and fixed 3 real runtime bugs (a `loadContent()` seed-wiring gap, a stale Pause/Resume label, a cross-module scope bug) this way. Full `npm test` (159 suites) run clean before merge. | commits `39be9e3`, `38e531c`, `73d749e`, `6944331` (direct to `main`, no PR) |
 
 See `CHANGELOG.md`'s v1.5.0, v1.5.1, and round-8 entries for the detailed version of all of the above.
 
@@ -45,28 +46,30 @@ Whenever the backlog above is exhausted and someone asks "what's next," the answ
 
 ---
 
-## 3. Next up: Content & Educational Materials expansion (design doc, not started)
+## 3. Next up: acquire ATP 7-22.02 (the one open item from the Content expansion above)
 
-A full design-and-pitch document exists at
-`guidon-app/docs/design/content-education-roadmap.md` (written 2026-09-10/11)
-proposing four connected additions: a Physical Readiness Training module
-(`#/prt`, the Preparation Drill's 10 exercises — already present as prose
-in the seed today, but with no dedicated feature), a Creeds & Branch
-Identities reading pillar (`#/creeds` — an audit found 3 of the requested
-creeds already exist verbatim as `board.questions` rows, but 11 of 15
-requested branch/unit identities, including every combat-arms and
-sustainment branch motto, do not exist in any form today), a recitation
-study-tools module (`#/recite` — first-letter mnemonics, chunking/
-backwards-chaining, timed recitation, all built on existing SRS/timer
-plumbing with no new engine), and the Global Search/nav/citation wiring to
-make all of it findable. **Nothing in it is implemented** — no route or
-seed key it names exists in `src/index.html` yet. One real, confirmed
-blocker before the PRT module's per-exercise detail can ship: ATP 7-22.02
-(the actual exercise-by-exercise PRT manual FM 7-22 defers to) is not yet
-in `guidon-app/docs-source/` and needs to be acquired first; every other
-piece of this initiative is unblocked. Read that document for the full
-architecture, phased milestones, and open decisions before starting any of
-this work.
+Milestones 1–3 of the Content & Educational Materials expansion (§1 above)
+are done and live on `main`. Exactly one piece was explicitly deferred,
+not forgotten: **ATP 7-22.02** (Physical Readiness Training) — the real
+Army manual with each Preparation Drill exercise's starting position and
+movement description — is confirmed absent from `guidon-app/docs-source/`.
+FM 7-22 (already in the corpus) explicitly defers to it, and this
+project's own standing discipline (no doctrine content shipped without a
+real, verifiable source — see the round-8 content-accuracy entries above)
+means `#/prt`'s 10 exercises currently show cadence/rep-rule/order (real,
+FM-7-22-sourced) but an honest "reference pending" state instead of
+per-exercise movement detail.
+
+**This needs the user's call, not an autonomous fetch/download** — adding
+an external document to the repo is outside standing session
+authorization. Options on the table: supply the PDF directly; authorize a
+web search for an official public-domain source with a confirm-before-
+download step; or leave it as-is (the feature ships fine without it,
+just incomplete at that one level of detail) and revisit later.
+`docs/design/content-education-roadmap.md` §2.4 has the full technical
+detail on exactly what's blocked and the intake path once the PDF lands
+(`tools/build-library-data.mjs`, then hand-transcription via
+`tools/seed-io.mjs`, gated by `tools/lint-prt-sources.mjs`).
 
 ---
 
@@ -97,6 +100,7 @@ Small, real items — not urgent, not forgotten.
 - **Dependabot alerts and security updates are disabled repo-wide** (confirmed round 8, `gh api repos/.../security_and_analysis`) — the repo is public, so this costs nothing to enable, but it's a GitHub repo setting, not code, so it falls under the same standing exclusion as other repo-security-settings recommendations (§4 above): flagged for the user, never auto-toggled. This is *why* the `@xmldom/xmldom` advisory below sat unnoticed — a transitive dev-only advisory that never generated a scheduled-bump PR because it's a security-triggered update and those are off.
 - **`@xmldom/xmldom` 0.9.10→0.9.12** (dev-only, via `@capacitor/cli`→`plist`; GHSA-6gmq-8vp8-gcm6) — likely-unreachable in practice (this repo has no `ios:` scripts, never runs `cap add ios`), zero-risk, free lockfile-only bump (`plist` already allows `^0.9.10`). Not yet applied — low urgency, listed here so it isn't lost.
 - **Two content claims flagged in round 8's content-accuracy pass but deliberately NOT auto-corrected**, both near/past the auditing model's own knowledge-cutoff confidence range: `doc-abcp-1`/`doc-abcp-2`'s claimed 7 July 2026 WHtR (waist-to-height ratio) body-composition standard replacing the tape test (specific date/directive/"no sex adjustment" detail unconfirmed), and an unnamed "BRS overview" entry's claimed continuation-pay eligibility window shift (8–12 years → 7–12 years, "as of 1 Jan 2026"). Worth a human subject-matter re-check next time either policy area comes up — do not treat silence here as confirmation either claim is correct.
+- **This file's version line and §1 table are stale past round 8** (v1.6.0, v1.7.0, the ESP32 Flashcard OS firmware fork, and PRs #120–#137 all landed with no corresponding entry) — the Content expansion (Milestones 1–3) got a real entry when it shipped in this same edit, but a proper historical backfill of everything else since round 8 hasn't been done. Worth a dedicated pass; not attempted here to keep this edit scoped to the question actually asked.
 - **MOI Import's "Not saved" warning is silently unreachable** (found during round 8's bucket A work, not one of that bucket's assigned fixes): `build()`'s warning text is appended to `stage` and then immediately wiped by `renderAlreadyImported()`'s own clear, so a Soldier never actually sees it. Spun off as its own follow-up task rather than expanding round 8's scope — check whether it's been picked up before re-flagging.
 
 ---
