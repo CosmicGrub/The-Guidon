@@ -156,6 +156,65 @@ function findGradleJar(groupId, artifactId, preferredVersion) {
   }
   return null;
 }
+// Like findGradleJar, but for cases where only ONE exact version is
+// acceptable (no "closest cached version" fallback) - used for
+// kotlin-reflect below, where mixing an arbitrary cached kotlin-reflect
+// build against a specific kotlin-compiler-embeddable isn't safe to assume
+// ABI-compatible the way falling back across kotlin-stdlib/etc. patch
+// versions is.
+function findGradleJarExact(groupId, artifactId, exactVersion) {
+  const base = path.join(gradleHome(), "caches", "modules-2", "files-2.1", groupId, artifactId, exactVersion);
+  if (!existsSync(base)) return null;
+  let hashes;
+  try { hashes = readdirSync(base).filter((h) => { try { return statSync(path.join(base, h)).isDirectory(); } catch { return false; } }); }
+  catch { return null; }
+  for (const h of hashes) {
+    const jarPath = path.join(base, h, `${artifactId}-${exactVersion}.jar`);
+    if (existsSync(jarPath)) return { jarPath, version: exactVersion };
+  }
+  return null;
+}
+// Reads the exact kotlin-reflect version a resolved kotlin-compiler-embeddable
+// jar's own POM pins as a runtime dependency. kotlin-compiler-embeddable
+// bundles/requires kotlin-reflect at its own K2JVMCompiler entry point
+// (confirmed via NoClassDefFoundError: kotlin/reflect/jvm/ReflectJvmMapping
+// once android/variables.gradle's kotlinVersion moved from 2.0.21 to 2.4.10 -
+// 2.0.21's embeddable compiler apparently didn't hit this path, or this
+// suite got lucky with what was already cached) - and it pins a SPECIFIC
+// kotlin-reflect release (1.6.10 as of Kotlin 2.4.10) independent of the
+// compiler's own version, not "whatever kotlin-reflect happens to be
+// cached." Reading it from the POM here (rather than hardcoding "1.6.10")
+// means a future Kotlin version bump that changes this pin doesn't leave a
+// second stale copy for this file to drift out of sync with, matching this
+// project's own stated preference for single-sourcing exactly this class of
+// hand-tracked version fact (see round 9's dependency-hygiene lens findings).
+function readEmbeddableCompilerReflectVersion(groupId, artifactId, version) {
+  // Gradle's module cache stores each artifact TYPE (.jar, .pom, ...) for
+  // the same coordinate under its OWN hash-named subdirectory (hashed by
+  // that file's own content), not alongside the .jar - so the .pom can't be
+  // found by string-replacing the resolved jar path's extension. Scan every
+  // hash dir under this version, same as findGradleJar does for the jar.
+  const vDir = path.join(gradleHome(), "caches", "modules-2", "files-2.1", groupId, artifactId, version);
+  if (!existsSync(vDir)) return null;
+  let hashes;
+  try { hashes = readdirSync(vDir).filter((h) => { try { return statSync(path.join(vDir, h)).isDirectory(); } catch { return false; } }); }
+  catch { return null; }
+  let text = null;
+  for (const h of hashes) {
+    const pomPath = path.join(vDir, h, `${artifactId}-${version}.pom`);
+    if (existsSync(pomPath)) { try { text = readFileSync(pomPath, "utf-8"); break; } catch { /* try next hash dir */ } }
+  }
+  if (text === null) return null;
+  const depBlocks = text.split("<dependency>").slice(1);
+  for (const block of depBlocks) {
+    const closeIdx = block.indexOf("</dependency>");
+    const scoped = closeIdx === -1 ? block : block.slice(0, closeIdx);
+    if (!/<artifactId>\s*kotlin-reflect\s*<\/artifactId>/.test(scoped)) continue;
+    const m = /<version>\s*([^<\s]+)\s*<\/version>/.exec(scoped);
+    if (m) return m[1];
+  }
+  return null;
+}
 
 const NEEDED = [
   { groupId: "org.jetbrains.kotlin", artifactId: "kotlin-compiler-embeddable", preferVersion: kotlinVersion, key: "compilerEmbeddable" },
@@ -180,6 +239,24 @@ if (missing.length) {
 }
 ok(`found kotlin-compiler-embeddable ${resolved.compilerEmbeddable.version} (and its runtime deps) in the Gradle cache at ${gradleHome()}` + (kotlinVersion ? ` (android/variables.gradle wants ${kotlinVersion})` : ""));
 
+// kotlin-compiler-embeddable's own K2JVMCompiler entry point needs
+// kotlin-reflect on the launching JVM's classpath (a real runtime dep
+// declared in the embeddable jar's own POM, not just an app-level
+// dependency) - see readEmbeddableCompilerReflectVersion's header comment.
+const reflectVersion = readEmbeddableCompilerReflectVersion("org.jetbrains.kotlin", "kotlin-compiler-embeddable", resolved.compilerEmbeddable.version);
+if (!reflectVersion) {
+  info(`could not read kotlin-reflect's pinned version out of kotlin-compiler-embeddable ${resolved.compilerEmbeddable.version}'s own .pom.`);
+  info("SKIPPING (exit 0) - this suite's own dependency-discovery assumption (compiler-embeddable's POM names its required kotlin-reflect version) didn't hold for this cache/version; investigate before trusting a result from here.");
+  process.exit(0);
+}
+const reflectJar = findGradleJarExact("org.jetbrains.kotlin", "kotlin-reflect", reflectVersion);
+if (!reflectJar) {
+  info(`kotlin-compiler-embeddable ${resolved.compilerEmbeddable.version} requires kotlin-reflect ${reflectVersion} at its own entry point, but that exact version isn't in the Gradle cache at ${gradleHome()} (only whatever versions a real Android build happened to pull in are cached; this suite deliberately never resolves a new one).`);
+  info('SKIPPING (exit 0) - run a real Gradle invocation that resolves kotlin-reflect ' + reflectVersion + " (e.g. `android\\gradlew.bat -p android help` after this Kotlin version is current) to populate the cache, then rerun this suite.");
+  process.exit(0);
+}
+ok(`found kotlin-reflect ${reflectJar.version} (kotlin-compiler-embeddable ${resolved.compilerEmbeddable.version}'s own pinned runtime dependency, per its .pom)`);
+
 const stdlibJar = resolved.stdlib.jarPath;
 const compilerCp = [
   // kotlin-compiler-embeddable is itself Kotlin-compiled code (references
@@ -193,6 +270,7 @@ const compilerCp = [
   resolved.trove4j.jarPath,
   resolved.annotations.jarPath,
   resolved.coroutinesCore.jarPath,
+  reflectJar.jarPath,
 ].join(path.delimiter);
 
 /* --------------------------------------------------------------- build --
