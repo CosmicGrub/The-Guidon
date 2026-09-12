@@ -109,34 +109,35 @@ Full end-to-end bring-up against the physical device, in order:
   display init, touch calibration loaded, SD card found, **all 78
   categories loaded**, subject list shown —
   [`docs/flashcardos_boot_output.log`](docs/flashcardos_boot_output.log).
-- **Touch: STILL UNRESOLVED as of this session's last test** — read
-  HARDWARE.md's "Touch" section before assuming anything below is fixed.
-  Two real, separate bugs WERE found and fixed, each independently
-  confirmed against physical hardware with measured before/after data:
-  (1) a stack overflow in `drawCard()` that crashed the device the
-  instant a card was opened, and (2) the backlight's 5kHz PWM was
-  genuinely desensitizing the resistive touch ADC via switching noise (0
-  touch hits/4s at 5kHz vs. 23/4s at 30kHz, measured directly). Both fixes
-  are real and worth keeping. **But together they did not fully resolve
-  the reported symptom** — the user's own live re-test of the shipped
-  firmware afterward still showed no taps registering in normal use, and
-  this session paused (host token budget) before finding the remaining
-  cause. HARDWARE.md's "Where this actually stands" subsection has
-  concrete next steps, roughly in order of likelihood, for whoever picks
-  this up next.
+- **Touch: RESOLVED**, confirmed against the physical device with real
+  content — subject list, card view, and navigating between them all
+  register taps correctly. Three real, separate bugs, stacked: (1) a
+  stack overflow in `drawCard()` that crashed the device the instant a
+  card was opened, (2) the backlight's 5kHz PWM was genuinely
+  desensitizing the resistive touch ADC via switching noise (0 touch
+  hits/4s at 5kHz vs. 23/4s at 30kHz, measured directly), and (3) the
+  real root cause behind "works everywhere except after SD loads a real
+  card deck" — TFT_eSPI and the SD card were both defaulting to the same
+  VSPI hardware peripheral via two separate `SPIClass` objects, and
+  `SD.begin()` silently stole the display/touch object's pin routing out
+  from under it. Fixed with one build flag (`-DUSE_HSPI_PORT=1`), moving
+  the display/touch onto their own dedicated HSPI peripheral. Full
+  root-cause writeup, including the isolation test that proved it, is in
+  HARDWARE.md's "Touch" section.
 - Display SPI clock pushed to 80MHz — the ESP32's undivided APB clock,
   the literal fastest its SPI peripheral can produce — and verified
   clean via the same GRAM round-trip test, not assumed safe. See
   HARDWARE.md's "Display SPI clock" section.
 
 **Not directly observed by this session** (no camera on the physical
-device): the actual on-screen rendering — subject list layout, card view,
-settings/QR screen — hasn't been visually confirmed correct here, only
-that the firmware reaches and reports each state correctly over serial,
-and (for touch) that raw+calibrated readings track real contact
-correctly. Worth a visual pass on the physical device to confirm layout
-looks right, on top of the "does it respond at all" question this session
-already answered.
+device): the actual on-screen visual layout — subject list rows, card
+view text wrapping, the settings/QR screen — hasn't been visually
+confirmed *correct* here, only that the firmware reaches and reports each
+state correctly over serial and that touch input itself is fully
+functional (state transitions, card navigation, all confirmed live with
+the user tapping the real device). Worth a visual pass on the physical
+device to confirm layout/legibility, on top of the "does it work at all"
+question this session already answered.
 
 ## Repo layout
 
