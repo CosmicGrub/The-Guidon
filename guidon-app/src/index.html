@@ -4396,6 +4396,48 @@ html.reduce-transparency #demo-mode-badge { background: var(--panel-2); }
 .nav :is(button, a):hover { color: var(--text); background: var(--panel-2); }
 .nav :is(button, a).active { color: color-mix(in srgb, var(--amber) 55%, var(--text)); background: color-mix(in srgb, var(--amber) 12%, transparent); }
 .nav .ico { font-size: 1.15rem; line-height: 1; }
+/* ---- Nav overhaul Milestone 3 (docs/design/nav-adaptive-rail.md §4.5):
+   platform-flavor treatment for the active dock icon. Scoped to the EXACT
+   phone-portrait dock breakpoint (DOCK_MQ: max-width:599px and
+   orientation:portrait) - the only tier that's a bottom "dock" in the OS
+   sense; the compact icon rail and labeled accordion rail keep their one
+   shared appearance regardless of platform, unchanged. data-nav-flavor is
+   set once at boot (computeNavFlavor(), alongside device-fold-narrow) and
+   never persisted - recomputed fresh every load, same contract as that
+   class. ---- */
+@media (max-width: 599px) and (orientation: portrait) {
+  /* Android: a real Material-3-style tonal pill (a full stadium shape,
+     not the shared subtly-rounded rect every other tier uses) plus a
+     solid elevated surface under the whole dock. A custom upward shadow,
+     not var(--shadow) - that token's own "0 6px 24px" is a DOWNWARD
+     shadow tuned for elements that sit above their own drop-shadow (cards,
+     dropdowns); a dock pinned to the bottom edge needs the opposite
+     direction to read as "lifted" off the content scrolling behind it.
+     Box-shadow only, no blur, so it stays fully opaque like a real
+     Android nav bar. */
+  html[data-nav-flavor="android"] .nav { box-shadow: 0 -2px 10px rgba(0,0,0,.2); }
+  html[data-nav-flavor="android"] .nav :is(button, a).active {
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--amber) 20%, transparent);
+  }
+  /* iOS: a translucent frosted bar - real backdrop-filter blur, guarded
+     with its own -webkit- twin (this file's established guard shape for
+     an above-floor CSS feature; lint-engine-floor.mjs's own FEATURES
+     table has a dedicated twin-detection rule for exactly this property)
+     - and a tint-ONLY active state, no pill background at all (real iOS
+     tab bars don't use one). */
+  html[data-nav-flavor="ios"] .nav {
+    background: color-mix(in srgb, var(--panel) 82%, transparent);
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
+  }
+  html[data-nav-flavor="ios"] .nav :is(button, a).active { background: transparent; }
+  /* Windows/Tauri desktop (and a plain desktop browser tab, if resized
+     this narrow): no override at all - today's existing var(--radius-sm)
+     IS the "squarer" baseline this doc's own §2 compares Android's fuller
+     pill against. data-nav-flavor="desktop" is still set for completeness
+     and as a future hook; it just carries no CSS of its own here. */
+}
 /* ---- Nav overhaul Milestone 2: pin toggles + the "Pinned" section.
    .nav-item-row wraps a grouped route's own navButton()-built <a> plus its
    pin toggle - a SIBLING wrapper, not a change to the <a> itself, so every
@@ -34873,6 +34915,39 @@ window.G = window.G || {};
     } catch (e) { /* no signal - fall through to the unchanged default */ }
   })();
 
+  // Nav overhaul Milestone 3 (docs/design/nav-adaptive-rail.md §4.5/§6):
+  // platform-flavor detection. Declared here, next to device-fold-narrow,
+  // but NOT called yet - unlike that IIFE (which only touches
+  // navigator.userAgentData, a native browser API with no load-order
+  // dependency), this reads G.pwa, a module build.mjs splices in as its
+  // OWN later <script> tag AFTER this one. Calling it eagerly right here
+  // read G.pwa before it existed and silently fell through to "desktop"
+  // every time (caught live while verifying this milestone in a real
+  // browser - flavor stayed "desktop" under a spoofed iOS/Android UA).
+  // The actual call lives in app.start() below instead (app.start()
+  // v.s.), which app.js only ever invokes after DOMContentLoaded/once
+  // every synchronous <script> tag on the page - including pwa.js - has
+  // already run; see this file's own closing `if (document.readyState
+  // === "loading") ... else app.start();` for why that ordering holds.
+  //   - isIOS() is MORE robust than a plain /iPhone|iPad/ test: it also
+  //     catches an iPad specifically BECAUSE iPadOS 13+ masquerades as
+  //     desktop Safari by default (navigator.platform === "MacIntel" +
+  //     navigator.maxTouchPoints > 1) - exactly the gap §6 flagged plain
+  //     UA sniffing has, already solved by a different feature's own code.
+  //   - isAndroid() is a plain UA sniff, deliberately broader than
+  //     G.caps.fork() === "android" (which only ever answers true inside
+  //     the packaged Capacitor build) - matches this doc's own intent
+  //     ("Android gets a tonal pill") for any Android browser tab, not
+  //     just Soldiers who installed the native .apk specifically.
+  //   - Neither ever fires in a Windows/Tauri desktop window or a plain
+  //     desktop browser tab - both fall through to "desktop", today's
+  //     unchanged default appearance.
+  function computeNavFlavor() {
+    if (G.pwa && G.pwa.isIOS && G.pwa.isIOS()) return "ios";
+    if (G.pwa && G.pwa.isAndroid && G.pwa.isAndroid()) return "android";
+    return "desktop";
+  }
+
   // Below 600px there's no side-rail — it's the horizontal bottom tab bar.
   // Real bottom tab bars (Material Design, iOS) are flat and scrollable, not
   // an accordion; a collapsible group header sitting inline in a horizontal
@@ -35798,6 +35873,11 @@ window.G = window.G || {};
       // same fallback UI the global window.onerror/unhandledrejection
       // safety net (top of <head>) uses for anything outside this.
       try {
+      // Nav overhaul Milestone 3: set data-nav-flavor before buildShell()'s
+      // own first renderNav() call - see computeNavFlavor()'s own comment
+      // above for why this can't run any earlier (G.pwa, a later <script>
+      // tag, isn't loaded yet at that point in the file).
+      document.documentElement.setAttribute("data-nav-flavor", computeNavFlavor());
       buildShell();
       wireStatus();
       window.addEventListener("hashchange", route);
