@@ -2,6 +2,20 @@
 
 All notable changes to GUIDON will be documented in this file. Format loosely follows [Keep a Changelog](http://keepachangelog.com/). This is the technical record for developers - the app itself shows a short, plain-language summary of each release to Soldiers directly (G.whatsNew, src/index.html), not this file.
 
+## 2026-09-13 - v1.8.0: Smart Dock ships, three more roadmap-audit rounds land
+
+**Everything merged since v1.7.0, cut as one release.** No single feature dominates this version the way iOS PWA distribution did v1.7.0 — instead it consolidates a full navigation redesign and three consecutive roadmap-audit rounds, all already merged and detailed in their own entries directly below. This entry is the release-level summary; see Round 9, the Nav & Adaptive-Layout overhaul, Round 10, and Round 11 for the full technical detail on each.
+
+**Smart Dock: pinned favorites and platform-native styling for the phone nav.** A genuine landscape-phone breakpoint, a "Sections" tile grid replacing the old flat drawer list, pin-to-favorite driving both the sidebar's "Pinned" section and the phone dock's 3 customizable slots, and platform-flavor dock styling (Android tonal pill, iOS translucent blur, desktop unchanged) — all verified live under real device/viewport/UA conditions plus a full 24-theme contrast sweep, shipped as three independently-merged milestones (PRs #140–#142).
+
+**Three roadmap-audit rounds (9, 10, 11), 59 findings total, zero features regressed.** Round 9 hardened the Content expansion's shared timer/focus code and reconciled its content against the rest of the app (PR #138). Round 10 fixed two `util.makeRoundTimer` wake-lock leaks, `util.busyButton`'s focus restoration, four doctrine-sourcing errors, and added two permanent drift-lint gates (PR #139). Round 11 found a sibling of the Nav overhaul's own pin-focus bug, closed three ARIA-state gaps, fixed two more doctrine-content errors (Article 15/NJP, UCMJ AWOL/desertion), and three small hygiene fixes — merging cleanly across all four buckets despite every one touching `src/index.html` (PR #145).
+
+**Doctrine accuracy keeps improving under direct scrutiny, not just growing.** Six real content errors were caught and fixed across these three rounds alone (Parade Rest's direction-of-address, an invented office-reporting script, a squad-drill mis-citation, PRT's rep-rule citation, Article 15/NJP's missing Company Grade authority, and AWOL/desertion's duration-vs-intent conflation) — each independently re-verified against the source PDFs or the app's own other content before being changed, never assumed from the audit's own first pass.
+
+**Two new permanent lint gates join the standing set.** `lint-kotlin-version.mjs` and `lint-workflow-pins.mjs` (Round 10) close drift classes that had each already needed a manual fix once before — both now run in `lint:patterns`, and therefore `npm test`, on every future change.
+
+Verified: full local suite (166 suites) green on the final merged state, `lint:patterns`/`build`/`verify` all green, and every PR's own CI matrix green before merging.
+
 ## 2026-09-12 - Round 11: a sibling focus-loss bug, three ARIA gaps, two more doctrine errors, zero real merge conflicts
 
 **Round 11 of the roadmap-audit cadence**, 11 findings across the standard 8 lenses synthesized into 4 buckets, each built by an isolated worktree agent and merged sequentially — [PR #145](https://github.com/CosmicGrub/The-Guidon/pull/145).

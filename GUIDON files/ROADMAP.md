@@ -2,7 +2,7 @@
 
 **Read this to know: what's shipped, what's deliberately not built (and why), and what actually comes next.** `GUIDON_PROJECT_MAP.md` is the 10,000-foot *what is this app* orientation; `CHANGELOG.md` is the session-by-session *what changed*; this document is the forward-looking one — pull from it to pick up where the last session left off, and keep it current going forward rather than letting it drift the way the other canonical docs already have once.
 
-**Current version:** v1.7.0 (`guidon-app/package.json`). §1's table below is now current through Round 11 (2026-09-12) — see `CHANGELOG.md` for the full detail on each. The version-line/table gap for v1.6.0, v1.7.0 itself, the ESP32 Flashcard OS firmware fork, and PRs #120–#137 (everything between round 8 and round 9) is still outstanding — flagged in §5 below, not attempted here to keep this pass scoped to the work that just landed.
+**Current version:** v1.8.0 (`guidon-app/package.json`), cut 2026-09-13 — the Nav & Adaptive-Layout overhaul plus roadmap-audit rounds 9-11, all merged since v1.7.0. §1's table below is now current through Round 11 (2026-09-12) — see `CHANGELOG.md` for the full detail on each. The version-line/table gap for v1.6.0, v1.7.0 itself, the ESP32 Flashcard OS firmware fork, and PRs #120–#137 (everything between round 8 and round 9) is still outstanding — flagged in §5 below, not attempted here to keep this pass scoped to the work that just landed.
 
 ---
 
