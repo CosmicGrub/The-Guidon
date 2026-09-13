@@ -243,10 +243,39 @@ onIdentityStep ? ok("Choosing Personal Account advances to the identity step") :
 const seededRankActive = await page.locator(".ob-rank-btn.active").textContent();
 seededRankActive?.trim() === "SSG" ? ok("Identity step pre-fills the seeded rank (SSG) via existingProfile") : bad("seeded rank not pre-filled: " + seededRankActive);
 
+// aria-state-attributes-gaps (Round 11): the rank picker is a real
+// single-select button group (classList.active already tracked selection)
+// but never carried aria-pressed, unlike every other .chip/.active toggle
+// group in the app. Confirm the pre-filled SSG button reports pressed and
+// every sibling reports not-pressed BEFORE any click in this walkthrough
+// touches the group, so this isn't just checking the post-click handler.
+const rankPressedStateSeeded = await page.evaluate(() => {
+  const btns = [...document.querySelectorAll(".ob-rank-btn")];
+  return {
+    total: btns.length,
+    pressedCount: btns.filter((b) => b.getAttribute("aria-pressed") === "true").length,
+    ssgPressed: btns.find((b) => b.textContent.trim() === "SSG")?.getAttribute("aria-pressed"),
+  };
+});
+(rankPressedStateSeeded.total > 1 && rankPressedStateSeeded.pressedCount === 1 && rankPressedStateSeeded.ssgPressed === "true")
+  ? ok(`rank picker: exactly one of ${rankPressedStateSeeded.total} buttons reports aria-pressed="true" (SSG, the seeded rank) on initial render`)
+  : bad("rank picker aria-pressed state wrong on initial render: " + JSON.stringify(rankPressedStateSeeded));
+
 // Change the rank to something else, so we have a real before/after value
 // to check survives a Back navigation.
 await page.locator(".ob-rank-btn", { hasText: /^SFC$/ }).click();
 await page.waitForTimeout(100);
+const rankPressedStateAfterClick = await page.evaluate(() => {
+  const btns = [...document.querySelectorAll(".ob-rank-btn")];
+  return {
+    pressedCount: btns.filter((b) => b.getAttribute("aria-pressed") === "true").length,
+    sfcPressed: btns.find((b) => b.textContent.trim() === "SFC")?.getAttribute("aria-pressed"),
+    ssgPressed: btns.find((b) => b.textContent.trim() === "SSG")?.getAttribute("aria-pressed"),
+  };
+});
+(rankPressedStateAfterClick.pressedCount === 1 && rankPressedStateAfterClick.sfcPressed === "true" && rankPressedStateAfterClick.ssgPressed === "false")
+  ? ok("clicking the SFC rank button moves aria-pressed to it and clears it from SSG (exactly one pressed at a time)")
+  : bad("rank picker aria-pressed did not move correctly to the clicked button: " + JSON.stringify(rankPressedStateAfterClick));
 await page.locator("button.ob-next", { hasText: /Next/ }).click();
 await page.waitForTimeout(300);
 

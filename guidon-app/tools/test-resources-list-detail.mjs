@@ -270,6 +270,42 @@ for (const [width, expect] of [[1023, "block"], [1024, "grid"]]) {
   await page.close();
 }
 
+/* ---- aria-state-attributes-gaps (Round 11): entryList rows carry aria-selected ----
+ * These role="option" rows (inside role="listbox") never set aria-selected,
+ * an ARIA-required state for that role - unlike Board Drill's catList,
+ * which does. Like Doctrine's own entryList, this is a jump index (click
+ * scrolls to the matching .search-header, there is no persistent "selected"
+ * category), so the correct value is a static "false" on every row, both
+ * before and after a click.
+ */
+{
+  const { page, noise } = await boot({ width: 1280, height: 900 });
+  const before = await page.evaluate(() => {
+    const list = document.querySelector('.list-detail-list[aria-label="Jump to category"]');
+    const rows = list ? [...list.querySelectorAll('[role="option"]')] : [];
+    return { listboxRole: list ? list.getAttribute("role") : null, count: rows.length, allFalse: rows.every((r) => r.getAttribute("aria-selected") === "false") };
+  });
+  before.listboxRole === "listbox"
+    ? ok('jump list container carries role="listbox" as documented')
+    : bad('jump list container missing role="listbox": ' + before.listboxRole);
+  before.count > 0 && before.allFalse
+    ? ok(`all ${before.count} jump-list role="option" rows carry aria-selected="false" before any click`)
+    : bad(`jump-list role="option" rows missing aria-selected: ${JSON.stringify(before)}`);
+
+  await page.evaluate(() => { document.querySelector('.list-detail-list[aria-label="Jump to category"] [role="option"]')?.click(); });
+  await page.waitForTimeout(200);
+  const after = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.list-detail-list[aria-label="Jump to category"] [role="option"]')];
+    return rows.every((r) => r.getAttribute("aria-selected") === "false");
+  });
+  after
+    ? ok("aria-selected stays a valid \"false\" on every row after clicking one (this is a jump index, not a true selection list)")
+    : bad("a row's aria-selected changed to something other than \"false\" after a click");
+
+  noise.length === 0 ? ok("no console errors/warnings during aria-selected check") : bad("console noise: " + noise.join(" | "));
+  await page.close();
+}
+
 console.log(fails === 0 ? "\nRESOURCES LIST-DETAIL: all passed" : `\nRESOURCES LIST-DETAIL: ${fails} failed`);
 await browser.close();
 server.close();

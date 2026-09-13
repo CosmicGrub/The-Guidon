@@ -105,6 +105,40 @@ if (rendered.cards > 3) {
     : bad(`clicking the 3rd jump row ("${jump.rowLabel}") landed on a mismatched card ("${landed}") - jump-index mapping is broken`);
 }
 
+/* ---- aria-state-attributes-gaps (Round 11): entryList rows carry aria-selected ----
+ * These role="option" rows (inside role="listbox", aria-label="Jump to
+ * result") never set aria-selected, an ARIA-required state for that role -
+ * unlike Board Drill's catList, which does. Like Doctrine/Resources' own
+ * entryLists, this is a jump index (click scrolls to and pulses the
+ * matching .search-hit card; there is no persistent "selected" result), so
+ * the correct value is a static "false" on every row, both before and
+ * after a click - checked here with real, currently-rendered "leader" rows
+ * rather than an empty list.
+ */
+{
+  const before = await page.evaluate(() => {
+    const list = document.querySelector('.list-detail-list[aria-label="Jump to result"]');
+    const rows = list ? [...list.querySelectorAll('[role="option"]')] : [];
+    return { listboxRole: list ? list.getAttribute("role") : null, count: rows.length, allFalse: rows.every((r) => r.getAttribute("aria-selected") === "false") };
+  });
+  before.listboxRole === "listbox"
+    ? ok('jump-index container carries role="listbox" as documented')
+    : bad('jump-index container missing role="listbox": ' + before.listboxRole);
+  before.count > 0 && before.allFalse
+    ? ok(`all ${before.count} jump-index role="option" rows carry aria-selected="false"`)
+    : bad(`jump-index role="option" rows missing aria-selected: ${JSON.stringify(before)}`);
+
+  await page.evaluate(() => { document.querySelector('.list-detail-list[aria-label="Jump to result"] [role="option"]')?.click(); });
+  await page.waitForTimeout(200);
+  const after = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.list-detail-list[aria-label="Jump to result"] [role="option"]')];
+    return rows.every((r) => r.getAttribute("aria-selected") === "false");
+  });
+  after
+    ? ok("aria-selected stays a valid \"false\" on every row after clicking one (this is a jump index, not a true selection list)")
+    : bad("a row's aria-selected changed to something other than \"false\" after a click");
+}
+
 /* ---- Escape clears BOTH panes, not just the results pane ---- */
 await page.evaluate(() => {
   const inp = document.querySelector('input[type="search"]');
