@@ -69,10 +69,15 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Setup Node
-        # Same pinned commit as ci.yml's own lint-build-verify job.
+        # Same pinned commit as ci.yml's own lint-build-verify job. Version
+        # bumped 20 -> 24 (roadmap audit round 10, "Dependency & CI hygiene
+        # cleanup" bucket) to match ci.yml/desktop.yml/ios.yml's NODE_VERSION
+        # and package.json's own engines.node ">=24" floor - this job runs a
+        # plain `npm ci && npm run build`, nothing Node-20-specific, so there
+        # was no reason for it to be the one workflow drifted from that floor.
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: guidon-app/package-lock.json
 

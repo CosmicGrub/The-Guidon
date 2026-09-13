@@ -52,7 +52,12 @@
  * after - a rebuilt row would be a fresh node without it), and arrow-key
  * navigation actually moves row-to-row and clamps correctly.
  *   - Creeds' listPane: clamps at the bottom; ArrowUp from row 0 returns
- *     focus to the "Search creeds and branch identities" input above it.
+ *     focus to the "Search creeds and branch identities" input above it;
+ *     ArrowDown from that input enters listPane at row 0 (round 10
+ *     roadmap-audit, "Creeds view fixes" bucket - the search input itself
+ *     had no keydown handler at all until that round, only the row-to-row
+ *     ArrowUp/ArrowDown covered here already, so this half of the pair was
+ *     previously untested because it didn't exist).
  *   - Recite's listPane: clamps at BOTH ends (no filter/search input
  *     positioned above this particular list).
  *   - PRT's listPane: clamps at BOTH ends (same shape as Recite - the
@@ -332,6 +337,17 @@ async function bootTo(hash, viewport) {
     onSearchInput
       ? ok("ArrowUp from Creeds listPane row 0 returned focus to the search input above the list")
       : bad("ArrowUp from Creeds listPane row 0 did not return focus to the search input");
+
+    // Roadmap audit round 10, "Creeds view fixes" bucket: the down-direction
+    // complement to the ArrowUp check just above - mirrors Doctrine's own
+    // ArrowDown-from-search-input coverage above in this file. Focus is
+    // already sitting on the search input from the ArrowUp press above.
+    await page.keyboard.press("ArrowDown");
+    const backOnRow0 = await page.evaluate(() =>
+      document.activeElement?.querySelector(".ldr-name")?.textContent || "");
+    backOnRow0 === labels[0]
+      ? ok(`ArrowDown from Creeds' search input entered listPane at row 0 ("${backOnRow0}")`)
+      : bad(`ArrowDown from Creeds' search input: expected row 0 ("${labels[0]}"), got "${backOnRow0}"`);
   }
 
   const relevantNoise = noise.filter((n) => !/favicon/.test(n));

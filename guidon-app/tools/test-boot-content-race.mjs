@@ -40,6 +40,16 @@
  * top-of-app.start() hashchange listener) is fired. If the cache-poisoning
  * bug is present, all three stay empty forever once the delay elapses and
  * content really does load; if it's fixed, all three recover.
+ *
+ * EXTENDED (roadmap-audit round 10, prt-aria-and-cache-tests bucket -
+ * test-coverage-only, no src/index.html change needed here): store.creeds()
+ * and store.prt() memoize on `!!state.seed.creeds`/`!!state.seed.prt`
+ * exactly the same way (see their own comments, same file, right next to
+ * doctrine()/scenarios() above) - the identical at-risk caching pattern,
+ * just never previously exercised by this suite. #/creeds and #/prt are
+ * fired through the same artificial-delay window as #/board/#/doctrine/
+ * #/train below, confirming both stay empty during the race and recover
+ * once content actually loads, same as the original three.
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
@@ -94,25 +104,34 @@ await page.waitForFunction(() => !!(window.G && window.G.routes && window.G.rout
 ok("app shell globals exist while content is still artificially delayed");
 
 // Fire the same hashchange-driven render path the real bug's culprit call
-// used, for all three memoized functions at once - #/board, #/doctrine and
-// #/train each touch boardQuestions()/doctrine()/scenarios() synchronously
-// during their initial render.
+// used, for all five memoized functions at once - #/board, #/doctrine,
+// #/train, #/creeds and #/prt each touch boardQuestions()/doctrine()/
+// scenarios()/creeds()/prt() synchronously during their initial render.
 await page.evaluate(() => { location.hash = "#/board"; });
 await page.waitForTimeout(60);
 await page.evaluate(() => { location.hash = "#/doctrine"; });
 await page.waitForTimeout(60);
 await page.evaluate(() => { location.hash = "#/train"; });
 await page.waitForTimeout(60);
+await page.evaluate(() => { location.hash = "#/creeds"; });
+await page.waitForTimeout(60);
+await page.evaluate(() => { location.hash = "#/prt"; });
+await page.waitForTimeout(60);
 
 const early = await page.evaluate(() => ({
   board: window.G.store.boardQuestions().length,
   doctrine: window.G.store.doctrine().length,
   scenarios: window.G.store.scenarios().length,
+  creeds: window.G.store.creeds().length,
+  prt: window.G.store.prt().length,
   seedLoaded: !!window.G.store.seed().board,
 }));
 (!early.seedLoaded)
   ? ok("content genuinely had not loaded yet when the hashchange-driven renders ran (seed.board still null) - the race window was actually hit, not skipped past")
   : bad("content had already loaded before the hashchanges fired - this run didn't exercise the race at all, DELAY_MS=" + DELAY_MS + " needs to be larger: " + JSON.stringify(early));
+(early.creeds === 0 && early.prt === 0)
+  ? ok("creeds()/prt() also stayed empty during the same race window (0 each) - state.seed.creeds/.prt were still null when the #/creeds and #/prt hashchanges rendered")
+  : bad("creeds()/prt() were NOT empty during the race window (creeds=" + early.creeds + ", prt=" + early.prt + ") - expected 0 each while content is still artificially delayed");
 
 // Let the artificially delayed db.ready() resolve and store.init() finish
 // loading real content for real.
@@ -122,6 +141,8 @@ const late = await page.evaluate(() => ({
   board: window.G.store.boardQuestions().length,
   doctrine: window.G.store.doctrine().length,
   scenarios: window.G.store.scenarios().length,
+  creeds: window.G.store.creeds().length,
+  prt: window.G.store.prt().length,
 }));
 
 late.board > 900
@@ -133,6 +154,12 @@ late.doctrine > 0
 late.scenarios > 0
   ? ok("scenarios() also recovered (" + late.scenarios + " entries, was " + early.scenarios + ")")
   : bad("scenarios() STAYED empty after content finished loading: " + late.scenarios + " (was " + early.scenarios + ")");
+late.creeds > 0
+  ? ok("creeds() also recovered (" + late.creeds + " entries, was " + early.creeds + ")")
+  : bad("creeds() STAYED empty after content finished loading: " + late.creeds + " (was " + early.creeds + ")");
+late.prt > 0
+  ? ok("prt() also recovered (" + late.prt + " entries, was " + early.prt + ")")
+  : bad("prt() STAYED empty after content finished loading: " + late.prt + " (was " + early.prt + ")");
 
 // A fresh, uncached call with a DIFFERENT tierFilter must still work too -
 // this is not just "the bug happens to be timed out by a later unrelated

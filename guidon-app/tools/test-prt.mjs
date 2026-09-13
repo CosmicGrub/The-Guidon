@@ -12,7 +12,7 @@
  * structural templates: a real route/DOM pass, plus a direct Node-level
  * check of the pure store/util functions underneath it).
  *
- * Five things covered here, none previously exercised anywhere:
+ * Six things covered here, none previously exercised anywhere:
  *
  *  (a) A real route/DOM pass: #/prt renders the Preparation Drill panel and
  *      lists all 10 exercises in fixed order, matching store.prtMeta()'s
@@ -51,6 +51,16 @@
  *      before this milestone - by checking the resulting kv row lands
  *      under "srs:<that exact id>" with the schedule() output a fresh
  *      grade-2 ("Know It") card should produce.
+ *
+ *  (f) prtRunDrill's Pause/Resume button carries a real `aria-pressed`
+ *      state, not just a textContent swap (roadmap-audit round 10,
+ *      prt-aria-and-cache-tests bucket - matches the pattern Quiz mode's own
+ *      Timer toggle button already established, search this file's sibling
+ *      src/index.html for `timerBtn.setAttribute("aria-pressed"`). Driven
+ *      via real clicks on the actual "Run the drill" button and the actual
+ *      Pause/Resume button - not a direct call into prtRunDrill()'s
+ *      internals - so the exact click handler under test is the one a real
+ *      Soldier's screen reader would see.
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
@@ -263,6 +273,69 @@ savedRec && typeof savedRec.due === "number" && savedRec.due > Date.now() && sav
 
 // Leave no trace in the shared profile's kv store.
 if (truth) await page.evaluate(async (id) => { await window.G.db.put("kv", { k: "srs:" + id, v: null }); }, truth.firstId);
+
+/* ========================================================================
+   (f) prtRunDrill's Pause/Resume button - real aria-pressed toggling on a
+   real click, not just the underlying timer factory in isolation (see (c)
+   above for that direct check). Roadmap-audit round 10 finding: this button
+   swapped textContent between "Pause"/"Resume" but never carried
+   aria-pressed at all, giving assistive tech no programmatic state - fixed
+   to match Quiz mode's own Timer toggle button (same file, search for
+   `timerBtn.setAttribute("aria-pressed"`).
+   ======================================================================== */
+await page.evaluate(() => { location.hash = "#/prt"; });
+await page.waitForTimeout(400);
+
+const runClicked = await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => /Run the drill/.test(b.textContent || ""));
+  if (btn) { btn.click(); return true; }
+  return false;
+});
+runClicked ? ok("'▶ Run the drill' button found and clicked, to reach the real Pause/Resume button") : bad("'Run the drill' button not found");
+await page.waitForTimeout(300);
+
+function readPauseBtn() {
+  return page.evaluate(() => {
+    const btn = [...document.querySelectorAll("button")].find((b) => /^(Pause|Resume)$/.test((b.textContent || "").trim()));
+    return btn ? { text: btn.textContent.trim(), ariaPressed: btn.getAttribute("aria-pressed") } : null;
+  });
+}
+function clickPauseBtn() {
+  return page.evaluate(() => {
+    const btn = [...document.querySelectorAll("button")].find((b) => /^(Pause|Resume)$/.test((b.textContent || "").trim()));
+    if (btn) { btn.click(); return true; }
+    return false;
+  });
+}
+
+const pauseBefore = await readPauseBtn();
+pauseBefore && pauseBefore.text === "Pause" && pauseBefore.ariaPressed === "false"
+  ? ok('Pause/Resume button starts as "Pause" with aria-pressed="false"')
+  : bad("Pause/Resume button's initial state: " + JSON.stringify(pauseBefore));
+
+const clickedToPause = await clickPauseBtn();
+clickedToPause ? ok("Pause/Resume button clicked once (Pause -> Resume)") : bad("Pause/Resume button not found to click");
+
+const pauseAfterClick1 = await readPauseBtn();
+pauseAfterClick1 && pauseAfterClick1.text === "Resume" && pauseAfterClick1.ariaPressed === "true"
+  ? ok('After a real click: button reads "Resume" with aria-pressed="true"')
+  : bad("Pause/Resume button state after first (pausing) click: " + JSON.stringify(pauseAfterClick1));
+
+const clickedToResume = await clickPauseBtn();
+clickedToResume ? ok("Pause/Resume button clicked a second time (Resume -> Pause)") : bad("Pause/Resume button not found for the second click");
+
+const pauseAfterClick2 = await readPauseBtn();
+pauseAfterClick2 && pauseAfterClick2.text === "Pause" && pauseAfterClick2.ariaPressed === "false"
+  ? ok('After a second real click: button reads "Pause" with aria-pressed="false" again')
+  : bad("Pause/Resume button state after second (resuming) click: " + JSON.stringify(pauseAfterClick2));
+
+// Leave the drill via its own real "End" button, same as a real Soldier
+// would, so this suite doesn't leave a live round timer running behind it.
+await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => (b.textContent || "").trim() === "End");
+  if (btn) btn.click();
+});
+await page.waitForTimeout(300);
 
 const relevantNoise = noise.filter((n) => !/favicon/.test(n));
 relevantNoise.length === 0 ? ok("no console errors") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));

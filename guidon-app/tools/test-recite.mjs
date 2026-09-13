@@ -7,7 +7,7 @@
  * tools/test-prt.mjs's header for the full rationale shared by all three
  * new suites this round adds.
  *
- * Three things covered here, none previously exercised anywhere:
+ * Four things covered here, none previously exercised anywhere:
  *
  *  (a) store.recitable()'s filter: category==="Creeds" AND a real,
  *      non-empty `lines` array - src/index.html's own comment on this
@@ -41,6 +41,28 @@
  *      the tab closes. Reload re-triggers onboarding for a guest-session
  *      profile (in-memory only), so this dismisses it again exactly the
  *      way tools/test-essay-drill.mjs's own reload step already does.
+ *
+ *  (d) Round 10 roadmap-audit regression: a stale renderChunk() callback
+ *      must not overwrite the DOM of whatever study mode a person switches
+ *      TO while a Chunk & Memorize save is still in flight. The direction
+ *      toggle and each "Mark learned" button call
+ *      saveReciteState(...).then(() => renderChunk(...)) - renderChunk()'s
+ *      own `renderMode` guard only protects against a mode switch during
+ *      the save if it's compared against what `mode` actually was AT CLICK
+ *      TIME, but that guard used to be evaluated too late (inside
+ *      renderChunk() itself, invoked only once the save had already
+ *      resolved, by which point `mode` was always already "now" - trivially
+ *      equal to itself). Fixed by capturing the click-time mode BEFORE the
+ *      async save starts and checking it in the `.then()` callback before
+ *      ever calling renderChunk() again. This case artificially delays
+ *      saveReciteState()'s own IndexedDB write (same page.addInitScript()
+ *      technique as tools/test-boot-content-race.mjs, scoped narrowly to
+ *      only this view's "recite:<id>" kv rows so no other write in the app
+ *      picks up unrelated timing noise), clicks "Backwards chaining" then
+ *      immediately switches to "Full text" mode before that delayed write
+ *      resolves, and asserts "Full text" mode's content is still on screen
+ *      - not silently replaced by Chunk & Memorize's markup - once the
+ *      delayed save finally does resolve.
  *
  * Plus a light real route/DOM pass (heading, the list showing exactly the
  * real recitable creeds) so this isn't pure function-level testing with no
@@ -260,6 +282,120 @@ afterReload.hintText === "1 / 6 line(s) locked in"
 
 // Leave no trace in the shared profile's kv store.
 await page.evaluate(async () => { await window.G.db.put("kv", { k: "recite:creed-7", v: null }); });
+
+/* ========================================================================
+   (d) Regression: a mode switch mid-save must not let a stale renderChunk()
+   callback overwrite the DOM of whatever mode the person switched TO.
+   saveReciteState()'s IndexedDB write is artificially delayed (same
+   page.addInitScript() technique as tools/test-boot-content-race.mjs,
+   scoped narrowly to only this view's own "recite:<id>" kv rows so no
+   other write in the app - settings, onboarding dismissal, SRS grading -
+   picks up unrelated timing noise) wide enough to reliably land a
+   mode-chip click inside the window between "save started" and "save
+   resolved". addInitScript() only takes effect on a FUTURE navigation, so
+   this reloads the page (same as step (c) above) before it can matter.
+   ======================================================================== */
+const RACE_DELAY_MS = 700;
+await page.addInitScript((delayMs) => {
+  const realPut = window.IDBObjectStore.prototype.put;
+  window.IDBObjectStore.prototype.put = function (value) {
+    const req = realPut.apply(this, arguments);
+    // Only recite's own kv rows get delayed - every other write in the app
+    // (settings, onboarding dismissal, SRS grading, etc.) must stay
+    // real-time or this would introduce unrelated timing noise into a test
+    // that only cares about saveReciteState()'s own round trip.
+    if (this.name !== "kv" || !value || typeof value.k !== "string" || value.k.indexOf("recite:") !== 0) {
+      return req;
+    }
+    const handlers = {};
+    ["success", "error"].forEach((evt) => {
+      Object.defineProperty(req, "on" + evt, {
+        configurable: true,
+        get() { return handlers[evt] || null; },
+        set(fn) { handlers[evt] = fn; },
+      });
+      // The real native completion still fires on schedule - this listener
+      // just defers calling whichever handler the app assigned (captured
+      // above via the property setter) by delayMs, same technique
+      // tools/test-boot-content-race.mjs uses on indexedDB.open() itself.
+      req.addEventListener(evt, (e) => {
+        const fn = handlers[evt];
+        if (fn) setTimeout(() => fn.call(req, e), delayMs);
+      });
+    });
+    return req;
+  };
+}, RACE_DELAY_MS);
+
+await page.reload({ waitUntil: "load" });
+await dismissOnboarding(page);
+await page.waitForTimeout(300);
+await page.evaluate(() => { location.hash = "#/recite"; });
+await page.waitForTimeout(500);
+
+const step3Selected = await selectRangerCreed();
+step3Selected ? ok("(race case) re-selected 'Ranger Creed'") : bad("(race case) 'Ranger Creed' row not found");
+const step3Opened = await openChunkMode();
+step3Opened ? ok("(race case) opened 'Chunk & memorize' mode") : bad("(race case) 'Chunk & memorize' mode chip not found");
+await page.waitForTimeout(250);
+
+const freshState = await readChunkState();
+freshState.hintText === "0 / 6 line(s) locked in" && freshState.fwdActive
+  ? ok(`(race case) starts from a fresh 0/6, Forward state: ${JSON.stringify(freshState)}`)
+  : bad("(race case) unexpected starting state: " + JSON.stringify(freshState));
+
+// Click "Backwards chaining" (fires the now artificially delayed
+// saveReciteState()) then, in the SAME browser-side script execution (no
+// round trip in between, to keep the two clicks as close together as
+// possible), switch to "Full text" mode BEFORE that save resolves.
+const raceClicked = await page.evaluate(() => {
+  const backBtn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Backwards chaining");
+  const fullBtn = [...document.querySelectorAll(".search-filters button")].find((b) => b.textContent.trim() === "Full text");
+  if (!backBtn || !fullBtn) return false;
+  backBtn.click();
+  fullBtn.click();
+  return true;
+});
+raceClicked ? ok("(race case) clicked 'Backwards chaining' then immediately 'Full text' before the delayed save resolves") : bad("(race case) 'Backwards chaining' and/or 'Full text' control not found");
+
+function readModeBodyText() {
+  return page.evaluate(() => {
+    const modeBody = document.querySelector('div[style*="margin-top:12px"]');
+    return modeBody ? modeBody.textContent : null;
+  });
+}
+
+// Confirm the switch itself took effect immediately - Full text mode's own
+// content should already be showing well before RACE_DELAY_MS elapses.
+const rightAfterSwitch = await readModeBodyText();
+rightAfterSwitch && !/Backwards chaining|line\(s\) locked in/.test(rightAfterSwitch)
+  ? ok("switching to 'Full text' mode replaced modeBody's content immediately, before the delayed save resolves")
+  : bad("mode switch did not take effect immediately: " + JSON.stringify(rightAfterSwitch));
+
+// Now let the artificially delayed save actually resolve.
+await page.waitForTimeout(RACE_DELAY_MS + 500);
+
+const afterDelayedSave = await readModeBodyText();
+afterDelayedSave && !/Backwards chaining|line\(s\) locked in/.test(afterDelayedSave)
+  ? ok("once the delayed saveReciteState() write finally resolves, the stale renderChunk() callback does NOT overwrite 'Full text' mode's DOM")
+  : bad("STALE RENDER BUG: renderChunk()'s callback overwrote the DOM of the mode the user had already switched away to: " + JSON.stringify(afterDelayedSave));
+
+// The delayed write itself must have genuinely landed - proves this test
+// actually exercised the race (a save that silently never happened at all
+// would make the assertion above pass for the wrong reason).
+const kvAfterRace = await page.evaluate(async () => {
+  const r = await window.G.db.get("kv", "recite:creed-7");
+  return r && r.v;
+});
+kvAfterRace && kvAfterRace.direction === "backward"
+  ? ok(`the delayed write itself did land ("recite:creed-7" now shows direction:"backward") - this test genuinely exercised the race window, not a save that silently never fired`)
+  : bad('delayed write never landed - kv row "recite:creed-7": ' + JSON.stringify(kvAfterRace));
+
+// Leave no trace. This put() also matches the "recite:" delay filter still
+// installed on this page, so the extra wait below accounts for that -
+// otherwise the reset itself wouldn't land before the browser closes.
+await page.evaluate(async () => { await window.G.db.put("kv", { k: "recite:creed-7", v: null }); });
+await page.waitForTimeout(RACE_DELAY_MS + 200);
 
 const relevantNoise = noise.filter((n) => !/favicon/.test(n));
 relevantNoise.length === 0 ? ok("no console errors") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));
