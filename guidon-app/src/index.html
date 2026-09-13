@@ -4452,7 +4452,26 @@ html.reduce-transparency #demo-mode-badge { background: var(--panel-2); }
    phone-portrait dock's own buttons - Home/Sections/etc. - never get a
    pin toggle, so this shape never appears there). ---- */
 .nav-item-row { display: flex; align-items: stretch; gap: 2px; flex: 0 0 auto; }
-.nav-item-row > a[data-hash] { flex: 1; min-width: 0; }
+/* !important on flex/min-width (round 12, found live on a real Z Fold5):
+   "html.device-fold-narrow .nav :is(button, a)" (the >=800px Fold-specific
+   compact-rail mirror, ~line 4813) is scoped under an extra "html.device-
+   fold-narrow" class prefix, which pushes ITS specificity (0-2-2) above
+   this rule's own (0-2-0, .nav-item-row's class + [data-hash]'s
+   attribute) - the one tier where this link-protecting rule was actually
+   losing. There the link stayed pinned to the generic rule's own
+   flex:0 0 auto/width:100% instead of shrinking to make room, so once the
+   pin star (fixed two rules below at its own correct 32px, no longer
+   crushable) took its real width, the two together overflowed the row -
+   and .nav's own overflow-x:hidden on that tier clipped the star straight
+   off screen: not overlapping, not truncated, simply gone. Confirmed live
+   on a physical SM-F946U (Fold5) after the star-width fix shipped in
+   v1.8.1 alone. flex:1/min-width:0 !important makes this rule win
+   regardless of which breakpoint-scoped selector also matches - the same
+   guarantee .nav-pin-btn's own rule below already relies on, and neither
+   of these two properties has any competing pointer:coarse/large-targets
+   rule that legitimately needs to override them the way the star's own
+   height properties do. */
+.nav-item-row > a[data-hash] { flex: 1 !important; min-width: 0 !important; }
 /* Round 12 fix: every ".nav :is(button, a)" rule across every breakpoint
    (base rule, the three mirrored compact-rail tiers, the >=800px desktop
    tier, nav-density/nav-labels toggles, Board Drill's icon-only collapse)
@@ -35629,6 +35648,14 @@ window.G = window.G || {};
         highlights: [
           "Fixed the star icon added last update sitting too close to a menu item's name on some screen sizes.",
           "Every menu row is now the same, even height — a few rows used to sit slightly taller than the rest for no reason.",
+        ],
+      },
+      {
+        version: "1.8.2",
+        date: "September 2026",
+        title: "Menu fix, part two (foldable phones)",
+        highlights: [
+          "Fixed the pin star from the last two updates being invisible on some foldable phones, instead of just showing in the wrong place.",
         ],
       },
     ],

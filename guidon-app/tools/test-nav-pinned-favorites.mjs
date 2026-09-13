@@ -31,6 +31,18 @@
  *      "before there were real group headers" divider rule that made 4
  *      specific routes render 5px taller than every other row for no
  *      reason tied to today's grouping. See each part's own comment.
+ *   7. (Part 10, found live on a REAL Z Fold5 after Part 8's own fix
+ *      shipped) The Fold-specific ">=800px" compact-rail mirror
+ *      (html.device-fold-narrow, ~line 4813) has an extra class prefix
+ *      that out-specifies ".nav-item-row > a[data-hash]"'s own
+ *      flex:1/min-width:0 protection - the one tier that rule was losing
+ *      in. There the link stayed full-width instead of shrinking, so once
+ *      the star stopped being crushable (Part 8's fix) the two together
+ *      overflowed the row and .nav's own overflow-x:hidden clipped the
+ *      star clean off screen: invisible, not overlapping, on the one real
+ *      device this whole feature was partly designed around. See
+ *      test-fold-narrow-split.mjs for the SM-F946U model-spoof technique
+ *      reused here.
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
@@ -590,6 +602,69 @@ for (const { width, height, tier } of [{ width: 700, height: 900, tier: "600-799
     : bad(`>=800px desktop rail: expanded sidebar rows have ${distinct.length} different heights (${JSON.stringify(distinct)}), expected exactly 1`);
 
   await page.close();
+}
+
+// ============================================================
+// PART 10 — regression coverage for the real Z Fold5 clipping bug: the
+// device-fold-narrow-scoped compact rail (see this file's own header
+// comment, point 7) out-specifies the link's own shrink-to-fit rule, so
+// the star gets pushed entirely outside .nav's own bounds and clipped by
+// overflow-x:hidden - invisible, not overlapping. Spoofs a real SM-F946U
+// the same way test-fold-narrow-split.mjs already does.
+// ============================================================
+{
+  const ctx = await browser.newContext({ viewport: { width: 823, height: 1300 } });
+  const page = await ctx.newPage();
+  page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push("[fold5-pin-clip] " + m.type() + ": " + m.text()); });
+  page.on("pageerror", (e) => noise.push("[fold5-pin-clip] pageerror: " + e.message));
+  await page.addInitScript(() => {
+    Object.defineProperty(window.navigator, "userAgentData", {
+      configurable: true,
+      value: { getHighEntropyValues: async () => ({ model: "SM-F946U" }) },
+    });
+  });
+  await page.goto(url, { waitUntil: "load" });
+  await dismissOnboarding(page);
+  await page.waitForTimeout(300);
+
+  const hasFoldClass = await page.evaluate(() => document.documentElement.classList.contains("device-fold-narrow"));
+  hasFoldClass ? ok("real Z Fold5 (SM-F946U): device-fold-narrow class applied, as test-fold-narrow-split.mjs already covers") : bad("device-fold-narrow class did not apply - fix the test, this suite assumes it");
+
+  await page.locator(".nav .nav-group-header", { hasText: "Leadership" }).click();
+  await page.waitForTimeout(450);
+
+  const rows = await page.evaluate(() => {
+    const nav = document.querySelector(".nav");
+    const navRect = nav.getBoundingClientRect();
+    const items = [...document.querySelectorAll(".nav-group-body.open .nav-item-row")].filter((r) => /BLC Prep|ALC Prep/.test(r.textContent));
+    return items.map((r) => {
+      const link = r.querySelector("a[data-hash]");
+      const star = r.querySelector(".nav-pin-btn");
+      const lr = link.getBoundingClientRect(), sr = star.getBoundingClientRect();
+      const overlap = !(lr.right <= sr.left || lr.left >= sr.right || lr.bottom <= sr.top || lr.top >= sr.bottom);
+      return {
+        label: link.getAttribute("aria-label"),
+        starWidth: Math.round(sr.width),
+        starWithinNavBounds: sr.right <= navRect.right + 0.5,
+        overlap,
+      };
+    });
+  });
+
+  rows.length >= 2
+    ? ok(`real Z Fold5: found ${rows.length} pinnable Leadership rows to check`)
+    : bad(`real Z Fold5: expected >=2 Leadership rows (BLC Prep/ALC Prep), found ${rows.length}`);
+  for (const r of rows) {
+    r.starWithinNavBounds
+      ? ok(`real Z Fold5: "${r.label}"'s pin star stays inside the visible nav rail, not clipped by overflow-x:hidden`)
+      : bad(`real Z Fold5: "${r.label}"'s pin star is clipped outside the nav rail (invisible to a real Soldier on this device)`);
+    !r.overlap
+      ? ok(`real Z Fold5: "${r.label}"'s pin star does not overlap its own link`)
+      : bad(`real Z Fold5: "${r.label}"'s pin star overlaps its own link`);
+  }
+
+  await page.close();
+  await ctx.close();
 }
 
 noise.length === 0 ? ok("no console errors/warnings across all viewport passes") : bad(noise.length + " console msg(s); first: " + noise[0]);
