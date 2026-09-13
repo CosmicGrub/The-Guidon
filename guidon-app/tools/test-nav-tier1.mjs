@@ -1,10 +1,13 @@
 /**
- * Intuitivism pass, Tier 1 nav mechanics: three new pieces of interactive
+ * Intuitivism pass, Tier 1 nav mechanics: four new pieces of interactive
  * surface with no prior coverage.
- *   1. <600px flat bar curated to 4 primary routes + "More", opening the
- *      SAME grouped accordion the >=600px sidebar renders as a bottom-sheet
- *      drawer (renderGroupsInto - one render path, not a duplicate DOM
- *      structure that could drift from the sidebar).
+ *   1. <600px-portrait dock curated to 4 primary routes + "Sections"
+ *      (renamed from "More", nav overhaul Milestone 1 -
+ *      docs/design/nav-adaptive-rail.md §4.2), opening the SAME grouped
+ *      accordion the >=600px sidebar renders, now as a grid of tiles
+ *      (renderGroupsInto - one render path, not a duplicate DOM structure
+ *      that could drift from the sidebar; the sidebar's own tiles just
+ *      render without opts.showCounts).
  *   2. In-group dividers (Board Prep/Leadership/Career & Life) - pure
  *      visual chunking, reusing the same .nav-divider element already
  *      used between groups.
@@ -13,6 +16,11 @@
  *      .nav-demoted dimming of the same pair within Account; superseded
  *      when the owner asked for the plan's own 7th-group fallback
  *      instead - see NAV_GROUPS in src/index.html for the full writeup).
+ *   4. (PART 3, nav overhaul Milestone 1) A <600px phone rotated to
+ *      landscape reuses the compact accordion rail instead of the
+ *      portrait-only dock - including the specific edge case (a narrow
+ *      phone whose landscape width still stays under 600px) that
+ *      SIDEBAR_MQ's own "change" event alone could never catch.
  * Exercises the real drawer end-to-end (open, focus-trap, Escape, a route
  * click closing it and navigating for real, focus restore) rather than
  * just checking the curated button list exists.
@@ -33,7 +41,7 @@ const browser = await chromium.launch();
 const noise = [];
 
 // ============================================================
-// PART 1 — <600px flat bar + "More" drawer
+// PART 1 — <600px-portrait dock + "Sections" drawer
 // ============================================================
 {
   const page = await (await browser.newContext({ viewport: { width: 412, height: 915 } })).newPage();
@@ -67,8 +75,8 @@ const noise = [];
   navState.primaryHashes.length === 4
     ? ok(`<600px flat bar shows exactly 4 primary routes (${navState.primaryHashes.join(", ")})`)
     : bad(`<600px flat bar primary route count: ${navState.primaryHashes.length}, expected 4 (${JSON.stringify(navState.primaryHashes)})`);
-  navState.hasMore ? ok('a "More" button renders alongside the 4 primaries') : bad('"More" button not found in the <600px flat bar');
-  navState.moreActive === false ? ok('"More" is not active while on Home (one of the 4 primaries)') : bad("More active state on Home: " + navState.moreActive);
+  navState.hasMore ? ok('a "Sections" button renders alongside the 4 primaries (renamed from "More", nav overhaul Milestone 1)') : bad('"Sections" button not found in the <600px flat bar');
+  navState.moreActive === false ? ok('"Sections" is not active while on Home (one of the 4 primaries)') : bad("Sections active state on Home: " + navState.moreActive);
   // Roadmap audit round 4, "Test coverage gaps for previously-fixed bug
   // classes" bucket: util.icon("more-horizontal", ...) used to name an icon
   // that didn't exist in G.icons' D object, so this always-visible mobile
@@ -76,8 +84,8 @@ const noise = [];
   // of a real stroke icon - nothing here ever checked the child's tag name,
   // only that SOME node was present. Now asserts a real <svg class="gi">.
   navState.iconTag === "svg" && navState.iconIsGi
-    ? ok('"More" button renders a real <svg class="gi"> icon, not a fallback <span> text glyph')
-    : bad('"More" button icon child: tag=' + navState.iconTag + " gi=" + navState.iconIsGi + " (expected a real svg.gi, not a fallback span)");
+    ? ok('"Sections" button renders a real <svg class="gi"> icon, not a fallback <span> text glyph')
+    : bad('"Sections" button icon child: tag=' + navState.iconTag + " gi=" + navState.iconIsGi + " (expected a real svg.gi, not a fallback span)");
 
   // ---- open the drawer ----
   await page.locator(".nav-more-btn").click();
@@ -94,16 +102,19 @@ const noise = [];
       demoted: panel ? Array.from(panel.querySelectorAll(".nav-demoted")).map((b) => b.getAttribute("data-hash")) : [],
     };
   });
-  drawerOpen.exists ? ok("clicking More opens the .nav-drawer panel") : bad(".nav-drawer did not appear after clicking More");
+  drawerOpen.exists ? ok("clicking Sections opens the .nav-drawer panel") : bad(".nav-drawer did not appear after clicking Sections");
   drawerOpen.role === "dialog" && drawerOpen.ariaModal === "true"
     ? ok("drawer panel carries role=dialog aria-modal=true")
     : bad(`drawer panel role/aria-modal: ${drawerOpen.role}/${drawerOpen.ariaModal}`);
-  drawerOpen.ariaLabel === "More sections" ? ok('drawer aria-label reads "More sections"') : bad("drawer aria-label: " + drawerOpen.ariaLabel);
+  drawerOpen.ariaLabel === "Sections" ? ok('drawer aria-label reads "Sections" (renamed from "More sections")') : bad("drawer aria-label: " + drawerOpen.ariaLabel);
   // Tier 2 (Part One): a genuine 7th group, "Advanced" (Author +
   // Diagnostics), replaces the old in-place .nav-demoted pair inside
-  // Account - so 6 labeled headers now, not 5.
-  JSON.stringify(drawerOpen.groupHeaders) === JSON.stringify(["Board Prep", "Study & Skills", "Leadership", "Career & Life", "Account", "Advanced"])
-    ? ok("drawer renders all 6 labeled groups, same order as the sidebar")
+  // Account - so 6 labeled headers now, not 5. Nav overhaul Milestone 1:
+  // the drawer's own tiles append each group's route count
+  // (opts.showCounts, renderGroupsInto) - the >=600px sidebar (Part 2
+  // below) deliberately does NOT, so only this array changed.
+  JSON.stringify(drawerOpen.groupHeaders) === JSON.stringify(["Board Prep (12)", "Study & Skills (4)", "Leadership (7)", "Career & Life (8)", "Account (4)", "Advanced (3)"])
+    ? ok("drawer renders all 6 labeled group tiles with route counts, same order as the sidebar")
     : bad("drawer group headers: " + JSON.stringify(drawerOpen.groupHeaders));
   // Derived from the build, never a literal: declaredNavRoutes() reads the
   // NAV_GROUPS hashes minus NAV_HIDDEN out of web/index.html. This was the
@@ -124,7 +135,7 @@ const noise = [];
   });
   focusedInPanel ? ok("opening the drawer moves keyboard focus inside the panel") : bad("focus is not inside the drawer panel after opening");
 
-  // ---- Escape closes it and restores focus to the More button ----
+  // ---- Escape closes it and restores focus to the Sections button ----
   await page.keyboard.press("Escape");
   await page.waitForTimeout(500);
   const afterEscape = await page.evaluate(() => ({
@@ -132,7 +143,7 @@ const noise = [];
     focusedIsMore: document.activeElement === document.querySelector(".nav-more-btn"),
   }));
   afterEscape.drawerGone ? ok("Escape closes the drawer") : bad("drawer still present after Escape");
-  afterEscape.focusedIsMore ? ok("closing via Escape restores focus to the More button") : bad("focus was not restored to the More button after Escape");
+  afterEscape.focusedIsMore ? ok("closing via Escape restores focus to the Sections button") : bad("focus was not restored to the Sections button after Escape");
 
   // ---- a real route click inside the drawer navigates AND closes it ----
   await page.locator(".nav-more-btn").click();
@@ -144,8 +155,10 @@ const noise = [];
   // reaching straight for a button that's currently clipped off by its
   // own collapsed .nav-group-body. Using #/progress specifically (not
   // #/settings, which the user picked as one of the 4 primaries) so this
-  // stays a genuine non-primary route for the "More lights up" check below.
-  await page.locator(".nav-drawer .nav-group-header", { hasText: /^Account$/ }).click();
+  // stays a genuine non-primary route for the "Sections lights up" check
+  // below. hasText is a substring match (not anchored) since nav overhaul
+  // Milestone 1 appends a route count to each tile's label ("Account (4)").
+  await page.locator(".nav-drawer .nav-group-header", { hasText: "Account" }).click();
   await page.waitForTimeout(300);
   await page.locator('.nav-drawer a[data-hash="#/progress"]').click();
   await page.waitForTimeout(400);
@@ -159,7 +172,7 @@ const noise = [];
     ? ok("clicking a route inside the drawer navigates for real (#/progress renders)")
     : bad(`hash/heading after drawer nav click: ${afterNav.hash} / ${afterNav.heading}`);
   afterNav.drawerGone ? ok("the drawer closes itself once a route is chosen") : bad("drawer still present after choosing a route");
-  afterNav.moreActive ? ok('"More" lights up now that the active route (#/progress) lives inside the drawer, not the 4 primaries') : bad("More button did not activate for a non-primary route");
+  afterNav.moreActive ? ok('"Sections" lights up now that the active route (#/progress) lives inside the drawer, not the 4 primaries') : bad("Sections button did not activate for a non-primary route");
 
   // ---- regression: the drawer's group-open state persists to the same
   // localStorage key the >=600px sidebar shares (guidon-nav-open-groups) -
@@ -270,7 +283,7 @@ const noise = [];
   }));
   // Same derived count as the drawer assertion above (declaredNavRoutes()).
   sidebar.totalButtons === NAV.count ? ok("sidebar renders all " + NAV.count + " non-hidden routes NAV_GROUPS declares") : bad("sidebar route button count: " + sidebar.totalButtons + ", expected " + NAV.count + " (NAV_GROUPS minus NAV_HIDDEN in the build)");
-  sidebar.hasMoreBtn === false ? ok("no More button at >=600px - the sidebar shows everything directly") : bad("unexpected More button in the sidebar");
+  sidebar.hasMoreBtn === false ? ok("no Sections button at >=600px - the sidebar shows everything directly") : bad("unexpected Sections button in the sidebar");
   // 6 labeled groups now (Board Prep/Study & Skills/Leadership/Career &
   // Life/Account/Advanced) = 6 between-group dividers, + 3 in-group
   // subdividers (Board Prep/Leadership/Career & Life only - Account lost
@@ -350,6 +363,68 @@ const noise = [];
   persistedKey.includes("advanced")
     ? ok('opening the "Advanced" group persists to the shared guidon-nav-open-groups key, same as every other group')
     : bad("guidon-nav-open-groups after opening Advanced: " + persistedKey);
+
+  await page.close();
+}
+
+// ============================================================
+// PART 3 — landscape phone reuses the compact accordion rail instead of
+// the portrait-only dock (nav overhaul Milestone 1,
+// docs/design/nav-adaptive-rail.md §4.1/§5). DOCK_MQ, not SIDEBAR_MQ
+// alone, now decides the dock; a resize/rotation listener on BOTH media
+// queries re-renders on any crossing either one can make.
+// ============================================================
+{
+  const page = await (await browser.newContext({ viewport: { width: 320, height: 568 } })).newPage();
+  page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push("[landscape] " + m.type() + ": " + m.text()); });
+  page.on("pageerror", (e) => noise.push("[landscape] pageerror: " + e.message));
+  await page.goto(url, { waitUntil: "load" });
+  await dismissOnboarding(page);
+  await page.waitForTimeout(700);
+
+  const navShape = () => page.evaluate(() => ({
+    hasDock: !!document.querySelector(".nav-more-btn"),
+    hasAccordion: !!document.querySelector(".nav-group-header"),
+    flexDir: getComputedStyle(document.querySelector(".nav")).flexDirection,
+  }));
+
+  const portrait = await navShape();
+  portrait.hasDock && !portrait.hasAccordion && portrait.flexDir === "row"
+    ? ok("320x568 portrait: renders the bottom dock (flat bar), not the accordion")
+    : bad("320x568 portrait nav shape: " + JSON.stringify(portrait));
+
+  await page.setViewportSize({ width: 568, height: 320 });
+  await page.waitForTimeout(200);
+  const landscape = await navShape();
+  landscape.hasAccordion && !landscape.hasDock && landscape.flexDir === "column"
+    ? ok("568x320 landscape (same phone, rotated): switches to the compact accordion rail, not the dock")
+    : bad("568x320 landscape nav shape: " + JSON.stringify(landscape));
+
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.waitForTimeout(200);
+  const backToPortrait = await navShape();
+  backToPortrait.hasDock && !backToPortrait.hasAccordion
+    ? ok("rotating back to 320x568 portrait restores the dock")
+    : bad("nav shape after rotating back to portrait: " + JSON.stringify(backToPortrait));
+
+  // The specific edge case DOCK_MQ's own listener exists for: a narrow
+  // phone whose LANDSCAPE width still stays under 600px never crosses
+  // SIDEBAR_MQ's min-width:600px threshold in either direction, so
+  // SIDEBAR_MQ's "change" event alone would never fire here - only
+  // DOCK_MQ's own compound (width AND orientation) condition does.
+  await page.setViewportSize({ width: 340, height: 700 });
+  await page.waitForTimeout(200);
+  const narrowPortrait = await navShape();
+  narrowPortrait.hasDock && !narrowPortrait.hasAccordion
+    ? ok("340x700 portrait (both under 600px either way): renders the dock")
+    : bad("340x700 portrait nav shape: " + JSON.stringify(narrowPortrait));
+
+  await page.setViewportSize({ width: 570, height: 340 });
+  await page.waitForTimeout(200);
+  const narrowLandscape = await navShape();
+  narrowLandscape.hasAccordion && !narrowLandscape.hasDock
+    ? ok("570x340 landscape (SIDEBAR_MQ never crosses 600px either way - only DOCK_MQ's own listener catches this): switches to the accordion rail")
+    : bad("570x340 landscape nav shape: " + JSON.stringify(narrowLandscape) + " - DOCK_MQ's own change listener may not have fired");
 
   await page.close();
 }

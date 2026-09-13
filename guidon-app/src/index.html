@@ -557,7 +557,7 @@ html.high-contrast nav.nav[data-scroll-y] { -webkit-mask-image: none; mask-image
 
 /* ══════════════════════════════════════════════════════════════════════════
    CANONICAL BREAKPOINT SCALE — every width-based @media in this file must
-   use one of these 8 values (paired range counts as two). CSS custom
+   use one of these 9 values (paired range counts as two). CSS custom
    properties can't be referenced inside a media-feature value in any
    shipping browser (no var() support in @media conditions, no @custom-media
    support), so this comment block IS the single source of truth — not a
@@ -567,6 +567,9 @@ html.high-contrast nav.nav[data-scroll-y] { -webkit-mask-image: none; mask-image
      420px   max-width   narrowest phones / content-fit floor (e.g. the
                           5-col gate table's stacked-card fallback)
      480px   max-width   general "small phone" cosmetic tier (most-used)
+     599px   max-width   landscape-phone compact-rail ceiling — paired with
+                          orientation:landscape (JS-side: DOCK_MQ), never
+                          alone; see 600px below for the portrait companion
      600px   min-width   foldable/small-tablet compact-rail tier floor —
              (paired with the 799px ceiling below in ONE rule, never alone)
      640px   max-width   dominant touch-target / mobile-layout-sweep
@@ -585,6 +588,20 @@ html.high-contrast nav.nav[data-scroll-y] { -webkit-mask-image: none; mask-image
      1500px  min-width   Board Drill's icon-only rail re-expands back to
                           the normal labeled one - another content-fit
                           threshold, not a device tier (see below)
+
+   599px added (nav overhaul Milestone 1, docs/design/nav-adaptive-rail.md
+   §4.1/§5, 2026-09-12): a phone under 600px rotated to landscape has
+   little vertical space to spare — the portrait-only bottom dock's own
+   justification (flat, horizontal tab bars are a real Material/iOS
+   convention, but only make sense when width is genuinely scarce and
+   height genuinely isn't) inverts in landscape. Below 600px AND
+   landscape now reuses the 600-799px tier's own compact icon-rail CSS
+   verbatim (a duplicated block, same as device-fold-narrow's own
+   >=800px override two tiers down — not a new maintenance pattern) since
+   a width-only media query can't also express the JS-driven orientation
+   condition. 599, not 600, because DOCK_MQ (JS) gates the dock to
+   max-width:599px so it never overlaps SIDEBAR_MQ's existing
+   min-width:600px threshold — the same adjacent-pair shape as 799/800.
 
    1500px added (PC/desktop intuitivism pass, Tier 1(e), 2026-08-22):
    board-drill-active's own #app override (96px icon-only rail, >=800px,
@@ -4379,6 +4396,74 @@ html.reduce-transparency #demo-mode-badge { background: var(--panel-2); }
 .nav :is(button, a):hover { color: var(--text); background: var(--panel-2); }
 .nav :is(button, a).active { color: color-mix(in srgb, var(--amber) 55%, var(--text)); background: color-mix(in srgb, var(--amber) 12%, transparent); }
 .nav .ico { font-size: 1.15rem; line-height: 1; }
+/* ---- Nav overhaul Milestone 3 (docs/design/nav-adaptive-rail.md §4.5):
+   platform-flavor treatment for the active dock icon. Scoped to the EXACT
+   phone-portrait dock breakpoint (DOCK_MQ: max-width:599px and
+   orientation:portrait) - the only tier that's a bottom "dock" in the OS
+   sense; the compact icon rail and labeled accordion rail keep their one
+   shared appearance regardless of platform, unchanged. data-nav-flavor is
+   set once at boot (computeNavFlavor(), alongside device-fold-narrow) and
+   never persisted - recomputed fresh every load, same contract as that
+   class. ---- */
+@media (max-width: 599px) and (orientation: portrait) {
+  /* Android: a real Material-3-style tonal pill (a full stadium shape,
+     not the shared subtly-rounded rect every other tier uses) plus a
+     solid elevated surface under the whole dock. A custom upward shadow,
+     not var(--shadow) - that token's own "0 6px 24px" is a DOWNWARD
+     shadow tuned for elements that sit above their own drop-shadow (cards,
+     dropdowns); a dock pinned to the bottom edge needs the opposite
+     direction to read as "lifted" off the content scrolling behind it.
+     Box-shadow only, no blur, so it stays fully opaque like a real
+     Android nav bar. */
+  html[data-nav-flavor="android"] .nav { box-shadow: 0 -2px 10px rgba(0,0,0,.2); }
+  html[data-nav-flavor="android"] .nav :is(button, a).active {
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--amber) 20%, transparent);
+  }
+  /* iOS: a translucent frosted bar - real backdrop-filter blur, guarded
+     with its own -webkit- twin (this file's established guard shape for
+     an above-floor CSS feature; lint-engine-floor.mjs's own FEATURES
+     table has a dedicated twin-detection rule for exactly this property)
+     - and a tint-ONLY active state, no pill background at all (real iOS
+     tab bars don't use one). */
+  html[data-nav-flavor="ios"] .nav {
+    background: color-mix(in srgb, var(--panel) 82%, transparent);
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
+  }
+  html[data-nav-flavor="ios"] .nav :is(button, a).active { background: transparent; }
+  /* Windows/Tauri desktop (and a plain desktop browser tab, if resized
+     this narrow): no override at all - today's existing var(--radius-sm)
+     IS the "squarer" baseline this doc's own §2 compares Android's fuller
+     pill against. data-nav-flavor="desktop" is still set for completeness
+     and as a future hook; it just carries no CSS of its own here. */
+}
+/* ---- Nav overhaul Milestone 2: pin toggles + the "Pinned" section.
+   .nav-item-row wraps a grouped route's own navButton()-built <a> plus its
+   pin toggle - a SIBLING wrapper, not a change to the <a> itself, so every
+   existing ".nav-group-body a[data-hash]"/".nav-drawer a[data-hash]" rule
+   (all descendant selectors) still matches the link with no changes of
+   its own. Appears only inside .nav-group-body/.nav-pinned-section (the
+   phone-portrait dock's own buttons - Home/Sections/etc. - never get a
+   pin toggle, so this shape never appears there). ---- */
+.nav-item-row { display: flex; align-items: stretch; gap: 2px; flex: 0 0 auto; }
+.nav-item-row > a[data-hash] { flex: 1; min-width: 0; }
+.nav-pin-btn {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+  width: 32px; background: transparent; border: 1px solid transparent; border-radius: var(--radius-sm);
+  color: var(--text-dim); cursor: pointer; opacity: .55; transition: opacity .15s, color .15s, border-color .15s;
+}
+.nav-pin-btn:hover, .nav-pin-btn:focus-visible { opacity: 1; color: var(--text); border-color: var(--line); }
+.nav-pin-btn.pinned { opacity: 1; color: var(--amber); }
+.nav-pin-btn svg { width: 14px; height: 14px; }
+/* Not a collapsible group (see renderPinnedInto's own comment) - no
+   header/chevron/open-close state, so this reuses .nav-group-body's own
+   column/gap shape directly rather than duplicating it under a new name. */
+.nav-pinned-section { display: flex; flex-direction: column; gap: 2px; margin-bottom: 4px; }
+.nav-pinned-label {
+  font-family: var(--font-head); font-size: .62rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--amber); padding: 6px 10px 2px;
+}
 .nav-divider { flex: 0 0 auto; width: 1px; align-self: center; height: 22px; background: var(--line); margin: 0 4px; }
 .nav-group-header {
   cursor: pointer; user-select: none;
@@ -4442,6 +4527,17 @@ html.reduce-motion .nav-group-body, html[data-motion="minimal"] .nav-group-body 
    >=600px/>=800px rail media queries (which don't apply below 600px,
    where this drawer lives) so it looks right regardless of viewport. */
 .nav-drawer-back { align-items: flex-end; padding: 0; }
+/* Nav overhaul Milestone 1 (docs/design/nav-adaptive-rail.md §4.2): the
+   panel is now a GRID of group tiles ("Sections") instead of a flat
+   vertical accordion list - faster to visually scan 6 groups than 39
+   rows. .nav-drawer-head (the title bar) and each expanded
+   .nav-group-body both span every column (grid-column:1/-1 below) so
+   they still read as full-width rows above/below the tile grid itself;
+   only .nav-group-header (one tile per group) actually occupies a single
+   grid cell. renderGroupsInto() itself is completely unchanged - same
+   DOM shape, same click/expand logic, same shared render function the
+   >=600px sidebar also calls (with opts.showCounts off there) - this is
+   a CSS reflow of that same structure, not a second implementation. */
 .nav-drawer {
   background: var(--panel); border-top: 1px solid var(--line);
   border-radius: 14px 14px 0 0; box-shadow: var(--shadow);
@@ -4449,10 +4545,13 @@ html.reduce-motion .nav-group-body, html[data-motion="minimal"] .nav-group-body 
   padding: 6px 8px max(14px, env(safe-area-inset-bottom));
   opacity: 0; transform: translateY(100%);
   transition: opacity var(--modal-dur,.22s) var(--modal-ease,ease), transform var(--modal-dur,.22s) var(--modal-ease,ease);
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: 8px; align-content: start;
 }
 html.reduce-motion .nav-drawer, html[data-motion="minimal"] .nav-drawer { transition: none; }
 .nav-drawer-back.modaltrap-open .nav-drawer { opacity: 1; transform: translateY(0); }
 .nav-drawer-head {
+  grid-column: 1 / -1;
   display: flex; align-items: center; justify-content: space-between;
   padding: 8px 8px 10px; margin-bottom: 4px; border-bottom: 1px solid var(--line);
   background: var(--panel);
@@ -4466,7 +4565,24 @@ html.reduce-motion .nav-drawer, html[data-motion="minimal"] .nav-drawer { transi
      the drawer without needing a persistently-visible header. */
 }
 .nav-drawer-head h2 { font-family: var(--font-head); font-size: .95rem; margin: 0; text-transform: uppercase; letter-spacing: .04em; }
-.nav-drawer .nav-group-body { gap: 2px; }
+/* Nav overhaul Milestone 2: a stable node openNavDrawer()/
+   refreshNavDrawerIfOpen() can clear and repopulate on its own (a pin
+   toggle needs to refresh the drawer's content WITHOUT closing the whole
+   modal) - display:contents makes it invisible to .nav-drawer's own grid
+   layout, so its children (tiles, pinned rows) lay out exactly as if
+   they were direct children of .nav-drawer, same as before this wrapper
+   existed. */
+.nav-drawer-body { display: contents; }
+.nav-drawer .nav-pinned-section { grid-column: 1 / -1; margin-bottom: 0; }
+.nav-drawer .nav-pinned-label { font-size: .68rem; padding: 4px 4px 2px; }
+.nav-drawer .nav-group-body {
+  grid-column: 1 / -1; gap: 2px;
+  /* was a plain block-level list item under a vertical accordion; now a
+     full-width row of its own beneath whichever tile is open, still using
+     the exact same max-height/opacity open/closed transition (base
+     .nav-group-body rule) so a collapsed body still costs ~0 row height
+     in the grid, not a new visual mechanism. */
+}
 .nav-drawer :is(button, a)[data-hash] {
   display: flex; flex-direction: row; align-items: center; justify-content: flex-start;
   gap: 10px; width: 100%; min-width: 0; padding: 10px 12px;
@@ -4490,18 +4606,43 @@ html.reduce-motion .nav-drawer, html[data-motion="minimal"] .nav-drawer { transi
   width: 3px; border-radius: 2px; background: var(--amber);
 }
 .nav-drawer .ico { font-size: 1.05rem; }
-.nav-drawer .nav-divider { width: auto; height: 1px; align-self: stretch; margin: 6px 8px; }
+/* Dividers separated adjacent rows in the old vertical list - meaningless
+   between grid tiles, where each tile's own border already delineates it. */
+.nav-drawer .nav-divider { display: none; }
 .nav-drawer .nav-group-header {
-  font-size: .7rem !important; letter-spacing: .06em; text-transform: uppercase !important;
-  padding: 10px 12px 4px !important; gap: 6px !important;
+  flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; min-height: 76px; text-align: center; position: relative;
+  padding: 14px 8px !important; border: 1px solid var(--line);
+  border-radius: var(--radius, 10px); background: var(--panel-2);
+  font-size: .68rem !important; letter-spacing: .04em; text-transform: uppercase !important;
+  transition: border-color .15s, background .15s;
 }
-.nav-drawer .nav-group-header .ico { font-size: .7rem !important; width: 12px; }
+.nav-drawer .nav-group-header:hover { border-color: color-mix(in srgb, var(--amber) 45%, var(--line)); }
+/* color explicitly set here (not left to the base .nav-group-header.open
+   rule's own `color: var(--text-dim)`, a few hundred lines up) - that
+   value was tuned against a plain --panel-2 background, and this rule's
+   own amber-tinted background darkens --panel-2 just enough in some
+   light themes (found via a real per-theme axe-core contrast sweep:
+   parade-rest specifically, whose --amber is a dark navy, not the usual
+   warm amber) to drop text-dim-on-tinted-panel below the 4.5:1 AA floor.
+   Uses the SAME color-mix(amber, text) formula this file's own
+   .nav :is(button, a).active rule already establishes for exactly this
+   "active state, amber-tinted text over an amber-tinted background"
+   shape - re-verified 0 violations across all 24 themes after this
+   change, sidebar and drawer contexts alike. */
+.nav-drawer .nav-group-header.open { border-color: var(--amber); background: color-mix(in srgb, var(--amber) 10%, var(--panel-2)); color: color-mix(in srgb, var(--amber) 55%, var(--text)); }
+/* The expand/collapse chevron moves to a small corner badge instead of
+   sitting inline before the label - inline made sense in a left-to-right
+   list row; centered inside a square tile, it read as part of the label
+   text instead of a distinct affordance. */
+.nav-drawer .nav-group-header .nav-group-chev { position: absolute; top: 6px; right: 8px; font-size: .6rem !important; }
 .nav-drawer :is(button, a).nav-demoted { opacity: .82; } /* same contrast fix as .nav :is(button, a).nav-demoted above */
 .nav-drawer :is(button, a).nav-demoted:hover, .nav-drawer :is(button, a).nav-demoted:focus-visible, .nav-drawer :is(button, a).nav-demoted.active { opacity: 1; }
 .nav-drawer :is(button, a).nav-shell-only { opacity: .45; cursor: not-allowed; } /* same treatment as .nav :is(button, a).nav-shell-only above */
 .nav-drawer :is(button, a).nav-shell-only:hover, .nav-drawer :is(button, a).nav-shell-only:focus-visible { opacity: .6; }
 
-/* "More" button itself, in the <600px flat bar - same base .nav :is(button, a)
+/* "Sections" button itself (renamed from "More" - nav overhaul Milestone
+   1), in the <600px-portrait dock - same base .nav :is(button, a)
    look, including its icon size (both fully inherited from .nav/.nav .ico
    above - audit finding: a redundant, byte-for-byte duplicate ".nav-more-
    btn .ico { font-size: 1.15rem }" rule used to sit here, contradicting
@@ -4675,6 +4816,55 @@ html.reduce-motion .nav-drawer, html[data-motion="minimal"] .nav-drawer { transi
    width scale). */
 @media (max-width: 799px) {
   html.device-fold-narrow .main { padding-bottom: calc(36px + env(safe-area-inset-bottom)); }
+}
+
+/* ---- Nav overhaul Milestone 1 (docs/design/nav-adaptive-rail.md §4.1/§5):
+   a <600px phone rotated to LANDSCAPE gets the same compact icon-only rail
+   the 600-799px tier above already uses, instead of the portrait-only
+   bottom dock (see DOCK_MQ/renderNav() in the JS above - the dock is now
+   gated to <600px AND portrait specifically). A width-only media query
+   can't also express "OR this JS-driven orientation condition", so this
+   duplicates the 600-799px block's declarations verbatim rather than
+   inventing a class-based indirection this file doesn't otherwise use for
+   pure-CSS-expressible conditions (contrast html.device-fold-narrow two
+   blocks above, which genuinely needs a JS-set class because ITS condition
+   - a specific device model - has no CSS media-feature equivalent at all).
+   If the 600-799px block changes, mirror the change here too - this is
+   now the SECOND copy of that block (after device-fold-narrow's own,
+   >=800px-scoped copy above), not a new maintenance pattern. */
+@media (max-width: 599px) and (orientation: landscape) {
+  #app {
+    grid-template-columns: 96px 1fr;
+    grid-template-rows: auto 1fr;
+    grid-template-areas: "top top" "nav main";
+  }
+  .nav {
+    flex-direction: column; align-items: stretch;
+    gap: 2px; padding: 12px 6px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    overflow-x: hidden; overflow-y: auto;
+    border-top: none; border-right: 1px solid var(--line);
+  }
+  .nav :is(button, a) {
+    flex: 0 0 auto; flex-direction: column; justify-content: center;
+    gap: 3px; min-width: 0; width: 100%; padding: 8px 4px;
+    font-size: .62rem; text-align: center; white-space: normal;
+  }
+  .nav :is(button, a).active { position: relative; background: color-mix(in srgb, var(--amber) 14%, transparent); }
+  .nav :is(button, a).active::after {
+    content: ""; position: absolute; left: 0; top: 15%; bottom: 15%;
+    width: 2px; border-radius: 2px; background: var(--amber);
+  }
+  .nav .ico { font-size: 1.05rem; }
+  .nav-group-header { padding: 8px 4px 3px !important; font-size: .58rem !important; gap: 3px !important; }
+  .nav-group-header .ico { font-size: .62rem !important; }
+  .nav-divider { width: auto; height: 1px; align-self: stretch; margin: 6px 6px; }
+  .main { padding: 20px 18px 36px; padding-bottom: calc(36px + env(safe-area-inset-bottom)); }
+  .view { max-width: 100%; }
+  html[data-nav-density="compact"] .nav :is(button, a) { padding: 5px 3px; font-size: .56rem; }
+  html[data-nav-density="compact"] .nav .ico { font-size: .92rem; }
+  html[data-nav-labels="off"] .nav :is(button, a) { font-size: 0; padding-top: 10px; padding-bottom: 10px; }
+  html[data-nav-labels="off"] .nav .ico { font-size: 1.25rem; }
 }
 
 @media (min-width: 1200px) {
@@ -34518,6 +34708,100 @@ window.G = window.G || {};
   function persistNavOpenGroups() { try { localStorage.setItem("guidon-nav-open-groups", JSON.stringify(Array.from(navOpenGroups))); } catch (e) {} }
   function groupForHash(hash) { return NAV_GROUPS.find((g) => g.hashes.indexOf(hash) !== -1); }
 
+  // Nav overhaul Milestone 2 (docs/design/nav-adaptive-rail.md §3/§4.4):
+  // pinned favorites. An ORDERED array, not a Set - order is meaningful
+  // (oldest pin first) both for the "Pinned" section's own display order
+  // and because the phone-portrait dock (renderNav()'s DOCK_MQ branch,
+  // below) fills its slots from this same array, first-pinned-first,
+  // falling back to NAV_PRIMARY_MOBILE's defaults for any slots a Soldier
+  // hasn't personalized yet. One mechanism, not two - the design doc's
+  // own §7 sketched a second, separate "dock slot" array with its own
+  // edit-mode UI; pinning already IS the personalization action a Soldier
+  // takes, and deriving the dock from it directly means there's no second
+  // control surface to build, explain, or keep in sync with the first.
+  // Same try/catch-wrapped read/write shape as guidon-nav-open-groups
+  // immediately above.
+  let navPinned = [];
+  try {
+    const savedPins = JSON.parse(localStorage.getItem("guidon-nav-pinned-routes") || "[]");
+    if (Array.isArray(savedPins)) navPinned = savedPins.filter((h) => typeof h === "string");
+  } catch (e) {}
+  function persistNavPinned() { try { localStorage.setItem("guidon-nav-pinned-routes", JSON.stringify(navPinned)); } catch (e) {} }
+  function isPinned(hash) { return navPinned.indexOf(hash) !== -1; }
+  // Home is never given a pin toggle (see renderGroupsInto's g.label===null
+  // branch) so it can never reach here through the UI - the "#/home"
+  // guard is defensive insurance, not a reachable path today.
+  function togglePin(hash) {
+    if (hash === "#/home") return;
+    const i = navPinned.indexOf(hash);
+    if (i === -1) navPinned.push(hash); else navPinned.splice(i, 1);
+    persistNavPinned();
+    onNavPinsChanged();
+  }
+  // A pin toggle can be tapped from either the >=600px sidebar (navEl) or
+  // the <600px-portrait Sections drawer (a separate DOM subtree appended
+  // to document.body) - both need to reflect the new pin state, and the
+  // phone dock's own slots may have just changed too. renderNav() handles
+  // the sidebar/dock; refreshNavDrawerIfOpen() (declared further down,
+  // alongside openNavDrawer) is a safe no-op when the drawer isn't open.
+  function onNavPinsChanged() {
+    renderNav();
+    if (typeof refreshNavDrawerIfOpen === "function") refreshNavDrawerIfOpen();
+  }
+  // Shared star-toggle button for both the "Pinned" section (unpin) and
+  // every grouped route row (pin) - one element shape, one aria contract,
+  // so a screen-reader user hears the identical control either way.
+  function pinToggleButton(hash) {
+    const r = ROUTES.find((x) => x.hash === hash);
+    const label = r ? r.label : hash;
+    const pinned = isPinned(hash);
+    const btn = el("button.nav-pin-btn" + (pinned ? ".pinned" : ""), {
+      type: "button",
+      "aria-pressed": pinned ? "true" : "false",
+      "aria-label": (pinned ? "Unpin " : "Pin ") + label,
+      title: (pinned ? "Unpin " : "Pin ") + label,
+      onclick: (e) => {
+        // Stops this from being interpreted as anything other than a pin
+        // toggle - the button is a SIBLING of the row's <a data-hash>, not
+        // its child (a <button> nested inside an <a> is invalid HTML/ARIA
+        // and would make the whole row a single confused control), so a
+        // click here never reaches navButton()'s own onclick regardless -
+        // this guards against ANCESTOR click delegation instead, e.g. the
+        // Sections drawer's own panel-level "close on route click"
+        // listener (openNavDrawer, below), which only matches
+        // e.target.closest("a[data-hash]") and so already ignores this
+        // button - stopPropagation is defensive belt-and-suspenders, not
+        // covering a bug reproduced today.
+        e.preventDefault();
+        e.stopPropagation();
+        togglePin(hash);
+      },
+    }, [G.util.icon("star", 14)]);
+    return btn;
+  }
+  // The "Pinned" section: every currently-pinned route, oldest-first,
+  // rendered as a full row (navButton()'s own <a> + an unpin star) - NOT
+  // a collapsible group (no header/chevron/open-close state to persist),
+  // since the whole point is these stay visible at a glance. Called from
+  // renderGroupsInto's g.label===null branch, right after Home, so it
+  // always sits between Home and the labeled groups in both the sidebar
+  // and the drawer. Renders nothing at all when there are no pins yet -
+  // a fresh install shows no empty "Pinned" husk.
+  function renderPinnedInto(container) {
+    if (!navPinned.length) return;
+    const section = el("div.nav-pinned-section");
+    section.appendChild(el("div.nav-pinned-label", { "aria-hidden": "true" }, ["Pinned"]));
+    navPinned.forEach((hash) => {
+      const b = navButton(hash);
+      if (!b) return; // a pinned route hidden/removed since (NAV_HIDDEN, etc.) - skip rather than render a dead row
+      const row = el("div.nav-item-row");
+      row.appendChild(b);
+      row.appendChild(pinToggleButton(hash));
+      section.appendChild(row);
+    });
+    container.appendChild(section);
+  }
+
   function buildShell() {
     const app = document.getElementById("app");
     util.clear(app);
@@ -34736,6 +35020,39 @@ window.G = window.G || {};
     } catch (e) { /* no signal - fall through to the unchanged default */ }
   })();
 
+  // Nav overhaul Milestone 3 (docs/design/nav-adaptive-rail.md §4.5/§6):
+  // platform-flavor detection. Declared here, next to device-fold-narrow,
+  // but NOT called yet - unlike that IIFE (which only touches
+  // navigator.userAgentData, a native browser API with no load-order
+  // dependency), this reads G.pwa, a module build.mjs splices in as its
+  // OWN later <script> tag AFTER this one. Calling it eagerly right here
+  // read G.pwa before it existed and silently fell through to "desktop"
+  // every time (caught live while verifying this milestone in a real
+  // browser - flavor stayed "desktop" under a spoofed iOS/Android UA).
+  // The actual call lives in app.start() below instead (app.start()
+  // v.s.), which app.js only ever invokes after DOMContentLoaded/once
+  // every synchronous <script> tag on the page - including pwa.js - has
+  // already run; see this file's own closing `if (document.readyState
+  // === "loading") ... else app.start();` for why that ordering holds.
+  //   - isIOS() is MORE robust than a plain /iPhone|iPad/ test: it also
+  //     catches an iPad specifically BECAUSE iPadOS 13+ masquerades as
+  //     desktop Safari by default (navigator.platform === "MacIntel" +
+  //     navigator.maxTouchPoints > 1) - exactly the gap §6 flagged plain
+  //     UA sniffing has, already solved by a different feature's own code.
+  //   - isAndroid() is a plain UA sniff, deliberately broader than
+  //     G.caps.fork() === "android" (which only ever answers true inside
+  //     the packaged Capacitor build) - matches this doc's own intent
+  //     ("Android gets a tonal pill") for any Android browser tab, not
+  //     just Soldiers who installed the native .apk specifically.
+  //   - Neither ever fires in a Windows/Tauri desktop window or a plain
+  //     desktop browser tab - both fall through to "desktop", today's
+  //     unchanged default appearance.
+  function computeNavFlavor() {
+    if (G.pwa && G.pwa.isIOS && G.pwa.isIOS()) return "ios";
+    if (G.pwa && G.pwa.isAndroid && G.pwa.isAndroid()) return "android";
+    return "desktop";
+  }
+
   // Below 600px there's no side-rail — it's the horizontal bottom tab bar.
   // Real bottom tab bars (Material Design, iOS) are flat and scrollable, not
   // an accordion; a collapsible group header sitting inline in a horizontal
@@ -34743,17 +35060,34 @@ window.G = window.G || {};
   // So: flat list on the phone-width rail, collapsible groups only on the
   // two sidebar tiers (≥600px) where vertical space actually benefits from it.
   const SIDEBAR_MQ = window.matchMedia ? window.matchMedia("(min-width: 600px)") : { matches: true };
+  // Nav overhaul Milestone 1 (docs/design/nav-adaptive-rail.md §4.1/§5): the
+  // bottom bar's own real-world justification above ("Material/iOS tab bars
+  // are flat and horizontal") only holds in PORTRAIT — a landscape phone has
+  // little vertical space to spare and a horizontal bar wastes a chunk of it
+  // for no benefit a side rail wouldn't also give. DOCK_MQ (not SIDEBAR_MQ)
+  // is the real "should this be the bottom dock" test from here on: bottom
+  // dock only below 600px AND portrait; everything else (≥600px, OR <600px
+  // landscape) falls through to the existing grouped-accordion rail, reusing
+  // the SAME 600–799px compact-icon-rail CSS a landscape phone now also
+  // matches (see the mirrored @media block a few hundred lines down) rather
+  // than inventing a third visual treatment.
+  const DOCK_MQ = window.matchMedia ? window.matchMedia("(max-width: 599px) and (orientation: portrait)") : { matches: false };
 
-  // Tier 1(a): the <600px flat bar used to render all 33 routes in one
-  // horizontally-scrolling strip - the single highest-leverage finding of
-  // the intuitivism pass. Curated to 4 primary routes + "More" below,
-  // which opens the exact same NAV_GROUPS accordion the >=600px sidebar
-  // renders (renderGroupsInto), as a drawer. Zero new routes.
-  // Chosen (confirmed with the user, morning check-in): the dashboard
-  // (Home), the two highest-traffic daily-prep tools (Train, Board
-  // Drill), and Settings - quick theme/account access one tap away
-  // rather than through "More", swapped in over the original draft's
-  // Progress (still fully reachable via More, same as every other route).
+  // Tier 1(a): the <600px-portrait dock used to render all 33 routes in
+  // one horizontally-scrolling strip - the single highest-leverage
+  // finding of the intuitivism pass. Curated to 4 primary routes +
+  // "Sections" below, which opens the exact same NAV_GROUPS accordion the
+  // >=600px sidebar renders (renderGroupsInto), as a drawer. Zero new
+  // routes. Chosen (confirmed with the user, morning check-in): the
+  // dashboard (Home), the two highest-traffic daily-prep tools (Train,
+  // Board Drill), and Settings - quick theme/account access one tap away
+  // rather than through Sections, swapped in over the original draft's
+  // Progress (still fully reachable via Sections, same as every other
+  // route). Nav overhaul Milestone 2: this array is now the FALLBACK
+  // dockSlots() (below) backfills with, not the dock's literal, always-
+  // used content - a Soldier who pins routes sees those in slots 2-4
+  // instead. A fresh install with zero pins still renders exactly this
+  // array, unchanged.
   const NAV_PRIMARY_MOBILE = ["#/home", "#/train", "#/board", "#/settings"];
 
   // Tier 2(b): shared roving-tabindex config (see util.rovingList) for
@@ -34768,13 +35102,28 @@ window.G = window.G || {};
 
   // Renders the full grouped accordion (dividers, collapsible headers,
   // in-group sub-dividers, demoted items) into ANY container - the
-  // >=600px sidebar (navEl) and the <600px "More" drawer both call this
-  // SAME function, so the drawer is never a second, driftable copy of
-  // the group structure.
-  function renderGroupsInto(container) {
+  // >=600px sidebar (navEl) and the <600px "More"/"Sections" drawer both
+  // call this SAME function, so the drawer is never a second, driftable
+  // copy of the group structure.
+  // Nav overhaul Milestone 1: opts.showCounts appends each group's own
+  // route count to its label ("Board Prep (12)") - used by the Sections
+  // grid only (a route count is the whole point of a scannable tile there)
+  // and deliberately NOT by the >=600px sidebar, whose own group-header
+  // text is asserted verbatim elsewhere (tools/test-nav-tier1.mjs Part 2,
+  // tools/test-nav-tier2ab.mjs) - two different call sites choosing two
+  // different presentations of the same shared render function, not a
+  // fork of it.
+  function renderGroupsInto(container, opts) {
+    opts = opts || {};
     NAV_GROUPS.forEach((g) => {
       if (g.label === null) {
         g.hashes.forEach((h) => { const b = navButton(h); if (b) container.appendChild(b); });
+        // Nav overhaul Milestone 2: the "Pinned" section renders right
+        // after Home (NAV_GROUPS[0] is always this g.label===null entry -
+        // one Home hash, guaranteed by the data), before any labeled
+        // group - same "always visible, never collapsed" treatment Home
+        // itself already gets, in both the sidebar and the drawer.
+        renderPinnedInto(container);
         return;
       }
       container.appendChild(el("div.nav-divider"));
@@ -34788,7 +35137,17 @@ window.G = window.G || {};
         const b = navButton(h);
         if (!b) return;
         if (g.demoted && g.demoted.indexOf(h) !== -1) b.classList.add("nav-demoted");
-        body.appendChild(b);
+        // Nav overhaul Milestone 2: wrap the route link with its own pin
+        // toggle. A <button> nested inside navButton()'s own <a> would be
+        // invalid HTML/ARIA (nested interactive controls), so this is a
+        // sibling wrapper, not a change to navButton() itself - every
+        // existing ".nav-group-body a[data-hash]"/".nav-drawer a[data-hash]"
+        // selector is a descendant combinator, so it still matches through
+        // this new wrapper with no CSS changes needed for the link itself.
+        const row = el("div.nav-item-row");
+        row.appendChild(b);
+        row.appendChild(pinToggleButton(h));
+        body.appendChild(row);
         // In-group divider (Tier 1(b)): same .nav-divider element already
         // used between groups, just placed inside this one's body too.
         if (g.subdivideAfter === h) body.appendChild(el("div.nav-divider"));
@@ -34806,31 +35165,100 @@ window.G = window.G || {};
         },
       }, [
         chev,
-        document.createTextNode(g.label),
+        document.createTextNode(opts.showCounts ? `${g.label} (${g.hashes.length})` : g.label),
       ]);
       container.appendChild(header);
       container.appendChild(body);
     });
   }
 
-  // Tier 1(a): the "More" drawer. Reuses .gm-back for the backdrop and the
-  // shared util.modalTrap (Escape, Tab focus-trap, focus-restore) every
-  // other dialog in the app already uses - only the panel's own look
-  // (.nav-drawer, bottom-anchored) is new.
+  // Tier 1(a): the "Sections" drawer (renamed from "More" - nav overhaul
+  // Milestone 1, docs/design/nav-adaptive-rail.md §4.2). Reuses .gm-back
+  // for the backdrop and the shared util.modalTrap (Escape, Tab
+  // focus-trap, focus-restore) every other dialog in the app already
+  // uses - only the panel's own look (.nav-drawer, laid out as a grid of
+  // tiles rather than a flat list - see the .nav-drawer CSS) is new.
+  // Function/variable names kept as "NavDrawer" rather than renamed to
+  // match - internal names, not user-visible copy, and renaming risked
+  // missing one of the many call sites this shared drawer has accumulated.
   let navDrawerTrap = null;
+  // Nav overhaul Milestone 2: kept at this same outer scope as
+  // navDrawerTrap (not local to openNavDrawer) so a pin toggle tapped
+  // from EITHER the sidebar or the drawer can refresh whichever one is
+  // actually live - see onNavPinsChanged/refreshNavDrawerIfOpen below.
+  let navDrawerPanel = null;
+  let navDrawerBody = null;
   function closeNavDrawer() {
-    if (navDrawerTrap) { navDrawerTrap.close(); navDrawerTrap = null; }
+    if (navDrawerTrap) { navDrawerTrap.close(); navDrawerTrap = null; navDrawerPanel = null; navDrawerBody = null; }
+  }
+  // Re-renders just the group/pinned content inside an OPEN drawer, in
+  // place, without closing and reopening the modal (which would replay
+  // its open animation and drop scroll position for what should be a
+  // lightweight star-tap). navDrawerBody is a plain <div display:contents>
+  // (see .nav-drawer-body CSS) - invisible to the .nav-drawer grid layout,
+  // so its children (tiles, pinned rows) still lay out exactly as if they
+  // were direct children of the grid, but this function has one stable
+  // node to clear and repopulate instead of needing to preserve/rebuild
+  // .nav-drawer-head alongside everything else. A safe no-op when the
+  // drawer isn't currently open.
+  function refreshNavDrawerIfOpen() {
+    if (!navDrawerTrap || !navDrawerBody) return;
+    // Bugfix (found live while writing tools/test-nav-pinned-favorites.mjs):
+    // util.clear() below destroys the currently-focused pin-toggle button -
+    // the exact one a Soldier just tapped - so the browser drops focus to
+    // <body>, outside the panel entirely. util.modalTrap's own Tab-cycle
+    // only ever checks document.activeElement against ITS panel's current
+    // first/last focusable, so a focus already outside the panel breaks the
+    // trap silently (Tab/Shift+Tab stop cycling back in) rather than
+    // throwing anything visible. Capture which route's star had focus
+    // before clearing, and hand focus to that SAME route's star again once
+    // it's back in the DOM (it may have moved between the Pinned section
+    // and its group's body, but a pin toggle for that hash always exists
+    // somewhere post-refresh) - focus follows the control the Soldier was
+    // just using, the same contract every other in-place refresh in this
+    // app already honors.
+    let refocusHash = null;
+    if (document.activeElement && navDrawerBody.contains(document.activeElement) && document.activeElement.classList.contains("nav-pin-btn")) {
+      const row = document.activeElement.closest(".nav-item-row");
+      const link = row ? row.querySelector("a[data-hash]") : null;
+      refocusHash = link ? link.getAttribute("data-hash") : null;
+    }
+    util.clear(navDrawerBody);
+    renderGroupsInto(navDrawerBody, { showCounts: true });
+    setActive(location.hash || "#/home", navDrawerPanel);
+    if (refocusHash) {
+      const newRow = Array.from(navDrawerBody.querySelectorAll(".nav-item-row")).find((r) => {
+        const a = r.querySelector("a[data-hash]");
+        return a && a.getAttribute("data-hash") === refocusHash;
+      });
+      const newBtn = newRow ? newRow.querySelector(".nav-pin-btn") : null;
+      if (newBtn) newBtn.focus();
+    }
+    // Re-sync roving tabindex onto the freshly-rebuilt items. Safe to call
+    // again on the same panel: util.rovingList's own keydown/click
+    // listener binding is guarded by container._rovingBound (already true
+    // here, from the original openNavDrawer() call) and skipped on
+    // repeat calls - only its unconditional sync()/rAF-sync() at the top
+    // actually re-runs, which is exactly what's needed: without this, the
+    // brand-new <a> elements this refresh just created would all default
+    // back to their natural tabbable state (every route a Tab stop again)
+    // until some LATER arrow-key press happened to recompute it.
+    if (util.rovingList) util.rovingList(navDrawerPanel, NAV_ROVING_SEL);
   }
   function openNavDrawer() {
     if (navDrawerTrap) return;
     const back = el("div.gm-back.nav-drawer-back", { role: "presentation" });
-    const panel = el("div.nav-drawer", { role: "dialog", "aria-modal": "true", "aria-label": "More sections" });
+    const panel = el("div.nav-drawer", { role: "dialog", "aria-modal": "true", "aria-label": "Sections" });
     const closeBtn = el("button.btn.ghost.sm", { type: "button", "aria-label": "Close" });
     closeBtn.appendChild(G.util.icon("x", 16, "✕"));
     closeBtn.addEventListener("click", () => closeNavDrawer());
-    panel.appendChild(el("div.nav-drawer-head", {}, [el("h2", { text: "More" }), closeBtn]));
-    renderGroupsInto(panel);
+    panel.appendChild(el("div.nav-drawer-head", {}, [el("h2", { text: "Sections" }), closeBtn]));
+    const body = el("div.nav-drawer-body");
+    panel.appendChild(body);
+    renderGroupsInto(body, { showCounts: true });
     setActive(location.hash || "#/home", panel);
+    navDrawerPanel = panel;
+    navDrawerBody = body;
     // Tier 2(b): same roving-tabindex arrow nav as the >=600px sidebar -
     // always active (no isActive gate needed) since the drawer only ever
     // exists in the <600px flat-bar tier, where it's the sole accordion-
@@ -34848,17 +35276,33 @@ window.G = window.G || {};
     back.appendChild(panel);
     back.addEventListener("click", (e) => { if (e.target === back) closeNavDrawer(); });
     document.body.appendChild(back);
-    navDrawerTrap = util.modalTrap(back, panel, () => { navDrawerTrap = null; });
+    navDrawerTrap = util.modalTrap(back, panel, () => { navDrawerTrap = null; navDrawerPanel = null; navDrawerBody = null; });
   }
 
+  // Nav overhaul Milestone 2: the phone-portrait dock's 4 icons - Home
+  // always first (unremovable - it's never given a pin toggle, see
+  // renderGroupsInto's g.label===null branch, so it can only ever fill
+  // this fixed slot, never one of the 3 below), then up to 3 more filled
+  // from the Soldier's own pinned routes (oldest-pin-first, deduped),
+  // backfilled with NAV_PRIMARY_MOBILE's original 3 defaults for any
+  // slot nobody has personalized yet. A fresh install with zero pins
+  // produces this exact function's output byte-identical to the old
+  // hardcoded NAV_PRIMARY_MOBILE array - zero behavior change until a
+  // Soldier actually pins something.
+  function dockSlots() {
+    const slots = ["#/home"];
+    navPinned.forEach((h) => { if (h !== "#/home" && slots.length < 4 && slots.indexOf(h) === -1) slots.push(h); });
+    NAV_PRIMARY_MOBILE.slice(1).forEach((h) => { if (slots.length < 4 && slots.indexOf(h) === -1) slots.push(h); });
+    return slots;
+  }
   function renderNav() {
     util.clear(navEl);
-    if (!SIDEBAR_MQ.matches) {
-      NAV_PRIMARY_MOBILE.forEach((h) => { const b = navButton(h); if (b) navEl.appendChild(b); });
+    if (DOCK_MQ.matches) {
+      dockSlots().forEach((h) => { const b = navButton(h); if (b) navEl.appendChild(b); });
       const moreBtn = el("button.nav-more-btn", {
-        type: "button", "aria-label": "More", title: "More sections",
+        type: "button", "aria-label": "Sections", title: "Sections",
         onclick: () => openNavDrawer(),
-      }, [el("span.ico", { "aria-hidden": "true" }, [G.util.icon("more-horizontal", 18, "⋯")]), document.createTextNode("More")]);
+      }, [el("span.ico", { "aria-hidden": "true" }, [G.util.icon("more-horizontal", 18, "⋯")]), document.createTextNode("Sections")]);
       navEl.appendChild(moreBtn);
       setActive(location.hash || "#/home");
       return;
@@ -34866,27 +35310,41 @@ window.G = window.G || {};
     renderGroupsInto(navEl);
     setActive(location.hash || "#/home");
     // Tier 2(b): roving-tabindex arrow nav for the sidebar itself. Gated
-    // to SIDEBAR_MQ.matches (checked live, on every keydown - not just
-    // here) because navEl is the SAME persistent node reused for the
-    // <600px flat bar (the branch above, which never calls this): once
-    // bound, the keydown listener stays bound forever (util.rovingList's
-    // own contract, matching tabbarKeys), so a device that resizes back
-    // down after this ran at least once must not have arrow keys firing on
-    // the flat bar's 4 primaries + More.
-    if (util.rovingList) util.rovingList(navEl, Object.assign({ isActive: () => SIDEBAR_MQ.matches }, NAV_ROVING_SEL));
+    // live (checked on every keydown - not just here) because navEl is the
+    // SAME persistent node reused for the <600px-portrait dock (the branch
+    // above, which never calls this): once bound, the keydown listener
+    // stays bound forever (util.rovingList's own contract, matching
+    // tabbarKeys), so a device that rotates/resizes back into the dock
+    // tier after this ran at least once must not have arrow keys firing on
+    // the dock's 4 primaries + More. Nav overhaul Milestone 1: the correct
+    // "is the accordion currently rendered" test is !DOCK_MQ.matches now,
+    // not SIDEBAR_MQ.matches - the accordion also renders in the <600px
+    // LANDSCAPE case, which is neither the dock nor a SIDEBAR_MQ match.
+    if (util.rovingList) util.rovingList(navEl, Object.assign({ isActive: () => !DOCK_MQ.matches }, NAV_ROVING_SEL));
   }
-  // Re-render if a resize crosses the 600px line (e.g. a foldable unfolding,
-  // or a desktop window being resized) so the nav presentation stays correct
-  // without needing a full page reload. Audit finding: the "More" drawer is
-  // appended to document.body (not navEl), so rebuilding navEl alone never
-  // touched it - a resize while the drawer was open left it stranded,
-  // focus-trapped, on top of the freshly-rendered >=600px sidebar
+  // Re-render if a resize/rotation crosses either the 600px line or the
+  // portrait/landscape boundary (e.g. a foldable unfolding, a phone
+  // rotating, or a desktop window being resized) so the nav presentation
+  // stays correct without needing a full page reload. Audit finding: the
+  // "More" drawer is appended to document.body (not navEl), so rebuilding
+  // navEl alone never touched it - a resize while the drawer was open left
+  // it stranded, focus-trapped, on top of the freshly-rendered sidebar
   // (reproduced: the sidebar was genuinely click-inert underneath the
   // leftover backdrop). closeNavDrawer() is already a safe no-op when
   // nothing is open, matching the same defensive call already made on
   // every route change (see route()).
-  if (SIDEBAR_MQ.addEventListener) SIDEBAR_MQ.addEventListener("change", () => { closeNavDrawer(); renderNav(); });
-  else if (SIDEBAR_MQ.addListener) SIDEBAR_MQ.addListener(() => { closeNavDrawer(); renderNav(); });
+  // Nav overhaul Milestone 1: SIDEBAR_MQ's own change event alone is no
+  // longer sufficient - rotating a phone whose landscape width still stays
+  // under 600px (e.g. 320x568 portrait -> 568x320 landscape) never crosses
+  // SIDEBAR_MQ's min-width:600px threshold in either direction, so its
+  // "change" event never fires, even though DOCK_MQ's own truth value DID
+  // just flip (portrait dock -> landscape accordion) and renderNav() must
+  // re-run. Listening on both covers every crossing either query can make.
+  const rerenderNavOnMqChange = () => { closeNavDrawer(); renderNav(); };
+  [SIDEBAR_MQ, DOCK_MQ].forEach((mq) => {
+    if (mq.addEventListener) mq.addEventListener("change", rerenderNavOnMqChange);
+    else if (mq.addListener) mq.addListener(rerenderNavOnMqChange);
+  });
 
   // Audit finding: the drawer's own ".active" highlight CSS was dead code -
   // setActive() was hardcoded to navEl, and the drawer's panel is a
@@ -35520,6 +35978,11 @@ window.G = window.G || {};
       // same fallback UI the global window.onerror/unhandledrejection
       // safety net (top of <head>) uses for anything outside this.
       try {
+      // Nav overhaul Milestone 3: set data-nav-flavor before buildShell()'s
+      // own first renderNav() call - see computeNavFlavor()'s own comment
+      // above for why this can't run any earlier (G.pwa, a later <script>
+      // tag, isn't loaded yet at that point in the file).
+      document.documentElement.setAttribute("data-nav-flavor", computeNavFlavor());
       buildShell();
       wireStatus();
       window.addEventListener("hashchange", route);

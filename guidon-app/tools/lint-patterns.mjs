@@ -71,7 +71,16 @@ console.log("lint-patterns: static regression guard for repeat bug shapes and re
     const css = html.slice(styleStart, styleEnd);
     const RAW_COLOR = /(?<![\w-])color\s*:\s*var\(--(cyan|violet|red|green|amber)\)/g;
     const hits = [...css.matchAll(RAW_COLOR)];
-    const BASELINE = 119; // audited count as of 2026-08-23 (Rapid Fire,
+    const BASELINE = 120; // audited count as of 2026-09-12 (nav overhaul
+    // Milestone 2: added .nav-pin-btn.pinned and .nav-pinned-label, both
+    // color:var(--amber) - the pin-toggle star's "pinned" tint and the
+    // "Pinned" section's own small uppercase label, matching the same
+    // mono-uppercase-label/icon-tint treatment already audited above
+    // (.mode-course .kc-label, .qz-front .kc-label). Verified via a real
+    // per-theme axe-core sweep (all 24 real theme ids, not a guessed
+    // subset) with a route actually pinned so both rules genuinely
+    // render: 0 color-contrast violations, sidebar and Sections-drawer
+    // contexts alike. Previously 119 as of 2026-08-23 (Rapid Fire,
     // Stage 1: added .rf-card .kc-label and .rf-answer-label, both
     // color:var(--cyan) - the SAME mono-uppercase-label-on-var(--panel)
     // treatment .qz-front .kc-label already uses (already inside this
@@ -308,11 +317,20 @@ console.log("lint-patterns: static regression guard for repeat bug shapes and re
    at risk of shrinking. See the canonical breakpoint scale comment in
    src/index.html for the full measured derivation.
 
+   599 added (nav overhaul Milestone 1, docs/design/nav-adaptive-rail.md
+   §4.1/§5, 2026-09-12): the same adjacent-pair convention 799/800 already
+   established two entries up - a landscape phone under 600px needs its
+   own "max-width: 599px" tier (paired with the JS-side DOCK_MQ, which
+   gates the portrait-only bottom dock to exactly the same threshold) so
+   it falls through to the existing 600-799px compact-rail CSS instead of
+   the portrait-only bottom dock. Not a new stray value - 600px itself was
+   already canonical and had no "just under it" companion until this.
+
    `prefers-*`, `hover`, `pointer`, and `print` are feature queries, not
    layout breakpoints, and are intentionally out of scope.
    ====================================================================== */
 {
-  const CANONICAL = new Set([420, 480, 600, 640, 768, 799, 800, 1024, 1200, 1360, 1500]);
+  const CANONICAL = new Set([420, 480, 599, 600, 640, 768, 799, 800, 1024, 1200, 1360, 1500]);
   // Not anchored to a literal "@media" prefix: compound conditions like
   // "@media (min-width: 600px) and (max-width: 859px)" put the second
   // clause after "and (", not "@media (", so anchoring would silently

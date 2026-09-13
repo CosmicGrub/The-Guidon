@@ -20,8 +20,10 @@
  *   hidden) until their header is expanded.
  *
  * Covers both call sites renderGroupsInto() feeds - the >=600px sidebar
- * (navEl) and the <600px "More" drawer - since both share the exact same
- * DOM shape and are meant to behave identically.
+ * (navEl) and the <600px-portrait "Sections" drawer (renamed from "More",
+ * nav overhaul Milestone 1) - since both share the exact same DOM shape
+ * and are meant to behave identically (the drawer's tiles additionally
+ * carry a route count per group, opts.showCounts - the only difference).
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
@@ -278,8 +280,10 @@ async function focusedId(page) {
 }
 
 // ============================================================
-// PART 2 — <600px "More" drawer (renders through the SAME
-// renderGroupsInto() as the sidebar - same shape, same expected behavior)
+// PART 2 — <600px-portrait "Sections" drawer (renamed from "More", nav
+// overhaul Milestone 1; renders through the SAME renderGroupsInto() as
+// the sidebar - same shape, same expected behavior, just with route
+// counts appended to each tile's label - opts.showCounts)
 // ============================================================
 {
   const context = await browser.newContext({ viewport: { width: 412, height: 915 } });
@@ -319,25 +323,29 @@ async function focusedId(page) {
     ? ok("drawer: exactly one tabIndex-0 item at rest, the current route (#/home)")
     : bad(`drawer roving-at-rest: count=${drawerRest.zeroedCount} hash=${drawerRest.zeroedHash}, expected 1/#/home`);
 
+  // Nav overhaul Milestone 1: the drawer's own tiles append each group's
+  // route count to its label ("Board Prep (12)") via opts.showCounts -
+  // the sidebar (Part 1 above) deliberately does not, so only these
+  // Part-2 literals changed.
   await page.locator('.nav-drawer a[data-hash="#/home"]').focus();
   await page.keyboard.press("ArrowDown");
   const drawerAfterFirstDown = await focusedId(page);
-  drawerAfterFirstDown === "Board Prep"
+  drawerAfterFirstDown === "Board Prep (12)"
     ? ok("drawer: ArrowDown from #/home lands on the first group header ('Board Prep')")
     : bad("drawer: focus after first ArrowDown: " + drawerAfterFirstDown);
   await page.keyboard.press("ArrowDown");
   const drawerAfterSecondDown = await focusedId(page);
-  drawerAfterSecondDown === "Study & Skills"
+  drawerAfterSecondDown === "Study & Skills (4)"
     ? ok("drawer: ArrowDown past a collapsed group's header lands on the NEXT header, skipping all its (invisible) members")
     : bad("drawer: focus after second ArrowDown: " + drawerAfterSecondDown + ", expected 'Study & Skills' header");
 
   await page.keyboard.press("End");
   const drawerAtEnd = await focusedId(page);
-  drawerAtEnd === "Advanced" ? ok("drawer: End jumps to the last VISIBLE item ('Advanced' header)") : bad("drawer: focus after End: " + drawerAtEnd);
+  drawerAtEnd === "Advanced (3)" ? ok("drawer: End jumps to the last VISIBLE item ('Advanced' header)") : bad("drawer: focus after End: " + drawerAtEnd);
 
   // ---- 2(b): Enter on a header opens it and live-updates the drawer's
   // own roving set, same as the sidebar. ----
-  await page.locator(".nav-drawer .nav-group-header", { hasText: /^Account$/ }).focus();
+  await page.locator(".nav-drawer .nav-group-header", { hasText: "Account" }).focus();
   await page.keyboard.press("Enter");
   await page.waitForTimeout(150);
   await page.keyboard.press("ArrowDown");
