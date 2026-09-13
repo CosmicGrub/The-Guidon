@@ -98,6 +98,21 @@ await page.evaluate(() => {
 // screen immediately, without stepping through the wizard.
 await page.evaluate(() => { window.G.counselpdf.open(); });
 await page.waitForTimeout(300);
+
+// aria-state-attributes-gaps (Round 11): the Step-by-step/Single form mode
+// switch is a real mutually-exclusive button group (classList.active
+// already tracked which one) but never carried aria-pressed. The wizard
+// opens in "wizard" mode by default, so Step-by-step should read pressed
+// and Single form should not, before either is ever clicked.
+const modePressedInitial = await page.evaluate(() => {
+  const btns = [...document.querySelectorAll(".cpdf-modebtn")];
+  return btns.map((b) => ({ text: b.textContent, pressed: b.getAttribute("aria-pressed") }));
+});
+(modePressedInitial.find((b) => b.text === "Step-by-step")?.pressed === "true"
+  && modePressedInitial.find((b) => b.text === "Single form")?.pressed === "false")
+  ? ok("mode switch: Step-by-step (the default mode) reports aria-pressed=\"true\", Single form reports \"false\"")
+  : bad("mode switch initial aria-pressed state wrong: " + JSON.stringify(modePressedInitial));
+
 await page.locator("button", { hasText: /^Single form$/ }).click();
 await page.waitForTimeout(300);
 
@@ -146,6 +161,20 @@ for (const m of SIG_MODES) {
     return btns.length === 1;
   }, m.id);
   active ? ok(`sigMode "${m.id}" button shows exactly one active state`) : bad(`sigMode "${m.id}" active-state toggle broken`);
+
+  // aria-state-attributes-gaps (Round 11): this picker's classList.active
+  // already tracked selection but never carried aria-pressed. Confirm the
+  // clicked button now reports pressed and every sibling reports not-pressed.
+  const pressedState = await page.evaluate((label) => {
+    const btns = Array.from(document.querySelectorAll("button.cpdf-sigbtn"));
+    return {
+      pressedCount: btns.filter((b) => b.getAttribute("aria-pressed") === "true").length,
+      clickedPressed: btns.find((b) => new RegExp(label).test(b.textContent))?.getAttribute("aria-pressed"),
+    };
+  }, m.label.source);
+  (pressedState.pressedCount === 1 && pressedState.clickedPressed === "true")
+    ? ok(`sigMode "${m.id}": exactly one button reports aria-pressed="true" (the one just clicked)`)
+    : bad(`sigMode "${m.id}": aria-pressed state wrong: ${JSON.stringify(pressedState)}`);
 
   await page.locator("button", { hasText: /^Generate fillable DA 4856/ }).click();
   await page.waitForFunction(() => /Downloaded the fillable DA 4856/.test(document.querySelector(".cpdf-status")?.textContent || ""), { timeout: 8000 })
