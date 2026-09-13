@@ -644,8 +644,8 @@ jobs:
             tests: "test:room-tauri test:room-web test:studygroup-callsigns test:qrcode"
           - name: "41-tlsadversarial-iconregistry-whatsnew-studyroomsshellgate"
             tests: "test:tls-adversarial test:icon-registry test:whats-new test:study-rooms-shell-gate"
-          - name: "42-shareosaware"
-            tests: "test:share-os-aware"
+          - name: "42-shareosaware-doctrinenjpawolaccuracy"
+            tests: "test:share-os-aware test:doctrine-njp-awol-accuracy"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
