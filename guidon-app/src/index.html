@@ -35100,6 +35100,37 @@ window.G = window.G || {};
   // in this file post-Tier-2(a).
   const NAV_ROVING_SEL = { itemSelector: ".nav-group-header, a[data-hash]", groupSelector: ".nav-group-body" };
 
+  // Round 11 roadmap-audit (nav-pin-focus-restore): shared capture/restore
+  // pair factored out of refreshNavDrawerIfOpen's own pin-toggle focus fix
+  // (see its comment, below) so the exact same protection covers the
+  // >=600px sidebar / <600px-landscape accordion path too. Both renderNav()
+  // and refreshNavDrawerIfOpen() clear-and-rebuild the identical
+  // ".nav-item-row" (route link + .nav-pin-btn star) shape renderGroupsInto/
+  // renderPinnedInto produce - a Soldier tapping a star to pin/unpin a route
+  // is clicking a button that a synchronous util.clear() is about to destroy
+  // out from under their own focus, in EITHER surface, not just the drawer.
+  // captureFocusedPinHash() must run BEFORE the clear (it reads
+  // document.activeElement while the original button is still live);
+  // restoreFocusedPinHash() runs after the container is fully repopulated
+  // (a pin toggle for that same hash always exists somewhere post-rebuild -
+  // it may have moved between the Pinned section and its group's body, but
+  // toggling a pin never removes the route itself).
+  function captureFocusedPinHash(scope) {
+    if (!(document.activeElement && scope.contains(document.activeElement) && document.activeElement.classList.contains("nav-pin-btn"))) return null;
+    const row = document.activeElement.closest(".nav-item-row");
+    const link = row ? row.querySelector("a[data-hash]") : null;
+    return link ? link.getAttribute("data-hash") : null;
+  }
+  function restoreFocusedPinHash(scope, hash) {
+    if (!hash) return;
+    const newRow = Array.from(scope.querySelectorAll(".nav-item-row")).find((r) => {
+      const a = r.querySelector("a[data-hash]");
+      return a && a.getAttribute("data-hash") === hash;
+    });
+    const newBtn = newRow ? newRow.querySelector(".nav-pin-btn") : null;
+    if (newBtn) newBtn.focus();
+  }
+
   // Renders the full grouped accordion (dividers, collapsible headers,
   // in-group sub-dividers, demoted items) into ANY container - the
   // >=600px sidebar (navEl) and the <600px "More"/"Sections" drawer both
@@ -35216,24 +35247,15 @@ window.G = window.G || {};
     // and its group's body, but a pin toggle for that hash always exists
     // somewhere post-refresh) - focus follows the control the Soldier was
     // just using, the same contract every other in-place refresh in this
-    // app already honors.
-    let refocusHash = null;
-    if (document.activeElement && navDrawerBody.contains(document.activeElement) && document.activeElement.classList.contains("nav-pin-btn")) {
-      const row = document.activeElement.closest(".nav-item-row");
-      const link = row ? row.querySelector("a[data-hash]") : null;
-      refocusHash = link ? link.getAttribute("data-hash") : null;
-    }
+    // app already honors. Round 11: capture/restoreFocusedPinHash() (above,
+    // by NAV_ROVING_SEL) factor this exact pair out so renderNav()'s own
+    // sidebar/accordion rebuild can share it - this was the only call site
+    // until then.
+    const refocusHash = captureFocusedPinHash(navDrawerBody);
     util.clear(navDrawerBody);
     renderGroupsInto(navDrawerBody, { showCounts: true });
     setActive(location.hash || "#/home", navDrawerPanel);
-    if (refocusHash) {
-      const newRow = Array.from(navDrawerBody.querySelectorAll(".nav-item-row")).find((r) => {
-        const a = r.querySelector("a[data-hash]");
-        return a && a.getAttribute("data-hash") === refocusHash;
-      });
-      const newBtn = newRow ? newRow.querySelector(".nav-pin-btn") : null;
-      if (newBtn) newBtn.focus();
-    }
+    restoreFocusedPinHash(navDrawerBody, refocusHash);
     // Re-sync roving tabindex onto the freshly-rebuilt items. Safe to call
     // again on the same panel: util.rovingList's own keydown/click
     // listener binding is guarded by container._rovingBound (already true
@@ -35296,6 +35318,19 @@ window.G = window.G || {};
     return slots;
   }
   function renderNav() {
+    // Round 11 roadmap-audit (nav-pin-focus-restore): the >=600px sidebar
+    // and <600px-landscape accordion share this one persistent navEl with
+    // the phone-portrait dock branch below, and a pin toggle tapped from
+    // either the sidebar or that accordion lands here via
+    // onNavPinsChanged() -> renderNav() same as every other nav rebuild.
+    // util.clear() just below destroys the just-clicked .nav-pin-btn with
+    // no capture/restore, dropping focus to <body> - the exact bug
+    // refreshNavDrawerIfOpen() (above) already found and fixed for the
+    // Sections drawer's own identical clear-and-rebuild. Capture before the
+    // clear (the dock branch's own dockSlots() never renders a
+    // .nav-pin-btn, so this is a no-op there - only the grouped-accordion
+    // branch below can ever have one focused).
+    const refocusHash = captureFocusedPinHash(navEl);
     util.clear(navEl);
     if (DOCK_MQ.matches) {
       dockSlots().forEach((h) => { const b = navButton(h); if (b) navEl.appendChild(b); });
@@ -35309,6 +35344,7 @@ window.G = window.G || {};
     }
     renderGroupsInto(navEl);
     setActive(location.hash || "#/home");
+    restoreFocusedPinHash(navEl, refocusHash);
     // Tier 2(b): roving-tabindex arrow nav for the sidebar itself. Gated
     // live (checked on every keydown - not just here) because navEl is the
     // SAME persistent node reused for the <600px-portrait dock (the branch

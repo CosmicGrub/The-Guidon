@@ -367,6 +367,118 @@ const readPins = (page) => page.evaluate(() => {
   await page.close();
 }
 
+// ============================================================
+// PART 6 — Round 11 roadmap-audit (nav-pin-focus-restore): toggling a pin
+// from the >=600px sidebar must not drop keyboard focus to <body>.
+// renderNav()'s util.clear(navEl) destroys the just-clicked .nav-pin-btn
+// on every pin toggle (the same DOM-destruction Part 2 above already
+// exercises for the drawer's own refreshNavDrawerIfOpen fix) - without an
+// explicit capture/restore on THIS path too, the browser silently falls
+// back focus to document.body, breaking Tab/Shift+Tab and screen-reader
+// navigation right after the exact click a keyboard/AT user just made.
+// ============================================================
+{
+  const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
+  page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push("[sidebar-focus] " + m.type() + ": " + m.text()); });
+  page.on("pageerror", (e) => noise.push("[sidebar-focus] pageerror: " + e.message));
+  await page.goto(url, { waitUntil: "load" });
+  await dismissOnboarding(page);
+  await page.waitForTimeout(700);
+
+  // Account, not Board Prep - see Part 1's own comment on why Board Prep
+  // is unsafe to click at this viewport width (auto-opens on a genuine
+  // first visit at >=1200px, Tier 1(f)).
+  await page.locator(".nav .nav-group-header", { hasText: "Account" }).click();
+  await page.waitForTimeout(450);
+  const progressRow = page.locator('.nav-group-body.open a[data-hash="#/progress"]').locator("xpath=ancestor::div[contains(@class,'nav-item-row')]");
+  const pinBtn = progressRow.locator(".nav-pin-btn");
+  await pinBtn.focus();
+  await pinBtn.click();
+  await page.waitForTimeout(200);
+
+  const afterPinFocus = await page.evaluate(() => {
+    const a = document.activeElement;
+    const row = a ? a.closest(".nav-item-row") : null;
+    const link = row ? row.querySelector("a[data-hash]") : null;
+    return {
+      isPinBtn: a ? a.classList.contains("nav-pin-btn") : false,
+      isBody: a === document.body,
+      pressed: a ? a.getAttribute("aria-pressed") : null,
+      matchesProgress: link ? link.getAttribute("data-hash") === "#/progress" : false,
+      inPinnedSection: !!(a && a.closest(".nav-pinned-section")),
+    };
+  });
+  !afterPinFocus.isBody && afterPinFocus.isPinBtn && afterPinFocus.matchesProgress && afterPinFocus.pressed === "true" && afterPinFocus.inPinnedSection
+    ? ok("sidebar: pinning Progress keeps focus on ITS OWN star, now relocated into the Pinned section, instead of dropping to <body>")
+    : bad("sidebar focus after pinning: " + JSON.stringify(afterPinFocus));
+
+  // ---- unpin too - focus must follow back to Progress's row, now moved
+  // back into Account's group body. ----
+  const pinnedStar = page.locator(".nav .nav-pinned-section .nav-pin-btn");
+  await pinnedStar.focus();
+  await pinnedStar.click();
+  await page.waitForTimeout(200);
+  const afterUnpinFocus = await page.evaluate(() => {
+    const a = document.activeElement;
+    const row = a ? a.closest(".nav-item-row") : null;
+    const link = row ? row.querySelector("a[data-hash]") : null;
+    return {
+      isPinBtn: a ? a.classList.contains("nav-pin-btn") : false,
+      isBody: a === document.body,
+      pressed: a ? a.getAttribute("aria-pressed") : null,
+      matchesProgress: link ? link.getAttribute("data-hash") === "#/progress" : false,
+    };
+  });
+  !afterUnpinFocus.isBody && afterUnpinFocus.isPinBtn && afterUnpinFocus.matchesProgress && afterUnpinFocus.pressed === "false"
+    ? ok("sidebar: unpinning Progress also keeps focus on its star, now back in Account's group body, not <body>")
+    : bad("sidebar focus after unpinning: " + JSON.stringify(afterUnpinFocus));
+
+  await page.close();
+}
+
+// ============================================================
+// PART 7 — same fix, the <600px-landscape accordion. DOCK_MQ requires
+// BOTH max-width:599px AND orientation:portrait, so a landscape viewport
+// under 600px wide still falls through to renderGroupsInto's same
+// clear-and-rebuild path as the sidebar (Part 6), not the phone dock's
+// separate branch - confirmed live (not assumed) via the isDock guard
+// below before asserting anything about focus.
+// ============================================================
+{
+  const page = await (await browser.newContext({ viewport: { width: 568, height: 320 } })).newPage();
+  page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push("[landscape-focus] " + m.type() + ": " + m.text()); });
+  page.on("pageerror", (e) => noise.push("[landscape-focus] pageerror: " + e.message));
+  await page.goto(url, { waitUntil: "load" });
+  await dismissOnboarding(page);
+  await page.waitForTimeout(700);
+
+  const isDock = await page.evaluate(() => !!document.querySelector(".nav-more-btn"));
+  if (isDock) {
+    bad("568x320-landscape rendered the phone dock (.nav-more-btn present), not the accordion - DOCK_MQ/viewport assumption is wrong, fix the test");
+  } else {
+    await page.locator(".nav .nav-group-header", { hasText: "Account" }).click();
+    await page.waitForTimeout(450);
+    const progressRow = page.locator('.nav-group-body.open a[data-hash="#/progress"]').locator("xpath=ancestor::div[contains(@class,'nav-item-row')]");
+    const pinBtn = progressRow.locator(".nav-pin-btn");
+    await pinBtn.focus();
+    await pinBtn.click();
+    await page.waitForTimeout(200);
+    const afterPinFocus = await page.evaluate(() => {
+      const a = document.activeElement;
+      return {
+        isPinBtn: a ? a.classList.contains("nav-pin-btn") : false,
+        isBody: a === document.body,
+        pressed: a ? a.getAttribute("aria-pressed") : null,
+      };
+    });
+    !afterPinFocus.isBody && afterPinFocus.isPinBtn && afterPinFocus.pressed === "true"
+      ? ok("<600px-landscape accordion: pinning Progress keeps focus on its own star, not <body> (same shared renderNav() path as the sidebar)")
+      : bad("landscape accordion focus after pinning: " + JSON.stringify(afterPinFocus));
+  }
+
+  await page.close();
+}
+
 noise.length === 0 ? ok("no console errors/warnings across all viewport passes") : bad(noise.length + " console msg(s); first: " + noise[0]);
 
 await browser.close();
