@@ -10,19 +10,24 @@ buildscript {
         classpath 'com.android.tools.build:gradle:8.13.0'
         // Roadmap audit round 5, "Dependency & CI/Build Hygiene" bucket:
         // removed the unconditional `classpath 'com.google.gms:google-
-        // services:4.5.0'` that used to sit here. app/build.gradle only
-        // ever applies the com.google.gms.google-services PLUGIN inside a
-        // try/catch gated on app/google-services.json existing - and no
-        // such file exists anywhere under android/ (confirmed via a repo
-        // search), nor does any push-notification/Firebase feature exist
-        // in this codebase (no @capacitor/push-notifications dependency,
-        // no FirebaseMessaging usage anywhere). The classpath was being
-        // resolved from Maven on every single Android Gradle invocation
-        // for a plugin whose only consumer condition can never be true
-        // today. If push notifications are ever actually implemented, add
-        // this classpath back here alongside committing the real
-        // google-services.json that app/build.gradle's try block already
-        // expects.
+        // services:4.5.0'` that used to sit here. At the time, app/build.gradle
+        // only ever applied the com.google.gms.google-services PLUGIN inside a
+        // try/catch gated on app/google-services.json existing - and no such
+        // file exists anywhere under android/ (confirmed via a repo search),
+        // nor does any push-notification/Firebase feature exist in this
+        // codebase (no @capacitor/push-notifications dependency, no
+        // FirebaseMessaging usage anywhere). The classpath was being resolved
+        // from Maven on every single Android Gradle invocation for a plugin
+        // whose only consumer condition could never be true. Round 8's own
+        // native-platform-hygiene bucket went further and removed that
+        // always-inert try/catch block from app/build.gradle entirely (see
+        // CHANGELOG.md's round-8 entry) - app/build.gradle no longer
+        // references google-services or google-services.json at all. If push
+        // notifications are ever actually implemented, both pieces need to
+        // come back together: this classpath entry here, AND a real
+        // `apply plugin: 'com.google.gms.google-services'` (guarded however
+        // is appropriate then) plus a committed google-services.json in
+        // app/build.gradle.
         // Baseline Profile Gradle plugin (id "androidx.baselineprofile"), applied
         // to :baselineprofile (com.android.test, generator) and :app (consumer).
         // This project uses the legacy buildscript+"apply plugin" style

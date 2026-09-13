@@ -74,6 +74,22 @@
  *      both the disabled state AND document.activeElement together at
  *      each step.
  *
+ *  (f) Roadmap audit round 11, "stale-comment-and-cache-hygiene" bucket:
+ *      store.recitable() now memoizes the same way its five siblings
+ *      (boardQuestions()/doctrine()/creeds()/prt()/scenarios()) already do,
+ *      instead of re-filtering boardQuestions()'s own array on every call.
+ *      Two checks: (1) back-to-back calls with nothing changed return the
+ *      exact SAME array reference (proof it's actually cached, not just
+ *      value-equal); (2) a real Focus-tier change - driven through the
+ *      genuine Settings <select> (tools/test-settings-toggles.mjs's own
+ *      `select[aria-label^="Focus tier"]` locator), not a synthetic state
+ *      write - correctly invalidates that cache: creed-7 ("Ranger Creed")
+ *      carries tier:["E1".."E6"], so filtering to E9 must drop it from
+ *      store.recitable() (via boardQuestions()'s own tier filter) while
+ *      creed-4/creed-5 (untagged, no `tier` field at all) stay recitable
+ *      regardless - and switching back to "All ranks" must recover the
+ *      full set again.
+ *
  * Plus a light real route/DOM pass (heading, the list showing exactly the
  * real recitable creeds) so this isn't pure function-level testing with no
  * browser-rendered assertion at all - matching tools/test-landnav-drill.mjs/
@@ -143,6 +159,45 @@ const shapeOk = await page.evaluate(() =>
 shapeOk
   ? ok("every item store.recitable() returns genuinely carries category:'Creeds' and a non-empty lines[]")
   : bad("at least one store.recitable() item does not actually satisfy its own documented filter");
+
+/* ========================================================================
+   (f) store.recitable() memoization (round 11, stale-comment-and-cache-
+   hygiene bucket) - see this file's own header for the full rationale.
+   ======================================================================== */
+const sameRefBeforeAnyChange = await page.evaluate(() => window.G.store.recitable() === window.G.store.recitable());
+sameRefBeforeAnyChange
+  ? ok("store.recitable() returns the SAME array reference across back-to-back calls with nothing changed - it is genuinely memoized, not re-filtering board.questions on every call")
+  : bad("store.recitable() returned a different array reference on a second, back-to-back call with nothing changed - it is not memoized");
+
+await page.evaluate(() => { location.hash = "#/settings"; });
+await page.waitForTimeout(500);
+const tierSel = page.locator('select[aria-label^="Focus tier"]');
+
+const beforeTierChange = await page.evaluate(() => window.G.store.recitable().map((q) => q.id).sort());
+await page.evaluate(() => { window.__preE9Recitable = window.G.store.recitable(); });
+
+// Real interaction: change the actual Focus tier <select> in Settings, the
+// same control/locator tools/test-settings-toggles.mjs already drives.
+await tierSel.selectOption("E9");
+await page.waitForTimeout(200);
+const afterE9 = await page.evaluate(() => {
+  const list = window.G.store.recitable();
+  return { ids: list.map((q) => q.id).sort(), refChanged: list !== window.__preE9Recitable };
+});
+(afterE9.ids.indexOf("creed-7") === -1 && afterE9.ids.length === beforeTierChange.length - 1)
+  ? ok(`Focus tier E9 (real <select> change): store.recitable() drops "creed-7" (Ranger Creed, tier-limited to E1-E6): ${JSON.stringify(beforeTierChange)} -> ${JSON.stringify(afterE9.ids)}`)
+  : bad(`Focus tier E9: store.recitable() -> ${JSON.stringify(afterE9.ids)}, expected creed-7 dropped from ${JSON.stringify(beforeTierChange)}`);
+afterE9.refChanged
+  ? ok("...and the tier change genuinely invalidated the memoized cache (a new array reference), not a stale cached list silently reused")
+  : bad("store.recitable() kept returning the SAME array reference after a real Focus-tier change - the cache was not invalidated");
+
+// Switch back to "All ranks" - the full set (including creed-7) must return.
+await tierSel.selectOption("all");
+await page.waitForTimeout(200);
+const afterAll = await page.evaluate(() => window.G.store.recitable().map((q) => q.id).sort());
+JSON.stringify(afterAll) === JSON.stringify(beforeTierChange)
+  ? ok(`Focus tier back to "All ranks": store.recitable() recovers the full set ${JSON.stringify(afterAll)}`)
+  : bad(`Focus tier "All ranks" recovery: store.recitable() -> ${JSON.stringify(afterAll)}, expected ${JSON.stringify(beforeTierChange)}`);
 
 /* ========================================================================
    Real route/DOM pass: #/recite lists exactly the real recitable creeds

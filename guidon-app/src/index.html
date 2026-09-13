@@ -8237,8 +8237,22 @@ window.G = window.G || {};
     // here without needing their own flag). Reads through boardQuestions()
     // rather than state.seed.board directly, so it inherits the same
     // tierFilter/first-boot-race handling for free.
+    // Roadmap audit round 11, "stale-comment-and-cache-hygiene" bucket: this
+    // was the one content accessor of its six siblings (boardQuestions()/
+    // doctrine()/creeds()/prt()/scenarios() above all memoize) with no
+    // memoization at all - it re-filtered boardQuestions()'s own already-
+    // memoized array from scratch on every single call, including every
+    // #/recite render and the Highlight Reel cross-link check above. Same
+    // base-cache convention as boardQuestions() right above it: keyed on
+    // the exact same `tierFilter|!!state.seed.board` string, since this
+    // accessor's result depends on nothing else - it just filters whatever
+    // boardQuestions() itself would return for that same key.
     recitable() {
-      return this.boardQuestions().filter((q) => q.category === "Creeds" && Array.isArray(q.lines) && q.lines.length > 0);
+      const key = (state.settings.tierFilter || "all") + "|" + !!state.seed.board;
+      if (state._recitableCache && state._recitableCache.key === key) return state._recitableCache.list;
+      const list = this.boardQuestions().filter((q) => q.category === "Creeds" && Array.isArray(q.lines) && q.lines.length > 0);
+      state._recitableCache = { key, list };
+      return list;
     },
 
     // ---- dictionary + curriculum ----
