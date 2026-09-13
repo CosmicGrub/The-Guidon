@@ -19412,7 +19412,7 @@ window.G = window.G || {};
     head.appendChild(el("h3.cpdf-title", { text: "Fill DA Form 4856" + (draft._topic ? " · " + draft._topic : "") }));
     var modeToggle = el("div.cpdf-modeswitch");
     ["wizard", "single"].forEach(function (m) {
-      var b = el("button.cpdf-modebtn" + (mode === m ? ".active" : ""), { type: "button", text: m === "wizard" ? "Step-by-step" : "Single form" });
+      var b = el("button.cpdf-modebtn" + (mode === m ? ".active" : ""), { type: "button", text: m === "wizard" ? "Step-by-step" : "Single form", "aria-pressed": String(mode === m) });
       b.addEventListener("click", function () { mode = m; step = 0; try { G.store.setSetting("counselFormMode", m); } catch (e) {} body(); });
       modeToggle.appendChild(b);
     });
@@ -19511,8 +19511,8 @@ window.G = window.G || {};
     ];
     var sigSel = el("div.cpdf-sigopts");
     sigOpts.forEach(function (o) {
-      var b = el("button.cpdf-sigbtn" + (sigMode === o.id ? ".active" : ""), { type: "button", text: o.label });
-      b.addEventListener("click", function () { sigMode = o.id; try { G.store.setSetting("sigMode", o.id); } catch (e) {} wrap.querySelectorAll(".cpdf-sigbtn").forEach(function (x) { x.classList.remove("active"); }); b.classList.add("active"); });
+      var b = el("button.cpdf-sigbtn" + (sigMode === o.id ? ".active" : ""), { type: "button", text: o.label, "aria-pressed": String(sigMode === o.id) });
+      b.addEventListener("click", function () { sigMode = o.id; try { G.store.setSetting("sigMode", o.id); } catch (e) {} wrap.querySelectorAll(".cpdf-sigbtn").forEach(function (x) { x.classList.remove("active"); x.setAttribute("aria-pressed", "false"); }); b.classList.add("active"); b.setAttribute("aria-pressed", "true"); });
       sigSel.appendChild(b);
     });
     wrap.appendChild(sigSel);
@@ -21621,10 +21621,11 @@ window.G = window.G || {};
         // be revisited via the Back button, and re-rendering with the old
         // hardcoded check made an already-made rank choice appear to reset
         // to SPC even though data.rank still held the real value underneath.
-        const b = el("button.ob-rank-btn" + (r === (data.rank || "SPC") ? ".active" : ""), { text: r, type:"button" });
+        const b = el("button.ob-rank-btn" + (r === (data.rank || "SPC") ? ".active" : ""), { text: r, type:"button", "aria-pressed": String(r === (data.rank || "SPC")) });
         b.addEventListener("click", () => {
-          rankRow.querySelectorAll("button").forEach(x => x.classList.remove("active"));
+          rankRow.querySelectorAll("button").forEach(x => { x.classList.remove("active"); x.setAttribute("aria-pressed", "false"); });
           b.classList.add("active");
+          b.setAttribute("aria-pressed", "true");
           // Deep-gap follow-up ("Profile Data-Loss & Persistence Bugs"
           // bucket): this used to unconditionally overwrite data.tier from
           // RANK_TO_TIER[r] on every rank-chip click, including re-clicking
@@ -30528,7 +30529,7 @@ window.G = window.G || {};
         setTimeout(() => hdr.classList.remove("list-detail-jumped"), 1600);
       }
       cats.forEach((c) => {
-        const row = el("button.list-detail-row", { type: "button", role: "option" }, [
+        const row = el("button.list-detail-row", { type: "button", role: "option", "aria-selected": "false" }, [
           el("span.ldr-name", { text: c.name }),
           el("span.ldr-badge", { text: String((c.items || []).length) }),
         ]);
@@ -32833,7 +32834,7 @@ window.G = window.G || {};
       list.slice(0, DOC_CAP).forEach((d, i) => {
         const topicColor = TOPIC_COLORS[d.topic] || "var(--text-dim)";
         const src = d.source ? (d.source.ref || d.ref || "") : (d.ref || "");
-        const row = el("button.list-detail-row", { type: "button", role: "option" }, [
+        const row = el("button.list-detail-row", { type: "button", role: "option", "aria-selected": "false" }, [
           el("span.ldr-name", { text: d.title }),
           el("span.ldr-badge", { text: d.topic || "Reference" }),
         ]);
@@ -34472,7 +34473,7 @@ window.G = window.G || {};
           // assistive tech via aria-label rather than the truncated text
           // content alone.
           const rowLabel = h.title && h.title.length > 60 ? h.title.slice(0, 60) + "…" : (h.title || "");
-          const row = el("button.list-detail-row", { type: "button", role: "option",
+          const row = el("button.list-detail-row", { type: "button", role: "option", "aria-selected": "false",
             "aria-label": (h.type || "result") + ": " + (h.title || "") }, [
             el("span.ldr-name", { text: rowLabel }),
             el("span.ldr-badge", { text: TYPE_ICON[type] }),
