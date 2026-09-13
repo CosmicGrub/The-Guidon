@@ -2391,15 +2391,20 @@ button:focus:not(:focus-visible),
 
 /* ===== Risk module — template selector ===== */
 
-/* ===== Nav visual grouping — section separators ===== */
-.nav :is(button, a)[data-hash="#/forms"],
-.nav :is(button, a)[data-hash="#/doctrine"],
-.nav :is(button, a)[data-hash="#/board"],
-.nav :is(button, a)[data-hash="#/author"] {
-  margin-top: 6px;
-  border-top: 1px solid var(--line);
-  padding-top: 8px;
-}
+/* ===== Nav visual grouping — REMOVED (round 12): this dates to v1.2.0,
+   before the nav had real collapsible .nav-group-header sections with
+   their own labels ("BOARD PREP", "STUDY & SKILLS", "LEADERSHIP",
+   "ACCOUNT"). Back then a flat list needed hand-picked border-top
+   dividers before what were then new-section starts; today every one of
+   those 4 routes (#/board, #/doctrine, #/forms, #/author) already sits
+   under its own labeled group header, so this rule was pure redundant
+   doubling-up - AND the one real, visible bug it caused: exactly these 4
+   rows rendered 43px tall (a border-top + 6px margin + 1px more top
+   padding) against every other row's 38px, an uneven, "crooked" rhythm
+   down an otherwise-uniform sidebar with no relationship to the current
+   grouping at all (found live, reported directly). Deleted rather than
+   fixed in place - nothing today still needs a second, competing way to
+   mark "this is a new section". ===== */
 
 
 /* ===== IDP goal templates ===== */
@@ -4448,9 +4453,37 @@ html.reduce-transparency #demo-mode-badge { background: var(--panel-2); }
    pin toggle, so this shape never appears there). ---- */
 .nav-item-row { display: flex; align-items: stretch; gap: 2px; flex: 0 0 auto; }
 .nav-item-row > a[data-hash] { flex: 1; min-width: 0; }
+/* Round 12 fix: every ".nav :is(button, a)" rule across every breakpoint
+   (base rule, the three mirrored compact-rail tiers, the >=800px desktop
+   tier, nav-density/nav-labels toggles, Board Drill's icon-only collapse)
+   was written before this button existed and targets ANY button/link
+   descendant of .nav with no [data-hash] guard - unlike .nav-drawer's own
+   equivalent rule, which already scopes to ":is(button,a)[data-hash]" and
+   so never matched this. Each one has equal-or-higher specificity than
+   this rule (".nav :is(button, a)" alone is 0-1-1 vs. this class-only
+   0-1-0), so depending on breakpoint this button was silently stretched to
+   width:100% / flex-direction:column / extra padding - i.e. the FULL row
+   width some tiers give real nav links, overlapping the label text right
+   next to it (found live: "Progress"/"Freshness"/"Settings" truncated to
+   "GRESS"/"SHNESS"/"TINGS" at the 600-799px compact rail; the star claimed
+   the whole ~211px row at the >=800px desktop rail too). Rather than add
+   a [data-hash]-style guard to every one of those ~15 call sites (real
+   fix, more surface area to get wrong or miss on a future edit), this
+   follows .nav-group-header's own established precedent two rules below -
+   the same "small widget needs guaranteed sizing regardless of whichever
+   breakpoint rule also matches .nav's descendants" problem, solved there
+   with !important on exactly the properties that matter. Deliberately
+   does NOT !important min-height/padding-top/padding-bottom - the
+   pointer:coarse and html.large-targets touch-target rules (~line
+   5168/5281) also match this button with no guard, and unlike the rules
+   above that's wanted: a 32px-wide pin toggle should still grow to the
+   same 48px tap target as every other nav control on a touchscreen or
+   with "Larger tap targets" on. */
 .nav-pin-btn {
-  flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
-  width: 32px; background: transparent; border: 1px solid transparent; border-radius: var(--radius-sm);
+  flex: 0 0 auto !important; display: flex; align-items: center; justify-content: center;
+  flex-direction: row !important;
+  width: 32px !important; min-width: 32px !important; padding: 0 !important;
+  background: transparent; border: 1px solid transparent; border-radius: var(--radius-sm);
   color: var(--text-dim); cursor: pointer; opacity: .55; transition: opacity .15s, color .15s, border-color .15s;
 }
 .nav-pin-btn:hover, .nav-pin-btn:focus-visible { opacity: 1; color: var(--text); border-color: var(--line); }
@@ -35587,6 +35620,15 @@ window.G = window.G || {};
           "A landscape phone now gets a proper compact side menu instead of the old cramped bar.",
           "Corrected two board-question topics: the levels of Article 15 punishment, and the real difference between being AWOL and desertion.",
           "Screen reader and keyboard navigation improvements across several study tools, including PRT, Recite, and search.",
+        ],
+      },
+      {
+        version: "1.8.1",
+        date: "September 2026",
+        title: "Menu clean-up",
+        highlights: [
+          "Fixed the star icon added last update sitting too close to a menu item's name on some screen sizes.",
+          "Every menu row is now the same, even height — a few rows used to sit slightly taller than the rest for no reason.",
         ],
       },
     ],

@@ -23,6 +23,14 @@
  *      one shared navPinned array, not two drifting copies.
  *   5. A real page reload (not just a localStorage.setItem) survives with
  *      both the sidebar's "Pinned" section and the dock's slots intact.
+ *   6. (Part 8/9, found live while checking the pin star's own layout)
+ *      Two real, pre-existing sidebar-row-consistency bugs unrelated to
+ *      pinning itself but discovered in the same pass: the pin star
+ *      inheriting width/flex-direction from generic ".nav :is(button, a)"
+ *      breakpoint rules with no [data-hash] guard, and a stale v1.2.0
+ *      "before there were real group headers" divider rule that made 4
+ *      specific routes render 5px taller than every other row for no
+ *      reason tied to today's grouping. See each part's own comment.
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
@@ -475,6 +483,111 @@ const readPins = (page) => page.evaluate(() => {
       ? ok("<600px-landscape accordion: pinning Progress keeps focus on its own star, not <body> (same shared renderNav() path as the sidebar)")
       : bad("landscape accordion focus after pinning: " + JSON.stringify(afterPinFocus));
   }
+
+  await page.close();
+}
+
+// ============================================================
+// PART 8 — regression coverage for a real layout bug found live: every
+// ".nav :is(button, a)" rule across every breakpoint (the base rule, all
+// three mirrored compact-rail tiers, the >=800px desktop tier, the
+// nav-density/nav-labels toggles, Board Drill's icon-only collapse) has
+// no [data-hash] guard, so .nav-pin-btn (a plain <button>, no data-hash)
+// inherited each one's width/flex-direction/padding right along with the
+// real nav links they were written for. Depending on breakpoint this
+// stretched the star to the FULL row width (100%), crushing its sibling
+// link down to a sliver and truncating visible labels mid-word (seen live:
+// "Progress"/"Freshness"/"Settings" rendered as "GRESS"/"SHNESS"/"TINGS"
+// at the 600-799px compact rail). Fixed in .nav-pin-btn's own rule with
+// !important on exactly the properties those ~15 call sites fight over
+// (flex-direction/width/min-width/padding), following .nav-group-header's
+// own established precedent for the identical problem - deliberately NOT
+// locking min-height/padding-top/padding-bottom, since the pointer:coarse
+// and html.large-targets touch-target rules also match this button with
+// no guard and SHOULD still be able to grow it. Checks both the tier that
+// broke worst (compact rail, column-direction) and the >=800px desktop
+// rail (row-direction, width:100% claimed the whole ~211px row there too).
+// ============================================================
+for (const { width, height, tier } of [{ width: 700, height: 900, tier: "600-799px compact rail" }, { width: 1280, height: 900, tier: ">=800px desktop rail" }]) {
+  const page = await (await browser.newContext({ viewport: { width, height } })).newPage();
+  page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push("[pin-btn-overlap@" + width + "] " + m.type() + ": " + m.text()); });
+  page.on("pageerror", (e) => noise.push("[pin-btn-overlap@" + width + "] pageerror: " + e.message));
+  await page.goto(url, { waitUntil: "load" });
+  await dismissOnboarding(page);
+  await page.waitForTimeout(300);
+
+  await page.locator(".nav .nav-group-header", { hasText: "Account" }).click();
+  await page.waitForTimeout(450);
+
+  const rows = await page.evaluate(() => {
+    const items = [...document.querySelectorAll(".nav-group-body.open .nav-item-row")].filter((r) =>
+      /Progress|Freshness|Settings/.test(r.textContent),
+    );
+    return items.map((r) => {
+      const link = r.querySelector("a[data-hash]");
+      const star = r.querySelector(".nav-pin-btn");
+      const lr = link.getBoundingClientRect(), sr = star.getBoundingClientRect();
+      const overlap = !(lr.right <= sr.left || lr.left >= sr.right || lr.bottom <= sr.top || lr.top >= sr.bottom);
+      return {
+        label: link.getAttribute("aria-label"),
+        visibleText: link.innerText.trim().replace(/\s+/g, " ").toUpperCase(),
+        starWidth: Math.round(sr.width),
+        overlap,
+      };
+    });
+  });
+
+  rows.length >= 2
+    ? ok(`${tier}: found ${rows.length} pinnable Account rows to check`)
+    : bad(`${tier}: expected >=2 Account rows (Progress/Freshness/Settings), found ${rows.length}`);
+  for (const r of rows) {
+    r.starWidth === 32
+      ? ok(`${tier}: "${r.label}"'s pin star is 32px wide, not stretched to the row's own width`)
+      : bad(`${tier}: "${r.label}"'s pin star is ${r.starWidth}px wide, expected 32px`);
+    !r.overlap
+      ? ok(`${tier}: "${r.label}"'s pin star does not overlap its own link`)
+      : bad(`${tier}: "${r.label}"'s pin star overlaps its own link`);
+    r.visibleText === r.label.toUpperCase()
+      ? ok(`${tier}: "${r.label}" renders its full label, not truncated ("${r.visibleText}")`)
+      : bad(`${tier}: "${r.label}" rendered as "${r.visibleText}" - truncated`);
+  }
+
+  await page.close();
+}
+
+// ============================================================
+// PART 9 — regression coverage for a second, unrelated row-consistency
+// bug found live in the same investigation: a v1.2.0-era rule gave
+// #/board, #/doctrine, #/forms and #/author a border-top + extra padding
+// as hand-picked "new section starts" for a flat list that predates real
+// .nav-group-header sections - every one of those 4 routes has sat under
+// its own labeled header for a long time now, so the rule was pure
+// redundant clutter left rendering those 4 rows 43px tall against every
+// other row's 38px, an uneven rhythm with no relationship to today's
+// actual grouping. Deleted outright rather than special-cased. Checks
+// the >=800px desktop rail, where the discrepancy was found and is
+// easiest to assert against a stable, fully-expanded row set.
+// ============================================================
+{
+  const page = await (await browser.newContext({ viewport: { width: 1280, height: 1000 } })).newPage();
+  page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push("[row-heights] " + m.type() + ": " + m.text()); });
+  page.on("pageerror", (e) => noise.push("[row-heights] pageerror: " + e.message));
+  await page.goto(url, { waitUntil: "load" });
+  await dismissOnboarding(page);
+  await page.waitForTimeout(300);
+
+  for (const header of await page.locator(".nav-group-header").all()) {
+    if ((await header.getAttribute("aria-expanded")) === "false") await header.click();
+  }
+  await page.waitForTimeout(450);
+
+  const heights = await page.evaluate(() =>
+    [...document.querySelectorAll(".nav-item-row")].map((r) => Math.round(r.getBoundingClientRect().height)),
+  );
+  const distinct = [...new Set(heights)];
+  distinct.length === 1
+    ? ok(`>=800px desktop rail: all ${heights.length} expanded sidebar rows share one uniform height (${distinct[0]}px) - no stale per-route divider inflating a handful of them`)
+    : bad(`>=800px desktop rail: expanded sidebar rows have ${distinct.length} different heights (${JSON.stringify(distinct)}), expected exactly 1`);
 
   await page.close();
 }
