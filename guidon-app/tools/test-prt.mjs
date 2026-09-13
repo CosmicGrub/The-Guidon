@@ -51,6 +51,15 @@
  *      before this milestone - by checking the resulting kv row lands
  *      under "srs:<that exact id>" with the schedule() output a fresh
  *      grade-2 ("Know It") card should produce.
+ *
+ *  (f) prtRunDrill's Pause/Resume button, an adjacent bugfix named in
+ *      docs/design/nav-adaptive-rail.md's "fold in while touching this
+ *      code" section: it gave assistive tech no programmatic state at all,
+ *      only ever swapping textContent between "Pause"/"Resume". Driven via
+ *      a real click on the actual "▶ Run the drill" button, then the
+ *      actual Pause/Resume button twice, asserting both the label and
+ *      aria-pressed together at each step (Pause/false -> Resume/true ->
+ *      Pause/false).
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
@@ -263,6 +272,62 @@ savedRec && typeof savedRec.due === "number" && savedRec.due > Date.now() && sav
 
 // Leave no trace in the shared profile's kv store.
 if (truth) await page.evaluate(async (id) => { await window.G.db.put("kv", { k: "srs:" + id, v: null }); }, truth.firstId);
+
+/* ========================================================================
+   (f) Adjacent bugfix flagged in docs/design/nav-adaptive-rail.md's own
+   "fold in while touching this code" section: prtRunDrill's Pause/Resume
+   button gave assistive tech no programmatic state at all - only
+   textContent ever changed. Driven via a real click on the actual
+   "▶ Run the drill" button, then the actual Pause/Resume button twice,
+   asserting both the label and aria-pressed together at each step.
+   ======================================================================== */
+await page.evaluate(() => { location.hash = "#/prt"; });
+await page.waitForTimeout(400);
+const drillStarted = await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => /Run the drill/.test(b.textContent || ""));
+  if (!btn) return false;
+  btn.click();
+  return true;
+});
+drillStarted ? ok("'▶ Run the drill' clicked - drill-runner mounted") : bad("'Run the drill' button not found/clickable");
+await page.waitForTimeout(300);
+
+function pauseBtnState() {
+  return page.evaluate(() => {
+    const btn = [...document.querySelectorAll("button")].find((b) => /^(Pause|Resume)$/.test((b.textContent || "").trim()));
+    return btn ? { label: btn.textContent.trim(), pressed: btn.getAttribute("aria-pressed") } : null;
+  });
+}
+const initial = await pauseBtnState();
+initial && initial.label === "Pause" && initial.pressed === "false"
+  ? ok('Pause/Resume button starts as "Pause" with aria-pressed="false"')
+  : bad("Pause/Resume initial state: " + JSON.stringify(initial));
+
+await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => /^(Pause|Resume)$/.test((b.textContent || "").trim()));
+  if (btn) btn.click();
+});
+const afterPause = await pauseBtnState();
+afterPause && afterPause.label === "Resume" && afterPause.pressed === "true"
+  ? ok('clicking Pause flips the label to "Resume" AND aria-pressed to "true", together')
+  : bad("Pause/Resume state after pausing: " + JSON.stringify(afterPause));
+
+await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => /^(Pause|Resume)$/.test((b.textContent || "").trim()));
+  if (btn) btn.click();
+});
+const afterUnpause = await pauseBtnState();
+afterUnpause && afterUnpause.label === "Pause" && afterUnpause.pressed === "false"
+  ? ok('clicking Resume flips the label back to "Pause" AND aria-pressed back to "false", together')
+  : bad("Pause/Resume state after resuming: " + JSON.stringify(afterUnpause));
+
+// Leave the drill screen cleanly (End -> back to the Hub) so this suite's
+// own #/prt hashchange later never lands mid-drill on a re-run.
+await page.evaluate(() => {
+  const endBtn = [...document.querySelectorAll("button")].find((b) => /^End$/.test((b.textContent || "").trim()));
+  if (endBtn) endBtn.click();
+});
+await page.waitForTimeout(300);
 
 const relevantNoise = noise.filter((n) => !/favicon/.test(n));
 relevantNoise.length === 0 ? ok("no console errors") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));

@@ -42,6 +42,14 @@
  *      profile (in-memory only), so this dismisses it again exactly the
  *      way tools/test-essay-drill.mjs's own reload step already does.
  *
+ *  (d) Timed recitation's Start/Stop buttons, an adjacent bugfix named in
+ *      docs/design/nav-adaptive-rail.md's "fold in while touching this
+ *      code" section: disabling the just-clicked button left keyboard
+ *      focus stranded there (dropping to <body>) instead of moving it to
+ *      whichever button became usable next. Driven via real clicks,
+ *      asserting both the disabled state AND document.activeElement
+ *      together at each step.
+ *
  * Plus a light real route/DOM pass (heading, the list showing exactly the
  * real recitable creeds) so this isn't pure function-level testing with no
  * browser-rendered assertion at all - matching tools/test-landnav-drill.mjs/
@@ -260,6 +268,61 @@ afterReload.hintText === "1 / 6 line(s) locked in"
 
 // Leave no trace in the shared profile's kv store.
 await page.evaluate(async () => { await window.G.db.put("kv", { k: "recite:creed-7", v: null }); });
+
+/* ========================================================================
+   (d) Timed recitation: an adjacent bugfix named in
+   docs/design/nav-adaptive-rail.md's "fold in while touching this code"
+   section - Start/Stop left keyboard focus stranded on the just-disabled
+   button (dropping to <body>) instead of moving it to whichever button
+   became usable next. Still on 'Ranger Creed' from part (c) above.
+   ======================================================================== */
+const timedOpened = await page.evaluate(() => {
+  const btn = [...document.querySelectorAll(".search-filters button")].find((b) => /Timed recitation/.test(b.textContent || ""));
+  if (btn) { btn.click(); return true; }
+  return false;
+});
+timedOpened ? ok("Opened 'Timed recitation' mode") : bad("'Timed recitation' mode chip not found");
+await page.waitForTimeout(250);
+
+function timedButtonState() {
+  return page.evaluate(() => {
+    const start = [...document.querySelectorAll("button")].find((b) => /Start timing/.test(b.textContent || ""));
+    const stop = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Stop");
+    return {
+      startDisabled: start ? start.disabled : null,
+      stopDisabled: stop ? stop.disabled : null,
+      focused: document.activeElement ? (document.activeElement.textContent || document.activeElement.tagName) : null,
+    };
+  });
+}
+const beforeStart = await timedButtonState();
+beforeStart.startDisabled === false && beforeStart.stopDisabled === true
+  ? ok("Timed recitation starts with Start enabled and Stop disabled")
+  : bad("initial Start/Stop state: " + JSON.stringify(beforeStart));
+
+await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => /Start timing/.test(b.textContent || ""));
+  if (btn) btn.click();
+});
+const afterStart = await timedButtonState();
+afterStart.startDisabled === true && afterStart.stopDisabled === false
+  ? ok("Clicking Start disables Start and enables Stop")
+  : bad("Start/Stop state after clicking Start: " + JSON.stringify(afterStart));
+afterStart.focused === "Stop"
+  ? ok("Clicking Start moves keyboard focus to the now-usable Stop button, not stranding it on the just-disabled Start (nor dropping to <body>)")
+  : bad("focused element after clicking Start: " + JSON.stringify(afterStart.focused));
+
+await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Stop");
+  if (btn) btn.click();
+});
+const afterStop = await timedButtonState();
+afterStop.startDisabled === false && afterStop.stopDisabled === true
+  ? ok("Clicking Stop re-enables Start and disables Stop again")
+  : bad("Start/Stop state after clicking Stop: " + JSON.stringify(afterStop));
+afterStop.focused === "▶ Start timing"
+  ? ok("Clicking Stop moves keyboard focus back to the now-usable Start button, not stranding it on the just-disabled Stop (nor dropping to <body>)")
+  : bad("focused element after clicking Stop: " + JSON.stringify(afterStop.focused));
 
 const relevantNoise = noise.filter((n) => !/favicon/.test(n));
 relevantNoise.length === 0 ? ok("no console errors") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));
