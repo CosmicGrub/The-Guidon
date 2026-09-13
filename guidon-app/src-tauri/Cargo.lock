@@ -1468,7 +1468,7 @@ dependencies = [
 
 [[package]]
 name = "guidon"
-version = "1.8.1"
+version = "1.8.2"
 dependencies = [
  "rcgen",
  "rustls",
