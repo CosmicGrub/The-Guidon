@@ -7,7 +7,7 @@
  * tools/test-prt.mjs's header for the full rationale shared by all three
  * new suites this round adds.
  *
- * Four things covered here, none previously exercised anywhere:
+ * Five things covered here, none previously exercised anywhere:
  *
  *  (a) store.recitable()'s filter: category==="Creeds" AND a real,
  *      non-empty `lines` array - src/index.html's own comment on this
@@ -63,6 +63,16 @@
  *      resolves, and asserts "Full text" mode's content is still on screen
  *      - not silently replaced by Chunk & Memorize's markup - once the
  *      delayed save finally does resolve.
+ *
+ *  (e) Timed recitation's Start/Stop buttons, an adjacent bugfix named in
+ *      docs/design/nav-adaptive-rail.md's "fold in while touching this
+ *      code" section: disabling the just-clicked button left keyboard
+ *      focus stranded there (dropping to <body>) instead of moving it to
+ *      whichever button became usable next. Fixed alongside round 10's
+ *      own recite-study-modes bucket (which fixed this same code but
+ *      added no dedicated test for it). Driven via real clicks, asserting
+ *      both the disabled state AND document.activeElement together at
+ *      each step.
  *
  * Plus a light real route/DOM pass (heading, the list showing exactly the
  * real recitable creeds) so this isn't pure function-level testing with no
@@ -396,6 +406,63 @@ kvAfterRace && kvAfterRace.direction === "backward"
 // otherwise the reset itself wouldn't land before the browser closes.
 await page.evaluate(async () => { await window.G.db.put("kv", { k: "recite:creed-7", v: null }); });
 await page.waitForTimeout(RACE_DELAY_MS + 200);
+
+/* ========================================================================
+   (e) Timed recitation: an adjacent bugfix named in
+   docs/design/nav-adaptive-rail.md's own "fold in while touching this
+   code" section (landed alongside round 10's own recite-study-modes
+   bucket, which fixed this same code but added no dedicated test for it) -
+   Start/Stop left keyboard focus stranded on the just-disabled button
+   (dropping to <body>) instead of moving it to whichever button became
+   usable next. Still on 'Ranger Creed' from parts (c)/(d) above.
+   ======================================================================== */
+const timedOpened = await page.evaluate(() => {
+  const btn = [...document.querySelectorAll(".search-filters button")].find((b) => /Timed recitation/.test(b.textContent || ""));
+  if (btn) { btn.click(); return true; }
+  return false;
+});
+timedOpened ? ok("Opened 'Timed recitation' mode") : bad("'Timed recitation' mode chip not found");
+await page.waitForTimeout(250);
+
+function timedButtonState() {
+  return page.evaluate(() => {
+    const start = [...document.querySelectorAll("button")].find((b) => /Start timing/.test(b.textContent || ""));
+    const stop = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Stop");
+    return {
+      startDisabled: start ? start.disabled : null,
+      stopDisabled: stop ? stop.disabled : null,
+      focused: document.activeElement ? (document.activeElement.textContent || document.activeElement.tagName) : null,
+    };
+  });
+}
+const beforeStart = await timedButtonState();
+beforeStart.startDisabled === false && beforeStart.stopDisabled === true
+  ? ok("Timed recitation starts with Start enabled and Stop disabled")
+  : bad("initial Start/Stop state: " + JSON.stringify(beforeStart));
+
+await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => /Start timing/.test(b.textContent || ""));
+  if (btn) btn.click();
+});
+const afterStart = await timedButtonState();
+afterStart.startDisabled === true && afterStart.stopDisabled === false
+  ? ok("Clicking Start disables Start and enables Stop")
+  : bad("Start/Stop state after clicking Start: " + JSON.stringify(afterStart));
+afterStart.focused === "Stop"
+  ? ok("Clicking Start moves keyboard focus to the now-usable Stop button, not stranding it on the just-disabled Start (nor dropping to <body>)")
+  : bad("focused element after clicking Start: " + JSON.stringify(afterStart.focused));
+
+await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Stop");
+  if (btn) btn.click();
+});
+const afterStop = await timedButtonState();
+afterStop.startDisabled === false && afterStop.stopDisabled === true
+  ? ok("Clicking Stop re-enables Start and disables Stop again")
+  : bad("Start/Stop state after clicking Stop: " + JSON.stringify(afterStop));
+afterStop.focused === "▶ Start timing"
+  ? ok("Clicking Stop moves keyboard focus back to the now-usable Start button, not stranding it on the just-disabled Stop (nor dropping to <body>)")
+  : bad("focused element after clicking Stop: " + JSON.stringify(afterStop.focused));
 
 const relevantNoise = noise.filter((n) => !/favicon/.test(n));
 relevantNoise.length === 0 ? ok("no console errors") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));
