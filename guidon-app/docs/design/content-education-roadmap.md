@@ -525,17 +525,39 @@ cross-reference names it for CD1's modifications too, so acquiring that
 one PDF unblocks all three drills at once.
 
 ACFT prep is a **different, larger data shape**, called out only as a
-placement decision here, not a schema: the six ACFT events are scored
-against age/gender standards tables, not performed as a fixed 4-count
-cadence sequence — a `PrtExercise`-shaped record is the wrong fit. Proposed
-only as `prt.acft` sitting alongside `prt.drills` in the same top-level
-seed key, reusing the Hub's route/nav/citation-placeholder conventions but
-not its per-exercise record shape, with its own schema design pass
-deferred until scheduled. **Unverified this session, flagged rather than
-assumed**: whether ACFT scoring standards are already present in FM 7-22
-(later editions are known to have carried ACFT content) or need their own
-new source document — a prerequisite check separate from the PD/RD/CD
-blocker above.
+placement decision here, not a schema: the events are scored against
+age/gender (or sex-neutral combat-standard) standards tables, not
+performed as a fixed 4-count cadence sequence — a `PrtExercise`-shaped
+record is the wrong fit. Proposed only as `prt.acft` sitting alongside
+`prt.drills` in the same top-level seed key, reusing the Hub's
+route/nav/citation-placeholder conventions but not its per-exercise
+record shape, with its own schema design pass deferred until scheduled.
+
+**UPDATE (2026-09-13), the "unverified this session" question above now
+answered — with a real, more complicated finding than either branch this
+note originally posed.** ACFT was renamed AFT (Army Fitness Test) effective
+1 June 2025, six events dropped to five (Standing Power Throw and the Pose
+Method removed). FM 7-22 itself carries **zero** AFT event-standard
+content — confirmed by direct text search of the acquired PDF, not
+assumed. The natural next candidate, **ATP 7-22.01 (Holistic Health and
+Fitness Testing, 12 March 2026 edition)** — acquired into `docs-source/`
+during this same scoping pass, the same user-authorized-web-search path as
+ATP 7-22.02 — covers AFT/OPAT/CWST **administration, protocol, and
+grading procedures** in real depth (already correctly cited by GUIDON's
+own pre-existing `acft-10`/`acft-11` board questions, verified verbatim
+against the real extracted text as part of this pass) but explicitly does
+**not** carry the numeric raw-score-to-points conversion tables: para
+2-30 states outright, "To convert raw scores to scaled scores, refer to
+the AFT event score conversion tables posted to the AFT website at
+https://www.army.mil/aft." Those tables are a **separate, independently-
+maintained resource** at a different URL, not a numbered Army publication
+— a genuinely new sourcing question, distinct from (and downstream of)
+the ATP 7-22.01 acquisition. A live fetch of that page was attempted this
+session and hit an HTTP 429 rate limit; several third-party fitness-
+calculator sites republish AFT score charts, but none are an official DoD
+source this project's doctrine-accuracy discipline would accept as a
+citation. **Raised to the user rather than resolved unilaterally** — see
+ROADMAP.md's own entry for this pass for how it was left.
 
 **Residual risks**: `repRule` is FM 7-22's general, drill-level statement
 — nothing confirms yet whether ATP 7-22.02 carries a per-exercise

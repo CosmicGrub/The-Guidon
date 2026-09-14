@@ -76,6 +76,50 @@ fetched from armypubs.army.mil.
 
 ---
 
+## 3b. IN PROGRESS: ACFT/AFT module scoping — one source acquired, a second one raised
+
+Started at the user's explicit request to scope the ACFT/AFT module next.
+Two real decisions surfaced, resolved in different ways:
+
+**Module scope, decided**: start with a standards reference/lookup — browse
+the AFT's 5 events and their real age/gender scoring tables, read-only, no
+personal data stored. A score calculator and a full tracked-history module
+(reusing Progress's existing heatmap/trend-chart infrastructure) were
+considered and explicitly deferred to a later pass once this narrower
+scope ships.
+
+**First source, acquired and resolved cleanly**: `docs/design/content-
+education-roadmap.md` §3.1 §7 had flagged, unverified, whether FM 7-22
+already carries AFT scoring content or a new source was needed. Confirmed
+this session: FM 7-22 carries none (direct text search, zero hits).
+GUIDON's own pre-existing board questions (`acft-10`, `acft-11`) already
+cited **ATP 7-22.01, Holistic Health and Fitness Testing (12 March 2026)**
+for AFT administration/grading detail — verified those citations verbatim
+against the real document after acquiring it, no corrections needed.
+Sourced the same way as ATP 7-22.02 above: user-authorized web search,
+confirmed live on armypubs.army.mil (ARN46104-ATP_7-22.01-000-WEB-1.pdf,
+~9.5 MB) before download. Added to `docs-source/` (Reference Library now
+17 core publications), `tools/build-library-data.mjs` re-run.
+
+**A second, genuinely new sourcing question, raised rather than resolved
+unilaterally**: ATP 7-22.01 itself does not carry the AFT's numeric
+raw-score-to-points conversion tables — para 2-30 explicitly defers those
+to "the AFT event score conversion tables posted to the AFT website at
+https://www.army.mil/aft," a separately-maintained resource at a
+different URL, not a numbered Army publication. A direct fetch of that
+page hit an HTTP 429 rate limit this session. Several third-party
+fitness-calculator sites republish AFT score charts, but none are an
+official DoD source — this project's doctrine-accuracy discipline (no
+content shipped without a real, verifiable source) rules those out same
+as it would any other unverifiable secondary source. This is the actual
+data the "standards reference/lookup" scope needs, so it's a real
+blocker, not a formality — raised to the user for how to proceed
+(retry the official fetch, user supplies the table directly, or descope
+the module to protocols/event-descriptions only until sourced) rather
+than filling it in from training-data memory or an unofficial mirror.
+
+---
+
 ## 4. Deliberately not built — and why
 
 Not gaps. Each of these was scoped, considered, and declined on its own merits. Revisit only if the stated condition changes.
