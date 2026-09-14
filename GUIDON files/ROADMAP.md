@@ -28,6 +28,7 @@ These are done — not "paused," not "mostly done." Nothing queued against them.
 | Nav & Adaptive-Layout overhaul ("Smart Dock") | Full design doc at `guidon-app/docs/design/nav-adaptive-rail.md`, all 3 build milestones shipped: (1) a genuine landscape-phone breakpoint (was sharing the portrait flat-bar treatment) + the "More" drawer redone as a scannable "Sections" tile grid; (2) pinned favorites, with the phone dock's own 3 customizable slots derived directly from the pin list rather than a second, separate mechanism the design doc had originally sketched; (3) platform-flavor dock styling (Android tonal pill, iOS translucent blur bar, desktop unchanged), unblocked by resolving the doc's own open iOS-detection question first. Each milestone verified live under real device/viewport/UA conditions and a full 24-theme axe-core contrast sweep before merge; two real bugs found and fixed along the way (a Sections-drawer contrast failure in one theme, a pin-toggle focus-trap break). Two adjacent bugs the design doc flagged as worth fixing in the same pass (PRT `aria-pressed`, Recite focus loss) turned out to already be fixed on the long-stalled Round 10 branch — folded in via Round 10's own merge instead of being duplicated. | PRs #140, #141, #142 |
 | Round 10 (6-bucket sweep) | Shared-util fixes every timed/async-button surface inherits at once (`util.busyButton` focus restoration, two distinct `util.makeRoundTimer` wake-lock leaks); 4 real doctrine-sourcing errors re-verified against the source PDFs (an inverted Parade Rest direction-of-address rule, an invented office-reporting script, a self-contradictory squad-drill citation, an over-asserted PRT rep-rule citation) plus a new structural test guarding the PRT numbers against drifting apart again; a 5-finding pass on Recite's Chunk & Memorize/Timed Recitation code (a stale-render guard that never actually guarded, a11y chip-styling, the Start/Stop focus fix, a timer/wake-lock cleanup gap, new regression coverage); Creeds' search-input ArrowDown handler and real click-driven tests for its 3 cross-link buttons; and two new **permanent** lint gates (`lint-kotlin-version.mjs`, `lint-workflow-pins.mjs`) closing drift classes rounds 4 and 9 had each already fixed by hand once. Resolved a real `git merge` conflict against the nav overhaul above (one `package.json` hunk, both sides' additions combined) before merging. | PR #139 |
 | Round 11 (4-bucket sweep) | 11 findings across 8 lenses, synthesized into 4 buckets, all 4 merging with zero real conflicts despite every bucket touching `src/index.html`: the Nav overhaul's own pin-toggle focus-loss fix (Milestone 2, drawer only) turned out to have a sibling bug in the `>=600px` sidebar and `<600px`-landscape accordion (same `renderNav()` rebuild path, no capture/restore) — fixed by factoring the drawer's own logic into two shared helpers both paths now call, rather than a second copy; 3 unrelated ARIA-state gaps closed (three `role="option"` jump-list views missing the ARIA-required `aria-selected`, DA Form 4856's two button-groups and onboarding's rank picker missing `aria-pressed`); 2 more doctrine-content errors fixed after independent re-verification against source (Article 15/NJP's body text omitted Company Grade authority entirely; UCMJ Art. 86 AWOL conflated the 30-day duration threshold with desertion's actual specific-intent element, now correctly tied to DFR processing instead); and 3 small hygiene fixes (a stale Gradle comment describing code round 8 already deleted, `package.json`'s own `_engines_note` citing the wrong `@capacitor/cli` Node floor, `store.recitable()` now memoized like its five siblings). One low-severity finding (`G.modal`/`WhatsNew`'s duplicated hand-rolled focus-trap logic) deliberately deferred — see §5. | PR #145 |
+| ATP 7-22.02 acquisition (closes §3's former open item) | User authorized a web search + confirm-before-download; sourced directly from armypubs.army.mil (ARN45013-ATP_7-22.02-001-WEB-4.pdf, published w/ Basic incl. C1), added to `docs-source/` (now 16 core publications), `tools/build-library-data.mjs` re-run. All 10 Preparation Drill exercises' `startingPosition`/`movementDescription` hand-transcribed verbatim from Chapter 3 (paras 3-3–3-13) via `tools/seed-io.mjs`, marked `sourceStatus:"verified"`, `tools/lint-prt-sources.mjs` (built exactly to this purpose back when the blocker was first documented) confirms the gate. New test-prt.mjs coverage added for the render path (was previously untested — `sourceStatus==="verified"` branch had zero coverage even before this). Where the source doctrine text itself only prints counts 1–3 for an exercise (Forward Lunge, Prone Row, Push-Up), transcribed exactly as printed rather than inferring a symmetric closing count. | direct to `main` |
 
 See `CHANGELOG.md`'s v1.5.0, v1.5.1, round-8, Nav-overhaul, and round-9/10/11 entries for the detailed version of all of the above.
 
@@ -52,30 +53,26 @@ Whenever the backlog above is exhausted and someone asks "what's next," the answ
 
 ---
 
-## 3. Next up: acquire ATP 7-22.02 (the one open item from the Content expansion above)
+## 3. RESOLVED (2026-09-13): ATP 7-22.02 acquired — the one open item from the Content expansion above
 
 Milestones 1–3 of the Content & Educational Materials expansion (§1 above)
-are done and live on `main`. Exactly one piece was explicitly deferred,
+were done and live on `main`, with exactly one piece explicitly deferred,
 not forgotten: **ATP 7-22.02** (Physical Readiness Training) — the real
 Army manual with each Preparation Drill exercise's starting position and
-movement description — is confirmed absent from `guidon-app/docs-source/`.
-FM 7-22 (already in the corpus) explicitly defers to it, and this
-project's own standing discipline (no doctrine content shipped without a
-real, verifiable source — see the round-8 content-accuracy entries above)
-means `#/prt`'s 10 exercises currently show cadence/rep-rule/order (real,
-FM-7-22-sourced) but an honest "reference pending" state instead of
-per-exercise movement detail.
+movement description — was confirmed absent from
+`guidon-app/docs-source/`. That gap is now closed — see §1's own entry for
+the acquisition and transcription detail, and
+`docs/design/content-education-roadmap.md` §2.4 for the full technical
+history of what was blocked and why (marked RESOLVED there too, kept for
+the record rather than rewritten).
 
-**This needs the user's call, not an autonomous fetch/download** — adding
-an external document to the repo is outside standing session
-authorization. Options on the table: supply the PDF directly; authorize a
-web search for an official public-domain source with a confirm-before-
-download step; or leave it as-is (the feature ships fine without it,
-just incomplete at that one level of detail) and revisit later.
-`docs/design/content-education-roadmap.md` §2.4 has the full technical
-detail on exactly what's blocked and the intake path once the PDF lands
-(`tools/build-library-data.mjs`, then hand-transcription via
-`tools/seed-io.mjs`, gated by `tools/lint-prt-sources.mjs`).
+This was the user's call, not an autonomous fetch/download, exactly as
+this section originally required: offered a choice of supplying the PDF
+directly, authorizing a web search for an official public-domain source
+with a confirm-before-download step, or leaving it as-is — the user chose
+the web search, the exact source and file size were confirmed back to the
+user before any download happened, and only then was the ~15.5 MB PDF
+fetched from armypubs.army.mil.
 
 ---
 

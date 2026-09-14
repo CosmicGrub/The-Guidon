@@ -21,10 +21,10 @@
  * independent guard: it fails the whole build loudly if any page's text
  * still isn't clean UTF-8, rather than shipping a silent U+FFFD.
  *
- * Why a separate assembly script rather than doing this by hand: 15
- * documents, ~1,955 pages, ~5.7MB of text. Hand-editing that into a JS file
+ * Why a separate assembly script rather than doing this by hand: 16
+ * documents, ~2,200 pages, ~5.8MB of text. Hand-editing that into a JS file
  * is exactly the kind of mechanical, error-prone transcription this script
- * exists to make deterministic and re-runnable (e.g. when a 16th document
+ * exists to make deterministic and re-runnable (e.g. when a 17th document
  * is added, or an edition updates).
  *
  * PDFs themselves are NOT embedded here - build.mjs's own step copies
@@ -100,6 +100,8 @@ const DOCS = [
     title: "U.S. Army Noncommissioned Officer Professional Development Guide", note: null },
   { id: "fm-7-22", file: "FM_7-22_Holistic_Health_and_Fitness", citation: "FM 7-22",
     title: "Holistic Health and Fitness", note: null },
+  { id: "atp-7-22-02", file: "ATP_7-22.02_Holistic_Health_and_Fitness_Drills_and_Exercises", citation: "ATP 7-22.02",
+    title: "Holistic Health and Fitness Drills and Exercises", note: "Companion to FM 7-22; the source for #/prt's Preparation Drill exercise detail." },
   { id: "tc-3-21-5", file: "TC_3-21.5_Drill_and_Ceremonies", citation: "TC 3-21.5",
     title: "Drill and Ceremonies", note: null },
   { id: "tc-3-22-9", file: "TC_3-22.9_Rifle_and_Carbine", citation: "TC 3-22.9",

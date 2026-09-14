@@ -1,6 +1,6 @@
 /**
  * Roadmap-week audit finding: the Reference Library (#/library,
- * src/app-modules/library.js) is a real in-app document reader for 15 Army
+ * src/app-modules/library.js) is a real in-app document reader for 16 Army
  * publications - its own full-text search (searchDoc) with a TOC-exclusion
  * filter, a "Jump to section" navigator built from build-time-extracted
  * headings, and an "Original PDF" tab - but every existing test that even
