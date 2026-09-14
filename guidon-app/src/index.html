@@ -13287,6 +13287,25 @@ window.G = window.G || {};
     E7: "expert", E8: "expert", E9: "expert",
   };
   const RF_PASS_FREQUENT = 2; // "came up as Pass a lot" threshold — passed at least this many times this round
+  // v2 candidate #1 (docs/superpowers/specs/2026-08-23-rapid-fire-design.md,
+  // "Deferred to a later pass" - a streak-multiplier scoring twist), shipped
+  // as a pure bonus ON TOP of the existing "Correct: N" count/win condition,
+  // never replacing it - Team mode's own winner-by-correctCount comparison
+  // (drawTeamRecap) is untouched, points is flavor, not a new scoring rule.
+  // 10 base points per correct card, plus 5 more for every card ALREADY in
+  // the current streak before this one (so the 1st card of a streak earns
+  // the base 10, the 2nd earns 15, the 3rd earns 20, ...), capped at +50
+  // bonus so an extreme streak doesn't produce an absurd, hard-to-parse
+  // number - transparent doubling-ish growth for the exact "reward staying
+  // hot" feel real Heads Up!-style party games use, without a hidden or
+  // exponential formula nobody watching over someone's shoulder could
+  // follow in the second or two Rapid Fire's own pace allows for.
+  const RF_BASE_POINTS = 10;
+  const RF_STREAK_BONUS_PER = 5;
+  const RF_STREAK_BONUS_CAP = 50;
+  function rfPointsForStreak(streakBeforeThisCard) {
+    return RF_BASE_POINTS + Math.min(RF_STREAK_BONUS_CAP, streakBeforeThisCard * RF_STREAK_BONUS_PER);
+  }
 
   async function renderRapidFire(mount, renderOpts) {
     util.clear(mount);
@@ -13623,6 +13642,7 @@ window.G = window.G || {};
       let queue = shuffle(pool);
       let current = null;
       let correctCount = 0;
+      let points = 0;
       let currentStreak = 0, bestStreak = 0;
       const passTally = new Map(); // question id -> times passed this round
       const roundCategories = new Set();
@@ -13691,6 +13711,7 @@ window.G = window.G || {};
         util.clear(scoreEl);
         scoreEl.appendChild(document.createTextNode("Correct: "));
         scoreEl.appendChild(el("b", { text: String(correctCount) }));
+        scoreEl.appendChild(document.createTextNode("  ·  " + points + " pts"));
         streakEl.textContent = currentStreak >= 2 ? ("🔥 " + currentStreak + " in a row") : "";
         if (remaining != null) {
           timerEl.textContent = Math.max(0, remaining) + "s";
@@ -13815,7 +13836,10 @@ window.G = window.G || {};
 
       function judge(isCorrect) {
         if (finished || !current) return;
+        let gained = 0;
         if (isCorrect) {
+          gained = rfPointsForStreak(currentStreak);
+          points += gained;
           correctCount++;
           currentStreak++;
           bestStreak = Math.max(bestStreak, currentStreak);
@@ -13848,7 +13872,8 @@ window.G = window.G || {};
         try {
           if (G.util.announce) {
             const streakPart = isCorrect && currentStreak >= 2 ? " " + currentStreak + " in a row." : "";
-            G.util.announce((isCorrect ? "Correct." : "Passed.") + " Score " + correctCount + "." + streakPart + " Next card.");
+            const pointsPart = isCorrect ? " +" + gained + " points, " + points + " total." : "";
+            G.util.announce((isCorrect ? "Correct." : "Passed.") + " Score " + correctCount + "." + streakPart + pointsPart + " Next card.");
           }
         } catch (e) {}
         advance();
@@ -13918,7 +13943,7 @@ window.G = window.G || {};
         document.removeEventListener("visibilitychange", onVisible);
         G.board.exitTheater();
         const stats = {
-          correctCount, bestStreak,
+          correctCount, bestStreak, points,
           elapsedSec: Math.round(activeElapsedMs / 1000),
           passTally, roundCategories, pool,
         };
@@ -13950,6 +13975,7 @@ window.G = window.G || {};
     function buildStatsBlock(panel, stats) {
       const statsRow = el("div", { style: "display:flex;gap:18px;flex-wrap:wrap;margin:10px 0" });
       statsRow.appendChild(el("div.stat", {}, [el("span.k", { text: "Correct" }), el("span.v", { text: String(stats.correctCount) })]));
+      statsRow.appendChild(el("div.stat", {}, [el("span.k", { text: "Points" }), el("span.v", { text: String(stats.points) })]));
       statsRow.appendChild(el("div.stat", {}, [el("span.k", { text: "Elapsed" }), el("span.v", { text: stats.elapsedSec + "s" })]));
       statsRow.appendChild(el("div.stat", {}, [el("span.k", { text: "Best streak" }), el("span.v", { text: stats.bestStreak + " in a row" })]));
       panel.appendChild(statsRow);
