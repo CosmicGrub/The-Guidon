@@ -1,4 +1,13 @@
 /**
+ * Also covers a second, unrelated v2 candidate from the same spec's
+ * "Deferred to a later pass" list: optional "who's playing" names in Party
+ * mode (cfg.players, src/index.html). Party stays a shared-device, one-
+ * running-score game - this doesn't add per-player scoring, it just shows
+ * a cosmetic "Played by: ..." credit line on the Recap, split/trimmed from
+ * whatever free text was typed. Bundled into this same file rather than a
+ * separate one since both features touch the same Setup screen and Recap
+ * component this file already drives.
+ *
  * Rapid Fire's streak-multiplier scoring (v2 candidate #1 from
  * docs/superpowers/specs/2026-08-23-rapid-fire-design.md's own "Deferred to
  * a later pass" list) — a pure bonus ON TOP of the existing Correct count,
@@ -145,6 +154,48 @@ recapPoints === String(expectedTotal)
   ? ok(`Recap's "Points" stat tile reads ${expectedTotal}, matching the round's real running total`)
   : bad("Recap Points tile: " + JSON.stringify(recapPoints));
 
+// ==================== Party mode: optional "Played by" credit on the Recap ====================
+console.log('\n-- Party mode: optional "Who\'s playing?" free text becomes a clean "Played by" credit --');
+await enterRapidFireFresh();
+const playersInput = await page.evaluate(() => {
+  const inp = document.querySelector("#rf-players-input");
+  return inp ? { placeholder: inp.placeholder, ariaLabel: inp.getAttribute("aria-label") } : null;
+});
+playersInput && /optional/i.test(playersInput.ariaLabel || "")
+  ? ok(`Party Setup shows the optional "Who's playing?" field: ${JSON.stringify(playersInput)}`)
+  : bad("Party Setup players input: " + JSON.stringify(playersInput));
+
+// Deliberately messy input (stray commas, uneven spacing) - the Recap must
+// show a clean, re-joined list, not an echo of the raw typed text.
+await page.evaluate(() => {
+  const inp = document.querySelector("#rf-players-input");
+  inp.value = "Alicia,  Marcus ,,Devon";
+  inp.dispatchEvent(new Event("input", { bubbles: true }));
+});
+await startRound();
+await tapCorrect();
+await tapEndRound();
+await page.waitForTimeout(200);
+const playedByText = await page.evaluate(() => {
+  const hints = [...document.querySelectorAll(".panel p.hint")];
+  const h = hints.find((el) => /^Played by:/.test(el.textContent || ""));
+  return h ? h.textContent : null;
+});
+playedByText === "Played by: Alicia, Marcus, Devon"
+  ? ok(`Recap shows a clean "Played by: Alicia, Marcus, Devon" from the messy typed input (stray commas/spacing normalized)`)
+  : bad('Recap "Played by" text: ' + JSON.stringify(playedByText));
+
+// Leaving it blank shows no credit line at all - not "Played by: " with nothing after it.
+await enterRapidFireFresh();
+await startRound();
+await tapCorrect();
+await tapEndRound();
+await page.waitForTimeout(200);
+const noPlayedByLine = await page.evaluate(() => ![...document.querySelectorAll(".panel p.hint")].some((el) => /^Played by:/.test(el.textContent || "")));
+noPlayedByLine
+  ? ok('leaving "Who\'s playing?" blank shows no "Played by" line at all on the Recap (not an empty one)')
+  : bad('a blank "Who\'s playing?" field still produced a "Played by" line on the Recap');
+
 // ==================== Team mode: points is flavor, NOT a new win condition ====================
 console.log("\n-- Team mode: each team's own Points tile, winner still decided by Correct count --");
 await enterRapidFireFresh();
@@ -214,5 +265,5 @@ relevantNoise.length === 0 ? ok("no console errors/warnings") : bad("console noi
 await browser.close();
 await server.close();
 
-console.log(fails ? `\n${fails} FAILURE(S)` : "\nRAPID FIRE STREAK POINTS: all passed");
+console.log(fails ? `\n${fails} FAILURE(S)` : "\nRAPID FIRE STREAK POINTS & PLAYED-BY: all passed");
 process.exit(fails ? 1 : 0);

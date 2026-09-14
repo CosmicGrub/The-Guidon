@@ -13332,6 +13332,15 @@ window.G = window.G || {};
       // "+ Add team" can add more (spec: "2+ named teams"); persists across
       // Setup redraws (mode switches, Play Again) the same way every other
       // cfg field already does.
+      // v2 candidate (design spec's "Deferred to a later pass" list):
+      // "per-player avatars/names in Party mode". Party is fundamentally a
+      // shared-device, one-running-score group game (unlike Team's real
+      // per-team turns) — this doesn't turn it into per-player scoring, it
+      // just personalizes the credit at Recap ("Played by: ..."), same
+      // spirit as Team's own roster without inventing turn-taking Party
+      // was never designed for. Free text, not a required multi-row list
+      // like Team's own teams[] - purely cosmetic, so it can't gate Start.
+      players: "",
     };
     let needsWorkCats = [];
 
@@ -13539,6 +13548,20 @@ window.G = window.G || {};
         teamRowWrap.appendChild(addBtn);
         teamRowWrap.appendChild(el("p.hint", { text: "Name at least 2 teams to start." }));
         wrap.appendChild(teamRowWrap);
+      }
+
+      // Party mode's own optional "who's playing" line - see cfg.players'
+      // own comment, above, for why this is free text rather than Team's
+      // required multi-row roster.
+      if (cfg.mode === "party") {
+        const playersRow = el("div.rf-setup-row.rf-players-row");
+        playersRow.appendChild(el("label", { text: "Who's playing? (optional)", for: "rf-players-input" }));
+        const playersInput = el("input", { type: "text", id: "rf-players-input", value: cfg.players,
+          placeholder: "e.g. Alicia, Marcus, Devon", "aria-label": "Who's playing (optional)" });
+        playersInput.addEventListener("input", () => { cfg.players = playersInput.value; });
+        playersRow.appendChild(playersInput);
+        playersRow.appendChild(el("p.hint", { text: "Shown on the Recap as “Played by” — doesn't change scoring, just gives credit." }));
+        wrap.appendChild(playersRow);
       }
 
       const poolNote = el("p.hint");
@@ -13946,6 +13969,12 @@ window.G = window.G || {};
           correctCount, bestStreak, points,
           elapsedSec: Math.round(activeElapsedMs / 1000),
           passTally, roundCategories, pool,
+          // Only real for an actual top-level Party round - a Team turn
+          // also calls beginRound(pool, "party", ...) internally to reuse
+          // this exact mechanic, but cfg.mode is "team" there, and team
+          // names already give credit per-turn in drawTeamRecap's own
+          // compare row, so this stays blank rather than duplicating it.
+          players: cfg.mode === "party" ? cfg.players.trim() : "",
         };
         // Team mode's own seam (see beginRound's header comment, above):
         // when a caller supplies onFinish, it runs INSTEAD of the default
@@ -13973,6 +14002,13 @@ window.G = window.G || {};
     //     behavior, just calling the two shared helpers above.
 
     function buildStatsBlock(panel, stats) {
+      if (stats.players) {
+        // Cosmetic credit line only - split/trimmed/re-joined so "alicia,,
+        // marcus ,devon" reads as a clean "Alicia, Marcus, Devon" rather
+        // than echoing whatever stray commas/spacing someone typed.
+        const names = stats.players.split(",").map((n) => n.trim()).filter(Boolean);
+        if (names.length) panel.appendChild(el("p.hint", { text: "Played by: " + names.join(", ") }));
+      }
       const statsRow = el("div", { style: "display:flex;gap:18px;flex-wrap:wrap;margin:10px 0" });
       statsRow.appendChild(el("div.stat", {}, [el("span.k", { text: "Correct" }), el("span.v", { text: String(stats.correctCount) })]));
       statsRow.appendChild(el("div.stat", {}, [el("span.k", { text: "Points" }), el("span.v", { text: String(stats.points) })]));
