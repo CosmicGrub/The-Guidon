@@ -13287,6 +13287,25 @@ window.G = window.G || {};
     E7: "expert", E8: "expert", E9: "expert",
   };
   const RF_PASS_FREQUENT = 2; // "came up as Pass a lot" threshold — passed at least this many times this round
+  // v2 candidate #1 (docs/superpowers/specs/2026-08-23-rapid-fire-design.md,
+  // "Deferred to a later pass" - a streak-multiplier scoring twist), shipped
+  // as a pure bonus ON TOP of the existing "Correct: N" count/win condition,
+  // never replacing it - Team mode's own winner-by-correctCount comparison
+  // (drawTeamRecap) is untouched, points is flavor, not a new scoring rule.
+  // 10 base points per correct card, plus 5 more for every card ALREADY in
+  // the current streak before this one (so the 1st card of a streak earns
+  // the base 10, the 2nd earns 15, the 3rd earns 20, ...), capped at +50
+  // bonus so an extreme streak doesn't produce an absurd, hard-to-parse
+  // number - transparent doubling-ish growth for the exact "reward staying
+  // hot" feel real Heads Up!-style party games use, without a hidden or
+  // exponential formula nobody watching over someone's shoulder could
+  // follow in the second or two Rapid Fire's own pace allows for.
+  const RF_BASE_POINTS = 10;
+  const RF_STREAK_BONUS_PER = 5;
+  const RF_STREAK_BONUS_CAP = 50;
+  function rfPointsForStreak(streakBeforeThisCard) {
+    return RF_BASE_POINTS + Math.min(RF_STREAK_BONUS_CAP, streakBeforeThisCard * RF_STREAK_BONUS_PER);
+  }
 
   async function renderRapidFire(mount, renderOpts) {
     util.clear(mount);
@@ -13304,7 +13323,14 @@ window.G = window.G || {};
       // visit to this tab looks and behaves exactly like before the Stage 2
       // upgrade rather than silently defaulting them into a mode they've
       // never seen.
-      categoryMode: "all",        // "all" | "needsWork" | a real category string
+      categoryMode: "all",        // "all" | "needsWork" | "custom" | a real category string
+      // v2 candidate (design spec's own "Deferred to a later pass" list):
+      // "custom category weighting" / "saved custom decks". The single-
+      // category <select> above already covers "one category at a time";
+      // this is the multi-pick step beyond it - categoryMode:"custom"
+      // means "the pool is whichever categories are checked here",
+      // independent of catSel's own single value.
+      customCategories: [],
       timerSec: 60,                // 30 | 60 | 90 | null (Untimed)
       diffMode: "rank",            // "rank" | "all"
       passedBehavior: "requeue",   // "requeue" | "remove"
@@ -13313,6 +13339,15 @@ window.G = window.G || {};
       // "+ Add team" can add more (spec: "2+ named teams"); persists across
       // Setup redraws (mode switches, Play Again) the same way every other
       // cfg field already does.
+      // v2 candidate (design spec's "Deferred to a later pass" list):
+      // "per-player avatars/names in Party mode". Party is fundamentally a
+      // shared-device, one-running-score group game (unlike Team's real
+      // per-team turns) — this doesn't turn it into per-player scoring, it
+      // just personalizes the credit at Recap ("Played by: ..."), same
+      // spirit as Team's own roster without inventing turn-taking Party
+      // was never designed for. Free text, not a required multi-row list
+      // like Team's own teams[] - purely cosmetic, so it can't gate Start.
+      players: "",
     };
     let needsWorkCats = [];
 
@@ -13348,6 +13383,16 @@ window.G = window.G || {};
         // else: no attempt history yet — falls back to the full,
         // unfiltered pool below, matching the Setup note shown for
         // this exact case (see refreshStart()'s fallenBack check).
+      } else if (cfg.categoryMode === "custom") {
+        if (cfg.customCategories.length) {
+          const set = new Set(cfg.customCategories);
+          pool = pool.filter((q) => set.has(q.category));
+        }
+        // else: nothing checked yet - falls through to the full pool,
+        // same "don't silently show zero questions" reasoning as
+        // needsWork's own empty-history fallback just above. refreshStart()
+        // shows an explicit "no categories selected" note for this case
+        // (see below) so it's never mistaken for "All" being intentional.
       } else if (cfg.categoryMode !== "all") {
         pool = pool.filter((q) => q.category === cfg.categoryMode);
       }
@@ -13432,24 +13477,29 @@ window.G = window.G || {};
       const catRow = el("div.rf-setup-row");
       catRow.appendChild(el("label", { text: "Deck / Categories" }));
       const pickRow = el("div", { style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center" });
+      const CUSTOM_SENTINEL = "__rf_custom__";
       const catSel = el("select", { "aria-label": "Filter by category" });
       categories.forEach((c) => catSel.appendChild(el("option", { value: c, text: c })));
-      catSel.value = (cfg.categoryMode !== "all" && cfg.categoryMode !== "needsWork") ? cfg.categoryMode : "All";
+      catSel.appendChild(el("option", { value: CUSTOM_SENTINEL, text: "Custom mix…" }));
+      catSel.value = cfg.categoryMode === "custom" ? CUSTOM_SENTINEL
+        : (cfg.categoryMode !== "all" && cfg.categoryMode !== "needsWork") ? cfg.categoryMode : "All";
       const needsWorkChip = el("button.due-chip", { type: "button", text: "⚙ Needs Work",
         "aria-pressed": String(cfg.categoryMode === "needsWork"),
         title: "Your weakest 3 categories — the same ranking the Readiness tab shows" });
       if (cfg.categoryMode === "needsWork") needsWorkChip.classList.add("active");
       catSel.addEventListener("change", () => {
-        cfg.categoryMode = catSel.value === "All" ? "all" : catSel.value;
+        cfg.categoryMode = catSel.value === "All" ? "all" : catSel.value === CUSTOM_SENTINEL ? "custom" : catSel.value;
         needsWorkChip.classList.remove("active");
         needsWorkChip.setAttribute("aria-pressed", "false");
+        drawCustomPicker();
         refreshStart();
       });
       needsWorkChip.addEventListener("click", () => {
         const activating = !needsWorkChip.classList.contains("active");
         needsWorkChip.classList.toggle("active", activating);
         needsWorkChip.setAttribute("aria-pressed", String(activating));
-        cfg.categoryMode = activating ? "needsWork" : (catSel.value === "All" ? "all" : catSel.value);
+        cfg.categoryMode = activating ? "needsWork" : (catSel.value === "All" ? "all" : catSel.value === CUSTOM_SENTINEL ? "custom" : catSel.value);
+        drawCustomPicker();
         refreshStart();
       });
       pickRow.appendChild(catSel); pickRow.appendChild(needsWorkChip);
@@ -13457,7 +13507,131 @@ window.G = window.G || {};
       const needsWorkNote = el("p.hint.rf-needs-work-note", { style: "display:none",
         text: "No attempt history yet, so there's nothing weak to surface — showing All categories instead." });
       catRow.appendChild(needsWorkNote);
+
+      // ── Custom mix: multi-select checkboxes + save/load named decks ──
+      // v2 candidate: "custom category weighting" / "saved custom decks".
+      // Checkboxes over a native <select multiple> - the latter's touch
+      // multi-select UX (ctrl/cmd-click only, no real mobile affordance)
+      // would be actively worse than this app's existing single-<select>
+      // Deck/Categories row on the exact devices this app is built for.
+      // Saved decks persist across sessions via db.getSetting/setSetting,
+      // the same real kv-backed mechanism Quiz's own per-category best
+      // score (quizBestKey, above) already uses - not a new storage shape.
+      const RF_SAVED_DECKS_KEY = "rapidFire:savedDecks";
+      const customBox = el("div.rf-custom-decks", { style: "display:none;margin-top:8px" });
+      catRow.appendChild(customBox);
       wrap.appendChild(catRow);
+
+      async function loadSavedDecks() {
+        const decks = await db.getSetting(RF_SAVED_DECKS_KEY, []);
+        return Array.isArray(decks) ? decks : [];
+      }
+      async function saveSavedDecks(decks) { await db.setSetting(RF_SAVED_DECKS_KEY, decks); }
+
+      async function drawCustomPicker() {
+        util.clear(customBox);
+        if (cfg.categoryMode !== "custom") { customBox.style.display = "none"; return; }
+        customBox.style.display = "";
+
+        const savedDecks = await loadSavedDecks();
+        if (savedDecks.length) {
+          const savedRow = el("div", { style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px" });
+          savedRow.appendChild(el("label", { text: "Saved decks:", style: "font-weight:600" }));
+          savedDecks.forEach((deck, i) => {
+            const chip = el("button.btn.ghost.sm", { type: "button", text: deck.name + " (" + deck.categories.length + ")" });
+            chip.addEventListener("click", () => {
+              cfg.customCategories = deck.categories.slice();
+              drawCustomPicker();
+              refreshStart();
+            });
+            savedRow.appendChild(chip);
+            const delBtn = el("button.btn.ghost.sm", { type: "button", text: "✕", "aria-label": "Delete saved deck " + deck.name, title: "Delete this saved deck" });
+            delBtn.addEventListener("click", async () => {
+              const next = savedDecks.filter((_, j) => j !== i);
+              await saveSavedDecks(next);
+              drawCustomPicker();
+            });
+            savedRow.appendChild(delBtn);
+          });
+          customBox.appendChild(savedRow);
+        }
+
+        const btnRow = el("div.btn-row", { style: "gap:8px;margin-bottom:6px" });
+        const allBtn = el("button.btn.ghost.sm", { type: "button", text: "Select all" });
+        const noneBtn = el("button.btn.ghost.sm", { type: "button", text: "Clear all" });
+        btnRow.appendChild(allBtn); btnRow.appendChild(noneBtn);
+        customBox.appendChild(btnRow);
+
+        const list = el("div.rf-custom-list", { style: "max-height:220px;overflow-y:auto;border:1px solid var(--line);border-radius:var(--radius-sm);padding:8px" });
+        const realCategories = categories.filter((c) => c !== "All");
+        const checkboxes = [];
+        // A single updatable hint, not rebuilt by drawCustomPicker() on
+        // every checkbox toggle - re-running this whole function (78
+        // categories' worth of checkboxes) on every single change would
+        // needlessly rebuild the entire list and could drop keyboard focus
+        // mid-navigation. Only the count text needs to change per toggle.
+        const selectedHint = el("p.hint", { style: "margin-top:4px" });
+        function updateSelectedHint() {
+          selectedHint.textContent = cfg.customCategories.length
+            ? cfg.customCategories.length + " categor" + (cfg.customCategories.length === 1 ? "y" : "ies") + " selected."
+            : "No categories selected yet — pick at least one, or this round uses every category.";
+        }
+        realCategories.forEach((c) => {
+          const row = el("div", { style: "display:flex;gap:6px;align-items:center;margin:2px 0" });
+          const id = "rf-cust-" + realCategories.indexOf(c);
+          const cb = el("input", { type: "checkbox", id, "aria-label": c });
+          cb.checked = cfg.customCategories.includes(c);
+          cb.addEventListener("change", () => {
+            cfg.customCategories = cb.checked
+              ? [...cfg.customCategories, c]
+              : cfg.customCategories.filter((x) => x !== c);
+            updateSelectedHint();
+            refreshStart();
+          });
+          checkboxes.push(cb);
+          row.appendChild(cb);
+          row.appendChild(el("label", { text: c, for: id, style: "margin:0;font-weight:400" }));
+          list.appendChild(row);
+        });
+        customBox.appendChild(list);
+
+        allBtn.addEventListener("click", () => {
+          cfg.customCategories = realCategories.slice();
+          checkboxes.forEach((cb) => { cb.checked = true; });
+          updateSelectedHint();
+          refreshStart();
+        });
+        noneBtn.addEventListener("click", () => {
+          cfg.customCategories = [];
+          checkboxes.forEach((cb) => { cb.checked = false; });
+          updateSelectedHint();
+          refreshStart();
+        });
+
+        const saveRow = el("div", { style: "display:flex;gap:8px;margin-top:8px;flex-wrap:wrap" });
+        const nameInput = el("input", { type: "text", placeholder: "Deck name", "aria-label": "New deck name", style: "max-width:200px" });
+        const saveBtn = el("button.btn.sm", { type: "button", text: "Save this deck" });
+        saveBtn.addEventListener("click", async () => {
+          const name = nameInput.value.trim();
+          if (!name || !cfg.customCategories.length) return;
+          const decks = await loadSavedDecks();
+          const next = decks.filter((d) => d.name !== name); // same name overwrites, doesn't duplicate
+          next.push({ name, categories: cfg.customCategories.slice() });
+          await saveSavedDecks(next);
+          nameInput.value = "";
+          drawCustomPicker();
+        });
+        saveRow.appendChild(nameInput); saveRow.appendChild(saveBtn);
+        customBox.appendChild(saveRow);
+        updateSelectedHint();
+        customBox.appendChild(selectedHint);
+      }
+      // buildSetup() itself is synchronous (its return value is appended
+      // to the DOM immediately by its own callers) - drawCustomPicker is
+      // async only because it reads saved decks from db.getSetting, same
+      // "fire without awaiting into an already-appended container" shape
+      // wireCrossLink() uses in this same file's Recap screen, below.
+      drawCustomPicker();
 
       function segRow(labelText, options, key) {
         const row = el("div.rf-setup-row");
@@ -13520,6 +13694,20 @@ window.G = window.G || {};
         teamRowWrap.appendChild(addBtn);
         teamRowWrap.appendChild(el("p.hint", { text: "Name at least 2 teams to start." }));
         wrap.appendChild(teamRowWrap);
+      }
+
+      // Party mode's own optional "who's playing" line - see cfg.players'
+      // own comment, above, for why this is free text rather than Team's
+      // required multi-row roster.
+      if (cfg.mode === "party") {
+        const playersRow = el("div.rf-setup-row.rf-players-row");
+        playersRow.appendChild(el("label", { text: "Who's playing? (optional)", for: "rf-players-input" }));
+        const playersInput = el("input", { type: "text", id: "rf-players-input", value: cfg.players,
+          placeholder: "e.g. Alicia, Marcus, Devon", "aria-label": "Who's playing (optional)" });
+        playersInput.addEventListener("input", () => { cfg.players = playersInput.value; });
+        playersRow.appendChild(playersInput);
+        playersRow.appendChild(el("p.hint", { text: "Shown on the Recap as “Played by” — doesn't change scoring, just gives credit." }));
+        wrap.appendChild(playersRow);
       }
 
       const poolNote = el("p.hint");
@@ -13623,6 +13811,7 @@ window.G = window.G || {};
       let queue = shuffle(pool);
       let current = null;
       let correctCount = 0;
+      let points = 0;
       let currentStreak = 0, bestStreak = 0;
       const passTally = new Map(); // question id -> times passed this round
       const roundCategories = new Set();
@@ -13691,6 +13880,7 @@ window.G = window.G || {};
         util.clear(scoreEl);
         scoreEl.appendChild(document.createTextNode("Correct: "));
         scoreEl.appendChild(el("b", { text: String(correctCount) }));
+        scoreEl.appendChild(document.createTextNode("  ·  " + points + " pts"));
         streakEl.textContent = currentStreak >= 2 ? ("🔥 " + currentStreak + " in a row") : "";
         if (remaining != null) {
           timerEl.textContent = Math.max(0, remaining) + "s";
@@ -13815,7 +14005,10 @@ window.G = window.G || {};
 
       function judge(isCorrect) {
         if (finished || !current) return;
+        let gained = 0;
         if (isCorrect) {
+          gained = rfPointsForStreak(currentStreak);
+          points += gained;
           correctCount++;
           currentStreak++;
           bestStreak = Math.max(bestStreak, currentStreak);
@@ -13848,7 +14041,8 @@ window.G = window.G || {};
         try {
           if (G.util.announce) {
             const streakPart = isCorrect && currentStreak >= 2 ? " " + currentStreak + " in a row." : "";
-            G.util.announce((isCorrect ? "Correct." : "Passed.") + " Score " + correctCount + "." + streakPart + " Next card.");
+            const pointsPart = isCorrect ? " +" + gained + " points, " + points + " total." : "";
+            G.util.announce((isCorrect ? "Correct." : "Passed.") + " Score " + correctCount + "." + streakPart + pointsPart + " Next card.");
           }
         } catch (e) {}
         advance();
@@ -13918,9 +14112,15 @@ window.G = window.G || {};
         document.removeEventListener("visibilitychange", onVisible);
         G.board.exitTheater();
         const stats = {
-          correctCount, bestStreak,
+          correctCount, bestStreak, points,
           elapsedSec: Math.round(activeElapsedMs / 1000),
           passTally, roundCategories, pool,
+          // Only real for an actual top-level Party round - a Team turn
+          // also calls beginRound(pool, "party", ...) internally to reuse
+          // this exact mechanic, but cfg.mode is "team" there, and team
+          // names already give credit per-turn in drawTeamRecap's own
+          // compare row, so this stays blank rather than duplicating it.
+          players: cfg.mode === "party" ? cfg.players.trim() : "",
         };
         // Team mode's own seam (see beginRound's header comment, above):
         // when a caller supplies onFinish, it runs INSTEAD of the default
@@ -13948,8 +14148,16 @@ window.G = window.G || {};
     //     behavior, just calling the two shared helpers above.
 
     function buildStatsBlock(panel, stats) {
+      if (stats.players) {
+        // Cosmetic credit line only - split/trimmed/re-joined so "alicia,,
+        // marcus ,devon" reads as a clean "Alicia, Marcus, Devon" rather
+        // than echoing whatever stray commas/spacing someone typed.
+        const names = stats.players.split(",").map((n) => n.trim()).filter(Boolean);
+        if (names.length) panel.appendChild(el("p.hint", { text: "Played by: " + names.join(", ") }));
+      }
       const statsRow = el("div", { style: "display:flex;gap:18px;flex-wrap:wrap;margin:10px 0" });
       statsRow.appendChild(el("div.stat", {}, [el("span.k", { text: "Correct" }), el("span.v", { text: String(stats.correctCount) })]));
+      statsRow.appendChild(el("div.stat", {}, [el("span.k", { text: "Points" }), el("span.v", { text: String(stats.points) })]));
       statsRow.appendChild(el("div.stat", {}, [el("span.k", { text: "Elapsed" }), el("span.v", { text: stats.elapsedSec + "s" })]));
       statsRow.appendChild(el("div.stat", {}, [el("span.k", { text: "Best streak" }), el("span.v", { text: stats.bestStreak + " in a row" })]));
       panel.appendChild(statsRow);
