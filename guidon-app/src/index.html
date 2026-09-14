@@ -14162,6 +14162,15 @@ window.G = window.G || {};
       statsRow.appendChild(el("div.stat", {}, [el("span.k", { text: "Best streak" }), el("span.v", { text: stats.bestStreak + " in a row" })]));
       panel.appendChild(statsRow);
 
+      // Team mode's "Handoff Steal Round" mechanic (see beginTeamMode's own
+      // header comment, below): stats.stealBonus is only ever set by
+      // mergeStealIntoTurn(), so this is a no-op for Party/Solo and for
+      // every ordinary Team turn that never triggered a steal.
+      if (stats.stealBonus) {
+        panel.appendChild(el("p.hint", { text: "Includes a steal bonus: +" + stats.stealBonus.correctCount +
+          " correct, +" + stats.stealBonus.points + " pts" }));
+      }
+
       // "Came up as Pass a lot" — the round's own local tally, read back
       // once at the end. No persisted store touched (spec: purely a
       // same-session summary).
@@ -14253,21 +14262,137 @@ window.G = window.G || {};
     // "party", …) Party mode itself calls; the only Team-specific code
     // here is what happens BETWEEN turns (a handoff screen) and AFTER the
     // last one (the Final Recap comparing every team).
+    //
+    // v2 candidate (docs/superpowers/specs/2026-08-23-rapid-fire-design.md,
+    // "Deferred to a later pass" — "a Team 'steal' mechanic... if Team A
+    // passes, Team B gets a shot at the same card before moving on") —
+    // "Handoff Steal Round" design, chosen after an adversarially-judged
+    // comparison against 3 alternatives (a real-time mid-turn freeze, a
+    // pooled end-of-game shout-it-out finale, and a scoreless read-only
+    // digest). Deliberately NOT the spec's literal "before moving on" —
+    // it's deferred to the one moment the device already changes hands
+    // (the existing handoff) rather than pausing the passing team's own
+    // turn mid-flight, specifically so this needed ZERO changes inside
+    // beginRound/judge/advance/finishRound: the steal round is just a
+    // second, ordinary beginRound(smallerPool, "party", {onFinish}) call
+    // over exactly what the previous team passed on, reusing the exact
+    // onFinish seam Team mode already chains its own turns through.
+    // Accepted, named trade-off: the FIRST team never gets a steal
+    // (nobody played before them) and the LAST team's own passes are
+    // never stolen (nobody plays after them) — most noticeable in the
+    // common 2-team game, where only Team 2 ever sees the offer.
+    const MAX_STEAL_CARDS = 8; // keeps a steal round a snack, not a second full match
+
+    // Reads a JUST-FINISHED team's own passTally (a real field finishRound()
+    // already produces) and resolves it to real question objects via the
+    // module-level byId lookup, capped at MAX_STEAL_CARDS. Uses EVERY passed
+    // id, not just the >=RF_PASS_FREQUENT ones the Recap's own "Came up as
+    // Pass a lot" list filters to — a single pass already means that team
+    // didn't get it, which is exactly what makes a card stealable. Under
+    // cfg.passedBehavior:"requeue" a card the same team later requeued and
+    // got right themselves can still appear here (passTally only counts
+    // passes, it doesn't un-count a later correct) — an accepted, minor
+    // wrinkle rather than new bookkeeping, same spirit as this file's other
+    // "known, named, not silently papered over" trade-offs.
+    function stealableCardsFrom(passTally) {
+      return Array.from(passTally.keys()).map((id) => byId[id]).filter(Boolean).slice(0, MAX_STEAL_CARDS);
+    }
+
+    // Folds a completed steal round's stats into the team's own real turn
+    // stats once THAT finishes — the steal round itself is never shown as
+    // its own separate recap, it's absorbed into the one recap the team
+    // already gets. correctCount/points/elapsedSec sum (a stolen correct
+    // answer is a real correct answer — it counts toward drawTeamRecap's
+    // own correctCount-based winner comparison exactly like any other, not
+    // just toward flavor `points`); bestStreak takes the max of the two
+    // (they're two separate streaks, not one continuous one); passTally and
+    // roundCategories union so a card stolen-and-passed-again still shows
+    // up correctly in this team's own "Came up as Pass a lot" list and
+    // cross-link category weighting. Unioning passTally here is also what
+    // lets an unclaimed hard card chain forward to the NEXT team's own
+    // steal offer (advanceToNextTeam reads this same merged tally) —
+    // capped by MAX_STEAL_CARDS so one bad round can't balloon into a
+    // second team's already-large steal offer.
+    function mergeStealIntoTurn(turnStats, stealStats) {
+      // Seed order matters for stealableCardsFrom's downstream
+      // slice(0, MAX_STEAL_CARDS): seeded with the STEAL round's own
+      // passes FIRST so an already-chained-forward card keeps insertion
+      // priority over this team's own brand-new passes (Map.set() on an
+      // EXISTING key updates its value without moving its position, so
+      // this only affects which NEW ids land at the back). Without this
+      // order, a team that both accepts-and-re-passes a stolen card AND
+      // separately racks up >= MAX_STEAL_CARDS new passes of their own
+      // during their OWN turn could see the chained card silently evicted
+      // by the cap in favor of their own newer ones — a real bug an
+      // adversarial review pass caught before this shipped (see
+      // test-rapid-fire-steal-round.mjs's own dedicated chain-priority
+      // coverage, which fails against the old (turnStats-first) order).
+      const passTally = new Map(stealStats.passTally);
+      turnStats.passTally.forEach((n, id) => passTally.set(id, (passTally.get(id) || 0) + n));
+      const roundCategories = new Set(turnStats.roundCategories);
+      stealStats.roundCategories.forEach((c) => roundCategories.add(c));
+      return {
+        correctCount: turnStats.correctCount + stealStats.correctCount,
+        bestStreak: Math.max(turnStats.bestStreak, stealStats.bestStreak),
+        points: turnStats.points + stealStats.points,
+        elapsedSec: turnStats.elapsedSec + stealStats.elapsedSec,
+        passTally, roundCategories,
+        pool: turnStats.pool,
+        players: turnStats.players,
+        stealBonus: { correctCount: stealStats.correctCount, points: stealStats.points },
+      };
+    }
+
     function beginTeamMode(pool) {
       const teamNames = cfg.teams.map((t) => t.trim()).filter(Boolean);
       const teamResults = [];
-      function runTeam(i) {
-        if (i >= teamNames.length) { drawTeamRecap(teamResults); return; }
+
+      // stealStats, when non-null, is a completed steal round this team
+      // just played (over the PREVIOUS team's passed cards) — folded into
+      // this team's own turn stats once it finishes, via
+      // mergeStealIntoTurn(). null for the first team (nobody played
+      // before them) and for any team that skipped/had nothing to steal.
+      //
+      // deviceAlreadyHere: true only when this call follows a
+      // drawStealOffer the SAME team just resolved (Steal or Skip) — that
+      // screen already told them "pass the device to you," so
+      // drawTeamHandoff's own copy shouldn't say it a second time to a
+      // team that's already holding it (an adversarial review pass caught
+      // this exact redundancy before shipping).
+      function startTeamTurn(i, stealStats, deviceAlreadyHere) {
         drawTeamHandoff(teamNames[i], i, teamNames.length, () => {
           beginRound(pool, "party", {
             onFinish: (stats) => {
-              teamResults.push({ name: teamNames[i], stats });
-              runTeam(i + 1);
+              const finalStats = stealStats ? mergeStealIntoTurn(stats, stealStats) : stats;
+              teamResults.push({ name: teamNames[i], stats: finalStats });
+              advanceToNextTeam(i);
             },
           });
+        }, deviceAlreadyHere);
+      }
+
+      // Called once team i's own turn (and any steal round folded into it)
+      // has fully finished and landed in teamResults[i]. Decides whether
+      // the game is over, or whether the NEXT team gets a steal offer
+      // before their own turn.
+      function advanceToNextTeam(i) {
+        const next = i + 1;
+        if (next >= teamNames.length) { drawTeamRecap(teamResults); return; }
+        const stolenCards = stealableCardsFrom(teamResults[i].stats.passTally);
+        // No offer -> device genuinely hasn't moved yet, this IS the first
+        // "pass the device" message the next team sees.
+        if (!stolenCards.length) { startTeamTurn(next, null); return; }
+        drawStealOffer(teamResults[i].name, teamNames[next], next, teamNames.length, stolenCards, {
+          onSteal: () => {
+            beginRound(stolenCards, "party", {
+              onFinish: (stealStats) => startTeamTurn(next, stealStats, true),
+            });
+          },
+          onSkip: () => startTeamTurn(next, null, true),
         });
       }
-      runTeam(0);
+
+      startTeamTurn(0, null);
     }
 
     // Handoff between turns (and before the very first one) — nothing in
@@ -14277,15 +14402,46 @@ window.G = window.G || {};
     // the instant Team 1's ends would blindside whoever's holding it.
     // Reuses the same .panel/.eyebrow/.btn.primary shapes drawExplainer()
     // and drawRecap() already use, not a new screen pattern.
-    function drawTeamHandoff(teamName, index, total, onGo) {
+    //
+    // deviceAlreadyHere (steal mechanic only — see startTeamTurn's own
+    // comment): the team was already told "pass the device to you" by a
+    // drawStealOffer screen they just resolved, so this instance skips the
+    // "Pass the device" sentence rather than repeating it to a team that
+    // never gave the device up.
+    function drawTeamHandoff(teamName, index, total, onGo, deviceAlreadyHere) {
       util.clear(root);
       const panel = el("div.panel.rf-team-handoff");
       panel.appendChild(el("div.eyebrow", { text: "Team " + (index + 1) + " of " + total }));
       panel.appendChild(el("div.section-title", {}, [el("h3", { text: teamName + "’s turn" })]));
-      panel.appendChild(el("p.hint", { text: "Pass the device to " + teamName + ". Same as Party mode: everyone else gives clues out loud, and the holder judges Correct or Pass." }));
+      panel.appendChild(el("p.hint", { text: (deviceAlreadyHere ? "Ready when you are, " + teamName + ". " : "Pass the device to " + teamName + ". ") +
+        "Same as Party mode: everyone else gives clues out loud, and the holder judges Correct or Pass." }));
       const go = el("button.btn.primary", { type: "button", text: "Start " + teamName + "’s turn" });
       go.addEventListener("click", onGo);
       panel.appendChild(go);
+      root.appendChild(panel);
+    }
+
+    // The steal offer — shown INSTEAD of a plain drawTeamHandoff whenever
+    // the previous team left stealable cards behind (see advanceToNextTeam
+    // above). Same physical moment as an ordinary handoff (the device is
+    // already changing hands to <toName>), same .panel/.eyebrow/.btn
+    // shapes as drawTeamHandoff, just offering a choice instead of a
+    // single "Start" button.
+    function drawStealOffer(fromName, toName, index, total, stolenCards, opts) {
+      util.clear(root);
+      const panel = el("div.panel.rf-team-handoff");
+      panel.appendChild(el("div.eyebrow", { text: "Team " + (index + 1) + " of " + total }));
+      panel.appendChild(el("div.section-title", {}, [el("h3", { text: "Steal chance!" })]));
+      const n = stolenCards.length;
+      panel.appendChild(el("p.hint", { text: "Pass the device to " + toName + ". " + fromName + " passed on " + n +
+        (n === 1 ? " card" : " cards") + " — steal them for bonus points before your turn, or skip straight to your turn." }));
+      const btnRow = el("div.btn-row");
+      const stealBtn = el("button.btn.primary", { type: "button", text: "Steal! (" + n + (n === 1 ? " card" : " cards") + ")" });
+      const skipBtn = el("button.btn.ghost", { type: "button", text: "Skip to your turn" });
+      stealBtn.addEventListener("click", opts.onSteal);
+      skipBtn.addEventListener("click", opts.onSkip);
+      btnRow.appendChild(stealBtn); btnRow.appendChild(skipBtn);
+      panel.appendChild(btnRow);
       root.appendChild(panel);
     }
 

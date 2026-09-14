@@ -127,6 +127,57 @@ and `prt.acft` schema/build work can proceed in the same pass.
 
 ---
 
+## 3c. SHIPPED (2026-09-14): Rapid Fire's Team "steal" mechanic
+
+Started at the user's explicit request to raise the Team "steal" mechanic
+design next — the last remaining item from the Rapid Fire v2 quick-wins
+brainstorm, previously deprioritized as "the most complex/ambiguous
+remaining item... no concrete design decided yet given the sequential/
+pass-the-device architecture doesn't support real-time buzz-in."
+
+**Design, not just implementation, was genuinely undecided** — the
+original spec's own one-liner ("if Team A passes, Team B gets a shot at
+the same card before moving on") doesn't fit the real architecture
+(each team gets exactly one uninterrupted turn; there's no live buzzer,
+no second device). Four real design candidates were generated and
+adversarially judged before writing any code: a real-time mid-turn freeze
+(most literal to the spec, but reaches into the shared round engine and
+self-admitted an unguarded Escape-key gap), a pooled end-of-game
+shout-it-out finale (fun, but honestly a different mechanic requiring a
+second mini-engine built from scratch), a scoreless read-only digest
+(safest, but by its own honest assessment barely qualifies as a steal
+mechanic), and the chosen **"Handoff Steal Round"** — deferred to the
+existing handoff moment rather than the literal "before moving on,"
+needing zero changes inside `beginRound`/`judge`/`advance`/`finishRound`
+by reusing the exact `onFinish` seam Team mode already chains its own
+turns through.
+
+**A second adversarial pass, this time over the actual diff before
+shipping, caught two real bugs no amount of manual review or the
+24-assertion E2E suite alone had surfaced**: (1) a genuine correctness
+gap where `MAX_STEAL_CARDS`'s cap could silently evict an already-
+chained-forward card in favor of the receiving team's own newer passes
+— found, fixed (a merge-order priority fix), and proven with a dedicated
+regression test that was itself verified to actually fail against the
+reverted bug before being trusted (it didn't, the first time — a
+coincidental card-identity overlap in the test's own random shuffle was
+masking the bug about half the time, fixed by excluding that specific
+card from the test's own generated passes); (2) a low-severity but real
+UX inconsistency where the screen right after resolving a steal offer
+re-instructed the same team to "pass the device" to themselves, fixed
+with a small "device already here" flag threaded through the existing
+handoff screen.
+
+Verified: `lint:patterns`, full local suite, and 30 real E2E assertions
+in `tools/test-rapid-fire-steal-round.mjs` covering the offer/accept/
+skip/zero-pass/first-team/last-team/cap/chain/priority-fix/copy-fix
+behaviors — including a real 3-team chain proof (a card accepted-and-
+re-passed during one team's own steal round correctly flows forward into
+the next team's own offer) and the regression test's own before/after
+verification against the fix it exists to guard.
+
+---
+
 ## 4. Deliberately not built — and why
 
 Not gaps. Each of these was scoped, considered, and declined on its own merits. Revisit only if the stated condition changes.
