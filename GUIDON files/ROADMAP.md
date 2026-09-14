@@ -120,10 +120,28 @@ than filling it in from training-data memory or an unofficial mirror.
 **User's call (2026-09-13): retry the official army.mil/aft fetch in a
 future session** once the rate limit has genuinely cleared, rather than
 hammering it now or descoping. No work lost either way — PR #151 (ATP
-7-22.01 acquisition) ships regardless. **Next session picking this back
-up: start here** — try `https://www.army.mil/aft` again before doing
-anything else on this module; if it resolves, the actual table-sourcing
-and `prt.acft` schema/build work can proceed in the same pass.
+7-22.01 acquisition) ships regardless.
+
+**Retried (2026-09-14), and this is now genuinely deferred, not just
+paused.** The retry didn't just hit the same per-request 429 again — it
+confirmed something stronger: `army.mil` itself (not just the `/aft`
+path) returns a site-wide 429 from this environment's network, via BOTH
+the fetch tool and a real browser session, having now persisted across
+many hours. That's the signature of an infrastructure-level block on this
+environment's own outbound path to army.mil, not a transient per-request
+throttle that more waiting or a different tool will clear. One genuinely
+useful thing was confirmed along the way: Army Directive 2025-06 (the
+policy that established the AFT, fetched cleanly from armypubs.army.mil)
+states outright in para 6.b that TRADOC/G-3/5/7 "will publish a new
+scorecard and accompanying score standards" as a *separate* artifact —
+consistent with ATP 7-22.01's own pointer, and ruling out any chance the
+numbers are embedded in the directive itself. **User's call: leave it
+deferred, no rush** — `#/prt`/AFT reference content ships fine without
+the numeric tables (same honest "reference pending" pattern used
+elsewhere), and the recommended real unblock is the user visiting
+army.mil/aft from their own network (likely unaffected by whatever is
+blocking this environment) and sharing the content directly, whenever
+they're ready — not another autonomous retry.
 
 ---
 
