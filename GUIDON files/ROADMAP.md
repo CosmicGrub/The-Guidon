@@ -196,6 +196,58 @@ verification against the fix it exists to guard.
 
 ---
 
+## 3d. SHIPPED (2026-09-14): doctrine confidence-field backfill
+
+Started at the user's explicit request to raise the doctrine confidence-
+field backfill next — the remaining backlog item explicitly flagged as
+"requires real per-entry content judgment, not mechanical." 32 of 355
+`doctrine.entries` records shipped with no `confidence` field at all
+(`"verified"` / `"in_transition"` / `"community"`, per the seed's own
+header note). Not just an accuracy gap: `#/doctrine`'s own base-list filter
+reads that field to drive the real "Show 'in transition' doctrine" /
+"Show community / supplementary content" Settings toggles — an entry with
+no field at all is neither value, so it always showed regardless of toggle
+state, a real (if minor) filter-correctness bug for any of those 32 that
+should have been hideable.
+
+**Methodology**: 8 parallel research batches (4 entries each), every batch
+independently web-verifying current doctrine status rather than defaulting
+every untagged entry to "verified," followed by a dedicated adversarial
+consistency-review pass that re-searched every one of the 32 proposals
+from scratch (not just re-reading the first pass's sources) before any
+were accepted. Final distribution: 340 verified / 8 in_transition / 7
+community (out of 355 total).
+
+**Three real content bugs were found and fixed along the way** (the same
+"fix confirmed errors when found" discipline as prior rounds, without
+expanding into a full citation-currency refresh of the other, merely-
+stale-but-still-accurate "verified" entries — a separate, larger project
+out of scope here):
+- `ncopds-ladder`: the course-to-rank ladder was off by a full rank
+  (BLC/ALC/SLC actually gate SGT/SSG/SFC, not SSG/SFC/MSG; MLC is
+  *becoming* the MSG gate as the ongoing NCO PME redesign fields it).
+- `doc-tccc`: cited TC 4-02.1, superseded in March 2026 by ATP 4-02.11
+  (Casualty Response, Tactical Combat Casualty Care, and First Aid); the
+  entry's other citation, ATP 4-02.84, turned out to be an unrelated
+  multiservice biological-casualty TTP, dropped rather than kept.
+- `doc-eo`: a secondary citation, "AR 27-26" (Legal Services: Rules of
+  Professional Conduct for Lawyers), was unrelated to Equal Opportunity
+  and not referenced anywhere in the entry's own body — dropped.
+
+**New permanent lint gate**: `tools/lint-doctrine-confidence.mjs` (wired
+into `lint:patterns`) fails CI if any future `doctrine.entries` record
+ships without a valid `confidence` value, the same mechanical backstop
+`lint-prt-sources.mjs` already provides for `PrtExercise` records.
+
+Verified: `lint:patterns`, full local suite, and a new
+`tools/test-doctrine-confidence-filters.mjs` proving the toggle behavior
+end-to-end against real seed content — a genuine in_transition entry and a
+genuine community entry (picked live from the seed, not hardcoded) each
+hide when their matching toggle is off and reappear when it's back on,
+while a verified control entry stays visible throughout.
+
+---
+
 ## 4. Deliberately not built — and why
 
 Not gaps. Each of these was scoped, considered, and declined on its own merits. Revisit only if the stated condition changes.
