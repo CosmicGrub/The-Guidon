@@ -122,6 +122,24 @@ const milFb = await page.locator(".feedback").first().textContent();
   ? ok(`Mils mode: correct answer (${expectedMil}) for azimuth ${azMil} mils is graded "Correct." and cites the 3,200-mil rule: "${milFb}"`)
   : bad(`Mils mode correct-answer feedback: "${milFb}" (azimuth=${azMil}, expected=${expectedMil})`);
 
+// "Add persistence to the memory-less drills" pass: scoreRow()'s new
+// lifetime hint (src/index.html) - unlike the session tally just above
+// (reset to 0/0 by the deg<->mils unit switch), this accumulates across
+// BOTH unit formats since they're the same underlying skill. By this
+// point the deg phase went 1 right / 2 attempts and the mils phase just
+// went 1 right / 1 attempt - 2/3 lifetime, 67%.
+const azLifeHint = await page.locator(".panel p.hint").filter({ hasText: /Lifetime:/ }).first().textContent();
+azLifeHint === "Lifetime: 67% (2/3)"
+  ? ok('Back azimuth: lifetime hint accumulates across the deg/mils unit switch ("Lifetime: 67% (2/3)")')
+  : bad("Back azimuth lifetime hint: " + JSON.stringify(azLifeHint));
+const azLifePersisted = await page.evaluate(async () => {
+  const r = await window.G.db.get("kv", "guidon:drills:v1");
+  return r && r.v && r.v.landnav ? r.v.landnav.azimuth : null;
+});
+azLifePersisted && azLifePersisted.attempts === 3 && azLifePersisted.right === 2
+  ? ok('Back azimuth lifetime score persists to kv "guidon:drills:v1" (landnav.azimuth: {attempts:3, right:2})')
+  : bad("Back azimuth persisted lifetime score: " + JSON.stringify(azLifePersisted));
+
 // ==================== (b) Pace count word problem ====================
 await page.locator(".segmented button", { hasText: "Pace count" }).click();
 await page.waitForTimeout(200);
@@ -154,6 +172,18 @@ paceFb = await page.locator(".feedback").first().textContent();
   : bad(`Pace count wrong-answer feedback: "${paceFb}"`);
 const paceScore = await page.locator(".stat .v").first().textContent();
 paceScore === "1 / 2" ? ok("Pace count: score tally reads 1 / 2 after a right then a wrong answer") : bad("Pace count score: " + JSON.stringify(paceScore));
+
+const paceLifeHint = await page.locator(".panel p.hint").filter({ hasText: /Lifetime:/ }).first().textContent();
+paceLifeHint === "Lifetime: 50% (1/2)"
+  ? ok('Pace count: lifetime hint reads "Lifetime: 50% (1/2)" (its own bucket, unaffected by azimuth mode above)')
+  : bad("Pace count lifetime hint: " + JSON.stringify(paceLifeHint));
+const paceLifePersisted = await page.evaluate(async () => {
+  const r = await window.G.db.get("kv", "guidon:drills:v1");
+  return r && r.v && r.v.landnav ? r.v.landnav.pace : null;
+});
+paceLifePersisted && paceLifePersisted.attempts === 2 && paceLifePersisted.right === 1
+  ? ok('Pace count lifetime score persists to kv "guidon:drills:v1" (landnav.pace: {attempts:2, right:1}), separate from landnav.azimuth')
+  : bad("Pace count persisted lifetime score: " + JSON.stringify(paceLifePersisted));
 
 let sawNewPaceProblem = false;
 for (let i = 0; i < 6; i++) {
@@ -205,6 +235,18 @@ gridFb = await page.locator(".feedback").first().textContent();
 const gridScore2 = await page.locator(".stat .v").first().textContent();
 gridScore2 === "1 / 2" ? ok("Grid coordinate: score tally reads 1 / 2 after the wrong-easting submission") : bad("Grid coordinate score after wrong: " + JSON.stringify(gridScore2));
 
+const gridLifeHint = await page.locator(".panel p.hint").filter({ hasText: /Lifetime:/ }).first().textContent();
+gridLifeHint === "Lifetime: 50% (1/2)"
+  ? ok('Grid coordinate: lifetime hint reads "Lifetime: 50% (1/2)" (its own bucket)')
+  : bad("Grid coordinate lifetime hint: " + JSON.stringify(gridLifeHint));
+const gridLifePersisted = await page.evaluate(async () => {
+  const r = await window.G.db.get("kv", "guidon:drills:v1");
+  return r && r.v && r.v.landnav ? r.v.landnav.grid : null;
+});
+gridLifePersisted && gridLifePersisted.attempts === 2 && gridLifePersisted.right === 1
+  ? ok('Grid coordinate lifetime score persists to kv "guidon:drills:v1" (landnav.grid: {attempts:2, right:1})')
+  : bad("Grid coordinate persisted lifetime score: " + JSON.stringify(gridLifePersisted));
+
 let sawNewGrid = false;
 for (let i = 0; i < 6; i++) {
   await page.locator("button", { hasText: "New coordinate →" }).click();
@@ -217,6 +259,34 @@ sawNewGrid
   : bad("Grid coordinate: combined string never changed across 6 clicks of 'New coordinate →'");
 const clearedSq = await sqIn.inputValue();
 clearedSq === "" ? ok("Grid coordinate: the square-identifier field is empty on a fresh problem") : bad("Grid coordinate square field after New coordinate: " + JSON.stringify(clearedSq));
+
+// All three lifetime scores must survive a REAL reload (a fresh page
+// load, not just an in-app re-render) - the same bar test-baseline-
+// coverage.mjs already holds citDrill()/briefDrill()'s own persistence to.
+await page.reload({ waitUntil: "load" });
+await page.waitForTimeout(500);
+await dismissOnboarding(page);
+await page.waitForTimeout(300);
+await openLandNavDrill();
+const azLifeAfterReload = await page.locator(".panel p.hint").filter({ hasText: /Lifetime:/ }).first().textContent();
+azLifeAfterReload === "Lifetime: 67% (2/3)"
+  ? ok("Back azimuth lifetime score survives a real page reload (67% (2/3))")
+  : bad("Back azimuth lifetime hint after reload: " + JSON.stringify(azLifeAfterReload));
+await page.locator(".segmented button", { hasText: "Pace count" }).click();
+await page.waitForTimeout(200);
+const paceLifeAfterReload = await page.locator(".panel p.hint").filter({ hasText: /Lifetime:/ }).first().textContent();
+paceLifeAfterReload === "Lifetime: 50% (1/2)"
+  ? ok("Pace count lifetime score survives a real page reload (50% (1/2))")
+  : bad("Pace count lifetime hint after reload: " + JSON.stringify(paceLifeAfterReload));
+await page.locator(".segmented button", { hasText: "Grid coordinate" }).click();
+await page.waitForTimeout(200);
+const gridLifeAfterReload = await page.locator(".panel p.hint").filter({ hasText: /Lifetime:/ }).first().textContent();
+gridLifeAfterReload === "Lifetime: 50% (1/2)"
+  ? ok("Grid coordinate lifetime score survives a real page reload (50% (1/2))")
+  : bad("Grid coordinate lifetime hint after reload: " + JSON.stringify(gridLifeAfterReload));
+
+// cleanup so this drill's saved lifetime scores don't bleed into another suite
+await page.evaluate(() => window.G.db.put("kv", { k: "guidon:drills:v1", v: {} }));
 
 const relevantNoise = noise.filter((n) => !/favicon/.test(n));
 relevantNoise.length === 0 ? ok("no console errors") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));
