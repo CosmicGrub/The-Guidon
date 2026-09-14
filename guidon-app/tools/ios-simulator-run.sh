@@ -23,7 +23,7 @@
 #   APP_PATH  absolute path to the built App.app            (required)
 #   DEVICES   comma-separated Simulator device names        (required)
 #   BUNDLE_ID app bundle identifier                         (default app.guidon.trainer)
-#   SETTLE    seconds to wait for the corpus to parse+paint (default 30)
+#   SETTLE    seconds to wait for the corpus to parse+paint (default 45)
 #
 # Output: artifacts/ios/<device>/ screenshots + logs, and artifacts/ios/summary.md
 # Exit:   0 every device rendered · 1 any device failed
@@ -39,7 +39,7 @@ if [ -z "$BUNDLE_ID" ] && [ -f "$APP_PATH/Info.plist" ]; then
   BUNDLE_ID="$(plutil -extract CFBundleIdentifier raw "$APP_PATH/Info.plist" 2>/dev/null || true)"
 fi
 BUNDLE_ID="${BUNDLE_ID:-app.guidon.trainer}"
-SETTLE="${SETTLE:-30}"
+SETTLE="${SETTLE:-45}"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT="$(cd "$HERE/.." && pwd)/artifacts/ios"
@@ -240,7 +240,22 @@ for raw in "${DEVICE_LIST[@]}"; do
   # difference (Simulators do not throttle CPU by device model). Not fully
   # confirmed without an interactive WebKit inspector on the runner itself,
   # so this is the best-supported fix from the evidence available - watch
-  # the next real run.
+  # the next real run. (That fix was SETTLE=30, the value this comment sat
+  # next to until the update below.)
+  #
+  # UPDATE (2026-09-13, web/index.html ~13.73 MB): SETTLE=30 held clean
+  # through many rounds of growth after the incident above, but two
+  # consecutive CI runs on the same PR each failed differently - first only
+  # iPad (10th gen) ("process died after launch", a SIGTERM mid-launch),
+  # then iPhone SE (3rd gen) rendered blank (0.00% change, the exact
+  # stuck-on-launch-screen signature from 2026-09-06) while a DIFFERENT
+  # device (iPad again) also failed with the process-death signature -
+  # non-deterministic which device fails, the same signature this comment
+  # already diagnoses as a shared-runner timing budget, not a per-device or
+  # code defect. Raised to SETTLE=45 rather than re-running a third time
+  # blind - this repo's own standing practice for a recurring CI signature
+  # is to root-cause it, and the log evidence here matches an already-
+  # diagnosed mechanism exactly. Watch the next few real runs.
   sleep "$SETTLE"
 
   # Is the process still alive? launchctl must run INSIDE the simulator via
