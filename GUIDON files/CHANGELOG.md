@@ -2,6 +2,18 @@
 
 All notable changes to GUIDON will be documented in this file. Format loosely follows [Keep a Changelog](http://keepachangelog.com/). This is the technical record for developers - the app itself shows a short, plain-language summary of each release to Soldiers directly (G.whatsNew, src/index.html), not this file.
 
+## 2026-09-13 - ACFT/AFT module scoping: ATP 7-22.01 acquired, a second sourcing question raised
+
+**Started at the user's request to scope the ACFT/AFT module next.** Two decisions, two different outcomes.
+
+**Module scope decided**: a standards reference/lookup — browse the AFT's 5 events and their real age/gender scoring tables, read-only. A score calculator and a full tracked-history module (reusing Progress's existing chart infrastructure) were both considered and deliberately deferred until this narrower scope ships first.
+
+**First source acquired cleanly.** `docs/design/content-education-roadmap.md` §3.1 §7 had flagged, unverified, whether FM 7-22 already carries AFT scoring content. Confirmed this session it does not (zero hits, direct text search). GUIDON's own pre-existing board questions (`acft-10`, `acft-11`) already cited **ATP 7-22.01, Holistic Health and Fitness Testing (12 March 2026)** — verified those citations verbatim against the real document after acquiring it, no corrections needed, a good sign for this project's existing content-accuracy discipline. Same user-authorized-web-search-then-confirm-before-download path as ATP 7-22.02: sourced from armypubs.army.mil (ARN46104-ATP_7-22.01-000-WEB-1.pdf, ~9.5 MB), added to `docs-source/` (Reference Library now 17 core publications), `tools/build-library-data.mjs` re-run.
+
+**A second, genuinely new sourcing question raised rather than guessed at.** ATP 7-22.01 does not actually carry the AFT's raw-score-to-points conversion tables — para 2-30 explicitly defers those to a separately-maintained page at `https://www.army.mil/aft`, not a numbered Army publication. A direct fetch hit an HTTP 429 rate limit. Several third-party fitness-calculator sites republish AFT score charts, but none are an official DoD source — ruled out the same as any other unverifiable secondary source would be, rather than filling the gap in from memory or an unofficial mirror. This is exactly the data the approved module scope needs, so it's real, not a formality. See ROADMAP.md §3b for the full detail and options put to the user.
+
+Verified: `lint:patterns`, `test-library.mjs`, `test-consistency.mjs` all green for the ATP 7-22.01 library addition.
+
 ## 2026-09-13 - ATP 7-22.02 acquired: the Content expansion's one deferred piece now has real per-exercise text
 
 **The one item Milestones 1–3 of the Content & Educational Materials expansion explicitly deferred (ROADMAP.md §3), now closed.** `#/prt`'s 10 Preparation Drill exercises shipped with real FM-7-22-sourced cadence/rep-rule/order but an honest "reference pending" state instead of per-exercise starting-position/movement detail, because ATP 7-22.02 — the manual FM 7-22 itself explicitly defers to for that detail — was confirmed absent from `docs-source/`. Per this project's own standing rule (adding an external document to the repo needs the user's call, not an autonomous fetch), the user was offered supply-the-PDF / authorize-a-web-search / leave-as-is, and chose the web search. The exact source, title, status, and file size (~15.5 MB) were confirmed back to the user before anything was downloaded.

@@ -7,7 +7,7 @@ listing was briefly unavailable) — never reconstructed from memory. This is
 regulation text a Soldier may rely on for an actual promotion board; the
 whole point of this feature is that it's the real thing.
 
-## The 16 core publications
+## The 17 core publications
 
 | Citation | Title | Source |
 |---|---|---|
@@ -25,6 +25,7 @@ whole point of this feature is that it's the real thing.
 | DA PAM 600-25 | NCO Professional Development Guide | armypubs.army.mil (ARN38811) |
 | FM 7-22 | Holistic Health and Fitness | armypubs.army.mil (ARN44522) |
 | ATP 7-22.02 | Holistic Health and Fitness Drills and Exercises | armypubs.army.mil (ARN45013, published w/ Basic incl C1) |
+| ATP 7-22.01 | Holistic Health and Fitness Testing | armypubs.army.mil (ARN46104, 12 March 2026 edition) |
 | TC 3-21.5 | Drill and Ceremonies | armypubs.army.mil (ARN32297) |
 | TC 3-22.9 | Rifle and Carbine | armypubs.army.mil (ARN19927, C3) |
 
@@ -36,11 +37,16 @@ mission (promotion-board prep, NCO development) over raw count alone. TC
 list but its current edition is CAC-gated on armypubs.army.mil — not
 publicly redistributable — so ADP 7-0 (Training) was substituted.
 
-ATP 7-22.02 was added later, outside that citation-frequency selection: it
-is FM 7-22's own companion publication and the one real source for
-`#/prt`'s Preparation Drill exercises' starting-position and movement-
-description text (ROADMAP.md §3) — added specifically to close that gap,
-not because of citation frequency.
+ATP 7-22.02 and ATP 7-22.01 were both added later, outside that citation-
+frequency selection: ATP 7-22.02 is FM 7-22's own companion publication
+and the one real source for `#/prt`'s Preparation Drill exercises'
+starting-position and movement-description text (ROADMAP.md §3). ATP
+7-22.01 was acquired for the same reason during ACFT/AFT module scoping —
+it's GUIDON's own already-cited source (board questions acft-10/acft-11)
+for AFT administration/grading procedures, though **it does not carry the
+AFT's numeric scoring-standards tables**: para 2-30 explicitly defers
+those to the separately-maintained AFT website (army.mil/aft), a distinct,
+still-open sourcing question of its own.
 
 ## Regenerating `src/app-modules/library.js`
 
