@@ -116,6 +116,39 @@ const modePressedInitial = await page.evaluate(() => {
 await page.locator("button", { hasText: /^Single form$/ }).click();
 await page.waitForTimeout(300);
 
+// Roadmap §5 (found round 11 fixing the adjacent aria-pressed gap above,
+// deliberately deferred as its own follow-up): the click handler only
+// redraws the wizard/single-form stage - it never used to re-sync the two
+// mode buttons' own classList.active/aria-pressed, so a second or third
+// toggle in the same modal session left the WRONG button still looking
+// (and reporting) active. Check after this FIRST click, then toggle back
+// and forth twice more - a single-toggle check alone wouldn't catch a bug
+// that only shows up on a second switch. Ends back on "Single form" so
+// the rest of this file's own flow (which assumes single-form content is
+// on screen) is unaffected.
+async function modeButtonStates() {
+  return page.evaluate(() => [...document.querySelectorAll(".cpdf-modebtn")].map((b) => ({
+    text: b.textContent, active: b.classList.contains("active"), pressed: b.getAttribute("aria-pressed"),
+  })));
+}
+function checkModeButtons(states, activeLabel, tag) {
+  const wantActive = states.find((b) => b.text === activeLabel);
+  const wantInactive = states.find((b) => b.text !== activeLabel);
+  (wantActive && wantActive.active && wantActive.pressed === "true" &&
+   wantInactive && !wantInactive.active && wantInactive.pressed === "false")
+    ? ok(`mode switch ${tag}: "${activeLabel}" is the only button showing .active + aria-pressed="true"`)
+    : bad(`mode switch ${tag}: expected only "${activeLabel}" active, got ${JSON.stringify(states)}`);
+}
+checkModeButtons(await modeButtonStates(), "Single form", "after 1st toggle (Step-by-step -> Single form)");
+
+await page.locator("button", { hasText: /^Step-by-step$/ }).click();
+await page.waitForTimeout(200);
+checkModeButtons(await modeButtonStates(), "Step-by-step", "after 2nd toggle (Single form -> Step-by-step) - the round 11 regression itself");
+
+await page.locator("button", { hasText: /^Single form$/ }).click();
+await page.waitForTimeout(200);
+checkModeButtons(await modeButtonStates(), "Single form", "after 3rd toggle (Step-by-step -> Single form)");
+
 const modalOpen = await page.evaluate(() => !!document.querySelector(".cpdf-backdrop"));
 modalOpen ? ok("DA 4856 filler modal opened") : bad("modal did not open");
 

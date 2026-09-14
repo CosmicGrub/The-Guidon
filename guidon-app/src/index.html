@@ -19843,7 +19843,24 @@ window.G = window.G || {};
     var modeToggle = el("div.cpdf-modeswitch");
     ["wizard", "single"].forEach(function (m) {
       var b = el("button.cpdf-modebtn" + (mode === m ? ".active" : ""), { type: "button", text: m === "wizard" ? "Step-by-step" : "Single form", "aria-pressed": String(mode === m) });
-      b.addEventListener("click", function () { mode = m; step = 0; try { G.store.setSetting("counselFormMode", m); } catch (e) {} body(); });
+      b.addEventListener("click", function () {
+        mode = m; step = 0;
+        try { G.store.setSetting("counselFormMode", m); } catch (e) {}
+        // Roadmap §5 (found round 11 fixing an adjacent aria-pressed gap):
+        // body() below only redraws `stage` (the wizard/single-form
+        // content), never these two mode buttons themselves - a second or
+        // third toggle in the same modal session left the WRONG button
+        // still showing/reporting active. Resync both buttons' visual and
+        // ARIA state here, same classList.toggle + setAttribute convention
+        // Settings' own segmented "Replica / Replica + PDF hook" control
+        // already uses (see fmSeg above).
+        Array.prototype.forEach.call(modeToggle.querySelectorAll(".cpdf-modebtn"), function (btn) {
+          var on = btn === b;
+          btn.classList.toggle("active", on);
+          btn.setAttribute("aria-pressed", String(on));
+        });
+        body();
+      });
       modeToggle.appendChild(b);
     });
     head.appendChild(modeToggle);
@@ -25325,7 +25342,6 @@ window.G = window.G || {};
 
   function dialog(opts) {
     return new Promise((resolve) => {
-      const prev = document.activeElement;
       const back = el("div.gm-back", { role:"presentation" });
       const box  = el("div.gm-box", { role:"dialog", "aria-modal":"true", "aria-label": opts.title || "Confirm" });
       box.appendChild(el("div.eyebrow", { text: opts.title || "Confirm" }));
@@ -25344,44 +25360,31 @@ window.G = window.G || {};
       box.appendChild(row);
       back.appendChild(box);
 
-      function motionOK() { return !util.prefersReducedMotion(); }
-      function finishClose(val) {
-        back.remove();
-        // _popModalInert BEFORE the focus restore, same reasoning as
-        // util.modalTrap's own finishClose - see that one's comment.
-        util._popModalInert(inertTracked);
-        try { if (prev && prev.focus) prev.focus(); } catch (e) {}
-        resolve(val);
-      }
-      function close(val) {
-        document.removeEventListener("keydown", onKey, true);
-        if (motionOK()) {
-          back.classList.remove("modaltrap-open");
-          let done = false;
-          const finish = () => { if (done) return; done = true; finishClose(val); };
-          back.addEventListener("transitionend", finish, { once: true });
-          setTimeout(finish, 400);
-        } else {
-          finishClose(val);
-        }
-      }
-      function onKey(e) {
-        if (e.key === "Escape") { e.preventDefault(); close(opts.prompt ? null : false); }
-        else if (e.key === "Enter" && (!input || document.activeElement === input)) { e.preventDefault(); accept(); }
-        else if (e.key === "Tab") {
-          const f = box.querySelectorAll("button, input");
-          if (!f.length) return;
-          const first = f[0], last = f[f.length - 1];
-          if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-          else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-        }
-      }
-      function accept() { close(opts.prompt ? (input ? input.value : "") : true); }
-      cancel.addEventListener("click", () => close(opts.prompt ? null : false));
+      // Roadmap §5 ("G.modal's dialog() and WhatsNew.show() hand-roll their
+      // own Escape/Tab focus-trap instead of reusing util.modalTrap"): this
+      // used to carry its own onKey/close/finishClose/inert-tracking, all
+      // duplicating util.modalTrap - including a narrower Tab-selector
+      // ("button, input") than modalTrap's own shared FOCUSABLE constant,
+      // which also matches a[href]/select/textarea/[tabindex]. Harmless
+      // today (this dialog's content is only ever buttons + one text
+      // input), but a real gap the moment either grows. modalTrap's own
+      // close()/onClose take no value, so resolveVal is set just before
+      // asking it to close rather than threaded through as an argument;
+      // Enter-to-accept is dialog-specific (modalTrap only knows Escape/
+      // Tab) and stays as its own slim bubbling listener on `box` - every
+      // real keypress here originates on a descendant of box, so it always
+      // sees it, and it simply ignores the Escape/Tab keys modalTrap's own
+      // capturing document listener already handles.
+      let resolveVal = opts.prompt ? null : false;
+      const trap = util.modalTrap(back, box, () => resolve(resolveVal));
+      function closeWith(val) { resolveVal = val; trap.close(); }
+      function accept() { closeWith(opts.prompt ? (input ? input.value : "") : true); }
+      box.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && (!input || document.activeElement === input)) { e.preventDefault(); accept(); }
+      });
+      cancel.addEventListener("click", () => closeWith(opts.prompt ? null : false));
       ok.addEventListener("click", accept);
-      back.addEventListener("click", (e) => { if (e.target === back) close(opts.prompt ? null : false); });
-      const inertTracked = util._pushModalInert(back);
-      document.addEventListener("keydown", onKey, true);
+      back.addEventListener("click", (e) => { if (e.target === back) closeWith(opts.prompt ? null : false); });
       document.body.appendChild(back);
       requestAnimationFrame(() => requestAnimationFrame(() => back.classList.add("modaltrap-open")));
       setTimeout(() => { (input || ok).focus(); }, 40);
@@ -36225,7 +36228,6 @@ window.G = window.G || {};
       } catch (e) {}
     },
     show(entry) {
-      const prev = document.activeElement;
       const back = el("div.gm-back", { role: "presentation" });
       const box = el("div.gm-box", { role: "dialog", "aria-modal": "true", "aria-label": "What's new" });
       box.appendChild(el("div.eyebrow", { text: "What's new · " + entry.date }));
@@ -36238,35 +36240,16 @@ window.G = window.G || {};
       row.appendChild(closeBtn);
       box.appendChild(row);
       back.appendChild(box);
-      function motionOK() { return !util.prefersReducedMotion(); }
-      function finishClose() {
-        back.remove();
-        util._popModalInert(inertTracked);
-        try { if (prev && prev.focus) prev.focus(); } catch (e) {}
-      }
-      function close() {
-        document.removeEventListener("keydown", onKey, true);
-        if (motionOK()) {
-          back.classList.remove("modaltrap-open");
-          let done = false;
-          const finish = () => { if (done) return; done = true; finishClose(); };
-          back.addEventListener("transitionend", finish, { once: true });
-          setTimeout(finish, 400);
-        } else {
-          finishClose();
-        }
-      }
-      function onKey(e) {
-        if (e.key === "Escape") { e.preventDefault(); close(); }
-        else if (e.key === "Tab") {
-          e.preventDefault();
-          closeBtn.focus(); // exactly one focusable control - Tab always returns to it
-        }
-      }
-      closeBtn.addEventListener("click", close);
-      back.addEventListener("click", (e) => { if (e.target === back) close(); });
-      const inertTracked = util._pushModalInert(back);
-      document.addEventListener("keydown", onKey, true);
+      // Roadmap §5: this used to hand-roll its own Escape/Tab/inert/focus-
+      // restore logic (see modal.js's dialog() - same finding, same fix).
+      // The old onKey's Tab branch always force-focused closeBtn outright;
+      // modalTrap's shared cycle-at-the-edges logic lands on the identical
+      // result here (exactly one real focusable control, so "first" and
+      // "last" are both closeBtn) via the same mechanism every other modal
+      // in the app already uses, instead of a second hand-written copy.
+      const trap = util.modalTrap(back, box);
+      closeBtn.addEventListener("click", () => trap.close());
+      back.addEventListener("click", (e) => { if (e.target === back) trap.close(); });
       document.body.appendChild(back);
       requestAnimationFrame(() => requestAnimationFrame(() => back.classList.add("modaltrap-open")));
       setTimeout(() => closeBtn.focus(), 40);
