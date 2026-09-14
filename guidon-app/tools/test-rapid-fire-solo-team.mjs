@@ -438,6 +438,17 @@ st = await roundState();
   ? ok("ending Alpha's turn advances to a real handoff screen naming Team 2 (Bravo) — genuine turn alternation, not a single shared round")
   : bad("post-Alpha handoff state: " + JSON.stringify(st));
 
+// Alpha's one Pass (above) makes this a real "Steal chance!" offer, not a
+// plain handoff (see tools/test-rapid-fire-steal-round.mjs for dedicated
+// coverage of the steal mechanic itself) — Skip it here so the rest of
+// this file's own assertions exercise the same baseline turn-alternation/
+// recap flow they always have, unaffected by the new feature.
+/Steal chance!/i.test(st.onHandoff || "")
+  ? ok("Alpha's one Pass correctly offers Bravo a steal chance before their own turn")
+  : bad("expected a 'Steal chance!' offer after a turn with a real pass: " + JSON.stringify(st));
+await clickButtonByText("Skip to your turn");
+await page.waitForTimeout(200);
+
 await clickButtonStartingWith("Start Bravo");
 await page.waitForTimeout(200);
 st = await roundState();

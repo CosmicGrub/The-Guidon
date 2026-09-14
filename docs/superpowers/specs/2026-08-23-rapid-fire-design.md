@@ -249,9 +249,15 @@ without a redesign:
 
 - **Literal tilt/motion-sensor input** (Forehead Mode) or the tilt+tap
   hybrid, once the Tap Mode core is proven out.
-- **A "steal" mechanic for Team mode** — if Team A passes, Team B gets a shot
-  at the same card before moving on. Genuinely fun, but real added
-  complexity: tracking cross-team state mid-turn, not a cosmetic add.
+- ~~**A "steal" mechanic for Team mode**~~ — **SHIPPED (2026-09-14)** as
+  "Handoff Steal Round," chosen after an adversarially-judged comparison
+  against 3 alternatives specifically because it needed zero changes to
+  the core round engine: deferred to the existing handoff moment rather
+  than the literal "before moving on" (which would have required pausing
+  the passing team's own turn mid-flight) — see `src/index.html`'s own
+  `beginTeamMode`/`advanceToNextTeam`/`drawStealOffer` header comments for
+  the full design, and `tools/test-rapid-fire-steal-round.mjs` for
+  coverage including a real cross-team chain scenario.
 - **Celebratory flourish/animation** on a high-score round.
 - Custom category weighting, a streak-multiplier scoring twist, saved custom
   decks, per-player avatars/names in Party mode.

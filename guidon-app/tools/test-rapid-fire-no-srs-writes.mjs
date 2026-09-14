@@ -235,6 +235,12 @@ await page.waitForTimeout(200);
 await tapCorrect();
 await tapPass();
 await tapEndRound();
+// Alpha's Pass above makes this a real "Steal chance!" offer for Bravo
+// (see tools/test-rapid-fire-steal-round.mjs for dedicated coverage) -
+// Skip it so this test's own no-writes assertion still sees a clean run
+// through to the Final Recap.
+await clickButtonByText("Skip to your turn");
+await page.waitForTimeout(200);
 await clickButtonStartingWith("Start Bravo");
 await page.waitForTimeout(200);
 await tapCorrect();
