@@ -13323,7 +13323,14 @@ window.G = window.G || {};
       // visit to this tab looks and behaves exactly like before the Stage 2
       // upgrade rather than silently defaulting them into a mode they've
       // never seen.
-      categoryMode: "all",        // "all" | "needsWork" | a real category string
+      categoryMode: "all",        // "all" | "needsWork" | "custom" | a real category string
+      // v2 candidate (design spec's own "Deferred to a later pass" list):
+      // "custom category weighting" / "saved custom decks". The single-
+      // category <select> above already covers "one category at a time";
+      // this is the multi-pick step beyond it - categoryMode:"custom"
+      // means "the pool is whichever categories are checked here",
+      // independent of catSel's own single value.
+      customCategories: [],
       timerSec: 60,                // 30 | 60 | 90 | null (Untimed)
       diffMode: "rank",            // "rank" | "all"
       passedBehavior: "requeue",   // "requeue" | "remove"
@@ -13376,6 +13383,16 @@ window.G = window.G || {};
         // else: no attempt history yet — falls back to the full,
         // unfiltered pool below, matching the Setup note shown for
         // this exact case (see refreshStart()'s fallenBack check).
+      } else if (cfg.categoryMode === "custom") {
+        if (cfg.customCategories.length) {
+          const set = new Set(cfg.customCategories);
+          pool = pool.filter((q) => set.has(q.category));
+        }
+        // else: nothing checked yet - falls through to the full pool,
+        // same "don't silently show zero questions" reasoning as
+        // needsWork's own empty-history fallback just above. refreshStart()
+        // shows an explicit "no categories selected" note for this case
+        // (see below) so it's never mistaken for "All" being intentional.
       } else if (cfg.categoryMode !== "all") {
         pool = pool.filter((q) => q.category === cfg.categoryMode);
       }
@@ -13460,24 +13477,29 @@ window.G = window.G || {};
       const catRow = el("div.rf-setup-row");
       catRow.appendChild(el("label", { text: "Deck / Categories" }));
       const pickRow = el("div", { style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center" });
+      const CUSTOM_SENTINEL = "__rf_custom__";
       const catSel = el("select", { "aria-label": "Filter by category" });
       categories.forEach((c) => catSel.appendChild(el("option", { value: c, text: c })));
-      catSel.value = (cfg.categoryMode !== "all" && cfg.categoryMode !== "needsWork") ? cfg.categoryMode : "All";
+      catSel.appendChild(el("option", { value: CUSTOM_SENTINEL, text: "Custom mix…" }));
+      catSel.value = cfg.categoryMode === "custom" ? CUSTOM_SENTINEL
+        : (cfg.categoryMode !== "all" && cfg.categoryMode !== "needsWork") ? cfg.categoryMode : "All";
       const needsWorkChip = el("button.due-chip", { type: "button", text: "⚙ Needs Work",
         "aria-pressed": String(cfg.categoryMode === "needsWork"),
         title: "Your weakest 3 categories — the same ranking the Readiness tab shows" });
       if (cfg.categoryMode === "needsWork") needsWorkChip.classList.add("active");
       catSel.addEventListener("change", () => {
-        cfg.categoryMode = catSel.value === "All" ? "all" : catSel.value;
+        cfg.categoryMode = catSel.value === "All" ? "all" : catSel.value === CUSTOM_SENTINEL ? "custom" : catSel.value;
         needsWorkChip.classList.remove("active");
         needsWorkChip.setAttribute("aria-pressed", "false");
+        drawCustomPicker();
         refreshStart();
       });
       needsWorkChip.addEventListener("click", () => {
         const activating = !needsWorkChip.classList.contains("active");
         needsWorkChip.classList.toggle("active", activating);
         needsWorkChip.setAttribute("aria-pressed", String(activating));
-        cfg.categoryMode = activating ? "needsWork" : (catSel.value === "All" ? "all" : catSel.value);
+        cfg.categoryMode = activating ? "needsWork" : (catSel.value === "All" ? "all" : catSel.value === CUSTOM_SENTINEL ? "custom" : catSel.value);
+        drawCustomPicker();
         refreshStart();
       });
       pickRow.appendChild(catSel); pickRow.appendChild(needsWorkChip);
@@ -13485,7 +13507,131 @@ window.G = window.G || {};
       const needsWorkNote = el("p.hint.rf-needs-work-note", { style: "display:none",
         text: "No attempt history yet, so there's nothing weak to surface — showing All categories instead." });
       catRow.appendChild(needsWorkNote);
+
+      // ── Custom mix: multi-select checkboxes + save/load named decks ──
+      // v2 candidate: "custom category weighting" / "saved custom decks".
+      // Checkboxes over a native <select multiple> - the latter's touch
+      // multi-select UX (ctrl/cmd-click only, no real mobile affordance)
+      // would be actively worse than this app's existing single-<select>
+      // Deck/Categories row on the exact devices this app is built for.
+      // Saved decks persist across sessions via db.getSetting/setSetting,
+      // the same real kv-backed mechanism Quiz's own per-category best
+      // score (quizBestKey, above) already uses - not a new storage shape.
+      const RF_SAVED_DECKS_KEY = "rapidFire:savedDecks";
+      const customBox = el("div.rf-custom-decks", { style: "display:none;margin-top:8px" });
+      catRow.appendChild(customBox);
       wrap.appendChild(catRow);
+
+      async function loadSavedDecks() {
+        const decks = await db.getSetting(RF_SAVED_DECKS_KEY, []);
+        return Array.isArray(decks) ? decks : [];
+      }
+      async function saveSavedDecks(decks) { await db.setSetting(RF_SAVED_DECKS_KEY, decks); }
+
+      async function drawCustomPicker() {
+        util.clear(customBox);
+        if (cfg.categoryMode !== "custom") { customBox.style.display = "none"; return; }
+        customBox.style.display = "";
+
+        const savedDecks = await loadSavedDecks();
+        if (savedDecks.length) {
+          const savedRow = el("div", { style: "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px" });
+          savedRow.appendChild(el("label", { text: "Saved decks:", style: "font-weight:600" }));
+          savedDecks.forEach((deck, i) => {
+            const chip = el("button.btn.ghost.sm", { type: "button", text: deck.name + " (" + deck.categories.length + ")" });
+            chip.addEventListener("click", () => {
+              cfg.customCategories = deck.categories.slice();
+              drawCustomPicker();
+              refreshStart();
+            });
+            savedRow.appendChild(chip);
+            const delBtn = el("button.btn.ghost.sm", { type: "button", text: "✕", "aria-label": "Delete saved deck " + deck.name, title: "Delete this saved deck" });
+            delBtn.addEventListener("click", async () => {
+              const next = savedDecks.filter((_, j) => j !== i);
+              await saveSavedDecks(next);
+              drawCustomPicker();
+            });
+            savedRow.appendChild(delBtn);
+          });
+          customBox.appendChild(savedRow);
+        }
+
+        const btnRow = el("div.btn-row", { style: "gap:8px;margin-bottom:6px" });
+        const allBtn = el("button.btn.ghost.sm", { type: "button", text: "Select all" });
+        const noneBtn = el("button.btn.ghost.sm", { type: "button", text: "Clear all" });
+        btnRow.appendChild(allBtn); btnRow.appendChild(noneBtn);
+        customBox.appendChild(btnRow);
+
+        const list = el("div.rf-custom-list", { style: "max-height:220px;overflow-y:auto;border:1px solid var(--line);border-radius:var(--radius-sm);padding:8px" });
+        const realCategories = categories.filter((c) => c !== "All");
+        const checkboxes = [];
+        // A single updatable hint, not rebuilt by drawCustomPicker() on
+        // every checkbox toggle - re-running this whole function (78
+        // categories' worth of checkboxes) on every single change would
+        // needlessly rebuild the entire list and could drop keyboard focus
+        // mid-navigation. Only the count text needs to change per toggle.
+        const selectedHint = el("p.hint", { style: "margin-top:4px" });
+        function updateSelectedHint() {
+          selectedHint.textContent = cfg.customCategories.length
+            ? cfg.customCategories.length + " categor" + (cfg.customCategories.length === 1 ? "y" : "ies") + " selected."
+            : "No categories selected yet — pick at least one, or this round uses every category.";
+        }
+        realCategories.forEach((c) => {
+          const row = el("div", { style: "display:flex;gap:6px;align-items:center;margin:2px 0" });
+          const id = "rf-cust-" + realCategories.indexOf(c);
+          const cb = el("input", { type: "checkbox", id, "aria-label": c });
+          cb.checked = cfg.customCategories.includes(c);
+          cb.addEventListener("change", () => {
+            cfg.customCategories = cb.checked
+              ? [...cfg.customCategories, c]
+              : cfg.customCategories.filter((x) => x !== c);
+            updateSelectedHint();
+            refreshStart();
+          });
+          checkboxes.push(cb);
+          row.appendChild(cb);
+          row.appendChild(el("label", { text: c, for: id, style: "margin:0;font-weight:400" }));
+          list.appendChild(row);
+        });
+        customBox.appendChild(list);
+
+        allBtn.addEventListener("click", () => {
+          cfg.customCategories = realCategories.slice();
+          checkboxes.forEach((cb) => { cb.checked = true; });
+          updateSelectedHint();
+          refreshStart();
+        });
+        noneBtn.addEventListener("click", () => {
+          cfg.customCategories = [];
+          checkboxes.forEach((cb) => { cb.checked = false; });
+          updateSelectedHint();
+          refreshStart();
+        });
+
+        const saveRow = el("div", { style: "display:flex;gap:8px;margin-top:8px;flex-wrap:wrap" });
+        const nameInput = el("input", { type: "text", placeholder: "Deck name", "aria-label": "New deck name", style: "max-width:200px" });
+        const saveBtn = el("button.btn.sm", { type: "button", text: "Save this deck" });
+        saveBtn.addEventListener("click", async () => {
+          const name = nameInput.value.trim();
+          if (!name || !cfg.customCategories.length) return;
+          const decks = await loadSavedDecks();
+          const next = decks.filter((d) => d.name !== name); // same name overwrites, doesn't duplicate
+          next.push({ name, categories: cfg.customCategories.slice() });
+          await saveSavedDecks(next);
+          nameInput.value = "";
+          drawCustomPicker();
+        });
+        saveRow.appendChild(nameInput); saveRow.appendChild(saveBtn);
+        customBox.appendChild(saveRow);
+        updateSelectedHint();
+        customBox.appendChild(selectedHint);
+      }
+      // buildSetup() itself is synchronous (its return value is appended
+      // to the DOM immediately by its own callers) - drawCustomPicker is
+      // async only because it reads saved decks from db.getSetting, same
+      // "fire without awaiting into an already-appended container" shape
+      // wireCrossLink() uses in this same file's Recap screen, below.
+      drawCustomPicker();
 
       function segRow(labelText, options, key) {
         const row = el("div.rf-setup-row");
