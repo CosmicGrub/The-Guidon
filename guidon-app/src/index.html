@@ -24196,11 +24196,34 @@ window.G = window.G || {};
       p.appendChild(el("div.eyebrow", { text:"Squad Drill \u2014 20 graded steps (TC 3-21.5)" }));
       const prog = el("p.hint"); const grp = el("h3"); const stepBox = el("div.card", { style:"margin:8px 0" });
       const row = el("div.btn-row", { style:"gap:8px;flex-wrap:wrap" });
-      p.appendChild(prog); p.appendChild(grp); p.appendChild(stepBox); p.appendChild(row);
+      // "Add persistence to the memory-less drills" pass: this stepper has
+      // no grading (it's reveal-and-read, not predict-then-check like Land
+      // Nav), so there's no score to persist - but a full pass through all
+      // 20 steps is still a real, honest completion event worth counting,
+      // the same way Quiz shows "you've done this before." Reuses the
+      // shared saved/KEY kv row.
+      const passHint = el("p.hint", { style:"margin-top:2px" });
+      p.appendChild(prog); p.appendChild(grp); p.appendChild(stepBox); p.appendChild(row); p.appendChild(passHint);
       const showBtn = el("button.btn.sm", { type:"button", text:"Reveal step" });
       const nextBtn = el("button.btn.sm", { type:"button", text:"Next \u2192" });
       const resetBtn= el("button.btn.sm.ghost", { type:"button", text:"\u21ba Restart" });
       row.appendChild(showBtn); row.appendChild(nextBtn); row.appendChild(resetBtn);
+      function drawPassHint() {
+        const n = saved.squadPasses || 0;
+        passHint.textContent = n
+          ? "Completed " + n + " full pass" + (n === 1 ? "" : "es") + (saved.squadLastDate ? " \u00b7 last " + saved.squadLastDate : "")
+          : "";
+      }
+      async function recordPass() {
+        saved.squadPasses = (saved.squadPasses || 0) + 1;
+        saved.squadLastDate = new Date().toISOString().slice(0, 10);
+        drawPassHint();
+        try { await G.db.put("kv", { k: KEY, v: saved }); }
+        catch (e) {
+          util.toast("Couldn't save that.");
+          if (G.selfheal) G.selfheal.log("drills-write-fail", "squad-pass", "squadDrill() pass-count save failed: " + (e && e.message ? e.message : String(e)));
+        }
+      }
       function draw() {
         const d = SQUAD_DRILL[i];
         prog.textContent = "Step " + (i+1) + " of " + SQUAD_DRILL.length + "  \u00b7  \u22125 points if missed";
@@ -24211,8 +24234,13 @@ window.G = window.G || {};
         showBtn.textContent = revealed ? "Hide" : "Reveal step";
       }
       showBtn.addEventListener("click", () => { revealed = !revealed; draw(); });
-      nextBtn.addEventListener("click", () => { i = (i+1) % SQUAD_DRILL.length; revealed = false; draw(); });
+      nextBtn.addEventListener("click", () => {
+        const wrapping = i === SQUAD_DRILL.length - 1;
+        i = (i+1) % SQUAD_DRILL.length; revealed = false; draw();
+        if (wrapping) recordPass();
+      });
       resetBtn.addEventListener("click", () => { i = 0; revealed = false; draw(); });
+      drawPassHint();
       draw(); stage.appendChild(p);
       const full = el("div.panel", { style:"margin-top:10px" });
       full.appendChild(el("div.eyebrow", { text:"Full sequence" }));
@@ -24302,12 +24330,32 @@ window.G = window.G || {};
       rub.appendChild(el("div.eyebrow", { text:"Score yourself \u2014 the real 1009S rubric (100 points, 70 to pass)" }));
       let total = BRIEF_RUBRIC.reduce((sum, [, pts], n) => sum + (saved["brf" + n] ? pts : 0), 0);
       const tally = el("div.stat", {}, [ el("span.k", { text:"Self-score" }), el("span.v", { text: total + " / 100" }) ]);
+      // "Add persistence to the memory-less drills" pass: the checkboxes
+      // below already persisted (saved["brf"+n]) - what was missing is any
+      // notion of an ATTEMPT: the live checklist just carries forward
+      // forever with no way to see "my best was X" the way Quiz's
+      // per-category best score does, and no way to start a fresh brief
+      // without hand-unchecking all 10 rows. bestHint/attemptsHint read
+      // from the same saved/KEY row; "Save attempt & start fresh" archives
+      // the current total as this attempt, keeps the higher of it and any
+      // prior best, and clears the checklist for a real do-over.
+      const bestHint = el("p.hint", { style:"margin-top:2px" });
+      function drawBestHint() {
+        const best = saved.brfBest, n = saved.brfAttempts || 0;
+        bestHint.textContent = n
+          ? "Best saved attempt: " + best + " / 100, across " + n + " attempt" + (n === 1 ? "" : "s")
+          : "Not saved as an attempt yet \u2014 checking boxes keeps your place, but won't count toward a best score until you save.";
+      }
+      drawBestHint();
       rub.appendChild(tally);
+      rub.appendChild(bestHint);
+      const checkboxes = [];
       BRIEF_RUBRIC.forEach(([label, pts], n) => {
         const r2 = el("div", { style:"display:flex;gap:8px;align-items:flex-start;margin:5px 0" });
         const id = "brf-" + n;
         const cb = el("input", { type:"checkbox", id:id, "aria-label": label + " (" + pts + " points)" });
         cb.checked = !!saved["brf" + n];
+        checkboxes.push(cb);
         cb.addEventListener("change", async () => {
           saved["brf" + n] = cb.checked;
           total += cb.checked ? pts : -pts;
@@ -24330,6 +24378,22 @@ window.G = window.G || {};
         r2.appendChild(el("label", { text: label + "  (" + pts + ")", for:id, style:"margin:0;font-weight:400" }));
         rub.appendChild(r2);
       });
+      const saveAttemptBtn = el("button.btn.sm", { type:"button", text:"Save attempt & start fresh", style:"margin-top:10px" });
+      saveAttemptBtn.addEventListener("click", async () => {
+        saved.brfBest = Math.max(saved.brfBest || 0, total);
+        saved.brfAttempts = (saved.brfAttempts || 0) + 1;
+        BRIEF_RUBRIC.forEach((_, n) => { saved["brf" + n] = false; });
+        checkboxes.forEach((cb) => { cb.checked = false; });
+        total = 0;
+        (tally.querySelector(".v")||{}).textContent = "0 / 100";
+        drawBestHint();
+        try { await G.db.put("kv", { k: KEY, v: saved }); }
+        catch (e) {
+          util.toast("Couldn't save that.");
+          if (G.selfheal) G.selfheal.log("drills-write-fail", "brf-attempt", "briefDrill() save-attempt failed: " + (e && e.message ? e.message : String(e)));
+        }
+      });
+      rub.appendChild(saveAttemptBtn);
       stage.appendChild(rub);
     }
 
@@ -24469,13 +24533,29 @@ window.G = window.G || {};
         "30 minutes \u00b1 2 on a Skill Level 1 task. \u22124 points per step executed incorrectly \u2014 miss eight and you are below 70." }));
       let done = CIT.filter((_, n) => saved["cit" + n]).length, lastG = "";
       const tally = el("div.stat", {}, [ el("span.k", { text:"Steps checked" }), el("span.v", { text: done + " / 25" }) ]);
+      // "Add persistence to the memory-less drills" pass: same reasoning as
+      // briefDrill()'s own bestHint/saveAttemptBtn just above - see its
+      // comment for the full rationale. Best is the highest step-count
+      // ever saved as a completed attempt, not just whatever's currently
+      // checked.
+      const bestHint = el("p.hint", { style:"margin-top:2px" });
+      function drawBestHint() {
+        const best = saved.citBest, n = saved.citAttempts || 0;
+        bestHint.textContent = n
+          ? "Best saved attempt: " + best + " / 25 steps, across " + n + " attempt" + (n === 1 ? "" : "s")
+          : "Not saved as an attempt yet — checking boxes keeps your place, but won't count toward a best score until you save.";
+      }
+      drawBestHint();
       p.appendChild(tally);
+      p.appendChild(bestHint);
+      const checkboxes = [];
       CIT.forEach(([g, s], n) => {
         if (g !== lastG) { p.appendChild(el("div.ob-plan-label", { text:g, style:"margin-top:10px" })); lastG = g; }
         const r = el("div", { style:"display:flex;gap:8px;align-items:flex-start;margin:4px 0" });
         const id = "cit-" + n;
         const cb = el("input", { type:"checkbox", id:id, "aria-label": s });
         cb.checked = !!saved["cit" + n];
+        checkboxes.push(cb);
         cb.addEventListener("change", async () => {
           saved["cit" + n] = cb.checked;
           done += cb.checked ? 1 : -1;
@@ -24492,6 +24572,22 @@ window.G = window.G || {};
         r.appendChild(cb); r.appendChild(el("label", { text:(n+1)+". "+s, for:id, style:"margin:0;font-weight:400" }));
         p.appendChild(r);
       });
+      const saveAttemptBtn = el("button.btn.sm", { type:"button", text:"Save attempt & start fresh", style:"margin-top:10px" });
+      saveAttemptBtn.addEventListener("click", async () => {
+        saved.citBest = Math.max(saved.citBest || 0, done);
+        saved.citAttempts = (saved.citAttempts || 0) + 1;
+        CIT.forEach((_, n) => { saved["cit" + n] = false; });
+        checkboxes.forEach((cb) => { cb.checked = false; });
+        done = 0;
+        (tally.querySelector(".v")||{}).textContent = "0 / 25";
+        drawBestHint();
+        try { await G.db.put("kv", { k: KEY, v: saved }); }
+        catch (e) {
+          util.toast("Couldn't save that.");
+          if (G.selfheal) G.selfheal.log("drills-write-fail", "cit-attempt", "citDrill() save-attempt failed: " + (e && e.message ? e.message : String(e)));
+        }
+      });
+      p.appendChild(saveAttemptBtn);
       stage.appendChild(p);
     }
 
@@ -24506,7 +24602,28 @@ window.G = window.G || {};
       const rev = el("button.btn.sm", { type:"button", text:"Reveal output" });
       const nxt = el("button.btn.sm", { type:"button", text:"Next \u2192" });
       row.appendChild(rev); row.appendChild(nxt);
-      p.appendChild(prog); p.appendChild(name); p.appendChild(box); p.appendChild(row);
+      // "Add persistence to the memory-less drills" pass: same reasoning as
+      // squadDrill()'s own passHint just above - no grading exists here to
+      // turn into a score, but a full pass through all 7 steps is still a
+      // real completion worth remembering across visits.
+      const passHint = el("p.hint", { style:"margin-top:2px" });
+      p.appendChild(prog); p.appendChild(name); p.appendChild(box); p.appendChild(row); p.appendChild(passHint);
+      function drawPassHint() {
+        const n = saved.mdmpPasses || 0;
+        passHint.textContent = n
+          ? "Completed " + n + " full pass" + (n === 1 ? "" : "es") + (saved.mdmpLastDate ? " \u00b7 last " + saved.mdmpLastDate : "")
+          : "";
+      }
+      async function recordPass() {
+        saved.mdmpPasses = (saved.mdmpPasses || 0) + 1;
+        saved.mdmpLastDate = new Date().toISOString().slice(0, 10);
+        drawPassHint();
+        try { await G.db.put("kv", { k: KEY, v: saved }); }
+        catch (e) {
+          util.toast("Couldn't save that.");
+          if (G.selfheal) G.selfheal.log("drills-write-fail", "mdmp-pass", "mdmpDrill() pass-count save failed: " + (e && e.message ? e.message : String(e)));
+        }
+      }
       function draw() {
         prog.textContent = "Step " + (i+1) + " of 7";
         name.textContent = MDMP[i][0];
@@ -24516,7 +24633,12 @@ window.G = window.G || {};
         rev.textContent = revealed ? "Hide" : "Reveal output";
       }
       rev.addEventListener("click", () => { revealed = !revealed; draw(); });
-      nxt.addEventListener("click", () => { i = (i+1) % MDMP.length; revealed = false; draw(); });
+      nxt.addEventListener("click", () => {
+        const wrapping = i === MDMP.length - 1;
+        i = (i+1) % MDMP.length; revealed = false; draw();
+        if (wrapping) recordPass();
+      });
+      drawPassHint();
       draw(); stage.appendChild(p);
     }
 
@@ -24555,10 +24677,46 @@ window.G = window.G || {};
       // Shared row-builder: a numeric/text input, a Check button and a New
       // Problem button, plus a score tally and a feedback slot -- the four
       // pieces every mode below wires up the same way.
-      function scoreRow(mount) {
+      //
+      // "Add persistence to the memory-less drills" pass: this session
+      // tally used to be the ONLY score anywhere in Land Nav Drill - three
+      // plain `let attempts=0, right=0` closures that reset to 0/0 on
+      // every single visit, unlike Quiz's per-category best-score
+      // (quizBestKey(), db.getSetting/setSetting above) or this same
+      // module's own briefDrill()/citDrill() rubric-checkbox persistence.
+      // A Soldier drilling azimuth/pace/grid three times this week had no
+      // way to see they were actually improving. Reuses the SAME `saved`/
+      // `KEY` kv row every other drill in this module already writes to
+      // (one row, not a new key per mode) - `saved.landnav[modeKey]`
+      // accumulates lifetime attempts/right per mode, shown as a %
+      // alongside the existing session tally, which is left untouched.
+      function scoreRow(mount, modeKey) {
+        const life = (saved.landnav && saved.landnav[modeKey]) || { attempts: 0, right: 0 };
         const stat = el("div.stat", {}, [ el("span.k", { text:"Score" }), el("span.v", { text:"0 / 0" }) ]);
+        const lifeHint = el("p.hint", { style:"margin:2px 0 0" });
+        function drawLife() {
+          lifeHint.textContent = life.attempts
+            ? "Lifetime: " + Math.round((life.right / life.attempts) * 100) + "% (" + life.right + "/" + life.attempts + ")"
+            : "No attempts yet in this mode.";
+        }
+        drawLife();
         mount.appendChild(stat);
-        return stat;
+        mount.appendChild(lifeHint);
+        async function recordAttempt(ok) {
+          life.attempts++; if (ok) life.right++;
+          drawLife();
+          if (!saved.landnav) saved.landnav = {};
+          saved.landnav[modeKey] = life;
+          // Enhancement backlog round 3, "Failed IndexedDB writes fail
+          // silently" bucket: same fix as this module's briefDrill()/
+          // citDrill() checkbox saves - see either's own comment.
+          try { await G.db.put("kv", { k: KEY, v: saved }); }
+          catch (e) {
+            util.toast("Couldn't save that.");
+            if (G.selfheal) G.selfheal.log("drills-write-fail", "landnav:" + modeKey, "landNavDrill() lifetime score save failed: " + (e && e.message ? e.message : String(e)));
+          }
+        }
+        return { elem: stat, recordAttempt };
       }
 
       // ---- (a) Azimuth ↔ back azimuth: the ±180° / ±3,200-mil rule ----
@@ -24593,7 +24751,7 @@ window.G = window.G || {};
             unitSeg.appendChild(b);
           });
           box.appendChild(unitSeg);
-          const stat = scoreRow(box);
+          const stat = scoreRow(box, "azimuth");
           const unitLabel = unit === "deg" ? "°" : " mils";
           box.appendChild(el("h3", { text: "Azimuth: " + az + unitLabel }));
           box.appendChild(el("p.hint", { text:"What is the back azimuth?" }));
@@ -24608,7 +24766,8 @@ window.G = window.G || {};
           checkBtn.addEventListener("click", () => {
             const ok = input.value.trim() !== "" && Number(input.value) === correct;
             attempts++; if (ok) right++;
-            (stat.querySelector(".v")||{}).textContent = right + " / " + attempts;
+            (stat.elem.querySelector(".v")||{}).textContent = right + " / " + attempts;
+            stat.recordAttempt(ok);
             util.clear(fb);
             const rule = unit === "deg"
               ? (az <= 180 ? "180° or less, so add 180°: " + az + " + 180 = " + correct
@@ -24652,7 +24811,7 @@ window.G = window.G || {};
         gen();
         function draw() {
           util.clear(box);
-          const stat = scoreRow(box);
+          const stat = scoreRow(box, "pace");
           box.appendChild(el("h3", { text: "Pace count: " + paceCount + " paces per 100 m" }));
           box.appendChild(el("p.hint", { text: "How many total paces to cover " + distance + " meters?" }));
           const row = el("div.btn-row", { style:"gap:8px;align-items:center" });
@@ -24666,7 +24825,8 @@ window.G = window.G || {};
           checkBtn.addEventListener("click", () => {
             const ok = input.value.trim() !== "" && Number(input.value) === correct;
             attempts++; if (ok) right++;
-            (stat.querySelector(".v")||{}).textContent = right + " / " + attempts;
+            (stat.elem.querySelector(".v")||{}).textContent = right + " / " + attempts;
+            stat.recordAttempt(ok);
             util.clear(fb);
             const raw = paceCount * distance / 100;
             const msg = (ok ? "Correct. " : "Not quite — " + correct + " paces. ")
@@ -24701,7 +24861,7 @@ window.G = window.G || {};
         gen();
         function draw() {
           util.clear(box);
-          const stat = scoreRow(box);
+          const stat = scoreRow(box, "grid");
           box.appendChild(el("h3", { text: square + easting + northing, style:"font-family:var(--font-mono);letter-spacing:.05em" }));
           box.appendChild(el("p.hint", { text:"That's an 8-digit grid coordinate with its 100,000-m square identifier, written as one continuous string. Break it into its three parts." }));
           const row = el("div", { style:"display:flex;gap:8px;flex-wrap:wrap;margin:8px 0" });
@@ -24723,7 +24883,8 @@ window.G = window.G || {};
             const okN  = nIn.value.trim() === northing;
             const ok = okSq && okE && okN;
             attempts++; if (ok) right++;
-            (stat.querySelector(".v")||{}).textContent = right + " / " + attempts;
+            (stat.elem.querySelector(".v")||{}).textContent = right + " / " + attempts;
+            stat.recordAttempt(ok);
             util.clear(fb);
             const parts = [];
             if (!okSq) parts.push("square identifier is " + square);

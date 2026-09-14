@@ -317,6 +317,62 @@ citBoxesAfterRerender[0] === false && citBoxesAfterRerender[1] === true
   ? ok("CIT checkbox checked-state survives re-render (step 1 unchecked, step 2 checked)")
   : bad("CIT checkbox states after re-render: " + JSON.stringify(citBoxesAfterRerender));
 
+// "Add persistence to the memory-less drills" pass: citDrill()'s new
+// bestHint/"Save attempt & start fresh" button (see its own comment,
+// src/index.html) - a Soldier could check boxes forever with no notion of
+// a completed attempt or a best score to beat. citAfterRerender left the
+// checklist at "1 / 25" (step 2 only) - save that as the first attempt.
+console.log(`\n-- #/drills: CIT "Save attempt & start fresh" persists a best score (kv "${DRILLS_KEY}") --`);
+const citBestHintBefore = await page.evaluate(() => {
+  const hints = [...document.querySelectorAll(".panel p.hint")];
+  const h = hints.find((el) => /Not saved as an attempt yet|Best saved attempt/.test(el.textContent || ""));
+  return h ? h.textContent : null;
+});
+/not saved as an attempt yet/i.test(citBestHintBefore || "")
+  ? ok("CIT shows 'not saved as an attempt yet' before the first save")
+  : bad("CIT best-hint before first save: " + JSON.stringify(citBestHintBefore));
+
+await page.locator("button", { hasText: /Save attempt & start fresh/ }).click();
+await page.waitForTimeout(200);
+const citAfterSave = await page.evaluate(() => (document.querySelector(".stat .v") || {}).textContent || "");
+citAfterSave === "0 / 25" ? ok("saving an attempt resets the live tally to '0 / 25'") : bad("CIT tally after save: " + JSON.stringify(citAfterSave));
+
+const citBoxesAfterSave = await page.evaluate(() => [...document.querySelectorAll('input[type="checkbox"]')].every((b) => !b.checked));
+citBoxesAfterSave ? ok("saving an attempt unchecks every CIT checkbox for a fresh attempt") : bad("some CIT checkboxes remained checked after saving an attempt");
+
+const citBestPersisted = await page.evaluate(async (k) => {
+  const r = await window.G.db.get("kv", k);
+  return r && r.v ? { best: r.v.citBest, attempts: r.v.citAttempts } : null;
+}, DRILLS_KEY);
+citBestPersisted && citBestPersisted.best === 1 && citBestPersisted.attempts === 1
+  ? ok(`CIT best score (1/25) and attempt count (1) persist to kv "${DRILLS_KEY}"`)
+  : bad("CIT best/attempts after save: " + JSON.stringify(citBestPersisted));
+
+const citBestHintAfter = await page.evaluate(() => {
+  const hints = [...document.querySelectorAll(".panel p.hint")];
+  const h = hints.find((el) => /Best saved attempt/.test(el.textContent || ""));
+  return h ? h.textContent : null;
+});
+/Best saved attempt: 1 \/ 25 steps, across 1 attempt\b/.test(citBestHintAfter || "")
+  ? ok("CIT best-hint reads 'Best saved attempt: 1 / 25 steps, across 1 attempt' (singular)")
+  : bad("CIT best-hint after save: " + JSON.stringify(citBestHintAfter));
+
+// A second, worse attempt should NOT overwrite the best.
+await page.locator('input[type="checkbox"]').nth(0).check();
+await page.waitForTimeout(150);
+await page.locator("button", { hasText: /Save attempt & start fresh/ }).click();
+await page.waitForTimeout(200);
+const citBestAfterWorseAttempt = await page.evaluate(async (k) => {
+  const r = await window.G.db.get("kv", k);
+  return r && r.v ? { best: r.v.citBest, attempts: r.v.citAttempts } : null;
+}, DRILLS_KEY);
+citBestAfterWorseAttempt && citBestAfterWorseAttempt.best === 1 && citBestAfterWorseAttempt.attempts === 2
+  ? ok("a worse second attempt (1/25) keeps the best at 1/25 but still counts as attempt 2")
+  : bad("CIT best/attempts after a worse attempt: " + JSON.stringify(citBestAfterWorseAttempt));
+
+// cleanup so this drill's saved best/attempts don't bleed into the Brief section below
+await page.evaluate((k) => window.G.db.put("kv", { k, v: {} }), DRILLS_KEY);
+
 console.log(`\n-- #/drills: 1009S brief rubric checklist (kv "${DRILLS_KEY}") --`);
 await page.locator("button", { hasText: /All drills/ }).click();
 await page.waitForTimeout(200);
@@ -348,6 +404,50 @@ brfAfterRerender === "5 / 100"
   : bad("Brief rubric tally after re-render: " + JSON.stringify(brfAfterRerender));
 const brfBoxChecked = await page.locator('input[type="checkbox"]').first().isChecked();
 brfBoxChecked ? ok("brief rubric checkbox checked-state survives re-render") : bad("brief rubric checkbox did not survive re-render");
+
+// "Add persistence to the memory-less drills" pass: briefDrill()'s new
+// bestHint/"Save attempt & start fresh" button - see citDrill()'s own
+// block above for the full rationale (shared pattern, ported here with
+// this drill's 100-point scale instead of a 25-step count).
+console.log(`\n-- #/drills: Brief rubric "Save attempt & start fresh" persists a best score (kv "${DRILLS_KEY}") --`);
+await page.locator("button", { hasText: /Save attempt & start fresh/ }).click();
+await page.waitForTimeout(200);
+const brfAfterSave = await page.evaluate(() => (document.querySelector(".stat .v") || {}).textContent || "");
+brfAfterSave === "0 / 100" ? ok("saving a brief attempt resets the live tally to '0 / 100'") : bad("brief tally after save: " + JSON.stringify(brfAfterSave));
+
+const brfBoxesAfterSave = await page.evaluate(() => [...document.querySelectorAll('input[type="checkbox"]')].every((b) => !b.checked));
+brfBoxesAfterSave ? ok("saving a brief attempt unchecks every rubric checkbox for a fresh attempt") : bad("some brief checkboxes remained checked after saving an attempt");
+
+const brfBestPersisted = await page.evaluate(async (k) => {
+  const r = await window.G.db.get("kv", k);
+  return r && r.v ? { best: r.v.brfBest, attempts: r.v.brfAttempts } : null;
+}, DRILLS_KEY);
+brfBestPersisted && brfBestPersisted.best === 5 && brfBestPersisted.attempts === 1
+  ? ok(`brief best score (5/100) and attempt count (1) persist to kv "${DRILLS_KEY}"`)
+  : bad("brief best/attempts after save: " + JSON.stringify(brfBestPersisted));
+
+const brfBestHintAfter = await page.evaluate(() => {
+  const hints = [...document.querySelectorAll(".panel p.hint")];
+  const h = hints.find((el) => /Best saved attempt/.test(el.textContent || ""));
+  return h ? h.textContent : null;
+});
+/Best saved attempt: 5 \/ 100, across 1 attempt\b/.test(brfBestHintAfter || "")
+  ? ok("brief best-hint reads 'Best saved attempt: 5 / 100, across 1 attempt' (singular)")
+  : bad("brief best-hint after save: " + JSON.stringify(brfBestHintAfter));
+
+// A better second attempt should raise the best.
+await page.locator('input[type="checkbox"]').nth(0).check();
+await page.locator('input[type="checkbox"]').nth(1).check();
+await page.waitForTimeout(150);
+await page.locator("button", { hasText: /Save attempt & start fresh/ }).click();
+await page.waitForTimeout(200);
+const brfBestAfterBetterAttempt = await page.evaluate(async (k) => {
+  const r = await window.G.db.get("kv", k);
+  return r && r.v ? { best: r.v.brfBest, attempts: r.v.brfAttempts } : null;
+}, DRILLS_KEY);
+brfBestAfterBetterAttempt && brfBestAfterBetterAttempt.best === 10 && brfBestAfterBetterAttempt.attempts === 2
+  ? ok("a better second attempt (10/100) raises the best from 5 to 10, and counts as attempt 2")
+  : bad("brief best/attempts after a better attempt: " + JSON.stringify(brfBestAfterBetterAttempt));
 
 // cleanup so this route's state doesn't bleed into anything else
 await page.evaluate((k) => window.G.db.put("kv", { k, v: {} }), DRILLS_KEY);
