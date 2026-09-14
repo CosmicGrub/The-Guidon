@@ -2,6 +2,18 @@
 
 All notable changes to GUIDON will be documented in this file. Format loosely follows [Keep a Changelog](http://keepachangelog.com/). This is the technical record for developers - the app itself shows a short, plain-language summary of each release to Soldiers directly (G.whatsNew, src/index.html), not this file.
 
+## 2026-09-14 - Doctrine confidence-field backfill: 32 entries tagged, 3 real content bugs fixed
+
+**Started at the user's request to raise the doctrine confidence-field backfill next** — flagged in the roadmap backlog as requiring real per-entry content judgment, not a mechanical fix. 32 of 355 `doctrine.entries` records shipped with no `confidence` field at all (`"verified"` / `"in_transition"` / `"community"`, per the seed's own header note distinguishing current primary doctrine from policy actively changing in FY25–FY27 from supplementary board-prep framing). Not just a metadata gap: `#/doctrine`'s own base-list filter reads this field to drive the real "Show 'in transition' doctrine" / "Show community / supplementary content" Settings toggles, and an entry with no field at all is neither value — so it always showed regardless of toggle state, a real filter-correctness bug for any of the 32 that should have been hideable.
+
+**8 parallel research batches (4 entries each), every one independently web-verifying current doctrine status** rather than defaulting an untagged entry to "verified" by default, followed by a dedicated adversarial consistency-review pass that re-searched all 32 proposals from scratch — not just re-reading the first pass's sources — before any were accepted. Final distribution: 340 verified / 8 in_transition / 7 community.
+
+**Three real content bugs surfaced by the same research pass, fixed rather than left for a separate citation-currency project**: `ncopds-ladder`'s course-to-rank ladder was off by a full rank (BLC/ALC/SLC actually gate SGT/SSG/SFC, not SSG/SFC/MSG — MLC is *becoming* the MSG gate as the ongoing NCO PME redesign fields it); `doc-tccc` cited TC 4-02.1, superseded in March 2026 by ATP 4-02.11, with its other citation (ATP 4-02.84) turning out to be an unrelated biological-casualty TTP; `doc-eo` carried a stray "AR 27-26" citation (Legal Services: Rules of Professional Conduct for Lawyers) unrelated to Equal Opportunity and never referenced in the entry's own body.
+
+**New permanent lint gate**, `tools/lint-doctrine-confidence.mjs` (wired into `lint:patterns`), fails CI if any future doctrine entry ships without a valid confidence value — the same mechanical backstop `lint-prt-sources.mjs` already provides for `PrtExercise` records.
+
+Verified: `lint:patterns`, full local suite, and new `tools/test-doctrine-confidence-filters.mjs` proving the toggle behavior end-to-end against real seed content — a genuine in_transition entry and a genuine community entry (picked live from the running seed, not hardcoded) each hide when their matching toggle is switched off via a real UI click and reappear when switched back on, while a verified control entry stays visible throughout; confirmed the test itself actually fails against the pre-fix filter logic before trusting it green.
+
 ## 2026-09-14 - Rapid Fire's Team "steal" mechanic ships: "Handoff Steal Round"
 
 **The last remaining item from the Rapid Fire v2 quick-wins brainstorm, previously deprioritized as the most complex/ambiguous one on the list.** The original spec's own one-liner ("if Team A passes, Team B gets a shot at the same card before moving on") doesn't actually fit the real pass-the-single-device Team-mode architecture — no live buzzer, no second device, each team gets exactly one uninterrupted turn. Design, not just implementation, was genuinely undecided.
