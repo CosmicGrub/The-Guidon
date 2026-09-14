@@ -117,6 +117,13 @@ blocker, not a formality — raised to the user for how to proceed
 (retry the official fetch, user supplies the table directly, or descope
 the module to protocols/event-descriptions only until sourced) rather
 than filling it in from training-data memory or an unofficial mirror.
+**User's call (2026-09-13): retry the official army.mil/aft fetch in a
+future session** once the rate limit has genuinely cleared, rather than
+hammering it now or descoping. No work lost either way — PR #151 (ATP
+7-22.01 acquisition) ships regardless. **Next session picking this back
+up: start here** — try `https://www.army.mil/aft` again before doing
+anything else on this module; if it resolves, the actual table-sourcing
+and `prt.acft` schema/build work can proceed in the same pass.
 
 ---
 
