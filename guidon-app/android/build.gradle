@@ -42,7 +42,7 @@ buildscript {
         // variables.gradle's baselineProfileGradlePluginVersion by hand; it's
         // the same constraint com.android.tools.build:gradle's own hardcoded
         // 8.13.0 above already lives under.
-        classpath 'androidx.benchmark:benchmark-baseline-profile-gradle-plugin:1.4.1'
+        classpath 'androidx.benchmark:benchmark-baseline-profile-gradle-plugin:1.5.0'
 
         // Kotlin Android Gradle plugin (RoomTlsPlugin.kt, TLS room-join spike,
         // 2026-09-06): :app was Java-only until this - every bundled Capacitor
@@ -57,7 +57,7 @@ buildscript {
         // pre-bump number; tools/lint-kotlin-version.mjs, wired into `npm
         // test`, is the mechanical backstop against a repeat - see its own
         // header for why).
-        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.10'
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.20'
 
         // NOTE: Do not place your application dependencies here; they belong
         // in the individual module build.gradle files
