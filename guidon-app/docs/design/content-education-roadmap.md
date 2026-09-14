@@ -264,9 +264,10 @@ Field notes:
   just a UI sort key — FM 7-22 states PD "is always performed in this
   fixed order."
 - **`startingPosition` / `movementDescription` / `source.para` /
-  `source.asOf`** stay `null` and `sourceStatus` stays `"pending-source"`
-  until ATP 7-22.02 is acquired and transcribed (§2.4 — this is a real,
-  confirmed blocker, not a formality).
+  `source.asOf`** — **RESOLVED** (see §2.4's update): ATP 7-22.02 was
+  acquired and all 10 PD exercises are now transcribed and
+  `sourceStatus:"verified"`. This bullet described the pre-acquisition
+  state; kept for history rather than deleted.
 - **`repRuleOverride`** stays `null` for all current entries; exists only
   so a future correction doesn't require a schema change.
 - **No `tier` field** — per the same precedent Dictionary and the
@@ -294,6 +295,19 @@ Field notes:
 read by nothing existing.)
 
 ### 2.4 The one real content-sourcing blocker: ATP 7-22.02
+
+**RESOLVED (2026-09-13).** ATP 7-22.02 was acquired directly from
+armypubs.army.mil (the ARN45013-ATP_7-22.02-001-WEB-4.pdf edition,
+published w/ Basic incl. C1) with the user's explicit authorization for
+the web search and download, added to `docs-source/`, and run through
+`tools/build-library-data.mjs` — the Reference Library now carries all 16
+publications. All 10 PD exercises' `startingPosition`/`movementDescription`
+were hand-transcribed verbatim from Chapter 3 (paragraphs 3-3 through
+3-13) via `tools/seed-io.mjs` and marked `sourceStatus:"verified"`;
+`tools/lint-prt-sources.mjs` (built exactly as this section originally
+specified) confirms the gate. Left below unedited as the historical record
+of why this was blocked and what the unblock path was — it is no longer
+current status.
 
 `guidon-app/docs-source/` already holds 15 official Army PDFs with
 pre-extracted plain text (`docs-source/_text/*.txt`) — a real, existing

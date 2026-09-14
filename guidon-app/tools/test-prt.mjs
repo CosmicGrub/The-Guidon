@@ -89,7 +89,11 @@ const truth = await page.evaluate(() => {
   const drill = (window.GUIDON_SEED.prt && window.GUIDON_SEED.prt.drills[0]) || null;
   if (!drill) return null;
   const exercises = drill.exercises.slice().sort((a, b) => a.order - b.order);
-  return { name: drill.name, abbr: drill.abbr, count: exercises.length, names: exercises.map((e) => e.name), firstId: exercises[0].id };
+  return { name: drill.name, abbr: drill.abbr, count: exercises.length, names: exercises.map((e) => e.name),
+    firstId: exercises[0].id, lastId: exercises[exercises.length - 1].id,
+    exercises: exercises.map((e) => ({ id: e.id, name: e.name, sourceStatus: e.sourceStatus,
+      startingPosition: e.startingPosition, movementDescription: e.movementDescription,
+      sourceRef: e.source && e.source.ref, sourcePara: e.source && e.source.para })) };
 });
 truth && truth.count > 0
   ? ok(`seed ground truth: drill "${truth.name}" (${truth.abbr}) has ${truth.count} exercises`)
@@ -117,6 +121,62 @@ runBtnPresent ? ok("'▶ Run the drill' button is present") : bad("'Run the dril
 
 const gradeRowPresent = await page.evaluate(() => !!document.querySelector(".qz-grade-row"));
 gradeRowPresent ? ok("The first exercise's detail card shows the 4-level self-grade row") : bad("no .qz-grade-row found on the default-selected exercise");
+
+// ---- ATP 7-22.02 content (ROADMAP.md §3): every exercise now ships a real,
+// verified startingPosition/movementDescription - confirm the detail card
+// actually renders that text (not the old "reference pending" placeholder),
+// per-exercise (not just the default-selected one), reading expected text
+// live from the seed so this stays correct if the transcription is ever
+// revised. ----
+const firstTruth = truth && truth.exercises[0];
+const firstDetailText = await page.evaluate(() => document.querySelector(".card")?.textContent || "");
+firstTruth && firstTruth.sourceStatus === "verified" && firstDetailText.includes("Starting position: " + firstTruth.startingPosition)
+  ? ok(`Default-selected exercise ("${firstTruth.name}") detail card shows its real, verified starting position`)
+  : bad(`Default-selected exercise detail card did not show the expected starting position text. sourceStatus=${firstTruth && firstTruth.sourceStatus}, card text: ${firstDetailText.slice(0, 200)}`);
+firstTruth && firstDetailText.includes(firstTruth.movementDescription)
+  ? ok(`Default-selected exercise ("${firstTruth.name}") detail card shows its real movement description`)
+  : bad(`Default-selected exercise detail card did not show the expected movement description: ${firstDetailText.slice(0, 300)}`);
+!firstDetailText.includes("reference pending")
+  ? ok('Default-selected exercise no longer shows the "reference pending" placeholder')
+  : bad('Default-selected exercise detail card still shows "reference pending": ' + firstDetailText.slice(0, 300));
+
+// Select a DIFFERENT exercise (the last one, Push-Up) via a real click on
+// its list row, and confirm the detail pane swaps to ITS OWN distinct real
+// text - not the first exercise's text left stale, and not every exercise
+// coincidentally sharing the same placeholder.
+const lastTruth = truth && truth.exercises[truth.exercises.length - 1];
+await page.evaluate((id) => {
+  document.querySelector(`.list-detail-row[data-exercise-id="${id}"]`)?.click();
+}, truth && truth.lastId);
+await page.waitForTimeout(150);
+const lastDetailText = await page.evaluate(() => document.querySelector(".card")?.textContent || "");
+lastTruth && lastTruth.sourceStatus === "verified" && lastDetailText.includes("Starting position: " + lastTruth.startingPosition)
+  ? ok(`Selecting a different exercise ("${lastTruth.name}") via a real click swaps the detail card to ITS OWN real starting position`)
+  : bad(`After selecting "${lastTruth && lastTruth.name}", detail card did not show its expected starting position: ${lastDetailText.slice(0, 300)}`);
+lastTruth && lastTruth.startingPosition !== firstTruth.startingPosition
+  ? ok("The first and last exercise's starting-position text are genuinely distinct (real per-exercise content, not one shared string)")
+  : bad("First and last exercise's starting-position text were identical - suspicious, check the seed");
+const sourceLineText = await page.evaluate(() => [...document.querySelectorAll(".card p.hint")].map((p) => p.textContent).find((t) => t.startsWith("Source:")) || "");
+lastTruth && sourceLineText === `Source: ${lastTruth.sourceRef}, para ${lastTruth.sourcePara}`
+  ? ok(`Source line cites the real reference: "${sourceLineText}"`)
+  : bad(`Source line did not match expected "Source: ${lastTruth && lastTruth.sourceRef}, para ${lastTruth && lastTruth.sourcePara}": got "${sourceLineText}"`);
+
+// Every one of the 10 exercises is verified with real, distinct text - not
+// just the two spot-checked above. lint-prt-sources.mjs already gates the
+// seed itself; this confirms the RENDER side actually reflects that for
+// every exercise, not just the two clicked here.
+const allVerified = truth.exercises.every((e) => e.sourceStatus === "verified" && e.startingPosition && e.movementDescription);
+const distinctPositions = new Set(truth.exercises.map((e) => e.startingPosition)).size;
+allVerified && distinctPositions === truth.exercises.length
+  ? ok(`All ${truth.exercises.length} exercises are sourceStatus:"verified" with real, mutually distinct starting-position text`)
+  : bad(`Not every exercise is verified with distinct text: allVerified=${allVerified}, distinctPositions=${distinctPositions}/${truth.exercises.length}`);
+
+// Reselect the first exercise so later sections (e)/(f) - which assume the
+// default-selected exercise - aren't left pointed at the last one.
+await page.evaluate((id) => {
+  document.querySelector(`.list-detail-row[data-exercise-id="${id}"]`)?.click();
+}, truth && truth.firstId);
+await page.waitForTimeout(150);
 
 /* ========================================================================
    (b) store.prt(query) - substring search filtering
