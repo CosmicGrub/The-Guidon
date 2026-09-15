@@ -24311,7 +24311,7 @@ window.G = window.G || {};
     // rule), a pace-count word problem, and grid-coordinate component
     // reading -- each sourced to a specific TC 3-25.26 paragraph.
     { id:"landnav", icon:"\u2316", name:"Land Navigation practice drill", for:"BLC",
-      blurb:"Generated azimuth/back-azimuth, pace-count and grid-coordinate problems you solve and check, not another card to read. TC 3-25.26: the \u00b1180\u00b0/\u00b13,200-mil rule (Ch. 6, Direction), pace count (para 5-3), and reading a grid right-then-up (paras 4-15\u20134-16)." }
+      blurb:"Generated azimuth/back-azimuth, pace-count, grid-coordinate and grid-plotting problems you solve and check, not another card to read. TC 3-25.26: the \u00b1180\u00b0/\u00b13,200-mil rule (Ch. 6, Direction), pace count (para 5-3), and reading/plotting a grid right-then-up (paras 4-15\u20134-16)." }
   ];
 
   const KEY = "guidon:drills:v1";
@@ -24831,7 +24831,7 @@ window.G = window.G || {};
       p.appendChild(seg); p.appendChild(body);
       stage.appendChild(p);
 
-      const MODES = [ ["azimuth","Back azimuth"], ["pace","Pace count"], ["grid","Grid coordinate"] ];
+      const MODES = [ ["azimuth","Back azimuth"], ["pace","Pace count"], ["grid","Grid coordinate"], ["plot","Grid plot"] ];
       function drawSeg() {
         util.clear(seg);
         MODES.forEach(([k, label]) => {
@@ -24845,7 +24845,8 @@ window.G = window.G || {};
         util.clear(body);
         if (mode === "azimuth") azimuthMode(body);
         else if (mode === "pace") paceMode(body);
-        else gridMode(body);
+        else if (mode === "grid") gridMode(body);
+        else plotMode(body);
       }
 
       // Shared row-builder: a numeric/text input, a Check button and a New
@@ -25067,6 +25068,145 @@ window.G = window.G || {};
             const msg = (ok ? "Correct. " : "Not quite — the " + parts.join("; the ") + ". ")
               + "TC 3-25.26, para 4-16: always read RIGHT then UP — the first half of the digits is the easting, the second half is the northing. "
               + "Para 4-15: report it as one continuous string, an even number of digits, with the two-letter 100,000-m square identifier included.";
+            fb.appendChild(el("div.feedback " + (ok ? "good" : "bad"), { role:"status", "aria-live":"polite", text: msg }));
+            try { if (G.util.announce) G.util.announce((ok ? "Correct. " : "Incorrect. ") + msg); } catch (e) {}
+          });
+          nextBtn.addEventListener("click", () => { gen(); draw(); });
+          // Round 8 landnav-focus fix: see azimuthMode()'s own comment on
+          // its matching box.focus() call, above, for the full explanation.
+          box.focus({ preventScroll: true });
+        }
+        draw();
+      }
+
+      // ---- (d) Grid coordinate PLOTTING (TC 3-25.26, paras 4-15/4-16) ----
+      // gridMode() above only ever asks a Soldier to decompose a GIVEN
+      // coordinate string into its 3 parts - useful, but it never asks
+      // anyone to actually place a point on anything, which is the real
+      // skill "read right, then up" exists to teach. This is the app's
+      // first genuine click-to-plot spatial interaction: an SVG 1000m x
+      // 1000m practice grid square (11 gridlines each direction, 100m
+      // apart, same spacing convention as a real map's grid square) a
+      // Soldier either reads a marked point off of, or plots a given
+      // coordinate onto - graded by real Euclidean distance in meters
+      // against a TOLERANCE_M "close enough to be useful in the field"
+      // radius, not exact-pixel precision.
+      //
+      // Accessibility, deliberately scoped: per this app's own established
+      // convention that a click target always needs a real keyboard path
+      // (see authoring.js's map-node divs, or every other drill in this
+      // very file), "Plot a point" ALSO accepts typed Easting/Northing
+      // numbers as a full keyboard-operable equivalent - clicking the SVG
+      // is a faster path for mouse/touch, never the only path, and both
+      // paths converge on the same two inputs before Check ever runs.
+      // "Read a point" is left as the one genuinely visual half of this
+      // mode: determining where a plotted dot sits is inherently a sighted
+      // task, the same as reading a printed map is - an honest, disclosed
+      // scope limit rather than a faked non-visual workaround.
+      function plotMode(mount) {
+        const SIZE = 1000, STEP = 100, TOLERANCE_M = 50;
+        const svgNS = "http://www.w3.org/2000/svg";
+        let direction = "plot", tx = 0, ty = 0, attempts = 0, right = 0, guess = null, revealed = false;
+        const box = el("div", { tabIndex: "-1" }); mount.appendChild(box);
+        function gen() {
+          // Snapped to 10m and kept off the very edge so the answer is
+          // never ambiguous against the grid's own drawn boundary line.
+          tx = Math.round((20 + Math.random() * (SIZE - 40)) / 10) * 10;
+          ty = Math.round((20 + Math.random() * (SIZE - 40)) / 10) * 10;
+          guess = null; revealed = false;
+        }
+        gen();
+        function toSvgY(m) { return SIZE - m; } // SVG y grows downward; northing grows upward on a real map.
+        function renderMarkers(svg) {
+          svg.querySelectorAll("[data-marker]").forEach((n) => n.remove());
+          function dot(xM, yM, color, label) {
+            const c = document.createElementNS(svgNS, "circle");
+            c.setAttribute("data-marker", "1");
+            c.setAttribute("cx", String(xM)); c.setAttribute("cy", String(toSvgY(yM))); c.setAttribute("r", "16");
+            c.setAttribute("fill", color); c.setAttribute("stroke", "var(--panel)"); c.setAttribute("stroke-width", "3");
+            const t = document.createElementNS(svgNS, "title"); t.textContent = label; c.appendChild(t);
+            svg.appendChild(c);
+          }
+          if (direction === "read" || revealed) dot(tx, ty, "var(--cyan)", direction === "read" ? "Marked point" : "Correct point");
+          if (guess) dot(guess.x, guess.y, "var(--amber)", "Your point");
+        }
+        function draw() {
+          util.clear(box);
+          const dirSeg = el("div.segmented", { style:"margin-bottom:8px" });
+          [["plot","Plot a point"],["read","Read a point"]].forEach(([k, label]) => {
+            const b = el("button", { type:"button", text:label, "aria-pressed": String(k === direction) });
+            if (k === direction) b.classList.add("active");
+            b.addEventListener("click", () => { if (direction !== k) { direction = k; attempts = 0; right = 0; gen(); draw(); } });
+            dirSeg.appendChild(b);
+          });
+          box.appendChild(dirSeg);
+          const stat = scoreRow(box, "plot");
+          box.appendChild(el("p.hint", { text: direction === "plot"
+            ? "Plot this point: Easting " + tx + "m, Northing " + ty + "m from the square's southwest corner."
+            : "Read the marked point below: how many meters right (easting) and up (northing) is it from the southwest corner?" }));
+
+          const PX = 320; // on-screen size in CSS px; viewBox stays in real meters (0..SIZE) for clean 1:1 click math
+          const svg = document.createElementNS(svgNS, "svg");
+          svg.setAttribute("viewBox", "0 0 " + SIZE + " " + SIZE);
+          svg.setAttribute("width", String(PX)); svg.setAttribute("height", String(PX));
+          svg.setAttribute("role", "img");
+          svg.setAttribute("aria-label", direction === "plot" ? "Grid square — click to plot your answer, or use the Easting/Northing fields below" : "Grid square with a marked point to read");
+          svg.style.cssText = "display:block;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-sm,6px);touch-action:none;" + (direction === "plot" ? "cursor:crosshair;" : "");
+          for (let i = 0; i <= SIZE / STEP; i++) {
+            const p = i * STEP;
+            const v = document.createElementNS(svgNS, "line");
+            v.setAttribute("x1", String(p)); v.setAttribute("y1", "0"); v.setAttribute("x2", String(p)); v.setAttribute("y2", String(SIZE));
+            v.setAttribute("stroke", "var(--line)"); v.setAttribute("stroke-width", "2"); svg.appendChild(v);
+            const h = document.createElementNS(svgNS, "line");
+            h.setAttribute("x1", "0"); h.setAttribute("y1", String(p)); h.setAttribute("x2", String(SIZE)); h.setAttribute("y2", String(p));
+            h.setAttribute("stroke", "var(--line)"); h.setAttribute("stroke-width", "2"); svg.appendChild(h);
+          }
+          if (direction === "plot") {
+            svg.addEventListener("click", (e) => {
+              const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+              const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
+              const x = Math.max(0, Math.min(SIZE, Math.round(loc.x)));
+              const y = Math.max(0, Math.min(SIZE, Math.round(SIZE - loc.y)));
+              guess = { x, y };
+              eIn.value = String(x); nIn.value = String(y);
+              renderMarkers(svg);
+            });
+          }
+          box.appendChild(svg);
+          renderMarkers(svg);
+
+          const row = el("div.btn-row", { style:"gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap" });
+          const eIn = el("input", { type:"number", min:"0", max:String(SIZE), step:"10", style:"max-width:110px",
+            "aria-label": direction === "plot" ? "Easting to plot, in meters" : "Your read easting, in meters" });
+          const nIn = el("input", { type:"number", min:"0", max:String(SIZE), step:"10", style:"max-width:110px",
+            "aria-label": direction === "plot" ? "Northing to plot, in meters" : "Your read northing, in meters" });
+          const checkBtn = el("button.btn.sm", { type:"button", text:"Check" });
+          const nextBtn = el("button.btn.sm.ghost", { type:"button", text:"New point →" });
+          row.appendChild(el("label", { text:"Easting (m):", style:"font-size:.8rem;color:var(--text-dim)" }));
+          row.appendChild(eIn);
+          row.appendChild(el("label", { text:"Northing (m):", style:"font-size:.8rem;color:var(--text-dim)" }));
+          row.appendChild(nIn);
+          row.appendChild(checkBtn); row.appendChild(nextBtn);
+          box.appendChild(row);
+          const fb = el("div", { style:"margin-top:8px" }); box.appendChild(fb);
+
+          nIn.addEventListener("keydown", (e) => { if (e.key === "Enter") checkBtn.click(); });
+          checkBtn.addEventListener("click", () => {
+            const gx = Number(eIn.value), gy = Number(nIn.value);
+            if (eIn.value.trim() === "" || nIn.value.trim() === "" || Number.isNaN(gx) || Number.isNaN(gy)) { util.toast("Enter both easting and northing first."); return; }
+            const dist = Math.round(Math.hypot(gx - tx, gy - ty));
+            const ok = dist <= TOLERANCE_M;
+            attempts++; if (ok) right++;
+            (stat.elem.querySelector(".v")||{}).textContent = right + " / " + attempts;
+            stat.recordAttempt(ok);
+            guess = { x: gx, y: gy };
+            revealed = true;
+            renderMarkers(svg);
+            util.clear(fb);
+            const msg = (ok
+              ? "Correct — within " + dist + "m of the real point (Easting " + tx + ", Northing " + ty + "). "
+              : "Off by " + dist + "m — the real point is Easting " + tx + ", Northing " + ty + ". ")
+              + "TC 3-25.26, para 4-16: always read RIGHT then UP — easting first, then northing.";
             fb.appendChild(el("div.feedback " + (ok ? "good" : "bad"), { role:"status", "aria-live":"polite", text: msg }));
             try { if (G.util.announce) G.util.announce((ok ? "Correct. " : "Incorrect. ") + msg); } catch (e) {}
           });

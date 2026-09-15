@@ -56,6 +56,9 @@ const modeButtons = await page.locator(".panel .segmented button").allTextConten
 JSON.stringify(modeButtons.slice(0, 3)) === JSON.stringify(["Back azimuth", "Pace count", "Grid coordinate"])
   ? ok('Land Navigation drill opens on the three-mode switch: "Back azimuth" / "Pace count" / "Grid coordinate"')
   : bad("mode switch buttons: " + JSON.stringify(modeButtons));
+modeButtons[3] === "Grid plot"
+  ? ok('a 4th mode, "Grid plot", is present alongside the original three')
+  : bad("4th mode button: " + JSON.stringify(modeButtons[3]));
 
 // ==================== (a) Back azimuth: degrees, a correct then an incorrect submission ====================
 const azHeading = await page.locator(".panel h3").first().textContent();
@@ -260,7 +263,145 @@ sawNewGrid
 const clearedSq = await sqIn.inputValue();
 clearedSq === "" ? ok("Grid coordinate: the square-identifier field is empty on a fresh problem") : bad("Grid coordinate square field after New coordinate: " + JSON.stringify(clearedSq));
 
-// All three lifetime scores must survive a REAL reload (a fresh page
+// ==================== (d) Grid plot: the app's first real click-to-plot spatial interaction ====================
+// Casualty-care-and-cohesion design pass (docs/design/casualty-care-and-
+// cohesion.md §2b, "Land-nav-plot" item): gridMode() above only ever
+// asks a Soldier to decompose a GIVEN coordinate string into parts -
+// this is the first mode that asks anyone to actually place a point on
+// something, or read one off. Real click math (getScreenCTM().inverse())
+// against the live SVG, real distance-in-meters grading (not exact-pixel
+// match), and a full keyboard-only path (typed Easting/Northing) as the
+// accessible equivalent to clicking - verified independently below.
+await page.locator(".segmented button", { hasText: "Grid plot" }).click();
+await page.waitForTimeout(200);
+
+const plotSubModes = await page.locator(".panel .segmented button").allTextContents();
+JSON.stringify(plotSubModes.slice(-2)) === JSON.stringify(["Plot a point", "Read a point"])
+  ? ok('Grid plot opens with a "Plot a point" / "Read a point" sub-toggle, defaulting to Plot')
+  : bad("plot sub-mode buttons: " + JSON.stringify(plotSubModes));
+
+const svgInfo = await page.evaluate(() => {
+  const svg = document.querySelector('svg[role="img"]');
+  return svg ? { viewBox: svg.getAttribute("viewBox"), lineCount: svg.querySelectorAll("line").length } : null;
+});
+svgInfo && svgInfo.viewBox === "0 0 1000 1000" && svgInfo.lineCount === 22
+  ? ok("Grid plot renders a real SVG grid: viewBox 0 0 1000 1000, 22 gridlines (11 vertical + 11 horizontal at 100m spacing)")
+  : bad("Grid plot SVG: " + JSON.stringify(svgInfo));
+
+async function readPlotHint() {
+  return page.evaluate(() =>
+    Array.from(document.querySelectorAll(".panel p.hint")).map((p) => p.textContent).find((t) => /Plot this point|Read the marked point/.test(t || "")) || ""
+  );
+}
+let plotHint = await readPlotHint();
+let mPlot = /Easting (\d+)m, Northing (\d+)m/.exec(plotHint);
+mPlot ? ok(`Plot-a-point states a real target coordinate: "${plotHint}"`) : bad("could not parse plot target from hint: " + plotHint);
+let [, tx, ty] = mPlot || [, "0", "0"];
+tx = Number(tx); ty = Number(ty);
+
+// Click exactly at the target - real getScreenCTM()-based coordinate math should land within a few meters (pixel rounding only).
+// Use a locator with a position offset (not raw page.mouse.click at absolute
+// viewport coordinates): the panel sits well down the page, so for low-
+// northing targets the naive rect-based screen point can fall below the
+// unscrolled 720px viewport and silently miss. locator.click({position})
+// scrolls the element into view first, then clicks relative to ITS OWN
+// freshly-measured box - immune to that.
+const PX_SIZE = 320; // matches plotMode()'s own on-screen SVG size (PX const)
+await page.locator('svg[role="img"]').click({ position: { x: (tx / 1000) * PX_SIZE, y: ((1000 - ty) / 1000) * PX_SIZE } });
+await page.waitForTimeout(150);
+const afterClick = await page.evaluate(() => ({
+  eVal: Number(document.querySelector('input[aria-label*="Easting"]')?.value),
+  nVal: Number(document.querySelector('input[aria-label*="Northing"]')?.value),
+  markerCount: document.querySelectorAll("[data-marker]").length,
+}));
+(Math.abs(afterClick.eVal - tx) <= 15 && Math.abs(afterClick.nVal - ty) <= 15)
+  ? ok(`clicking the SVG at the target populates the Easting/Northing inputs via real getScreenCTM() math (clicked (${afterClick.eVal}, ${afterClick.nVal}) vs target (${tx}, ${ty}))`)
+  : bad(`click-to-coordinate math off: got (${afterClick.eVal}, ${afterClick.nVal}), target (${tx}, ${ty})`);
+afterClick.markerCount === 1
+  ? ok("exactly 1 marker shown after clicking - the guess only, target not revealed before Check")
+  : bad("marker count after click (pre-Check): " + afterClick.markerCount);
+
+await page.locator("button", { hasText: "Check" }).first().click();
+await page.waitForTimeout(150);
+const plotCheck = await page.evaluate(() => ({
+  feedback: document.querySelector(".feedback")?.textContent,
+  cls: document.querySelector(".feedback")?.className,
+  markerCount: document.querySelectorAll("[data-marker]").length,
+  score: document.querySelector(".stat .v")?.textContent,
+}));
+/^Correct — within \d+m of the real point/.test(plotCheck.feedback || "") && (plotCheck.cls || "").includes("good")
+  ? ok(`a click within tolerance is graded "Correct" with a real distance-in-meters figure: "${plotCheck.feedback}"`)
+  : bad(`plot correct-click feedback: "${plotCheck.feedback}" (class: ${plotCheck.cls})`);
+plotCheck.markerCount === 2
+  ? ok("both the target and the guess are marked on the grid after Check, for visual comparison")
+  : bad("marker count after Check: " + plotCheck.markerCount);
+plotCheck.score === "1 / 1" ? ok("Grid plot: score tally reads 1 / 1 after a correct plot") : bad("Grid plot score: " + JSON.stringify(plotCheck.score));
+
+// A deliberately-wrong plot (typed, not clicked) must report a real miss-distance, not just "wrong".
+await page.locator("button", { hasText: "New point →" }).click();
+await page.waitForTimeout(150);
+plotHint = await readPlotHint();
+mPlot = /Easting (\d+)m, Northing (\d+)m/.exec(plotHint);
+[, tx, ty] = mPlot || [, "0", "0"]; tx = Number(tx); ty = Number(ty);
+const farE = tx > 500 ? tx - 300 : tx + 300, farN = ty > 500 ? ty - 300 : ty + 300;
+await page.fill('input[aria-label*="Easting"]', String(farE));
+await page.fill('input[aria-label*="Northing"]', String(farN));
+await page.locator("button", { hasText: "Check" }).first().click();
+await page.waitForTimeout(150);
+const wrongPlot = await page.evaluate(() => ({ feedback: document.querySelector(".feedback")?.textContent, cls: document.querySelector(".feedback")?.className }));
+const expectedDist = Math.round(Math.hypot(farE - tx, farN - ty));
+(wrongPlot.feedback || "").includes(`Off by ${expectedDist}m`) && (wrongPlot.cls || "").includes("bad")
+  ? ok(`a wrong plot (typed, no click) reports the real miss-distance: "${wrongPlot.feedback}"`)
+  : bad(`plot wrong-answer feedback: "${wrongPlot.feedback}" (expected ~${expectedDist}m off)`);
+const plotScore2 = await page.locator(".stat .v").first().textContent();
+plotScore2 === "1 / 2" ? ok("Grid plot: score tally reads 1 / 2 after the wrong plot") : bad("Grid plot score after wrong: " + JSON.stringify(plotScore2));
+
+const plotLifeHint = await page.locator(".panel p.hint").filter({ hasText: /Lifetime:/ }).first().textContent();
+plotLifeHint === "Lifetime: 50% (1/2)"
+  ? ok('Grid plot: lifetime hint reads "Lifetime: 50% (1/2)" (its own bucket, unaffected by azimuth/pace/grid above)')
+  : bad("Grid plot lifetime hint: " + JSON.stringify(plotLifeHint));
+const plotLifePersisted = await page.evaluate(async () => {
+  const r = await window.G.db.get("kv", "guidon:drills:v1");
+  return r && r.v && r.v.landnav ? r.v.landnav.plot : null;
+});
+plotLifePersisted && plotLifePersisted.attempts === 2 && plotLifePersisted.right === 1
+  ? ok('Grid plot lifetime score persists to kv "guidon:drills:v1" (landnav.plot: {attempts:2, right:1})')
+  : bad("Grid plot persisted lifetime score: " + JSON.stringify(plotLifePersisted));
+
+// Read-a-point: a marked point is shown up front (this is the genuinely
+// visual half of this mode), and it's answerable purely by keyboard -
+// typing Easting/Northing and pressing Enter, never touching the SVG.
+await page.locator(".segmented button", { hasText: "Read a point" }).click();
+await page.waitForTimeout(200);
+const readState = await page.evaluate(() => ({ markerCount: document.querySelectorAll("[data-marker]").length }));
+readState.markerCount === 1
+  ? ok("Read-a-point shows exactly 1 marker (the point to read) immediately, before any answer")
+  : bad("Read-a-point marker count before answering: " + readState.markerCount);
+plotHint = await readPlotHint();
+/Read the marked point below/.test(plotHint)
+  ? ok('Read-a-point prompt text: "' + plotHint + '"')
+  : bad("Read-a-point hint text: " + plotHint);
+// Read the real marked point straight off the SVG (cx, and cy inverted
+// per toSvgY()'s SIZE - m flip) so the guess below can be a DETERMINISTIC
+// miss, rather than gambling on a fixed guess happening to land within
+// 50m of an independently-random target.
+const readTarget = await page.evaluate(() => {
+  const c = document.querySelector("[data-marker]");
+  return c ? { x: Number(c.getAttribute("cx")), y: 1000 - Number(c.getAttribute("cy")) } : null;
+});
+const readGuessE = readTarget.x > 500 ? readTarget.x - 300 : readTarget.x + 300;
+const readGuessN = readTarget.y > 500 ? readTarget.y - 300 : readTarget.y + 300;
+await page.fill('input[aria-label*="easting"]', String(readGuessE));
+await page.fill('input[aria-label*="northing"]', String(readGuessN));
+await page.keyboard.press("Enter"); // Enter-to-submit, no click anywhere in this whole sub-mode
+await page.waitForTimeout(150);
+const readFb = await page.evaluate(() => document.querySelector(".feedback")?.textContent || "");
+const readExpectedDist = Math.round(Math.hypot(readGuessE - readTarget.x, readGuessN - readTarget.y));
+readFb.includes(`Off by ${readExpectedDist}m`)
+  ? ok(`Read-a-point is fully keyboard-operable end to end (typed inputs + Enter, no click), reporting the real miss-distance: "${readFb}"`)
+  : bad(`Read-a-point keyboard-only check: "${readFb}" (expected ~${readExpectedDist}m off, target was (${readTarget.x}, ${readTarget.y}))`);
+
+// All four lifetime scores must survive a REAL reload (a fresh page
 // load, not just an in-app re-render) - the same bar test-baseline-
 // coverage.mjs already holds citDrill()/briefDrill()'s own persistence to.
 await page.reload({ waitUntil: "load" });
@@ -284,6 +425,15 @@ const gridLifeAfterReload = await page.locator(".panel p.hint").filter({ hasText
 gridLifeAfterReload === "Lifetime: 50% (1/2)"
   ? ok("Grid coordinate lifetime score survives a real page reload (50% (1/2))")
   : bad("Grid coordinate lifetime hint after reload: " + JSON.stringify(gridLifeAfterReload));
+await page.locator(".segmented button", { hasText: "Grid plot" }).click();
+await page.waitForTimeout(200);
+const plotLifeAfterReload = await page.locator(".panel p.hint").filter({ hasText: /Lifetime:/ }).first().textContent();
+// 1/2 from the plot-mode checks above, plus the Read-a-point keyboard-only
+// submission (a fixed 500/500 guess against a random target, almost always
+// a miss) = 3 attempts, 1 right.
+plotLifeAfterReload === "Lifetime: 33% (1/3)"
+  ? ok("Grid plot lifetime score survives a real page reload (33% (1/3))")
+  : bad("Grid plot lifetime hint after reload: " + JSON.stringify(plotLifeAfterReload));
 
 // cleanup so this drill's saved lifetime scores don't bleed into another suite
 await page.evaluate(() => window.G.db.put("kv", { k: "guidon:drills:v1", v: {} }));
