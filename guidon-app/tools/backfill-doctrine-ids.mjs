@@ -35,9 +35,14 @@ for (const e of noId) {
   let id = base, n = 2;
   while (taken.has(id)) id = base + "-" + n++;
   taken.add(id);
-  // Put id first so the on-disk key order matches every other entry.
+  // Put id first so the on-disk key order matches every other entry. The
+  // spread keeps a present-but-empty id ("", null, "   " - the exact shape
+  // the noId filter selects) and, as the LAST Object.assign source, would
+  // clobber the freshly generated one - so drop it first (review finding,
+  // reproduced: the tool reported success while rule (a) still failed).
   const rest = { ...e };
-  Object.keys(rest).forEach((k) => delete e[k]);
+  delete rest.id;
+  Object.keys(e).forEach((k) => delete e[k]);
   Object.assign(e, { id }, rest);
   console.log("  " + id.padEnd(52) + " <- " + rest.title);
 }
