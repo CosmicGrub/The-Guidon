@@ -168,7 +168,12 @@ seed.doctrine === 355 ? ok("355 doctrine entries intact") : bad(`doctrine: ${see
 // Equipment Operator-Maintainer) entry, previously mentioned only in a
 // note/array with no MOS-list entry of its own.
 seed.career === 164 ? ok("164 MOS entries intact") : bad(`MOS: ${seed.career}, expected 164`);
-seed.scenarios === 182 ? ok("182 scenarios intact") : bad(`scenarios: ${seed.scenarios}, expected 182`);
+// 183 as of the casualty-care-and-cohesion content pass (docs/design/
+// casualty-care-and-cohesion.md §2b, "TCCC-first" build order): added
+// sc-tccc-ied-strike, the first interactive TCCC content GUIDON ships -
+// a real branching MARCH-sequence scenario on the unmodified G.engine,
+// with three distinct flag-gated endings (182 -> 183).
+seed.scenarios === 183 ? ok("183 scenarios intact") : bad(`scenarios: ${seed.scenarios}, expected 183`);
 // creeds/prt existed as empty skeleton keys from Milestone 1 (see the
 // topKeys===19 comment above) with no content until Milestone 2 (PRT Hub -
 // the Preparation Drill, 1 drill / 10 exercises) and Milestone 3 (Creeds
