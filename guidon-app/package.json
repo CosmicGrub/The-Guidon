@@ -113,6 +113,7 @@
     "test:train-mode-guard": "node tools/test-train-mode-guard.mjs",
     "test:board-drill-dynamic": "node tools/test-board-drill-dynamic.mjs",
     "test:board-drill-grading": "node tools/test-board-drill-grading.mjs",
+    "test:board-reps": "node tools/test-board-reps.mjs",
     "test:board-drill-preflip-hiding": "node tools/test-board-drill-preflip-hiding.mjs",
     "test:board-drill-reduced-motion-scroll": "node tools/test-board-drill-reduced-motion-scroll.mjs",
     "test:search-list-detail": "node tools/test-search-list-detail.mjs",
