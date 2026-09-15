@@ -176,7 +176,12 @@ seed.career === 164 ? ok("164 MOS entries intact") : bad(`MOS: ${seed.career}, e
 // sc-medevac-9line-callin, the 9-line MEDEVAC builder - a fixed 9-node
 // multiple-choice graph (never free text) with a wartime/peacetime
 // comprehension check on Lines 6 and 9 (183 -> 184).
-seed.scenarios === 184 ? ok("184 scenarios intact") : bad(`scenarios: ${seed.scenarios}, expected 184`);
+// 187 as of the Integrated Operational Thinking pass (2026-09-15): 3 new
+// Vertical/Lateral-thinking scenarios added (sc-iot-comms-blackout,
+// sc-iot-motorpool-belt, sc-iot-range-safety) on the unmodified G.engine -
+// ROADMAP.md §3f, Phase 0. Was 184 (the TCCC IED-strike and 9-line MEDEVAC
+// additions, v1.9.0).
+seed.scenarios === 187 ? ok("187 scenarios intact") : bad(`scenarios: ${seed.scenarios}, expected 187`);
 // creeds/prt existed as empty skeleton keys from Milestone 1 (see the
 // topKeys===19 comment above) with no content until Milestone 2 (PRT Hub -
 // the Preparation Drill, 1 drill / 10 exercises) and Milestone 3 (Creeds
