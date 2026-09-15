@@ -2,7 +2,7 @@
 
 **Read this to know: what's shipped, what's deliberately not built (and why), and what actually comes next.** `GUIDON_PROJECT_MAP.md` is the 10,000-foot *what is this app* orientation; `CHANGELOG.md` is the session-by-session *what changed*; this document is the forward-looking one — pull from it to pick up where the last session left off, and keep it current going forward rather than letting it drift the way the other canonical docs already have once.
 
-**Current version:** v1.8.2 (`guidon-app/package.json`), cut 2026-09-13 — two same-day patches fixing real layout bugs in v1.8.0's own pin-star feature: v1.8.1 fixed the star overlapping labels (found live, reported directly) plus an unrelated v1.2.0-era row-height bug found in the same pass; v1.8.2 fixed a more severe gap in v1.8.1's own fix, found only by verifying on the real physical Z Fold5 rather than trusting a browser-only check. §1's table below is now current through the doctrine confidence-field backfill (2026-09-14) — see `CHANGELOG.md` for the full detail on each. The former version-line/table gap for v1.6.0, v1.7.0, and the ESP32 Flashcard OS firmware fork (PRs #120–#137, everything between round 8 and round 9) is now backfilled below.
+**Current version:** v1.9.0 (`guidon-app/package.json`), cut 2026-09-15 — the casualty-care-and-cohesion design's full TCCC-first build order shipped: two new branching G.engine scenarios (`sc-tccc-ied-strike`, `sc-medevac-9line-callin`) and Land Nav Drill's 4th mode (Grid plot), each independently adversarially reviewed and each catching real, fixed content-accuracy defects before shipping — see `CHANGELOG.md` for the full detail on each. §1's table below is current through the doctrine confidence-field backfill (2026-09-14); this release's own three items are summarized in §3e below rather than re-added as separate table rows, since they complete work that section already scoped.
 
 ---
 
@@ -254,7 +254,7 @@ while a verified control entry stays visible throughout.
 
 ---
 
-## 3e. PLANNED (2026-09-14): casualty care/land nav/grid/MEDEVAC content depth, cross-subject cohesion, team-building catalog, and a PT scheduler
+## 3e. TCCC-first lane SHIPPED (2026-09-15); cross-subject cohesion, team-building catalog, and a PT scheduler still PLANNED
 
 Two "monumental addition" requests, each explored via an independent
 4-candidate design workflow (adversarially scored and synthesized), with
@@ -262,20 +262,11 @@ every real decision point locked in by the user via multiple choice
 against the judge's own recommendations. **Full design docs, locked
 decisions, and named open engineering risks**:
 `guidon-app/docs/design/casualty-care-and-cohesion.md` and
-`guidon-app/docs/design/pt-scheduler.md`. Nothing in either doc is built
-yet except the day-one doctrine fixes below, which are.
+`guidon-app/docs/design/pt-scheduler.md`.
 
-**Casualty care/land nav/grid/MEDEVAC + cohesion, locked scope**: build
-order is TCCC-first (a branching, consequence-based STX lane extending
-the app's existing 182-scenario engine, not a new content type), then the
-9-line MEDEVAC builder, then a real SVG click-to-place grid-plotting mode
-for Land Nav Drill. The cross-subject cohesion mechanic is "Scenario Relay
-+ Collective Decision" (a `discuss:true` group-decision node flag on the
-same shared scenario engine — retrofits onto all 182 existing scenarios
-for free). A minimal, manually-updated leader Squad Roster ships alongside
-it. The 10-exercise doctrine-grounded team-building catalog ships in
-format-band phases (icebreaker/config-only first, then high-stress/blind-
-trust, then content-dependent exercises once TCCC/9-line exist).
+**Casualty care/land nav/grid/MEDEVAC, locked build order — all three items now SHIPPED**: TCCC-first (`sc-tccc-ied-strike`, an 11-node branching, consequence-based STX lane extending the app's existing scenario engine, not a new content type — [PR #159](https://github.com/CosmicGrub/The-Guidon/pull/159)), then the 9-line MEDEVAC builder (`sc-medevac-9line-callin`, 13 nodes — [PR #160](https://github.com/CosmicGrub/The-Guidon/pull/160)), then a real SVG click-to-place grid-plotting mode for Land Nav Drill (`plotMode()`, the drill's 4th mode — [PR #161](https://github.com/CosmicGrub/The-Guidon/pull/161)). All three shipped in v1.9.0; see `CHANGELOG.md` for the full technical detail on each, including every content-accuracy defect the adversarial-review pass caught and fixed before shipping.
+
+**Still PLANNED, unstarted**: the cross-subject cohesion mechanic, "Scenario Relay + Collective Decision" (a `discuss:true` group-decision node flag on the same shared scenario engine — retrofits onto every existing scenario for free, now that the TCCC/9-line lanes have proven real content plays well on the unmodified engine, satisfying the design doc's own "probe with 1-2 STX lanes first" sequencing note). A minimal, manually-updated leader Squad Roster ships alongside it. The 10-exercise doctrine-grounded team-building catalog ships in format-band phases (icebreaker/config-only first, then high-stress/blind-trust, then content-dependent exercises — now unblocked, since TCCC/9-line content exists).
 
 **PT scheduler, locked scope**: reconcile the two duplicate PT-session
 datasets (`#/prt`'s verified single-drill engine vs. `#/drills`' full-
