@@ -254,6 +254,60 @@ while a verified control entry stays visible throughout.
 
 ---
 
+## 3e. PLANNED (2026-09-14): casualty care/land nav/grid/MEDEVAC content depth, cross-subject cohesion, team-building catalog, and a PT scheduler
+
+Two "monumental addition" requests, each explored via an independent
+4-candidate design workflow (adversarially scored and synthesized), with
+every real decision point locked in by the user via multiple choice
+against the judge's own recommendations. **Full design docs, locked
+decisions, and named open engineering risks**:
+`guidon-app/docs/design/casualty-care-and-cohesion.md` and
+`guidon-app/docs/design/pt-scheduler.md`. Nothing in either doc is built
+yet except the day-one doctrine fixes below, which are.
+
+**Casualty care/land nav/grid/MEDEVAC + cohesion, locked scope**: build
+order is TCCC-first (a branching, consequence-based STX lane extending
+the app's existing 182-scenario engine, not a new content type), then the
+9-line MEDEVAC builder, then a real SVG click-to-place grid-plotting mode
+for Land Nav Drill. The cross-subject cohesion mechanic is "Scenario Relay
++ Collective Decision" (a `discuss:true` group-decision node flag on the
+same shared scenario engine — retrofits onto all 182 existing scenarios
+for free). A minimal, manually-updated leader Squad Roster ships alongside
+it. The 10-exercise doctrine-grounded team-building catalog ships in
+format-band phases (icebreaker/config-only first, then high-stress/blind-
+trust, then content-dependent exercises once TCCC/9-line exist).
+
+**PT scheduler, locked scope**: reconcile the two duplicate PT-session
+datasets (`#/prt`'s verified single-drill engine vs. `#/drills`' full-
+session checklist) using a documented placeholder table so it ships
+without waiting on all new drill content to be fully doctrine-sourced
+first. Day-one intelligence is "defaults + a flagged history check" (day-
+of-week template + a non-blocking 3:1 hard:recovery-ratio warning, not a
+full auto-adjusting rule engine). A persisted, hand-editable day/week/
+month schedule, a hybrid template-library-plus-suggestion interaction
+model, a reused-checklist-plus-export leader tie-in (not a full roster
+module), and notifications on the existing single-fire reminder pipeline
+(not new recurrence infrastructure) round out day one.
+
+**Day-one doctrine fixes — shipped, not just planned**: `doc-tccc` and
+`doc-tccc-1` were two overlapping, unreconciled TCCC doctrine cards
+(`doc-tccc-1` cited the superseded TC 4-02.1 despite carrying
+`confidence:"verified"`). Verified directly against the real, current ATP
+4-02.11 (23 March 2026) and ATP 4-02.2 (12 July 2019) source PDFs before
+writing anything: `doc-tccc-1` retired; `doc-tccc` extended from MARCH-only
+to the actual current MARCH-**PAWS** protocol (Pain/Antibiotics/Wounds/
+Splinting is genuinely the second half of the doctrine, confirmed present
+in the source text — a real completeness gap, not previously known) and
+its "DA Form 1380" citation corrected to "DD Form 1380" (a Department of
+Defense form — this had been silently self-contradicting the app's own
+`tc4021-9` board question, which already said DD Form 1380 correctly).
+The previously-nonexistent 9-line MEDEVAC doctrine card (`doc-medevac-
+9line`) was added, sourced verbatim-in-substance from ATP 4-02.2's real
+Appendix C, Table C-1. New regression coverage:
+`tools/test-doctrine-tccc-medevac-accuracy.mjs`.
+
+---
+
 ## 4. Deliberately not built — and why
 
 Not gaps. Each of these was scoped, considered, and declined on its own merits. Revisit only if the stated condition changes.

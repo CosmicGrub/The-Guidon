@@ -7,7 +7,7 @@ listing was briefly unavailable) — never reconstructed from memory. This is
 regulation text a Soldier may rely on for an actual promotion board; the
 whole point of this feature is that it's the real thing.
 
-## The 17 core publications
+## The 19 core publications
 
 | Citation | Title | Source |
 |---|---|---|
@@ -26,6 +26,8 @@ whole point of this feature is that it's the real thing.
 | FM 7-22 | Holistic Health and Fitness | armypubs.army.mil (ARN44522) |
 | ATP 7-22.02 | Holistic Health and Fitness Drills and Exercises | armypubs.army.mil (ARN45013, published w/ Basic incl C1) |
 | ATP 7-22.01 | Holistic Health and Fitness Testing | armypubs.army.mil (ARN46104, 12 March 2026 edition) |
+| ATP 4-02.11 | Casualty Response, Tactical Combat Casualty Care, and First Aid | armypubs.army.mil (ARN46159, 23 March 2026 edition) |
+| ATP 4-02.2 | Medical Evacuation | armypubs.army.mil (ARN17834, 12 July 2019) |
 | TC 3-21.5 | Drill and Ceremonies | armypubs.army.mil (ARN32297) |
 | TC 3-22.9 | Rifle and Carbine | armypubs.army.mil (ARN19927, C3) |
 
@@ -47,6 +49,16 @@ for AFT administration/grading procedures, though **it does not carry the
 AFT's numeric scoring-standards tables**: para 2-30 explicitly defers
 those to the separately-maintained AFT website (army.mil/aft), a distinct,
 still-open sourcing question of its own.
+
+ATP 4-02.11 and ATP 4-02.2 were added during the casualty-care/land-nav/
+grid/MEDEVAC content-depth pass (`GUIDON files/ROADMAP.md` §3e): ATP
+4-02.11 is the real, current source for `doc-tccc`'s MARCH-PAWS protocol
+(it supersedes TC 4-02.1, previously cited there); ATP 4-02.2's Appendix
+C, Table C-1 is the real source for the newly-added `doc-medevac-9line`
+doctrine entry and for the upcoming interactive 9-line MEDEVAC builder.
+Both fetched and verified (content extracted and cross-checked against
+what shipped in the seed) before any doctrine text was written, not
+assumed from memory.
 
 ## Regenerating `src/app-modules/library.js`
 
