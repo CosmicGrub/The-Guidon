@@ -10034,6 +10034,7 @@ window.G = window.G || {};
       const diff = diffSel.value || "All";
       let pool = cat === "All" ? all : all.filter((q) => q.category === cat);
       if (diff !== "All") pool = pool.filter((q) => G.board.normDifficulty(q.difficulty) === diff);
+      if (regFilter !== "All") pool = pool.filter((q) => (regIndex.get(q.id) || []).includes(regFilter));
       // One db.all("kv") cursor scan instead of N parallel db.get()s -
       // scoped to the FULL bank (all), not just the filtered pool, so the
       // single resulting srsMap also covers what refreshCatList()/
@@ -10140,6 +10141,7 @@ window.G = window.G || {};
       }
       refreshCatList();
       refreshCatChips();
+      refreshRegChips();
       refreshReadinessPane();
       draw();
     }
@@ -10232,6 +10234,7 @@ window.G = window.G || {};
         if (dueOnlyMode) active.push("Due only");
         if (leechOnlyMode) active.push("Leeches only");
         if (starOnlyMode) active.push("My Bookmarks");
+        if (regFilter !== "All") active.push("regulation “" + regFilter + "”");
         const msg = active.length
           ? "No questions match " + active.join(" + ") + ". Clear one of these filters to see more."
           : "No questions for this filter.";
@@ -11049,6 +11052,44 @@ window.G = window.G || {};
       });
     }
 
+    // Regulation quick filter (ROADMAP §3f Phase 1-2, "sort the cards by
+    // subject matter/regulation"): the SAME chip-bar idiom as the category
+    // bar directly above, on a second, independent axis - which publication
+    // a card cites (G.board.regulationsOf(q.source), derived at read time;
+    // see that function's comment for why it is not a seed field). A card
+    // citing two regulations ("AR 600-8-19 / DA PAM 600-8-19") appears
+    // under both. Composes with category/level/due/leech/bookmark filters
+    // in build(). Capped exactly like the category bar (count >= 2, top 12
+    // by frequency) - the bank cites ~150 distinct publications, and a
+    // full list of chips would be its own wall. State is a plain local
+    // (regFilter) rather than a <select>: unlike categories there is no
+    // pre-existing dropdown to stay in sync with.
+    const regIndex = new Map();
+    all.forEach((q) => regIndex.set(q.id, G.board.regulationsOf(q.source)));
+    const regChipCounts = {};
+    regIndex.forEach((regs) => regs.forEach((r) => { regChipCounts[r] = (regChipCounts[r] || 0) + 1; }));
+    const topRegChips = Object.entries(regChipCounts).filter(([, n]) => n >= 2)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 12).map(([r]) => r);
+    let regFilter = "All";
+    const regChipBar = el("div.search-filters", { "aria-label": "Quick-filter by regulation" });
+    function refreshRegChips() {
+      util.clear(regChipBar);
+      const allChip = el("button.chip.search-chip" + (regFilter === "All" ? ".active" : ""), {
+        type: "button", text: "All regulations", "aria-pressed": String(regFilter === "All"),
+      });
+      allChip.addEventListener("click", () => { if (regFilter !== "All") { regFilter = "All"; build(); } });
+      regChipBar.appendChild(allChip);
+      topRegChips.forEach((r) => {
+        const on = regFilter === r;
+        const chip = el("button.chip.search-chip" + (on ? ".active" : ""), {
+          type: "button", text: r + " (" + regChipCounts[r] + ")", "aria-pressed": String(on),
+          title: "Only cards that cite " + r,
+        });
+        chip.addEventListener("click", () => { if (regFilter !== r) { regFilter = r; build(); } });
+        regChipBar.appendChild(chip);
+      });
+    }
+
     // Readiness supporting pane (Fold5/tablet fidelity wave 2): a third,
     // narrow column next to the flashcard at >=1200px (Fold5-unfolded-
     // landscape / larger-tablet width - .drill-layout, see CSS), showing a
@@ -11115,6 +11156,7 @@ window.G = window.G || {};
     if (!boardHintSeen) { try { localStorage.setItem(BOARD_HINT_KEY, "1"); } catch (e) {} }
     const drillDetail = el("div");
     drillDetail.appendChild(catChipBar);
+    drillDetail.appendChild(regChipBar);
     drillDetail.appendChild(el("div.mini-row", {}, [el("label", { text: "Category", style: "margin:0" }), catSel, el("label", { text: "Level", style: "margin:0" }), diffSel, dueChip, leechChip, starChip, shuffleBtn]));
     drillDetail.appendChild(el("div", { style: "height:8px" }));
     drillDetail.appendChild(tally);
@@ -14582,6 +14624,71 @@ window.G = window.G || {};
     // reason: route() needs to remove this listener on every navigation.
     // See renderDrill()'s own comment where this is set, below.
     _autoTheaterResizeHandler: null,
+    // ROADMAP §3f Phase 1-2, "a structured `regulation` field decomposed from
+    // board questions' free-text `source`": decided as RUNTIME derivation,
+    // not a persisted field. A 997-card seed migration would have to be
+    // re-run on every future card (the standing every-sourced-fact-gets-
+    // board-cards rule adds them constantly) and would go stale the moment
+    // someone edited a `source` by hand; deriving from `source` at read time
+    // can't drift, touches no seed data, and costs one regex pass per card.
+    // Calibrated against the real bank (2026-09-15 dry run over all 997
+    // sources): 887 parse fully, 67 carry a publication plus a named
+    // non-publication residue (DFAS, VA.gov, "unit SOP", a curriculum name),
+    // 43 cite no publication at all (statutes are covered below; creeds,
+    // institutions and websites deliberately yield nothing - `category`
+    // already sorts those). `source` stays the human-readable citation;
+    // this is the machine-readable axis beside `category`.
+    //
+    // Returns the distinct regulation ids in order of first appearance,
+    // normalized so "DODI 6495.02", "DoDI 6495.02" and "DoD 6495.02"-style
+    // spelling drift (and "37 USC § 403" vs "37 U.S.C. 403") collapse to
+    // one chip each. Prefix canonicalization first, then every rule runs
+    // over the same canonical string and results are merged by position.
+    regulationsOf(source) {
+      const src = String(source || "");
+      if (!src.trim()) return [];
+      const canon = src
+        .replace(/\bDA\s*Pam\b/gi, "DA PAM")
+        .replace(/\bUSAREC\s*Pam\b/gi, "USAREC PAM")
+        .replace(/\bDOD([IDM])\b/g, (m, x) => "DoD" + x)
+        .replace(/\bDoD\s*FMR\b/gi, "DoD FMR")
+        .replace(/\bExecutive\s+Order\s+(\d+)/gi, "EO $1")
+        .replace(/\bManual\s+for\s+Courts-?Martial\b/gi, "MCM")
+        .replace(/\bTitle\s+(\d+)\b(?!\s*U)/gi, "$1 USC");
+      const PUB = /\b(DA PAM|USAREC PAM|TB MED|AR|FM|ADP|ADRP|ATP|ATTP|TC|TM|STP|TB|SB|GTA|CTA|JP|DoDI|DoDD|DoDM|DoD|AFI|MCO|ALARACT|MILPER)\s*(\d[\w.\-/]*)/g;
+      const RULES = [
+        [PUB, (m) => m[1] + " " + m[2].replace(/[.,;/-]+$/, "")],
+        [/\b(\d+)\s*U\.?S\.?C\.?\s*(?:Ch(?:apter)?\.?\s*(\d+)|§?\s*(\d+))?/g, (m) => m[1] + " USC" + (m[2] ? " Ch. " + m[2] : m[3] ? " " + m[3] : "")],
+        [/\b(\d+)\s*CFR\s*(?:Part\s*)?(\d+)/g, (m) => m[1] + " CFR " + m[2]],
+        [/\bUCMJ(?:[\s,]*Art(?:icles?|\.)?\s*(\d+[a-z]?(?:-\d+)?))?/g, (m) => "UCMJ" + (m[1] ? " Art. " + m[1] : "")],
+        [/\bMCM\b/g, () => "MCM"],
+        [/\bMRE\s+(\d+)/g, (m) => "MRE " + m[1]],
+        [/\bEO\s+(\d{4,})/g, (m) => "EO " + m[1]],
+        [/\b(DA|DD)\s*(?:Form\s*)?(\d{3,}[\w-]*)/g, (m) => m[1] + " Form " + m[2]],
+        [/\bDoD FMR(?:\s*Vol(?:ume)?\.?\s*([\w]+))?/g, (m) => "DoD FMR" + (m[1] ? " Vol " + m[1] : "")],
+        [/\bGeneva\s+Conventions?\b/gi, () => "Geneva Conventions"],
+        [/\bHague\s+(?:Conventions?|Regulations?)\b/gi, () => "Hague Regulations"],
+        [/\bStafford\s+Act\b/gi, () => "Stafford Act"],
+        [/\bPosse\s+Comitatus\s+Act\b/gi, () => "Posse Comitatus Act"],
+        [/\bNational\s+Response\s+Framework\b/gi, () => "National Response Framework"],
+        [/\bSCRA\b/g, () => "SCRA"],
+        [/\bJTR\b/g, () => "JTR"],
+        [/\bUSCENTCOM\s+GO-?1\b/gi, () => "USCENTCOM GO-1"],
+      ];
+      const hits = [];
+      for (const [re, fmt] of RULES) {
+        re.lastIndex = 0;
+        let m;
+        while ((m = re.exec(canon)) !== null) {
+          if (m.index === re.lastIndex) re.lastIndex++;
+          hits.push({ i: m.index, id: fmt(m).replace(/\s+/g, " ").trim() });
+        }
+      }
+      hits.sort((a, b) => a.i - b.i);
+      const out = [];
+      for (const h of hits) if (h.id && !out.includes(h.id)) out.push(h.id);
+      return out;
+    },
     // Shared "is this card due for review" predicate. Home's aggregate
     // due-count banner and Progress's per-category due tally used to answer
     // this differently - Progress required reps>0 (a card must have been
