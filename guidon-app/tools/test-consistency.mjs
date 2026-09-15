@@ -132,7 +132,10 @@ seed.topKeys === 19 ? ok("seed has all 19 top-level sections") : bad(`expected 1
 // pass's PR for the per-card reasoning. Was 993 before this pass (itself
 // down from 1009 via the AFT/ACFT/Fitness consolidation - see git history
 // for that baseline's own provenance comment).
-seed.board === 984 ? ok("984 board cards intact") : bad(`board cards: ${seed.board}, expected 984`);
+// 988 as of the same pass: 4 matching board cards (counsel-proc-1/2,
+// adp70-8step-1/2) per the standing every-sourced-fact-gets-board-cards
+// rule. Was 984 on this branch (the AER/ACS/SUDCC +9 lives on its own PR).
+seed.board === 988 ? ok("988 board cards intact") : bad(`board cards: ${seed.board}, expected 988`);
 // 3623 as of the same quick-win pass: deleted "RAC-OT" (an OCR/scrape
 // duplicate artifact of "RAS-OT", not a real distinct acronym) and 7
 // redundant unhyphenated staff-designator overlay entries (S2, S3, G1,
@@ -163,7 +166,10 @@ seed.acronyms === 3623 ? ok("3,623 acronym terms intact") : bad(`acronyms: ${see
 // convention (see board.questions "boardprocedu-4"), so it was split into
 // its own community-tier entry rather than left mis-attributed to the TC
 // 3-21.5 office-reporting procedure (354 -> 355).
-seed.doctrine === 355 ? ok("355 doctrine entries intact") : bad(`doctrine: ${seed.doctrine}, expected 355`);
+// 357 as of the counseling/training-management doctrine pass (2026-09-15):
+// doc-counsel-process (the four-stage counseling process, ATP 6-22.1 2024)
+// and doc-8step-training (ADP 7-0 Table 4-1). Was 355.
+seed.doctrine === 357 ? ok("357 doctrine entries intact") : bad(`doctrine: ${seed.doctrine}, expected 357`);
 // 164 as of v1.4.20: task #104 added a real 46T (Visual Information
 // Equipment Operator-Maintainer) entry, previously mentioned only in a
 // note/array with no MOS-list entry of its own.

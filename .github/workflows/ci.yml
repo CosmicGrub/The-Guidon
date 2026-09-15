@@ -648,8 +648,8 @@ jobs:
             tests: "test:tls-adversarial test:icon-registry test:whats-new test:study-rooms-shell-gate"
           - name: "43-shareosaware-doctrinenjpawolaccuracy-doctrineconfidencefilters-doctrinetcccmedevacaccuracy"
             tests: "test:share-os-aware test:doctrine-njp-awol-accuracy test:doctrine-confidence-filters test:doctrine-tccc-medevac-accuracy"
-          - name: "44-tccciedstrikescenario-medevac9linescenario"
-            tests: "test:tccc-ied-strike-scenario test:medevac-9line-scenario"
+          - name: "44-tccciedstrikescenario-medevac9linescenario-doctrinecounseltrainingaccuracy"
+            tests: "test:tccc-ied-strike-scenario test:medevac-9line-scenario test:doctrine-counsel-training-accuracy"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
