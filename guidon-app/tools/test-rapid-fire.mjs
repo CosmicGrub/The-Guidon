@@ -234,18 +234,29 @@ afterSwitch.hasStartBtn ? ok("Rapid Fire's Setup screen renders (real 'Start Rou
 //     also clicked so the difficulty-band default ("Match my rank", which
 //     for the real guest profile's real tier E4 means the beginner band)
 //     doesn't silently narrow these category counts further.
+//     Fixture-obsolescence fix (2026-09-15): these two counts used to be
+//     hard-coded literals (17 / 19) "verified against the real seed data
+//     before this file was written" - and the Counseling one broke the
+//     moment the standing every-sourced-fact-gets-board-cards rule added
+//     two real counseling-process cards (PR #167). Read live from the same
+//     tier-filtered G.store.boardQuestions() the round pool itself is
+//     built from, with the original literals kept as FLOORS so a category
+//     silently losing cards still fails here instead of passing vacuously.
+const categoryCount = (cat) => page.evaluate((c) => G.store.boardQuestions().filter((q) => q.category === c).length, cat);
 await clickButtonByText("All difficulties");
 await setCategory("Army Fitness Test (AFT)");
+const aftCount = await categoryCount("Army Fitness Test (AFT)");
 let note = await poolNoteText();
-/^17 questions in this deck\.$/.test(note || "")
-  ? ok("selecting category 'Army Fitness Test (AFT)' shows the real 17-question pool count")
-  : bad("pool note after selecting Army Fitness Test (AFT): " + note);
+(aftCount >= 17 && new RegExp("^" + aftCount + " questions in this deck\\.$").test(note || ""))
+  ? ok(`selecting category 'Army Fitness Test (AFT)' shows the real live pool count (${aftCount}; floor 17)`)
+  : bad(`pool note after selecting Army Fitness Test (AFT) (expected ${aftCount}, floor 17): ` + note);
 
 await setCategory("Counseling (ATP 6-22.1)");
+const counselCount = await categoryCount("Counseling (ATP 6-22.1)");
 note = await poolNoteText();
-/^19 questions in this deck\.$/.test(note || "")
-  ? ok("selecting category 'Counseling (ATP 6-22.1)' shows the real 19-question pool count")
-  : bad("pool note after selecting Counseling (ATP 6-22.1): " + note);
+(counselCount >= 19 && new RegExp("^" + counselCount + " questions in this deck\\.$").test(note || ""))
+  ? ok(`selecting category 'Counseling (ATP 6-22.1)' shows the real live pool count (${counselCount}; floor 19)`)
+  : bad(`pool note after selecting Counseling (ATP 6-22.1) (expected ${counselCount}, floor 19): ` + note);
 
 const realTotal = await page.evaluate(() => G.store.boardQuestions().length);
 await setCategory("All");

@@ -136,7 +136,10 @@ seed.topKeys === 19 ? ok("seed has all 19 top-level sections") : bad(`expected 1
 // from before that redundancy pass (see the AFT/ACFT/Fitness
 // consolidation this comment used to cite) - today's 993 is a different
 // set of cards, not a reversion to that earlier state.
-seed.board === 993 ? ok("993 board cards intact") : bad(`board cards: ${seed.board}, expected 993`);
+// 997 as of the same counseling/training pass: 4 matching board cards
+// (counsel-proc-1/2, adp70-8step-1/2) per the standing every-sourced-fact-
+// gets-board-cards rule, on top of the AER/ACS/SUDCC pass's 993 below.
+seed.board === 997 ? ok("997 board cards intact") : bad(`board cards: ${seed.board}, expected 997`);
 // 3623 as of the same quick-win pass: deleted "RAC-OT" (an OCR/scrape
 // duplicate artifact of "RAS-OT", not a real distinct acronym) and 7
 // redundant unhyphenated staff-designator overlay entries (S2, S3, G1,
@@ -167,7 +170,10 @@ seed.acronyms === 3623 ? ok("3,623 acronym terms intact") : bad(`acronyms: ${see
 // convention (see board.questions "boardprocedu-4"), so it was split into
 // its own community-tier entry rather than left mis-attributed to the TC
 // 3-21.5 office-reporting procedure (354 -> 355).
-seed.doctrine === 355 ? ok("355 doctrine entries intact") : bad(`doctrine: ${seed.doctrine}, expected 355`);
+// 357 as of the counseling/training-management doctrine pass (2026-09-15):
+// doc-counsel-process (the four-stage counseling process, ATP 6-22.1 2024)
+// and doc-8step-training (ADP 7-0 Table 4-1). Was 355.
+seed.doctrine === 357 ? ok("357 doctrine entries intact") : bad(`doctrine: ${seed.doctrine}, expected 357`);
 // 164 as of v1.4.20: task #104 added a real 46T (Visual Information
 // Equipment Operator-Maintainer) entry, previously mentioned only in a
 // note/array with no MOS-list entry of its own.
@@ -180,7 +186,12 @@ seed.career === 164 ? ok("164 MOS entries intact") : bad(`MOS: ${seed.career}, e
 // sc-medevac-9line-callin, the 9-line MEDEVAC builder - a fixed 9-node
 // multiple-choice graph (never free text) with a wartime/peacetime
 // comprehension check on Lines 6 and 9 (183 -> 184).
-seed.scenarios === 184 ? ok("184 scenarios intact") : bad(`scenarios: ${seed.scenarios}, expected 184`);
+// 187 as of the Integrated Operational Thinking pass (2026-09-15): 3 new
+// Vertical/Lateral-thinking scenarios added (sc-iot-comms-blackout,
+// sc-iot-motorpool-belt, sc-iot-range-safety) on the unmodified G.engine -
+// ROADMAP.md §3f, Phase 0. Was 184 (the TCCC IED-strike and 9-line MEDEVAC
+// additions, v1.9.0).
+seed.scenarios === 187 ? ok("187 scenarios intact") : bad(`scenarios: ${seed.scenarios}, expected 187`);
 // creeds/prt existed as empty skeleton keys from Milestone 1 (see the
 // topKeys===19 comment above) with no content until Milestone 2 (PRT Hub -
 // the Preparation Drill, 1 drill / 10 exercises) and Milestone 3 (Creeds
