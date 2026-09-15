@@ -141,10 +141,21 @@ hint = await selectedHintText();
 hint === "1 category selected."
   ? ok(`checking one category updates the live hint to "1 category selected." (singular, updates without a full re-render)`)
   : bad('hint after 1 check: ' + JSON.stringify(hint));
+// Fixture-obsolescence fix (2026-09-15): the 17 / 36 literals here broke
+// the moment two real counseling-process cards landed (PR #167, per the
+// standing every-sourced-fact-gets-board-cards rule). Counts are now read
+// live from the same tier-filtered G.store.boardQuestions() the round pool
+// is built from - the "independently-verifiable sum" claim still holds
+// (AFT + Counseling, computed separately, must equal the note) - with the
+// original literals kept as FLOORS so a category silently losing cards
+// still fails here instead of passing vacuously.
+const categoryCount = (cat) => page.evaluate((c) => G.store.boardQuestions().filter((q) => q.category === c).length, cat);
+const aftCount = await categoryCount("Army Fitness Test (AFT)");
+const counselCount = await categoryCount("Counseling (ATP 6-22.1)");
 let note = await poolNoteText();
-/^17 questions in this deck\.$/.test(note || "")
-  ? ok(`pool note reads "17 questions in this deck." for AFT alone, matching the real known category size`)
-  : bad("pool note after 1 category: " + JSON.stringify(note));
+(aftCount >= 17 && new RegExp("^" + aftCount + " questions in this deck\\.$").test(note || ""))
+  ? ok(`pool note reads "${aftCount} questions in this deck." for AFT alone, matching the real live category size (floor 17)`)
+  : bad(`pool note after 1 category (expected ${aftCount}, floor 17): ` + JSON.stringify(note));
 
 await checkCategory("Counseling (ATP 6-22.1)", true);
 await page.waitForTimeout(150);
@@ -153,9 +164,10 @@ hint === "2 categories selected."
   ? ok('checking a second category updates the hint to "2 categories selected." (plural)')
   : bad("hint after 2 checks: " + JSON.stringify(hint));
 note = await poolNoteText();
-/^36 questions in this deck\.$/.test(note || "")
-  ? ok(`pool note reads "36 questions in this deck." — the real independent sum of AFT (17) + Counseling (19), not a guess`)
-  : bad("pool note after 2 categories: " + JSON.stringify(note));
+const twoCatSum = aftCount + counselCount;
+(counselCount >= 19 && new RegExp("^" + twoCatSum + " questions in this deck\\.$").test(note || ""))
+  ? ok(`pool note reads "${twoCatSum} questions in this deck." — the real independent sum of AFT (${aftCount}) + Counseling (${counselCount}), not a guess`)
+  : bad(`pool note after 2 categories (expected ${twoCatSum} = ${aftCount} + ${counselCount}): ` + JSON.stringify(note));
 
 // ==================== a custom-mix round actually only draws from the checked categories ====================
 console.log("\n-- starting a round with this custom mix only ever draws AFT/Counseling cards --");
