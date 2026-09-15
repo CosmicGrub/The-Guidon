@@ -21,8 +21,8 @@
  * independent guard: it fails the whole build loudly if any page's text
  * still isn't clean UTF-8, rather than shipping a silent U+FFFD.
  *
- * Why a separate assembly script rather than doing this by hand: 17
- * documents, ~2,300 pages, ~6.0MB of text. Hand-editing that into a JS file
+ * Why a separate assembly script rather than doing this by hand: 19
+ * documents, ~2,700 pages, ~7.0MB of text. Hand-editing that into a JS file
  * is exactly the kind of mechanical, error-prone transcription this script
  * exists to make deterministic and re-runnable (e.g. when an 18th document
  * is added, or an edition updates).
@@ -104,6 +104,10 @@ const DOCS = [
     title: "Holistic Health and Fitness Drills and Exercises", note: "Companion to FM 7-22; the source for #/prt's Preparation Drill exercise detail." },
   { id: "atp-7-22-01", file: "ATP_7-22.01_Holistic_Health_and_Fitness_Testing", citation: "ATP 7-22.01",
     title: "Holistic Health and Fitness Testing", note: "AFT/OPAT/CWST administration, protocols, and grading procedures. Does NOT contain the AFT's numeric scoring-standards tables - para 2-30 explicitly defers those to the separately-maintained AFT website (army.mil/aft)." },
+  { id: "atp-4-02-11", file: "ATP_4-02.11_Casualty_Response_TCCC_and_First_Aid", citation: "ATP 4-02.11",
+    title: "Casualty Response, Tactical Combat Casualty Care, and First Aid", note: "Supersedes TC 4-02.1 (March 2026). The source for the MARCH-PAWS casualty-assessment protocol." },
+  { id: "atp-4-02-2", file: "ATP_4-02.2_Medical_Evacuation", citation: "ATP 4-02.2",
+    title: "Medical Evacuation", note: "Appendix C, Table C-1 is the source for the 9-line MEDEVAC request format." },
   { id: "tc-3-21-5", file: "TC_3-21.5_Drill_and_Ceremonies", citation: "TC 3-21.5",
     title: "Drill and Ceremonies", note: null },
   { id: "tc-3-22-9", file: "TC_3-22.9_Rifle_and_Carbine", citation: "TC 3-22.9",
