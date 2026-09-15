@@ -123,19 +123,23 @@ seed.isObject ? ok("GUIDON_SEED parsed to an object") : bad("GUIDON_SEED is not 
 // content yet, that's Milestone 2/3, but the keys themselves are real from
 // this commit forward.
 seed.topKeys === 19 ? ok("seed has all 19 top-level sections") : bad(`expected 19 top-level keys, got ${seed.topKeys}`);
-// 984 as of the quick-win internal-redundancy pass: General Orders (bq21,
-// bq22 - strict subsets of go-1/go-3), Weapons TC 3-22.9 (m4-1 duplicate
-// of wpn-8; m4-2 duplicate of wpn-9), and TCCC/First Aid (bq-tccc-01,
-// tccc-7, tccc-9, tccc-8 - each a duplicate of a fuller card) each had
-// genuinely redundant cards deleted, 9 total. Every fact unique to a
-// deleted card was folded into the card it duplicated first - see that
-// pass's PR for the per-card reasoning. Was 993 before this pass (itself
-// down from 1009 via the AFT/ACFT/Fitness consolidation - see git history
-// for that baseline's own provenance comment).
-// 988 as of the same pass: 4 matching board cards (counsel-proc-1/2,
-// adp70-8step-1/2) per the standing every-sourced-fact-gets-board-cards
-// rule. Was 984 on this branch (the AER/ACS/SUDCC +9 lives on its own PR).
-seed.board === 988 ? ok("988 board cards intact") : bad(`board cards: ${seed.board}, expected 988`);
+// 993 as of the AER/ACS/SUDCC content-gap pass (2026-09-15): 9 new cards
+// added (aer-1..3, acs-1..3, sudcc-1..3) - SHARP and EO already had real
+// coverage in the existing 984-card set (confirmed directly from the
+// seed during this session's own board-schema investigation), but these
+// three Army Programs did not. Was 984 before this pass, itself the
+// result of an earlier quick-win internal-redundancy pass that deleted 9
+// genuinely duplicate cards (General Orders bq21/bq22, Weapons TC 3-22.9
+// m4-1/m4-2, TCCC/First Aid bq-tccc-01/tccc-7/tccc-9/tccc-8) - see git
+// history for that pass's own per-card reasoning. NOTE: this is a
+// coincidental number match with an even older, unrelated 993 baseline
+// from before that redundancy pass (see the AFT/ACFT/Fitness
+// consolidation this comment used to cite) - today's 993 is a different
+// set of cards, not a reversion to that earlier state.
+// 997 as of the same counseling/training pass: 4 matching board cards
+// (counsel-proc-1/2, adp70-8step-1/2) per the standing every-sourced-fact-
+// gets-board-cards rule, on top of the AER/ACS/SUDCC pass's 993 below.
+seed.board === 997 ? ok("997 board cards intact") : bad(`board cards: ${seed.board}, expected 997`);
 // 3623 as of the same quick-win pass: deleted "RAC-OT" (an OCR/scrape
 // duplicate artifact of "RAS-OT", not a real distinct acronym) and 7
 // redundant unhyphenated staff-designator overlay entries (S2, S3, G1,
