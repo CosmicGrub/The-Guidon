@@ -313,6 +313,51 @@ noise.length === 0 ? ok("no console errors/warnings") : bad(noise.length + " con
   await narrowCtx.close();
 }
 
+/* ---- v1.9.0 discoverability pass: scenarios tagged `since` (this
+   session's "what's new" wave marker - same convention as THEMES' own
+   `since` field in theme.js, driving Settings' theme-wall "New" badge)
+   sort to the front of the default, unfiltered/unsearched list and carry
+   a visible "New" badge - closing a real gap where a scenario appended to
+   the end of a 184-long catalog was otherwise invisible inside the
+   default TRAIN_CAP-capped view unless you already knew its name to
+   search for it. ---- */
+await page.evaluate(() => { location.hash = "#/train"; });
+await page.waitForTimeout(300);
+// Clear the "High Performer" search left over from the search-box test
+// above - a stale query would narrow the grid to that one match again,
+// masking the real default-list sort order this section checks.
+await page.fill('input[aria-label="Search scenarios"]', "");
+await page.waitForTimeout(400);
+const newCardsInfo = await page.evaluate(() => {
+  const cards = [...document.querySelectorAll(".grid .card.click")].slice(0, 5);
+  return cards.map((c) => ({
+    title: c.querySelector("h3")?.textContent || null,
+    ariaLabel: c.getAttribute("aria-label"),
+    hasBadge: !!c.querySelector("span.badge.green"),
+  }));
+});
+const tcccCard = newCardsInfo.find((c) => /IED Strike/i.test(c.title || ""));
+const medevacCard = newCardsInfo.find((c) => /9-LINE MEDEVAC/i.test(c.title || ""));
+tcccCard && medevacCard
+  ? ok(`both new scenarios (IED Strike, 9-line MEDEVAC) sort into the first 5 cards of the default, unsearched #/train list - no search needed to find them (found at positions ${newCardsInfo.indexOf(tcccCard)}, ${newCardsInfo.indexOf(medevacCard)})`)
+  : bad("new scenarios not found near the top of the default #/train list: " + JSON.stringify(newCardsInfo.map((c) => c.title)));
+tcccCard && tcccCard.hasBadge && /\(New\)$/.test(tcccCard.ariaLabel || "")
+  ? ok('"Contact: IED Strike" card carries a visible "New" badge and its accessible name ends "(New)"')
+  : bad('IED Strike card New-badge info: ' + JSON.stringify(tcccCard));
+medevacCard && medevacCard.hasBadge && /\(New\)$/.test(medevacCard.ariaLabel || "")
+  ? ok('the 9-line MEDEVAC card carries a visible "New" badge and its accessible name ends "(New)"')
+  : bad('MEDEVAC card New-badge info: ' + JSON.stringify(medevacCard));
+// A scenario with no `since` field must NOT carry the badge - proves this
+// is a real conditional, not every card getting one by accident.
+const anOlderCard = await page.evaluate(() => {
+  const cards = [...document.querySelectorAll(".grid .card.click")];
+  const c = cards.find((c) => !/IED Strike|9-LINE MEDEVAC/i.test(c.querySelector("h3")?.textContent || ""));
+  return c ? { title: c.querySelector("h3")?.textContent, hasBadge: !!c.querySelector("span.badge.green") } : null;
+});
+anOlderCard && anOlderCard.hasBadge === false
+  ? ok(`an older, non-"since"-tagged scenario card ("${anOlderCard.title}") correctly shows no "New" badge`)
+  : bad("older scenario card unexpectedly carries a New badge: " + JSON.stringify(anOlderCard));
+
 await browser.close();
 server.close();
 console.log("\n" + (fails ? `TRAIN: ${fails} FAILURE(S)` : "TRAIN: all passed"));
