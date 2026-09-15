@@ -10139,6 +10139,7 @@ window.G = window.G || {};
         dueChip.replaceChildren(G.util.icon("clock", 13), document.createTextNode(" " + dueCount + " due — select to drill these first"));
       }
       refreshCatList();
+      refreshCatChips();
       refreshReadinessPane();
       draw();
     }
@@ -11011,6 +11012,43 @@ window.G = window.G || {};
       });
     }
 
+    // Topic-chip quick filter: the exact ".search-filters"/".chip.search-
+    // chip" idiom Doctrine's own topic-chip bar established (mechanically
+    // copied since to Dictionary, Resources, and the Scenario Library) -
+    // reused here rather than inventing a second "browse a large catalog by
+    // category" mechanism. catSel's own <select> remains the full, complete
+    // 78-category picker (chips would be unwieldy at that count); this bar
+    // is a faster-access layer over the SAME state, capped to the most
+    // common categories the same way Doctrine caps its own topic bar
+    // (count >= 2, top 12 by frequency) - not a parallel filter, a second
+    // VIEW onto catSel.value + change event, exactly like catList above.
+    const catChipCounts = {};
+    all.forEach((q) => { catChipCounts[q.category] = (catChipCounts[q.category] || 0) + 1; });
+    const topCatChips = Object.entries(catChipCounts).filter(([, n]) => n >= 2)
+      .sort((a, b) => b[1] - a[1]).slice(0, 12).map(([c]) => c);
+    const catChipBar = el("div.search-filters", { "aria-label": "Quick-filter by category" });
+    function refreshCatChips() {
+      util.clear(catChipBar);
+      const active = catSel.value || "All";
+      const allChip = el("button.chip.search-chip" + (active === "All" ? ".active" : ""), {
+        type: "button", text: "All categories", "aria-pressed": String(active === "All"),
+      });
+      allChip.addEventListener("click", () => {
+        if (catSel.value !== "All") { catSel.value = "All"; catSel.dispatchEvent(new Event("change")); }
+      });
+      catChipBar.appendChild(allChip);
+      topCatChips.forEach((c) => {
+        const on = active === c;
+        const chip = el("button.chip.search-chip" + (on ? ".active" : ""), {
+          type: "button", text: c + " (" + catChipCounts[c] + ")", "aria-pressed": String(on),
+        });
+        chip.addEventListener("click", () => {
+          if (catSel.value !== c) { catSel.value = c; catSel.dispatchEvent(new Event("change")); }
+        });
+        catChipBar.appendChild(chip);
+      });
+    }
+
     // Readiness supporting pane (Fold5/tablet fidelity wave 2): a third,
     // narrow column next to the flashcard at >=1200px (Fold5-unfolded-
     // landscape / larger-tablet width - .drill-layout, see CSS), showing a
@@ -11076,6 +11114,7 @@ window.G = window.G || {};
       : clickVerb() + " a card (or press Space) to flip it. Grade yourself 1-4 — Needs Help, Somewhat, Know It, or Down Cold — and spaced repetition schedules your next review accordingly. Filter by study level: Beginner, Intermediate, or Expert (by-the-book verbatim). Star a card to add it to your personal bookmark deck." }));
     if (!boardHintSeen) { try { localStorage.setItem(BOARD_HINT_KEY, "1"); } catch (e) {} }
     const drillDetail = el("div");
+    drillDetail.appendChild(catChipBar);
     drillDetail.appendChild(el("div.mini-row", {}, [el("label", { text: "Category", style: "margin:0" }), catSel, el("label", { text: "Level", style: "margin:0" }), diffSel, dueChip, leechChip, starChip, shuffleBtn]));
     drillDetail.appendChild(el("div", { style: "height:8px" }));
     drillDetail.appendChild(tally);
