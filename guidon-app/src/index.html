@@ -739,6 +739,14 @@ html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after 
   height: 100%; width: 100%; background: var(--amber); border-radius: 99px;
   transform-origin: left; transition: transform .35s cubic-bezier(.22,.8,.25,1);
 }
+/* "5-Minute Board Reps" (ROADMAP §3f Phase 1): the capped daily set's
+   counter strip above the card, and its completion panel. Mono + tabular
+   digits so "Card 7 of 12" doesn't jitter as the number changes. */
+.reps-banner { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;
+  font-family: var(--font-mono); font-size: .74rem; color: var(--text-dim); margin: 0 2px 6px; }
+.reps-banner .reps-count { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text); }
+.reps-done { text-align:center; padding: 22px 16px; }
+.reps-done .reps-big { font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; margin: 6px 0 2px; }
 
 .qz-wrap { outline: none; }
 .qz-wrap:focus-visible { outline: 3px solid var(--amber); outline-offset: 4px; } /* .qz-wrap (tabIndex="0") is the real tab stop; the ring used to be declared on .qz-card below, which never receives focus */
@@ -10010,6 +10018,25 @@ window.G = window.G || {};
 
     let queue = [], idx = 0, seen = 0, recalled = 0, srsMap = {}, dueOnlyMode = false, leechOnlyMode = false, starOnlyMode = false;
     let flipped = false;
+    // "5-Minute Board Reps" (ROADMAP §3f Phase 1): a capped daily set - due
+    // cards first, then leeches, then the Soldier's weakest categories -
+    // composed by composeReps() from the SAME ordered queue build() already
+    // produces (no second scheduler, no new persisted per-card state). The
+    // set ends after exactly repsSize grades (seen-based, see grade()), so
+    // "12 cards" means 12 - a missed card is NOT reinserted mid-set the way
+    // the open-ended deck does it; instead its id goes into repsMissed and
+    // composeReps() pins it to the FRONT of the next set today (kept in
+    // memory for "Another set", and persisted as the day record's `missed`
+    // list so a Home -> Start later the same day honors it too). A card
+    // graded Know It / Down Cold in a later set leaves the list. Entered
+    // via the one-shot G.board._filterReps flag Home's reps card sets (same
+    // convention as _filterCat/_filterDue below); exited with the banner's
+    // own button. The set is strictly linear: Previous/Next, the arrow
+    // keys, browse-by-swipe and Shuffle are all inert while it runs.
+    const REPS_SIZE = (G.board && G.board.REPS_SIZE) || 12;
+    let repsMode = false, repsSize = 0;
+    const repsMissed = new Set();
+    let repsMissedLoaded = false;
     // Mid-flip theater-entry guard (item 6): true for the duration of the
     // .65s (default "rich"; .45s/.95s under standard/cinematic — see the
     // --qz-flip-dur custom properties near .qz-card) rotateY transition
@@ -10023,6 +10050,9 @@ window.G = window.G || {};
     leechChip.addEventListener("click", () => { leechOnlyMode = !leechOnlyMode; leechChip.classList.toggle("active", leechOnlyMode); leechChip.setAttribute("aria-pressed", String(leechOnlyMode)); build(); });
     starChip.addEventListener("click", () => { starOnlyMode = !starOnlyMode; starChip.classList.toggle("active", starOnlyMode); starChip.setAttribute("aria-pressed", String(starOnlyMode)); build(); });
     shuffleBtn.addEventListener("click", () => {
+      // A reps set is a fixed sequence: reshuffling the capped queue while
+      // `seen` keeps counting would repeat some cards and never show others.
+      if (repsMode) { util.toast("A reps set is a fixed sequence — exit reps to shuffle the full deck."); return; }
       queue = shuffle(queue);
       idx = 0; flipped = false;
       util.toast("Deck reshuffled.");
@@ -10135,6 +10165,10 @@ window.G = window.G || {};
         }
       }
       queue = ordered.map((x) => x.q);
+      if (repsMode) {
+        queue = await composeReps(ordered);
+        repsSize = queue.length;
+      }
       idx = 0; seen = 0; recalled = 0; flipped = false;
       if (!dueOnlyMode && dueCount > 0 && idx === 0 && seen === 0) {
         dueChip.replaceChildren(G.util.icon("clock", 13), document.createTextNode(" " + dueCount + " due — select to drill these first"));
@@ -10144,6 +10178,106 @@ window.G = window.G || {};
       refreshRegChips();
       refreshReadinessPane();
       draw();
+    }
+
+    // Composes the reps set from build()'s already-ordered queue: every
+    // overdue card first (they're already at the front, weighted by misses),
+    // then any leech that isn't overdue, then unstudied/upcoming cards from
+    // the same weakest-3 categories the Readiness tab ranks (shared
+    // G.board.weakestCategoriesByMastery - one ranking app-wide, not a
+    // second opinion), then whatever is left - capped at REPS_SIZE. The
+    // active category/level/due/leech/bookmark filters still apply, since
+    // `ordered` was built from the filtered pool.
+    async function composeReps(ordered) {
+      // Today's carried-over misses (see the repsMissed declaration): load
+      // the day record's list once per render, then pin any of them that
+      // survive the active filters to the front, in queue order.
+      if (!repsMissedLoaded) {
+        repsMissedLoaded = true;
+        try {
+          const rec = await G.db.getSetting(G.board.repsKey(), null);
+          if (rec && Array.isArray(rec.missed)) rec.missed.forEach((id) => { if (typeof id === "string") repsMissed.add(id); });
+        } catch (e) {}
+      }
+      const pinned = ordered.filter((x) => repsMissed.has(x.q.id)).map((x) => x.q);
+      const due = ordered.filter((x) => x.overdue).map((x) => x.q);
+      const rest = ordered.filter((x) => !x.overdue).map((x) => x.q);
+      let weak = [];
+      try { weak = (await G.board.weakestCategoriesByMastery(3, all, srsMap)).map((c) => c.cat); } catch (e) {}
+      const isLeech = (q) => G.board.isLeech(srsMap[q.id]);
+      const leech = rest.filter(isLeech);
+      const weakRest = rest.filter((q) => !isLeech(q) && weak.includes(q.category));
+      const other = rest.filter((q) => !isLeech(q) && !weak.includes(q.category));
+      const picked = [], taken = new Set();
+      for (const list of [pinned, due, leech, weakRest, other]) {
+        for (const q of list) {
+          if (picked.length >= REPS_SIZE) break;
+          if (taken.has(q.id)) continue;
+          taken.add(q.id); picked.push(q);
+        }
+      }
+      return picked;
+    }
+
+    // One record per local calendar day (G.board.repsKey - same local-date
+    // reasoning as G.streak's isoDate()), accumulating across sets so
+    // "Another set" adds to today's tally instead of overwriting it. Called
+    // from grade() at the exact moment seen reaches repsSize, once per set.
+    async function recordReps() {
+      const key = G.board.repsKey();
+      try {
+        const prev = await G.db.getSetting(key, null);
+        const rec = (prev && typeof prev === "object" && !Array.isArray(prev)) ? prev : { sets: 0, cards: 0, recalled: 0 };
+        rec.sets = (rec.sets || 0) + 1;
+        rec.cards = (rec.cards || 0) + repsSize;
+        rec.recalled = (rec.recalled || 0) + recalled;
+        rec.missed = Array.from(repsMissed);
+        rec.ts = Date.now();
+        await G.db.setSetting(key, rec);
+      } catch (e) {
+        if (G.selfheal) G.selfheal.log("srs-write-fail", key, "recordReps failed: " + (e && e.message ? e.message : String(e)));
+      }
+      try { if (G.util.announce) G.util.announce("Reps complete. " + recalled + " of " + repsSize + " recalled."); } catch (e) {}
+      util.haptic("success");
+    }
+
+    function repsBanner() {
+      const exitBtn = el("button.btn.ghost.sm", { type: "button", text: "Exit reps", "aria-label": "Exit 5-minute reps and return to the full deck" });
+      exitBtn.addEventListener("click", (e) => { e.stopPropagation(); repsMode = false; repsSize = 0; build(); });
+      return el("div.reps-banner", {}, [
+        el("span", {}, [
+          el("span.reps-count", { text: "Card " + Math.min(seen + 1, repsSize) + " of " + repsSize }),
+          document.createTextNode(" · 5-minute reps"),
+        ]),
+        exitBtn,
+      ]);
+    }
+
+    function drawRepsDone() {
+      const pct = repsSize ? Math.round((recalled / repsSize) * 100) : 0;
+      // The "This session" stat above the card is only rewritten on the
+      // card-drawing path; keep it in step with the panel it now sits over.
+      (tally.querySelector(".v") || {}).textContent = `Set complete  ·  recalled ${recalled}/${seen}`;
+      const panel = el("div.panel.reps-done", { role: "status", "aria-live": "polite" });
+      panel.appendChild(el("div.eyebrow", { text: "5-minute reps complete" }));
+      panel.appendChild(el("div.reps-big", { text: recalled + " / " + repsSize }));
+      // "leads your next set" is a real guarantee, not a hope: every card
+      // graded Needs Help / Somewhat this set is in repsMissed, which
+      // composeReps() pins to the front of the next set today (in this
+      // visit via memory, across visits via the day record's `missed`).
+      panel.appendChild(el("p.hint", { text: "recalled (Know It or Down Cold) — " + pct + "%. " + (recalled >= repsSize
+        ? "Clean sweep. Tomorrow's set will pick up whatever comes due."
+        : pct >= 75
+          ? "Solid set. Anything you missed leads your next set."
+          : "Anything you missed leads your next set.") }));
+      const another = el("button.btn.primary.sm", { type: "button", text: "Another set" });
+      another.addEventListener("click", () => { build(); }); // repsMode stays on; build() recomposes from the updated schedule
+      const keep = el("button.btn.ghost.sm", { type: "button", text: "Keep drilling" });
+      keep.addEventListener("click", () => { repsMode = false; repsSize = 0; build(); });
+      const home = el("button.btn.ghost.sm", { type: "button", text: "Back to Home" });
+      home.addEventListener("click", () => { location.hash = "#/home"; });
+      panel.appendChild(el("div.btn-row", { style: "justify-content:center; margin-top:12px" }, [another, keep, home]));
+      cardWrap.appendChild(panel);
     }
 
     function buildBackContent(q) {
@@ -10221,6 +10355,12 @@ window.G = window.G || {};
 
     function draw() {
       util.clear(cardWrap);
+      // Set complete: reset the flip flag BEFORE the early return (the
+      // normal `flipped = false` reset sits further down, after a card is
+      // drawn) - otherwise the 12th grade leaves flipped=true with focus on
+      // cardWrap, and a stray 1-4 keypress on the completion panel would
+      // grade an off-screen card (review finding, reproduced live).
+      if (repsMode && repsSize > 0 && seen >= repsSize) { flipped = false; drawRepsDone(); return; }
       if (!queue.length) {
         // Up to 5 independent filter dimensions can combine here (category,
         // difficulty, Due only, Leeches only, My Bookmarks). The generic
@@ -10247,8 +10387,11 @@ window.G = window.G || {};
       flipped = false;
 
       // Slim top progress bar (Quizlet-style deck progress, not just a number)
-      const progressPct = Math.round(((idx % queue.length) / queue.length) * 100);
-      const progressTrack = el("div.qz-progress-track", { role: "progressbar", "aria-valuenow": String(progressPct), "aria-valuemin": "0", "aria-valuemax": "100", "aria-label": "Deck progress" });
+      if (repsMode) cardWrap.appendChild(repsBanner());
+      // In reps mode the bar tracks grades against the fixed set size (the
+      // promise the banner makes), not position in a wrap-around deck.
+      const progressPct = (repsMode && repsSize) ? Math.round((seen / repsSize) * 100) : Math.round(((idx % queue.length) / queue.length) * 100);
+      const progressTrack = el("div.qz-progress-track", { role: "progressbar", "aria-valuenow": String(progressPct), "aria-valuemin": "0", "aria-valuemax": "100", "aria-label": repsMode ? "Reps progress" : "Deck progress" });
       progressTrack.appendChild(el("div.qz-progress-fill", { style: "transform:scaleX(" + (progressPct / 100) + ")" }));
       cardWrap.appendChild(progressTrack);
 
@@ -10426,9 +10569,9 @@ window.G = window.G || {};
       // refocus the container afterward so tabbing to these very "Previous
       // card"/"Next card" buttons and activating them doesn't strand focus
       // on <body>.
-      prevBtn.addEventListener("click", () => { idx = (idx - 1 + queue.length) % queue.length; draw(); cardWrap.focus(); });
+      prevBtn.addEventListener("click", () => { if (repsMode) return; idx = (idx - 1 + queue.length) % queue.length; draw(); cardWrap.focus(); });
       flipBtn.addEventListener("click", () => doFlip());
-      nextBtn.addEventListener("click", () => { idx = (idx + 1) % queue.length; draw(); cardWrap.focus(); });
+      nextBtn.addEventListener("click", () => { if (repsMode) return; idx = (idx + 1) % queue.length; draw(); cardWrap.focus(); });
       const fsOn = document.documentElement.classList.contains("qz-theater");
       const fsBtn = el("button.qz-nav-btn.qz-fs-btn", { type: "button",
         "aria-label": fsOn ? "Exit fullscreen study" : "Fullscreen study",
@@ -10439,11 +10582,22 @@ window.G = window.G || {};
           ? G.board.exitTheater()
           : G.board.enterTheater(cardWrap);
       });
-      navRow.appendChild(prevBtn); navRow.appendChild(flipBtn); navRow.appendChild(nextBtn); navRow.appendChild(fsBtn);
+      // In reps mode the set is strictly linear (the banner counts GRADES,
+      // the card shown is queue[idx] - browsing would let the two drift, so
+      // one Next tap could grade a card twice and never show another). No
+      // Previous/Next in the row; the handlers above are guarded as well.
+      if (!repsMode) navRow.appendChild(prevBtn);
+      navRow.appendChild(flipBtn);
+      if (!repsMode) navRow.appendChild(nextBtn);
+      navRow.appendChild(fsBtn);
       cardWrap.appendChild(navRow);
 
       wireSwipe(card, q, () => flipped, doFlip, dragState);
-      (tally.querySelector(".v") || {}).textContent = `Card ${(idx % queue.length) + 1}/${queue.length}  ·  recalled ${recalled}/${seen}` + (overdue ? "  ·  due" : "");
+      // In reps mode the position IS the grade count (the set is linear), so
+      // this reads off the same numbers as the banner above the card.
+      (tally.querySelector(".v") || {}).textContent = (repsMode && repsSize
+        ? `Card ${Math.min(seen + 1, repsSize)}/${repsSize}  ·  recalled ${recalled}/${seen}`
+        : `Card ${(idx % queue.length) + 1}/${queue.length}  ·  recalled ${recalled}/${seen}`) + (overdue ? "  ·  due" : "");
     }
 
     // Full drag gesture surface (confirmed with the user, post-Tier-1
@@ -10587,7 +10741,9 @@ window.G = window.G || {};
             }
           } else snapBack();
         } else {
-          if (Math.abs(dx) >= threshold) {
+          // !repsMode: no browse-by-swipe inside a fixed reps set (see the
+          // nav-row comment in draw()); the card just snaps back.
+          if (!repsMode && Math.abs(dx) >= threshold) {
             const goNext = dx < 0; // swipe left -> next, swipe right -> previous
             if (reduceMotion) {
               card.style.transition = ""; card.style.transform = ""; card.style.opacity = "";
@@ -10665,6 +10821,9 @@ window.G = window.G || {};
     }
 
     async function grade(q, gradeLevel) {
+      // Belt-and-braces for the reps completion panel (see draw()'s own
+      // guard): no grading path may run once the set's grade count is in.
+      if (repsMode && repsSize && seen >= repsSize) return;
       const s = schedule(srsMap[q.id], gradeLevel);
       srsMap[q.id] = s;
       // Code-review finding (post-merge audit): this is Board Drill's
@@ -10689,10 +10848,19 @@ window.G = window.G || {};
         util.toast("Couldn't save that grade to your review schedule.");
       }
       seen++; if (gradeLevel >= 2) recalled++;
+      // Needs Help / Somewhat joins today's carry-over list (pinned first in
+      // the next set); a real recall leaves it. See the repsMissed comment.
+      if (repsMode) { if (gradeLevel <= 1) repsMissed.add(q.id); else repsMissed.delete(q.id); }
+      // Exactly once per reps set, at the grade that completes it - draw()
+      // below then shows the completion panel instead of another card.
+      if (repsMode && repsSize && seen === repsSize) recordReps();
       const labels = ["Marked needs help.", "Marked somewhat known.", "Marked known.", "Marked down cold."];
       try { if (G.util.announce) G.util.announce((labels[gradeLevel] || "Graded.") + " Next card."); } catch (e) {}
       util.haptic(gradeLevel >= 2 ? "success" : "warning");
-      if (gradeLevel <= 1) {
+      // !repsMode: a reps set is a fixed count of grades, not a loop-until-
+      // cleared deck (see the repsMode declaration above) - reinserting the
+      // missed card here would make "12 cards" quietly mean 13 or 14.
+      if (gradeLevel <= 1 && !repsMode) {
         // Fixed +3 thrashed on small filtered pools (single-category + due-
         // only + leech combos routinely leave <=3 cards) — scale the
         // reinsertion gap with the actual queue size instead of a constant.
@@ -10752,6 +10920,9 @@ window.G = window.G || {};
     // matching way to enter it from the keyboard).
     cardWrap.addEventListener("keydown", (e) => {
       if (!queue.length) return;
+      // Reps set complete: the panel has no card, so arrows and 1-4 are
+      // inert until "Another set"/"Keep drilling"/"Exit reps" rebuilds.
+      if (repsMode && repsSize && seen >= repsSize) return;
       const q = queue[idx % queue.length];
       if (e.key === " " || e.key === "Enter") {
         // cardWrap has no focusable content of its own, so this handler
@@ -10766,13 +10937,14 @@ window.G = window.G || {};
         e.preventDefault();
         const card = cardWrap.querySelector(".qz-card");
         if (card) card.click();
-      } else if (e.key === "ArrowLeft") {
+      } else if (e.key === "ArrowLeft" && !repsMode) {
         // Item 9 fix: draw() rebuilds cardWrap's DOM (see grade()'s own
         // comment, above, for the full explanation) — refocus the container
         // afterward so a Tab-focused prev/next button doesn't strand focus
-        // on <body>.
+        // on <body>. (!repsMode: a reps set is a fixed sequence - see the
+        // nav-row comment in draw().)
         e.preventDefault(); idx = (idx - 1 + queue.length) % queue.length; draw(); cardWrap.focus();
-      } else if (e.key === "ArrowRight") {
+      } else if (e.key === "ArrowRight" && !repsMode) {
         e.preventDefault(); idx = (idx + 1) % queue.length; draw(); cardWrap.focus();
       } else if (flipped && ["1", "2", "3", "4"].includes(e.key)) {
         e.preventDefault(); grade(q, +e.key - 1);
@@ -10819,6 +10991,13 @@ window.G = window.G || {};
       dueChip.classList.add("active");
       dueChip.setAttribute("aria-pressed", "true");
       G.board._filterDue = null;
+    }
+    // Home's "5-minute board reps" card - same one-shot convention as the
+    // two flags above; build() (called once everything is mounted, below)
+    // reads repsMode and composes the capped set.
+    if (G.board._filterReps) {
+      repsMode = true;
+      G.board._filterReps = null;
     }
     catSel.addEventListener("change", build);
     diffSel.addEventListener("change", build);
@@ -14605,6 +14784,19 @@ window.G = window.G || {};
     // hook to open the right tab after landing here — not just a hash.
     _openRapidFire: null,
     _openMockBoard: null,
+    // "5-Minute Board Reps" (ROADMAP §3f Phase 1). _filterReps is the
+    // one-shot entry flag Home sets (consumed by renderDrill alongside
+    // _filterCat/_filterDue). REPS_SIZE is the set size: 12 cards at the
+    // ~25 s/card a flip-read-grade cycle actually takes is ~5 minutes.
+    // repsKey() is the ONE definition of the per-day kv key both the drill
+    // (writes it on completion) and Home (reads it for the done-today card)
+    // use - local calendar date, same reasoning as G.streak's isoDate().
+    _filterReps: null,
+    REPS_SIZE: 12,
+    repsKey(d) {
+      const t = d instanceof Date ? d : new Date();
+      return "board:reps:" + t.getFullYear() + "-" + String(t.getMonth() + 1).padStart(2, "0") + "-" + String(t.getDate()).padStart(2, "0");
+    },
     // Handle for the short-landscape auto-theater setTimeout(220) fired from
     // TWO sites inside renderDrill() (initial mount, and catList's category-
     // select click handler) - a property on G.board rather than a variable
@@ -31636,11 +31828,14 @@ window.G = window.G || {};
     // (a null result below stands in for what the removed try/catch used
     // to silently swallow) rather than letting one of THEM take down the
     // whole Promise.all.
-    const [p, streak, profileData, srsAllFromBatch] = await Promise.all([
+    const [p, streak, profileData, srsAllFromBatch, repsToday] = await Promise.all([
       store.getProgress(),
       G.streak ? G.streak.tick().catch(() => null) : Promise.resolve(null),
       G.profile ? G.profile.current().catch(() => null) : Promise.resolve(null),
       (G.db && G.board && G.board.loadAllSrs) ? G.board.loadAllSrs().catch(() => null) : Promise.resolve(null),
+      // Today's "5-minute reps" record (null when none yet) - same batch,
+      // same catch-and-skip semantics as the three reads above it.
+      (G.db && G.board && G.board.repsKey) ? G.db.getSetting(G.board.repsKey(), null).catch(() => null) : Promise.resolve(null),
     ]);
     // Intuitivism pass: shared "has this Soldier done anything yet" signal
     // for the readiness dashboard and competency mini-bars below - both
@@ -31818,21 +32013,66 @@ window.G = window.G || {};
         if (fresh || dueCount >= 3) {
           const urgency = fresh ? "green" : dueCount >= 20 ? "red" : dueCount >= 10 ? "amber" : "green";
           const urgeText = { red: "color-mix(in srgb, var(--red) 40%, var(--text))", amber: "color-mix(in srgb, var(--amber) 40%, var(--text))", green: "color-mix(in srgb, var(--green) 40%, var(--text))" }[urgency];
+          // "N board cards due for review → Drill" landed on the full,
+          // unfiltered deck - the same broken promise Readiness's "Drill N
+          // Due Now" button used to make before it learned to set
+          // _filterDue. Same one-shot flag here, only for the real
+          // due-count case (an untouched deck has nothing to filter to).
+          const goDrill = () => { if (!fresh && G.board) G.board._filterDue = true; location.hash = "#/board"; };
           hero.appendChild(el("div.card.click", {
             style: "margin-top:12px; display:flex; align-items:center; justify-content:space-between; gap:10px",
             role: "button", tabindex: "0",
             "aria-label": fresh ? allQs.length + " board questions ready to study" : dueCount + " board questions due for review",
-            onclick: () => location.hash = "#/board",
-            onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") location.hash = "#/board"; },
+            onclick: goDrill,
+            onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") goDrill(); },
           }, [
             el("span", { style: "color:" + urgeText, text: fresh
               ? allQs.length.toLocaleString() + " board cards ready to study"
               : dueCount + " board cards due for review" }),
-            el("button.btn.sm.primary", { text: "Drill →", tabindex: "-1" }),
+            el("button.btn.sm.primary", { style: "flex-shrink:0; white-space:nowrap", text: "Drill →", tabindex: "-1" }),
           ]));
         }
       }
     } catch (e) { /* due-count non-fatal */ }
+
+    // "5-Minute Board Reps" (ROADMAP §3f Phase 1): one fixed-size set a day,
+    // due cards first. Two states, one card: not-done-yet ("Start →") and
+    // done-today with the tally ("Another set →"). Reads the per-day record
+    // renderDrill's recordReps() writes under the shared G.board.repsKey().
+    // Always offered once the bank is at least one set deep - unlike the
+    // due-count card above, a brand-new profile is exactly who a small,
+    // bounded first session is for.
+    try {
+      const bank = (G.store && G.store.boardQuestions && G.store.boardQuestions()) || [];
+      const size = (G.board && G.board.REPS_SIZE) || 12;
+      if (bank.length >= size && G.board) {
+        const rec = (repsToday && typeof repsToday === "object" && repsToday.sets > 0) ? repsToday : null;
+        if (rec) hasAnyProgress = true;
+        const startReps = () => { G.board._filterReps = true; location.hash = "#/board"; };
+        const title = rec ? "Today's reps done ✓" : "5-minute board reps";
+        const sub = rec
+          ? rec.recalled + "/" + rec.cards + " recalled · " + rec.sets + " set" + (rec.sets === 1 ? "" : "s") + " today"
+          : size + " cards · due ones first, then your weakest topics";
+        hero.appendChild(el("div.card.click", {
+          style: "margin-top:10px; display:flex; align-items:center; justify-content:space-between; gap:10px",
+          role: "button", tabindex: "0",
+          "aria-label": rec
+            ? "Today's 5-minute reps done, " + rec.recalled + " of " + rec.cards + " recalled. Start another set"
+            : "Start today's 5-minute board reps, " + size + " cards",
+          onclick: startReps,
+          onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); startReps(); } },
+        }, [
+          el("span", {}, [
+            el("strong", { text: title }),
+            el("span.hint", { style: "display:block; margin:0", text: sub }),
+          ]),
+          // flex-shrink:0 + nowrap: at phone widths the two-line text beside
+          // it otherwise squeezes the CTA into "START" over "→" (measured
+          // at 344-430px; .btn has no nowrap of its own outside .btn-row).
+          el("button.btn.sm" + (rec ? "" : ".primary"), { style: "flex-shrink:0; white-space:nowrap", text: rec ? "Another set →" : "Start →", tabindex: "-1" }),
+        ]));
+      }
+    } catch (e) { /* reps card non-fatal */ }
 
     // Recommended next — pulled up from the bottom of the page. The single
     // most useful line on Home deserves to be seen, not scrolled to.
