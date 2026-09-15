@@ -299,6 +299,100 @@ Appendix C, Table C-1. New regression coverage:
 
 ---
 
+## 3f. PLANNED (2026-09-15): reconciled content expansion — cadences, Integrated Operational Thinking, board-card taxonomy, Mock Board
+
+A wide-ranging brainstorm session (Integrated Operational Thinking model,
+an SGT-board study module, a full System-A/B curriculum-and-simulator
+spec, and an Army-cadences research pass) produced a large amount of
+draft content and several proposed new systems. **Reconciliation
+decision, locked**: none of it becomes a new database, a new tier
+hierarchy, or a live-AI/server architecture — GUIDON stays single-file,
+offline-first, zero-server. Every idea maps onto an *existing* schema,
+section, or engine (`G.engine`, the 984-card `board.questions` set, the
+rank-tier filter, the SRS/category-mastery system already in `#/board`)
+as additive fields and new content, not parallel systems. Full mapping
+table and reasoning: this session's own conversation record (not yet
+extracted to its own design doc — do that before this section grows
+further).
+
+**Quick wins (Phase 0 — pure content/small UI, no policy decisions
+blocking them):**
+- A `pillar` tag (one of 6: Doctrinal Thinking, Programs & Support,
+  Leadership/Counseling, Maintenance & Supply, Training Management,
+  D&C/Board Etiquette) added as an optional field across doctrine
+  entries, scenarios, and board questions — Private/Specialist/Jr. NCO
+  "tiers" are the *existing* E1–E3/E4/E5 rank-tier array, not a new
+  hierarchy.
+- Missing Army Program board questions: AER (AR 930-4), ACS (AR 608-1),
+  and SUDCC — SHARP and EO already have real coverage in the existing
+  984-card set, confirmed directly from the seed; these three are the
+  actual gap. SUDCC's exact current governing publication needs
+  verification before it ships as `confidence:"verified"` (program
+  naming has shifted amid Army substance-abuse-care reorganization).
+- Three new Vertical/Lateral-thinking `G.engine` scenarios (field
+  exercise comms blackout, motor-pool PMCS/safety-vs-schedule, range
+  safety-vs-schedule) — zero new engine code, same schema as
+  `sc-tccc-ied-strike`.
+- New doctrine entries for the 4-phase counseling process (already-cited
+  ATP 6-22.1), CSDP/FLIPL/Statement of Charges (AR 735-5), and the
+  8-Step Training Model (ADP 7-0) — each needs the standard
+  fetch-and-verify pass against the real PDF before shipping, per this
+  project's own citation-honesty discipline; TC 3-04.7 does not appear
+  to actually govern ground PMCS (looks aviation-specific) and needs a
+  corrected citation, not the one originally proposed.
+- A topic-chip bar for Board Drill's category picker, reusing the
+  `.search-filters`/`.chip.search-chip` idiom already copied 4 times
+  elsewhere in this app (Doctrine → Dictionary → Resources → Scenario
+  Library) — replaces/augments the current plain `<select>`, zero new
+  data model.
+- A `lint-board-taxonomy.mjs` gate (mirroring `lint-doctrine-
+  confidence.mjs`/`lint-prt-sources.mjs`) so a 79th near-duplicate
+  category string or a newly-added, unparseable `source` string can't
+  silently ship — directly enforces the standing rule that every new
+  sourced fact also gets a board card ([[guidon-content-pipeline-board-
+  cards-rule]] in memory).
+
+**Bigger investment (Phase 1–2, sequenced, not blocking Phase 0):** a
+"Board Readiness Score" rollup (a formula over scores that already
+exist — category mastery + scenario attempts — not a new tracker); a
+"5-Minute Board Reps" daily view (a smarter query over the existing
+SRS due/leech queues, not a new engine); a structured `regulation`
+field decomposed from board questions' existing free-text `source`
+string (984 cards, ~12% compound citations — a real multi-wave content
+migration, same shape as the already-completed board-card-accuracy
+project, not a quick edit); a Mock Board Simulator built as a deep
+`G.engine` scenario tree (or a few linked scenarios per phase) plus a
+themed UI wrapper — explicitly NOT a live generative-AI opponent
+(would make this the app's first-ever online-required feature) and NOT
+the literal PostgreSQL/REST-API architecture originally proposed for it.
+
+**Cadences — research complete, content-policy decisions pending.** A
+103-agent research pass (Wayback/archive.org-backed, two independent
+runs after a session-restart casualty) found: no Army doctrinal source
+for cadence lyrics exists (confirmed against ~70 years of drill
+manuals), but the U.S. Army Center of Military History runs a real,
+citable "Drill Sergeant Tool Kit → Jody Calls" page with full text for
+a dozen-plus heritage/contemporary cadences — the strongest available
+source class. Result: ~35 cadences cleared for inclusion outright
+(clean unit-pride/comic/endurance content, several independently traced
+decades before any website); a firm exclude list with real sourcing
+(most notably "Napalm Sticks to Kids," the one title with genuine
+academic/journalistic documentation of formal prohibition); a real
+copyright landmine caught before shipping (one title presented as
+folklore by an aggregator site is actually a working musician's
+actively commercial-licensed 2022–2023 song); one unresolved conflict
+(two contradictory copyright verdicts on the same title, "Around Her
+Hair / Yellow Ribbon," needs a real musicologist/legal read before
+either version ships); and several titles (including "I Wish That All
+the Ladies") that are real and old but need an explicit content-policy
+call (default-off/opt-in/exclude) rather than default inclusion.
+**Blocked on**: the policy decision for the borderline titles, and
+deciding where this content actually lives in the app (new route vs.
+folded into Creeds & Branch Identities) before any of the ~35 cleared
+cadences ship as real content.
+
+---
+
 ## 4. Deliberately not built — and why
 
 Not gaps. Each of these was scoped, considered, and declined on its own merits. Revisit only if the stated condition changes.
