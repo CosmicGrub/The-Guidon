@@ -356,7 +356,12 @@ blocking them):**
 "Board Readiness Score" rollup (a formula over scores that already
 exist — category mastery + scenario attempts — not a new tracker); a
 "5-Minute Board Reps" daily view (a smarter query over the existing
-SRS due/leech queues, not a new engine); a structured `regulation`
+SRS due/leech queues, not a new engine) — **SHIPPED 2026-09-15 (PR
+#168)**: Home card → a capped 12-grade set composed from Board Drill's
+own ordered queue (due first, then leeches, then the Readiness tab's
+weakest-3 categories), no mid-set reinsertion, per-day record under
+`G.board.repsKey()`, plus the Home due-card now landing on the due-only
+queue; a structured `regulation`
 field decomposed from board questions' existing free-text `source`
 string (984 cards, ~12% compound citations — a real multi-wave content
 migration, same shape as the already-completed board-card-accuracy
