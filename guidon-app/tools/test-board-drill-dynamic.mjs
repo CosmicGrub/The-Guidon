@@ -90,6 +90,88 @@ if (spy.rowCount > 1) {
     : bad("selecting a category did not call scrollIntoView on the flashcard: " + JSON.stringify(calls));
 }
 
+/* ---- topic-chip quick filter: a second VIEW onto catSel, not a second
+   filter mechanism - same idiom as Doctrine's own topic-chip bar,
+   mechanically copied here. Verify it's a real, bidirectional sync with
+   the actual <select> and the actual deck, not just cosmetic markup. ---- */
+// Reset first: the catList test above already picked a non-"All" category
+// on this same page/session, so the chip bar's own active state right now
+// correctly reflects THAT filter, not a fresh "All" state - this section
+// tests the chip bar on its own terms, starting from a known "All" state.
+await stacked.page.evaluate(() => {
+  const sel = document.querySelector('select[aria-label="Filter by category"]');
+  sel.value = "All"; sel.dispatchEvent(new Event("change"));
+});
+await stacked.page.waitForTimeout(250);
+const chipInfo = await stacked.page.evaluate(() => {
+  const bar = document.querySelector('.search-filters[aria-label="Quick-filter by category"]');
+  const chips = bar ? [...bar.querySelectorAll(".search-chip")] : [];
+  return {
+    barPresent: !!bar,
+    chipCount: chips.length,
+    firstIsAll: chips[0] && chips[0].textContent === "All categories" && chips[0].classList.contains("active"),
+    capped: chips.length <= 13, // "All" + at most 12, matching Doctrine's own cap
+  };
+});
+chipInfo.barPresent ? ok("Board Drill's quick-filter chip bar renders") : bad("chip bar not found in the DOM");
+chipInfo.firstIsAll ? ok('"All categories" is the first chip and shows active once the select is reset to "All"') : bad('first chip: ' + JSON.stringify(chipInfo));
+chipInfo.capped ? ok(`chip bar is capped (${chipInfo.chipCount} chips total) rather than rendering all 79 categories as chips`) : bad(`chip bar rendered ${chipInfo.chipCount} chips - expected a cap around 13`);
+
+// Click a real category chip (not "All") and confirm it's a genuine
+// filter, not decoration: the <select> value changes, the deck's own
+// category header changes, and only that one chip is marked active.
+const targetLabel = await stacked.page.evaluate(() => {
+  const bar = document.querySelector('.search-filters[aria-label="Quick-filter by category"]');
+  const target = bar.querySelectorAll(".search-chip")[1]; // [0] is "All categories"
+  target.click();
+  return target.textContent;
+});
+// build() is async (awaits an IndexedDB SRS scan before it gets to
+// refreshCatChips()/draw()) - same reason the catList click test above
+// waits before reading its own result.
+await stacked.page.waitForTimeout(250);
+const afterChipClick = await stacked.page.evaluate((targetLabel) => {
+  const bar = document.querySelector('.search-filters[aria-label="Quick-filter by category"]');
+  const chips = [...bar.querySelectorAll(".search-chip")];
+  const sel = document.querySelector('select[aria-label="Filter by category"]');
+  const activeChips = chips.filter((c) => c.classList.contains("active"));
+  return {
+    targetLabel,
+    selectValue: sel.value,
+    activeChipTexts: activeChips.map((c) => c.textContent),
+    cardHeaderText: (document.querySelector(".qz-wrap")?.textContent || "").slice(0, 80),
+  };
+}, targetLabel);
+const clickedCategory = afterChipClick.targetLabel.replace(/\s*\(\d+\)$/, "");
+afterChipClick.selectValue === clickedCategory
+  ? ok(`clicking the "${clickedCategory}" chip set the real <select>'s value to match`)
+  : bad(`chip click did not sync the select: clicked "${clickedCategory}", select now "${afterChipClick.selectValue}"`);
+JSON.stringify(afterChipClick.activeChipTexts) === JSON.stringify([afterChipClick.targetLabel])
+  ? ok("exactly the clicked chip is marked active - not the old one, not both")
+  : bad("active-chip state after click: " + JSON.stringify(afterChipClick.activeChipTexts));
+afterChipClick.cardHeaderText.includes(clickedCategory)
+  ? ok(`the flashcard deck itself filtered to "${clickedCategory}" - a real filter, not cosmetic chip state`)
+  : bad("card header after chip click: " + JSON.stringify(afterChipClick.cardHeaderText));
+
+// Reverse direction: changing the real <select> (as the dropdown control
+// itself would) must update the chip bar's active state too - proving
+// this is one shared piece of state with two views, not two independent
+// trackers that can drift apart.
+const afterSelectChange = await stacked.page.evaluate(() => {
+  const sel = document.querySelector('select[aria-label="Filter by category"]');
+  sel.value = "All";
+  sel.dispatchEvent(new Event("change"));
+});
+await stacked.page.waitForTimeout(250);
+const afterReset = await stacked.page.evaluate(() => {
+  const bar = document.querySelector('.search-filters[aria-label="Quick-filter by category"]');
+  const chips = [...bar.querySelectorAll(".search-chip")];
+  return chips.filter((c) => c.classList.contains("active")).map((c) => c.textContent);
+});
+JSON.stringify(afterReset) === JSON.stringify(["All categories"])
+  ? ok('setting the real <select> back to "All" (as the dropdown itself would) re-activates the "All categories" chip')
+  : bad("active-chip state after resetting the select: " + JSON.stringify(afterReset));
+
 stacked.noise.length === 0 ? ok("no console errors/warnings") : bad("console noise: " + stacked.noise.join(" | "));
 await stacked.page.close();
 
