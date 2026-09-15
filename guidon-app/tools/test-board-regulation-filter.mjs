@@ -68,6 +68,9 @@ const CASES = [
   ["Posse Comitatus Act (18 U.S.C. 1385); ADP 3-28", ["Posse Comitatus Act", "18 USC 1385", "ADP 3-28"]],
   ["USCENTCOM GO-1 / UCMJ Art. 92", ["USCENTCOM GO-1", "UCMJ Art. 92"]],
   ["DoDFMR Vol 7A", ["DoD FMR Vol 7A"]],
+  // A bare "DoD NNNN.NN" is deliberately NOT guessed into DoDI/DoDD - it
+  // yields nothing (the one such citation in the bank is a content fix).
+  ["AR 600-20, Chapter 7 / DoD 6495.02", ["AR 600-20"]],
   ["ADP 6-22; ADP 6-22", ["ADP 6-22"]],
   ["Creeds", []],
   ["Army Center of Military History", []],
@@ -110,11 +113,19 @@ await page.evaluate(() => { location.hash = "#/board"; });
 await page.waitForTimeout(900);
 const readBar = () => page.evaluate(() => {
   const bar = document.querySelector('.search-filters[aria-label="Quick-filter by regulation"]');
+  const catBar = document.querySelector('.search-filters[aria-label="Quick-filter by category"]');
   const chips = bar ? [...bar.querySelectorAll(".search-chip")] : [];
-  return { present: !!bar, chips: chips.map((c) => ({ text: c.textContent, active: c.classList.contains("active"), pressed: c.getAttribute("aria-pressed") })) };
+  return {
+    present: !!bar,
+    underCatBar: !!(bar && catBar && catBar.nextElementSibling === bar),
+    visible: !!(bar && bar.getBoundingClientRect().height > 0),
+    chips: chips.map((c) => ({ text: c.textContent, active: c.classList.contains("active"), pressed: c.getAttribute("aria-pressed") })),
+  };
 });
 let bar = await readBar();
-bar.present ? ok("the regulation chip bar renders under the category chip bar") : bad("regulation chip bar not found");
+(bar.present && bar.underCatBar && bar.visible)
+  ? ok("the regulation chip bar renders, visible, directly under the category chip bar (next sibling)")
+  : bad("regulation chip bar: " + JSON.stringify({ present: bar.present, underCatBar: bar.underCatBar, visible: bar.visible }));
 (bar.chips[0] && bar.chips[0].text === "All regulations" && bar.chips[0].active && bar.chips[0].pressed === "true")
   ? ok('"All regulations" is the first chip and starts active')
   : bad("first chip: " + JSON.stringify(bar.chips[0]));
@@ -172,6 +183,27 @@ if (noCat) {
 } else {
   bad("could not find a category (>=5 cards) with no card citing " + leadReg);
 }
+
+// Keyboard activation keeps focus on the chip (chips are built once and
+// toggled in place - a bar that rebuilt itself on every build() destroyed
+// the very button the user pressed Enter on and dropped focus to <body>)
+// and announces the new deck via the app's live region.
+for (const [label, idx] of [["regulation", 2], ["category", 1]]) {
+  await page.evaluate(([label, idx]) => { document.querySelector(`.search-filters[aria-label="Quick-filter by ${label}"]`).querySelectorAll(".search-chip")[idx].focus(); }, [label, idx]);
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(500);
+  const focus = await page.evaluate((label) => {
+    const a = document.activeElement;
+    const bar = document.querySelector(`.search-filters[aria-label="Quick-filter by ${label}"]`);
+    return { tag: a && a.tagName, inBar: !!(a && bar && bar.contains(a)), pressed: a && a.getAttribute("aria-pressed"), text: a && a.textContent, live: (document.getElementById("a11y-live") || {}).textContent || "" };
+  }, label);
+  (focus.tag === "BUTTON" && focus.inBar && focus.pressed === "true")
+    ? ok(`Enter on a ${label} chip keeps focus on that chip ("${focus.text}", aria-pressed=true) - no focus drop to <body>`)
+    : bad(`focus after Enter on a ${label} chip: ` + JSON.stringify(focus));
+  /Showing /.test(focus.live) ? ok(`...and the live region announced the change: "${focus.live.trim()}"`) : bad(`live region after ${label} chip: ` + JSON.stringify(focus.live));
+}
+await page.evaluate(() => { const sel = document.querySelector('select[aria-label="Filter by category"]'); sel.value = "All"; sel.dispatchEvent(new Event("change")); });
+await page.waitForTimeout(400);
 
 // "All regulations" restores the full deck.
 await page.evaluate(() => { document.querySelector('.search-filters[aria-label="Quick-filter by regulation"]').querySelectorAll(".search-chip")[0].click(); });

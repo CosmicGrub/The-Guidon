@@ -11030,26 +11030,30 @@ window.G = window.G || {};
     const topCatChips = Object.entries(catChipCounts).filter(([, n]) => n >= 2)
       .sort((a, b) => b[1] - a[1]).slice(0, 12).map(([c]) => c);
     const catChipBar = el("div.search-filters", { "aria-label": "Quick-filter by category" });
+    // Chips are built ONCE and refreshCatChips() only toggles .active/
+    // aria-pressed in place - Doctrine's topicBar idiom, which this bar
+    // originally copied. The first version rebuilt the bar on every
+    // build() (util.clear + re-append), which destroyed the very <button>
+    // a keyboard user had just pressed Enter on and dropped focus to
+    // <body> - the exact failure grade()'s "Item 9 fix" below documents
+    // for cardWrap. Labels and counts derive from `all`, fixed for the
+    // route's lifetime, so nothing about the chips needs rebuilding.
+    const catChips = [["All", el("button.chip.search-chip.active", { type: "button", text: "All categories", "aria-pressed": "true" })]]
+      .concat(topCatChips.map((c) => [c, el("button.chip.search-chip", {
+        type: "button", text: c + " (" + catChipCounts[c] + ")", "aria-pressed": "false",
+      })]));
+    catChips.forEach(([c, chip]) => {
+      chip.addEventListener("click", () => {
+        if (catSel.value !== c) {
+          catSel.value = c; catSel.dispatchEvent(new Event("change"));
+          try { if (G.util.announce) G.util.announce(c === "All" ? "Showing all categories." : "Showing " + c + " cards."); } catch (e) {}
+        }
+      });
+      catChipBar.appendChild(chip);
+    });
     function refreshCatChips() {
-      util.clear(catChipBar);
       const active = catSel.value || "All";
-      const allChip = el("button.chip.search-chip" + (active === "All" ? ".active" : ""), {
-        type: "button", text: "All categories", "aria-pressed": String(active === "All"),
-      });
-      allChip.addEventListener("click", () => {
-        if (catSel.value !== "All") { catSel.value = "All"; catSel.dispatchEvent(new Event("change")); }
-      });
-      catChipBar.appendChild(allChip);
-      topCatChips.forEach((c) => {
-        const on = active === c;
-        const chip = el("button.chip.search-chip" + (on ? ".active" : ""), {
-          type: "button", text: c + " (" + catChipCounts[c] + ")", "aria-pressed": String(on),
-        });
-        chip.addEventListener("click", () => {
-          if (catSel.value !== c) { catSel.value = c; catSel.dispatchEvent(new Event("change")); }
-        });
-        catChipBar.appendChild(chip);
-      });
+      catChips.forEach(([c, chip]) => { const on = active === c; chip.classList.toggle("active", on); chip.setAttribute("aria-pressed", String(on)); });
     }
 
     // Regulation quick filter (ROADMAP §3f Phase 1-2, "sort the cards by
@@ -11072,22 +11076,23 @@ window.G = window.G || {};
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 12).map(([r]) => r);
     let regFilter = "All";
     const regChipBar = el("div.search-filters", { "aria-label": "Quick-filter by regulation" });
+    // Built once, toggled in place on refresh - same reasoning (and the
+    // same keyboard-focus failure avoided) as catChips directly above.
+    const regChips = [["All", el("button.chip.search-chip.active", { type: "button", text: "All regulations", "aria-pressed": "true" })]]
+      .concat(topRegChips.map((r) => [r, el("button.chip.search-chip", {
+        type: "button", text: r + " (" + regChipCounts[r] + ")", "aria-pressed": "false", title: "Only cards that cite " + r,
+      })]));
+    regChips.forEach(([r, chip]) => {
+      chip.addEventListener("click", () => {
+        if (regFilter !== r) {
+          regFilter = r; build();
+          try { if (G.util.announce) G.util.announce(r === "All" ? "Showing all regulations." : "Showing cards that cite " + r + "."); } catch (e) {}
+        }
+      });
+      regChipBar.appendChild(chip);
+    });
     function refreshRegChips() {
-      util.clear(regChipBar);
-      const allChip = el("button.chip.search-chip" + (regFilter === "All" ? ".active" : ""), {
-        type: "button", text: "All regulations", "aria-pressed": String(regFilter === "All"),
-      });
-      allChip.addEventListener("click", () => { if (regFilter !== "All") { regFilter = "All"; build(); } });
-      regChipBar.appendChild(allChip);
-      topRegChips.forEach((r) => {
-        const on = regFilter === r;
-        const chip = el("button.chip.search-chip" + (on ? ".active" : ""), {
-          type: "button", text: r + " (" + regChipCounts[r] + ")", "aria-pressed": String(on),
-          title: "Only cards that cite " + r,
-        });
-        chip.addEventListener("click", () => { if (regFilter !== r) { regFilter = r; build(); } });
-        regChipBar.appendChild(chip);
-      });
+      regChips.forEach(([r, chip]) => { const on = regFilter === r; chip.classList.toggle("active", on); chip.setAttribute("aria-pressed", String(on)); });
     }
 
     // Readiness supporting pane (Fold5/tablet fidelity wave 2): a third,
@@ -14640,10 +14645,14 @@ window.G = window.G || {};
     // this is the machine-readable axis beside `category`.
     //
     // Returns the distinct regulation ids in order of first appearance,
-    // normalized so "DODI 6495.02", "DoDI 6495.02" and "DoD 6495.02"-style
-    // spelling drift (and "37 USC § 403" vs "37 U.S.C. 403") collapse to
-    // one chip each. Prefix canonicalization first, then every rule runs
-    // over the same canonical string and results are merged by position.
+    // normalized so case drift ("DODI 6495.02" vs "DoDI 6495.02", "DA Pam"
+    // vs "DA PAM") and statute forms ("37 USC § 403" vs "37 U.S.C. 403",
+    // "Title 10") collapse to one chip each. A bare "DoD NNNN.NN" is NOT
+    // guessed into a DoDI/DoDD (the number alone can't tell them apart) -
+    // it yields nothing and stays in the human-readable `source`; the one
+    // such citation in the bank is a content fix, not a grammar one.
+    // Prefix canonicalization first, then every rule runs over the same
+    // canonical string and results are merged by position.
     regulationsOf(source) {
       const src = String(source || "");
       if (!src.trim()) return [];
@@ -14655,7 +14664,7 @@ window.G = window.G || {};
         .replace(/\bExecutive\s+Order\s+(\d+)/gi, "EO $1")
         .replace(/\bManual\s+for\s+Courts-?Martial\b/gi, "MCM")
         .replace(/\bTitle\s+(\d+)\b(?!\s*U)/gi, "$1 USC");
-      const PUB = /\b(DA PAM|USAREC PAM|TB MED|AR|FM|ADP|ADRP|ATP|ATTP|TC|TM|STP|TB|SB|GTA|CTA|JP|DoDI|DoDD|DoDM|DoD|AFI|MCO|ALARACT|MILPER)\s*(\d[\w.\-/]*)/g;
+      const PUB = /\b(DA PAM|USAREC PAM|TB MED|AR|FM|ADP|ADRP|ATP|ATTP|TC|TM|STP|TB|SB|GTA|CTA|JP|DoDI|DoDD|DoDM|AFI|MCO|ALARACT|MILPER)\s*(\d[\w.\-/]*)/g;
       const RULES = [
         [PUB, (m) => m[1] + " " + m[2].replace(/[.,;/-]+$/, "")],
         [/\b(\d+)\s*U\.?S\.?C\.?\s*(?:Ch(?:apter)?\.?\s*(\d+)|§?\s*(\d+))?/g, (m) => m[1] + " USC" + (m[2] ? " Ch. " + m[2] : m[3] ? " " + m[3] : "")],
