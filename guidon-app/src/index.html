@@ -3752,6 +3752,16 @@ html.light .feedback.error { background: rgba(220,53,69,0.1); }
 
 /* ── Enhanced search view ─────────────────────────────────────────────────── */
 .search-filters { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+/* Board Drill's three quick-filter rows (pillar / category / regulation):
+   at phone width each becomes ONE horizontally scrollable row instead of
+   wrapping into 4-5 rows apiece - three wrapping bars pushed the flashcard
+   ~570px further below the fold at 390px (measured during the regulation
+   bar's review). Desktop keeps the wrapping layout; Doctrine's and the
+   other .search-filters bars are untouched (opt-in class). */
+@media (max-width: 640px) {
+  .qf-row { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; padding-bottom: 4px; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
+  .qf-row .search-chip { flex: 0 0 auto; white-space: nowrap; }
+}
 .search-chip { font-size:0.78rem; padding:3px 10px; border-radius:20px;
   border:1px solid var(--line); background:var(--bg-2); cursor:pointer;
   transition:background 0.15s, border-color 0.15s; }
@@ -10065,6 +10075,7 @@ window.G = window.G || {};
       let pool = cat === "All" ? all : all.filter((q) => q.category === cat);
       if (diff !== "All") pool = pool.filter((q) => G.board.normDifficulty(q.difficulty) === diff);
       if (regFilter !== "All") pool = pool.filter((q) => (regIndex.get(q.id) || []).includes(regFilter));
+      if (pillarFilter !== "All") pool = pool.filter((q) => q.pillar === pillarFilter);
       // One db.all("kv") cursor scan instead of N parallel db.get()s -
       // scoped to the FULL bank (all), not just the filtered pool, so the
       // single resulting srsMap also covers what refreshCatList()/
@@ -10176,6 +10187,7 @@ window.G = window.G || {};
       refreshCatList();
       refreshCatChips();
       refreshRegChips();
+      refreshPillarChips();
       refreshReadinessPane();
       draw();
     }
@@ -10375,6 +10387,7 @@ window.G = window.G || {};
         if (leechOnlyMode) active.push("Leeches only");
         if (starOnlyMode) active.push("My Bookmarks");
         if (regFilter !== "All") active.push("regulation “" + regFilter + "”");
+        if (pillarFilter !== "All") active.push("pillar “" + pillarFilter + "”");
         const msg = active.length
           ? "No questions match " + active.join(" + ") + ". Clear one of these filters to see more."
           : "No questions for this filter.";
@@ -11208,7 +11221,7 @@ window.G = window.G || {};
     all.forEach((q) => { catChipCounts[q.category] = (catChipCounts[q.category] || 0) + 1; });
     const topCatChips = Object.entries(catChipCounts).filter(([, n]) => n >= 2)
       .sort((a, b) => b[1] - a[1]).slice(0, 12).map(([c]) => c);
-    const catChipBar = el("div.search-filters", { "aria-label": "Quick-filter by category" });
+    const catChipBar = el("div.search-filters.qf-row", { "aria-label": "Quick-filter by category" });
     // Chips are built ONCE and refreshCatChips() only toggles .active/
     // aria-pressed in place - Doctrine's topicBar idiom, which this bar
     // originally copied. The first version rebuilt the bar on every
@@ -11254,7 +11267,7 @@ window.G = window.G || {};
     const topRegChips = Object.entries(regChipCounts).filter(([, n]) => n >= 2)
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 12).map(([r]) => r);
     let regFilter = "All";
-    const regChipBar = el("div.search-filters", { "aria-label": "Quick-filter by regulation" });
+    const regChipBar = el("div.search-filters.qf-row", { "aria-label": "Quick-filter by regulation" });
     // Built once, toggled in place on refresh - same reasoning (and the
     // same keyboard-focus failure avoided) as catChips directly above.
     const regChips = [["All", el("button.chip.search-chip.active", { type: "button", text: "All regulations", "aria-pressed": "true" })]]
@@ -11272,6 +11285,45 @@ window.G = window.G || {};
     });
     function refreshRegChips() {
       regChips.forEach(([r, chip]) => { const on = regFilter === r; chip.classList.toggle("active", on); chip.setAttribute("aria-pressed", String(on)); });
+    }
+
+    // Pillar quick filter (ROADMAP §3f: the `pillar` tags the taxonomy pass
+    // put on ~700 cards, made usable): the coarsest study axis - one of the
+    // six SGT-board pillars - as the FIRST chip row, above category. Same
+    // built-once / toggled-in-place idiom as the two bars above. Canonical
+    // order (G.board.PILLARS, kept in sync with tools/pillar-map.mjs by
+    // lint-board-taxonomy rule (h)), not by count; a pillar with no tagged
+    // cards is simply absent. Content outside the six (weapons, land nav,
+    // TCCC, CBRN, fitness...) belongs to no pillar BY DESIGN and stays
+    // reachable through "All pillars" and the category axis. The
+    // Readiness tab's "Drill <pillar>" buttons arrive through the one-shot
+    // G.board._filterPillar flag, consumed right here (after the state
+    // exists, unlike _filterCat/_filterDue which are consumed earlier
+    // because their state is declared earlier).
+    const pillarCounts = {};
+    all.forEach((q) => { if (q.pillar) pillarCounts[q.pillar] = (pillarCounts[q.pillar] || 0) + 1; });
+    const pillarList = (G.board.PILLARS || []).filter((p) => pillarCounts[p]);
+    let pillarFilter = "All";
+    if (G.board._filterPillar) {
+      if (pillarList.includes(G.board._filterPillar)) pillarFilter = G.board._filterPillar;
+      G.board._filterPillar = null;
+    }
+    const pillarChipBar = el("div.search-filters.qf-row", { "aria-label": "Quick-filter by pillar" });
+    const pillarChips = [["All", el("button.chip.search-chip.active", { type: "button", text: "All pillars", "aria-pressed": "true" })]]
+      .concat(pillarList.map((p) => [p, el("button.chip.search-chip", {
+        type: "button", text: p + " (" + pillarCounts[p] + ")", "aria-pressed": "false", title: "Only " + p + " cards",
+      })]));
+    pillarChips.forEach(([p, chip]) => {
+      chip.addEventListener("click", () => {
+        if (pillarFilter !== p) {
+          pillarFilter = p; build();
+          try { if (G.util.announce) G.util.announce(p === "All" ? "Showing all pillars." : "Showing " + p + " cards."); } catch (e) {}
+        }
+      });
+      pillarChipBar.appendChild(chip);
+    });
+    function refreshPillarChips() {
+      pillarChips.forEach(([p, chip]) => { const on = pillarFilter === p; chip.classList.toggle("active", on); chip.setAttribute("aria-pressed", String(on)); });
     }
 
     // Readiness supporting pane (Fold5/tablet fidelity wave 2): a third,
@@ -11339,6 +11391,7 @@ window.G = window.G || {};
       : clickVerb() + " a card (or press Space) to flip it. Grade yourself 1-4 — Needs Help, Somewhat, Know It, or Down Cold — and spaced repetition schedules your next review accordingly. Filter by study level: Beginner, Intermediate, or Expert (by-the-book verbatim). Star a card to add it to your personal bookmark deck." }));
     if (!boardHintSeen) { try { localStorage.setItem(BOARD_HINT_KEY, "1"); } catch (e) {} }
     const drillDetail = el("div");
+    drillDetail.appendChild(pillarChipBar);
     drillDetail.appendChild(catChipBar);
     drillDetail.appendChild(regChipBar);
     drillDetail.appendChild(el("div.mini-row", {}, [el("label", { text: "Category", style: "margin:0" }), catSel, el("label", { text: "Level", style: "margin:0" }), diffSel, dueChip, leechChip, starChip, shuffleBtn]));
@@ -13181,6 +13234,47 @@ window.G = window.G || {};
       mount.appendChild(weak);
     }
 
+    // ── Readiness by pillar (ROADMAP §3f Phase 1 rollup) ──────────
+    // "A formula over scores that already exist - category mastery +
+    // scenario attempts - not a new tracker": per SGT-board pillar, card
+    // mastery (the same isMasteredSrs predicate the score above uses) next
+    // to scenarios completed (store.getProgress()'s best-attempt ids).
+    // Deliberately a SEPARATE panel, not blended into the Board Readiness
+    // Score above - that number is card mastery and changing what it means
+    // silently is exactly what the Home dashboard's round-4 note warns
+    // against. Content outside the six pillars is not counted here (it is
+    // in the score above); a pillar with no cards and no scenarios is
+    // simply absent.
+    try {
+      const prog = store.getProgress ? await store.getProgress().catch(() => null) : null;
+      const doneIds = new Set((prog && prog.completedIds) || []);
+      const scsAll = store.scenarios ? store.scenarios() : [];
+      const pillarRows = (G.board.PILLARS || []).map((p) => {
+        const cards = all.filter((q) => q.pillar === p);
+        const mastered = cards.filter((q) => G.board.isMasteredSrs(srsData[q.id])).length;
+        const scs = scsAll.filter((s) => s.pillar === p);
+        return { p, total: cards.length, mastered, pct: cards.length ? Math.round((mastered / cards.length) * 100) : 0, scTotal: scs.length, scDone: scs.filter((s) => doneIds.has(s.id)).length };
+      }).filter((r) => r.total || r.scTotal);
+      if (pillarRows.length) {
+        const pil = el("div.panel.readiness-pillars", { style: "margin-top:12px" });
+        pil.appendChild(el("div.eyebrow", { text: "Readiness by pillar" }));
+        pil.appendChild(el("p.hint", { text: "The six SGT-board study pillars — cards you've mastered and scenarios you've completed in each. Subjects outside them (weapons, land nav, medical, fitness…) count toward the score above but not here." }));
+        pillarRows.forEach((r) => {
+          const row = el("div.readiness-pillar-row", { style: "margin-bottom:10px", "data-pillar": r.p });
+          row.appendChild(el("div.stat", {}, [
+            el("span.k", { text: r.p }),
+            el("span.v", { style: "color:" + (r.pct >= 85 ? "var(--green)" : r.pct >= 60 ? "var(--cyan)" : "var(--amber)"),
+              text: (r.total ? r.pct + "%  (" + r.mastered + "/" + r.total + " cards)" : "no cards") + (r.scTotal ? "  ·  " + r.scDone + "/" + r.scTotal + " scenarios" : "") }),
+          ]));
+          if (r.total) row.appendChild(el("div.bar" + (r.pct >= 85 ? ".green" : ""), {}, [el("span", { style: "transform:scaleX(" + (r.pct / 100) + ")" })]));
+          if (r.total) row.appendChild(el("button.btn.ghost.sm", { type: "button", text: "Drill " + r.p, style: "margin-top:4px",
+            onclick: () => { G.board._filterPillar = r.p; G.board.render(mount.parentElement || mount); } }));
+          pil.appendChild(row);
+        });
+        mount.appendChild(pil);
+      }
+    } catch (e) { /* pillar rollup non-fatal */ }
+
     // ── All categories ─────────────────────────────────────────
     // Tier 4 roadmap: this used to be a single-column scrolling bar-list,
     // one row per category (93 real categories in the deck) with only one
@@ -14793,6 +14887,14 @@ window.G = window.G || {};
     // use - local calendar date, same reasoning as G.streak's isoDate().
     _filterReps: null,
     REPS_SIZE: 12,
+    // The six ROADMAP §3f study pillars, in canonical order. The ONE
+    // definition for the seed side is tools/pillar-map.mjs; lint-board-
+    // taxonomy's rule (h) fails if this literal ever drifts from it. Used
+    // by Board Drill's pillar chip row and the Readiness tab's rollup.
+    // _filterPillar is the one-shot entry flag (same convention as
+    // _filterCat/_filterDue/_filterReps) Readiness's "Drill <pillar>" sets.
+    PILLARS: ["Doctrinal Thinking", "Programs & Support", "Leadership & Counseling", "Maintenance & Supply", "Training Management", "Drill & Board Etiquette"],
+    _filterPillar: null,
     repsKey(d) {
       const t = d instanceof Date ? d : new Date();
       return "board:reps:" + t.getFullYear() + "-" + String(t.getMonth() + 1).padStart(2, "0") + "-" + String(t.getDate()).padStart(2, "0");

@@ -47,6 +47,7 @@
  *    `since` value at any moment.
  */
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import { readSeed } from "./seed-io.mjs";
 import { PILLARS, pillarForBoard, pillarForDoctrine, pillarForScenario } from "./pillar-map.mjs";
 
@@ -130,6 +131,20 @@ for (const [label, list, fn] of [["board", B, pillarForBoard], ["doctrine", D, p
 mismatched.length === 0
   ? ok("(f2) every record whose category/topic/lane is mapped in tools/pillar-map.mjs carries exactly that pillar")
   : bad(`(f2) ${mismatched.length} record(s) missing or contradicting their mapped pillar (run node tools/backfill-pillars.mjs for missing ones): ${show(mismatched, 5)}`);
+
+// (h) The app's own G.board.PILLARS literal (Board Drill's pillar chip row,
+//     the Readiness rollup) must equal PILLARS from tools/pillar-map.mjs -
+//     same six names, same canonical order - so the seed side and the UI
+//     side of the taxonomy can't drift apart.
+{
+  const html = readFileSync(SEED_PATH, "utf8");
+  const m = html.match(/\bPILLARS:\s*\[([^\]]*)\]/);
+  let appPillars = null;
+  try { appPillars = m ? JSON.parse("[" + m[1] + "]") : null; } catch (e) { appPillars = null; }
+  (appPillars && JSON.stringify(appPillars) === JSON.stringify(PILLARS))
+    ? ok("(h) the app's G.board.PILLARS literal matches tools/pillar-map.mjs (same six names, same order)")
+    : bad(`(h) G.board.PILLARS in src/index.html ${appPillars ? "is " + JSON.stringify(appPillars) : "was not found/parseable"}; tools/pillar-map.mjs says ${JSON.stringify(PILLARS)}`);
+}
 
 // (g) since: one wave at a time, per theme.js's own convention.
 const sinceVals = [...new Set([...B, ...D, ...S].map((x) => x.since).filter(Boolean))];
