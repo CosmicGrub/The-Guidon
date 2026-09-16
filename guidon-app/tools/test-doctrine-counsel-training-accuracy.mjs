@@ -54,7 +54,10 @@ const truth = await page.evaluate(() => {
   const cards = (S.board && S.board.questions) || [];
   const byId = (id) => entries.find((e) => e.id === id);
   const cp = byId("doc-counsel-process"), ts = byId("doc-8step-training"), c4856 = byId("counseling-4856");
-  const propAcct = entries.filter((e) => !e.id && e.topic === "Property Accountability" && e.source && /735-5/.test(e.source.ref || ""));
+  // By id: these two used to be identifiable only by their LACK of an id
+  // (the older un-id'd authoring batch), but the board-taxonomy pass
+  // backfilled deterministic "doc-" + slug(title) ids onto every entry.
+  const propAcct = ["doc-flipl-financial-liability-investigation-of", "doc-hand-receipt-types-and-responsibilities"].map(byId).filter(Boolean);
   const newCards = ["counsel-proc-1", "counsel-proc-2", "adp70-8step-1", "adp70-8step-2"].map((id) => { const q = cards.find((c) => c.id === id); return q ? { id, category: q.category, pillar: q.pillar } : null; });
   return {
     cp: cp ? { title: cp.title, ref: cp.source.ref, asOf: cp.source.asOf, confidence: cp.confidence, pillar: cp.pillar } : null,
