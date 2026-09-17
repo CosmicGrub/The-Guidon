@@ -52,7 +52,18 @@ jobs:
           jarsigner -verify "$AAB"
 
           apk_digest="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr '[:upper:]' '[:lower:]' | tr -d ':')"
-          aab_digest="$(keytool -printcert -jarfile "$AAB" | sed -n 's/^[[:space:]]*SHA256: //p' | head -1 | tr '[:upper:]' '[:lower:]' | tr -d ':')"
+
+          # AABs are JAR-signed. Extract the PKCS#7 signature block from
+          # META-INF, decode its signer certificate, and fingerprint that
+          # certificate directly. This avoids keytool/JarInputStream quirks
+          # seen with Android App Bundle metadata while still validating the
+          # real certificate that signed the bundle.
+          sig_entry="$(unzip -Z1 "$AAB" | grep -Ei '^META-INF/[^/]+\.(RSA|DSA|EC)$' | head -1)"
+          test -n "$sig_entry"
+          unzip -p "$AAB" "$sig_entry" > /tmp/guidon-aab-signer.p7b
+          openssl pkcs7 -inform DER -in /tmp/guidon-aab-signer.p7b -print_certs -out /tmp/guidon-aab-certs.pem
+          openssl x509 -in /tmp/guidon-aab-certs.pem -noout -subject -fingerprint -sha256
+          aab_digest="$(openssl x509 -in /tmp/guidon-aab-certs.pem -noout -fingerprint -sha256 | sed -E 's/^sha256 Fingerprint=//I' | tr '[:upper:]' '[:lower:]' | tr -d ':')"
 
           test -n "$apk_digest"
           test -n "$aab_digest"
