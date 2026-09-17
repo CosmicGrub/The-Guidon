@@ -4,7 +4,7 @@
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
-  "description": "GUIDON packaging: installable PWA bundle, standalone single file, Windows desktop app, Android app",
+  "description": "GUIDON packaging: installable PWA bundle, standalone single file, Windows/macOS desktop app, Android/iOS app",
   "engines": {
     "node": ">=24"
   },
@@ -252,6 +252,7 @@
     "@capacitor/core": "^8.5.1",
     "@capacitor/filesystem": "^8.1.2",
     "@capacitor/haptics": "^8.0.2",
+    "@capacitor/ios": "^8.5.1",
     "@capacitor/local-notifications": "^8.2.1",
     "@capacitor/share": "^8.0.1",
     "@capacitor/status-bar": "^8.0.3"
