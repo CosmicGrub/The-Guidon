@@ -1,0 +1,33 @@
+name: OPSEC Casefix
+on:
+  push:
+    branches: [feature/opsec-cyber-legal-harmonization]
+    paths: ['.github/workflows/opsec-casefix.yml']
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feature/opsec-cyber-legal-harmonization
+          fetch-depth: 0
+      - name: Make location context case-insensitive
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('guidon-app/src/app-modules/05-opsec-guard.js')
+          s=p.read_text()
+          old="const LOCATION_CONTEXT_RE = /\\b(?:AT|IN|NEAR|TO)\\s+[A-Z][A-Za-z0-9.'-]*(?:\\s+[A-Z][A-Za-z0-9.'-]*){0,4}\\b/;"
+          new="const LOCATION_CONTEXT_RE = /\\b(?:AT|IN|NEAR|TO)\\s+[A-Z][A-Za-z0-9.'-]*(?:\\s+[A-Z][A-Za-z0-9.'-]*){0,4}\\b/i;"
+          if old not in s: raise SystemExit('aggregation regex anchor missing')
+          p.write_text(s.replace(old,new))
+          PY
+          git rm .github/workflows/opsec-casefix.yml
+          git config user.name "CosmicGrub"
+          git config user.email "ctsolomon95@gmail.com"
+          git add guidon-app/src/app-modules/05-opsec-guard.js
+          git commit -m "fix(opsec): detect mixed-case operational locations"
+          git push origin HEAD:feature/opsec-cyber-legal-harmonization
