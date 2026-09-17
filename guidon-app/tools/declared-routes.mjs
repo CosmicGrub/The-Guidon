@@ -15,7 +15,7 @@ export async function declaredRoutes(file = "web/index.html") {
   if (start < 0) throw new Error("declaredRoutes: ROUTES array not found in " + file);
   const end = html.indexOf("\n  ];", start);
   const block = html.slice(start, end < 0 ? start + 4000 : end);
-  const hashes = [...block.matchAll(/hash:\s*"(#\/[a-z]+)"/g)].map((m) => m[1]);
+  const hashes = [...block.matchAll(/hash:\s*"(#\/[a-z0-9-]+)"/g)].map((m) => m[1]);
   return { count: hashes.length, hashes };
 }
 
