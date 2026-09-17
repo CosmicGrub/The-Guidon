@@ -363,12 +363,16 @@ st.answerVisible === false
   ? ok("the answer panel is hidden by default (question-only) — real display:none, checked before Reveal is ever tapped")
   : bad("answer panel state before Reveal: " + st.answerVisible);
 
-// Reveal — prefers acceptableAnswer (Counseling (ATP 6-22.1): every card has one).
+// Reveal uses the live card's preferred answer field. The board supplement can
+// add Counseling cards without acceptableAnswer, so do not assume every card in
+// the category has one; runtime behavior is acceptableAnswer || a. The dedicated
+// fallback fixture below still exercises the missing-acceptableAnswer path directly.
 await tapReveal();
 st = await roundState();
-(realCard && st.answerText === realCard.acceptableAnswer)
-  ? ok("Reveal answer shows the real acceptableAnswer text, in full, exactly matching the real question object — no truncation")
-  : bad("revealed text vs real acceptableAnswer: " + JSON.stringify({ shown: st.answerText, real: realCard && realCard.acceptableAnswer }));
+const expectedRealAnswer = realCard && (realCard.acceptableAnswer || realCard.a);
+(realCard && st.answerText === expectedRealAnswer)
+  ? ok(`Reveal answer shows the real ${realCard.acceptableAnswer ? "acceptableAnswer" : "a fallback"} text in full — no truncation`)
+  : bad("revealed text vs real preferred answer: " + JSON.stringify({ shown: st.answerText, real: expectedRealAnswer }));
 st.answerVisible === true ? ok("the answer panel becomes visible after tapping Reveal") : bad("answer panel did not become visible after Reveal");
 
 // ── Correct/Pass tallying + streak, real state ──────────────────────
