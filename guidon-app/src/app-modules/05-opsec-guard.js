@@ -33,7 +33,7 @@ window.G = window.G || {};
   const PHONE_RE = /(?:\+?1[ .-]?)?(?:\(\d{3}\)|\d{3})[ .-]\d{3}[ .-]\d{4}\b/g;
   const FUTURE_YEAR_RE = /\b(?:20(?:2[7-9]|[3-9]\d))[-/]\d{1,2}[-/]\d{1,2}\b|\b(?:JAN(?:UARY)?|FEB(?:RUARY)?|MAR(?:CH)?|APR(?:IL)?|MAY|JUN(?:E)?|JUL(?:Y)?|AUG(?:UST)?|SEP(?:TEMBER)?|OCT(?:OBER)?|NOV(?:EMBER)?|DEC(?:EMBER)?)\s+\d{1,2}(?:ST|ND|RD|TH)?(?:,)?\s+20(?:2[7-9]|[3-9]\d)\b/i;
   const OPS_CONTEXT_RE = /\b(DEPLOY(?:MENT|ING)?|MOVEMENT|CONVOY|SP\s+TIME|LD\s+TIME|LINE\s+OF\s+DEPARTURE|LIVE[- ]FIRE|TRAINING\s+AREA|RANGE|ASSEMBLY\s+AREA|MGRS|GRID|COORDINATE|PZ|LZ|OBJ(?:ECTIVE)?)\b/i;
-  const LOCATION_CONTEXT_RE = /\b(?:AT|IN|NEAR|TO)\s+[A-Z][A-Za-z0-9.'-]*(?:\s+[A-Z][A-Za-z0-9.'-]*){0,4}\b/;
+  const LOCATION_CONTEXT_RE = /\b(?:AT|IN|NEAR|TO)\s+[A-Z][A-Za-z0-9.'-]*(?:\s+[A-Z][A-Za-z0-9.'-]*){0,4}\b/i;
 
   function finding(code, label, detail) { return { code: code, label: label, detail: detail || "" }; }
 
@@ -48,7 +48,6 @@ window.G = window.G || {};
       if (p.re.test(original)) blocks.push(finding(p.code, p.label, "Do not place marked material in GUIDON."));
     });
 
-    // A blocking marking is never rewritten into a false "safe" document.
     if (blocks.length) {
       return { text: original, blocked: true, redactions: redactions, flags: flags, reasons: blocks, changed: false, requiresReview: true };
     }
@@ -74,9 +73,6 @@ window.G = window.G || {};
       redact(PHONE_RE, "[PHONE REDACTED]", "phone", "phone number");
     }
 
-    // Aggregation is context-dependent. Refuse to certify it by regex. If a
-    // future date appears with operational/location context, require the user
-    // to remove or fictionalize it before this text can be persisted.
     if (FUTURE_YEAR_RE.test(original) && OPS_CONTEXT_RE.test(original) && LOCATION_CONTEXT_RE.test(original)) {
       flags.push(finding("future-operation-location", "future operational date + location", "Remove or replace the real date/location with a synthetic training value before continuing."));
     }
@@ -101,9 +97,7 @@ window.G = window.G || {};
   }
 
   async function screenForPersistence(input, options) {
-    const r = sanitizeInput(input, options);
-    if (r.blocked || r.requiresReview) return r;
-    return r;
+    return sanitizeInput(input, options);
   }
 
   function showDisclaimerOnce() {
