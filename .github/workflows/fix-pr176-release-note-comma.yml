@@ -35,7 +35,6 @@ jobs:
           if s.count(bad) != 1:
               raise SystemExit(f'expected one malformed release-note boundary, found {s.count(bad)}')
           s = s.replace(bad, good, 1)
-          # Normalize the array close indentation created by the earlier move.
           s = s.replace('      },\n],\n    // guidon:whatsnew:v1', '      },\n    ],\n    // guidon:whatsnew:v1', 1)
           p.write_text(s)
           PY
@@ -43,6 +42,7 @@ jobs:
           npm ci --omit=optional
           npx playwright install --with-deps chromium
           npm run lint:patterns
+          npm run icons
           npm run build
           npm run verify
           cd ..
