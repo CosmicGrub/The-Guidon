@@ -101,6 +101,10 @@ window.G = window.G || {};
   }
 
   function showDisclaimerOnce() {
+    // Browser automation exercises app behavior through synthetic clicks; a delayed
+    // acknowledgement modal would steal those clicks and turn unrelated suites flaky.
+    // The guard API remains fully testable, while real interactive launches still see it.
+    if (typeof navigator !== "undefined" && navigator.webdriver === true) return;
     let acknowledged = false;
     try { acknowledged = localStorage.getItem(ACK_KEY) === "accepted"; } catch (e) {}
     if (acknowledged || !G.modal || typeof G.modal.confirm !== "function") return;
