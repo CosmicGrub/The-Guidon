@@ -1,0 +1,69 @@
+name: Cut release
+
+# Stage 1 of a release. A version bump lands first; changing .release-prep to
+# that version then creates the immutable source tag + GitHub Release. Only after
+# this job is green should .release-trigger be changed, which fans out the
+# platform asset workflows from the already-created tag.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'guidon-app/src/.release-prep'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cut-release
+  cancel-in-progress: false
+
+jobs:
+  cut:
+    name: Tag + GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: Create or verify release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./guidon-app/package.json').version")"
+          TAG="v${VERSION}"
+          PREP="$(tr -d '\r\n[:space:]' < guidon-app/src/.release-prep)"
+
+          if [ "$PREP" != "$TAG" ]; then
+            echo "::error::.release-prep says '$PREP' but package.json says '$TAG'"
+            exit 1
+          fi
+
+          if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            TAG_COMMIT="$(git rev-list -n 1 "$TAG")"
+            if [ "$TAG_COMMIT" != "$GITHUB_SHA" ]; then
+              echo "::error::$TAG already points to $TAG_COMMIT, not this release-prep commit $GITHUB_SHA"
+              exit 1
+            fi
+          fi
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "$TAG release already exists; verified idempotent rerun."
+          else
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "GUIDON $TAG" \
+              --generate-notes
+          fi
+
+          git fetch --tags --force
+          TAG_COMMIT="$(git rev-list -n 1 "$TAG")"
+          test "$TAG_COMMIT" = "$GITHUB_SHA" || {
+            echo "::error::$TAG resolved to $TAG_COMMIT after creation; expected $GITHUB_SHA"
+            exit 1
+          }
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY"
