@@ -1,44 +1,33 @@
-name: OPSEC Harmonization Inspect
+name: OPSEC Harmonization Apply
 
 on:
   push:
     branches: [feature/opsec-cyber-legal-harmonization]
     paths:
       - '.github/workflows/opsec-harmonization-inspect.yml'
-  workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  inspect:
+  apply:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feature/opsec-cyber-legal-harmonization
+          fetch-depth: 0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: '24'
-      - name: Print integration anchors
+      - name: Apply deterministic OPSEC integration patch
+        run: node guidon-app/tools/apply-opsec-harmonization.mjs
+      - name: Remove one-shot helpers and commit
         shell: bash
         run: |
-          node <<'NODE'
-          const fs = require('fs');
-          const p='guidon-app/src/index.html';
-          const s=fs.readFileSync(p,'utf8');
-          function clip(label, needle, before=500, after=1000) {
-            const i=s.indexOf(needle);
-            console.log('\n===== '+label+' @ '+i+' =====');
-            if(i<0) return console.log('NOT FOUND');
-            console.log(s.slice(Math.max(0,i-before), Math.min(s.length,i+after)));
-          }
-          clip('ROUTE MOI', '#/moi', 350, 700);
-          clip('NAV STUDY', 'Study & Skills', 350, 900);
-          const d=s.indexOf('const DEMO_NOTES = {');
-          const m=s.indexOf('"#/moi"', d);
-          console.log('\n===== DEMO MOI @ '+m+' =====');
-          console.log(m<0?'NOT FOUND':s.slice(Math.max(d,m-250),m+1200));
-          const sg=fs.readFileSync('guidon-app/src/app-modules/studygroup.js','utf8');
-          const si=sg.indexOf('text: "Study group"');
-          console.log('\n===== STUDYGROUP RENDER @ '+si+' =====');
-          console.log(si<0?'NOT FOUND':sg.slice(Math.max(0,si-600),si+900));
-          NODE
+          git rm .github/workflows/opsec-harmonization-inspect.yml guidon-app/tools/apply-opsec-harmonization.mjs
+          git config user.name "CosmicGrub"
+          git config user.email "ctsolomon95@gmail.com"
+          git add guidon-app/src/index.html guidon-app/src/app-modules/moi-import.js guidon-app/src/app-modules/leader.js guidon-app/src/app-modules/studygroup.js
+          git commit -m "feat(opsec): enforce sensitive-input and network boundaries"
+          git push origin HEAD:feature/opsec-cyber-legal-harmonization
