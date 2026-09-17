@@ -143,7 +143,9 @@ jobs:
           # certificate, never the private key; the Actions keystore secret
           # must therefore contain the private key corresponding to this cert.
           expected_digest="83a0cae688a714aa008022d9ab8be5840d327c7b0f6e673e426fe113ed1e1da2"
-          apk_digest="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr '[:upper:]' '[:lower:]' | tr -d ':')"
+          # apksigner labels the signer differently across Build Tools releases
+          # (e.g. "Signer #1" versus "V2 Signer"); match the stable digest suffix.
+          apk_digest="$("$APKSIGNER" verify --print-certs "$APK" | sed -n -E 's/^.*certificate SHA-256 digest:[[:space:]]*//p' | head -1 | tr '[:upper:]' '[:lower:]' | tr -d ':')"
 
           sig_entry="$(unzip -Z1 "$AAB" | grep -Ei '^META-INF/[^/]+\.(RSA|DSA|EC)$' | head -1)"
           test -n "$sig_entry"
