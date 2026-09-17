@@ -46,7 +46,10 @@ jobs:
           test -n "$APKSIGNER"
 
           "$APKSIGNER" verify --verbose --print-certs "$APK"
-          jarsigner -verify -strict "$AAB"
+          # The GUIDON release certificate is intentionally self-signed, so
+          # jarsigner -strict would fail PKIX trust even when the AAB is
+          # correctly signed. Verify JAR integrity, then pin the exact cert.
+          jarsigner -verify "$AAB"
 
           apk_digest="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr '[:upper:]' '[:lower:]' | tr -d ':')"
           aab_digest="$(keytool -printcert -jarfile "$AAB" | sed -n 's/^[[:space:]]*SHA256: //p' | head -1 | tr '[:upper:]' '[:lower:]' | tr -d ':')"
