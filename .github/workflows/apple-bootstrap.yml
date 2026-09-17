@@ -39,19 +39,52 @@ jobs:
 
           p = Path('guidon-app/src/index.html')
           text = p.read_text(encoding='utf-8')
-          if "version:'1.10.0'" not in text:
-              entry = """{version:'1.10.0', date:'2026-09-17', title:'Board Readiness & Study Rooms',
-           bullets:[
-             'Study Rooms can now build multi-category decks, with Scenario Relay and Collective Decision cohesion improvements.',
-             'Board Drill adds 5-Minute Board Reps plus quick filters by regulation and readiness pillar, with readiness rollups by pillar.',
-             'The board and doctrine library adds verified counseling, training, AER, ACS, SUDCC and operational-thinking content with stronger taxonomy checks.'
-           ]},
-          """
-              needle = "{version:'1.9.0'"
-              pos = text.find(needle)
-              if pos < 0:
-                  raise SystemExit('could not locate v1.9.0 RELEASE_NOTES entry')
-              text = text[:pos] + entry + text[pos:]
+          if 'version: "1.10.0"' not in text and "version: '1.10.0'" not in text:
+              marker = 'RELEASE_NOTES: ['
+              start = text.find(marker)
+              if start < 0:
+                  raise SystemExit('could not locate G.whatsNew.RELEASE_NOTES')
+              open_bracket = text.find('[', start)
+              depth = 0
+              quote = None
+              escaped = False
+              close_bracket = None
+              for i in range(open_bracket, len(text)):
+                  ch = text[i]
+                  if quote is not None:
+                      if escaped:
+                          escaped = False
+                      elif ch == '\\':
+                          escaped = True
+                      elif ch == quote:
+                          quote = None
+                      continue
+                  if ch in ('"', "'", '`'):
+                      quote = ch
+                      continue
+                  if ch == '[':
+                      depth += 1
+                  elif ch == ']':
+                      depth -= 1
+                      if depth == 0:
+                          close_bracket = i
+                          break
+              if close_bracket is None:
+                  raise SystemExit('could not find end of G.whatsNew.RELEASE_NOTES')
+
+              entry = '''      {
+        version: "1.10.0",
+        date: "September 2026",
+        title: "Board readiness and better study rooms",
+        highlights: [
+          "Study Rooms can now build multi-category decks, with new Scenario Relay and Collective Decision ways to train together.",
+          "Board Drill adds 5-Minute Board Reps plus quick filters by regulation and readiness pillar, with readiness rollups by pillar.",
+          "The board and doctrine library adds verified counseling, training, AER, ACS, SUDCC, and operational-thinking material with clearer organization."
+        ]
+      }'''
+              before = text[:close_bracket].rstrip()
+              sep = ',\n' if before and before[-1] == '}' else '\n'
+              text = before + sep + entry + '\n    ' + text[close_bracket:]
               p.write_text(text, encoding='utf-8')
 
           pkg = Path('guidon-app/package.json')
