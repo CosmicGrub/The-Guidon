@@ -71,17 +71,18 @@ jobs:
                           break
               if close_bracket is None:
                   raise SystemExit('could not find end of G.whatsNew.RELEASE_NOTES')
-
-              entry = '''      {
-        version: "1.10.0",
-        date: "September 2026",
-        title: "Board readiness and better study rooms",
-        highlights: [
-          "Study Rooms can now build multi-category decks, with new Scenario Relay and Collective Decision ways to train together.",
-          "Board Drill adds 5-Minute Board Reps plus quick filters by regulation and readiness pillar, with readiness rollups by pillar.",
-          "The board and doctrine library adds verified counseling, training, AER, ACS, SUDCC, and operational-thinking material with clearer organization."
-        ]
-      }'''
+              entry = '\n'.join([
+                  '      {',
+                  '        version: "1.10.0",',
+                  '        date: "September 2026",',
+                  '        title: "Board readiness and better study rooms",',
+                  '        highlights: [',
+                  '          "Study Rooms can now build multi-category decks, with new Scenario Relay and Collective Decision ways to train together.",',
+                  '          "Board Drill adds 5-Minute Board Reps plus quick filters by regulation and readiness pillar, with readiness rollups by pillar.",',
+                  '          "The board and doctrine library adds verified counseling, training, AER, ACS, SUDCC, and operational-thinking material with clearer organization."',
+                  '        ]',
+                  '      }',
+              ])
               before = text[:close_bracket].rstrip()
               sep = ',\n' if before and before[-1] == '}' else '\n'
               text = before + sep + entry + '\n    ' + text[close_bracket:]
