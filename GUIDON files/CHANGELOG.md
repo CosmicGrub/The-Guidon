@@ -2,6 +2,14 @@
 
 All notable changes to GUIDON will be documented in this file. Format loosely follows [Keep a Changelog](http://keepachangelog.com/). This is the technical record for developers - the app itself shows a short, plain-language summary of each release to Soldiers directly (G.whatsNew, src/index.html), not this file.
 
+## 2026-09-17 - v1.10.1: Apple parity and release reliability
+
+**Apple platform parity is now a maintained release concern, not a side build.** The committed Capacitor iOS project compiles the same GUIDON web bundle as the other platform shells, while the macOS lane produces a universal Apple Silicon + Intel DMG from the same immutable release tag used by Android and Windows.
+
+**Release ordering is explicit and auditable.** A release-cut gate creates and verifies the source tag before platform asset fan-out, and iOS Simulator verification preserves first-pass evidence while retrying only the two documented transient process-death/stuck-launch signatures. Compile, install, and genuine render/progress failures remain hard-red.
+
+**Distribution boundaries remain explicit.** The macOS package is universal but still requires Apple Developer ID credentials for notarization; the iOS target is build- and Simulator-verified, while TestFlight/App Store/device distribution still requires Apple Developer signing and provisioning credentials.
+
 ## 2026-09-15 - v1.9.0: TCCC-first lane ships, all three locked content items live
 
 **Everything merged since v1.8.2, cut as one release.** The casualty-care-and-cohesion design pass's full TCCC-first build order (`docs/design/casualty-care-and-cohesion.md` §2b) is now live: two new branching G.engine scenarios and a fourth Land Nav Drill mode, all shipped in sequence this session and detailed in their own entries directly below — see those for the full technical detail, including every content-accuracy defect the adversarial review passes caught and fixed before shipping.
