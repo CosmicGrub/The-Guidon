@@ -1,0 +1,198 @@
+name: Apple release assets
+
+# Apple parity lane for a published GUIDON tag.
+# - macOS: build the same tagged web bundle as every other fork, package a
+#   universal Tauri DMG, verify both slices/minimum OS/signature, then attach it
+#   to the existing GitHub Release.
+# - iOS: build the maintained Capacitor project from that same tag and run the
+#   real Simulator render/progress gate. The Simulator .app is retained as CI
+#   evidence; App Store/TestFlight/device distribution still requires Apple
+#   Developer signing credentials and is intentionally not represented as a
+#   shippable IPA here.
+
+on:
+  push:
+    tags: ['v*']
+    branches: [main]
+    paths:
+      - 'guidon-app/src/.release-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apple-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '24'
+  APP_ID: app.guidon.trainer
+  DEFAULT_DEVICES: 'iPhone SE (3rd generation),iPhone 16,iPhone 16 Pro Max,iPad (10th generation)'
+
+jobs:
+  resolve:
+    name: Resolve published tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./guidon-app/package.json').version")"
+          TAG="v${VERSION}"
+          git rev-parse "${TAG}^{commit}" >/dev/null
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+  macos:
+    name: macOS universal DMG
+    needs: resolve
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.resolve.outputs.version }}
+      TAG: ${{ needs.resolve.outputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    defaults:
+      run:
+        working-directory: guidon-app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: guidon-app/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Chromium and generate icons
+        run: |
+          npx playwright install chromium
+          npm run icons
+      - name: Build web bundle
+        run: npm run build
+      - name: Install universal Rust targets
+        working-directory: guidon-app/src-tauri
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - name: Build universal macOS bundle
+        run: npx tauri build --target universal-apple-darwin --ci
+      - name: Verify universal bundle
+        run: |
+          set -euo pipefail
+          BUNDLE=src-tauri/target/universal-apple-darwin/release/bundle
+          APP="$(find "$BUNDLE/macos" -maxdepth 1 -name '*.app' | head -1)"
+          DMG="$(find "$BUNDLE/dmg" -maxdepth 1 -name '*.dmg' | head -1)"
+          test -n "$APP" && test -n "$DMG"
+          BIN="$(find "$APP/Contents/MacOS" -maxdepth 1 -type f | head -1)"
+          ARCHS="$(lipo -archs "$BIN")"
+          case "$ARCHS" in
+            *x86_64*arm64*|*arm64*x86_64*) ;;
+            *) echo "::error::expected universal binary, got: $ARCHS"; exit 1 ;;
+          esac
+          MIN="$(plutil -extract LSMinimumSystemVersion raw -o - "$APP/Contents/Info.plist")"
+          test "$MIN" = "12.3" || { echo "::error::minimum macOS $MIN != 12.3"; exit 1; }
+          codesign --verify --deep --strict "$APP"
+          mkdir -p release-out artifacts/apple-release
+          cp "$DMG" "release-out/GUIDON-${VERSION}-macos-universal.dmg"
+          {
+            echo "tag=$TAG"
+            echo "arches=$ARCHS"
+            echo "minimum_macos=$MIN"
+            codesign -dv "$APP" 2>&1 || true
+          } > artifacts/apple-release/macos-record.txt
+      - name: Publish macOS DMG
+        run: gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "release-out/GUIDON-${VERSION}-macos-universal.dmg"
+      - name: Upload macOS verification record
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: guidon-macos-release-verification
+          path: guidon-app/artifacts/apple-release/
+          retention-days: 30
+
+  ios:
+    name: iOS tagged Simulator parity
+    needs: resolve
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      TAG: ${{ needs.resolve.outputs.tag }}
+    defaults:
+      run:
+        working-directory: guidon-app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: guidon-app/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Build and sync iOS bundle
+        env:
+          GUIDON_CAPS_PROBE: '1'
+        run: |
+          npm run build
+          npx playwright install chromium
+          npm run icons
+          npx cap sync ios
+      - name: Pick Simulator
+        id: dest
+        run: |
+          set -euo pipefail
+          python3 tools/ios-pick-simulator.py --selftest
+          UDID="$(xcrun simctl list devices available -j | python3 tools/ios-pick-simulator.py --match iPhone)"
+          test -n "$UDID"
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+      - name: Compile Simulator app
+        env:
+          DEST_UDID: ${{ steps.dest.outputs.udid }}
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=${DEST_UDID}" \
+            -derivedDataPath ios/build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build
+      - name: Locate app
+        id: app
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find ios/build/Build/Products -maxdepth 2 -name 'App.app' -type d | head -1)"
+          test -n "$APP_PATH"
+          echo "path=$PWD/$APP_PATH" >> "$GITHUB_OUTPUT"
+      - name: Verify Simulator parity
+        env:
+          APP_PATH: ${{ steps.app.outputs.path }}
+          BUNDLE_ID: ${{ env.APP_ID }}
+          DEVICES: ${{ env.DEFAULT_DEVICES }}
+        run: bash tools/ios-simulator-run-with-retry.sh
+      - name: Upload iOS tagged evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: guidon-ios-${{ needs.resolve.outputs.version }}-simulator-evidence
+          path: |
+            guidon-app/artifacts/ios/
+            guidon-app/ios/build/Build/Products/Debug-iphonesimulator/App.app
+          retention-days: 30
+          if-no-files-found: warn
