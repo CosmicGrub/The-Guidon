@@ -348,11 +348,16 @@ const search92 = await page.evaluate(() => ({
   hits: [...document.querySelectorAll(".search-hit-title")].map((n) => n.textContent || ""),
   heads: [...document.querySelectorAll(".search-section-head")].map((n) => n.textContent || ""),
   hitCount: document.querySelectorAll(".search-hit").length,
+  segTitles: [...document.querySelectorAll(".search-dist-seg")].map((n) => n.title || ""),
 }));
-const renderedCount = Number((search92.countText.match(/\d+/) || [0])[0]);
-(renderedCount === search92.hitCount && renderedCount > 1)
-  ? ok(`Search "92a": count (${renderedCount}) matches the expanded cross-curriculum result set`)
-  : bad(`Search "92a": countText="${search92.countText}", rendered hits=${search92.hitCount}`);
+const totalCount92 = Number((search92.countText.match(/\d+/) || [0])[0]);
+const distributedCount92 = search92.segTitles.reduce((sum, title) => {
+  const m = /^(\d+)/.exec(title.trim());
+  return sum + (m ? Number(m[1]) : 0);
+}, 0);
+(totalCount92 === distributedCount92 && totalCount92 >= search92.hitCount && search92.hitCount > 1)
+  ? ok(`Search "92a": uncapped total (${totalCount92}) matches the distribution bar and includes the ${search92.hitCount} rendered/capped cards`)
+  : bad(`Search "92a": countText="${search92.countText}", distributed=${distributedCount92}, rendered hits=${search92.hitCount}`);
 search92.hits.some((t) => /92A/i.test(t))
   ? ok('Search "92a": 92A-specific content is present in the result set')
   : bad(`Search "92a": no hit title contained 92A: ${JSON.stringify(search92.hits.slice(0, 8))}`);

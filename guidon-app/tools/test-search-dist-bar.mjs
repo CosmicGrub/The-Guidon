@@ -225,21 +225,34 @@ await page.evaluate(() => {
 });
 
 /* ---- single-domain query: no bar renders (matches old parts.length>1 threshold) ---- */
-// "92A" only ever hits the career/MOS domain (a bare MOS code), same as the
-// dedicated MOS-code regression in test-search-views/test-nav-seed - one
-// domain only, so the old text breakdown never rendered a parenthetical
-// and the bar must not render one either.
-await search("92A");
+// "reflective belt" is independently covered in test-misc-routes as one
+// real Doctrine hit, so it remains a stable single-domain threshold check.
+await search("reflective belt");
 const singleDomain = await page.evaluate(() => ({
   cards: document.querySelectorAll(".search-hit").length,
   sections: document.querySelectorAll(".search-section").length,
   bars: document.querySelectorAll(".search-dist-bar").length,
 }));
-(singleDomain.cards > 0 && singleDomain.sections === 1)
+(singleDomain.cards === 1 && singleDomain.sections === 1)
   ? (singleDomain.bars === 0
-      ? ok(`single-domain query "92A" (${singleDomain.cards} hits, 1 section) renders no distribution bar - matches the old text breakdown's own threshold`)
-      : bad(`single-domain query "92A" rendered ${singleDomain.bars} distribution bar(s) - should render none`))
-  : bad(`"92A" no longer resolves to exactly one domain (cards=${singleDomain.cards}, sections=${singleDomain.sections}) - test assumption stale`);
+      ? ok('single-domain query "reflective belt" (1 hit, 1 section) renders no distribution bar')
+      : bad(`single-domain query "reflective belt" rendered ${singleDomain.bars} distribution bar(s) - should render none`))
+  : bad(`"reflective belt" stopped being a single-domain/single-hit query (cards=${singleDomain.cards}, sections=${singleDomain.sections})`);
+
+/* ---- 92A is now deliberately multi-domain after the curriculum supplement ---- */
+await search("92A");
+const mosExpanded = await page.evaluate(() => ({
+  cards: document.querySelectorAll(".search-hit").length,
+  sections: [...document.querySelectorAll(".search-section-head")].map((h) => h.textContent || ""),
+  bars: document.querySelectorAll(".search-dist-bar").length,
+  segTitles: [...document.querySelectorAll(".search-dist-seg")].map((s) => s.title || ""),
+  total: (document.querySelector(".search-count") || {}).textContent || "",
+}));
+const mosHasBoard = mosExpanded.sections.some((h) => /Board Questions/i.test(h));
+const mosHasCareer = mosExpanded.sections.some((h) => /MOS/i.test(h));
+(mosExpanded.cards > 0 && mosHasBoard && mosHasCareer && mosExpanded.bars === 1)
+  ? ok(`expanded "92A" search spans Board Questions + MOS/Career and renders one distribution bar (${mosExpanded.total})`)
+  : bad(`expanded "92A" search did not expose the expected cross-domain bar: ${JSON.stringify(mosExpanded)}`);
 
 noise.length === 0 ? ok("no console errors/warnings across the whole run") : bad("console noise: " + noise.join(" | "));
 
