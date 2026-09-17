@@ -159,14 +159,6 @@ const back2 = await readStep();
 const sessionStep = await page.evaluate(() => sessionStorage.getItem("guidon-demo-step"));
 sessionStep === "1" ? ok("Guided Tour: current step (index 1 = step 2) is persisted to sessionStorage for back/resume") : bad('Guided Tour: sessionStorage step was "' + sessionStep + '", expected "1"');
 
-// Roadmap audit round 5, "Kiosk/Demo Center" bucket: a persistent "TOUR
-// N/M" badge now shows in the topbar while mid Guided Tour (see
-// G.kioskBadge in index.html) - confirm it tracks the real current step
-// and that its Resume button returns to #/kiosk without touching either
-// sessionStorage key (unlike Free Mode's Exit, tested further below).
-// Label kept deliberately short (not "TOUR: Step N of M") so it can never
-// starve the brand wordmark of width on a real narrow device - see the
-// #demo-mode-badge shrink/ellipsis fix, same commit.
 const tourBadgeText = await page.evaluate(() => (document.querySelector("#demo-mode-badge") || {}).textContent || "");
 /TOUR 2\/\d+/.test(tourBadgeText)
   ? ok(`Guided Tour: the persistent tour badge reads "${tourBadgeText}", matching the real current step (2)`)
@@ -180,14 +172,6 @@ stepKeyAfterResume === "1"
   ? ok("Guided Tour badge: 'Resume' leaves sessionStorage untouched, landing back on the same step (2) — not a fresh Exit")
   : bad(`Guided Tour badge: 'guidon-demo-step' was "${stepKeyAfterResume}" after Resume, expected "1" (unchanged)`);
 
-// ============================================================
-// #/kiosk -> Guided Tour: advance all the way to the final step and click
-// "End tour", then verify BOTH sessionStorage keys clear. Regression test
-// for the fix documented in profile.js's doneBtn comment (enhancement
-// backlog round 4): "End tour" originally cleared only guidon-demo-step,
-// not guidon-demo-mode, which silently skipped the mode picker on the next
-// visit to #/kiosk and dropped the user straight back into a resumed tour.
-// ============================================================
 while (await page.locator("button", { hasText: "Next →" }).count()) {
   await page.locator("button", { hasText: "Next →" }).click();
   await page.waitForTimeout(150);
@@ -208,8 +192,6 @@ modeKeyAfterEnd === null
   : bad(`Guided Tour: 'guidon-demo-mode' was "${modeKeyAfterEnd}" after End tour, expected null (regression: round-4 fix)`);
 badgeGoneAfterEnd ? ok("Guided Tour: 'End tour' removes the persistent tour badge") : bad("Guided Tour: #demo-mode-badge still present after 'End tour'");
 
-// Re-visiting #/kiosk after "End tour" must show the mode picker again, not
-// silently resume a tour - the exact failure mode the round-4 fix prevents.
 await page.evaluate(() => { location.hash = "#/kiosk"; });
 await page.waitForTimeout(400);
 const showsPickerAfterEnd = await page.evaluate(() => !!document.querySelector(".ob-mode-grid") && !document.querySelector(".ob-kiosk-card"));
@@ -217,15 +199,6 @@ showsPickerAfterEnd
   ? ok("#/kiosk after 'End tour': shows the mode picker again, not a resumed tour")
   : bad("#/kiosk after 'End tour': did not show the mode picker (tour resumed silently — the round-4 regression)");
 
-// ============================================================
-// #/kiosk -> Highlights: the curated track sitting alongside the full,
-// route-derived Guided Tour (see profile.js's TOUR_HIGHLIGHTS). Confirms
-// it's a genuinely separate, shorter list (not just a slice of the same
-// DEMO_STEPS array), that its two non-route stops (Rapid Fire, Mock Board)
-// actually open the right Board Drill tab rather than just landing on
-// #/board, and that the track choice persists through resume the same way
-// the full tour's step already does.
-// ============================================================
 await page.evaluate(() => { location.hash = "#/kiosk"; });
 await page.waitForTimeout(600);
 
@@ -247,9 +220,6 @@ const hStep1 = await readStep();
 const trackKeyAfterPick = await page.evaluate(() => sessionStorage.getItem("guidon-demo-track"));
 trackKeyAfterPick === "highlights" ? ok('Highlights: sessionStorage "guidon-demo-track" is "highlights"') : bad(`Highlights: sessionStorage "guidon-demo-track" was "${trackKeyAfterPick}", expected "highlights"`);
 
-// Advance to the Rapid Fire stop and confirm "Open →" lands on #/board with
-// the Rapid Fire tab itself active — not just the route, which every other
-// stop already gets for free via location.hash.
 let rfStep = await readStep();
 while (rfStep.title !== "Rapid Fire" && (await page.locator("button", { hasText: "Next →" }).count())) {
   await page.locator("button", { hasText: "Next →" }).click();
@@ -258,7 +228,7 @@ while (rfStep.title !== "Rapid Fire" && (await page.locator("button", { hasText:
 }
 rfStep.title === "Rapid Fire" ? ok("Highlights: advanced to the Rapid Fire stop") : bad(`Highlights: never reached a "Rapid Fire" stop (stuck on "${rfStep.title}")`);
 await page.locator("button", { hasText: "Open →" }).click();
-await page.waitForTimeout(500); // the stop's open() hand-off is hash-then-setTimeout(100) - give it real room
+await page.waitForTimeout(500);
 const rfState = await page.evaluate(() => ({
   hash: location.hash,
   rapidActive: [...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Rapid Fire" && b.classList.contains("active")),
@@ -266,7 +236,6 @@ const rfState = await page.evaluate(() => ({
 rfState.hash === "#/board" ? ok("Highlights 'Rapid Fire' stop: Open → lands on #/board") : bad(`Highlights 'Rapid Fire' stop: hash was "${rfState.hash}", expected "#/board"`);
 rfState.rapidActive ? ok("Highlights 'Rapid Fire' stop: the Rapid Fire tab itself is active, not just the route (G.board._openRapidFire)") : bad("Highlights 'Rapid Fire' stop: landed on #/board but the Rapid Fire tab was not active");
 
-// Same check for the Mock Board stop.
 await page.evaluate(() => { location.hash = "#/kiosk"; });
 await page.waitForTimeout(400);
 let mbStep = await readStep();
@@ -285,9 +254,6 @@ const mbState = await page.evaluate(() => ({
 mbState.hash === "#/board" ? ok("Highlights 'Mock Board' stop: Open → lands on #/board") : bad(`Highlights 'Mock Board' stop: hash was "${mbState.hash}", expected "#/board"`);
 mbState.mockActive ? ok("Highlights 'Mock Board' stop: the Mock Board tab itself is active, not just the route (G.board._openMockBoard)") : bad("Highlights 'Mock Board' stop: landed on #/board but the Mock Board tab was not active");
 
-// Choosing a different mode must drop the track key too, exactly like the
-// existing guidon-demo-mode/guidon-demo-step clear — otherwise a later
-// "Every Section" pick could silently inherit a stale "highlights" track.
 await page.evaluate(() => { location.hash = "#/kiosk"; });
 await page.waitForTimeout(400);
 await page.locator("button", { hasText: "← Choose a different mode" }).click();
@@ -295,11 +261,6 @@ await page.waitForTimeout(300);
 const trackKeyAfterBack = await page.evaluate(() => sessionStorage.getItem("guidon-demo-track"));
 trackKeyAfterBack === null ? ok('Highlights: "← Choose a different mode" clears sessionStorage "guidon-demo-track"') : bad(`Highlights: "guidon-demo-track" was "${trackKeyAfterBack}" after switching modes, expected null`);
 
-// ============================================================
-// #/kiosk -> Free Mode: picking Free Mode drops straight into #/home and
-// raises the persistent "DEMO MODE" badge with a one-tap Exit — neither the
-// mode itself nor the badge previously had any test coverage.
-// ============================================================
 const freeCard = page.locator("button.ob-mode-card", { hasText: /Explore on your own/i });
 (await freeCard.count()) > 0 ? ok("#/kiosk shows the 'Free Mode' mode-picker card") : bad("#/kiosk: 'Free Mode' card not found");
 await freeCard.click();
@@ -316,8 +277,6 @@ const badgeTextAfterFree = await page.evaluate(() => (document.querySelector("#d
 const modeKeyAfterFree = await page.evaluate(() => sessionStorage.getItem("guidon-demo-mode"));
 modeKeyAfterFree === "free" ? ok('Free Mode: sessionStorage "guidon-demo-mode" is "free"') : bad(`Free Mode: sessionStorage "guidon-demo-mode" was "${modeKeyAfterFree}", expected "free"`);
 
-// Badge's one-tap Exit: clears session storage, removes itself, and returns
-// to #/kiosk.
 await page.locator("#demo-mode-badge button", { hasText: "Exit" }).click();
 await page.waitForTimeout(400);
 
@@ -329,19 +288,14 @@ modeKeyAfterExit === null ? ok('Free Mode Exit: clears sessionStorage "guidon-de
 badgeGoneAfterExit ? ok("Free Mode Exit: removes the DEMO MODE badge from the topbar") : bad("Free Mode Exit: #demo-mode-badge still present after clicking Exit");
 
 // ============================================================
-// #/search -> global search: a query chosen after reading the real filter
-// logic in views.search, verified against real content read directly from
-// the app's own data (store.scenarios/boardQuestions/doctrine/etc.) rather
-// than guessed. "reflective belt" hits exactly one doctrine entry; "PT
-// test" hits three different content types at once, so the per-domain
-// distribution bar is checked too.
+// #/search -> global search: verify exact content and cross-domain behavior.
 // ============================================================
 await page.evaluate(() => { location.hash = "#/search"; });
 await page.waitForTimeout(500);
 
 const searchInput = page.locator('input[aria-label="Global search"]');
 await searchInput.fill("reflective belt");
-await page.waitForTimeout(300); // past the 120ms debounce
+await page.waitForTimeout(300);
 
 const countText = await page.evaluate(() => (document.querySelector(".search-count") || {}).textContent || "");
 countText === "1 result"
@@ -358,7 +312,6 @@ const sectionHead = await page.evaluate(() => (document.querySelector(".search-s
   ? ok(`Search "reflective belt": result is grouped under the Doctrine section ("${sectionHead}")`)
   : bad(`Search "reflective belt": section head was "${sectionHead}", expected it to mention Doctrine`);
 
-// Clicking the hit should navigate to the real route for that content type.
 await page.locator(".search-hit").first().click();
 await page.waitForTimeout(400);
 const hashAfterClick = await page.evaluate(() => location.hash);
@@ -366,12 +319,6 @@ hashAfterClick === "#/doctrine"
   ? ok('Search "reflective belt": clicking the hit navigates to #/doctrine')
   : bad(`Search "reflective belt": clicking the hit navigated to "${hashAfterClick}", expected "#/doctrine"`);
 
-// A second query spanning three different content types at once, to prove
-// the cross-category breakdown is real and specific too. Roadmap Tier 3
-// batch 2 replaced the old plain-text ".search-breakdown" line with a
-// clickable ".search-dist-bar" of ".search-dist-seg" segments (see
-// views.search in src/index.html) - same underlying per-domain counts,
-// surfaced as segment titles instead of one joined string.
 await page.evaluate(() => { location.hash = "#/search"; });
 await page.waitForTimeout(500);
 const searchInput2 = page.locator('input[aria-label="Global search"]');
@@ -387,52 +334,59 @@ countText2 === "3 results"
   ? ok(`Search "PT test": distribution bar correctly attributes 1 hit to each of scenario/board/lesson (${JSON.stringify(segTitles2)})`)
   : bad(`Search "PT test": distribution bar segment titles were ${JSON.stringify(segTitles2)}`);
 
-// Audit finding (rank/MOS scoping pass): typing an MOS code into the app's
-// own search box previously returned nothing, despite a 164-entry MOS
-// database existing two taps away - "92a" (case-insensitive, matches the
-// MOS code field) hits exactly one real entry (92A) verified directly
-// against the seed, with zero collision against either query above.
+// A bare MOS-code query now intentionally crosses both the Career Center and
+// the newly integrated MOS-specific board curriculum. The test derives the
+// expected result count from the rendered hits instead of freezing the old
+// pre-curriculum assumption that 92A could only exist in the MOS database.
 await page.evaluate(() => { location.hash = "#/search"; });
 await page.waitForTimeout(500);
 const searchInput3 = page.locator('input[aria-label="Global search"]');
 await searchInput3.fill("92a");
 await page.waitForTimeout(300);
-const countText3 = await page.evaluate(() => (document.querySelector(".search-count") || {}).textContent || "");
-countText3 === "1 result"
-  ? ok('Search "92a": exactly 1 result, a real MOS entry the global search previously never indexed')
-  : bad(`Search "92a": count text was "${countText3}", expected "1 result"`);
-const hitTitle3 = await page.evaluate(() => (document.querySelector(".search-hit-title") || {}).textContent || "");
-hitTitle3.includes("92A")
-  ? ok(`Search "92a": the hit is the real MOS entry ("${hitTitle3}")`)
-  : bad(`Search "92a": hit title was "${hitTitle3}", expected it to include "92A"`);
-const sectionHead3 = await page.evaluate(() => (document.querySelector(".search-section-head") || {}).textContent || "");
-/MOS/.test(sectionHead3)
-  ? ok(`Search "92a": result is grouped under the MOS/Career section ("${sectionHead3}")`)
-  : bad(`Search "92a": section head was "${sectionHead3}", expected it to mention MOS`);
-// Clicking through should land on #/career with the code prefilled via
-// G.career._searchSeed - not just navigate there empty.
-await page.locator(".search-hit").first().click();
+const search92 = await page.evaluate(() => ({
+  countText: (document.querySelector(".search-count") || {}).textContent || "",
+  hits: [...document.querySelectorAll(".search-hit-title")].map((n) => n.textContent || ""),
+  heads: [...document.querySelectorAll(".search-section-head")].map((n) => n.textContent || ""),
+  hitCount: document.querySelectorAll(".search-hit").length,
+  segTitles: [...document.querySelectorAll(".search-dist-seg")].map((n) => n.title || ""),
+}));
+const totalCount92 = Number((search92.countText.match(/\d+/) || [0])[0]);
+const distributedCount92 = search92.segTitles.reduce((sum, title) => {
+  const m = /^(\d+)/.exec(title.trim());
+  return sum + (m ? Number(m[1]) : 0);
+}, 0);
+(totalCount92 === distributedCount92 && totalCount92 >= search92.hitCount && search92.hitCount > 1)
+  ? ok(`Search "92a": uncapped total (${totalCount92}) matches the distribution bar and includes the ${search92.hitCount} rendered/capped cards`)
+  : bad(`Search "92a": countText="${search92.countText}", distributed=${distributedCount92}, rendered hits=${search92.hitCount}`);
+search92.hits.some((t) => /92A/i.test(t))
+  ? ok('Search "92a": 92A-specific content is present in the result set')
+  : bad(`Search "92a": no hit title contained 92A: ${JSON.stringify(search92.hits.slice(0, 8))}`);
+(search92.heads.some((h) => /Board Questions/i.test(h)) && search92.heads.some((h) => /MOS/i.test(h)))
+  ? ok(`Search "92a": results span Board Questions and MOS/Career sections (${JSON.stringify(search92.heads)})`)
+  : bad(`Search "92a": expected Board Questions + MOS sections, got ${JSON.stringify(search92.heads)}`);
+
+// Click the MOS/Career hit specifically; board cards appearing first is now a
+// feature of the expanded corpus, not a reason to lose the Career hand-off.
+const clickedMos = await page.evaluate(() => {
+  const head = [...document.querySelectorAll(".search-section-head")].find((h) => /MOS/i.test(h.textContent || ""));
+  const hit = head && head.parentElement && head.parentElement.querySelector(".search-hit");
+  if (!hit) return false;
+  hit.click();
+  return true;
+});
+clickedMos ? ok('Search "92a": MOS/Career result is independently clickable') : bad('Search "92a": MOS/Career hit was not found');
 await page.waitForTimeout(500);
 const hashAfterMosClick = await page.evaluate(() => location.hash);
-const careerInputValue = await page.evaluate(() => {
-  const inp = document.querySelector('input[aria-label="MOS code or title"], .panel input[type="text"]');
-  return inp ? inp.value : null;
-});
 hashAfterMosClick === "#/career"
-  ? ok('Search "92a": clicking the hit navigates to #/career')
-  : bad(`Search "92a": clicking the hit navigated to "${hashAfterMosClick}", expected "#/career"`);
+  ? ok('Search "92a": clicking the MOS hit navigates to #/career')
+  : bad(`Search "92a": clicking the MOS hit navigated to "${hashAfterMosClick}", expected "#/career"`);
 const careerResultVisible = await page.evaluate(() => (document.body.textContent || "").includes("Petroleum") || (document.body.textContent || "").includes("92A"));
 careerResultVisible
   ? ok("Search \"92a\": the Career Center auto-prefills and renders the 92A result, not a blank search box")
   : bad("Search \"92a\": Career Center did not show the 92A result after the search hand-off");
 
 // ============================================================
-// #/privacy -> real, substantive content (not just structural presence).
-// Already swept for CSP/contrast/a11y-tree structurally elsewhere; this
-// checks the actual policy text, in particular the squad-roster
-// backup-exclusion behavior, which is a real, currently-true claim about
-// the app's backup/export logic (see G.backup.exportAll / the roster
-// opt-in), not boilerplate.
+// #/privacy -> real, substantive content.
 // ============================================================
 await page.evaluate(() => { location.hash = "#/privacy"; });
 await page.waitForTimeout(500);

@@ -42,8 +42,10 @@ const findings = await page.evaluate(() => {
     if (node && typeof node === "object") for (const k of Object.keys(node)) walk(node[k], path + "." + k);
   })(window.GUIDON_SEED, "seed");
 
-  /* Present tense, no historical marker nearby = a claim about today. */
-  const HISTORICAL = /was dropped|were dropped|was removed|were removed|was replaced|were replaced|replaced the ACFT|replaced the Leg Tuck|succeeded the ACFT|had replaced|former|had six|old ACFT|superseded|formerly|no longer|rescinded|is gone|are both gone|used to|previously|until 2025|teaching the old/i;
+  /* Present tense, no historical marker nearby = a claim about today.
+     Questions that explicitly ask "what happened to" a retired event are
+     transition/history prompts, not claims that the event remains current. */
+  const HISTORICAL = /what happened to|was dropped|were dropped|was removed|were removed|was replaced|were replaced|replaced the ACFT|replaced the Leg Tuck|succeeded the ACFT|had replaced|former|had six|old ACFT|superseded|formerly|no longer|rescinded|is gone|are both gone|used to|previously|until 2025|teaching the old/i;
   const isHistorical = (t) => HISTORICAL.test(t);
 
   const checks = {
@@ -123,23 +125,14 @@ seed.isObject ? ok("GUIDON_SEED parsed to an object") : bad("GUIDON_SEED is not 
 // content yet, that's Milestone 2/3, but the keys themselves are real from
 // this commit forward.
 seed.topKeys === 19 ? ok("seed has all 19 top-level sections") : bad(`expected 19 top-level keys, got ${seed.topKeys}`);
-// 993 as of the AER/ACS/SUDCC content-gap pass (2026-09-15): 9 new cards
-// added (aer-1..3, acs-1..3, sudcc-1..3) - SHARP and EO already had real
-// coverage in the existing 984-card set (confirmed directly from the
-// seed during this session's own board-schema investigation), but these
-// three Army Programs did not. Was 984 before this pass, itself the
-// result of an earlier quick-win internal-redundancy pass that deleted 9
-// genuinely duplicate cards (General Orders bq21/bq22, Weapons TC 3-22.9
-// m4-1/m4-2, TCCC/First Aid bq-tccc-01/tccc-7/tccc-9/tccc-8) - see git
-// history for that pass's own per-card reasoning. NOTE: this is a
-// coincidental number match with an even older, unrelated 993 baseline
-// from before that redundancy pass (see the AFT/ACFT/Fitness
-// consolidation this comment used to cite) - today's 993 is a different
-// set of cards, not a reversion to that earlier state.
-// 997 as of the same counseling/training pass: 4 matching board cards
-// (counsel-proc-1/2, adp70-8step-1/2) per the standing every-sourced-fact-
-// gets-board-cards rule, on top of the AER/ACS/SUDCC pass's 993 below.
-seed.board === 997 ? ok("997 board cards intact") : bad(`board cards: ${seed.board}, expected 997`);
+// 997 as of the counseling/training pass, then 216 net-new board prompts from
+// the promotion-board supplement (224 supplied prompts minus exact-question
+// reconciliations that preserve their pre-existing IDs/SRS history) = 1213.
+// The dedicated test-board-supplement-intake.mjs independently proves all
+// 112 source cards / 224 prompt links are accounted for, so this count guard
+// still protects the built seed against silent truncation without requiring
+// duplicate cards just to make the arithmetic match the source documents.
+seed.board === 1213 ? ok("1,213 board cards intact") : bad(`board cards: ${seed.board}, expected 1213`);
 // 3623 as of the same quick-win pass: deleted "RAC-OT" (an OCR/scrape
 // duplicate artifact of "RAS-OT", not a real distinct acronym) and 7
 // redundant unhyphenated staff-designator overlay entries (S2, S3, G1,
@@ -178,20 +171,10 @@ seed.doctrine === 357 ? ok("357 doctrine entries intact") : bad(`doctrine: ${see
 // Equipment Operator-Maintainer) entry, previously mentioned only in a
 // note/array with no MOS-list entry of its own.
 seed.career === 164 ? ok("164 MOS entries intact") : bad(`MOS: ${seed.career}, expected 164`);
-// 184 as of the casualty-care-and-cohesion content pass (docs/design/
-// casualty-care-and-cohesion.md §2b, "TCCC-first" build order): added
-// sc-tccc-ied-strike, the first interactive TCCC content GUIDON ships -
-// a real branching MARCH-sequence scenario on the unmodified G.engine,
-// with three distinct flag-gated endings (182 -> 183). Then +1 for
-// sc-medevac-9line-callin, the 9-line MEDEVAC builder - a fixed 9-node
-// multiple-choice graph (never free text) with a wartime/peacetime
-// comprehension check on Lines 6 and 9 (183 -> 184).
-// 187 as of the Integrated Operational Thinking pass (2026-09-15): 3 new
-// Vertical/Lateral-thinking scenarios added (sc-iot-comms-blackout,
-// sc-iot-motorpool-belt, sc-iot-range-safety) on the unmodified G.engine -
-// ROADMAP.md §3f, Phase 0. Was 184 (the TCCC IED-strike and 9-line MEDEVAC
-// additions, v1.9.0).
-seed.scenarios === 187 ? ok("187 scenarios intact") : bad(`scenarios: ${seed.scenarios}, expected 187`);
+// 187 as of the Integrated Operational Thinking pass (2026-09-15), then
+// +2 92A logistics judgment scenarios from the supplied promotion-board deck:
+// sc-92a-critical-part-overdue and sc-92a-inventory-discrepancy.
+seed.scenarios === 189 ? ok("189 scenarios intact") : bad(`scenarios: ${seed.scenarios}, expected 189`);
 // creeds/prt existed as empty skeleton keys from Milestone 1 (see the
 // topKeys===19 comment above) with no content until Milestone 2 (PRT Hub -
 // the Preparation Drill, 1 drill / 10 exercises) and Milestone 3 (Creeds

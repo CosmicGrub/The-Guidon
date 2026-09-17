@@ -1,0 +1,35 @@
+name: Board Supplement Intake
+
+on:
+  pull_request:
+    paths:
+      - "guidon-app/src/app-modules/0*-board-supplement-*.js"
+      - "guidon-app/tools/test-board-supplement-intake.mjs"
+      - "guidon-app/src/index.html"
+      - "firmware/esp32-flashcard-os/tools/extract-cards.mjs"
+      - ".github/workflows/board-supplement.yml"
+  push:
+    branches: [main]
+    paths:
+      - "guidon-app/src/app-modules/0*-board-supplement-*.js"
+      - "guidon-app/tools/test-board-supplement-intake.mjs"
+      - "guidon-app/src/index.html"
+      - "firmware/esp32-flashcard-os/tools/extract-cards.mjs"
+      - ".github/workflows/board-supplement.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  intake:
+    name: 112 cards / 224 prompts accounted
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Setup Node 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24"
+      - name: Execute supplement against real seed
+        run: node guidon-app/tools/test-board-supplement-intake.mjs

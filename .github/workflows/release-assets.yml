@@ -131,23 +131,46 @@ jobs:
           APKSIGNER="$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools" -type f -name apksigner | sort -V | tail -1)"
           test -n "$APKSIGNER"
           "$APKSIGNER" verify --verbose --print-certs "$APK"
-          jarsigner -verify -strict "$AAB"
+          # GUIDON intentionally uses a self-signed release certificate. A
+          # strict PKIX trust check rejects that certificate even when the AAB
+          # signature is cryptographically valid, so verify JAR integrity and
+          # then require the exact pinned signer certificate below.
+          jarsigner -verify "$AAB"
 
-          # v1.9.0 is the immediately previous shipped Android release. Refuse
-          # to publish an APK signed by a different key because Android would
-          # reject it as an update over users' existing installs.
-          mkdir -p /tmp/guidon-prior
-          gh release download v1.9.0 --repo "$GITHUB_REPOSITORY" \
-            --pattern 'GUIDON-1.9.0-android.apk' --dir /tmp/guidon-prior
-          PRIOR="/tmp/guidon-prior/GUIDON-1.9.0-android.apk"
-          prior_digest="$("$APKSIGNER" verify --print-certs "$PRIOR" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)"
-          new_digest="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)"
-          test -n "$prior_digest" && test -n "$new_digest"
-          if [ "$prior_digest" != "$new_digest" ]; then
-            echo "::error::Android signing certificate does not match v1.9.0; refusing an update-incompatible release."
+          # Canonical signer identity is anchored to the owner-supplied
+          # GUIDON-1.4.7-release.apk and independently confirmed against the
+          # v1.9.0 APK/AAB release pair. APKs/AABs expose the public signer
+          # certificate, never the private key; the Actions keystore secret
+          # must therefore contain the private key corresponding to this cert.
+          expected_digest="83a0cae688a714aa008022d9ab8be5840d327c7b0f6e673e426fe113ed1e1da2"
+          # apksigner labels the signer differently across Build Tools releases
+          # (e.g. "Signer #1" versus "V2 Signer"); match the stable digest suffix.
+          apk_digest="$("$APKSIGNER" verify --print-certs "$APK" | sed -n -E 's/^.*certificate SHA-256 digest:[[:space:]]*//p' | head -1 | tr '[:upper:]' '[:lower:]' | tr -d ':')"
+
+          sig_entry="$(unzip -Z1 "$AAB" | grep -Ei '^META-INF/[^/]+\.(RSA|DSA|EC)$' | head -1)"
+          test -n "$sig_entry"
+          unzip -p "$AAB" "$sig_entry" > /tmp/guidon-release-aab-signer.p7b
+          openssl pkcs7 -inform DER -in /tmp/guidon-release-aab-signer.p7b -print_certs -out /tmp/guidon-release-aab-certs.pem
+          aab_digest="$(openssl x509 -in /tmp/guidon-release-aab-certs.pem -noout -fingerprint -sha256 | sed -E 's/^sha256 Fingerprint=//I' | tr '[:upper:]' '[:lower:]' | tr -d ':')"
+
+          test -n "$apk_digest"
+          test -n "$aab_digest"
+
+          if [ "$apk_digest" != "$expected_digest" ]; then
+            echo "::error::APK signing certificate does not match the canonical GUIDON signer; refusing an update-incompatible release."
+            echo "::error::Expected ${expected_digest}; got ${apk_digest}"
             exit 1
           fi
-          echo "Android signing continuity verified: ${new_digest}"
+          if [ "$aab_digest" != "$expected_digest" ]; then
+            echo "::error::AAB signing certificate does not match the canonical GUIDON signer; refusing an update-incompatible release."
+            echo "::error::Expected ${expected_digest}; got ${aab_digest}"
+            exit 1
+          fi
+          if [ "$apk_digest" != "$aab_digest" ]; then
+            echo "::error::APK and AAB were signed by different certificates."
+            exit 1
+          fi
+          echo "Android APK/AAB signing continuity verified against canonical signer: ${apk_digest}"
 
       - name: Publish Android assets to GitHub Release
         run: |
