@@ -51,7 +51,9 @@ jobs:
           # correctly signed. Verify JAR integrity, then pin the exact cert.
           jarsigner -verify "$AAB"
 
-          apk_digest="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr '[:upper:]' '[:lower:]' | tr -d ':')"
+          # apksigner's certificate label changed across Build Tools versions
+          # (e.g. "Signer #1" vs "V2 Signer"). Parse the invariant suffix.
+          apk_digest="$("$APKSIGNER" verify --print-certs "$APK" | sed -n -E 's/^.*certificate SHA-256 digest:[[:space:]]*//p' | head -1 | tr '[:upper:]' '[:lower:]' | tr -d ':')"
 
           # AABs are JAR-signed. Extract the PKCS#7 signature block from
           # META-INF, decode its signer certificate, and fingerprint that
