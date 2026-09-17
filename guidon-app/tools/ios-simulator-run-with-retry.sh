@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
-# Wrap the strict iOS Simulator verifier with one evidence-preserving retry for
-# the two transient shared-runner signatures the repo has already observed:
+# Run the strict iOS Simulator verifier one requested device at a time.
+#
+# Why one device at a time: simctl occasionally wedges on GitHub's shared macOS
+# runners. A single unbounded simctl/bootstatus call used to strand the entire
+# four-device matrix until the job-level timeout. Per-device process-group
+# deadlines turn that infrastructure stall into evidence we can retry once,
+# while still requiring every device to genuinely launch, paint, and progress.
+#
+# Retryable once:
 #   - process died after launch
 #   - never progressed past the launch screen
-#
-# Everything else remains a hard failure. The retry runs only the failed devices
-# after a clean shutdown/reboot/reinstall performed by ios-simulator-run.sh.
-# Attempt-1 evidence is moved aside before retry so a green second attempt never
-# erases the fact that the runner flaked.
+#   - the strict verifier itself exceeded the per-device deadline
+# Everything else remains a hard failure. First-attempt evidence is preserved.
 
 set -uo pipefail
 
@@ -15,100 +19,205 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE="$HERE/ios-simulator-run.sh"
 OUT="$(cd "$HERE/.." && pwd)/artifacts/ios"
 SUMMARY="$OUT/summary.md"
+DEVICE_TIMEOUT="${IOS_DEVICE_TIMEOUT:-180}"
 
-run_base() {
-  bash "$BASE"
+mkdir -p "$OUT/attempt-1" "$OUT/summaries"
+
+# macOS does not ship GNU timeout. Python is already a required dependency of
+# this lane (the render checker uses it), so use it to supervise the whole
+# process group. Killing the group matters: ios-simulator-run.sh starts log
+# stream and simctl launch children that otherwise survive a killed parent.
+run_timed() {
+  local seconds="$1"
+  shift
+  python3 - "$seconds" "$@" <<'PY'
+import os, signal, subprocess, sys
+seconds = float(sys.argv[1])
+cmd = sys.argv[2:]
+p = subprocess.Popen(cmd, start_new_session=True)
+try:
+    rc = p.wait(timeout=seconds)
+except subprocess.TimeoutExpired:
+    try:
+        os.killpg(p.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    try:
+        p.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        p.wait()
+    print(f"::warning::timed out after {seconds:g}s: {' '.join(cmd)}", file=sys.stderr)
+    sys.exit(124)
+sys.exit(rc)
+PY
 }
 
-set +e
-run_base
-first_rc=$?
-set -e
+slug_for() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed -e 's/^-//' -e 's/-$//'
+}
 
-if [ "$first_rc" -eq 0 ]; then
-  exit 0
-fi
+# The base verifier writes a complete summary for the single device. Keep its
+# GitHub step-summary output suppressed here; this wrapper emits one aggregate
+# verdict after all devices have been checked.
+run_device() {
+  local device="$1"
+  local saved_devices="$DEVICES"
+  local saved_step_summary="${GITHUB_STEP_SUMMARY-}"
+  export DEVICES="$device"
+  unset GITHUB_STEP_SUMMARY
+  run_timed "$DEVICE_TIMEOUT" bash "$BASE"
+  local rc=$?
+  export DEVICES="$saved_devices"
+  if [ -n "$saved_step_summary" ]; then
+    export GITHUB_STEP_SUMMARY="$saved_step_summary"
+  else
+    unset GITHUB_STEP_SUMMARY
+  fi
+  return "$rc"
+}
 
-if [ ! -s "$SUMMARY" ]; then
-  echo "::error::iOS verifier failed before producing a summary; not retrying"
-  exit "$first_rc"
-fi
+# Output: RESULT<TAB>DETAIL. The base verifier is invoked with exactly one
+# device, so the first PASS/FAIL/skipped row is the row we want.
+parse_row() {
+  if [ ! -s "$SUMMARY" ]; then
+    printf '\t'
+    return 0
+  fi
+  awk -F'|' '
+    $3 ~ /^[[:space:]]*(PASS|FAIL|skipped)[[:space:]]*$/ {
+      r=$3; d=$4
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", r)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", d)
+      printf "%s\t%s", r, d
+      exit
+    }
+  ' "$SUMMARY"
+}
 
-cp "$SUMMARY" "$OUT/summary-attempt-1.md"
+clean_simulators() {
+  run_timed 20 xcrun simctl shutdown all >/dev/null 2>&1 || true
+}
 
-failed_csv=""
-retryable=1
-while IFS='|' read -r _ device result detail _; do
-  device="$(printf '%s' "$device" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
-  result="$(printf '%s' "$result" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
-  detail="$(printf '%s' "$detail" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
-  [ "$result" = "FAIL" ] || continue
+IFS=',' read -r -a DEVICE_LIST <<< "$DEVICES"
+ROWS=()
+overall=0
+verified=0
+retried=0
 
-  case "$detail" in
-    *"process died after launch"*|*"never progressed past the launch screen"*)
-      failed_csv="${failed_csv:+${failed_csv},}${device}"
-      ;;
-    *)
-      echo "::error::${device}: non-transient Simulator failure (${detail}); not retrying"
-      retryable=0
-      ;;
-  esac
-done < "$SUMMARY"
+# Do not let a stale summary from a previous invocation influence classification.
+rm -f "$SUMMARY" "$OUT/summary-retry-record.md"
 
-if [ "$retryable" -ne 1 ] || [ -z "$failed_csv" ]; then
-  exit "$first_rc"
-fi
+for raw in "${DEVICE_LIST[@]}"; do
+  device="$(printf '%s' "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+  [ -n "$device" ] || continue
+  slug="$(slug_for "$device")"
 
-mkdir -p "$OUT/attempt-1"
-old_ifs="$IFS"
-IFS=','
-for device in $failed_csv; do
-  slug="$(printf '%s' "$device" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed -e 's/^-//' -e 's/-$//')"
+  echo "::group::Simulator verifier: $device (attempt 1)"
+  rm -f "$SUMMARY"
+  run_device "$device"
+  first_rc=$?
+  first_row="$(parse_row)"
+  first_result="${first_row%%$'\t'*}"
+  first_detail="${first_row#*$'\t'}"
+  [ "$first_row" = "$first_result" ] && first_detail=""
+  [ -s "$SUMMARY" ] && cp "$SUMMARY" "$OUT/summaries/${slug}-attempt-1.md"
+  echo "::endgroup::"
+
+  if [ "$first_rc" -eq 0 ] && [ "$first_result" = "PASS" ]; then
+    verified=$((verified + 1))
+    ROWS+=("| $device | PASS | ${first_detail:-launched and rendered} |")
+    continue
+  fi
+
+  retryable=0
+  if [ "$first_rc" -eq 124 ]; then
+    retryable=1
+    first_detail="simulator verifier timed out after ${DEVICE_TIMEOUT}s"
+  else
+    case "$first_detail" in
+      *"process died after launch"*|*"never progressed past the launch screen"*) retryable=1 ;;
+    esac
+  fi
+
+  if [ "$retryable" -ne 1 ]; then
+    overall=1
+    detail="${first_detail:-verifier failed before producing a usable device verdict}"
+    echo "::error::$device: non-transient Simulator failure ($detail); not retrying"
+    ROWS+=("| $device | FAIL | $detail |")
+    continue
+  fi
+
+  retried=$((retried + 1))
+  echo "::warning::$device: transient Simulator failure ($first_detail); retrying once"
+
   if [ -d "$OUT/$slug" ]; then
     rm -rf "$OUT/attempt-1/$slug"
     mv "$OUT/$slug" "$OUT/attempt-1/$slug"
   fi
+  clean_simulators
+
+  echo "::group::Simulator verifier: $device (attempt 2)"
+  rm -f "$SUMMARY"
+  run_device "$device"
+  second_rc=$?
+  second_row="$(parse_row)"
+  second_result="${second_row%%$'\t'*}"
+  second_detail="${second_row#*$'\t'}"
+  [ "$second_row" = "$second_result" ] && second_detail=""
+  [ -s "$SUMMARY" ] && cp "$SUMMARY" "$OUT/summaries/${slug}-attempt-2.md"
+  echo "::endgroup::"
+
+  if [ "$second_rc" -eq 0 ] && [ "$second_result" = "PASS" ]; then
+    verified=$((verified + 1))
+    ROWS+=("| $device | PASS | launched and rendered after one transient retry |")
+  else
+    overall=1
+    if [ "$second_rc" -eq 124 ]; then
+      second_detail="simulator verifier timed out again after ${DEVICE_TIMEOUT}s"
+    fi
+    second_detail="${second_detail:-retry failed before producing a usable device verdict}"
+    echo "::error::$device: retry failed ($second_detail)"
+    ROWS+=("| $device | FAIL | $second_detail |")
+  fi
 done
-IFS="$old_ifs"
-
-echo "::warning::Transient iOS Simulator failure detected; retrying once after a clean simulator cycle: $failed_csv"
-
-set +e
-DEVICES="$failed_csv" run_base
-retry_rc=$?
-set -e
-
-if [ -s "$SUMMARY" ]; then
-  cp "$SUMMARY" "$OUT/summary-attempt-2.md"
-fi
 
 {
-  echo "## iOS Simulator retry record"
+  echo "## iOS Simulator verification"
   echo
-  echo "The first pass failed only with a known transient Simulator signature."
-  echo "A single clean retry was run for: \`$failed_csv\`."
+  echo "App: \`$APP_PATH\`"
+  echo "Bundle: \`${BUNDLE_ID:-app.guidon.trainer}\`"
+  echo "Per-device deadline: ${DEVICE_TIMEOUT}s"
   echo
-  echo "### Attempt 1"
-  echo
-  cat "$OUT/summary-attempt-1.md"
-  echo
-  echo "### Attempt 2"
-  echo
-  if [ -s "$OUT/summary-attempt-2.md" ]; then
-    cat "$OUT/summary-attempt-2.md"
+  echo "| Device | Result | Detail |"
+  echo "|---|---|---|"
+  if [ "${#ROWS[@]}" -gt 0 ]; then
+    for row in "${ROWS[@]}"; do echo "$row"; done
   else
-    echo "Retry produced no summary."
+    echo "| (none) | FAIL | no requested device was supplied |"
   fi
-} > "$OUT/summary-retry-record.md"
+  echo
+  echo "Verified devices: $verified"
+  echo "Transient retries used: $retried"
+  if [ "$overall" -eq 0 ] && [ "$verified" -gt 0 ] && [ "$verified" -eq "${#ROWS[@]}" ]; then
+    echo
+    echo "All requested devices launched, rendered, and progressed."
+  else
+    echo
+    echo "**One or more requested devices were not verified.** The parity gate remains red."
+  fi
+} > "$SUMMARY"
 
+cp "$SUMMARY" "$OUT/summary-retry-record.md"
+cat "$SUMMARY"
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-  cat "$OUT/summary-retry-record.md" >> "$GITHUB_STEP_SUMMARY"
+  cat "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
 fi
 
-if [ "$retry_rc" -eq 0 ]; then
-  echo "iOS Simulator retry passed; first-attempt evidence is preserved under artifacts/ios/attempt-1/."
-  exit 0
+if [ "${#ROWS[@]}" -eq 0 ] || [ "$verified" -ne "${#ROWS[@]}" ]; then
+  exit 1
 fi
-
-echo "::error::iOS Simulator retry failed; parity gate remains red"
-exit "$retry_rc"
+exit "$overall"
