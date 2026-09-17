@@ -133,21 +133,20 @@ jobs:
           "$APKSIGNER" verify --verbose --print-certs "$APK"
           jarsigner -verify -strict "$AAB"
 
-          # v1.9.0 is the immediately previous shipped Android release. Refuse
-          # to publish an APK signed by a different key because Android would
-          # reject it as an update over users' existing installs.
-          mkdir -p /tmp/guidon-prior
-          gh release download v1.9.0 --repo "$GITHUB_REPOSITORY" \
-            --pattern 'GUIDON-1.9.0-android.apk' --dir /tmp/guidon-prior
-          PRIOR="/tmp/guidon-prior/GUIDON-1.9.0-android.apk"
-          prior_digest="$("$APKSIGNER" verify --print-certs "$PRIOR" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)"
-          new_digest="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)"
-          test -n "$prior_digest" && test -n "$new_digest"
-          if [ "$prior_digest" != "$new_digest" ]; then
-            echo "::error::Android signing certificate does not match v1.9.0; refusing an update-incompatible release."
+          # Canonical signer identity is anchored to the owner-supplied
+          # GUIDON-1.4.7-release.apk (inspected 2026-09-17). APKs contain the
+          # public signing certificate, not the private key, so the release
+          # keystore secret must contain the matching private key. Refuse any
+          # Android release whose signer differs, even if the build succeeds.
+          expected_digest="83a0cae688a714aa008022d9ab8be5840d327c7b0f6e673e426fe113ed1e1da2"
+          new_digest="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr '[:upper:]' '[:lower:]' | tr -d ':')"
+          test -n "$new_digest"
+          if [ "$new_digest" != "$expected_digest" ]; then
+            echo "::error::Android signing certificate does not match the canonical GUIDON v1.4.7 signer; refusing an update-incompatible release."
+            echo "::error::Expected ${expected_digest}; got ${new_digest}"
             exit 1
           fi
-          echo "Android signing continuity verified: ${new_digest}"
+          echo "Android signing continuity verified against canonical v1.4.7 signer: ${new_digest}"
 
       - name: Publish Android assets to GitHub Release
         run: |
