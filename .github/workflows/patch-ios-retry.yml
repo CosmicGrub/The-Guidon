@@ -1,0 +1,39 @@
+name: Wire iOS retry wrapper
+
+on:
+  push:
+    branches: [fix/apple-release-parity]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: fix/apple-release-parity
+          token: ${{ github.token }}
+      - name: Patch iOS workflow
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('.github/workflows/ios.yml')
+          s = p.read_text()
+          old = '        run: bash tools/ios-simulator-run.sh\n'
+          new = '        run: bash tools/ios-simulator-run-with-retry.sh\n'
+          if old not in s:
+              raise SystemExit('expected iOS simulator invocation not found')
+          if s.count(old) != 1:
+              raise SystemExit(f'expected exactly one invocation, found {s.count(old)}')
+          p.write_text(s.replace(old, new))
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/ios.yml
+          git diff --cached --check
+          git commit -m 'ci(ios): use evidence-preserving transient retry'
+          git push origin HEAD:fix/apple-release-parity
