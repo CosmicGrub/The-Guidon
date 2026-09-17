@@ -4,8 +4,9 @@
  *
  * Executes the same pre-start app modules against the real source seed and
  * proves that every supplied source card / Q&A prompt is represented after
- * dedupe, that 92A prompts carry MOS/curriculum metadata, and that the final
- * study-room content fingerprint is re-stamped after the merge.
+ * dedupe, that 92A prompts carry MOS/curriculum metadata, that the two 92A
+ * judgment prompts also reach the scenario-training engine, and that the
+ * final study-room content fingerprint is re-stamped after the merge.
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -19,6 +20,7 @@ const MODULES = [
   "src/app-modules/01-board-supplement-92a.js",
   "src/app-modules/02-board-supplement-integration.js",
   "src/app-modules/03-board-supplement-bankhash.js",
+  "src/app-modules/04-board-supplement-92a-scenarios.js",
 ];
 
 let fails = 0;
@@ -28,6 +30,7 @@ const expect = (cond, pass, fail = pass) => cond ? ok(pass) : bad(fail);
 
 const { data } = readSeed(SEED_PATH);
 const before = data.board.questions.length;
+const scenariosBefore = data.scenarios?.scenarios?.length || 0;
 const sandbox = { window: { GUIDON_SEED: data, G: {} }, console };
 sandbox.window.window = sandbox.window;
 const ctx = vm.createContext(sandbox);
@@ -73,10 +76,25 @@ expect(mosLinks.length === 40, "all 40 92A Q&A prompts are represented", `92A pr
 const badMos = mosLinks.filter((q) => !Array.isArray(q.mos) || !q.mos.includes("92A") || !Array.isArray(q.curriculum) || !q.curriculum.includes("92A Promotion Board") || q.pillar !== "Maintenance & Supply");
 expect(badMos.length === 0, "every 92A prompt is tagged for the 92A curriculum and Maintenance & Supply pillar", `bad 92A metadata: ${badMos.slice(0, 8).map((q) => q.id).join(", ")}`);
 
+const scenarioIds = ["sc-92a-critical-part-overdue", "sc-92a-inventory-discrepancy"];
+const scenarios = data.scenarios?.scenarios || [];
+const addedScenarios = scenarioIds.map((id) => scenarios.find((s) => s.id === id));
+expect(addedScenarios.every(Boolean), "both 92A judgment prompts are also available as interactive Train scenarios");
+for (const sc of addedScenarios.filter(Boolean)) {
+  const n2 = sc.nodes && sc.nodes.n2;
+  const distinctEnds = n2 && Array.isArray(n2.choices) ? new Set(n2.choices.map((c) => c.goto)).size : 0;
+  const shapeOk = sc.start === "n1" && sc.nodes && Object.keys(sc.nodes).length === 6 && n2 && n2.choices.length === 4 && distinctEnds === 4
+    && Array.isArray(sc.mos) && sc.mos.includes("92A") && Array.isArray(sc.curriculum) && sc.curriculum.includes("92A Promotion Board")
+    && sc.pillar === "Maintenance & Supply" && Array.isArray(sc.doctrine) && sc.doctrine.length > 0;
+  expect(shapeOk, `${sc.id} has the normal 6-node/4-outcome scenario shape plus 92A curriculum metadata`, `${sc.id} malformed: ${JSON.stringify(sc)}`);
+}
+expect(scenarios.length >= scenariosBefore + 2, `scenario curriculum expands by the two supplied 92A judgment cases (${scenariosBefore} -> ${scenarios.length})`);
+
 expect(bank.length >= before, `board bank remains additive after reconciliation (${before} -> ${bank.length})`);
 expect(typeof data.board.contentHash === "string" && /^[0-9a-f]{16}$/.test(data.board.contentHash), "final supplemented bank has a 16-hex study-room content fingerprint", `contentHash=${JSON.stringify(data.board.contentHash)}`);
 expect(audit?.contentHash === data.board.contentHash, "audit records the final bank fingerprint");
 
 console.log(`\nboard supplement: ${before} base questions -> ${bank.length} final questions; ${intake.length} records carry supplied-card provenance`);
+console.log(`scenario supplement: ${scenariosBefore} base scenarios -> ${scenarios.length} final scenarios`);
 console.log(fails ? `BOARD SUPPLEMENT INTAKE: ${fails} FAILURE(S)` : "BOARD SUPPLEMENT INTAKE: all passed");
 process.exit(fails ? 1 : 0);
