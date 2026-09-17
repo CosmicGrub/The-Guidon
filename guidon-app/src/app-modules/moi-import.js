@@ -4,8 +4,8 @@
    An MOI (memorandum of instruction) is the memo a board assigns a Soldier -
    a list of doctrine citations naming exactly what to study. The gap this
    closes: GUIDON already has a huge doctrine/board-question corpus, but a
-   Soldier handed a real MOI has no way to see it filtered down to ONLY what
-   their own board actually assigned. This lets them paste or upload that
+   Soldier working from an authorized public or synthetic study MOI needs a way
+   to see it filtered down to ONLY what that study document assigns. This lets them paste or upload that
    memo and get a study dashboard built from exactly those citations -
    nothing added, nothing assumed relevant just because it's in the corpus.
 
@@ -612,9 +612,23 @@ window.G = window.G || {};
       findBtn.addEventListener("click", () => {
         const combined = [pdfText, ta.value].filter(Boolean).join("\n");
         if (!combined.trim()) { try { util.toast("Add some MOI text first — upload a PDF or paste text."); } catch (e) {} return; }
-        runMatching(combined);
+        const screened = G.opsecGuard && G.opsecGuard.sanitizeInput ? G.opsecGuard.sanitizeInput(combined, { redactContact: true }) : { text: combined, blocked: false, requiresReview: false, redactions: [] };
+        if (screened.blocked || screened.requiresReview) {
+          errorBox.textContent = G.opsecGuard ? G.opsecGuard.decisionMessage(screened) : "Sensitive-looking input cannot be processed here.";
+          errorBox.hidden = false;
+          try { util.toast("MOI import stopped — review the OPSEC warning."); } catch (e) {}
+          return;
+        }
+        if (screened.redactions && screened.redactions.length) {
+          errorBox.textContent = G.opsecGuard.decisionMessage(screened);
+          errorBox.hidden = false;
+        }
+        runMatching(screened.text);
       });
 
+      stage.appendChild(el("div.panel", { style: "margin-top:10px;border-left:3px solid var(--amber)" }, [
+        el("div.eyebrow", { text: "Public / synthetic study material only" }),
+        el("p.hint", { text: "Do not paste or upload classified information, CUI, real operational orders/rosters, mission grids, or sensitive personnel data. GUIDON blocks marked sensitive material and flags likely aggregation risks before parsing; this screen is not a classification or public-release determination." }) ]));
       stage.appendChild(el("div.panel", { style: "margin-top:10px" }, [
         el("div.eyebrow", { text: "Upload a PDF or text file" }), fileInput, fileStatus, errorBox ]));
       stage.appendChild(el("div.panel", { style: "margin-top:10px" }, [

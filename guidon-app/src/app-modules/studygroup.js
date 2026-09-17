@@ -1058,6 +1058,10 @@
     util().clear(mount);
     rt.mount = mount;
     mount.appendChild(el("div.section-title", {}, [el("h2", { text: "Study group" }), el("div.rule")]));
+    var netWarn = el("div.panel.sg-network-boundary", { style: "margin-bottom:10px;border-left:3px solid var(--amber)" });
+    netWarn.appendChild(el("div.eyebrow", { text: "Personal / explicitly authorized networks only" }));
+    netWarn.appendChild(el("p", { text: "Do not host or join GUIDON Study Rooms on DoD/Army enterprise networks unless your organization has explicitly authorized this application and connection under its cybersecurity and network-connection process. By default, use personal/off-duty local Wi-Fi. Offline-first design is not an ATO or network authorization. References: AR 25-2; DoDI 8510.01." }));
+    mount.appendChild(netWarn);
     var rootEl = el("div.sg-root");
     rt.view = el("div.sg-view");
     rt.stage = el("div.sg-stage");

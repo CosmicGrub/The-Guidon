@@ -103,7 +103,7 @@ window.G = window.G || {};
     priv.appendChild(el("p", { text:
       "This is the only part of GUIDON that holds information about other people. It stays on this device, it is never uploaded, and it is not a system of record - IPPS-A and your unit's tracker are." }));
     priv.appendChild(el("p", { text:
-      "Use initials or a roster number, not full names. Keep it to dates. Do not put medical, legal, SHARP, financial or performance narrative in here - that belongs in the systems built for it, with the access controls that come with them." }));
+      "Use initials, a callsign, or a roster number — not full legal names. Keep it to dates. Do not enter CUI, classified information, UICs, DoD IDs, SSNs, phone numbers, email/address data, or medical, legal, SHARP, financial, or performance narrative. Those belong only in authorized systems and processes." }));
     priv.appendChild(el("p.hint", { text:
       "If this device is shared, issued, or you are about to hand it to someone, clear the roster." }));
     priv.appendChild(el("p.hint", { text:
@@ -331,7 +331,7 @@ window.G = window.G || {};
           list: mosListId, maxlength: 6,
           "aria-label": "MOS for roster entry " + (idx + 1), style: "width:80px" });
         rankIn.addEventListener("change", function () { sol.rank = rankIn.value.trim().toUpperCase(); persist(); buildSummary(); });
-        nameIn.addEventListener("change", function () { sol.name = nameIn.value.trim(); persist(); buildSummary(); });
+        nameIn.addEventListener("change", function () { const candidate = nameIn.value.trim(); const screened = G.opsecGuard && G.opsecGuard.sanitizeInput ? G.opsecGuard.sanitizeInput(candidate, { redactContact: true }) : { text:candidate, blocked:false, requiresReview:false, redactions:[] }; if (screened.blocked || screened.requiresReview || (screened.redactions && screened.redactions.length)) { nameIn.value = sol.name || ""; try { util.toast(G.opsecGuard ? G.opsecGuard.decisionMessage(screened) : "Use only initials, a callsign, or a roster number."); } catch (e) {} return; } sol.name = screened.text; persist(); buildSummary(); });
         mosIn.addEventListener("change", function () { sol.mos = mosIn.value.trim().toUpperCase(); persist(); });
         head.appendChild(rankIn); head.appendChild(mosIn); head.appendChild(nameIn);
 
