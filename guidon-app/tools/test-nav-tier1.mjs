@@ -113,7 +113,7 @@ const noise = [];
   // the drawer's own tiles append each group's route count
   // (opts.showCounts, renderGroupsInto) - the >=600px sidebar (Part 2
   // below) deliberately does NOT, so only this array changed.
-  JSON.stringify(drawerOpen.groupHeaders) === JSON.stringify(["Board Prep (12)", "Study & Skills (4)", "Leadership (7)", "Career & Life (8)", "Account (4)", "Advanced (3)"])
+  JSON.stringify(drawerOpen.groupHeaders) === JSON.stringify(["Board Prep (13)", "Study & Skills (4)", "Leadership (7)", "Career & Life (8)", "Account (4)", "Advanced (3)"])
     ? ok("drawer renders all 6 labeled group tiles with route counts, same order as the sidebar")
     : bad("drawer group headers: " + JSON.stringify(drawerOpen.groupHeaders));
   // Derived from the build, never a literal: declaredNavRoutes() reads the
