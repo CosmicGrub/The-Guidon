@@ -219,16 +219,18 @@ async function focusedId(page) {
     downSequence.push(await focusedId(page));
   }
   // From #/records (Board Prep: train, board, records, calendar, doctrine,
-  // creeds, prt, recite, dictionary, library, moi - #/group excluded, see
+  // cyber-opsec, creeds, prt, recite, dictionary, library, moi - #/group excluded, see
   // this file's own comment above): +1 -> calendar, +2 -> doctrine,
-  // +3 -> creeds. Milestone 1 of docs/design/content-education-roadmap.md
+  // +3 -> cyber-opsec. The Cyber/OPSEC curriculum route intentionally sits
+  // between doctrine and creeds; Milestone 1 of docs/design/content-education-roadmap.md
   // inserted creeds/prt/recite between doctrine and dictionary
   // (NAV_GROUPS' own "prep" hashes array) - this sequence and the named
   // presses below were re-derived from that real array, not just
   // re-counted blindly.
-  JSON.stringify(downSequence) === JSON.stringify(["#/calendar", "#/doctrine", "#/creeds"])
+  JSON.stringify(downSequence) === JSON.stringify(["#/calendar", "#/doctrine", "#/cyber-opsec"])
     ? ok("ArrowDown roves forward through the open 'Board Prep' group in order")
     : bad("ArrowDown sequence from #/records (x3): " + JSON.stringify(downSequence));
+  await page.keyboard.press("ArrowDown"); // -> creeds
   await page.keyboard.press("ArrowDown"); // -> prt
   await page.keyboard.press("ArrowDown"); // -> recite
   await page.keyboard.press("ArrowDown"); // -> dictionary
@@ -324,13 +326,13 @@ async function focusedId(page) {
     : bad(`drawer roving-at-rest: count=${drawerRest.zeroedCount} hash=${drawerRest.zeroedHash}, expected 1/#/home`);
 
   // Nav overhaul Milestone 1: the drawer's own tiles append each group's
-  // route count to its label ("Board Prep (12)") via opts.showCounts -
+  // route count to its label ("Board Prep (13)") via opts.showCounts -
   // the sidebar (Part 1 above) deliberately does not, so only these
   // Part-2 literals changed.
   await page.locator('.nav-drawer a[data-hash="#/home"]').focus();
   await page.keyboard.press("ArrowDown");
   const drawerAfterFirstDown = await focusedId(page);
-  drawerAfterFirstDown === "Board Prep (12)"
+  drawerAfterFirstDown === "Board Prep (13)"
     ? ok("drawer: ArrowDown from #/home lands on the first group header ('Board Prep')")
     : bad("drawer: focus after first ArrowDown: " + drawerAfterFirstDown);
   await page.keyboard.press("ArrowDown");
