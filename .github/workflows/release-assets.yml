@@ -144,7 +144,13 @@ jobs:
           # must therefore contain the private key corresponding to this cert.
           expected_digest="83a0cae688a714aa008022d9ab8be5840d327c7b0f6e673e426fe113ed1e1da2"
           apk_digest="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr '[:upper:]' '[:lower:]' | tr -d ':')"
-          aab_digest="$(keytool -printcert -jarfile "$AAB" | sed -n 's/^[[:space:]]*SHA256: //p' | head -1 | tr '[:upper:]' '[:lower:]' | tr -d ':')"
+
+          sig_entry="$(unzip -Z1 "$AAB" | grep -Ei '^META-INF/[^/]+\.(RSA|DSA|EC)$' | head -1)"
+          test -n "$sig_entry"
+          unzip -p "$AAB" "$sig_entry" > /tmp/guidon-release-aab-signer.p7b
+          openssl pkcs7 -inform DER -in /tmp/guidon-release-aab-signer.p7b -print_certs -out /tmp/guidon-release-aab-certs.pem
+          aab_digest="$(openssl x509 -in /tmp/guidon-release-aab-certs.pem -noout -fingerprint -sha256 | sed -E 's/^sha256 Fingerprint=//I' | tr '[:upper:]' '[:lower:]' | tr -d ':')"
+
           test -n "$apk_digest"
           test -n "$aab_digest"
 
