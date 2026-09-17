@@ -36,7 +36,6 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re
 
           p = Path('guidon-app/src/index.html')
           text = p.read_text(encoding='utf-8')
@@ -48,9 +47,11 @@ jobs:
              'The board and doctrine library adds verified counseling, training, AER, ACS, SUDCC and operational-thinking content with stronger taxonomy checks.'
            ]},
           """
-              text, n = re.subn(r"(RELEASE_NOTES\s*:\s*\[\s*)(\{version:'1\.9\.0')", lambda m: m.group(1) + entry + m.group(2), text, count=1)
-              if n != 1:
-                  raise SystemExit('could not locate RELEASE_NOTES head at 1.9.0')
+              needle = "{version:'1.9.0'"
+              pos = text.find(needle)
+              if pos < 0:
+                  raise SystemExit('could not locate v1.9.0 RELEASE_NOTES entry')
+              text = text[:pos] + entry + text[pos:]
               p.write_text(text, encoding='utf-8')
 
           pkg = Path('guidon-app/package.json')
@@ -62,7 +63,7 @@ jobs:
 
       - name: Install first-class iOS platform dependency
         working-directory: guidon-app
-        run: npm install --save '@capacitor/ios@^8.5.1'
+        run: npm install --save '@capacitor/ios@8.5.1'
 
       - name: Generate maintained Capacitor iOS project
         working-directory: guidon-app
