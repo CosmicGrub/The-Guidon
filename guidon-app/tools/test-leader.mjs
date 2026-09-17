@@ -34,7 +34,7 @@ await go();
 const boot = await page.evaluate(() => ({
   heading: (document.querySelector("#view h2, main h2") || {}).textContent,
   privacy: /Read this before you put anyone in here/.test(document.body.textContent || ""),
-  initialsGuidance: /initials or a roster number/i.test(document.body.textContent || ""),
+  initialsGuidance: /initials(?:, a callsign,)? or a roster number/i.test(document.body.textContent || ""),
 }));
 boot.heading === "Squad Roster" ? ok("Squad Roster renders") : bad("heading was " + boot.heading);
 boot.privacy ? ok("privacy statement shown first") : bad("privacy panel missing");
