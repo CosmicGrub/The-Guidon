@@ -125,12 +125,23 @@ async function focusedId(page) {
   // waitForEvent resolves the instant its condition is met.
   async function clickAndFindNativeTab(locator, clickOptions, timeoutMs = 15000) {
     const before = new Set(context.pages());
-    await locator.click(clickOptions);
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-      const opened = context.pages().find((p) => !before.has(p));
-      if (opened) return opened;
-      await page.waitForTimeout(100);
+    // A native modified click can be swallowed by Chromium under extreme CI
+    // contention even though the anchor and browser behavior are correct.
+    // Retry the REAL trusted click once; keep the original page set across
+    // both attempts so a late first popup is still detected, not missed.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await locator.click(clickOptions);
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        const opened = context.pages().find((p) => !before.has(p));
+        if (opened) return opened;
+        await page.waitForTimeout(100);
+      }
+      // One last grace check before issuing the second trusted click avoids
+      // creating a duplicate tab if the first popup arrived on the boundary.
+      await page.waitForTimeout(500);
+      const late = context.pages().find((p) => !before.has(p));
+      if (late) return late;
     }
     return null;
   }
