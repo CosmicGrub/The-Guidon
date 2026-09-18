@@ -11,13 +11,24 @@
   var MOCK_HISTORY = "board:mockHistory:v1";
 
   function fresh() {
-    return { version:1, reportingDone:false, knowledgeDone:false, judgmentDone:false, mockHistoryCount:null, startedAt:0, completedAt:0 };
+    return {
+      version:1, reportingDone:false, knowledgeDone:false, judgmentDone:false,
+      mockHistoryCount:null, mockHistoryToken:null, startedAt:0, completedAt:0,
+      aarDraft:{ strong:"", improve:"", next:"" }
+    };
   }
   async function load() {
     try {
       var v = await db.getSetting(KEY, null);
       if (!v || typeof v !== "object" || Array.isArray(v)) return fresh();
-      return Object.assign(fresh(), v);
+      var out = Object.assign(fresh(), v);
+      var draft = v.aarDraft && typeof v.aarDraft === "object" && !Array.isArray(v.aarDraft) ? v.aarDraft : {};
+      out.aarDraft = {
+        strong:String(draft.strong || ""),
+        improve:String(draft.improve || ""),
+        next:String(draft.next || "")
+      };
+      return out;
     } catch (e) { return fresh(); }
   }
   async function save(s) {
@@ -27,10 +38,16 @@
     try { var v = await db.getSetting(MOCK_HISTORY, []); return Array.isArray(v) ? v : []; }
     catch (e) { return []; }
   }
+  function historyToken(h) {
+    if (!Array.isArray(h) || !h.length) return "";
+    try { return JSON.stringify(h[h.length - 1]); } catch (e) { return String(h.length); }
+  }
   async function reconcileKnowledge(s) {
-    if (s.mockHistoryCount == null || s.knowledgeDone) return s;
+    if ((s.mockHistoryCount == null && s.mockHistoryToken == null) || s.knowledgeDone) return s;
     var h = await mockHistory();
-    if (h.length > s.mockHistoryCount) {
+    var grew = s.mockHistoryCount != null && h.length > Number(s.mockHistoryCount || 0);
+    var changedAtCap = s.mockHistoryToken != null && historyToken(h) !== s.mockHistoryToken;
+    if (grew || changedAtCap) {
       s.knowledgeDone = true;
       s.completedAt = s.judgmentDone ? Date.now() : s.completedAt;
       await save(s);
@@ -89,6 +106,7 @@
     start2.addEventListener("click", async function () {
       var h = await mockHistory();
       state.mockHistoryCount = h.length;
+      state.mockHistoryToken = historyToken(h);
       await save(state);
       location.hash = "#/board";
       var tries = 0;
@@ -120,7 +138,16 @@
      ["improve","What should change before the next board repetition?"],
      ["next","What is the single highest-value topic or behavior to rehearse next?"]].forEach(function (pair) {
        aar.appendChild(el("label", { text:pair[1], for:"board-sim-" + pair[0] }));
-       aar.appendChild(el("textarea", { id:"board-sim-" + pair[0], rows:"2", "aria-label":pair[1] }));
+       var ta = el("textarea", {
+         id:"board-sim-" + pair[0], rows:"2", "aria-label":pair[1],
+         value:String((state.aarDraft && state.aarDraft[pair[0]]) || "")
+       });
+       ta.addEventListener("input", function () {
+         state.aarDraft = state.aarDraft || { strong:"", improve:"", next:"" };
+         state.aarDraft[pair[0]] = ta.value;
+         save(state);
+       });
+       aar.appendChild(ta);
      });
     var history = await mockHistory();
     if (history.length) {
@@ -142,5 +169,5 @@
     related.appendChild(board); related.appendChild(reps); mount.appendChild(related);
   }
 
-  G.mockBoardSim = { render:render, KEY:KEY, _fresh:fresh, _reconcileKnowledge:reconcileKnowledge };
+  G.mockBoardSim = { render:render, KEY:KEY, _fresh:fresh, _reconcileKnowledge:reconcileKnowledge, _historyToken:historyToken };
 })();
