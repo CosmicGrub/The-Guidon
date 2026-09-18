@@ -1,0 +1,32 @@
+name: One-shot v1.11.0 release prep
+
+on:
+  push:
+    branches: ['release/v1.11.0']
+    paths: ['.release-v1110-kick']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-v1110-prep
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: release/v1.11.0
+          fetch-depth: 0
+      - name: Apply coordinated v1.11.0 release prep
+        run: |
+          set -euo pipefail
+          python3 tools/_release_v1110.py
+          rm -f .release-v1110-kick tools/_release_v1110.py .github/workflows/_release-v1110-prep.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "release: prepare GUIDON v1.11.0"
+          git push origin HEAD:release/v1.11.0
