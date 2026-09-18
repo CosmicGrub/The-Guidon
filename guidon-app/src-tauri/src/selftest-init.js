@@ -17,6 +17,10 @@
   }
   function fork() {
     var G = window.G;
+    // This probe only runs inside the Tauri self-test process. Prefer the native
+    // runtime marker directly so report timing cannot race G.caps module injection
+    // or fall back to the web build stamp embedded in frontendDist.
+    if (window.__TAURI_INTERNALS__ || window.__TAURI__) return "tauri";
     try {
       if (G.caps && typeof G.caps.fork === "function") { return G.caps.fork(); }
     } catch (e) {}

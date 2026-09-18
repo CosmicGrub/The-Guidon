@@ -128,11 +128,13 @@ seed.topKeys === 19 ? ok("seed has all 19 top-level sections") : bad(`expected 1
 // 997 as of the counseling/training pass, then 216 net-new board prompts from
 // the promotion-board supplement (224 supplied prompts minus exact-question
 // reconciliations that preserve their pre-existing IDs/SRS history) = 1213.
+// The Cybersecurity & OPSEC curriculum adds 34 intentional board prompts,
+// bringing the canonical bank to 1247.
 // The dedicated test-board-supplement-intake.mjs independently proves all
 // 112 source cards / 224 prompt links are accounted for, so this count guard
 // still protects the built seed against silent truncation without requiring
 // duplicate cards just to make the arithmetic match the source documents.
-seed.board === 1213 ? ok("1,213 board cards intact") : bad(`board cards: ${seed.board}, expected 1213`);
+seed.board === 1247 ? ok("1,247 board cards intact") : bad(`board cards: ${seed.board}, expected 1247`);
 // 3623 as of the same quick-win pass: deleted "RAC-OT" (an OCR/scrape
 // duplicate artifact of "RAS-OT", not a real distinct acronym) and 7
 // redundant unhyphenated staff-designator overlay entries (S2, S3, G1,
@@ -142,7 +144,7 @@ seed.board === 1213 ? ok("1,213 board cards intact") : bad(`board cards: ${seed.
 // first. Was 3631 as of the intuitivism pass before this: added "SLC"
 // (Senior Leader Course) and "DA 7906" (the IDP form itself), both real,
 // genuinely missing entries the terminology audit found - not padding.
-seed.acronyms === 3623 ? ok("3,623 acronym terms intact") : bad(`acronyms: ${seed.acronyms}, expected 3623`);
+seed.acronyms === 3632 ? ok("3,632 acronym terms intact") : bad(`acronyms: ${seed.acronyms}, expected 3632`);
 // 353 as of round 6's two content-gap passes, both landing the same round:
 // +15 doctrine.entries cards closing 5 topics that had a correctly-cited
 // board.questions self-check category but zero doctrine cards citing the
@@ -174,7 +176,7 @@ seed.career === 164 ? ok("164 MOS entries intact") : bad(`MOS: ${seed.career}, e
 // 187 as of the Integrated Operational Thinking pass (2026-09-15), then
 // +2 92A logistics judgment scenarios from the supplied promotion-board deck:
 // sc-92a-critical-part-overdue and sc-92a-inventory-discrepancy.
-seed.scenarios === 189 ? ok("189 scenarios intact") : bad(`scenarios: ${seed.scenarios}, expected 189`);
+seed.scenarios === 193 ? ok("193 scenarios intact") : bad(`scenarios: ${seed.scenarios}, expected 193`);
 // creeds/prt existed as empty skeleton keys from Milestone 1 (see the
 // topKeys===19 comment above) with no content until Milestone 2 (PRT Hub -
 // the Preparation Drill, 1 drill / 10 exercises) and Milestone 3 (Creeds

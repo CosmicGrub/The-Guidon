@@ -21645,6 +21645,8 @@ window.G = window.G || {};
     // comment a few lines up for that fallback's own reasoning).
     "#/moi":       { d:"Import your board's MOI and get a study plan built from exactly what it assigns.",
                      w:"Paste or upload the MOI, then Find my topics — Review shows exactly what matched, needs a second look, or wasn't found." },
+    "#/cyber-opsec": { d:"Practice public, unclassified Cybersecurity and OPSEC fundamentals with board questions, scenarios, and a local knowledge audit.",
+                     w:"Review the safety boundary first, then use scenarios, the 10-question audit, or jump into the Cybersecurity & OPSEC board-question category." },
     // lint-patterns.mjs check (g), added 2026-09 alongside the Guided
     // Tour's Highlights track, caught this exact gap: #/group shipped on a
     // separate branch with no matching entry here. Off by default (see
@@ -35841,6 +35843,7 @@ window.G = window.G || {};
     // assigns. A plain route like every other entry here - no wizard, no
     // modal - see src/app-modules/moi-import.js's own header comment.
     { hash: "#/moi", label: "MOI Import", ico: "upload", render: (m) => G.moiImport.render(m) },
+    { hash: "#/cyber-opsec", label: "Cybersecurity & OPSEC", ico: "shield", render: (m) => G.opsec.render(m) },
     { hash: "#/board", label: "Board", ico: "layers", render: (m) => G.board.render(m) },
     // Collective P3a: LAN study rooms (src/app-modules/studygroup.js). The
     // route renders the kill-switch-off "Pass the device" panel while
@@ -35900,7 +35903,7 @@ window.G = window.G || {};
     // material in the same sense Doctrine is (tiered/citable, browsable),
     // not tacked onto the end of an already-coherent Dictionary/Library/MOI
     // cluster.
-    { id: "prep",    label: "Board Prep",     hashes: ["#/train", "#/board", "#/group", "#/records", "#/calendar", "#/doctrine", "#/creeds", "#/prt", "#/recite", "#/dictionary", "#/library", "#/moi"],
+    { id: "prep",    label: "Board Prep",     hashes: ["#/train", "#/board", "#/group", "#/records", "#/calendar", "#/doctrine", "#/cyber-opsec", "#/creeds", "#/prt", "#/recite", "#/dictionary", "#/library", "#/moi"],
       subdivideAfter: "#/calendar" },
     // Counsel moved here from Leadership (intuitivism pass) - its own
     // DEMO_NOTES tooltip already calls it a "skill-builder," closer in
