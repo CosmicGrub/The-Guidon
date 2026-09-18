@@ -21,8 +21,8 @@ between topics/subjects."*
 What this firmware **is**: a touchscreen flashcard browser. Three
 screens — subject list, card view (question, tap to reveal answer,
 prev/next), and a settings screen (backlight brightness + an install QR
-for the full GUIDON app). All 984 of GUIDON's board-question flashcards,
-across all 78 subjects, browsable offline from a microSD card.
+for the full GUIDON app). The current canonical GUIDON board-question bank, including release-time supplements,
+browsable offline by subject from a microSD card.
 
 What this firmware **deliberately is not**: GUIDON itself. No board
 drills, no grading, no SRS scheduling, no settings sprawl, no Study

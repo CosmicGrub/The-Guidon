@@ -2,6 +2,18 @@
 
 All notable changes to GUIDON will be documented in this file. Format loosely follows [Keep a Changelog](http://keepachangelog.com/). This is the technical record for developers - the app itself shows a short, plain-language summary of each release to Soldiers directly (G.whatsNew, src/index.html), not this file.
 
+## 2026-09-17 - v1.11.0: Board depth, OPSEC safeguards, and adaptive memorization
+
+**Promotion-board depth.** PR #177 integrates the complete 112-card source intake / 224 Q&A prompts, dedicated 92A coverage, two logistics scenarios, the ESP32 exporter, and permanent intake auditing.
+
+**OPSEC/cyber safeguards.** PR #178 adds the local-only ingestion guard/disclaimer, MOI and roster persistence safeguards, the Study Rooms official-network warning, the Cybersecurity & OPSEC study route, scenarios/self-check, and the command/legal review package without claiming regex redaction declassifies information or that the app is legally certified.
+
+**Optional memorization expansion.** PR #179 adds Spirit of the CAV and the default-off Adaptive Recall Ladder while preserving existing Recitation/SRS study methods.
+
+**Android signer continuity.** APK and AAB publication is pinned to the historically consistent GUIDON signing certificate and fails hard on identity drift.
+
+**Full-fork release scope.** The immutable v1.11.0 tag is the source for web/PWA + standalone, Android APK/AAB, Windows MSI/EXE, universal macOS DMG, tagged iOS Simulator package/evidence, and ESP32 Flashcard OS firmware + board-card content. Physical-device iOS distribution still requires Apple Developer credentials and is not represented as a shippable IPA.
+
 ## 2026-09-17 - v1.10.1: Apple parity and release reliability
 
 **Apple platform parity is now a maintained release concern, not a side build.** The committed Capacitor iOS project compiles the same GUIDON web bundle as the other platform shells, while the macOS lane produces a universal Apple Silicon + Intel DMG from the same immutable release tag used by Android and Windows.

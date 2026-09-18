@@ -819,7 +819,14 @@ console.log("lint-patterns: static regression guard for repeat bug shapes and re
     if (body == null) {
       bad("(h) could not extract G.whatsNew.RELEASE_NOTES's balanced array body");
     } else {
-      const versions = [...body.matchAll(/version:\s*"([^"]+)"/g)].map((m) => m[1]);
+      // Release notes may live directly in the giant source file OR in tiny
+      // build-injected release modules. The latter keeps routine version bumps
+      // from requiring a multi-megabyte source rewrite while preserving the
+      // exact same runtime G.whatsNew.RELEASE_NOTES array in every fork.
+      const releaseModuleNames = (await readdir("src/app-modules")).filter((n) => /^99-release-v.*\.js$/.test(n)).sort();
+      const releaseModuleText = (await Promise.all(releaseModuleNames.map((n) => readFile("src/app-modules/" + n, "utf-8")))).join("\n");
+      const releaseText = body + "\n" + releaseModuleText;
+      const versions = [...releaseText.matchAll(/version:\s*"([^"]+)"/g)].map((m) => m[1]);
       const pkgVersion = PKG.version;
       if (!versions.length) {
         bad(`(h) G.whatsNew.RELEASE_NOTES is empty - package.json is at ${pkgVersion} with no matching "what's new" entry`);
@@ -829,9 +836,9 @@ console.log("lint-patterns: static regression guard for repeat bug shapes and re
         // Confirm the CURRENT version's own entry actually has highlights -
         // catches a bump that added the version key but left the array
         // empty (e.g. a stub committed to satisfy this check literally).
-        const currentBlockIdx = body.lastIndexOf('version: "' + pkgVersion + '"');
-        const highlightsIdx = body.indexOf("highlights:", currentBlockIdx);
-        const highlightsBody = highlightsIdx === -1 ? null : extractBalanced(body, body.indexOf("[", highlightsIdx), "[", "]");
+        const currentBlockIdx = releaseText.lastIndexOf('version: "' + pkgVersion + '"');
+        const highlightsIdx = releaseText.indexOf("highlights:", currentBlockIdx);
+        const highlightsBody = highlightsIdx === -1 ? null : extractBalanced(releaseText, releaseText.indexOf("[", highlightsIdx), "[", "]");
         const highlightCount = highlightsBody == null ? 0 : (highlightsBody.match(/"(?:[^"\\]|\\.)*"/g) || []).length;
         if (!highlightCount) {
           bad(`(h) G.whatsNew.RELEASE_NOTES's entry for ${pkgVersion} has no highlights - a Soldier updating to this release would see an empty "What's new" panel`);

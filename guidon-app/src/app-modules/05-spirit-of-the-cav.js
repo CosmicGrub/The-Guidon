@@ -81,15 +81,15 @@
       ]},
       {n:6,title:"Spirit of the CAV — Line 6",category:"Creeds",source:"User-supplied unit tradition text — Spirit of the CAV",qa:[
         ["What line follows 'We have a heritage that will never die'?","'Cause we ride the charge with sabers high."],
-        ["Fill in the blank: "'Cause we ride the ______ with sabers high."","charge"]
+        ["Fill in the blank: 'Cause we ride the ______ with sabers high.","charge"]
       ]},
       {n:7,title:"Spirit of the CAV — Line 7",category:"Creeds",source:"User-supplied unit tradition text — Spirit of the CAV",qa:[
-        ["What line follows "'Cause we ride the charge with sabers high"?","We are the CAV, we are the First Team,"],
+        ["What line follows 'Cause we ride the charge with sabers high?","We are the CAV, we are the First Team,"],
         ["Fill in the blank: 'We are the CAV, we are the ______ ______.'","First Team"]
       ]},
       {n:8,title:"Spirit of the CAV — Final Line",category:"Creeds",source:"User-supplied unit tradition text — Spirit of the CAV",qa:[
         ["What is the final line of the Spirit of the CAV?","We're Gary Owen, sound the charge!"],
-        ["Fill in the blanks: "We're ______ ______, sound the ______!"","Gary Owen; charge"]
+        ["Fill in the blanks: We're ______ ______, sound the ______!","Gary Owen; charge"]
       ]},
       {n:9,title:"Spirit of the CAV — Meaning",category:"Creeds",source:"1st Cavalry Division / U.S. Cavalry historical tradition; user-supplied text",qa:[
         ["What does 'First Team' refer to in the Spirit of the CAV?","The 1st Cavalry Division, widely known as the First Team."],
