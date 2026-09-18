@@ -16,7 +16,16 @@ export async function declaredRoutes(file = "web/index.html") {
   const end = html.indexOf("\n  ];", start);
   const block = html.slice(start, end < 0 ? start + 4000 : end);
   const hashes = [...block.matchAll(/hash:\s*"(#\/[a-z0-9-]+)"/g)].map((m) => m[1]);
-  return { count: hashes.length, hashes };
+  // Modular features injected by tools/build.mjs can register routes through
+  // the public G.routes reference instead of rewriting the giant legacy
+  // ROUTES literal. The roadmap feature bootstrap deliberately uses the
+  // tiny addRoute("#/x", ...) helper for that purpose. Count those literal
+  // declarations too, de-duplicated with legacy routes, so this static
+  // manifest remains the contract for the actual built app rather than a
+  // contract for one historical source-file shape.
+  const modular = [...html.matchAll(/\baddRoute\(\s*"(#\/[a-z0-9-]+)"/g)].map((m) => m[1]);
+  const all = [...new Set(hashes.concat(modular))];
+  return { count: all.length, hashes: all };
 }
 
 /**
