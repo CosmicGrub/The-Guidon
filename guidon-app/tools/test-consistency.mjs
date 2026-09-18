@@ -134,7 +134,7 @@ seed.topKeys === 19 ? ok("seed has all 19 top-level sections") : bad(`expected 1
 // 112 source cards / 224 prompt links are accounted for, so this count guard
 // still protects the built seed against silent truncation without requiring
 // duplicate cards just to make the arithmetic match the source documents.
-seed.board === 1247 ? ok("1,247 board cards intact") : bad(`board cards: ${seed.board}, expected 1247`);
+seed.board === 1265 ? ok("1,265 board cards intact") : bad(`board cards: ${seed.board}, expected 1265`);
 // 3623 as of the same quick-win pass: deleted "RAC-OT" (an OCR/scrape
 // duplicate artifact of "RAS-OT", not a real distinct acronym) and 7
 // redundant unhyphenated staff-designator overlay entries (S2, S3, G1,
@@ -176,7 +176,7 @@ seed.career === 164 ? ok("164 MOS entries intact") : bad(`MOS: ${seed.career}, e
 // 187 as of the Integrated Operational Thinking pass (2026-09-15), then
 // +2 92A logistics judgment scenarios from the supplied promotion-board deck:
 // sc-92a-critical-part-overdue and sc-92a-inventory-discrepancy.
-seed.scenarios === 193 ? ok("193 scenarios intact") : bad(`scenarios: ${seed.scenarios}, expected 193`);
+seed.scenarios === 195 ? ok("195 scenarios intact") : bad(`scenarios: ${seed.scenarios}, expected 195`);
 // creeds/prt existed as empty skeleton keys from Milestone 1 (see the
 // topKeys===19 comment above) with no content until Milestone 2 (PRT Hub -
 // the Preparation Drill, 1 drill / 10 exercises) and Milestone 3 (Creeds
@@ -187,7 +187,7 @@ seed.scenarios === 193 ? ok("193 scenarios intact") : bad(`scenarios: ${seed.sce
 // added to this file's seed-integrity check when that content landed - the
 // same silent-truncation gap the 984/3623/354/164/182 checks above already
 // guard every other section against.
-seed.creeds === 18 ? ok("18 creeds/identities intact") : bad(`creeds: ${seed.creeds}, expected 18`);
+seed.creeds === 19 ? ok("19 creeds/identities intact") : bad(`creeds: ${seed.creeds}, expected 19`);
 seed.prt === 10 ? ok("10 PRT exercises intact") : bad(`prt exercises: ${seed.prt}, expected 10`);
 
 /* The positive half: the corrected facts must actually be present. */
