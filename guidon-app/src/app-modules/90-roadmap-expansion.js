@@ -118,10 +118,119 @@ window.G = window.G || {};
     };
   }
 
+  async function renderPlanner(mount) {
+    const el = G.util.el;
+    G.util.clear(mount);
+    let plan = await loadPlan();
+    let mode = "week";
+
+    const tabs = el("div.segmented", { "aria-label":"PT planner view" });
+    const body = el("div", { style:"margin-top:10px" });
+    const status = el("div", { role:"status", "aria-live":"polite" });
+    ["day","week","month"].forEach(function (m) {
+      const b = el("button" + (m === mode ? ".active" : ""), { type:"button", text:m[0].toUpperCase()+m.slice(1), "aria-pressed":String(m===mode) });
+      b.addEventListener("click", function () {
+        mode=m;
+        Array.prototype.forEach.call(tabs.querySelectorAll("button"), function (x) { const on=x.textContent.toLowerCase()===m; x.classList.toggle("active",on); x.setAttribute("aria-pressed",String(on)); });
+        draw();
+      });
+      tabs.appendChild(b);
+    });
+    mount.appendChild(el("div.panel", {}, [
+      el("div.eyebrow", { text:"PT Planner" }),
+      el("h3", { text:"Day / week / month training plan" }),
+      el("p.hint", { text:"Editable local plan. Defaults are suggestions, not orders; adjust them to your unit program and current guidance." }),
+      tabs, status, body
+    ]));
+
+    async function persist(msg) {
+      plan = await savePlan(plan);
+      status.textContent = msg || "PT plan saved.";
+    }
+    function libFor(id) { return SESSION_LIBRARY.find(function (x) { return x.id === id; }); }
+    function ratioLine() {
+      const r = ratio(plan);
+      const p = el("div.feedback." + (r.warning ? "warn" : "good"), { style:"margin-bottom:10px",
+        text:"Hard : recovery/rest = " + r.label + (r.warning ? " — above the planner's 3:1 caution threshold; consider adding recovery." : " — within the planner's 3:1 caution threshold.") });
+      return p;
+    }
+    function dayIndexNow() { const d=new Date().getDay(); return d===0 ? 6 : d-1; }
+    function drawDay() {
+      const d = plan.week[dayIndexNow()];
+      body.appendChild(ratioLine());
+      const card = el("div.card");
+      card.appendChild(el("div.eyebrow", { text:"Today · " + d.day }));
+      card.appendChild(el("h3", { text:d.title }));
+      card.appendChild(el("p.hint", { text:"Intensity: " + d.intensity + (d.note ? " · " + d.note : "") }));
+      if (d.drillId === "pd") {
+        const run = el("button.btn.primary", { type:"button", text:"Open Preparation Drill" });
+        run.addEventListener("click", function () { location.hash="#/prt"; });
+        card.appendChild(run);
+      }
+      body.appendChild(card);
+    }
+    function drawWeek() {
+      body.appendChild(ratioLine());
+      const grid = el("div");
+      plan.week.forEach(function (d, i) {
+        const row = el("div.panel", { style:"margin-bottom:8px" });
+        const head = el("div.stat", {}, [el("span.k", { text:d.day }), el("span.v", { text:d.intensity })]);
+        row.appendChild(head);
+        const sel = el("select", { "aria-label":"Session for " + d.day, style:"width:100%;margin:6px 0" });
+        SESSION_LIBRARY.forEach(function (s) { sel.appendChild(el("option", { value:s.id, text:s.name, selected:s.id===d.sessionId ? "selected" : null })); });
+        sel.addEventListener("change", async function () {
+          const s=libFor(sel.value); plan.week[i]=Object.assign({}, plan.week[i], { sessionId:s.id,title:s.name,intensity:s.intensity,kind:s.kind,drillId:s.drillId||null });
+          await persist(d.day + " updated."); draw();
+        });
+        row.appendChild(sel);
+        const note = el("input", { type:"text", value:d.note||"", maxlength:"240", placeholder:"Optional session note", "aria-label":"Note for " + d.day, style:"width:100%" });
+        note.addEventListener("change", async function () { plan.week[i].note=note.value.slice(0,240); await persist(d.day + " note saved."); });
+        row.appendChild(note);
+        const move = el("div.btn-row", { style:"margin-top:6px" });
+        if (i>0) {
+          const up=el("button.btn.ghost.sm",{type:"button",text:"↑ Swap"});
+          up.addEventListener("click",async function(){plan=swap(plan,i,i-1);await persist("Sessions swapped.");draw();}); move.appendChild(up);
+        }
+        if (i<6) {
+          const down=el("button.btn.ghost.sm",{type:"button",text:"↓ Swap"});
+          down.addEventListener("click",async function(){plan=swap(plan,i,i+1);await persist("Sessions swapped.");draw();}); move.appendChild(down);
+        }
+        row.appendChild(move); grid.appendChild(row);
+      });
+      body.appendChild(grid);
+      const acts=el("div.btn-row",{style:"margin-top:10px;flex-wrap:wrap"});
+      const shuf=el("button.btn",{type:"button",text:"Shuffle week"});
+      shuf.addEventListener("click",async function(){plan=shuffleWeek(plan);await persist("Week shuffled.");draw();});
+      const reset=el("button.btn.ghost",{type:"button",text:"Restore defaults"});
+      reset.addEventListener("click",async function(){plan=normalizePlan({week:defaultWeek()});await persist("Default week restored.");draw();});
+      const exp=el("button.btn.ghost",{type:"button",text:"Export plan"});
+      exp.addEventListener("click",function(){
+        const x=exportPlan(plan), blob=new Blob([x.text+"\n\n"+JSON.stringify(x,null,2)],{type:"text/plain"});
+        const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="guidon-pt-plan.txt"; a.click(); setTimeout(function(){URL.revokeObjectURL(a.href);},1000);
+      });
+      const print=el("button.btn.ghost",{type:"button",text:"Print"});
+      print.addEventListener("click",function(){const x=exportPlan(plan); G.util.printHTML("GUIDON PT Plan","<pre style='white-space:pre-wrap'>"+G.util.esc(x.text)+"</pre>");});
+      acts.appendChild(shuf);acts.appendChild(reset);acts.appendChild(exp);acts.appendChild(print);body.appendChild(acts);
+    }
+    function drawMonth() {
+      body.appendChild(ratioLine());
+      body.appendChild(el("p.hint", { text:"Four-week projection using the editable weekly template. Change Week view once and the projection updates everywhere." }));
+      for(let w=1;w<=4;w++) {
+        const p=el("div.panel",{style:"margin-bottom:8px"}); p.appendChild(el("div.eyebrow",{text:"Week "+w}));
+        p.appendChild(el("p",{text:plan.week.map(function(d){return d.day.slice(0,3)+" "+d.title;}).join(" · ")})); body.appendChild(p);
+      }
+    }
+    function draw() {
+      G.util.clear(body);
+      if(mode==="day") drawDay(); else if(mode==="month") drawMonth(); else drawWeek();
+    }
+    draw();
+  }
+
   G.ptPlanner = {
     KEY:PT_PLAN_KEY, HISTORY_KEY:PT_HISTORY_KEY, DAYS:DAY_NAMES.slice(), library:SESSION_LIBRARY.slice(),
     defaultWeek:defaultWeek, normalize:normalizePlan, load:loadPlan, save:savePlan, ratio:ratio,
-    history:history, recordHistory:recordHistory, swap:swap, shuffle:shuffleWeek, exportPlan:exportPlan,
+    history:history, recordHistory:recordHistory, swap:swap, shuffle:shuffleWeek, exportPlan:exportPlan, render:renderPlanner,
   };
 
   const TEAM_CATALOG = [
