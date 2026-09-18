@@ -513,6 +513,64 @@ window.G = window.G || {};
     });
     mount.appendChild(foot);
 
+    // Team-training catalog + lightweight completion matrix. This deliberately
+    // reuses the existing privacy-minimal roster (rank/initials only) instead
+    // of introducing a second personnel store.
+    if (G.teamTools) {
+      const team = el("div.panel", { style:"margin-top:10px" });
+      team.appendChild(el("div.eyebrow", { text:"Team Training" }));
+      team.appendChild(el("h3", { text:"Collective reps & decision relays" }));
+      team.appendChild(el("p.hint", { text:"Optional leader tools. Scenario relays rotate decision ownership; nothing here is an official training record." }));
+
+      const members = function () {
+        return roster.map(function (s, i) { return ((s.rank ? s.rank + " " : "") + (s.name || "Soldier " + (i + 1))).trim(); }).filter(Boolean);
+      };
+      const catalog = el("div.card-results-grid");
+      G.teamTools.catalog.forEach(function (item) {
+        const card = el("div.card");
+        card.appendChild(el("div.eyebrow", { text:item.band }));
+        card.appendChild(el("h4", { text:item.title }));
+        card.appendChild(el("p.hint", { text:item.objective }));
+        const go = el("button.btn.sm", { type:"button", text:item.scenarioId ? "Start team relay" : "Open activity" });
+        go.addEventListener("click", function () {
+          const names = members();
+          if (item.scenarioId && names.length < 2) {
+            try { util.toast && util.toast("Add at least two roster entries for a decision relay."); } catch (e) {}
+            return;
+          }
+          G.teamTools.start(item.id, names);
+        });
+        card.appendChild(go); catalog.appendChild(card);
+      });
+      team.appendChild(catalog);
+
+      const skills = [
+        ["tccc","TCCC"],["medevac","9-Line"],["landnav","Land Nav"],["board","Board Reps"],["teamwork","Teamwork"]
+      ];
+      const matrix = el("div", { style:"margin-top:14px" });
+      matrix.appendChild(el("div.eyebrow", { text:"Local completion check" }));
+      matrix.appendChild(el("p.hint", { text:"A convenience checklist only — not a certification, DTMS entry, or system of record." }));
+      G.teamTools.load().then(function (state) {
+        roster.forEach(function (sol, idx) {
+          const row = el("div.panel", { style:"margin:8px 0" });
+          row.appendChild(el("div.k", { text:(sol.rank ? sol.rank + " " : "") + (sol.name || "Soldier " + (idx + 1)) }));
+          const checks = el("div", { style:"display:flex;gap:10px;flex-wrap:wrap;margin-top:6px" });
+          skills.forEach(function (sk) {
+            const id = "team-cert-" + idx + "-" + sk[0];
+            const lab = el("label", { for:id, style:"display:flex;gap:5px;align-items:center" });
+            const cb = el("input", { id:id, type:"checkbox" });
+            cb.checked = !!(state.certifications && state.certifications[String(idx)] && state.certifications[String(idx)][sk[0]]);
+            cb.addEventListener("change", function () { G.teamTools.setCertification(idx, sk[0], cb.checked).catch(function () {}); });
+            lab.appendChild(cb); lab.appendChild(document.createTextNode(sk[1])); checks.appendChild(lab);
+          });
+          row.appendChild(checks); matrix.appendChild(row);
+        });
+        if (!roster.length) matrix.appendChild(el("p.hint", { text:"Add Soldiers above to use the local completion matrix." }));
+      }).catch(function () {});
+      team.appendChild(matrix);
+      mount.appendChild(team);
+    }
+
     buildSummary();
     buildList();
   }
