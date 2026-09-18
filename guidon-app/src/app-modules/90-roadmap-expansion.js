@@ -151,7 +151,41 @@ window.G = window.G || {};
     await G.db.put("kv", { k:TEAM_KEY, v:v });
     return v;
   }
-  G.teamTools = { KEY:TEAM_KEY, catalog:TEAM_CATALOG.slice(), load:loadTeamState, setCertification:setCertification };
+  function startCatalogItem(itemId, members) {
+    const item = TEAM_CATALOG.find(function (x) { return x.id === itemId; });
+    if (!item) return false;
+    if (item.scenarioId && G.engine) {
+      G.engine._pendingTeam = {
+        scenarioId:item.scenarioId,
+        members:Array.isArray(members) && members.length ? members.slice(0, 12) : ["Soldier 1","Soldier 2"],
+        relay:true,
+        discussionSeconds:30,
+      };
+      location.hash = "#/train";
+      return true;
+    }
+    location.hash = item.route;
+    return true;
+  }
+  G.teamTools = { KEY:TEAM_KEY, catalog:TEAM_CATALOG.slice(), load:loadTeamState, setCertification:setCertification, start:startCatalogItem };
+
+  // Opt selected, already-shipped scenarios into the new collective-decision
+  // behavior without creating a parallel scenario collection. Only nodes with
+  // two or more choices are eligible; the first two decision nodes are marked,
+  // leaving the rest of every scenario unchanged in ordinary solo play.
+  try {
+    const ids = ["sc-tccc-ied-strike","sc-medevac-9line-callin","sc-iot-comms-blackout","sc-iot-motorpool-belt","sc-iot-range-safety"];
+    const list = window.GUIDON_SEED && window.GUIDON_SEED.scenarios && window.GUIDON_SEED.scenarios.scenarios;
+    if (Array.isArray(list)) ids.forEach(function (id) {
+      const sc = list.find(function (x) { return x.id === id; });
+      if (!sc || !sc.nodes) return;
+      let marked = 0;
+      Object.keys(sc.nodes).forEach(function (k) {
+        const n = sc.nodes[k];
+        if (marked < 2 && n && Array.isArray(n.choices) && n.choices.length >= 2) { n.discuss = true; marked++; }
+      });
+    });
+  } catch (e) {}
 
   if (G.board) {
     G.board.readinessScore = async function () {
