@@ -28,10 +28,11 @@ jobs:
       - name: Apply surgical source patch
         working-directory: guidon-app
         run: node tools/apply-roadmap-expansion.mjs
-      - name: Verify patch anchors and build
+      - name: Verify patch anchors, refresh CI matrix, and build
         working-directory: guidon-app
         run: |
           npm ci
+          node tools/lint-ci-matrix.mjs --write
           npm run build
       - name: Commit generated source changes
         run: |
@@ -41,6 +42,6 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add guidon-app/src/index.html
+          git add guidon-app/src/index.html .github/workflows/ci.yml
           git commit -m "feat: wire roadmap expansion into core views [roadmap-patcher]"
           git push origin HEAD:feature/roadmap-leader-readiness-expansion
