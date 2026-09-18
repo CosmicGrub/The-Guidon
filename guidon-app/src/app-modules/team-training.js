@@ -56,15 +56,26 @@
 
   function launchSequence(host, ids, exerciseId, collective) {
     var idx = 0;
-    function next() {
+    function next(result) {
       util.clear(host);
+      if (result && result.cancelled) {
+        var stopped = el("div.panel", {}, [
+          el("div.eyebrow", { text:"Relay paused" }),
+          el("h3", { text:"Session not recorded" }),
+          el("p", { text:"You exited before completing the current lane. No completion was added." })
+        ]);
+        var back = el("button.btn.primary", { type:"button", text:"Return to catalog" });
+        back.addEventListener("click", function () { render(document.getElementById("route") || host.parentElement); });
+        stopped.appendChild(back); host.appendChild(stopped);
+        return;
+      }
       if (idx >= ids.length) {
         markComplete(exerciseId).then(function () {
           host.appendChild(el("div.panel", {}, [
             el("div.eyebrow", { text:"Relay complete" }),
             el("h3", { text:"Run the AAR before you disperse" }),
             el("p", { text:"Capture one sustain, one improve, and one action the team will deliberately test next round." }),
-            el("button.btn.primary", { type:"button", text:"Return to catalog", onclick:function () { render(document.getElementById("view") || host.parentElement); } })
+            el("button.btn.primary", { type:"button", text:"Return to catalog", onclick:function () { render(document.getElementById("route") || host.parentElement); } })
           ]));
         });
         return;
