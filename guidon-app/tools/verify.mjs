@@ -13,6 +13,7 @@
 import { chromium, devices } from "playwright";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import vm from "node:vm";
 import { serve } from "./server.mjs";
 import { probeViaPlaywright, writeProbe } from "./caps-probe.mjs";
 
@@ -91,7 +92,34 @@ const bad = (m) => {
   results.fail.push(m); console.log("  FAIL  " + m);
 };
 
+async function assertBuiltScriptsParse() {
+  const htmlText = await readFile(join(WEB, "index.html"), "utf8");
+  const scriptRe = /<script([^>]*)>([\s\S]*?)<\/script>/gi;
+  let m, idx = 0, checked = 0;
+  while ((m = scriptRe.exec(htmlText))) {
+    idx++;
+    const attrs = m[1] || "";
+    if (/\bsrc\s*=/.test(attrs)) continue;
+    const type = (/\btype\s*=\s*["']([^"']+)["']/i.exec(attrs) || [])[1] || "";
+    if (type && !/^(?:text|application)\/javascript$/i.test(type) && type.toLowerCase() !== "module") continue;
+    const code = m[2] || "";
+    try {
+      new vm.Script(code, { filename: `built-inline-script-${idx}.js` });
+      checked++;
+    } catch (e) {
+      const line = e && e.stack ? String(e.stack).split("\n").slice(0, 5).join("\n") : String(e);
+      const ln = e && e.lineNumber ? e.lineNumber : null;
+      const lines = code.split("\n");
+      const near = ln ? lines.slice(Math.max(0, ln - 3), Math.min(lines.length, ln + 2)).join("\n") : lines.slice(0, 8).join("\n");
+      throw new Error(`generated web/index.html inline script #${idx} failed static parse\n${line}\n--- script excerpt ---\n${near}`);
+    }
+  }
+  if (!checked) throw new Error("generated web/index.html contained no inline classic scripts to syntax-check");
+  console.log(`static script syntax: ${checked} inline script(s) parsed cleanly`);
+}
+
 async function main() {
+  await assertBuiltScriptsParse();
   const { server, url } = await serve(WEB);
   console.log("serving " + WEB + " at " + url + "\n");
   const browser = await chromium.launch();
