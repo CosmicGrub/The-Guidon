@@ -142,6 +142,7 @@
     util.clear(mount);
     var plan = await loadPlan();
     var activeView = "week";
+    var drawGeneration = 0;
 
     mount.appendChild(el("div.section-title", {}, [el("h2", { text:"PT Planner" }), el("div.rule")]));
     mount.appendChild(el("p.hint", { text:"Build a day/week/month PT plan from GUIDON's existing training surfaces. Suggestions are planning aids, not an automated training prescription; unit policy, medical guidance, weather, mission, and leader judgment control." }));
@@ -268,11 +269,12 @@
       return card;
     }
 
-    async function renderDay() {
+    async function renderDay(generation) {
       util.clear(stage);
       var idx = new Date().getDay();
       stage.appendChild(makeDayCard(idx, false));
       var hist = await loadHistory();
+      if (generation !== drawGeneration || activeView !== "day") return;
       var todayKey = localISO(new Date());
       var already = hist.some(function (x) { return x && x.date === todayKey; });
       var complete = el("button.btn.primary", { type:"button", text:already ? "Today logged" : "Mark today complete", "data-pt-complete":"1" });
@@ -368,11 +370,12 @@
       stage.appendChild(grid);
     }
     function draw() {
+      var generation = ++drawGeneration;
       ih.textContent = (TEMPLATES[plan.templateId] || TEMPLATES.balanced).hint;
       Array.from(intensity.querySelectorAll("button")).forEach(function (b) { var on = b.getAttribute("data-intensity") === plan.intensity; b.classList.toggle("active", on); b.setAttribute("aria-pressed", String(on)); });
       Array.from(tabs.querySelectorAll("button")).forEach(function (b) { var on = b.getAttribute("data-pt-view") === activeView; b.classList.toggle("active", on); b.setAttribute("aria-selected", String(on)); });
       drawRatio();
-      if (activeView === "day") renderDay();
+      if (activeView === "day") renderDay(generation);
       else if (activeView === "month") renderMonth();
       else renderWeek();
     }
