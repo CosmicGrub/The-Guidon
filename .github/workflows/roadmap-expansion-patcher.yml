@@ -1,0 +1,46 @@
+name: Roadmap Expansion Patcher
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/roadmap-leader-readiness-expansion
+    paths:
+      - guidon-app/tools/apply-roadmap-expansion.mjs
+      - guidon-app/src/app-modules/90-roadmap-expansion.js
+      - .github/workflows/roadmap-expansion-patcher.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: "!contains(github.event.head_commit.message, '[roadmap-patcher]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feature/roadmap-leader-readiness-expansion
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Apply surgical source patch
+        working-directory: guidon-app
+        run: node tools/apply-roadmap-expansion.mjs
+      - name: Verify patch anchors and build
+        working-directory: guidon-app
+        run: |
+          npm ci
+          npm run build
+      - name: Commit generated source changes
+        run: |
+          if git diff --quiet; then
+            echo "No generated source changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add guidon-app/src/index.html
+          git commit -m "feat: wire roadmap expansion into core views [roadmap-patcher]"
+          git push origin HEAD:feature/roadmap-leader-readiness-expansion
