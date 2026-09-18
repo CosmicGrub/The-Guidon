@@ -123,30 +123,30 @@ async function focusedId(page) {
   // comment), applied here to tab/popup creation specifically rather than
   // app-render warmup. Widening costs nothing on a normal run since
   // waitForEvent resolves the instant its condition is met.
+  async function clickAndFindNativeTab(locator, clickOptions, timeoutMs = 15000) {
+    const before = new Set(context.pages());
+    await locator.click(clickOptions);
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const opened = context.pages().find((p) => !before.has(p));
+      if (opened) return opened;
+      await page.waitForTimeout(100);
+    }
+    return null;
+  }
+
   {
     const hashBefore = await page.evaluate(() => location.hash);
-    const newPagePromise = context.waitForEvent("page", { timeout: 15000 }).catch(() => null);
-    await page.locator('.nav a[data-hash="#/doctrine"]').click({ modifiers: ["Control"] });
-    const newPage = await newPagePromise;
+    const newPage = await clickAndFindNativeTab(
+      page.locator('.nav a[data-hash="#/doctrine"]'),
+      { modifiers: ["Control"] }
+    );
     if (newPage) {
       await newPage.waitForLoadState("load").catch(() => {});
       const hashAfter = await page.evaluate(() => location.hash);
       newPage.url().endsWith("#/doctrine") ? ok("Ctrl+click on a sidebar item opens a real new tab at the right route") : bad("Ctrl+click new tab URL: " + newPage.url());
       hashAfter === hashBefore ? ok("Ctrl+click leaves the original tab's route untouched") : bad(`Ctrl+click changed the original tab's hash: ${hashBefore} -> ${hashAfter}`);
       await newPage.close();
-      // Closing a just-opened tab and immediately arming another
-      // context.waitForEvent("page") for the very next interaction was a
-      // real, CI-load-sensitive race (confirmed: "middle-click on a
-      // sidebar item did not open a new tab" failed 2 CI runs in a row on
-      // this exact PR, passed every time locally uncontended) - the
-      // browser context needs a moment to actually finish tearing down
-      // the closed tab before it reliably fires a fresh "page" event for
-      // the next one under load. A short settle here, not a longer
-      // timeout on the wait itself, is the fix for THIS transition
-      // specifically: the new-tab event either fires quickly once armed or
-      // it doesn't fire at all, so padding the wait wouldn't help a
-      // genuinely-missed event here, only mask how close to the edge this
-      // already runs.
       await page.waitForTimeout(300);
     } else {
       bad("Ctrl+click on a sidebar item did not open a new tab");
@@ -159,9 +159,10 @@ async function focusedId(page) {
   // code. Same real-trusted-click reasoning as the Ctrl+click check. ----
   {
     const hashBefore = await page.evaluate(() => location.hash);
-    const newPagePromise = context.waitForEvent("page", { timeout: 15000 }).catch(() => null);
-    await page.locator('.nav a[data-hash="#/calendar"]').click({ button: "middle" });
-    const newPage = await newPagePromise;
+    const newPage = await clickAndFindNativeTab(
+      page.locator('.nav a[data-hash="#/calendar"]'),
+      { button: "middle" }
+    );
     if (newPage) {
       await newPage.waitForLoadState("load").catch(() => {});
       const hashAfter = await page.evaluate(() => location.hash);

@@ -169,14 +169,32 @@ async function finalRecapText() {
 }
 async function setupTeamMatch(teamNames) {
   await enterRapidFireFresh();
-  await clickButtonByText("Team");
-  await page.waitForTimeout(150);
+  const teamClicked = await clickButtonByText("Team");
+  if (!teamClicked) throw new Error("Rapid Fire Team mode button was not available");
+  await page.waitForFunction(
+    () => document.querySelectorAll(".rf-team-row input").length >= 2,
+    { timeout: 30000 }
+  );
   // The Setup screen ships exactly 2 team-name rows by default; add more
   // via the real "+ Add team" control for a 3+-team match (spec: "2+ named
   // teams", cfg.teams.push("") on click - see src/index.html).
-  for (let i = 2; i < teamNames.length; i++) { await clickButtonByText("+ Add team"); await page.waitForTimeout(80); }
+  for (let i = 2; i < teamNames.length; i++) {
+    const added = await clickButtonByText("+ Add team");
+    if (!added) throw new Error("Rapid Fire + Add team control was not available");
+    await page.waitForFunction(
+      (count) => document.querySelectorAll(".rf-team-row input").length >= count,
+      teamNames.length,
+      { timeout: 30000 }
+    );
+  }
+  await page.waitForFunction(
+    (count) => document.querySelectorAll(".rf-team-row input").length >= count,
+    teamNames.length,
+    { timeout: 30000 }
+  );
   await page.evaluate((names) => {
     const inputs = [...document.querySelectorAll(".rf-team-row input")];
+    if (inputs.length < names.length) throw new Error(`Expected ${names.length} team inputs, found ${inputs.length}`);
     names.forEach((name, i) => { inputs[i].value = name; inputs[i].dispatchEvent(new Event("input")); });
   }, teamNames);
   await page.waitForTimeout(80);
