@@ -190,21 +190,19 @@ feedbackShown ? ok("committing a team answer exposes feedback before advancing")
 
 // Regression: authored single-choice feedback must be shown before advancing.
 const singleFeedback = await page.evaluate(async () => {
-  const list = window.G.store.scenarios();
-  const id = "qa-collective-single-feedback";
-  if (!list.some((x) => x.id === id)) list.push({
-    id, title:"QA single feedback", tier:["E4"], competency:["Intellect"], difficulty:"Basic",
+  const fixture = {
+    id:"qa-collective-single-feedback", title:"QA single feedback", tier:["E4"], competency:["Intellect"], difficulty:"Basic",
     defaultMode:"cyoa", renderModes:["cyoa"], start:"n1",
     nodes:{
       n1:{ prompt:"Choose the only transition.", choices:[{ text:"Proceed", goto:"end", feedback:"Teaching point preserved." }] },
       end:{ end:true, outcome:"Done." }
     }
-  });
+  };
   const host = document.createElement("div");
   host.id = "qa-single-feedback-host";
   document.body.appendChild(host);
   window.__qaCollectiveExit = null;
-  window.G.engine.runCollective(id, host, (result) => { window.__qaCollectiveExit = result; });
+  window.G.engine.runCollective(fixture, host, (result) => { window.__qaCollectiveExit = result; });
   return !!host.querySelector("button");
 });
 singleFeedback ? ok("single-choice collective fixture launches") : bad("single-choice collective fixture did not launch");
