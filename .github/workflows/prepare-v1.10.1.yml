@@ -1,0 +1,106 @@
+name: Prepare v1.10.1
+
+# One-shot helper for release/v1.10.1. Keep every guarded replacement aligned
+# with the v1.10.0 tree so a partial or repeated release bump fails closed.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/release/v1.10.1'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: release/v1.10.1
+
+      - name: Apply the release bump
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new, count=1):
+              target = Path(path)
+              contents = target.read_text()
+              actual = contents.count(old)
+              if actual != count:
+                  raise SystemExit(
+                      f"{path}: expected {count} occurrence(s) of {old!r}, found {actual}"
+                  )
+              target.write_text(contents.replace(old, new))
+
+          replace("guidon-app/package.json", '"version": "1.10.0"', '"version": "1.10.1"')
+          replace(
+              "guidon-app/package-lock.json",
+              '"version": "1.10.0"',
+              '"version": "1.10.1"',
+              2,
+          )
+          replace("guidon-app/src-tauri/Cargo.toml", 'version = "1.10.0"', 'version = "1.10.1"')
+          replace(
+              "guidon-app/src-tauri/Cargo.lock",
+              'name = "guidon"\nversion = "1.10.0"',
+              'name = "guidon"\nversion = "1.10.1"',
+          )
+          replace("guidon-app/src-tauri/tauri.conf.json", '"version": "1.10.0"', '"version": "1.10.1"')
+          replace("guidon-app/android/app/build.gradle", 'versionCode 11000', 'versionCode 11001')
+          replace("guidon-app/android/app/build.gradle", 'versionName "1.10.0"', 'versionName "1.10.1"')
+
+          project = "guidon-app/ios/App/App.xcodeproj/project.pbxproj"
+          replace(project, "CURRENT_PROJECT_VERSION = 1;", "CURRENT_PROJECT_VERSION = 2;", 2)
+          replace(project, "MARKETING_VERSION = 1.10.0;", "MARKETING_VERSION = 1.10.1;", 2)
+
+          index = "guidon-app/src/index.html"
+          previous_note = '''      {
+                  version: "1.10.0",
+                  date: "September 2026",
+                  title: "Board readiness and better study rooms",
+                  highlights: [
+                    "Study Rooms can now build multi-category decks, with new Scenario Relay and Collective Decision ways to train together.",
+                    "Board Drill adds 5-Minute Board Reps plus quick filters by regulation and readiness pillar, with readiness rollups by pillar.",
+                    "The board and doctrine library adds verified counseling, training, AER, ACS, SUDCC, and operational-thinking material with clearer organization."
+                  ]
+                }'''
+          new_note = '''      {
+                  version: "1.10.1",
+                  date: "September 2026",
+                  title: "Apple parity and release reliability",
+                  highlights: [
+                    "GUIDON now maintains a first-class iOS project that stays synced to the same app bundle and study experience as the web, Android, Windows, and macOS versions.",
+                    "macOS releases now include a universal Apple Silicon + Intel package built from the same tagged source as the other platforms.",
+                    "Apple-device verification now covers compact iPhone, standard iPhone, large iPhone, and iPad layouts with preserved render evidence and safer handling of transient Simulator failures.",
+                  ],
+                },'''
+          replace(index, previous_note, previous_note + ",\n" + new_note)
+
+          changelog = """## 2026-09-17 - v1.10.1: Apple parity and release reliability
+
+          **Apple platform parity is now a maintained release concern, not a side build.** The committed Capacitor iOS project compiles the same GUIDON web bundle as the other platform shells, while the macOS lane produces a universal Apple Silicon + Intel DMG from the same immutable release tag used by Android and Windows.
+
+          **Release ordering is explicit and auditable.** A release-cut gate creates and verifies the source tag before platform asset fan-out, and iOS Simulator verification preserves first-pass evidence while retrying only the two documented transient process-death/stuck-launch signatures. Compile, install, and genuine render/progress failures remain hard-red.
+
+          **Distribution boundaries remain explicit.** The macOS package is universal but still requires Apple Developer ID credentials for notarization; the iOS target is build- and Simulator-verified, while TestFlight/App Store/device distribution still requires Apple Developer signing and provisioning credentials.
+
+          """
+          replace("GUIDON files/CHANGELOG.md", "# Changelog\n", "# Changelog\n\n" + changelog)
+          PY
+
+      - name: Verify release metadata
+        working-directory: guidon-app
+        run: |
+          npm ci
+          npm run lint:patterns
+
+      - name: Commit and push
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add --all
+          git commit -m "chore(release): prepare v1.10.1"
+          git push origin HEAD:release/v1.10.1
