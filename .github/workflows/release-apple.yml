@@ -186,6 +186,16 @@ jobs:
           BUNDLE_ID: ${{ env.APP_ID }}
           DEVICES: ${{ env.DEFAULT_DEVICES }}
         run: bash tools/ios-simulator-run-with-retry.sh
+      - name: Publish iOS Simulator package
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          OUT="GUIDON-${VERSION}-ios-simulator.zip"
+          ditto -c -k --sequesterRsrc --keepParent "${{ steps.app.outputs.path }}" "$OUT"
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "$OUT"
       - name: Upload iOS tagged evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
