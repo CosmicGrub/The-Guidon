@@ -823,7 +823,7 @@ console.log("lint-patterns: static regression guard for repeat bug shapes and re
       // build-injected release modules. The latter keeps routine version bumps
       // from requiring a multi-megabyte source rewrite while preserving the
       // exact same runtime G.whatsNew.RELEASE_NOTES array in every fork.
-      const releaseModuleNames = (await readdir("src/app-modules")).filter((n) => /^99-release-v.*\\.js$/.test(n)).sort();
+      const releaseModuleNames = (await readdir("src/app-modules")).filter((n) => /^99-release-v.*\.js$/.test(n)).sort();
       const releaseModuleText = (await Promise.all(releaseModuleNames.map((n) => readFile("src/app-modules/" + n, "utf-8")))).join("\n");
       const releaseText = body + "\n" + releaseModuleText;
       const versions = [...releaseText.matchAll(/version:\s*"([^"]+)"/g)].map((m) => m[1]);
