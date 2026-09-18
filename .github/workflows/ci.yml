@@ -260,6 +260,12 @@ jobs:
       - name: Verify (PWA/build harness)
         run: npm run verify
 
+      # Large-roadmap integration gate. This suite also remains in the
+      # generated matrix; running it here gives direct, non-paginated logs
+      # for the new PT/Team/Collective/Board-Simulator integration surface.
+      - name: Roadmap leader-readiness regression
+        run: npm run test:roadmap-leader-readiness
+
       # Collective P2: merge the probe file verify just wrote (artifacts/caps/
       # chromium-web.json, the evidence column) into docs/generated/
       # capability-matrix.{md,json}; exits non-zero when a required
