@@ -110,7 +110,9 @@
     if (sess.sc.scene) title.appendChild(el("div.engine-scene-tag", { text:sess.sc.scene }));
     h.appendChild(title);
     var exit = el("button.btn.ghost.sm", { type:"button", text:"Exit" });
-    exit.addEventListener("click", function () { if (sess.onExit) sess.onExit(); });
+    exit.addEventListener("click", function () {
+      if (sess.onExit) sess.onExit({ completed:false, cancelled:true, scenarioId:sess.sc.id });
+    });
     h.appendChild(exit);
     return h;
   }
@@ -144,16 +146,21 @@
     var again = el("button.btn.ghost", { type:"button", text:"Replay collective lane" });
     again.addEventListener("click", function () { runCollective(sess.sc, sess.container, sess.onExit, sess.options); });
     var done = el("button.btn.primary", { type:"button", text:"Done" });
-    done.addEventListener("click", function () { if (sess.onExit) sess.onExit(); });
+    done.addEventListener("click", function () {
+      if (sess.onExit) sess.onExit({ completed:true, cancelled:false, scenarioId:sess.sc.id });
+    });
     p.appendChild(el("div.btn-row", {}, [again, done]));
     sess.container.appendChild(p);
   }
-  function advance(sess, c) {
-    applyChoice(sess, c);
+  function continueAppliedChoice(sess, c) {
     var target = targetFor(sess, c);
     if (!target) return finish(sess, { outcome:"This authored path has no valid next node. Review the scenario graph." });
     sess.nodeId = target;
     renderCollective(sess);
+  }
+  function advance(sess, c) {
+    applyChoice(sess, c);
+    continueAppliedChoice(sess, c);
   }
   function renderSingle(sess, node, choices) {
     util.clear(sess.container); sess.container.appendChild(header(sess));
@@ -161,9 +168,22 @@
     if (node.beat) p.appendChild(el("div.eyebrow", { text:node.beat }));
     if (node.prompt || node.body) p.appendChild(el("p", { text:String(node.prompt || node.body) }));
     addDialogue(p, node.dialogue);
-    var c = choices[0];
-    var btn = el("button.btn.primary", { type:"button", text:(c && c.text) || "Continue" });
-    btn.addEventListener("click", function () { advance(sess, c || { goto:node.next }); });
+    var c = choices[0] || { text:"Continue", goto:node.next };
+    var btn = el("button.btn.primary", { type:"button", text:c.text || "Continue" });
+    btn.addEventListener("click", function () {
+      btn.disabled = true;
+      applyChoice(sess, c);
+      if (c.feedback || c.tradeoff) {
+        var fb = el("div", { style:"margin-top:10px" });
+        if (c.feedback) fb.appendChild(el("div.feedback", { role:"status", "aria-live":"polite", text:c.feedback }));
+        if (c.tradeoff) fb.appendChild(el("p.hint", { text:"Tradeoff: " + c.tradeoff }));
+        var next = el("button.btn.primary", { type:"button", text:"Continue" });
+        next.addEventListener("click", function () { continueAppliedChoice(sess, c); });
+        fb.appendChild(next); p.appendChild(fb); next.focus();
+        return;
+      }
+      continueAppliedChoice(sess, c);
+    });
     p.appendChild(btn); sess.container.appendChild(p); btn.focus();
   }
   function renderDecision(sess, node, choices) {
