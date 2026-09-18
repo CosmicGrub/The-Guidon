@@ -269,8 +269,13 @@
     if (sc && (opts.collective || scenarioHasDiscuss(sc))) return runCollective(sc, container, onExit, opts);
     return originalRun(scenarioId, mode, container, onExit);
   };
-  G.engine.runCollective = function (scenarioId, container, onExit, options) {
-    var sc = G.store && G.store.scenario ? G.store.scenario(scenarioId) : null;
+  G.engine.runCollective = function (scenarioOrId, container, onExit, options) {
+    // Accept an authored scenario object as well as a stored id. This keeps
+    // the collective adapter useful to Authoring/preview/test surfaces
+    // without forcing a temporary scenario into the memoized store.
+    var sc = scenarioOrId && typeof scenarioOrId === "object"
+      ? scenarioOrId
+      : (G.store && G.store.scenario ? G.store.scenario(scenarioOrId) : null);
     if (!sc) { util.toast("Scenario not found."); return; }
     return runCollective(sc, container, onExit, Object.assign({ collective:true }, options || {}));
   };
