@@ -233,7 +233,8 @@
     "test:icon-registry": "node tools/test-icon-registry.mjs",
     "test:whats-new": "node tools/test-whats-new.mjs",
     "test:study-rooms-shell-gate": "node tools/test-study-rooms-shell-gate.mjs",
-    "test:share-os-aware": "node tools/test-share-os-aware.mjs"
+    "test:share-os-aware": "node tools/test-share-os-aware.mjs",
+    "test:spirit-of-the-cav": "node tools/test-spirit-of-the-cav.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",
