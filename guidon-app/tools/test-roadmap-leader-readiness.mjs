@@ -50,7 +50,8 @@ for (const row of scenarioTruth) {
   row.found ? ok(row.id + " exists in the real scenario store") : bad(row.id + " missing");
   (!row.validate || row.validate.ok !== false) ? ok(row.id + " is accepted by the current scenario validator") : bad(row.id + " validator errors: " + JSON.stringify(row.validate));
 }
-const collectiveTruth = scenarioTruth.find((x) => x.id === "sc-collective-decision-relay");\nNumber(collectiveTruth && collectiveTruth.discussed || 0) >= 3 ? ok("collective relay authors at least three discuss:true decision nodes") : bad("collective decision nodes: " + JSON.stringify(collectiveTruth));
+const collectiveTruth = scenarioTruth.find((x) => x.id === "sc-collective-decision-relay");
+Number(collectiveTruth && collectiveTruth.discussed || 0) >= 3 ? ok("collective relay authors at least three discuss:true decision nodes") : bad("collective decision nodes: " + JSON.stringify(collectiveTruth));
 
 // ---- PT Planner ----
 await page.evaluate(() => { location.hash = "#/pt-plan"; });
@@ -104,6 +105,34 @@ await page.waitForTimeout(250);
 const monthDays = await page.locator(".pt-month-day").count();
 monthDays === 28 ? ok("month view expands the weekly plan into the next 28 dated sessions") : bad("month entry count: " + monthDays);
 
+// Regression: a delayed Day-history read must never append into a newer Week render.
+await page.evaluate(() => {
+  const db = window.G.db;
+  if (!db.__roadmapOriginalGetSetting) db.__roadmapOriginalGetSetting = db.getSetting.bind(db);
+  db.getSetting = async function (key, fallback) {
+    if (key === "pt:history:v1") await new Promise((resolve) => setTimeout(resolve, 350));
+    return db.__roadmapOriginalGetSetting(key, fallback);
+  };
+});
+await page.locator('button[data-pt-view="day"]').click();
+await page.waitForTimeout(40);
+await page.locator('button[data-pt-view="week"]').click();
+await page.waitForTimeout(500);
+const staleDay = await page.evaluate(() => ({
+  week:!!document.querySelector("[data-pt-week]"),
+  dayComplete:!!document.querySelector("[data-pt-complete]")
+}));
+staleDay.week && !staleDay.dayComplete
+  ? ok("stale async Day history cannot append into a newer Week render")
+  : bad("stale PT Day render leaked into Week: " + JSON.stringify(staleDay));
+await page.evaluate(() => {
+  const db = window.G.db;
+  if (db.__roadmapOriginalGetSetting) {
+    db.getSetting = db.__roadmapOriginalGetSetting;
+    delete db.__roadmapOriginalGetSetting;
+  }
+});
+
 // ---- Team Training + collective decision engine ----
 await page.evaluate(() => { location.hash = "#/team"; });
 await page.waitForTimeout(650);
@@ -113,6 +142,28 @@ const catalog = await page.evaluate(() => ({
 }));
 catalog.count === 10 ? ok("#/team renders all ten planned exercises") : bad("team exercise count: " + catalog.count);
 [1,2,3].every((p) => catalog.phases.some((x) => x.includes("Phase " + p))) ? ok("all three catalog phases are represented") : bad("phase labels: " + JSON.stringify(catalog.phases));
+
+// Regression: Exit cancels a relay lane and must not advance or record completion.
+const contactBefore = await page.evaluate(async () => {
+  const s = await window.G.db.getSetting("team:training:v1", {});
+  return (s && s["contact-relay"] && s["contact-relay"].count) || 0;
+});
+await page.locator('button[data-team-start="contact-relay"]').click();
+await page.waitForTimeout(180);
+await page.locator(".engine-head button", { hasText:/^Exit$/ }).click();
+await page.waitForTimeout(250);
+const exitState = await page.evaluate(async () => {
+  const s = await window.G.db.getSetting("team:training:v1", {});
+  return {
+    count:(s && s["contact-relay"] && s["contact-relay"].count) || 0,
+    text:document.querySelector("[data-team-session]")?.textContent || ""
+  };
+});
+exitState.count === contactBefore && /Session not recorded/i.test(exitState.text)
+  ? ok("Exit cancels a relay without advancing or recording completion")
+  : bad("relay Exit incorrectly counted/advanced: " + JSON.stringify({ before:contactBefore, after:exitState }));
+await page.locator("button", { hasText:/Return to catalog/i }).click();
+await page.waitForTimeout(250);
 
 await page.locator('button[data-team-start="contact-relay"]').click();
 await page.waitForTimeout(450);
@@ -137,6 +188,45 @@ await page.waitForTimeout(120);
 const feedbackShown = await page.evaluate(() => /Continue/.test(document.querySelector(".collective-decision")?.textContent || ""));
 feedbackShown ? ok("committing a team answer exposes feedback before advancing") : bad("collective commit did not reach feedback/continue state");
 
+// Regression: authored single-choice feedback must be shown before advancing.
+const singleFeedback = await page.evaluate(async () => {
+  const list = window.G.store.scenarios();
+  const id = "qa-collective-single-feedback";
+  if (!list.some((x) => x.id === id)) list.push({
+    id, title:"QA single feedback", tier:["E4"], competency:["Intellect"], difficulty:"Basic",
+    defaultMode:"cyoa", renderModes:["cyoa"], start:"n1",
+    nodes:{
+      n1:{ prompt:"Choose the only transition.", choices:[{ text:"Proceed", goto:"end", feedback:"Teaching point preserved." }] },
+      end:{ end:true, outcome:"Done." }
+    }
+  });
+  const host = document.createElement("div");
+  host.id = "qa-single-feedback-host";
+  document.body.appendChild(host);
+  window.__qaCollectiveExit = null;
+  window.G.engine.runCollective(id, host, (result) => { window.__qaCollectiveExit = result; });
+  return !!host.querySelector("button");
+});
+singleFeedback ? ok("single-choice collective fixture launches") : bad("single-choice collective fixture did not launch");
+await page.locator("#qa-single-feedback-host button", { hasText:/Proceed/i }).click();
+await page.waitForTimeout(80);
+const singleStage = await page.evaluate(() => ({
+  feedback:document.querySelector("#qa-single-feedback-host .feedback")?.textContent || "",
+  continueVisible:[...document.querySelectorAll("#qa-single-feedback-host button")].some((b) => b.textContent.trim() === "Continue"),
+  callback:window.__qaCollectiveExit
+}));
+/Teaching point preserved/.test(singleStage.feedback) && singleStage.continueVisible && singleStage.callback == null
+  ? ok("single-choice collective feedback is preserved behind a separate Continue action")
+  : bad("single-choice feedback path malformed: " + JSON.stringify(singleStage));
+await page.locator("#qa-single-feedback-host button", { hasText:/^Continue$/ }).click();
+await page.waitForTimeout(80);
+await page.locator("#qa-single-feedback-host button", { hasText:/^Done$/ }).click();
+await page.waitForTimeout(80);
+const completionSignal = await page.evaluate(() => window.__qaCollectiveExit);
+completionSignal && completionSignal.completed === true && completionSignal.cancelled === false
+  ? ok("collective completion emits an explicit completed signal")
+  : bad("collective completion signal: " + JSON.stringify(completionSignal));
+
 // ---- Board Simulator wrapper ----
 await page.evaluate(() => { location.hash = "#/board-sim"; });
 await page.waitForTimeout(650);
@@ -147,6 +237,38 @@ const sim = await page.evaluate(() => ({
 }));
 sim.heading === "Board Simulator" ? ok("#/board-sim renders") : bad("Board Simulator heading: " + sim.heading);
 sim.phases === 3 && sim.aar ? ok("Board Simulator exposes reporting, knowledge, judgment, and AAR phases") : bad("Board Simulator phase shape: " + JSON.stringify(sim));
+
+// Regression: capped 20-entry Mock Board history still detects a newly completed board.
+const capDetection = await page.evaluate(async () => {
+  const rows = Array.from({length:20}, (_, i) => ({ ts:1000+i, pct:70+i%5, marker:"old-"+i }));
+  await window.G.db.setSetting("board:mockHistory:v1", rows);
+  const state = window.G.mockBoardSim._fresh();
+  state.mockHistoryCount = rows.length;
+  state.mockHistoryToken = window.G.mockBoardSim._historyToken(rows);
+  const newer = rows.slice();
+  newer.shift();
+  newer.push({ ts:999999, pct:88, marker:"new-board" });
+  await window.G.db.setSetting("board:mockHistory:v1", newer);
+  const out = await window.G.mockBoardSim._reconcileKnowledge(state);
+  const detected = out.knowledgeDone === true;
+  await window.G.db.setSetting("board:mockHistory:v1", []);
+  await window.G.db.setSetting(window.G.mockBoardSim.KEY, window.G.mockBoardSim._fresh());
+  await window.G.mockBoardSim.render(document.querySelector("#route"));
+  return detected;
+});
+capDetection ? ok("Board Simulator detects a new Mock Board even when rolling history stays capped at 20") : bad("20-entry Mock Board cap prevented knowledge completion");
+
+// Regression: AAR draft text survives a simulator rerender.
+const aarInput = page.locator("#board-sim-strong");
+await aarInput.fill("Keep concise answers and strong eye contact.");
+await page.waitForTimeout(160);
+await page.evaluate(async () => { await window.G.mockBoardSim.render(document.querySelector("#route")); });
+await page.waitForTimeout(120);
+const aarPersisted = await page.locator("#board-sim-strong").inputValue().catch(() => "");
+aarPersisted === "Keep concise answers and strong eye contact."
+  ? ok("Board Simulator preserves AAR draft notes across phase rerenders")
+  : bad("AAR draft lost on rerender: " + JSON.stringify(aarPersisted));
+
 await page.locator('button[data-board-sim-reporting]').click();
 await page.waitForTimeout(350);
 const reporting = await page.evaluate(() => document.querySelector("[data-board-sim-engine]")?.textContent || "");
