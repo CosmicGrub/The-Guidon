@@ -50,13 +50,13 @@ for (const row of scenarioTruth) {
   row.found ? ok(row.id + " exists in the real scenario store") : bad(row.id + " missing");
   (!row.validate || row.validate.ok !== false) ? ok(row.id + " is accepted by the current scenario validator") : bad(row.id + " validator errors: " + JSON.stringify(row.validate));
 }
-scenarioTruth[0] && scenarioTruth[0].discuss >= 3 ? ok("collective relay authors at least three discuss:true decision nodes") : bad("collective decision nodes: " + JSON.stringify(scenarioTruth[0]));
+const collectiveTruth = scenarioTruth.find((x) => x.id === "sc-collective-decision-relay");\nNumber(collectiveTruth && collectiveTruth.discussed || 0) >= 3 ? ok("collective relay authors at least three discuss:true decision nodes") : bad("collective decision nodes: " + JSON.stringify(collectiveTruth));
 
 // ---- PT Planner ----
 await page.evaluate(() => { location.hash = "#/pt-plan"; });
 await page.waitForTimeout(650);
 const ptBoot = await page.evaluate(() => ({
-  heading: document.querySelector("#view h2")?.textContent || "",
+  heading: document.querySelector("#route h2, main h2")?.textContent || "",
   days: document.querySelectorAll(".pt-day-card").length,
   ratio: document.querySelector("[data-pt-ratio]")?.textContent || "",
   views: document.querySelectorAll("[data-pt-view]").length
@@ -141,7 +141,7 @@ feedbackShown ? ok("committing a team answer exposes feedback before advancing")
 await page.evaluate(() => { location.hash = "#/board-sim"; });
 await page.waitForTimeout(650);
 const sim = await page.evaluate(() => ({
-  heading:document.querySelector("#view h2")?.textContent || "",
+  heading:document.querySelector("#route h2, main h2")?.textContent || "",
   phases:document.querySelectorAll(".board-sim-phase").length,
   aar:!!document.querySelector("[data-board-sim-aar]")
 }));
