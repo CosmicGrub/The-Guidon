@@ -105,7 +105,7 @@ async function main() {
     page.on("console", (m) => {
       if (m.type() === "error" || m.type() === "warning") msgs.push(`${m.type()}: ${m.text()}`);
     });
-    page.on("pageerror", (e) => msgs.push("pageerror: " + e.message));
+    page.on("pageerror", (e) => msgs.push("pageerror: " + (e.stack || e.message)));
 
     const t0 = Date.now();
     await page.goto(url, { waitUntil: "load" });
@@ -382,7 +382,7 @@ async function main() {
       }
       const vmsgs = [];
       p.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") vmsgs.push(m.text()); });
-      p.on("pageerror", (e) => vmsgs.push("pageerror: " + e.message));
+      p.on("pageerror", (e) => vmsgs.push("pageerror: " + (e.stack || e.message)));
       await p.goto(url, { waitUntil: "load" });
       await p.waitForTimeout(SETTLE_NAV);
       let badCount = 0;
