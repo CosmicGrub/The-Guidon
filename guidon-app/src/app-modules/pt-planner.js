@@ -11,6 +11,13 @@
   var HISTORY_KEY = "pt:history:v1";
   var DAY_KEYS = ["sun","mon","tue","wed","thu","fri","sat"];
   var DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  var LEADER_CHECKLIST = [
+    "Confirm task, conditions, standards, and the leader responsible for the session.",
+    "Complete the applicable risk-management process and brief controls before training.",
+    "Confirm site, equipment, water, communications, and medical/emergency support.",
+    "Brief the session plan and any unit-specific limitations before execution.",
+    "Close with an AAR: one sustain, one improve, and the next action."
+  ];
 
   var PRESETS = {
     rest: { id:"rest", title:"Rest / no organized PT", type:"rest", effort:"recovery", route:"" },
@@ -48,7 +55,7 @@
     var t = TEMPLATES[id] || TEMPLATES.balanced;
     var days = {};
     DAY_KEYS.forEach(function (k) { days[k] = clonePreset(t.days[k]); });
-    return { version:1, templateId:id in TEMPLATES ? id : "balanced", intensity:"standard", weekStart:"sun", days:days, overrides:{} };
+    return { version:1, templateId:id in TEMPLATES ? id : "balanced", intensity:"standard", weekStart:"sun", shareable:false, days:days, overrides:{} };
   }
   function normalizePlan(v) {
     if (!v || typeof v !== "object" || Array.isArray(v)) return planFromTemplate("balanced");
@@ -57,6 +64,7 @@
       templateId:TEMPLATES[v.templateId] ? v.templateId : "balanced",
       intensity:["light","standard","challenge"].indexOf(v.intensity) >= 0 ? v.intensity : "standard",
       weekStart:"sun",
+      shareable:!!v.shareable,
       days:{},
       overrides:(v.overrides && typeof v.overrides === "object" && !Array.isArray(v.overrides)) ? v.overrides : {}
     };
@@ -172,6 +180,13 @@
     });
     controls.appendChild(el("div.eyebrow", { text:"Intensity dial" }));
     controls.appendChild(intensity);
+    var shareRow = el("label", { style:"display:flex;gap:8px;align-items:center;margin-top:10px" });
+    var share = el("input", { type:"checkbox", "data-pt-shareable":"1" });
+    share.checked = !!plan.shareable;
+    share.addEventListener("change", async function () { plan.shareable = share.checked; await savePlan(plan); });
+    shareRow.appendChild(share);
+    shareRow.appendChild(document.createTextNode("Mark this plan shareable for export to the squad"));
+    controls.appendChild(shareRow);
     mount.appendChild(controls);
 
     var ratioHost = el("div");
@@ -274,6 +289,15 @@
       var grid = el("div.card-results-grid", { "data-pt-week":"1" });
       for (var i=0;i<7;i++) grid.appendChild(makeDayCard(i, false));
       stage.appendChild(grid);
+
+      var leader = el("div.panel", { "data-pt-leader-checklist":"1" });
+      leader.appendChild(el("div.eyebrow", { text:"Leader checklist" }));
+      leader.appendChild(el("p.hint", { text:"Planning prompts only—use the current unit SOP, approved risk-management process, and qualified medical/safety guidance." }));
+      var checklist = el("ul");
+      LEADER_CHECKLIST.forEach(function (x) { checklist.appendChild(el("li", { text:x })); });
+      leader.appendChild(checklist);
+      stage.appendChild(leader);
+
       var rebalance = el("button.btn.ghost", { type:"button", text:"Rotate training days", "data-pt-rotate":"1" });
       rebalance.addEventListener("click", async function () {
         var first = plan.days.sun;
@@ -281,23 +305,64 @@
         plan.days.sat = first;
         await savePlan(plan); draw();
       });
-      var exp = el("button.btn.ghost", { type:"button", text:"Export plan", "data-pt-export":"1" });
-      exp.addEventListener("click", function () {
-        util.download("guidon-pt-plan.json", JSON.stringify({ schema:"guidon.pt-plan/v1", exportedAt:new Date().toISOString(), plan:plan }, null, 2), "application/json");
+      var shuffle = el("button.btn.ghost", { type:"button", text:"Shuffle week", "data-pt-shuffle":"1" });
+      shuffle.addEventListener("click", async function () {
+        var entries = DAY_KEYS.map(function (k) { return plan.days[k]; });
+        for (var j=entries.length-1;j>0;j--) {
+          var k = Math.floor(Math.random() * (j+1)), tmp = entries[j]; entries[j] = entries[k]; entries[k] = tmp;
+        }
+        DAY_KEYS.forEach(function (k, idx) { plan.days[k] = entries[idx]; });
+        await savePlan(plan); draw();
       });
-      stage.appendChild(el("div.btn-row", {}, [rebalance, exp]));
+      var schedule = el("button.btn.ghost", { type:"button", text:"Schedule week reminders", "data-pt-remind-week":"1" });
+      schedule.addEventListener("click", async function () {
+        schedule.disabled = true;
+        var made = 0;
+        for (var j=0;j<7;j++) {
+          var e = plan.days[DAY_KEYS[j]];
+          if (e && e.type !== "rest" && await addPtReminder(e, j)) made++;
+        }
+        schedule.textContent = made ? made + " reminders set" : "No reminders added";
+      });
+      var exp = el("button.btn.ghost", { type:"button", text:"Export JSON", "data-pt-export":"1" });
+      exp.addEventListener("click", function () {
+        util.download("guidon-pt-plan.json", JSON.stringify({ schema:"guidon.pt-plan/v1", exportedAt:new Date().toISOString(), shareable:!!plan.shareable, plan:plan, leaderChecklist:LEADER_CHECKLIST }, null, 2), "application/json");
+      });
+      var sheet = el("button.btn.ghost", { type:"button", text:"Export leader sheet", "data-pt-export-sheet":"1" });
+      sheet.addEventListener("click", function () {
+        var lines = ["GUIDON PT PLAN", "Intensity: " + plan.intensity, "Shareable: " + (plan.shareable ? "yes" : "no"), ""];
+        DAY_KEYS.forEach(function (k, i) { var e = plan.days[k]; lines.push(DAY_NAMES[i] + ": " + e.title + " [" + effortLabel(e.effort) + "]"); });
+        lines.push("", "LEADER CHECKLIST");
+        LEADER_CHECKLIST.forEach(function (x, i) { lines.push((i+1) + ". " + x); });
+        lines.push("", "Planning aid only. Current unit policy, approved risk controls, and qualified medical/safety guidance control.");
+        util.download("guidon-pt-leader-sheet.txt", lines.join("\n"), "text/plain");
+      });
+      stage.appendChild(el("div.btn-row", {}, [rebalance, shuffle, schedule, exp, sheet]));
     }
     function renderMonth() {
       util.clear(stage);
       var start = new Date(); start.setHours(0,0,0,0);
       var grid = el("div.card-results-grid", { "data-pt-month":"1" });
-      for (var i=0;i<28;i++) {
-        var d = new Date(start); d.setDate(start.getDate()+i);
-        var e = dayEntryForDate(plan,d);
-        var c = el("div.panel.pt-month-day", { "data-pt-date":localISO(d) });
+      for (let i=0;i<28;i++) {
+        let d = new Date(start); d.setDate(start.getDate()+i);
+        let iso = localISO(d);
+        let e = dayEntryForDate(plan,d);
+        let c = el("div.panel.pt-month-day", { "data-pt-date":iso });
         c.appendChild(el("div.eyebrow", { text:d.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}) }));
-        c.appendChild(el("strong", { text:e.title }));
-        c.appendChild(el("p.hint", { text:effortLabel(e.effort) + " · " + plan.intensity }));
+        var sel = el("select", { "aria-label":"Session override for " + iso, "data-pt-date-session":iso });
+        Object.keys(PRESETS).forEach(function (id) { sel.appendChild(el("option", { value:id, text:PRESETS[id].title })); });
+        sel.value = PRESETS[e.id] ? e.id : "custom";
+        sel.addEventListener("change", async function () {
+          plan.overrides[iso] = clonePreset(sel.value);
+          await savePlan(plan); draw();
+        });
+        c.appendChild(sel);
+        c.appendChild(el("p.hint", { text:effortLabel(e.effort) + " · " + plan.intensity + (plan.overrides[iso] ? " · date override" : " · weekly plan") }));
+        if (plan.overrides[iso]) {
+          var reset = el("button.btn.sm.ghost", { type:"button", text:"Use weekly plan", "data-pt-date-reset":iso });
+          reset.addEventListener("click", async function () { delete plan.overrides[iso]; await savePlan(plan); draw(); });
+          c.appendChild(reset);
+        }
         grid.appendChild(c);
       }
       stage.appendChild(grid);
@@ -320,6 +385,7 @@
     HISTORY_KEY:HISTORY_KEY,
     PRESETS:PRESETS,
     TEMPLATES:TEMPLATES,
+    LEADER_CHECKLIST:LEADER_CHECKLIST,
     _ratio:ratioOf,
     _planFromTemplate:planFromTemplate
   };
