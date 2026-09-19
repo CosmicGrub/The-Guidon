@@ -29,38 +29,24 @@
  *
  * The practice text below was written for this test. It is nobody's song.
  */
-import { chromium } from "playwright";
-import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
-
-let fails = 0;
-const ok = (m) => console.log("  PASS  " + m);
-const bad = (m) => { fails++; console.log("  FAIL  " + m); };
+import { bootApp, ok, bad, finish, waitForRoute, clickWhenStable, until, expectNoConsoleNoise } from "./testkit.mjs";
 
 const KEY = "guidon:recite:own:v1";
 const TITLE = "Alpha Troop motto";
 const LINES = ["Ready at the first light", "Steady through the long night", "We carry the load together", "And we finish what we start"];
 const MARKER = "carry the load together";
 
-const { server, url } = await serve("web");
-const browser = await chromium.launch();
-const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
-const page = await ctx.newPage();
-const noise = [];
+// The listener goes on before the page navigates, so "no request left the
+// page at any point" covers the app's own start-up too.
 const outside = [];
-page.on("console", (m) => { if (["error", "warning"].includes(m.type())) noise.push(m.type() + ": " + m.text()); });
-page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
-page.on("request", (r) => { if (!r.url().startsWith(url) && !/^(data|blob|about):/.test(r.url())) outside.push(r.url()); });
+const { page, noise } = await bootApp({
+  viewport: { width: 390, height: 844 },
+  beforeLoad: ({ page, url }) => { page.on("request", (r) => { if (!r.url().startsWith(url) && !/^(data|blob|about):/.test(r.url())) outside.push(r.url()); }); },
+});
 
-await page.goto(url, { waitUntil: "load" });
-await dismissOnboarding(page);
-
-const openRecite = async () => {
-  await page.evaluate(() => { location.hash = "#/home"; });
-  await page.waitForTimeout(150);
-  await page.evaluate(() => { location.hash = "#/recite"; });
-  await page.waitForSelector("[data-recite-add]");
-};
+// Rebuilt from scratch every time, so each section starts from a clean screen.
+const openRecite = () => waitForRoute(page, "#/recite", { fresh: true, ready: "[data-recite-add]" });
 const live = () => page.evaluate(() => (document.getElementById("a11y-live") || {}).textContent || "");
 const focusInfo = () => page.evaluate(() => {
   const a = document.activeElement;
@@ -69,9 +55,11 @@ const focusInfo = () => page.evaluate(() => {
 const ownRows = () => page.evaluate(() => Array.from(document.querySelectorAll("[data-recite-own] .list-detail-row")).map((r) => ({ text: r.textContent, selected: r.getAttribute("aria-selected"), id: r.dataset.reciteId })));
 const stored = () => page.evaluate(async (k) => { const r = await window.G.db.get("kv", k); return r ? r.v : null; }, KEY);
 const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+// A mode is "picked" once its chip reports pressed - the panel under it is
+// drawn in the same pass.
 const pickMode = async (label) => {
-  await page.locator('[aria-label="Study mode"] .search-chip', { hasText: label }).click();
-  await page.waitForTimeout(250);
+  await clickWhenStable(page, page.locator('[aria-label="Study mode"] .search-chip', { hasText: label }));
+  await until(page, (l) => Array.from(document.querySelectorAll('[aria-label="Study mode"] .search-chip[aria-pressed="true"]')).some((c) => (c.textContent || "").includes(l)), label, { timeout: 5000 });
 };
 
 // ---- the section itself ------------------------------------------------
@@ -326,18 +314,12 @@ const restored = await page.evaluate(async () => {
   return { skipped: res && res.skipped, failed: res && res.failedStores };
 });
 await openRecite();
-await page.waitForFunction(() => document.querySelectorAll("[data-recite-own] .list-detail-row").length === 2).catch(() => {});
+await until(page, () => document.querySelectorAll("[data-recite-own] .list-detail-row").length === 2, null, { timeout: 8000 });
 rows = await ownRows();
 rows.length === 2 && rows.some((r) => r.text === TITLE)
   ? ok("restoring that backup brings the deleted text back under My unit")
   : bad("restore did not bring the text back: " + JSON.stringify({ rows, restored }));
 
 outside.length === 0 ? ok("no request left the page at any point - the text never goes anywhere") : bad("requests left the page: " + outside.slice(0, 3).join(", "));
-const relevantNoise = noise.filter((n) => !/favicon/.test(n));
-relevantNoise.length === 0 ? ok("no console errors or warnings") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));
-
-await browser.close();
-await server.close();
-
-console.log(fails ? `\n${fails} FAILURE(S)` : "\nRECITE MY UNIT: all passed");
-process.exit(fails ? 1 : 0);
+expectNoConsoleNoise(noise, { ignore: [/favicon/] });
+await finish("RECITE MY UNIT");

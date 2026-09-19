@@ -14,23 +14,17 @@
  * both halves of that: the real anchors render correctly and in the right
  * order, and no fabricated "eligible on [date]" milestone ever appears.
  */
-import { chromium } from "playwright";
-import { serve } from "./server.mjs";
-import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { bootApp, ok, bad, finish, waitForRoute, clickWhenStable, until, expectNoConsoleNoise } from "./testkit.mjs";
 
-let fails = 0;
-const ok = (m) => console.log("  PASS  " + m);
-const bad = (m) => { fails++; console.log("  FAIL  " + m); };
+const { page, noise } = await bootApp({ noiseLevels: ["error"] });
 
-const { server, url } = await serve("web");
-const browser = await chromium.launch();
-const page = await (await browser.newContext()).newPage();
-const noise = [];
-page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
-page.on("console", (m) => { if (m.type() === "error") noise.push("console.error: " + m.text()); });
-
-await page.goto(url, { waitUntil: "load" });
-await dismissOnboarding(page);
+// Calendar is rebuilt from scratch each time so it re-reads the dates just
+// saved; it is drawn once the timeline has at least its "Now" row.
+const reopenCalendar = async () => {
+  await waitForRoute(page, "#/calendar", { fresh: true });
+  await until(page, () => document.querySelectorAll(".cal-timeline-row").length >= 1, null, { timeout: 8000 });
+};
+const hashBecomes = (h) => until(page, (want) => location.hash === want, h, { timeout: 8000 });
 
 async function timelinePanel() {
   const eyebrow = page.locator(".eyebrow", { hasText: "Career timeline" }).first();
@@ -45,10 +39,7 @@ async function rows(panel) {
 }
 
 // ── 1) Empty state: only "Now" renders, with a real hint, no fabrication ──
-await page.evaluate(() => { location.hash = "#/settings"; });
-await page.waitForTimeout(200);
-await page.evaluate(() => { location.hash = "#/calendar"; });
-await page.waitForTimeout(500);
+await reopenCalendar();
 let panel = await timelinePanel();
 let r = await rows(panel);
 r.length === 1 && r[0].isNow
@@ -83,10 +74,7 @@ await page.evaluate(([bd, ed]) => {
     window.G.store.setSetting("etsDate", localISO(ets)),
   ]);
 }, [boardDays, etsDays]);
-await page.evaluate(() => { location.hash = "#/settings"; });
-await page.waitForTimeout(200);
-await page.evaluate(() => { location.hash = "#/calendar"; });
-await page.waitForTimeout(500);
+await reopenCalendar();
 panel = await timelinePanel();
 r = await rows(panel);
 
@@ -107,16 +95,15 @@ r.length === 3
 //    "What is next" list links to for the same two dates ─────────────────
 const openBtns = panel.locator("button", { hasText: "Open" });
 (await openBtns.count()) === 2 ? ok("exactly 2 'Open' cross-link buttons (board + ETS; 'Now' has none — nothing to open)") : bad("Open button count: " + (await openBtns.count()));
-await openBtns.nth(0).click();
-await page.waitForTimeout(400);
+await clickWhenStable(page, openBtns.nth(0));
+await hashBecomes("#/records");
 let hash = await page.evaluate(() => location.hash);
 hash === "#/records" ? ok("Promotion board's 'Open' button navigates to #/records (Records Readiness)") : bad("hash after board Open click: " + hash);
 
-await page.evaluate(() => { location.hash = "#/calendar"; });
-await page.waitForTimeout(400);
+await reopenCalendar();
 panel = await timelinePanel();
-await panel.locator("button", { hasText: "Open" }).nth(1).click();
-await page.waitForTimeout(400);
+await clickWhenStable(page, panel.locator("button", { hasText: "Open" }).nth(1));
+await hashBecomes("#/transition");
 hash = await page.evaluate(() => location.hash);
 hash === "#/transition" ? ok("ETS's 'Open' button navigates to #/transition") : bad("hash after ETS Open click: " + hash);
 
@@ -129,10 +116,7 @@ await page.evaluate(() => {
     window.G.store.setSetting("etsDate", ets.toISOString().slice(0, 10)),
   ]);
 });
-await page.evaluate(() => { location.hash = "#/settings"; });
-await page.waitForTimeout(200);
-await page.evaluate(() => { location.hash = "#/calendar"; });
-await page.waitForTimeout(500);
+await reopenCalendar();
 panel = await timelinePanel();
 r = await rows(panel);
 (r[1] && /ETS/.test(r[1].text) && r[2] && /Promotion board/.test(r[2].text))
@@ -149,15 +133,11 @@ const dateInputCount = await page.locator('input[type="date"]').count();
 
 // ── 6) No horizontal overflow at mobile width (this app's own convention) ─
 await page.setViewportSize({ width: 375, height: 812 });
-await page.waitForTimeout(300);
+// Measured once the page has the new width and has painted at it.
+await until(page, () => window.innerWidth === 375, null, { timeout: 5000 });
+await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 const overflowsX = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
 !overflowsX ? ok("no horizontal overflow at 375px mobile width") : bad("body overflows horizontally at 375px");
 
-noise.length === 0
-  ? ok("no console errors/warnings across the whole flow")
-  : bad("console noise: " + JSON.stringify(noise));
-
-await browser.close();
-server.close();
-console.log("\n" + (fails ? `CAREER TIMELINE: ${fails} FAILURE(S)` : "CAREER TIMELINE: all passed"));
-process.exit(fails ? 1 : 0);
+expectNoConsoleNoise(noise, { pass: "no console errors/warnings across the whole flow" });
+await finish("CAREER TIMELINE");

@@ -70,6 +70,28 @@ debugging:
 adb forward tcp:9222 localabstract:webview_devtools_remote_$(adb shell pidof app.guidon.trainer)
 ```
 
+### Writing a new suite
+
+```bash
+node tools/new-suite.mjs board-drill-thing "what it proves"   # add --node for a suite with no browser
+node tools/new-suite.mjs --register board-drill-thing         # a suite file that already exists
+```
+
+One command writes `tools/test-<name>.mjs`, adds the `test:<name>` script,
+appends it to the run-parallel list inside `"test"` and regenerates the CI
+matrix - a suite with a script entry that is not in that list is never run by
+anything. The generated file fails on a TODO until you write it.
+
+New suites are built on `tools/testkit.mjs`: `bootApp()` (server, the suite's
+one browser, onboarding dismissed; `openSession()` for another viewport,
+profile or the standalone build), `waitForRoute()`, `clickWhenStable()`,
+`until()`, `liveCount()` and `expectNoConsoleNoise()`.
+`tools/lint-test-hygiene.mjs` holds every suite to its committed count of
+fixed sleeps, swallowed waits and literal deck sizes
+(`tools/test-hygiene-baseline.json`); the numbers only go down. After cleaning
+a suite up, bank it with `node tools/lint-test-hygiene.mjs --write`;
+`--report` lists what is left.
+
 ## Shipping
 
 ```bash

@@ -5,29 +5,18 @@
  * coverage of any kind before this. Covers the fix shipped this same week:
  * Export/Print used to only render after at least one goal existed.
  */
-import { chromium } from "playwright";
-import { serve } from "./server.mjs";
-import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { bootApp, ok, bad, finish, waitForRoute, clickWhenStable, until, expectNoConsoleNoise } from "./testkit.mjs";
 
-let fails = 0;
-const ok = (m) => console.log("  PASS  " + m);
-const bad = (m) => { fails++; console.log("  FAIL  " + m); };
+const { page, noise } = await bootApp();
 
-const { server, url } = await serve("web");
-const browser = await chromium.launch();
-const page = await (await browser.newContext()).newPage();
-const noise = [];
-page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push(m.type() + ": " + m.text()); });
-page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
+// What is saved for the goal list right now (the app's own on-device store).
+const savedGoals = () => page.evaluate(async () => { const r = await window.G.db.get("kv", "idp:goals"); return (r && r.v) || []; });
 
-await page.goto(url, { waitUntil: "load" });
-await dismissOnboarding(page);
-
-await page.evaluate(() => { window.G.db.setSetting("idp:goals", []); });
-await page.evaluate(() => { location.hash = "#/develop"; });
-await page.waitForTimeout(600);
-await page.locator("button", { hasText: /^My IDP$/ }).click();
-await page.waitForTimeout(400);
+await page.evaluate(() => window.G.db.setSetting("idp:goals", []));
+await waitForRoute(page, "#/develop", { ready: page.locator("button", { hasText: /^My IDP$/ }) });
+await clickWhenStable(page, page.locator("button", { hasText: /^My IDP$/ }));
+// The tab is drawn once its new-goal form is on screen.
+await until(page, () => !!document.querySelector(".idp-form input[type=text]"));
 
 // --- zero-goal state: empty message + Export/Print still render (the fix) ---
 const emptyState = await page.evaluate(() => /No goals yet/i.test(document.body.textContent || ""));
@@ -41,13 +30,11 @@ buttonsAtZero.printBtn ? ok("Print IDP button renders with zero goals (was missi
 
 // --- add a goal ---
 await page.locator(".idp-form input[type=text]").first().fill("Complete BLC and get promoted to SGT");
-await page.locator("button", { hasText: /\+ Add goal/i }).click();
-await page.waitForTimeout(500);
+await clickWhenStable(page, page.locator("button", { hasText: /\+ Add goal/i }));
+// Saved AND redrawn: the status control only exists on a drawn goal card.
+await until(page, async () => { const r = await window.G.db.get("kv", "idp:goals"); return !!(r && r.v && r.v.length) && !!document.querySelector(".idp-goal-ctl select"); });
 
-const afterAdd = await page.evaluate(async () => {
-  const r = await window.G.db.get("kv", "idp:goals");
-  return (r && r.v) || [];
-});
+const afterAdd = await savedGoals();
 afterAdd.length === 1 ? ok("Add goal persists a new goal to idp:goals") : bad("idp:goals length after add: " + afterAdd.length);
 afterAdd[0] && afterAdd[0].goal === "Complete BLC and get promoted to SGT"
   ? ok("the persisted goal's text matches what was typed")
@@ -60,11 +47,8 @@ cardVisible ? ok("the new goal appears in the on-screen list") : bad("new goal n
 const statusSel = page.locator(".idp-goal-ctl select").first();
 if (await statusSel.count()) {
   await statusSel.selectOption("Done");
-  await page.waitForTimeout(500);
-  const afterStatus = await page.evaluate(async () => {
-    const r = await window.G.db.get("kv", "idp:goals");
-    return (r && r.v) || [];
-  });
+  await until(page, async () => { const r = await window.G.db.get("kv", "idp:goals"); return !!(r && r.v && r.v[0] && r.v[0].status === "Done"); });
+  const afterStatus = await savedGoals();
   afterStatus[0] && afterStatus[0].status === "Done"
     ? ok("changing status to Done persists")
     : bad("status after change: " + JSON.stringify(afterStatus[0] && afterStatus[0].status));
@@ -73,17 +57,10 @@ if (await statusSel.count()) {
 }
 
 // --- Remove deletes it ---
-await page.locator("button", { hasText: /^Remove$/ }).first().click();
-await page.waitForTimeout(500);
-const afterRemove = await page.evaluate(async () => {
-  const r = await window.G.db.get("kv", "idp:goals");
-  return (r && r.v) || [];
-});
+await clickWhenStable(page, page.locator("button", { hasText: /^Remove$/ }).first());
+await until(page, async () => { const r = await window.G.db.get("kv", "idp:goals"); return !!(r && r.v && r.v.length === 0); });
+const afterRemove = await savedGoals();
 afterRemove.length === 0 ? ok("Remove deletes the goal") : bad("idp:goals length after remove: " + afterRemove.length);
 
-noise.length === 0 ? ok("no console errors/warnings") : bad(noise.length + " console msgs; first: " + noise[0]);
-
-await browser.close();
-server.close();
-console.log("\n" + (fails ? `IDP: ${fails} FAILURE(S)` : "IDP: all passed"));
-process.exit(fails ? 1 : 0);
+expectNoConsoleNoise(noise, { pass: "no console errors/warnings" });
+await finish("IDP");
