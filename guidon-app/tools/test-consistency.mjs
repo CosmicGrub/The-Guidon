@@ -24,19 +24,25 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { assembleBank } from "./assemble-bank.mjs";
+import { loadManifest, buildFigures, diffFigures } from "./content-manifest.mjs";
 
-// The expected content counts are COMPUTED, not typed: tools/assemble-bank.mjs
-// evaluates the static seed plus every src/app-modules content pack headlessly,
-// in the app's own load order. The built page must agree with it exactly.
-// This replaces three hand-bumped literals that turned main CI red twice in
-// one week (1247 -> 1265 -> 1274) every time a content PR forgot to bump
-// them - while still catching what they were for: a build that silently
-// truncates or duplicates the bank. The FLOORS below are the ratchet against
-// the other failure - content quietly disappearing from the SOURCE, where the
-// page and the assembler would shrink together and agree. Lower a floor only
-// in the same change that deliberately removes content, and say why there.
+// No content count is typed in this file. Three things must agree:
+//   - the BUILT PAGE (what a Soldier gets),
+//   - tools/assemble-bank.mjs (the static seed plus every src/app-modules
+//     content pack, evaluated headlessly in the app's own load order), and
+//   - tools/content-manifest.json (the committed, reviewed figures).
+// Page vs assembler catches a build that silently truncates or duplicates
+// the bank. Page vs manifest catches the other failure - content quietly
+// disappearing from the SOURCE, where the page and the assembler would
+// shrink together and agree: the manifest only regenerates downward with
+// `--allow-shrink "<reason>"`, which is recorded in the file.
+// This replaces FLOORS = { board: 1230, ... } and five more typed counts
+// (3632 terms, 164 MOS, 19 creeds, 10 PRT exercises, 19 seed sections) that
+// turned main CI red twice in one week (1247 -> 1265 -> 1274) every time a
+// content PR forgot to bump them. How each figure got to where it is now
+// lives in the manifest's own git history and its "shrinks" list.
 const assembled = assembleBank();
-const FLOORS = { board: 1230, doctrine: 357, scenarios: 187 };
+const manifest = loadManifest();
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -117,107 +123,70 @@ for (const [key, label] of Object.entries(LABELS)) {
 /* Seed integrity.
    The build rewrites the seed from a JS object literal into JSON.parse("...")
    for a measured ~94ms faster boot at 6x CPU. That transform is only safe if it
-   is lossless, so the shape and the content counts are asserted here rather
-   than trusted. A silently truncated seed would still boot. */
-const seed = await page.evaluate(() => {
-  const S = window.GUIDON_SEED;
-  return {
-    isObject: !!S && typeof S === "object",
-    topKeys: Object.keys(S || {}).length,
-    board: (S.board && S.board.questions || []).length,
-    acronyms: (S.acronyms && S.acronyms.terms || []).length,
-    doctrine: (S.doctrine && S.doctrine.entries || []).length,
-    career: (S.career && S.career.mos || []).length,
-    scenarios: (S.scenarios && S.scenarios.scenarios || []).length,
-    creeds: (S.creeds || []).length,
-    prt: (S.prt && S.prt.drills || []).reduce((n, d) => n + (d.exercises || []).length, 0),
-  };
-});
-seed.isObject ? ok("GUIDON_SEED parsed to an object") : bad("GUIDON_SEED is not an object");
-// 19 as of Milestone 1 of docs/design/content-education-roadmap.md: added
-// `creeds` ([]) and `prt` ({drills:[]}) as new empty top-level keys - no
-// content yet, that's Milestone 2/3, but the keys themselves are real from
-// this commit forward.
-seed.topKeys === 19 ? ok("seed has all 19 top-level sections") : bad(`expected 19 top-level keys, got ${seed.topKeys}`);
-// 997 as of the counseling/training pass, then 216 net-new board prompts from
-// the promotion-board supplement (224 supplied prompts minus exact-question
-// reconciliations that preserve their pre-existing IDs/SRS history) = 1213.
-// The Cybersecurity & OPSEC curriculum adds 34 intentional board prompts,
-// bringing the canonical bank to 1247.
-// The dedicated test-board-supplement-intake.mjs independently proves all
-// 112 source cards / 224 prompt links are accounted for, so this count guard
-// still protects the built seed against silent truncation without requiring
-// duplicate cards just to make the arithmetic match the source documents.
-// 1274 as of the leader-readiness batch (PR #183): its own two gap modules
-// (06-army-program-board-gaps: AER/ACS/SUDCC x2 = 6, 07-supply-discipline-
-// board-gaps: 3) added 9 cards the 1265 literal it shipped with did not
-// count - main CI was red on this line from #182/#183 until this fix.
-// Breakdown at the time of writing: 997 static seed cards + 277 registered
-// at load by src/app-modules content packs (pb-core 141, pb-deck 75,
-// opsec-cyber 34, pb-spirit-cav 17, creed 1, prog-* 6, supply-* 3).
-(seed.board === assembled.finalCounts.board && seed.board >= FLOORS.board)
-  ? ok(`${seed.board.toLocaleString()} board cards in the built page = ${assembled.staticCounts.board} seed + ${assembled.finalCounts.board - assembled.staticCounts.board} from content packs (assembled headlessly), floor ${FLOORS.board}`)
-  : bad(`board cards: built page has ${seed.board}, assembled source has ${assembled.finalCounts.board}, floor ${FLOORS.board}`);
-// 3623 as of the same quick-win pass: deleted "RAC-OT" (an OCR/scrape
-// duplicate artifact of "RAS-OT", not a real distinct acronym) and 7
-// redundant unhyphenated staff-designator overlay entries (S2, S3, G1,
-// G2, G3, G4, G6) that duplicated the doctrinally-correct hyphenated
-// forms (S-2, S-3, G-1..G-4, G-6) already present. G1's one unique fact
-// (the S1-equivalent-at-higher-echelons framing) was folded into G-1
-// first. Was 3631 as of the intuitivism pass before this: added "SLC"
-// (Senior Leader Course) and "DA 7906" (the IDP form itself), both real,
-// genuinely missing entries the terminology audit found - not padding.
-seed.acronyms === 3632 ? ok("3,632 acronym terms intact") : bad(`acronyms: ${seed.acronyms}, expected 3632`);
-// 353 as of round 6's two content-gap passes, both landing the same round:
-// +15 doctrine.entries cards closing 5 topics that had a correctly-cited
-// board.questions self-check category but zero doctrine cards citing the
-// matching publication (336 -> 351, see the dedicated block near the end
-// of this file for the per-topic detail), then +2 more for doc-levels-4
-// (Direct Leadership) and doc-levels-5 (Organizational Leadership) under
-// "Levels of Leadership", which previously only had a dedicated card for
-// the Strategic level (doc-levels-2) - real board MOIs assign a 5-7 page
-// essay on exactly this direct/organizational/strategic framework per
-// ADP 6-22 (351 -> 353). Then +1 for doc-boardconduct-1 (Milestone 3 of
-// docs/design/content-education-roadmap.md - "Board room posture: Position
-// of Attention and Parade Rest", sourced verbatim from TC 3-21.5 paras
-// 4-4 through 4-6) (353 -> 354). Then +1 for doc-cc-adv-3 (round 10,
-// doctrine-content-accuracy bucket): doc-cc-adv-2's old body cited TC 3-21.5
-// for a "reporting as ordered" script that TC 3-21.5 does not contain -
-// TC 3-21.5 Appendix A-2's real verbatim line is "Sir/Ma'am, [Rank] [Name]
-// reports". "Reporting as ordered" is a real, separately-taught board/summons
-// convention (see board.questions "boardprocedu-4"), so it was split into
-// its own community-tier entry rather than left mis-attributed to the TC
-// 3-21.5 office-reporting procedure (354 -> 355).
-// 357 as of the counseling/training-management doctrine pass (2026-09-15):
-// doc-counsel-process (the four-stage counseling process, ATP 6-22.1 2024)
-// and doc-8step-training (ADP 7-0 Table 4-1). Was 355.
-(seed.doctrine === assembled.finalCounts.doctrine && seed.doctrine >= FLOORS.doctrine)
-  ? ok(`${seed.doctrine} doctrine entries in the built page match the assembled source (floor ${FLOORS.doctrine})`)
-  : bad(`doctrine: built page has ${seed.doctrine}, assembled source has ${assembled.finalCounts.doctrine}, floor ${FLOORS.doctrine}`);
-// 164 as of v1.4.20: task #104 added a real 46T (Visual Information
-// Equipment Operator-Maintainer) entry, previously mentioned only in a
-// note/array with no MOS-list entry of its own.
-seed.career === 164 ? ok("164 MOS entries intact") : bad(`MOS: ${seed.career}, expected 164`);
-// 187 as of the Integrated Operational Thinking pass (2026-09-15), then
-// +2 92A logistics judgment scenarios from the supplied promotion-board deck:
-// sc-92a-critical-part-overdue and sc-92a-inventory-discrepancy.
-(seed.scenarios === assembled.finalCounts.scenarios && seed.scenarios >= FLOORS.scenarios)
-  ? ok(`${seed.scenarios} scenarios in the built page = ${assembled.staticCounts.scenarios} seed + ${assembled.finalCounts.scenarios - assembled.staticCounts.scenarios} from content packs (floor ${FLOORS.scenarios})`)
-  : bad(`scenarios: built page has ${seed.scenarios}, assembled source has ${assembled.finalCounts.scenarios}, floor ${FLOORS.scenarios}`);
+   is lossless, so the shape and EVERY content figure are asserted here rather
+   than trusted. A silently truncated seed would still boot.
+
+   The figures are computed from the page's own seed by the same function that
+   generates tools/content-manifest.json (buildFigures), so "the page" and "the
+   manifest" cannot mean two different ways of counting. */
+const pageSeed = await page.evaluate(() => window.GUIDON_SEED);
+(pageSeed && typeof pageSeed === "object") ? ok("GUIDON_SEED parsed to an object") : bad("GUIDON_SEED is not an object");
+const pageFigures = buildFigures({ data: pageSeed || {}, modules: [], staticCounts: {} });
+
+// What the page can know: everything except which file a record came from.
+const pageSide = (f) => ({ fingerprint: f.fingerprint, totals: f.totals, board: f.board, doctrine: f.doctrine, scenarios: f.scenarios });
+const KIND_LINES = [
+  ["seedSections", "top-level seed sections"], ["acronyms", "dictionary terms"], ["mos", "MOS entries"],
+  ["creeds", "creeds/identities"], ["prtExercises", "PRT exercises"],
+];
+/** Every verdict about the content figures, as [{ pass, msg }]. A function so
+ *  it can be run twice: once for real, once against planted defects. */
+function countVerdicts(pageFig, headless, committed) {
+  const out = [];
+  const say = (pass, msg) => out.push({ pass, msg });
+  const n = (v) => Number(v).toLocaleString("en-US");
+  for (const [kind, label] of [["board", "board cards"], ["doctrine", "doctrine entries"], ["scenarios", "scenarios"]]) {
+    const inPage = pageFig.totals[kind], inSource = headless.finalCounts[kind], reviewed = committed.totals[kind];
+    (inPage === inSource && inPage === reviewed)
+      ? say(true, `${n(inPage)} ${label} in the built page = ${n(headless.staticCounts[kind])} seed + ${n(inSource - headless.staticCounts[kind])} from content packs (assembled headlessly) = the committed manifest`)
+      : say(false, `${label} (totals.${kind}): built page has ${n(inPage)}, assembled source has ${n(inSource)}, tools/content-manifest.json says ${n(reviewed)}${inPage === inSource ? " - the content changed: run node tools/content-manifest.mjs --write" : " - the build lost or duplicated records"}`);
+  }
+  for (const [kind, label] of KIND_LINES) {
+    pageFig.totals[kind] === committed.totals[kind]
+      ? say(true, `${n(pageFig.totals[kind])} ${label} intact (matches the committed manifest)`)
+      : say(false, `${label} (totals.${kind}): built page has ${n(pageFig.totals[kind])}, tools/content-manifest.json says ${n(committed.totals[kind])}`);
+  }
+  const named = new Set(["board", "doctrine", "scenarios", ...KIND_LINES.map((k) => k[0])].map((k) => "totals." + k));
+  const rest = diffFigures(pageSide(committed), pageSide(pageFig)).filter((x) => !named.has(x.figure));
+  rest.length === 0
+    ? say(true, `every other figure agrees too: ${Object.keys(committed.board.byCategory).length} board categories and ${Object.keys(committed.doctrine.byTopic).length} doctrine topics card for card, the per-pillar counts, and the bank fingerprint (${committed.fingerprint})`)
+    : rest.slice(0, 12).forEach((x) => say(false, `${x.figure}: tools/content-manifest.json says ${JSON.stringify(x.from)}, the built page has ${JSON.stringify(x.to)}`));
+  if (rest.length > 12) say(false, `... and ${rest.length - 12} more figure(s) differ between the manifest and the built page`);
+  return out;
+}
+for (const v of countVerdicts(pageFigures, assembled, manifest)) (v.pass ? ok : bad)(v.msg);
+
+// Verify the verifier: the same function must FAIL on planted defects, naming
+// the figure. (a) the reviewed manifest holds one more card than the page - the
+// exact shape of content vanishing from the source; (b) the page lost a card
+// the assembler still has - a truncating build; (c) one card re-filed under
+// another category with every total unchanged.
+{
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+  const failing = (vs) => vs.filter((v) => !v.pass).map((v) => v.msg).join(" | ");
+  const someCategory = Object.keys(manifest.board.byCategory)[0], otherCategory = Object.keys(manifest.board.byCategory)[1];
+  const richer = clone(manifest); richer.totals.board += 1; richer.board.byCategory[someCategory] += 1;
+  const a = failing(countVerdicts(pageFigures, assembled, richer));
+  (/totals\.board/.test(a) && a.includes(JSON.stringify(someCategory).slice(1, -1))) ? ok("verifier check: a manifest holding one more card than the page fails, naming totals.board and the category") : bad("verifier check (a) did not fail as expected: " + (a || "(no failures)"));
+  const truncated = clone(pageFigures); truncated.totals.doctrine -= 1;
+  const b = failing(countVerdicts(truncated, assembled, manifest));
+  /totals\.doctrine/.test(b) && /lost or duplicated/.test(b) ? ok("verifier check: a page one doctrine entry short of the assembled source fails as a build loss") : bad("verifier check (b) did not fail as expected: " + (b || "(no failures)"));
+  const refiled = clone(pageFigures); refiled.board.byCategory[someCategory] -= 1; refiled.board.byCategory[otherCategory] += 1;
+  const c = failing(countVerdicts(refiled, assembled, manifest));
+  (c.includes("board.byCategory") && !/totals\./.test(c)) ? ok("verifier check: a card re-filed under another category fails even though every total is unchanged") : bad("verifier check (c) did not fail as expected: " + (c || "(no failures)"));
+}
 const brokenPacks = assembled.modules.filter((m) => m.error);
 brokenPacks.length === 0 ? ok(`all ${assembled.modules.length} content-pack modules load headlessly`) : bad("content pack(s) failed to load headlessly: " + brokenPacks.map((m) => m.file + " - " + m.error).join("; "));
-// creeds/prt existed as empty skeleton keys from Milestone 1 (see the
-// topKeys===19 comment above) with no content until Milestone 2 (PRT Hub -
-// the Preparation Drill, 1 drill / 10 exercises) and Milestone 3 (Creeds
-// reading pillar, 18 creeds/identities: the Soldier's/NCO/Ranger/Cadet
-// creeds, the Combat Medic Prayer, the Night Stalker Creed, the seven Army
-// Values, and 11 branch mottoes/nicknames) of
-// docs/design/content-education-roadmap.md. These two counts were never
-// added to this file's seed-integrity check when that content landed - the
-// same silent-truncation gap the 984/3623/354/164/182 checks above already
-// guard every other section against.
-seed.creeds === 19 ? ok("19 creeds/identities intact") : bad(`creeds: ${seed.creeds}, expected 19`);
-seed.prt === 10 ? ok("10 PRT exercises intact") : bad(`prt exercises: ${seed.prt}, expected 10`);
 
 /* The positive half: the corrected facts must actually be present. */
 const present = await page.evaluate(() => {
