@@ -641,7 +641,10 @@ async function main() {
      app.start() to DOMContentLoaded, which fires after these run. */
   const appModuleDir = "src/app-modules";
   const appModuleFiles = (await readdir(appModuleDir).catch(() => [])).filter((f) => f.endsWith(".js")).sort();
-  let appModules = "";
+  // The six-pillar taxonomy (tools/pillar-map.mjs, the ONE definition) as
+  // plain data for the running app - see 98-content-pack-finalize.js.
+  const { runtimePillarMap } = await import("./pillar-map.mjs");
+  let appModules = `<script>\nwindow.GUIDON_PILLAR_MAP = ${JSON.stringify(runtimePillarMap()).replace(/</g, "\\u003c")};\n</script>\n`;
   for (const f of appModuleFiles) {
     appModules += `<script>\n${await readFile(join(appModuleDir, f), "utf8")}\n</script>\n`;
   }

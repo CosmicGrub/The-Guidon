@@ -23,6 +23,20 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { assembleBank } from "./assemble-bank.mjs";
+
+// The expected content counts are COMPUTED, not typed: tools/assemble-bank.mjs
+// evaluates the static seed plus every src/app-modules content pack headlessly,
+// in the app's own load order. The built page must agree with it exactly.
+// This replaces three hand-bumped literals that turned main CI red twice in
+// one week (1247 -> 1265 -> 1274) every time a content PR forgot to bump
+// them - while still catching what they were for: a build that silently
+// truncates or duplicates the bank. The FLOORS below are the ratchet against
+// the other failure - content quietly disappearing from the SOURCE, where the
+// page and the assembler would shrink together and agree. Lower a floor only
+// in the same change that deliberately removes content, and say why there.
+const assembled = assembleBank();
+const FLOORS = { board: 1230, doctrine: 357, scenarios: 187 };
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -141,7 +155,9 @@ seed.topKeys === 19 ? ok("seed has all 19 top-level sections") : bad(`expected 1
 // Breakdown at the time of writing: 997 static seed cards + 277 registered
 // at load by src/app-modules content packs (pb-core 141, pb-deck 75,
 // opsec-cyber 34, pb-spirit-cav 17, creed 1, prog-* 6, supply-* 3).
-seed.board === 1274 ? ok("1,274 board cards intact (997 seed + 277 from content packs)") : bad(`board cards: ${seed.board}, expected 1274`);
+(seed.board === assembled.finalCounts.board && seed.board >= FLOORS.board)
+  ? ok(`${seed.board.toLocaleString()} board cards in the built page = ${assembled.staticCounts.board} seed + ${assembled.finalCounts.board - assembled.staticCounts.board} from content packs (assembled headlessly), floor ${FLOORS.board}`)
+  : bad(`board cards: built page has ${seed.board}, assembled source has ${assembled.finalCounts.board}, floor ${FLOORS.board}`);
 // 3623 as of the same quick-win pass: deleted "RAC-OT" (an OCR/scrape
 // duplicate artifact of "RAS-OT", not a real distinct acronym) and 7
 // redundant unhyphenated staff-designator overlay entries (S2, S3, G1,
@@ -175,7 +191,9 @@ seed.acronyms === 3632 ? ok("3,632 acronym terms intact") : bad(`acronyms: ${see
 // 357 as of the counseling/training-management doctrine pass (2026-09-15):
 // doc-counsel-process (the four-stage counseling process, ATP 6-22.1 2024)
 // and doc-8step-training (ADP 7-0 Table 4-1). Was 355.
-seed.doctrine === 357 ? ok("357 doctrine entries intact") : bad(`doctrine: ${seed.doctrine}, expected 357`);
+(seed.doctrine === assembled.finalCounts.doctrine && seed.doctrine >= FLOORS.doctrine)
+  ? ok(`${seed.doctrine} doctrine entries in the built page match the assembled source (floor ${FLOORS.doctrine})`)
+  : bad(`doctrine: built page has ${seed.doctrine}, assembled source has ${assembled.finalCounts.doctrine}, floor ${FLOORS.doctrine}`);
 // 164 as of v1.4.20: task #104 added a real 46T (Visual Information
 // Equipment Operator-Maintainer) entry, previously mentioned only in a
 // note/array with no MOS-list entry of its own.
@@ -183,7 +201,11 @@ seed.career === 164 ? ok("164 MOS entries intact") : bad(`MOS: ${seed.career}, e
 // 187 as of the Integrated Operational Thinking pass (2026-09-15), then
 // +2 92A logistics judgment scenarios from the supplied promotion-board deck:
 // sc-92a-critical-part-overdue and sc-92a-inventory-discrepancy.
-seed.scenarios === 195 ? ok("195 scenarios intact") : bad(`scenarios: ${seed.scenarios}, expected 195`);
+(seed.scenarios === assembled.finalCounts.scenarios && seed.scenarios >= FLOORS.scenarios)
+  ? ok(`${seed.scenarios} scenarios in the built page = ${assembled.staticCounts.scenarios} seed + ${assembled.finalCounts.scenarios - assembled.staticCounts.scenarios} from content packs (floor ${FLOORS.scenarios})`)
+  : bad(`scenarios: built page has ${seed.scenarios}, assembled source has ${assembled.finalCounts.scenarios}, floor ${FLOORS.scenarios}`);
+const brokenPacks = assembled.modules.filter((m) => m.error);
+brokenPacks.length === 0 ? ok(`all ${assembled.modules.length} content-pack modules load headlessly`) : bad("content pack(s) failed to load headlessly: " + brokenPacks.map((m) => m.file + " - " + m.error).join("; "));
 // creeds/prt existed as empty skeleton keys from Milestone 1 (see the
 // topKeys===19 comment above) with no content until Milestone 2 (PRT Hub -
 // the Preparation Drill, 1 drill / 10 exercises) and Milestone 3 (Creeds
