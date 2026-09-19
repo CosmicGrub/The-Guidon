@@ -345,11 +345,15 @@ await clickButtonByText("Untimed");
 await clickButtonByText("Remove for this round");
 await clickButtonByText("Start Round");
 await page.waitForTimeout(250);
-for (let i = 0; i < 17; i++) { await tapQzCard(); await tapPass(); }
+// The live deck size, not a literal: packs can add cards to a seed category (AFT went
+// 17 -> 20 when a duplicate pack category was merged into it), and "pass every card"
+// has to mean every card.
+const aftDeckSize = await page.evaluate(() => window.G.store.boardQuestions().filter((q) => q.category === "Army Fitness Test (AFT)").length);
+for (let i = 0; i < aftDeckSize; i++) { await tapQzCard(); await tapPass(); }
 st = await roundState();
 st.onRecap
-  ? ok("Solo, Passed cards = Remove: passing all 17 real AFT questions exhausts the deck and ends the round on its own — same real Remove behavior Party uses")
-  : bad("Solo round state after 17 Removes (expected Recap): " + JSON.stringify(st));
+  ? ok("Solo, Passed cards = Remove: passing all " + aftDeckSize + " real AFT questions exhausts the deck and ends the round on its own — same real Remove behavior Party uses")
+  : bad("Solo round state after " + aftDeckSize + " Removes (expected Recap): " + JSON.stringify(st));
 
 await enterRapidFireFresh();
 await setMode("Solo");
@@ -362,7 +366,7 @@ await page.waitForTimeout(250);
 for (let i = 0; i < 5; i++) { await tapQzCard(); await tapPass(); }
 st = await roundState();
 (!st.onRecap && st.onRound)
-  ? ok("Solo, Passed cards = Requeue: passing 5 of 17 real AFT questions does NOT end the round — each pass goes back into the SAME queue Party's own judge() maintains")
+  ? ok("Solo, Passed cards = Requeue: passing 5 of " + aftDeckSize + " real AFT questions does NOT end the round — each pass goes back into the SAME queue Party's own judge() maintains")
   : bad("Solo round state after 5 Requeues (expected still running): " + JSON.stringify(st));
 await tapEndRound();
 

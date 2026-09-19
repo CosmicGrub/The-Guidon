@@ -24,6 +24,7 @@
 #   DEVICES   comma-separated Simulator device names        (required)
 #   BUNDLE_ID app bundle identifier                         (default app.guidon.trainer)
 #   SETTLE    seconds to wait for the corpus to parse+paint (default 45)
+#   IOS_EVIDENCE_DIR  where evidence goes                   (default artifacts/ios)
 #
 # Output: artifacts/ios/<device>/ screenshots + logs, and artifacts/ios/summary.md
 # Exit:   0 every device rendered · 1 any device failed
@@ -42,7 +43,9 @@ BUNDLE_ID="${BUNDLE_ID:-app.guidon.trainer}"
 SETTLE="${SETTLE:-45}"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OUT="$(cd "$HERE/.." && pwd)/artifacts/ios"
+# IOS_EVIDENCE_DIR: set (and exported) by ios-simulator-run-with-retry.sh so the
+# wrapper reads the summary from the same place this script writes it.
+OUT="${IOS_EVIDENCE_DIR:-$(cd "$HERE/.." && pwd)/artifacts/ios}"
 CHECK="$HERE/png-render-check.py"
 
 mkdir -p "$OUT"

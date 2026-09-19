@@ -109,7 +109,10 @@ async function panelState(page) {
 // CASE 3 — plain desktop browser visitor
 // ============================================================
 {
-  const page = await newPage({ viewport: { width: 1280, height: 900 } });
+  // Pinned to a Windows user agent: Playwright's default one names the machine
+  // the suite runs on, and on a Mac that is now (correctly) the "You're on a
+  // Mac" branch - covered by tools/test-share-mac-first-open.mjs.
+  const page = await newPage({ viewport: { width: 1280, height: 900 }, userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36" });
   await gotoShare(page);
   const s = await panelState(page);
   /You're on a computer/.test(s.recText || "") ? ok("Desktop: recommendation panel identifies desktop") : bad("Desktop: recText = " + s.recText);

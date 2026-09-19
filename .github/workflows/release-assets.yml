@@ -6,6 +6,36 @@ name: Release assets
 # Important: release binaries are built from the version tag, not from the
 # trigger commit on main. A main-branch release trigger can therefore safely
 # fan out the already-cut release without making the binaries drift past it.
+#
+# THREE RULES THIS FILE ENFORCES (added 2026-09-18, after v1.10.0 shipped with
+# two Windows files, no Android, and became "Latest" anyway):
+#
+# 1. The in-app install buttons must keep working. #/share (the page the
+#    install QR opens) downloads
+#      .../releases/latest/download/GUIDON-android.apk
+#      .../releases/latest/download/GUIDON-windows-setup.exe
+#    so every release has to carry those two VERSION-LESS names as well as
+#    the versioned ones. The Android and Windows jobs upload both; the names
+#    live in guidon-app/tools/release-manifest.mjs and
+#    tools/lint-release-state.mjs fails if the app links to a name no job
+#    uploads.
+#
+# 2. A release is only marked Latest once it is complete. release-cut.yml
+#    creates it with --latest=false; the finalize job at the bottom rewrites
+#    the Downloads section of the release page from the files that are
+#    REALLY attached, and marks the release Latest only when every required
+#    file is there. Until then the previous release stays Latest and its
+#    download links keep working.
+#
+# 3. Android degrades honestly. This repository has no Actions secrets, and
+#    an agent or a workflow must never be the thing that creates them: the
+#    Android signing key lives on the owner's machine. With no signing
+#    secrets the Android job SKIPS with a notice instead of failing the run;
+#    the owner signs locally and attaches the three Android files (see
+#    guidon-app/docs/release-runbook.md), then runs this workflow by hand
+#    with "finalize_only" ticked. If the owner ever does add the four
+#    secrets, the same job builds, verifies the signer and uploads, with no
+#    change here. HALF-configured secrets are still a hard failure.
 
 on:
   push:
@@ -14,9 +44,19 @@ on:
     paths:
       - 'guidon-app/src/.release-trigger'
   workflow_dispatch:
+    inputs:
+      finalize_only:
+        description: 'Build nothing. Only refresh the Downloads section and mark the release Latest if it is complete (use after attaching locally signed Android files).'
+        type: boolean
+        default: false
+      tag:
+        description: 'Release tag to work on (for example v1.12.1). Leave empty to use the version in package.json on main.'
+        type: string
+        default: ''
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: release-assets-${{ github.ref }}
@@ -42,21 +82,62 @@ jobs:
         id: version
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG_INPUT: ${{ inputs.tag }}
+          FINALIZE_ONLY: ${{ inputs.finalize_only }}
         run: |
           set -euo pipefail
           VERSION="$(node -p "require('./guidon-app/package.json').version")"
+          if [ -n "${TAG_INPUT:-}" ]; then
+            case "$TAG_INPUT" in
+              v[0-9]*.[0-9]*.[0-9]*) VERSION="${TAG_INPUT#v}" ;;
+              *) echo "::error::tag input '$TAG_INPUT' is not of the form vX.Y.Z"; exit 1 ;;
+            esac
+          fi
           TAG="v${VERSION}"
+
+          # A push of .release-trigger is a statement of intent: "fan out THIS
+          # version". If main's package.json has already moved on, building
+          # whatever version main now names would publish something nobody
+          # asked for, so the two must agree.
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF_TYPE" = "branch" ]; then
+            TRIGGER="$(tr -d '\r\n[:space:]' < guidon-app/src/.release-trigger)"
+            if [ "$TRIGGER" != "$TAG" ]; then
+              echo "::error::.release-trigger says '$TRIGGER' but package.json says '$TAG' - refusing to fan out a version nobody asked for"
+              exit 1
+            fi
+          fi
+
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           git rev-parse "${TAG}^{commit}" >/dev/null
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+
+          # Never build installers from a commit CI did not pass. release-cut
+          # already refuses to tag one, but a tag can also be made by hand
+          # (v1.10.0 was: no CI run ever existed for its commit). Nothing is
+          # built in finalize-only mode, so there is nothing to vouch for.
+          if [ "${FINALIZE_ONLY:-false}" != "true" ]; then
+            # A hand-pushed tag checks out the TAG's tree here; if that tree
+            # predates the gate there is no way to vouch for it, so refuse.
+            test -f guidon-app/tools/release-gate.mjs || {
+              echo "::error::this ref has no guidon-app/tools/release-gate.mjs, so its CI result cannot be checked - refusing to build installers from it"
+              exit 1
+            }
+            node guidon-app/tools/release-gate.mjs \
+              --repo "$GITHUB_REPOSITORY" \
+              --sha "$(git rev-parse "${TAG}^{commit}")" \
+              --workflow ci.yml --wait-minutes 0
+          fi
           echo "Publishing native assets for ${TAG}"
 
   android:
     name: Android signed APK + AAB
     needs: resolve
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.finalize_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    outputs:
+      signing: ${{ steps.sign.outputs.signing }}
     env:
       VERSION: ${{ needs.resolve.outputs.version }}
       TAG: ${{ needs.resolve.outputs.tag }}
@@ -71,29 +152,19 @@ jobs:
           ref: ${{ needs.resolve.outputs.tag }}
           fetch-depth: 0
 
-      - name: Setup Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: guidon-app/package-lock.json
-
-      - name: Setup Java 21
-        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961  # v5
-        with:
-          distribution: temurin
-          java-version: '21'
-
-      - name: Install dependencies
-        run: npm ci --omit=optional
-
-      - name: Install Chromium for icon generation
-        run: npx playwright install --with-deps chromium
-
-      - name: Generate icons
-        run: npm run icons
-
-      - name: Configure release signing
+      # Runs FIRST, before any install or build, so a repository with no
+      # signing secrets spends seconds here, not minutes. Three outcomes:
+      #   all four present -> signing=present, the job builds and uploads.
+      #   none present     -> signing=absent, every later step is skipped and
+      #                       the job ends green with a notice. This is the
+      #                       normal state of this repository: the signing
+      #                       key stays on the owner's machine.
+      #   some, not all    -> hard failure. A half-configured key is a
+      #                       mistake to fix, never something to skip past.
+      # This step only tests for presence; it never prints, writes or
+      # otherwise touches a secret's value.
+      - name: Check for Android signing secrets
+        id: sign
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 || secrets.GUIDON_ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD || secrets.GUIDON_ANDROID_KEYSTORE_PASSWORD }}
@@ -101,14 +172,73 @@ jobs:
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD || secrets.GUIDON_ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          missing=0
+          have=0
+          missing=""
           for name in KEYSTORE_B64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
-            if [ -z "${!name:-}" ]; then
-              echo "::error::Missing Android signing secret: ${name}"
-              missing=1
-            fi
+            if [ -n "${!name:-}" ]; then have=$((have + 1)); else missing="$missing $name"; fi
           done
-          [ "$missing" -eq 0 ] || exit 1
+          if [ "$have" -eq 4 ]; then
+            echo "signing=present" >> "$GITHUB_OUTPUT"
+            echo "Android signing secrets are configured; building and signing here."
+            exit 0
+          fi
+          if [ "$have" -eq 0 ]; then
+            echo "signing=absent" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Android is signed on the owner's machine::No Android signing secrets are configured, so this job built nothing. The owner signs the Android app locally and attaches GUIDON-${VERSION}-android.apk, GUIDON-${VERSION}-android.aab and GUIDON-android.apk to release ${TAG}, then runs this workflow by hand with finalize_only ticked. Until then ${TAG} is not marked Latest. Steps: guidon-app/docs/release-runbook.md"
+            {
+              echo "### Android: waiting on the owner's locally signed files"
+              echo ""
+              echo "No Android signing secrets are configured for this repository, so nothing was built or signed here. That is expected."
+              echo ""
+              echo "To finish release ${TAG}, attach these three files (signed on the owner's machine), then run **Release assets** by hand with **finalize_only** ticked:"
+              echo ""
+              echo "- GUIDON-${VERSION}-android.apk"
+              echo "- GUIDON-${VERSION}-android.aab"
+              echo "- GUIDON-android.apk (the same .apk again, under the name the in-app Download button uses)"
+              echo ""
+              echo "Step by step: guidon-app/docs/release-runbook.md"
+            } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+            exit 0
+          fi
+          echo "::error::Android signing is half-configured (missing:$missing). Set all four signing secrets or none of them."
+          exit 1
+
+      - name: Setup Node ${{ env.NODE_VERSION }}
+        if: steps.sign.outputs.signing == 'present'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: guidon-app/package-lock.json
+
+      - name: Setup Java 21
+        if: steps.sign.outputs.signing == 'present'
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961  # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        if: steps.sign.outputs.signing == 'present'
+        run: npm ci --omit=optional
+
+      - name: Install Chromium for icon generation
+        if: steps.sign.outputs.signing == 'present'
+        run: npx playwright install --with-deps chromium
+
+      - name: Generate icons
+        if: steps.sign.outputs.signing == 'present'
+        run: npm run icons
+
+      - name: Configure release signing
+        if: steps.sign.outputs.signing == 'present'
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 || secrets.GUIDON_ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD || secrets.GUIDON_ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || secrets.GUIDON_ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD || secrets.GUIDON_ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
           mkdir -p android/keys
           printf '%s' "$KEYSTORE_B64" | base64 --decode > android/keys/guidon-release.jks
           cat > android/keystore.properties <<EOF
@@ -119,9 +249,11 @@ jobs:
           EOF
 
       - name: Build signed APK + AAB
+        if: steps.sign.outputs.signing == 'present'
         run: npm run android:release
 
       - name: Verify signatures and signing-key continuity
+        if: steps.sign.outputs.signing == 'present'
         run: |
           set -euo pipefail
           APK="android/app/build/outputs/apk/release/app-release.apk"
@@ -172,19 +304,27 @@ jobs:
           fi
           echo "Android APK/AAB signing continuity verified against canonical signer: ${apk_digest}"
 
+      # GUIDON-android.apk is the SAME file under the version-less name the
+      # in-app "Download the Android app" button asks for
+      # (.../releases/latest/download/GUIDON-android.apk). Leave it out and
+      # that button is a 404 for every Android visitor.
       - name: Publish Android assets to GitHub Release
+        if: steps.sign.outputs.signing == 'present'
         run: |
           set -euo pipefail
           mkdir -p release-out
           cp android/app/build/outputs/apk/release/app-release.apk "release-out/GUIDON-${VERSION}-android.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "release-out/GUIDON-android.apk"
           cp android/app/build/outputs/bundle/release/app-release.aab "release-out/GUIDON-${VERSION}-android.aab"
           gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
             "release-out/GUIDON-${VERSION}-android.apk" \
-            "release-out/GUIDON-${VERSION}-android.aab"
+            "release-out/GUIDON-${VERSION}-android.aab" \
+            "release-out/GUIDON-android.apk"
 
   windows:
     name: Windows MSI + setup EXE
     needs: resolve
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.finalize_only }}
     runs-on: windows-latest
     timeout-minutes: 60
     env:
@@ -223,9 +363,13 @@ jobs:
       - name: Build Windows release installers
         run: npx tauri build --ci
 
+      # GUIDON-windows-setup.exe is the SAME installer under the version-less
+      # name the in-app "Download for Windows" button asks for
+      # (.../releases/latest/download/GUIDON-windows-setup.exe).
       - name: Publish Windows assets to GitHub Release
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force release-out | Out-Null
           $nsis = Get-ChildItem 'src-tauri/target/release/bundle/nsis/*.exe' | Select-Object -First 1
           $msi = Get-ChildItem 'src-tauri/target/release/bundle/msi/*.msi' | Select-Object -First 1
@@ -233,14 +377,18 @@ jobs:
           if (-not $msi) { throw 'MSI installer not found' }
           $setupOut = "release-out/GUIDON-$env:VERSION-windows-setup.exe"
           $msiOut = "release-out/GUIDON-$env:VERSION-windows.msi"
+          $aliasOut = 'release-out/GUIDON-windows-setup.exe'
           Copy-Item $nsis.FullName $setupOut
+          Copy-Item $nsis.FullName $aliasOut
           Copy-Item $msi.FullName $msiOut
-          gh release upload $env:TAG --repo $env:GITHUB_REPOSITORY --clobber $setupOut $msiOut
+          gh release upload $env:TAG --repo $env:GITHUB_REPOSITORY --clobber $setupOut $msiOut $aliasOut
+          if ($LASTEXITCODE -ne 0) { throw "gh release upload failed with exit code $LASTEXITCODE" }
 
 
   web_firmware:
     name: Web/PWA + standalone + ESP32
     needs: resolve
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.finalize_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -294,3 +442,124 @@ jobs:
           cp firmware/esp32-flashcard-os/sdcard/categories.json "release-out/GUIDON-${VERSION}-esp32-categories.json"
       - name: Publish web/standalone/ESP32 assets
         run: gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber release-out/*
+
+  # ---------------------------------------------------------------------
+  # Runs after the three jobs above whatever happened to them, and is also
+  # the whole workflow in finalize_only mode.
+  #   1. Rewrites the Downloads section at the top of the release page from
+  #      the files that are really attached - plain language, one row per
+  #      device, never a row for a file that is not there.
+  #   2. Goes red if a platform job failed.
+  #   3. Marks the release Latest ONLY when every required file, including
+  #      both version-less names the in-app buttons use, is attached AND
+  #      really downloads. Otherwise the previous release stays Latest, so
+  #      those buttons keep working instead of pointing at a release with
+  #      nothing behind them (what v1.10.0 did).
+  # The tools come from this workflow's own commit on main, not from the
+  # tag: they only read file names, and an older tag may predate them.
+  # The concurrency group is shared with release-apple.yml's refresh job so
+  # two workflows never rewrite the same release page at the same moment.
+  # ---------------------------------------------------------------------
+  finalize:
+    name: Downloads section + mark Latest when complete
+    needs: [resolve, android, windows, web_firmware]
+    if: ${{ always() && needs.resolve.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: release-page-${{ needs.resolve.outputs.tag }}
+      cancel-in-progress: false
+    env:
+      VERSION: ${{ needs.resolve.outputs.version }}
+      TAG: ${{ needs.resolve.outputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout this workflow's own commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Refresh the Downloads section
+        id: page
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets,body > "$RUNNER_TEMP/release.json"
+          code=0
+          node guidon-app/tools/release-manifest.mjs finalize \
+            --version "$VERSION" --tag "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --release-json "$RUNNER_TEMP/release.json" \
+            --notes-out "$RUNNER_TEMP/notes.md" > "$RUNNER_TEMP/verdict.txt" || code=$?
+          cat "$RUNNER_TEMP/verdict.txt"
+          case "$code" in
+            0) echo "complete=true" >> "$GITHUB_OUTPUT" ;;
+            3) echo "complete=false" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::release-manifest could not read release $TAG"; exit 1 ;;
+          esac
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/notes.md"
+
+      - name: Platform jobs must not have failed
+        env:
+          R_ANDROID: ${{ needs.android.result }}
+          R_WINDOWS: ${{ needs.windows.result }}
+          R_WEB: ${{ needs.web_firmware.result }}
+        run: |
+          set -euo pipefail
+          bad=0
+          for pair in "Android=$R_ANDROID" "Windows=$R_WINDOWS" "Web, standalone and ESP32=$R_WEB"; do
+            name="${pair%%=*}"; result="${pair##*=}"
+            case "$result" in
+              success|skipped) echo "ok: $name ($result)" ;;
+              *) echo "::error::$name finished as '$result' - $TAG stays out of Latest until it is fixed and re-run"; bad=1 ;;
+            esac
+          done
+          exit "$bad"
+
+      - name: Mark Latest (complete releases only)
+        if: steps.page.outputs.complete == 'true'
+        run: |
+          set -euo pipefail
+          # The two names the in-app buttons ask for must really download,
+          # not merely be listed.
+          for name in GUIDON-android.apk GUIDON-windows-setup.exe; do
+            curl -fsSIL -o /dev/null "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/$name" || {
+              echo "::error::$name is listed on $TAG but does not download"; exit 1; }
+          done
+          # Re-finalizing an OLD release must never take Latest away from a
+          # newer one.
+          CURRENT="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null || true)"
+          NEWEST="$(printf '%s\n%s\n' "$CURRENT" "$TAG" | sort -V | tail -1)"
+          if [ "$NEWEST" != "$TAG" ]; then
+            echo "::notice::$CURRENT is newer than $TAG and stays Latest."
+            exit 0
+          fi
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --latest
+          NOW="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
+          test "$NOW" = "$TAG" || { echo "::error::Latest is $NOW after marking $TAG"; exit 1; }
+          echo "$TAG is complete and is now the Latest release; the in-app download buttons serve it."
+
+      - name: Say plainly why this release is not Latest yet
+        if: steps.page.outputs.complete != 'true'
+        env:
+          SIGNING: ${{ needs.android.outputs.signing }}
+          FINALIZE_ONLY: ${{ inputs.finalize_only }}
+        run: |
+          set -euo pipefail
+          MISSING="$(sed -n 's/^  INCOMPLETE - missing: //p' "$RUNNER_TEMP/verdict.txt")"
+          {
+            echo "### $TAG is not marked Latest yet"
+            echo ""
+            echo "Still missing: $MISSING"
+            echo ""
+            echo "The previous release stays Latest, so the download buttons inside GUIDON keep working."
+          } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+          # The one expected way to get here: Android is signed on the
+          # owner's machine and has not been attached yet. Anything else
+          # missing after green jobs is a real fault.
+          ONLY_ANDROID=true
+          for name in $(printf '%s' "$MISSING" | tr ',' ' '); do
+            case "$name" in *android*) ;; *) ONLY_ANDROID=false ;; esac
+          done
+          if [ "${FINALIZE_ONLY:-false}" != "true" ] && [ "${SIGNING:-}" = "absent" ] && [ "$ONLY_ANDROID" = "true" ]; then
+            echo "::notice title=$TAG is waiting on the Android files::Attach the locally signed Android files to $TAG, then run this workflow by hand with finalize_only ticked. Steps: guidon-app/docs/release-runbook.md"
+            exit 0
+          fi
+          echo "::error::$TAG is incomplete (missing: $MISSING) and was not marked Latest."
+          exit 1

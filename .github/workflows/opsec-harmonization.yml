@@ -1,17 +1,29 @@
 name: OPSEC Harmonization
 
+# The push trigger used to name feature/opsec-cyber-legal-harmonization - the
+# branch this gate was merged FROM - so once that branch landed the gate never
+# ran on main again. Same shape as board-supplement.yml: pull requests that
+# touch these paths, and pushes to main. The paths cover everything the suite
+# reads: the app source (modules, guest page template), its fixture table, the
+# seed reader, the review package, and the lint the second step runs.
 on:
   pull_request:
     paths:
       - 'guidon-app/src/**'
       - 'guidon-app/tools/test-opsec-harmonization.mjs'
+      - 'guidon-app/tools/fixtures/opsec-guard-cases.json'
+      - 'guidon-app/tools/seed-io.mjs'
+      - 'guidon-app/tools/lint-patterns.mjs'
       - 'GUIDON_COMMAND_LEGAL_PACKAGE.md'
       - '.github/workflows/opsec-harmonization.yml'
   push:
-    branches: [feature/opsec-cyber-legal-harmonization]
+    branches: [main]
     paths:
       - 'guidon-app/src/**'
       - 'guidon-app/tools/test-opsec-harmonization.mjs'
+      - 'guidon-app/tools/fixtures/opsec-guard-cases.json'
+      - 'guidon-app/tools/seed-io.mjs'
+      - 'guidon-app/tools/lint-patterns.mjs'
       - 'GUIDON_COMMAND_LEGAL_PACKAGE.md'
       - '.github/workflows/opsec-harmonization.yml'
 

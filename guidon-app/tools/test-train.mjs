@@ -313,14 +313,16 @@ noise.length === 0 ? ok("no console errors/warnings") : bad(noise.length + " con
   await narrowCtx.close();
 }
 
-/* ---- v1.9.0 discoverability pass: scenarios tagged `since` (this
-   session's "what's new" wave marker - same convention as THEMES' own
-   `since` field in theme.js, driving Settings' theme-wall "New" badge)
+/* ---- "New" wave: scenarios tagged `since` (same convention as THEMES'
+   own `since` field in theme.js, driving Settings' theme-wall "New" badge)
    sort to the front of the default, unfiltered/unsearched list and carry
    a visible "New" badge - closing a real gap where a scenario appended to
-   the end of a 184-long catalog was otherwise invisible inside the
-   default TRAIN_CAP-capped view unless you already knew its name to
-   search for it. ---- */
+   the end of a long catalog was otherwise invisible inside the default
+   TRAIN_CAP-capped view unless you already knew its name to search for it.
+   The wave rotates every release (src/app-modules/98-content-pack-finalize.js
+   NEW_WAVE), so this reads the LIVE wave from the store the view itself
+   renders from instead of naming scenarios - the v1.9.0 version of this
+   section named two and had to be rewritten the first time they rotated. ---- */
 await page.evaluate(() => { location.hash = "#/train"; });
 await page.waitForTimeout(300);
 // Clear the "High Performer" search left over from the search-box test
@@ -328,35 +330,38 @@ await page.waitForTimeout(300);
 // masking the real default-list sort order this section checks.
 await page.fill('input[aria-label="Search scenarios"]', "");
 await page.waitForTimeout(400);
-const newCardsInfo = await page.evaluate(() => {
-  const cards = [...document.querySelectorAll(".grid .card.click")].slice(0, 5);
-  return cards.map((c) => ({
+const wave = await page.evaluate(() => {
+  const all = window.G.store.scenarios();
+  const tagged = all.filter((x) => x.since);
+  const cards = [...document.querySelectorAll(".grid .card.click")].map((c) => ({
     title: c.querySelector("h3")?.textContent || null,
     ariaLabel: c.getAttribute("aria-label"),
     hasBadge: !!c.querySelector("span.badge.green"),
   }));
+  return { values: [...new Set(tagged.map((x) => x.since))], titles: tagged.map((x) => x.title), total: all.length, cards };
 });
-const tcccCard = newCardsInfo.find((c) => /IED Strike/i.test(c.title || ""));
-const medevacCard = newCardsInfo.find((c) => /9-LINE MEDEVAC/i.test(c.title || ""));
-tcccCard && medevacCard
-  ? ok(`both new scenarios (IED Strike, 9-line MEDEVAC) sort into the first 5 cards of the default, unsearched #/train list - no search needed to find them (found at positions ${newCardsInfo.indexOf(tcccCard)}, ${newCardsInfo.indexOf(medevacCard)})`)
-  : bad("new scenarios not found near the top of the default #/train list: " + JSON.stringify(newCardsInfo.map((c) => c.title)));
-tcccCard && tcccCard.hasBadge && /\(New\)$/.test(tcccCard.ariaLabel || "")
-  ? ok('"Contact: IED Strike" card carries a visible "New" badge and its accessible name ends "(New)"')
-  : bad('IED Strike card New-badge info: ' + JSON.stringify(tcccCard));
-medevacCard && medevacCard.hasBadge && /\(New\)$/.test(medevacCard.ariaLabel || "")
-  ? ok('the 9-line MEDEVAC card carries a visible "New" badge and its accessible name ends "(New)"')
-  : bad('MEDEVAC card New-badge info: ' + JSON.stringify(medevacCard));
+wave.values.length === 1 && wave.titles.length >= 1
+  ? ok(`exactly one "New" wave is live for this profile (${wave.values[0]}: ${wave.titles.length} of ${wave.total} scenarios)`)
+  : bad("expected exactly one live 'since' wave with at least one scenario this profile can see: " + JSON.stringify({ values: wave.values, n: wave.titles.length }));
+const badged = wave.cards.filter((c) => c.hasBadge);
+const lead = wave.cards.slice(0, badged.length);
+badged.length >= 1 && lead.every((c) => c.hasBadge && wave.titles.includes(c.title))
+  ? ok(`the wave sorts to the front of the default, unsearched #/train list - the first ${badged.length} card(s) are all wave scenarios, no search needed to find them`)
+  : bad("New-wave cards are not contiguous at the top of the default #/train list: " + JSON.stringify(wave.cards.slice(0, 10).map((c) => [c.title, c.hasBadge])));
+badged.length >= 1 && badged.every((c) => /\(New\)$/.test(c.ariaLabel || "") && wave.titles.includes(c.title))
+  ? ok('every badged card is a wave scenario and its accessible name ends "(New)" (the badge itself is aria-hidden, so the name has to carry it)')
+  : bad("badged cards that are not in the wave, or whose accessible name lacks (New): " + JSON.stringify(badged.filter((c) => !/\(New\)$/.test(c.ariaLabel || "") || !wave.titles.includes(c.title))));
 // A scenario with no `since` field must NOT carry the badge - proves this
 // is a real conditional, not every card getting one by accident.
-const anOlderCard = await page.evaluate(() => {
-  const cards = [...document.querySelectorAll(".grid .card.click")];
-  const c = cards.find((c) => !/IED Strike|9-LINE MEDEVAC/i.test(c.querySelector("h3")?.textContent || ""));
-  return c ? { title: c.querySelector("h3")?.textContent, hasBadge: !!c.querySelector("span.badge.green") } : null;
-});
-anOlderCard && anOlderCard.hasBadge === false
+const anOlderCard = wave.cards.find((c) => !wave.titles.includes(c.title));
+anOlderCard && anOlderCard.hasBadge === false && !/\(New\)$/.test(anOlderCard.ariaLabel || "")
   ? ok(`an older, non-"since"-tagged scenario card ("${anOlderCard.title}") correctly shows no "New" badge`)
   : bad("older scenario card unexpectedly carries a New badge: " + JSON.stringify(anOlderCard));
+// The retired wave: v1.9.0's two scenarios stopped being "New" in v1.12.1.
+const retired = await page.evaluate(() => window.G.store.scenarios().filter((x) => /^sc-(tccc-ied-strike|medevac-9line-callin)$/.test(x.id)).map((x) => ({ id: x.id, since: x.since || null })));
+retired.every((x) => x.since === null)
+  ? ok(`the v1.9.0 wave is retired - ${retired.length ? retired.map((x) => x.id).join(", ") : "its scenarios"} no longer carry \`since\``)
+  : bad("a v1.9.0 scenario still carries 'since': " + JSON.stringify(retired));
 
 await browser.close();
 server.close();

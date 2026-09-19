@@ -88,7 +88,10 @@ ptBoot.views === 3 ? ok("day/week/month views are present") : bad("PT view count
 const ratioGuard = await page.evaluate(() => {
   const p = window.G.ptPlanner._planFromTemplate("balanced");
   ["sun","mon","tue","wed","thu","fri","sat"].forEach((k, i) => {
-    p.days[k] = { id:"custom", title:"X", type:i === 6 ? "rest" : "custom", effort:i < 4 ? "hard" : i === 4 ? "recovery" : "moderate", route:"" };
+    // No rest day in this fixture: a rest day now counts on the recovery side
+    // of the check (as a logged rest day always did in the history check), so
+    // a rest day here would make this a 4:2 week, not the 4:1 week under test.
+    p.days[k] = { id:"custom", title:"X", type:"custom", effort:i < 4 ? "hard" : i === 4 ? "recovery" : "moderate", route:"" };
   });
   return window.G.ptPlanner._ratio(p);
 });
@@ -324,7 +327,10 @@ const foundations = await page.evaluate(() => ({
 foundations.pillars === 6 && foundations.iot ? ok("existing Board Readiness taxonomy and all three IOT scenarios remain intact") : bad("foundation regression: " + JSON.stringify(foundations));
 
 const programGapCoverage = await page.evaluate(() => {
-  const ids = ["prog-aer-1","prog-aer-2","prog-acs-1","prog-acs-2","prog-sudcc-1","prog-sudcc-2"];
+  // prog-acs-2 and prog-sudcc-1 restated seed cards acs-1 and sudcc-1 with a
+  // different answer; they were folded into those older ids (which keep the
+  // Soldier's study history) - see tools/test-board-content-truth.mjs.
+  const ids = ["prog-aer-1","prog-aer-2","prog-acs-1","prog-sudcc-2","acs-1","sudcc-1"];
   const all = window.G.store.boardQuestions();
   return ids.map((id) => {
     const q = all.find((x) => x.id === id);
@@ -338,12 +344,12 @@ const programGapCoverage = await page.evaluate(() => {
   });
 });
 programGapCoverage.every((x) => !x.missing && x.pillar === "Programs & Support" && x.rich)
-  ? ok("AER, ACS, and SUDCC now have six source-rich Board Drill cards in the Programs & Support pillar")
+  ? ok("AER, ACS, and SUDCC coverage: four pack cards plus the two seed cards that absorbed their twins, all source-rich, all in Programs & Support")
   : bad("Army-program board gap coverage: " + JSON.stringify(programGapCoverage));
 programGapCoverage.every((x) => x.missing || (
   (/^prog-aer-/.test(x.id) && x.regs.includes("AR 930-4")) ||
-  (/^prog-acs-/.test(x.id) && x.regs.includes("AR 608-1")) ||
-  (/^prog-sudcc-/.test(x.id) && x.regs.includes("AR 600-85"))
+  (/^(prog-)?acs-/.test(x.id) && x.regs.includes("AR 608-1")) ||
+  (/^(prog-)?sudcc-/.test(x.id) && x.regs.includes("AR 600-85"))
 ))
   ? ok("each new Army-program card resolves to its governing regulation through the existing regulation grammar")
   : bad("Army-program regulation derivation: " + JSON.stringify(programGapCoverage));

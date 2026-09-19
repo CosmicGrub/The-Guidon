@@ -501,10 +501,10 @@ await clickButtonByText("All difficulties");
 await clickButtonByText("Untimed");
 await clickButtonByText("Remove for this round");
 await startRound();
-for (let i = 0; i < 17; i++) await tapPass();
+for (let i = 0; i < aftCount; i++) await tapPass();
 st = await roundState();
 st.onRecap
-  ? ok("Passed cards = Remove: passing all 17 real AFT questions exhausts the deck and ends the round on its own (caps the round to the real available card count, per the design spec's error-handling section)")
+  ? ok("Passed cards = Remove: passing all " + aftCount + " real AFT questions exhausts the deck and ends the round on its own (caps the round to the real available card count, per the design spec's error-handling section)")
   : bad("round did not end after passing every card with Remove selected: " + JSON.stringify(st));
 
 await enterRapidFireFresh();
@@ -516,7 +516,7 @@ await startRound();
 for (let i = 0; i < 5; i++) await tapPass();
 st = await roundState();
 (!st.onRecap && st.onRound)
-  ? ok("Passed cards = Requeue: passing 5 of 17 real AFT questions does NOT end the round (each pass goes back into the queue) — genuinely different real behavior from Remove above")
+  ? ok("Passed cards = Requeue: passing 5 of " + aftCount + " real AFT questions does NOT end the round (each pass goes back into the queue) — genuinely different real behavior from Remove above")
   : bad("round state after 5 passes with Requeue selected (expected still running): " + JSON.stringify(st));
 await tapEndRound();
 
@@ -630,12 +630,12 @@ await tapEndRound();
 // "Came up as Pass a lot" — the round's own local tally, read back once
 // ════════════════════════════════════════════════════════════════════
 await enterRapidFireFresh();
-await setCategory("Army Fitness Test (AFT)"); // 17 real questions
+await setCategory("Army Fitness Test (AFT)"); // the live deck (aftCount, read above)
 await clickButtonByText("All difficulties");
 await clickButtonByText("Untimed");
 // Requeue (default) so passed cards keep coming back around.
 await startRound();
-for (let i = 0; i < 20; i++) await tapPass(); // more taps than cards (17) -> guarantees at least one card passed 2x+
+for (let i = 0; i < aftCount + 3; i++) await tapPass(); // more taps than cards in the live deck -> guarantees at least one card passed 2x+
 await tapEndRound();
 const passListCount = await page.evaluate(() => document.querySelectorAll(".rf-recap-list li").length);
 passListCount > 0

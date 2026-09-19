@@ -800,6 +800,9 @@ console.log("lint-patterns: static regression guard for repeat bug shapes and re
    a style preference: see G.whatsNew's own header comment in index.html.
    A version bump with no matching entry, or an entry whose `highlights`
    array is empty, both fail loudly here instead of shipping quietly wrong.
+   The entry is matched by VERSION wherever it sits (file order is not
+   version order), and every entry's title and highlights must pass the
+   plain-language rules in tools/whats-new-rules.mjs.
    ====================================================================== */
 {
   function extractBalanced(text, openIdx, openChar, closeChar) {
@@ -828,10 +831,26 @@ console.log("lint-patterns: static regression guard for repeat bug shapes and re
       const releaseText = body + "\n" + releaseModuleText;
       const versions = [...releaseText.matchAll(/version:\s*"([^"]+)"/g)].map((m) => m[1]);
       const pkgVersion = PKG.version;
+      // The plain-language rule used to be a comment nobody enforced, and
+      // three entries in a row read like a developer changelog ("without
+      // creating a second scenario engine", "packaged from one tagged
+      // source ..."). tools/whats-new-rules.mjs is that rule as code; it
+      // reads titles and highlights only, never comments.
+      {
+        const { parseReleaseNotes, checkCopy } = await import("./whats-new-rules.mjs");
+        const entries = parseReleaseNotes(releaseText);
+        const problems = checkCopy(entries);
+        for (const p of problems) bad("(h) " + p);
+        if (!problems.length) ok(`(h) all ${entries.length} What's New entries are in plain language (no builder's terms, no packaging claims, highlights within length)`);
+      }
       if (!versions.length) {
         bad(`(h) G.whatsNew.RELEASE_NOTES is empty - package.json is at ${pkgVersion} with no matching "what's new" entry`);
-      } else if (versions[versions.length - 1] !== pkgVersion) {
-        bad(`(h) G.whatsNew.RELEASE_NOTES's last entry is ${versions[versions.length - 1]}, but package.json is ${pkgVersion} - add a release-notes entry for ${pkgVersion} (see G.whatsNew's own header comment for the plain-language style this needs)`);
+      } else if (!versions.includes(pkgVersion)) {
+        // Matched by version, not by position: entries also arrive from
+        // src/app-modules/99-release-*.js in file-name order (where "v11210"
+        // sorts before "v1122"), and the app itself looks the entry up by
+        // version for the same reason.
+        bad(`(h) G.whatsNew.RELEASE_NOTES has no entry for ${pkgVersion} (package.json's version; newest entry found: ${versions[versions.length - 1]}) - add a release-notes entry for ${pkgVersion} (see G.whatsNew's own header comment for the plain-language style this needs)`);
       } else {
         // Confirm the CURRENT version's own entry actually has highlights -
         // catches a bump that added the version key but left the array

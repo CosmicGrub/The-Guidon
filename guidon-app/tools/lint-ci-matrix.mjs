@@ -20,6 +20,13 @@
  *       chunk/job count must match the live counts (or carry no count).
  *   (c) one-browser guard: no tools/test-*.mjs launches more than one
  *       browser (chromium|webkit|firefox).launch( at most once per file).
+ *   (d) reachability: EVERY tools/test-*.mjs file is either run by a name in
+ *       the run-parallel list, or has a row in OUTSIDE_THE_LIST below saying
+ *       which workflow runs it instead (checked against that workflow's
+ *       text) or exactly why CI cannot run it. A test file nothing runs is a
+ *       failure. "Has a script entry but is not in the list" happened five
+ *       times in one week; each time the suite looked real and guarded
+ *       nothing.
  *
  * `node tools/lint-ci-matrix.mjs --write` regenerates ONLY the lines between
  * `        chunk:` and the `    steps:` that follows it, from package.json's
@@ -28,7 +35,10 @@
  * nothing.
  * `--ci <path>` points the checks at another copy of ci.yml so the verifier
  * can be verified (a copy with one suite removed from a chunk fails, naming
- * it); package.json and tools/ still come from the tree.
+ * it); package.json and tools/ still come from the tree. For the same reason
+ * `--tools <dir>`, `--pkg <file>` and `--workflows <dir>` point check (d) at
+ * stand-in copies (tools/test-release-pipeline.mjs uses them to prove that an
+ * orphaned suite, a wrong workflow row and a stale row each fail).
  * No dependencies; run from anywhere (paths resolve from this file).
  */
 import { readFile, writeFile, readdir } from "node:fs/promises";
@@ -38,10 +48,11 @@ import { fileURLToPath } from "node:url";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP = path.resolve(HERE, "..");
 const REPO = path.resolve(APP, "..");
-const PKG = path.join(APP, "package.json");
 const argOf = (flag) => { const i = process.argv.indexOf(flag); return i > 0 && process.argv[i + 1] ? process.argv[i + 1] : null; };
+const PKG = argOf("--pkg") ? path.resolve(argOf("--pkg")) : path.join(APP, "package.json");
 const CI = argOf("--ci") || path.join(REPO, ".github", "workflows", "ci.yml");
-const TOOLS = path.join(APP, "tools");
+const TOOLS = argOf("--tools") ? path.resolve(argOf("--tools")) : path.join(APP, "tools");
+const WORKFLOWS = argOf("--workflows") ? path.resolve(argOf("--workflows")) : path.join(REPO, ".github", "workflows");
 const CI_REL = ".github/workflows/ci.yml";
 // Root-cause hunt 2026-09-07 ("no-cards" boot-race PR, CI stabilization):
 // 8 was flagged as "never measured" the whole time it stood (see
@@ -250,6 +261,73 @@ if (!loc) {
     else hist[n]++;
   }
   if (cFails === 0) ok(`(c) ${files.length} tools/test-*.mjs files: ${hist[0]} launch no browser, ${hist[1]} launch exactly one, none launch more`);
+}
+
+/* ---------------------------------------------------------------------
+   (d) reachability: every tools/test-*.mjs is run by something.
+
+   OUTSIDE_THE_LIST is the ONLY way a test file may stay out of the
+   run-parallel list. Each row is one of:
+     { workflow: "<file>.yml", why }  another workflow step runs it. Checked:
+                                      that workflow's non-comment text must
+                                      name the file, or an npm script that
+                                      runs it.
+     { excluded: "<reason>" }         CI cannot run it at all; say why.
+     { awaiting: "<version>", why }   a NEW suite waiting to be added to the
+                                      list by whoever integrates the branch
+                                      (branches may not edit the shared list
+                                      themselves). Tolerated only while
+                                      package.json is still at that version:
+                                      the next version bump turns it into a
+                                      failure, so it cannot linger.
+   A row for a file that no longer exists, or for a suite that IS in the
+   list, is stale and fails - this table may only describe reality.
+   --------------------------------------------------------------------- */
+const OUTSIDE_THE_LIST = {
+  "test-network-floor.mjs": { workflow: "ci.yml", why: "needs the built web/ + dist/ trees, so it runs in the lint-build-verify job as netfloor:web / netfloor:pwa rather than as a matrix suite" },
+  "test-android.mjs": { excluded: "drives the installed app on a physical Android device over adb; CI runners have no device (by hand: npm run test:android)" },
+  "test-android-back.mjs": { excluded: "drives the installed app on a physical Android device over adb; CI runners have no device (by hand: npm run test:android:back)" },
+  "test-android-external-links.mjs": { excluded: "drives the installed app on a physical Android device over adb; CI runners have no device (by hand: npm run test:android:links)" },
+  "test-contrast.mjs": { excluded: "curated predecessor of test:contrast-full, which sweeps every route in every theme and IS in the list (see ci.yml's NOTE on test:contrast)" },
+};
+{
+  const files = (await readdir(TOOLS)).filter((f) => /^test-.*\.mjs$/.test(f)).sort();
+  const scripts = pkg.scripts || {};
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\:]/g, "\\$&");
+  const runsFile = (cmd, f) => new RegExp("(^|[\\s/])tools/" + esc(f) + "(\\s|$)").test(cmd || "");
+  const scriptsFor = (f) => Object.keys(scripts).filter((k) => !k.startsWith("_") && runsFile(scripts[k], f));
+  const inList = new Set(files.filter((f) => suites.some((n) => runsFile(scripts[n], f))));
+  const counts = { list: 0, workflow: 0, excluded: 0, awaiting: 0 };
+  let dFails = 0;
+  const dBad = (m) => { dFails++; bad(m); };
+  const workflowCode = async (name) => {
+    try { return (await readFile(path.join(WORKFLOWS, name), "utf-8")).split("\n").filter((l) => !COMMENT.test(l)).join("\n"); } catch (e) { return null; }
+  };
+  for (const f of files) {
+    const row = OUTSIDE_THE_LIST[f];
+    if (inList.has(f)) {
+      if (row) dBad(`(d) tools/${f} is in the run-parallel list now, so its OUTSIDE_THE_LIST row is stale - delete the row (tools/lint-ci-matrix.mjs)`);
+      else counts.list++;
+      continue;
+    }
+    const names = scriptsFor(f);
+    if (!row) {
+      dBad(`(d) tools/${f} is run by nothing in CI${names.length ? ` (it has the script ${names.join(", ")}, but that name is not in package.json's "test" run-parallel list)` : " (no npm script runs it)"} - add it to the list and run: node tools/lint-ci-matrix.mjs --write  (or give it an OUTSIDE_THE_LIST row saying what runs it instead)`);
+    } else if (row.workflow) {
+      const code = await workflowCode(row.workflow);
+      const mentioned = code != null && (code.includes("tools/" + f) || names.some((n) => new RegExp("npm run " + esc(n) + "(\\s|$|&)", "m").test(code)));
+      if (mentioned) counts.workflow++;
+      else dBad(`(d) OUTSIDE_THE_LIST says .github/workflows/${row.workflow} runs tools/${f}, but ${code == null ? "that workflow does not exist" : "no step in it does"}`);
+    } else if (row.excluded) {
+      if (String(row.excluded).trim().length >= 30) counts.excluded++;
+      else dBad(`(d) tools/${f}: an exclusion needs a real reason (30+ characters) saying why CI cannot run it`);
+    } else if (row.awaiting) {
+      if (pkg.version === row.awaiting) counts.awaiting++;
+      else dBad(`(d) tools/${f} has been waiting to join the run-parallel list since ${row.awaiting} and the version is now ${pkg.version} - add it to package.json's "test" list, run --write, and delete its OUTSIDE_THE_LIST row`);
+    } else dBad(`(d) tools/${f}: its OUTSIDE_THE_LIST row says neither workflow, excluded nor awaiting`);
+  }
+  for (const f of Object.keys(OUTSIDE_THE_LIST)) if (!files.includes(f)) dBad(`(d) OUTSIDE_THE_LIST has a row for tools/${f}, which does not exist - delete the row`);
+  if (dFails === 0) ok(`(d) all ${files.length} tools/test-*.mjs files are reachable: ${counts.list} in the run-parallel list, ${counts.workflow} run by another workflow step, ${counts.excluded} excluded with a written reason${counts.awaiting ? `, ${counts.awaiting} NEW and waiting to be added to the list (must happen before the next version bump)` : ""}`);
 }
 
 finish();

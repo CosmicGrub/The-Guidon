@@ -5,6 +5,22 @@ App/App/public
 DerivedData
 xcuserdata
 
+# Everything below is written by `npx cap sync ios` on every run and is NOT
+# committed - the same rule the Android project follows for its equivalents
+# (android/.gitignore: capacitor-cordova-android-plugins, the assets copy of
+# capacitor.config.json, res/xml/config.xml). These five paths were force-added
+# once, which left two copies of the truth: CI always regenerates them before
+# it builds, so the committed copies were never what shipped and could go stale
+# without anyone noticing. The one source is guidon-app/capacitor.config.json.
+# tools/lint-capacitor-config.mjs (check h) fails if any of them is tracked
+# again; the iOS workflow fails if a sync changes a file that IS committed
+# (CapApp-SPM/Package.swift - the iOS twin of Android's tracked
+# capacitor.settings.gradle / app/capacitor.build.gradle).
+#
+# A fresh clone therefore needs `npm run ios:sync` before Xcode can build: the
+# project references capacitor.config.json, config.xml and public/ as bundle
+# resources. That was already true for public/.
+
 # Cordova plugins for Capacitor
 capacitor-cordova-ios-plugins
 

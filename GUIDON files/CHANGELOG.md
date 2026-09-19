@@ -2,7 +2,25 @@
 
 All notable changes to GUIDON will be documented in this file. Format loosely follows [Keep a Changelog](http://keepachangelog.com/). This is the technical record for developers - the app itself shows a short, plain-language summary of each release to Soldiers directly (G.whatsNew, src/index.html), not this file.
 
-## 2026-09-18 - v1.12.0: Leader readiness, collective training, and PT planning
+## 2026-09-19 - v1.12.1: audit fixes, one assembled content bank, and an honest release pipeline
+
+**Why this release exists.** v1.10.1, v1.11.0 and v1.12.0 were version-bumped on main between 2026-09-17 and 2026-09-18 but never cut: `.release-prep` never existed, the repository has no Actions secrets so CI could not sign Android, and only v1.10.0 had a tag - carrying Windows installers and nothing else, which left both in-app download buttons (`#/share`) returning 404. PRs #179, #182 and #183 were merged with red CI. A 66-agent audit of everything merged since 2026-09-15 confirmed 54 defects (9 high, 37 medium, 8 low); this release fixes them. v1.10.1 was published retroactively on 2026-09-18 from its original commit (signed Android APK/AAB and standalone file built locally; Windows and macOS attached by the tag's own CI run). **v1.11.0 and v1.12.0 were never released and are superseded by this version.**
+
+**Rights.** The bundled text of a named-author unit song shipped in v1.11.0's module with "user-supplied" as its only provenance. It is removed in full (the same standard that held the cadences back); four sourced heritage cards remain under Army History, and Recitation Drill gains **My unit** - a Soldier pastes their own unit song, creed or motto, stored only on the device. A rights gate now fails the build if any bundled full text lacks `{author, firstPublished, basis, evidence}`.
+
+**Content truth.** Cards that contradicted each other or their source were reconciled against current publications (the Statement of Charges form, SUDCC vs ASAP, CSDP under AR 710-4, a weapons "fourth safety rule" TC 3-22.9 does not contain, an NCO Creed line the Creed does not contain, superseded ACS/AER paragraph cites). Paraphrased supplement cards no longer render under a "verbatim doctrine" heading. Six pack categories that duplicated a seed subject under another name were merged. Net board cards: 1,274 -> 1,230 (duplicates and the removed lyric cards).
+
+**One assembled bank.** `tools/assemble-bank.mjs` evaluates the seed plus every numbered `src/app-modules` pack headlessly in load order; the consistency counts, the new `tools/lint-content-packs.mjs` (in `lint:patterns`), and the ESP32 card exporter all read it, so a new pack is covered the moment its file exists (the handheld deck had silently fallen 61 cards behind). `98-content-pack-finalize.js` tags pack records from the single pillar definition (injected by the build as `window.GUIDON_PILLAR_MAP`) and stamps the study-room bank fingerprint after the last pack.
+
+**Feature fixes.** Study Rooms multi-category decks rebuilt inside `studygroup.js` (the shim never ran from the real UI, and globally shrank the app's bank); the OPSEC guard became findings-only (it was deleting Army citations from MOI imports) and no longer overwrites dictionary definitions; PT Planner var-in-loop bug saved the wrong day, reminders never expired, template changes wiped overrides without asking; Board Simulator marked phases complete on Exit and dead-ended for E1-E3; Team Training dead-ended outside E4-E6; the Recall ladder advertised in What's New had no screen (it is now a real Recitation mode); quick-filter chip focus rings were clipped and a deep-linked chip could sit off-screen on a phone.
+
+**Pipeline.** `release-cut.yml` refuses to tag a commit whose CI is not green; `pages.yml` deploys only after CI succeeds; asset jobs always upload the version-less alias files and write the downloads table; Android degrades honestly to "signed on the owner's machine" (`docs/release-runbook.md`); `tools/bump-version.mjs` moves all 12 version locations across every fork in one command and `tools/lint-release-state.mjs` fails when they, the CHANGELOG, What's New or the tags disagree; `tools/lint-ci-matrix.mjs` fails on any `tools/test-*.mjs` no CI path runs (201 suites / 51 chunks). iOS: `NSFaceIDUsageDescription` added, the bounded Simulator retry wrapper a later commit had silently reverted is restored and tested, and the WebKit pre-flight is a real (ratcheted) gate again.
+
+**Still the owner's to set (repository settings, not files):** require the `CI green` check on `main`, and protect `refs/tags/v*` from update/deletion.
+
+## 2026-09-18 - v1.12.0 (prepared, not released): Leader readiness, collective training, and PT planning
+
+*Never tagged or published. Everything below shipped to Soldiers for the first time in v1.12.1, which supersedes it.*
 
 **Collective/team readiness.** PR #183 adds a complete 10-exercise Team Training catalog, a shared discuss-then-commit Collective Decision mode on the existing scenario engine, the cross-subject Scenario Relay, roster/AAR tie-ins, and collective variants for already-shipped training lanes. Study Rooms' existing multi-category composition remains the room-level companion rather than being rebuilt.
 
@@ -14,7 +32,9 @@ All notable changes to GUIDON will be documented in this file. Format loosely fo
 
 **Hardening.** Five review defects in the umbrella branch were resolved before release: relay cancellation no longer records completion, capped Mock Board history still detects a new board, single-choice collective feedback is preserved, stale PT history reads cannot leak into another view, and Board Simulator AAR textarea drafts survive rerenders through the live DOM value rather than an ineffective HTML value attribute.
 
-## 2026-09-17 - v1.11.0: Board depth, OPSEC safeguards, and adaptive memorization
+## 2026-09-17 - v1.11.0 (prepared, not released): Board depth, OPSEC safeguards, and adaptive memorization
+
+*Never tagged or published. Everything below shipped to Soldiers for the first time in v1.12.1, which supersedes it. The bundled unit-song text this entry describes was removed before anything was released; see v1.12.1.*
 
 **Promotion-board depth.** PR #177 integrates the complete 112-card source intake / 224 Q&A prompts, dedicated 92A coverage, two logistics scenarios, the ESP32 exporter, and permanent intake auditing.
 
@@ -28,11 +48,27 @@ All notable changes to GUIDON will be documented in this file. Format loosely fo
 
 ## 2026-09-17 - v1.10.1: Apple parity and release reliability
 
+*Prepared 2026-09-17; tagged and published retroactively on 2026-09-18 from its original commit (`9aabebc`), with the signed Android APK/AAB built on the owner's machine.*
+
 **Apple platform parity is now a maintained release concern, not a side build.** The committed Capacitor iOS project compiles the same GUIDON web bundle as the other platform shells, while the macOS lane produces a universal Apple Silicon + Intel DMG from the same immutable release tag used by Android and Windows.
 
 **Release ordering is explicit and auditable.** A release-cut gate creates and verifies the source tag before platform asset fan-out, and iOS Simulator verification preserves first-pass evidence while retrying only the two documented transient process-death/stuck-launch signatures. Compile, install, and genuine render/progress failures remain hard-red.
 
 **Distribution boundaries remain explicit.** The macOS package is universal but still requires Apple Developer ID credentials for notarization; the iOS target is build- and Simulator-verified, while TestFlight/App Store/device distribution still requires Apple Developer signing and provisioning credentials.
+
+## 2026-09-17 - v1.10.0: Board Drill study tools (5-minute reps, regulation and pillar filters, readiness by pillar)
+
+*Entry written retroactively on 2026-09-19. The tag `v1.10.0` (commit `8772ee3`) was cut on 2026-09-17 with no CHANGELOG entry and with Windows installers as its only assets, which left the in-app Android download link returning 404. The signed Android APK/AAB and the fixed-name `GUIDON-android.apk` / `GUIDON-windows-setup.exe` files were attached on 2026-09-18.*
+
+**5-Minute Board Reps (#168).** Home offers a one-tap daily set composed from the same ordered queue Board Drill already builds - every overdue card first, then leeches, then unstudied cards from the Readiness tab's weakest three categories - capped at `G.board.REPS_SIZE` (12 cards). There is no second scheduler and no new per-card state: a set grades through the normal SRS path, a missed card leads the next set instead of being reinserted, and the per-day tally lives under `G.board.repsKey()`.
+
+**Regulation filter (#169) and a cleaned taxonomy (#170).** `G.board.regulationsOf(card)` derives the publications a card cites from its own `source` string; quick-filter chips narrow the drill to one regulation. The taxonomy pass normalized category strings, sources and difficulty values, and `tools/lint-board-taxonomy.mjs` holds them there.
+
+**Six-pillar filter and Readiness by pillar (#171).** Every card, doctrine entry and scenario maps to one of the six promotion-board study areas from a single definition (`tools/pillar-map.mjs`); Board Drill can filter by pillar and the Readiness view rolls mastery up per pillar.
+
+**Content.** The four-stage counseling process, the eight-step training model, Army Emergency Relief, Army Community Service and substance-abuse care cards, plus three multi-angle judgment scenarios - each shipped with matching board-drill cards per the content-pipeline rule.
+
+**Study Rooms multi-category decks (#173)** also landed in this tag as a compatibility shim. It did not run from the real UI and is replaced in v1.12.1.
 
 ## 2026-09-15 - v1.9.0: TCCC-first lane ships, all three locked content items live
 
