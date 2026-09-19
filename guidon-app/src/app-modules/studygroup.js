@@ -1163,6 +1163,16 @@
        bare name on the wire, exactly as every build has always sent it. */
     var deck = encodeDeck(Array.isArray(opts.categories) && cleanNames(opts.categories).length ? opts.categories : [opts.category]);
     if (!deck.ok) return { ok: false, reason: deck.reason };
+    var category = deck.label == null ? "All" : deck.label;
+    /* A JOINER with no cards for the room's deck falls back to its whole
+       bank and is told so on screen (deckNotice). The HOST may not: it is
+       the one naming the deck, and in Mock Board Live it deals the cards -
+       a fallback there would deal the whole bank under this label, which is
+       the very defect this replaced. The picker only lists categories that
+       have cards, so this is a caller's typo or a Focus tier with nothing
+       in those categories. */
+    var plan = deckPlan(category);
+    if (plan.fallback) return { ok: false, reason: "None of those categories have cards on this device under your Focus tier setting. Pick others, or change Focus tier in Settings." };
     if (rt.state) leave();
     // Room code minted first (not inline inside initHost() below, as this
     // used to be) so it can be handed to transportHostStart() before any
@@ -1174,12 +1184,11 @@
     var nativeFp = nativeIdentityFp();
     rt.identity = nativeFp ? { fp: nativeFp, kind: "native-tls", key: null } : await makeIdentity();
     var mode = opts.mode === "board" ? "board" : "relay";
-    var category = deck.label == null ? "All" : deck.label;
     /* Dealt from the label itself - the same deckPlan() every seat's relay
        round runs - so what the host deals and what the wire says can never
        be two different things (the shim's Mock Board Live dealt from the
        whole bank under a "Multi:" label). */
-    var pool = deckPlan(category).pool;
+    var pool = plan.pool;
     var ids = [], cards = {};
     if (mode === "board") {
       var picked = shuffle(pool).slice(0, Math.max(1, Math.min(Number(opts.count) || 5, pool.length)));

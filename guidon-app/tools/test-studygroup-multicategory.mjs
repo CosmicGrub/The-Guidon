@@ -443,6 +443,18 @@ try {
   partWarn.hit && /doesn't have 1 of this room's categories/.test(partWarn.value) && /leaves it out/.test(partWarn.value) && partLine && partLine.includes(CAT_A) && partLine.includes(counts[0] + " cards")
     ? ok("a deck with one category this device lacks: the room says so (\"" + partWarn.value + "\") and plays the " + counts[0] + " cards it does have")
     : bad("partial deck on the joiner: " + JSON.stringify({ warn: partWarn.value, line: partLine }));
+  /* ... and the HOST is never allowed the quiet fallback: a deck it has no
+     cards for is refused in plain words, with the room it already has left
+     standing (every earlier build opened a whole-bank room under that name). */
+  const refused = await H.evaluate(async () => {
+    const before = G.studyGroup.state().room;
+    const r = await G.studyGroup.host({ mode: "board", name: "HOST-ONE", count: 5, categories: ["No Such Category One", "No Such Category Two"] });
+    const now = G.studyGroup.state();
+    return { r, kept: !!now && now.room === before && !now.terminal };
+  });
+  refused.r && refused.r.ok === false && /None of those categories have cards/.test(refused.r.reason || "") && refused.kept
+    ? ok("hosting a deck this device has no cards for is refused (\"" + refused.r.reason + "\") and the open room is left standing")
+    : bad("host() with an unplayable deck: " + JSON.stringify(refused));
   await clickWhen(H, "button.sg-leave");
   await until(() => st(P).then((s) => s && s.terminal));
   await clickWhen(P, "button.sg-leave");
