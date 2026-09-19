@@ -32,13 +32,16 @@
   var seed = window.GUIDON_SEED;
   if (!seed || !seed.board || !Array.isArray(seed.board.questions)) return;
 
-  // Sources were opened and read on CHECKED. They are official 1st Cavalry
-  // Division / U.S. Army pages, not a regulation - so no paragraph numbers
-  // are cited, because there are none to cite.
-  var CHECKED = "2026-09-18";
-  var SRC_DIVISION = "U.S. Army 1st Cavalry Division official page (army.mil/1stcav), History";
-  var SRC_SONG = "1st Cavalry Division official social media post, 24 March 2025; DVIDS, \"1st Cavalry Division Command Sergeant Major Relinquishes Responsibility,\" 28 February 2023";
-  var SRC_GARRYOWEN = "U.S. Army (army.mil), \"Echo Garryowen,\" 7 June 2013; 1st Cavalry Division Public Affairs";
+  // Every source below was opened and read on CHECKED, and each card says
+  // only what its source says. They are official U.S. Army pages and news
+  // articles, not a regulation - so no paragraph numbers are cited, because
+  // there are none to cite. (An earlier draft named a social-media post and a
+  // date nobody had confirmed; a source that cannot be opened and checked
+  // does not go on a card.)
+  var CHECKED = "2026-09-19";
+  var SRC_DIVISION = "U.S. Army, 1st Cavalry Division official page (army.mil/1stcav), \"1st Cavalry Division, America's First Team!\"";
+  var SRC_SONG = "U.S. Army (army.mil), \"Greywolf Brigade assumes mission in Kuwait,\" 18 March 2017; \"1st Cavalry Division Command Sergeant Major Relinquishes Responsibility,\" 28 February 2023";
+  var SRC_GARRYOWEN = "U.S. Army (army.mil), \"Echo Garryowen,\" 7 June 2013; \"1st Squadron, 7th Cavalry Regiment hosts Garryowen Family Day,\" 19 July 2019";
 
   var CATEGORY = "Army History";
   // tools/pillar-map.mjs files "Army History" under this pillar; a card whose
@@ -68,31 +71,30 @@
   var cards = [
     card("pb-spirit-cav-09-1",
       "Which Army division is known as the \"First Team\"?",
-      "The 1st Cavalry Division. Its official history says the name took root in World War II under Major General William C. Chase.",
+      "The 1st Cavalry Division. Its official page says the name took root under Major General William C. Chase, when the division was the first to enter Tokyo.",
       SRC_DIVISION,
       ["\"First Team\" is the nickname of the 1st Cavalry Division.",
-       "The division's official history ties the name to World War II and Major General William C. Chase.",
-       "The same history records the division as the first into Tokyo at the start of the occupation of Japan."]),
+       "The division's official page says the name took root under Major General William C. Chase.",
+       "The same page records the division as the first to enter Tokyo, securing the capital during the occupation of Japan."]),
     card("pb-spirit-cav-09-2",
       "What is \"Garryowen\" in U.S. Cavalry tradition?",
-      "A traditional Irish tune that the 7th Cavalry Regiment took as its own. The regiment is nicknamed \"Garryowen,\" and 7th Cavalry units have served in the 1st Cavalry Division.",
+      "An Irish quickstep tune that the 7th Cavalry Regiment took as its namesake. \"Garryowen\" is the regiment's nickname and a traditional greeting in it, and 7th Cavalry squadrons have served in the 1st Cavalry Division.",
       SRC_GARRYOWEN,
-      ["Garryowen is a traditional Irish tune (a quickstep), not an Army composition.",
-       "It is the regimental namesake of the 7th Cavalry Regiment.",
-       "7th Cavalry units have served in the 1st Cavalry Division, which is why Troopers there use the name."]),
+      ["Garryowen is a well-known Irish quickstep tune.",
+       "It is the regimental namesake of the 7th Cavalry Regiment, and a traditional greeting in the regiment.",
+       "7th Cavalry squadrons have served in the 1st Cavalry Division, which is why the name is heard there."]),
     card("pb-spirit-cav-10-1",
       "When and where was the 1st Cavalry Division activated?",
       "13 September 1921 at Fort Bliss, Texas.",
       SRC_DIVISION,
-      ["Activated 13 September 1921.",
-       "It began at Fort Bliss, Texas, as a horse-mounted division patrolling the Mexican border."]),
+      ["The division's official page gives its start as 13 September 1921 at Fort Bliss, Texas.",
+       "It began as a horse-mounted division guarding the Mexican border."]),
     card("pb-spirit-cav-11-1",
       "What is \"Spirit of the Cav\"?",
-      "The official song of the 1st Cavalry Division, sung by its Troopers at division ceremonies.",
+      "The division song of the 1st Cavalry Division. Its Troopers sing it at the close of division ceremonies.",
       SRC_SONG,
-      ["It is the 1st Cavalry Division's official song.",
-       "Troopers sing it at division ceremonies, such as changes of command and responsibility.",
-       "GUIDON does not include the words. A Soldier can add their own copy under Recitation Drill, My unit, and it stays on their device."])
+      ["It is the 1st Cavalry Division's division song.",
+       "Troopers sing it at the close of ceremonies such as a transfer of authority or a change of responsibility."])
   ];
 
   var have = {};
@@ -108,9 +110,12 @@
       branch: "Cavalry",
       scope: "unit",
       officialTitle: "Spirit of the Cav (1st Cavalry Division song)",
-      // Title and history only, on purpose - see this file's header.
+      // Title and history only, on purpose - see this file's header. The
+      // empty motto/fullText keep the record the same shape as the
+      // branch-motto entries in the seed.
+      motto: null,
       fullText: "",
-      history: "\"Spirit of the Cav\" is the official song of the 1st Cavalry Division, the \"First Team,\" and its Troopers sing it at division ceremonies. The division was activated on 13 September 1921 at Fort Bliss, Texas. The words are not included in GUIDON because they are not GUIDON's to share. If this is your unit, you can add your own copy under Recitation Drill, My unit - it stays on your device.",
+      history: "\"Spirit of the Cav\" is the division song of the 1st Cavalry Division, the \"First Team.\" Its Troopers sing it at the close of division ceremonies. The division's official page gives its start as 13 September 1921 at Fort Bliss, Texas. The words of the song are not included in GUIDON because they are not GUIDON's to share. If this is your unit, you can add your own copy in Recitation Drill, under My unit - it stays on your device.",
       coreTenets: [],
       source: {
         ref: SRC_SONG + "; " + SRC_DIVISION,

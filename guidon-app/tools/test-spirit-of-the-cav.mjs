@@ -1,9 +1,34 @@
 /**
- * Spirit of the CAV integration regression coverage.
- * Verifies the runtime module feeds canonical Board Drill/Quiz content,
- * Recitation Drill, Creeds & Branch Identities, and progressive cloze data.
+ * 1st Cavalry Division heritage content - and the song text that must NOT ship.
+ *
+ * The defect this guards (audit findings C25 / U32 / U19 / U20): the app
+ * bundled the complete words of "Spirit of the Cav", a song with a named
+ * author and no recorded public-domain or permission basis, as a recitable
+ * record, eight line-by-line cards, a Creeds entry's full text and three
+ * fill-in-the-blank strings. Every one of those cited "User-supplied ..." as
+ * its source, and all 18 cards sat in the Army-wide "Creeds" recall deck that
+ * every Soldier quizzes, whatever their unit.
+ *
+ * What this suite proves:
+ *  - NO SONG TEXT SHIPS. The probes below are a few words each, read from the
+ *    old module before it was deleted; they are looked for in both built
+ *    files (web/index.html and dist/guidon-standalone.html), in every record
+ *    of the running app's question bank and Creeds list, and in what the
+ *    Creeds page and Recitation Drill put on screen. This file deliberately
+ *    carries no more of the song than those probes, and must never be given
+ *    more - "assert the text is present" is how the old suite locked the
+ *    defect in.
+ *  - The old recitable record and the sixteen line-by-line cards are gone,
+ *    and nothing from this module is in the "Creeds" category any more.
+ *  - What stays is fact: four heritage cards under "Army History", each
+ *    citing a real U.S. Army page, plus a title-only Creeds entry. No record
+ *    anywhere in the bank or the Creeds list cites "user-supplied" anything.
+ *  - The Creeds page shows the entry with a real source line and points the
+ *    Soldier at Recitation Drill's "My unit" section instead of the words.
  */
 import { chromium } from "playwright";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
@@ -11,78 +36,124 @@ let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
 const bad = (m) => { fails++; console.log("  FAIL  " + m); };
 
+// A few words each, from two different lines of the removed text. Compared
+// case-insensitively with whitespace collapsed. Do not lengthen these.
+const PROBES = ["sabers shining in", "fathers rode in"];
+const hasProbe = (text) => {
+  const t = String(text || "").toLowerCase().replace(/\s+/g, " ");
+  return PROBES.filter((p) => t.includes(p));
+};
+
+// ---- 1. the built files themselves ------------------------------------
+for (const rel of ["../web/index.html", "../dist/guidon-standalone.html"]) {
+  const file = fileURLToPath(new URL(rel, import.meta.url));
+  let text = null;
+  try { text = readFileSync(file, "utf8"); } catch (e) { bad(rel + " could not be read - run `npm run build` first (" + e.message + ")"); }
+  if (text === null) continue;
+  const hits = hasProbe(text);
+  hits.length === 0
+    ? ok(rel.replace("../", "") + " carries none of the song's words")
+    : bad(rel.replace("../", "") + " still carries song text (matched " + hits.length + " of " + PROBES.length + " probes)");
+}
+
+// ---- 2. the running app ------------------------------------------------
 const { server, url } = await serve("web");
 const browser = await chromium.launch();
-const page = await (await browser.newContext()).newPage();
+const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+const page = await ctx.newPage();
 const noise = [];
-page.on("console", (m) => { if (m.type() === "error") noise.push(m.text()); });
+page.on("console", (m) => { if (["error", "warning"].includes(m.type())) noise.push(m.type() + ": " + m.text()); });
 page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 
 await page.goto(url, { waitUntil: "load" });
-await page.waitForTimeout(700);
 await dismissOnboarding(page);
-await page.waitForTimeout(250);
 
-const truth = await page.evaluate(() => {
-  const board = window.GUIDON_SEED.board.questions || [];
-  const full = board.find((q) => q.id === "creed-spirit-of-the-cav");
-  const related = board.filter((q) => /Spirit of the CAV|Gary Owen|First Team/.test((q.q || "") + " " + (q.concept || "")));
-  const creed = (window.GUIDON_SEED.creeds || []).find((c) => c.id === "creed-spirit-of-the-cav");
+const truth = await page.evaluate((probes) => {
+  const flat = (o) => JSON.stringify(o).toLowerCase().replace(/\\n/g, " ").replace(/\s+/g, " ");
+  const bank = window.G.store.boardQuestions();
+  const creeds = window.G.store.creeds();
+  const mine = bank.filter((q) => /^pb-spirit-cav-/.test(q.id) || q.id === "creed-spirit-of-the-cav");
   return {
-    full: full ? {
-      id: full.id,
-      category: full.category,
-      lineCount: Array.isArray(full.lines) ? full.lines.length : 0,
-      source: full.source,
-      hasFullText: /We are the CAV/.test(full.a || "") && /sound the charge/.test(full.a || "")
-    } : null,
-    relatedCount: related.length,
-    creed: creed ? {
-      linkedBoardId: creed.linkedBoardId,
-      status: creed.source && creed.source.status,
-      branch: creed.branch
-    } : null,
-    cloze: window.G.spiritOfTheCav && window.G.spiritOfTheCav.cloze
+    lyricRecords: bank.concat(creeds).filter((r) => probes.some((p) => flat(r).includes(p))).map((r) => r.id),
+    userSupplied: bank.concat(creeds).filter((r) => /user[- ]supplied/i.test(JSON.stringify(r.source || ""))).map((r) => r.id),
+    oldRecitable: bank.some((q) => q.id === "creed-spirit-of-the-cav"),
+    inRecitable: window.G.store.recitable().some((q) => /spirit|cav/i.test(q.id + " " + (q.concept || ""))),
+    oldLineCards: bank.filter((q) => /^pb-spirit-cav-0[1-8]-/.test(q.id)).map((q) => q.id),
+    withLines: mine.filter((q) => Array.isArray(q.lines) && q.lines.length).map((q) => q.id),
+    helperObject: typeof window.G.spiritOfTheCav,
+    mine: mine.map((q) => ({ id: q.id, category: q.category, pillar: q.pillar, source: q.source, unit: q.unit, a: q.a })),
+    inCreedsDeck: bank.filter((q) => q.category === "Creeds" && (/^pb-spirit-cav-/.test(q.id) || /1st cavalry|first team|garryowen|spirit of the cav/i.test(q.q + " " + q.a))).map((q) => q.id),
+    creed: (function () {
+      const c = creeds.find((x) => x.id === "creed-spirit-of-the-cav");
+      return c ? { fullText: c.fullText, ref: c.source && c.source.ref, asOf: c.source && c.source.asOf, status: c.source && c.source.status, linkedBoardId: c.linkedBoardId, lines: c.lines } : null;
+    })(),
   };
-});
+}, PROBES);
 
-truth.full && truth.full.category === "Creeds" && truth.full.lineCount === 8 && truth.full.hasFullText
-  ? ok("full Spirit of the CAV recitation record exists with 8 ordered lines")
-  : bad("missing or malformed full recitation record: " + JSON.stringify(truth.full));
+truth.lyricRecords.length === 0
+  ? ok("no card in the question bank and no Creeds entry carries any of the song's words")
+  : bad("song text is still in these records: " + truth.lyricRecords.join(", "));
+!truth.oldRecitable && !truth.inRecitable
+  ? ok("the full-text recitable record is gone from the bank and from Recitation Drill's list")
+  : bad("a Spirit of the Cav recitable record still exists (bank: " + truth.oldRecitable + ", recitable(): " + truth.inRecitable + ")");
+truth.oldLineCards.length === 0 && truth.withLines.length === 0
+  ? ok("the line-by-line and fill-in-the-blank cards are gone, and no remaining card carries lines[]")
+  : bad("line cards remain: " + JSON.stringify(truth.oldLineCards) + " / cards with lines[]: " + JSON.stringify(truth.withLines));
+truth.helperObject === "undefined"
+  ? ok("the unused fill-in-the-blank helper object is gone")
+  : bad("G.spiritOfTheCav still exists (" + truth.helperObject + ")");
 
-truth.relatedCount >= 10
-  ? ok("line-by-line/fill-in/history prompts were merged into canonical board.questions")
-  : bad("expected at least 10 Spirit-related board prompts, found " + truth.relatedCount);
+truth.userSupplied.length === 0
+  ? ok("no card or Creeds entry cites a \"user-supplied\" source")
+  : bad("\"user-supplied\" is still cited by: " + truth.userSupplied.join(", "));
 
-truth.creed && truth.creed.linkedBoardId === "creed-spirit-of-the-cav" && truth.creed.status === "unit-tradition" && truth.creed.branch === "Cavalry"
-  ? ok("Creeds & Branch Identities entry cross-links to the recitable record and is labeled unit-tradition")
-  : bad("creed/reference entry malformed: " + JSON.stringify(truth.creed));
+const officialSource = (s) => /army\.mil/i.test(String(s || ""));
+truth.mine.length === 4 && truth.mine.every((q) => q.category === "Army History" && q.pillar === "Drill & Board Etiquette" && officialSource(q.source) && q.unit === "1st Cavalry Division")
+  ? ok("four heritage cards remain, under Army History, each tagged to the division and citing a U.S. Army page")
+  : bad("heritage cards malformed: " + JSON.stringify(truth.mine));
+truth.inCreedsDeck.length === 0
+  ? ok("nothing about one division's heritage is left in the Army-wide Creeds deck")
+  : bad("unit-specific cards are still filed under Creeds: " + truth.inCreedsDeck.join(", "));
+const facts = truth.mine.map((q) => q.a).join(" | ");
+/1st Cavalry Division/.test(facts) && /13 September 1921/.test(facts) && /Fort Bliss/.test(facts) && /7th Cavalry/.test(facts) && /division song/i.test(facts)
+  ? ok("the cards teach the facts: First Team, the 1921 start at Fort Bliss, Garryowen and the 7th Cavalry, and what the song is")
+  : bad("a heritage fact is missing from the card answers: " + facts);
 
-truth.cloze && /______/.test(truth.cloze.easy) && /______/.test(truth.cloze.medium) && /W a t C/.test(truth.cloze.hard)
-  ? ok("easy, medium, and first-letter hard memorization surfaces are available")
-  : bad("progressive cloze data missing/malformed: " + JSON.stringify(truth.cloze));
+truth.creed && truth.creed.fullText === "" && !truth.creed.lines && officialSource(truth.creed.ref) && /^\d{4}-\d{2}-\d{2}$/.test(truth.creed.asOf || "") &&
+  truth.creed.status === "unit-tradition" && !truth.creed.linkedBoardId
+  ? ok("the Creeds entry is title-and-history only, with a real source and the date it was checked")
+  : bad("Creeds entry malformed: " + JSON.stringify(truth.creed));
 
-const recitableHas = await page.evaluate(() => window.G.store.recitable().some((q) => q.id === "creed-spirit-of-the-cav"));
-recitableHas
-  ? ok("store.recitable() includes Spirit of the CAV automatically")
-  : bad("Spirit of the CAV did not enter Recitation Drill's canonical store");
+// ---- 3. what the Soldier actually sees --------------------------------
+await page.evaluate(() => { location.hash = "#/creeds"; });
+await page.waitForSelector(".list-detail-list .list-detail-row");
+await page.locator(".list-detail-list .list-detail-row", { hasText: /Spirit of the Cav/i }).click();
+await page.waitForFunction(() => /Spirit of the Cav/i.test((document.querySelector("#creeds-detail h3") || {}).textContent || ""));
+const creedsDetail = await page.evaluate(() => document.getElementById("creeds-detail").innerText);
+hasProbe(creedsDetail).length === 0 && /Source: .*army\.mil/i.test(creedsDetail) && !/user[- ]supplied/i.test(creedsDetail)
+  ? ok("#/creeds shows the entry with a real source line and none of the words")
+  : bad("#/creeds detail is wrong: " + creedsDetail.replace(/\s+/g, " ").slice(0, 300));
+/My unit/.test(creedsDetail) && /stays on your device/i.test(creedsDetail)
+  ? ok("#/creeds tells the Soldier where to add their own copy, and that it stays on their device")
+  : bad("#/creeds does not point at Recitation Drill's My unit section");
+const creedLinks = await page.evaluate(() => Array.from(document.querySelectorAll("#creeds-detail button")).map((b) => b.textContent));
+!creedLinks.some((t) => /Board Drill|Practice reciting/i.test(t))
+  ? ok("#/creeds offers no \"Practice reciting this\" link for a text the app does not carry")
+  : bad("#/creeds still links the entry to a recitable record: " + JSON.stringify(creedLinks));
 
 await page.evaluate(() => { location.hash = "#/recite"; });
-await page.waitForTimeout(400);
-const reciteRow = await page.evaluate(() =>
-  [...document.querySelectorAll(".list-detail-list .ldr-name")].some((el) => /Spirit of the CAV/.test(el.textContent || ""))
-);
-reciteRow ? ok("#/recite visibly lists Spirit of the CAV") : bad("#/recite does not list Spirit of the CAV");
+await page.waitForSelector(".list-detail-list .list-detail-row");
+const reciteRows = await page.evaluate(() => Array.from(document.querySelectorAll(".list-detail-list .list-detail-row")).map((r) => r.textContent));
+const reciteText = await page.evaluate(() => document.getElementById("route").innerText);
+!reciteRows.some((t) => /spirit|cav/i.test(t)) && hasProbe(reciteText).length === 0
+  ? ok("#/recite no longer lists the song among the built-in texts")
+  : bad("#/recite still lists it: " + JSON.stringify(reciteRows));
 
-await page.evaluate(() => { location.hash = "#/creeds"; });
-await page.waitForTimeout(400);
-const creedRow = await page.evaluate(() =>
-  [...document.querySelectorAll(".list-detail-list .ldr-name")].some((el) => /Spirit of the CAV/.test(el.textContent || ""))
-);
-creedRow ? ok("#/creeds visibly lists Spirit of the CAV") : bad("#/creeds does not list Spirit of the CAV");
+const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+overflow <= 0 ? ok("no sideways scrolling at phone width (390px)") : bad("page is " + overflow + "px wider than the 390px screen");
 
-const relevantNoise = noise.filter((n) => !/favicon/.test(n) && !/board supplement intake incomplete/.test(n));
-relevantNoise.length === 0 ? ok("no console errors") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));
+const relevantNoise = noise.filter((n) => !/favicon/.test(n));
+relevantNoise.length === 0 ? ok("no console errors or warnings") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));
 
 await browser.close();
 await server.close();
