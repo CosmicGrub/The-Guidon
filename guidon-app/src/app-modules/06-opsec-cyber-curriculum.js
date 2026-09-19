@@ -322,11 +322,14 @@
     }
     draw(false); mount.appendChild(audit);
 
+    // .btn-row .btn is flex-shrink:0 app-wide, so a label this long stays one
+    // line and overflows a folded phone (344px). Same fix as .qz-back .btn-row .btn.
+    var LONG_LABEL="flex-shrink:1;min-width:0;max-width:100%";
     var practice=el("div.btn-row",{style:"gap:8px;flex-wrap:wrap;margin-top:10px"});
-    var board=el("button.btn.primary",{type:"button",text:"Practice Cybersecurity & OPSEC questions ("+cards.length+")"});
+    var board=el("button.btn.primary",{type:"button",style:LONG_LABEL,text:"Practice Cybersecurity & OPSEC questions ("+cards.length+")"});
     board.addEventListener("click",function(){if(G.board)G.board._filterCat=CATEGORY;location.hash="#/board";}); practice.appendChild(board);
     if(relatedCount){
-      var related=el("button.btn",{type:"button",text:"Practice OPSEC & information security questions ("+relatedCount+")"});
+      var related=el("button.btn",{type:"button",style:LONG_LABEL,text:"Practice OPSEC & information security questions ("+relatedCount+")"});
       related.addEventListener("click",function(){if(G.board)G.board._filterCat=RELATED_CATEGORY;location.hash="#/board";}); practice.appendChild(related);
     }
     mount.appendChild(practice);
