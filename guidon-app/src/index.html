@@ -320,7 +320,7 @@ a:hover { text-decoration: underline; }
 .btn.ghost { background: transparent; }
 .btn.sm { font-size: .75rem; padding: 6px 10px; }
 .btn.block { display: block; width: 100%; text-align: center; }
-.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn:disabled, .btn[aria-disabled="true"] { opacity: .4; cursor: not-allowed; }
 .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
 
 /* ---------- Progress ---------- */

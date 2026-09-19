@@ -11,6 +11,10 @@
  *
  * What each block guards (every one of these FAILED on the code it was
  * written against):
+ *  0. Static guard: no app module declares a function-scoped `var` inside a
+ *     `for (let ...)` body and then reads it from a closure made in that loop
+ *     (the exact shape of the Month-view defect), with a self-test so the
+ *     scanner cannot silently match nothing.
  *  1. Month view: picking a session for a date saves THAT session for THAT
  *     date (a function-scoped `var` inside the 28-cell loop used to make
  *     every cell save the last cell's value), on two non-last cells, plus
@@ -50,6 +54,7 @@ import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { fileURLToPath } from "node:url";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -117,6 +122,69 @@ async function until(fn, ms = 4000) {
     await sleep(60);
   }
 }
+
+// ---- Static guard for the pattern behind the Month-view defect ----------
+// `var x` written directly inside a `for (let ...)` body is function-scoped:
+// every closure created in the loop shares the ONE binding and sees the last
+// iteration's value. Flags a `var` in such a body only when a function nested
+// in that same body reads the name (the capture is what makes it a bug).
+function loopVarCaptures(src) {
+  // Blank out comments and string/template contents so braces inside them
+  // cannot unbalance the matcher (offsets are preserved).
+  let out = "", i = 0;
+  while (i < src.length) {
+    const c = src[i], n = src[i + 1];
+    if (c === "/" && n === "/") { while (i < src.length && src[i] !== "\n") { out += " "; i++; } continue; }
+    if (c === "/" && n === "*") { while (i < src.length && !(src[i] === "*" && src[i + 1] === "/")) { out += src[i] === "\n" ? "\n" : " "; i++; } out += "  "; i += 2; continue; }
+    if (c === '"' || c === "'" || c === "`") {
+      out += c; i++;
+      while (i < src.length && src[i] !== c) { if (src[i] === "\\") { out += "  "; i += 2; continue; } out += src[i] === "\n" ? "\n" : " "; i++; }
+      out += c; i++; continue;
+    }
+    out += c; i++;
+  }
+  const closeOf = (open) => { let d = 0; for (let k = open; k < out.length; k++) { if (out[k] === "{") d++; else if (out[k] === "}" && --d === 0) return k; } return -1; };
+  const found = [];
+  const loopRe = /\bfor\s*\(\s*let\b/g;
+  let m;
+  while ((m = loopRe.exec(out))) {
+    let p = out.indexOf("(", m.index), d = 0;
+    for (; p < out.length; p++) { if (out[p] === "(") d++; else if (out[p] === ")" && --d === 0) break; }
+    const open = out.indexOf("{", p);
+    if (open < 0 || /\S/.test(out.slice(p + 1, open))) continue; // single-statement body
+    const close = closeOf(open);
+    if (close < 0) continue;
+    let body = out.slice(open + 1, close), nested = "";
+    const fnRe = /(\bfunction\b[^{]*|=>\s*)\{/g;
+    let f;
+    while ((f = fnRe.exec(body))) {
+      const fo = f.index + f[0].length - 1;
+      let dd = 0, fc = -1;
+      for (let k = fo; k < body.length; k++) { if (body[k] === "{") dd++; else if (body[k] === "}" && --dd === 0) { fc = k; break; } }
+      if (fc < 0) break;
+      nested += " " + body.slice(fo, fc + 1);
+      body = body.slice(0, fo) + " ".repeat(fc + 1 - fo) + body.slice(fc + 1);
+      fnRe.lastIndex = fc + 1;
+    }
+    for (const v of body.matchAll(/\bvar\s+([A-Za-z_$][\w$]*)/g)) {
+      if (new RegExp("(^|[^\\w$.])" + v[1].replace(/\$/g, "\\$") + "\\b").test(nested)) found.push(v[1] + " (line " + out.slice(0, open + 1 + v.index).split("\n").length + ")");
+    }
+  }
+  return found;
+}
+
+await section("0. No function-scoped `var` captured by a closure inside a `for (let ...)` loop", async () => {
+  const bad = 'for (let i=0;i<28;i++) {\n  let iso = d(i);\n  var sel = el("select");\n  sel.addEventListener("change", async function () { plan.overrides[iso] = clonePreset(sel.value); });\n}';
+  const good = bad.replace("var sel", "let sel");
+  check(loopVarCaptures(bad).length === 1 && /^sel /.test(loopVarCaptures(bad)[0]) && loopVarCaptures(good).length === 0,
+    "the scanner catches the Month-view pattern (and passes the fixed form)", "scanner self-test: bad=" + JSON.stringify(loopVarCaptures(bad)) + " good=" + JSON.stringify(loopVarCaptures(good)));
+  const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "app-modules");
+  const hits = [];
+  for (const name of fs.readdirSync(dir).filter((n) => n.endsWith(".js"))) {
+    for (const h of loopVarCaptures(fs.readFileSync(path.join(dir, name), "utf-8"))) hits.push(name + ": " + h);
+  }
+  check(hits.length === 0, "no app module has the pattern", "captured loop `var`: " + hits.join(" | "));
+});
 
 await section("1. Month view: the session you pick for a date is the session that is saved", async () => {
   await openPlanner(page, "month");
@@ -282,6 +350,8 @@ await section("4. A date changed in Month view is what Day view, the log and rem
   check(!rems.some((r) => r.date === TUE), "\"Remind me\" on Tuesday adds nothing when that Tuesday was changed to a rest day", "reminder created for a rest date: " + JSON.stringify(rems));
   const tueBtn = await page.locator('[data-pt-remind="tue"]').innerText();
   check(/rest/i.test(tueBtn), "...and the button says why (\"" + tueBtn + "\")", "Tuesday remind button reads " + JSON.stringify(tueBtn));
+  const usedLook = await page.evaluate(() => { const b = document.querySelector('[data-pt-remind="tue"]'); return { aria: b.getAttribute("aria-disabled"), native: b.disabled, opacity: Number(getComputedStyle(b).opacity), focusable: (b.focus(), document.activeElement === b) }; });
+  check(usedLook.aria === "true" && usedLook.native === false && usedLook.opacity < 1 && usedLook.focusable, "a used button looks and reads as unavailable but stays focusable (no focus drop)", "used button: " + JSON.stringify(usedLook));
   await page.locator("[data-pt-remind-week]").click();
   await until(async () => (await ptReminders()).length >= 5);
   await sleep(500);
