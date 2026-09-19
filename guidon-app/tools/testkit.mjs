@@ -290,7 +290,9 @@ async function onScreen(page) {
  *   - location.hash is the route (deep-link parameters after it are fine);
  *   - the tab title is that route's own label, which route() sets as its
  *     first act, so the router ran FOR THIS hash;
- *   - the start-up placeholder is gone and #route holds rendered content;
+ *   - the start-up placeholder is gone and #route holds rendered content -
+ *     in a NEW frame, not the one that was on screen when we left (with the
+ *     page-to-page cross-fade the old screen outlives the title change);
  *   - `ready` (a selector or a locator, optional but recommended) is visible - the one
  *     thing YOUR suite is about to touch. Views load their data
  *     asynchronously, so only the suite knows what "ready" means for it;
@@ -313,10 +315,10 @@ export async function waitForRoute(page, hash, { ready = null, fresh = false, ti
 
   if (fresh) {
     const away = known.hash === "#/home" ? "#/settings" : "#/home";
-    await page.evaluate((h) => { location.hash = h; }, away);
+    await leaveFor(page, away);
     await drawn(page, away, null, timeout, "leaving for " + away + " first (fresh: true)");
   }
-  await page.evaluate((h) => { if (location.hash !== h) location.hash = h; }, hash);
+  await leaveFor(page, hash);
   await drawn(page, hash, known.label, timeout, "opening " + hash);
   if (ready) {
     const loc = typeof ready === "string" ? page.locator(ready) : ready;
@@ -324,6 +326,25 @@ export async function waitForRoute(page, hash, { ready = null, fresh = false, ti
     catch (e) { throw new Error("waitForRoute: " + hash + " opened, but " + (typeof ready === "string" ? JSON.stringify(ready) : String(ready)) + " never became visible within " + timeout + "ms. " + (await onScreen(page))); }
   }
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+}
+
+/* Change the hash (a no-op when the page is already there), first tagging the
+   frame that is on screen NOW. route() gives every render its own frame
+   inside #route, so "the first child of #route is no longer the tagged node"
+   is the exact signal that the router has swapped the screen for THIS
+   navigation. The title alone is not: route() sets it at once, but with the
+   page-to-page cross-fade (document.startViewTransition) the old screen stays
+   in #route until the browser calls the swap back a frame later - measured on
+   that build, title + "#route has content" was true for a whole frame while
+   #route still held the PREVIOUS screen, and a `ready` selector both screens
+   share (a heading, a button) matched the old one. */
+async function leaveFor(page, hash) {
+  await page.evaluate((h) => {
+    if (location.hash === h) return;
+    const r = document.getElementById("route");
+    if (r && r.firstElementChild) r.firstElementChild.__testkitLeaving = true;
+    location.hash = h;
+  }, hash);
 }
 
 async function drawn(page, hash, label, timeout, step) {
@@ -334,6 +355,7 @@ async function drawn(page, hash, label, timeout, step) {
       const r = document.getElementById("route");
       if (!r || /Loading GUIDON/.test(r.textContent || "")) return false;
       const frame = r.firstElementChild;
+      if (frame && frame.__testkitLeaving) return false; // still the screen we are leaving
       return !!(frame && frame.childElementCount > 0);
     }, { h: hash, label }, { timeout });
   } catch (e) {

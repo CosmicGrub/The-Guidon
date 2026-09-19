@@ -209,6 +209,40 @@ const { page, noise } = boot;
   const shape = await throws(() => waitForRoute(page, "board"));
   check(shape && /must look like/.test(shape), "a hash without #/ is refused before it can time out", () => String(shape));
 
+  // A router that names the new screen at once but swaps it in LATER - what
+  // the app's page-to-page cross-fade does (the browser calls the swap back
+  // a frame after route() has already set the title). Here the delay is
+  // 300ms so no runner is fast enough to hide it. Both screens have a
+  // heading and a button, so the title, "#route has content" and a shared
+  // `ready` selector are all satisfied by the OLD screen the whole time.
+  {
+    const rt = await boot.context.newPage();
+    captureNoise(rt, { into: noise, tag: "[router fixture]" });
+    await rt.setContent(`<!doctype html><meta charset="utf-8"><title>GUIDON</title>
+<div id="route"><div class="empty">Loading GUIDON...</div></div>
+<script>
+  window.G = { routes: [{ hash: "#/one", label: "One" }, { hash: "#/two", label: "Two" }] };
+  window.__swaps = 0;
+  window.addEventListener("hashchange", function () {
+    var r = window.G.routes.find(function (x) { return x.hash === location.hash; });
+    document.title = "GUIDON - " + r.label;
+    setTimeout(function () {
+      document.getElementById("route").innerHTML = "<div><h2>" + r.label + "</h2><button>Open</button></div>";
+      window.__swaps++;
+    }, 300);
+  });
+  location.hash = "#/one";
+</script>`);
+    await rt.waitForFunction(() => window.__swaps === 1);
+    await waitForRoute(rt, "#/two", { ready: "#route h2" });
+    const landed = await rt.evaluate(() => ({ heading: document.querySelector("#route h2").textContent, swaps: window.__swaps, title: document.title }));
+    check(landed.heading === "Two" && landed.swaps === 2,
+      "waitForRoute() does not return while #route still holds the screen it is leaving, even though the title and a shared `ready` selector already match (the cross-fade case)", () => JSON.stringify(landed));
+    await waitForRoute(rt, "#/two", { ready: "#route h2" });
+    check((await rt.evaluate(() => window.__swaps)) === 2, "and asking again for the screen it is already on still returns at once, without waiting for a swap that is not coming");
+    await rt.close();
+  }
+
   // until(): poll, then assert - true when the state arrives, false (not a
   // throw, not a swallowed rejection) when it does not, and a real error
   // (the predicate itself blowing up) still surfaces.
