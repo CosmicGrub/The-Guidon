@@ -1,0 +1,27 @@
+{
+  "_note": "Known iOS/WebKit layout defects, tolerated by tools/verify-ios-webkit.mjs. This list may only SHRINK: delete a line when its defect is fixed; never add one to get a new defect past CI. Recorded from the CI run for main @ 6d5d004 (19 defects + 1 vh declaration). Regenerate with: node tools/verify-ios-webkit.mjs --write-baseline",
+  "defects": [
+    "font<16|input[type=date].ob-input",
+    "font<16|input[type=number]",
+    "font<16|input[type=number]#promo-goal",
+    "font<16|input[type=search]",
+    "font<16|input[type=search].ob-input",
+    "font<16|input[type=text]",
+    "font<16|select",
+    "font<16|textarea",
+    "font<16|textarea#board-sim-improve",
+    "font<16|textarea#board-sim-next",
+    "font<16|textarea#board-sim-strong",
+    "font<16|textarea.wr-bullet-input",
+    "tap<44|a",
+    "tap<44|a.active",
+    "tap<44|a.nav-shell-only",
+    "tap<44|a.res-url",
+    "tap<44|button[type=button].btn.sm",
+    "tap<44|button[type=button].nav-pin-btn",
+    "tap<44|input[type=checkbox]"
+  ],
+  "vh": [
+    "height:75vh"
+  ]
+}
