@@ -236,6 +236,13 @@ try {
   if (real.stderr && real.stderr.trim()) stderrNoise.push("real lint -> " + real.stderr.trim().split("\n")[0]);
   check(real.status === 0 && /CONTENT-MANIFEST: all passed/.test(real.stdout), "node tools/content-manifest.mjs passes on this tree (the exact command lint:patterns runs)", "real lint: exit " + real.status + "\n" + real.stdout);
   check(/live figures, any time: node tools\/content-manifest\.mjs --figures/.test(real.stdout), "and it ends by saying where the live figures are, so nobody types one into a document");
+  // --base-ref is --base with the earlier manifest read out of git, which is how
+  // a pull request is held to the ratchet (against the branch it merges into).
+  const viaRef = (ref) => { const x = spawnSync(process.execPath, [TOOL, "--base-ref", ref], { encoding: "utf8" }); return { code: x.status, out: x.stdout || "" }; };
+  let g = viaRef("HEAD");
+  check(g.code === 0 && /ratchet vs HEAD:|has no guidon-app\/tools\/content-manifest\.json yet/.test(g.out), "--base-ref HEAD: nothing in this working tree fell below the last commit without a recorded reason", "--base-ref HEAD: exit " + g.code + "\n" + g.out);
+  g = viaRef("no-such-ref-for-this-test");
+  check(g.code === 1 && /git cannot find "no-such-ref-for-this-test"/.test(g.out) && /NOT checked/.test(g.out), "--base-ref with a ref git cannot find FAILS, saying the ratchet was not checked - it never passes by default");
   const committed = loadManifest();
   const liveFigures = buildFigures(assembleBank());
   check(diffFigures(committed, liveFigures).length === 0 && JSON.stringify(figuresOf(committed)) === JSON.stringify(figuresOf(liveFigures)), `imported directly, buildFigures(assembleBank()) is the committed file, key for key, in the same order (${committed.totals.board} cards, fingerprint ${committed.fingerprint})`, "differences: " + JSON.stringify(diffFigures(committed, liveFigures).slice(0, 6)));
