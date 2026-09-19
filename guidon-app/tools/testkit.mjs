@@ -233,7 +233,26 @@ export async function openSession({ dir = "web", entry, viewport, profile = "gue
   } else if (profile) {
     await dismissOnboarding(page, { mode: profile });
   }
+  if (profile) await unlocked(page);
   return { context, page, server, url, noise: into };
+}
+
+/* The welcome screen is a modal, and a modal makes the whole app `inert`.
+   The overlay is REMOVED the moment a card is picked, but the app only lets
+   go of `inert` when the modal's close animation ends - and with the overlay
+   already gone that event never comes, so it is the 400ms fallback timer
+   (measured: 406-413ms after #ob-overlay detaches, every boot; 0ms with
+   reduced motion). For that long a focus() is a silent no-op and every key
+   press lands on <body>. The suites' old fixed sleeps hid this; a suite with
+   none walks straight into it (test-theater pressed Space into <body> and
+   failed 3 runs of 3 under load). So "past onboarding" here means the app
+   has been handed back, not only that the overlay is gone. */
+async function unlocked(page, { timeout = PATIENCE_MS } = {}) {
+  try {
+    await page.waitForFunction(() => { const app = document.getElementById("app"); return !app || !app.hasAttribute("inert"); }, null, { timeout });
+  } catch (e) {
+    throw new Error("testkit: the welcome screen closed but the app was still locked (inert) " + timeout + "ms later. " + (await onScreen(page)));
+  }
 }
 
 function kvRows(seedKv) {

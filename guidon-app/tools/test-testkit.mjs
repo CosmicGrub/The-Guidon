@@ -98,13 +98,19 @@ const boot = await bootApp({
 const { page, noise } = boot;
 
 {
+  // (Read FIRST, in the same breath as the handover: the welcome screen's
+  // modal keeps the whole app inert for ~400ms after its overlay is gone, and
+  // in that window focus() is a silent no-op and keys land on <body>.)
   const state = await page.evaluate(async () => ({
+    inert: document.getElementById("app").hasAttribute("inert"),
+    focusTook: (() => { const b = document.querySelector(".nav button"); if (!b) return null; b.focus(); const took = document.activeElement === b; b.blur(); return took; })(),
     overlay: !!document.querySelector("#ob-overlay"),
     store: !!(window.G && window.G.store),
     probe: ((await window.G.db.get("kv", "testkit:probe")) || {}).v || null,
     width: window.innerWidth,
   }));
   check(!state.overlay && state.store, "bootApp() returns with the welcome screen dismissed and the app started", () => JSON.stringify(state));
+  check(state.inert === false && state.focusTook === true, "and with the app handed back: nothing is still locked behind the closed welcome screen, so a focus() or a key press in the suite's very first step lands where it was aimed", () => JSON.stringify({ inert: state.inert, focusTook: state.focusTook }));
   check(state.probe && state.probe.hello === "from before boot", "seedKv rows are in the app's on-device store by the time the suite gets the page", () => JSON.stringify(state));
   check(state.width === 1100, "the viewport asked for is the viewport the page has", () => "innerWidth " + state.width);
   check(boot.browser && boot.context && boot.server && /^http:\/\/127\.0\.0\.1:\d+\/$/.test(boot.url) && Array.isArray(noise),
@@ -380,6 +386,19 @@ const { page, noise } = boot;
     check(bank === headless.finalCounts.board && visible < bank, `liveCount follows the Soldier: ${visible} of ${bank} cards at rank filter ${who.tier}`, () => JSON.stringify({ visible, bank, who }));
   }
   await soldier.context.close();
+
+  // The other card on the welcome screen. Same contract as Guest: past the
+  // welcome screen, app handed back, and the Soldier the suite asked for.
+  const kiosk = await openSession({ profile: "kiosk", viewport: { width: 344, height: 800 }, noise, noiseTag: "[kiosk]" });
+  const k = await kiosk.page.evaluate(() => ({
+    inert: document.getElementById("app").hasAttribute("inert"),
+    overlay: !!document.querySelector("#ob-overlay"),
+    mode: ((window.G.profile && window.G.profile.cached && window.G.profile.cached()) || {}).mode || null,
+    sideways: document.documentElement.scrollWidth - window.innerWidth,
+  }));
+  check(!k.overlay && k.inert === false && k.mode === "kiosk" && k.sideways <= 0,
+    "profile: \"kiosk\" picks the Kiosk card: past the welcome screen, app handed back, running as a kiosk - at the narrowest supported width", () => JSON.stringify(k));
+  await kiosk.context.close();
 
   const single = await openSession({ dir: "dist", noise, noiseTag: "[standalone]" });
   await waitForBoot(single.page);
