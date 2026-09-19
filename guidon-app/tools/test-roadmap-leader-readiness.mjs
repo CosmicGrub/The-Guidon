@@ -323,6 +323,31 @@ const foundations = await page.evaluate(() => ({
 }));
 foundations.pillars === 6 && foundations.iot ? ok("existing Board Readiness taxonomy and all three IOT scenarios remain intact") : bad("foundation regression: " + JSON.stringify(foundations));
 
+const programGapCoverage = await page.evaluate(() => {
+  const ids = ["prog-aer-1","prog-aer-2","prog-acs-1","prog-acs-2","prog-sudcc-1","prog-sudcc-2"];
+  const all = window.G.store.boardQuestions();
+  return ids.map((id) => {
+    const q = all.find((x) => x.id === id);
+    return q ? {
+      id,
+      category:q.category,
+      pillar:q.pillar,
+      regs:window.G.board.regulationsOf(q.source),
+      rich:!!(q.boardAnswer && Array.isArray(q.keyPoints) && q.keyPoints.length)
+    } : { id, missing:true };
+  });
+});
+programGapCoverage.every((x) => !x.missing && x.pillar === "Programs & Support" && x.rich)
+  ? ok("AER, ACS, and SUDCC now have six source-rich Board Drill cards in the Programs & Support pillar")
+  : bad("Army-program board gap coverage: " + JSON.stringify(programGapCoverage));
+programGapCoverage.every((x) => x.missing || (
+  (/^prog-aer-/.test(x.id) && x.regs.includes("AR 930-4")) ||
+  (/^prog-acs-/.test(x.id) && x.regs.includes("AR 608-1")) ||
+  (/^prog-sudcc-/.test(x.id) && x.regs.includes("AR 600-85"))
+))
+  ? ok("each new Army-program card resolves to its governing regulation through the existing regulation grammar")
+  : bad("Army-program regulation derivation: " + JSON.stringify(programGapCoverage));
+
 noise.length === 0 ? ok("no console errors/warnings across new roadmap surfaces") : bad(noise.length + " console messages; first: " + noise[0]);
 
 await browser.close();
