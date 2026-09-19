@@ -101,6 +101,39 @@ console.log("\nC16 - weapon safety rules say what TC 3-22.9 says");
   (d && d.source && d.source.para === "1-6 to 1-14") ? ok("...and cites the paragraphs the rules are in (1-6 to 1-14)") : bad("doc-weapons-1 source: " + JSON.stringify(d && d.source));
 }
 
+/* ---- C19: the NCO Creed is an official text - quote it exactly or not at all ---- */
+console.log("\nC19 - the NCO Creed is quoted exactly, and nothing is put in its mouth");
+{
+  /* The line-by-line copy the accuracy project verified against TC 7-22.7,
+     Figure 7 - the one place in the bank that holds the whole Creed. */
+  const creedLines = await page.evaluate(() => (G.store.boardQuestions().find((q) => q.id === "creed-4") || {}).lines || []);
+  creedLines.length === 20 ? ok("creed-4 carries the full 20-line Creed to check quotations against") : bad("creed-4.lines has " + creedLines.length + " lines");
+  const creedText = creedLines.join(" ");
+  !/carry out/i.test(creedText) ? ok('the Creed itself has no "carry out ... orders" line') : bad("creed-4 contains a carry-out-orders line?");
+  /* No card may present "carry out the orders" as something the Creed says -
+     the one card that mentions the phrase must be the one that debunks it. */
+  const carry = bank.filter((q) => /NCO Creed|Creeds/.test(q.category) && /carry out (the|their) orders/i.test(textOf(q)));
+  const misattrib = carry.filter((q) => !/not in the Creed|never says|no 'carry out the orders' line/i.test(textOf(q)));
+  misattrib.length === 0 ? ok("no Creed card attributes an obedience line to the Creed") : bad("cards attributing 'carry out the orders' to the Creed: " + misattrib.map((q) => q.id).join(", "));
+  /* Every card asking what the Creed says/requires about officers gives the real passage. */
+  const officerCards = bank.filter((q) => /NCO Creed/i.test(q.q) && /\bofficers\b/i.test(q.q) && /(say|require|actually)/i.test(q.q));
+  officerCards.length >= 1 ? ok(`${officerCards.length} card(s) ask what the Creed says about officers: ${officerCards.map((q) => q.id).join(", ")}`) : bad("no card asks what the Creed says about officers");
+  for (const c of officerCards) {
+    /Officers of my unit will have maximum time to accomplish their duties; they will not have to accomplish mine\./.test(c.a)
+      ? ok(`${c.id}: answers with the Creed's real officer passage`) : bad(`${c.id}: "${c.a.slice(0, 160)}"`);
+  }
+  /* Anything inside double quotes on those cards must be findable in the Creed (or be the Oath, which the card names). */
+  for (const c of officerCards.concat(bank.filter((q) => q.id === "ncoc-3" && !officerCards.includes(q)))) {
+    const quoted = (c.a.match(/"([^"]{25,})"/g) || []).map((s) => s.slice(1, -1));
+    const stray = quoted.filter((s) => !s.split(/(?<=[.;]) /).every((part) => creedText.includes(part.replace(/^\.\.\.|\.\.\.$/g, "").trim()) || /officers appointed over me/.test(part) || /^I will carry out the orders/.test(part)));
+    stray.length === 0 ? ok(`${c.id}: every quotation is word-for-word from the Creed (or the named Oath)`) : bad(`${c.id}: quotation not found in the Creed: ${stray[0].slice(0, 120)}`);
+  }
+  const twin = bank.find((q) => /What does the NCO Creed require regarding officers\?/.test(q.q)) || bank.find((q) => q.id === "creeds-5");
+  const back = await openCardBack(twin);
+  (back && /Officers of my unit will have maximum time/.test(back.all) && !/carry out their orders/i.test(back.all))
+    ? ok(`${twin.id}: the flipped card in Board Drill shows the real officer passage`) : bad(`${twin.id}: Board Drill back face: ${back ? back.all.slice(0, 240) : "not reachable"}`);
+}
+
 /* ---- zero console noise ---- */
 console.log("");
 noise.length === 0 ? ok("zero console errors/warnings across the run") : bad("console noise: " + noise.slice(0, 5).join(" | "));
