@@ -32,6 +32,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { openAsOwner } from "./device-storage.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -53,7 +54,10 @@ page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 page.on("request", (r) => { if (!r.url().startsWith(url) && !/^(data|blob|about):/.test(r.url())) outside.push(r.url()); });
 
 await page.goto(url, { waitUntil: "load" });
-await dismissOnboarding(page);
+// A real profile, not a Guest session: this suite checks that what it does is
+// still there after a reload, and a Guest session saves nothing (the storage
+// contract - see tools/device-storage.mjs and test-guest-saves-nothing.mjs).
+await openAsOwner(page, url);
 
 const openRecite = async () => {
   await page.evaluate(() => { location.hash = "#/home"; });
@@ -260,8 +264,9 @@ wide <= 0 ? ok("a long unbroken name or word wraps in the list and in every mode
 const longId = (await ownRows())[1].id;
 
 // ---- reload, backup, delete, restore -------------------------------------
-// A guest session shows the welcome screen again on every load (the same
-// reload step tools/test-recite.mjs uses); what was saved is still there.
+// Under the real profile this suite runs as, the app reopens straight into
+// itself and what was saved is still there. (dismissOnboarding() is a no-op
+// then - it returns at once when no welcome screen shows up.)
 await page.reload({ waitUntil: "load" });
 await dismissOnboarding(page);
 await openRecite();

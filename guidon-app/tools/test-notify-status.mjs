@@ -34,6 +34,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { openAsOwner } from "./device-storage.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -91,7 +92,10 @@ await context.addInitScript(() => {
 });
 
 await page.goto(url, { waitUntil: "load" });
-await dismissOnboarding(page);
+// A real profile, not a Guest session: this suite checks that what it does is
+// still there after a reload, and a Guest session saves nothing (the storage
+// contract - see tools/device-storage.mjs and test-guest-saves-nothing.mjs).
+await openAsOwner(page, url);
 
 // 0) Sanity: the mock actually landed before notify.js's own module-scope
 //    isNative check ran, and G.notify picked up the new export.
@@ -129,7 +133,7 @@ const notifPanel = page.locator(".notify-live-status");
 
 const notifCheckbox = page.getByRole("checkbox", { name: "Reminder notifications", exact: true });
 (await notifCheckbox.isChecked()) === false
-  ? ok("checkbox starts unchecked (fresh guest profile - notifyReminders defaults off)")
+  ? ok("checkbox starts unchecked (fresh profile - notifyReminders defaults off)")
   : bad("checkbox unexpectedly started checked");
 
 async function liveStatus() {
@@ -223,8 +227,8 @@ stillChecked && revokedStatus && revokedStatus.warn
 
 // ============================================================
 // 3) The refresh survives a real reload too (on-mount, not only
-//    visibilitychange) - settings persist in real IndexedDB across reload
-//    even for a guest profile (unlike the in-memory profile itself), so the
+//    visibilitychange) - under the real profile this suite runs as, settings
+//    persist across a reload (a Guest session's would not), so the
 //    toggle should still read checked and the live status should still show
 //    revoked immediately, with no visibilitychange needed at all.
 // ============================================================
@@ -236,7 +240,7 @@ await page.waitForTimeout(500);
 const afterReloadChecked = await page.getByRole("checkbox", { name: "Reminder notifications", exact: true }).isChecked();
 const afterReloadStatus = await liveStatus();
 afterReloadChecked
-  ? ok("notifyReminders=true survives a real reload (real IndexedDB, unlike the guest profile itself)")
+  ? ok("notifyReminders=true survives a real reload under a real profile")
   : bad("checkbox lost its 'on' state after reload: " + afterReloadChecked);
 afterReloadStatus && afterReloadStatus.warn && /not granted/i.test(afterReloadStatus.text)
   ? ok("a fresh mount (reload, no visibilitychange involved) ALSO shows the revoked state immediately - the on-mount check works standalone")
