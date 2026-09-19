@@ -2,7 +2,7 @@
 
 **Read this to know: what's shipped, what's deliberately not built (and why), and what actually comes next.** `GUIDON_PROJECT_MAP.md` is the 10,000-foot *what is this app* orientation; `CHANGELOG.md` is the session-by-session *what changed*; this document is the forward-looking one — pull from it to pick up where the last session left off, and keep it current going forward rather than letting it drift the way the other canonical docs already have once.
 
-**Current version:** v1.11.0 (guidon-app/package.json), prepared 2026-09-17 — PR #177 board/92A expansion, PR #178 OPSEC/cyber/legal harmonization, and PR #179 Spirit of the CAV + optional Adaptive Recall Ladder. One immutable tag feeds web/PWA + standalone, Android, Windows, macOS, iOS Simulator parity, and the ESP32 firmware/content fork. See CHANGELOG.md for distribution boundaries.
+**Current version:** v1.12.0 (guidon-app/package.json), prepared 2026-09-18 — PR #183 leader-readiness expansion: collective/team training, PT Planner, Board Simulator, and the remaining Army-program/supply-study gaps. One immutable tag feeds web/PWA + standalone, Android, Windows, macOS, iOS Simulator parity, and the ESP32 firmware/content fork. See CHANGELOG.md for distribution boundaries.
 
 ---
 
@@ -12,6 +12,7 @@ These are done — not "paused," not "mostly done." Nothing queued against them.
 
 | Initiative | Scope | Where |
 |---|---|---|
+| v1.12.0: Leader readiness expansion | Collective Decision + 10-exercise Team Training catalog; persisted PT Planner with reminders/exports/history guard and shared PRT session blocks; offline Board Simulator; remaining AER/ACS/SUDCC/CSDP/DA Form 7923 board-study gaps closed; dedicated umbrella regression gate | PR #183 |
 | Board-card content-accuracy project | All 984 board-question cards independently researched; zero duplicated/faked answer content remains | PRs #86–#88 |
 | Enhancement backlog (2-pass full-app audit) | 86 findings across 2 audit passes, every tier (do-first through long-term) implemented | PRs #93, #95, #96, #97 |
 | Roadmap-audit cadence, rounds 1–9 | Nine audit rounds — eight full 8-lens sweeps plus round 7 (scoped to fast/small/low-risk fixes only) | PRs #90–#92, #98, #106, #107, #112, #114, #138 |
@@ -254,7 +255,7 @@ while a verified control entry stays visible throughout.
 
 ---
 
-## 3e. TCCC-first lane SHIPPED (2026-09-15); cross-subject cohesion, team-building catalog, and a PT scheduler still PLANNED
+## 3e. TCCC-first lane + cross-subject cohesion, team-building catalog, and PT Planner SHIPPED
 
 Two "monumental addition" requests, each explored via an independent
 4-candidate design workflow (adversarially scored and synthesized), with
@@ -266,9 +267,9 @@ decisions, and named open engineering risks**:
 
 **Casualty care/land nav/grid/MEDEVAC, locked build order — all three items now SHIPPED**: TCCC-first (`sc-tccc-ied-strike`, an 11-node branching, consequence-based STX lane extending the app's existing scenario engine, not a new content type — [PR #159](https://github.com/CosmicGrub/The-Guidon/pull/159)), then the 9-line MEDEVAC builder (`sc-medevac-9line-callin`, 13 nodes — [PR #160](https://github.com/CosmicGrub/The-Guidon/pull/160)), then a real SVG click-to-place grid-plotting mode for Land Nav Drill (`plotMode()`, the drill's 4th mode — [PR #161](https://github.com/CosmicGrub/The-Guidon/pull/161)). All three shipped in v1.9.0; see `CHANGELOG.md` for the full technical detail on each, including every content-accuracy defect the adversarial-review pass caught and fixed before shipping.
 
-**Still PLANNED, unstarted**: the cross-subject cohesion mechanic, "Scenario Relay + Collective Decision" (a `discuss:true` group-decision node flag on the same shared scenario engine — retrofits onto every existing scenario for free, now that the TCCC/9-line lanes have proven real content plays well on the unmodified engine, satisfying the design doc's own "probe with 1-2 STX lanes first" sequencing note). A minimal, manually-updated leader Squad Roster ships alongside it. The 10-exercise doctrine-grounded team-building catalog ships in format-band phases (icebreaker/config-only first, then high-stress/blind-trust, then content-dependent exercises — now unblocked, since TCCC/9-line content exists).
+**SHIPPED in v1.12.0**: the cross-subject cohesion mechanic, "Scenario Relay + Collective Decision" (a `discuss:true` group-decision node flag on the same shared scenario engine — retrofits onto every existing scenario for free, now that the TCCC/9-line lanes have proven real content plays well on the unmodified engine, satisfying the design doc's own "probe with 1-2 STX lanes first" sequencing note). A minimal, manually-updated leader Squad Roster ships alongside it. The 10-exercise doctrine-grounded team-building catalog ships in format-band phases (icebreaker/config-only first, then high-stress/blind-trust, then content-dependent exercises — now unblocked, since TCCC/9-line content exists).
 
-**PT scheduler, locked scope**: reconcile the two duplicate PT-session
+**PT Planner — SHIPPED in v1.12.0:** reconcile the two duplicate PT-session
 datasets (`#/prt`'s verified single-drill engine vs. `#/drills`' full-
 session checklist) using a documented placeholder table so it ships
 without waiting on all new drill content to be fully doctrine-sourced
@@ -299,7 +300,7 @@ Appendix C, Table C-1. New regression coverage:
 
 ---
 
-## 3f. PLANNED (2026-09-15): reconciled content expansion — cadences, Integrated Operational Thinking, board-card taxonomy, Mock Board
+## 3f. Reconciled content expansion — readiness/taxonomy/Mock Board SHIPPED; cadences remain policy-gated
 
 A wide-ranging brainstorm session (Integrated Operational Thinking model,
 an SGT-board study module, a full System-A/B curriculum-and-simulator
