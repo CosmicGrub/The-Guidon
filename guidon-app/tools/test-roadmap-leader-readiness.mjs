@@ -37,6 +37,24 @@ routeTruth.pt && routeTruth.team && routeTruth.sim ? ok("all three roadmap route
 routeTruth.teamCatalog === 10 ? ok("team-training catalog contains exactly 10 planned exercises") : bad("team catalog count: " + routeTruth.teamCatalog);
 routeTruth.ptApi && routeTruth.simApi ? ok("PT Planner and Board Simulator module APIs are live") : bad("missing module API: " + JSON.stringify(routeTruth));
 
+const prtSessionModel = await page.evaluate(() => {
+  const prt = window.GUIDON_SEED && window.GUIDON_SEED.prt;
+  const sessions = (prt && prt.sessions) || [];
+  const byId = (id) => sessions.find((s) => s.id === id);
+  return {
+    strength:(byId("strength")?.blocks || []).map((b) => b.drillId),
+    endurance:(byId("endurance")?.blocks || []).map((b) => b.drillId),
+    pending:Object.keys((prt && prt.pendingDrills) || {}).sort()
+  };
+});
+JSON.stringify(prtSessionModel.strength) === JSON.stringify(["pd","ssd","cd1","cd2","rd"]) &&
+JSON.stringify(prtSessionModel.endurance) === JSON.stringify(["pd","hsd","mmd1","mmd2","rd"])
+  ? ok("PT Planner publishes the canonical Strength/Endurance session block model")
+  : bad("PRT session model mismatch: " + JSON.stringify(prtSessionModel));
+prtSessionModel.pending.length === 7
+  ? ok("seven not-yet-authored PRT drills stay explicit placeholders instead of fabricated content")
+  : bad("pending PRT drill table: " + JSON.stringify(prtSessionModel.pending));
+
 // Seed scenarios and author-validator compatibility.
 const scenarioTruth = await page.evaluate(() => {
   const ids = ["sc-collective-decision-relay","sc-board-simulator-reporting"];
@@ -77,6 +95,29 @@ const ratioGuard = await page.evaluate(() => {
 ratioGuard.warn === true && ratioGuard.hard === 4 && ratioGuard.recovery === 1
   ? ok("3:1 guard flags a 4-hard/1-recovery week without blocking it")
   : bad("ratio guard result: " + JSON.stringify(ratioGuard));
+
+const historyGuard = await page.evaluate(() => {
+  const today = new Date();
+  const iso = (d) => d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+  const rows = [];
+  for (let i=0;i<4;i++) {
+    const d = new Date(today); d.setDate(today.getDate()-i);
+    rows.push({ date:iso(d), effort:i === 3 ? "recovery" : "hard" });
+  }
+  const safe = window.G.ptPlanner._historyRatio(rows);
+  const fifth = new Date(today); fifth.setDate(today.getDate()-4);
+  rows.push({ date:iso(fifth), effort:"hard" });
+  const flagged = window.G.ptPlanner._historyRatio(rows);
+  return { safe, flagged };
+});
+historyGuard.safe.warn === false && historyGuard.flagged.warn === true
+  ? ok("recent PT history applies the non-blocking 3:1 guard only when completed history crosses it")
+  : bad("history-ratio guard result: " + JSON.stringify(historyGuard));
+
+const sharedSessionUi = await page.locator('[data-pt-session-blocks="strength"]').first().textContent().catch(() => "");
+/Preparation Drill/.test(sharedSessionUi) && /content pending/.test(sharedSessionUi)
+  ? ok("scheduled PRT sessions render from the shared block model and label unauthored drills honestly")
+  : bad("shared PRT session summary missing/misleading: " + JSON.stringify(sharedSessionUi));
 
 // Persist a custom Monday session through reload.
 await page.locator('select[data-pt-session="mon"]').selectOption("custom");
