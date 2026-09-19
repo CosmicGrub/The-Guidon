@@ -16,8 +16,11 @@
  *  (a) STATIC: every guarded call in src/index.html (data lines such as the
  *      seed skipped), the shell scripts and src/app-modules is collected -
  *      typeof G.a.b === / !== "function", G.a && G.a.b(...), if (G.a)
- *      G.a.b(...), G.a?.b(...) - from comment-blanked source, so an API named
- *      in prose is not a guard (tools/module-contract.mjs).
+ *      G.a.b(...), G.a?.b(...), and a name that is TESTED in one place and
+ *      called in another (if (!G.a || !G.a.b) return x; ... G.a.b(x) - the
+ *      early return and the multi-line if, which is how most guards here are
+ *      written) - from comment-blanked source, so an API named in prose is
+ *      not a guard (tools/module-contract.mjs).
  *  (b) RUNTIME: the real web build is booted and EVERY declared route is
  *      visited (APIs such as G.board.enterTheater only exist once Board Drill
  *      has drawn); the single-file build is booted the same way from file://.
@@ -46,6 +49,9 @@
  *  (d) SELF-CHECK: the verifier is run against planted defects and must
  *      fail, naming them - a stand-in copy of recite-user-texts.js with
  *      typeof G.opsecGuard.sanitizeInput === "function" restored, a stand-in
+ *      copy of moi-import.js whose early-return guard (if (!str ||
+ *      !G.opsecGuard || !G.opsecGuard.screen) return str;) points at that
+ *      removed name instead, a stand-in
  *      module with an undeclared storage write / core patch / misspelt
  *      extension point / undeclared dependency, and manifests with a patch,
  *      a hook, a route or a provided name mis-declared.
@@ -123,9 +129,20 @@ if (!STAND_IN) {
     "G.delta?.one(); G.delta.two?.();",
     "var data = G.echo && G.echo.value;            // data, not a call",
     "var t = `${G.foxtrot && G.foxtrot.one()}`;",
+    "if (G.golf.one) G.golf.one();                  // the test and the call name the same thing",
+    "var u = G.golf.two ? G.golf.two(1) : null;",
+    "if (G.hotel && G.hotel.one) {                  // tested here ...",
+    "  G.hotel.one(1);                              // ... called on another line",
+    "}",
+    "function early(str) { if (!str || !G.india || !G.india.one) return str;",
+    "  return G.india.one(str); }",
+    "if (!G.juliet || !G.juliet.value) return;      // tested but never called: data, not a guard",
+    "if (G.kilo) G.kilo.apply(1);                   // what is called is G.kilo.apply, not G.kilo",
+    "var z = G.lima.one(G.lima.two(1)); if (G.lima && G.lima.two) z();   // a call inside another call's brackets still counts as called",
   ].join("\n");
   const found = collectGuards([{ label: "sample.js", kind: "module", file: "sample.js", ...blankSource(sample) }]).map((g) => g.name + "@" + g.line + ":" + g.shape).sort();
-  const want = ["G.alpha.one@5:typeof", "G.alpha.two@6:typeof", "G.alpha.three@7:typeof", "G.bravo.one@8:and-call", "G.bravo.two@9:and-call", "G.bravo.three.deep@10:and-call", "G.charlie.one@11:if-call", "G.delta.one@12:optional", "G.delta.two@12:optional", "G.foxtrot.one@14:and-call"].sort();
+  const want = ["G.alpha.one@5:typeof", "G.alpha.two@6:typeof", "G.alpha.three@7:typeof", "G.bravo.one@8:and-call", "G.bravo.two@9:and-call", "G.bravo.three.deep@10:and-call", "G.charlie.one@11:if-call", "G.delta.one@12:optional", "G.delta.two@12:optional", "G.foxtrot.one@14:and-call",
+    "G.golf.one@15:if-call", "G.golf.two@16:tested", "G.hotel.one@17:tested", "G.india.one@20:tested", "G.kilo.apply@23:if-call", "G.lima.two@24:tested"].sort();
   check(JSON.stringify(found) === JSON.stringify(want), `the scanner finds every guard shape (${want.length} planted in a sample) and nothing in comments, strings, regular expressions or data guards`, "scanner sample mismatch:\n          found   " + JSON.stringify(found) + "\n          wanted  " + JSON.stringify(want));
 }
 
@@ -145,6 +162,17 @@ if (!STAND_IN) {
   writeFileSync(join(dirA, "recite-user-texts.js"), recite.replace(before, after));
   planted.guardLine = recite.slice(0, recite.indexOf(before)).split("\n").length;
   planted.restoredGuard = staticFacts(join(scratch, "restored-guard"));
+  // (1b) the same seam in the shape this code base mostly uses: an early return, with the call on the
+  // next line. moi-import.js keeps a string out of the saved plan unless G.opsecGuard.screen found
+  // nothing in it; pointed at a name that no longer exists, it hands every string back unchecked.
+  const dirA2 = join(scratch, "early-return-guard", "app-modules"); mkdirSync(dirA2, { recursive: true });
+  const moi = modSrc("moi-import.js");
+  const earlyGuard = "if (!str || !G.opsecGuard || !G.opsecGuard.screen) return str;", earlyCall = "return G.opsecGuard.screen(str).findings.length ? null : str;";
+  const renamed = (line) => line.replace("opsecGuard.screen", "opsecGuard.sanitizeInput");
+  planted.earlyPlantable = moi.split(earlyGuard).length === 2 && moi.split(earlyCall).length === 2;
+  writeFileSync(join(dirA2, "moi-import.js"), moi.replace(earlyGuard, renamed(earlyGuard)).replace(earlyCall, renamed(earlyCall)));
+  planted.earlyLine = moi.slice(0, moi.indexOf(earlyGuard)).split("\n").length;
+  planted.earlyReturnGuard = staticFacts(join(scratch, "early-return-guard"));
   // (2) a module that writes an undeclared key, replaces a core function, subscribes to a misspelt point, calls an undeclared module.
   const dirB = join(scratch, "rogue-module", "app-modules"); mkdirSync(dirB, { recursive: true });
   writeFileSync(join(dirB, "pt-planner.js"), modSrc("pt-planner.js") + [
@@ -162,7 +190,7 @@ const standIn = STAND_IN ? staticFacts(STAND_IN) : null;
 const standInManifest = STAND_IN && existsSync(join(STAND_IN, "app-modules", "manifest.json")) ? readManifest(join(STAND_IN, "app-modules")).manifest : realManifest;
 
 const allGuardNames = new Set();
-for (const facts of [real, standIn, planted.restoredGuard, planted.rogueModule]) if (facts) for (const g of facts.guards) allGuardNames.add(g.name);
+for (const facts of [real, standIn, planted.restoredGuard, planted.earlyReturnGuard, planted.rogueModule]) if (facts) for (const g of facts.guards) allGuardNames.add(g.name);
 for (const man of [realManifest, standInManifest]) {
   for (const m of man.modules) { for (const p of m.provides) allGuardNames.add(p); for (const o of m.optionalApis) allGuardNames.add(o.name); }
   for (const o of ((man.core || {}).optionalApis || [])) allGuardNames.add(o.name);
@@ -464,6 +492,10 @@ if (STAND_IN) {
   expectBreach(A, "guard", new RegExp(String.raw`src/app-modules/recite-user-texts\.js:${planted.guardLine} guards G\.opsecGuard\.sanitizeInput \(typeof\)`), `typeof G.opsecGuard.sanitizeInput === "function" restored in a copy of recite-user-texts.js fails, naming the guard, the file and line ${planted.guardLine}`);
   expectBreach(A, "guard-provides", /recite-user-texts\.js:\d+ guards G\.opsecGuard\.sanitizeInput, which belongs to src\/app-modules\/05-opsec-guard\.js \(it is what adds G\.opsecGuard\), but that module's manifest entry does not list G\.opsecGuard\.sanitizeInput under "provides"/, "...and it is also reported as an API the opsec-guard module never declared");
   check(A.length === 2 && A.every((b) => /G\.opsecGuard\.sanitizeInput/.test(b.msg)), "(d) ...and nothing else in that stand-in is reported (the rest of the module still keeps the contract)", "(d) the restored-guard stand-in produced other breaches too:\n          " + report(A));
+  check(planted.earlyPlantable, "(d) moi-import.js still carries the early-return opsecGuard guard the second self-check plants its defect into", "(d) moi-import.js no longer contains its cleanForPlan() guard and call exactly once each - re-point this self-check at the module's current early-return guard");
+  const A2 = judge(planted.earlyReturnGuard, realManifest, { partial: true });
+  expectBreach(A2, "guard", new RegExp(String.raw`src/app-modules/moi-import\.js:${planted.earlyLine} guards G\.opsecGuard\.sanitizeInput \(tested\)`), `the same removed API behind an EARLY RETURN in a copy of moi-import.js (if (!str || !G.opsecGuard || !G.opsecGuard.sanitizeInput) return str;) fails, naming the guard, the file and line ${planted.earlyLine}`);
+  check(A2.length > 0 && A2.every((b) => /G\.opsecGuard\.sanitizeInput/.test(b.msg)), "(d) ...and nothing else in that stand-in is reported", "(d) the early-return stand-in produced other breaches too:\n          " + report(A2));
   const B = judge(planted.rogueModule, realManifest, { partial: true });
   expectBreach(B, "storage", /pt-planner\.js:\d+ writes the storage key "pt:planted:v1"/, "an undeclared storage key write");
   expectBreach(B, "storage", /pt-planner\.js:\d+ writes the storage key "pt:\*"/, "an undeclared key prefix write");
