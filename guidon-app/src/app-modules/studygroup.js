@@ -582,8 +582,13 @@
     transport: null, state: null, identity: null, timers: [], mount: null, view: null, stage: null, header: null,
     counters: { received: 0, accepted: 0, ignored: {}, sent: 0, dropped: 0, renders: 0 },
     renderTimer: null, lastRender: 0, snapTimer: null, snapDirty: false, lastSnap: 0, pingN: 0,
-    engineActive: false, selfScored: {}, myScores: {}, msg: "", ui: {
-      mode: "relay", category: "All", count: 5, timerSec: 60, code: "", hotspot: "other",
+    engineActive: false, selfScored: {}, myScores: {}, msg: "", peerInfo: {}, ui: {
+      // category is the picker's <select> value: "All", one category, or
+      // MIX_CUSTOM - and only then does categories (the ticked boxes) count.
+      // Both live HERE, not in the DOM, so every redraw of the idle screen
+      // (mode toggle, a failed host, coming back from a room) rebuilds the
+      // picker exactly as the host left it.
+      mode: "relay", category: "All", categories: [], count: 5, timerSec: 60, code: "", hotspot: "other",
       // Seat-name defaults (Chris, 2026-09-06): a study room can put a name in
       // front of a stranger on the same Wi-Fi/hotspot in a way a private
       // on-device profile never does, so these start from a call sign, not
@@ -676,15 +681,231 @@
     rt.byId = m;
     return m;
   }
+  function bankAll() { try { return G.store.boardQuestions() || []; } catch (e) { return []; } }
+  /* What the host can PICK from: the categories that have cards under this
+     device's own Focus tier, in bank order. */
   function categories() {
-    try { var qs = G.store.boardQuestions(); var seen = {}, out = []; for (var i = 0; i < qs.length; i++) if (!seen[qs[i].category]) { seen[qs[i].category] = 1; out.push(qs[i].category); } return out; } catch (e) { return []; }
+    var qs = bankAll(), seen = Object.create(null), out = [];
+    for (var i = 0; i < qs.length; i++) if (qs[i] && qs[i].category && !seen[qs[i].category]) { seen[qs[i].category] = 1; out.push(qs[i].category); }
+    return out;
   }
-  function poolFor(category) {
-    var all = [];
-    try { all = G.store.boardQuestions(); } catch (e) {}
-    if (!category || category === "All") return all;
-    var f = all.filter(function (q) { return q.category === category; });
-    return f.length ? f : all;
+  function categoryCounts() {
+    var qs = bankAll(), n = Object.create(null);
+    for (var i = 0; i < qs.length; i++) if (qs[i] && qs[i].category) n[qs[i].category] = (n[qs[i].category] || 0) + 1;
+    return n;
+  }
+  /* What a deck label is RESOLVED against: every category in the whole
+     bank, whatever this device's Focus tier is - a category that exists
+     here but has no cards at this Soldier's tier is not "missing from this
+     device", it is just empty for them. */
+  function allCategories() {
+    var seen = Object.create(null), out = [];
+    try {
+      var qs = (G.store.seed().board || {}).questions || [];
+      for (var i = 0; i < qs.length; i++) if (qs[i] && qs[i].category && !seen[qs[i].category]) { seen[qs[i].category] = 1; out.push(qs[i].category); }
+    } catch (e) {}
+    return out;
+  }
+
+  /* ------------------------------------------------------ mixed decks */
+  /* A room's deck is one category, every category, or a MIX of up to
+     MIX_MAX categories the host ticks on the idle screen. All of it lives
+     here, in the module that owns the room - the first version was a
+     load-order shim (z-studygroup-multicategory.js) that patched this
+     module's exported properties from outside, and every defect it shipped
+     came from that: the Host button calls the closure-local host(), so the
+     shim's wrapper never ran; host() deals the board cards before rt.state
+     exists, so the shim's filter was off exactly when the deck was picked;
+     and its filter sat on the app-wide G.store.boardQuestions(), so Board
+     Drill, Quiz, search and Diagnostics all saw a shrunken bank for as long
+     as the room (or its host-left panel) stayed up. Nothing here touches
+     the store: deckPlan() filters a COPY for this room's own rounds only.
+
+     ON THE WIRE the mix rides in the existing deck.category string (<= 80
+     UTF-16 units in room-schema.js AND in the generated Rust validator), so
+     protocol v1, the guest page and the desktop host are all unchanged. The
+     shim wrote the names themselves ("Multi: A + B") and cut them mid-word
+     at 80 chars - two real category names were enough to lose one. This
+     codec cannot lose anything: each category is a fixed 5-character token
+     (FNV-1a over the name's UTF-16LE bytes, mod 36^5, base36), sorted and
+     concatenated after "Mixed deck #" - 12 + 12*5 = 72 chars at the cap. A
+     peer resolves tokens against the names in ITS OWN bank, so a joiner on
+     a different GUIDON build still gets the right categories wherever it
+     has them, and knows exactly how many it could not resolve (deckNotice
+     says so on its screen) instead of quietly drilling something else.
+     encodeDeck() refuses - never truncates - past MIX_MAX, and refuses a
+     category whose token is shared by another category in this bank
+     (none is today; tools/test-studygroup-multicategory.mjs pins that).
+
+     OLDER BUILDS cannot read a mix. One that joins a relay room matches
+     the label against no category and falls back to its whole bank, and
+     nothing on its side can be changed from here - so the HOST is told the
+     truth instead: knowsMixedDecks() reads the build details a joiner's
+     hello already carries, and the roster and the waiting list flag that
+     seat in plain words (and announce it once). Mock Board Live needs no
+     flag: the host deals its cards by id, and inlines the text for any
+     seat whose bank differs. */
+  var MIX_PREFIX = "Mixed deck #";
+  var LEGACY_MIX_PREFIX = "Multi: ";
+  var MIX_TOKEN_LEN = 5;
+  var MIX_TOKEN_SPACE = 60466176; // 36^5
+  var MIX_MAX = 12;
+  var MIX_CUSTOM = "__sg_custom__"; // the picker's own <option> value - never a category, never sent
+  /* The last GUIDON version that shipped WITHOUT this codec. A joiner
+     reporting this or anything older (or reporting nothing) cannot read a
+     mix - unless it is this very build (same stamped sha). */
+  var MIX_LAST_VERSION_WITHOUT = [1, 12, 0];
+  var MIX_FULL_TEXT = "A room's deck can mix up to " + MIX_MAX + " categories. Untick one to add another.";
+
+  function catToken(name) {
+    var s = String(name == null ? "" : name), h = 0x811c9dc5;
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charCodeAt(i);
+      h ^= c & 0xff; h = Math.imul(h, 16777619);
+      h ^= c >>> 8; h = Math.imul(h, 16777619);
+    }
+    var t = ((h >>> 0) % MIX_TOKEN_SPACE).toString(36);
+    while (t.length < MIX_TOKEN_LEN) t = "0" + t;
+    return t;
+  }
+  function cleanNames(xs) {
+    var seen = Object.create(null), out = [];
+    (Array.isArray(xs) ? xs : [xs]).forEach(function (x) {
+      x = String(x == null ? "" : x);
+      if (!x || x === "All" || x === MIX_CUSTOM || seen[x]) return;
+      seen[x] = 1; out.push(x);
+    });
+    return out;
+  }
+  /** encodeDeck(names) -> { ok, label, names, reason }. label is null for
+      "every category", the bare name for one category (byte-for-byte what
+      every build has always sent) and the token form for two or more. */
+  function encodeDeck(names) {
+    names = cleanNames(names);
+    if (!names.length) return { ok: true, label: null, names: names };
+    if (names.length === 1) {
+      if (names[0].length > 80) return { ok: false, reason: "That category's name is too long for a room. Pick another." };
+      return { ok: true, label: names[0], names: names };
+    }
+    if (names.length > MIX_MAX) return { ok: false, reason: MIX_FULL_TEXT };
+    var all = allCategories(), owner = Object.create(null), toks = [], i, t;
+    for (i = 0; i < all.length; i++) { t = catToken(all[i]); owner[t] = owner[t] === undefined || owner[t] === all[i] ? all[i] : false; }
+    for (i = 0; i < names.length; i++) {
+      t = catToken(names[i]);
+      if (owner[t] === false || toks.indexOf(t) !== -1) return { ok: false, reason: "\"" + names[i] + "\" can't go in a mixed deck. Host it on its own, or leave it out." };
+      toks.push(t);
+    }
+    toks.sort();
+    return { ok: true, label: MIX_PREFIX + toks.join(""), names: names };
+  }
+  /** decodeDeck(label) -> null for a plain label (one category, or none),
+      else { names, missing }: the categories THIS device's bank resolves,
+      and how many it could not. Also reads the retired shim's "Multi: A +
+      B" names form, so a room opened from an older host still means what
+      its host meant wherever the names survived. */
+  function decodeDeck(label) {
+    var s = String(label == null ? "" : label), all, names = [], missing = 0, i;
+    if (s.indexOf(MIX_PREFIX) === 0) {
+      var body = s.slice(MIX_PREFIX.length);
+      if (!body.length || body.length % MIX_TOKEN_LEN || !/^[0-9a-z]+$/.test(body)) return { names: [], missing: 1 };
+      all = allCategories();
+      var byTok = Object.create(null);
+      for (i = 0; i < all.length; i++) { var t = catToken(all[i]); (byTok[t] = byTok[t] || []).push(all[i]); }
+      for (i = 0; i < body.length; i += MIX_TOKEN_LEN) { var hit = byTok[body.slice(i, i + MIX_TOKEN_LEN)]; if (hit) names = names.concat(hit); else missing++; }
+      return { names: names, missing: missing };
+    }
+    if (s.indexOf(LEGACY_MIX_PREFIX) === 0) {
+      all = allCategories();
+      cleanNames(s.slice(LEGACY_MIX_PREFIX.length).split(/\s*\+\s*/)).forEach(function (n) { if (all.indexOf(n) !== -1) names.push(n); else missing++; });
+      return { names: names, missing: missing };
+    }
+    return null;
+  }
+  /** deckPlan(label) -> what THIS device plays for a room's deck label:
+      { every, mixed, label, names, missing, pool, fallback }. pool is a filtered COPY of
+      this device's bank - the ONE pool-selection path, shared by host()'s
+      board deal and every seat's relay round. An empty result falls back to
+      the whole bank (a round with no cards is no round), and says so:
+      fallback is what deckNotice() turns into a sentence on screen. */
+  var planMemo = null;
+  function deckPlan(label) {
+    var all = bankAll();
+    if (label == null || label === "" || label === "All") return { every: true, names: [], missing: 0, pool: all, fallback: false };
+    /* The room header asks on every redraw (up to ten a second under a
+       burst of frames); the answer only changes with the label or with the
+       bank the store hands back (a new array whenever the Focus tier
+       changes), so the last one is kept. */
+    var key = String(label);
+    if (planMemo && planMemo.key === key && planMemo.all === all && planMemo.n === all.length) return planMemo.plan;
+    var d = decodeDeck(label), names, missing;
+    if (d) { names = d.names; missing = d.missing; }
+    else { names = [key]; missing = 0; if (allCategories().indexOf(key) === -1) { names = []; missing = 1; } }
+    var want = Object.create(null);
+    names.forEach(function (n) { want[n] = 1; });
+    var pool = all.filter(function (q) { return !!q && want[q.category] === 1; });
+    var plan = { every: false, mixed: !!d, label: key, names: names, missing: missing, pool: pool.length ? pool : all, fallback: !pool.length };
+    planMemo = { key: key, all: all, n: all.length, plan: plan };
+    return plan;
+  }
+  /* One line under the room code, on every seat: what this room drills. */
+  function deckLine(st, plan) {
+    var what = plan.every ? "every category" : plan.names.length ? plan.names.join(" + ") : plan.mixed ? "a mixed deck" : plan.label;
+    if (st.mode === "board") { var n = st.round && st.round.total ? st.round.total : 0; return "Deck: " + (n ? n + (n === 1 ? " card" : " cards") + " from " : "") + what + "."; }
+    return "Deck: " + what + (plan.fallback ? "." : " - " + plan.pool.length + (plan.pool.length === 1 ? " card" : " cards") + " on this device.");
+  }
+  /* The honest-fallback sentence (relay only - in Mock Board Live the host
+     deals the cards, so no seat's own bank decides anything). "" when this
+     device plays exactly what the host picked. */
+  function deckNotice(st, plan) {
+    if (st.mode !== "relay" || plan.every) return "";
+    if (plan.fallback) return plan.missing
+      ? "This device's question bank doesn't have this room's categories, so your round will use every category. Update GUIDON on this device to match the host."
+      : "None of this room's categories have cards under your Focus tier setting, so your round will use every category.";
+    if (plan.missing) return "This device's question bank doesn't have " + plan.missing + " of this room's categories, so your round leaves " + (plan.missing === 1 ? "it" : "them") + " out. Update GUIDON on this device to get the full deck.";
+    return "";
+  }
+  /* rt.peerInfo: fp -> the display-only build details of a joiner's hello
+     ({ build, app }), host side, in memory only, dropped with the room. */
+  function rememberHello(frame) {
+    var st = rt.state;
+    if (!st || st.role !== "host" || !frame || frame.t !== "hello" || !schema().validate(frame).ok) return false;
+    var info = skewOf(frame), was = rt.peerInfo[frame.from];
+    info.told = !!(was && was.told);
+    rt.peerInfo[frame.from] = info;
+    return true;
+  }
+  function settleHello(frame) {
+    var st = rt.state;
+    if (!st || st.role !== "host") return;
+    /* Bounded by the room itself: only fingerprints the host is actually
+       holding (seated, waiting or admitted) keep an entry, so a stranger
+       spraying hellos grows nothing. */
+    var keep = {};
+    st.seats.concat(st.pending, st.admitted).forEach(function (x) { if (rt.peerInfo[x.fp]) keep[x.fp] = rt.peerInfo[x.fp]; });
+    rt.peerInfo = keep;
+    var info = keep[frame.from], note = info && !info.told ? legacySeatNote(st, frame.from, frame.body.bankSig, frame.body.name) : "";
+    if (note) {
+      info.told = true;
+      try { if (util().announce) util().announce(note); } catch (e) {}
+    }
+  }
+  function knowsMixedDecks(info) {
+    if (!info) return false;
+    var mine = localBuild();
+    if (info.build && mine.build && info.build === mine.build) return true;
+    var m = /^(\d+)\.(\d+)\.(\d+)/.exec(info.app || "");
+    if (!m) return false;
+    for (var i = 0; i < 3; i++) { var d = Number(m[i + 1]) - MIX_LAST_VERSION_WITHOUT[i]; if (d) return d > 0; }
+    return false;
+  }
+  /* "" unless this is a relay room on a mixed deck AND that seat's GUIDON
+     cannot read one. The browser guest page (bankSig "guest") has no
+     question bank at all - the host reads its cards aloud - so it is never
+     flagged. */
+  function legacySeatNote(st, fp, bankSig, name) {
+    if (!st || st.role !== "host" || st.mode !== "relay" || bankSig === "guest") return "";
+    if (!decodeDeck(st.deck ? st.deck.category : null)) return "";
+    return knowsMixedDecks(rt.peerInfo[fp]) ? "" : name + " is on an older GUIDON and will get questions from every category.";
   }
   function shuffle(a) { a = a.slice(); for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
   function answerScale() {
@@ -811,7 +1032,12 @@
     rt.counters.received++;
     if (!available()) { countIgnored("off"); return; }
     if (!rt.state) { countIgnored("no-room"); return; }
+    /* Around the reducer, not after it: apply() can redraw synchronously,
+       and that draw must already know what build the joiner reported - then
+       settleHello() forgets anyone the host did not actually take in. */
+    var hello = rememberHello(frame);
     apply(reduce(rt.state, frame, ctxNow()));
+    if (hello) settleHello(frame);
   }
   function apply(res) {
     if (!res) return;
@@ -930,6 +1156,13 @@
     opts = opts || {};
     if (!available()) return { ok: false, reason: "Study groups are off in Settings." };
     if (!rt.transport) return { ok: false, reason: "No room connection is attached on this build yet." };
+    /* The deck first, before anything is torn down or opened: a pick the
+       label cannot carry is refused with the room the host already has (if
+       any) still standing. opts.categories (the idle screen's ticked boxes,
+       or any caller's array) wins over opts.category; one name stays the
+       bare name on the wire, exactly as every build has always sent it. */
+    var deck = encodeDeck(Array.isArray(opts.categories) && cleanNames(opts.categories).length ? opts.categories : [opts.category]);
+    if (!deck.ok) return { ok: false, reason: deck.reason };
     if (rt.state) leave();
     // Room code minted first (not inline inside initHost() below, as this
     // used to be) so it can be handed to transportHostStart() before any
@@ -941,8 +1174,12 @@
     var nativeFp = nativeIdentityFp();
     rt.identity = nativeFp ? { fp: nativeFp, kind: "native-tls", key: null } : await makeIdentity();
     var mode = opts.mode === "board" ? "board" : "relay";
-    var category = opts.category == null ? "All" : opts.category;
-    var pool = poolFor(category);
+    var category = deck.label == null ? "All" : deck.label;
+    /* Dealt from the label itself - the same deckPlan() every seat's relay
+       round runs - so what the host deals and what the wire says can never
+       be two different things (the shim's Mock Board Live dealt from the
+       whole bank under a "Multi:" label). */
+    var pool = deckPlan(category).pool;
     var ids = [], cards = {};
     if (mode === "board") {
       var picked = shuffle(pool).slice(0, Math.max(1, Math.min(Number(opts.count) || 5, pool.length)));
@@ -1020,7 +1257,7 @@
     if (st && st.role === "host") transportHostStop();
     transportOnEnded();
     releaseWakeLock();
-    rt.state = null; rt.selfScored = {}; rt.myScores = {};
+    rt.state = null; rt.selfScored = {}; rt.myScores = {}; rt.peerInfo = {};
     scheduleRender();
     return { ok: true };
   }
@@ -1091,6 +1328,9 @@
     if (seatRow) return { kind: "seat", seat: seatRow.getAttribute("data-seat"), cls: el.className || "" };
     var fpEl = el.hasAttribute && el.hasAttribute("data-fp") ? el : (el.closest ? el.closest("[data-fp]") : null);
     if (fpEl) return { kind: "fp", fp: fpEl.getAttribute("data-fp") };
+    // The deck picker's tick boxes all share one class; their ids are what
+    // tell them apart, so a redraw re-lands on the SAME box.
+    if (el.id) return { kind: "id", id: el.id };
     if (el.className) return { kind: "class", cls: el.className };
     return { kind: "view" };
   }
@@ -1103,6 +1343,9 @@
         target = row ? row.querySelector("button") : null;
       } else if (key.kind === "fp") {
         target = view.querySelector('[data-fp="' + key.fp + '"]');
+      } else if (key.kind === "id") {
+        target = document.getElementById(key.id);
+        if (target && !view.contains(target)) target = null;
       } else if (key.kind === "class" && key.cls) {
         target = view.querySelector("." + String(key.cls).trim().split(/\s+/).join("."));
       }
@@ -1196,10 +1439,79 @@
     var nameRow = el("div", { style: "display:flex;gap:8px;align-items:stretch" });
     nameRow.appendChild(nameIn); nameRow.appendChild(hostDice);
     hp.appendChild(el("label", { text: "Seat name" })); hp.appendChild(nameRow);
+    /* The deck picker: Rapid Fire's own idiom (one <select>, whose last
+       option "Custom mix..." opens a scrolling list of tick boxes), not a
+       native <select multiple> - that needs a Ctrl/Command-click, which the
+       phones and tablets a room actually runs on do not have. Built from
+       rt.ui on EVERY drawIdle(), so the mode toggle, a failed host and
+       coming back from a room all show the picker exactly as it was left;
+       ticking a box updates the summary line in place (and announces it)
+       rather than redrawing, so the list never scrolls back to the top or
+       loses the keyboard's place. */
+    var cats = categories(), counts = categoryCounts();
+    rt.ui.categories = rt.ui.categories.filter(function (c) { return cats.indexOf(c) !== -1; });
+    if (rt.ui.category !== "All" && rt.ui.category !== MIX_CUSTOM && cats.indexOf(rt.ui.category) === -1) rt.ui.category = "All";
     var catSel = el("select.sg-category", { "aria-label": "Category", style: "width:100%;margin:6px 0" });
-    ["All"].concat(categories()).forEach(function (c) { var o = el("option", { value: c, text: c }); if (c === rt.ui.category) o.selected = true; catSel.appendChild(o); });
-    catSel.addEventListener("change", function () { rt.ui.category = catSel.value; });
-    hp.appendChild(el("label", { text: "Category" })); hp.appendChild(catSel);
+    ["All"].concat(cats).forEach(function (c) { var o = el("option", { value: c, text: c }); if (c === rt.ui.category) o.selected = true; catSel.appendChild(o); });
+    var mixOpt = el("option", { value: MIX_CUSTOM, text: "Custom mix…" });
+    if (rt.ui.category === MIX_CUSTOM) mixOpt.selected = true;
+    catSel.appendChild(mixOpt);
+    var mixBox = el("div.sg-custom", { style: "margin:2px 0 6px" });
+    function say(text) { try { if (util().announce) util().announce(text); } catch (e) {} }
+    function drawMix() {
+      util().clear(mixBox);
+      if (rt.ui.category !== MIX_CUSTOM) { mixBox.style.display = "none"; return; }
+      mixBox.style.display = "";
+      mixBox.appendChild(hint("Pick every category you want in this room's deck - up to " + MIX_MAX + "."));
+      var summary = el("p.hint.sg-custom-summary", { style: "margin-top:4px" });
+      var boxes = [];
+      function summarize(aloud) {
+        var n = rt.ui.categories.length, cards = 0;
+        rt.ui.categories.forEach(function (c) { cards += counts[c] || 0; });
+        var text = n
+          ? n + (n === 1 ? " category" : " categories") + " picked - " + cards + (cards === 1 ? " card" : " cards") + " in this room's deck."
+          : "No categories picked yet - pick at least one, or this room uses every category.";
+        summary.textContent = text;
+        if (aloud) say(text);
+      }
+      var tools = el("div.btn-row", { style: "gap:8px;margin-bottom:6px" });
+      tools.appendChild(btn("btn.ghost.sm.sg-custom-clear", "Clear all", function () {
+        rt.ui.categories = [];
+        boxes.forEach(function (cb) { cb.checked = false; });
+        summarize(true);
+      }));
+      mixBox.appendChild(tools);
+      var list = el("div.sg-custom-list", { role: "group", "aria-label": "Categories in this room's deck", style: "max-height:220px;overflow-y:auto;border:1px solid var(--line);border-radius:var(--radius-sm);padding:8px" });
+      cats.forEach(function (c, i) {
+        var id = "sg-cust-" + i;
+        var row = el("div", { style: "display:flex;gap:6px;align-items:center;margin:2px 0" });
+        var cb = el("input.sg-custom-cb", { type: "checkbox", id: id, "aria-label": c });
+        cb.checked = rt.ui.categories.indexOf(c) !== -1;
+        cb.addEventListener("change", function () {
+          if (cb.checked && rt.ui.categories.length >= MIX_MAX) {
+            /* Never silently drop or cut a pick (the first version did
+               both): past the cap the box simply does not stay ticked, and
+               the line under the list - and the screen reader - says why. */
+            cb.checked = false;
+            summary.textContent = MIX_FULL_TEXT;
+            say(MIX_FULL_TEXT);
+            return;
+          }
+          rt.ui.categories = cb.checked ? rt.ui.categories.concat([c]) : rt.ui.categories.filter(function (x) { return x !== c; });
+          summarize(true);
+        });
+        boxes.push(cb);
+        row.appendChild(cb);
+        row.appendChild(el("label", { text: c, for: id, style: "margin:0;font-weight:400;min-width:0;overflow-wrap:anywhere" }));
+        list.appendChild(row);
+      });
+      mixBox.appendChild(list);
+      summarize(false);
+      mixBox.appendChild(summary);
+    }
+    catSel.addEventListener("change", function () { rt.ui.category = catSel.value; drawMix(); });
+    hp.appendChild(el("label", { text: "Category" })); hp.appendChild(catSel); hp.appendChild(mixBox);
+    drawMix();
     var extraSel;
     if (rt.ui.mode === "board") {
       extraSel = el("select.sg-count", { "aria-label": "Cards per board", style: "width:100%;margin:6px 0" });
@@ -1215,7 +1527,11 @@
     hp.appendChild(extraSel);
     hp.appendChild(btn("btn.primary.sg-host", "Host a room", function () {
       rt.msg = "";
-      host({ mode: rt.ui.mode, name: nameIn.value, category: rt.ui.category, count: rt.ui.count, timerSec: rt.ui.timerSec }).then(function (r) { if (!r.ok) { rt.msg = r.reason; draw(); } });
+      /* A custom mix goes in as the ticked names themselves; with nothing
+         ticked it is "All", which is what the summary line under the list
+         has been saying. */
+      var mix = rt.ui.category === MIX_CUSTOM;
+      host({ mode: rt.ui.mode, name: nameIn.value, category: mix ? "All" : rt.ui.category, categories: mix ? rt.ui.categories.slice() : null, count: rt.ui.count, timerSec: rt.ui.timerSec }).then(function (r) { if (!r.ok) { rt.msg = r.reason; draw(); } });
     }, { style: "margin-top:8px" }));
     grid.appendChild(hp);
 
@@ -1304,6 +1620,9 @@
       if (st.phase === "lobby") row.appendChild(el("span", { text: x.ready ? "ready" : "", style: "color:var(--ink-green)" }));
       if (st.phase !== "lobby") row.appendChild(el("span.sg-score-cell", { text: (st.mode === "board" && x.seatNo !== st.turnSeat && st.phase !== "recap") ? "" : String(x.score), style: "min-width:2em;text-align:right" }));
       row.appendChild(el("span", { text: x.online ? "" : "held", style: "color:var(--ink-red)" }));
+      // Host only, mixed relay decks only: this seat's GUIDON cannot read a
+      // mix and will play from its whole bank - its score is not comparable,
+      // and the host is the one person who can do anything about that.
       // Confirmation gate added per audit finding H6: this was the one
       // destructive roster control in this file skipping the app's shared
       // confirm-dialog convention (leader.js:338-341 gates its identically-
@@ -1316,6 +1635,13 @@
         hostAction({ type: "kick", seatNo: x.seatNo });
       }, { "aria-label": "Remove " + x.name + " from the room" }));
       wrap.appendChild(row);
+      // Host only, mixed relay decks only: this seat's GUIDON cannot read a
+      // mix and will play from its whole bank, so its score is not comparable
+      // - and the host is the one person who can do anything about that. Its
+      // own line under the seat: a seat row is a single unwrapped flex line,
+      // and a sentence inside it would crush the name at phone width.
+      var deckNote = mine ? "" : legacySeatNote(st, x.fp, x.bankSig, x.name);
+      if (deckNote) wrap.appendChild(el("div.hint.sg-seat-note", { text: deckNote, "data-seat-note": String(x.seatNo), style: "margin:0 0 4px 2.2em;color:var(--ink-amber)" }));
     });
     return wrap;
   }
@@ -1329,6 +1655,8 @@
       if (p.bankSig !== st.bankSig) row.appendChild(el("span", { text: "different question bank", style: "color:var(--ink-amber)" }));
       row.appendChild(btn("btn.sm.primary.sg-admit", "Admit", function () { hostAction({ type: "admit", fp: p.fp }); }, { "data-fp": p.fp, "aria-label": "Admit " + p.name }));
       wrap.appendChild(row);
+      var deckNote = legacySeatNote(st, p.fp, p.bankSig, p.name);
+      if (deckNote) wrap.appendChild(el("div.hint.sg-seat-note", { text: deckNote, style: "margin:0 0 4px;color:var(--ink-amber)" }));
     });
     st.admitted.forEach(function (p) {
       wrap.appendChild(el("div", { text: p.name + " - admitted, seated at the next card", style: "padding:4px 0" }));
@@ -1485,6 +1813,14 @@
     var head = el("div.panel", { style: "margin-bottom:10px" });
     head.appendChild(el("div.eyebrow", { text: (st.mode === "board" ? "Mock Board Live" : "Rapid-Fire relay") + " - room " + st.room }));
     head.appendChild(el("div.sg-room-code", { text: st.room, style: "font-size:1.6rem;font-weight:700;letter-spacing:.06em;margin:6px 0" }));
+    /* What this room drills, on every seat, from the lobby on - the first
+       version never showed it anywhere, so a host whose pick had been
+       dropped had no way to see that. The second line only appears when
+       THIS device cannot play exactly what the host picked. */
+    var plan = deckPlan(st.deck ? st.deck.category : null);
+    head.appendChild(el("p.hint.sg-deck", { text: deckLine(st, plan), style: "overflow-wrap:anywhere" }));
+    var deckWarn = deckNotice(st, plan);
+    if (deckWarn) head.appendChild(el("div.feedback.warn.sg-deck-warn", { text: deckWarn }));
     if (st.phase === "lobby") head.appendChild(hint(isHost ? "Read this code out. Each joiner enters it, then you admit them one at a time below." : "Waiting for the host to start."));
     if (rt.msg) head.appendChild(el("div.feedback.warn.sg-msg", { text: rt.msg }));
     if (isHost && st.phase === "lobby") drawHostLadder(head, st);
@@ -1570,7 +1906,7 @@
       eng.cfg.timerSec = deck.timerSec == null ? null : deck.timerSec;
       eng.cfg.passedBehavior = "requeue";
       eng.cfg.soundHaptics = true;
-      var pool = poolFor(deck.category == null ? "All" : deck.category);
+      var pool = deckPlan(deck.category).pool;
       if (!pool.length) { finishMyRound(0); return; }
       eng.beginRound(pool, "party", {
         onFinish: function (stats) { finishMyRound(stats && stats.correctCount ? stats.correctCount : 0); },
@@ -1686,6 +2022,11 @@
     available: available, attach: attach, host: host, join: join, leave: leave, reconnect: reconnect, sendIntent: sendIntent, hostAction: hostAction,
     state: function () { return rt.state; }, session: session, counters: function () { return rt.counters; }, identity: function () { return rt.identity ? { fp: rt.identity.fp, kind: rt.identity.kind } : null; },
     render: render, _deliver: deliver, _flush: flushSnapshots, _redraw: scheduleRender, HOTSPOT_CAP: HOTSPOT_CAP,
+    /* The deck-label codec, pure functions only (see "mixed decks" above):
+       encode(names) -> { ok, label, reason }, decode(label) -> null |
+       { names, missing }, token(name). host({ categories: [...] }) is the
+       way to OPEN a mixed room; nothing here reaches into one. */
+    mixedDeck: { MAX: MIX_MAX, PREFIX: MIX_PREFIX, encode: encodeDeck, decode: decodeDeck, token: catToken },
     /* Harness-only: the ladder's clock (null restores Date.now()). */
     _setClock: function (fn) { rt.clock = typeof fn === "function" ? fn : null; },
     /* Harness-only introspection of the runtime plumbing (no state). */
