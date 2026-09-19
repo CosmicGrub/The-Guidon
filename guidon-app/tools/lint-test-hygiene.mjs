@@ -38,7 +38,10 @@
  *       sleep, bank it: run --write).
  *
  * `--write` rewrites the baseline, and may only LOWER it: a count that rose,
- * or a new file that has any, is refused - fix the suite instead. `--report`
+ * or a new file that has any, is refused - fix the suite instead. (The one
+ * deliberate way to accept a rise - say, when merging a branch written before
+ * this lint existed - is to delete the baseline and run `--write --init`; the
+ * diff then shows every number that went up, for a reviewer to see.) `--report`
  * prints every hit (file:line) - the to-do list. `--tools <dir>` and
  * `--baseline <file>` point the lint at stand-in copies so the verifier can
  * be verified (tools/test-hygiene-ratchet.mjs plants each defect and watches it
