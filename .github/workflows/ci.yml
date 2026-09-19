@@ -675,8 +675,14 @@ jobs:
             tests: "test:medevac-9line-scenario test:iot-scenarios test:doctrine-counsel-training-accuracy test:roadmap-leader-readiness"
           - name: "46-spiritofthecav-studygroupmulticategory-optionalrecallladder-boardsupplementintake"
             tests: "test:spirit-of-the-cav test:studygroup-multicategory test:optional-recall-ladder test:board-supplement-intake"
-          - name: "47-opsecharmonization"
-            tests: "test:opsec-harmonization"
+          - name: "47-opsecharmonization-biometricunavailablereason-boardcontenttruth-boardsimulatorbehaviour"
+            tests: "test:opsec-harmonization test:biometric-unavailable-reason test:board-content-truth test:board-simulator-behaviour"
+          - name: "48-contentpacks-iosconfiglint-iosretrywrapper-ioswebkitratchet"
+            tests: "test:content-packs test:ios-config-lint test:ios-retry-wrapper test:ios-webkit-ratchet"
+          - name: "49-opseccurriculum-opsecguard-ptplannerbehaviour-quiztwinoptions"
+            tests: "test:opsec-curriculum test:opsec-guard test:pt-planner-behaviour test:quiz-twin-options"
+          - name: "50-reciteusertext-sharemacfirstopen-teamtrainingbehaviour"
+            tests: "test:recite-user-text test:share-mac-first-open test:team-training-behaviour"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same

@@ -33,7 +33,8 @@ window.G = window.G || {};
       // "Recall ladder" mode and "My unit" section; four Army History cards)
       // - the first wording promised a ladder no screen showed, and a unit
       // song GUIDON has no right to hand out.
-      "Recitation Drill has an optional Recall ladder that hides more of the words as you improve, and a My unit section where you can add your own unit song, creed or motto. Your own text stays on this device. 1st Cavalry Division heritage questions join Army History in Board Drill.",
+      "Recitation Drill has an optional Recall ladder that hides more of the words as you improve.",
+      "A new My unit section in Recitation Drill lets you add your own unit song, creed or motto. Your own text stays on this device. 1st Cavalry Division heritage questions join Army History in Board Drill.",
     ],
   });
 })();
