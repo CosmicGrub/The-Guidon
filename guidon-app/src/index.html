@@ -27469,6 +27469,14 @@ window.G = window.G || {};
     const onIOS = !isFile && !!(G.pwa && G.pwa.isIOS && G.pwa.isIOS());
     const onAndroid = !isFile && !onIOS && !!(G.pwa && G.pwa.isAndroid && G.pwa.isAndroid());
     const onDesktop = !isFile && !onIOS && !onAndroid;
+    // A Mac is a desktop that must NOT be handed the Windows installer. An
+    // iPad asking for the desktop site also says "Macintosh", but isIOS()
+    // has already claimed it (touch points), so it never reaches this test.
+    const onMac = onDesktop && /Macintosh|Mac OS X/.test(navigator.userAgent || "");
+    // The releases LIST, not /releases/latest/download/<name>: there is no
+    // version-less Mac file to point a permalink at, and not every release
+    // carries a Mac version at all (the newest one may not).
+    const RELEASES_ALL = "https://github.com/CosmicGrub/The-Guidon/releases";
 
     // ── "Get the app for this device" ──────────────────────────────────────
     // Added for the QR-code distribution path (2026-09-08): a Soldier who
@@ -27507,6 +27515,20 @@ window.G = window.G || {};
         }));
         rec.appendChild(el("p.hint", { style: "margin-top:8px", text:
           "Your phone will warn about installing from outside the Play Store — that's expected for a direct download; allow it for this file. Prefer not to install anything? Adding this exact page to your Home Screen (see “Android” below) still works, just without those extras." }));
+      } else if (onMac) {
+        // A Mac visitor used to be told "You're on a computer" and handed the
+        // Windows .exe. Honest version: this page IS the app here; SOME
+        // releases also carry a Mac version, which the Mac refuses to open the
+        // first time (it is not registered with Apple) - so never a bare
+        // download button without the "Mac" steps panel further down.
+        rec.appendChild(el("p", { text:
+          "You're on a Mac. This page is the full GUIDON app — it works in Safari or any other browser here, and keeps working with no signal once it has loaded. There's nothing you have to download." }));
+        rec.appendChild(el("a.btn", {
+          href: RELEASES_ALL, target: "_blank", rel: "noopener",
+          text: "See if a Mac version is posted (releases page)", style: "text-decoration:none;display:inline-block",
+        }));
+        rec.appendChild(el("p.hint", { style: "margin-top:8px", text:
+          "Some GUIDON releases include a Mac version — a file ending in .dmg — and some don't. If you download one, your Mac will refuse to open it the first time. That's expected; the “Mac” steps below show the safe way through." }));
       } else {
         rec.appendChild(el("p", { text: "You're on a computer. The full Windows desktop app is a direct download:" }));
         rec.appendChild(el("a.btn.primary", {
@@ -27514,7 +27536,7 @@ window.G = window.G || {};
           text: "⭳ Download for Windows (.exe)", style: "text-decoration:none;display:inline-block",
         }));
         rec.appendChild(el("p.hint", { style: "margin-top:8px", text:
-          "Mac and Linux don't have a native build yet — this hosted page works fully in any browser there, and can still be installed for an app-like window (see “What hosting does and does not change” below)." }));
+          "Linux doesn't have its own download yet — this hosted page works fully in any browser there, and can still be installed for an app-like window (see “What hosting does and does not change” below). On a Mac, see the “Mac” steps below." }));
       }
       mount.appendChild(rec);
 
@@ -27607,6 +27629,40 @@ window.G = window.G || {};
       .forEach(t => al.appendChild(el("li", { text:t, style:"margin:3px 0" })));
     and.appendChild(al);
     mount.appendChild(makeCollapsible(and, onAndroid || onDesktop, "Show Android steps \u25be", "Hide Android steps \u25b4"));
+
+    // Mac. The Mac version is not registered with Apple, so a downloaded copy
+    // is refused on first open - and the only thing the refusal offers is
+    // "Move to Trash". Nothing anywhere told a Soldier that this is expected
+    // or how to get past it SAFELY, so the likeliest outcomes were giving up
+    // or pasting a Terminal command from a forum. The steps are Apple's own
+    // ("Open a Mac app from an unknown developer": Privacy & Security >
+    // Security > Open Anyway, offered for about an hour after the first try).
+    // The long form lives in guidon-app/docs/mac-first-launch.md; this panel
+    // has to stand alone because the app is read with no signal. Open by
+    // default on any computer (same "list them all" rule as the two panels
+    // above), one tap away on a phone or a local file.
+    {
+      const mac = el("div.panel", { style:"margin-bottom:10px" });
+      mac.appendChild(el("div.eyebrow", { text:"Mac" }));
+      mac.appendChild(el("p.hint", { text:
+        "On a Mac this page is the full app \u2014 open it in Safari or any browser. Some releases also include a Mac version you can keep in your Applications folder (a file ending in .dmg on the releases page). Not every release has one." }));
+      mac.appendChild(el("p", { text:
+        "The first time you open a downloaded Mac version, your Mac will refuse. It will say it could not check GUIDON for harmful software, or that it cannot confirm who made it. That is expected: Apple only skips that warning for app makers who pay Apple to review every version, and GUIDON doesn't do that yet. It does not mean your download is bad." }));
+      const ml = el("ol", { style:"margin:6px 0 0 18px" });
+      ["Only do this with a copy you downloaded yourself from the GUIDON releases page \u2014 never one sent to you in a message or passed around on a drive",
+       "Open the .dmg file and drag GUIDON into Applications",
+       "Open GUIDON once. When the warning appears, close it \u2014 do not choose \u201cMove to Trash\u201d",
+       "Open System Settings, choose Privacy & Security, and scroll down to Security (on macOS 12: System Preferences, then Security & Privacy, then General)",
+       "Next to the note about GUIDON, click \u201cOpen Anyway\u201d. That button is only there for about an hour after the previous step",
+       "Your Mac asks you to confirm with your Mac password or Touch ID, and shows the warning one last time \u2014 this time with a button that opens GUIDON. Click it. GUIDON opens normally from then on"]
+        .forEach(t => ml.appendChild(el("li", { text:t, style:"margin:3px 0" })));
+      mac.appendChild(ml);
+      mac.appendChild(el("p.hint", { style:"margin-top:8px", text:
+        "If you see anything other than this \u2014 for example a message that GUIDON is damaged \u2014 stop, delete the download, and use this page in your browser instead. Never turn off your Mac's security settings or paste commands into Terminal to get GUIDON open." }));
+      const macLink = el("a.btn.sm", { href: RELEASES_ALL, target:"_blank", rel:"noopener", text:"Open the GUIDON releases page", style:"text-decoration:none;display:inline-block;margin-top:8px" });
+      mac.appendChild(macLink);
+      mount.appendChild(makeCollapsible(mac, onDesktop, "Show Mac steps \u25be", "Hide Mac steps \u25b4"));
+    }
 
     const facts = el("div.panel");
     facts.appendChild(el("div.eyebrow", { text:"What hosting does and does not change" }));
