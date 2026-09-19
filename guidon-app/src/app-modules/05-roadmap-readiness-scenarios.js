@@ -109,8 +109,12 @@
           { text:"Argue that the question was unclear before attempting any answer.", goto:"bad", score:{Presence:0,Leads:0}, feedback:"Seek clarification when genuinely needed, but do not use it to avoid a question you simply do not know." }
         ]
       },
-      good:{ end:true, outcome:"Reporting rehearsal complete. Carry the verified local procedure into the live Mock Board knowledge round, then finish with a judgment scenario and AAR." },
-      bad:{ end:true, outcome:"Reset the reporting phase around three anchors: current local instructions, deliberate military bearing, and honest answers. Rehearse again before treating the script as memorized." }
+      // These two lines are read inside the Board Simulator (and in the Train
+      // catalog), so they use the simulator's on-screen step names - Mock
+      // Board, leadership problem, after-action notes. The old wording named
+      // a "knowledge round" and a "judgment scenario" the Soldier never sees.
+      good:{ end:true, outcome:"Reporting practice complete. Take the procedure you confirmed for your own board into the Mock Board next. In the Board Simulator, the leadership problem and your after-action notes come after that." },
+      bad:{ end:true, outcome:"Rebuild your reporting practice around three anchors: your board's current instructions, deliberate military bearing, and honest answers. Rehearse again before you treat any script as memorized." }
     }
   });
 })();

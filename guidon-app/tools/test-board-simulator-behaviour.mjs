@@ -121,12 +121,13 @@ async function playToOutcome(p = page, host = "[data-board-sim-engine]") {
 const afterRedraw = (p = page) => p.waitForFunction(() => { const h = document.querySelector("[data-board-sim-engine]"); return !!h && h.children.length === 0; }, null, WAIT);
 
 let s; // the saved run, re-read after each action
+// Words a Soldier should never have to read on this screen.
+const JARGON = /deterministic|offline|\bengine\b|re-?render|\bmodule\b|wrapper|\bSRS\b|regression|\bshim\b|active phases|\blane\b|\bsequence\b|rubric dimensions|consequence-based|\bsession\b/i;
 
 /* ---- 1. The screen itself: plain words, fits a phone ---- */
 await section("section 1", async () => {
 await openSim();
 (await statusText()) === "0 of 3 practice steps done" ? ok('a new run starts at "0 of 3 practice steps done"') : bad("opening status: " + JSON.stringify(await statusText()));
-const JARGON = /deterministic|offline|\bengine\b|re-?render|\bmodule\b|wrapper|\bSRS\b|regression|\bshim\b|active phases|\blane\b|\bsequence\b|rubric dimensions|consequence-based|\bsession\b/i;
 const simCopy = await page.evaluate(() => document.querySelector("#route").innerText);
 const simHit = simCopy.match(JARGON);
 !simHit ? ok("the simulator's own copy carries no build-log words") : bad('simulator copy still says "' + simHit[0] + '"');
@@ -182,6 +183,10 @@ const pickedByKey = await page.locator("[data-board-sim-engine] .course-continue
 pickedByKey === 1 ? ok("Enter on the Start button opens the step and the letter key answers it (keyboard reachable end to end)") : bad("letter key did not pick a choice - focus is " + (await focusInfo()));
 if (pickedByKey) await page.locator("[data-board-sim-engine] .course-continue-btn").click();
 (await playToOutcome()) ? ok("reporting practice plays through to its outcome screen") : bad("never reached the reporting outcome");
+const outcomeCopy = await page.evaluate(() => (document.querySelector("[data-board-sim-engine] .panel.outcome .feedback") || {}).textContent || "");
+(/Mock Board/.test(outcomeCopy) && /leadership problem/.test(outcomeCopy) && /after-action notes/.test(outcomeCopy) && !/knowledge round|judgment scenario|\bphase\b/i.test(outcomeCopy) && !JARGON.test(outcomeCopy))
+  ? ok("the reporting result names the next steps the way the screen does (Mock Board, leadership problem, after-action notes)")
+  : bad("reporting result copy: " + JSON.stringify(outcomeCopy));
 await page.locator("[data-board-sim-engine] .panel.outcome button", { hasText: /^\s*Done\s*$/ }).click();
 await afterRedraw();
 s = await stored();
