@@ -27,6 +27,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { CATEGORY_PILLAR } from "./pillar-map.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -57,10 +58,10 @@ const textOf = (q) => [q.q, q.a, q.acceptableAnswer, q.boardAnswer, q.concept].c
 /* Open one specific card in the real Board Drill and flip it. Returns the
    back face as the Soldier sees it: every answer block's heading + text, the
    Source line, and the key points. */
-async function openCardBack(card) {
+async function openCardBack(card, pillar) {
   await page.evaluate(() => { location.hash = "#/home"; });
   await page.waitForTimeout(250);
-  await page.evaluate((cat) => { G.board._filterCat = cat; location.hash = "#/board"; }, card.category);
+  await page.evaluate(([cat, pil]) => { G.board._filterCat = cat; if (pil) G.board._filterPillar = pil; location.hash = "#/board"; }, [card.category, pillar || null]);
   await page.waitForSelector(".qz-front .qz-prompt", { timeout: 15000 });
   const poolSize = bank.filter((q) => q.category === card.category).length;
   for (let i = 0; i <= poolSize + 1; i++) {
@@ -251,6 +252,17 @@ console.log("\nC17 - honest card-back headings and real citations");
   (classI && !/drinking water/.test(classI.a)) ? ok("Class I is subsistence; water is not folded into it (ATP 4-42 paras 1-22, 1-38)") : bad("Class I answer: " + (classI && classI.a));
   const log = doctrine.find((d) => d.id === "doc-log-1");
   (log && /ten classes of supply/i.test(log.body) && !/seven Classes of Supply/i.test(log.body + log.keyPoints.join(" "))) ? ok("doctrine entry doc-log-1 counts ten classes of supply, agreeing with the cards") : bad("doc-log-1: " + (log && log.body.slice(0, 160)));
+}
+
+/* ---- C48: the supplement's hand-copied pillar table must agree with tools/pillar-map.mjs ---- */
+console.log("\nC48 - pack cards carry the pillar their category is mapped to");
+{
+  const wrong = bank.filter((q) => CATEGORY_PILLAR[q.category] && q.pillar !== CATEGORY_PILLAR[q.category]);
+  wrong.length === 0 ? ok("every card whose category is in tools/pillar-map.mjs carries exactly that pillar (" + bank.filter((q) => CATEGORY_PILLAR[q.category]).length + " checked, seed and packs)") : bad(wrong.length + " cards disagree with pillar-map.mjs: " + wrong.slice(0, 6).map((q) => q.id + " [" + q.category + " -> " + q.pillar + "]").join("; "));
+  /* Through the real filter: with the Leadership & Counseling pillar chip on, the supplement's Discipline card must be in the deck. */
+  const disc = bank.find((q) => q.q === "What is an NCO's role in military discipline?");
+  const back = disc && await openCardBack(disc, "Leadership & Counseling");
+  back ? ok(disc.id + " is reachable in Board Drill with the Leadership & Counseling pillar filter on") : bad("the supplement's Discipline card is missing from the Leadership & Counseling pillar deck");
 }
 
 /* ---- zero console noise ---- */

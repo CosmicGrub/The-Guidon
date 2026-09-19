@@ -16,6 +16,12 @@
     return String(s || "").toLowerCase().replace(/[\u2018\u2019]/g, "'")
       .replace(/[^a-z0-9]+/g, " ").trim();
   }
+  /* INTERIM: a hand copy of the rows of tools/pillar-map.mjs CATEGORY_PILLAR
+     this deck uses (a later change feeds the real map in at build time). It
+     must agree with that map for every category a deck uses - "Discipline"
+     was missing, so two cards fell out of the Leadership & Counseling pillar
+     filter and readiness row. tools/test-board-content-truth.mjs compares the
+     live bank against pillar-map.mjs so a gap here fails a test. */
   function pillarFor(cat) {
     var m = {
       "Army Values":"Drill & Board Etiquette", "Warrior Ethos":"Drill & Board Etiquette",
@@ -26,6 +32,7 @@
       "AR 623-3 — Evaluations":"Leadership & Counseling", "Army Programs":"Programs & Support",
       "SHARP (AR 600-52)":"Programs & Support", "Equal Opportunity (AR 600-20)":"Programs & Support",
       "UCMJ":"Leadership & Counseling", "Promotions":"Leadership & Counseling",
+      "Discipline":"Leadership & Counseling",
       "Counseling (ATP 6-22.1)":"Leadership & Counseling", "Leadership":"Leadership & Counseling",
       "Mission Command (ADP 6-0)":"Doctrinal Thinking", "Risk Management":"Doctrinal Thinking",
       "AR 350-1 (Training Regulation / METL)":"Training Management"
