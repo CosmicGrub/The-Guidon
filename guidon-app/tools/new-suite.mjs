@@ -28,7 +28,10 @@
  *
  * It refuses, changing nothing: a name that is not lower-case-and-dashes, a
  * suite or script that already exists, a package.json whose "scripts" are not
- * one per line, and - the reason it edits TEXT rather than JSON.stringify -
+ * one per line, a "test" script with anything after the run-parallel name
+ * list (an appended name would not reach it), a stand-in flag with no path
+ * after it (it must never fall back to the real file), and - the reason it
+ * edits TEXT rather than JSON.stringify -
  * a package.json that already holds a DUPLICATE key. Stacked merges have left
  * two "test" keys here before; JSON.parse keeps the last one silently, so the
  * other list is dead weight nobody can see. The result is re-read before it
@@ -53,7 +56,12 @@ const argv = process.argv.slice(2);
 const flag = {};
 const positional = [];
 for (let i = 0; i < argv.length; i++) {
-  if (VALUE_FLAGS.includes(argv[i])) { flag[argv[i]] = argv[++i]; continue; }
+  if (VALUE_FLAGS.includes(argv[i])) {
+    // A stand-in flag with nothing after it must never fall back to the REAL
+    // file: `--pkg` typed last once meant "edit guidon-app/package.json".
+    if (argv[i + 1] === undefined || argv[i + 1].startsWith("--")) { console.error(`new-suite: ${argv[i]} needs a path after it. Nothing was changed.`); process.exit(1); }
+    flag[argv[i]] = argv[++i]; continue;
+  }
   if (argv[i].startsWith("--")) { flag[argv[i]] = true; continue; }
   positional.push(argv[i]);
 }
@@ -67,7 +75,12 @@ const known = new Set([...VALUE_FLAGS, "--register", "--node"]);
 for (const f of Object.keys(flag)) if (!known.has(f)) die(`unknown option ${f}`);
 
 const name = positional[0];
-const describe = (positional[1] || "").trim();
+// The description is written into the suite's header COMMENT, so it must not
+// be able to end that comment. A glob such as "tools/*/x.mjs" contains the
+// two characters that do, and everything after them became live code: an
+// unwritten scaffold that ran whatever followed, and could exit 0 instead of
+// failing on its TODO. Kept to one line, with that closing pair broken up.
+const describe = (positional[1] || "").replace(/\s+/g, " ").replace(/\*\//g, "* /").trim();
 if (!name) die("usage: node tools/new-suite.mjs <name> [\"one line describing it\"] [--node]   |   node tools/new-suite.mjs --register <name>");
 if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) die(`"${name}" is not a suite name - use lower-case words joined by dashes (board-drill-grading), without the "test-" prefix or ".mjs"`);
 if (/^test(-|$)/.test(name)) die(`leave the "test-" prefix off - the file becomes tools/test-${name.replace(/^test-?/, "") || "<name>"}.mjs on its own`);
@@ -150,6 +163,12 @@ const testValue = JSON.parse(before.slice(testEntry.valueStart, testEntry.valueS
 const RUNNER = "run-parallel.mjs";
 if (!testValue.includes(RUNNER)) die(`the "test" script does not end in tools/${RUNNER} <names> - this tool only knows how to append to that list`);
 const listed = testValue.slice(testValue.indexOf(RUNNER) + RUNNER.length).trim().split(/\s+/).filter(Boolean);
+// Appending only reaches run-parallel while its name list is the END of the
+// script. With anything after it ("... test:z && node tools/after.mjs") the
+// new name would land on that other command: reported as added, run by
+// nothing - the very trap this tool exists to close.
+const notNames = listed.filter((n) => !/^[\w:.-]+$/.test(n) || n.startsWith("-"));
+if (notNames.length) die(`the "test" script has something after the run-parallel name list (${notNames.slice(0, 3).join(" ")} ...) - a name appended there would not reach run-parallel. Move the list to the end of the script first. Nothing was changed.`);
 
 const hasFile = existsSync(FILE_PATH);
 const hasScript = entries.some((e) => e.key === SCRIPT);

@@ -148,6 +148,41 @@ try {
   const written = node([pureFile]);
   check(written.code === 0 && /ZZ PURE DEMO: all passed/.test(written.out), "once its TODO is replaced the same file runs green with the house summary line", () => written.out);
 
+  /* ---- 7b. hostile command lines (each of these did damage before it was refused) ---- */
+  {
+    // A description is written into the header comment. One that holds the
+    // comment's own closing pair - any glob like tools/*/x.mjs does - used to
+    // end the comment, and the rest of it ran: the unwritten scaffold printed
+    // INJECTED and exited 0 instead of failing on its TODO.
+    const HOSTILE = "covers tools/*/x.mjs */ console.log(\"INJECTED\"); process.exit(0); /*\nsecond line";
+    const inj = scaffold("zz-inject-demo", HOSTILE, "--node");
+    const injFile = path.join(tools, "test-zz-inject-demo.mjs");
+    const ran = node([injFile]);
+    const headerLines = read(injFile).split("\n").slice(1, read(injFile).split("\n").findIndex((l) => l === " */"));
+    check(inj.code === 0 && ran.code === 1 && !/INJECTED/.test(ran.out) && /has not been written yet/.test(ran.out) && headerLines.length > 3 && headerLines.every((l) => l.startsWith(" *")),
+      "a description cannot end the header comment: with a glob, a comment-closer and a line break in it, the scaffold still FAILS on its TODO and runs nothing else", () => inj.out + ran.out + JSON.stringify(headerLines.slice(0, 3)));
+
+    // `--pkg` with nothing after it used to fall back to the REAL package.json
+    // and edit it. Proven on a COPY of the tool, whose "real" package.json is
+    // the stand-in's - so this can never touch the repo's own, whatever the tool does.
+    for (const f of ["new-suite.mjs", "lint-ci-matrix.mjs"]) copyFileSync(path.join(HERE, f), path.join(tools, f));
+    const pkgBefore = read(pkg);
+    const noValue = node([path.join(tools, "new-suite.mjs"), "zz-novalue-demo", "--pkg"]);
+    check(noValue.code === 1 && /--pkg needs a path/.test(noValue.out) && read(pkg) === pkgBefore && !existsSync(path.join(tools, "test-zz-novalue-demo.mjs")),
+      "a stand-in flag with no path after it is refused - it never falls back to editing the real package.json", () => noValue.out);
+    const swallowed = scaffold("zz-novalue-demo", "--tools", "--node");
+    check(swallowed.code === 1 && /--tools needs a path/.test(swallowed.out) && read(pkg) === pkgBefore, "nor may it swallow the next option as its path", () => swallowed.out);
+    for (const f of ["new-suite.mjs", "lint-ci-matrix.mjs"]) rmSync(path.join(tools, f));
+
+    // Appending only works while the name list ENDS the "test" script.
+    const tailed = pkgBefore.replace(JSON.stringify(scripts().test), JSON.stringify(scripts().test + " && node tools/after.mjs"));
+    writeFileSync(pkg, tailed);
+    const tail = scaffold("zz-tail-demo", "would land after another command");
+    check(tailed !== pkgBefore && tail.code === 1 && /something after the run-parallel name list/.test(tail.out) && read(pkg) === tailed && !existsSync(path.join(tools, "test-zz-tail-demo.mjs")),
+      "a \"test\" script with a command AFTER the run-parallel list is refused - the name would be reported as added and run by nothing", () => tail.out);
+    writeFileSync(pkg, pkgBefore);
+  }
+
   /* ---- 8. awkward places: after the last script, before the first, CRLF ---- */
   {
     const mini = path.join(root, "mini"); mkdirSync(path.join(mini, "tools"), { recursive: true });
