@@ -17,7 +17,7 @@
     "core": "core.extensionPoints: the points src/index.html runs (G.ext.run). core.optionalApis: guarded APIs that live outside src/app-modules and may be missing."
   },
   "core": {
-    "extensionPoints": [],
+    "extensionPoints": ["board:rendered", "drills:rendered", "prt:rendered"],
     "optionalApis": []
   },
   "modules": [
@@ -45,11 +45,9 @@
       "storageKeys": [],
       "optionalApis": [],
       "patches": [
-        { "name": "G.engine.run", "when": "load", "why": "Collective Decision mode: run() is replaced with a version that takes a fifth options argument and sends scenarios with a discussion step to the collective runner; every other scenario goes to the original, kept as G.engine._soloRun. To be replaced by a real engine mode (ROADMAP 3g H)." },
-        { "name": "G.board.render", "when": "load", "why": "Wrapped to add the Board Simulator launch panel under Board Drill once the screen has drawn." },
-        { "name": "G.drills.render", "when": "load", "why": "Wrapped to add the Team Training / PT Planner launch panel under Leadership Drills once the screen has drawn." },
-        { "name": "G.views.prt", "when": "load", "why": "Wrapped to add the PT Planner launch panel under Physical Readiness once the screen has drawn." }
-      ]
+        { "name": "G.engine.run", "when": "load", "why": "Collective Decision mode: run() is replaced with a version that takes a fifth options argument and sends scenarios with a discussion step to the collective runner; every other scenario goes to the original, kept as G.engine._soloRun. To be replaced by a real engine mode (ROADMAP 3g H)." }
+      ],
+      "hooks": ["board:rendered", "drills:rendered", "prt:rendered"]
     },
     {
       "file": "01-board-supplement-92a.js",

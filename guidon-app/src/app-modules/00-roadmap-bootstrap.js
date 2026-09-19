@@ -37,34 +37,28 @@
     });
     p.appendChild(row); mount.appendChild(p);
   }
-  function wrapRender(obj, key, after) {
-    if (!obj || typeof obj[key] !== "function" || obj[key]._roadmapWrapped) return;
-    var base = obj[key];
-    var wrapped = function (mount) {
-      var out = base.apply(this, arguments);
-      Promise.resolve(out).catch(function () {}).finally(function () {
-        try { after(mount); } catch (e) { if (window.console) console.error("Roadmap launcher failed:", e); }
-      });
-      return out;
-    };
-    wrapped._roadmapWrapped = true;
-    obj[key] = wrapped;
-  }
 
   // These are the discoverability anchors. The new routes are real routes in
   // the same ROUTES array (G.routes is that array), but NAV_GROUPS is private
   // legacy-shell state; placing launchers in the nearest existing first-class
   // surfaces avoids a second navigation system and keeps this modular batch
   // from rewriting the 9.9 MB shell solely to add three sidebar rows.
-  wrapRender(G.board, "render", function (m) {
+  //
+  // They hang off core's named extension points (G.ext, util.js). They used
+  // to REPLACE G.board.render, G.drills.render and G.views.prt with wrappers,
+  // which only held while no other module wrapped the same function and this
+  // file happened to load first. G.ext.on is called with no typeof guard on
+  // purpose: if the registry or a point ever goes away this must fail out
+  // loud, not quietly stop showing three launch panels.
+  G.ext.on("board:rendered", function (m) {
     addLaunchPanel(m, "Board Simulator", "Rehearse a whole board appearance in one sitting: report in, answer timed questions, work a leadership problem, then write your after-action notes. Works with no signal.",
       [{ label:"Open Board Simulator", hash:"#/board-sim" }]);
   });
-  wrapRender(G.drills, "render", function (m) {
+  G.ext.on("drills:rendered", function (m) {
     addLaunchPanel(m, "Collective leader tools", "Optional team-development and PT-planning surfaces built on GUIDON's existing drills, scenarios, roster, and reminders.",
       [{ label:"Team Training", hash:"#/team" }, { label:"PT Planner", hash:"#/pt-plan" }]);
   });
-  if (G.views) wrapRender(G.views, "prt", function (m) {
+  G.ext.on("prt:rendered", function (m) {
     addLaunchPanel(m, "Plan the week", "Turn the verified PRT reference plus GUIDON's broader drill/checklist surfaces into an editable weekly schedule.",
       [{ label:"Open PT Planner", hash:"#/pt-plan" }]);
   });
