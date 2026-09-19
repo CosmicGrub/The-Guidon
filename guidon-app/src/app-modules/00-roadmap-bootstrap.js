@@ -57,7 +57,7 @@
   // surfaces avoids a second navigation system and keeps this modular batch
   // from rewriting the 9.9 MB shell solely to add three sidebar rows.
   wrapRender(G.board, "render", function (m) {
-    addLaunchPanel(m, "Board Simulator", "Run reporting procedure, the existing live Mock Board, a judgment lane, and an AAR as one offline sequence.",
+    addLaunchPanel(m, "Board Simulator", "Rehearse a whole board appearance in one sitting: report in, answer timed questions, work a leadership problem, then write your after-action notes. Works with no signal.",
       [{ label:"Open Board Simulator", hash:"#/board-sim" }]);
   });
   wrapRender(G.drills, "render", function (m) {
