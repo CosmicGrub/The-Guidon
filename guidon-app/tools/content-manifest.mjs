@@ -77,7 +77,7 @@ const MIN_REASON = 20;
 /** Documents that carry a generated figures block between these markers.
  *  Every document listed here MUST contain the block: deleting it fails the
  *  lint, so the list can only describe reality. */
-export const FIGURE_DOCS = [];
+export const FIGURE_DOCS = ["README.md", "GUIDON files/GUIDON_PROJECT_MAP.md"];
 /** Documents --docs-report also reads. The masterfile is a session-by-session
  *  history: a figure there is "as of that session", not a claim about today. */
 const REPORT_DOCS = [...FIGURE_DOCS, "guidon-app/README.md", "GUIDON files/GUIDON_MASTERFILE.md"];
@@ -253,15 +253,20 @@ export function figuresBlock(fig) {
 }
 
 const QUOTED = "(\\d{1,3}(?:,\\d{3})+|\\d{2,5})";
+// The ways this repo's documents have actually phrased a bank count: "1,014
+// board cards", "a 984-card drill", "3,629-term dictionary", "353-entry
+// doctrine reference", "163-MOS career center", and the two-column tables.
 const DOC_PATTERNS = [
   { key: "board", re: new RegExp("\\b" + QUOTED + "\\s+(?:remaining\\s+)?board(?:\\s+study)?\\s+(?:cards|questions|prompts)\\b", "gi") },
+  { key: "board", re: new RegExp("\\b" + QUOTED + "-card\\b", "gi") },
   { key: "board", re: new RegExp("\\bBoard study cards\\s*\\|\\s*" + QUOTED, "gi") },
   { key: "acronyms", re: new RegExp("\\b" + QUOTED + "(?:-term\\b|\\s+(?:total\\s+)?(?:acronyms?|terms)\\b)", "gi") },
-  { key: "doctrine", re: new RegExp("\\b" + QUOTED + "\\s+doctrine\\s+entries\\b", "gi") },
+  { key: "acronyms", re: new RegExp("\\bAcronym dictionary\\s*\\|\\s*" + QUOTED, "gi") },
+  { key: "doctrine", re: new RegExp("\\b" + QUOTED + "(?:\\s+doctrine\\s+entries|-entry\\s+doctrine)\\b", "gi") },
   { key: "doctrine", re: new RegExp("\\bDoctrine entries\\s*\\|\\s*" + QUOTED, "gi") },
   { key: "scenarios", re: new RegExp("\\b" + QUOTED + "\\s+scenarios\\b", "gi") },
   { key: "scenarios", re: new RegExp("\\bScenarios\\s*\\|\\s*" + QUOTED, "gi") },
-  { key: "mos", re: new RegExp("\\b" + QUOTED + "\\s+MOS(?:s|\\s+entries)\\b", "g") },
+  { key: "mos", re: new RegExp("\\b" + QUOTED + "(?:\\s+MOS\\s+entries|-MOS)\\b", "g") },
   { key: "mos", re: new RegExp("\\bMOS entries\\s*\\|\\s*" + QUOTED, "gi") },
 ];
 /** Lines of a document (outside its generated block) that quote a count the
