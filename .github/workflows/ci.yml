@@ -683,8 +683,8 @@ jobs:
             tests: "test:opsec-curriculum test:opsec-guard test:pt-planner-behaviour test:quiz-twin-options"
           - name: "50-reciteusertext-sharemacfirstopen-teamtrainingbehaviour-releasepipeline"
             tests: "test:recite-user-text test:share-mac-first-open test:team-training-behaviour test:release-pipeline"
-          - name: "51-releasestate"
-            tests: "test:release-state"
+          - name: "51-releasestate-viewtransitions"
+            tests: "test:release-state test:view-transitions"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same

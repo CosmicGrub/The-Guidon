@@ -4373,6 +4373,23 @@ html.light .theme-swatch-dot { border-color:rgba(0,0,0,.12); }
 #demo-mode-badge button:hover { background: var(--amber-dim); }
 html.reduce-transparency #demo-mode-badge { background: var(--panel-2); }
 
+/* View Transitions prototype (route()'s own JS comment has the full
+   rationale): the default UA cross-fade is correct, just slightly languid
+   (~250ms) for a snappy SPA route change - tightened here. Named pseudo-
+   elements only exist while a transition set up by document.
+   startViewTransition() is actually running, so this rule is a pure no-op
+   everywhere the JS side skips one (unsupported browser, first render,
+   reduced motion, onboarding overlay) - nothing to feature-detect twice. */
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 140ms; }
+/* Defense in depth, matching this file's own established double-guard
+   pattern for every other motion effect: util.prefersReducedMotion() in JS
+   already stops a transition from ever being started, but if a browser ever
+   auto-derives a page's own view-transition-name from something JS doesn't
+   control, this ensures the OS-level query still wins. */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+}
+
 /* Main scroll container. */
 .main {
   grid-area: main;
@@ -37744,7 +37761,7 @@ window.G = window.G || {};
     // OTHER route change while it's open (browser back, search-jump, a
     // deep link) must not leave it stranded over the new view.
     try { closeNavDrawer(); } catch (e) {}
-    util.clear(routeEl);
+
     // Every render gets its OWN frame inside #route, so a superseded render can
     // only ever append into a detached node. Without this, two quick route()
     // calls (boot sets the default hash AND calls route(), so the hashchange
@@ -37752,17 +37769,70 @@ window.G = window.G || {};
     // renders: the second clears the first's early output, then BOTH keep
     // appending, and Home boots with every panel duplicated. Found when the
     // accessibility sweep flagged two of every Home control at boot.
-    const frame = el("div");
-    routeEl.appendChild(frame);
-    // render() may be sync or async; handle both, and catch async rejections
-    // that a plain try/catch would miss (home/progress/board are async views).
-    Promise.resolve()
-      .then(() => r.render(frame))
-      .catch((e) => {
-        console.error(e);
-        util.clear(routeEl);
-        routeEl.appendChild(el("div.empty", { text: "Something went wrong rendering this view." }));
-      })
+    function swapRoute() {
+      util.clear(routeEl);
+      const frame = el("div");
+      routeEl.appendChild(frame);
+      // render() may be sync or async; handle both, and catch async rejections
+      // that a plain try/catch would miss (home/progress/board are async views).
+      return Promise.resolve()
+        .then(() => r.render(frame))
+        .catch((e) => {
+          console.error(e);
+          util.clear(routeEl);
+          routeEl.appendChild(el("div.empty", { text: "Something went wrong rendering this view." }));
+        });
+    }
+    // View Transitions prototype: cross-fades the outgoing/incoming view via
+    // the browser's own compositor (document.startViewTransition) instead of
+    // an instant hard swap - zero bytes added, a native platform API. The
+    // browser snapshots the CURRENT #route contents before swapRoute() runs,
+    // so the old view stays visible (as a static image) for the whole time
+    // swapRoute()'s promise is pending, then cross-fades into whatever
+    // swapRoute() actually left behind - no visible "blank" flash between
+    // clear() and the new render populating.
+    //
+    // Skipped, never assumed: on the very first render (nothing to
+    // transition FROM - the first paint must not animate in over the empty
+    // shell); on unsupported browsers (feature-detected - Safari/WebKit at
+    // this app's own declared engine floor has no startViewTransition);
+    // whenever util.prefersReducedMotion() is true (the same single source
+    // of truth every other motion effect in this file already defers to -
+    // OS-level media query OR the in-app Settings override); and while
+    // onboarding's overlay owns the page (a transitioning root fighting a
+    // modal's own focus-trap/inert state is not a combination worth
+    // supporting here).
+    const wantsViewTransition = _firstRouteDone
+      && !document.getElementById("ob-overlay")
+      && typeof document.startViewTransition === "function"
+      && !util.prefersReducedMotion();
+    let swapDone;
+    if (wantsViewTransition) {
+      // A second route change while a cross-fade is still running (a fast
+      // double tap, the back button, a redirect) makes the browser SKIP the
+      // first transition, and a hidden tab aborts one outright. Either way it
+      // rejects that transition's `ready` and `finished` promises. Nothing here
+      // waits on them, so left alone each would surface as an unhandled
+      // "Transition was skipped" rejection in the console - noise for a
+      // Soldier's bug report and a failure for every suite that asserts a
+      // clean console. The DOM swap itself is unaffected: a skipped
+      // transition still runs swapRoute(), and updateCallbackDone still
+      // settles, which is the only promise the focus step below depends on.
+      let vt = null;
+      try { vt = document.startViewTransition(swapRoute); } catch (e) { vt = null; } // floor-ok: only reached when wantsViewTransition (above) has feature-detected it; without it the plain swapRoute() below runs
+      if (vt && vt.updateCallbackDone) {
+        if (vt.ready && vt.ready.catch) vt.ready.catch(() => {});
+        if (vt.finished && vt.finished.catch) vt.finished.catch(() => {});
+        swapDone = vt.updateCallbackDone;
+      } else {
+        // An older or partial implementation that threw, or returned nothing
+        // usable: fall back to the plain swap rather than leave the page blank.
+        swapDone = swapRoute();
+      }
+    } else {
+      swapDone = swapRoute();
+    }
+    swapDone
       .then(() => {
         // Move focus to the view heading for screen-reader and keyboard users
         // after async views finish appending it — this announces the new view
