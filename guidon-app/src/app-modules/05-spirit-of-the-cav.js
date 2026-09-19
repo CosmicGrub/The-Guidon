@@ -1,141 +1,140 @@
-/* GUIDON - Spirit of the CAV study-content integration.
-   Adds the user-supplied cavalry song/tradition to the same canonical study
-   surfaces already used by Board Drill/Quiz/Rapid Fire and Recitation Drill.
+/* GUIDON - 1st Cavalry Division heritage (facts only; no song text).
 
-   Design:
-   - one full-text recitable board record with lines[] for #/recite;
-   - line-by-line recall cards plus fill-in-the-blank prompts via the existing
-     board supplement merge path, so all normal board-study consumers see them;
-   - one Creeds & Branch Identities reading/reference record cross-linked to the
-     recitable board record;
-   - provenance is explicit: the supplied text is treated as unit-tradition
-     content, not as numbered Army doctrine.
+   WHY this file carries no song text any more: it used to bundle the whole
+   text of the division song, line by line, as board cards and as a
+   recitable record. That song has a named author and no recorded
+   public-domain or permission basis, and the project rule is that GUIDON
+   never ships copyrighted text or song lyrics. So the text is gone - from
+   the recitable record, the line-by-line cards, the fill-in-the-blank
+   strings and the Creeds entry - and nothing here may quote or paraphrase it
+   line by line again (tools/test-spirit-of-the-cav.mjs fails the build's
+   output if any of it comes back).
+
+   What stays is FACT, which nobody owns, each with a real source a Soldier
+   can check:
+   - a title-only entry in Creeds & Branch Identities (same shape as the
+     branch-motto entries: history + source, no full text);
+   - four heritage cards filed under the existing "Army History" category.
+     They are NOT in "Creeds" - that deck is the Army-wide recall deck every
+     Soldier quizzes, and one division's heritage does not belong in it.
+
+   A Soldier who wants to drill their own unit's song, creed or motto does it
+   through Recitation Drill's "My unit" section (recite-user-texts.js): they
+   paste the text themselves, it is stored only on their device, and it is
+   never part of the app.
+
+   THE RULE FOR ANY FUTURE TEXT: a bundled record that carries words to
+   recite (lines[] or fullText) must say why GUIDON may reproduce them -
+     rights: { author, firstPublished, basis, evidence, checkedOn }
+   with basis one of "us-gov-work" | "pd-age" | "permission". "A Soldier
+   gave it to us" is not a basis. tools/test-spirit-of-the-cav.mjs enforces
+   it against the assembled content, this file's records included.
+
+   IDs: pb-spirit-cav-09-1 / -09-2 are kept from the original release so a
+   Soldier's review history on those two facts carries over.
 */
 (function () {
   "use strict";
 
-  var G = window.G = window.G || {};
   var seed = window.GUIDON_SEED;
   if (!seed || !seed.board || !Array.isArray(seed.board.questions)) return;
-  if (typeof G.boardSupplementMergeDeck !== "function") return;
 
-  var lines = [
-    "We are the CAV, we are the First Team",
-    "Our sabers shining in the sun.",
-    "We are the CAV, we are the First Team",
-    "Our fathers rode in '21.",
-    "We have a heritage that will never die",
-    "'Cause we ride the charge with sabers high.",
-    "We are the CAV, we are the First Team,",
-    "We're Gary Owen, sound the charge!"
-  ];
+  // Every source below was opened and read on CHECKED, and each card says
+  // only what its source says. They are official U.S. Army pages and news
+  // articles, not a regulation - so no paragraph numbers are cited, because
+  // there are none to cite. (An earlier draft named a social-media post and a
+  // date nobody had confirmed; a source that cannot be opened and checked
+  // does not go on a card.)
+  var CHECKED = "2026-09-19";
+  var SRC_DIVISION = "U.S. Army, 1st Cavalry Division official page (army.mil/1stcav), \"1st Cavalry Division, America's First Team!\"";
+  var SRC_SONG = "U.S. Army (army.mil), \"Greywolf Brigade assumes mission in Kuwait,\" 18 March 2017; \"1st Cavalry Division Command Sergeant Major Relinquishes Responsibility,\" 28 February 2023";
+  var SRC_GARRYOWEN = "U.S. Army (army.mil), \"Echo Garryowen,\" 7 June 2013; \"1st Squadron, 7th Cavalry Regiment hosts Garryowen Family Day,\" 19 July 2019";
 
-  var fullText = lines.join("\n");
-  var boardId = "creed-spirit-of-the-cav";
-  var exists = seed.board.questions.some(function (q) { return q.id === boardId; });
+  var CATEGORY = "Army History";
+  // tools/pillar-map.mjs files "Army History" under this pillar; a card whose
+  // category is mapped must carry exactly that pillar (lint-board-taxonomy f2).
+  var PILLAR = "Drill & Board Etiquette";
 
-  if (!exists) {
-    seed.board.questions.push({
-      id: boardId,
-      category: "Creeds",
-      q: "Recite the Spirit of the CAV.",
-      a: fullText,
-      boardAnswer: fullText,
-      acceptableAnswer: fullText,
-      source: "User-supplied unit tradition text — Spirit of the CAV",
-      concept: "Spirit of the CAV",
-      keyPoints: [
-        "First Team identifies the 1st Cavalry Division.",
-        "Gary Owen/Garryowen is historically associated with U.S. Cavalry tradition.",
-        "Memorize the text in sequence and preserve the exact line order."
-      ],
-      difficulty: "intermediate",
-      pillar: "Drill & Board Etiquette",
-      lines: lines,
-      tags: ["spirit-of-the-cav", "cavalry", "first-team", "gary-owen", "garryowen", "unit-tradition"]
-    });
+  function card(id, q, a, source, keyPoints) {
+    return {
+      id: id,
+      category: CATEGORY,
+      q: q,
+      a: a,
+      boardAnswer: a,
+      acceptableAnswer: a,
+      source: source,
+      concept: "1st Cavalry Division heritage",
+      keyPoints: keyPoints,
+      difficulty: "basic",
+      pillar: PILLAR,
+      // Read by nothing yet - the same kind of tag the 92A lane carries
+      // (mos/curriculum), so a future unit filter has something to key on.
+      unit: "1st Cavalry Division",
+      tags: ["1st-cavalry-division", "unit-heritage"]
+    };
   }
 
-  G.boardSupplementMergeDeck({
-    id: "spirit-cav",
-    cards: [
-      {n:1,title:"Spirit of the CAV — Line 1",category:"Creeds",source:"User-supplied unit tradition text — Spirit of the CAV",qa:[
-        ["What is the opening line of the Spirit of the CAV?","We are the CAV, we are the First Team"],
-        ["In the opening line, what identity follows 'We are the CAV'?","We are the First Team."]
-      ]},
-      {n:2,title:"Spirit of the CAV — Line 2",category:"Creeds",source:"User-supplied unit tradition text — Spirit of the CAV",qa:[
-        ["What line follows 'We are the CAV, we are the First Team'?","Our sabers shining in the sun."],
-        ["Fill in the blank: 'Our ______ shining in the sun.'","sabers"]
-      ]},
-      {n:3,title:"Spirit of the CAV — Line 3",category:"Creeds",source:"User-supplied unit tradition text — Spirit of the CAV",qa:[
-        ["After 'Our sabers shining in the sun,' what line comes next?","We are the CAV, we are the First Team"],
-        ["Fill in the blank: 'We are the CAV, we are the ______ ______.'","First Team"]
-      ]},
-      {n:4,title:"Spirit of the CAV — Line 4",category:"Creeds",source:"User-supplied unit tradition text — Spirit of the CAV",qa:[
-        ["What line follows the second 'We are the CAV, we are the First Team'?","Our fathers rode in '21."],
-        ["Fill in the blank: 'Our fathers rode in ______.'","'21"]
-      ]},
-      {n:5,title:"Spirit of the CAV — Line 5",category:"Creeds",source:"User-supplied unit tradition text — Spirit of the CAV",qa:[
-        ["What line comes after 'Our fathers rode in '21'?","We have a heritage that will never die"],
-        ["Fill in the blank: 'We have a ______ that will never die.'","heritage"]
-      ]},
-      {n:6,title:"Spirit of the CAV — Line 6",category:"Creeds",source:"User-supplied unit tradition text — Spirit of the CAV",qa:[
-        ["What line follows 'We have a heritage that will never die'?","'Cause we ride the charge with sabers high."],
-        ["Fill in the blank: 'Cause we ride the ______ with sabers high.","charge"]
-      ]},
-      {n:7,title:"Spirit of the CAV — Line 7",category:"Creeds",source:"User-supplied unit tradition text — Spirit of the CAV",qa:[
-        ["What line follows 'Cause we ride the charge with sabers high?","We are the CAV, we are the First Team,"],
-        ["Fill in the blank: 'We are the CAV, we are the ______ ______.'","First Team"]
-      ]},
-      {n:8,title:"Spirit of the CAV — Final Line",category:"Creeds",source:"User-supplied unit tradition text — Spirit of the CAV",qa:[
-        ["What is the final line of the Spirit of the CAV?","We're Gary Owen, sound the charge!"],
-        ["Fill in the blanks: We're ______ ______, sound the ______!","Gary Owen; charge"]
-      ]},
-      {n:9,title:"Spirit of the CAV — Meaning",category:"Creeds",source:"1st Cavalry Division / U.S. Cavalry historical tradition; user-supplied text",qa:[
-        ["What does 'First Team' refer to in the Spirit of the CAV?","The 1st Cavalry Division, widely known as the First Team."],
-        ["What does 'Gary Owen' refer to in cavalry tradition?","It refers to Garryowen/Gary Owen, a traditional cavalry tune and name strongly associated with U.S. Cavalry heritage, including the 7th Cavalry and later cavalry tradition."]
-      ]}
-    ]
-  });
+  var cards = [
+    card("pb-spirit-cav-09-1",
+      "Which Army division is known as the \"First Team\"?",
+      "The 1st Cavalry Division. Its official page says the name took root under Major General William C. Chase, when the division was the first to enter Tokyo.",
+      SRC_DIVISION,
+      ["\"First Team\" is the nickname of the 1st Cavalry Division.",
+       "The division's official page says the name took root under Major General William C. Chase.",
+       "The same page records the division as the first to enter Tokyo, securing the capital during the occupation of Japan."]),
+    card("pb-spirit-cav-09-2",
+      "What is \"Garryowen\" in U.S. Cavalry tradition?",
+      "An Irish quickstep tune that the 7th Cavalry Regiment took as its namesake. \"Garryowen\" is the regiment's nickname and a traditional greeting in it, and 7th Cavalry squadrons have served in the 1st Cavalry Division.",
+      SRC_GARRYOWEN,
+      ["Garryowen is a well-known Irish quickstep tune.",
+       "It is the regimental namesake of the 7th Cavalry Regiment, and a traditional greeting in the regiment.",
+       "7th Cavalry squadrons have served in the 1st Cavalry Division, which is why the name is heard there."]),
+    card("pb-spirit-cav-10-1",
+      "When and where was the 1st Cavalry Division activated?",
+      "13 September 1921 at Fort Bliss, Texas.",
+      SRC_DIVISION,
+      ["The division's official page gives its start as 13 September 1921 at Fort Bliss, Texas.",
+       "It began as a horse-mounted division guarding the Mexican border."]),
+    card("pb-spirit-cav-11-1",
+      "What is \"Spirit of the Cav\"?",
+      "The division song of the 1st Cavalry Division. Its Troopers sing it at the close of division ceremonies.",
+      SRC_SONG,
+      ["It is the 1st Cavalry Division's division song.",
+       "Troopers sing it at the close of ceremonies such as a transfer of authority or a change of responsibility."])
+  ];
+
+  var have = {};
+  seed.board.questions.forEach(function (q) { have[q.id] = true; });
+  cards.forEach(function (c) { if (!have[c.id]) seed.board.questions.push(c); });
 
   seed.creeds = Array.isArray(seed.creeds) ? seed.creeds : [];
   if (!seed.creeds.some(function (c) { return c.id === "creed-spirit-of-the-cav"; })) {
     seed.creeds.push({
       id: "creed-spirit-of-the-cav",
-      kind: "creed",
+      kind: "song",
       group: "Maneuver & Combat Arms",
       branch: "Cavalry",
-      scope: "unit-tradition",
-      officialTitle: "Spirit of the CAV",
-      fullText: fullText,
-      history: "A cavalry heritage piece centered on the 1st Cavalry Division's 'First Team' identity and the Garryowen/Gary Owen cavalry tradition. In GUIDON it is presented as unit-tradition study content rather than numbered Army doctrine.",
-      coreTenets: [
-        "Cavalry identity and esprit de corps",
-        "Connection to the First Team",
-        "Continuity of cavalry heritage across generations",
-        "Charge, sabers, and Garryowen/Gary Owen imagery"
-      ],
+      scope: "unit",
+      officialTitle: "Spirit of the Cav (1st Cavalry Division song)",
+      // Title and history only, on purpose - see this file's header. The
+      // empty motto/fullText keep the record the same shape as the
+      // branch-motto entries in the seed.
+      motto: null,
+      fullText: "",
+      history: "\"Spirit of the Cav\" is the division song of the 1st Cavalry Division, the \"First Team.\" Its Troopers sing it at the close of division ceremonies. The division's official page gives its start as 13 September 1921 at Fort Bliss, Texas. The words of the song are not included in GUIDON because they are not GUIDON's to share. If this is your unit, you can add your own copy in Recitation Drill, under My unit - it stays on your device.",
+      coreTenets: [],
       source: {
-        ref: "User-supplied Spirit of the CAV text; historical context from established U.S. Cavalry / 1st Cavalry Division tradition",
+        ref: SRC_SONG + "; " + SRC_DIVISION,
         para: "",
-        asOf: "2026-09-17",
+        asOf: CHECKED,
         status: "unit-tradition"
       },
       tier: "all",
-      tags: ["spirit-of-the-cav", "cavalry", "first-team", "gary-owen", "garryowen", "song", "unit-tradition"],
-      linkedBoardId: boardId
+      tags: ["spirit-of-the-cav", "1st-cavalry-division", "first-team", "garryowen", "song", "unit-tradition"],
+      // No recitable record exists for it any more, so there is nothing for
+      // the Creeds page to link to in Board Drill or Recitation Drill.
+      linkedBoardId: null
     });
   }
-
-  G.spiritOfTheCav = {
-    boardId: boardId,
-    lines: lines.slice(),
-    cloze: {
-      easy: "We are the CAV, we are the ______ Team\nOur sabers shining in the sun.\nWe are the CAV, we are the First Team\nOur fathers rode in '21.\nWe have a ______ that will never die\n'Cause we ride the charge with sabers high.\nWe are the CAV, we are the First Team,\nWe're Gary Owen, sound the ______!",
-      medium: "We are the ______, we are the ______ ______\nOur ______ shining in the ______.\nWe are the ______, we are the ______ ______\nOur ______ rode in ______.\nWe have a ______ that will never ______\n'Cause we ______ the ______ with ______ high.\nWe are the ______, we are the ______ ______,\nWe're ______ ______, sound the ______!",
-      hard: lines.map(function (line) {
-        return line.replace(/\b([A-Za-z])[A-Za-z']*\b/g, "$1");
-      }).join("\n")
-    }
-  };
 })();
