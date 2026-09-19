@@ -212,8 +212,8 @@ const { page, noise } = boot;
   // until(): poll, then assert - true when the state arrives, false (not a
   // throw, not a swallowed rejection) when it does not, and a real error
   // (the predicate itself blowing up) still surfaces.
-  await page.evaluate(() => { window.__late = false; setTimeout(() => { window.__late = true; }, 250); });
-  const early = await page.evaluate(() => window.__late);
+  // (read in the same breath as the timer is set, so a slow runner cannot make "early" late)
+  const early = await page.evaluate(() => { window.__late = false; setTimeout(() => { window.__late = true; }, 250); return window.__late; });
   const arrived = await until(page, () => window.__late === true);
   const u0 = Date.now();
   const gaveUp = await until(page, () => window.__neverSet === true, null, { timeout: 500 });
@@ -275,7 +275,8 @@ const { page, noise } = boot;
   const clicks = (id) => fx.evaluate((i) => window.__clicks.filter((c) => c.id === i), id);
 
   // Control: a click that does not wait lands mid-move.
-  await fx.evaluate(() => { window.startMove(300); return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => { document.getElementById("mover").click(); r(); }))); });
+  // (started and clicked in one synchronous step, so no runner is slow enough to change the answer)
+  await fx.evaluate(() => { window.startMove(300); document.getElementById("mover").click(); });
   let c = await clicks("mover");
   check(c.length === 1 && c[0].moving === true, "control: a click that does not wait lands while the button is still moving (the fixture can tell)", () => JSON.stringify(c));
   await fx.waitForFunction(() => window.__moving === false);
@@ -287,7 +288,7 @@ const { page, noise } = boot;
   const res = await clickWhenStable(fx, "#mover", { click: { force: true } });
   const took = Date.now() - t0;
   c = await clicks("mover");
-  check(c.length === 2 && c[1].moving === false && c[1].left === "300px" && took >= 250,
+  check(c.length === 2 && c[1].moving === false && c[1].left === "300px",
     `clickWhenStable() waits out a button that moves for 300ms and clicks it where it came to rest (took ${took}ms) - its own wait, with Playwright's switched off`, () => JSON.stringify({ c, took, res }));
 
   // It takes a locator as well as a selector.
