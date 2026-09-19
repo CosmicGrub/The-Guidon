@@ -83,7 +83,15 @@ const navTitle = await page.evaluate(() => { const a = document.querySelector('.
 
 /* ---- 3. How current is this? ---- */
 await page.evaluate(() => { location.hash = "#/currency"; });
-await page.waitForFunction(() => window.G && G.currency && Array.isArray(G.currency.DOMAINS) && document.querySelectorAll("#route .hint").length > 3, null, { timeout: 15000 }).catch(() => {});
+// Wait for THIS page, not for "some hints": Home (where step 2 left us) already
+// shows more than three, so a count-of-hints wait is satisfied before the route
+// has changed and the cards below are then read off the wrong screen. Run
+// against the pre-fix build, that race reported the untouched Terms card as ""
+// - a failure for the wrong reason, and a flake waiting to happen on a loaded
+// CI runner. The heading and the Terms card exist in every build, old or new.
+const onCurrencyPage = await page.waitForFunction(() => /how current is this/i.test((document.querySelector("#route h1, #route h2") || {}).textContent || "")
+  && Array.from(document.querySelectorAll("#route .hint")).some((h) => / terms\. The baseline is the oldest thing in the app/.test(h.textContent || "")), null, { timeout: 15000 }).then(() => true).catch(() => false);
+onCurrencyPage ? ok("How current is this? has rendered its cards (the heading and the Terms card are on screen)") : bad("#/currency never rendered its cards within 15s - everything below would be read off the wrong screen");
 const shown = await page.evaluate(() => Array.from(document.querySelectorAll("#route .hint")).map((h) => (h.textContent || "").trim()));
 const doctrineLine = shown.find((t) => /entries and .* board cards\./.test(t)) || "";
 doctrineLine === `${ENTRIES} entries and ${CARDS} board cards.`
