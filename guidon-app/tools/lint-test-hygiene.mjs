@@ -98,9 +98,12 @@ export function mask(text) {
       continue;
     }
     if (c === "/") {
-      const before = out.replace(/\s+$/, "");
-      const prev = before[before.length - 1];
-      if (prev === undefined || REGEX_MAY_FOLLOW.has(prev) || REGEX_AFTER_WORD.test(before.slice(-12))) {
+      // the last thing that is not white space, found without copying `out`
+      // (this runs once per "/" - copying it made the whole lint take seconds)
+      let k = out.length - 1;
+      while (k >= 0 && (out[k] === " " || out[k] === "\n" || out[k] === "\r" || out[k] === "\t")) k--;
+      const prev = k >= 0 ? out[k] : undefined;
+      if (prev === undefined || REGEX_MAY_FOLLOW.has(prev) || REGEX_AFTER_WORD.test(out.slice(Math.max(0, k - 11), k + 1))) {
         // a regex literal: blank through the closing "/" (a "/" inside a
         // [class] or after a backslash does not close it), keep the flags
         let j = i + 1, inClass = false, closed = false;
@@ -119,7 +122,13 @@ export function mask(text) {
   return out;
 }
 
-const lineOf = (text, idx) => { let n = 1; for (let i = 0; i < idx && i < text.length; i++) if (text.charCodeAt(i) === 10) n++; return n; };
+/* 1-based line of an offset, by binary search over the line starts (a file
+   with hundreds of hits would otherwise be re-walked from the top each time). */
+function lineIndex(text) {
+  const starts = [0];
+  for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10) starts.push(i + 1);
+  return (idx) => { let lo = 0, hi = starts.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (starts[mid] <= idx) lo = mid; else hi = mid - 1; } return lo + 1; };
+}
 
 function closeParen(code, open) {
   let depth = 0;
@@ -243,6 +252,8 @@ export function scan(source) {
   const src = source.replace(/\r\n/g, "\n");
   const code = mask(src);
   const rawLines = src.split("\n");
+  const lineAt = lineIndex(code);
+  const lineOf = (_code, idx) => lineAt(idx);
   const hits = [];
   const exempt = (line) => {
     const ok = (l) => { const m = /\/\/\s*hygiene-ok:\s*(.*)$/.exec(rawLines[l - 1] || ""); return !!m && m[1].trim().length >= 10; };
