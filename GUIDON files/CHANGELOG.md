@@ -2,6 +2,18 @@
 
 All notable changes to GUIDON will be documented in this file. Format loosely follows [Keep a Changelog](http://keepachangelog.com/). This is the technical record for developers - the app itself shows a short, plain-language summary of each release to Soldiers directly (G.whatsNew, src/index.html), not this file.
 
+## 2026-09-18 - v1.12.0: Leader readiness, collective training, and PT planning
+
+**Collective/team readiness.** PR #183 adds a complete 10-exercise Team Training catalog, a shared discuss-then-commit Collective Decision mode on the existing scenario engine, the cross-subject Scenario Relay, roster/AAR tie-ins, and collective variants for already-shipped training lanes. Study Rooms' existing multi-category composition remains the room-level companion rather than being rebuilt.
+
+**PT planning.** The new offline PT Planner persists day/week/month plans, supports templates and hand edits, schedules through the existing reminder pipeline, exports leader-facing plans, and applies non-blocking 3:1 hard-to-recovery planning/history guards. The canonical Strength and Endurance session sequences now live under the shared PRT model; drills whose full doctrine content is not authored yet stay explicitly labeled "content pending" instead of receiving invented exercise text.
+
+**Board Simulator and readiness.** A new Board Simulator composes reporting-procedure rehearsal, the real Mock Board history, judgment scenarios, and an AAR. It is deterministic/offline and MOI-aware, not a live-AI dependency. Existing six-pillar readiness, regulation filters, 5-Minute Board Reps, and the three Integrated Operational Thinking scenarios remain the foundation rather than being duplicated.
+
+**Remaining roadmap content gaps closed.** Source-rich Board Drill coverage now includes AER (AR 930-4), ACS (AR 608-1), SUDCC/ASAP context (AR 600-85), current CSDP framing under AR 710-4, and the current DA Form 7923 Statement of Charges/Cash Collection Voucher under AR 735-5. The release regression suite pins these records and their regulation mappings.
+
+**Hardening.** Five review defects in the umbrella branch were resolved before release: relay cancellation no longer records completion, capped Mock Board history still detects a new board, single-choice collective feedback is preserved, stale PT history reads cannot leak into another view, and Board Simulator AAR textarea drafts survive rerenders through the live DOM value rather than an ineffective HTML value attribute.
+
 ## 2026-09-17 - v1.11.0: Board depth, OPSEC safeguards, and adaptive memorization
 
 **Promotion-board depth.** PR #177 integrates the complete 112-card source intake / 224 Q&A prompts, dedicated 92A coverage, two logistics scenarios, the ESP32 exporter, and permanent intake auditing.

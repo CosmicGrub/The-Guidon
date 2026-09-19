@@ -260,6 +260,12 @@ jobs:
       - name: Verify (PWA/build harness)
         run: npm run verify
 
+      # Large-roadmap integration gate. This suite also remains in the
+      # generated matrix; running it here gives direct, non-paginated logs
+      # for the new PT/Team/Collective/Board-Simulator integration surface.
+      - name: Roadmap leader-readiness regression
+        run: npm run test:roadmap-leader-readiness
+
       # Collective P2: merge the probe file verify just wrote (artifacts/caps/
       # chromium-web.json, the evidence column) into docs/generated/
       # capability-matrix.{md,json}; exits non-zero when a required
@@ -650,8 +656,8 @@ jobs:
             tests: "test:icon-registry test:whats-new test:study-rooms-shell-gate test:share-os-aware"
           - name: "44-doctrinenjpawolaccuracy-doctrineconfidencefilters-doctrinetcccmedevacaccuracy-tccciedstrikescenario"
             tests: "test:doctrine-njp-awol-accuracy test:doctrine-confidence-filters test:doctrine-tccc-medevac-accuracy test:tccc-ied-strike-scenario"
-          - name: "45-medevac9linescenario-iotscenarios-doctrinecounseltrainingaccuracy"
-            tests: "test:medevac-9line-scenario test:iot-scenarios test:doctrine-counsel-training-accuracy"
+          - name: "45-medevac9linescenario-iotscenarios-doctrinecounseltrainingaccuracy-roadmapleaderreadiness"
+            tests: "test:medevac-9line-scenario test:iot-scenarios test:doctrine-counsel-training-accuracy test:roadmap-leader-readiness"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
