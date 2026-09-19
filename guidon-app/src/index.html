@@ -11088,7 +11088,20 @@ window.G = window.G || {};
       // - dragging/move/end all no-op on it (dragging stays false), leaving
       // the browser's native scroll (and, for mouse, the wheel, which was
       // never affected by this to begin with) fully in charge.
-      const startsInScroll = (e) => e.target instanceof HTMLElement && !!e.target.closest(".qz-back-scroll");
+      const startsInScroll = (e) => e.target instanceof Element && !!e.target.closest(".qz-back-scroll");
+      // Any press that starts on an actual control (grade buttons, the star
+      // button, the cross-link buttons inside the answer, ...) is that
+      // control's own click, never "begin a drag" - checked via .closest()
+      // so a press landing on an icon/SVG *inside* the button still counts
+      // (e.target there is the SVG/path, not the <button> itself).
+      // `instanceof Element`, not `instanceof HTMLElement`: an SVG icon's
+      // target is an SVGElement, which fails the HTMLElement check and would
+      // silently skip this carve-out for exactly the icon presses it needs
+      // to catch (found as a real regression - a real mouse click on a grade
+      // button's icon was landing on the card, which had captured the
+      // pointer in pointerdown below, so the *click* that followed went to
+      // the card's flip handler instead of the button's own grade() call).
+      const startsOnControl = (e) => e.target instanceof Element && !!e.target.closest("button, a, input, select, textarea, [role=button]");
 
       // ---- Touch path: unchanged raw Touch events ----
       card.addEventListener("touchstart", (e) => {
@@ -11105,14 +11118,14 @@ window.G = window.G || {};
 
       // ---- Mouse/pen path: Pointer Events, explicitly not touch (the path
       // above already owns touch — this avoids double-handling the same
-      // finger drag through two event systems at once). The star button
-      // keeps its own click behavior exactly like the tap-to-flip handler
-      // above already carves it out — a mouse press starting there is
-      // "star this card," never "begin a drag."
+      // finger drag through two event systems at once). A mouse press
+      // starting on any control inside the card (star button, grade
+      // buttons, answer cross-links) keeps its own click behavior instead of
+      // arming the drag/flip gesture - see startsOnControl above.
       let pointerId = null;
       card.addEventListener("pointerdown", (e) => {
         if (e.pointerType === "touch") return;
-        if (e.target instanceof HTMLElement && e.target.closest(".qz-star-btn")) return;
+        if (startsOnControl(e)) return;
         if (startsInScroll(e)) return;
         pointerId = e.pointerId;
         try { card.setPointerCapture(pointerId); } catch (e2) {}
