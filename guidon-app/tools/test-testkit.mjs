@@ -20,7 +20,7 @@
  *     it should, and refuses a misspelt category instead of returning 0;
  *   - waitForRoute: resolves only once the screen is drawn, rebuilds it on
  *     { fresh }, and fails loudly on an unknown screen or a `ready` selector
- *     that never shows;
+ *     that never shows; until() polls and hands back a boolean to assert on;
  *   - clickWhenStable: a click that does not wait lands on a button that is
  *     still moving; the helper's lands after it has stopped - and it follows
  *     a node that is replaced mid-wait, waits out disabled / inert, and says
@@ -34,7 +34,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { assembleBank } from "./assemble-bank.mjs";
 import {
   bootApp, openSession, ok, bad, check, finish, captureNoise, expectNoConsoleNoise,
-  clickWhenStable, waitForRoute, waitForBoot, liveCount, PERSONAL_PROFILE, PROFILE_KEY,
+  clickWhenStable, waitForRoute, waitForBoot, liveCount, until, PERSONAL_PROFILE, PROFILE_KEY,
 } from "./testkit.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -195,6 +195,21 @@ const { page, noise } = boot;
     "a `ready` control that never shows fails in the time allowed, naming the selector and the screen - nothing is swallowed", () => String(never));
   const shape = await throws(() => waitForRoute(page, "board"));
   check(shape && /must look like/.test(shape), "a hash without #/ is refused before it can time out", () => String(shape));
+
+  // until(): poll, then assert - true when the state arrives, false (not a
+  // throw, not a swallowed rejection) when it does not, and a real error
+  // (the predicate itself blowing up) still surfaces.
+  await page.evaluate(() => { window.__late = false; setTimeout(() => { window.__late = true; }, 250); });
+  const early = await page.evaluate(() => window.__late);
+  const arrived = await until(page, () => window.__late === true);
+  const u0 = Date.now();
+  const gaveUp = await until(page, () => window.__neverSet === true, null, { timeout: 500 });
+  const broke = await throws(() => until(page, () => { throw new Error("predicate blew up"); }, null, { timeout: 500 }));
+  // The browser reports that deliberate throw as an uncaught page error too;
+  // take exactly that one back out so the closing noise check stays honest.
+  for (let i = noise.length - 1; i >= 0; i--) if (/predicate blew up/.test(noise[i])) noise.splice(i, 1);
+  check(early === false && arrived === true && gaveUp === false && Date.now() - u0 < 4000 && broke && /predicate blew up/.test(broke),
+    "until() is true once the state arrives, false when time runs out, and still throws a real error", () => JSON.stringify({ early, arrived, gaveUp, broke }));
 }
 
 /* =====================================================================

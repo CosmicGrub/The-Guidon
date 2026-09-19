@@ -8,8 +8,8 @@
  * that a shared helper can simply not have:
  *
  *   1. a click racing a redraw          -> clickWhenStable()
- *   2. a fixed sleep standing in for    -> waitForRoute() (and a `ready`
- *      "the view has rendered"             selector instead of waitForTimeout)
+ *   2. a fixed sleep standing in for    -> waitForRoute() with a `ready`
+ *      "the view has rendered"             control, and until() for the rest
  *   3. a wait whose failure was          -> every helper here THROWS, naming
  *      swallowed by .catch(() => {})        the step and what was on screen
  *
@@ -285,7 +285,7 @@ async function onScreen(page) {
  *   - the tab title is that route's own label, which route() sets as its
  *     first act, so the router ran FOR THIS hash;
  *   - the start-up placeholder is gone and #route holds rendered content;
- *   - `ready` (a selector, optional but recommended) is visible - the one
+ *   - `ready` (a selector or a locator, optional but recommended) is visible - the one
  *     thing YOUR suite is about to touch. Views load their data
  *     asynchronously, so only the suite knows what "ready" means for it;
  *   - then one painted frame.
@@ -313,8 +313,9 @@ export async function waitForRoute(page, hash, { ready = null, fresh = false, ti
   await page.evaluate((h) => { if (location.hash !== h) location.hash = h; }, hash);
   await drawn(page, hash, known.label, timeout, "opening " + hash);
   if (ready) {
-    try { await page.locator(ready).first().waitFor({ state: "visible", timeout }); }
-    catch (e) { throw new Error("waitForRoute: " + hash + " opened, but " + JSON.stringify(ready) + " never became visible within " + timeout + "ms. " + (await onScreen(page))); }
+    const loc = typeof ready === "string" ? page.locator(ready) : ready;
+    try { await loc.first().waitFor({ state: "visible", timeout }); }
+    catch (e) { throw new Error("waitForRoute: " + hash + " opened, but " + (typeof ready === "string" ? JSON.stringify(ready) : String(ready)) + " never became visible within " + timeout + "ms. " + (await onScreen(page))); }
   }
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 }
@@ -331,6 +332,31 @@ async function drawn(page, hash, label, timeout, step) {
     }, { h: hash, label }, { timeout });
   } catch (e) {
     throw new Error("waitForRoute: " + step + " - the screen was not drawn within " + timeout + "ms. " + (await onScreen(page)));
+  }
+}
+
+/* ---------------------------------------------------------------------
+   until
+   --------------------------------------------------------------------- */
+/**
+ * until(page, fn, arg, { timeout }) -> true as soon as `fn` (run in the
+ * page, like waitForFunction) returns something truthy, false if `timeout`
+ * passes first.
+ *
+ * The replacement for BOTH old idioms that sit in front of an assertion:
+ *   await page.waitForTimeout(500);                          // hope it is done
+ *   await page.waitForFunction(...).catch(() => {});         // hide that it is not
+ * Poll for the state, then make the SAME assertion you always made: if the
+ * state never arrives the assertion prints its own FAIL line with its own
+ * diagnostics, exactly as before - nothing is swallowed, because the wait
+ * was never the assertion. Anything other than running out of time (the
+ * page closed, `fn` itself threw) is still thrown.
+ */
+export async function until(page, fn, arg, { timeout = PATIENCE_MS } = {}) {
+  try { await page.waitForFunction(fn, arg, { timeout }); return true; }
+  catch (e) {
+    if (e && (e.name === "TimeoutError" || /Timeout \d+ms exceeded/.test(String(e.message)))) return false;
+    throw e;
   }
 }
 
