@@ -96,7 +96,23 @@ r.code !== 0 && /UNCHECKED lists "boardQuiz:timedMode" but it has a restore chec
   ? ok("(s3) a no-check-list entry that has since gained a real check is reported as stale")
   : bad("(s3) stale ratchet entry was not caught: exit " + r.code + "\n" + r.out);
 
-// 6) must NOT trip: a comment, and a read
+// 6) (s3) a helper whose key prefix is a separately declared constant, not an
+//    inline literal - quizBestKey()'s real shape in src/index.html:
+//      const QUIZ_BEST_PREFIX = "boardQuiz:best:";
+//      function quizBestKey(cat, lvl) { return QUIZ_BEST_PREFIX + cat + ...; }
+//    The helper-detection regex used to require the return statement to
+//    START with an inline string literal, so this real, actively-written
+//    family's write site was invisible to (s3) - not flagged unchecked, but
+//    not confirmed checked either. Removing its real restore check (planted
+//    below) must be caught, the same as any other unchecked family.
+r = planted((dir) => editIndex(dir, (s) => s.replace(
+  '{ prefix: "boardQuiz:best:", test: function (v) { return typeof v === "number" && !isNaN(v); } },', ""
+)));
+r.code !== 0 && /\(s3\) saved item boardQuiz:best: /.test(r.out)
+  ? ok("(s3) a family key built from a separately declared constant (quizBestKey/QUIZ_BEST_PREFIX) is tracked, not silently skipped")
+  : bad("(s3) removing boardQuiz:best:'s restore check was not caught: exit " + r.code + "\n" + r.out);
+
+// 7) must NOT trip: a comment, and a read
 r = planted((dir) => writeModule(dir, "zz-planted.js", '// this module never calls localStorage.setItem("x", "y") itself\n/* nor indexedDB.open("guidon") */\n(function () { var v = null; try { v = localStorage.getItem("guidon:appearance:v1"); } catch (e) {} G.planted = v; })();\n'));
 r.code === 0
   ? ok("naming localStorage/indexedDB in a comment, or READING localStorage, does not fail the lint")

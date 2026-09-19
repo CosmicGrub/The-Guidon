@@ -191,10 +191,26 @@ for (const s of all) {
   const resolve = (name, at) => { let hit = null; for (const c of consts) if (c.name === name && c.at < at) hit = c; return hit ? hit.value : null; };
   // A key built by a small helper is a FAMILY, recorded by its prefix:
   //   function srsKey(id) { return "srs:" + id; }      repsKey(d) { ...; return "board:reps:" + ...; }
+  // The prefix itself is sometimes a separately declared constant rather than
+  // an inline literal - quizBestKey() (Board Quiz's per-category/level best
+  // score) is exactly this shape:
+  //   const QUIZ_BEST_PREFIX = "boardQuiz:best:";
+  //   function quizBestKey(cat, lvl) { return QUIZ_BEST_PREFIX + cat + ...; }
+  // The inline-literal-only version of this regex never matched that helper,
+  // so quizBestKey()'s write site was invisible to (s3) - not flagged as
+  // unchecked, but not confirmed checked either. A verifier that silently
+  // stops watching a real, actively-written key family is worse than one
+  // that never watched it: removing boardQuiz:best:'s real KV_PREFIX_VALIDATORS
+  // entry passed this lint with zero complaint (tools/test-storage-contract-lint.mjs
+  // plants exactly that defect and expects it named).
   const helpers = {};
   {
-    let h; const reH = /\b(?:function\s+)?([A-Za-z_$][\w$]*)\s*\([^()]*\)\s*\{[^{}]{0,200}?return\s+(["'])([A-Za-z][\w.-]*(?::[\w.-]+)*:)\2\s*\+/g;
-    while ((h = reH.exec(s.code))) if (!helpers[h[1]]) helpers[h[1]] = h[3];
+    let h; const reH = /\b(?:function\s+)?([A-Za-z_$][\w$]*)\s*\([^()]*\)\s*\{[^{}]{0,200}?return\s+(?:(["'])([A-Za-z][\w.-]*(?::[\w.-]+)*:)\2|([A-Z][A-Z0-9_]*))\s*\+/g;
+    while ((h = reH.exec(s.code))) {
+      if (helpers[h[1]]) continue;
+      if (h[3]) { helpers[h[1]] = h[3]; continue; }
+      if (h[4]) { const c = resolve(h[4], h.index); if (c && c.endsWith(":")) helpers[h[1]] = c; }
+    }
   }
   // The key a write names, from the expression in the key position.
   const keyOfExpr = (expr, at) => {
