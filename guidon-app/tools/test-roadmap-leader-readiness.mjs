@@ -88,7 +88,10 @@ ptBoot.views === 3 ? ok("day/week/month views are present") : bad("PT view count
 const ratioGuard = await page.evaluate(() => {
   const p = window.G.ptPlanner._planFromTemplate("balanced");
   ["sun","mon","tue","wed","thu","fri","sat"].forEach((k, i) => {
-    p.days[k] = { id:"custom", title:"X", type:i === 6 ? "rest" : "custom", effort:i < 4 ? "hard" : i === 4 ? "recovery" : "moderate", route:"" };
+    // No rest day in this fixture: a rest day now counts on the recovery side
+    // of the check (as a logged rest day always did in the history check), so
+    // a rest day here would make this a 4:2 week, not the 4:1 week under test.
+    p.days[k] = { id:"custom", title:"X", type:"custom", effort:i < 4 ? "hard" : i === 4 ? "recovery" : "moderate", route:"" };
   });
   return window.G.ptPlanner._ratio(p);
 });
