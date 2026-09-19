@@ -399,6 +399,27 @@ cadences ship as real content.
 
 ---
 
+## 3g. NEXT: make the 2026-09 feature sets registered parts of the app, not patches on it
+
+Source: `GUIDON files/AUDIT-2026-09.md` section 6 (the audit of PRs #172-#183 and the v1.12.1 fix release). The new tools - Board Simulator, Team Training, PT Planner, the Cybersecurity & OPSEC curriculum, the 92A deck, Study Rooms mixed decks, My unit - arrived as runtime modules that wrap core functions and push content into the seed at load. v1.12.1 put lints around that (`tools/assemble-bank.mjs`, `tools/lint-content-packs.mjs`); the items below remove the need for the workaround. Nothing here is started. Each is sized to land green on its own.
+
+**Now (small):**
+- A. Module manifest with named extension points (`{ id, requires, provides, routes, storageKeys, contentPack }`), replacing alphabetical load order and function wrapping; plus a lint that a `typeof G.x.y === "function"` guard names an API some module declares. v1.12.1's integration found a guard that silently skipped a classification-marking refusal because the guarded function had been removed by another branch.
+- B. Backup validators for the new storage keys (`board:sim:v1`, `team:training:v1`, `prt:plan:v1`, `pt:history:v1`, `recall-ladder:*`, `guidon:recite:own:v1`), and one app-wide decision on Guest/Kiosk writes.
+- C. Shared test helpers (`clickWhenStable`, `waitForRoute`) under a lint ratchet on swallowed waits; new-suite scaffold derives counts from the live bank (three suites broke on a literal deck size in one week).
+- D. Generated content floors instead of hand-bumped literals.
+
+**Next (structural):**
+- E. Build-time content packs behind one API (`G.contentPack.define(...)`), merged into the seed by the build. The single highest-value change: every tool that reads the seed sees one bank by construction. Five-step migration, ids and study history preserved.
+- F. Structured citations (`{ pub, edition, para, quoteKind }`) so "verbatim" headings, regulation chips, the superseded-publication check and the rights gate are mechanical.
+- G. MOS decks as a first-class opt-in lane with their own Readiness row (92A is the first of many).
+- H. A real `G.engine.run()` completion contract; Collective mode as an engine render mode; Board Simulator on a phase registry.
+- I. One PRT session model shared by PT Planner, `#/prt` and `#/drills`.
+
+**Later:** data-driven What's New; the legal package as a verified, version-stamped artifact; macOS launch proof, a fixed-name Mac download and notarization-readiness; Study Rooms carrying PT plans and Team Training sessions; per-unit content packs; lanes on the ESP32 handheld.
+
+**Owner decisions outstanding:** listed in the audit's section 5 (twenty items: repository settings, rights and content, product behaviour, release and platform).
+
 ## 4. Deliberately not built — and why
 
 Not gaps. Each of these was scoped, considered, and declined on its own merits. Revisit only if the stated condition changes.
