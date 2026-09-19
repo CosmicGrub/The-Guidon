@@ -9,6 +9,13 @@ name: Apple release assets
 #   evidence; App Store/TestFlight/device distribution still requires Apple
 #   Developer signing credentials and is intentionally not represented as a
 #   shippable IPA here.
+#
+# What this lane does NOT decide: whether the release is marked Latest. The
+# in-app install buttons only need the Android and Windows files, which
+# release-assets.yml owns, so a slow or failed Apple run can never leave those
+# buttons pointing at nothing. When this lane finishes it only refreshes the
+# Downloads section of the release page, so a Mac row appears once a .dmg is
+# really attached and never before.
 
 on:
   push:
@@ -20,6 +27,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: apple-release-${{ github.ref }}
@@ -50,6 +58,16 @@ jobs:
           TAG="v${VERSION}"
           git rev-parse "${TAG}^{commit}" >/dev/null
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          # Same rule as release-assets.yml: never build a package from a
+          # commit CI did not pass, and refuse a ref too old to check.
+          test -f guidon-app/tools/release-gate.mjs || {
+            echo "::error::this ref has no guidon-app/tools/release-gate.mjs, so its CI result cannot be checked - refusing to build from it"
+            exit 1
+          }
+          node guidon-app/tools/release-gate.mjs \
+            --repo "$GITHUB_REPOSITORY" \
+            --sha "$(git rev-parse "${TAG}^{commit}")" \
+            --workflow ci.yml --wait-minutes 0
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
@@ -206,3 +224,37 @@ jobs:
             guidon-app/ios/build/Build/Products/Debug-iphonesimulator/App.app
           retention-days: 30
           if-no-files-found: warn
+
+  # Re-renders the Downloads section of the release page from the files that
+  # are really attached, whatever happened above (a Mac row only ever appears
+  # once a .dmg exists). Shares release-assets.yml's concurrency group so the
+  # two workflows never rewrite the same page at the same moment. It never
+  # touches the Latest flag - see the note at the top of this file.
+  refresh_downloads:
+    name: Refresh the Downloads section
+    needs: [resolve, macos, ios]
+    if: ${{ always() && needs.resolve.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: release-page-${{ needs.resolve.outputs.tag }}
+      cancel-in-progress: false
+    env:
+      VERSION: ${{ needs.resolve.outputs.version }}
+      TAG: ${{ needs.resolve.outputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Refresh the Downloads section
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets,body > "$RUNNER_TEMP/release.json"
+          code=0
+          node guidon-app/tools/release-manifest.mjs finalize \
+            --version "$VERSION" --tag "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --release-json "$RUNNER_TEMP/release.json" \
+            --notes-out "$RUNNER_TEMP/notes.md" || code=$?
+          # 0 = complete, 3 = incomplete: both are a readable release whose
+          # page should be refreshed. Anything else is a real failure.
+          case "$code" in 0|3) ;; *) exit 1 ;; esac
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/notes.md"

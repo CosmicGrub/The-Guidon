@@ -30,19 +30,39 @@
  * copied list silently fell behind once already), capture console "warning"
  * as well as "error".
  *
+ * BASELINE RATCHET (tools/ios-webkit-ratchet.mjs has the full story). This
+ * suite exited 1 on every run for weeks, so ios.yml ran it with
+ * continue-on-error and the job was green whatever it found - the only
+ * layout / tap-target / zoom-on-focus check for the iPhone fork decided
+ * nothing, and new defects walked in unseen. Now the layout defects that
+ * exist today are written down in tools/ios-webkit-baseline.json and
+ * tolerated; ANY defect not on that list fails the run, and the step in
+ * ios.yml is a real gate again. Fix one and the run reminds you to delete
+ * its line - the list only ever shrinks. Everything that is not a layout
+ * defect (viewport-fit, service worker, storage, console noise) was never
+ * part of the backlog and stays a hard failure.
+ *
  * Usage: node tools/verify-ios-webkit.mjs [webDir] [--shots] [--headed]
+ *        [--no-baseline]     judge all-or-nothing, as before the ratchet
+ *        [--write-baseline]  record today's defects as the new baseline
+ *                            (only ever to REMOVE fixed ones - never to
+ *                            wave a new defect through)
  */
 import { webkit, devices } from "playwright";
 import { serve } from "./server.mjs";
-import { readFile, mkdir } from "node:fs/promises";
+import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { probeViaPlaywright, writeProbe } from "./caps-probe.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { keyOf, loadBaseline, judge, serialize } from "./ios-webkit-ratchet.mjs";
 
 const args = process.argv.slice(2);
 const WEB = args.find((a) => !a.startsWith("--")) || "web";
 const SHOTS = args.includes("--shots");
 const HEADED = args.includes("--headed");
+const BASELINE_PATH = "tools/ios-webkit-baseline.json";
+const WRITE_BASELINE = args.includes("--write-baseline");
+const NO_BASELINE = args.includes("--no-baseline");
 const SETTLE_NAV = 250;
 const SETTLE_ROUTE = 150;
 const OUT = "artifacts/ios-webkit";
@@ -207,7 +227,16 @@ async function main() {
     const bounded = prop.startsWith("max-") || prop === "margin" || /\b(?:min|max|clamp)\s*\(/.test(decl);
     (paired ? vhPaired : bounded ? vhBounded : vhUnbounded).push(decl.slice(0, 60));
   }
-  if (vhUnbounded.length) {
+  const baselineJson = NO_BASELINE ? null : await readFile(BASELINE_PATH, "utf8").then(JSON.parse).catch((e) => {
+    if (e && e.code === "ENOENT") return null;
+    throw new Error(BASELINE_PATH + " could not be read: " + e.message);
+  });
+  const baseline = loadBaseline(baselineJson);
+  console.log(baseline.on ? `    baseline in use: ${baseline.defects.size} known layout defect(s) + ${baseline.vh.size} known vh declaration(s) are tolerated; anything else fails` : "    no baseline in use: every defect fails");
+  if (vhUnbounded.length && baseline.on) {
+    // Judged with the route-sweep defects at the end (fresh vs known).
+    console.log(`    info: ${vhUnbounded.length} unbounded "vh" declaration(s) found - checked against the baseline below`);
+  } else if (vhUnbounded.length) {
     bad(`${vhUnbounded.length} UNBOUNDED "vh" declaration(s) - iOS Safari chrome clips these: ${vhUnbounded.slice(0, 6).join(" | ")}`);
   } else ok(`no unbounded vh values (${vhPaired.length} paired with dvh, ${vhBounded.length} bounded by max-*/min()/clamp())`);
   if (vhBounded.length || vhPaired.length) {
@@ -275,8 +304,10 @@ async function main() {
           nOrphan ? `${nOrphan} orphan-label` : null,
           nText ? `${nText} bad-text` : null,
         ].filter(Boolean);
+        // With a baseline, one device's raw count decides nothing: the
+        // defects are judged once, deduped, against the baseline at the end.
         summary.length
-          ? bad(`${name}: ${routes.length} routes swept - ${summary.join(", ")} (deduped detail below)`)
+          ? (baseline.on ? console.log(`  INFO  ${name}: ${routes.length} routes swept - ${summary.join(", ")} (judged against the baseline below)`) : bad(`${name}: ${routes.length} routes swept - ${summary.join(", ")} (deduped detail below)`))
           : ok(`${name}: ${routes.length} routes clean - no overflow, fonts, tap targets or date defects`);
       }
 
@@ -401,6 +432,30 @@ async function main() {
         console.log(`  ${d.signature}`);
         console.log(`      ${d.detail}  ·  ${where}  ·  [${dev}]`);
       }
+    }
+  }
+
+  // ---------- baseline ratchet ----------
+  const observedDefects = [...defects.values()].map((d) => keyOf(d.check, d.signature));
+  if (WRITE_BASELINE) {
+    await writeFile(BASELINE_PATH, serialize({ observedDefects, observedVh: vhUnbounded,
+      note: "Known iOS/WebKit layout defects, tolerated by tools/verify-ios-webkit.mjs. This list may only SHRINK: delete a line when its defect is fixed; never add one to get a new defect past CI. Regenerate with: node tools/verify-ios-webkit.mjs --write-baseline" }), "utf8");
+    console.log(`\nbaseline written: ${BASELINE_PATH} (${new Set(observedDefects).size} defect(s), ${new Set(vhUnbounded).size} vh declaration(s))`);
+  } else if (baseline.on) {
+    const j = judge({ observedDefects, observedVh: vhUnbounded, baseline });
+    console.log("\n" + "=".repeat(64));
+    console.log("BASELINE RATCHET");
+    console.log("=".repeat(64));
+    const fresh = j.freshDefects.length + j.freshVh.length, known = j.knownDefects.length + j.knownVh.length, stale = j.staleDefects.length + j.staleVh.length;
+    if (fresh) {
+      bad(`${fresh} NEW defect(s) that are not in ${BASELINE_PATH} - fix them (the baseline is never extended to wave one through):`);
+      for (const k of j.freshDefects) console.log("        " + k.replace("|", "  ->  "));
+      for (const k of j.freshVh) console.log("        unbounded vh  ->  " + k);
+    } else ok(`no new layout defects (${known} known one(s) still open and tolerated)`);
+    if (stale) {
+      console.log(`  NOTE  ${stale} baseline entr${stale === 1 ? "y is" : "ies are"} no longer seen - if fixed, delete from ${BASELINE_PATH} so it cannot come back unnoticed:`);
+      for (const k of [...j.staleDefects, ...j.staleVh]) console.log("        " + k);
+      if (process.env.GITHUB_ACTIONS) console.log(`::warning title=iOS WebKit baseline can shrink::${stale} entr${stale === 1 ? "y" : "ies"} in ${BASELINE_PATH} no longer reproduce - delete them.`);
     }
   }
 

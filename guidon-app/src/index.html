@@ -3003,6 +3003,11 @@ mark.dict-hi {
   transition:opacity var(--modal-dur,.22s) var(--modal-ease,ease), transform var(--modal-dur,.22s) var(--modal-ease,ease); }
 .gm-back.modaltrap-open .gm-box { opacity:1; transform:scale(1) translateY(0); }
 @media (max-width:480px){ .gm-box { padding:13px; } }
+/* What's New can list several missed updates at once. The box never grows
+   past the screen: the title and "Got it" stay put and only the list between
+   them scrolls (36px = .gm-back's 18px padding, top and bottom). */
+.gm-box.whatsnew-box { display:flex; flex-direction:column; max-height:calc(100vh - 36px); max-height:calc(100dvh - 36px); }
+.whatsnew-body { overflow-y:auto; min-height:0; overflow-wrap:anywhere; }
 /* Narrow-screen table fallback. The Channels gate table has 5 columns; below
    ~420px (folded Z Fold, small phones) that cannot fit, so each row becomes a
    stacked block with its column name as a prefix. Data-label is set in JS. */
@@ -37076,7 +37081,15 @@ window.G = window.G || {};
   // Writing a new entry: plain language only - no protocol/security/CI/
   // codebase terms, no bug-report phrasing. State what changed from the
   // Soldier's own point of view and why it matters to them, not how it was
-  // built or fixed.
+  // built or fixed. Never announce something they cannot find on a screen,
+  // and never describe how or where the app was packaged. This is enforced
+  // now, not just asked for: check (h) runs tools/whats-new-rules.mjs over
+  // every title and highlight and fails on builder's wording.
+  //
+  // Newer entries live in src/app-modules/99-release-*.js (one small file
+  // each) so a release never has to touch this file. A Soldier who skipped
+  // versions is shown every entry they missed, newest first - see
+  // missedSince() and show() below.
   G.whatsNew = {
     RELEASE_NOTES: [
       {
@@ -37144,24 +37157,46 @@ window.G = window.G || {};
       {
         version: "1.10.0",
         date: "September 2026",
-        title: "Board readiness and better study rooms",
+        title: "A five-minute daily board habit, and faster ways to find cards",
         highlights: [
-          "Study Rooms can now build multi-category decks, with new Scenario Relay and Collective Decision ways to train together.",
-          "Board Drill adds 5-Minute Board Reps plus quick filters by regulation and readiness pillar, with readiness rollups by pillar.",
-          "The board and doctrine library adds verified counseling, training, AER, ACS, SUDCC, and operational-thinking material with clearer organization."
-        ]
+          "New: 5-minute board reps. Home now offers a short daily set of board questions, starting with the ones you're due to review.",
+          "Board Drill has new quick filters: show only the cards from one regulation, or from one of the six board study areas, like Leadership & Counseling or Training Management.",
+          "Board Drill's Readiness view now shows how you're doing in each of those six study areas, so you can see where to spend your time.",
+          "New study material: the four-stage counseling process, the eight-step training model, Army Emergency Relief, Army Community Service, and three new scenarios that make you work a problem from more than one angle.",
+        ],
       },
       {
         version: "1.10.1",
         date: "September 2026",
-        title: "Apple parity and release reliability",
+        title: "iPhone and iPad upkeep",
         highlights: [
-          "GUIDON now maintains a first-class iOS project that stays synced to the same app bundle and study experience as the web, Android, Windows, and macOS versions.",
-          "macOS releases now include a universal Apple Silicon + Intel package built from the same tagged source as the other platforms.",
-          "Apple-device verification now covers compact iPhone, standard iPhone, large iPhone, and iPad layouts with preserved render evidence and safer handling of transient Simulator failures.",
+          "Behind-the-scenes work to keep GUIDON working well on iPhone and iPad. Nothing new to learn in this one.",
         ],
       },
     ],
+    // Numeric x.y.z compare, so 1.12.10 is newer than 1.12.2. Entries are
+    // NEVER trusted to be in order: they come from the array above AND from
+    // small build-added files (src/app-modules/99-release-*.js) that load in
+    // file-name order, not version order.
+    cmpVersion(a, b) {
+      const pa = String(a || "").split(".").map((n) => parseInt(n, 10) || 0);
+      const pb = String(b || "").split(".").map((n) => parseInt(n, 10) || 0);
+      for (let i = 0; i < 3; i++) { const d = (pa[i] || 0) - (pb[i] || 0); if (d) return d; }
+      return 0;
+    },
+    // Every entry the Soldier has not seen yet: newer than the version they
+    // last saw, no newer than the build now running, newest first. People
+    // skip versions all the time (the Android and Windows apps update far
+    // less often than the web copy), and showing only the newest entry meant
+    // they were never told about anything in the versions they jumped over.
+    // An entry marked `released: false` (a number that was prepared but
+    // never cut) is still included - what it added is just as new to them.
+    missedSince(seenVersion, current) {
+      return this.RELEASE_NOTES
+        .filter((n) => n && n.version && Array.isArray(n.highlights) && n.highlights.length)
+        .filter((n) => this.cmpVersion(n.version, current) <= 0 && this.cmpVersion(n.version, seenVersion) > 0)
+        .sort((a, b) => this.cmpVersion(b.version, a.version));
+    },
     // guidon:whatsnew:v1 stores { lastSeenVersion }. A profile with NO
     // record at all is seeded SILENTLY (never shown) - this only ever
     // fires the panel on a genuine VERSION CHANGE (a stored, older version
@@ -37186,9 +37221,10 @@ window.G = window.G || {};
       try {
         const notes = this.RELEASE_NOTES;
         if (!notes.length) return;
-        const latest = notes[notes.length - 1];
         const current = window.GUIDON_APP_VERSION;
-        if (!current || latest.version !== current) return; // build/notes out of sync - never show a stale or future entry
+        // Found by VERSION, never by position - see cmpVersion's note above.
+        const latest = current ? notes.find((n) => n && n.version === current) : null;
+        if (!latest) return; // build/notes out of sync - never show a stale or future entry
         const profile = G.profile && G.profile.current ? await G.profile.current() : null;
         if (!profile || (G.profile.isGuest && G.profile.isGuest()) || profile.mode === "kiosk") return; // session-only modes have nothing persistent to compare against
         const KEY = "guidon:whatsnew:v1";
@@ -37198,17 +37234,58 @@ window.G = window.G || {};
         const hadNoRecord = !rec || !rec.v; // a stored-but-empty record (rec.v null/undefined) counts as "no record" too, not just a genuinely missing kv row
         await G.db.put("kv", { k: KEY, v: { lastSeenVersion: current } });
         if (hadNoRecord) return; // first boot this mechanism has ever seen for this profile - seed quietly, never show retroactively
-        this.show(latest);
+        const missed = this.missedSince(seenVersion, current);
+        if (!missed.length) return; // the stored version is the same or NEWER (an older copy was opened) - nothing here is new to them
+        this.show(missed);
       } catch (e) {}
     },
-    show(entry) {
+    // `entries`: one entry, or every missed entry newest first. The newest
+    // is the panel's headline. Older ones follow under "Also new since you
+    // last updated": as many as fit in about eight bullets are shown open,
+    // and anything older waits behind an "Earlier updates" control, so
+    // someone who is five versions behind gets the whole story without a
+    // wall of text landing on them at launch.
+    show(entries) {
+      const all = (Array.isArray(entries) ? entries : [entries]).filter(Boolean);
+      if (!all.length) return;
+      const entry = all[0];
+      const bulletList = (e) => {
+        const list = el("ul", { style: "margin:0 0 10px;padding-left:20px;display:flex;flex-direction:column;gap:6px" });
+        e.highlights.forEach((h) => list.appendChild(el("li", { text: h, style: "font-size:.92rem;line-height:1.4" })));
+        return list;
+      };
       const back = el("div.gm-back", { role: "presentation" });
-      const box = el("div.gm-box", { role: "dialog", "aria-modal": "true", "aria-label": "What's new" });
+      const box = el("div.gm-box.whatsnew-box", { role: "dialog", "aria-modal": "true", "aria-label": "What's new" });
       box.appendChild(el("div.eyebrow", { text: "What's new · " + entry.date }));
       box.appendChild(el("h3", { text: entry.title, style: "margin:2px 0 8px" }));
-      const list = el("ul", { style: "margin:0 0 10px;padding-left:20px;display:flex;flex-direction:column;gap:6px" });
-      entry.highlights.forEach((h) => list.appendChild(el("li", { text: h, style: "font-size:.92rem;line-height:1.4" })));
-      box.appendChild(list);
+      // Only the body scrolls; "Got it" stays in view however long the list is.
+      const body = el("div.whatsnew-body");
+      body.appendChild(bulletList(entry));
+      if (all.length > 1) {
+        const BUDGET = 8;
+        let shown = entry.highlights.length;
+        const open = [], later = [];
+        all.slice(1).forEach((e) => {
+          if (!later.length && shown + e.highlights.length <= BUDGET) { open.push(e); shown += e.highlights.length; }
+          else later.push(e);
+        });
+        const section = (e) => {
+          const wrap = el("div.whatsnew-earlier", { "data-whatsnew-version": e.version });
+          wrap.appendChild(el("h4", { text: e.title, style: "margin:8px 0 6px;font-size:.95rem" }));
+          wrap.appendChild(bulletList(e));
+          return wrap;
+        };
+        body.appendChild(el("div.eyebrow", { text: "Also new since you last updated", style: "margin-top:4px" }));
+        open.forEach((e) => body.appendChild(section(e)));
+        if (later.length) {
+          const more = el("details.whatsnew-more", { style: "margin:4px 0 10px" });
+          // Padding, not display:flex - flex would drop the open/closed arrow.
+          more.appendChild(el("summary", { text: "Earlier updates (" + later.length + ")", style: "cursor:pointer;padding:12px 0;font-weight:600" }));
+          later.forEach((e) => more.appendChild(section(e)));
+          body.appendChild(more);
+        }
+      }
+      box.appendChild(body);
       const row = el("div.btn-row", { style: "justify-content:flex-end" });
       const closeBtn = el("button.btn.sm.primary", { type: "button", text: "Got it" });
       row.appendChild(closeBtn);
@@ -37225,6 +37302,14 @@ window.G = window.G || {};
       closeBtn.addEventListener("click", () => trap.close());
       back.addEventListener("click", (e) => { if (e.target === back) trap.close(); });
       document.body.appendChild(back);
+      // A list long enough to scroll has to be scrollable from the keyboard
+      // too, so the scrolling part becomes a focus stop - only when it
+      // really overflows, so the short, common panel keeps exactly one stop.
+      if (body.scrollHeight > body.clientHeight + 1) {
+        body.setAttribute("tabindex", "0");
+        body.setAttribute("role", "group");
+        body.setAttribute("aria-label", "What changed");
+      }
       requestAnimationFrame(() => requestAnimationFrame(() => back.classList.add("modaltrap-open")));
       setTimeout(() => closeBtn.focus(), 40);
     },

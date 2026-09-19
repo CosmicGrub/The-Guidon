@@ -70,8 +70,18 @@ jobs:
         run: |
           npm run build
           npm run icons
+      # A REAL gate again. This step ran with `continue-on-error: true` for
+      # weeks because the verifier always exited 1 on a backlog of known
+      # layout defects - so the job was green whatever it found, and the only
+      # layout / tap-target / zoom-on-focus check for the iPhone fork decided
+      # nothing. It was meant to be temporary; the note saying so was later
+      # deleted and the defect count kept growing unseen. The backlog is now
+      # written down in guidon-app/tools/ios-webkit-baseline.json and
+      # tolerated; ANY defect that is not on that list fails this step. The
+      # list may only shrink (the run says when a line can be deleted). Do
+      # not put continue-on-error back: fix the new defect instead.
+      # tools/test-release-pipeline.mjs asserts this step stays blocking.
       - name: iOS WebKit verification
-        continue-on-error: true
         run: npm run ios:verify:shots
       - name: Upload WebKit screenshots
         if: always()
