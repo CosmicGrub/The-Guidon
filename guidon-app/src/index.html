@@ -11510,7 +11510,16 @@ window.G = window.G || {};
   // and a thin category still reliably produces 3 distractors.
   function buildDistractors(correctText, correctCat, pool, count) {
     const bucket = lenBucket(correctText);
-    const norm = (s) => (s || "").trim().toLowerCase();
+    // Two options that read the same must count as the same option. This
+    // used to compare on trim().toLowerCase() only, so an answer that
+    // differed from the correct one by nothing but a trailing comma or full
+    // stop (or a doubled space) was offered right beside it; a Soldier who
+    // picked that look-alike was marked Incorrect and got a "Needs Help"
+    // grade written to their real review schedule. Trailing punctuation and
+    // runs of whitespace are dropped before comparing - for the correct
+    // answer and for every option already chosen, so two look-alike WRONG
+    // options cannot sit side by side either.
+    const norm = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").replace(/[\s.,;:!?]+$/, "").trim();
     const seen = new Set([norm(correctText)]);
     const out = [];
     const passes = [
@@ -27792,6 +27801,19 @@ window.G = window.G || {};
     // "skipped" count instead of silently discarding the row's data via
     // that fallback with no indication anything was wrong.
     "reminders:v1": function (v) { return Array.isArray(v); },
+    // Recitation Drill's "My unit" texts - the Soldier's OWN pasted unit
+    // song, creed or motto (src/app-modules/recite-user-texts.js). It is
+    // their own study material, so it travels in a backup like everything
+    // else here (it is deliberately NOT in PRIVATE_PREFIXES above - that
+    // list is for data about OTHER people). Recitation Drill reads
+    // q.lines.join()/q.lines.length off every entry, so each one must
+    // really carry an id, a title and an array of text lines.
+    "guidon:recite:own:v1": function (v) {
+      return Array.isArray(v) && v.every(function (r) {
+        return r && typeof r === "object" && typeof r.id === "string" && typeof r.title === "string" &&
+          Array.isArray(r.lines) && r.lines.length > 0 && r.lines.every(function (s) { return typeof s === "string"; });
+      });
+    },
     "finance:salaryNeg:v1": function (v) { return v && typeof v === "object" && !Array.isArray(v); },
     // forms:saved stores its array under `.value`, not the `.v` every
     // other kv row uses (see forms.js's own writeSaved/loadSaved) - a
@@ -27854,6 +27876,13 @@ window.G = window.G || {};
   // self-heal to a fresh record.
   var KV_PREFIX_VALIDATORS = [
     { prefix: "srs:", test: function (v) { return v && typeof v === "object" && !Array.isArray(v); } },
+    // recall-ladder:<textId> - Recitation Drill's optional Recall ladder
+    // mode keeps one small {level, streak} row per text a Soldier has used
+    // it on (src/app-modules/06-optional-recall-ladder.js). Its own load()
+    // already falls back to the first step for anything that is not a
+    // plain object; this turns that silent self-heal into a visible
+    // "skipped" on restore, the same as srs: above.
+    { prefix: "recall-ladder:", test: function (v) { return v && typeof v === "object" && !Array.isArray(v); } },
     // curr:<lessonId> - one row per curriculum lesson ever touched
     // (curriculum.js's own setP()), same "no single literal key" problem
     // as srs: above - 106+ lessons across the full curriculum, growing
@@ -33270,6 +33299,17 @@ window.G = window.G || {};
   // stopwatch built on Milestone 2's util.makeRoundTimer/util.fmtClock,
   // plus a pre-round posture checklist pointing at doc-boardconduct-1,
   // this same milestone's new Doctrine entry).
+  //
+  // Two later additions, both optional and both for EVERY recitable text:
+  //  - a fifth study mode, "Recall ladder" (G.memorization.recallLadder,
+  //    src/app-modules/06-optional-recall-ladder.js owns its screen);
+  //  - a "My unit" section under the bundled creeds, where a Soldier adds
+  //    their OWN unit song, creed or motto (G.reciteUser,
+  //    src/app-modules/recite-user-texts.js). GUIDON never bundles a unit's
+  //    song - it is usually somebody's copyrighted work - so the Soldier's
+  //    own copy, kept only on their device, is how that need is met. Those
+  //    texts are not board cards: nothing here writes a review grade for
+  //    one (see renderGradeRow's callers below).
   var RECITE_TITLES = {
     "creed-4": "NCO Creed",
     "creed-5": "Soldier's Creed (Warrior Ethos)",
@@ -33279,27 +33319,43 @@ window.G = window.G || {};
     util.clear(mount);
     mount.appendChild(el("div.section-title", {}, [el("h2", { text: "Recitation Drill" }), el("div.rule")]));
 
-    var items = store.recitable();
-    if (!items.length) {
+    var bundled = store.recitable();
+    var ownApi = (G.reciteUser && typeof G.reciteUser.list === "function") ? G.reciteUser : null;
+    var own = [];
+    if (!bundled.length && !ownApi) {
       mount.appendChild(el("div.panel", {}, [el("p.hint", { text: "No recitable content yet." })]));
       return;
     }
     function titleFor(q) { return RECITE_TITLES[q.id] || q.concept || q.q || q.id; }
 
-    var selectedId = items[0].id;
-    var listPane = el("div.list-detail-list", { role: "listbox", "aria-label": "Recitable creeds" });
+    var selectedId = bundled.length ? bundled[0].id : null;
+    // true while the detail pane is showing the "Add your own text" form
+    // instead of a text.
+    var adding = false;
+    var addBtn = null;
+    // The CSS class (and every suite that looks for rows inside it) stays on
+    // the COLUMN; the two listboxes sit inside it. A listbox may only hold
+    // options, so the "My unit" heading, its note and its Add button cannot
+    // live inside one.
+    var listCol = el("div.list-detail-list");
+    var listPane = el("div", { role: "listbox", "aria-label": "Recitable creeds" });
+    var ownPane = el("div", { "data-recite-own": "1" });
+    listCol.appendChild(listPane);
+    if (ownApi) listCol.appendChild(ownPane);
     var detailPane = el("div");
-    mount.appendChild(el("div.list-detail", {}, [listPane, detailPane]));
+    mount.appendChild(el("div.list-detail", {}, [listCol, detailPane]));
 
     // Roadmap audit round 9, "List-detail selection focus fix" bucket: see
     // Creeds' selectCreed() above for the destroy-and-rebuild bug this
-    // replaces - same fix, same convention. This list is never
+    // replaces - same fix, same convention. The bundled list is never
     // re-filtered after first paint (no search box/chips above it), so
-    // renderList() itself now only ever runs once, at the bottom of this
-    // view.
+    // renderList() itself only ever runs once, at the bottom of this view.
+    // The "My unit" rows ARE rebuilt, but only when that set really changes
+    // (a text added or deleted) - never on a plain selection.
     function selectRecite(id) {
       selectedId = id;
-      Array.prototype.forEach.call(listPane.querySelectorAll(".list-detail-row"), function (r) {
+      adding = false;
+      Array.prototype.forEach.call(listCol.querySelectorAll(".list-detail-row"), function (r) {
         var on = r.dataset.reciteId === id;
         r.classList.toggle("active", on);
         r.setAttribute("aria-selected", String(on));
@@ -33307,39 +33363,129 @@ window.G = window.G || {};
       renderDetail();
     }
 
+    function buildRow(q) {
+      var isSelected = !adding && q.id === selectedId;
+      var row = el("button.list-detail-row" + (isSelected ? ".active" : ""), { type: "button", role: "option",
+        "aria-selected": String(isSelected), "data-recite-id": q.id }, [el("span.ldr-name", { text: titleFor(q) })]);
+      row.addEventListener("click", function () { selectRecite(q.id); });
+      // ArrowUp/ArrowDown row-to-row (Dictionary's entryList row idiom,
+      // this same file) - clamps at both ends, no input sits directly
+      // above this list to hand focus off to.
+      row.addEventListener("keydown", function (e) {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          var next = row.nextElementSibling;
+          if (next) next.focus();
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          var prev = row.previousElementSibling;
+          if (prev) prev.focus();
+        }
+      });
+      return row;
+    }
+
     function renderList() {
       util.clear(listPane);
-      items.forEach(function (q) {
-        var isSelected = q.id === selectedId;
-        var row = el("button.list-detail-row" + (isSelected ? ".active" : ""), { type: "button", role: "option",
-          "aria-selected": String(isSelected), "data-recite-id": q.id }, [el("span.ldr-name", { text: titleFor(q) })]);
-        row.addEventListener("click", function () { selectRecite(q.id); });
-        // ArrowUp/ArrowDown row-to-row (Dictionary's entryList row idiom,
-        // this same file) - clamps at both ends, no input sits directly
-        // above this list to hand focus off to.
-        row.addEventListener("keydown", function (e) {
-          if (e.key === "ArrowDown") {
-            e.preventDefault();
-            var next = row.nextElementSibling;
-            if (next) next.focus();
-          } else if (e.key === "ArrowUp") {
-            e.preventDefault();
-            var prev = row.previousElementSibling;
-            if (prev) prev.focus();
-          }
+      bundled.forEach(function (q) { listPane.appendChild(buildRow(q)); });
+    }
+
+    // focus: { add:true } puts focus on the Add button, { id } on that
+    // text's row - whichever control stands in for the one a Save, Cancel
+    // or Delete just removed from the page.
+    function renderOwn(focus) {
+      if (!ownApi) return;
+      util.clear(ownPane);
+      ownPane.appendChild(el("div.eyebrow", { text: "My unit", role: "heading", "aria-level": "3", style: "margin-top:14px" }));
+      ownPane.appendChild(el("p.hint", { text:
+        "Add your own unit song, creed or motto and drill it the same way. It is saved only on this device and is never shared or sent anywhere." }));
+      if (own.length) {
+        var ownList = el("div", { role: "listbox", "aria-label": "My unit texts" });
+        own.forEach(function (q) { ownList.appendChild(buildRow(q)); });
+        ownPane.appendChild(ownList);
+      }
+      addBtn = el("button.btn.sm", { type: "button", text: "Add your own text", "data-recite-add": "1" });
+      addBtn.addEventListener("click", function () {
+        adding = true;
+        Array.prototype.forEach.call(listCol.querySelectorAll(".list-detail-row"), function (r) {
+          r.classList.remove("active");
+          r.setAttribute("aria-selected", "false");
         });
-        listPane.appendChild(row);
+        renderDetail();
       });
+      ownPane.appendChild(addBtn);
+      if (focus && focus.add) addBtn.focus();
+      else if (focus && focus.id) {
+        var target = Array.prototype.filter.call(ownPane.querySelectorAll(".list-detail-row"), function (r) { return r.dataset.reciteId === focus.id; })[0];
+        if (target) target.focus();
+      }
+    }
+
+    function renderAddForm() {
+      var card = el("div.card");
+      card.appendChild(el("h3", { text: "Add your own text" }));
+      card.appendChild(el("p.hint", { text:
+        "Paste or type your unit song, creed or motto. It is saved only on this device, it is never shared or sent anywhere, and you can delete it whenever you like. It travels with you only if you export a backup yourself. Do not add anything sensitive or classified." }));
+      card.appendChild(el("label", { "for": "recite-own-title", text: "Name" }));
+      var titleIn = el("input", { type: "text", id: "recite-own-title", maxlength: String(ownApi.LIMITS.title), autocomplete: "off" });
+      card.appendChild(titleIn);
+      card.appendChild(el("label", { "for": "recite-own-text", text: "Text - one line for each line you want to learn" }));
+      var textIn = el("textarea", { id: "recite-own-text", rows: "8", maxlength: String(ownApi.LIMITS.chars) });
+      card.appendChild(textIn);
+      // role=alert: a refusal is read out the moment it appears, without
+      // moving focus off the field the Soldier has to fix.
+      var err = el("p.hint", { role: "alert", "data-recite-own-error": "1" });
+      card.appendChild(err);
+      var saveBtn = el("button.btn.primary", { type: "button", text: "Save on this device" });
+      var cancelBtn = el("button.btn.ghost", { type: "button", text: "Cancel" });
+      saveBtn.addEventListener("click", function () {
+        saveBtn.disabled = true;
+        ownApi.add({ title: titleIn.value, text: textIn.value }).then(function (res) {
+          if (!detailPane.isConnected) return;
+          if (!res || !res.ok) {
+            saveBtn.disabled = false;
+            err.textContent = (res && res.error) || "Couldn't save that.";
+            (titleIn.value.trim() ? textIn : titleIn).focus();
+            return;
+          }
+          own = own.concat([res.item]);
+          adding = false;
+          selectedId = res.item.id;
+          renderOwn({ id: res.item.id });
+          renderDetail();
+          if (util.announce) util.announce("Saved on this device. " + res.item.concept + " is ready to drill.");
+        });
+      });
+      cancelBtn.addEventListener("click", function () {
+        adding = false;
+        if (!selectedId && bundled.length) selectedId = bundled[0].id;
+        if (selectedId) {
+          // Re-marks the row that was selected before the form opened.
+          selectRecite(selectedId);
+        } else {
+          renderDetail();
+        }
+        if (addBtn) addBtn.focus();
+      });
+      card.appendChild(el("div", { style: "display:flex;flex-wrap:wrap;gap:8px;margin-top:10px" }, [saveBtn, cancelBtn]));
+      detailPane.appendChild(card);
+      titleIn.focus();
     }
 
     function renderDetail() {
       util.clear(detailPane);
-      var q = items.filter(function (x) { return x.id === selectedId; })[0];
-      if (!q) return;
+      if (adding && ownApi) { renderAddForm(); return; }
+      var q = bundled.concat(own).filter(function (x) { return x.id === selectedId; })[0];
+      if (!q) {
+        detailPane.appendChild(el("div.card", {}, [el("p.hint", { text: "Pick a text from the list, or add your own under My unit." })]));
+        return;
+      }
       var fullText = q.lines.join(" ");
       var card = el("div.card");
       card.appendChild(el("h3", { text: titleFor(q) }));
-      card.appendChild(el("p.hint", { text: "Source: " + q.source }));
+      // A Soldier's own text has no publication behind it - say whose it is
+      // and where it is kept instead of inventing a "Source:".
+      card.appendChild(el("p.hint", { text: q.own ? q.source : "Source: " + q.source }));
 
       // `timer` is hoisted up here (sibling to `mode`) rather than declared
       // fresh inside renderTimed() each time it runs, so the mode-bar click
@@ -33355,12 +33501,16 @@ window.G = window.G || {};
       var mode = "full", timer = null;
       var modeBar = el("div.search-filters", { "aria-label": "Study mode" });
       var modeBtns = {};
+      // The Recall ladder is optional twice over: it is only offered when
+      // its module is present, and it is never the mode a text opens on.
+      var ladder = (G.memorization && G.memorization.recallLadder && typeof G.memorization.recallLadder.mount === "function" &&
+        G.memorization.recallLadder.supports(q)) ? G.memorization.recallLadder : null;
       [
         { id: "full", label: "Full text" },
         { id: "firstletter", label: "First letters" },
         { id: "chunk", label: "Chunk & memorize" },
         { id: "timed", label: "Timed recitation" },
-      ].forEach(function (m) {
+      ].concat(ladder ? [{ id: "ladder", label: ladder.modeLabel || "Recall ladder" }] : []).forEach(function (m) {
         var btn = el("button.chip.search-chip" + (m.id === "full" ? ".active" : ""),
           { type: "button", text: m.label, "aria-pressed": String(m.id === "full") });
         btn.addEventListener("click", function () {
@@ -33385,6 +33535,41 @@ window.G = window.G || {};
       card.appendChild(modeBody);
       detailPane.appendChild(card);
 
+      // Only the Soldier's own texts can be deleted - and deleting one takes
+      // its saved study progress with it (G.reciteUser.remove), so nothing
+      // about it is left on the device.
+      if (q.own && ownApi) {
+        var delBtn = el("button.btn.sm.ghost", { type: "button", text: "Delete this text", "data-recite-own-delete": "1" });
+        delBtn.addEventListener("click", async function () {
+          var sure = await G.modal.confirm("Delete “" + titleFor(q) + "” from this device? Your progress on it goes too. This can't be undone.",
+            { title: "Delete this text?", okText: "Delete", danger: true });
+          if (!sure) return;
+          if (timer) timer.stop();
+          await ownApi.remove(q.id);
+          if (!detailPane.isConnected) return;
+          own = own.filter(function (x) { return x.id !== q.id; });
+          selectedId = bundled.length ? bundled[0].id : (own.length ? own[0].id : null);
+          adding = false;
+          renderOwn({ add: true });
+          if (selectedId) selectRecite(selectedId); else renderDetail();
+          if (util.announce) util.announce("Deleted from this device.");
+        });
+        detailPane.appendChild(el("div", { style: "margin-top:10px" }, [delBtn]));
+      }
+
+      // What a finished text earns. A bundled creed is a real board card, so
+      // the Soldier grades it and that grade feeds their review schedule. A
+      // "My unit" text is not a board card - writing a grade for it would
+      // leave a review record pointing at nothing - so it gets a plain
+      // well-done line instead.
+      function renderFinished(container) {
+        if (q.own) {
+          container.appendChild(el("p.hint", { "data-recite-own-done": "1", text:
+            "You have this one down. It is your own text, so it is not added to your board review schedule." }));
+          return;
+        }
+        renderGradeRow(container);
+      }
       function renderGradeRow(container) {
         container.appendChild(el("p.hint", { text: "How well do you know it, start to finish?" }));
         var gradeRow = el("div.qz-grade-row");
@@ -33415,6 +33600,19 @@ window.G = window.G || {};
         else if (mode === "firstletter") renderFirstLetter();
         else if (mode === "chunk") renderChunk();
         else if (mode === "timed") renderTimed();
+        else if (mode === "ladder") renderLadder();
+      }
+      // The ladder draws itself (it loads and saves its own place, both
+      // async). isCurrent is the stale-render guard: it goes false the
+      // moment the Soldier picks another mode or another text, so a save
+      // that lands late can never paint over the screen they moved on to -
+      // the same problem renderChunk()'s renderMode guard solves below.
+      function renderLadder() {
+        if (!ladder) return;
+        ladder.mount(modeBody, q, {
+          isCurrent: function () { return mode === "ladder" && modeBody.isConnected; },
+          onMastered: renderFinished,
+        });
       }
       function renderFull() {
         modeBody.appendChild(el("p", { text: fullText }));
@@ -33542,7 +33740,7 @@ window.G = window.G || {};
             modeBody.appendChild(row);
           });
 
-          if (learned.length === q.lines.length) renderGradeRow(modeBody);
+          if (learned.length === q.lines.length) renderFinished(modeBody);
 
           // Re-focus the equivalent freshly-built control in place of the
           // one the click above just destroyed, so keyboard users aren't
@@ -33623,7 +33821,18 @@ window.G = window.G || {};
     }
 
     renderList();
+    renderOwn(null);
     renderDetail();
+    // The Soldier's own texts come out of on-device storage, so they arrive
+    // a moment after first paint. The bundled creeds never wait on them.
+    if (ownApi) {
+      ownApi.list().then(function (rows) {
+        if (!listCol.isConnected || !rows.length) return;
+        own = rows;
+        renderOwn(document.activeElement === addBtn ? { add: true } : null);
+        if (!selectedId && !adding) selectRecite(own[0].id);
+      }, function () {});
+    }
   };
 
   // ── Physical Readiness (#/prt) — Milestone 2 ────────────────────────────
