@@ -28240,8 +28240,40 @@ window.G = window.G || {};
     // counts.
     "prt:plan:v1": function (v) { return !!v && typeof v === "object" && !Array.isArray(v) && !!v.days && typeof v.days === "object" && !Array.isArray(v.days); },
     "pt:history:v1": function (v) { return Array.isArray(v) && v.every(function (r) { return r && typeof r === "object" && typeof r.date === "string"; }); },
-    "team:training:v1": function (v) { return !!v && typeof v === "object" && !Array.isArray(v); },
+    // The counseling plan of action: one typed answer per field. Found by
+    // tools/lint-storage-contract.mjs (s3) as the one saved item with no
+    // check at all. Its print button splits each answer into lines, so a
+    // field that is not text would throw there.
+    "counsel:poa": function (v) { return isPlainObject(v) && Object.keys(v).every(function (f) { return typeof v[f] === "string"; }); },
+    // One { count, last } pair per exercise. team-training.js adds 1 to
+    // count and prints it on the exercise card ("Local completions: N"); a
+    // count that is not a number would print as NaN from then on.
+    "team:training:v1": function (v) {
+      return isPlainObject(v) && Object.keys(v).every(function (id) {
+        var s = v[id];
+        return isPlainObject(s) && typeof s.count === "number" && isFinite(s.count) && s.count >= 0 && (s.last == null || typeof s.last === "number");
+      });
+    },
+    // Board Simulator (mock-board-simulator.js): three done-flags, the
+    // Soldier's after-action notes and the "a step was opened" markers. Its
+    // own load() rebuilds the notes and markers field by field, so the
+    // checks here are the ones load() does NOT make: the row is an object,
+    // a flag that is present is a real true/false (a "false" string would
+    // read as done), and the notes are text.
+    "board:sim:v1": function (v) {
+      if (!isPlainObject(v)) return false;
+      var flags = ["reportingDone", "knowledgeDone", "judgmentDone"];
+      for (var i = 0; i < flags.length; i++) if (flags[i] in v && typeof v[flags[i]] !== "boolean") return false;
+      if ("aarDraft" in v) {
+        if (!isPlainObject(v.aarDraft)) return false;
+        var notes = ["strong", "improve", "next"];
+        for (var j = 0; j < notes.length; j++) if (notes[j] in v.aarDraft && typeof v.aarDraft[notes[j]] !== "string") return false;
+      }
+      if ("opened" in v && !isPlainObject(v.opened)) return false;
+      return true;
+    },
   };
+  function isPlainObject(v) { return !!v && typeof v === "object" && !Array.isArray(v); }
   // Exact-string-keyed KV_VALIDATORS above can never validate a
   // dynamically-keyed family like "srs:<questionId>" - one row per board
   // question ever graded (1,000+), no single literal key to register.
@@ -28258,7 +28290,17 @@ window.G = window.G || {};
     // already falls back to the first step for anything that is not a
     // plain object; this turns that silent self-heal into a visible
     // "skipped" on restore, the same as srs: above.
-    { prefix: "recall-ladder:", test: function (v) { return v && typeof v === "object" && !Array.isArray(v); } },
+    // Tightened from "any plain object": the two fields the ladder keeps
+    // must be the kinds it keeps (a step name, a small count), so a row of
+    // the right outline but the wrong contents is also a visible skip.
+    { prefix: "recall-ladder:", test: function (v) { return isPlainObject(v) && typeof v.level === "string" && typeof v.streak === "number" && isFinite(v.streak); } },
+    // recite:<textId> - Recitation Drill's "Chunk & memorize" progress, one
+    // row per creed or My unit text ({ chunksLearned:[line numbers],
+    // direction }). The reader calls chunksLearned.indexOf() on it, so a
+    // row that is an object but carries a non-list there would throw the
+    // first time that text is opened. ("guidon:recite:own:v1" - the My unit
+    // texts themselves - is an exact key above and never reaches here.)
+    { prefix: "recite:", test: function (v) { return isPlainObject(v) && (v.chunksLearned == null || (Array.isArray(v.chunksLearned) && v.chunksLearned.every(function (n) { return typeof n === "number"; }))); } },
     // curr:<lessonId> - one row per curriculum lesson ever touched
     // (curriculum.js's own setP()), same "no single literal key" problem
     // as srs: above - 106+ lessons across the full curriculum, growing
@@ -28294,6 +28336,65 @@ window.G = window.G || {};
     var validator = KV_VALIDATORS[row.k] || prefixValidatorFor(row.k);
     if (!validator) return true;
     return !!validator(row.k === "forms:saved" ? row : row.v);
+  }
+
+  // What a saved item IS, in the Soldier's words. A restore that leaves
+  // something out has to say what, and "board:sim:v1" says nothing to the
+  // person reading it. Exact names first, then families; anything not
+  // listed is just "another saved item" - never the raw name.
+  var KEY_LABELS = {
+    "guidon:profile:v1": "your profile",
+    "settings": "your settings",
+    "board:sim:v1": "Board Simulator progress and notes",
+    "team:training:v1": "Team Training completion counts",
+    "prt:plan:v1": "your PT plan",
+    "pt:history:v1": "your completed PT sessions",
+    "guidon:recite:own:v1": "your My unit texts",
+    "board:mockHistory:v1": "Mock Board history",
+    "idp:goals": "your IDP goals",
+    "counsel:poa": "your counseling plan of action",
+    "streak:v1": "your study streak",
+    "reminders:v1": "your reminders",
+    "guidon:calendar:v1": "your calendar",
+    "forms:saved": "saved form drafts",
+    "guidon:ppw:v1": "your promotion points worksheet",
+    "progress:weeklyGoal:v1": "your weekly study goal",
+    "writing:bulletHistory:v1": "Bullet Builder history",
+    "resilience:practiceLog:v1": "your resilience practice log",
+    "finance:salaryNeg:v1": "salary worksheet",
+    "risk:all": "saved risk assessments",
+    "guidon:leader:roster:v1": "the squad roster",
+  };
+  var KEY_LABEL_FAMILIES = [
+    { prefix: "srs:", label: "Board Drill review progress" },
+    { prefix: "recall-ladder:", label: "Recall ladder progress" },
+    { prefix: "recite:", label: "Recitation Drill progress" },
+    { prefix: "curr:", label: "lesson progress" },
+    { prefix: "boardQuiz:best:", label: "quiz best scores" },
+    { prefix: "guidon:", label: "a checklist or study record" },
+  ];
+  function describeKey(k) {
+    k = String(k == null ? "" : k);
+    if (Object.prototype.hasOwnProperty.call(KEY_LABELS, k)) return KEY_LABELS[k];
+    for (var i = 0; i < KEY_LABEL_FAMILIES.length; i++) if (k.indexOf(KEY_LABEL_FAMILIES[i].prefix) === 0) return KEY_LABEL_FAMILIES[i].label;
+    return "another saved item";
+  }
+  // "Board Simulator progress and notes, your PT plan and Recall ladder
+  // progress (3)" - each kind once, with a count when there are several.
+  function describeKeys(keys) {
+    var order = [], counts = {};
+    (keys || []).forEach(function (k) { var l = describeKey(k); if (!counts[l]) { counts[l] = 0; order.push(l); } counts[l]++; });
+    var parts = order.map(function (l) { return counts[l] > 1 ? l + " (" + counts[l] + ")" : l; });
+    if (parts.length <= 1) return parts.join("");
+    return parts.slice(0, -1).join(", ") + " and " + parts[parts.length - 1];
+  }
+  // The one sentence both restore screens show when something was left out.
+  function skippedSummary(keys) {
+    keys = keys || [];
+    if (!keys.length) return "";
+    var profile = keys.indexOf("guidon:profile:v1") !== -1;
+    return (keys.length === 1 ? "1 damaged item was left out: " : keys.length + " damaged items were left out: ") + describeKeys(keys) +
+      ". Everything else was restored." + (profile ? " The profile already on this device was kept." : "");
   }
 
   // House-rule audit finding: failedStores (below) already made a failed
@@ -28416,6 +28517,10 @@ window.G = window.G || {};
     }
     var restored = { kv: 0, userScenarios: 0, attempts: 0 };
     var skipped = { kv: 0, userScenarios: 0 };
+    // Which kv rows were left out, by key - so the restore screens can say
+    // WHAT was damaged in the Soldier's words (skippedSummary() above)
+    // instead of only how many.
+    var skippedKeys = [];
     // Deep-gap follow-up ("Profile Data-Loss & Persistence Bugs" bucket):
     // the header comment above used to advertise importAll(obj, {merge})
     // with a documented "replace" option, and a `merge` flag was computed
@@ -28456,12 +28561,12 @@ window.G = window.G || {};
           var pv = row.v;
           var pvOk = pv && typeof pv === "object" && typeof pv.onboardingComplete === "boolean" && typeof pv.mode === "string";
           if (!pvOk) {
-            skipped.kv++;
+            skipped.kv++; skippedKeys.push(row.k);
             if (G.selfheal) G.selfheal.log("kv-reject", row.k, "malformed profile row rejected during backup import (missing onboardingComplete/mode) - existing profile kept");
             continue;
           }
         } else if (!validateKvRow(row)) {
-          skipped.kv++;
+          skipped.kv++; skippedKeys.push(row.k);
           if (G.selfheal) G.selfheal.log("kv-reject", row.k, "row failed validation during backup import, discarded");
           continue;
         }
@@ -28499,7 +28604,7 @@ window.G = window.G || {};
       }
       if (atRows.length) { try { await G.db.putMany("attempts", atRows); restored.attempts += atRows.length; } catch (e) { failedStores.push("attempts"); logImportFail("attempts", e); } }
     }
-    return { restored: restored, skipped: skipped, failedStores: failedStores };
+    return { restored: restored, skipped: skipped, skippedKeys: skippedKeys, failedStores: failedStores };
   }
 
   // Enhancement backlog round 1, "Settings Import Backup" bucket:
@@ -28538,7 +28643,8 @@ window.G = window.G || {};
           });
         }
         var msg = "Import this backup?" + (sum ? "\n\nIt contains: " + (sum.kv || 0) + " saved items, " + (sum.userScenarios || 0) + " authored scenarios, " + (sum.attempts || 0) + " quiz attempts." : "") + "\n\nYour existing data will be kept; matching items will be overwritten by the backup." + (hasProfileRow ? " This includes your name, rank, and board date." : "") +
-          (kvRejected.length ? "\n\n" + kvRejected.length + " item(s) in this file are corrupted and will be skipped: " + kvRejected.slice(0, 8).join(", ") + (kvRejected.length > 8 ? ", …" : "") + "." : "");
+          // Named in the Soldier's words (describeKeys), never by storage key.
+          (kvRejected.length ? "\n\n" + (kvRejected.length === 1 ? "1 item in this file is damaged and will be left out: " : kvRejected.length + " items in this file are damaged and will be left out: ") + describeKeys(kvRejected) + ". Everything else will be restored." : "");
         G.modal.confirm(msg, { title: "Import backup" }).then(function (ok) {
           if (!ok) { resolve({ status: "cancelled" }); return; }
           importAll(obj).then(function (res) {
@@ -28551,7 +28657,7 @@ window.G = window.G || {};
             // previously "Restored 0 items, 0 scenarios, 0 attempts."
             // rendered with the same "ok" styling as a real success,
             // looking exactly like a no-op restore rather than a failure.
-            resolve({ status: "success", restored: r, skipped: sk, failedStores: fs });
+            resolve({ status: "success", restored: r, skipped: sk, skippedKeys: res.skippedKeys || [], failedStores: fs });
           }).catch(function (e) {
             resolve({ status: "error", message: e && e.message ? e.message : "unknown error" });
           });
@@ -28637,7 +28743,8 @@ window.G = window.G || {};
           return;
         }
         status.textContent = "Restored " + r.kv + " items, " + r.userScenarios + " scenarios, " + r.attempts + " attempts." +
-          (sk && sk.kv ? " " + sk.kv + " item(s) skipped (malformed profile entry rejected — your existing profile was kept)." : "") +
+          // (This used to blame the profile for every skipped item, whatever it was.)
+          (sk && sk.kv ? " " + skippedSummary(result.skippedKeys) : "") +
           " Reloading…";
         status.className = "backup-status hint ok";
         if (G.util.announce) G.util.announce("Backup restored.");
@@ -28663,7 +28770,7 @@ window.G = window.G || {};
     return "Backup downloaded";
   }
 
-  G.backup = { exportAll: exportAll, downloadAll: downloadAll, importAll: importAll, renderControls: renderControls, confirmAndImportFile: confirmAndImportFile, validateKvRow: validateKvRow, exportDoneMessage: exportDoneMessage, getLastExportAt: getLastExportAt, formatLastExport: formatLastExport };
+  G.backup = { exportAll: exportAll, downloadAll: downloadAll, importAll: importAll, renderControls: renderControls, confirmAndImportFile: confirmAndImportFile, validateKvRow: validateKvRow, describeKey: describeKey, skippedSummary: skippedSummary, exportDoneMessage: exportDoneMessage, getLastExportAt: getLastExportAt, formatLastExport: formatLastExport };
 })();
 // END backup.js
 
@@ -35741,7 +35848,7 @@ window.G = window.G || {};
         // write failure previously looked identical to a clean restore.
         if (fs.length) { util.toast("Restore failed to write to this device (" + fs.join(", ") + ") — try again. Reloading…"); return; }
         util.toast("Restored " + r.kv + " item(s), " + r.userScenarios + " scenario(s), " + r.attempts + " attempt(s)." +
-          (sk && sk.kv ? " " + sk.kv + " skipped (malformed profile rejected)." : "") + " Reloading…");
+          (sk && sk.kv ? " " + G.backup.skippedSummary(result.skippedKeys) : "") + " Reloading…");
       });
     });
     // Same "Export backup"/"Import backup" wording as the Profile view's own
