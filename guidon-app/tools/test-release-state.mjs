@@ -157,6 +157,8 @@ try {
   check(r.failures.length === 0, "--cut passes when everything agrees and .release-prep names this version", "--cut fails on a clean fixture: " + r.failures.join(" | "));
   r = broken("guidon-app/src/index.html", () => notesHtml([{ v: "1.10.1" }, { v: "1.11.0", unreleased: true }, { v: "1.12.0", unreleased: true }, { v: "1.12.1", unreleased: true }]), { cut: true });
   check(failsWith(r, /entry for 1\.12\.1 is marked released: false/), "--cut refuses a version whose own notes say it is not released");
+  r = broken("GUIDON files/CHANGELOG.md", (t) => t.replace("v1.12.1: fix", "v1.12.1 (prepared, not released): fix"), { cut: true });
+  check(failsWith(r, /marks v1\.12\.1 as not released - a version being cut/), "--cut refuses a version whose own CHANGELOG entry says it is not released");
   git("add", "-A"); git("commit", "-q", "-m", "1.12.1"); git("tag", "v1.12.1", "HEAD~1");
   check(failsWith(lint({ cut: true }), /v1\.12\.1 is already tagged on [0-9a-f]{7}, not on this commit/), "--cut refuses when the tag already exists on a different commit (a tag is never moved)");
   git("tag", "-d", "v1.12.1"); git("tag", "v1.13.0");

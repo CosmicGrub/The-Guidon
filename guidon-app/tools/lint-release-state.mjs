@@ -136,6 +136,8 @@ export function lintReleaseState({ root, cut = false }) {
       const before = failures.length;
       const top = heads.slice().sort((x, y) => compareVersions(y.version, x.version))[0];
       if (top.version !== V) bad(`(c) CHANGELOG's newest versioned heading is v${top.version} (line ${top.line}) but package.json is ${V} - add the ${V} entry`);
+      const own = heads.find((h) => h.version === V);
+      if (cut && own && own.marked) bad(`(c) --cut: CHANGELOG line ${own.line} marks v${V} as not released - a version being cut cannot be marked unreleased`);
       if (tags.length) {
         for (const h of heads) {
           if (h.version === V) continue;
