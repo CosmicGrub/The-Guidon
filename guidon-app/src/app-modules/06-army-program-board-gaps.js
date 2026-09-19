@@ -1,8 +1,21 @@
-/* GUIDON — Army-program board coverage gap closure.
- * ROADMAP §3f Phase 0 identified exactly three under-covered programs:
- * AER, ACS, and SUDCC. These additive cards use current Army sources
- * verified 2026-09-18 and the category names already reserved in
- * tools/pillar-map.mjs. No new engine or taxonomy is introduced.
+/* GUIDON — Army-program board coverage gap closure (AER, ACS, SUDCC).
+ * ROADMAP §3f Phase 0 named three under-covered programs. The seed already
+ * carries aer-1..3, acs-1..3 and sudcc-1..3, so this pack only adds what
+ * those nine cards do NOT ask - it must never restate one of them with a
+ * different answer (an earlier version did: a second "ACS mission" card
+ * quoting the superseded 2017 AR 608-1, and a second "what is SUDCC" card
+ * beside a seed card that called SUDCC "under ASAP"). Those two twins were
+ * folded into acs-1 and sudcc-1 in the seed, which keep their ids so study
+ * history survives.
+ *
+ * Every card was checked against the Army Publishing Directorate PDF of the
+ * CURRENT edition on 2026-09-19:
+ *   AR 930-4, Army Emergency Relief ............ 15 Apr 2026 (supersedes 29 Nov 2024)
+ *   AR 608-1, Soldier and Family Readiness ..... 26 May 2026 (retitled from "Army Community Service")
+ *   AR 600-85, The Army Substance Abuse Program . 4 Oct 2024 (supersedes 23 Jul 2020)
+ * The answers are study-guide wording, not quotations, so each card is
+ * marked verbatim:false and the card back says so instead of claiming
+ * "verbatim doctrine".
  */
 (function () {
   "use strict";
@@ -13,6 +26,7 @@
   var have = new Set(list.map(function (q) { return q && q.id; }));
   function add(q) {
     if (!q || have.has(q.id)) return;
+    q.verbatim = false;
     list.push(q);
     have.add(q.id);
   }
@@ -27,10 +41,10 @@
     concept:"Army Emergency Relief purpose and governing regulation",
     keyPoints:[
       "AR 930-4 is the governing Army regulation for Army Emergency Relief.",
-      "The current regulation is dated 29 November 2024 and became effective 29 December 2024.",
+      "The current edition is dated and effective 15 April 2026; it superseded the 29 November 2024 edition.",
       "AER assistance supports eligible Soldiers and eligible Family members; exact eligibility and assistance categories are controlled by the regulation and current AER policy."
     ],
-    source:"AR 930-4 (29 Nov 2024), Army Emergency Relief",
+    source:"AR 930-4 (15 Apr 2026), Army Emergency Relief",
     difficulty:"basic",
     pillar:"Programs & Support",
     tier:["E4","E5","E6"],
@@ -41,16 +55,16 @@
     id:"prog-aer-2",
     category:"AER (AR 930-4)",
     q:"Under the current AR 930-4, which unit leaders are specifically charged with ensuring Soldiers are informed about AER programs and benefits?",
-    a:"Company or battery commanders and first sergeants.",
-    acceptableAnswer:"Company/battery commanders and first sergeants.",
-    boardAnswer:"Sergeant Major, AR 930-4 specifically requires company or battery commanders and first sergeants to ensure Soldiers are informed about Army Emergency Relief programs and benefits.",
+    a:"Company, battery, and troop commanders and first sergeants.",
+    acceptableAnswer:"Company, battery, and troop commanders and first sergeants.",
+    boardAnswer:"Sergeant Major, AR 930-4 charges company, battery, and troop commanders and first sergeants with ensuring Soldiers are informed year-round of how to obtain AER assistance and have current information on AER categories of assistance and programs.",
     concept:"Leader responsibility to inform Soldiers about AER",
     keyPoints:[
-      "The 29 November 2024 revision added this leader responsibility.",
-      "Company/battery commanders and first sergeants are the specifically named leaders.",
-      "The requirement is to ensure Soldiers are informed about AER programs and benefits."
+      "AR 930-4 (15 Apr 2026), para 1-18, lists the AER duties of company, battery, and troop commanders and first sergeants.",
+      "Para 1-18g: ensure Soldiers are informed on a year-round basis of how to obtain assistance and have updated information on AER categories of assistance and programs, including education assistance.",
+      "The same paragraph also has them make sure all unit officers and NCOs are familiar with AER assistance (para 1-18c)."
     ],
-    source:"AR 930-4 (29 Nov 2024), para 1-18i / Summary of Change",
+    source:"AR 930-4 (15 Apr 2026), para 1-18g",
     difficulty:"intermediate",
     pillar:"Programs & Support",
     tier:["E4","E5","E6"],
@@ -63,74 +77,35 @@
     q:"What regulation governs Army Community Service and Soldier and Family Readiness services?",
     a:"AR 608-1, Soldier and Family Readiness.",
     acceptableAnswer:"AR 608-1.",
-    boardAnswer:"Sergeant Major, Army Community Service and Soldier and Family Readiness services are governed by AR 608-1.",
+    boardAnswer:"Sergeant Major, Army Community Service and Soldier and Family Readiness services are governed by AR 608-1, Soldier and Family Readiness.",
     concept:"Army Community Service governing regulation",
     keyPoints:[
       "AR 608-1 is the governing Army regulation.",
-      "Current Army benefits references identify the publication as Soldier and Family Readiness.",
-      "ACS delivers standardized Soldier and Family support services across the Army."
+      "The 26 May 2026 edition changed the publication's title from Army Community Service to Soldier and Family Readiness.",
+      "Under it, an ACS center is one kind of Soldier and Family Readiness access point, alongside the Family Assistance Center and the Army Reserve Family Programs Office."
     ],
-    source:"AR 608-1, Soldier and Family Readiness (current Army publication; reviewed 18 Sep 2026)",
+    source:"AR 608-1 (26 May 2026), Soldier and Family Readiness",
     difficulty:"basic",
     pillar:"Programs & Support",
     tier:["E4","E5","E6"],
     tags:["acs","army-community-service","soldier-family-readiness","army-programs"]
-  });
-
-  add({
-    id:"prog-acs-2",
-    category:"ACS (AR 608-1)",
-    q:"What is the mission of Army Community Service?",
-    a:"To facilitate the commander's ability to provide comprehensive, standardized, coordinated, and responsive services supporting Soldiers, DA Civilians, and Families regardless of geographic location, while using resources effectively and measuring service effectiveness.",
-    acceptableAnswer:"ACS helps commanders provide comprehensive, standardized, coordinated, responsive support to Soldiers, DA Civilians, and Families regardless of location.",
-    boardAnswer:"Sergeant Major, ACS facilitates the commander's ability to provide comprehensive, standardized, coordinated, and responsive services that support Soldiers, DA Civilians, and Families regardless of geographic location.",
-    concept:"Army Community Service mission",
-    keyPoints:[
-      "ACS is a commander-support and quality-of-life system, not just a single counseling office.",
-      "The mission emphasizes comprehensive, standardized, coordinated, and responsive services.",
-      "Support is intended to reach Soldiers, DA Civilians, and Families regardless of geographic location."
-    ],
-    source:"AR 608-1, para 1-6, Army Community Service mission",
-    difficulty:"intermediate",
-    pillar:"Programs & Support",
-    tier:["E4","E5","E6"],
-    tags:["acs","army-community-service","soldier-family-readiness","army-programs"]
-  });
-
-  add({
-    id:"prog-sudcc-1",
-    category:"SUDCC (AR 600-85)",
-    q:"What is Substance Use Disorder Clinical Care (SUDCC)?",
-    a:"SUDCC is the Army's integrated clinical model for substance-use-disorder care, providing assessment, treatment, and aftercare within the behavioral health system to support health, recovery, and readiness.",
-    acceptableAnswer:"The Army's integrated behavioral-health clinical care for substance use disorders, including assessment, treatment, and aftercare.",
-    boardAnswer:"Sergeant Major, SUDCC is the Army's integrated clinical model for substance-use-disorder care. It provides assessment, treatment, and aftercare within the behavioral health system to support recovery and readiness.",
-    concept:"SUDCC purpose",
-    keyPoints:[
-      "SUDCC means Substance Use Disorder Clinical Care.",
-      "It provides clinical assessment, treatment, and aftercare.",
-      "The model is integrated with the Army behavioral health system and is designed to support recovery and readiness."
-    ],
-    source:"AR 600-85 (23 Jul 2020), The Army Substance Abuse Program; Army Resilience Directorate, Substance Use Disorder Clinical Care (reviewed 18 Sep 2026)",
-    difficulty:"basic",
-    pillar:"Programs & Support",
-    tier:["E4","E5","E6"],
-    tags:["sudcc","asap","behavioral-health","army-programs"]
   });
 
   add({
     id:"prog-sudcc-2",
     category:"SUDCC (AR 600-85)",
     q:"How does SUDCC relate to the Army Substance Abuse Program (ASAP)?",
-    a:"AR 600-85 distinguishes SUDCC as the clinical-care function integrated within the Behavioral Health System of Care. SUDCC is not itself part of the nonclinical ASAP structure, but it supports the Army's substance-abuse strategy by providing treatment when clinically indicated.",
-    acceptableAnswer:"SUDCC is the clinical treatment function integrated with behavioral health; it supports ASAP's overall strategy but is not the nonclinical ASAP program itself.",
-    boardAnswer:"Sergeant Major, AR 600-85 separates the clinical-care function from the nonclinical ASAP structure. SUDCC is integrated with the Behavioral Health System of Care and supports the Army's substance-abuse strategy by providing treatment when clinically indicated.",
+    a:"AR 600-85 says SUDCC is not a part of ASAP. It is the clinical-care function, integrated with the Behavioral Health System of Care, and it supports the Army's strategy to prevent substance abuse by providing treatment services when clinically indicated.",
+    acceptableAnswer:"SUDCC is the clinical treatment function integrated with behavioral health; it supports the Army's substance abuse strategy but is not a part of ASAP itself.",
+    boardAnswer:"Sergeant Major, AR 600-85 states that SUDCC is not a part of ASAP. SUDCC is integrated with the Behavioral Health System of Care and supports the Army's strategy to prevent substance abuse by providing treatment services when clinically indicated.",
     concept:"SUDCC and ASAP relationship",
     keyPoints:[
-      "AR 600-85 separates deterrence/prevention functions from the clinical treatment function.",
-      "SUDCC is integrated within the Behavioral Health System of Care.",
+      "ASAP's overarching tenets are deterrence, prevention, and treatment (AR 600-85, para 1-7c).",
+      "The same paragraph says that, while not a part of ASAP, SUDCC supports the Army's strategy and provides treatment services when clinically indicated.",
+      "Substance use disorder treatment is a single program integrated with the Behavioral Health System of Care (para 1-7d).",
       "Avoid the outdated shorthand that all substance-use clinical treatment is simply 'ASAP rehab.'"
     ],
-    source:"AR 600-85 (23 Jul 2020), paras 1-1 and 1-7; Army Resilience Directorate SUDCC (reviewed 18 Sep 2026)",
+    source:"AR 600-85 (4 Oct 2024), para 1-7",
     difficulty:"intermediate",
     pillar:"Programs & Support",
     tier:["E4","E5","E6"],
@@ -139,7 +114,10 @@
 
   window.G = window.G || {};
   window.G.armyProgramGapCards = {
-    ids:["prog-aer-1","prog-aer-2","prog-acs-1","prog-acs-2","prog-sudcc-1","prog-sudcc-2"],
-    verifiedAsOf:"2026-09-18"
+    ids:["prog-aer-1","prog-aer-2","prog-acs-1","prog-sudcc-2"],
+    /* prog-acs-2 and prog-sudcc-1 were near-duplicates of seed cards acs-1 and
+       sudcc-1; their verified wording now lives on those older ids. */
+    foldedIntoSeed:{ "prog-acs-2":"acs-1", "prog-sudcc-1":"sudcc-1" },
+    verifiedAsOf:"2026-09-19"
   };
 })();
