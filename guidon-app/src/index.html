@@ -8289,10 +8289,22 @@ window.G = window.G || {};
       // loadContent() runs) itself invalidate the stale empty entry, so the
       // very next call recomputes for real and caches correctly - same fix
       // as doctrine()/scenarios() below, which shared this exact pattern.
-      const key = (s.tierFilter || "all") + "|" + !!state.seed.board;
+      // MOS-specific cards (a card with a `mos` list - today the 92A deck)
+      // are for Soldiers in that MOS. They used to land in EVERY Soldier's
+      // pool, so an 11B's Maintenance & Supply readiness, All-category
+      // drill, Rapid Fire and Mock Board were half GCSS-Army and SSA
+      // location surveys. When the Soldier has told the app their MOS and
+      // it is a different one, those cards stay out. With no MOS on the
+      // profile (guest, kiosk, left blank) the app cannot tell, so nothing
+      // is hidden. The MOS is part of the cache key, so editing the profile
+      // takes effect on the next call.
+      const prof = (window.G && G.profile && G.profile.cached) ? G.profile.cached() : null;
+      const myMos = String((prof && prof.mos) || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+      const key = (s.tierFilter || "all") + "|" + !!state.seed.board + "|" + myMos;
       if (state._boardQuestionsCache && state._boardQuestionsCache.key === key) return state._boardQuestionsCache.list;
       let list = (state.seed.board && state.seed.board.questions) || [];
       if (s.tierFilter !== "all") list = list.filter((q) => !q.tier || util.expandTierTokens(q.tier).indexOf(s.tierFilter) !== -1);
+      if (myMos) list = list.filter((q) => !Array.isArray(q.mos) || !q.mos.length || q.mos.some((m) => myMos.indexOf(String(m).toUpperCase()) === 0));
       state._boardQuestionsCache = { key, list };
       return list;
     },

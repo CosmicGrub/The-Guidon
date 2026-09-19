@@ -340,6 +340,40 @@ console.log("\nU14 - near-duplicate prompts are one card, on the older id");
   }
 }
 
+/* ---- U13: MOS-only cards are for Soldiers in that MOS ---- */
+console.log("\nU13 - 92A cards stay out of another MOS's pools");
+{
+  /* A guest profile lives only in memory, so a real personal profile + reload is the way to give the app an MOS
+     (same pattern as test-ppw / test-career). Everything above ran as a guest with no MOS: all 40 cards were in the pool. */
+  const asMos = async (mos) => {
+    await page.evaluate(async (m) => { await G.db.put("kv", { k: "guidon:profile:v1", v: { onboardingComplete: true, mode: "personal", tier: "E5", rank: "SGT", mos: m } }); }, mos);
+    await page.reload({ waitUntil: "load" });
+    await page.waitForFunction(() => window.G && G.store && G.profile && G.profile.cached && G.profile.cached() && G.store.boardQuestions().length > 900, null, { timeout: 30000 });
+    await page.evaluate(() => { location.hash = "#/board"; });
+    await page.waitForSelector('select[aria-label="Filter by category"]', { timeout: 15000 });
+    await page.waitForTimeout(300);
+    return page.evaluate(() => {
+      const pool = G.store.boardQuestions();
+      const pillarChip = Array.from(document.querySelectorAll("button, [role=button]")).find((b) => /Maintenance & Supply/.test(b.textContent) && /\d/.test(b.textContent));
+      return {
+        mosCards: pool.filter((q) => Array.isArray(q.mos) && q.mos.length).length,
+        supplyPillar: pool.filter((q) => q.pillar === "Maintenance & Supply").length,
+        options: Array.from(document.querySelector('select[aria-label="Filter by category"]').options).map((o) => o.value).filter((v) => /^92A/.test(v)).length,
+        chip: pillarChip ? pillarChip.textContent.replace(/\s+/g, " ").trim() : null,
+      };
+    });
+  };
+  const infantry = await asMos("11B");
+  infantry.mosCards === 0 ? ok("an 11B's question pool holds no 92A-only cards") : bad("11B pool still holds " + infantry.mosCards + " MOS-only cards");
+  infantry.options === 0 ? ok("...Board Drill's category picker offers an 11B no \"92A — ...\" categories") : bad("11B still sees " + infantry.options + " 92A categories in the picker");
+  const supply = await asMos("92a");
+  supply.mosCards === 40 ? ok("a 92A (typed in lower case) gets all 40") : bad("92A pool holds " + supply.mosCards + " MOS-only cards");
+  supply.options >= 10 ? ok("...and sees the 92A categories in the picker (" + supply.options + ")") : bad("92A sees " + supply.options + " 92A categories");
+  (supply.supplyPillar - infantry.supplyPillar === 40) ? ok(`the Maintenance & Supply pillar is ${infantry.supplyPillar} cards for the 11B and ${supply.supplyPillar} for the 92A - the 40 MOS cards no longer count against another MOS's readiness`) : bad("M&S pillar: 11B " + infantry.supplyPillar + ", 92A " + supply.supplyPillar);
+  const skill = await asMos("92A2O");
+  skill.mosCards === 40 ? ok("an MOS typed with its skill level (92A2O) still matches") : bad("92A2O pool holds " + skill.mosCards);
+}
+
 /* ---- zero console noise ---- */
 console.log("");
 noise.length === 0 ? ok("zero console errors/warnings across the run") : bad("console noise: " + noise.slice(0, 5).join(" | "));
