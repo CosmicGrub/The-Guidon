@@ -175,6 +175,21 @@
     return run;
   }
   function say(msg) { try { if (G.util && G.util.announce) G.util.announce(msg); } catch (e) {} }
+  // Once a date is logged its planner-made reminder has done its job; leaving
+  // it would show "PT: ... - Today" on Home for a session already completed.
+  // (Reminders whose date has simply passed are expired by G.reminders
+  // itself - see EXPIRING_KINDS there - so nothing here needs a clock.)
+  var REMINDER_NOTE = "From PT Planner";
+  async function clearPtRemindersFor(iso) {
+    if (!G.reminders || !G.reminders.load || !G.reminders.remove) return;
+    try {
+      var mine = (await G.reminders.load()).filter(function (r) { return r && r.kind === "pt" && r.date === iso && r.note === REMINDER_NOTE; });
+      for (var i = 0; i < mine.length; i++) {
+        await G.reminders.remove(mine[i].id);
+        try { if (G.notify && G.notify.cancelForReminder) await G.notify.cancelForReminder(mine[i].id); } catch (e) {}
+      }
+    } catch (e) {}
+  }
   function localISO(d) {
     return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
   }
@@ -241,7 +256,7 @@
       if (!quiet) util.toast("That date is a rest day - no reminder added.");
       return "rest";
     }
-    var list = await G.reminders.add({ kind:"pt", label:"PT: " + entry.title, date:date, note:"From PT Planner" });
+    var list = await G.reminders.add({ kind:"pt", label:"PT: " + entry.title, date:date, note:REMINDER_NOTE });
     if (!list) { util.toast("Reminder limit reached."); return "full"; }
     var r = list[list.length - 1];
     try { if (G.notify && G.notify.scheduleForReminder) await G.notify.scheduleForReminder(r); } catch (e) {}
@@ -462,6 +477,7 @@
         if (!ok) { complete.removeAttribute("aria-disabled"); util.toast("Could not save the PT log."); return; }
         complete.textContent = "Today logged";
         util.toast("PT session logged.");
+        await clearPtRemindersFor(todayKey);
         drawHistoryGuard(drawGeneration);
       });
       stage.appendChild(el("div.panel", {}, [el("div.eyebrow", { text:"History" }), complete]));

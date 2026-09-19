@@ -28322,6 +28322,15 @@ window.G = window.G || {};
     var d = daysUntil(r.date);
     return d !== null && d < 0;
   }
+  // Drops expired rows from a list that is about to be saved. Runs inside
+  // add()/remove()'s write queue only - bucket() below hides expired rows
+  // from every screen straight away, and the next write of any kind is what
+  // actually frees their storage, so nothing is ever rewritten from a read
+  // path. A passed date's scheduled notification has already fired (or been
+  // skipped), so there is nothing to cancel in notify.js.
+  function dropExpired(list) {
+    return list.filter(function (r) { return !isExpired(r); });
+  }
 
   async function load() {
     try { var r = await db.get("kv", KEY); var v = r && r.v; return Array.isArray(v) ? v : []; } catch (e) { return []; }
@@ -28353,7 +28362,10 @@ window.G = window.G || {};
   }
   async function add(entry) {
     return _serialize(async function () {
-      var list = await load();
+      // Expired rows go BEFORE the duplicate and cap checks, so scheduling
+      // another PT week replaces last week's rows instead of stacking six
+      // more on top of them against MAX_REMINDERS.
+      var list = dropExpired(await load());
       var kind = entry.kind || "other", label = entry.label || "Reminder", date = entry.date || "";
       // Upgrade-roadmap first wave, item 9: none of this build's growing
       // set of one-click quick-add buttons (Records' cutoff reminder,
@@ -28384,7 +28396,7 @@ window.G = window.G || {};
   }
   async function remove(id) {
     return _serialize(async function () {
-      var list = await load();
+      var list = dropExpired(await load());
       list = list.filter(function (r) { return r.id !== id; });
       await save(list);
       return list;
@@ -28412,6 +28424,10 @@ window.G = window.G || {};
     // .forEach - same defensive posture as load()'s own fix.
     (Array.isArray(list) ? list : []).forEach(function (r) {
       if (!r || typeof r !== "object") return;
+      // An expired kind (see EXPIRING_KINDS) is in NO bucket: not Overdue on
+      // the Home strip, not in its "N overdue reminders" announcement, not
+      // in the editor's Overdue section. Every reader goes through here.
+      if (isExpired(r)) return;
       var d = daysUntil(r.date);
       if (d === null) return;
       var item = Object.assign({ daysUntil: d }, r);
