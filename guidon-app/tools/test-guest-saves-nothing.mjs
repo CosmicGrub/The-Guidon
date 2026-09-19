@@ -40,6 +40,7 @@ import path from "node:path";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 import { deviceDump, deviceKvGet, putOnDevice, seedOwnerProfile } from "./device-storage.mjs";
+import { waitForRoute } from "./testkit.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -71,12 +72,12 @@ async function settledDump(page) {
   }
   return last;
 }
-const go = async (page, hash, selector) => {
-  await page.evaluate(() => { location.hash = "#/home"; });
-  await page.waitForTimeout(120);
-  await page.evaluate((h) => { location.hash = h; }, hash);
-  await page.waitForSelector(selector, { timeout: 10000 });
-};
+// waitForRoute (tools/testkit.mjs) tags the outgoing screen before the hash
+// changes and waits for #route to hold a DIFFERENT, fully drawn one - a bare
+// `waitForSelector(selector)` can match a generic selector (an <input>, a
+// heading) still sitting in the PREVIOUS screen's stale DOM for a moment
+// after the hash changes, before the new view has replaced it.
+const go = (page, hash, selector) => waitForRoute(page, hash, { ready: selector, fresh: true });
 // For a moment after the welcome screen closes, the page behind it is still
 // switched off for input (inert), and typing into it is silently dropped.
 const typable = (page, selector) => page.waitForFunction((sel) => { const n = document.querySelector(sel); return !!n && !n.closest("[inert]"); }, selector, { timeout: 8000 });

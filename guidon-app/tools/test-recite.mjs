@@ -191,8 +191,8 @@ const acceptTierChange = async () => {
     await box.click();
     // The answer only takes effect once the dialog has finished closing.
     await page.locator(".gm-box").waitFor({ state: "detached", timeout: 3000 });
-    await page.waitForTimeout(250);
-  } catch (e) { /* no question asked: nothing to accept */ }
+    await page.waitForTimeout(250); // hygiene-ok: the dialog's own close animation, not a guess - the tier change only takes effect once it finishes
+  } catch (e) { /* no question asked: nothing to accept */ } // hygiene-ok: the confirm dialog is genuinely optional - it only appears when the tier change affects saved data
 };
 await tierSel.selectOption("E9");
 await acceptTierChange();

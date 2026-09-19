@@ -567,7 +567,7 @@ async function openAdvanced() {
       await go.waitFor({ state: "visible", timeout: 1200 });
       await go.click();
       await page.locator(".gm-box").waitFor({ state: "detached", timeout: 3000 });
-    } catch (e) { /* no question asked: nothing to accept */ }
+    } catch (e) { /* no question asked: nothing to accept */ } // hygiene-ok: the confirm dialog is genuinely optional - it only appears when the tier change affects saved data
   };
   const tierSel = page.locator('select[aria-label^="Focus tier"]');
   const hintText = () => page.evaluate(() => {

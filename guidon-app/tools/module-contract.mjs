@@ -285,8 +285,11 @@ function resolveKeyExpr(expr, text, hops = 0) {
 /**
  * Writes and deletes a module makes to the on-device store, by static scan of
  * its own calls:  x.put("kv", { k: KEY ...  x.setSetting(KEY ...
- * localStorage.setItem(KEY ...  x.putMany("kv" ...   and the delete forms
- * x.del("kv", KEY)  x.delMany("kv", KEYS)  localStorage.removeItem(KEY).
+ * localStorage.setItem(KEY ...  x.putMany("kv" ...  G.db.local.set(KEY ...
+ * and the delete forms  x.del("kv", KEY)  x.delMany("kv", KEYS)
+ * localStorage.removeItem(KEY)  G.db.local.remove(KEY). G.db.local is the
+ * one door for a module's own localStorage-backed preference (see the db
+ * section's own comment on why it exists) and is scanned the same way.
  * CANNOT see: a write made for the module by a core API (G.reminders.add,
  * G.store.recordAttempt, G.board.noteExternalResult - those rows are core's),
  * a key assembled from values only known at run time (reported as
@@ -299,10 +302,12 @@ export function collectStorage(source) {
     ["write", /\.put\(\s*["']kv["']\s*,\s*\{\s*k\s*:\s*/g],
     ["write", /\.setSetting\(\s*/g],
     ["write", /\b(?:localStorage|sessionStorage)\.setItem\(\s*/g],
+    ["write", /\.local\.set\(\s*/g],
     ["write-many", /\.putMany\(\s*["']kv["']\s*,\s*/g],
     ["delete", /\.del\(\s*["']kv["']\s*,\s*/g],
     ["delete", /\.delMany\(\s*["']kv["']\s*,\s*/g],
     ["delete", /\b(?:localStorage|sessionStorage)\.removeItem\(\s*/g],
+    ["delete", /\.local\.remove\(\s*/g],
   ];
   const lineOf = (idx) => source.text.slice(0, idx).split("\n").length;
   for (const [op, re] of forms) {

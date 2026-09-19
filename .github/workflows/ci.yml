@@ -683,8 +683,14 @@ jobs:
             tests: "test:opsec-curriculum test:opsec-guard test:pt-planner-behaviour test:quiz-twin-options"
           - name: "50-reciteusertext-sharemacfirstopen-teamtrainingbehaviour-releasepipeline"
             tests: "test:recite-user-text test:share-mac-first-open test:team-training-behaviour test:release-pipeline"
-          - name: "51-releasestate-viewtransitions"
-            tests: "test:release-state test:view-transitions"
+          - name: "51-releasestate-viewtransitions-modulemanifest-extpoints"
+            tests: "test:release-state test:view-transitions test:module-manifest test:ext-points"
+          - name: "52-modulecontract-testkit-hygieneratchet-newsuitescaffold"
+            tests: "test:module-contract test:testkit test:hygiene-ratchet test:new-suite-scaffold"
+          - name: "53-contentmanifest-livecontentfigures-guestsavesnothing-backupnewtools"
+            tests: "test:content-manifest test:live-content-figures test:guest-saves-nothing test:backup-new-tools"
+          - name: "54-storagecontractlint"
+            tests: "test:storage-contract-lint"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same

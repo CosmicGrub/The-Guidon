@@ -63,6 +63,21 @@ const DOCS = path.join(scratch, "docs");
 mkdirSync(MODULES); mkdirSync(DOCS);
 copyFileSync(path.join(HERE, "..", "src", "app-modules", "98-content-pack-finalize.js"), path.join(MODULES, "98-content-pack-finalize.js"));
 
+// tools/module-manifest.mjs (ROADMAP 3g item A) made assemble-bank.mjs read
+// the module LIST from src/app-modules/manifest.json instead of scanning the
+// folder, so this stand-in folder needs its own tiny one. The finalize
+// entry's "requires" is deliberately empty - the real manifest lists the
+// modules whose APIs it touches, which do not exist in this fixture.
+const MODULES_MANIFEST = path.join(MODULES, "manifest.json");
+const writeModulesManifest = ({ broken = false } = {}) => {
+  const entry = (file, kind) => ({ file, id: file.replace(/\.js$/, "").replace(/^\d+-/, ""), kind, headless: true, requires: [], provides: [], routes: [], storageKeys: [], optionalApis: [] });
+  const modules = [entry("01-stand-in-pack.js", "content-pack")];
+  if (broken) modules.push(entry("02-broken-pack.js", "content-pack"));
+  modules.push(entry("98-content-pack-finalize.js", "finalize"));
+  writeFileSync(MODULES_MANIFEST, JSON.stringify({ modules }, null, 2) + "\n", "utf8");
+};
+writeModulesManifest();
+
 const card = (id, category, q = "Question " + id + "?") => ({ id, category, q, a: "Answer " + id, boardAnswer: "Answer " + id });
 const seedBank = () => ({
   board: { questions: [card("s1", "Army Values"), card("s2", "Army Values"), card("s3", "Land Navigation"), card("s4", "Land Navigation")] },
@@ -99,6 +114,7 @@ try {
     "it records the totals, the seed-only split, the per-pack contribution and the per-category counts (6 cards = 4 seed + 2 pack; Army Values 4, Land Navigation 2)", "figures: " + JSON.stringify({ totals: m.totals, seedOnly: m.seedOnly, packs: m.packs, byCategory: m.board.byCategory }));
   check(m.totals.doctrine === 3 && m.doctrine.byTopic.Counseling === 2 && m.totals.scenarios === 2 && m.totals.acronyms === 3 && m.totals.mos === 2 && m.totals.creeds === 1 && m.totals.prtExercises === 3 && m.totals.seedSections === 7,
     "and every other counted kind: doctrine by topic, scenarios, dictionary terms, MOS entries, creeds, PRT exercises, seed sections", "totals: " + JSON.stringify(m.totals));
+  // hygiene-ok: a synthetic, self-authored 6-card fixture built above, not the live app bank
   check(m.board.byPillar["Drill & Board Etiquette"] === 4 && m.board.byPillar["(none)"] === 2 && m.scenarios.byPillar["Programs & Support"] === 1,
     "per-pillar counts come from the one pillar map (Army Values -> Drill & Board Etiquette; Land Navigation is outside the six by design)", "byPillar: " + JSON.stringify(m.board.byPillar) + " " + JSON.stringify(m.scenarios.byPillar));
   check(/^[0-9a-f]{16}$/.test(m.fingerprint) && Array.isArray(m.shrinks) && m.shrinks.length === 0, "the bank fingerprint is the one the real finalize pass stamps, and the shrinks history starts empty", "fingerprint " + m.fingerprint + " shrinks " + JSON.stringify(m.shrinks));
@@ -188,9 +204,11 @@ try {
   check(r.code === 1 && bytes() === conflicted, "...and --write will not paper over it (the shrinks history lives in that file) - nothing written");
   writeFileSync(MANIFEST, settled, "utf8");
   writeFileSync(path.join(MODULES, "02-broken-pack.js"), "(function () { this is not javascript", "utf8");
+  writeModulesManifest({ broken: true });
   r = run("--write");
   check(r.code === 1 && /02-broken-pack\.js/.test(r.out) && /nothing compared, nothing written/.test(r.out) && bytes() === settled, "a pack that will not load stops everything - a short bank is never compared or written", "broken pack: exit " + r.code + "\n" + r.out);
   rmSync(path.join(MODULES, "02-broken-pack.js"));
+  writeModulesManifest();
   r = run("--wirte");
   check(r.code === 1 && /unknown option --wirte/.test(r.out), "a mistyped option fails instead of quietly running the lint");
   // A stand-in flag with its value missing must not fall back to the REAL file.
