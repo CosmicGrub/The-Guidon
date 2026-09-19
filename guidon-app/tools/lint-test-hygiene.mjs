@@ -41,7 +41,7 @@
  * or a new file that has any, is refused - fix the suite instead. `--report`
  * prints every hit (file:line) - the to-do list. `--tools <dir>` and
  * `--baseline <file>` point the lint at stand-in copies so the verifier can
- * be verified (tools/test-test-hygiene.mjs plants each defect and watches it
+ * be verified (tools/test-hygiene-ratchet.mjs plants each defect and watches it
  * fail). No dependencies; run from anywhere.
  */
 import { readFile, writeFile, readdir } from "node:fs/promises";
