@@ -119,18 +119,20 @@ These are repository settings, not files, so no PR can make them:
 2. Tag rule on `refs/tags/v*`: block update and deletion, so "a version tag is
    permanent" is enforced by GitHub rather than by habit.
 
-## Where things stand (2026-09-19)
+## Where things stand (2026-09-19, as v1.12.1 is prepared)
 
-- Tagged: v1.9.0 (complete), v1.10.0 (two Windows files only - it was cut from
-  a commit CI never ran on, has no in-app What's New entry and no CHANGELOG
-  entry), v1.10.1.
+- Tagged: v1.9.0 (complete); v1.10.0 (cut from a commit CI never ran on, with
+  two Windows files only - the signed Android APK/AAB and both fixed-name
+  download files were attached on 2026-09-18, and its CHANGELOG entry was
+  written retroactively with v1.12.1); v1.10.1 (published retroactively on
+  2026-09-18 from its original commit, every platform attached).
 - 1.11.0 and 1.12.0 were version-bumped on main but never cut. The hosted web
   app did run builds calling themselves 1.11.0 and 1.12.0. Do **not** tag
-  either number now: a corrected build under an already-used number would put
-  two different "1.12.0"s in the wild. Ship the corrected work as the next
-  patch number and record 1.11.0 / 1.12.0 in the CHANGELOG as
-  "prepared, not released".
-- While v1.10.0 is Latest, both in-app download buttons are dead links.
-  Reversible stop-gap (changes public release state, so it is the owner's
-  call): `gh release edit v1.9.0 --latest`, which carries both version-less
-  files. The next complete release takes Latest back automatically.
+  either number: a corrected build under an already-used number would put
+  two different "1.12.0"s in the wild. The owner's decision (2026-09-19) is
+  that v1.12.1 supersedes both; the CHANGELOG records them as
+  "prepared, not released" and their What's New entries stay
+  `released: false`.
+- The in-app download buttons (`#/share`) resolve again: v1.10.0 is Latest and
+  now carries `GUIDON-android.apk` and `GUIDON-windows-setup.exe`. v1.12.1
+  takes Latest only when its finalize step finds it complete.

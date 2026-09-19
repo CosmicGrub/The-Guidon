@@ -20,7 +20,6 @@
     { "check": "tap<44", "signature": "button[type=button].nav-pin-btn", "seen": "every route, iPad only, 32x48" },
     { "check": "tap<44", "signature": "a.res-url", "seen": "#/resources, 303x18" },
     { "check": "tap<44", "signature": "button[type=button].btn.sm", "seen": "#/progress, 32x48" },
-    { "check": "tap<44", "signature": "input[type=checkbox]", "seen": "#/pt-plan, 295x31 including its label" },
     { "check": "tap<44", "signature": "a", "seen": "#/board, iPad only, 41x48" },
     { "check": "tap<44", "signature": "a.active", "seen": "#/board, iPad only, 41x48" },
     { "check": "tap<44", "signature": "a.nav-shell-only", "seen": "#/board, iPad only, 41x48" }
