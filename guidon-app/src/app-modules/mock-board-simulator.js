@@ -338,22 +338,30 @@
     settle(mount, after, state);
   }
 
+  // Never a raw error and never an empty screen: say it on the page, in plain
+  // words, and out loud.
+  function showUnavailable(st, engineHost) {
+    var msg = "This step can't be opened right now. The other steps still work.";
+    util.clear(engineHost);
+    engineHost.appendChild(el("div.panel", { "data-board-sim-unavailable":st.id }, [
+      el("div.eyebrow", { text:"Step " + st.n }),
+      el("p", { text:msg })
+    ]));
+    say(msg);
+  }
+
   function openScenarioStep(st, sc, mount, state, engineHost) {
     util.clear(engineHost);
-    if (!sc) {
-      // Never a raw error: say it on the page, in plain words, and out loud.
-      var msg = "This step can't be opened right now. The other steps still work.";
-      engineHost.appendChild(el("div.panel", { "data-board-sim-unavailable":st.id }, [
-        el("div.eyebrow", { text:"Step " + st.n }),
-        el("p", { text:msg })
-      ]));
-      say(msg);
-      return;
-    }
+    if (!sc) return showUnavailable(st, engineHost);
     state.opened = state.opened || {};
     state.opened[st.id] = { id:sc.id, at:Date.now() };
     save(state);
+    var closed = false;
     runScenario(sc, engineHost, async function (result) {
+      // A double tap on Done must not run this twice: the second pass would
+      // find no marker and report a finished step as "left early".
+      if (closed) return;
+      closed = true;
       var marker = state.opened && state.opened[st.id];
       var finished = await scenarioStepFinished(marker, result);
       if (state.opened) delete state.opened[st.id];
@@ -361,6 +369,13 @@
       await save(state);
       render(mount, { kind:finished ? "done" : "left", step:st.id });
     });
+    // The practice screen draws itself before run() returns. If it drew
+    // nothing, whatever the reason, do not leave the Soldier looking at a gap.
+    if (!engineHost.firstChild) {
+      delete state.opened[st.id];
+      save(state);
+      return showUnavailable(st, engineHost);
+    }
     // Land keyboard and screen-reader users inside the practice (its letter
     // keys only work from there) instead of leaving them on the Start button
     // with two more cards to tab past.
