@@ -39,20 +39,48 @@
     };
     return m[cat] || null;
   }
+  /* Prompts already folded into an older card (normalized question -> older
+     id). It outlives one deck so that the SAME prompt in a later deck folds
+     to the same card instead of being added as new. */
+  var foldedPrompts = new Map();
   function mergeDeck(deck) {
     var bank = seed.board.questions;
     var byQ = new Map();
+    var byId = new Map();
     var ids = new Set();
-    bank.forEach(function (q) { byQ.set(norm(q.q), q); ids.add(q.id); });
-    var stats = { sourceCards: deck.cards.length, qas: 0, added: 0, matched: 0 };
+    bank.forEach(function (q) { byQ.set(norm(q.q), q); byId.set(q.id, q); ids.add(q.id); });
+    foldedPrompts.forEach(function (olderId, key) { if (!byQ.has(key) && byId.has(olderId)) byQ.set(key, byId.get(olderId)); });
+    var stats = { sourceCards: deck.cards.length, qas: 0, added: 0, matched: 0, folded: 0, unresolved: 0 };
     deck.cards.forEach(function (card) {
       card.qa.forEach(function (pair, i) {
         stats.qas++;
         var qtext = pair[0], ans = pair[1], k = norm(qtext), existing = byQ.get(k);
         var sourceCard = deck.id + "-" + String(card.n).padStart(2, "0");
+        /* Same question, different words. Exact-text matching caught 8 of the
+           224 prompts; "What is the Warrior Ethos?" still landed beside
+           "Recite the Warrior Ethos." as a second card, and the Quiz could
+           then offer one twin's correct answer as a wrong option for the
+           other. A third element {sameAs:"<older id>"} is the authoring-time
+           decision that this prompt IS that older card: nothing is added,
+           the older id (and the Soldier's study history on it) stays, and
+           its reviewed answer is left alone - only the provenance link is
+           recorded so the intake audit still accounts for the prompt. */
+        var folded = !!existing && foldedPrompts.has(k);
+        if (!existing && pair[2] && pair[2].sameAs) {
+          existing = byId.get(pair[2].sameAs);
+          if (existing) { folded = true; foldedPrompts.set(k, existing.id); byQ.set(k, existing); } else stats.unresolved++;
+        }
         if (existing) {
           existing.sourceCards = Array.isArray(existing.sourceCards) ? existing.sourceCards : [];
           if (existing.sourceCards.indexOf(sourceCard) < 0) existing.sourceCards.push(sourceCard);
+          if (folded) {
+            /* The supplement offered this prompt to every Soldier. If the
+               older card was limited to some ranks, folding must not take
+               the question away from the rest. */
+            if (Array.isArray(existing.tier) && existing.tier.length) existing.tier = ["E1", "E2", "E3", "E4", "E5", "E6"];
+            stats.folded++; stats.matched++;
+            return;
+          }
           existing.keyPoints = Array.isArray(existing.keyPoints) && existing.keyPoints.length ? existing.keyPoints : [existing.a || ans];
           if (existing.keyPoints.indexOf(ans) < 0 && ans !== existing.a && ans.length < 260) existing.keyPoints.push(ans);
           stats.matched++;
@@ -81,10 +109,10 @@
           sourceCards: [sourceCard]
         };
         var p = pillarFor(card.category); if (p) rec.pillar = p;
-        bank.push(rec); byQ.set(k, rec); ids.add(id); stats.added++;
+        bank.push(rec); byQ.set(k, rec); byId.set(id, rec); ids.add(id); stats.added++;
       });
     });
-    G.boardSupplement = G.boardSupplement || { decks: [], totals: { sourceCards: 0, qas: 0, added: 0, matched: 0 } };
+    G.boardSupplement = G.boardSupplement || { decks: [], totals: { sourceCards: 0, qas: 0, added: 0, matched: 0, folded: 0, unresolved: 0 } };
     G.boardSupplement.decks.push({ id: deck.id, stats: stats });
     Object.keys(stats).forEach(function (k) { G.boardSupplement.totals[k] = (G.boardSupplement.totals[k] || 0) + stats[k]; });
   }
@@ -92,17 +120,17 @@
 
   mergeDeck({ id: "core72", cards: [
     {n:1,title:"Army Values: LDRSHIP",category:"Army Values",source:"ADP 6-22",qa:[["What are the seven Army Values?","Loyalty, Duty, Respect, Selfless Service, Honor, Integrity, and Personal Courage."],["What mnemonic is commonly used to remember the Army Values?","LDRSHIP."]]},
-    {n:2,title:"Loyalty & Duty",category:"Army Values",source:"ADP 6-22",qa:[["What is Loyalty?","Bear true faith and allegiance to the U.S. Constitution, the Army, your unit, and other Soldiers."],["What is Duty?","Fulfill your obligations and accept responsibility for your actions and those entrusted to you."]]},
+    {n:2,title:"Loyalty & Duty",category:"Army Values",source:"ADP 6-22",qa:[["What is Loyalty?","Bear true faith and allegiance to the U.S. Constitution, the Army, your unit, and other Soldiers."],["What is Duty?","Fulfill your obligations and accept responsibility for your actions and those entrusted to you.",{sameAs:"av-duty"}]]},
     {n:3,title:"Respect & Selfless Service",category:"Army Values",source:"ADP 6-22",qa:[["What is Respect?","Treat people as they should be treated."],["What is Selfless Service?","Put the welfare of the Nation, the Army, and your subordinates before your own, without neglecting your own legitimate needs."]]},
     {n:4,title:"Honor & Integrity",category:"Army Values",source:"ADP 6-22",qa:[["What is Honor?","Live up to all the Army Values."],["What is Integrity?","Do what is right, legally and morally."]]},
     {n:5,title:"Personal Courage",category:"Army Values",source:"ADP 6-22",qa:[["What is Personal Courage?","Face moral or physical fear, danger, or adversity."],["Give a leadership example of moral courage.","Correcting a wrong, reporting misconduct, or speaking truthfully when doing so is difficult or unpopular."]]},
     {n:6,title:"Applying Army Values",category:"Army Values",source:"ADP 6-22",qa:[["Why are Army Values important to an NCO?","They guide decisions, behavior, leadership, trust, and the example an NCO sets for Soldiers."],["If mission pressure conflicts with an Army Value, what should you do?","Choose the lawful and ethical course, seek guidance when needed, and never use mission pressure to justify misconduct."]]},
     {n:7,title:"Soldier's Creed",category:"Creeds",source:"Soldier's Creed / ADP 6-22",qa:[["What does the Soldier's Creed express?","The identity, obligations, Warrior Ethos, discipline, and professional commitment expected of an American Soldier."],["What phrase begins the Soldier's Creed?","I am an American Soldier."]]},
-    {n:8,title:"Warrior Ethos",category:"Warrior Ethos",source:"ADP 6-22 / Soldier's Creed",qa:[["What are the four lines of the Warrior Ethos?","Always place the mission first; never accept defeat; never quit; never leave a fallen comrade."],["Why should a Soldier know the Warrior Ethos?","It provides a concise standard for mission focus, perseverance, courage, and commitment to teammates."]]},
+    {n:8,title:"Warrior Ethos",category:"Warrior Ethos",source:"ADP 6-22 / Soldier's Creed",qa:[["What are the four lines of the Warrior Ethos?","Always place the mission first; never accept defeat; never quit; never leave a fallen comrade.",{sameAs:"we-8"}],["Why should a Soldier know the Warrior Ethos?","It provides a concise standard for mission focus, perseverance, courage, and commitment to teammates."]]},
     {n:9,title:"Soldier's Creed: Profession",category:"Creeds",source:"Soldier's Creed",qa:[["What does 'I am a warrior and a member of a team' emphasize?","Soldiers combine individual competence with teamwork and service to something larger than themselves."],["What does the Soldier's Creed say about standards?","A Soldier is disciplined, physically and mentally tough, trained and proficient, and maintains arms, equipment, and self."]]},
     {n:10,title:"NCO Creed: Identity",category:"NCO Creed",source:"Creed of the Noncommissioned Officer / TC 7-22.7",qa:[["What opening principle is central to the NCO Creed?","No one is more professional than I."],["What does the NCO Creed say an NCO is?","A noncommissioned officer, a leader of Soldiers."]]},
-    {n:11,title:"NCO Responsibilities",category:"NCO Creed",source:"Creed of the Noncommissioned Officer / TC 7-22.7",qa:[["What are an NCO's two basic responsibilities stated in the Creed?","Accomplishment of the mission and the welfare of Soldiers."],["Which responsibility comes first in the NCO Creed?","Accomplishment of the mission."]]},
-    {n:12,title:"NCO Leadership",category:"NCO Creed",source:"Creed of the Noncommissioned Officer / TC 7-22.7",qa:[["What does the NCO Creed require regarding communication?","NCOs communicate consistently and never leave Soldiers uninformed."],["What does the NCO Creed require regarding officers?","The Creed says: \"Officers of my unit will have maximum time to accomplish their duties; they will not have to accomplish mine. I will earn their respect and confidence as well as that of my Soldiers.\""]]},
+    {n:11,title:"NCO Responsibilities",category:"NCO Creed",source:"Creed of the Noncommissioned Officer / TC 7-22.7",qa:[["What are an NCO's two basic responsibilities stated in the Creed?","Accomplishment of the mission and the welfare of Soldiers.",{sameAs:"creeds-3"}],["Which responsibility comes first in the NCO Creed?","Accomplishment of the mission."]]},
+    {n:12,title:"NCO Leadership",category:"NCO Creed",source:"Creed of the Noncommissioned Officer / TC 7-22.7",qa:[["What does the NCO Creed require regarding communication?","NCOs communicate consistently and never leave Soldiers uninformed."],["What does the NCO Creed require regarding officers?","The Creed says: \"Officers of my unit will have maximum time to accomplish their duties; they will not have to accomplish mine. I will earn their respect and confidence as well as that of my Soldiers.\"",{sameAs:"creeds-5"}]]},
     {n:13,title:"Chain of Command",category:"Chain of Command",source:"AR 600-20",qa:[["What is the chain of command?","The succession of commanders through which command authority is exercised from a superior to a subordinate."],["Why is the chain of command important?","It establishes authority, responsibility, accountability, communication, and disciplined execution."]]},
     {n:14,title:"NCO Support Channel",category:"NCO Support Channel",source:"AR 600-20",qa:[["What is the NCO support channel?","The communication and supervision channel that parallels and supports the chain of command through NCO leadership."],["Does the NCO support channel replace the chain of command?","No. It supports the chain of command and functions within the commander's policies and authority."]]},
     {n:15,title:"Know Your Unit",category:"Board Procedures",source:"Local promotion-board MOI / AR 600-8-19",qa:[["Which leaders should you know by name before your board?","At minimum, the leaders required by your board MOI, normally your immediate chain through battalion or brigade and any higher positions specified."],["Why should permanent flashcards not hard-code all leader names?","Command positions change. Verify current names immediately before the board."]]},
@@ -115,7 +143,7 @@
     {n:22,title:"Reporting to the Board",category:"Board Procedures",source:"Local promotion-board MOI / AR 600-8-19",qa:[["How do you report to the president of a promotion board?","Follow the board MOI and sponsor instructions: enter when directed, move to the prescribed position, salute when appropriate, and give the required reporting statement."],["Why practice reporting procedures?","They demonstrate military bearing, confidence, attention to detail, and knowledge of military customs."]]},
     {n:23,title:"Forms of Address",category:"Customs & Courtesies",source:"AR 600-25",qa:[["How do you address an NCO?","Use the appropriate title of rank or authorized form of address."],["How do you address a commissioned officer?","By rank or title, using Sir or Ma'am as appropriate."]]},
     {n:24,title:"Respect for the Flag",category:"Customs & Courtesies",source:"AR 600-25",qa:[["What should a Soldier do when passing or being passed by uncased colors outdoors?","Render the honors prescribed by AR 600-25."],["Why are customs and courtesies important?","They reinforce discipline, respect, cohesion, military heritage, and authority."]]},
-    {n:25,title:"Governing Publications",category:"AR 670-1 — Uniform Standards",source:"AR 670-1 / DA PAM 670-1",qa:[["What regulation governs wear and appearance of Army uniforms and insignia?","AR 670-1."],["What publication provides detailed uniform wear guidance?","DA PAM 670-1."]]},
+    {n:25,title:"Governing Publications",category:"AR 670-1 — Uniform Standards",source:"AR 670-1 / DA PAM 670-1",qa:[["What regulation governs wear and appearance of Army uniforms and insignia?","AR 670-1.",{sameAs:"unif-1"}],["What publication provides detailed uniform wear guidance?","DA PAM 670-1."]]},
     {n:26,title:"Soldier Responsibility",category:"AR 670-1 — Uniform Standards",source:"AR 670-1",qa:[["Who is responsible for maintaining a proper military appearance?","Every Soldier is responsible for meeting the standard; leaders enforce the standard."],["What image should Soldiers present?","A professional military image consistent with discipline, uniformity, and Army standards."]]},
     {n:27,title:"Grooming",category:"AR 670-1 — Uniform Standards",source:"AR 670-1 / DA PAM 670-1 / current Army directives",qa:[["Must Soldiers comply with grooming standards while in uniform?","Yes, as well as applicable standards while in civilian clothes on duty."],["Should you rely solely on an old study guide for grooming rules?","No. Check current AR 670-1, DA PAM 670-1, and current Army directives because policy can change."]]},
     {n:28,title:"Awards",category:"Awards",source:"AR 600-8-22 / AR 670-1 / DA PAM 670-1",qa:[["What regulation primarily governs Army awards and decorations?","AR 600-8-22."],["Where do you verify how awards and insignia are worn?","AR 670-1 and DA PAM 670-1, together with applicable awards and heraldry guidance."]]},
@@ -139,16 +167,16 @@
     {n:46,title:"Lawful Orders",category:"UCMJ",source:"UCMJ / AR 600-20 (Army Command Policy)",qa:[["Are Soldiers required to obey unlawful orders?","No. Soldiers are obligated to obey lawful orders."],["What if a Soldier is uncertain about an order's legality?","Seek clarification and appropriate command or legal guidance when circumstances permit rather than relying on guesswork."]]},
     {n:47,title:"NJP Rights",category:"UCMJ",source:"Article 15, UCMJ / AR 27-10",qa:[["What should a Soldier facing Article 15 proceedings understand?","The alleged misconduct, applicable rights, available choices, and opportunities to consult counsel provided by law and regulation."],["Should an NCO improvise legal advice?","No. Provide factual leadership support and refer legal questions to qualified legal resources."]]},
     {n:48,title:"NCO Responsibility",category:"Discipline",source:"AR 600-20 / UCMJ / command policy",qa:[["What is an NCO's role in military discipline?","Set and enforce standards, correct deficiencies, document appropriately, protect Soldiers' rights, and use command and legal resources when necessary."],["What should guide corrective action?","It should be lawful, professional, proportionate, mission-focused, and consistent with command policy."]]},
-    {n:49,title:"Promotions",category:"Promotions",source:"AR 600-8-19",qa:[["What regulation governs enlisted promotions and demotions?","AR 600-8-19."],["What should a promotion candidate verify?","Eligibility, records, required training and education, promotion data, board requirements, and current policy."]]},
+    {n:49,title:"Promotions",category:"Promotions",source:"AR 600-8-19",qa:[["What regulation governs enlisted promotions and demotions?","AR 600-8-19.",{sameAs:"boardprocedu-8"}],["What should a promotion candidate verify?","Eligibility, records, required training and education, promotion data, board requirements, and current policy."]]},
     {n:50,title:"DA Form 4856",category:"Counseling (ATP 6-22.1)",source:"ATP 6-22.1 / DA Form 4856",qa:[["What form documents developmental counseling?","DA Form 4856."],["What is counseling intended to accomplish?","Communicate standards and performance, address events or issues, develop Soldiers, and establish plans of action with follow-up."]]},
     {n:51,title:"Counseling Categories",category:"Counseling (ATP 6-22.1)",source:"ATP 6-22.1",qa:[["What are the three major categories of developmental counseling?","Event-oriented, performance, and professional growth counseling."],["Can a counseling fit more than one category?","Yes. The leader should focus on the Soldier's needs and purpose."]]},
     {n:52,title:"Counseling Process",category:"Counseling (ATP 6-22.1)",source:"ATP 6-22.1",qa:[["What are the four stages of the counseling process?","Identify the need; prepare; conduct the counseling session; follow up."],["Why is counseling follow-up important?","It evaluates the plan of action, reinforces progress, and allows adjustments."]]},
     {n:53,title:"Board MOI",category:"Board Procedures",source:"AR 600-8-19 / local promotion-board MOI",qa:[["What document should you obtain for your local promotion board?","The current board memorandum of instruction or equivalent unit guidance."],["Why should you obtain the current board MOI?","It identifies subjects, uniform, reporting procedures, documents, board composition, and local requirements."]]},
     {n:54,title:"Promotion Records",category:"Promotions",source:"AR 600-8-19 / personnel records policy",qa:[["Why should you review your personnel records before a board?","To ensure awards, education, qualifications, evaluations, and promotion-relevant information are accurate."],["What should you do if you find an error in your promotion records?","Use the appropriate personnel process and supporting documentation to request correction as early as possible."]]},
-    {n:55,title:"H2F",category:"FM 7-22",source:"FM 7-22",qa:[["What are the five H2F readiness domains?","Physical, nutritional, mental, spiritual, and sleep readiness."],["What publication covers H2F?","FM 7-22, Holistic Health and Fitness."]]},
+    {n:55,title:"H2F",category:"FM 7-22",source:"FM 7-22",qa:[["What are the five H2F readiness domains?","Physical, nutritional, mental, spiritual, and sleep readiness.",{sameAs:"acft-005"}],["What publication covers H2F?","FM 7-22, Holistic Health and Fitness."]]},
     {n:56,title:"Current Fitness Test",category:"Army Fitness Test (AFT)",source:"Army Directive 2025-06 / Army AFT implementation guidance",qa:[["What is the Army's current physical fitness test of record?","The Army Fitness Test, or AFT, effective June 1, 2025."],["Should you answer ACFT because an older study guide says so?","No. Use current Army policy and your board MOI."]]},
-    {n:57,title:"AFT Events",category:"Army Fitness Test (AFT)",source:"Army Directive 2025-06 / Army AFT implementation guidance",qa:[["What are the five AFT events?","Three-Repetition Maximum Deadlift, Hand-Release Push-Up Arm Extension, Sprint-Drag-Carry, Plank, and Two-Mile Run."],["What happened to the Standing Power Throw in the AFT?","It was removed during the transition from the six-event ACFT to the five-event AFT."]]},
-    {n:58,title:"Physical Readiness",category:"FM 7-22",source:"FM 7-22",qa:[["What is physical readiness?","The ability to meet the physical demands of duty and combat while reducing preventable injury and sustaining performance."],["Who is responsible for physical readiness?","Individual Soldiers and leaders; commanders and NCOs plan, execute, assess, and enforce readiness standards."]]},
+    {n:57,title:"AFT Events",category:"Army Fitness Test (AFT)",source:"Army Directive 2025-06 / Army AFT implementation guidance",qa:[["What are the five AFT events?","Three-Repetition Maximum Deadlift, Hand-Release Push-Up Arm Extension, Sprint-Drag-Carry, Plank, and Two-Mile Run.",{sameAs:"acft-003"}],["What happened to the Standing Power Throw in the AFT?","It was removed during the transition from the six-event ACFT to the five-event AFT."]]},
+    {n:58,title:"Physical Readiness",category:"FM 7-22",source:"FM 7-22",qa:[["What is physical readiness?","The ability to meet the physical demands of duty and combat while reducing preventable injury and sustaining performance.",{sameAs:"fm722-2"}],["Who is responsible for physical readiness?","Individual Soldiers and leaders; commanders and NCOs plan, execute, assess, and enforce readiness standards."]]},
     {n:59,title:"Recovery",category:"FM 7-22",source:"FM 7-22",qa:[["Why are sleep and recovery part of readiness?","They support physical recovery, cognitive performance, learning, resilience, and sustained mission performance."],["Is more training always better?","No. Effective programming balances appropriate overload with recovery, progression, and mission requirements."]]},
     {n:60,title:"Nutrition & Mental Readiness",category:"FM 7-22",source:"FM 7-22",qa:[["Why is nutrition readiness important?","Fueling and hydration affect health, recovery, body composition, cognition, and performance."],["What is mental readiness?","The ability to use psychological and cognitive skills to meet demands, adapt, make decisions, and sustain performance."]]},
     {n:61,title:"Rifle & Carbine",category:"Weapons (TC 3-22.9)",source:"TC 3-22.9",qa:[["What publication covers the rifle and carbine?","TC 3-22.9, Rifle and Carbine."],["What weapon families does TC 3-22.9 address?","The M4- and M16-series weapon systems and their employment."]]},
@@ -161,7 +189,7 @@
     {n:68,title:"Marginal Information",category:"Land Navigation (TC 3-25.26)",source:"TC 3-25.26",qa:[["Why is marginal information important?","It provides map identification, scale, contour interval, grid information, declination data, and other information needed to use the map correctly."],["What should you check before navigating?","Correct map sheet and edition, scale, grid zone, contour interval, declination information, and area of operation."]]},
     {n:69,title:"Grid Coordinates",category:"Land Navigation (TC 3-25.26)",source:"TC 3-25.26",qa:[["What is the purpose of a grid coordinate?","To identify a location on a military map using the grid reference system."],["What memory aid helps when plotting grid coordinates?","Read right, then up."]]},
     {n:70,title:"Azimuth",category:"Land Navigation (TC 3-25.26)",source:"TC 3-25.26",qa:[["What is an azimuth?","A horizontal angle measured clockwise from a reference direction, commonly north, to a line of direction."],["How many degrees are in a circle?","360 degrees."]]},
-    {n:71,title:"Terrain Features",category:"Land Navigation (TC 3-25.26)",source:"TC 3-25.26",qa:[["What are the five major terrain features?","Hill, ridge, valley, saddle, and depression."],["Name three commonly taught minor terrain features.","Draw, spur, and cliff."]]},
-    {n:72,title:"Compass & Pace Count",category:"Land Navigation (TC 3-25.26)",source:"TC 3-25.26",qa:[["What is pace count used for?","Estimating distance traveled on the ground."],["Why must you account for declination when required?","Grid north and magnetic north differ. Correct conversion prevents directional error when moving between a map and compass."]]}
+    {n:71,title:"Terrain Features",category:"Land Navigation (TC 3-25.26)",source:"TC 3-25.26",qa:[["What are the five major terrain features?","Hill, ridge, valley, saddle, and depression.",{sameAs:"bq-nav-02"}],["Name three commonly taught minor terrain features.","Draw, spur, and cliff.",{sameAs:"tc32526-3"}]]},
+    {n:72,title:"Compass & Pace Count",category:"Land Navigation (TC 3-25.26)",source:"TC 3-25.26",qa:[["What is pace count used for?","Estimating distance traveled on the ground.",{sameAs:"landnav-9"}],["Why must you account for declination when required?","Grid north and magnetic north differ. Correct conversion prevents directional error when moving between a map and compass."]]}
   ]});
 })();

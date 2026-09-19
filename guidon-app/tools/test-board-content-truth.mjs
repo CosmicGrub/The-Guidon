@@ -203,7 +203,7 @@ console.log("\nC17 - honest card-back headings and real citations");
   const PARAPHRASE = await page.evaluate(() => G.board.PARAPHRASE_LABEL);
   (typeof PARAPHRASE === "string" && /not a word-for-word quote/.test(PARAPHRASE)) ? ok(`study-guide cards get their own heading: "${PARAPHRASE}"`) : bad("G.board.PARAPHRASE_LABEL = " + PARAPHRASE);
   const packCards = bank.filter((q) => /^pb-(core72|deck40)/.test(q.id) || /^(prog-(aer|acs|sudcc)-|supply-(csdp|statement))/.test(q.id));
-  packCards.length > 200 ? ok(`${packCards.length} cards come from the supplement and gap packs`) : bad("only " + packCards.length + " pack cards found");
+  packCards.length > 150 ? ok(`${packCards.length} cards come from the supplement and gap packs`) : bad("only " + packCards.length + " pack cards found");
   const unflagged = packCards.filter((q) => q.verbatim !== false);
   unflagged.length === 0 ? ok("every one of them declares that its text is study-guide wording (verbatim:false)") : bad(unflagged.length + " pack cards still claim verbatim text, e.g. " + unflagged.slice(0, 4).map((q) => q.id).join(", "));
 
@@ -292,6 +292,52 @@ console.log("\nCategories - a pack never splits a seed subject under a second na
   const options = await page.evaluate(() => Array.from(document.querySelector('select[aria-label="Filter by category"]').options).map((o) => o.value));
   const offered = Object.keys(RENAMED).filter((c) => options.includes(c));
   (offered.length === 0 && Object.values(RENAMED).every((c) => options.includes(c))) ? ok("Board Drill's category picker lists each of the six subjects once, under the seed's name") : bad("category picker still offers: " + offered.join(", "));
+}
+
+/* ---- U14: the same question is one card - and the Quiz never offers a twin's right answer as a wrong option ---- */
+console.log("\nU14 - near-duplicate prompts are one card, on the older id");
+{
+  const totals = await page.evaluate(() => G.boardSupplement && G.boardSupplement.totals);
+  (totals && totals.folded >= 28 && totals.unresolved === 0) ? ok(`${totals.folded} supplement prompts were folded into an older card; every fold target exists`) : bad("fold totals: " + JSON.stringify(totals));
+  /* Same tokenizer the audit used: stop-worded, stemmed Jaccard similarity of the QUESTION text. */
+  const STOP = new Set("what is the a an of to and or in for are does do you your should be by on with as that which who how why when it its this their they at from must can".split(" "));
+  const stem = (w) => w.replace(/(ies)$/, "y").replace(/(es|s)$/, "");
+  const toks = (s) => new Set(String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter((w) => w && !STOP.has(w)).map(stem));
+  const jac = (A, B) => { let i = 0; for (const x of A) if (B.has(x)) i++; const u = A.size + B.size - i; return u ? i / u : 0; };
+  const T = bank.map((q) => ({ q, t: toks(q.q) }));
+  const isSupp = (q) => /^pb-(core72|deck40)/.test(q.id);
+  /* Pairs that look alike but ask different things - each one read and decided by hand. */
+  const DIFFERENT = new Set(["pb-core72-40-1|bq-prog-04", "pb-core72-12-1|pb-core72-12-2", "pb-core72-13-1|pb-core72-13-2", "pb-core72-33-1|pb-core72-33-2", "pb-core72-58-2|fm722-2",
+    "pb-deck40-92a-27-1|pb-deck40-92a-27-2", "pb-deck40-92a-36-2|nco-duties-1", "pb-core72-14-2|nco-sc-003", "pb-core72-14-2|ncosup-7", "pb-core72-14-2|bq-ncosc-02", "pb-core72-07-1|creed-1",
+    "pb-core72-10-2|creeds-5", "pb-core72-16-2|bq24", "pb-deck40-general-17-2|bq-opsec-01"]);
+  const twins = [];
+  for (const x of T) { if (!isSupp(x.q)) continue; for (const y of T) { if (x === y || (isSupp(y.q) && y.q.id < x.q.id)) continue; if (jac(x.t, y.t) >= 0.6 && !DIFFERENT.has(x.q.id + "|" + y.q.id) && !DIFFERENT.has(y.q.id + "|" + x.q.id)) twins.push(x.q.id + " ~ " + y.q.id); } }
+  twins.length === 0 ? ok("no supplement card's question is a near-duplicate (similarity >= 0.6) of another card's") : bad(twins.length + " near-duplicate question pairs remain: " + twins.slice(0, 8).join("; "));
+  /* the older ids are the ones that survived */
+  const kept = ["bq9", "wpn-9", "creeds-5", "bq-nav-02", "unif-1", "av-duty", "bq27", "adp60-1", "safety-003"];
+  kept.every((id) => bank.find((q) => q.id === id)) ? ok("the older ids survive: " + kept.join(", ")) : bad("missing older ids: " + kept.filter((id) => !bank.find((q) => q.id === id)).join(", "));
+  const terrain = bank.find((q) => q.id === "bq-nav-02");
+  (terrain && terrain.sourceCards.includes("core72-71")) ? ok("...and carry the folded prompt's provenance (bq-nav-02 <- core72-71)") : bad("bq-nav-02 sourceCards: " + JSON.stringify(terrain && terrain.sourceCards));
+  /* one answer for the principles of mission command: ADP 6-0 (7 Jul 2026) para 1-49 lists seven */
+  const six = bank.filter((q) => /six principles/i.test(textOf(q)) && /mission command/i.test(textOf(q)) && !/older|pre-2019|superseded/i.test(textOf(q)));
+  six.length === 0 ? ok("no card still teaches six principles of mission command (ADP 6-0 para 1-49 lists seven)") : bad("cards teaching six principles: " + six.map((q) => q.id).join(", "));
+  !bank.some((q) => /Composite Risk Management process/.test(q.q)) ? ok("the risk management card no longer calls ATP 5-19 \"Composite Risk Management\"") : bad("a card still asks for the Composite Risk Management process");
+
+  /* What the Quiz draws its wrong options from: every OTHER card's acceptable answer (renderQuiz's distractorPool).
+     A folded prompt must leave exactly one card able to supply the right answer to it. Checked for the prompts whose
+     twin answer was word-for-word equivalent, where the Quiz really did list the right answer twice. */
+  const pool = await page.evaluate(() => G.store.boardQuestions().map((x) => ({ id: x.id, a: x.acceptableAnswer || x.a })));
+  const RIGHT = [
+    ["the five major terrain features", /hill, ridge, valley, saddle,? (and )?depression/i],
+    ["the three minor terrain features", /^draw, spur, and cliff[.]?$/i],
+    ["AR 600-8-19 as the whole answer", /^AR 600-8-19[.]?$/i],
+    ["the five essential characteristics of the Army Profession", /^trust, honorable service, military expertise, stewardship, and esprit de corps.?$/i],
+    ["the three categories of developmental counseling", /^event-oriented( counseling)?, performance( counseling)?, and professional growth counseling.?$/i],
+  ];
+  for (const [what, re] of RIGHT) {
+    const holders = pool.filter((x) => re.test(x.a));
+    holders.length <= 1 ? ok("at most one card can supply " + what + " (" + (holders[0] ? holders[0].id : "folded into a fuller answer") + ")") : bad(holders.length + " cards supply " + what + ": " + holders.map((x) => x.id).join(", "));
+  }
 }
 
 /* ---- zero console noise ---- */
