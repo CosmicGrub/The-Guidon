@@ -1,9 +1,14 @@
 /* ==== js/biometric.js ==== */
 /* GUIDON — biometric.js : opt-in biometric unlock for Personal Account (G.biometric)
 
-   Only does anything inside a Capacitor Android build; a no-op everywhere else
-   (web, Tauri, file://) so this file is safe to load anywhere, same convention
-   as native.js/notify.js.
+   Only does anything inside a Capacitor build - Android AND iOS: the iOS
+   project links the same plugin (ios/App/CapApp-SPM/Package.swift), so
+   supported() is true there too. A no-op everywhere else (web, Tauri,
+   file://) so this file is safe to load anywhere, same convention as
+   native.js/notify.js. On iOS the plugin answers "biometryNotAvailable"
+   unless ios/App/App/Info.plist carries NSFaceIDUsageDescription - this
+   header used to say "Android" only, and the iOS build shipped without it
+   (tools/lint-capacitor-config.mjs check (d) now requires it).
 
    Thin wrapper over @aparajita/capacitor-biometric-auth's native bridge
    (Cap.Plugins.BiometricAuthNative — real AndroidX BiometricPrompt underneath;

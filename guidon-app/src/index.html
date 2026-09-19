@@ -34826,10 +34826,16 @@ window.G = window.G || {};
         accGrid.appendChild(notif);
       }
 
-      // ---- BIOMETRIC LOCK panel: Android-only (real AndroidX BiometricPrompt
-      // via @aparajita/capacitor-biometric-auth's Cap.Plugins.BiometricAuthNative
-      // bridge), hidden entirely on web/Tauri since G.biometric.supported() is
-      // false there - same convention as the Notifications panel just above.
+      // ---- BIOMETRIC LOCK panel: the Capacitor builds - Android (real AndroidX
+      // BiometricPrompt) AND iOS (Face ID / Touch ID), both through
+      // @aparajita/capacitor-biometric-auth's Cap.Plugins.BiometricAuthNative
+      // bridge. This comment said "Android-only" long after the iOS project
+      // bundled the same plugin, which is how the iOS build came to offer this
+      // switch without the NSFaceIDUsageDescription sentence iOS requires
+      // (ios/App/App/Info.plist; tools/lint-capacitor-config.mjs check (d)
+      // now fails without it). Hidden entirely on web/Tauri since
+      // G.biometric.supported() is false there - same convention as the
+      // Notifications panel just above.
       // Off by default (DEFAULT_SETTINGS.biometricLock). The prompt fires from
       // exactly two places in the whole app: right here, as a real
       // proof-of-enrollment check BEFORE the toggle is allowed to turn on
@@ -34851,7 +34857,17 @@ window.G = window.G || {};
             if (!avail.available) {
               bioInput.checked = false;
               bioInput.disabled = false;
-              bioStatus.textContent = "No fingerprint or face is set up on this device " + String.fromCharCode(8212) + " enroll one in your device's system settings, then try again.";
+              // Say "nothing is set up" ONLY when that is what the device
+              // reported. Every unavailable answer used to get that sentence,
+              // so an iPhone with Face ID enrolled - refused because the iOS
+              // build shipped without its Face ID permission sentence - told
+              // the Soldier to go enroll a face that was already enrolled.
+              // The codes are the plugin's own, identical on Android and iOS;
+              // avail.reason is developer wording and is never shown.
+              const notSetUp = avail.code === "biometryNotEnrolled" || avail.code === "passcodeNotSet" || avail.code === "noDeviceCredential";
+              bioStatus.textContent = notSetUp
+                ? "No fingerprint or face is set up on this device " + String.fromCharCode(8212) + " enroll one in your device's system settings, then try again."
+                : "Biometric lock isn't available on this device right now, so it was left off.";
               return;
             }
             const r = await G.biometric.authenticate("Confirm to turn on biometric lock for GUIDON");
