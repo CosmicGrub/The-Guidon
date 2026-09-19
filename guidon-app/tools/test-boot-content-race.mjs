@@ -53,6 +53,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { loadManifest } from "./content-manifest.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -145,8 +146,10 @@ const late = await page.evaluate(() => ({
   prt: window.G.store.prt().length,
 }));
 
-late.board > 900
-  ? ok("boardQuestions() recovered to the real seed size (" + late.board + ") once content finished loading - the cache did not permanently lock in the early empty read (was " + early.board + ")")
+// "Recovered" means the WHOLE bank, not "more than 900": the committed content
+// manifest says how many cards this unfiltered first-boot pool must hold.
+late.board === loadManifest().totals.board
+  ? ok("boardQuestions() recovered to the full bank the content manifest records (" + late.board + ") once content finished loading - the cache did not permanently lock in the early empty read (was " + early.board + ")")
   : bad("boardQuestions() STAYED empty after content finished loading: " + late.board + " (was " + early.board + " during the race window) - the first-boot content race regressed");
 late.doctrine > 0
   ? ok("doctrine() also recovered (" + late.doctrine + " entries, was " + early.doctrine + ")")

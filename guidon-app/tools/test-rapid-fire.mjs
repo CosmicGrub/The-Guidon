@@ -59,6 +59,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { loadManifest } from "./content-manifest.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -240,23 +241,26 @@ afterSwitch.hasStartBtn ? ok("Rapid Fire's Setup screen renders (real 'Start Rou
 //     moment the standing every-sourced-fact-gets-board-cards rule added
 //     two real counseling-process cards (PR #167). Read live from the same
 //     tier-filtered G.store.boardQuestions() the round pool itself is
-//     built from, with the original literals kept as FLOORS so a category
-//     silently losing cards still fails here instead of passing vacuously.
+//     built from. The typed floors (17 / 19) that guarded against a category
+//     silently losing cards are now the committed content manifest's own
+//     per-category figures (tools/content-manifest.json): this guest pool has
+//     no tier or MOS filter, so the live count must equal them exactly.
 const categoryCount = (cat) => page.evaluate((c) => G.store.boardQuestions().filter((q) => q.category === c).length, cat);
+const reviewedSize = loadManifest().board.byCategory;
 await clickButtonByText("All difficulties");
 await setCategory("Army Fitness Test (AFT)");
 const aftCount = await categoryCount("Army Fitness Test (AFT)");
 let note = await poolNoteText();
-(aftCount >= 17 && new RegExp("^" + aftCount + " questions in this deck\\.$").test(note || ""))
-  ? ok(`selecting category 'Army Fitness Test (AFT)' shows the real live pool count (${aftCount}; floor 17)`)
-  : bad(`pool note after selecting Army Fitness Test (AFT) (expected ${aftCount}, floor 17): ` + note);
+(aftCount > 0 && aftCount === reviewedSize["Army Fitness Test (AFT)"] && new RegExp("^" + aftCount + " questions in this deck\\.$").test(note || ""))
+  ? ok(`selecting category 'Army Fitness Test (AFT)' shows the real live pool count (${aftCount}, the content manifest's figure for it)`)
+  : bad(`pool note after selecting Army Fitness Test (AFT) (live ${aftCount}, content manifest ${reviewedSize["Army Fitness Test (AFT)"]}): ` + note);
 
 await setCategory("Counseling (ATP 6-22.1)");
 const counselCount = await categoryCount("Counseling (ATP 6-22.1)");
 note = await poolNoteText();
-(counselCount >= 19 && new RegExp("^" + counselCount + " questions in this deck\\.$").test(note || ""))
-  ? ok(`selecting category 'Counseling (ATP 6-22.1)' shows the real live pool count (${counselCount}; floor 19)`)
-  : bad(`pool note after selecting Counseling (ATP 6-22.1) (expected ${counselCount}, floor 19): ` + note);
+(counselCount > 0 && counselCount === reviewedSize["Counseling (ATP 6-22.1)"] && new RegExp("^" + counselCount + " questions in this deck\\.$").test(note || ""))
+  ? ok(`selecting category 'Counseling (ATP 6-22.1)' shows the real live pool count (${counselCount}, the content manifest's figure for it)`)
+  : bad(`pool note after selecting Counseling (ATP 6-22.1) (live ${counselCount}, content manifest ${reviewedSize["Counseling (ATP 6-22.1)"]}): ` + note);
 
 const realTotal = await page.evaluate(() => G.store.boardQuestions().length);
 await setCategory("All");

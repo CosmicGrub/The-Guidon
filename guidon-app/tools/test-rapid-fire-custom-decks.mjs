@@ -20,6 +20,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { loadManifest } from "./content-manifest.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -146,16 +147,19 @@ hint === "1 category selected."
 // standing every-sourced-fact-gets-board-cards rule). Counts are now read
 // live from the same tier-filtered G.store.boardQuestions() the round pool
 // is built from - the "independently-verifiable sum" claim still holds
-// (AFT + Counseling, computed separately, must equal the note) - with the
-// original literals kept as FLOORS so a category silently losing cards
-// still fails here instead of passing vacuously.
+// (AFT + Counseling, computed separately, must equal the note). The typed
+// floors (17 / 19) that guarded against a category silently losing cards
+// are now the committed content manifest's own per-category figures
+// (tools/content-manifest.json): this guest pool has no tier or MOS filter,
+// so the live count must equal them exactly.
 const categoryCount = (cat) => page.evaluate((c) => G.store.boardQuestions().filter((q) => q.category === c).length, cat);
+const reviewedSize = loadManifest().board.byCategory;
 const aftCount = await categoryCount("Army Fitness Test (AFT)");
 const counselCount = await categoryCount("Counseling (ATP 6-22.1)");
 let note = await poolNoteText();
-(aftCount >= 17 && new RegExp("^" + aftCount + " questions in this deck\\.$").test(note || ""))
-  ? ok(`pool note reads "${aftCount} questions in this deck." for AFT alone, matching the real live category size (floor 17)`)
-  : bad(`pool note after 1 category (expected ${aftCount}, floor 17): ` + JSON.stringify(note));
+(aftCount > 0 && aftCount === reviewedSize["Army Fitness Test (AFT)"] && new RegExp("^" + aftCount + " questions in this deck\\.$").test(note || ""))
+  ? ok(`pool note reads "${aftCount} questions in this deck." for AFT alone, matching the real live category size and the content manifest's figure for it`)
+  : bad(`pool note after 1 category (live ${aftCount}, content manifest ${reviewedSize["Army Fitness Test (AFT)"]}): ` + JSON.stringify(note));
 
 await checkCategory("Counseling (ATP 6-22.1)", true);
 await page.waitForTimeout(150);
@@ -165,7 +169,7 @@ hint === "2 categories selected."
   : bad("hint after 2 checks: " + JSON.stringify(hint));
 note = await poolNoteText();
 const twoCatSum = aftCount + counselCount;
-(counselCount >= 19 && new RegExp("^" + twoCatSum + " questions in this deck\\.$").test(note || ""))
+(counselCount > 0 && counselCount === reviewedSize["Counseling (ATP 6-22.1)"] && new RegExp("^" + twoCatSum + " questions in this deck\\.$").test(note || ""))
   ? ok(`pool note reads "${twoCatSum} questions in this deck." — the real independent sum of AFT (${aftCount}) + Counseling (${counselCount}), not a guess`)
   : bad(`pool note after 2 categories (expected ${twoCatSum} = ${aftCount} + ${counselCount}): ` + JSON.stringify(note));
 

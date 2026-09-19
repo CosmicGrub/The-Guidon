@@ -43,6 +43,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { loadManifest } from "./content-manifest.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -171,9 +172,12 @@ const corpus = await page.evaluate(() => {
   });
   return { counts, stops, ids, checks };
 });
-(corpus.counts.card > 1000 && corpus.counts.scenario > 100 && corpus.counts.term > 3000)
-  ? ok(`corpus swept: ${JSON.stringify(corpus.counts)}`)
-  : bad("corpus looks too small to mean anything: " + JSON.stringify(corpus.counts));
+// The sweep must cover the WHOLE bank the content manifest records, not
+// "more than 1000 cards": a guard that never saw the last pack proves nothing.
+const reviewedTotals = loadManifest().totals;
+(corpus.counts.card === reviewedTotals.board && corpus.counts.scenario === reviewedTotals.scenarios && corpus.counts.doctrine === reviewedTotals.doctrine && corpus.counts.term === reviewedTotals.acronyms)
+  ? ok(`corpus swept, every record the content manifest counts: ${JSON.stringify(corpus.counts)}`)
+  : bad("the sweep did not cover the whole bank: swept " + JSON.stringify(corpus.counts) + ", the content manifest records " + JSON.stringify({ card: reviewedTotals.board, scenario: reviewedTotals.scenarios, doctrine: reviewedTotals.doctrine, term: reviewedTotals.acronyms }));
 corpus.stops.length === 0
   ? ok("none of the app's own cards, scenarios, doctrine entries or dictionary terms is stopped as marked material (the first guard stopped 10 cards and 6 scenarios)")
   : bad(`${corpus.stops.length} pieces of the app's own content are stopped: ${corpus.stops.slice(0, 8).join(" | ")}`);
