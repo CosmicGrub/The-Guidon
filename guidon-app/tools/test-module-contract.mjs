@@ -34,8 +34,10 @@
  *      something that module provides; every "routes" entry is registered
  *      and drawn by that module (and the reverse); "patches" are exactly the
  *      functions the module replaces - seen happening, by comparing window.G
- *      before and after each module's <script> runs - so an undeclared
- *      monkeypatch fails; "hooks" are exactly the extension points it
+ *      (and each route-table entry's render) before and after each module's
+ *      <script> runs, and once more after every route has been visited, so a
+ *      wrapper put on later (a DOMContentLoaded listener, first use) is seen
+ *      too - so an undeclared monkeypatch fails; "hooks" are exactly the extension points it
  *      subscribes to, every point core declares really fires with the
  *      screen's element, and nobody subscribes to a point that does not
  *      exist; every module that calls another declares it under requires /
@@ -53,7 +55,10 @@
  *      !G.opsecGuard || !G.opsecGuard.screen) return str;) points at that
  *      removed name instead, a stand-in
  *      module with an undeclared storage write / core patch / misspelt
- *      extension point / undeclared dependency, and manifests with a patch,
+ *      extension point / undeclared dependency, the real page served with a
+ *      planted module that wraps a route-table entry at load and
+ *      G.board.render after load (through obj[key] = wrapped, which no source
+ *      scan can read), and manifests with a patch,
  *      a hook, a route or a provided name mis-declared.
  *
  *   node tools/test-module-contract.mjs                 the suite
@@ -227,6 +232,9 @@ const INIT = () => {
       }
     };
     walk(G, "G", 1);
+    // The route table is an array (the walk skips arrays), and each entry's render is a core function like
+    // any other: wrapping G.routes[i].render is the same monkeypatch as wrapping G.board.render.
+    if (Array.isArray(G.routes)) for (const r of G.routes) if (r && typeof r.hash === "string" && typeof r.render === "function") out.set("route:" + r.hash, "f" + idOf(r.render));
     if (G.ext && typeof G.ext.points === "function") for (const n of G.ext.points()) out.set("ext:" + n, "c" + G.ext.count(n));
     return out;
   };
@@ -249,17 +257,32 @@ const INIT = () => {
   mo.observe(document, { childList: true, subtree: true });
   document.addEventListener("DOMContentLoaded", () => { C.boundaries.push({ node: null, about: null, sharedBatch: false, delta: delta() }); mo.disconnect(); }, { once: true, capture: true });
   C.seal = () => C.boundaries.map((b) => ({ about: b.node ? fp(b.node.textContent || "") : null, sharedBatch: b.sharedBatch, delta: b.delta }));
+  // Functions that existed when the page finished loading and are a DIFFERENT function now. A module can
+  // put its wrapper on from a DOMContentLoaded listener or on first use - after the last boundary above -
+  // and through obj[key] = wrapped, which no source scan can read (that is how wrapRender was written).
+  // Core's lazily-set hooks (G.board._openReadiness ...) start as null, so they are additions, not
+  // replacements; the one function core does replace on itself after load (app.start() wraps
+  // G.store.setSetting) is written as a plain assignment, which the judge reads from core's own source.
+  C.late = () => delta().changed.filter(([, was]) => String(was)[0] === "f").map(([n]) => n);
 };
 
 const moduleFp = new Map(real.modules.map((s) => [fingerprint("\n" + s.raw + "\n"), s.file]));
 
-async function bootAndVisit(browser, label, target, routes) {
+async function bootAndVisit(browser, label, target, routes, { inject = null } = {}) {
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
   const noise = [];
   page.on("console", (m) => { if (["error", "warning"].includes(m.type())) noise.push(m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
   await page.addInitScript(INIT);
+  // Self-check only: serve the REAL page with one more <script> at the very end - a planted module - so the
+  // runtime half of the verifier can be shown to fail on a defect that only exists in a running page.
+  if (inject) await page.route((u) => u.href === target, async (route) => {
+    const res = await route.fetch();
+    const html = await res.text();
+    const tail = html.lastIndexOf("</body>");
+    await route.fulfill({ response: res, body: html.slice(0, tail) + "<script>\n" + inject + "\n</script>\n" + html.slice(tail) });
+  });
   await page.goto(target, { waitUntil: "load" });
   await dismissOnboarding(page);
   // Listen on every extension point through the public API, to see each one really fire.
@@ -288,6 +311,7 @@ async function bootAndVisit(browser, label, target, routes) {
       points: window.G.ext && G.ext.points ? G.ext.points() : null,
       fired: window.__contract.fired,
       boundaries: window.__contract.seal(),
+      late: window.__contract.late(),
       fork: window.GUIDON_FORK,
     };
   }, NAMES);
@@ -316,13 +340,30 @@ async function bootAndVisit(browser, label, target, routes) {
   return { label, facts, perModule, before, noise, unsettled, ambiguous };
 }
 
+/* Self-check plant for the RUNTIME half: a module that wraps core functions the two ways nothing static can
+   see. At load it wraps an entry of the route table (an array element); after load - from a
+   DOMContentLoaded listener, through obj[key] = wrapped, exactly how 00-roadmap-bootstrap.js's wrapRender
+   was written - it wraps G.board.render and another route's render. */
+const PLANT_FILE = "zz-planted-late-patch.js";
+const PLANT_SRC = [
+  "/* planted by tools/test-module-contract.mjs - never part of a build */",
+  "(function () {",
+  "  var G = window.G;",
+  "  function wrapRender(obj, key) { var base = obj[key]; obj[key] = function () { return base.apply(this, arguments); }; }",
+  "  function route(hash) { return G.routes.filter(function (r) { return r.hash === hash; })[0]; }",
+  "  wrapRender(route('#/prt'), 'render');",
+  "  document.addEventListener('DOMContentLoaded', function () { wrapRender(G.board, 'render'); wrapRender(route('#/drills'), 'render'); });",
+  "})();"].join("\n");
+if (!STAND_IN) moduleFp.set(fingerprint("\n" + PLANT_SRC + "\n"), PLANT_FILE);
+
 const { hashes: ROUTES } = await declaredRoutes("web/index.html");
 const { server, url } = await serve("web");
 const browser = await chromium.launch();
-let web = null, single = null, bootError = null;
+let web = null, single = null, plantedPage = null, bootError = null;
 try {
   web = await bootAndVisit(browser, "web", url, ROUTES);
   single = await bootAndVisit(browser, "single-file", pathToFileURL(resolve("dist/guidon-standalone.html")).href, ROUTES);
+  if (!STAND_IN) plantedPage = await bootAndVisit(browser, "planted", url, [], { inject: PLANT_SRC });
 } catch (e) { bootError = e; }
 await browser.close();
 server.close();
@@ -332,6 +373,17 @@ const BUILDS = [web, single];
 /* =====================================================================
    The judge: static facts + runtime facts + a manifest -> breaches
    ===================================================================== */
+const nice = (n) => (n.startsWith("route:") ? "the render of the route " + n.slice(6) : n);
+/** Functions replaced AFTER the page finished loading (see C.late) that nobody owns up to: not a manifest
+ *  "patches" entry, and not core or a shell script reassigning one of its own functions in plain sight
+ *  (a module doing THAT is caught by the source scan in (E); what is left is a wrapper nothing can read). */
+const CORE_ASSIGNS = new Set(real.sources.filter((s) => s.kind !== "module").flatMap((s) => collectAssignments(s).map((a) => a.name)));
+function latePatchBreaches(builds, manifest) {
+  const declared = new Set(manifest.modules.flatMap((m) => (m.patches || []).map((p) => p.name)));
+  const out = [];
+  for (const b of builds) for (const n of b.facts.late) if (!declared.has(n) && !CORE_ASSIGNS.has(n)) out.push({ rule: "patches", msg: `${nice(n)} was REPLACED after the page had finished loading (${b.label} build: it was one function when the last script ended and is a different one now) and no module's manifest entry declares it under "patches" - a wrapper put on from a DOMContentLoaded listener, or the first time a screen opens, is still a monkeypatch: subscribe to a named extension point (G.ext) instead, or declare it with a reason` });
+  return out;
+}
 function judge(facts, manifest, { partial = false } = {}) {
   const breaches = [];
   const say = (rule, msg) => breaches.push({ rule, msg });
@@ -386,12 +438,13 @@ function judge(facts, manifest, { partial = false } = {}) {
       if (owner && byFile.get(owner) && !byFile.get(owner).routes.includes(h)) say("routes", `the route ${h} is drawn by src/app-modules/${owner} (${"G" + x[1]}) but that module's manifest entry does not list it under "routes"`);
     }
   }
-  // (E) patches: seen at load, and assigned in the source
+  // (E) patches: seen at load, seen after load, and assigned in the source
+  if (!partial) breaches.push(...latePatchBreaches(BUILDS, manifest));
   for (const m of mods) {
     const declared = (m.patches || []);
     if (!partial) {
       const seen = (web.perModule.get(m.file) || { patched: [] }).patched;
-      for (const n of seen) if (!declared.some((p) => p.name === n && p.when === "load")) say("patches", `src/app-modules/${m.file} REPLACES ${n} as it loads (seen: the function on window.G changed while this file's <script> ran) but its manifest entry does not declare that under "patches" - use a named extension point (G.ext) instead, or declare the patch with a reason`);
+      for (const n of seen) if (!declared.some((p) => p.name === n && p.when === "load")) say("patches", `src/app-modules/${m.file} REPLACES ${nice(n)} as it loads (seen: the function on window.G changed while this file's <script> ran) but its manifest entry does not declare that under "patches" - use a named extension point (G.ext) instead, or declare the patch with a reason`);
       for (const p of declared.filter((x) => x.when === "load")) if (!seen.includes(p.name)) say("patches", `src/app-modules/${m.file} declares a load-time patch of ${p.name}, but that function was not replaced while the file loaded - remove the stale entry`);
     }
     if (!present.has(m.file)) continue;
@@ -506,6 +559,15 @@ if (STAND_IN) {
   {
     const rulesHit = [...new Set(B.map((b) => b.rule))].sort();
     check(JSON.stringify(rulesHit) === JSON.stringify(["hooks", "patches", "requires", "storage"]), "(d) ...and the rules that stand-in does NOT break stay quiet (no false alarms)", "(d) the rogue-module stand-in tripped unexpected rules: " + JSON.stringify(rulesHit) + "\n          " + report(B));
+  }
+  // A defect that only exists in a RUNNING page: the real web build served with one planted module at the end.
+  {
+    const atLoad = (plantedPage.perModule.get(PLANT_FILE) || { patched: [] }).patched;
+    check(atLoad.includes("route:#/prt"), "(d) planted defect caught: a module that wraps an entry of the route table as it loads (G.routes is an array - a walk of G's own properties never sees it)", "(d) planted defect NOT caught: wrapping the #/prt route's render at load - seen replaced: " + JSON.stringify(atLoad));
+    const late = latePatchBreaches([plantedPage], realManifest);
+    expectBreach(late, "patches", /^G\.board\.render was REPLACED after the page had finished loading \(planted build/, "the wrapRender idiom put on from a DOMContentLoaded listener, through obj[key] = wrapped (no source scan can read it, and it happens after the last script)");
+    expectBreach(late, "patches", /^the render of the route #\/drills was REPLACED after the page had finished loading/, "...and the same done to a route-table entry");
+    check(late.length === 2, "(d) ...and nothing else is reported as replaced after load", "(d) the planted page reported other late replacements too:\n          " + report(late));
   }
   // Manifest-side defects: the source is the real tree, the claims are wrong.
   const clone = () => JSON.parse(JSON.stringify(realManifest));
