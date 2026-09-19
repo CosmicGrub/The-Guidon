@@ -69,15 +69,23 @@ export async function checkRowScrollsToEnd(page, selector, name) {
     ? { ok: true, msg: `${name} row: its ${before.scrollWidth}px of chips overflow the ${before.clientWidth}px row and overflow-x is "${before.overflowX}" (a scroller, not a clipper)` }
     : { ok: false, msg: `${name} row: ${before.scrollWidth}px of chips in a ${before.clientWidth}px row, but overflow-x is "${before.overflowX}" - the chips past the edge are cut off and unreachable` });
 
-  // Real wheel input over the row, repeated until the row stops moving.
+  // Real wheel input over the row, repeated until the row is at its end (or
+  // refuses to move). No fixed sleep decides anything: a loaded CI runner can
+  // take far longer than a desktop to deliver a wheel event, and the wheel
+  // scroll itself animates - so after each gesture WAIT for the row to move
+  // (up to 2s), then for it to come to rest, before judging. A row that never
+  // moves (the clipper this check exists to catch) costs one 2s wait and then
+  // fails below on scrollLeft 0.
+  const scrollState = () => page.evaluate((sel) => { const b = document.querySelector(sel); return { left: b.scrollLeft, atEnd: b.scrollLeft + b.clientWidth >= b.scrollWidth - 1 }; }, selector);
   await page.mouse.move(before.cx, before.cy);
-  let last = -1;
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 20; i++) {
+    const from = await scrollState();
+    if (from.atEnd) break;
     await page.mouse.wheel(600, 0);
-    await page.waitForTimeout(140);
-    const now = await page.evaluate((sel) => document.querySelector(sel).scrollLeft, selector);
-    if (now === last) break;
-    last = now;
+    await page.waitForFunction(([sel, was]) => document.querySelector(sel).scrollLeft !== was, [selector, from.left], { timeout: 2000 }).catch(() => {});
+    let now = (await scrollState()).left, prev;
+    do { prev = now; await page.waitForTimeout(80); now = (await scrollState()).left; } while (now !== prev);
+    if (now === from.left) break;
   }
   const end = await page.evaluate((sel) => {
     const port = (n) => { const r = n.getBoundingClientRect(); return { left: r.left + n.clientLeft, top: r.top + n.clientTop, right: r.left + n.clientLeft + n.clientWidth, bottom: r.top + n.clientTop + n.clientHeight }; };
