@@ -4,10 +4,16 @@
  * board.questions inside guidon-app/src/index.html) into the lean, SD-
  * streamable format this firmware actually reads on-device.
  *
- * The desktop/mobile app also has pre-DOMContentLoaded board-supplement
- * modules in guidon-app/src/app-modules. This exporter executes those same
- * modules against the parsed seed before writing cards.ndjson, so the ESP32
- * fork cannot silently drift from the app's expanded promotion-board bank.
+ * The desktop/mobile app also adds cards at load time from content packs in
+ * guidon-app/src/app-modules. This exporter therefore reads the ASSEMBLED
+ * bank (guidon-app/tools/assemble-bank.mjs: the seed plus EVERY numbered
+ * pack, evaluated in the app's own load order) rather than the seed.
+ *
+ * It used to name three supplement modules by hand. Every pack added after
+ * that list was written - the OPSEC curriculum, the Army-program and supply
+ * cards - was silently missing from the handheld: 1,213 cards exported
+ * against 1,274 in the app (2026-09-18 audit). There is no list any more; a
+ * new pack is exported the moment its file exists.
  *
  * WHY NOT JUST COPY THE APP'S OWN JSON: this ESP32-D0WD-V3 module has NO
  * PSRAM and 520KB of SRAM total (see HARDWARE.md). The app's own
@@ -24,35 +30,20 @@
  * Run from firmware/esp32-flashcard-os/:  node tools/extract-cards.mjs
  * Writes into ./sdcard/ (gitignored - this is device content, not source).
  */
-import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
-import vm from "node:vm";
-import { readSeed } from "../../../guidon-app/tools/seed-io.mjs";
+import { writeFileSync, mkdirSync } from "node:fs";
+import { assembleBank } from "../../../guidon-app/tools/assemble-bank.mjs";
 
-const SEED_PATH = "../../guidon-app/src/index.html";
 const OUT_DIR = "./sdcard";
-const SUPPLEMENT_MODULES = [
-  "../../guidon-app/src/app-modules/00-board-supplement-core.js",
-  "../../guidon-app/src/app-modules/01-board-supplement-92a.js",
-  "../../guidon-app/src/app-modules/02-board-supplement-integration.js",
-];
 
-function applyBoardSupplements(data) {
-  const sandbox = { window: { GUIDON_SEED: data, G: {} }, console };
-  sandbox.window.window = sandbox.window;
-  for (const path of SUPPLEMENT_MODULES) {
-    const src = readFileSync(path, "utf8");
-    vm.runInNewContext(src, sandbox, { filename: path });
-  }
-  const audit = sandbox.window.G.boardSupplement && sandbox.window.G.boardSupplement.audit;
+function main() {
+  const assembled = assembleBank();
+  const failed = assembled.modules.filter((m) => m.error);
+  if (failed.length) throw new Error("extract-cards: content pack(s) failed to load: " + failed.map((m) => m.file + " (" + m.error + ")").join("; "));
+  const data = assembled.data;
+  const audit = assembled.G && assembled.G.boardSupplement && assembled.G.boardSupplement.audit;
   if (!audit || audit.complete !== true) {
     throw new Error("extract-cards: promotion-board supplement audit did not complete: " + JSON.stringify(audit || null));
   }
-  return audit;
-}
-
-function main() {
-  const { data } = readSeed(SEED_PATH);
-  const audit = applyBoardSupplements(data);
   const all = (data.board && data.board.questions) || [];
   if (!all.length) throw new Error("extract-cards: board.questions is empty - seed shape changed?");
 

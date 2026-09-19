@@ -101,9 +101,43 @@ export const SCENARIO_PILLAR = {
   // AR 735-5": sc-the-favor cites it and is a leadership-integrity dilemma,
   // correctly Leadership & Counseling.)
   "sc-train-property": MS,
+  // Content-pack scenarios whose SUBJECT is not the lane default below. Each
+  // was tagged this way by its own pack and confirmed on review (2026-09-18):
+  // two 92A logistics dilemmas, and the board-reporting rehearsal the Board
+  // Simulator opens with.
+  "sc-92a-critical-part-overdue": MS,
+  "sc-92a-inventory-discrepancy": MS,
+  "sc-board-simulator-reporting": DB,
 };
 
-export function pillarForBoard(q) { return CATEGORY_PILLAR[q.category] || null; }
+// Categories a CONTENT PACK (src/app-modules/NN-*.js) may introduce that the
+// static seed does not have. Anything else a pack uses must be an existing
+// seed category, spelled exactly - tools/lint-content-packs.mjs fails on a
+// pack category that is neither (that is how "Land Navigation" ended up
+// beside the seed's "Land Navigation (TC 3-25.26)", splitting one subject
+// across two names in the picker, the chips and the Readiness heatmap).
+// Value = the pillar, or null for "outside the six by design".
+export const PACK_CATEGORIES = {
+  "92A — MOS Fundamentals": MS, "92A — GCSS-Army": MS, "92A — Supply Support Activity": MS,
+  "92A — Inventory & Stock Control": MS, "92A — Supply Fundamentals": MS, "92A — Supply Transactions": MS,
+  "92A — Accountability": MS, "92A — Maintenance Support": MS, "92A — Materiel Management": MS,
+  "92A — Leadership": MS, "92A — Scenarios": MS,
+  "Army Profession": DB,
+  "Cybersecurity & OPSEC": null,
+};
+
+export function pillarForBoard(q) { return CATEGORY_PILLAR[q.category] || PACK_CATEGORIES[q.category] || null; }
+
+// The taxonomy as plain data for the RUNNING app. tools/build.mjs injects it
+// as window.GUIDON_PILLAR_MAP ahead of the app modules and tools/assemble-
+// bank.mjs hands the same object to its headless sandbox, so
+// src/app-modules/98-content-pack-finalize.js tags pack records from THIS
+// definition instead of a hand-copied table that drifts.
+export function runtimePillarMap() {
+  const category = { ...CATEGORY_PILLAR };
+  for (const [c, p] of Object.entries(PACK_CATEGORIES)) if (p) category[c] = p;
+  return { pillars: PILLARS.slice(), category, topic: { ...TOPIC_PILLAR }, doctrineId: { ...DOCTRINE_PILLAR }, scenarioId: { ...SCENARIO_PILLAR } };
+}
 export function pillarForDoctrine(e) { return DOCTRINE_PILLAR[e.id] || TOPIC_PILLAR[e.topic] || null; }
 // Scenarios use a coarse but honest rule: the catalog is overwhelmingly
 // leadership-judgment content (Leadership & Counseling); mandatory-training
@@ -113,7 +147,10 @@ export function pillarForDoctrine(e) { return DOCTRINE_PILLAR[e.id] || TOPIC_PIL
 export function pillarForScenario(s) {
   if (SCENARIO_PILLAR[s.id]) return SCENARIO_PILLAR[s.id];
   if (/^sc-iot-/.test(s.id)) return DT;
-  if (/^sc-(tccc|medevac)/.test(s.id)) return null;
+  // Lanes outside the six by design: medical (TCCC / MEDEVAC), and the
+  // OPSEC / cyber / CUI lane - the same call the board side makes by leaving
+  // "OPSEC & Information Security" and "Cybersecurity & OPSEC" untagged.
+  if (/^sc-(tccc|medevac|opsec|cyber|cui)-/.test(s.id)) return null;
   if (s.defaultMode === "training") return PS;
   return LC;
 }
