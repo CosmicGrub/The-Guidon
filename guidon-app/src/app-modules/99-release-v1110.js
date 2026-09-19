@@ -8,6 +8,11 @@ window.G = window.G || {};
   if (G.whatsNew.RELEASE_NOTES.some(function (x) { return x && x.version === "1.11.0"; })) return;
   G.whatsNew.RELEASE_NOTES.push({
     version: "1.11.0",
+    // This number was prepared on main but never cut as a tagged release.
+    // The entry stays so anyone who updates past it still hears what it
+    // added; tools/lint-release-state.mjs requires the mark (and fails if a
+    // v1.11.0 tag ever appears while it is still here).
+    released: false,
     date: "September 2026",
     title: "Board depth, OPSEC safeguards, and adaptive memorization",
     highlights: [

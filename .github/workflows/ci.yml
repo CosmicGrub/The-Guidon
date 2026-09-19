@@ -228,6 +228,19 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
+      # tools/lint-release-state.mjs (part of lint:patterns) compares the
+      # version files, the CHANGELOG and the in-app What's New notes with the
+      # version TAGS - "does anything claim a release that was never cut?".
+      # The Checkout step above is one commit deep and carries no tags, and
+      # without them the lint can only say "not checked". This brings in the
+      # version tags alone, one commit deep each (the lint also reads
+      # Android's versionCode AT the newest tag). Deliberately not fatal: if
+      # the fetch fails, the lint says plainly that its tag checks did not
+      # run. release-cut.yml, where a wrong answer would be permanent, uses a
+      # full-history checkout and refuses outright when it sees no tags.
+      - name: Fetch version tags (for lint-release-state)
+        run: git fetch --no-tags --depth=1 origin '+refs/tags/v*:refs/tags/v*' || echo "::warning::could not fetch version tags - lint-release-state will report its tag checks as not run"
+
       - name: Lint patterns
         run: npm run lint:patterns
 
