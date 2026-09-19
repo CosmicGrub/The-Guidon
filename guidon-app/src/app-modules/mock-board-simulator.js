@@ -119,6 +119,16 @@
       return rows.some(function (a) { return !!a && a.scenarioId === marker.id && Number(a.ts) >= marker.at; });
     } catch (e) { return false; }
   }
+  // The one question both paths ask (the practice screen's own close
+  // callback, and the check at the top of every redraw). `result` is whatever
+  // the practice screen handed back when it closed - today the shared
+  // scenario engine hands back nothing at all, for Exit and Done alike.
+  // A finished run outranks a later "cancelled": finish, Replay, Exit halfway
+  // is still one finished run.
+  async function scenarioStepFinished(marker, result) {
+    if (result && result.completed === true) return true;
+    return finishedRunSince(marker);
+  }
   async function reconcileKnowledge(s) {
     if ((s.mockHistoryCount == null && s.mockHistoryToken == null) || s.knowledgeDone) return s;
     var h = await mockHistory();
@@ -131,12 +141,20 @@
     }
     return s;
   }
+  // Runs at the top of every redraw. A redraw always tears the practice
+  // screen down, so a marker that is still here belongs to a step that was
+  // opened and then left some other way (nav bar, back button, app closed).
+  // It gets this one check - which is what makes "finished, then left by the
+  // nav bar" count - and is then dropped, so finishing the same scenario from
+  // the Train tab next week cannot quietly tick a simulator step.
   async function reconcileScenarios(s) {
     var changed = false;
     for (var i = 0; i < STEPS.length; i++) {
       var st = STEPS[i], marker = s.opened && s.opened[st.id];
-      if (st.kind !== "scenario" || !marker || s[st.flag]) continue;
-      if (await finishedRunSince(marker)) { s[st.flag] = true; delete s.opened[st.id]; changed = true; }
+      if (st.kind !== "scenario" || !marker) continue;
+      if (!s[st.flag] && await scenarioStepFinished(marker)) s[st.flag] = true;
+      delete s.opened[st.id];
+      changed = true;
     }
     if (changed) { stampCompletion(s); await save(s); }
     return s;
@@ -337,7 +355,7 @@
     save(state);
     runScenario(sc, engineHost, async function (result) {
       var marker = state.opened && state.opened[st.id];
-      var finished = !!(result && result.completed === true) || await finishedRunSince(marker);
+      var finished = await scenarioStepFinished(marker, result);
       if (state.opened) delete state.opened[st.id];
       if (finished) { state[st.flag] = true; stampCompletion(state); }
       await save(state);

@@ -40,6 +40,9 @@ const offsite = [];
 async function boot() {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const p = await ctx.newPage();
+  // Short enough that a broken build reports every section's failures in a
+  // few minutes instead of sitting on one missing button for half an hour.
+  p.setDefaultTimeout(12000);
   p.on("console", (m) => { if (["error", "warning"].includes(m.type())) noise.push(m.type() + ": " + m.text()); });
   p.on("pageerror", (e) => noise.push("pageerror: " + e.message));
   p.on("request", (r) => { const u = r.url(); if (!u.startsWith(url) && !/^(data|blob|about):/.test(u)) offsite.push(u); });
@@ -63,6 +66,13 @@ async function boot() {
 
 const page = await boot();
 const WAIT = { timeout: 20000 };
+// One broken section must not hide the others: a thrown timeout becomes that
+// section's FAIL line and the run carries on (each section re-opens the
+// simulator itself, and the rank-filter section resets the saved run).
+async function section(name, fn) {
+  try { await fn(); }
+  catch (e) { bad(name + " stopped early: " + String((e && e.message) || e).split(/\r?\n/)[0]); }
+}
 
 // Always bounce through another route so a hashchange fires even when the
 // simulator is already the current route.
@@ -100,17 +110,20 @@ const startStep = async (attr, p = page) => {
 };
 const engineExit = (p = page) => p.locator("[data-board-sim-engine] .engine-head button", { hasText: /^\s*Exit\s*$/ }).click();
 // Answer every question (first choice each time) until the outcome screen.
-async function playToOutcome(p = page) {
+async function playToOutcome(p = page, host = "[data-board-sim-engine]") {
   for (let i = 0; i < 25; i++) {
-    if (await p.locator("[data-board-sim-engine] .panel.outcome").count()) return true;
-    await p.locator("[data-board-sim-engine] .choice:not(:disabled)").first().click();
-    await p.locator("[data-board-sim-engine] .course-continue-btn").click();
+    if (await p.locator(host + " .panel.outcome").count()) return true;
+    await p.locator(host + " .choice:not(:disabled)").first().click();
+    await p.locator(host + " .course-continue-btn").click();
   }
-  return (await p.locator("[data-board-sim-engine] .panel.outcome").count()) > 0;
+  return (await p.locator(host + " .panel.outcome").count()) > 0;
 }
 const afterRedraw = (p = page) => p.waitForFunction(() => { const h = document.querySelector("[data-board-sim-engine]"); return !!h && h.children.length === 0; }, null, WAIT);
 
+let s; // the saved run, re-read after each action
+
 /* ---- 1. The screen itself: plain words, fits a phone ---- */
+await section("section 1", async () => {
 await openSim();
 (await statusText()) === "0 of 3 practice steps done" ? ok('a new run starts at "0 of 3 practice steps done"') : bad("opening status: " + JSON.stringify(await statusText()));
 const JARGON = /deterministic|offline|\bengine\b|re-?render|\bmodule\b|wrapper|\bSRS\b|regression|\bshim\b|active phases|\blane\b|\bsequence\b|rubric dimensions|consequence-based|\bsession\b/i;
@@ -126,8 +139,10 @@ await page.waitForFunction(() => !!document.querySelector("[data-roadmap-launch=
 const launchCopy = await page.evaluate(() => (document.querySelector("[data-roadmap-launch='Board Simulator']") || {}).innerText || "");
 (launchCopy && !JARGON.test(launchCopy)) ? ok("the Board screen's Board Simulator launcher is in plain words too") : bad("launcher copy: " + JSON.stringify(launchCopy));
 await openSim();
+});
 
 /* ---- 2. Exit without answering anything must NOT complete a step ---- */
+await section("section 2", async () => {
 for (const step of [
   { attr: "data-board-sim-reporting", n: 1, flag: "reportingDone", name: "Reporting practice" },
   { attr: "data-board-sim-judgment", n: 3, flag: "judgmentDone", name: "Leadership problem" },
@@ -152,8 +167,10 @@ for (const step of [
   (await waitLive(new RegExp(step.name + " closed before the end"))) ? ok("...and the early exit is announced") : bad("live region after a bare Exit: " + JSON.stringify(await liveText()));
 }
 (await attempts()).length === 0 ? ok("no scenario attempt was recorded by either bare Exit") : bad("attempts after bare exits: " + JSON.stringify(await attempts()));
+});
 
 /* ---- 3. A real finish counts - by keyboard, from where focus was left ---- */
+await section("section 3", async () => {
 const srsBefore = JSON.stringify(await srsRows());
 // Focus sits on step 3's Start button; walk back to step 1 with the keyboard alone.
 for (let i = 0; i < 6 && (await focusInfo()) !== "data-board-sim-reporting"; i++) await page.keyboard.press("Shift+Tab");
@@ -167,7 +184,7 @@ if (pickedByKey) await page.locator("[data-board-sim-engine] .course-continue-bt
 (await playToOutcome()) ? ok("reporting practice plays through to its outcome screen") : bad("never reached the reporting outcome");
 await page.locator("[data-board-sim-engine] .panel.outcome button", { hasText: /^\s*Done\s*$/ }).click();
 await afterRedraw();
-let s = await stored();
+s = await stored();
 (s.reportingDone === true && s.judgmentDone === false) ? ok("finishing the reporting practice marks step 1 done, and only step 1") : bad("after a real finish: " + JSON.stringify(s));
 (await eyebrow(1)) === "Step 1 · Done" ? ok('...badged "Step 1 · Done"') : bad("step 1 eyebrow: " + JSON.stringify(await eyebrow(1)));
 (await statusText()) === "1 of 3 practice steps done" ? ok("...progress reads 1 of 3") : bad("progress: " + JSON.stringify(await statusText()));
@@ -193,8 +210,10 @@ s = await stored();
 const nag = await page.evaluate(() => !!document.querySelector("[data-board-sim-note]"));
 (s.judgmentDone === true && !nag && (await focusInfo()) === "data-board-sim-judgment") ? ok("re-opening a finished step and backing out keeps it Done, shows no 'not counted' note, and keeps focus") : bad("re-open + Exit: " + JSON.stringify({ done: s.judgmentDone, nag, focus: await focusInfo() }));
 JSON.stringify(await srsRows()) === srsBefore ? ok("steps 1 and 3 wrote no review-schedule rows") : bad("an srs: row changed during the scenario steps");
+});
 
 /* ---- 4. Step 2 hands off to the real Mock Board, which stays the only writer ---- */
+await section("section 4", async () => {
 await page.locator("button[data-board-sim-knowledge]").click();
 await page.waitForFunction(() => location.hash === "#/board" && /Set up your board/i.test(document.body.textContent || ""), null, WAIT).catch(() => {});
 /Set up your board/i.test(await page.evaluate(() => document.body.textContent || "")) ? ok("step 2 opens the existing Mock Board setup") : bad("Mock Board setup did not open from step 2");
@@ -220,8 +239,10 @@ s = await stored();
 (s.knowledgeDone === true && s.completedAt > 0) ? ok("step 2 is done and the whole run is stamped complete") : bad("state on return: " + JSON.stringify(s));
 JSON.stringify(await srsRows()) === JSON.stringify(rows) ? ok("the simulator itself added or changed no review-schedule row") : bad("srs rows changed after returning to the simulator");
 /All three steps are done/.test(await page.evaluate(() => document.querySelector("[data-board-sim-status]").textContent)) ? ok("the progress panel says all three steps are done") : bad("3-of-3 hint missing");
+});
 
 /* ---- 5. Start over asks first, then lands focus somewhere useful ---- */
+await section("section 5", async () => {
 await page.locator("#board-sim-strong").fill("Kept answers short and looked at the president.");
 await page.waitForFunction(async () => ((await G.db.getSetting("board:sim:v1", {})).aarDraft || {}).strong === "Kept answers short and looked at the president.", null, WAIT).catch(() => {});
 await page.locator("button[data-board-sim-reset]").click();
@@ -241,8 +262,10 @@ s = await stored();
 (await waitLive(/Started over\. 0 of 3 practice steps done\./)) ? ok("...announces it") : bad("live region after Start over: " + JSON.stringify(await liveText()));
 await page.waitForFunction(() => document.activeElement && document.activeElement.hasAttribute && document.activeElement.hasAttribute("data-board-sim-reporting"), null, WAIT).catch(() => {});
 (await focusInfo()) === "data-board-sim-reporting" ? ok("...and puts focus on step 1's Start button, not <body>") : bad("focus after Start over: " + (await focusInfo()));
+});
 
 /* ---- 6. Finishing and then leaving by the nav bar still counts ---- */
+await section("section 6", async () => {
 await startStep("data-board-sim-reporting");
 await playToOutcome();
 await openSim(); // never pressed Done or Exit
@@ -250,11 +273,33 @@ s = await stored();
 (s.reportingDone === true && (await eyebrow(1)) === "Step 1 · Done") ? ok("a finished practice counts even when the Soldier leaves by the nav bar instead of Done") : bad("nav-away after finishing: " + JSON.stringify(s));
 (await waitLive(/Reporting practice finished\. 1 of 3/)) ? ok("...and is announced on return") : bad("live region on return: " + JSON.stringify(await liveText()));
 
+// ...but a step that was opened and walked away from is NOT ticked later by
+// finishing the same scenario somewhere else in the app (the Train tab runs
+// the very same scenarios through the very same practice screen).
+await startStep("data-board-sim-judgment");
+const abandoned = await engineTitle();
+await openSim(); // left by the nav bar with nothing answered
+s = await stored();
+(s.judgmentDone === false && !(s.opened && s.opened.judgment)) ? ok("a step left by the nav bar with nothing answered is not counted, and is no longer waiting on a result") : bad("after abandoning step 3: " + JSON.stringify(s));
+await page.evaluate(() => {
+  const host = document.createElement("div");
+  host.id = "outside-run";
+  document.querySelector("#route").appendChild(host);
+  G.engine.run("sc-iot-range-safety", "course", host, () => host.remove());
+});
+(await playToOutcome(page, "#outside-run")) ? ok(`the same scenario ("${abandoned}") finished outside the simulator`) : bad("outside run never reached an outcome");
+await page.waitForFunction(async () => (await G.db.allAttempts()).some((a) => a.scenarioId === "sc-iot-range-safety"), null, WAIT).catch(() => {});
+await openSim();
+s = await stored();
+(s.judgmentDone === false && (await eyebrow(3)) === "Step 3") ? ok("...and that outside run does not tick the simulator's step 3") : bad("an outside run completed step 3: " + JSON.stringify(s));
+});
+
 /* ---- 7. Every rank filter: both steps open, same scenario every time, no raw error ---- */
+await section("section 7", async () => {
 const JUNIOR = "Staff Duty Integrity Check", LEADER = "Range Fan Violation, First Relay Loaded";
 const expectTitle = { all: LEADER, E1: JUNIOR, E2: JUNIOR, E3: JUNIOR, E4: LEADER, E5: LEADER, E6: LEADER, E7: LEADER, E8: LEADER, E9: LEADER };
 const storeFn = await page.evaluate(() => { window.__realScenarioFn = G.store.scenario; return true; });
-for (const tier of ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "all"]) {
+for (const tier of ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "all"]) await section("rank filter " + tier, async () => {
   await page.evaluate(async (t) => { window.__toasts.length = 0; await G.store.setSetting("tierFilter", t); await G.db.setSetting("board:sim:v1", G.mockBoardSim._fresh()); }, tier);
   await openSim();
   await startStep("data-board-sim-reporting");
@@ -283,11 +328,13 @@ for (const tier of ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "all"]
     const leak = await page.evaluate(() => ({ same: G.store.scenario === window.__realScenarioFn, hidden: G.store.scenario("sc-board-simulator-reporting") === null && G.store.scenario("sc-iot-range-safety") === null, listed: G.store.scenarios().some((x) => x.id === "sc-board-simulator-reporting") }));
     (leak.same && leak.hidden && !leak.listed) ? ok("...and the rest of the app still sees exactly what the E3 filter allows (nothing leaked, the store is untouched)") : bad("E3 leak check: " + JSON.stringify(leak));
   }
-}
+});
 void storeFn;
 await page.evaluate(async () => { await G.store.setSetting("tierFilter", "all"); });
+});
 
 /* ---- 8. A step that truly cannot be opened says so on the page - never a raw error ---- */
+await section("section 8", async () => {
 const page2 = await boot();
 await page2.evaluate(async () => {
   await G.store.setSetting("tierFilter", "E1");
@@ -301,6 +348,7 @@ await page2.waitForFunction(() => !!document.querySelector("[data-board-sim-unav
 const un = await page2.evaluate(() => ({ text: (document.querySelector("[data-board-sim-unavailable]") || {}).textContent || "", toasts: window.__toasts.slice() }));
 (/can't be opened right now/.test(un.text) && un.toasts.length === 0) ? ok("a missing scenario shows a plain on-page message and no toast") : bad("missing scenario: " + JSON.stringify(un));
 (await waitLive(/can't be opened right now/, page2)) ? ok("...and announces it") : bad("missing scenario not announced: " + JSON.stringify(await liveText(page2)));
+});
 
 offsite.length === 0 ? ok("fully offline: not one request left the local app") : bad("off-site requests: " + offsite.join(", "));
 noise.length === 0 ? ok("no console errors/warnings or page errors in either context") : bad(`console noise: ${noise.join(" | ")}`);
