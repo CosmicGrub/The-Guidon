@@ -681,8 +681,10 @@ jobs:
             tests: "test:content-packs test:ios-config-lint test:ios-retry-wrapper test:ios-webkit-ratchet"
           - name: "49-opseccurriculum-opsecguard-ptplannerbehaviour-quiztwinoptions"
             tests: "test:opsec-curriculum test:opsec-guard test:pt-planner-behaviour test:quiz-twin-options"
-          - name: "50-reciteusertext-sharemacfirstopen-teamtrainingbehaviour"
-            tests: "test:recite-user-text test:share-mac-first-open test:team-training-behaviour"
+          - name: "50-reciteusertext-sharemacfirstopen-teamtrainingbehaviour-releasepipeline"
+            tests: "test:recite-user-text test:share-mac-first-open test:team-training-behaviour test:release-pipeline"
+          - name: "51-releasestate"
+            tests: "test:release-state"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same

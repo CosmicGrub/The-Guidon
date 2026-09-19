@@ -51,35 +51,34 @@ cardText && /TC 3-25\.26/.test(cardText)
   ? ok("#/drills menu shows the Land Navigation card with its TC 3-25.26 blurb")
   : bad("Land Navigation menu card missing or blurb didn't cite TC 3-25.26: " + JSON.stringify(cardText));
 
-// v1.9.0 discoverability pass: the card itself carries a "New" badge (same
-// DRILLS.since convention as the "Grid plot" mode button below) so a
-// Soldier browsing #/drills sees the grid-plotting addition before ever
-// opening the drill - checked here separately from the mode-switch badge.
+// The "New" badges this drill carried for v1.9.0 (the #/drills menu card and
+// the "Grid plot" mode button) were retired in v1.12.1: one wave is live at
+// a time, and a badge that outlives three releases stops meaning anything.
+// The generic `since` support stays in both places for the next wave, so
+// what is checked here is that neither still claims to be new.
 const landnavCardInfo = await page.evaluate(() => {
   const btn = [...document.querySelectorAll("button")].find((b) => /Land Navigation practice drill/.test(b.textContent || ""));
   return btn ? { ariaLabel: btn.getAttribute("aria-label"), badgeText: btn.querySelector(".badge.green")?.textContent || null } : null;
 });
-landnavCardInfo && landnavCardInfo.ariaLabel === "Land Navigation practice drill (New)" && landnavCardInfo.badgeText === "New"
-  ? ok('the #/drills menu card itself carries a "New" badge (accessible name "...(New)", visible .badge.green "New")')
-  : bad("Land Navigation menu card New-badge info: " + JSON.stringify(landnavCardInfo));
+landnavCardInfo && landnavCardInfo.ariaLabel === "Land Navigation practice drill" && landnavCardInfo.badgeText === null
+  ? ok('the #/drills menu card no longer carries the retired v1.9.0 "New" badge (plain accessible name, no .badge.green)')
+  : bad("Land Navigation menu card badge info: " + JSON.stringify(landnavCardInfo));
 
 await openLandNavDrill();
-// aria-label, not textContent: "Grid plot" carries a visible "New" badge as
-// a child node (v1.9.0, same discoverability convention as THEMES' own
-// `since` field in theme.js), so its real textContent is now "Grid plotNew"
-// - the accessible name is the exact, stable signal for what each button
-// IS, independent of that visible-but-decorative badge markup.
+// aria-label, not textContent: a mode button that carries a `since` badge
+// renders it as a child node, so the accessible name is the exact, stable
+// signal for what each button IS.
 const modeButtons = await page.locator(".panel .segmented button").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")));
 JSON.stringify(modeButtons.slice(0, 3)) === JSON.stringify(["Back azimuth", "Pace count", "Grid coordinate"])
-  ? ok('Land Navigation drill opens on the three-mode switch: "Back azimuth" / "Pace count" / "Grid coordinate"')
+  ? ok('Land Navigation drill opens on the mode switch: "Back azimuth" / "Pace count" / "Grid coordinate"')
   : bad("mode switch buttons: " + JSON.stringify(modeButtons));
-modeButtons[3] === "Grid plot (New)"
-  ? ok('a 4th mode, "Grid plot", is present alongside the original three, marked "(New)" in its accessible name')
+modeButtons[3] === "Grid plot"
+  ? ok('a 4th mode, "Grid plot", is present alongside the original three, with a plain accessible name')
   : bad("4th mode button: " + JSON.stringify(modeButtons[3]));
-const plotBadge = await page.locator(".segmented button", { hasText: "Grid plot" }).locator(".badge.green").textContent();
-plotBadge === "New"
-  ? ok('the "Grid plot" mode button carries a visible "New" badge (.badge.green, reusing the theme wall\'s own component)')
-  : bad('Grid plot "New" badge: ' + JSON.stringify(plotBadge));
+const plotBadges = await page.locator(".panel .segmented button .badge.green").count();
+plotBadges === 0
+  ? ok('no mode button carries a "New" badge now that the v1.9.0 wave is retired')
+  : bad("mode buttons still carrying a New badge: " + plotBadges);
 
 // ==================== (a) Back azimuth: degrees, a correct then an incorrect submission ====================
 const azHeading = await page.locator(".panel h3").first().textContent();

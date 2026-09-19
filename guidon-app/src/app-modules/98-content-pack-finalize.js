@@ -51,6 +51,21 @@
       stats[key]++;
     }
   }
+  // The one live "New" wave. theme.js's convention, enforced by
+  // lint-board-taxonomy (g) and lint-content-packs (p9): exactly one
+  // `since` value is live at a time, so the badge keeps meaning "added in
+  // the release you just got". To rotate: replace the version and the
+  // ids here, and remove any `since` still set in the seed or in a pack.
+  var NEW_WAVE = { since: "v1.12.1", scenarioIds: [
+    "sc-92a-critical-part-overdue", "sc-92a-inventory-discrepancy",
+    "sc-collective-decision-relay", "sc-board-simulator-reporting",
+    "sc-opsec-social-engineering", "sc-cyber-removable-media",
+    "sc-opsec-fitness-tracking", "sc-cui-spillage-reporting",
+  ] };
+  var waveTagged = 0;
+  ((seed.scenarios && seed.scenarios.scenarios) || []).forEach(function (sc) {
+    if (sc && NEW_WAVE.scenarioIds.indexOf(sc.id) !== -1 && !sc.since) { sc.since = NEW_WAVE.since; waveTagged++; }
+  });
   if (map) {
     apply(seed.board.questions, function (q) { return (map.category || {})[q.category] || null; }, "board");
     apply(seed.doctrine && seed.doctrine.entries, function (e) { return (map.doctrineId || {})[e.id] || (map.topic || {})[e.topic] || null; }, "doctrine");
@@ -84,6 +99,6 @@
 
   var G = window.G = window.G || {};
   G.contentPacks = G.contentPacks || {};
-  G.contentPacks.finalized = { pillarsApplied: stats, corrections: corrections, cards: qs.length, contentHash: seed.board.contentHash, hadMap: !!map };
+  G.contentPacks.finalized = { newWave: { since: NEW_WAVE.since, expected: NEW_WAVE.scenarioIds.length, tagged: waveTagged }, pillarsApplied: stats, corrections: corrections, cards: qs.length, contentHash: seed.board.contentHash, hadMap: !!map };
   if (G.boardSupplement && G.boardSupplement.audit) G.boardSupplement.audit.contentHash = seed.board.contentHash;
 })();

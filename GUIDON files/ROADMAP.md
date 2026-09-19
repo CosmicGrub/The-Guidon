@@ -2,7 +2,7 @@
 
 **Read this to know: what's shipped, what's deliberately not built (and why), and what actually comes next.** `GUIDON_PROJECT_MAP.md` is the 10,000-foot *what is this app* orientation; `CHANGELOG.md` is the session-by-session *what changed*; this document is the forward-looking one — pull from it to pick up where the last session left off, and keep it current going forward rather than letting it drift the way the other canonical docs already have once.
 
-**Current version:** v1.12.0 (guidon-app/package.json), prepared 2026-09-18 — PR #183 leader-readiness expansion: collective/team training, PT Planner, Board Simulator, and the remaining Army-program/supply-study gaps. One immutable tag feeds web/PWA + standalone, Android, Windows, macOS, iOS Simulator parity, and the ESP32 firmware/content fork. See CHANGELOG.md for distribution boundaries.
+**Current version:** v1.12.1 (guidon-app/package.json), 2026-09-19 — audit-fix release: 54 confirmed defects from the 2026-09-15..18 merges fixed, runtime content packs brought under the same lints as the seed (one assembled bank: 1,230 board cards / 357 doctrine entries / 195 scenarios), and the release pipeline made to refuse a red commit. v1.11.0 and v1.12.0 were prepared but never released and are superseded by this version; v1.10.1 was published retroactively. One immutable tag feeds web/PWA + standalone, Android (signed on the owner's machine - see guidon-app/docs/release-runbook.md), Windows, macOS, iOS Simulator parity, and the ESP32 firmware/content fork. See CHANGELOG.md for distribution boundaries.
 
 ---
 

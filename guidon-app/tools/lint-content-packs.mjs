@@ -15,6 +15,8 @@
  *     tools/pillar-map.mjs                                   -> rules (p2)(p6)
  *   - the same question shipped twice under two ids                -> rule (p7)
  *   - a module with a syntax error merged to main (PR #179)        -> rule (p1)
+ *   - a second "New" wave started by a pack, or a wave id that no
+ *     longer exists                                              -> rule (p9)
  *
  * A pack is any src/app-modules file named NN-*.js. The contract: it must be
  * loadable with no DOM (it runs before the app boots anyway); it may extend
@@ -110,6 +112,20 @@ for (const s of packS) {
   if (!Array.isArray(s.doctrine) || !s.doctrine.length) brokenSc.push(from(s) + ": cites no doctrine");
 }
 brokenSc.length === 0 ? ok(`(p8) all ${packS.length} pack scenarios have a start, reachable targets, an end and a doctrine citation`) : bad(`(p8) pack scenario problems: ${show(brokenSc, 6)}`);
+
+// (p9) one "New" wave at a time, across the ASSEMBLED bank. lint-board-taxonomy
+// (g) holds the seed to this; a pack or the finalize pass could otherwise
+// start a second wave it never sees. The finalize pass also reports how many
+// of its declared wave ids it actually found - a renamed or deleted scenario
+// would otherwise just silently stop being "New".
+const sinceVals = [...new Set([...B, ...D, ...S].map((x) => x.since).filter(Boolean))];
+sinceVals.length <= 1
+  ? ok(`(p9) at most one \`since\` wave is live across the assembled bank (${JSON.stringify(sinceVals)})`)
+  : bad(`(p9) more than one \`since\` wave is live once the packs load - retire the older one: ${JSON.stringify(sinceVals)}`);
+const nw = fin && fin.newWave;
+(nw && nw.tagged === nw.expected && (!sinceVals.length || sinceVals[0] === nw.since))
+  ? ok(`(p9) the finalize pass tagged all ${nw.expected} scenarios of its declared wave (${nw.since})`)
+  : bad(`(p9) 98-content-pack-finalize NEW_WAVE is out of step with the bank: ${JSON.stringify(nw || null)}, live since values ${JSON.stringify(sinceVals)} - an id in the wave no longer exists, or something else already carries a different \`since\``);
 
 console.log(`\n  assembled bank: ${B.length} cards (${packB.length} from packs), ${D.length} doctrine (${packD.length}), ${S.length} scenarios (${packS.length})`);
 console.log(fails === 0 ? "\nLINT-CONTENT-PACKS: all passed" : `\nLINT-CONTENT-PACKS: ${fails} failed`);

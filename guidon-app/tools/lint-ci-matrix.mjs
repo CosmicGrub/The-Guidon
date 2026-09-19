@@ -289,8 +289,6 @@ const OUTSIDE_THE_LIST = {
   "test-android-back.mjs": { excluded: "drives the installed app on a physical Android device over adb; CI runners have no device (by hand: npm run test:android:back)" },
   "test-android-external-links.mjs": { excluded: "drives the installed app on a physical Android device over adb; CI runners have no device (by hand: npm run test:android:links)" },
   "test-contrast.mjs": { excluded: "curated predecessor of test:contrast-full, which sweeps every route in every theme and IS in the list (see ci.yml's NOTE on test:contrast)" },
-  "test-release-pipeline.mjs": { awaiting: "1.12.0", why: "new with the release-pipeline fixes: add test:release-pipeline to the run-parallel list, run --write, delete this row" },
-  "test-release-state.mjs": { awaiting: "1.12.0", why: "new with the release-pipeline fixes: add test:release-state to the run-parallel list, run --write, delete this row" },
 };
 {
   const files = (await readdir(TOOLS)).filter((f) => /^test-.*\.mjs$/.test(f)).sort();
