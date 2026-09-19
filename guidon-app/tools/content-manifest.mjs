@@ -29,7 +29,10 @@
  *       doctrine topic FELL compared with the committed file ...
  *   ... --write --allow-shrink "<reason>"      ... unless a reason is given, in
  *       which case every drop and the reason are appended to the manifest's
- *       "shrinks" history. The history is append-only.
+ *       "shrinks" history. The history is append-only. A manifest that is
+ *       missing from disk while the last commit still has it is NOT a first
+ *       run: --write refuses rather than start a fresh, history-less file
+ *       (deleting and regenerating would otherwise walk past the ratchet).
  *   ... --base <old-manifest.json> | --base-ref <git ref>
  *       the same ratchet for a REVIEW: every figure that fell between that
  *       earlier manifest and the committed one must be named by a shrinks entry
@@ -53,7 +56,9 @@
  * (tools/test-content-manifest.mjs): --manifest <file>, --seed <index.html>,
  * --modules <dir>, --docs-root <dir>. With any bank or manifest stand-in and no
  * --docs-root, documents are left completely alone: a stand-in bank must never
- * be able to rewrite the real README.
+ * be able to rewrite the real README. For the same reason a stand-in BANK
+ * (--seed / --modules) is refused without --manifest: it may never be compared
+ * with, or written over, the real committed manifest.
  *
  * Suites and tools import { loadManifest } instead of typing a number.
  */
@@ -224,6 +229,15 @@ export function loadManifest(file = MANIFEST_PATH) {
   return validateManifest(parsed, file);
 }
 
+/** The manifest as the last commit has it, or null (never committed there, not
+ *  a git checkout, no git at all). Asked by PATH, not by repo-relative name, so
+ *  a stand-in manifest inside a scratch repository is held to the same rule as
+ *  the real one - which is how tools/test-content-manifest.mjs proves it. */
+export function lastCommittedCopy(file) {
+  const r = spawnSync("git", ["-C", path.dirname(file), "show", "HEAD:./" + path.basename(file)], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  return r.status === 0 && typeof r.stdout === "string" && r.stdout.length ? r.stdout : null;
+}
+
 /** The review ratchet: what fell between an EARLIER manifest and this one
  *  without being recorded. Returns a list of plain-word problems. */
 export function unrecordedFalls(base, committed) {
@@ -317,6 +331,12 @@ function main() {
   const valueless = ["--manifest", "--seed", "--modules", "--docs-root", "--base", "--base-ref"].filter((f) => has(f) && !argOf(f));
   if (valueless.length) { bad(`${valueless.join(", ")} needs a value - nothing compared, nothing written`); finish(); }
   if (has("--allow-shrink") && !WRITE) { bad('--allow-shrink only means something together with --write (the lint never records anything)'); finish(); }
+  // A stand-in BANK is only ever held against a stand-in MANIFEST. Without
+  // --manifest the path below is the real committed file: the lint would mean
+  // nothing, and `--seed <toy> --write --allow-shrink "<reason>"` - one
+  // forgotten flag in a new test - overwrote the real manifest with a six-card
+  // bank, recorded a bogus shrink and exited 0 (proved in review).
+  if ((argOf("--seed") || argOf("--modules")) && !argOf("--manifest") && !has("--figures") && !has("--docs-report")) { bad(`--seed / --modules (a stand-in bank) need --manifest <file> as well: a stand-in bank is never compared with, or written over, the real ${MANIFEST_REL} - nothing compared, nothing written`); finish(); }
 
   /* ---- the live bank ---- */
   const bankOpts = {};
@@ -356,6 +376,16 @@ function main() {
 
   /* ---- --write ---- */
   if (WRITE) {
+    // No file on disk means nothing to ratchet against - which made "delete it
+    // and regenerate" (the reflex for any generated file, above all in a merge
+    // conflict) a way past the ratchet that also threw the shrinks history
+    // away: after a refused fall, rm + --write went through with exit 0 and an
+    // empty history (proved in review). If the last commit has the file, it is
+    // not a first run: put the file back and let --write compare against it.
+    if (!committed && lastCommittedCopy(manifestPath) !== null) {
+      bad(`${shown} is missing here, but the last commit has it. The ratchet and the shrinks history live in that file, so --write will not start a fresh one in its place (a count that fell would go through unrecorded). Put it back - git checkout HEAD -- "${path.basename(manifestPath)}" from its folder - then run --write again - nothing written`);
+      finish();
+    }
     const reasonGiven = has("--allow-shrink");
     const reason = (argOf("--allow-shrink") || "").trim();
     const falls = committed ? diffFigures(committed, live).filter((x) => x.fell) : [];

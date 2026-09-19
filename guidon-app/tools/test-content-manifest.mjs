@@ -21,6 +21,10 @@
  *   - a second --write changes nothing; output is LF with one trailing newline
  *   - a hand-edited, re-indented, conflict-marked or history-doctored manifest
  *     fails in plain words; a pack that will not load stops everything
+ *   - a stand-in bank with --manifest forgotten is refused (it once overwrote
+ *     the real manifest), and a manifest deleted from disk while the last
+ *     commit still has it is not a "first run" (rm + --write once walked a fall
+ *     past the ratchet and dropped the history) - proved in a scratch git repo
  *   - --base holds a REVIEW to the same rule: a fall between two manifests with
  *     no new shrinks entry fails, and so does a rewritten history
  *   - a generated figures block in a document goes stale and is regenerated -
@@ -195,6 +199,48 @@ try {
   check(lost.status === 1 && /--manifest needs a value/.test(lost.stdout || "") && readFileSync(MANIFEST_PATH, "utf8") === realBefore, "--manifest with its value missing stops before anything is compared or written - a stand-in bank can never be written over the committed manifest", "valueless --manifest: exit " + lost.status + " realChanged=" + (readFileSync(MANIFEST_PATH, "utf8") !== realBefore) + "\n" + lost.stdout);
   r = run("--allow-shrink", REASON);
   check(r.code === 1 && /only means something together with --write/.test(r.out), "--allow-shrink without --write fails: the lint never records anything");
+  // A stand-in BANK with --manifest forgotten altogether. Before the guard this
+  // exact command overwrote the real committed manifest with the toy bank,
+  // recorded a bogus shrink in it and exited 0. If the guard ever regresses the
+  // real file is put back here, byte for byte, and the check fails.
+  const forgot = spawnSync(process.execPath, [TOOL, "--seed", SEED, "--modules", MODULES, "--write", "--allow-shrink", REASON], { encoding: "utf8" });
+  const realSurvived = readFileSync(MANIFEST_PATH, "utf8") === realBefore;
+  if (!realSurvived) writeFileSync(MANIFEST_PATH, realBefore, "utf8");
+  check(forgot.status === 1 && /need --manifest <file> as well/.test(forgot.stdout || "") && realSurvived, "a stand-in bank with --manifest forgotten is refused outright, even with --write --allow-shrink \"<reason>\" - the real manifest is never the target of a toy bank", "forgotten --manifest: exit " + forgot.status + " realSurvived=" + realSurvived + "\n" + forgot.stdout);
+  const peek = spawnSync(process.execPath, [TOOL, "--seed", SEED, "--modules", MODULES, "--figures"], { encoding: "utf8" });
+  check(peek.status === 0 && /\| Board study cards \| \d+ in \d+ categories \|/.test(peek.stdout || ""), "(--figures on a stand-in bank still works without --manifest: it only prints)", "--figures stand-in: exit " + peek.status + "\n" + peek.stdout);
+
+  /* ---------------------------------------------------------------- "delete it and regenerate" is not a way past the ratchet */
+  console.log("\na manifest deleted from disk is not a first run");
+  {
+    // A scratch git repository, so the rule is proved on the real code path
+    // (the tool asks git for the last committed copy of whatever path it was
+    // given) without ever touching this repository's own manifest.
+    const REPO2 = path.join(scratch, "scratch-repo");
+    mkdirSync(REPO2);
+    const M2 = path.join(REPO2, "content-manifest.json");
+    const identity = { ...process.env, GIT_AUTHOR_NAME: "guidon-test", GIT_AUTHOR_EMAIL: "guidon-test@example.invalid", GIT_COMMITTER_NAME: "guidon-test", GIT_COMMITTER_EMAIL: "guidon-test@example.invalid" };
+    const git = (...a) => spawnSync("git", ["-C", REPO2, "-c", "commit.gpgsign=false", "-c", "core.autocrlf=false", ...a], { encoding: "utf8", env: identity });
+    const run2 = (...args) => { const x = spawnSync(process.execPath, [TOOL, "--manifest", M2, "--seed", SEED, "--modules", MODULES, ...args], { encoding: "utf8" }); return { code: x.status, out: x.stdout || "" }; };
+    const made = git("init", "-q").status === 0;
+    r = run2("--write");
+    check(made && r.code === 0 && existsSync(M2), "in a fresh repository with no manifest in any commit, --write creates one (a real first run is still free)", "first run in scratch repo: git init ok=" + made + " exit " + r.code + "\n" + r.out);
+    const committedOk = git("add", "content-manifest.json").status === 0 && git("commit", "-q", "-m", "manifest").status === 0;
+    check(committedOk, "(the scratch repository commits it)", "scratch commit failed: " + (git("status", "--short").stdout || ""));
+    const committedBytes = readFileSync(M2, "utf8");
+    writePack([]); // the bank loses its pack card: totals.board falls
+    r = run2("--write");
+    check(r.code === 1 && /REFUSED/.test(r.out) && readFileSync(M2, "utf8") === committedBytes, "(the fall is refused while the file is there, as above)", "scratch fall: exit " + r.code + "\n" + r.out);
+    rmSync(M2);
+    r = run2("--write");
+    check(r.code === 1 && /is missing here, but the last commit has it/.test(r.out) && /nothing written/.test(r.out) && !existsSync(M2),
+      "deleting the manifest and running --write again is refused too: the last commit has it, so it is not a first run - before this, rm + --write took the fall with exit 0 and an empty history", "deleted manifest: exit " + r.code + " recreated=" + existsSync(M2) + "\n" + r.out);
+    r = run2("--write", "--allow-shrink", REASON);
+    check(r.code === 1 && !existsSync(M2), "...and a reason does not change that - the history to append to is in the missing file");
+    check(git("checkout", "HEAD", "--", "content-manifest.json").status === 0 && run2("--write", "--allow-shrink", REASON).code === 0 && JSON.parse(readFileSync(M2, "utf8")).shrinks.length === JSON.parse(committedBytes).shrinks.length + 1,
+      "put back the way the message says (git checkout HEAD -- <file>), --write --allow-shrink records the drop on top of the surviving history");
+    writePack(packOf(1)); // bank restored for the checks below
+  }
 
   /* ---------------------------------------------------------------- --base: the review ratchet */
   console.log("\n--base holds a review to the same rule");
