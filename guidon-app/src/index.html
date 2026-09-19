@@ -33615,7 +33615,13 @@ window.G = window.G || {};
         });
       }
       function renderFull() {
-        modeBody.appendChild(el("p", { text: fullText }));
+        // A Soldier's own text keeps the line breaks they typed - a song or
+        // a motto reads line by line - and a long unbroken word wraps
+        // instead of pushing a phone screen sideways. The bundled creeds are
+        // prose and stay one paragraph, as before.
+        modeBody.appendChild(q.own
+          ? el("p", { text: q.lines.join("\n"), "data-recite-own-full": "1", style: "white-space:pre-line;overflow-wrap:anywhere" })
+          : el("p", { text: fullText }));
       }
       function renderFirstLetter() {
         modeBody.appendChild(el("p.hint", { text: "Recall prompt — first letters only:" }));
@@ -33828,7 +33834,9 @@ window.G = window.G || {};
     if (ownApi) {
       ownApi.list().then(function (rows) {
         if (!listCol.isConnected || !rows.length) return;
-        own = rows;
+        // Anything saved in the instant before this read came back is kept,
+        // not overwritten by the slightly older list.
+        own = rows.concat(own.filter(function (x) { return !rows.some(function (r) { return r.id === x.id; }); }));
         renderOwn(document.activeElement === addBtn ? { add: true } : null);
         if (!selectedId && !adding) selectRecite(own[0].id);
       }, function () {});
