@@ -35,7 +35,7 @@
  * assertions at another copy of the .github/workflows folder. Pointed at the
  * files as they were before this suite existed, sections 1-5 fail.
  */
-import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync, existsSync, chmodSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync, existsSync, chmodSync, readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -398,6 +398,38 @@ try {
   check(gating.length > 5 && suiteSteps.length === 0, "lint-build-verify runs no test suites (every other job needs it; one flake there would skip the entire matrix)",
     "lint-build-verify runs test suite step(s): " + suiteSteps.map((s) => s.name).join(", "));
   for (const j of ["cargo-check", "test"]) check(/needs: \[?lint-build-verify\]?/.test(jobBlock(ci, j) || ""), `${j} still waits on lint-build-verify (the reason the rule above matters)`);
+
+  /* ===================================================================
+     6. A test file that nothing runs is a lint failure
+        (tools/lint-ci-matrix.mjs check (d), driven with stand-in copies)
+     =================================================================== */
+  console.log("\n6. Every tools/test-*.mjs is reachable by CI");
+  {
+    const lintMatrix = (...args) => spawnSync(process.execPath, ["tools/lint-ci-matrix.mjs", ...args], { encoding: "utf-8" });
+    const real = lintMatrix();
+    check(real.status === 0 && /PASS {2}\(d\) all \d+ tools\/test-\*\.mjs files are reachable/.test(real.stdout), "the real tree: every test file is in the list, run by a named workflow step, or excluded with a written reason", "lint-ci-matrix fails on the real tree:\n" + real.stdout);
+    const realFiles = readdirSync("tools").filter((f) => /^test-.*\.mjs$/.test(f));
+    const toolsCopy = path.join(scratch, "tools-copy"); mkdirSync(toolsCopy, { recursive: true });
+    for (const f of realFiles) writeFileSync(path.join(toolsCopy, f), "");
+    writeFileSync(path.join(toolsCopy, "test-orphan-example.mjs"), "");
+    let r = lintMatrix("--tools", toolsCopy);
+    check(r.status === 1 && /FAIL {2}\(d\) tools\/test-orphan-example\.mjs is run by nothing in CI \(no npm script runs it\)/.test(r.stdout), "a new test file that nothing runs fails the lint, by name");
+    const pkgReal = JSON.parse(readFileSync("package.json", "utf-8"));
+    const pkgWith = (edit) => { const p = JSON.parse(JSON.stringify(pkgReal)); edit(p); const file = path.join(scratch, "pkg-" + Math.random().toString(36).slice(2) + ".json"); writeFileSync(file, JSON.stringify(p)); return file; };
+    r = lintMatrix("--tools", toolsCopy, "--pkg", pkgWith((p) => { p.scripts["test:orphan-example"] = "node tools/test-orphan-example.mjs"; }));
+    check(/test-orphan-example\.mjs is run by nothing in CI \(it has the script test:orphan-example, but that name is not in package\.json's "test" run-parallel list\)/.test(r.stdout),
+      "the exact trap that kept recurring - a script entry that is not in the run-parallel list - is named as such");
+    r = lintMatrix("--pkg", pkgWith((p) => { p.scripts.test += " test:contrast"; }));
+    check(/FAIL {2}\(d\) tools\/test-contrast\.mjs is in the run-parallel list now, so its OUTSIDE_THE_LIST row is stale/.test(r.stdout), "an exclusion row for a suite that IS in the list is stale, and fails");
+    const wfCopy = path.join(scratch, "wf-copy"); mkdirSync(wfCopy, { recursive: true });
+    writeFileSync(path.join(wfCopy, "ci.yml"), ci.split("\n").filter((l) => /^\s*#/.test(l) || !/netfloor/.test(l)).join("\n"));
+    r = lintMatrix("--workflows", wfCopy);
+    check(/FAIL {2}\(d\) OUTSIDE_THE_LIST says \.github\/workflows\/ci\.yml runs tools\/test-network-floor\.mjs, but no step in it does/.test(r.stdout), "a row claiming a workflow runs the suite is checked against that workflow (comments do not count)");
+    if (/waiting to be added to the list/.test(real.stdout)) {
+      r = lintMatrix("--pkg", pkgWith((p) => { p.version = "99.0.0"; }));
+      check(/FAIL {2}\(d\) tools\/test-[\w-]+\.mjs has been waiting to join the run-parallel list since/.test(r.stdout), "a new suite still waiting for registration becomes a failure at the next version bump (it cannot linger)");
+    } else ok("no suite is waiting for registration");
+  }
 } catch (e) {
   bad("suite crashed: " + (e && e.stack ? e.stack : e));
 } finally {
