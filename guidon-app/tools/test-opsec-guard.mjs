@@ -293,6 +293,9 @@ n = await notice(page);
 (n && n.kind === "stop" && n.visible && /GUIDON did not read this text/.test(n.text) && /Line 3/.test(n.text) && /\(S\/\/NF\)/.test(n.text))
   ? ok("(marked text) the import stops, and the notice names line 3 and shows the marking it saw")
   : bad("(marked text) stop notice: " + JSON.stringify(n));
+(n && /Line 3: “\(S\/\/NF\) The company/.test(n.text) && !/Line 3: “[^”]*Study ADP/.test(n.text))
+  ? ok("(marked text) the quote for line 3 is line 3 - it does not run back into the line above")
+  : bad("(marked text) the line-3 quote spills across lines: " + (n && n.text));
 (n && n.focusInside && !n.buttons.includes("Continue")) ? ok("(marked text) focus moves onto the notice, and there is no way to continue past it") : bad("(marked text) focus/continue: " + JSON.stringify(n));
 (n && /handling and reporting procedures/.test(n.text) && /take that line out and try again/.test(n.text))
   ? ok("(marked text) it says what to do in both cases - really marked, or only study text about markings")

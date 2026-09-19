@@ -186,11 +186,14 @@ window.G = window.G || {};
     function lineOf(offset) { let lo = 0, hi = lineStarts.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (lineStarts[mid] <= offset) lo = mid; else hi = mid - 1; } return lo + 1; }
 
     function excerptOf(start, end, mask) {
-      const from = Math.max(0, start - 28), to = Math.min(text.length, end + 28);
+      // Context stays inside the finding's own line: the notice says "Line 3", so the quote must be line 3.
+      const lineStart = text.lastIndexOf("\n", start - 1) + 1;
+      let lineEnd = text.indexOf("\n", end); if (lineEnd === -1) lineEnd = text.length;
+      const from = Math.max(lineStart, start - 28), to = Math.min(lineEnd, end + 28);
       let hit = text.slice(start, end);
       // Display-only: the notice should locate a Social Security / DoD ID number without repeating it in full.
       if (mask) { let keep = 4; hit = hit.split("").reverse().map((c) => (/\d/.test(c) ? (keep-- > 0 ? c : "•") : c)).reverse().join(""); }
-      const s = (from > 0 ? "…" : "") + text.slice(from, start) + hit + text.slice(end, to) + (to < text.length ? "…" : "");
+      const s = (from > lineStart ? "…" : "") + text.slice(from, start) + hit + text.slice(end, to) + (to < lineEnd ? "…" : "");
       return s.replace(/\s+/g, " ").trim();
     }
     function add(code, severity, start, end, opts) {
