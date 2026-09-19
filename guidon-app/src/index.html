@@ -13279,7 +13279,10 @@ window.G = window.G || {};
           el("span.v", { style: "color:var(--amber)", text: c.pct + "%  (" + c.mastered + "/" + c.total + ")" }),
         ]));
         row.appendChild(el("div.bar", {}, [el("span", { style: "transform:scaleX(" + (c.pct / 100) + ")" })]));
-        row.appendChild(el("button.btn.ghost.sm", { text: "Drill " + c.cat, style: "margin-top:4px",
+        // "Study", not "Drill " + category - same reason as the pillar rows
+        // below: a real category is named "Drill and Ceremony (TC 3-21.5)",
+        // so a Soldier weak in it was offered "Drill Drill and Ceremony".
+        row.appendChild(el("button.btn.ghost.sm", { text: "Study " + c.cat, "aria-label": "Study " + c.cat + " cards", style: "margin-top:4px",
           // Set the flag but never navigated anywhere to read it - the
           // button did nothing visible. Matches the working "Drill N Due
           // Now" button above.
@@ -13356,7 +13359,7 @@ window.G = window.G || {};
     // frames the bar-list itself as the problem ("render as one scrolling
     // bar-list"). The old full list had no click/drill interaction on its
     // rows to preserve (unlike the "Needs Work" weakest-3 panel above,
-    // which keeps its own "Drill <category>" buttons unchanged).
+    // which keeps its own "Study <category>" buttons unchanged).
     const heatCats = catScores.filter((c) => c.total > 0);
     if (heatCats.length) {
       const heatPanel = el("div.panel", { style: "margin-top:12px" });

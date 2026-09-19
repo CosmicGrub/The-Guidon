@@ -16,7 +16,9 @@
  *     Drill with that pillar chip active (one-shot G.board._filterPillar).
  *     The label used to be "Drill " + pillar, which read "Drill Drill & Board
  *     Etiquette" for the sixth pillar; no label may stutter, and each
- *     button's accessible name says which pillar's cards it opens.
+ *     button's accessible name says which pillar's cards it opens. The
+ *     "Needs Work" buttons one panel up had the same fault ("Drill Drill and
+ *     Ceremony (TC 3-21.5)") and are held to the same rule (section 6).
  *  3. At phone width all three quick-filter rows become single, horizontally
  *     scrollable rows (.qf-row) instead of a 12-row wall above the card -
  *     GENUINELY scrollable (a real wheel gesture reaches the last chip; a
@@ -278,6 +280,61 @@ const reveal = await chipInsideRow(page2, BAR("pillar"), ".search-chip.active");
 (reveal && reveal.text.startsWith(lastPillar) && reveal.inside && reveal.scrollLeft > 0)
   ? ok(`at 390px the Readiness button for "${lastPillar}" lands on Board Drill with that chip scrolled fully into view (row scrollLeft ${reveal.scrollLeft}px), not left off-screen`)
   : bad("chip visibility at phone width after the Readiness button: " + JSON.stringify(reveal));
+
+/* ---- 6. the "Needs Work" buttons on the same tab ---- */
+// Same stutter, one panel up: those buttons were "Drill " + category, and a
+// real category is named "Drill and Ceremony (TC 3-21.5)" - so a Soldier
+// weak in it was offered "Drill Drill and Ceremony (TC 3-21.5)". The panel
+// only lists the three weakest categories, so make that category the weakest
+// for certain: a fresh profile where every OTHER card is mastered and one of
+// its own was missed (real stored study records, written the way the heatmap
+// suite seeds them - the label code under test is untouched).
+const page3 = await (await browser.newContext({ viewport: { width: 1200, height: 900 } })).newPage();
+page3.on("console", (m) => { if (["error", "warning"].includes(m.type())) noise.push(m.type() + "(p3): " + m.text()); });
+page3.on("pageerror", (e) => noise.push("pageerror(p3): " + e.message));
+await page3.goto(url, { waitUntil: "load" });
+await dismissOnboarding(page3);
+const weakCat = await page3.evaluate(async () => {
+  const all = G.store.boardQuestions();
+  const cat = [...new Set(all.map((q) => q.category))].find((c) => /^drill\b/i.test(c));
+  if (!cat) return null;
+  const others = all.filter((q) => q.category !== cat), own = all.filter((q) => q.category === cat);
+  for (let i = 0; i < others.length; i += 100) {
+    await Promise.all(others.slice(i, i + 100).map((q) => G.db.put("kv", { k: "srs:" + q.id, v: { reps: 2, ease: 2.4, interval: 3, due: Date.now() + 864e5, misses: 0, lastGrade: 2 } })));
+  }
+  await G.db.put("kv", { k: "srs:" + own[0].id, v: { reps: 0, ease: 2.3, interval: 0, due: 0, misses: 1, lastGrade: 0 } });
+  return { cat, total: own.length };
+});
+if (!weakCat) {
+  ok("no card category starts with the word \"Drill\" any more - nothing for a \"Drill ...\" label to collide with");
+} else {
+  await page3.evaluate(() => { location.hash = "#/board"; });
+  await page3.waitForTimeout(900);
+  await page3.evaluate(() => { G.board._openReadiness && G.board._openReadiness(); });
+  await page3.waitForTimeout(900);
+  const needs = await page3.evaluate(() => {
+    const panel = [...document.querySelectorAll(".panel")].find((p) => { const e = p.querySelector(".eyebrow"); return e && e.textContent.trim() === "Needs Work"; });
+    if (!panel) return null;
+    return [...panel.querySelectorAll("button")].map((b) => ({ cat: ((b.parentElement.querySelector(".stat .k") || {}).textContent || ""), text: b.textContent.trim(), name: (b.getAttribute("aria-label") || b.textContent).trim() }));
+  });
+  const STUTTER2 = /\b(\w+)\s+\1\b/i;
+  const mine = needs && needs.find((n) => n.cat === weakCat.cat);
+  mine ? ok(`"${weakCat.cat}" is listed under Needs Work (button "${mine.text}")`) : bad("Needs Work does not list the seeded weakest category: " + JSON.stringify(needs));
+  if (needs && mine) {
+    const bad2 = needs.filter((n) => STUTTER2.test(n.text) || STUTTER2.test(n.name));
+    bad2.length === 0 ? ok(`no Needs Work button repeats a word back to back (${needs.map((n) => '"' + n.text + '"').join(", ")})`) : bad("Needs Work button label stutters: " + JSON.stringify(bad2));
+    needs.every((n) => n.text.includes(n.cat) && n.name.includes(n.text))
+      ? ok(`each Needs Work button names its category, and its accessible name contains the visible label (e.g. "${mine.name}")`)
+      : bad("Needs Work button names: " + JSON.stringify(needs));
+    await page3.evaluate((cat) => {
+      const panel = [...document.querySelectorAll(".panel")].find((p) => { const e = p.querySelector(".eyebrow"); return e && e.textContent.trim() === "Needs Work"; });
+      [...panel.querySelectorAll("button")].find((b) => (b.parentElement.querySelector(".stat .k") || {}).textContent === cat).click();
+    }, weakCat.cat);
+    await page3.waitForTimeout(1000);
+    const landed = await page3.evaluate(() => { const s = Array.from(document.querySelectorAll(".stat")).find((x) => /This session/.test(x.textContent)); const m = s && ((s.querySelector(".v") || {}).textContent || "").match(/Card \d+\/(\d+)/); return m ? Number(m[1]) : null; });
+    landed === weakCat.total ? ok(`...and the relabelled button still opens Board Drill on exactly that category's ${landed} cards`) : bad(`after the Needs Work button: deck ${landed} vs ${weakCat.total} "${weakCat.cat}" cards`);
+  }
+}
 
 noise.length === 0 ? ok("no console errors/warnings or page errors") : bad(`console noise: ${noise.join(" | ")}`);
 console.log(fails === 0 ? "\nBOARD PILLAR FILTER: all passed" : `\nBOARD PILLAR FILTER: ${fails} failed`);
