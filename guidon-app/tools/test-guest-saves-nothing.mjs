@@ -240,6 +240,10 @@ for (const kind of ["guest", "kiosk"]) {
     who + ": the owner's data is on the device before the session starts (" + beforeObj.stores.kv.length + " saved items)",
     who + ": seeding the owner's data failed");
 
+  // The welcome screen tells the truth about both before either is chosen.
+  const cardSays = await page.evaluate((re) => { const c = Array.from(document.querySelectorAll("#ob-overlay .ob-mode-card")).find((n) => new RegExp(re, "i").test(n.textContent)); return c ? c.textContent : ""; }, kind === "guest" ? "guest session" : "kiosk");
+  check(kind === "guest" ? /no data saved after you close the app/i.test(cardSays) : /Nothing is saved/.test(cardSays), who + ": its card on the welcome screen says nothing is saved", who + ": welcome-screen card reads: " + JSON.stringify(cardSays));
+
   await dismissOnboarding(page, { mode: kind });
   const active = await page.evaluate(() => (window.G.db.session ? { on: window.G.db.session.active(), kind: window.G.db.session.kind() } : { on: false, kind: "(this build has no save-nothing session)" }));
   check(active.on && active.kind === kind, who + ": choosing it on the welcome screen starts a save-nothing session", who + ": the session did not start: " + JSON.stringify(active));
@@ -541,6 +545,23 @@ for (const kind of ["guest", "kiosk"]) {
   await page.waitForTimeout(900);
   const askedAgain = await page.locator(".gm-box").count();
   check(asOwner === "accepted" && askedAgain === 0, "under a real profile it is remembered, and the notice does not come back", "notice under a real profile: stored=" + asOwner + ", asked again=" + askedAgain);
+  await ctx.close();
+}
+
+/* The welcome screen's longer Kiosk line must still fit a folded phone. */
+{
+  const ctx = await browser.newContext({ viewport: { width: 344, height: 800 } });
+  const page = await ctx.newPage();
+  watch(page, "Narrow");
+  await page.goto(url, { waitUntil: "load" });
+  await bootDecided(page);
+  await page.waitForSelector("#ob-overlay .ob-mode-card", { timeout: 8000 });
+  const wide = await page.evaluate(() => {
+    const over = document.documentElement.scrollWidth - window.innerWidth;
+    const cards = Array.from(document.querySelectorAll("#ob-overlay .ob-mode-card")).map((c) => Math.ceil(c.getBoundingClientRect().right) - window.innerWidth);
+    return { over, cardsPast: Math.max.apply(null, cards) };
+  });
+  check(wide.over <= 0 && wide.cardsPast <= 0, "the welcome screen does not scroll sideways at 344px with the new Kiosk line", "welcome screen at 344px: " + JSON.stringify(wide));
   await ctx.close();
 }
 
