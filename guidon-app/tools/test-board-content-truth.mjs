@@ -71,7 +71,7 @@ async function openCardBack(card) {
       return page.evaluate(() => {
         const back = document.querySelector(".qz-back");
         const blocks = Array.from(back.querySelectorAll(".bq-answer-block")).map((b) => ({
-          label: (b.querySelector(".bq-answer-label") || {}).textContent || "",
+          label: ((b.querySelector(".bq-answer-label") || {}).textContent || "").trim(), // the icon leaves a leading space
           text: (b.querySelector(".bq-answer-text") || {}).textContent || "",
           src: (b.querySelector(".src") || {}).textContent || "",
         }));
@@ -193,6 +193,64 @@ console.log("\nC40/U31/U28 - the bank teaches one answer, from the current editi
   aer.every((q) => !/current regulation is dated 29 November 2024/.test(allText(q)) && !/1-18i/.test(allText(q)))
     ? ok("no AER card calls the 29 Nov 2024 edition current or cites para 1-18i (the informed-Soldiers duty is 1-18g)") : bad("AER cards with a stale edition/paragraph: " + aer.filter((q) => /29 November 2024 and|1-18i/.test(allText(q))).map((q) => q.id).join(", "));
   bank.every((q) => !/AR 608-1, para 1-6/.test(allText(q))) ? ok('no card cites "AR 608-1, para 1-6" (the mission paragraph of the superseded 2017 edition)') : bad("AR 608-1 para 1-6 still cited");
+}
+
+/* ---- C17: "verbatim doctrine" is only ever printed over a real quotation; every 92A card cites a real publication ---- */
+console.log("\nC17 - honest card-back headings and real citations");
+{
+  const VERBATIM = "By the Book (verbatim doctrine)";
+  const PARAPHRASE = await page.evaluate(() => G.board.PARAPHRASE_LABEL);
+  (typeof PARAPHRASE === "string" && /not a word-for-word quote/.test(PARAPHRASE)) ? ok(`study-guide cards get their own heading: "${PARAPHRASE}"`) : bad("G.board.PARAPHRASE_LABEL = " + PARAPHRASE);
+  const packCards = bank.filter((q) => /^pb-(core72|deck40)/.test(q.id) || /^(prog-(aer|acs|sudcc)-|supply-(csdp|statement))/.test(q.id));
+  packCards.length > 200 ? ok(`${packCards.length} cards come from the supplement and gap packs`) : bad("only " + packCards.length + " pack cards found");
+  const unflagged = packCards.filter((q) => q.verbatim !== false);
+  unflagged.length === 0 ? ok("every one of them declares that its text is study-guide wording (verbatim:false)") : bad(unflagged.length + " pack cards still claim verbatim text, e.g. " + unflagged.slice(0, 4).map((q) => q.id).join(", "));
+
+  /* (a) a supplement card whose one sentence used to be printed three times under two headings */
+  const salute = bank.find((q) => q.q === "What is the salute?");
+  const b1 = salute && await openCardBack(salute);
+  if (!b1) bad("could not open the supplement card \"What is the salute?\"");
+  else {
+    const labels = b1.blocks.map((x) => x.label);
+    !labels.includes(VERBATIM) ? ok(`${salute.id}: the card back no longer prints "${VERBATIM}" over a paraphrase`) : bad(`${salute.id}: headings are ${JSON.stringify(labels)}`);
+    labels.includes(PARAPHRASE) ? ok("...it prints the study-guide heading instead") : bad("...headings are " + JSON.stringify(labels));
+    const times = b1.all.split(salute.a).length - 1;
+    times === 1 ? ok("...and the answer sentence appears once, not three times") : bad("...the answer sentence appears " + times + " times on the card back");
+    b1.blocks.some((x) => /^Source: AR 600-25/.test(x.src)) ? ok("...with its Source line kept") : bad("...source line: " + JSON.stringify(b1.blocks.map((x) => x.src)));
+  }
+  /* (b) a gap-pack card: a short acceptable answer plus a longer spoken answer - two boxes, neither claims to be a quotation */
+  const aer = bank.find((q) => q.id === "prog-aer-2");
+  const b2 = aer && await openCardBack(aer);
+  (b2 && b2.blocks.length === 2 && !b2.blocks.some((x) => x.label === VERBATIM) && b2.blocks.some((x) => x.label === PARAPHRASE))
+    ? ok("prog-aer-2: both answers shown, the long one under the study-guide heading") : bad("prog-aer-2 blocks: " + JSON.stringify(b2 && b2.blocks.map((x) => x.label)));
+  (b2 && b2.kp.length === 3) ? ok("...and its three real key points are still listed") : bad("prog-aer-2 key points: " + JSON.stringify(b2 && b2.kp));
+  /* (c) a seed card that really quotes the publication keeps the verbatim heading */
+  const rules = bank.find((q) => q.id === "wpn-9");
+  const b3 = await openCardBack(rules);
+  (b3 && b3.blocks.some((x) => x.label === VERBATIM && /Rule 4/.test(x.text))) ? ok("wpn-9 (quotes TC 3-22.9) still shows \"" + VERBATIM + "\"") : bad("wpn-9 blocks: " + JSON.stringify(b3 && b3.blocks.map((x) => x.label)));
+
+  /* (c2) the longer heading must not push the card sideways on a phone */
+  await page.setViewportSize({ width: 390, height: 844 });
+  const b4 = salute && await openCardBack(salute);
+  const fit = await page.evaluate(() => {
+    const sc = document.querySelector(".qz-back-scroll"), lab = document.querySelector(".qz-back .bq-bybook .bq-answer-label");
+    return { page: document.documentElement.scrollWidth <= window.innerWidth + 1, scroll: sc ? sc.scrollWidth <= sc.clientWidth + 1 : false, label: lab ? lab.getBoundingClientRect().right <= window.innerWidth + 1 : false };
+  });
+  (b4 && fit.page && fit.scroll && fit.label) ? ok("at 390px the study-guide heading wraps inside the card - no sideways scroll") : bad("390px overflow: " + JSON.stringify(fit));
+  await page.setViewportSize({ width: 1200, height: 900 });
+
+  /* (d) citations: a publication designator, not "Army sustainment doctrine" */
+  const PUB = /\b(AR|DA PAM|ATP|ADP|FM|TC|TM) \d/;
+  const mos = bank.filter((q) => /^92A/.test(q.category));
+  mos.length === 40 ? ok("all 40 92A prompts are in the bank") : bad(mos.length + " 92A prompts found (expected 40 - run this suite with no tier or MOS filter)");
+  const uncited = mos.filter((q) => !PUB.test(q.source));
+  uncited.length === 0 ? ok("every 92A card cites at least one Army publication by number") : bad(uncited.length + " 92A cards cite no publication: " + uncited.slice(0, 6).map((q) => q.id + " [" + q.source + "]").join("; "));
+  const vague = packCards.filter((q) => /Army sustainment doctrine|Army supply procedures|Applicable Army program regulations|GCSS-Army procedures|CMF 92 career guidance|^GCSS-Army$/.test(q.source));
+  vague.length === 0 ? ok("no pack card is sourced to a vague phrase (\"Army sustainment doctrine\", \"Army supply procedures\", ...)") : bad("vague sources: " + vague.slice(0, 6).map((q) => q.id + " [" + q.source + "]").join("; "));
+  const classI = bank.find((q) => q.q === "What is Class I?");
+  (classI && !/drinking water/.test(classI.a)) ? ok("Class I is subsistence; water is not folded into it (ATP 4-42 paras 1-22, 1-38)") : bad("Class I answer: " + (classI && classI.a));
+  const log = doctrine.find((d) => d.id === "doc-log-1");
+  (log && /ten classes of supply/i.test(log.body) && !/seven Classes of Supply/i.test(log.body + log.keyPoints.join(" "))) ? ok("doctrine entry doc-log-1 counts ten classes of supply, agreeing with the cards") : bad("doc-log-1: " + (log && log.body.slice(0, 160)));
 }
 
 /* ---- zero console noise ---- */

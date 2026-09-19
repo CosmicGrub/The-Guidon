@@ -53,12 +53,20 @@
         }
         var id = "pb-" + deck.id + "-" + String(card.n).padStart(2, "0") + "-" + (i + 1);
         while (ids.has(id)) id += "x";
+        /* These decks are a study guide's own wording, not quotations from
+           the cited publication. verbatim:false makes the card back say so
+           ("Study-guide answer (not a word-for-word quote)") instead of
+           presenting the text under "By the Book (verbatim doctrine)".
+           boardAnswer is still filled because every consumer of the bank
+           (search, Mock Board, the handheld export) expects the field. */
         var rec = {
           id: id,
           category: card.category,
           q: qtext,
           a: ans,
+          acceptableAnswer: ans,
           boardAnswer: ans,
+          verbatim: false,
           source: card.source,
           concept: card.title,
           keyPoints: [ans],
@@ -117,11 +125,11 @@
     {n:39,title:"ASAP",category:"Army Programs",source:"AR 600-85",qa:[["What does ASAP stand for?","Army Substance Abuse Program."],["What does ASAP focus on?","Prevention, education, deterrence, drug testing, and related non-clinical program functions; clinical treatment is handled through appropriate medical channels."]]},
     {n:40,title:"ACES",category:"Army Programs",source:"AR 621-5",qa:[["What does ACES stand for?","Army Continuing Education System."],["What does ACES provide?","Education counseling and programs supporting Soldiers' academic, testing, credentialing, and continuing-education goals."]]},
     {n:41,title:"BOSS",category:"Army Programs",source:"Army BOSS program / AR 215-1",qa:[["What does BOSS stand for?","Better Opportunities for Single Soldiers."],["What does BOSS support?","Quality of life, community involvement and service, recreation and leisure, and life skills for eligible Soldiers."]]},
-    {n:42,title:"Using Army Programs",category:"Army Programs",source:"Applicable Army program regulations and command policy",qa:[["What should an NCO do when a Soldier asks for help through an Army program?","Listen, identify urgency, connect the Soldier to the correct resource, protect required privacy, follow reporting rules, and follow up within policy."],["What if you are unsure which Army program or rule applies?","Do not guess. Protect the Soldier, use the chain of command or qualified program representative, and verify current policy."]]},
+    {n:42,title:"Using Army Programs",category:"Army Programs",source:"AR 600-85 / AR 621-5 / AR 215-1 / AR 600-20",qa:[["What should an NCO do when a Soldier asks for help through an Army program?","Listen, identify urgency, connect the Soldier to the correct resource, protect required privacy, follow reporting rules, and follow up within policy."],["What if you are unsure which Army program or rule applies?","Do not guess. Protect the Soldier, use the chain of command or qualified program representative, and verify current policy."]]},
     {n:43,title:"UCMJ",category:"UCMJ",source:"Uniform Code of Military Justice / 10 USC Chapter 47",qa:[["What does UCMJ stand for?","Uniform Code of Military Justice."],["Who does the UCMJ govern?","Persons subject to the UCMJ as defined by federal law."]]},
     {n:44,title:"Article 15",category:"UCMJ",source:"Article 15, UCMJ / AR 27-10",qa:[["What is Article 15?","Nonjudicial punishment allowing commanders to address certain offenses without a court-martial."],["Is an Article 15 a court-martial conviction?","No. It is nonjudicial punishment."]]},
     {n:45,title:"Article 31",category:"UCMJ",source:"Article 31, UCMJ / AR 27-10",qa:[["What is the basic purpose of Article 31 rights?","To protect a suspected or accused person from compelled self-incrimination and require appropriate rights advisement before questioning."],["What should a leader do before questioning a Soldier suspected of an offense?","Ensure required rights are protected and seek legal guidance when appropriate."]]},
-    {n:46,title:"Lawful Orders",category:"UCMJ",source:"UCMJ / Army command policy",qa:[["Are Soldiers required to obey unlawful orders?","No. Soldiers are obligated to obey lawful orders."],["What if a Soldier is uncertain about an order's legality?","Seek clarification and appropriate command or legal guidance when circumstances permit rather than relying on guesswork."]]},
+    {n:46,title:"Lawful Orders",category:"UCMJ",source:"UCMJ / AR 600-20 (Army Command Policy)",qa:[["Are Soldiers required to obey unlawful orders?","No. Soldiers are obligated to obey lawful orders."],["What if a Soldier is uncertain about an order's legality?","Seek clarification and appropriate command or legal guidance when circumstances permit rather than relying on guesswork."]]},
     {n:47,title:"NJP Rights",category:"UCMJ",source:"Article 15, UCMJ / AR 27-10",qa:[["What should a Soldier facing Article 15 proceedings understand?","The alleged misconduct, applicable rights, available choices, and opportunities to consult counsel provided by law and regulation."],["Should an NCO improvise legal advice?","No. Provide factual leadership support and refer legal questions to qualified legal resources."]]},
     {n:48,title:"NCO Responsibility",category:"Discipline",source:"AR 600-20 / UCMJ / command policy",qa:[["What is an NCO's role in military discipline?","Set and enforce standards, correct deficiencies, document appropriately, protect Soldiers' rights, and use command and legal resources when necessary."],["What should guide corrective action?","It should be lawful, professional, proportionate, mission-focused, and consistent with command policy."]]},
     {n:49,title:"Promotions",category:"Promotions",source:"AR 600-8-19",qa:[["What regulation governs enlisted promotions and demotions?","AR 600-8-19."],["What should a promotion candidate verify?","Eligibility, records, required training and education, promotion data, board requirements, and current policy."]]},
