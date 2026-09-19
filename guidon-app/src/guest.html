@@ -25,6 +25,7 @@ html, body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.
 .wrap { max-width: 40rem; margin: 0 auto; padding: 16px; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
 .panel.warn { border-left: 4px solid var(--red); }
+.panel.gp-boundary { border-left: 4px solid var(--amber); }
 .eyebrow { font-family: var(--mono); font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--cyan); margin-bottom: 6px; }
 .hint { color: var(--muted); font-size: .9rem; margin: 6px 0; }
 .feedback { color: var(--amber); margin: 6px 0; }
@@ -196,6 +197,11 @@ window.GUIDON_BUILD_DIRTY = @@BUILD_DIRTY@@;
     else if (st.joinState !== "seated") drawWaiting(root, st);
     else drawRoom(root, st);
     root.appendChild(el("footer", { text: "GUIDON guest page " + (window.GUIDON_APP_VERSION || "") + " - nothing is saved on this page; close the tab and it forgets everything." }));
+    /* In EVERY room state, not only on the join screen: this page is the one a
+       guest opens on whatever network their phone happens to be on, and it is
+       the only GUIDON screen they ever see - the app's own Study Rooms notice
+       and first-run statement never reach a browser guest. */
+    root.appendChild(el("footer.gp-notice", { text: "Personal or explicitly authorized networks only. GUIDON is an unofficial, independent study aid and is not endorsed by the Department of Defense, the U.S. Army, or any government agency." }));
     app.appendChild(root);
   }
   function drawIdle(root) {
@@ -209,6 +215,12 @@ window.GUIDON_BUILD_DIRTY = @@BUILD_DIRTY@@;
     p.appendChild(el("label", { text: "Seat name" })); p.appendChild(name);
     p.appendChild(btn("primary gp-join", "Join", function () { rt.code = code.value; rt.name = name.value; join(code.value, name.value); }));
     root.appendChild(p);
+    /* The same boundary the app's own Study Rooms screen states, shown here
+       BEFORE a guest joins - the join screen is the decision point. */
+    var pb = el("div.panel.gp-boundary");
+    pb.appendChild(el("div.eyebrow", { text: "Personal / explicitly authorized networks only" }));
+    pb.appendChild(hint("Do not join a GUIDON study room on DoD/Army enterprise networks unless your organization has explicitly authorized this application and connection. By default, use personal/off-duty Wi-Fi or a hotspot. Keeping everything on the device is not an ATO or a network authorization. References: AR 25-2; DoDI 8510.01."));
+    root.appendChild(pb);
     var pv = el("div.panel");
     pv.appendChild(el("div.eyebrow", { text: "What leaves this phone" }));
     pv.appendChild(hint("Only the room's own frames: your seat name, a random per-session fingerprint and the scores of the round. Nothing is stored on this page, no camera, no microphone, no account."));

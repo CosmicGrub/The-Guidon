@@ -130,6 +130,20 @@ expect(moi.includes("G.opsecGuard.screen(combined)") && moi.indexOf("G.opsecGuar
 expect(!moi.includes("Soldier handed a real MOI"), "MOI copy no longer encourages real operational MOIs");
 expect(leader.includes("G.opsecGuard.screen(") && !/sanitizeInput|decisionMessage/.test(leader) && leader.includes("Use initials, a callsign, or a roster number"), "Squad Roster checks the one free-text field and states the minimized-data rule in its own words");
 expect(group.includes("Personal / explicitly authorized networks only") && group.includes("Offline-first design is not an ATO or network authorization"), "Study Rooms permanently states the official-network authorization boundary");
+/* The guest join page is a second Study Rooms screen - the only one a
+   participant without the app ever sees - and it carried neither the network
+   boundary nor the "unofficial / not endorsed" statement, while the review
+   package told a commander the Study Rooms UI "permanently states" it.
+   (Template, not dist/: this gate runs without a build. tools/test-guest-page.mjs
+   proves the rendered page in every room state.) */
+const guest=readFileSync(APP+"src/guest.html","utf8");
+expect(guest.includes("Personal / explicitly authorized networks only") && guest.includes("DoD/Army enterprise networks") && guest.includes("not an ATO or a network authorization"), "the host-served guest join page states the official-network boundary");
+expect(guest.includes("Personal or explicitly authorized networks only.") && guest.includes("not endorsed by the Department of Defense, the U.S. Army, or any government agency"), "the guest page's always-drawn footer carries the boundary and the unofficial / not-endorsed statement");
+const legal=readFileSync(fileURLToPath(new URL("../../GUIDON_COMMAND_LEGAL_PACKAGE.md", import.meta.url)),"utf8");
+expect(/guest join page/.test(legal) && !/The Study Rooms UI permanently states/.test(legal), "the review package describes BOTH Study Rooms screens (app and guest join page) instead of claiming one UI 'permanently states' the boundary");
+expect(/findings-only/.test(legal) && !/detected\/redacted locally/.test(legal) && !/hard-stopped/.test(legal) && !/blocked by the ingestion guard/.test(legal), "the review package describes the check as findings-only and no longer claims local redaction or an unqualified hard stop");
+expect(/are \*\*not\*\* recognized/.test(legal) && /Unlabelled ten-digit numbers/.test(legal), "the review package states which marking shapes are recognized and what is NOT detected");
+expect(legal.includes("DoDI 8510.01 — Risk Management Framework for DoD Systems"), "the review package cites DoDI 8510.01 by its current title");
 expect(!readFileSync(APP+"src/app-modules/05-opsec-guard.js","utf8").match(/fetch\s*\(|XMLHttpRequest|analytics|telemetry/i), "OPSEC guard introduces no outbound network/telemetry primitive");
 expect(!readFileSync(APP+"src/app-modules/06-opsec-cyber-curriculum.js","utf8").match(/fetch\s*\(|XMLHttpRequest|analytics|telemetry/i), "Cyber/OPSEC curriculum introduces no outbound network/telemetry primitive");
 
