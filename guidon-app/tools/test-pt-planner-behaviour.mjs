@@ -190,10 +190,14 @@ await section("2. Week view: focus, announcements and the hard:recovery panel", 
   f = await focusDesc();
   check(f !== "BODY", "...and focus is not dropped when the Undo button goes away (" + f + ")", "focus after Undo fell to <body>");
   // Drive the week over the guardrail: make every day hard.
+  // The flag turns on part-way through (at 6 hard : 1 recovery), so the
+  // announcement is read after EACH edit, not once at the end.
+  const spokenPerEdit = [];
   for (const k of ["sun", "mon", "tue", "thu", "sat"]) {
     await page.locator('select[data-pt-session="' + k + '"]').selectOption("strength");
     await until(async () => ((await storedPlan()) || {}).days[k].id === "strength");
-    await sleep(80);
+    await sleep(150);
+    spokenPerEdit.push(await live());
   }
   await sleep(150);
   const flagged = await page.evaluate(() => ({
@@ -203,8 +207,8 @@ await section("2. Week view: focus, announcements and the hard:recovery panel", 
   }));
   check(flagged.same && flagged.count === 1, "the hard:recovery panel is one persistent node that is updated in place", "status panel was rebuilt: " + JSON.stringify({ same: flagged.same, count: flagged.count }));
   check(/Flag:/.test(flagged.text) && /7 hard/.test(flagged.text), "seven hard days with no recovery or rest raises the flag", "ratio panel: " + flagged.text);
-  const liveFlag = await live();
-  check(/heads up/i.test(liveFlag), "the flag turning on is announced (\"" + liveFlag + "\")", "flag flip not announced: " + JSON.stringify(liveFlag));
+  const flips = spokenPerEdit.filter((t) => /heads up/i.test(t));
+  check(flips.length === 1 && /thursday/i.test(flips[0]), "the flag turning on is announced once, with the edit that caused it (\"" + flips[0] + "\")", "flag flip announcements: " + JSON.stringify(spokenPerEdit));
   await page.locator('select[data-pt-session="sun"]').selectOption("rest");
   await until(async () => ((await storedPlan()) || {}).days.sun.id === "rest");
   await sleep(150);
@@ -557,5 +561,6 @@ check(noise.length === 0, "no console errors/warnings or page errors in any cont
 console.log(fails === 0 ? "\nPT PLANNER BEHAVIOUR: all passed" : "\nPT PLANNER BEHAVIOUR: " + fails + " failed");
 await browser.close();
 server.close();
-try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) {}
+// Only the files this run wrote, then the (now empty) folder - never a recursive delete.
+try { for (const n of fs.readdirSync(tmpDir)) fs.unlinkSync(path.join(tmpDir, n)); fs.rmdirSync(tmpDir); } catch (e) {}
 process.exit(fails === 0 ? 0 : 1);
