@@ -4,6 +4,8 @@ All notable changes to GUIDON will be documented in this file. Format loosely fo
 
 ## 2026-09-19 - v1.12.1: audit fixes, one assembled content bank, and an honest release pipeline
 
+*Released 2026-09-19 for every platform. It replaces v1.11.0 and v1.12.0, which are recorded below as prepared only.*
+
 **Why this release exists.** v1.10.1, v1.11.0 and v1.12.0 were version-bumped on main between 2026-09-17 and 2026-09-18 but never cut: `.release-prep` never existed, the repository has no Actions secrets so CI could not sign Android, and only v1.10.0 had a tag - carrying Windows installers and nothing else, which left both in-app download buttons (`#/share`) returning 404. PRs #179, #182 and #183 were merged with red CI. A 66-agent audit of everything merged since 2026-09-15 confirmed 54 defects (9 high, 37 medium, 8 low); this release fixes them. v1.10.1 was published retroactively on 2026-09-18 from its original commit (signed Android APK/AAB and standalone file built locally; Windows and macOS attached by the tag's own CI run). **v1.11.0 and v1.12.0 were never released and are superseded by this version.**
 
 **Rights.** The bundled text of a named-author unit song shipped in v1.11.0's module with "user-supplied" as its only provenance. It is removed in full (the same standard that held the cadences back); four sourced heritage cards remain under Army History, and Recitation Drill gains **My unit** - a Soldier pastes their own unit song, creed or motto, stored only on the device. A rights gate now fails the build if any bundled full text lacks `{author, firstPublished, basis, evidence}`.
