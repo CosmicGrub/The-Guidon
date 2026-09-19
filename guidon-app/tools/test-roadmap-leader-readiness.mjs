@@ -348,6 +348,32 @@ programGapCoverage.every((x) => x.missing || (
   ? ok("each new Army-program card resolves to its governing regulation through the existing regulation grammar")
   : bad("Army-program regulation derivation: " + JSON.stringify(programGapCoverage));
 
+const supplyGapCoverage = await page.evaluate(() => {
+  const ids = ["supply-csdp-current-1","supply-statement-charges-7923","supply-statement-charges-use"];
+  const all = window.G.store.boardQuestions();
+  return ids.map((id) => {
+    const q = all.find((x) => x.id === id);
+    return q ? {
+      id,
+      category:q.category,
+      pillar:q.pillar,
+      regs:window.G.board.regulationsOf(q.source),
+      answer:q.boardAnswer || "",
+      points:q.keyPoints || []
+    } : { id, missing:true };
+  });
+});
+supplyGapCoverage.every((x) => !x.missing && x.category === "Supply & Property" && x.pillar === "Maintenance & Supply" && x.answer && x.points.length >= 3)
+  ? ok("current CSDP and DA Form 7923 coverage is present in Maintenance & Supply")
+  : bad("supply-discipline gap coverage: " + JSON.stringify(supplyGapCoverage));
+(supplyGapCoverage[0] && supplyGapCoverage[0].regs.includes("AR 710-4")) &&
+supplyGapCoverage.slice(1).every((x) => x && x.regs.includes("AR 735-5"))
+  ? ok("CSDP resolves to AR 710-4 and Statement-of-Charges cards resolve to AR 735-5")
+  : bad("supply-discipline regulation derivation: " + JSON.stringify(supplyGapCoverage));
+(supplyGapCoverage[1] && /DA Form 7923/.test(supplyGapCoverage[1].answer) && !/DD Form 362/.test(supplyGapCoverage[1].answer))
+  ? ok("current Statement-of-Charges board answer teaches DA Form 7923, not the retired DD Form 362 wording")
+  : bad("current Statement-of-Charges form assertion failed: " + JSON.stringify(supplyGapCoverage[1]));
+
 noise.length === 0 ? ok("no console errors/warnings across new roadmap surfaces") : bad(noise.length + " console messages; first: " + noise[0]);
 
 await browser.close();
