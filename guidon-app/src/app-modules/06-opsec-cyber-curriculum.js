@@ -260,7 +260,7 @@
        "Score: n / 10". Now every answer is followed by a feedback panel - right
        or not, the correct choice, why, and the source - which takes focus and
        is announced; "Next question" moves focus to the next question. */
-    var audit=el("div.panel",{style:"margin-top:10px"}); audit.appendChild(el("h3",{text:"10-question self-check"}));
+    var audit=el("div.panel",{style:"margin-top:10px"}); audit.appendChild(el("h3",{text:"10-question knowledge audit"})); /* the Guided Tour's text for this page calls it "the 10-question audit" */
     var body=el("div"); audit.appendChild(body); var idx=0,score=0,missed=[];
     function cardFor(item){ for(var i=0;i<cards.length;i++) if(cards[i][0]===item.card) return cards[i]; return null; }
     function focusOn(node){ try{ node.focus({preventScroll:false}); }catch(e){} }

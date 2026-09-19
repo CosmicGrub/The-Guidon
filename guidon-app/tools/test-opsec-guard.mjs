@@ -370,8 +370,8 @@ rs = await rosterState();
 rs.msg ? ok("(roster) the message is still there after a toast would have gone") : bad("(roster) the message vanished");
 await page.fill(nameSel, "JD");
 await page.press(nameSel, "Tab");
-await page.waitForTimeout(250);
-rs = await rosterState();
+// The save is an IndexedDB write; poll for it rather than trusting one fixed wait on a busy runner.
+for (let i = 0; i < 40; i++) { rs = await rosterState(); if (rs.savedName === "JD") break; await page.waitForTimeout(125); }
 (!rs.msg && rs.invalid === null && rs.savedName === "JD") ? ok("(roster) initials clear the message and save") : bad("(roster) after fixing: " + JSON.stringify(rs));
 await page.evaluate(async () => { await window.G.db.put("kv", { k: "guidon:leader:roster:v1", v: [] }); });
 

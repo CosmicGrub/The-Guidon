@@ -691,7 +691,7 @@ window.G = window.G || {};
 
       let lead;
       if (kind === "stop") lead = "Part of it looks like " + what + ". A personal study tool is not the place for marked material.";
-      else if (kind === "check") lead = "Part of it looks like " + what + ". GUIDON only needs the publication numbers (like AR 600-20) and does not save the rest of your text.";
+      else if (kind === "check") lead = "Part of it looks like " + what + ". GUIDON only looks for publication numbers (like AR 600-20). It keeps the topics it finds and your section headings, not the rest of your text.";
       else lead = "Your text includes " + what + ". GUIDON used the text only to find your publications — those details are not saved in your plan.";
       box.appendChild(el("p", { style: "margin:4px 0", text: lead }));
 
