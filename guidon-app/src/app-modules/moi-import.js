@@ -387,6 +387,10 @@ window.G = window.G || {};
     const stage = el("div");
     mount.appendChild(stage);
 
+    // What the sensitive-text check found in the import now in progress but
+    // did not stop on ({ findings } or null) - see mentionNotice() below.
+    let pendingNotice = null;
+
     let saved = null;
     try {
       const r = await G.db.get("kv", KEY);
@@ -452,6 +456,12 @@ window.G = window.G || {};
       head.appendChild(row);
       stage.appendChild(head);
       if (expanded) stage.appendChild(buildResultView(plan));
+      // A "heads up" from the import just finished that the Soldier has not
+      // dismissed yet follows them here (Build cleared the Review screen it
+      // was on, and View/Hide details redraws this whole function). On a
+      // routine later visit there is none: pendingNotice is per-import.
+      const heads = mentionNotice(() => head);
+      if (heads) stage.insertBefore(heads.node, stage.firstChild);
       // Roadmap audit lens (a11y, HIGH): matches review()'s own
       // tabindex="-1" + focus({preventScroll:true}) convention below - this
       // is an in-page state swap inside the SAME route (Delete's return to
@@ -608,32 +618,155 @@ window.G = window.G || {};
 
       const ta = el("textarea", { rows: "8", placeholder: "Paste MOI text here (or part of it — combine with an uploaded PDF above)…", "aria-label": "Paste MOI text" });
 
-      const findBtn = el("button.btn.primary", { type: "button", text: "Find my topics", style: "margin-top:10px" });
-      findBtn.addEventListener("click", () => {
+      // The sensitive-text notice gets a box of its own, right above the
+      // button that raised it. It used to share errorBox, which the file
+      // picker clears on every change - and the one notice that was written
+      // on the way to Review sat inside `stage`, which runMatching() clears
+      // as its first statement, so it was destroyed in the same tick it was
+      // written and no Soldier ever saw it.
+      const guardBox = el("div");
+      pendingNotice = null;
+
+      // G.opsecGuard only REPORTS (see 05-opsec-guard.js); it never changes
+      // the text. This screen decides what a report means, and the Soldier
+      // decides the rest:
+      //   stop  - real marking syntax. The text is not read. The notice names
+      //           the line and the pasted text stays exactly as typed, so it
+      //           can be fixed and tried again.
+      //   check - the import pauses and asks. "Continue" reads the text as is.
+      //   note  - routine contact details; the import carries on and Review
+      //           mentions them.
+      // The parser ALWAYS gets the original text. The earlier guard handed it
+      // a rewritten copy, and "AR 600-20 2020" arrived as "AR [SSN REDACTED]":
+      // the assigned regulation silently dropped out of the study plan.
+      function find(acknowledged) {
         const combined = [pdfText, ta.value].filter(Boolean).join("\n");
         if (!combined.trim()) { try { util.toast("Add some MOI text first — upload a PDF or paste text."); } catch (e) {} return; }
-        const screened = G.opsecGuard && G.opsecGuard.sanitizeInput ? G.opsecGuard.sanitizeInput(combined, { redactContact: true }) : { text: combined, blocked: false, requiresReview: false, redactions: [] };
-        if (screened.blocked || screened.requiresReview) {
-          errorBox.textContent = G.opsecGuard ? G.opsecGuard.decisionMessage(screened) : "Sensitive-looking input cannot be processed here.";
-          errorBox.hidden = false;
-          try { util.toast("MOI import stopped — review the OPSEC warning."); } catch (e) {}
+        const result = (G.opsecGuard && G.opsecGuard.screen) ? G.opsecGuard.screen(combined) : { findings: [], stop: false, check: false };
+        util.clear(guardBox);
+        if (result.stop || (result.check && !acknowledged)) {
+          const kind = result.stop ? "stop" : "check";
+          const notice = guardNotice(kind, result.findings.filter((f) => f.severity === kind), {
+            onContinue: () => find(true),
+            onBack: () => { util.clear(guardBox); try { ta.focus(); } catch (e) {} },
+          });
+          guardBox.appendChild(notice.node);
+          notice.focus();
           return;
         }
-        if (screened.redactions && screened.redactions.length) {
-          errorBox.textContent = G.opsecGuard.decisionMessage(screened);
-          errorBox.hidden = false;
-        }
-        runMatching(screened.text);
-      });
+        const mention = result.findings.filter((f) => f.severity !== "stop");
+        pendingNotice = mention.length ? { findings: mention } : null;
+        runMatching(combined);
+      }
+
+      const findBtn = el("button.btn.primary", { type: "button", text: "Find my topics", style: "margin-top:10px" });
+      findBtn.addEventListener("click", () => find(false));
 
       stage.appendChild(el("div.panel", { style: "margin-top:10px;border-left:3px solid var(--amber)" }, [
         el("div.eyebrow", { text: "Public / synthetic study material only" }),
-        el("p.hint", { text: "Do not paste or upload classified information, CUI, real operational orders/rosters, mission grids, or sensitive personnel data. GUIDON blocks marked sensitive material and flags likely aggregation risks before parsing; this screen is not a classification or public-release determination." }) ]));
+        el("p.hint", { text: "Do not paste or upload classified information, CUI, real operational orders/rosters, mission grids, or sensitive personnel data. GUIDON checks the text first and points out anything that looks like a marking, an ID number, or a real future date and place. It never changes what you pasted, and the check is not a classification or public-release decision." }) ]));
       stage.appendChild(el("div.panel", { style: "margin-top:10px" }, [
         el("div.eyebrow", { text: "Upload a PDF or text file" }), fileInput, fileStatus, errorBox ]));
       stage.appendChild(el("div.panel", { style: "margin-top:10px" }, [
         el("div.eyebrow", { text: "Or paste text" }), ta ]));
+      stage.appendChild(guardBox);
       stage.appendChild(findBtn);
+    }
+
+    // ---- Sensitive-text notice ----------------------------------------
+    // One builder for all three kinds so the wording stays consistent. The
+    // notice is an ordinary panel that stays on screen until the Soldier acts
+    // on it - never a toast, which is gone before a 40-word message can be
+    // read. Returns { node, focus } so the caller places it and then moves
+    // keyboard focus onto its heading (the same tabindex="-1" convention
+    // capture() and review() use for an in-page state swap).
+    function guardNotice(kind, findings, handlers) {
+      handlers = handlers || {};
+      const what = (G.opsecGuard && G.opsecGuard.listWhat) ? G.opsecGuard.listWhat(findings) : "sensitive details";
+      const box = el("div.panel", { "data-moi-guard": kind, style: "margin-top:10px;border-left:3px solid var(--amber)" });
+      const title = el("div.eyebrow", { tabindex: "-1", text:
+        kind === "stop" ? "GUIDON did not read this text" :
+        kind === "check" ? "Take a look before GUIDON reads this" : "Heads up" });
+      box.appendChild(title);
+
+      let lead;
+      if (kind === "stop") lead = "Part of it looks like " + what + ". A personal study tool is not the place for marked material.";
+      else if (kind === "check") lead = "Part of it looks like " + what + ". GUIDON only needs the publication numbers (like AR 600-20) and does not save the rest of your text.";
+      else lead = "Your text includes " + what + ". GUIDON used the text only to find your publications — those details are not saved in your plan.";
+      box.appendChild(el("p", { style: "margin:4px 0", text: lead }));
+
+      if (kind !== "note") {
+        const list = el("ul", { style: "margin:6px 0 6px 18px;padding:0" });
+        findings.slice(0, 5).forEach((f) => {
+          list.appendChild(el("li", { style: "margin:2px 0;overflow-wrap:anywhere", text: "Line " + f.line + ": “" + f.excerpt + "”" }));
+        });
+        if (findings.length > 5) list.appendChild(el("li", { style: "margin:2px 0", text: "…and " + (findings.length - 5) + " more." }));
+        box.appendChild(list);
+      }
+
+      if (kind === "stop") {
+        box.appendChild(el("p.hint", { text: "If this really is marked material, stop here and follow your unit's handling and reporting procedures. If it is only study text that talks about markings, take that line out and try again. Your text has not been changed or saved." }));
+      } else if (kind === "check") {
+        box.appendChild(el("p.hint", { text: "If this is a board date, a made-up example or a harmless detail, continue. If it is a real mission detail or someone's personal information, go back and take it out first. Your text has not been changed." }));
+      }
+
+      const row = el("div.btn-row", { style: "gap:8px;margin-top:6px" });
+      if (kind === "check") {
+        const go = el("button.btn.sm", { type: "button", text: "Continue" });
+        go.addEventListener("click", () => { if (handlers.onContinue) handlers.onContinue(); });
+        row.appendChild(go);
+      }
+      const back = el("button.btn.sm.ghost", { type: "button", text: kind === "note" ? "Dismiss" : (kind === "check" ? "Go back and edit" : "Dismiss") });
+      back.addEventListener("click", () => { if (handlers.onBack) handlers.onBack(); });
+      row.appendChild(back);
+      box.appendChild(row);
+
+      // Screen-reader users hear it too (G.util.announce is the app's one
+      // polite live region), with the first flagged line so the message is
+      // actionable without hunting for the list.
+      const spoken = title.textContent + ". " + lead + (kind !== "note" && findings[0] ? " Line " + findings[0].line + "." : "");
+      return {
+        node: box,
+        focus: () => { try { if (util.announce) util.announce(spoken); } catch (e) {} try { title.focus({ preventScroll: false }); } catch (e) {} },
+        announce: () => { try { if (util.announce) util.announce(spoken); } catch (e) {} },
+      };
+    }
+
+    // The "heads up" notice for what the check found but did not stop on.
+    // It stays until dismissed: shown on Review, and carried onto the result
+    // view by build() if the Soldier builds without dismissing it.
+    function mentionNotice(afterDismissFocus) {
+      if (!pendingNotice) return null;
+      const notice = guardNotice("note", pendingNotice.findings, {
+        onBack: () => {
+          pendingNotice = null;
+          if (notice.node.parentNode) notice.node.parentNode.removeChild(notice.node);
+          try { if (afterDismissFocus) afterDismissFocus().focus({ preventScroll: true }); } catch (e) {}
+        },
+      });
+      return notice;
+    }
+
+    // Only text the check found nothing in is ever written into the saved
+    // plan. The plan keeps two strings lifted from the MOI - a unit line and
+    // the section headings - and a POC line in capitals ("SSG DOE
+    // 270-555-0101") reads as a heading. Such a line is left out rather than
+    // rewritten: its topics fall under "General" instead.
+    function cleanForPlan(str) {
+      if (!str || !G.opsecGuard || !G.opsecGuard.screen) return str;
+      return G.opsecGuard.screen(str).findings.length ? null : str;
+    }
+    function cleanGroupsForPlan(groups) {
+      if (!groups) return groups;
+      const merged = [];
+      groups.forEach((g) => {
+        const heading = cleanForPlan(g.heading) || "General";
+        let b = merged.find((x) => x.heading === heading);
+        if (!b) { b = { heading: heading, topics: [] }; merged.push(b); }
+        (g.topics || []).forEach((t) => { if (b.topics.indexOf(t) === -1) b.topics.push(t); });
+      });
+      merged.forEach((b) => b.topics.sort());
+      return merged.length > 1 ? merged : null;
     }
 
     // ---- Matching placeholder -> Review -------------------------------
@@ -690,6 +823,12 @@ window.G = window.G || {};
       stage.appendChild(h3);
       stage.appendChild(el("p.hint", { text:
         matched.length + " matched · " + needsReview.length + " need a look · " + notFound.length + " not found" }));
+
+      // Added AFTER this function's own util.clear(stage) above, so it is
+      // still here when the Soldier looks (the same wiped-before-it-painted
+      // trap build() documents for its "Not saved" warning).
+      const heads = mentionNotice(() => h3);
+      if (heads) { stage.appendChild(heads.node); heads.announce(); }
 
       // Segmented filter - reuses this app's existing .segmented/
       // aria-pressed toggle convention (11+ existing sites, grep
@@ -895,12 +1034,12 @@ window.G = window.G || {};
       });
 
       const plan = {
-        name: detectMoiName(sourceText) || ("MOI imported " + new Date().toLocaleDateString()),
+        name: cleanForPlan(detectMoiName(sourceText)) || ("MOI imported " + new Date().toLocaleDateString()),
         importedAt: Date.now(),
         topics: topicNames,
         topicCoverage: topicCoverage,
         topicLinks: topicLinks,
-        groups: detectGroups(sourceText, topicNames), // [{heading, topics}] or null -> alphabetical fallback in buildResultView
+        groups: cleanGroupsForPlan(detectGroups(sourceText, topicNames)), // [{heading, topics}] or null -> alphabetical fallback in buildResultView
         generatedDrillCategories: genDrill ? Array.from(boardCatsForDrill) : [],
       };
 

@@ -331,7 +331,30 @@ window.G = window.G || {};
           list: mosListId, maxlength: 6,
           "aria-label": "MOS for roster entry " + (idx + 1), style: "width:80px" });
         rankIn.addEventListener("change", function () { sol.rank = rankIn.value.trim().toUpperCase(); persist(); buildSummary(); });
-        nameIn.addEventListener("change", function () { const candidate = nameIn.value.trim(); const screened = G.opsecGuard && G.opsecGuard.sanitizeInput ? G.opsecGuard.sanitizeInput(candidate, { redactContact: true }) : { text:candidate, blocked:false, requiresReview:false, redactions:[] }; if (screened.blocked || screened.requiresReview || (screened.redactions && screened.redactions.length)) { nameIn.value = sol.name || ""; try { util.toast(G.opsecGuard ? G.opsecGuard.decisionMessage(screened) : "Use only initials, a callsign, or a roster number."); } catch (e) {} return; } sol.name = screened.text; persist(); buildSummary(); });
+        // Sensitive-text check on the roster's one free-text field. It used to
+        // put the old value back and flash a two-second toast written for MOI
+        // import ("GUIDON stopped this import...", "redacted ... before use") -
+        // the Soldier watched their typing vanish, the words described
+        // something that had not happened, and nothing stayed on screen to
+        // explain it. Now the typed text stays exactly as typed (the check
+        // never edits anything), the entry is simply not saved, and a plain
+        // message sits under the field until the entry is fixed.
+        const nameMsg = el("p.feedback.warn", { id: "roster-name-msg-" + idx, "data-roster-name-msg": String(idx), style: "margin:6px 0 0;display:none" });
+        nameIn.addEventListener("change", function () {
+          const candidate = nameIn.value.trim();
+          const found = (G.opsecGuard && G.opsecGuard.screen) ? G.opsecGuard.screen(candidate).findings : [];
+          if (found.length) {
+            nameMsg.textContent = "Not saved — that looks like " + G.opsecGuard.listWhat(found) + ". Use initials, a callsign, or a roster number instead.";
+            nameMsg.style.display = "";
+            nameIn.setAttribute("aria-invalid", "true");
+            nameIn.setAttribute("aria-describedby", nameMsg.id);
+            try { if (util.announce) util.announce(nameMsg.textContent); } catch (e) {}
+            return;
+          }
+          nameMsg.textContent = ""; nameMsg.style.display = "none";
+          nameIn.removeAttribute("aria-invalid"); nameIn.removeAttribute("aria-describedby");
+          sol.name = candidate; persist(); buildSummary();
+        });
         mosIn.addEventListener("change", function () { sol.mos = mosIn.value.trim().toUpperCase(); persist(); });
         head.appendChild(rankIn); head.appendChild(mosIn); head.appendChild(nameIn);
 
@@ -355,6 +378,7 @@ window.G = window.G || {};
         });
         head.appendChild(del);
         card.appendChild(head);
+        card.appendChild(nameMsg);
 
         // .panel-grid-2 (>=600px, see index.html) lays the 4 date fields out
         // 2x2 on a Fold5/tablet-class screen instead of 4 full-width rows -
