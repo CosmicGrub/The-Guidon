@@ -70,6 +70,18 @@ both are tested.
 
 ## Rules worth not relearning
 
+- **Never type a content count.** How many cards, doctrine entries, scenarios, terms
+  or MOS entries the app holds lives in one generated, committed file:
+  `tools/content-manifest.json`. After any content change run
+  `node tools/content-manifest.mjs --write` and commit the result with it;
+  `npm run lint:patterns` fails, naming each figure, if you forget. A count may rise
+  freely. If one FELL - a total, a board category, a doctrine topic - `--write`
+  refuses until you say why: `--write --allow-shrink "<reason>"` records the drop and
+  the reason in the file, so content never goes missing quietly (the ESP32 handheld
+  once shipped 61 cards short and nothing noticed). Suites and tools
+  `import { loadManifest }` instead of carrying a number; the card exporter checks its
+  export against the same file; README and the project map carry a generated block.
+  `node tools/content-manifest.mjs --figures` prints the live figures any time.
 - **Never anchor a build edit on `</body>`.** Markup-shaped strings live inside the
   JS in this file; the print-summary code emits a literal `</body></html>`. Anchor on
   the document terminator. Every replacement in `tools/build.mjs` fails loudly if it

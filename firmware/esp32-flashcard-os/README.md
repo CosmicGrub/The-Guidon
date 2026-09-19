@@ -46,6 +46,14 @@ See [`tools/extract-cards.mjs`](tools/extract-cards.mjs)'s own header for
 the on-SD format and why it's shaped the way it is (streamed one card at
 a time, never loaded whole).
 
+The exporter checks what it is about to write against the app's committed
+content manifest (`guidon-app/tools/content-manifest.json`: total cards,
+cards per category, the bank fingerprint). If the deck is short, long or a
+different bank, it stops, says which figure is off, and writes nothing - a
+handheld once shipped 61 cards behind the app without anyone noticing. If
+the app's content really did change, regenerate the manifest first:
+`cd guidon-app && node tools/content-manifest.mjs --write`.
+
 Getting those two files onto the device's actual microSD card doesn't
 require a separate SD card reader — it goes over the same USB-serial
 link used for flashing:

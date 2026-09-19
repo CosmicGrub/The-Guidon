@@ -311,6 +311,12 @@ function main() {
 
   console.log("content-manifest: the committed content figures vs the live assembled bank" + (WRITE ? " (--write)" : "") + "\n");
   if (unknown.length) { bad(`unknown option ${unknown.join(", ")} (known: ${KNOWN.join(" ")})`); finish(); }
+  // A stand-in flag that lost its value must never fall back to the REAL
+  // manifest or the REAL bank - with --write that would rewrite the committed
+  // file from a test. Same for a reason offered where nothing can record it.
+  const valueless = ["--manifest", "--seed", "--modules", "--docs-root", "--base", "--base-ref"].filter((f) => has(f) && !argOf(f));
+  if (valueless.length) { bad(`${valueless.join(", ")} needs a value - nothing compared, nothing written`); finish(); }
+  if (has("--allow-shrink") && !WRITE) { bad('--allow-shrink only means something together with --write (the lint never records anything)'); finish(); }
 
   /* ---- the live bank ---- */
   const bankOpts = {};

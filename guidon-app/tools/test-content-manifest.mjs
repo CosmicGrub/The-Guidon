@@ -189,6 +189,12 @@ try {
   rmSync(path.join(MODULES, "02-broken-pack.js"));
   r = run("--wirte");
   check(r.code === 1 && /unknown option --wirte/.test(r.out), "a mistyped option fails instead of quietly running the lint");
+  // A stand-in flag with its value missing must not fall back to the REAL file.
+  const realBefore = readFileSync(MANIFEST_PATH, "utf8");
+  const lost = spawnSync(process.execPath, [TOOL, "--seed", SEED, "--modules", MODULES, "--manifest", "--write"], { encoding: "utf8" });
+  check(lost.status === 1 && /--manifest needs a value/.test(lost.stdout || "") && readFileSync(MANIFEST_PATH, "utf8") === realBefore, "--manifest with its value missing stops before anything is compared or written - a stand-in bank can never be written over the committed manifest", "valueless --manifest: exit " + lost.status + " realChanged=" + (readFileSync(MANIFEST_PATH, "utf8") !== realBefore) + "\n" + lost.stdout);
+  r = run("--allow-shrink", REASON);
+  check(r.code === 1 && /only means something together with --write/.test(r.out), "--allow-shrink without --write fails: the lint never records anything");
 
   /* ---------------------------------------------------------------- --base: the review ratchet */
   console.log("\n--base holds a review to the same rule");
