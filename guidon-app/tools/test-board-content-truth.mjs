@@ -175,6 +175,18 @@ console.log("\nC40/U31/U28 - the bank teaches one answer, from the current editi
   const found = await page.evaluate(() => G.store.doctrine("Command Supply Discipline").map((d) => ({ id: d.id, ref: d.source && d.source.ref })));
   (found.length >= 1 && found.every((d) => !/710-2/.test(d.ref || ""))) ? ok("a doctrine search for the CSDP returns only AR 710-4 entries") : bad("doctrine search: " + JSON.stringify(found));
 
+  /* (3b) Hand-receipt and inventory rules moved from the 2008 AR 710-2 to AR 710-4 (15 Apr 2026): Table 16-1, Table 1-1, para 4-7. */
+  const moved = ["prop-5", "prop-6", "prop-7"].map((id) => bank.find((q) => q.id === id));
+  moved.every((q) => q && /AR 710-4 \(15 Apr 2026\)/.test(q.source) && !/AR 710-2/.test(q.boardAnswer)) ? ok("prop-5 / prop-6 / prop-7 cite AR 710-4 (15 Apr 2026), not the 2008 AR 710-2's Table 2-2 and glossary") : bad("still on the 2008 AR 710-2: " + moved.filter((q) => !q || !/AR 710-4/.test(q.source)).map((q) => q && q.id).join(", "));
+  const std = bank.filter((q) => /management level/i.test(allText(q)) && /95\s*[–-]\s*100%/.test(allText(q).replace(/superseded edition allowed 95% to 100%/g, "")));
+  std.length === 0 ? ok("the inventory accuracy standard is taught as 98% to 100% (AR 710-4 Table 1-1), nowhere as the old 95-100%") : bad("cards still teaching a 95-100% management level: " + std.map((q) => q.id).join(", "));
+  /* A ratchet, not a finish line: the seed cards below still cite AR 710-2 for property-book rules and are NOT yet re-derived.
+     The list may only shrink. (92A cards cite the CURRENT AR 710-2 for supply support activity rules - that is correct.) */
+  const KNOWN_STALE_7102 = ["bq-prop-02", "bq-prop-03", "bq-prop-04", "prop-10", "phys-sec-004", "pat-6"];
+  const cites7102 = bank.filter((q) => /AR 710-2\b(?! \(1 Jul 2024\))/.test(q.source) && !/^92A/.test(q.category)).map((q) => q.id);
+  const fresh = cites7102.filter((id) => !KNOWN_STALE_7102.includes(id));
+  fresh.length === 0 ? ok(`no new card cites the old AR 710-2 for property accountability (${cites7102.length} known ones still to re-derive: ${cites7102.join(", ")})`) : bad("cards citing AR 710-2 that are not on the known list: " + fresh.join(", "));
+
   /* (4) No pack card restates a seed card: the twins are gone and their ids are not. */
   ["prog-acs-2", "prog-sudcc-1"].every((id) => !bank.find((q) => q.id === id)) ? ok("the two pack cards that restated acs-1 / sudcc-1 are gone") : bad("twin still in the bank");
   ["acs-1", "sudcc-1"].every((id) => bank.find((q) => q.id === id)) ? ok("...and the older ids they were folded into are still there (study history survives)") : bad("acs-1 / sudcc-1 missing");
