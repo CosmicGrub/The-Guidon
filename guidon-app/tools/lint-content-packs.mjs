@@ -18,7 +18,8 @@
  *   - a second "New" wave started by a pack, or a wave id that no
  *     longer exists                                              -> rule (p9)
  *
- * A pack is any src/app-modules file named NN-*.js. The contract: it must be
+ * A pack is any src/app-modules file whose manifest.json entry says
+ * "headless": true (tools/module-manifest.mjs). The contract: it must be
  * loadable with no DOM (it runs before the app boots anyway); it may extend
  * window.GUIDON_SEED and hang things off window.G.
  */
@@ -37,9 +38,9 @@ const B = r.data.board.questions, D = r.data.doctrine.entries, S = r.data.scenar
 const packB = B.filter((q) => q.__pack), packD = D.filter((e) => e.__pack), packS = S.filter((s) => s.__pack);
 const from = (x) => `${x.id} [${x.__pack}]`;
 
-// (p1) every numbered module loads headlessly, cleanly.
+// (p1) every headless module (manifest.json) loads with no page, cleanly.
 const broken = r.modules.filter((m) => m.error);
-broken.length === 0 ? ok(`(p1) all ${r.modules.length} numbered modules load with no DOM and no error`) : bad(`(p1) module(s) failed to load headlessly: ${show(broken.map((m) => m.file + ": " + m.error), 4)}`);
+broken.length === 0 ? ok(`(p1) all ${r.modules.length} headless modules (src/app-modules/manifest.json) load with no DOM and no error`) : bad(`(p1) module(s) failed to load headlessly: ${show(broken.map((m) => m.file + ": " + m.error), 4)}`);
 const errLogs = r.logs.filter((l) => l.startsWith("error:"));
 errLogs.length === 0 ? ok("(p1) no pack wrote to console.error while loading") : bad(`(p1) pack console.error output: ${show(errLogs, 3)}`);
 

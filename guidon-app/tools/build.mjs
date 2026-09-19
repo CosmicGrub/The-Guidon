@@ -4,7 +4,8 @@
  * Two sources - src/index.html (the app shell: nav, routing, and every module
  * that hasn't been split out) PLUS every *.js file in src/app-modules/ (a
  * module per file, spliced in as its own <script> block right before
- * </body> - see "app modules" below) - produce two artifacts, because the
+ * </body>, in the order src/app-modules/manifest.json declares - see "app
+ * modules" below) - produce two artifacts, because the
  * project has two distribution promises to keep:
  *
  *   dist/guidon-standalone.html
@@ -501,6 +502,39 @@ function assertRouteModulesPresent(html, label) {
   }
 }
 
+/**
+ * The <script> blocks for every src/app-modules file, in load order (both
+ * builds splice this in right before </body>).
+ *
+ * ORDER comes from src/app-modules/manifest.json, not from file names. Until
+ * 2026-09 this was a plain alphabetical readdir(), which made load order a
+ * side effect of "00-"/"98-" prefixes and meant a module only worked if its
+ * name happened to sort after what it called. The manifest states the order
+ * and each module's requires; loadModules() refuses - naming the file - when
+ * a *.js file in the folder is not listed (it would otherwise silently stop
+ * shipping), a listed file is missing, ids or files repeat, or a "requires"
+ * is unknown or loads later. tools/assemble-bank.mjs reads the same list, so
+ * the headless bank can never disagree with the page about which modules
+ * exist.
+ *
+ * Exported (and main() honours GUIDON_APP_MODULE_DIR) only so
+ * tools/test-module-manifest.mjs can prove, against stand-in folders, that
+ * the order really is the manifest's and that a refusal really stops the
+ * build; nothing else passes a different folder.
+ */
+async function assembleAppModules(appModuleDir) {
+  const { loadModules } = await import("./module-manifest.mjs");
+  const appModuleFiles = loadModules(appModuleDir).files;
+  // The six-pillar taxonomy (tools/pillar-map.mjs, the ONE definition) as
+  // plain data for the running app - see 98-content-pack-finalize.js.
+  const { runtimePillarMap } = await import("./pillar-map.mjs");
+  let appModules = `<script>\nwindow.GUIDON_PILLAR_MAP = ${JSON.stringify(runtimePillarMap()).replace(/</g, "\\u003c")};\n</script>\n`;
+  for (const f of appModuleFiles) {
+    appModules += `<script>\n${await readFile(join(appModuleDir, f), "utf8")}\n</script>\n`;
+  }
+  return appModules;
+}
+
 /* The guidon mark as a compact inline SVG, so the favicon matches the app icon
    in every build including the standalone one. */
 const FAVICON_SVG =
@@ -639,15 +673,10 @@ async function main() {
      shell so every G.* dependency already exists; ROUTES may reference them
      because its render callbacks are lazy arrow functions, and the shell defers
      app.start() to DOMContentLoaded, which fires after these run. */
-  const appModuleDir = "src/app-modules";
-  const appModuleFiles = (await readdir(appModuleDir).catch(() => [])).filter((f) => f.endsWith(".js")).sort();
-  // The six-pillar taxonomy (tools/pillar-map.mjs, the ONE definition) as
-  // plain data for the running app - see 98-content-pack-finalize.js.
-  const { runtimePillarMap } = await import("./pillar-map.mjs");
-  let appModules = `<script>\nwindow.GUIDON_PILLAR_MAP = ${JSON.stringify(runtimePillarMap()).replace(/</g, "\\u003c")};\n</script>\n`;
-  for (const f of appModuleFiles) {
-    appModules += `<script>\n${await readFile(join(appModuleDir, f), "utf8")}\n</script>\n`;
-  }
+  // Order and membership come from src/app-modules/manifest.json - see
+  // assembleAppModules(). It throws (naming the file) before anything below
+  // is written, so a bad manifest never leaves a half-built web/ or dist/.
+  const appModules = await assembleAppModules(process.env.GUIDON_APP_MODULE_DIR || "src/app-modules");
 
   /* =========================================================== standalone */
   // Identical to source apart from a favicon that matches the real app icon,
@@ -930,4 +959,4 @@ if (isMain) {
   main().catch((e) => { console.error(String(e.message || e)); process.exit(1); });
 }
 
-export { deriveThemeIds, main };
+export { deriveThemeIds, assembleAppModules, main };

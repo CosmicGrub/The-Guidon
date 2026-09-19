@@ -34,7 +34,7 @@
  * did not declare) is tools/test-module-contract.mjs's job.
  */
 import { readdirSync, readFileSync, existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { join } from "node:path";
 
 export const APP_MODULE_DIR = fileURLToPath(new URL("../src/app-modules/", import.meta.url));
@@ -151,7 +151,8 @@ export function loadModules(dir = APP_MODULE_DIR) {
 }
 
 // CLI: node tools/module-manifest.mjs [--dir <app-modules folder>]  -> prints the load order, exits 1 on a problem.
-if (process.argv[1] && /module-manifest\.mjs$/.test(process.argv[1].replace(/\\/g, "/"))) {
+// (pathToFileURL, not a file-name match: tools/test-module-manifest.mjs ends in the same letters.)
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const i = process.argv.indexOf("--dir");
   const dir = i > 0 && process.argv[i + 1] ? process.argv[i + 1] : APP_MODULE_DIR;
   try {

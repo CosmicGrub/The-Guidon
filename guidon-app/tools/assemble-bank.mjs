@@ -14,36 +14,43 @@
  * and the study-room bank fingerprint each hard-coded WHICH packs exist and
  * silently drifted (the handheld deck was 61 cards short).
  *
- * The fix is not another list of module names. It is this: evaluate every
- * numbered module exactly the way the page does (same alphabetical order
- * tools/build.mjs injects them in), headlessly, against a parsed copy of the
- * seed - and hand the RESULT to every tool. A new pack is covered the moment
- * its file exists; nothing has to be registered anywhere.
+ * The fix is not another list of module names kept by this tool. It is this:
+ * evaluate every headless module exactly the way the page does (same order
+ * tools/build.mjs injects them in), with no browser, against a parsed copy of
+ * the seed - and hand the RESULT to every tool.
  *
- * The contract this imposes on a content pack (enforced by
- * tools/lint-content-packs.mjs): a numbered module must be loadable with no
- * DOM - it may read and extend window.GUIDON_SEED and hang things off
- * window.G at load, and must defer anything that needs the page (routes,
- * views, listeners) to DOMContentLoaded or a function called later. Every
- * pack written so far already works this way, because they all have to run
- * before the app boots.
+ * WHICH files, and in WHAT order, comes from src/app-modules/manifest.json
+ * through tools/module-manifest.mjs - the same reader the build uses, so the
+ * two cannot disagree. (This tool used to pick "files whose name starts with
+ * two digits" and sort them itself: a second, implicit copy of the load
+ * order.) A module is evaluated here when its entry says "headless": true;
+ * the manifest check refuses a content pack or the finalize pass that is not,
+ * and the build refuses a file that is not listed at all - so a new pack is
+ * still covered the moment it can ship.
+ *
+ * The contract this imposes on a headless module (enforced by
+ * tools/lint-content-packs.mjs): it must be loadable with no DOM - it may
+ * read and extend window.GUIDON_SEED and hang things off window.G at load,
+ * and must defer anything that needs the page (routes, views, listeners) to
+ * DOMContentLoaded or a function called later. Every pack written so far
+ * already works this way, because they all have to run before the app boots.
  */
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import vm from "node:vm";
 import { readSeed } from "./seed-io.mjs";
 import { runtimePillarMap } from "./pillar-map.mjs";
+import { loadModules, APP_MODULE_DIR } from "./module-manifest.mjs";
 
 export const SEED_PATH = fileURLToPath(new URL("../src/index.html", import.meta.url));
-export const APP_MODULE_DIR = fileURLToPath(new URL("../src/app-modules/", import.meta.url));
+export { APP_MODULE_DIR };
 
-/** Numbered modules, in the exact order tools/build.mjs injects them (plain
- *  .sort() over the directory listing). Un-numbered files are feature
- *  modules (calendar.js, studygroup.js ...) that need the running app and
- *  never add content at load. */
+/** The modules evaluated headlessly, in manifest (= build) order. Throws,
+ *  naming the file, if the manifest and the folder disagree - a bank
+ *  assembled from a list the build would refuse is not worth linting. */
 export function contentPackFiles(dir = APP_MODULE_DIR) {
-  return readdirSync(dir).filter((f) => f.endsWith(".js")).sort().filter((f) => /^\d\d-/.test(f));
+  return loadModules(dir).headlessFiles;
 }
 
 const counts = (d) => ({
