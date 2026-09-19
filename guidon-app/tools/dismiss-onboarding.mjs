@@ -61,8 +61,9 @@ const OVERLAY_PRESENT_JS = () => !!document.querySelector("#ob-overlay");
    placeholder is gone" happens-after the decision, regardless of how long
    the IndexedDB read actually took; unlike SHELL_READY_JS it can't fire
    before the decision exists. See dismissOnboarding()'s own comment for how
-   this is used. */
-const BOOT_DECIDED_JS = () => {
+   this is used. Exported so tools/testkit.mjs waits on this SAME signal when
+   it seeds a profile instead of keeping a second copy of the predicate. */
+export const BOOT_DECIDED_JS = () => {
   const r = document.getElementById("route");
   return !r || !/Loading GUIDON/.test(r.textContent || "");
 };
