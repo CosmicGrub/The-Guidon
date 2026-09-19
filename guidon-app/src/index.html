@@ -27843,6 +27843,17 @@ window.G = window.G || {};
     // separate mechanism that had no entry, so a malformed roster row was
     // invisible to both backup-import validation and the live kvscan.
     "guidon:leader:roster:v1": function (v) { return Array.isArray(v) && v.every(function (s) { return s && typeof s === "object"; }); },
+    // PT Planner's two rows and Team Training's one shipped with no entry
+    // here: they rode every backup export/import unchecked and were
+    // invisible to Diagnostics' live "Data validity scan". Same shape-only
+    // rigor as the rest of this table, matched to what each reader needs -
+    // pt-planner.js rebuilds a plan from `days` (its own normalizePlan()
+    // cleans every field inside it), keys each completed-PT row by its
+    // `date`, and team-training.js indexes a plain object of per-exercise
+    // counts.
+    "prt:plan:v1": function (v) { return !!v && typeof v === "object" && !Array.isArray(v) && !!v.days && typeof v.days === "object" && !Array.isArray(v.days); },
+    "pt:history:v1": function (v) { return Array.isArray(v) && v.every(function (r) { return r && typeof r === "object" && typeof r.date === "string"; }); },
+    "team:training:v1": function (v) { return !!v && typeof v === "object" && !Array.isArray(v); },
   };
   // Exact-string-keyed KV_VALIDATORS above can never validate a
   // dynamically-keyed family like "srs:<questionId>" - one row per board
