@@ -29,6 +29,7 @@ import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { declaredNavRoutes } from "./declared-routes.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { openAsOwner } from "./device-storage.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -55,7 +56,10 @@ const noise = [];
   // contexts have it at 700 ms), so a timed click found nothing, the
   // overlay stayed up and the next real click timed out behind it
   // (2 of 5 runs). Same idiom as tools/dismiss-onboarding.mjs.
-  await dismissOnboarding(page);
+  // A real profile, not a Guest session: what this suite checks is kept on the
+  // device, and a Guest session saves nothing (the storage contract - see
+  // tools/device-storage.mjs and test-guest-saves-nothing.mjs).
+  await openAsOwner(page, url);
   await page.waitForTimeout(700);
 
   const navState = await page.evaluate(() => {
@@ -268,7 +272,7 @@ const noise = [];
   // contexts have it at 700 ms), so a timed click found nothing, the
   // overlay stayed up and the next real click timed out behind it
   // (2 of 5 runs). Same idiom as tools/dismiss-onboarding.mjs.
-  await dismissOnboarding(page);
+  await openAsOwner(page, url);
   await page.waitForTimeout(700);
 
   const sidebar = await page.evaluate(() => ({
@@ -379,7 +383,7 @@ const noise = [];
   page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push("[landscape] " + m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("[landscape] pageerror: " + e.message));
   await page.goto(url, { waitUntil: "load" });
-  await dismissOnboarding(page);
+  await openAsOwner(page, url);
   await page.waitForTimeout(700);
 
   const navShape = () => page.evaluate(() => ({

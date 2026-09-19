@@ -25,6 +25,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { openAsOwner } from "./device-storage.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -36,6 +37,12 @@ const browser = await chromium.launch();
 async function bootGuest(page) {
   await page.goto(url, { waitUntil: "load" });
   await dismissOnboarding(page);
+}
+// The two cases that RELOAD and expect a motion choice to have been kept run as
+// a real profile: a Guest session saves nothing, settings included (the storage
+// contract - tools/device-storage.mjs). The fresh-install cases stay a Guest.
+async function bootOwner(page) {
+  await openAsOwner(page, url);
 }
 
 /* ---- (1) Fresh install, OS reduce-motion ON, never touched Settings -
@@ -102,7 +109,7 @@ async function bootGuest(page) {
   const noise = [];
   page.on("console", (m) => { if (["error", "warning"].includes(m.type())) noise.push(m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
-  await bootGuest(page);
+  await bootOwner(page);
   // Precondition: before any explicit choice, OS reduce-motion still wins.
   const before = await page.evaluate(() => document.documentElement.getAttribute("data-motion"));
   before === "minimal"
@@ -154,7 +161,7 @@ async function bootGuest(page) {
   const noise = [];
   page.on("console", (m) => { if (["error", "warning"].includes(m.type())) noise.push(m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
-  await bootGuest(page);
+  await bootOwner(page);
 
   // Seed a minimal "legacy" settings row directly at the DB layer -
   // bypassing store.setSetting (which merges into the already-fully-keyed

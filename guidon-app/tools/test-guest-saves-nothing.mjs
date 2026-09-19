@@ -34,6 +34,9 @@
  * The practice text was written for this test. It is nobody's song.
  */
 import { chromium } from "playwright";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 import { deviceDump, deviceKvGet, putOnDevice, seedOwnerProfile } from "./device-storage.mjs";
@@ -269,8 +272,40 @@ for (const kind of ["guest", "kiosk"]) {
   const afterImport = JSON.stringify(await deviceDump(page));
   check(imported > 0 && afterImport === before, who + ": restoring a backup inside the session (" + imported + " items) still leaves the device untouched", who + ": a restore inside the session wrote to the device. " + describeDiff(before, afterImport));
 
+  // ...and the real Import button does not pretend: it would otherwise say
+  // "Restored", reload, and be gone. It says why not, and where to go.
+  const backupFile = path.join(os.tmpdir(), "guidon-guest-import-" + kind + "-" + Date.now() + ".json");
+  fs.writeFileSync(backupFile, JSON.stringify(await page.evaluate(() => window.G.backup.exportAll())));
+  await go(page, "#/profile", ".backup-panel");
+  await page.locator(".backup-panel button", { hasText: /Import backup/ }).click();
+  await page.locator('.backup-panel input[type="file"]').setInputFiles(backupFile);
+  await page.waitForFunction(() => ((document.querySelector(".backup-status") || {}).textContent || "").length > 0, null, { timeout: 6000 }).catch(() => {});
+  const importSays = await page.evaluate(() => ({ status: (document.querySelector(".backup-status") || {}).textContent || "", asked: !!document.querySelector(".gm-box") }));
+  check(/nothing is saved in a Guest or Kiosk session/.test(importSays.status) && /Personal Account/.test(importSays.status) && !importSays.asked,
+    who + ": the Import backup button explains, in plain words, that nothing can be restored here and what to do instead",
+    who + ": Import backup inside the session said: " + JSON.stringify(importSays));
+  try { fs.unlinkSync(backupFile); } catch (e) {}
+
+  if (kind === "kiosk") {
+    // The Focus-tier picker used to write the Kiosk profile straight to the
+    // device (its own db.put, past saveProfile()'s guard) - one more caller
+    // that no longer has to remember the rule.
+    await go(page, "#/settings", 'select[aria-label^="Focus tier"]');
+    await page.locator('select[aria-label^="Focus tier"]').selectOption("E6");
+    const cont = page.locator(".gm-box button", { hasText: /^Continue$/ });
+    try { await cont.waitFor({ state: "visible", timeout: 1500 }); await cont.click(); await page.locator(".gm-box").waitFor({ state: "detached", timeout: 3000 }); } catch (e) { /* not asked */ }
+    await page.waitForTimeout(600);
+    const tierNow = await page.evaluate(() => window.G.store.settings().tierFilter);
+    const afterTier = JSON.stringify(await deviceDump(page));
+    check(tierNow === "E6" && afterTier === before, "Kiosk: changing the Focus tier works for the session and leaves the device untouched (it used to save the Kiosk profile)", "Kiosk: Focus tier change: tier=" + tierNow + ". " + describeDiff(before, afterTier));
+  }
+
   if (kind === "guest") {
-    // Close and reopen.
+    // Close and reopen. (From Home: reopening ON the Profile screen with no
+    // profile draws a second copy of the welcome wizard inside that screen,
+    // underneath the real one, and the helper would click the hidden copy.)
+    await page.evaluate(() => { location.hash = "#/home"; });
+    await page.waitForTimeout(150);
     await page.reload({ waitUntil: "load" });
     await bootDecided(page);
     await page.waitForSelector("#ob-overlay", { timeout: 8000 });

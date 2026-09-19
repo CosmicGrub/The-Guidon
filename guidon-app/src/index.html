@@ -28621,6 +28621,15 @@ window.G = window.G || {};
   // so every caller handles the same three outcomes the same way.
   function confirmAndImportFile(file) {
     return new Promise(function (resolve) {
+      // A Guest or Kiosk session saves nothing (db section, "Session-only
+      // storage"), so a restore made from inside one would say "Restored",
+      // reload, and be gone - the worst possible answer to give someone
+      // moving to a new phone. Say so before anything is read, and say
+      // where to go instead. Both restore screens show this as it is.
+      if (G.db.session && G.db.session.active()) {
+        resolve({ status: "error", message: "nothing is saved in a Guest or Kiosk session, so a backup can't be restored here. Open Profile, choose “Switch account or mode”, set up a Personal Account, and import your backup there." });
+        return;
+      }
       var reader = new FileReader();
       reader.onload = function () {
         var obj;

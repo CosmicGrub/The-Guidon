@@ -178,3 +178,23 @@ export async function openAsOwner(page, url, overrides = {}) {
   if (overlay) throw new Error("openAsOwner: the welcome screen is still showing after seeding a real profile and reloading");
   return profile;
 }
+
+/**
+ * For a page that is ALREADY loaded: make sure it is running as a real
+ * profile. If the app came up on the welcome screen (nothing on the device
+ * yet), put the owner profile on the device and reload; if a profile was
+ * already there (a second page at the same origin), do nothing.
+ */
+export async function ensureOwner(page, { timeoutMs = 15000, overrides = {} } = {}) {
+  const decided = () => !!(window.G && window.G.store && window.G.db) && !/Loading GUIDON/.test((document.getElementById("route") || {}).textContent || "");
+  await page.waitForFunction(decided, null, { timeout: timeoutMs });
+  // The welcome screen is attached one animation frame after the decision.
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  if (!(await page.locator("#ob-overlay").count())) return { seeded: false };
+  await seedOwnerProfile(page, overrides);
+  await page.reload({ waitUntil: "load" });
+  await page.waitForFunction(decided, null, { timeout: timeoutMs });
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  if (await page.locator("#ob-overlay").count()) throw new Error("ensureOwner: the welcome screen is still showing after seeding a real profile and reloading");
+  return { seeded: true };
+}

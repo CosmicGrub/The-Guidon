@@ -28,6 +28,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { openAsOwner } from "./device-storage.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -42,7 +43,10 @@ page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 
 await page.goto(url, { waitUntil: "load" });
 await page.waitForTimeout(700);
-await dismissOnboarding(page);
+// A real profile, not a Guest session: what this suite checks is kept on the
+// device, and a Guest session saves nothing (the storage contract - see
+// tools/device-storage.mjs and test-guest-saves-nothing.mjs).
+await openAsOwner(page, url);
 await page.waitForTimeout(300);
 
 await page.evaluate(() => { location.hash = "#/settings"; });
@@ -550,12 +554,21 @@ async function openAdvanced() {
 // 8) FOCUS TIER E7-E9 DISCLOSURE - segmented <select> (Appearance panel).
 //    Real fix under test: zero board questions/scenarios are tagged past
 //    E6, so selecting a senior-NCO tier used to silently collapse the
-//    content pool with no indication anywhere in this UI. A guest session
-//    (in scope here, unlike a personal profile) never triggers the
-//    separate rank-change confirm dialog, so tierSel.value changes apply
-//    immediately - exactly what this check needs.
+//    content pool with no indication anywhere in this UI. This suite runs
+//    as a real profile (its reload checks need one - a Guest session saves
+//    nothing), and a real profile is asked to confirm a Focus-tier change
+//    because it also updates the saved rank; acceptTierChange() says yes.
+//    The confirm gate itself is tested on its own further down.
 // ============================================================
 {
+  const acceptTierChange = async () => {
+    const go = page.locator(".gm-box button", { hasText: /^Continue$/ });
+    try {
+      await go.waitFor({ state: "visible", timeout: 1200 });
+      await go.click();
+      await page.locator(".gm-box").waitFor({ state: "detached", timeout: 3000 });
+    } catch (e) { /* no question asked: nothing to accept */ }
+  };
   const tierSel = page.locator('select[aria-label^="Focus tier"]');
   const hintText = () => page.evaluate(() => {
     const sel = document.querySelector('select[aria-label^="Focus tier"]');
@@ -564,6 +577,7 @@ async function openAdvanced() {
   });
 
   await tierSel.selectOption("E5");
+  await acceptTierChange();
   await page.waitForTimeout(200);
   const hintAtE5 = await hintText();
   (!hintAtE5 || hintAtE5 === "")
@@ -571,6 +585,7 @@ async function openAdvanced() {
     : bad("Focus tier E5: unexpected hint text: " + hintAtE5);
 
   await tierSel.selectOption("E7");
+  await acceptTierChange();
   await page.waitForTimeout(200);
   const hintAtE7 = await hintText();
   (hintAtE7 && /tagged only through E6\/SSG/.test(hintAtE7) && hintAtE7.includes("E7"))
@@ -578,6 +593,7 @@ async function openAdvanced() {
     : bad("Focus tier E7: hint text was " + JSON.stringify(hintAtE7));
 
   await tierSel.selectOption("E9");
+  await acceptTierChange();
   await page.waitForTimeout(200);
   const hintAtE9 = await hintText();
   (hintAtE9 && hintAtE9.includes("E9"))
@@ -585,6 +601,7 @@ async function openAdvanced() {
     : bad("Focus tier E9: hint text was " + JSON.stringify(hintAtE9));
 
   await tierSel.selectOption("all");
+  await acceptTierChange();
   await page.waitForTimeout(200);
   const hintAtAll = await hintText();
   (!hintAtAll || hintAtAll === "")
