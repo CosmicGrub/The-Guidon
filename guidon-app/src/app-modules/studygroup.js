@@ -1620,9 +1620,6 @@
       if (st.phase === "lobby") row.appendChild(el("span", { text: x.ready ? "ready" : "", style: "color:var(--ink-green)" }));
       if (st.phase !== "lobby") row.appendChild(el("span.sg-score-cell", { text: (st.mode === "board" && x.seatNo !== st.turnSeat && st.phase !== "recap") ? "" : String(x.score), style: "min-width:2em;text-align:right" }));
       row.appendChild(el("span", { text: x.online ? "" : "held", style: "color:var(--ink-red)" }));
-      // Host only, mixed relay decks only: this seat's GUIDON cannot read a
-      // mix and will play from its whole bank - its score is not comparable,
-      // and the host is the one person who can do anything about that.
       // Confirmation gate added per audit finding H6: this was the one
       // destructive roster control in this file skipping the app's shared
       // confirm-dialog convention (leader.js:338-341 gates its identically-

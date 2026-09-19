@@ -280,9 +280,13 @@ try {
     : bad("waiting-list notes: " + JSON.stringify(notes.value));
   const toldLive = await until(() => live(H).then((t) => /PEER-OLD is on an older GUIDON/.test(t)));
   toldLive.hit ? ok("and it is announced through the live region") : bad("live region after the older joiner's hello: " + JSON.stringify(await live(H)));
-  for (let i = 0; i < 2; i++) {
-    await clickWhen(H, "button.sg-admit");
-    await until(() => st(H).then((s) => s && s.seats.length === 2 + i));
+  /* Each joiner by its OWN Admit button (found by its accessible name), and
+     the next click only once that joiner is off the waiting list ON SCREEN:
+     the room redraws on a 100 ms throttle, so "the first Admit button" right
+     after a click is still the joiner who was just admitted. */
+  for (const name of ["PEER-NOW", "PEER-OLD"]) {
+    await clickWhen(H, 'button.sg-admit[aria-label="Admit ' + name + '"]');
+    await until(() => H.evaluate((n) => G.studyGroup.state().seats.some((x) => x.name === n) && !document.querySelector('button.sg-admit[aria-label="Admit ' + n + '"]'), name));
   }
   const seated = await until(async () => (await st(P)).joinState === "seated" && (await st(L)).joinState === "seated");
   seated.hit ? ok("both joiners admitted with the real Admit buttons and seated") : bad("joiners not seated");
@@ -389,14 +393,22 @@ try {
   await until(() => st(P).then((s) => s && s.joinState === "seated"));
   await clickWhen(H, "button.sg-start");
   const shown = { host: [], joiner: [] };
+  /* The card panel redraws on a 100 ms throttle, so state can be one card
+     ahead of the screen: each device is read only once its PANEL shows the
+     question the host's state says is up (never the state alone). */
+  const onPanel = (p, n, q) => p.evaluate(({ n, q }) => {
+    const s = G.studyGroup.state(), qEl = document.querySelector(".sg-board .sg-q"), cEl = document.querySelector(".sg-board .sg-cat");
+    return s && s.phase === "play" && s.round.idx === n && qEl && cEl && (q == null || qEl.textContent === q) ? { q: qEl.textContent, cat: cEl.textContent } : null;
+  }, { n, q });
   for (let i = 0; i < 15; i++) {
+    const upQ = await until(() => H.evaluate((n) => { const s = G.studyGroup.state(); return s && s.phase === "play" && s.round.idx === n && s.cardId && s.cards[s.cardId] ? s.cards[s.cardId].q : null; }, i));
+    if (!upQ.hit) { bad("card " + (i + 1) + " never came up on the host"); break; }
     const both = await until(async () => {
-      const h = await H.evaluate((n) => { const s = G.studyGroup.state(); const c = document.querySelector(".sg-board .sg-cat"); return s && s.phase === "play" && s.round.idx === n && c ? c.textContent : null; }, i);
-      const p = await P.evaluate((n) => { const s = G.studyGroup.state(); const c = document.querySelector(".sg-board .sg-cat"); return s && s.phase === "play" && s.round.idx === n && c ? c.textContent : null; }, i);
+      const h = await onPanel(H, i, upQ.value), p = await onPanel(P, i, upQ.value);
       return h && p ? { h, p } : null;
     });
     if (!both.hit) { bad("card " + (i + 1) + " never showed on both devices"); break; }
-    shown.host.push(both.value.h); shown.joiner.push(both.value.p);
+    shown.host.push(both.value.h.cat); shown.joiner.push(both.value.p.cat);
     await clickWhen(H, "button.sg-advance");
   }
   const shownOutside = shown.host.concat(shown.joiner).filter((c) => !inPicks(c));
