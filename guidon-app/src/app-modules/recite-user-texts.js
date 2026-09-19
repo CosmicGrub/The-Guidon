@@ -29,8 +29,6 @@
   // cannot bloat every backup file from then on.
   var LIMITS = { items: 20, title: 80, chars: 8000, lines: 200 };
   var NOTE = "Your own text. It is saved only on this device and is never shared or sent anywhere.";
-  // See add(): the marking words, in capitals only, not part of a longer word.
-  var MARKING_IN_CAPS = /(^|[^A-Za-z])(TOP\s+SECRET|SECRET|CONFIDENTIAL|CUI|NOFORN|REL\s+TO|FEDCON|CONTROLLED\s+UNCLASSIFIED\s+INFORMATION)(?![A-Za-z])/;
 
   function clip(s, n) { s = String(s == null ? "" : s); return s.length > n ? s.slice(0, n) : s; }
 
@@ -93,14 +91,15 @@
     // The same local check the MOI import uses. Only a hard stop matters
     // here (a classification or handling marking); the text itself is never
     // changed, because a recitation has to be word for word.
-    // That shared check ignores upper and lower case, so on its own it
-    // would refuse a creed for containing the everyday word "secret" or
-    // "confidential". A real marking is written in capitals, so a refusal
-    // also needs the marking word to appear in capitals in what was pasted.
-    if (G.opsecGuard && typeof G.opsecGuard.sanitizeInput === "function") {
+    // That check keys on marking syntax in capitals ("SECRET//NOFORN",
+    // "(S//NF)", a banner line), so a creed that uses the everyday word
+    // "secret" or "confidential" in a sentence is not refused. Its "check"
+    // and "note" findings (a phone number, a date) do not apply to a
+    // recitation and are ignored here.
+    if (G.opsecGuard && typeof G.opsecGuard.screen === "function") {
       var screened = null;
-      try { screened = G.opsecGuard.sanitizeInput(title + "\n" + raw, { redactContact: false }); } catch (e) { screened = null; }
-      if (screened && screened.blocked && MARKING_IN_CAPS.test(title + "\n" + raw)) {
+      try { screened = G.opsecGuard.screen(title + "\n" + raw); } catch (e) { screened = null; }
+      if (screened && screened.stop) {
         return Promise.resolve({ ok: false, error: "This looks like it carries a classification or handling marking, so GUIDON did not save it. Only add text that is cleared for open study." });
       }
     }
