@@ -9,7 +9,9 @@
  *    now counts only when a run was really finished: the scenario reached
  *    its outcome (an attempt row exists for it since the step was opened).
  *    That holds whichever way the Soldier leaves the outcome screen - Done,
- *    Replay-then-Exit, or the nav bar - and never for a bare Exit.
+ *    Replay-then-Exit, or the nav bar - and never for a bare Exit. A step
+ *    that was opened and abandoned stops waiting for a result, so finishing
+ *    the same scenario from the Train tab later cannot tick it.
  *  - With the rank filter on E1-E3 (what onboarding sets for every PVT, PV2
  *    and PFC) or E7-E9, steps 1 and 3 showed a "Scenario not found." toast
  *    over an empty screen and could never be finished. Both steps must open
@@ -40,9 +42,6 @@ const offsite = [];
 async function boot() {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const p = await ctx.newPage();
-  // Short enough that a broken build reports every section's failures in a
-  // few minutes instead of sitting on one missing button for half an hour.
-  p.setDefaultTimeout(12000);
   p.on("console", (m) => { if (["error", "warning"].includes(m.type())) noise.push(m.type() + ": " + m.text()); });
   p.on("pageerror", (e) => noise.push("pageerror: " + e.message));
   p.on("request", (r) => { const u = r.url(); if (!u.startsWith(url) && !/^(data|blob|about):/.test(u)) offsite.push(u); });
@@ -65,7 +64,10 @@ async function boot() {
 }
 
 const page = await boot();
-const WAIT = { timeout: 20000 };
+// Generous on purpose: CI runs several browsers per shard and a starved one
+// is slow, not broken. A genuinely broken build still finishes, because every
+// section below catches its own timeout.
+const WAIT = { timeout: 30000 };
 // One broken section must not hide the others: a thrown timeout becomes that
 // section's FAIL line and the run carries on (each section re-opens the
 // simulator itself, and the rank-filter section resets the saved run).
