@@ -260,6 +260,8 @@ console.log("\nC17 - honest card-back headings and real citations");
   uncited.length === 0 ? ok("every 92A card cites at least one Army publication by number") : bad(uncited.length + " 92A cards cite no publication: " + uncited.slice(0, 6).map((q) => q.id + " [" + q.source + "]").join("; "));
   const vague = packCards.filter((q) => /Army sustainment doctrine|Army supply procedures|Applicable Army program regulations|GCSS-Army procedures|CMF 92 career guidance|^GCSS-Army$/.test(q.source));
   vague.length === 0 ? ok("no pack card is sourced to a vague phrase (\"Army sustainment doctrine\", \"Army supply procedures\", ...)") : bad("vague sources: " + vague.slice(0, 6).map((q) => q.id + " [" + q.source + "]").join("; "));
+  const scRefs = await page.evaluate(() => ["sc-92a-critical-part-overdue", "sc-92a-inventory-discrepancy"].map((id) => { const s = G.store.scenario(id); return s ? (s.doctrine || []).map((d) => d.ref) : null; }));
+  scRefs.every((r) => r && r.length && r.every((x) => PUB.test(x))) ? ok("both 92A Train scenarios cite numbered publications too (" + scRefs.map((r) => r.join(" + ")).join("; ") + ")") : bad("92A scenario doctrine refs: " + JSON.stringify(scRefs));
   const classI = bank.find((q) => q.q === "What is Class I?");
   (classI && !/drinking water/.test(classI.a)) ? ok("Class I is subsistence; water is not folded into it (ATP 4-42 paras 1-22, 1-38)") : bad("Class I answer: " + (classI && classI.a));
   const log = doctrine.find((d) => d.id === "doc-log-1");
