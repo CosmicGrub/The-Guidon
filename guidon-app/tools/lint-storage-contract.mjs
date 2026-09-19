@@ -171,7 +171,10 @@ const exact = new Set(), families = [];
   while ((m = re.exec(table))) exact.add(m[2]);
   const fam = backupText.slice(backupText.indexOf("KV_PREFIX_VALIDATORS = ["));
   const re2 = /\{\s*prefix:\s*(["'])([^"'\n]+)\1/g;
-  while ((m = re2.exec(fam.slice(0, fam.indexOf("];") + 2)))) families.push(m[2]);
+  // The list ends at the first line that is only "];" - a "];" INSIDE a
+  // check's own body (var counts = [...];) must not end it early.
+  const famEnd = fam.search(/\n\s*\];/);
+  while ((m = re2.exec(famEnd === -1 ? fam : fam.slice(0, famEnd)))) families.push(m[2]);
 }
 if (!exact.size || !families.length) bad("(s3) could not read KV_VALIDATORS / KV_PREFIX_VALIDATORS from the backup section");
 // The profile row has its own, stricter check inside importAll().
@@ -201,6 +204,14 @@ for (const s of all) {
     if ((x = /^(["'])([^"'\n]+)\1$/.exec(expr))) return x[2];                                  // "streak:v1"
     if ((x = /^([A-Z][A-Z0-9_]*)$/.exec(expr))) return resolve(x[1], at);                       // KEY
     if ((x = /^(?:[\w$]+\s*\.\s*)*([A-Za-z_$][\w$]*)\s*\(/.exec(expr)) && helpers[x[1]]) return helpers[x[1]]; // srsKey(id), G.board.repsKey()
+    // A local that was just given its key:  const key = G.board.repsKey();  ...  setSetting(key, rec)
+    if ((x = /^([a-z_$][\w$]*)$/.exec(expr))) {
+      const before = s.code.slice(Math.max(0, at - 1500), at);
+      const decl = new RegExp("(?:const|let|var)\\s+" + x[1].replace(/\$/g, "\\$") + "\\s*=\\s*([^;\\n]+);", "g");
+      let d, last = null;
+      while ((d = decl.exec(before))) last = d[1];
+      if (last && !/^[a-z_$][\w$]*$/.test(last.trim())) return keyOfExpr(last, at);
+    }
     return null;
   };
   let m;

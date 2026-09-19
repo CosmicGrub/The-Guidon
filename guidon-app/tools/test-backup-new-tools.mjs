@@ -247,6 +247,21 @@ const verdicts = await pageB.evaluate(({ damaged, goodRows }) => ({
 check(verdicts.damagedRefused.length === 0, "each of the seven damaged rows is refused by the restore check", "damaged rows that would be ACCEPTED: " + JSON.stringify(verdicts.damagedRefused));
 check(verdicts.goodAccepted.length === 0, "every real row the tools wrote, and the good rows beside them, are accepted", "good rows that would be REFUSED: " + JSON.stringify(verdicts.goodAccepted));
 
+// Two more saved items the storage-contract lint found with no restore check
+// at all: 5-Minute Board Reps' daily tally and the counseling plan of action.
+const alsoChecked = await pageB.evaluate(() => ({
+  repsBad: window.G.backup.validateKvRow({ k: "board:reps:2026-09-19", v: { sets: "two", cards: 12, recalled: 9 } }),
+  repsBadList: window.G.backup.validateKvRow({ k: "board:reps:2026-09-19", v: { sets: 1, cards: 12, recalled: 9, missed: "wpn-9" } }),
+  repsGood: window.G.backup.validateKvRow({ k: "board:reps:2026-09-19", v: { sets: 1, cards: 12, recalled: 9, missed: ["wpn-9"], ts: 1 } }),
+  poaBad: window.G.backup.validateKvRow({ k: "counsel:poa", v: { goal: ["not", "text"] } }),
+  poaGood: window.G.backup.validateKvRow({ k: "counsel:poa", v: { goal: "Earn the EIB", steps: "Ruck twice a week" } }),
+  names: [window.G.backup.describeKey("board:reps:2026-09-19"), window.G.backup.describeKey("counsel:poa"), window.G.backup.describeKey("something:nobody:listed")],
+}));
+check(alsoChecked.repsBad === false && alsoChecked.repsBadList === false && alsoChecked.repsGood === true && alsoChecked.poaBad === false && alsoChecked.poaGood === true,
+  "Board Reps' daily tally and the counseling plan of action are checked on restore too (damaged refused, real accepted)", "board:reps / counsel:poa checks: " + JSON.stringify(alsoChecked));
+check(alsoChecked.names[0] === "5-Minute Board Reps history" && alsoChecked.names[1] === "your counseling plan of action" && alsoChecked.names[2] === "another saved item",
+  "every saved item has a plain name, and one nobody listed is \"another saved item\" - never its storage name", "plain names: " + JSON.stringify(alsoChecked.names));
+
 const second = await importThroughTheScreen(pageB, damagedPath);
 const rawKeyShown = (text) => Object.keys(KEYS).map((n) => KEYS[n]).concat(["recall-ladder:", "recite:"]).filter((k) => text.indexOf(k) !== -1);
 const LABELS = [/Board Simulator progress and notes/, /Team Training completion counts/, /your PT plan/, /your completed PT sessions/, /your My unit texts/, /Recall ladder progress/, /Recitation Drill progress/];

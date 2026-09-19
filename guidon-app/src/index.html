@@ -28294,6 +28294,17 @@ window.G = window.G || {};
     // must be the kinds it keeps (a step name, a small count), so a row of
     // the right outline but the wrong contents is also a visible skip.
     { prefix: "recall-ladder:", test: function (v) { return isPlainObject(v) && typeof v.level === "string" && typeof v.streak === "number" && isFinite(v.streak); } },
+    // board:reps:<YYYY-MM-DD> - 5-Minute Board Reps, one small tally per day
+    // ({ sets, cards, recalled, missed:[card ids], ts }). Found by
+    // tools/lint-storage-contract.mjs (s3). recordReps() adds to the three
+    // counts and Home reads them, so each one that is present must be a
+    // number, and the carry-over list must be a list.
+    { prefix: "board:reps:", test: function (v) {
+      if (!isPlainObject(v)) return false;
+      var counts = ["sets", "cards", "recalled"];
+      for (var i = 0; i < counts.length; i++) if (counts[i] in v && (typeof v[counts[i]] !== "number" || !isFinite(v[counts[i]]))) return false;
+      return v.missed == null || Array.isArray(v.missed);
+    } },
     // recite:<textId> - Recitation Drill's "Chunk & memorize" progress, one
     // row per creed or My unit text ({ chunksLearned:[line numbers],
     // direction }). The reader calls chunksLearned.indexOf() on it, so a
@@ -28367,6 +28378,7 @@ window.G = window.G || {};
   };
   var KEY_LABEL_FAMILIES = [
     { prefix: "srs:", label: "Board Drill review progress" },
+    { prefix: "board:reps:", label: "5-Minute Board Reps history" },
     { prefix: "recall-ladder:", label: "Recall ladder progress" },
     { prefix: "recite:", label: "Recitation Drill progress" },
     { prefix: "curr:", label: "lesson progress" },

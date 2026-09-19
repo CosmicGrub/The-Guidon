@@ -467,6 +467,46 @@ for (const kind of ["guest", "kiosk"]) {
   await ctx.close();
 }
 
+/* ======================================================================
+ * The "Before you start" notice. Automated browsers never see it (the app
+ * skips it for them so it cannot steal clicks in every other suite), so this
+ * context tells the app it is an ordinary browser.
+ * ==================================================================== */
+{
+  console.log("\n-- the \"Before you start\" notice --");
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await ctx.addInitScript(() => { Object.defineProperty(Navigator.prototype, "webdriver", { get: () => false }); });
+  const page = await ctx.newPage();
+  watch(page, "Notice");
+  const ACK = "guidon:opsec-ack:v1";
+  const answer = async (label) => {
+    const btn = page.locator(".gm-box button", { hasText: label });
+    await btn.waitFor({ state: "visible", timeout: 8000 });
+    await btn.click();
+    await page.locator(".gm-box").waitFor({ state: "detached", timeout: 4000 });
+  };
+  await page.goto(url, { waitUntil: "load" });
+  await bootDecided(page);
+  await answer(/^Not yet$/);
+  await dismissOnboarding(page, { mode: "guest" });
+  await page.evaluate(() => window.G.opsecGuard.showDisclaimerOnce());
+  await answer(/^I understand$/);
+  const inSession = await page.evaluate((k) => ({ device: localStorage.getItem(k), app: window.G.db.local.get(k) }), ACK);
+  check(inSession.device === null && inSession.app === "accepted", "a Guest's \"I understand\" counts for the session and is not left on the device for the next person", "notice acknowledgement in a Guest session: " + JSON.stringify(inSession));
+
+  await seedOwnerProfile(page);
+  await page.reload({ waitUntil: "load" });
+  await bootDecided(page);
+  await answer(/^I understand$/);
+  const asOwner = await page.evaluate((k) => localStorage.getItem(k), ACK);
+  await page.reload({ waitUntil: "load" });
+  await bootDecided(page);
+  await page.waitForTimeout(900);
+  const askedAgain = await page.locator(".gm-box").count();
+  check(asOwner === "accepted" && askedAgain === 0, "under a real profile it is remembered, and the notice does not come back", "notice under a real profile: stored=" + asOwner + ", asked again=" + askedAgain);
+  await ctx.close();
+}
+
 function describeDiff(a, b) {
   try {
     const A = JSON.parse(a), B = JSON.parse(b), out = [];
