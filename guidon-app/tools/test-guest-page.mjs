@@ -111,6 +111,21 @@ try {
   boot.fork === "guest" && boot.schema && boot.core ? ok("(3) the page runs as the guest fork with G.roomSchema and G.roomCore (the lifted pure core)") : bad("(3) boot: " + JSON.stringify(boot));
   boot.code === ROOM ? ok("(3) the room code is pre-filled from /j/" + ROOM) : bad("(3) code field: " + JSON.stringify(boot.code));
   info("(3) origin " + boot.proto + " isSecureContext=" + boot.secure + " (127.0.0.1 is potentially trustworthy; a LAN IP is not - the page uses nothing that needs it either way)");
+  /* The network boundary and the "unofficial / not endorsed" statement. The
+     app's own Study Rooms screen states both, but a browser guest never sees
+     the app - this page is the only GUIDON screen they get, on whatever
+     network their phone is on. It carried neither. Elements, not body text:
+     this page's inline scripts are part of <body>. */
+  const notices = () => page.evaluate(() => {
+    const shown = (n) => (n && n.getBoundingClientRect().height > 0) ? n.textContent.replace(/\s+/g, " ").trim() : "";
+    return { boundary: shown(document.querySelector(".gp-boundary")), footer: shown(document.querySelector("footer.gp-notice")), wide: document.documentElement.scrollWidth > document.documentElement.clientWidth };
+  });
+  const footerOk = (n) => /explicitly authorized networks only/i.test(n.footer) && n.footer.includes("not endorsed by the Department of Defense, the U.S. Army, or any government agency");
+  let nt = await notices();
+  (nt.boundary.includes("Personal / explicitly authorized networks only") && nt.boundary.includes("DoD/Army enterprise networks") && /explicitly authorized this application and connection/.test(nt.boundary) && /not an ATO or a network authorization/.test(nt.boundary))
+    ? ok("(3) BEFORE joining, the guest page states the network boundary (personal or explicitly authorized networks; not an ATO)")
+    : bad("(3) join-screen network boundary missing: " + JSON.stringify(nt.boundary));
+  footerOk(nt) ? ok("(3) ...and its footer says GUIDON is unofficial and not endorsed by DoD / the Army / any agency") : bad("(3) join-screen footer notice: " + JSON.stringify(nt.footer));
   await page.fill(".gp-name", "PHONE-GUEST");
   await page.click(".gp-join");
   const guestPending = await until(() => { const p = host.pending().find((x) => x.name === "PHONE-GUEST"); return p ? p : null; });
@@ -120,6 +135,8 @@ try {
   helloIn && helloIn.frame.body.app === app && (helloIn.frame.body.build || "") === (sha || "") ? ok("(3) the guest's hello carries the stamped build fields (app " + helloIn.frame.body.app + ")") : bad("(3) guest hello body: " + JSON.stringify(helloIn && helloIn.frame.body));
   const waitingCopy = await until(() => page.evaluate(() => /waiting for the host/i.test(document.body.textContent) ? true : null));
   waitingCopy.hit ? ok("(3) the guest sees \"Waiting for the host\" (admit-each; no admit-all exists anywhere)") : bad("(3) pending copy missing");
+  nt = await notices();
+  footerOk(nt) ? ok("(3) the notice is still there while waiting to be admitted") : bad("(3) waiting-state notice: " + JSON.stringify(nt.footer));
   const ledger = await page.evaluate(() => window.G.netLedger ? G.netLedger.list().length : -1);
   ledger === 1 ? ok("(3) the guest page's G.netLedger records exactly one connection") : bad("(3) guest ledger: " + ledger);
   host.act({ type: "admit", fp: gfp });
@@ -134,6 +151,8 @@ try {
   host.act({ type: "start" });
   const card = await until(() => page.evaluate(() => { const q = document.querySelector(".gp-q"); return q && q.textContent.trim().length > 10 ? q.textContent.trim() : null; }));
   card.hit && card.value === cards.gq1.q ? ok("(3) the card text rides inline (guest bankSig differs) and renders: \"" + card.value + "\"") : bad("(3) card on guest: " + JSON.stringify(card.value));
+  nt = await notices();
+  footerOk(nt) && !nt.wide ? ok("(3) ...and during a round, without widening the page") : bad("(3) in-round notice: " + JSON.stringify(nt));
   const noScoreYet = await page.evaluate(() => document.querySelectorAll(".gp-score").length);
   noScoreYet === 0 ? ok("(3) no score buttons before the candidate answers") : bad("(3) score buttons shown early: " + noScoreYet);
   cand.intent({ kind: "answer" });
@@ -155,6 +174,8 @@ try {
   host.act({ type: "end" });
   const ended = await until(() => page.evaluate(() => !!document.querySelector(".gp-terminal[data-kind=ended]")));
   ended.hit ? ok("(3) end -> the guest shows the ended state") : bad("(3) ended state missing");
+  nt = await notices();
+  footerOk(nt) ? ok("(3) ...and after the room ends - every room state carries it") : bad("(3) ended-state notice: " + JSON.stringify(nt.footer));
   const storage = await page.evaluate(async () => ({ ls: localStorage.length, ss: sessionStorage.length, cookie: document.cookie, idb: (await (indexedDB.databases ? indexedDB.databases() : Promise.resolve([]))).length }));
   storage.ls === 0 && storage.ss === 0 && storage.cookie === "" && storage.idb === 0 ? ok("(3) nothing stored: localStorage 0, sessionStorage 0, no cookie, 0 IndexedDB databases") : bad("(3) storage: " + JSON.stringify(storage));
   const external = requests.filter((u) => !u.startsWith(base));
