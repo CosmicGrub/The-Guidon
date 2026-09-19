@@ -11,6 +11,7 @@
   var HISTORY_KEY = "pt:history:v1";
   var DAY_KEYS = ["sun","mon","tue","wed","thu","fri","sat"];
   var DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  var TITLE_MAX = 80; // a custom session name; also enforced on anything read from storage or a file
   var LEADER_CHECKLIST = [
     "Confirm task, conditions, standards, and the leader responsible for the session.",
     "Complete the applicable risk-management process and brief controls before training.",
@@ -156,6 +157,24 @@
     try { await db.setSetting(HISTORY_KEY, (Array.isArray(list) ? list : []).slice(0, 90)); return true; }
     catch (e) { return false; }
   }
+  // The one way a completion is written. It re-reads storage at write time
+  // and runs on a queue, so a Day view that has been open for a while (or two
+  // quick taps) can never save its own older copy of the list over rows that
+  // were written in the meantime - the same lost-update G.reminders had to
+  // fix with its own write queue. One row per date: logging a date again
+  // replaces that date's row.
+  var _historyQueue = Promise.resolve();
+  function logCompletion(row) {
+    var run = _historyQueue.then(async function () {
+      var list = (await loadHistory()).filter(function (x) { return x && typeof x === "object" && x.date !== row.date; });
+      list.push(row);
+      list.sort(function (a, b) { return String(b.date || "").localeCompare(String(a.date || "")); });
+      return saveHistory(list);
+    });
+    _historyQueue = run.catch(function () {});
+    return run;
+  }
+  function say(msg) { try { if (G.util && G.util.announce) G.util.announce(msg); } catch (e) {} }
   function localISO(d) {
     return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
   }
@@ -197,20 +216,37 @@
     var d = new Date(now); d.setDate(d.getDate() + delta);
     return localISO(d);
   }
+  // THE lookup for "what is planned on this date": a change made to one
+  // date in Month view wins over the weekly plan. Every dated consumer (Month
+  // cells, Day view, "Mark today complete", both reminder buttons) reads
+  // through here - Day view, the completion log and the reminders used to
+  // read plan.days directly, so a date the leader had changed to a recovery
+  // day was still shown, logged (with the wrong effort, which feeds the
+  // 7-day check) and reminded as the weekly session.
   function dayEntryForDate(plan, d) {
     var iso = localISO(d);
     var override = plan.overrides && plan.overrides[iso];
     return override && typeof override === "object" ? override : plan.days[DAY_KEYS[d.getDay()]];
   }
-  async function addPtReminder(entry, dayIndex) {
-    if (!G.reminders || !G.reminders.add) return false;
+  // Resolves to "set" | "rest" | "full" | "failed" so each caller can say WHY
+  // nothing was added. The session is looked up for the concrete date the
+  // reminder will carry, never for the weekday alone: that date may have been
+  // changed to rest (no reminder) or from rest to a session (reminder, with
+  // that session's name).
+  async function addPtReminder(plan, dayIndex, quiet) {
+    if (!G.reminders || !G.reminders.add) return "failed";
     var date = nextDateForDay(dayIndex);
+    var entry = dayEntryForDate(plan, new Date(date + "T12:00:00"));
+    if (!entry || entry.type === "rest") {
+      if (!quiet) util.toast("That date is a rest day - no reminder added.");
+      return "rest";
+    }
     var list = await G.reminders.add({ kind:"pt", label:"PT: " + entry.title, date:date, note:"From PT Planner" });
-    if (!list) { util.toast("Reminder limit reached."); return false; }
+    if (!list) { util.toast("Reminder limit reached."); return "full"; }
     var r = list[list.length - 1];
     try { if (G.notify && G.notify.scheduleForReminder) await G.notify.scheduleForReminder(r); } catch (e) {}
-    util.toast("PT reminder set for " + date + ".");
-    return true;
+    if (!quiet) util.toast("PT reminder set for " + date + ".");
+    return "set";
   }
   function effortLabel(e) {
     return e === "hard" ? "Hard" : e === "recovery" ? "Recovery" : "Moderate";
@@ -312,35 +348,52 @@
       ratioHost.appendChild(p);
     }
 
-    function makeDayCard(dayIndex, compact) {
-      var key = DAY_KEYS[dayIndex], entry = plan.days[key];
-      var card = el("div.panel.pt-day-card", { "data-pt-day":key });
-      card.appendChild(el("div.eyebrow", { text:DAY_NAMES[dayIndex] }));
-      if (compact) {
-        card.appendChild(el("strong", { text:entry.title }));
-        card.appendChild(el("p.hint", { text:effortLabel(entry.effort) + " · " + plan.intensity }));
-        return card;
+    // A day card edits the WEEKLY plan (Week view) unless `dated` is given
+    // ({ iso, entry }, Day view): then it shows what is actually planned for
+    // that date and an edit changes that one date only - the same record the
+    // Month view writes - so the three views can never disagree about a date.
+    function makeDayCard(dayIndex, dated) {
+      var key = DAY_KEYS[dayIndex];
+      var changed = !!(dated && plan.overrides && plan.overrides[dated.iso]);
+      var entry = dated ? dated.entry : plan.days[key];
+      // The record an edit on this card writes to.
+      function target() {
+        if (!dated) return plan.days[key];
+        if (!plan.overrides[dated.iso]) plan.overrides[dated.iso] = Object.assign({}, entry);
+        return plan.overrides[dated.iso];
       }
-      var sel = el("select", { "aria-label":"Session for " + DAY_NAMES[dayIndex], "data-pt-session":key });
+      var card = el("div.panel.pt-day-card", { "data-pt-day":key });
+      card.appendChild(el("div.eyebrow", { text:DAY_NAMES[dayIndex] + (dated ? " · today" : "") }));
+      var sel = el("select", { "aria-label":"Session for " + (dated ? "today" : DAY_NAMES[dayIndex]), "data-pt-session":key });
       Object.keys(PRESETS).forEach(function (id) { sel.appendChild(el("option", { value:id, text:PRESETS[id].title })); });
       sel.value = PRESETS[entry.id] ? entry.id : "custom";
       sel.addEventListener("change", async function () {
-        plan.days[key] = clonePreset(sel.value);
+        var picked = clonePreset(sel.value);
+        if (dated) plan.overrides[dated.iso] = picked; else plan.days[key] = picked;
         await savePlan(plan);
-        draw();
+        say((dated ? "Today" : DAY_NAMES[dayIndex]) + " set to " + picked.title + (dated ? ", for this date only." : "."));
+        draw('select[data-pt-session="' + key + '"]');
       });
       card.appendChild(sel);
       if (entry.id === "custom") {
-        var custom = el("input", { type:"text", value:entry.title === "Custom PT" ? "" : entry.title, placeholder:"Name this session", "aria-label":"Custom PT name for " + DAY_NAMES[dayIndex], "data-pt-custom":key });
-        custom.addEventListener("change", async function () { plan.days[key].title = custom.value.trim() || "Custom PT"; await savePlan(plan); });
+        var custom = el("input", { type:"text", value:entry.title === "Custom PT" ? "" : entry.title, maxlength:String(TITLE_MAX), placeholder:"Name this session", "aria-label":"Custom PT name for " + DAY_NAMES[dayIndex], "data-pt-custom":key });
+        custom.addEventListener("change", async function () { target().title = custom.value.trim().slice(0, TITLE_MAX) || "Custom PT"; await savePlan(plan); });
         card.appendChild(custom);
         var effort = el("select", { "aria-label":"Training effort for " + DAY_NAMES[dayIndex], "data-pt-effort":key });
         [["recovery","Recovery"],["moderate","Moderate"],["hard","Hard"]].forEach(function (pair) { effort.appendChild(el("option", { value:pair[0], text:pair[1] })); });
         effort.value = entry.effort;
-        effort.addEventListener("change", async function () { plan.days[key].effort = effort.value; await savePlan(plan); drawRatio(); });
+        effort.addEventListener("change", async function () {
+          target().effort = effort.value;
+          await savePlan(plan);
+          say((dated ? "Today" : DAY_NAMES[dayIndex]) + " effort set to " + effortLabel(effort.value) + ".");
+          // A full draw(), not drawRatio() alone: that used to wipe the
+          // completed-history panel (it lived in the same host) and left this
+          // card's own effort line showing the old value.
+          draw('select[data-pt-effort="' + key + '"]');
+        });
         card.appendChild(effort);
       }
-      card.appendChild(el("p.hint", { text:effortLabel(entry.effort) + " effort · " + entry.type }));
+      card.appendChild(el("p.hint", { text:effortLabel(entry.effort) + " effort · " + entry.type + (changed ? " · changed for this date" : "") }));
       if (entry.sessionId) {
         var summary = prtSessionSummary(entry.sessionId);
         if (summary) card.appendChild(el("p.hint", { text:"Session blocks: " + summary, "data-pt-session-blocks":entry.sessionId }));
@@ -351,46 +404,72 @@
         open.addEventListener("click", function () { location.hash = entry.route; });
         actions.appendChild(open);
       }
-      var remind = el("button.btn.sm.ghost.pt-remind-btn", { type:"button", text:"Remind me", "data-pt-remind":key });
+      if (changed) {
+        var back = el("button.btn.sm.ghost", { type:"button", text:"Use weekly plan", "data-pt-date-reset":dated.iso });
+        back.addEventListener("click", async function () {
+          delete plan.overrides[dated.iso];
+          await savePlan(plan);
+          say("Today is back on the weekly plan: " + plan.days[key].title + ".");
+          draw('select[data-pt-session="' + key + '"]');
+        });
+        actions.appendChild(back);
+      }
+      // aria-disabled (not disabled) once used: a focused button that becomes
+      // disabled drops keyboard focus to <body>.
+      var remind = el("button.btn.sm.ghost.pt-remind-btn", { type:"button", text:dated ? "Remind me next " + DAY_NAMES[dayIndex] : "Remind me", "data-pt-remind":key });
       remind.addEventListener("click", async function () {
-        remind.disabled = true;
-        var ok = await addPtReminder(plan.days[key], dayIndex);
-        remind.textContent = ok ? "Reminder set" : "Try again";
-        if (!ok) remind.disabled = false;
+        if (remind.getAttribute("aria-disabled") === "true") return;
+        remind.setAttribute("aria-disabled", "true");
+        var res = await addPtReminder(plan, dayIndex);
+        remind.textContent = res === "set" ? "Reminder set" : res === "rest" ? "Rest day - no reminder" : "Try again";
+        if (res === "full" || res === "failed") remind.removeAttribute("aria-disabled");
       });
       actions.appendChild(remind);
-      var swap = el("button.btn.sm.ghost", { type:"button", text:"Swap with " + DAY_NAMES[(dayIndex+1)%7], "data-pt-swap":key });
-      swap.addEventListener("click", async function () {
-        var nextKey = DAY_KEYS[(dayIndex+1)%7], tmp = plan.days[key];
-        plan.days[key] = plan.days[nextKey]; plan.days[nextKey] = tmp;
-        await savePlan(plan); draw();
-      });
-      actions.appendChild(swap);
+      // Swap trades two WEEKLY slots, so it is only offered where the card is
+      // showing the weekly slot (never on a date that has its own change).
+      if (!changed) {
+        var swap = el("button.btn.sm.ghost", { type:"button", text:"Swap with " + DAY_NAMES[(dayIndex+1)%7], "data-pt-swap":key });
+        swap.addEventListener("click", async function () {
+          var nextKey = DAY_KEYS[(dayIndex+1)%7], tmp = plan.days[key];
+          plan.days[key] = plan.days[nextKey]; plan.days[nextKey] = tmp;
+          await savePlan(plan);
+          say(DAY_NAMES[dayIndex] + " and " + DAY_NAMES[(dayIndex+1)%7] + " swapped.");
+          draw('[data-pt-swap="' + key + '"]');
+        });
+        actions.appendChild(swap);
+      }
       card.appendChild(actions);
       return card;
     }
 
     async function renderDay(generation) {
       util.clear(stage);
-      var idx = new Date().getDay();
-      stage.appendChild(makeDayCard(idx, false));
+      var now = new Date(), idx = now.getDay();
+      stage.appendChild(makeDayCard(idx, { iso:localISO(now), entry:dayEntryForDate(plan, now) }));
       var hist = await loadHistory();
       if (generation !== drawGeneration || activeView !== "day") return;
       var todayKey = localISO(new Date());
       var already = hist.some(function (x) { return x && x.date === todayKey; });
       var complete = el("button.btn.primary", { type:"button", text:already ? "Today logged" : "Mark today complete", "data-pt-complete":"1" });
-      complete.disabled = already;
+      if (already) complete.setAttribute("aria-disabled", "true");
       complete.addEventListener("click", async function () {
-        var e = plan.days[DAY_KEYS[idx]];
-        hist.unshift({ date:todayKey, title:e.title, effort:e.effort, intensity:plan.intensity, ts:Date.now() });
-        await saveHistory(hist); complete.disabled = true; complete.textContent = "Today logged"; util.toast("PT session logged."); drawHistoryGuard(drawGeneration);
+        if (complete.getAttribute("aria-disabled") === "true") return;
+        complete.setAttribute("aria-disabled", "true");
+        // What is planned for TODAY'S DATE (a change made to this date wins
+        // over the weekly plan), read at click time rather than render time.
+        var e = dayEntryForDate(plan, new Date());
+        var ok = await logCompletion({ date:todayKey, title:e.title, effort:e.effort, type:e.type, ts:Date.now() });
+        if (!ok) { complete.removeAttribute("aria-disabled"); util.toast("Could not save the PT log."); return; }
+        complete.textContent = "Today logged";
+        util.toast("PT session logged.");
+        drawHistoryGuard(drawGeneration);
       });
       stage.appendChild(el("div.panel", {}, [el("div.eyebrow", { text:"History" }), complete]));
     }
     function renderWeek() {
       util.clear(stage);
       var grid = el("div.card-results-grid", { "data-pt-week":"1" });
-      for (var i=0;i<7;i++) grid.appendChild(makeDayCard(i, false));
+      for (var i=0;i<7;i++) grid.appendChild(makeDayCard(i));
       stage.appendChild(grid);
 
       var leader = el("div.panel", { "data-pt-leader-checklist":"1" });
@@ -406,7 +485,9 @@
         var first = plan.days.sun;
         for (var j=0;j<6;j++) plan.days[DAY_KEYS[j]] = plan.days[DAY_KEYS[j+1]];
         plan.days.sat = first;
-        await savePlan(plan); draw();
+        await savePlan(plan);
+        say("Every session moved one day earlier.");
+        draw("[data-pt-rotate]");
       });
       var shuffle = el("button.btn.ghost", { type:"button", text:"Shuffle week", "data-pt-shuffle":"1" });
       shuffle.addEventListener("click", async function () {
@@ -415,17 +496,25 @@
           var k = Math.floor(Math.random() * (j+1)), tmp = entries[j]; entries[j] = entries[k]; entries[k] = tmp;
         }
         DAY_KEYS.forEach(function (k, idx) { plan.days[k] = entries[idx]; });
-        await savePlan(plan); draw();
+        await savePlan(plan);
+        say("Week shuffled.");
+        draw("[data-pt-shuffle]");
       });
       var schedule = el("button.btn.ghost", { type:"button", text:"Schedule week reminders", "data-pt-remind-week":"1" });
       schedule.addEventListener("click", async function () {
-        schedule.disabled = true;
-        var made = 0;
-        for (var j=0;j<7;j++) {
-          var e = plan.days[DAY_KEYS[j]];
-          if (e && e.type !== "rest" && await addPtReminder(e, j)) made++;
+        if (schedule.getAttribute("aria-disabled") === "true") return;
+        schedule.setAttribute("aria-disabled", "true");
+        var made = 0, full = false;
+        // Rest is decided per DATE inside addPtReminder (a date changed to
+        // rest is skipped; a rest weekday changed to a session is reminded).
+        for (var j=0;j<7 && !full;j++) {
+          var res = await addPtReminder(plan, j, true);
+          if (res === "set") made++;
+          else if (res === "full") full = true;
         }
-        schedule.textContent = made ? made + " reminders set" : "No reminders added";
+        schedule.textContent = made ? made + (made === 1 ? " reminder set" : " reminders set") : "No reminders added";
+        say(made ? made + (made === 1 ? " PT reminder" : " PT reminders") + " set for the next 7 days. Rest days are skipped." : "No PT reminders were added.");
+        if (full) schedule.removeAttribute("aria-disabled");
       });
       var exp = el("button.btn.ghost", { type:"button", text:"Export JSON", "data-pt-export":"1" });
       exp.addEventListener("click", function () {
@@ -452,25 +541,52 @@
         let e = dayEntryForDate(plan,d);
         let c = el("div.panel.pt-month-day", { "data-pt-date":iso });
         c.appendChild(el("div.eyebrow", { text:d.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}) }));
-        var sel = el("select", { "aria-label":"Session override for " + iso, "data-pt-date-session":iso });
+        // `let`, never `var`, for anything a handler in this loop reads: a
+        // function-scoped `var sel` was shared by all 28 handlers, so every
+        // cell saved the LAST cell's value - pick Recovery for the 20th, get
+        // whatever the 28th day happened to show.
+        let label = d.toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
+        let sel = el("select", { "aria-label":"Session for " + label, "data-pt-date-session":iso });
         Object.keys(PRESETS).forEach(function (id) { sel.appendChild(el("option", { value:id, text:PRESETS[id].title })); });
         sel.value = PRESETS[e.id] ? e.id : "custom";
         sel.addEventListener("change", async function () {
-          plan.overrides[iso] = clonePreset(sel.value);
-          await savePlan(plan); draw();
+          let picked = clonePreset(sel.value);
+          plan.overrides[iso] = picked;
+          await savePlan(plan);
+          say(label + " set to " + picked.title + ", for this date only.");
+          draw('select[data-pt-date-session="' + iso + '"]');
         });
         c.appendChild(sel);
-        c.appendChild(el("p.hint", { text:effortLabel(e.effort) + " · " + plan.intensity + (plan.overrides[iso] ? " · date override" : " · weekly plan") }));
+        c.appendChild(el("p.hint", { text:effortLabel(e.effort) + " effort" + (plan.overrides[iso] ? " · changed for this date" : " · weekly plan") }));
         if (plan.overrides[iso]) {
-          var reset = el("button.btn.sm.ghost", { type:"button", text:"Use weekly plan", "data-pt-date-reset":iso });
-          reset.addEventListener("click", async function () { delete plan.overrides[iso]; await savePlan(plan); draw(); });
+          let reset = el("button.btn.sm.ghost", { type:"button", text:"Use weekly plan", "data-pt-date-reset":iso });
+          reset.addEventListener("click", async function () {
+            delete plan.overrides[iso];
+            await savePlan(plan);
+            say(label + " is back on the weekly plan.");
+            // The reset button is gone after the redraw; land on the date's picker.
+            draw('select[data-pt-date-session="' + iso + '"]');
+          });
           c.appendChild(reset);
         }
         grid.appendChild(c);
       }
       stage.appendChild(grid);
     }
-    function draw() {
+    // Every edit rebuilds the stage, which destroys the control that was just
+    // used. `focusSelector` names its replacement so keyboard focus comes
+    // back to it instead of falling to <body> (from where a keyboard or
+    // switch user editing the 28-cell month grid had to tab in from the top
+    // of the page after every single change). Never steals focus on a plain
+    // first render or a view switch - only when a selector is passed.
+    function refocus(focusSelector) {
+      if (!focusSelector) return;
+      var n = null;
+      try { n = mount.querySelector(focusSelector); } catch (e) {}
+      if (!n) n = tabs.querySelector('[aria-selected="true"]');
+      try { if (n) n.focus(); } catch (e) {}
+    }
+    function draw(focusSelector) {
       var generation = ++drawGeneration;
       ih.textContent = (TEMPLATES[plan.templateId] || TEMPLATES.balanced).hint;
       Array.from(intensity.querySelectorAll("button")).forEach(function (b) { var on = b.getAttribute("data-intensity") === plan.intensity; b.classList.toggle("active", on); b.setAttribute("aria-pressed", String(on)); });
@@ -480,6 +596,7 @@
       if (activeView === "day") renderDay(generation);
       else if (activeView === "month") renderMonth();
       else renderWeek();
+      refocus(focusSelector);
     }
     draw();
   }
