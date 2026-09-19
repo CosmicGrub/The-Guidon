@@ -94,7 +94,12 @@ const t0 = Date.now();
       await page.evaluate(() => { document.querySelector('button.qz-nav-btn[aria-label="Next card"]')?.click(); });
       // The next probe must read the NEXT card: wait for the live tally to
       // move on rather than hoping 25ms was enough on a slow runner.
-      await until(page, (was) => { const t = [...document.querySelectorAll(".stat .v")].map((e) => e.textContent || "").find((x) => /^Card \d+\/\d+/.test(x)) || ""; const m = /^Card (\d+)\//.exec(t); return !!m && Number(m[1]) !== was; }, o.card, { timeout: 8000 });
+      const movedOn = await until(page, (was) => { const t = [...document.querySelectorAll(".stat .v")].map((e) => e.textContent || "").find((x) => /^Card \d+\/\d+/.test(x)) || ""; const m = /^Card (\d+)\//.exec(t); return !!m && Number(m[1]) !== was; }, o.card, { timeout: 8000 });
+      // A deck that will not move must stop the walk HERE. Waiting out every
+      // remaining card is 8s x the whole deck x two screens - hours, so CI
+      // kills the chunk at its time limit with no FAIL line - and a deck that
+      // never left card 1 then reads as "wrapped back to card 1" below.
+      if (!movedOn) { bad(`${tag}: "Next card" did not move the deck on from card ${o.card}/${o.total} within 8s :: "${o.prompt}"`); break; }
     }
     const after = await page.evaluate(PROBE);
     stepped === total ? ok(`${tag}: stepped all ${stepped}/${total} cards, ${hits} with overflow`)
