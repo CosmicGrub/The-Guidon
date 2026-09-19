@@ -28304,6 +28304,25 @@ window.G = window.G || {};
   function daysUntil(s) { var d = parseDate(s); if (!d) return null; return Math.round((d - today0()) / 86400000); }
   function uid() { return "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 
+  // Kinds whose reminders stop mattering the moment their date has passed.
+  // A planned PT session is the first: "PT: Strength session - 5 days
+  // overdue" is nothing a Soldier can act on (PT Planner itself treats a
+  // missed day as a gap, never as debt), yet one tap on the planner's
+  // "Schedule week reminders" used to leave six rows that then sat in the
+  // Overdue bucket forever. A week later they filled all five Home "Coming
+  // up" slots, pushed a real board-date reminder off the screen, were read
+  // out as "6 overdue reminders." on every Home visit, and used up six rows
+  // of MAX_REMINDERS per scheduled week. Keyed by kind rather than a per-row
+  // flag so rows written before this existed expire too. Every other kind
+  // (board, counseling, weapons qual...) keeps its overdue state on purpose -
+  // a missed counseling IS still something to act on.
+  var EXPIRING_KINDS = { pt: true };
+  function isExpired(r) {
+    if (!r || typeof r !== "object" || !EXPIRING_KINDS[r.kind]) return false;
+    var d = daysUntil(r.date);
+    return d !== null && d < 0;
+  }
+
   async function load() {
     try { var r = await db.get("kv", KEY); var v = r && r.v; return Array.isArray(v) ? v : []; } catch (e) { return []; }
   }
