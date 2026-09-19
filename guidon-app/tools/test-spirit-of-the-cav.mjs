@@ -81,11 +81,19 @@ const truth = await page.evaluate((probes) => {
     oldLineCards: bank.filter((q) => /^pb-spirit-cav-0[1-8]-/.test(q.id)).map((q) => q.id),
     withLines: mine.filter((q) => Array.isArray(q.lines) && q.lines.length).map((q) => q.id),
     helperObject: typeof window.G.spiritOfTheCav,
-    mine: mine.map((q) => ({ id: q.id, category: q.category, pillar: q.pillar, source: q.source, unit: q.unit, a: q.a })),
+    mine: mine.map((q) => ({ id: q.id, category: q.category, pillar: q.pillar, source: q.source, unit: q.unit })),
+    // Card answers are only ever TESTED in here, never sent back out: if the
+    // song text regresses, a failure message must not print it into a public
+    // CI log. (Same reason the Creeds entry reports a length, not its text.)
+    facts: (function () {
+      const t = mine.map((q) => q.a).join(" | ");
+      return { firstTeam: /1st Cavalry Division/.test(t), date: /13 September 1921/.test(t), place: /Fort Bliss/.test(t), seventhCavalry: /7th Cavalry/.test(t), divisionSong: /division song/i.test(t) };
+    })(),
     inCreedsDeck: bank.filter((q) => q.category === "Creeds" && (/^pb-spirit-cav-/.test(q.id) || /1st cavalry|first team|garryowen|spirit of the cav/i.test(q.q + " " + q.a))).map((q) => q.id),
     creed: (function () {
       const c = creeds.find((x) => x.id === "creed-spirit-of-the-cav");
-      return c ? { fullText: c.fullText, ref: c.source && c.source.ref, asOf: c.source && c.source.asOf, status: c.source && c.source.status, linkedBoardId: c.linkedBoardId, lines: c.lines } : null;
+      return c ? { fullTextLength: String(c.fullText || "").length, ref: c.source && c.source.ref, asOf: c.source && c.source.asOf, status: c.source && c.source.status,
+        linkedBoardId: c.linkedBoardId, lineCount: Array.isArray(c.lines) ? c.lines.length : 0 } : null;
     })(),
   };
 }, PROBES);
@@ -114,12 +122,11 @@ truth.mine.length === 4 && truth.mine.every((q) => q.category === "Army History"
 truth.inCreedsDeck.length === 0
   ? ok("nothing about one division's heritage is left in the Army-wide Creeds deck")
   : bad("unit-specific cards are still filed under Creeds: " + truth.inCreedsDeck.join(", "));
-const facts = truth.mine.map((q) => q.a).join(" | ");
-/1st Cavalry Division/.test(facts) && /13 September 1921/.test(facts) && /Fort Bliss/.test(facts) && /7th Cavalry/.test(facts) && /division song/i.test(facts)
+Object.keys(truth.facts).every((k) => truth.facts[k])
   ? ok("the cards teach the facts: First Team, the 1921 start at Fort Bliss, Garryowen and the 7th Cavalry, and what the song is")
-  : bad("a heritage fact is missing from the card answers: " + facts);
+  : bad("a heritage fact is missing from the card answers: " + JSON.stringify(truth.facts));
 
-truth.creed && truth.creed.fullText === "" && !truth.creed.lines && officialSource(truth.creed.ref) && /^\d{4}-\d{2}-\d{2}$/.test(truth.creed.asOf || "") &&
+truth.creed && truth.creed.fullTextLength === 0 && truth.creed.lineCount === 0 && officialSource(truth.creed.ref) && /^\d{4}-\d{2}-\d{2}$/.test(truth.creed.asOf || "") &&
   truth.creed.status === "unit-tradition" && !truth.creed.linkedBoardId
   ? ok("the Creeds entry is title-and-history only, with a real source and the date it was checked")
   : bad("Creeds entry malformed: " + JSON.stringify(truth.creed));
@@ -132,7 +139,8 @@ await page.waitForFunction(() => /Spirit of the Cav/i.test((document.querySelect
 const creedsDetail = await page.evaluate(() => document.getElementById("creeds-detail").innerText);
 hasProbe(creedsDetail).length === 0 && /Source: .*army\.mil/i.test(creedsDetail) && !/user[- ]supplied/i.test(creedsDetail)
   ? ok("#/creeds shows the entry with a real source line and none of the words")
-  : bad("#/creeds detail is wrong: " + creedsDetail.replace(/\s+/g, " ").slice(0, 300));
+  : bad("#/creeds detail is wrong: song words on screen=" + hasProbe(creedsDetail).length + ", army.mil source line=" + /Source: .*army\.mil/i.test(creedsDetail) +
+    ", says user-supplied=" + /user[- ]supplied/i.test(creedsDetail));
 /My unit/.test(creedsDetail) && /stays on your device/i.test(creedsDetail)
   ? ok("#/creeds tells the Soldier where to add their own copy, and that it stays on their device")
   : bad("#/creeds does not point at Recitation Drill's My unit section");
