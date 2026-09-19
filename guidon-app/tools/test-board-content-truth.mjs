@@ -265,6 +265,35 @@ console.log("\nC48 - pack cards carry the pillar their category is mapped to");
   back ? ok(disc.id + " is reachable in Board Drill with the Leadership & Counseling pillar filter on") : bad("the supplement's Discipline card is missing from the Leadership & Counseling pillar deck");
 }
 
+/* ---- One subject, one category: a pack must file its cards under the seed's exact category string ---- */
+console.log("\nCategories - a pack never splits a seed subject under a second name");
+{
+  const RENAMED = {
+    "Land Navigation": "Land Navigation (TC 3-25.26)", "Army Fitness Test": "Army Fitness Test (AFT)", "Weapons — M4/M16": "Weapons (TC 3-22.9)",
+    "Army Body Composition": "AR 600-9 — Army Body Composition Program", "OPSEC": "OPSEC & Information Security", "Holistic Health & Fitness": "FM 7-22",
+  };
+  const cats = new Set(bank.map((q) => q.category));
+  const left = Object.keys(RENAMED).filter((c) => cats.has(c));
+  left.length === 0 ? ok("none of the six duplicate category names is left in the bank") : bad("duplicate category names still in the bank: " + left.join(", "));
+  /* the same normalization lint-board-taxonomy rule (b) applies to the seed, here applied to the assembled bank */
+  const normCat = (s) => String(s).toLowerCase().replace(/[—–]/g, "-").replace(/\s*\(.*?\)\s*/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
+  const byNorm = {};
+  cats.forEach((c) => { (byNorm[normCat(c)] = byNorm[normCat(c)] || []).push(c); });
+  const near = Object.values(byNorm).filter((g) => g.length > 1);
+  near.length === 0 ? ok(`no two of the ${cats.size} live categories are near-duplicates of each other`) : bad("near-duplicate categories: " + JSON.stringify(near));
+  /* the pack cards really moved into the seed subject (they were not dropped) */
+  const landNav = bank.filter((q) => q.category === "Land Navigation (TC 3-25.26)");
+  (landNav.some((q) => /^pb-core72-/.test(q.id)) && landNav.some((q) => !/^pb-/.test(q.id))) ? ok(`"Land Navigation (TC 3-25.26)" now holds seed and supplement cards together (${landNav.length})`) : bad("Land Navigation (TC 3-25.26) does not mix seed and pack cards");
+  /* and the real category picker offers each subject once */
+  await page.evaluate(() => { location.hash = "#/home"; });
+  await page.waitForTimeout(200);
+  await page.evaluate(() => { location.hash = "#/board"; });
+  await page.waitForSelector('select[aria-label="Filter by category"]', { timeout: 15000 });
+  const options = await page.evaluate(() => Array.from(document.querySelector('select[aria-label="Filter by category"]').options).map((o) => o.value));
+  const offered = Object.keys(RENAMED).filter((c) => options.includes(c));
+  (offered.length === 0 && Object.values(RENAMED).every((c) => options.includes(c))) ? ok("Board Drill's category picker lists each of the six subjects once, under the seed's name") : bad("category picker still offers: " + offered.join(", "));
+}
+
 /* ---- zero console noise ---- */
 console.log("");
 noise.length === 0 ? ok("zero console errors/warnings across the run") : bad("console noise: " + noise.slice(0, 5).join(" | "));
