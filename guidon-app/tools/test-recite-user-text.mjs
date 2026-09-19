@@ -226,6 +226,22 @@ const ladderPrompt = await page.evaluate(() => (document.querySelector("[data-la
   : bad("ladder prompt for own text: " + JSON.stringify(ladderPrompt));
 (await overflow()) <= 0 ? ok("no sideways scrolling at 390px with the text open") : bad("page is " + (await overflow()) + "px too wide with the text open");
 
+// ---- Cancel puts everything back ------------------------------------------
+await pickMode("Full text");
+await page.locator("[data-recite-add]").click();
+await page.waitForSelector("#recite-own-title");
+const whileAdding = await page.evaluate(() => Array.from(document.querySelectorAll(".list-detail-list .list-detail-row")).filter((r) => r.getAttribute("aria-selected") === "true").length);
+await page.locator(".list-detail > div:last-child button", { hasText: /^Cancel$/ }).click();
+await page.waitForSelector("#recite-own-title", { state: "detached" });
+const afterCancel = await page.evaluate(() => ({
+  selected: Array.from(document.querySelectorAll('.list-detail-list .list-detail-row[aria-selected="true"]')).map((r) => r.dataset.reciteId),
+  title: (document.querySelector(".list-detail > div:last-child .card h3") || {}).textContent,
+  focusIsAdd: !!(document.activeElement && document.activeElement.dataset && document.activeElement.dataset.reciteAdd),
+}));
+whileAdding === 0 && afterCancel.selected.join() === ownId && afterCancel.title === TITLE && afterCancel.focusIsAdd
+  ? ok("while the form is open no row claims to be selected; Cancel re-selects the text that was open and returns focus to \"Add your own text\"")
+  : bad("form open/Cancel: " + JSON.stringify({ whileAdding, afterCancel }));
+
 // ---- a long unbroken word must wrap, not widen the page -------------------
 await page.locator("[data-recite-add]").click();
 await page.waitForSelector("#recite-own-title");
