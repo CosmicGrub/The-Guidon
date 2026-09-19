@@ -260,11 +260,13 @@ jobs:
       - name: Verify (PWA/build harness)
         run: npm run verify
 
-      # Large-roadmap integration gate. This suite also remains in the
-      # generated matrix; running it here gives direct, non-paginated logs
-      # for the new PT/Team/Collective/Board-Simulator integration surface.
-      - name: Roadmap leader-readiness regression
-        run: npm run test:roadmap-leader-readiness
+      # NO browser test suites in this job. Every other job in this workflow
+      # `needs:` it, so one suite failing (or merely flaking under load) here
+      # would skip the ENTIRE test matrix and hide every other result behind
+      # it. A hand-added test:roadmap-leader-readiness step lived here
+      # briefly; that suite already runs in the generated matrix below,
+      # which is where suites belong - a failure there costs one chunk.
+      # tools/test-release-pipeline.mjs asserts this job stays suite-free.
 
       # Collective P2: merge the probe file verify just wrote (artifacts/caps/
       # chromium-web.json, the evidence column) into docs/generated/
@@ -742,3 +744,56 @@ jobs:
       # concurrently in this one job.
       - name: Run test chunk (${{ matrix.chunk.name }})
         run: node tools/run-parallel.mjs ${{ matrix.chunk.tests }}
+
+  # ---------------------------------------------------------------------
+  # ONE always-reporting verdict for the whole run, named "CI green".
+  #
+  # Why it exists: the matrix job names above are generated from the suite
+  # list and change whenever a suite is added, so they cannot be named in a
+  # branch rule; and when lint-build-verify fails, the matrix and cargo-check
+  # are SKIPPED, which GitHub does not count as a failure of those checks.
+  # PRs #179, #182 and #183 were all merged with red or skipped checks
+  # because nothing single and stable said "this commit is not green".
+  # `if: always()` makes this job report on every run, and it fails unless
+  # each gating job actually SUCCEEDED - skipped and cancelled count as not
+  # green. It is the one check a branch rule on main should require (a
+  # repository setting only the owner can change; see
+  # guidon-app/docs/release-runbook.md).
+  #
+  # cargo-audit and android-osv-scan are deliberately not listed: both are
+  # advisory, non-blocking scans by design (see their own comments), and an
+  # outage of an advisory database must not be able to block a merge, a
+  # deploy or a release.
+  #
+  # pages.yml and release-cut.yml do not read this job by name; they read
+  # the whole run's conclusion through tools/release-gate.mjs, which this
+  # job's failure also turns red.
+  # ---------------------------------------------------------------------
+  ci-green:
+    name: CI green
+    if: always()
+    needs: [lint-build-verify, cargo-check, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every gating job succeeded
+        # This job has no checkout, so the workflow-wide guidon-app working
+        # directory does not exist here.
+        working-directory: .
+        env:
+          R_LINT: ${{ needs.lint-build-verify.result }}
+          R_CARGO: ${{ needs.cargo-check.result }}
+          R_TEST: ${{ needs.test.result }}
+        run: |
+          set -euo pipefail
+          bad=0
+          for pair in "lint + build + verify=$R_LINT" "cargo check=$R_CARGO" "test matrix=$R_TEST"; do
+            name="${pair%%=*}"; result="${pair##*=}"
+            if [ "$result" = "success" ]; then
+              echo "ok: $name"
+            else
+              echo "::error::$name finished as '$result' - this commit is NOT green"
+              bad=1
+            fi
+          done
+          exit "$bad"

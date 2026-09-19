@@ -1,7 +1,8 @@
 name: Deploy to GitHub Pages
 
-# Deploys the installable web/ PWA build (guidon-app/web/) to GitHub Pages on
-# every push to main that could change it - the standing project rule
+# Deploys the installable web/ PWA build (guidon-app/web/) to GitHub Pages
+# AFTER CI has passed on that exact commit (see "WHEN THIS RUNS" below) - the
+# standing project rule
 # established 2026-09-07 is that every release/update gets pushed to every
 # device fork it applies to (Android via adb + a signed APK/AAB release
 # asset, PC via an installer + release asset, iOS via... nothing native, no
@@ -28,24 +29,38 @@ name: Deploy to GitHub Pages
 # (non-TLS) link can't be opened from an HTTPS-hosted page either (mixed-
 # content blocking). Everything else in the app is unaffected.
 
+#
+# WHEN THIS RUNS (changed 2026-09-18). This used to be `on: push` to main,
+# with no connection to CI at all - the deploy took under a minute, CI took
+# many, so whatever was pushed was live long before anything had tested it.
+# That is how a build with a script error in it was served to every iPhone
+# user for about four hours, and how the live app came to announce version
+# numbers from commits whose CI was red. It now runs when the CI workflow
+# COMPLETES on main, and the build job only proceeds if that run succeeded.
+#   - It checks out the exact commit CI tested (workflow_run.head_sha), never
+#     "whatever main is by now".
+#   - A manual run (workflow_dispatch) is held to the same rule: the first
+#     step asks tools/release-gate.mjs whether CI is green for that commit.
+#   - CI runs finish in any order, and an old red run can be re-run to green
+#     days later. Without a guard, that would redeploy an OLD commit over a
+#     newer live one, so the build job skips when the commit it was handed
+#     is an ancestor of what is already live.
+#   - The old `paths:` filter is gone because workflow_run has none. The
+#     deploy is idempotent and takes about a minute, so that is acceptable.
+
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
-    paths:
-      - 'guidon-app/src/**'
-      - 'guidon-app/tools/build.mjs'
-      - 'guidon-app/tools/icon-spec.mjs'
-      - 'guidon-app/tools/make-icons.mjs'
-      - 'guidon-app/web/docs/**'
-      - 'guidon-app/package.json'
-      - 'guidon-app/package-lock.json'
-      - '.github/workflows/pages.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
   pages: write
   id-token: write
+  actions: read
+  deployments: read
 
 # Only one Pages deployment can be in flight at once; never cancel one that's
 # already live-deploying mid-way (cancel-in-progress: false), only queue
@@ -58,7 +73,20 @@ concurrency:
 jobs:
   build:
     name: Build web/ and upload the Pages artifact
+    # Only a SUCCESSFUL CI run for a push to main may deploy. A failed,
+    # cancelled or pull-request CI run ends here with the job skipped.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.fresh.outputs.deploy }}
+    env:
+      # The commit CI actually tested; for a manual run, the commit it was
+      # started on.
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     defaults:
       run:
         working-directory: guidon-app
@@ -67,8 +95,37 @@ jobs:
         # SHA-pin-over-mutable-tag, same convention and same pinned commit
         # ci.yml's own Checkout steps already use throughout this repo.
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          # Full history: the "never deploy backwards" step below asks git
+          # whether one commit is an ancestor of another.
+          fetch-depth: 0
+
+      - name: Manual runs need green CI too
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node tools/release-gate.mjs \
+            --repo "$GITHUB_REPOSITORY" --sha "$DEPLOY_SHA" \
+            --workflow ci.yml --wait-minutes 0
+
+      - name: Never deploy backwards
+        id: fresh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          LIVE="$(gh api "repos/$GITHUB_REPOSITORY/deployments?environment=github-pages&per_page=1" --jq '.[0].sha // ""' 2>/dev/null || true)"
+          if [ -n "$LIVE" ] && [ "$LIVE" != "$DEPLOY_SHA" ] && git merge-base --is-ancestor "$DEPLOY_SHA" "$LIVE" 2>/dev/null; then
+            echo "::notice::$DEPLOY_SHA is older than $LIVE, which is already live - not deploying backwards."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Setup Node
+        if: steps.fresh.outputs.deploy == 'true'
         # Same pinned commit as ci.yml's own lint-build-verify job. Version
         # bumped 20 -> 24 (roadmap audit round 10, "Dependency & CI hygiene
         # cleanup" bucket) to match ci.yml/desktop.yml/ios.yml's NODE_VERSION
@@ -82,15 +139,19 @@ jobs:
           cache-dependency-path: guidon-app/package-lock.json
 
       - name: Install dependencies (npm ci)
+        if: steps.fresh.outputs.deploy == 'true'
         run: npm ci
 
       - name: Build (produces guidon-app/web/, the installable PWA)
+        if: steps.fresh.outputs.deploy == 'true'
         run: npm run build
 
       - name: Configure Pages
+        if: steps.fresh.outputs.deploy == 'true'
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d  # v6.0.0
 
       - name: Upload Pages artifact
+        if: steps.fresh.outputs.deploy == 'true'
         # path: is resolved from the repo root regardless of this job's own
         # working-directory default above (that default only applies to
         # `run:` shell steps, not an action's own `with:` inputs).
@@ -101,6 +162,7 @@ jobs:
   deploy:
     name: Deploy
     needs: build
+    if: needs.build.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

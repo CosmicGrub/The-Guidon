@@ -4,6 +4,28 @@ name: Cut release
 # that version then creates the immutable source tag + GitHub Release. Only after
 # this job is green should .release-trigger be changed, which fans out the
 # platform asset workflows from the already-created tag.
+#
+# WHAT "GREEN" MEANS HERE (changed 2026-09-18). This job used to check only
+# that .release-prep matched package.json, then tag and publish within
+# seconds - while CI for the very same push was still minutes from a verdict,
+# and with nothing stopping a manual run from any branch. Two version bumps
+# (1.11.0, 1.12.0) landed on commits whose CI was red, and this job would
+# have tagged either of them without complaint. A version tag is permanent:
+# tagging a red commit either burns the number or tempts someone into moving
+# the tag. So the order is now
+#   1. refuse anything that is not main,
+#   2. refuse if the version-bearing files disagree with each other
+#      (tools/lint-release-state.mjs --cut),
+#   3. WAIT for CI on this exact commit and refuse unless it succeeded
+#      (tools/release-gate.mjs; Desktop and iOS must be green too when they
+#      ran for this commit),
+#   4. only then create the tag and the Release.
+# The Release is created with --latest=false on purpose: it has no files yet,
+# and the install buttons inside the app download from whichever release is
+# marked Latest. release-assets.yml's finalize job marks it Latest once the
+# files those buttons need are really attached. (Do NOT switch this to
+# --draft: a draft creates no git tag, and both asset workflows check out the
+# tag.)
 
 on:
   push:
@@ -14,6 +36,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: cut-release
@@ -22,11 +45,30 @@ concurrency:
 jobs:
   cut:
     name: Tag + GitHub Release
+    # workflow_dispatch can be started from any branch; a release is only
+    # ever cut from main.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # Most of this is the wait for CI in step 3, not work.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
+
+      - name: Version files agree and this version was never released
+        run: node guidon-app/tools/lint-release-state.mjs --cut
+
+      - name: Require green CI on this exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node guidon-app/tools/release-gate.mjs \
+            --repo "$GITHUB_REPOSITORY" \
+            --sha "$GITHUB_SHA" \
+            --workflow ci.yml \
+            --also desktop.yml,ios.yml \
+            --wait-minutes 90
 
       - name: Create or verify release
         env:
@@ -57,6 +99,7 @@ jobs:
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
               --title "GUIDON $TAG" \
+              --latest=false \
               --generate-notes
           fi
 
