@@ -35,19 +35,50 @@ windowMock.window=windowMock;
 const ctx=vm.createContext(sandbox);
 for(const rel of modules) vm.runInContext(readFileSync(APP+rel,"utf8"),ctx,{filename:rel});
 
+/* The sensitive-text check is FINDINGS ONLY: it reports what it saw and where,
+   and never hands a caller edited text. (The first version rewrote its input,
+   and "AR 600-20 2020" reached MOI Import's parser as "AR [SSN REDACTED]".)
+   tools/test-opsec-guard.mjs proves the same table - and the screens built on
+   it - inside the real page; this copy runs without a build, so the
+   dedicated workflow gate covers the rules too. */
 const guard=G.opsecGuard;
-expect(!!guard && typeof G.util?.sanitizeInput === "function", "shared OPSEC sanitizer is exported through G.util and G.opsecGuard");
-expect(guard.sanitizeInput("SECRET operational annex").blocked, "SECRET-marked input hard-stops");
-expect(guard.sanitizeInput("CUI // SP-PRVCY").blocked, "CUI-marked input hard-stops");
-const ssn=guard.sanitizeInput("SSN 123-45-6789");
-expect(!ssn.blocked && ssn.text.includes("[SSN REDACTED]"), "SSN is locally redacted without pretending the document is declassified");
-const uic=guard.sanitizeInput("UIC W1ABCD");
-expect(uic.text.includes("[UNIT REDACTED]"), "context-labeled six-character UIC is redacted");
-const dod=guard.sanitizeInput("DoD ID: 1234567890");
-expect(dod.text.includes("[IDENTIFIER REDACTED]"), "context-labeled 10-digit DoD ID/EDIPI is redacted");
-const agg=guard.sanitizeInput("Deployment movement on 2030-05-20 at Fort Example training area");
-expect(agg.requiresReview && !agg.blocked, "future operational date + location is flagged for human removal/review");
-expect(!guard.sanitizeInput("Board study session on 2026-09-17").blocked, "ordinary benign study text is not classified by the guard");
+expect(!!guard && typeof guard.screen === "function", "the sensitive-text check is exported as G.opsecGuard.screen()");
+expect(!!guard && guard.sanitizeInput === undefined && G.util?.sanitizeInput === undefined, "no text-rewriting API is exported any more (sanitizeInput is gone)");
+const codes=(t,o)=>guard.screen(t,o).findings.map(f=>f.code+":"+f.severity).join(",");
+expect(codes("SECRET//NOFORN")==="control-marking:stop", "a real control marking (SECRET//NOFORN) is a stop finding", codes("SECRET//NOFORN"));
+expect(codes("CUI // SP-PRVCY")==="control-marking:stop", "a real CUI control marking is a stop finding", codes("CUI // SP-PRVCY"));
+expect(codes("(S//NF) The unit departs.")==="portion-marking:stop" && codes("UNCLASSIFIED//FOUO")==="control-marking:stop", "portion marks and legacy FOUO control strings - which the first guard let through - are stop findings");
+expect(codes("What are the three levels of classified information? Top Secret, Secret, and Confidential (AR 380-5).")==="" && codes("Is CUI classified information? No. CUI is unclassified information that requires safeguarding.")==="", "ordinary study text ABOUT markings produces no finding (the first guard hard-stopped both)");
+const ssn=guard.screen("SSN 123-45-6789");
+expect(ssn.text==="SSN 123-45-6789" && ssn.findings.length===1 && ssn.findings[0].code==="ssn" && ssn.findings[0].severity==="check" && !ssn.findings[0].excerpt.includes("123-45"), "a Social Security number is reported (masked in the excerpt) and the text is returned unchanged", JSON.stringify(ssn.findings));
+for (const cite of ["AR 600-20 2020","AR 635-200 2021","References: AR 385-10 2023; AR 190-13 2019; DA PAM 600-25 2023."]) {
+  const r=guard.screen(cite);
+  expect(r.clean && r.text===cite, `a regulation followed by its year is not an ID or phone number: "${cite}"`, JSON.stringify(r.findings));
+}
+expect(codes("UIC W1ABCD")==="uic:note", "a labelled six-character UIC is noted", codes("UIC W1ABCD"));
+expect(codes("DoD ID: 1234567890")==="dod-id:check" && codes("DA Form 4856, block 3: 1234567890.")==="", "a labelled 10-digit DoD ID/EDIPI is reported; an unlabelled ten-digit number in a form is not");
+// Dates come from the real clock so this never depends on a year written into the rule or the test.
+const D=new Date(), MON=["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"], MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+const day=n=>new Date(D.getFullYear(),D.getMonth(),D.getDate()+n), p2=n=>String(n).padStart(2,"0");
+const army=d=>d.getDate()+" "+MON[d.getMonth()]+" "+d.getFullYear(), iso=d=>d.getFullYear()+"-"+p2(d.getMonth()+1)+"-"+p2(d.getDate());
+expect(codes("Convoy movement to Fort Example training area on "+army(day(1))+", SP time 0600.")==="future-operation-location:check", "tomorrow's movement in the Army's own DD MON YYYY format is flagged for a deliberate look ("+army(day(1))+")");
+expect(codes("Deployment movement on "+iso(day(1))+" at Fort Example training area")==="future-operation-location:check", "...and in ISO format ("+iso(day(1))+") - no year is written into the rule");
+expect(codes("Deployment movement on "+iso(day(-40))+" at Fort Example training area")==="", "a movement that has already happened is not 'future' ("+iso(day(-40))+")");
+expect(codes("The board convenes "+MONTHS[day(396).getMonth()]+" "+day(396).getDate()+", "+day(396).getFullYear()+" in the battalion conference room. Topics: land navigation grid coordinates.")==="", "a board's own date and room is not a unit movement (the first guard hard-stopped this sentence)");
+expect(codes("Board study session on 2026-09-17")==="", "ordinary benign study text produces no finding");
+
+// The whole fixture table (tools/test-opsec-guard.mjs runs the same rows in the built page).
+const FIX=JSON.parse(readFileSync(APP+"tools/fixtures/opsec-guard-cases.json","utf8")).cases;
+const forms=d=>({ISO:iso(d),US:(d.getMonth()+1)+"/"+d.getDate()+"/"+d.getFullYear(),LONG:MONTHS[d.getMonth()]+" "+d.getDate()+", "+d.getFullYear(),ARMY:army(d),ARMY2:d.getDate()+" "+MON[d.getMonth()]+" "+String(d.getFullYear()).slice(2),DTG:p2(d.getDate())+"0600Z"+MON[d.getMonth()]+String(d.getFullYear()).slice(2)});
+const TOK={SOON:forms(day(1)),FAR:forms(day(396)),PAST:forms(day(-42))};
+const fixBad=[];
+for (const c of FIX) {
+  const text=c.text.replace(/\{\{(SOON|FAR|PAST)_([A-Z0-9]+)\}\}/g,(_,w,k)=>TOK[w][k]);
+  const r=guard.screen(text);
+  const got=[...new Set(r.findings.map(f=>f.code))].sort().join(","), want=[...c.expect].sort().join(",");
+  if (got!==want || r.text!==text || (c.severity && r.findings.some(f=>f.severity!==c.severity))) fixBad.push(`"${c.name}" got [${got}] expected [${want}]`);
+}
+expect(fixBad.length===0, `all ${FIX.length} rows of tools/fixtures/opsec-guard-cases.json produce exactly their expected findings and come back unedited`, fixBad.join(" | "));
 
 const audit=G.opsec?.audit;
 expect(audit?.cardsPresent===34, "all 34 Cybersecurity & OPSEC board questions are represented", `cardsPresent=${audit?.cardsPresent}`);
@@ -68,9 +99,9 @@ const group=readFileSync(APP+"src/app-modules/studygroup.js","utf8");
 expect(index.includes('{ hash: "#/cyber-opsec", label: "Cybersecurity & OPSEC"'), "#/cyber-opsec is a declared application route");
 expect(/hashes:\s*\[[^\]]*"#\/cyber-opsec"/.test(index), "Cyber/OPSEC route is present in declared navigation");
 expect(index.includes('"#/cyber-opsec": { d:'), "Guided Tour metadata covers the new route");
-expect(moi.includes("G.opsecGuard") && moi.indexOf("G.opsecGuard") < moi.indexOf("runMatching(screened.text)"), "MOI import screens source text before the matching/persistence path");
+expect(moi.includes("G.opsecGuard.screen(combined)") && moi.indexOf("G.opsecGuard.screen(combined)") < moi.indexOf("runMatching(combined)") && !/screened\.text|sanitizeInput/.test(moi), "MOI import checks the text before matching, and the parser is given the ORIGINAL text - never a rewritten copy");
 expect(!moi.includes("Soldier handed a real MOI"), "MOI copy no longer encourages real operational MOIs");
-expect(leader.includes("G.opsecGuard") && leader.includes("Use initials, a callsign, or a roster number"), "Squad Roster guards identifier mutation and states the minimized-data rule");
+expect(leader.includes("G.opsecGuard.screen(") && !/sanitizeInput|decisionMessage/.test(leader) && leader.includes("Use initials, a callsign, or a roster number"), "Squad Roster checks the one free-text field and states the minimized-data rule in its own words");
 expect(group.includes("Personal / explicitly authorized networks only") && group.includes("Offline-first design is not an ATO or network authorization"), "Study Rooms permanently states the official-network authorization boundary");
 expect(!readFileSync(APP+"src/app-modules/05-opsec-guard.js","utf8").match(/fetch\s*\(|XMLHttpRequest|analytics|telemetry/i), "OPSEC guard introduces no outbound network/telemetry primitive");
 expect(!readFileSync(APP+"src/app-modules/06-opsec-cyber-curriculum.js","utf8").match(/fetch\s*\(|XMLHttpRequest|analytics|telemetry/i), "Cyber/OPSEC curriculum introduces no outbound network/telemetry primitive");
