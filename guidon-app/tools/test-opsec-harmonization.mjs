@@ -144,6 +144,12 @@ expect(/guest join page/.test(legal) && !/The Study Rooms UI permanently states/
 expect(/findings-only/.test(legal) && !/detected\/redacted locally/.test(legal) && !/hard-stopped/.test(legal) && !/blocked by the ingestion guard/.test(legal), "the review package describes the check as findings-only and no longer claims local redaction or an unqualified hard stop");
 expect(/are \*\*not\*\* recognized/.test(legal) && /Unlabelled ten-digit numbers/.test(legal), "the review package states which marking shapes are recognized and what is NOT detected");
 expect(legal.includes("DoDI 8510.01 — Risk Management Framework for DoD Systems"), "the review package cites DoDI 8510.01 by its current title");
+/* This gate's own trigger. Its push trigger named the feature branch it was
+   merged from, so after the merge it never ran on main again. */
+const wf=readFileSync(fileURLToPath(new URL("../../.github/workflows/opsec-harmonization.yml", import.meta.url)),"utf8").split(/\r?\n/).filter(l=>!/^\s*#/.test(l)).join("\n");
+const pushBlock=(wf.match(/\n  push:\n([\s\S]*?)(?=\n\S|\n  \S|$)/)||[])[1]||"";
+expect(/^\s+branches:\s*\[\s*main\s*\]\s*$/m.test(pushBlock) && !/feature\//.test(wf), "the OPSEC Harmonization workflow runs on pushes to main (not on a merged feature branch)", JSON.stringify(pushBlock.slice(0,160)));
+expect(/\n  pull_request:\n/.test(wf) && ["guidon-app/src/**","guidon-app/tools/fixtures/opsec-guard-cases.json","guidon-app/tools/seed-io.mjs","GUIDON_COMMAND_LEGAL_PACKAGE.md"].every(p=>wf.split("'"+p+"'").length===3), "...and on pull requests, with every file this suite reads listed under both triggers");
 expect(!readFileSync(APP+"src/app-modules/05-opsec-guard.js","utf8").match(/fetch\s*\(|XMLHttpRequest|analytics|telemetry/i), "OPSEC guard introduces no outbound network/telemetry primitive");
 expect(!readFileSync(APP+"src/app-modules/06-opsec-cyber-curriculum.js","utf8").match(/fetch\s*\(|XMLHttpRequest|analytics|telemetry/i), "Cyber/OPSEC curriculum introduces no outbound network/telemetry primitive");
 
