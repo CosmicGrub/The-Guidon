@@ -148,7 +148,15 @@ const restored = await deckSize();
 restored === live.total ? ok(`"All pillars" restores the full ${restored}-card deck`) : bad(`after All pillars: deck ${restored} vs ${live.total}`);
 
 /* ---- 4. Readiness by pillar ---- */
-// Grade a few cards first so mastery numbers are non-zero somewhere.
+// Grade four cards INSIDE one pillar, so the rollup has a number this test
+// can predict. The first version graded four cards from the full deck and
+// asserted "some row is above 0%": with 1,274 cards that was luck - four
+// masteries in a 231-card pillar round to 0%, and an untagged card counts
+// toward no pillar at all. Filtering to the smallest pillar first makes the
+// expected outcome exact: that row's mastered count is 4.
+const gradePillar = "Maintenance & Supply";
+await clickChip("pillar", 1 + chipNames.indexOf(gradePillar));
+await page.waitForTimeout(450);
 for (let i = 0; i < 4; i++) { await page.evaluate(() => { document.querySelectorAll(".qz-grade-row .qz-grade-btn")[2].click(); }); await page.waitForTimeout(150); }
 await page.evaluate(() => { G.board._openReadiness && G.board._openReadiness(); });
 await page.waitForTimeout(900);
@@ -174,8 +182,17 @@ rollup ? ok(`"Readiness by pillar" panel renders with ${rollup.rows.length} rows
 if (rollup) {
   const same = rollup.rows.length === rollup.expected.length && rollup.rows.every((r, i) => r.p === rollup.expected[i].p && r.v === rollup.expected[i].v);
   same ? ok("every row's numbers equal the live computation (isMasteredSrs over the SRS store + getProgress().completedIds over scenarios)") : bad("rollup rows vs expected: " + JSON.stringify(rollup.rows) + " vs " + JSON.stringify(rollup.expected));
-  rollup.anyMastered ? ok("the four cards just graded show up as mastery somewhere in the rollup") : bad("rollup shows 0% everywhere after grading four cards");
+  const msRow = rollup.rows.find((r) => r.p === gradePillar);
+  const msMastered = msRow ? Number((msRow.v.match(/\((\d+)\/\d+ cards\)/) || [])[1]) : NaN;
+  msMastered === 4 ? ok(`the four "${gradePillar}" cards just graded Know It show up as exactly 4 mastered in that pillar's row ("${msRow.v}")`) : bad(`"${gradePillar}" row after grading four of its cards: ` + JSON.stringify(msRow));
   rollup.rows.every((r) => r.hasDrill) ? ok("every pillar row has a Drill button") : bad("a pillar row lacks its Drill button");
+  const bands = await page.evaluate(() => [...document.querySelectorAll(".readiness-pillar-row")].map((row) => {
+    const pct = Number(((row.querySelector(".stat .v") || {}).textContent || "").match(/^(\d+)%/)?.[1]);
+    const bar = row.querySelector(".bar");
+    return { p: row.getAttribute("data-pillar"), pct, green: !!bar && bar.classList.contains("green"), cyan: !!bar && bar.classList.contains("cyan") };
+  }));
+  const bandOk = bands.every((b) => Number.isNaN(b.pct) || (b.green === (b.pct >= 85) && b.cyan === (b.pct >= 60 && b.pct < 85)));
+  bandOk ? ok("each rollup bar's colour band matches its own percentage (green >= 85, cyan 60-84, base below) - no text-vs-bar contradiction") : bad("rollup bar bands: " + JSON.stringify(bands));
   const drillTarget = rollup.rows[1].p;
   await page.evaluate((p) => { const row = document.querySelector(`.readiness-pillar-row[data-pillar="${p}"]`); row.querySelector("button").click(); }, drillTarget);
   await page.waitForTimeout(900);
@@ -205,6 +222,25 @@ const phone = await page2.evaluate(() => {
 });
 const singleRow = phone.rows.every((r) => r.nowrap && r.h < r.chipH * 1.8);
 (singleRow && !phone.pageOverflow) ? ok(`at 390px all three quick-filter rows are single rows (heights ${phone.rows.map((r) => Math.round(r.h)).join("/")}px, ${phone.rows.filter((r) => r.scrolls).length} scroll horizontally) with no page overflow`) : bad("phone-width rows: " + JSON.stringify(phone));
+
+// A chip made active by a deep link must be VISIBLE in the phone-width
+// scroller, not parked off-screen at scrollLeft 0 (the row used to look like
+// nothing was selected). Use the LAST pillar - the one furthest right.
+const lastPillar = CANON[CANON.length - 1];
+await page2.evaluate((p) => { G.board._filterPillar = p; location.hash = "#/home"; }, lastPillar);
+await page2.waitForTimeout(500);
+await page2.evaluate(() => { location.hash = "#/board"; });
+await page2.waitForTimeout(1000);
+const reveal = await page2.evaluate(() => {
+  const bar = document.querySelector('.search-filters[aria-label="Quick-filter by pillar"]');
+  const chip = bar && bar.querySelector(".search-chip.active");
+  if (!bar || !chip) return null;
+  const b = bar.getBoundingClientRect(), c = chip.getBoundingClientRect();
+  return { text: chip.textContent, scrollLeft: Math.round(bar.scrollLeft), inView: c.left >= b.left - 1 && c.right <= b.right + 1 };
+});
+(reveal && reveal.text.startsWith(lastPillar) && reveal.inView && reveal.scrollLeft > 0)
+  ? ok(`at 390px a deep-linked "${lastPillar}" chip is scrolled into view (row scrollLeft ${reveal.scrollLeft}px), not left off-screen`)
+  : bad("deep-linked chip visibility at phone width: " + JSON.stringify(reveal));
 
 noise.length === 0 ? ok("no console errors/warnings or page errors") : bad(`console noise: ${noise.join(" | ")}`);
 console.log(fails === 0 ? "\nBOARD PILLAR FILTER: all passed" : `\nBOARD PILLAR FILTER: ${fails} failed`);

@@ -38,7 +38,7 @@
  *    merely until a backfill finishes: the six pillars were scoped to the
  *    SGT-board study track, and a large share of the app's content
  *    (weapons, land nav, TCCC/medical, CBRN, SERE, fitness standards, LOAC,
- *    pay/benefits, history) belongs to none of them. Untagged is the
+ *    antiterrorism, safety) belongs to none of them. Untagged is the
  *    correct state for that content. PILLAR_REQUIRED exists only so the
  *    rule can be flipped deliberately if the pillar model is ever widened
  *    to cover everything.
@@ -49,7 +49,7 @@
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import { readSeed } from "./seed-io.mjs";
-import { PILLARS, pillarForBoard, pillarForDoctrine, pillarForScenario } from "./pillar-map.mjs";
+import { PILLARS, TOPIC_PILLAR, pillarForBoard, pillarForDoctrine, pillarForScenario } from "./pillar-map.mjs";
 
 const SEED_PATH = fileURLToPath(new URL("../src/index.html", import.meta.url));
 const { data } = readSeed(SEED_PATH);
@@ -87,6 +87,15 @@ const byNorm = {};
 new Set(B.map((q) => q.category).filter(Boolean)).forEach((c) => { const k = normCat(c); (byNorm[k] = byNorm[k] || []).push(c); });
 const nearDup = Object.values(byNorm).filter((g) => g.length > 1);
 nearDup.length === 0 ? ok("(b) no two categories are near-duplicates of each other (normalized punctuation/parentheticals)") : bad(`(b) near-duplicate category groups: ${JSON.stringify(nearDup)}`);
+// Same guard for the doctrine vocabulary, and against the TOPIC_PILLAR keys:
+// a variant spelling of a mapped topic ("Customs and Courtesies" vs
+// "Customs & Courtesies") would otherwise ship untagged and still pass. A
+// SEPARATE pass on purpose - board "Counseling (ATP 6-22.1)" and doctrine
+// "Counseling" legitimately coexist and would collide if merged.
+const byNormT = {};
+new Set([...D.map((e) => e.topic).filter(Boolean), ...Object.keys(TOPIC_PILLAR)]).forEach((t) => { const k = normCat(t); (byNormT[k] = byNormT[k] || []).push(t); });
+const nearDupT = Object.values(byNormT).filter((g) => g.length > 1);
+nearDupT.length === 0 ? ok(`(b) no two doctrine topics are near-duplicates of each other or of a mapped topic (${new Set(D.map((e) => e.topic)).size} distinct)`) : bad(`(b) near-duplicate doctrine topic groups: ${JSON.stringify(nearDupT)}`);
 
 // (c) source: a non-empty string. Deliberately NOT "names a publication" -
 //     see the header for the 32 legitimate non-publication citations.
@@ -125,12 +134,12 @@ const mismatched = [];
 for (const [label, list, fn] of [["board", B, pillarForBoard], ["doctrine", D, pillarForDoctrine], ["scenario", S, pillarForScenario]]) {
   for (const r of list) {
     const want = fn(r);
-    if (want && r.pillar !== want) mismatched.push(`${label} ${r.id}: pillar=${JSON.stringify(r.pillar ?? null)} expected ${JSON.stringify(want)}`);
+    if ((want || r.pillar != null) && r.pillar !== want) mismatched.push(`${label} ${r.id}: pillar=${JSON.stringify(r.pillar ?? null)} expected ${JSON.stringify(want)}`);
   }
 }
 mismatched.length === 0
   ? ok("(f2) every record whose category/topic/lane is mapped in tools/pillar-map.mjs carries exactly that pillar")
-  : bad(`(f2) ${mismatched.length} record(s) missing or contradicting their mapped pillar (run node tools/backfill-pillars.mjs for missing ones): ${show(mismatched, 5)}`);
+  : bad(`(f2) ${mismatched.length} record(s) missing or contradicting their mapped pillar (missing -> run node tools/backfill-pillars.mjs; "expected null" -> the record carries a pillar its category/topic is not mapped to: remove the tag, or add the category/topic/id to tools/pillar-map.mjs): ${show(mismatched, 5)}`);
 
 // (h) The app's own G.board.PILLARS literal (Board Drill's pillar chip row,
 //     the Readiness rollup) must equal PILLARS from tools/pillar-map.mjs -
