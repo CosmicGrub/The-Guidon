@@ -28,7 +28,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
-import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { dismissOnboarding, MODE_TEXT } from "./dismiss-onboarding.mjs";
 import { loadManifest, docDisagreements } from "./content-manifest.mjs";
 
 let fails = 0;
@@ -121,6 +121,45 @@ const planted = docDisagreements("984 board cards, a real 3D flip, spaced repeti
 (planted.length === 1 && planted[0].quoted === 984 && planted[0].live === manifest.totals.board)
   ? ok("verifier check: the sentence this screen used to show (\"984 board cards ...\") is caught by the same sweep")
   : bad("verifier check: the old typed sentence was NOT caught: " + JSON.stringify(planted));
+// "164 MOS codes" (the MOS section's description) is a typed count too; it is
+// right today, and the sweep has to notice the day it is not.
+const plantedMos = docDisagreements(`${manifest.totals.mos - 1} MOS codes with ASVAB and OPAT data`, manifest);
+(plantedMos.length === 1 && plantedMos[0].key === "mos" && plantedMos[0].live === manifest.totals.mos)
+  ? ok("verifier check: an MOS count one short (\"... MOS codes\") is caught by the same sweep")
+  : bad("verifier check: a stale \"MOS codes\" count was NOT caught: " + JSON.stringify(plantedMos));
+
+/* ---- 5. the first-run wizard's rank previews ----
+   The very first screen a new Soldier reads. Picking SPC said the SGT board
+   course "Covers the 261 board questions" - a bank size from long ago, shown
+   to every new SPC, and out of reach of the sweep above because the text only
+   exists once a rank is picked. A fresh visitor (second context, same
+   browser), Personal Account, every rank in turn, the same sweep. */
+const fresh = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: "en-US" });
+const wizard = await fresh.newPage();
+wizard.on("console", (m) => { if (["error", "warning"].includes(m.type())) noise.push("wizard " + m.type() + ": " + m.text()); });
+wizard.on("pageerror", (e) => noise.push("wizard pageerror: " + e.message));
+await wizard.goto(url, { waitUntil: "load" });
+const personal = wizard.locator("#ob-overlay .ob-mode-card", { hasText: MODE_TEXT.personal });
+const wizardUp = await personal.waitFor({ timeout: 30000 }).then(() => true).catch(() => false);
+const previews = [];
+if (wizardUp) {
+  await personal.click();
+  await wizard.waitForSelector(".ob-rank-btn", { timeout: 15000 }).catch(() => {});
+  const ranks = await wizard.locator(".ob-rank-btn").allTextContents();
+  for (let i = 0; i < ranks.length; i++) {
+    await wizard.locator(".ob-rank-btn").nth(i).click();
+    previews.push({ where: "first-run rank preview (" + ranks[i].trim() + ")", text: ((await wizard.locator(".ob-rank-preview").textContent()) || "").trim() });
+  }
+}
+(previews.length >= 9 && previews.every((p) => p.text.length > 40))
+  ? ok(`the first-run wizard shows a rank preview for each of its ${previews.length} ranks`)
+  : bad("could not read the first-run rank previews (wizard up: " + wizardUp + "): " + JSON.stringify(previews.map((p) => p.where + " -> " + p.text.slice(0, 30))));
+const wrongPreviews = [];
+for (const p of previews) for (const d of docDisagreements(p.text, manifest)) wrongPreviews.push(`${p.where}: says ${say(d.quoted)} ${d.key}, the bank has ${say(d.live)}`);
+wrongPreviews.length === 0
+  ? ok("none of the rank previews quotes a content count the manifest disagrees with (SPC said \"the 261 board questions\")")
+  : bad("typed counts in the first-run rank previews - say it without a number, or read it from the loaded content: " + [...new Set(wrongPreviews)].join(" | "));
+await fresh.close();
 
 noise.length === 0 ? ok("no console errors/warnings or page errors") : bad("console noise: " + noise.join(" | "));
 console.log(fails === 0 ? "\nLIVE CONTENT FIGURES: all passed" : `\nLIVE CONTENT FIGURES: ${fails} failed`);

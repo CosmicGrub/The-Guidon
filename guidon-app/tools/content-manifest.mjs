@@ -280,7 +280,7 @@ const DOC_PATTERNS = [
   { key: "doctrine", re: new RegExp("\\bDoctrine entries\\s*\\|\\s*" + QUOTED, "gi") },
   { key: "scenarios", re: new RegExp("\\b" + QUOTED + "\\s+scenarios\\b", "gi") },
   { key: "scenarios", re: new RegExp("\\bScenarios\\s*\\|\\s*" + QUOTED, "gi") },
-  { key: "mos", re: new RegExp("\\b" + QUOTED + "(?:\\s+MOS\\s+entries|-MOS)\\b", "g") },
+  { key: "mos", re: new RegExp("\\b" + QUOTED + "(?:\\s+MOS\\s+(?:entries|codes)|-MOS)\\b", "g") },
   { key: "mos", re: new RegExp("\\bMOS entries\\s*\\|\\s*" + QUOTED, "gi") },
 ];
 /** Lines of a document (outside its generated block) that quote a count the
