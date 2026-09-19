@@ -22063,7 +22063,20 @@ window.G = window.G || {};
       desc: "Leadership scenarios that branch on the choice actually made, not a quiz with one right answer.",
       watch: "Pick a branch and let it resolve — then show the ADP 6-22 competency it just scored against." },
     { title: "Board Drill", route: "#/board",
-      desc: "984 board cards, a real 3D flip, spaced repetition scheduling the next review.",
+      // Was a typed "984 board cards" - still on screen in the Guided Tour
+      // long after the bank had grown past it. Same fix as
+      // DEMO_NOTES["#/board"] above: a getter over the raw seed (every
+      // content pack has pushed its cards in long before a tour stop
+      // renders), never the Soldier's own tier-filtered pool.
+      // tools/test-live-content-figures.mjs holds it to the content manifest.
+      get desc() {
+        try {
+          const s = window.GUIDON_SEED;
+          const n = (s && s.board && s.board.questions && s.board.questions.length) || null;
+          if (n) return n.toLocaleString() + " board cards, a real 3D flip, spaced repetition scheduling the next review.";
+        } catch (e) {}
+        return "Board cards with a real 3D flip, spaced repetition scheduling the next review.";
+      },
       watch: "Flip a card and grade it Down Cold — show the review interval it just set, out loud." },
     { title: "Rapid Fire", open: () => openBoardTab("_openRapidFire"),
       desc: "The pass-the-device party mode living inside Board Drill — Party, Solo, or head-to-head Team play on the same real card deck.",
@@ -22555,7 +22568,10 @@ window.G = window.G || {};
       'E1': "E1 / PVT -- Junior Soldier Foundations, Customs & Courtesies, and Army Values are your priority courses. The goal is fundamentals before anything else.",
       'E2': "E2 / PV2 -- Same track as PVT: Foundations, Customs, and Warfighting. You are still building the base -- master these before moving up.",
       'E3': "E3 / PFC -- Customs mastery expected. Start familiarizing yourself with Standards & Discipline and Army Programs. Your SPC board is coming.",
-      'E4': "E4 / SPC -- SGT Board Prep is your #1 course. Covers the 261 board questions, report-in procedures, NCO Creed, and uniform standards. NCO Roles and Military Presence are also priority. Everything feeds your board.",
+      // No typed count here: this said "the 261 board questions" - a bank size
+      // from long ago - to every new SPC on the first screen they read.
+      // tools/test-live-content-figures.mjs sweeps every rank preview.
+      'E4': "E4 / SPC -- SGT Board Prep is your #1 course. Covers the board questions you will be asked, report-in procedures, NCO Creed, and uniform standards. NCO Roles and Military Presence are also priority. Everything feeds your board.",
       'E5': "E5 / SGT -- Developing Others and MDMP/TLP are now your professional responsibilities. You counsel Soldiers, receive OPORDs, and execute TLPs. Army Leadership and NCO Core Competencies apply to your daily work.",
       'E6': "E6 / SSG -- Developing NCOs (not just Soldiers) is your primary task. MDMP at section level, Army Programs accountability, and organizational leadership are your focus. You are a force multiplier for your SGTs.",
       'E7': "E7 / SFC -- GUIDON's board-prep depth tops out at E6; from here, SLC Prep covers SLC/MLC/SMC at survey level rather than full course depth. Army Leadership doctrine still applies at every tier.",

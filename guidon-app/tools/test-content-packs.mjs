@@ -24,6 +24,7 @@ import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { assembleBank } from "./assemble-bank.mjs";
 import { runtimePillarMap, pillarForBoard } from "./pillar-map.mjs";
+import { loadManifest } from "./content-manifest.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -64,6 +65,26 @@ for (const [label, a, b] of [["board cards", live.board, hb], ["doctrine entries
   d === null ? ok(`${a.length} ${label}: the built page and the headless assembler agree on every id, in order, with the same category/topic and pillar`) : bad(`${label} differ between the page and the assembler at ${JSON.stringify(d)}`);
 }
 live.hash === headless.data.board.contentHash ? ok(`same study-room fingerprint in the page and headless (${live.hash})`) : bad(`fingerprint: page ${live.hash} vs headless ${headless.data.board.contentHash}`);
+
+/* ---- the committed manifest describes THIS bank ----
+   tools/content-manifest.json is what the ESP32 exporter and the other suites
+   trust instead of a typed count, so it has to be tied to the real page, not
+   only to the assembler that generated it. test-consistency compares every
+   figure the page can know; this adds the two it cannot - which file each
+   record came from - by closing the arithmetic against the page's own totals. */
+const manifest = loadManifest();
+live.hash === manifest.fingerprint ? ok(`the committed content manifest carries this page's fingerprint (${manifest.fingerprint})`) : bad(`tools/content-manifest.json fingerprint ${manifest.fingerprint} is not the built page's ${live.hash} - run: node tools/content-manifest.mjs --write`);
+for (const kind of ["board", "doctrine", "scenarios"]) {
+  const fromPacks = Object.values(manifest.packs).reduce((n, p) => n + p[kind], 0);
+  manifest.seedOnly[kind] + fromPacks === live[kind].length
+    ? ok(`manifest ${kind}: ${manifest.seedOnly[kind]} in the seed + ${fromPacks} from packs = the ${live[kind].length} the built page holds`)
+    : bad(`manifest ${kind}: ${manifest.seedOnly[kind]} seed + ${fromPacks} from packs is not the ${live[kind].length} the built page holds - run: node tools/content-manifest.mjs --write`);
+}
+const addsSomething = (a) => a.board || a.doctrine || a.scenarios;
+const reallyAdded = Object.fromEntries(headless.modules.filter((m) => addsSomething(m.added)).map((m) => [m.file, m.added]));
+JSON.stringify(reallyAdded) === JSON.stringify(manifest.packs)
+  ? ok(`the manifest's per-pack contributions are what each of the ${Object.keys(reallyAdded).length} contributing pack files really adds, in load order`)
+  : bad(`per-pack contributions differ - manifest ${JSON.stringify(manifest.packs)} vs loaded ${JSON.stringify(reallyAdded)}`);
 
 /* ---- finalize pass: one pillar definition, fingerprint stamped last ---- */
 JSON.stringify(live.map) === JSON.stringify(runtimePillarMap()) ? ok("the build injects tools/pillar-map.mjs into the page verbatim (window.GUIDON_PILLAR_MAP)") : bad("window.GUIDON_PILLAR_MAP differs from tools/pillar-map.mjs runtimePillarMap()");

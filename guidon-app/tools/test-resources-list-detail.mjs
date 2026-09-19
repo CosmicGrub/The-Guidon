@@ -34,6 +34,9 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { loadManifest } from "./content-manifest.mjs";
+
+const REVIEWED = loadManifest().totals;
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -70,17 +73,21 @@ async function boot(viewport) {
     }));
   });
 
-  expected.length === 24
-    ? ok(`store.resources() has 24 categories as documented (found ${expected.length})`)
-    : bad(`expected 24 categories in store.resources(), found ${expected.length}`);
+  // Not a typed 24 / 78 any more: the committed content manifest records how
+  // many resource categories and links the bank holds (totals.resourceCategories
+  // / totals.resourceLinks), so adding a link no longer means hand-bumping this
+  // suite, and losing one is refused by the manifest's own ratchet.
+  (expected.length > 0 && expected.length === REVIEWED.resourceCategories)
+    ? ok(`store.resources() has the ${expected.length} categories the content manifest records`)
+    : bad(`store.resources() has ${expected.length} categories, the content manifest records ${REVIEWED.resourceCategories}`);
   rendered.length === expected.length
     ? ok(`jump list rendered ${rendered.length} rows, one per category`)
     : bad(`jump list rendered ${rendered.length} rows, expected ${expected.length}`);
 
   const totalItems = expected.reduce((s, c) => s + c.count, 0);
-  totalItems === 78
-    ? ok(`store.resources() totals 78 items across all categories as documented (found ${totalItems})`)
-    : bad(`expected 78 total items, found ${totalItems}`);
+  (totalItems > 0 && totalItems === REVIEWED.resourceLinks)
+    ? ok(`store.resources() totals the ${totalItems} items the content manifest records, across all categories`)
+    : bad(`store.resources() totals ${totalItems} items, the content manifest records ${REVIEWED.resourceLinks}`);
 
   const mismatches = expected.filter((c, i) => !rendered[i] || rendered[i].name !== c.name || rendered[i].badge !== String(c.count));
   mismatches.length === 0

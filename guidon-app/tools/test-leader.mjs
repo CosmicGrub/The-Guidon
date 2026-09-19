@@ -7,6 +7,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { loadManifest } from "./content-manifest.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -56,6 +57,12 @@ n === 1 ? ok("Add Soldier creates a roster entry") : bad("expected 1 entry, got 
 // to the app's own canonical RANKS list, and there was no MOS field on a
 // roster entry at all - both fixed with real <datalist> options, checked
 // here rather than just assuming the wiring is correct.
+// mosOptionCount is a bank total (one <option> per career.mos entry) - it
+// used to be typed here as 164, the exact FLOORS-style literal the content
+// manifest work (tools/content-manifest.mjs) replaced everywhere else; this
+// suite was missed. Read live from the committed manifest instead, so a MOS
+// added or removed does not need a hand-bump here too.
+const mosTotal = loadManifest().totals.mos;
 const datalists = await page.evaluate(() => ({
   rankOptionCount: document.querySelectorAll("#roster-ranks-list option").length,
   rankHasSGT: !!document.querySelector('#roster-ranks-list option[value="SGT"]'),
@@ -67,9 +74,9 @@ const datalists = await page.evaluate(() => ({
 (datalists.rankOptionCount === 13 && datalists.rankHasSGT)
   ? ok("Rank field is backed by a <datalist> of the app's canonical 13 ranks (SGT present)")
   : bad("rank datalist: " + JSON.stringify(datalists));
-(datalists.mosOptionCount === 164 && datalists.mosHas11B)
-  ? ok("MOS field is backed by a <datalist> of all 164 real MOS entries (11B present)")
-  : bad("MOS datalist: " + JSON.stringify(datalists));
+(datalists.mosOptionCount > 0 && datalists.mosOptionCount === mosTotal && datalists.mosHas11B)
+  ? ok(`MOS field is backed by a <datalist> of all ${mosTotal} real MOS entries the content manifest records (11B present)`)
+  : bad(`MOS datalist has ${datalists.mosOptionCount} option(s), the content manifest records ${mosTotal}: ` + JSON.stringify(datalists));
 (datalists.rankInputLinked === "roster-ranks-list" && datalists.mosInputLinked === "roster-mos-list")
   ? ok("Both inputs are actually wired to their datalists via list=")
   : bad("input list= attributes: " + JSON.stringify(datalists));
