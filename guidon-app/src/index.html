@@ -7419,6 +7419,53 @@ window.G = window.G || {};
     },
   };
 
+  // ---------------- G.ext: named extension points ----------------
+  // WHY: the 2026-09 feature modules (src/app-modules) added their launch
+  // panels to Board Drill, Leadership Drills and Physical Readiness by
+  // REPLACING G.board.render / G.drills.render / G.views.prt with wrappers
+  // of their own. That works only while nobody else wraps the same function,
+  // depends on the order the files load in, and is invisible from here - a
+  // refactor of one of those renders could drop a module's panel and nothing
+  // would say so. An extension point is the same hook, declared: core says
+  // WHERE it may be extended (EXT_POINTS below - add a name here and call
+  // G.ext.run(name, ...) at that spot), a module subscribes with
+  // G.ext.on(name, fn), and src/app-modules/manifest.json lists both sides
+  // (core.extensionPoints, each module's "hooks") so tools/test-module-
+  // contract.mjs can hold them to it.
+  //
+  // Two rules make it safe to call from a render:
+  //  - a handler that throws (or returns a promise that rejects) is logged
+  //    and skipped; the host screen and the other handlers carry on.
+  //  - an unknown point name is refused OUT LOUD, in on() and in run(). A
+  //    handler registered for a misspelt point would otherwise never run and
+  //    nothing would notice - the same silent skip as a typeof guard around a
+  //    function that no longer exists. console.error is the loud path here:
+  //    every browser suite asserts a clean console.
+  var EXT_POINTS = ["board:rendered", "drills:rendered", "prt:rendered"];
+  var _extHandlers = Object.create(null);
+  function extLog(what, name, e) { if (window.console) console.error("G.ext: " + what + " (" + name + ")", e || ""); }
+  G.ext = {
+    points: function () { return EXT_POINTS.slice(); },
+    count: function (name) { return (_extHandlers[name] || []).length; },
+    on: function (name, fn) {
+      if (EXT_POINTS.indexOf(name) === -1) { extLog("no such extension point, handler ignored", name); return false; }
+      if (typeof fn !== "function") { extLog("handler is not a function, ignored", name); return false; }
+      (_extHandlers[name] || (_extHandlers[name] = [])).push(fn);
+      return true;
+    },
+    run: function (name) {
+      if (EXT_POINTS.indexOf(name) === -1) { extLog("no such extension point, nothing run", name); return; }
+      var args = Array.prototype.slice.call(arguments, 1);
+      var list = (_extHandlers[name] || []).slice();
+      for (var i = 0; i < list.length; i++) {
+        try {
+          var out = list[i].apply(null, args);
+          if (out && typeof out.then === "function") out.then(null, function (e) { extLog("a handler failed", name, e); });
+        } catch (e) { extLog("a handler failed", name, e); }
+      }
+    },
+  };
+
   G.util = util;
 })();
 
@@ -15332,6 +15379,11 @@ window.G = window.G || {};
       const boardSeed = G.nav && G.nav.consume("board-category");
       if (boardSeed) G.board._filterCat = boardSeed;
       set("drill");
+      // Extension point (G.ext, util.js): modules add to this screen here -
+      // today the Board Simulator launch panel - instead of replacing
+      // G.board.render with a wrapper. Runs last, on the route mount, so
+      // whatever a handler appends lands below the tab body.
+      G.ext.run("board:rendered", mount);
     },
   };
 
@@ -25878,6 +25930,11 @@ window.G = window.G || {};
 
     mount.appendChild(el("p.hint", { style:"margin-top:12px", text:
       "Rubric point values and sequences are from the BLC ISAP (600-C44), TC 3-21.5 and ATP 7-22.02. Academies vary \u2014 confirm specifics against the assignment sheet you are given." }));
+    // Extension point (G.ext, util.js): the screen is fully drawn by now
+    // (this function has already awaited its saved state), so a module's
+    // panel - today the Team Training / PT Planner launcher - lands below
+    // everything above. Replaces a wrapper around G.drills.render.
+    G.ext.run("drills:rendered", mount);
   }
 
   G.drills = { render };
@@ -34180,7 +34237,11 @@ window.G = window.G || {};
     startExercise();
   }
 
-  views.prt = function (mount) {
+  // The Hub itself lives in prtHub() so views.prt (below it) has exactly ONE
+  // place where the screen is known to be drawn - prtHub returns early when
+  // there is no PRT content, and an extension point placed at the bottom of
+  // it would be skipped on that path.
+  function prtHub(mount) {
     util.clear(mount);
     mount.appendChild(el("div.section-title", {}, [el("h2", { text: "Physical Readiness" }), el("div.rule")]));
 
@@ -34324,6 +34385,15 @@ window.G = window.G || {};
     }
     renderList();
     renderDetail();
+  }
+
+  // Extension point (G.ext, util.js): modules add to the Hub here - today
+  // the PT Planner launch panel - instead of replacing G.views.prt with a
+  // wrapper. prtRunDrill's "back to the Hub" calls views.prt again, so a
+  // panel added here comes back with the Hub, as it did under the wrapper.
+  views.prt = function (mount) {
+    prtHub(mount);
+    G.ext.run("prt:rendered", mount);
   };
 
   views.doctrine = function (mount) {

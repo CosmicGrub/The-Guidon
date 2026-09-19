@@ -2,8 +2,8 @@
  * Content packs: the running page and the headless assembler must be the
  * SAME bank.
  *
- * tools/assemble-bank.mjs evaluates the static seed plus every numbered
- * src/app-modules pack with no browser, so that the lints, the consistency
+ * tools/assemble-bank.mjs evaluates the static seed plus every headless
+ * src/app-modules module (manifest.json) with no browser, so that the lints, the consistency
  * counts and the ESP32 card exporter all see what a Soldier actually gets.
  * That is only worth anything if it is true - so this suite loads the REAL
  * built page and compares it, field by field, with the assembler's output:
@@ -54,7 +54,7 @@ const live = await page.evaluate(() => {
 
 /* ---- the headless assembler is trustworthy ---- */
 const broken = headless.modules.filter((m) => m.error);
-broken.length === 0 ? ok(`all ${headless.modules.length} numbered modules load headlessly (no DOM needed)`) : bad("modules failed headlessly: " + JSON.stringify(broken));
+broken.length === 0 ? ok(`all ${headless.modules.length} headless modules (src/app-modules/manifest.json) load with no DOM`) : bad("modules failed headlessly: " + JSON.stringify(broken));
 const hb = headless.data.board.questions.map((q) => [q.id, q.category, q.pillar || null]);
 const hd = headless.data.doctrine.entries.map((e) => [e.id, e.topic, e.pillar || null]);
 const hs = headless.data.scenarios.scenarios.map((s) => [s.id, s.pillar || null]);
