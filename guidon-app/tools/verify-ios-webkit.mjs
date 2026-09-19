@@ -30,39 +30,35 @@
  * copied list silently fell behind once already), capture console "warning"
  * as well as "error".
  *
- * BASELINE RATCHET (tools/ios-webkit-ratchet.mjs has the full story). This
- * suite exited 1 on every run for weeks, so ios.yml ran it with
- * continue-on-error and the job was green whatever it found - the only
- * layout / tap-target / zoom-on-focus check for the iPhone fork decided
- * nothing, and new defects walked in unseen. Now the layout defects that
- * exist today are written down in tools/ios-webkit-baseline.json and
- * tolerated; ANY defect not on that list fails the run, and the step in
- * ios.yml is a real gate again. Fix one and the run reminds you to delete
- * its line - the list only ever shrinks. Everything that is not a layout
- * defect (viewport-fit, service worker, storage, console noise) was never
- * part of the backlog and stays a hard failure.
+ * EXIT CODE = the job's colour (audit U7). This suite used to run in CI under
+ * `continue-on-error: true`: green tick, exit 1, 19 defects, for weeks. Known
+ * defects now live in tools/ios-webkit-baseline.json and the run fails ONLY on
+ * a defect that is not listed there (something got worse) or on a listed
+ * entry that no longer reproduces (something got better - delete the entry, so
+ * the list can only shrink). Every other check here - viewport-fit, service
+ * worker, storage, console noise - fails the run exactly as before. The
+ * verdict logic is tools/ios-webkit-baseline.mjs (pure, tested on any OS by
+ * tools/test-ios-webkit-ratchet.mjs); tools/lint-capacitor-config.mjs check (i)
+ * keeps continue-on-error from coming back.
  *
  * Usage: node tools/verify-ios-webkit.mjs [webDir] [--shots] [--headed]
- *        [--no-baseline]     judge all-or-nothing, as before the ratchet
- *        [--write-baseline]  record today's defects as the new baseline
- *                            (only ever to REMOVE fixed ones - never to
- *                            wave a new defect through)
+ *          [--baseline=<file>]   another baseline (default tools/ios-webkit-baseline.json)
+ *          [--no-baseline]       tolerate nothing: any defect at all fails the run
  */
 import { webkit, devices } from "playwright";
 import { serve } from "./server.mjs";
-import { readFile, mkdir, writeFile } from "node:fs/promises";
+import { readFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { probeViaPlaywright, writeProbe } from "./caps-probe.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
-import { keyOf, loadBaseline, judge, serialize } from "./ios-webkit-ratchet.mjs";
+import { loadBaseline, emptyBaseline, classify, defectKey, BASELINE_PATH } from "./ios-webkit-baseline.mjs";
 
 const args = process.argv.slice(2);
 const WEB = args.find((a) => !a.startsWith("--")) || "web";
 const SHOTS = args.includes("--shots");
 const HEADED = args.includes("--headed");
-const BASELINE_PATH = "tools/ios-webkit-baseline.json";
-const WRITE_BASELINE = args.includes("--write-baseline");
 const NO_BASELINE = args.includes("--no-baseline");
+const BASELINE_FILE = (args.find((a) => a.startsWith("--baseline=")) || "").slice("--baseline=".length) || BASELINE_PATH;
 const SETTLE_NAV = 250;
 const SETTLE_ROUTE = 150;
 const OUT = "artifacts/ios-webkit";
@@ -96,11 +92,12 @@ function defect(check, route, signature, detail, device) {
      routes render it; keying on route as well reported the same two topbar
      buttons 69 times and made the headline count about 5x the real work.
      Routes are kept as evidence, not as multiplicity. */
-  const key = `${check}\u0000${signature}`;
+  const key = defectKey(check, signature);
   let d = defects.get(key);
-  if (!d) { d = { check, signature, detail, routes: new Set(), devices: new Set() }; defects.set(key, d); }
+  if (!d) { d = { key, check, signature, detail, routes: new Set(), devices: new Set() }; defects.set(key, d); }
   d.routes.add(route);
   d.devices.add(device);
+  return key;
 }
 
 /* Everything below runs inside the page. Kept as one string so the helpers
@@ -190,6 +187,14 @@ const SWEEP = ({ minTap, minFont }) => {
 };
 
 async function main() {
+  // A baseline that fails to load is a hard error (exit 2), never "empty":
+  // an empty baseline would re-label all 19 known defects NEW, and a reader
+  // of that red run would go hunting for a regression that does not exist.
+  const baseline = NO_BASELINE ? emptyBaseline() : await loadBaseline(BASELINE_FILE);
+  console.log(NO_BASELINE
+    ? "baseline: none (--no-baseline) - any defect at all fails this run"
+    : `baseline: ${baseline.defects.size} known defect(s) + ${baseline.vh.size} known unbounded vh, from ${BASELINE_FILE}\n`);
+
   // ---------- 0. static source audit: bare vh, once, engine-independent ----------
   console.log("[0] Static CSS audit (bare vh without dvh/svh/lvh fallback)");
   const indexPath = join(process.cwd(), WEB, "index.html");
@@ -227,18 +232,13 @@ async function main() {
     const bounded = prop.startsWith("max-") || prop === "margin" || /\b(?:min|max|clamp)\s*\(/.test(decl);
     (paired ? vhPaired : bounded ? vhBounded : vhUnbounded).push(decl.slice(0, 60));
   }
-  const baselineJson = NO_BASELINE ? null : await readFile(BASELINE_PATH, "utf8").then(JSON.parse).catch((e) => {
-    if (e && e.code === "ENOENT") return null;
-    throw new Error(BASELINE_PATH + " could not be read: " + e.message);
-  });
-  const baseline = loadBaseline(baselineJson);
-  console.log(baseline.on ? `    baseline in use: ${baseline.defects.size} known layout defect(s) + ${baseline.vh.size} known vh declaration(s) are tolerated; anything else fails` : "    no baseline in use: every defect fails");
-  if (vhUnbounded.length && baseline.on) {
-    // Judged with the route-sweep defects at the end (fresh vs known).
-    console.log(`    info: ${vhUnbounded.length} unbounded "vh" declaration(s) found - checked against the baseline below`);
-  } else if (vhUnbounded.length) {
-    bad(`${vhUnbounded.length} UNBOUNDED "vh" declaration(s) - iOS Safari chrome clips these: ${vhUnbounded.slice(0, 6).join(" | ")}`);
+  const vh = classify(vhUnbounded, baseline.vh);
+  if (vh.fresh.length) {
+    bad(`${vh.fresh.length} NEW unbounded "vh" declaration(s) - iOS Safari chrome clips these: ${vh.fresh.slice(0, 6).join(" | ")}`);
+  } else if (vh.known.length) {
+    ok(`no new unbounded vh values (${vh.known.length} known, still open: ${vh.known.join(" | ")})`);
   } else ok(`no unbounded vh values (${vhPaired.length} paired with dvh, ${vhBounded.length} bounded by max-*/min()/clamp())`);
+  for (const s of vh.stale) bad(`baseline lists unbounded vh "${s}" but the source no longer has it - fixed? Delete that line from ${BASELINE_FILE} in this change`);
   if (vhBounded.length || vhPaired.length) {
     console.log(`    info: ${vhPaired.length} paired, ${vhBounded.length} bounded - not defects`);
   }
@@ -248,6 +248,9 @@ async function main() {
   if (SHOTS) await mkdir(OUT, { recursive: true });
 
   const browser = await webkit.launch({ headless: !HEADED });
+  // Devices whose route sweep actually ran. "This baseline entry no longer
+  // reproduces" is only a true statement if every device looked.
+  let sweptDevices = 0;
 
   try {
     for (const device of DEVICES) {
@@ -282,19 +285,20 @@ async function main() {
 
       // ---------- 2/3/5/6. per-route sweep ----------
       let nOverflow = 0, nFont = 0, nTap = 0, nOrphan = 0, nText = 0;
+      const seenHere = new Set(); // defect keys THIS device raised, for its own verdict line
       for (const r of routes || []) {
         await page.evaluate((h) => { location.hash = h; }, r);
         await page.waitForTimeout(SETTLE_ROUTE);
         const s = await page.evaluate(SWEEP, { minTap: MIN_TAP, minFont: MIN_FONT });
 
-        if (s.overflow > 1) { nOverflow++; defect("overflow", r, "document", `${s.overflow}px wider than viewport`, name); }
-        for (const f of s.fonts) { nFont++; defect("font<16", r, f.sig, `${f.size}px`, name); }
+        if (s.overflow > 1) { nOverflow++; seenHere.add(defect("overflow", r, "document", `${s.overflow}px wider than viewport`, name)); }
+        for (const f of s.fonts) { nFont++; seenHere.add(defect("font<16", r, f.sig, `${f.size}px`, name)); }
         for (const t of s.taps) {
           nTap++;
-          defect("tap<44", r, t.sig, `${t.w}x${t.h}${t.labelled ? " (incl. label)" : ""}`, name);
+          seenHere.add(defect("tap<44", r, t.sig, `${t.w}x${t.h}${t.labelled ? " (incl. label)" : ""}`, name));
         }
-        for (const l of s.orphanLabels) { nOrphan++; defect("orphan-label", r, l.sig, `"${l.text}" points at nothing`, name); }
-        if (s.badText) { nText++; defect("bad-text", r, "body", "Invalid Date or NaN rendered", name); }
+        for (const l of s.orphanLabels) { nOrphan++; seenHere.add(defect("orphan-label", r, l.sig, `"${l.text}" points at nothing`, name)); }
+        if (s.badText) { nText++; seenHere.add(defect("bad-text", r, "body", "Invalid Date or NaN rendered", name)); }
       }
       if (routes && routes.length) {
         const summary = [
@@ -304,11 +308,14 @@ async function main() {
           nOrphan ? `${nOrphan} orphan-label` : null,
           nText ? `${nText} bad-text` : null,
         ].filter(Boolean);
-        // With a baseline, one device's raw count decides nothing: the
-        // defects are judged once, deduped, against the baseline at the end.
-        summary.length
-          ? (baseline.on ? console.log(`  INFO  ${name}: ${routes.length} routes swept - ${summary.join(", ")} (judged against the baseline below)`) : bad(`${name}: ${routes.length} routes swept - ${summary.join(", ")} (deduped detail below)`))
-          : ok(`${name}: ${routes.length} routes clean - no overflow, fonts, tap targets or date defects`);
+        /* The device's line fails only for a defect the baseline does not
+           list. Known ones are still counted out loud - "PASS" here means
+           "nothing got worse", never "nothing is wrong". */
+        const here = classify(seenHere, baseline.defects);
+        if (here.fresh.length) bad(`${name}: ${routes.length} routes swept - ${here.fresh.length} NEW defect(s) not in the baseline: ${here.fresh.slice(0, 4).join(" | ")}${here.fresh.length > 4 ? " | ..." : ""} (all occurrences: ${summary.join(", ")}; deduped detail below)`);
+        else if (summary.length) ok(`${name}: ${routes.length} routes swept - nothing new; ${here.known.length} known defect(s) still open (${summary.join(", ")})`);
+        else ok(`${name}: ${routes.length} routes clean - no overflow, fonts, tap targets or date defects`);
+        sweptDevices++;
       }
 
       // ---------- 6b. capability probe (collective P2) ----------
@@ -399,6 +406,17 @@ async function main() {
     server.close();
   }
 
+  // ---------- ratchet: anything fixed must leave the baseline ----------
+  /* Only when every device swept its routes: a run that lost a device (no
+     G.routes, a crash) has already failed above, and calling the entries it
+     never looked for "fixed" would send someone to delete real ones. */
+  const overall = classify(defects.keys(), baseline.defects);
+  if (sweptDevices === DEVICES.length) {
+    for (const key of overall.stale) bad(`baseline lists "${key}" but no device reproduced it - fixed? Delete that entry from ${BASELINE_FILE} in this change, so it cannot quietly come back`);
+  } else if (overall.stale.length) {
+    console.log(`    info: ${overall.stale.length} baseline entr${overall.stale.length === 1 ? "y" : "ies"} not reproduced, but only ${sweptDevices}/${DEVICES.length} devices swept - not judged`);
+  }
+
   // ---------- deduped defect report ----------
   const LABELS = {
     "overflow": "Horizontal overflow",
@@ -429,39 +447,15 @@ async function main() {
         const where = routes.length === 1
           ? routes[0]
           : `${routes.length} routes (${routes.slice(0, 3).join(", ")}${routes.length > 3 ? ", ..." : ""})`;
-        console.log(`  ${d.signature}`);
+        console.log(`  ${d.signature}${baseline.defects.has(d.key) ? "" : "   <-- NEW (not in the baseline)"}`);
         console.log(`      ${d.detail}  ·  ${where}  ·  [${dev}]`);
       }
     }
   }
 
-  // ---------- baseline ratchet ----------
-  const observedDefects = [...defects.values()].map((d) => keyOf(d.check, d.signature));
-  if (WRITE_BASELINE) {
-    await writeFile(BASELINE_PATH, serialize({ observedDefects, observedVh: vhUnbounded,
-      note: "Known iOS/WebKit layout defects, tolerated by tools/verify-ios-webkit.mjs. This list may only SHRINK: delete a line when its defect is fixed; never add one to get a new defect past CI. Regenerate with: node tools/verify-ios-webkit.mjs --write-baseline" }), "utf8");
-    console.log(`\nbaseline written: ${BASELINE_PATH} (${new Set(observedDefects).size} defect(s), ${new Set(vhUnbounded).size} vh declaration(s))`);
-  } else if (baseline.on) {
-    const j = judge({ observedDefects, observedVh: vhUnbounded, baseline });
-    console.log("\n" + "=".repeat(64));
-    console.log("BASELINE RATCHET");
-    console.log("=".repeat(64));
-    const fresh = j.freshDefects.length + j.freshVh.length, known = j.knownDefects.length + j.knownVh.length, stale = j.staleDefects.length + j.staleVh.length;
-    if (fresh) {
-      bad(`${fresh} NEW defect(s) that are not in ${BASELINE_PATH} - fix them (the baseline is never extended to wave one through):`);
-      for (const k of j.freshDefects) console.log("        " + k.replace("|", "  ->  "));
-      for (const k of j.freshVh) console.log("        unbounded vh  ->  " + k);
-    } else ok(`no new layout defects (${known} known one(s) still open and tolerated)`);
-    if (stale) {
-      console.log(`  NOTE  ${stale} baseline entr${stale === 1 ? "y is" : "ies are"} no longer seen - if fixed, delete from ${BASELINE_PATH} so it cannot come back unnoticed:`);
-      for (const k of [...j.staleDefects, ...j.staleVh]) console.log("        " + k);
-      if (process.env.GITHUB_ACTIONS) console.log(`::warning title=iOS WebKit baseline can shrink::${stale} entr${stale === 1 ? "y" : "ies"} in ${BASELINE_PATH} no longer reproduce - delete them.`);
-    }
-  }
-
   console.log("\n" + "=".repeat(64));
   const routeHits = [...defects.values()].reduce((n, d) => n + d.routes.size, 0);
-  console.log(`RESULT: ${results.pass.length} pass, ${results.fail.length} fail, ${defects.size} unique defect(s) across ${routeHits} route occurrence(s)`);
+  console.log(`RESULT: ${results.pass.length} pass, ${results.fail.length} fail, ${defects.size} unique defect(s) across ${routeHits} route occurrence(s) - ${overall.known.length} known (baseline), ${overall.fresh.length} NEW`);
   console.log("=".repeat(64));
   process.exit(results.fail.length ? 1 : 0);
 }

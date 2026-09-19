@@ -3,7 +3,7 @@
  * (.github/workflows/release-cut.yml, release-assets.yml, release-apple.yml,
  * pages.yml, the hand-written parts of ci.yml) and the three tools those
  * workflows call: tools/release-manifest.mjs, tools/release-gate.mjs,
- * tools/ios-webkit-ratchet.mjs.
+ * tools/test-ios-webkit-ratchet.mjs (the ratchet's own suite).
  *
  * WHY THIS EXISTS. Every defect below shipped because nothing executable
  * described what the pipeline is supposed to do:
@@ -432,36 +432,22 @@ try {
   }
 
   /* ===================================================================
-     7. The iOS WebKit pre-flight decides something again (baseline ratchet)
+     7. The iOS WebKit pre-flight is a real gate again
+     The baseline ratchet itself (tolerate the written-down backlog, fail
+     on anything new, the list may only shrink) is owned and proven by
+     tools/test-ios-webkit-ratchet.mjs. Two agents built that ratchet at
+     once during the 2026-09 fix wave; the duplicate helper this section
+     used to import was retired at integration. What stays here is the one
+     thing that is about the PIPELINE: the step must be blocking.
      =================================================================== */
-  console.log("\n7. iOS WebKit pre-flight: known defects tolerated, any NEW one fails");
+  console.log("\n7. iOS WebKit pre-flight: the verification step is blocking");
   {
-    const { keyOf, vhKey, loadBaseline, judge, serialize } = await import("./ios-webkit-ratchet.mjs");
-    const ios = wf("ios.yml");
-    const webkitSteps = stepsOf(jobBlock(ios, "webkit") || jobBlock(ios, "webkit-preflight") || jobBlock(ios, "preflight"));
-    const verifyStep = webkitSteps.find((s) => /ios:verify/.test(s.run || ""));
-    check(!!verifyStep, "ios.yml still runs the WebKit verifier", "could not find the ios:verify step in ios.yml (job renamed?)");
-    check(!!verifyStep && !/continue-on-error/.test(verifyStep.text), "the WebKit verification step is blocking (no continue-on-error: a green job used to mean nothing)", "ios.yml runs the WebKit verifier with continue-on-error - its result decides nothing");
-    const verifier = readFileSync("tools/verify-ios-webkit.mjs", "utf-8");
-    check(/from "\.\/ios-webkit-ratchet\.mjs"/.test(verifier) && /judge\(\{ observedDefects/.test(verifier), "verify-ios-webkit.mjs judges its defects through the ratchet");
-    const committed = JSON.parse(readFileSync("tools/ios-webkit-baseline.json", "utf-8"));
-    const base = loadBaseline(committed);
-    check(base.on && [...base.defects].every((k) => /^(font<16|tap<44|overflow|orphan-label|bad-text)\|\S/.test(k)), `the committed baseline is well-formed (${base.defects.size} defect(s), ${base.vh.size} vh declaration(s))`, "tools/ios-webkit-baseline.json has an entry that is not \"<check>|<selector>\"");
-    check(JSON.stringify(committed.defects) === JSON.stringify([...committed.defects].sort()) && new Set(committed.defects).size === committed.defects.length, "the baseline is sorted and has no duplicates (so a regenerated file diffs cleanly)");
-
-    const known = [keyOf("font<16", "select"), keyOf("tap<44", "a.res-url")];
-    const b = loadBaseline({ defects: known, vh: ["height:75vh"] });
-    let j = judge({ observedDefects: known, observedVh: ["height: 75vh ;"], baseline: b });
-    check(j.freshDefects.length === 0 && j.freshVh.length === 0 && j.knownDefects.length === 2 && j.knownVh.length === 1 && j.staleDefects.length === 0, "exactly the known defects (spacing differences included): nothing new, nothing stale");
-    j = judge({ observedDefects: [...known, keyOf("tap<44", "button.brand-new")], observedVh: ["height:75vh", "min-height:100vh"], baseline: b });
-    check(j.freshDefects.join() === "tap<44|button.brand-new" && j.freshVh.join() === vhKey("min-height:100vh"), "a defect that is not on the list is reported as NEW (this is what fails the run)");
-    j = judge({ observedDefects: [known[0]], observedVh: [], baseline: b });
-    check(j.staleDefects.join() === known[1] && j.staleVh.join() === "height:75vh" && j.freshDefects.length === 0, "a fixed defect is reported as stale so its line gets deleted, and never fails the run");
-    check(loadBaseline(null).on === false, "with no baseline file the verifier falls back to all-or-nothing");
-    let threw = false; try { loadBaseline({ defects: "nope" }); } catch (e) { threw = true; }
-    check(threw, "a malformed baseline file is an error, never silently \"no known defects\"");
-    const round = JSON.parse(serialize({ observedDefects: ["b|2", "a|1", "b|2"], observedVh: ["height:1vh;", "height: 1vh"], note: "n" }));
-    check(round.defects.join() === "a|1,b|2" && round.vh.join() === "height:1vh", "--write-baseline output is sorted and de-duplicated");
+    const ios = readFileSync("../.github/workflows/ios.yml", "utf-8");
+    const webkitJob = jobBlock(ios, "webkit") || jobBlock(ios, "webkit-preflight") || jobBlock(ios, "preflight") || "";
+    check(/verify-ios-webkit|ios:verify/.test(webkitJob), "ios.yml still runs the WebKit verifier", "could not find the WebKit verification step in ios.yml (job renamed?)");
+    const verifyStep = stepsOf(webkitJob).find((s) => /verify-ios-webkit|ios:verify/.test(s.run || ""));
+    check(!!verifyStep && !/continue-on-error/.test(verifyStep.text), "the WebKit verification step is blocking (no continue-on-error: a green job means the check passed)", "the WebKit verification step is missing or still has continue-on-error");
+    check(existsSync("tools/test-ios-webkit-ratchet.mjs") && existsSync("tools/ios-webkit-baseline.json"), "the baseline ratchet and its own suite are present", "tools/test-ios-webkit-ratchet.mjs or tools/ios-webkit-baseline.json is missing");
   }
 } catch (e) {
   bad("suite crashed: " + (e && e.stack ? e.stack : e));

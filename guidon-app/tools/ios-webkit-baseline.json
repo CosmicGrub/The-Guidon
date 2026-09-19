@@ -1,27 +1,28 @@
 {
-  "_note": "Known iOS/WebKit layout defects, tolerated by tools/verify-ios-webkit.mjs. This list may only SHRINK: delete a line when its defect is fixed; never add one to get a new defect past CI. Recorded from the CI run for main @ 6d5d004 (19 defects + 1 vh declaration). Regenerate with: node tools/verify-ios-webkit.mjs --write-baseline",
-  "defects": [
-    "font<16|input[type=date].ob-input",
-    "font<16|input[type=number]",
-    "font<16|input[type=number]#promo-goal",
-    "font<16|input[type=search]",
-    "font<16|input[type=search].ob-input",
-    "font<16|input[type=text]",
-    "font<16|select",
-    "font<16|textarea",
-    "font<16|textarea#board-sim-improve",
-    "font<16|textarea#board-sim-next",
-    "font<16|textarea#board-sim-strong",
-    "font<16|textarea.wr-bullet-input",
-    "tap<44|a",
-    "tap<44|a.active",
-    "tap<44|a.nav-shell-only",
-    "tap<44|a.res-url",
-    "tap<44|button[type=button].btn.sm",
-    "tap<44|button[type=button].nav-pin-btn",
-    "tap<44|input[type=checkbox]"
+  "note": "Known iOS/WebKit layout defects that tools/verify-ios-webkit.mjs tolerates. This list may only SHRINK. The verifier fails on any defect that is not listed here, and also on any entry here that no longer reproduces - delete the entry in the same change that fixes it. Never add an entry to make a red run green: fix the defect, or say in the change why it cannot be fixed yet. See tools/ios-webkit-baseline.mjs for why this is a ratchet and not an on/off switch.",
+  "recorded": "2026-09-19, from the real CI output (GitHub Actions run 35420907914, WebKit pre-flight job, the commit that became main 6d5d004). The identical 19 signatures and the one unbounded vh were printed by runs 35410756274 and 35409357663 as well, so the list is stable run to run.",
+  "unboundedVh": [
+    "height:75vh;"
   ],
-  "vh": [
-    "height:75vh"
+  "defects": [
+    { "check": "font<16", "signature": "input[type=text]", "seen": "8 routes (#/train, #/forms, #/career, ...), 12.2px" },
+    { "check": "font<16", "signature": "select", "seen": "6 routes (#/board, #/risk, #/author, ...), 12.2px" },
+    { "check": "font<16", "signature": "input[type=search]", "seen": "#/creeds, #/search, 14.3px" },
+    { "check": "font<16", "signature": "textarea.wr-bullet-input", "seen": "#/write, 15px" },
+    { "check": "font<16", "signature": "input[type=number]", "seen": "#/money, 14.3px" },
+    { "check": "font<16", "signature": "input[type=date].ob-input", "seen": "#/calendar, 15px" },
+    { "check": "font<16", "signature": "input[type=search].ob-input", "seen": "#/leader, 15px" },
+    { "check": "font<16", "signature": "textarea", "seen": "#/risk, 12.2px" },
+    { "check": "font<16", "signature": "input[type=number]#promo-goal", "seen": "#/profile, 12.2px" },
+    { "check": "font<16", "signature": "textarea#board-sim-strong", "seen": "#/board-sim, 12.2px" },
+    { "check": "font<16", "signature": "textarea#board-sim-improve", "seen": "#/board-sim, 12.2px" },
+    { "check": "font<16", "signature": "textarea#board-sim-next", "seen": "#/board-sim, 12.2px" },
+    { "check": "tap<44", "signature": "button[type=button].nav-pin-btn", "seen": "every route, iPad only, 32x48" },
+    { "check": "tap<44", "signature": "a.res-url", "seen": "#/resources, 303x18" },
+    { "check": "tap<44", "signature": "button[type=button].btn.sm", "seen": "#/progress, 32x48" },
+    { "check": "tap<44", "signature": "input[type=checkbox]", "seen": "#/pt-plan, 295x31 including its label" },
+    { "check": "tap<44", "signature": "a", "seen": "#/board, iPad only, 41x48" },
+    { "check": "tap<44", "signature": "a.active", "seen": "#/board, iPad only, 41x48" },
+    { "check": "tap<44", "signature": "a.nav-shell-only", "seen": "#/board, iPad only, 41x48" }
   ]
 }
