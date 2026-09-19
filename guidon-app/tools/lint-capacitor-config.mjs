@@ -340,6 +340,17 @@ const plugins = pkg ? Object.keys(pkg.dependencies || {}).filter((d) => /^@capac
     if (!pin) bad(`(g) ${rel(SPM)} has no exact capacitor-swift-pm pin`);
     else if (lockIos && pin !== lockIos) bad(`(g) ${rel(SPM)} pins capacitor-swift-pm ${pin} but package-lock.json installs @capacitor/ios ${lockIos} - the committed file is stale; run \`npm run ios:sync\` and commit ios/App/CapApp-SPM/Package.swift`);
     else if (lockIos) ok(`(g) ${rel(SPM)} pins capacitor-swift-pm ${pin}, the @capacitor/ios version in package-lock.json`);
+    // The CLI writes `.iOS(.v<NN>)` from the first two characters after the
+    // first "IPHONEOS_DEPLOYMENT_TARGET = " in project.pbxproj
+    // (@capacitor/cli dist/ios/common.js getMajoriOSVersion). The committed
+    // file said .v15 beside a 16.2 deployment target from the day the project
+    // was added; CI built the regenerated .v16 copy, so nobody saw it.
+    const pbxForSpm = await readOr(PBXPROJ);
+    const cliMajor = pbxForSpm == null ? null : ((pbxForSpm.match(/IPHONEOS_DEPLOYMENT_TARGET = (\d{2})/) || [])[1] || null);
+    const spmMajor = (swift.match(/platforms:\s*\[\s*\.iOS\(\.v(\d+)\)\s*\]/) || [])[1] || null;
+    if (!spmMajor) bad(`(g) ${rel(SPM)} has no \`platforms: [.iOS(.vNN)]\` line`);
+    else if (cliMajor && spmMajor !== cliMajor) bad(`(g) ${rel(SPM)} says platforms .iOS(.v${spmMajor}) but project.pbxproj's IPHONEOS_DEPLOYMENT_TARGET makes \`cap sync\` write .v${cliMajor} - the committed file is stale; run \`npm run ios:sync\` and commit ios/App/CapApp-SPM/Package.swift`);
+    else if (cliMajor) ok(`(g) ${rel(SPM)} platforms .iOS(.v${spmMajor}) is what \`cap sync\` derives from the deployment target`);
     const listed = [...swift.matchAll(/path:\s*"(?:\.\.\/)+node_modules\/([^"]+)"/g)].map((m) => m[1]).sort();
     const missing = plugins.filter((p) => !listed.includes(p)), extra = listed.filter((p) => !plugins.includes(p));
     if (missing.length || extra.length) bad(`(g) ${rel(SPM)} plugin list differs from package.json${missing.length ? " - not linked: " + missing.join(", ") : ""}${extra.length ? " - linked but not a dependency: " + extra.join(", ") : ""}; run \`npm run ios:sync\` and commit the result`);
