@@ -7424,6 +7424,14 @@ window.G = window.G || {};
    exported/imported JSON backup FILE format, not this IndexedDB database -
    the two have never needed to move together and there's no reason they
    would.
+
+   THE STORAGE CONTRACT: this section is the ONLY code that touches
+   IndexedDB or window.localStorage for writing. Everything else goes
+   through G.db (get/put/del/putMany/delMany/all/clear and the helpers built
+   on them) or G.db.local (the few small localStorage preferences). That is
+   what lets one rule hold for every feature, present and future: a Guest or
+   Kiosk session saves nothing - see "Session-only storage" below.
+   tools/lint-storage-contract.mjs holds the line.
    ------------------------------------------------------------------ */
 window.G = window.G || {};
 // Placeholder values only - tools/build.mjs always overwrites all four from
@@ -7511,6 +7519,123 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
+  }
+
+  // ── Session-only storage: Guest and Kiosk sessions really save nothing ────
+  // Owner decision, 2026-09-19 (audit decision 15). The screen says "Guest
+  // session - nothing is saved after you close the app", and until now that
+  // was only true of the PROFILE row (saveProfile()'s own guard). Every
+  // feature's data - card grades, PT plans, Board Simulator notes, Team
+  // Training counts, "My unit" texts, settings - was still written to the
+  // device like any other key, from ~80 call sites that would each have had
+  // to remember to check. It is decided ONCE, here, underneath all of them:
+  //
+  //   while a session-only profile is active, a write lands in `session`
+  //   (memory) instead of on the device, and a read looks there first and
+  //   falls through to the device for anything the session has not touched.
+  //
+  // So every tool keeps working for the length of the session, a real
+  // owner's rows already on the device are never modified, deleted or
+  // overwritten (a session delete is a tombstone in memory, not a delete),
+  // and closing or reloading the app discards the lot. What a session can
+  // READ of the device is deliberately unchanged.
+  //
+  // WHO decides: sessionOnly() below. The profile module calls
+  // db.session.begin() at the two places a guest/kiosk profile is created;
+  // the profile check inside sessionOnly() is the net under that - a future
+  // path that builds such a profile without calling begin() is still caught,
+  // because the active profile's own mode is the truth. The net only ever
+  // turns the layer ON. Turning it off is db.session.end(): an explicit act,
+  // made in one place (finishing real account setup from inside a session).
+  // It is NEVER inferred from "there is no profile row on the device": a
+  // fresh install, a deleted profile and a directly seeded profile all look
+  // alike there (the What's New lesson), and everything before the Soldier
+  // has picked a mode must keep saving normally.
+  //
+  // Rows are copied on the way in and on the way out, exactly as IndexedDB
+  // does: several callers keep mutating the object they just saved (the
+  // Board Simulator's `state`), and handing the same object back from a
+  // later get() would let those edits appear "saved" without a save.
+  const session = { on: false, kind: "", rows: {}, gone: {}, cleared: {}, local: {} };
+  function copyRow(v) {
+    if (v == null || typeof v !== "object") return v;
+    return typeof structuredClone === "function" ? structuredClone(v) : JSON.parse(JSON.stringify(v));
+  }
+  function rowKey(row) { return row && row.k != null ? row.k : row && row.id; }
+  function dropSession() { session.rows = {}; session.gone = {}; session.cleared = {}; session.local = {}; }
+  function beginSession(kind) {
+    session.kind = kind === "kiosk" ? "kiosk" : "guest";
+    if (session.on) return;
+    session.on = true;
+    if (db._invalidateKvCache) db._invalidateKvCache();
+  }
+  function sessionOnly() {
+    if (session.on) return true;
+    let p = null;
+    try { p = G.profile && G.profile.cached ? G.profile.cached() : null; } catch (e) { p = null; }
+    if (p && (p.mode === "guest" || p.mode === "kiosk")) beginSession(p.mode);
+    return session.on;
+  }
+  // Wraps whichever backend is live (IndexedDB, or the localStorage/memory
+  // fallbacks installMemoryFallback() swaps in). Applied BEFORE wrapKvCache()
+  // every time, so the kv cache and the cross-window bus (src/xwin.js) sit on
+  // top of it unchanged and see one consistent store.
+  function wrapSessionOnly() {
+    const raw = { get: db.get, put: db.put, del: db.del, putMany: db.putMany, delMany: db.delMany, all: db.all, clear: db.clear };
+    const rowsOf = (s) => session.rows[s] || (session.rows[s] = new Map());
+    const goneOf = (s) => session.gone[s] || (session.gone[s] = new Set());
+    const write = (s, row) => {
+      const k = rowKey(row);
+      // The same refusal IndexedDB gives a row with no key, so a caller's
+      // own error handling behaves identically in and out of a session.
+      if (k == null) throw new Error("Row has no key");
+      rowsOf(s).set(k, copyRow(row));
+      goneOf(s).delete(k);
+    };
+    const erase = (s, k) => { rowsOf(s).delete(k); goneOf(s).add(k); };
+    const settle = (fn) => { try { return Promise.resolve(fn()); } catch (e) { return Promise.reject(e); } };
+
+    db.get = function (s, k) {
+      if (!sessionOnly()) return raw.get.call(db, s, k);
+      if (rowsOf(s).has(k)) return settle(() => copyRow(rowsOf(s).get(k)));
+      if (session.cleared[s] || goneOf(s).has(k)) return Promise.resolve(undefined);
+      return raw.get.call(db, s, k);
+    };
+    db.put = function (s, row) {
+      if (!sessionOnly()) return raw.put.call(db, s, row);
+      return settle(() => { write(s, row); });
+    };
+    db.del = function (s, k) {
+      if (!sessionOnly()) return raw.del.call(db, s, k);
+      return settle(() => { erase(s, k); });
+    };
+    // One bad row must not take the batch down - the same promise the real
+    // putMany()/delMany() make.
+    db.putMany = function (s, rows) {
+      if (!sessionOnly()) return raw.putMany.call(db, s, rows);
+      (rows || []).forEach((row) => { try { write(s, row); } catch (e) { /* skipped, like a row IndexedDB refuses */ } });
+      return Promise.resolve();
+    };
+    db.delMany = function (s, keys) {
+      if (!sessionOnly()) return raw.delMany.call(db, s, keys);
+      (keys || []).forEach((k) => erase(s, k));
+      return Promise.resolve();
+    };
+    db.all = function (s) {
+      if (!sessionOnly()) return raw.all.call(db, s);
+      const mine = rowsOf(s), gone = goneOf(s);
+      const onDevice = session.cleared[s] ? Promise.resolve([]) : raw.all.call(db, s);
+      return onDevice.then((rows) => {
+        const out = (rows || []).filter((r) => { const k = rowKey(r); return !mine.has(k) && !gone.has(k); });
+        mine.forEach((r) => out.push(copyRow(r)));
+        return out;
+      });
+    };
+    db.clear = function (s) {
+      if (!sessionOnly()) return raw.clear.call(db, s);
+      session.rows[s] = new Map(); session.gone[s] = new Set(); session.cleared[s] = true;
+      return Promise.resolve();
+    };
   }
 
   // Upgrade-roadmap first wave, item 12: a shared cache for the "scan the
@@ -7683,6 +7808,7 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
         };
         db.ready = () => Promise.resolve();
         db._backend = "localStorage";
+        wrapSessionOnly();
         wrapKvCache();
         return;
       }
@@ -7699,9 +7825,53 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
       db.clear = (s) => { mem[s] = {}; return Promise.resolve(); };
       db.ready = () => Promise.resolve();
       db._backend = "memory";
+      wrapSessionOnly();
       wrapKvCache();
     },
     _backend: "indexeddb",
+
+    // --- session-only storage (see "Session-only storage" above open()) ---
+    session: {
+      // Called by the profile module when a Guest or Kiosk profile becomes
+      // the active one. Safe to call twice.
+      begin(kind) { beginSession(kind); },
+      // Forget everything the session held and let writes reach the device
+      // again. If the active profile is STILL a guest/kiosk one, the very
+      // next read or write turns the layer straight back on (sessionOnly()'s
+      // net) - so the caller makes the real profile active first.
+      end() {
+        session.on = false; session.kind = "";
+        dropSession();
+        if (db._invalidateKvCache) db._invalidateKvCache();
+      },
+      active() { return sessionOnly(); },
+      kind() { return sessionOnly() ? session.kind : ""; },
+    },
+
+    // --- small on-device preferences (browser localStorage) ---
+    // The few things kept outside the database so they can be read before it
+    // opens (the no-flash appearance mirror) or because they are one-word
+    // flags (which menu groups are open, recent searches, "seen this hint").
+    // They go through here, never through window.localStorage directly, so
+    // they obey the same rule as everything else: in a Guest or Kiosk
+    // session a write stays in memory and the device is left untouched.
+    // tools/lint-storage-contract.mjs fails the build on a direct write
+    // anywhere outside this section. Never throws: a blocked localStorage
+    // (private mode, file://) reads as "nothing saved", as it always has.
+    local: {
+      get(k) {
+        if (sessionOnly() && Object.prototype.hasOwnProperty.call(session.local, k)) return session.local[k];
+        try { return window.localStorage.getItem(k); } catch (e) { return null; }
+      },
+      set(k, v) {
+        if (sessionOnly()) { session.local[k] = String(v); return; }
+        try { window.localStorage.setItem(k, String(v)); } catch (e) {}
+      },
+      remove(k) {
+        if (sessionOnly()) { session.local[k] = null; return; }
+        try { window.localStorage.removeItem(k); } catch (e) {}
+      },
+    },
     // See MIGRATIONS/runMigrations() above open() - exposed here (not kept
     // private) so tools/test-schema-migration.mjs can inject a disposable
     // migration and invoke this SAME real function against a scratch
@@ -7711,6 +7881,7 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
     _runMigrations: runMigrations,
   };
 
+  wrapSessionOnly();
   wrapKvCache();
   G.db = db;
 })();
@@ -8069,6 +8240,22 @@ window.G = window.G || {};
     },
     // Read by src/xwin.js's receipt path - see _dirtySettings above.
     _dirtySettingsKeys() { return Array.from(_dirtySettings); },
+    // Put the live settings back to exactly what is saved on the device,
+    // dropping any edit that has not been written (and any pending write).
+    // One caller: finishing real account setup from inside a Guest or Kiosk
+    // session (profile module), so the session's own settings changes are
+    // not carried into the new account. Edits the SAME object in place -
+    // other modules hold on to what settings() returned. Announces nothing:
+    // that caller restarts the app straight afterwards.
+    async reloadSettings() {
+      if (_settingsDebounce) { clearTimeout(_settingsDebounce); _settingsDebounce = null; }
+      _dirtySettings.clear();
+      let saved = null;
+      try { saved = await db.getSetting("settings", null); } catch (e) { saved = null; }
+      const fresh = Object.assign({}, DEFAULT_SETTINGS, saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {});
+      Object.keys(state.settings).forEach((k) => { if (!(k in fresh)) delete state.settings[k]; });
+      Object.assign(state.settings, fresh);
+    },
 
     // ---- doctrine ----
     // Enhancement backlog round 3, "Redundant IndexedDB reads and
@@ -11469,7 +11656,7 @@ window.G = window.G || {};
     // works elsewhere in the app.
     const BOARD_HINT_KEY = "guidon:board-drill-hint-seen:v1";
     let boardHintSeen = false;
-    try { boardHintSeen = localStorage.getItem(BOARD_HINT_KEY) === "1"; } catch (e) {}
+    boardHintSeen = G.db.local.get(BOARD_HINT_KEY) === "1";
     mount.appendChild(el("p.hint", { text: boardHintSeen
       // PC/desktop intuitivism pass: this used to drop the keyboard mention
       // entirely on repeat visits (kept only in the longer first-run copy
@@ -11477,7 +11664,7 @@ window.G = window.G || {};
       // desktop keyboard user actually sees every time.
       ? clickVerb() + " a card (or press Space) to flip it, then grade yourself 1-4."
       : clickVerb() + " a card (or press Space) to flip it. Grade yourself 1-4 — Needs Help, Somewhat, Know It, or Down Cold — and spaced repetition schedules your next review accordingly. Filter by study level: Beginner, Intermediate, or Expert (by-the-book verbatim). Star a card to add it to your personal bookmark deck." }));
-    if (!boardHintSeen) { try { localStorage.setItem(BOARD_HINT_KEY, "1"); } catch (e) {} }
+    if (!boardHintSeen) G.db.local.set(BOARD_HINT_KEY, "1");
     const drillDetail = el("div");
     drillDetail.appendChild(pillarChipBar);
     drillDetail.appendChild(catChipBar);
@@ -23108,6 +23295,22 @@ window.G = window.G || {};
       const saveBtn = el("button.btn.primary.ob-next", { text: "Save profile & start →", type:"button" });
       saveBtn.addEventListener("click", async () => {
         const profile = Object.assign({}, data, { mode: data.mode || "personal", guestSession: false });
+        // Setting up a real account from INSIDE a Guest or Kiosk session
+        // (Kiosk's Profile screen offers "Redo my setup", which reaches this
+        // wizard with no reload in between). The new account must start
+        // clean: nothing the session did may ride along into it. So the real
+        // profile becomes the active one FIRST (that is what the storage
+        // layer reads), everything the session held is dropped, the settings
+        // screens go back to what is really on the device, and once the
+        // profile is written the app restarts - other screens can still be
+        // holding session state of their own, and a restart is the one way
+        // to be sure none of it is saved later under the new account.
+        const leavingSession = !!(db.session && db.session.active());
+        if (leavingSession) {
+          _cache = profile;
+          db.session.end();
+          if (G.store && G.store.reloadSettings) await G.store.reloadSettings();
+        }
         await saveProfile(profile);
         _cache = profile;
         // Sync key fields to settings
@@ -23116,6 +23319,14 @@ window.G = window.G || {};
           if (profile.tier) await G.store.setSetting("tierFilter", profile.tier);
           if (profile.retirementSystem) await G.store.setSetting("retirementSystem", profile.retirementSystem);
           if (profile.displayName) await G.store.setSetting("userName", profile.displayName);
+        }
+        if (leavingSession) {
+          // The settings save above is debounced; write it now rather than
+          // trusting a timer to beat the restart.
+          try { if (G.store && G.store.settings) await db.setSetting("settings", G.store.settings()); } catch (e) {}
+          location.hash = "#/home";
+          location.reload();
+          return;
         }
         if (onComplete) onComplete(profile);
       });
@@ -23133,6 +23344,10 @@ window.G = window.G || {};
         { id:"g-3", priority:"medium", category:"Promotion",  action:"Work out your promotion points on the PPW worksheet", route:"#/board", icon:"\u00a2" },
         { id:"g-4", priority:"medium", category:"Channels",   action:"Find out who to see when your points are wrong", route:"#/channels", icon:"\u260e" }
       ] });
+      // From here until the app is closed or reloaded, nothing any screen
+      // saves reaches the device (see "Session-only storage" in the db
+      // section) - not just this profile row.
+      if (db.session) db.session.begin("guest");
       if (onComplete) onComplete(_cache);
     }
 
@@ -23147,6 +23362,9 @@ window.G = window.G || {};
         onboardingComplete:true, createdAt:Date.now(),
       });
       _cache = kiosk;
+      // A demo on a shared or borrowed device saves nothing either - same
+      // rule, same place, as a Guest session above.
+      if (db.session) db.session.begin("kiosk");
       try { sessionStorage.removeItem("guidon-demo-mode"); sessionStorage.removeItem("guidon-demo-step"); } catch (e) {} // fresh choice of guided/free each time kiosk is (re)entered
       if (onComplete) onComplete(kiosk);
       location.hash = "#/kiosk"; // land on the Guided Tour / Free Mode picker, not Home
@@ -23190,7 +23408,7 @@ window.G = window.G || {};
       acct.appendChild(el("div.eyebrow", { text: "Account" }));
       acct.appendChild(el("h3", { text: profile.displayName || "Unnamed profile", style:"margin:2px 0 2px" }));
       const modeLabel = profile.mode === "guest" ? "Guest session \u00b7 nothing is saved after you close the app"
-                      : profile.mode === "kiosk" ? "Kiosk / demo mode"
+                      : profile.mode === "kiosk" ? "Kiosk / demo mode · nothing is saved after you close the app"
                       : profile.anonymous ? "Personal account \u00b7 anonymous (rank only, no name stored)"
                       : "Personal account";
       acct.appendChild(el("p.hint", { text: modeLabel, style:"margin:0 0 10px" }));
@@ -32201,8 +32419,8 @@ window.G = window.G || {};
     // re-triggering the first-run treatment every refresh.
     const HOME_VISITED_KEY = "guidon:home-visited:v1";
     let homeVisited = false;
-    try { homeVisited = localStorage.getItem(HOME_VISITED_KEY) === "1"; } catch (e) {}
-    try { localStorage.setItem(HOME_VISITED_KEY, "1"); } catch (e) {}
+    homeVisited = G.db.local.get(HOME_VISITED_KEY) === "1";
+    G.db.local.set(HOME_VISITED_KEY, "1");
 
     // ── ETS countdown + milestone alerts ────────────────────────────────────
     try {
@@ -34842,7 +35060,7 @@ window.G = window.G || {};
     // open/closed state already persists (guidon-nav-open-groups).
     const advancedPanels = [];
     let settingsAdvancedOpen = false;
-    try { settingsAdvancedOpen = localStorage.getItem("guidon-settings-advanced-open") === "1"; } catch (e) {}
+    settingsAdvancedOpen = G.db.local.get("guidon-settings-advanced-open") === "1";
 
     // ---- APPEARANCE (v0.43: themes grouped + typography + size/spacing + motion) ----
     if (G.theme) {
@@ -35482,7 +35700,7 @@ window.G = window.G || {};
         settingsAdvancedWrap.style.display = open ? "" : "none";
         settingsAdvToggle.textContent = open ? "Hide advanced settings ▴" : "Show advanced settings ▾";
         settingsAdvToggle.setAttribute("aria-expanded", String(open));
-        try { localStorage.setItem("guidon-settings-advanced-open", open ? "1" : "0"); } catch (e) {}
+        G.db.local.set("guidon-settings-advanced-open", open ? "1" : "0");
       });
       mount.appendChild(advPanel);
     }
@@ -35749,7 +35967,7 @@ window.G = window.G || {};
     const RECENT_KEY = "guidon-search-recent";
     function getRecentSearches() {
       try {
-        const v = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
+        const v = JSON.parse(G.db.local.get(RECENT_KEY) || "[]");
         return Array.isArray(v) ? v.filter((s) => typeof s === "string" && s) : [];
       } catch (e) { return []; }
     }
@@ -35758,7 +35976,7 @@ window.G = window.G || {};
       try {
         const list = getRecentSearches().filter((s) => s.toLowerCase() !== term.toLowerCase());
         list.unshift(term);
-        localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 5)));
+        G.db.local.set(RECENT_KEY, JSON.stringify(list.slice(0, 5)));
       } catch (e) {}
     }
     inp.addEventListener("blur", () => addRecentSearch(inp.value.trim()));
@@ -36414,13 +36632,13 @@ window.G = window.G || {};
   // over what every other localStorage call site in this file treats as a
   // simple, recoverable "default to false and keep booting" case.
   let isFirstEverVisit = false;
-  try { isFirstEverVisit = localStorage.getItem("guidon-nav-open-groups") === null; } catch (e) {}
+  try { isFirstEverVisit = G.db.local.get("guidon-nav-open-groups") === null; } catch (e) {}
   if (isFirstEverVisit && window.innerWidth >= 1200) navOpenGroups.add("prep");
   try {
-    const saved = JSON.parse(localStorage.getItem("guidon-nav-open-groups") || "[]");
+    const saved = JSON.parse(G.db.local.get("guidon-nav-open-groups") || "[]");
     if (Array.isArray(saved)) saved.forEach((id) => navOpenGroups.add(id));
   } catch (e) {}
-  function persistNavOpenGroups() { try { localStorage.setItem("guidon-nav-open-groups", JSON.stringify(Array.from(navOpenGroups))); } catch (e) {} }
+  function persistNavOpenGroups() { try { G.db.local.set("guidon-nav-open-groups", JSON.stringify(Array.from(navOpenGroups))); } catch (e) {} }
   function groupForHash(hash) { return NAV_GROUPS.find((g) => g.hashes.indexOf(hash) !== -1); }
 
   // Nav overhaul Milestone 2 (docs/design/nav-adaptive-rail.md §3/§4.4):
@@ -36438,10 +36656,10 @@ window.G = window.G || {};
   // immediately above.
   let navPinned = [];
   try {
-    const savedPins = JSON.parse(localStorage.getItem("guidon-nav-pinned-routes") || "[]");
+    const savedPins = JSON.parse(G.db.local.get("guidon-nav-pinned-routes") || "[]");
     if (Array.isArray(savedPins)) navPinned = savedPins.filter((h) => typeof h === "string");
   } catch (e) {}
-  function persistNavPinned() { try { localStorage.setItem("guidon-nav-pinned-routes", JSON.stringify(navPinned)); } catch (e) {} }
+  function persistNavPinned() { try { G.db.local.set("guidon-nav-pinned-routes", JSON.stringify(navPinned)); } catch (e) {} }
   function isPinned(hash) { return navPinned.indexOf(hash) !== -1; }
   // Home is never given a pin toggle (see renderGroupsInto's g.label===null
   // branch) so it can never reach here through the UI - the "#/home"
@@ -37832,7 +38050,11 @@ window.G = window.G || {};
         autoNight: !!s.autoNight, autoNightTheme: s.autoNightTheme || null,
         autoNightStart: s.autoNightStart, autoNightEnd: s.autoNightEnd,
       };
-      localStorage.setItem("guidon:appearance:v1", JSON.stringify(mirror));
+      // Through G.db.local, not window.localStorage: a Guest or Kiosk
+      // session's theme choice must not become the look the NEXT person's
+      // app opens with (the pre-paint script at the top of this file reads
+      // this key before anything else runs).
+      G.db.local.set("guidon:appearance:v1", JSON.stringify(mirror));
     } catch (e) {}
   }
 
