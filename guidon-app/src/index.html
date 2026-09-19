@@ -13487,6 +13487,8 @@ window.G = window.G || {};
             concept: q._defConcept,
             acceptable: q.acceptableAnswer || q.a,
             byBook: q.boardAnswer || q.a,
+            // study-guide wording, not a quotation (see buildBackContent) - labelled as such below
+            paraphrased: q.verbatim === false,
             keyPoints: q.keyPoints || [],
             source: q.source || "",
             id: q.id,
@@ -13595,7 +13597,7 @@ window.G = window.G || {};
         // By-the-book
         if (item.byBook !== item.acceptable) {
           const bookBox = el("div.bq-answer-block.bq-bybook");
-          bookBox.appendChild(el("div.bq-answer-label", { gi: "star", giSize: 13, text: "By the Book" }));
+          bookBox.appendChild(el("div.bq-answer-label", { gi: item.paraphrased ? "book-open" : "star", giSize: 13, text: item.paraphrased ? G.board.PARAPHRASE_LABEL : "By the Book" }));
           bookBox.appendChild(el("p.bq-answer-text", { text: item.byBook }));
           if (item.source) bookBox.appendChild(el("span.src", { text: "Source: " + item.source }));
           card.appendChild(bookBox);

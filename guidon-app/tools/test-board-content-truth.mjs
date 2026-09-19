@@ -242,6 +242,18 @@ console.log("\nC17 - honest card-back headings and real citations");
   const b3 = await openCardBack(rules);
   (b3 && b3.blocks.some((x) => x.label === VERBATIM && /Rule 4/.test(x.text))) ? ok("wpn-9 (quotes TC 3-22.9) still shows \"" + VERBATIM + "\"") : bad("wpn-9 blocks: " + JSON.stringify(b3 && b3.blocks.map((x) => x.label)));
 
+  /* (c1) the Definitions tab shows the same cards - same honest heading there */
+  await page.evaluate(() => { location.hash = "#/home"; });
+  await page.waitForTimeout(200);
+  await page.evaluate(() => { location.hash = "#/board"; });
+  await page.waitForSelector(".qz-front .qz-prompt", { timeout: 15000 });
+  await page.evaluate(() => { const b = Array.from(document.querySelectorAll("button")).find((x) => x.textContent.trim() === "Definitions"); if (b) b.click(); });
+  await page.waitForSelector('input[aria-label="Search definitions"]', { timeout: 15000 });
+  await page.fill('input[aria-label="Search definitions"]', "Leader responsibility to inform Soldiers about AER");
+  await page.waitForTimeout(600);
+  const defLabels = await page.evaluate(() => Array.from(document.querySelectorAll(".def-card")).filter((c) => /inform Soldiers about AER/.test(c.textContent)).map((c) => Array.from(c.querySelectorAll(".bq-answer-label")).map((l) => l.textContent.trim())));
+  (defLabels.length === 1 && defLabels[0].includes(PARAPHRASE) && !defLabels[0].includes("By the Book")) ? ok("Definitions tab: prog-aer-2's long answer sits under the study-guide heading, not \"By the Book\"") : bad("Definitions tab labels: " + JSON.stringify(defLabels));
+
   /* (c2) the longer heading must not push the card sideways on a phone */
   await page.setViewportSize({ width: 390, height: 844 });
   const b4 = salute && await openCardBack(salute);
