@@ -171,7 +171,7 @@ note = await poolNoteText();
 const twoCatSum = aftCount + counselCount;
 (counselCount > 0 && counselCount === reviewedSize["Counseling (ATP 6-22.1)"] && new RegExp("^" + twoCatSum + " questions in this deck\\.$").test(note || ""))
   ? ok(`pool note reads "${twoCatSum} questions in this deck." — the real independent sum of AFT (${aftCount}) + Counseling (${counselCount}), not a guess`)
-  : bad(`pool note after 2 categories (expected ${twoCatSum} = ${aftCount} + ${counselCount}): ` + JSON.stringify(note));
+  : bad(`pool note after 2 categories (expected ${twoCatSum} = ${aftCount} + ${counselCount}; live Counseling ${counselCount}, content manifest ${reviewedSize["Counseling (ATP 6-22.1)"]}): ` + JSON.stringify(note));
 
 // ==================== a custom-mix round actually only draws from the checked categories ====================
 console.log("\n-- starting a round with this custom mix only ever draws AFT/Counseling cards --");

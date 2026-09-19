@@ -148,9 +148,16 @@ const late = await page.evaluate(() => ({
 
 // "Recovered" means the WHOLE bank, not "more than 900": the committed content
 // manifest says how many cards this unfiltered first-boot pool must hold.
-late.board === loadManifest().totals.board
+// Two different failures, two different messages. With one message for both, a
+// manifest that was merely stale (a content change without `--write`) reported
+// "STAYED empty ... 1230 ... the first-boot content race regressed" - sending
+// whoever read it after a race that had not happened.
+const reviewedBoard = loadManifest().totals.board;
+late.board === reviewedBoard
   ? ok("boardQuestions() recovered to the full bank the content manifest records (" + late.board + ") once content finished loading - the cache did not permanently lock in the early empty read (was " + early.board + ")")
-  : bad("boardQuestions() STAYED empty after content finished loading: " + late.board + " (was " + early.board + " during the race window) - the first-boot content race regressed");
+  : late.board > 0
+    ? bad("boardQuestions() recovered to " + late.board + " cards, but the content manifest records " + reviewedBoard + " (was " + early.board + " during the race window). NOT the empty-read race: either the content changed and the manifest is stale (run: node tools/content-manifest.mjs --write) or only part of the bank loaded")
+    : bad("boardQuestions() STAYED empty after content finished loading: " + late.board + " (was " + early.board + " during the race window) - the first-boot content race regressed");
 late.doctrine > 0
   ? ok("doctrine() also recovered (" + late.doctrine + " entries, was " + early.doctrine + ")")
   : bad("doctrine() STAYED empty after content finished loading: " + late.doctrine + " (was " + early.doctrine + ")");
