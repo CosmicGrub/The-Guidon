@@ -150,14 +150,15 @@ export function loadModules(dir = APP_MODULE_DIR) {
   };
 }
 
-// CLI: node tools/module-manifest.mjs [--dir <app-modules folder>]  -> prints the load order, exits 1 on a problem.
+// CLI: node tools/module-manifest.mjs [--dir <app-modules folder>] [--check]
+//   prints the load order (just the verdict with --check, for use in a lint chain); exits 1 on a problem.
 // (pathToFileURL, not a file-name match: tools/test-module-manifest.mjs ends in the same letters.)
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const i = process.argv.indexOf("--dir");
   const dir = i > 0 && process.argv[i + 1] ? process.argv[i + 1] : APP_MODULE_DIR;
   try {
     const r = loadModules(dir);
-    r.modules.forEach((m, n) => console.log(String(n + 1).padStart(3) + "  " + m.file.padEnd(40) + m.kind.padEnd(14) + (m.headless ? "headless  " : "          ") + (m.requires.length ? "requires " + m.requires.join(", ") : "")));
+    if (!process.argv.includes("--check")) r.modules.forEach((m, n) => console.log(String(n + 1).padStart(3) + "  " + m.file.padEnd(40) + m.kind.padEnd(14) + (m.headless ? "headless  " : "          ") + (m.requires.length ? "requires " + m.requires.join(", ") : "")));
     console.log(`\nmodule manifest ok: ${r.modules.length} modules, ${r.headlessFiles.length} evaluated headlessly`);
   } catch (e) { console.error(String(e.message || e)); process.exit(1); }
 }
