@@ -210,11 +210,14 @@ async function panelDetail() {
 }
 const notesInfo = await page.evaluate((cur) => {
   const W = window.G.whatsNew;
-  const between = (lo) => W.RELEASE_NOTES.filter((n) => W.cmpVersion && W.cmpVersion(n.version, lo) > 0 && W.cmpVersion(n.version, cur) <= 0);
+  // The test's OWN version compare - what "skipped" means must not depend on
+  // the code under test.
+  const cmp = (a, b) => { const pa = a.split(".").map(Number), pb = b.split(".").map(Number); return pa[0] - pb[0] || pa[1] - pb[1] || pa[2] - pb[2]; };
+  const between = (lo) => W.RELEASE_NOTES.filter((n) => cmp(n.version, lo) > 0 && cmp(n.version, cur) <= 0);
   const entry = W.RELEASE_NOTES.find((n) => n.version === cur);
   return { currentTitle: entry ? entry.title : null, since190: between("1.9.0").map((n) => ({ version: n.version, title: n.title, highlights: n.highlights })), old190: (W.RELEASE_NOTES.find((n) => n.version === "1.9.0") || {}).highlights || [] };
 }, V);
-notesInfo.since190.length >= 2 ? ok("(7) there are " + notesInfo.since190.length + " entries newer than 1.9.0 to test with: " + notesInfo.since190.map((n) => n.version).join(", ")) : bad("(7) expected several entries newer than 1.9.0 (G.whatsNew.cmpVersion missing?): " + JSON.stringify(notesInfo.since190.map((n) => n.version)));
+notesInfo.since190.length >= 2 ? ok("(7) there are " + notesInfo.since190.length + " entries newer than 1.9.0 to test with: " + notesInfo.since190.map((n) => n.version).join(", ")) : bad("(7) expected several entries newer than 1.9.0: " + JSON.stringify(notesInfo.since190.map((n) => n.version)));
 await setWhatsNewSeen("1.9.0");
 await page.reload({ waitUntil: "load" });
 await page.waitForTimeout(500);
