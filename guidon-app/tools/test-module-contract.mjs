@@ -274,6 +274,18 @@ async function bootAndVisit(browser, label, target, routes, { inject = null } = 
   const noise = [];
   page.on("console", (m) => { if (["error", "warning"].includes(m.type())) noise.push(m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
+  // library.js's #/library route makes a one-time same-origin HEAD probe against
+  // a real doc's PDF to decide whether web/docs/*.pdf shipped with this build.
+  // This suite is the first to walk EVERY route in one page, so it is also the
+  // first to reliably hit that probe. It only 404s here because
+  // .github/workflows/ci.yml's build-output upload deliberately excludes
+  // guidon-app/web/docs/** (~78MB, not worth re-uploading for every matrix job)
+  // - see tools/test-csp.mjs's identical allowance for the established
+  // rationale and tools/test-library.mjs for what the UI does about it. The
+  // console text itself never carries the URL, so a real network listener is
+  // what confirms *which* 404 this is; any OTHER 404/error still fails below.
+  let docsProbe404 = 0;
+  page.on("response", (r) => { if (!r.ok() && /\/docs\/.*\.pdf$/i.test(new URL(r.url()).pathname)) docsProbe404++; });
   await page.addInitScript(INIT);
   // Self-check only: serve the REAL page with one more <script> at the very end - a planted module - so the
   // runtime half of the verifier can be shown to fail on a defect that only exists in a running page.
@@ -337,7 +349,13 @@ async function bootAndVisit(browser, label, target, routes, { inject = null } = 
     const next = moduleFp.get(B[k].about);
     if (next) before.set(next, new Map(state));
   }
-  return { label, facts, perModule, before, noise, unsettled, ambiguous };
+  const DOCS_PROBE_404 = /Failed to load resource: the server responded with a status of 404/;
+  let docsAllowance = docsProbe404;
+  const realNoise = noise.filter((n) => {
+    if (docsAllowance > 0 && DOCS_PROBE_404.test(n)) { docsAllowance--; return false; }
+    return true;
+  });
+  return { label, facts, perModule, before, noise: realNoise, unsettled, ambiguous };
 }
 
 /* Self-check plant for the RUNTIME half: a module that wraps core functions the two ways nothing static can
