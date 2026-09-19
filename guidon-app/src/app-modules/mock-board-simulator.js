@@ -139,9 +139,11 @@
      ["next","What is the single highest-value topic or behavior to rehearse next?"]].forEach(function (pair) {
        aar.appendChild(el("label", { text:pair[1], for:"board-sim-" + pair[0] }));
        var ta = el("textarea", {
-         id:"board-sim-" + pair[0], rows:"2", "aria-label":pair[1],
-         value:String((state.aarDraft && state.aarDraft[pair[0]]) || "")
+         id:"board-sim-" + pair[0], rows:"2", "aria-label":pair[1]
        });
+       // <textarea> ignores a value HTML attribute as its live initial value.
+       // Restore the persisted draft through the DOM property so rerenders keep it.
+       ta.value = String((state.aarDraft && state.aarDraft[pair[0]]) || "");
        ta.addEventListener("input", function () {
          state.aarDraft = state.aarDraft || { strong:"", improve:"", next:"" };
          state.aarDraft[pair[0]] = ta.value;
