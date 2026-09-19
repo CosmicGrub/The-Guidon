@@ -1,6 +1,10 @@
-/* GUIDON v1.12.0 release note.
-   Leader-readiness release: collective training, PT planning, Board Simulator,
-   and the remaining roadmap study-content gaps. */
+/* GUIDON 1.12.0 "What's new" entry.
+   See 99-release-v1110.js for why these live in small build-added files and
+   for the WRITING RULE every entry follows: plain words, what a Soldier will
+   notice and where, never how it was built - and never a feature that is not
+   on a screen they can reach. (This entry used to read like a changelog for
+   developers; the facts are the same, the words are for the people using
+   the app.) */
 window.G = window.G || {};
 (function () {
   "use strict";
@@ -14,12 +18,12 @@ window.G = window.G || {};
     // v1.12.0 tag ever appears while it is still here).
     released: false,
     date: "September 2026",
-    title: "Leader readiness, team training, and PT planning",
+    title: "Team training, a PT planner, and a full practice board",
     highlights: [
-      "Team Training now includes a complete 10-exercise catalog and a shared Collective Decision mode that turns existing scenarios into discuss-then-commit group lanes without creating a second scenario engine.",
-      "The new PT Planner provides persistent day, week, and month planning, editable templates, reminders, leader exports, an advisory hard-to-recovery guard, recent-history context, and canonical strength/endurance PRT session blocks with unauthored drills labeled honestly as content pending.",
-      "Board Simulator now links reporting-procedure rehearsal, the existing Mock Board knowledge round, judgment scenarios, and an AAR into one offline progression while preserving local-MOI differences instead of inventing a universal script.",
-      "Board readiness content closes the remaining roadmap gaps for AER, ACS, SUDCC, current CSDP, and the current DA Form 7923 Statement of Charges, while keeping the existing six-pillar taxonomy, regulation filters, 5-Minute Board Reps, and Integrated Operational Thinking scenarios intact."
+      "New: Team Training. Short exercises for a squad or study group - talk a decision over together, then lock in one answer.",
+      "New: PT Planner. Lay out your PT by day, week, or month, set reminders, and get a heads-up when hard days start to outnumber recovery days.",
+      "New: Board Simulator. Practice reporting in, answer board questions, work a leadership problem, then write your own after-action notes.",
+      "More board questions on Army Emergency Relief, Army Community Service, and supply discipline.",
     ],
   });
 })();

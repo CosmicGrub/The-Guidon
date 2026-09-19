@@ -199,6 +199,39 @@ try {
   check(dry.status === 0 && /Dry run - nothing was written/.test(dry.stdout) && FILES.map((f) => sha(path.join(REAL_ROOT, f))).join() === realBefore, "against the REAL tree the CLI defaults to a dry run, and not one byte of any version file changed");
   const chk = spawnSync(process.execPath, ["tools/bump-version.mjs", "--check"], { encoding: "utf-8" });
   check(chk.status === 0 && /every value agrees/.test(chk.stdout), "bump-version --check agrees with the lint on the real tree");
+
+  console.log("\n7. What's New copy rules (tools/whats-new-rules.mjs, run by lint-patterns check (h))");
+  {
+    const { parseReleaseNotes, checkCopy, MAX_HIGHLIGHT_CHARS } = await import("./whats-new-rules.mjs");
+    // The entries exactly as they shipped to Soldiers before the rewrite.
+    const SHIPPED = `
+      { version: "1.10.1", title: "Apple parity and release reliability", highlights: [
+        "GUIDON now maintains a first-class iOS project that stays synced to the same app bundle and study experience as the web, Android, Windows, and macOS versions.",
+        "macOS releases now include a universal Apple Silicon + Intel package built from the same tagged source as the other platforms.",
+        "Apple-device verification now covers compact iPhone, standard iPhone, large iPhone, and iPad layouts with preserved render evidence and safer handling of transient Simulator failures.",
+      ] },
+      /* a comment may say engine, module and CI as often as it likes */
+      // so may this one: packaged from one tagged source
+      { version: "1.11.0", released: false, title: "Board depth, OPSEC safeguards, and adaptive memorization", highlights: [
+        "This release is packaged from one tagged source across web/PWA and standalone, Android, Windows, macOS, iOS parity verification, and the ESP32 flashcard fork.",
+      ] },
+      { version: "1.12.0", title: "Leader readiness, team training, and PT planning", highlights: [
+        "Team Training now includes a complete 10-exercise catalog and a shared Collective Decision mode that turns existing scenarios into discuss-then-commit group lanes without creating a second scenario engine.",
+      ] },`;
+    const shipped = parseReleaseNotes(SHIPPED);
+    check(shipped.length === 3 && shipped[0].highlights.length === 3 && shipped[1].unreleased === true && shipped[2].title === "Leader readiness, team training, and PT planning", "entries, titles, highlights and the released: false mark are read out of source text");
+    const problems = checkCopy(shipped);
+    const hit = (v, word) => problems.some((p) => p.includes(`What's New ${v} `) && p.includes(`"${word}"`));
+    check(hit("1.10.1", "parity") && hit("1.10.1", "first-class") && hit("1.10.1", "bundle") && hit("1.10.1", "tagged") && hit("1.10.1", "render evidence"), "the 1.10.1 entry as shipped fails: parity, first-class, bundle, tagged, render evidence", "1.10.1 as shipped was not rejected: " + problems.join(" | "));
+    check(hit("1.11.0", "packaged") && hit("1.11.0", "PWA") && hit("1.11.0", "fork") && hit("1.11.0", "ESP32"), "the 1.11.0 \"packaged from one tagged source ... fork\" bullet fails");
+    check(hit("1.12.0", "engine"), "the 1.12.0 \"second scenario engine\" bullet fails");
+    check(!problems.some((p) => /a comment may|so may this one/.test(p)) && problems.every((p) => !/"module"|"CI"/.test(p)), "comments are never read as copy (an entry may explain itself)");
+    check(checkCopy(parseReleaseNotes('{ version: "2.0.0", title: "New: Board Simulator", highlights: ["New: Board Simulator. Practice reporting in, then answer board questions."] }')).length === 0, "\"Board Simulator\" is a feature name and passes; plain wording passes");
+    check(checkCopy(parseReleaseNotes(`{ version: "2.0.0", title: "t", highlights: ["${"word ".repeat(60).trim()}"] }`)).some((p) => p.includes(`max ${MAX_HIGHLIGHT_CHARS}`)), "a highlight that runs on past the length cap fails");
+    check(checkCopy(parseReleaseNotes('{ version: "2.0.0", title: "a", highlights: ["x"] }, { version: "2.0.0", title: "b", highlights: ["y"] }')).some((p) => /two entries for 2\.0\.0/.test(p)), "two entries for one version fail");
+    const lintH = spawnSync(process.execPath, ["tools/lint-patterns.mjs"], { encoding: "utf-8" });
+    check(/PASS {2}\(h\) all \d+ What's New entries are in plain language/.test(lintH.stdout), "the real What's New entries pass the same rules through lint-patterns check (h)", "lint-patterns (h) does not report the plain-language scan:\n" + (lintH.stdout.match(/.*\(h\).*/g) || []).join("\n"));
+  }
 } catch (e) {
   bad("suite crashed: " + (e && e.stack ? e.stack : e));
 } finally {

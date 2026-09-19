@@ -178,6 +178,111 @@ if (st.present) {
   bad("(6) could not reach a shown-panel state to test Escape");
 }
 
+// ============================================================
+// 7) Someone who SKIPPED versions is told about every one they skipped.
+//    The Android and Windows apps update far less often than the web copy,
+//    so jumping several versions is the normal case. The panel used to show
+//    only the newest entry, so everything added in between was never
+//    mentioned to them at all.
+// ============================================================
+async function panelDetail() {
+  return page.evaluate(() => {
+    const box = document.querySelector('.gm-box[aria-label="What\'s new"]');
+    if (!box) return null;
+    const visible = (n) => { const r = n.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+    const btn = box.querySelector("button");
+    const br = btn.getBoundingClientRect(), xr = box.getBoundingClientRect();
+    const body = box.querySelector(".whatsnew-body");
+    return {
+      title: box.querySelector("h3").textContent,
+      allText: box.textContent,
+      visibleBullets: [...box.querySelectorAll("li")].filter(visible).map((li) => li.textContent),
+      allBullets: [...box.querySelectorAll("li")].map((li) => li.textContent),
+      hasMore: !!box.querySelector("details.whatsnew-more"),
+      buttonInView: br.top >= 0 && br.bottom <= window.innerHeight && br.height > 0,
+      boxFits: xr.top >= 0 && xr.bottom <= window.innerHeight + 1 && xr.left >= 0 && xr.right <= window.innerWidth + 1,
+      pageOverflowX: document.documentElement.scrollWidth > window.innerWidth + 1,
+      bodyScrolls: body ? body.scrollHeight > body.clientHeight + 1 : false,
+      bodyTabStop: body ? body.getAttribute("tabindex") === "0" : false,
+      focusInside: box.contains(document.activeElement),
+    };
+  });
+}
+const notesInfo = await page.evaluate((cur) => {
+  const W = window.G.whatsNew;
+  const between = (lo) => W.RELEASE_NOTES.filter((n) => W.cmpVersion && W.cmpVersion(n.version, lo) > 0 && W.cmpVersion(n.version, cur) <= 0);
+  const entry = W.RELEASE_NOTES.find((n) => n.version === cur);
+  return { currentTitle: entry ? entry.title : null, since190: between("1.9.0").map((n) => ({ version: n.version, title: n.title, highlights: n.highlights })), old190: (W.RELEASE_NOTES.find((n) => n.version === "1.9.0") || {}).highlights || [] };
+}, V);
+notesInfo.since190.length >= 2 ? ok("(7) there are " + notesInfo.since190.length + " entries newer than 1.9.0 to test with: " + notesInfo.since190.map((n) => n.version).join(", ")) : bad("(7) expected several entries newer than 1.9.0 (G.whatsNew.cmpVersion missing?): " + JSON.stringify(notesInfo.since190.map((n) => n.version)));
+await setWhatsNewSeen("1.9.0");
+await page.reload({ waitUntil: "load" });
+await page.waitForTimeout(500);
+let det = await panelDetail();
+if (!det) bad("(7) no panel for a Soldier updating from 1.9.0");
+else {
+  det.title === notesInfo.currentTitle ? ok('(7) the headline is the version now running: "' + det.title + '"') : bad("(7) headline " + JSON.stringify(det.title) + " is not the current version's " + JSON.stringify(notesInfo.currentTitle));
+  if (det.hasMore) {
+    // Opened from the keyboard, the way someone without a mouse would.
+    await page.focus('.gm-box[aria-label="What\'s new"] details.whatsnew-more summary');
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(150);
+    det = await panelDetail();
+  }
+  const missing = [];
+  notesInfo.since190.forEach((n) => n.highlights.forEach((h) => { if (!det.visibleBullets.includes(h)) missing.push(n.version + ": " + h.slice(0, 50)); }));
+  missing.length === 0 ? ok("(7) every highlight of every version skipped since 1.9.0 can be read in the panel (" + det.visibleBullets.length + " bullets" + (det.hasMore ? ', older ones behind a keyboard-operable "Earlier updates"' : "") + ")") : bad("(7) skipped-version highlights never shown: " + JSON.stringify(missing));
+  const leaked = notesInfo.old190.filter((h) => det.allBullets.includes(h));
+  leaked.length === 0 ? ok("(7) nothing from 1.9.0 or earlier is repeated - only what is new to this Soldier") : bad("(7) already-seen highlights were shown again: " + JSON.stringify(leaked));
+  /\b\d+\.\d+\.\d+\b/.test(det.allText) ? bad("(7) the panel shows raw version numbers: " + JSON.stringify(det.allText.match(/\b\d+\.\d+\.\d+\b/)[0])) : ok("(7) the panel talks about features, never version numbers");
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(400);
+}
+
+// ============================================================
+// 8) Entries are found by VERSION, never by position. They arrive from the
+//    main file AND from small per-release files that load in file-name
+//    order ("v11210" sorts before "v1122"), so "the last one in the array"
+//    is not reliably the newest. Reversed here to prove order is irrelevant.
+// ============================================================
+await setWhatsNewSeen("1.9.0");
+await page.evaluate(async () => { window.G.whatsNew.RELEASE_NOTES.reverse(); await window.G.whatsNew.checkOnBoot(); });
+await page.waitForTimeout(400);
+det = await panelDetail();
+det && det.title === notesInfo.currentTitle ? ok("(8) with the entries in reverse order the headline is still the current version's") : bad("(8) with the entries reordered the panel was " + (det ? "headed " + JSON.stringify(det.title) : "not shown at all"));
+if (det) { await page.keyboard.press("Escape"); await page.waitForTimeout(400); }
+
+// ============================================================
+// 9) A stored version NEWER than this build (an older copy opened after a
+//    newer one) has nothing new to announce.
+// ============================================================
+await setWhatsNewSeen("99.0.0");
+await page.reload({ waitUntil: "load" });
+await page.waitForTimeout(500);
+st = await panelState();
+!st.present ? ok("(9) opening an OLDER copy than the one last seen announces nothing") : bad("(9) panel shown although the stored version (99.0.0) is newer than this build: " + JSON.stringify(st));
+
+// ============================================================
+// 10) The longest panel there can be (every entry ever) on a phone: the box
+//     stays on screen, "Got it" stays in view, only the list scrolls, the
+//     list can be scrolled from the keyboard, and the page never scrolls
+//     sideways.
+// ============================================================
+await page.setViewportSize({ width: 390, height: 700 });
+await setWhatsNewSeen("0.0.1");
+await page.reload({ waitUntil: "load" });
+await page.waitForTimeout(700);
+det = await panelDetail();
+if (!det) bad("(10) no panel at phone width");
+else {
+  det.boxFits && !det.pageOverflowX ? ok("(10) at 390px the whole panel stays on screen and the page does not scroll sideways") : bad("(10) panel does not fit a 390x700 screen: " + JSON.stringify({ boxFits: det.boxFits, pageOverflowX: det.pageOverflowX }));
+  det.buttonInView ? ok('(10) "Got it" is in view without scrolling, however long the list is') : bad('(10) "Got it" is pushed off screen by a long list');
+  det.focusInside ? ok("(10) keyboard focus is inside the panel") : bad("(10) focus is not inside the panel");
+  !det.bodyScrolls || det.bodyTabStop ? ok("(10) the scrolling list is reachable from the keyboard" + (det.bodyScrolls ? "" : " (it did not need to scroll here)")) : bad("(10) the list scrolls but cannot be focused, so a keyboard user cannot read the rest");
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(400);
+}
+
 noise.length === 0 ? ok("no console errors/warnings across the whole run") : bad("console noise: " + JSON.stringify(noise));
 
 await browser.close();

@@ -1,6 +1,16 @@
-/* GUIDON v1.11.0 release note.
-   Kept as a tiny build-injected module so release-note maintenance does not
-   require replacing the multi-megabyte src/index.html through remote APIs. */
+/* GUIDON 1.11.0 "What's new" entry.
+   Kept as a tiny build-added file so a release note never requires editing
+   the multi-megabyte src/index.html. Load order does not matter: G.whatsNew
+   finds and sorts entries by version number, never by position.
+
+   WRITING RULE (see G.whatsNew's own header in src/index.html): this is read
+   by Soldiers, not developers. Say what they will notice and where to find
+   it, in plain words. Never describe how something was built, tested or
+   packaged, and never announce something that is not on a screen they can
+   reach. tools/lint-patterns.mjs check (h) rejects build/engineering wording
+   here. This entry was rewritten on those terms: it used to advertise a
+   memorization feature no screen offers, and said the app was "packaged from
+   one tagged source" for platforms that were never built. */
 window.G = window.G || {};
 (function () {
   "use strict";
@@ -14,12 +24,11 @@ window.G = window.G || {};
     // v1.11.0 tag ever appears while it is still here).
     released: false,
     date: "September 2026",
-    title: "Board depth, OPSEC safeguards, and adaptive memorization",
+    title: "More board questions, plus cybersecurity and OPSEC",
     highlights: [
-      "Promotion-board study now includes the full new core and 92A question set, with logistics-focused practice available throughout Board Drill, quizzes, weak-area review, group study, and the handheld flashcard export.",
-      "New Cybersecurity & OPSEC study material adds practical scenarios, board questions, key terms, and a self-check, while MOI and roster tools add stronger warnings and local safeguards against sensitive information.",
-      "Spirit of the CAV is now available as memorization material, with an optional Adaptive Recall Ladder that starts off disabled and never replaces your existing study methods.",
-      "This release is packaged from one tagged source across web/PWA and standalone, Android, Windows, macOS, iOS parity verification, and the ESP32 flashcard fork.",
+      "Many more board questions across the subjects you already study, plus new supply question sets for 92A Soldiers. They show up in Board Drill, quizzes, and weak-area review.",
+      "New in the menu: Cybersecurity & OPSEC, with scenarios, board questions, key terms, and a short self-check on protecting sensitive information.",
+      "GUIDON now reminds you to keep sensitive information out of MOI imports and rosters. Everything you enter still stays on your device.",
     ],
   });
 })();

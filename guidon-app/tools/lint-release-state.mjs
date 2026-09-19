@@ -53,6 +53,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { readAnchors, parseVersion, compareVersions, androidVersionCode } from "./release-version-files.mjs";
 import { ALIASES } from "./release-manifest.mjs";
+import { parseReleaseNotes, extractNotesArray } from "./whats-new-rules.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const NOT_RELEASED = /\b(prepared,?\s+(?:but\s+)?not\s+released|not\s+released|never\s+released|unreleased)\b/i;
@@ -169,15 +170,11 @@ export function lintReleaseState({ root, cut = false }) {
   const modNames = existsSync(modDir) ? readdirSync(modDir).filter((n) => /^99-release-.*\.js$/.test(n)).sort() : [];
   if (html == null) bad("(d) guidon-app/src/index.html is missing");
   else {
-    const declIdx = html.indexOf("G.whatsNew = {");
-    const startIdx = declIdx === -1 ? -1 : html.indexOf("RELEASE_NOTES: [", declIdx);
-    // The array ends where checkOnBoot begins; entries never contain that name.
-    const endIdx = startIdx === -1 ? -1 : html.indexOf("checkOnBoot", startIdx);
-    const notesText = (startIdx === -1 ? "" : html.slice(startIdx, endIdx === -1 ? startIdx + 40000 : endIdx)) + "\n" + modNames.map((n) => read("guidon-app/src/app-modules/" + n) || "").join("\n");
-    const entries = [];
-    const re = /\bversion:\s*"(\d+\.\d+\.\d+)"/g;
-    const hits = [...notesText.matchAll(re)];
-    hits.forEach((m, i) => { const body = notesText.slice(m.index, i + 1 < hits.length ? hits[i + 1].index : notesText.length); entries.push({ version: m[1], unreleased: /\breleased:\s*false\b/.test(body) }); });
+    // Same reader lint-patterns check (h) uses: the array's own [ ] only, with
+    // comments dropped - so a comment that MENTIONS `released: false` (the
+    // app's own code has one) can never be mistaken for the mark itself.
+    const notesText = (extractNotesArray(html) || "") + "\n" + modNames.map((n) => read("guidon-app/src/app-modules/" + n) || "").join("\n");
+    const entries = parseReleaseNotes(notesText);
     if (!entries.length) bad("(d) could not find any What's New entries (G.whatsNew.RELEASE_NOTES)");
     else {
       const before = failures.length;
