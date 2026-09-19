@@ -19,12 +19,70 @@
     "Close with an AAR: one sustain, one improve, and the next action."
   ];
 
+  // Canonical multi-drill session model from docs/design/pt-scheduler.md §2a.
+  // Only PD has fully authored/verified exercise text today. The remaining
+  // drill IDs are explicit placeholders, never fabricated doctrine.
+  var PRT_SESSION_DEFS = [
+    { id:"strength", label:"Strength & Mobility Session", blocks:[
+      { drillId:"pd" }, { drillId:"ssd" }, { drillId:"cd1" }, { drillId:"cd2" }, { drillId:"rd" }
+    ]},
+    { id:"endurance", label:"Endurance & Mobility Session", blocks:[
+      { drillId:"pd" }, { drillId:"hsd" }, { drillId:"mmd1" }, { drillId:"mmd2" }, { drillId:"rd" }
+    ]}
+  ];
+  var PRT_PENDING_DRILLS = {
+    ssd:"Shoulder Stability Drill",
+    cd1:"Conditioning Drill 1",
+    cd2:"Conditioning Drill 2",
+    hsd:"Hip Stability Drill",
+    mmd1:"Military Movement Drill 1",
+    mmd2:"Military Movement Drill 2",
+    rd:"Recovery Drill"
+  };
+  function ensurePrtSessionModel() {
+    try {
+      var seed = window.GUIDON_SEED;
+      if (!seed || !seed.prt) return;
+      if (!Array.isArray(seed.prt.sessions) || !seed.prt.sessions.length) {
+        seed.prt.sessions = PRT_SESSION_DEFS.map(function (s) {
+          return { id:s.id, label:s.label, blocks:s.blocks.map(function (b) { return { drillId:b.drillId }; }) };
+        });
+      }
+      if (!seed.prt.pendingDrills || typeof seed.prt.pendingDrills !== "object") {
+        seed.prt.pendingDrills = Object.assign({}, PRT_PENDING_DRILLS);
+      }
+    } catch (e) {}
+  }
+  ensurePrtSessionModel();
+
+  function prtSession(id) {
+    var sessions = [];
+    try { sessions = (window.GUIDON_SEED.prt && window.GUIDON_SEED.prt.sessions) || []; } catch (e) {}
+    return sessions.find(function (s) { return s && s.id === id; }) || PRT_SESSION_DEFS.find(function (s) { return s.id === id; }) || null;
+  }
+  function prtDrillLabel(id) {
+    try {
+      var drills = (window.GUIDON_SEED.prt && window.GUIDON_SEED.prt.drills) || [];
+      var real = drills.find(function (d) { return d && d.id === id; });
+      if (real) return { label:String(real.name || id), pending:false };
+    } catch (e) {}
+    return { label:PRT_PENDING_DRILLS[id] || id, pending:true };
+  }
+  function prtSessionSummary(id) {
+    var s = prtSession(id);
+    if (!s) return "";
+    return (s.blocks || []).map(function (b) {
+      var d = prtDrillLabel(b.drillId);
+      return d.label + (d.pending ? " (content pending)" : "");
+    }).join(" → ");
+  }
+
   var PRESETS = {
     rest: { id:"rest", title:"Rest / no organized PT", type:"rest", effort:"recovery", route:"" },
     prep: { id:"prep", title:"Preparation Drill", type:"drill", effort:"recovery", route:"#/prt" },
     recovery: { id:"recovery", title:"Recovery / mobility", type:"session", effort:"recovery", route:"#/drills" },
-    strength: { id:"strength", title:"Strength & mobility session", type:"session", effort:"hard", route:"#/drills" },
-    endurance: { id:"endurance", title:"Endurance & mobility session", type:"session", effort:"hard", route:"#/drills" },
+    strength: { id:"strength", title:"Strength & mobility session", type:"session", effort:"hard", route:"#/drills", sessionId:"strength" },
+    endurance: { id:"endurance", title:"Endurance & mobility session", type:"session", effort:"hard", route:"#/drills", sessionId:"endurance" },
     circuit: { id:"circuit", title:"Leader-built circuit", type:"session", effort:"hard", route:"#/drills" },
     custom: { id:"custom", title:"Custom PT", type:"custom", effort:"moderate", route:"" }
   };
@@ -49,7 +107,7 @@
 
   function clonePreset(id) {
     var p = PRESETS[id] || PRESETS.custom;
-    return { id:p.id, title:p.title, type:p.type, effort:p.effort, route:p.route || "" };
+    return { id:p.id, title:p.title, type:p.type, effort:p.effort, route:p.route || "", sessionId:p.sessionId || "" };
   }
   function planFromTemplate(id) {
     var t = TEMPLATES[id] || TEMPLATES.balanced;
@@ -76,7 +134,8 @@
         title:String(d.title || (PRESETS[d.id] && PRESETS[d.id].title) || "Custom PT"),
         type:String(d.type || "custom"),
         effort:["hard","moderate","recovery"].indexOf(d.effort) >= 0 ? d.effort : "moderate",
-        route:String(d.route || "")
+        route:String(d.route || ""),
+        sessionId:String(d.sessionId || (PRESETS[d.id] && PRESETS[d.id].sessionId) || "")
       };
     });
     return out;
@@ -111,6 +170,25 @@
     });
     var ratio = recovery ? hard / recovery : (hard ? Infinity : 0);
     return { hard:hard, recovery:recovery, moderate:moderate, ratio:ratio, warn:hard > 0 && (recovery === 0 || ratio > 3) };
+  }
+  function historyRatio(list, nowMs) {
+    var now = new Date(nowMs || Date.now()); now.setHours(23,59,59,999);
+    var cutoff = new Date(now); cutoff.setDate(cutoff.getDate() - 6); cutoff.setHours(0,0,0,0);
+    var hard = 0, recovery = 0, moderate = 0, logged = 0;
+    (Array.isArray(list) ? list : []).forEach(function (row) {
+      if (!row || !row.date) return;
+      var d = new Date(String(row.date) + "T12:00:00");
+      if (!Number.isFinite(d.getTime()) || d < cutoff || d > now) return;
+      logged++;
+      if (row.effort === "hard") hard++;
+      else if (row.effort === "recovery") recovery++;
+      else if (row.effort === "moderate") moderate++;
+    });
+    var ratio = recovery ? hard / recovery : (hard ? Infinity : 0);
+    // A gap is just a gap: never infer missed-session debt. Only completed
+    // history can trigger this non-blocking guard.
+    var warn = (hard >= 3 && recovery === 0) || (recovery > 0 && ratio > 3);
+    return { hard:hard, recovery:recovery, moderate:moderate, logged:logged, ratio:ratio, warn:warn };
   }
   function nextDateForDay(dayIndex) {
     var now = new Date(); now.setHours(0,0,0,0);
@@ -215,6 +293,25 @@
       ratioHost.appendChild(p);
     }
 
+    async function drawHistoryGuard(generation) {
+      var old = ratioHost.querySelector("[data-pt-history-guard]");
+      if (old) old.remove();
+      var hist = await loadHistory();
+      if (generation !== drawGeneration) return;
+      var r = historyRatio(hist);
+      var p = el("div.panel", { role:"status", "aria-live":"polite", "data-pt-history-guard":"1" });
+      p.appendChild(el("div.eyebrow", { text:"Recent completed PT · 7 days" }));
+      if (!r.logged) {
+        p.appendChild(el("p.hint", { text:"No PT Planner completions are logged in the last 7 days yet. Missed days are treated as gaps, never debt to make up." }));
+      } else {
+        p.appendChild(el("strong", { text:r.hard + " hard · " + r.recovery + " recovery · " + r.moderate + " moderate" }));
+        p.appendChild(el("p.hint", { text:r.warn
+          ? "History flag: recent completed sessions exceed the 3:1 hard-to-recovery planning guardrail. This is advisory only; review the next assignment rather than auto-changing it."
+          : "Recent completed PT does not trigger the 3:1 history flag. A missing day is not treated as a session to make up." }));
+      }
+      ratioHost.appendChild(p);
+    }
+
     function makeDayCard(dayIndex, compact) {
       var key = DAY_KEYS[dayIndex], entry = plan.days[key];
       var card = el("div.panel.pt-day-card", { "data-pt-day":key });
@@ -244,6 +341,10 @@
         card.appendChild(effort);
       }
       card.appendChild(el("p.hint", { text:effortLabel(entry.effort) + " effort · " + entry.type }));
+      if (entry.sessionId) {
+        var summary = prtSessionSummary(entry.sessionId);
+        if (summary) card.appendChild(el("p.hint", { text:"Session blocks: " + summary, "data-pt-session-blocks":entry.sessionId }));
+      }
       var actions = el("div.btn-row");
       if (entry.route) {
         var open = el("button.btn.sm.ghost", { type:"button", text:"Open training tool" });
@@ -282,7 +383,7 @@
       complete.addEventListener("click", async function () {
         var e = plan.days[DAY_KEYS[idx]];
         hist.unshift({ date:todayKey, title:e.title, effort:e.effort, intensity:plan.intensity, ts:Date.now() });
-        await saveHistory(hist); complete.disabled = true; complete.textContent = "Today logged"; util.toast("PT session logged.");
+        await saveHistory(hist); complete.disabled = true; complete.textContent = "Today logged"; util.toast("PT session logged."); drawHistoryGuard(drawGeneration);
       });
       stage.appendChild(el("div.panel", {}, [el("div.eyebrow", { text:"History" }), complete]));
     }
@@ -375,6 +476,7 @@
       Array.from(intensity.querySelectorAll("button")).forEach(function (b) { var on = b.getAttribute("data-intensity") === plan.intensity; b.classList.toggle("active", on); b.setAttribute("aria-pressed", String(on)); });
       Array.from(tabs.querySelectorAll("button")).forEach(function (b) { var on = b.getAttribute("data-pt-view") === activeView; b.classList.toggle("active", on); b.setAttribute("aria-selected", String(on)); });
       drawRatio();
+      drawHistoryGuard(generation);
       if (activeView === "day") renderDay(generation);
       else if (activeView === "month") renderMonth();
       else renderWeek();
@@ -390,6 +492,11 @@
     TEMPLATES:TEMPLATES,
     LEADER_CHECKLIST:LEADER_CHECKLIST,
     _ratio:ratioOf,
-    _planFromTemplate:planFromTemplate
+    _historyRatio:historyRatio,
+    _planFromTemplate:planFromTemplate,
+    _session:prtSession,
+    _sessionSummary:prtSessionSummary,
+    SESSION_DEFS:PRT_SESSION_DEFS,
+    PENDING_DRILLS:PRT_PENDING_DRILLS
   };
 })();
