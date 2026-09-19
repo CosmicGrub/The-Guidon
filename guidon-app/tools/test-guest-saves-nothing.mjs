@@ -77,6 +77,9 @@ const go = async (page, hash, selector) => {
   await page.evaluate((h) => { location.hash = h; }, hash);
   await page.waitForSelector(selector, { timeout: 10000 });
 };
+// For a moment after the welcome screen closes, the page behind it is still
+// switched off for input (inert), and typing into it is silently dropped.
+const typable = (page, selector) => page.waitForFunction((sel) => { const n = document.querySelector(sel); return !!n && !n.closest("[inert]"); }, selector, { timeout: 8000 });
 const appKv = (page, k) => page.evaluate(async (key) => { const r = await window.G.db.get("kv", key); return r ? r.v : null; }, k);
 
 /** What a real owner left on this device before anyone opened a session. */
@@ -464,6 +467,40 @@ for (const kind of ["guest", "kiosk"]) {
   }, tomorrow);
   check(res.scheduled === false && res.cancelled === false && res.queue.length === 1 && /Owner board/.test(res.queue[0]),
     "a Guest session neither queues a notification of its own nor cancels the owner's", "notification queue after the guest session: " + JSON.stringify(res));
+  await ctx.close();
+}
+
+/* ======================================================================
+ * A browser with no database (the single-file build opened where IndexedDB
+ * is blocked): the app keeps everything in localStorage instead. The rule
+ * has to hold on that path too - it is a different set of functions
+ * underneath, swapped in after boot.
+ * ==================================================================== */
+{
+  console.log("\n-- a browser with no database (everything kept in localStorage) --");
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await ctx.addInitScript(() => { window.indexedDB.open = function () { throw new Error("blocked for this test"); }; });
+  const page = await ctx.newPage();
+  watch(page, "NoDB");
+  const localDump = () => page.evaluate(() => { const o = {}; Object.keys(localStorage).sort().forEach((k) => { o[k] = localStorage.getItem(k); }); return JSON.stringify(o); });
+  await page.goto(url, { waitUntil: "load" });
+  await bootDecided(page);
+  await page.waitForSelector("#ob-overlay", { timeout: 8000 });
+  await page.waitForTimeout(800);
+  const backend = await page.evaluate(() => window.G.db._backend);
+  const before = await localDump();
+  await dismissOnboarding(page, { mode: "guest" });
+  await go(page, "#/board-sim", "#board-sim-improve");
+  await typable(page, "#board-sim-improve");
+  await page.fill("#board-sim-improve", "SESSION-nodb-note");
+  await page.waitForTimeout(400);
+  await go(page, "#/home", "#route");
+  await go(page, "#/board-sim", "#board-sim-improve");
+  const kept = await page.inputValue("#board-sim-improve");
+  const after = await localDump();
+  check(backend === "localStorage" && kept === "SESSION-nodb-note" && after === before && after.indexOf("SESSION-nodb-note") === -1,
+    "with no database, a Guest's notes still work for the session and localStorage is byte-for-byte unchanged",
+    "no-database path: backend=" + backend + ", notes kept=" + JSON.stringify(kept) + ", localStorage unchanged=" + (after === before));
   await ctx.close();
 }
 
