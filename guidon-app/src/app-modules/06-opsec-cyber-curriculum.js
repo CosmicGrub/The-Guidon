@@ -10,8 +10,13 @@
   if (!seed) return;
 
   var CATEGORY = "Cybersecurity & OPSEC";
+  /* opsec-cyber-01 used to ask "What is OPSEC?" - word for word the prompt of
+     the seed's own bq-opsec-02, with a different answer, so the bank held one
+     question twice. It now asks what the process examines (the part of the
+     definition bq-opsec-02 does not cover); the id stays so saved progress on
+     this card is kept. */
   var cards = [
-    ["opsec-cyber-01","What is OPSEC?","A process for identifying critical information and analyzing friendly actions related to military operations and other activities so indicators can be identified and protective measures applied.","AR 530-1 / DoDD 5205.02E","OPSEC purpose"],
+    ["opsec-cyber-01","What does the OPSEC process examine, and what is that examination for?","It identifies critical information and analyzes friendly actions related to military operations and other activities, so that indicators can be identified and protective measures applied.","AR 530-1 / DoDD 5205.02E","OPSEC purpose"],
     ["opsec-cyber-02","What is critical information in OPSEC?","Specific facts about friendly intentions, capabilities, or activities that an adversary needs to plan and act effectively against mission accomplishment.","AR 530-1 / DoDD 5205.02E","Critical information"],
     ["opsec-cyber-03","What is an OPSEC indicator?","Friendly detectable information or activity that can be interpreted or combined by an adversary to reveal critical information.","AR 530-1 / DoDD 5205.02E","Indicators"],
     ["opsec-cyber-04","Why does aggregation matter in OPSEC?","Separate unclassified facts can become operationally revealing when combined. Users must consider the total picture, not only each data point in isolation.","AR 530-1 / DoDD 5205.02E","Aggregation risk"],
@@ -86,10 +91,30 @@
   seed.acronyms.terms = Array.isArray(seed.acronyms.terms) ? seed.acronyms.terms : [];
   var termMap = new Map(seed.acronyms.terms.map(function (t) { return [String(t.a || "").toUpperCase(), t]; }));
   var termsAdded = 0, termsUpdated = 0;
+  /* ADD a meaning, never replace one. This used to run `existing.d = x[1]`,
+     so the Dictionary's "AO" lost "area of operations", "ATO" lost "air
+     tasking order; antiterrorism officer" and "PII" lost its seed meaning -
+     a Soldier looking up AO before a board saw only the cybersecurity sense.
+     Every meaning the dictionary already had stays, in its original order,
+     and the entry keeps its own source tag. */
+  function mergeDefinition(had, incoming) {
+    had = String(had || "");
+    var head = incoming.split(" — ")[0].toLowerCase();
+    if (!had) return incoming;
+    var senses = had.split(";").map(function (s) { return s.trim().toLowerCase(); });
+    if (had.toLowerCase().indexOf(incoming.toLowerCase()) !== -1) return had;                    /* already merged */
+    if (senses.length === 1 && senses[0] === head) return incoming;                             /* same single meaning, fuller wording */
+    if (senses.indexOf(head) !== -1) return had + " (" + incoming + ")";                        /* one of several meanings: keep them all, explain this one */
+    return had + "; " + incoming;                                                               /* a new meaning: append it */
+  }
   terms.forEach(function (x) {
     var key = x[0].toUpperCase(), existing = termMap.get(key);
-    if (existing) { existing.d = x[1]; existing.src = "official"; termsUpdated++; }
-    else { var t = { a: x[0], d: x[1], src: "official" }; seed.acronyms.terms.push(t); termMap.set(key, t); termsAdded++; }
+    if (existing) { existing.d = mergeDefinition(existing.d, x[1]); termsUpdated++; }
+    /* New entries belong to the dictionary's curated Army overlay, so they carry
+       the overlay's own tag. The old value, "official", was one the Dictionary
+       had never heard of: it fell through to the JOINT badge, which claimed
+       terms such as CMMC and MFA came from the joint dictionary. */
+    else { var t = { a: x[0], d: x[1], src: "army" }; seed.acronyms.terms.push(t); termMap.set(key, t); termsAdded++; }
   });
 
   var scenarioList = seed.scenarios && Array.isArray(seed.scenarios.scenarios) ? seed.scenarios.scenarios : null;

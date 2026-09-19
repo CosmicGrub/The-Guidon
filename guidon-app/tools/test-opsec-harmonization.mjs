@@ -21,6 +21,9 @@ const bad=m=>{fails++;console.error("  FAIL  "+m);};
 const expect=(c,p,f=p)=>c?ok(p):bad(f);
 
 const { data } = readSeed(INDEX);
+// The dictionary exactly as the seed ships it, BEFORE any module touches it.
+const termsBefore = new Map((data.acronyms?.terms||[]).map(t=>[String(t.a||"").toUpperCase(), { d:String(t.d||""), src:t.src }]));
+const srcVocabulary = new Set([...termsBefore.values()].map(t=>t.src));
 const local = new Map();
 const documentMock = { readyState:"loading", addEventListener(){} };
 const G = {};
@@ -79,6 +82,30 @@ for (const c of FIX) {
   if (got!==want || r.text!==text || (c.severity && r.findings.some(f=>f.severity!==c.severity))) fixBad.push(`"${c.name}" got [${got}] expected [${want}]`);
 }
 expect(fixBad.length===0, `all ${FIX.length} rows of tools/fixtures/opsec-guard-cases.json produce exactly their expected findings and come back unedited`, fixBad.join(" | "));
+
+/* The curriculum ADDS dictionary meanings; it never replaces one. It used to
+   run `existing.d = ...; existing.src = "official"`, so AO lost "area of
+   operations", ATO lost "air tasking order; antiterrorism officer", PII lost
+   its seed meaning, and 20 entries carried a source tag the Dictionary had
+   never heard of (badged JOINT by fall-through). */
+const lostSenses=[], changedSrc=[];
+for (const t of data.acronyms.terms) {
+  const was=termsBefore.get(String(t.a||"").toUpperCase());
+  if (!was) continue;
+  const now=String(t.d||"").toLowerCase();
+  for (const sense of was.d.split(";").map(s=>s.trim()).filter(Boolean)) if (!now.includes(sense.toLowerCase())) lostSenses.push(`${t.a}: "${sense}"`);
+  if (t.src!==was.src) changedSrc.push(`${t.a}: ${was.src} -> ${t.src}`);
+}
+expect(lostSenses.length===0, `every meaning the seed dictionary had survives the modules (${termsBefore.size} entries checked)`, "meanings lost: "+lostSenses.join(" | "));
+expect(changedSrc.length===0, "no pre-existing dictionary entry has its source tag changed", "source tags changed: "+changedSrc.slice(0,12).join(" | "));
+const termOf=a=>data.acronyms.terms.find(t=>String(t.a).toUpperCase()===a)||{};
+expect(/area of operations/.test(termOf("AO").d) && /authorizing official/i.test(termOf("AO").d), "AO carries both \"area of operations\" and the cybersecurity \"authorizing official\"", JSON.stringify(termOf("AO")));
+expect(/air tasking order/.test(termOf("ATO").d) && /antiterrorism officer/.test(termOf("ATO").d) && /authorization to operate/i.test(termOf("ATO").d), "ATO carries \"air tasking order; antiterrorism officer\" and \"authorization to operate\"", JSON.stringify(termOf("ATO")));
+const strangers=data.acronyms.terms.filter(t=>!srcVocabulary.has(t.src)).map(t=>t.a+"="+t.src);
+expect(strangers.length===0, `every dictionary entry uses a source tag the seed already uses (${[...srcVocabulary].join(", ")})`, "unknown source tags: "+strangers.slice(0,12).join(", "));
+const promptSeen=new Map(), promptDup=[];
+for (const q of data.board.questions) { const k=String(q.q||"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim(); if (promptSeen.has(k)) promptDup.push(`"${q.q}" (${promptSeen.get(k)} and ${q.id})`); else promptSeen.set(k,q.id); }
+expect(promptDup.length===0, "no two board questions ask the identical prompt (opsec-cyber-01 used to repeat bq-opsec-02's \"What is OPSEC?\" with a different answer)", promptDup.join(" | "));
 
 const audit=G.opsec?.audit;
 expect(audit?.cardsPresent===34, "all 34 Cybersecurity & OPSEC board questions are represented", `cardsPresent=${audit?.cardsPresent}`);
