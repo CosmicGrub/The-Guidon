@@ -70,7 +70,7 @@
   add({
     id:"sc-board-simulator-reporting",
     title:"Promotion Board Reporting Procedure — Decision Rehearsal",
-    summary:"An MOI-aware procedural rehearsal that avoids inventing one universal reporting script.",
+    summary:"Rehearse the choices around reporting to a board: preparing, entering, following directions, and answering honestly. Your own board's instructions always set the exact procedure.",
     tier:["E4","E5","E6"],
     competency:["Presence","Intellect","Leads"],
     estMinutes:5,
