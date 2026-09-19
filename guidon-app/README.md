@@ -23,10 +23,35 @@ android/            Android app (Capacitor)
 
 `src/app-modules/*.js` is application content, so it goes into the standalone
 build too; `pwa.js`/`native.js`/`pdf-defer.js` are packaging and are web-only.
-Adding a module means dropping a file in `app-modules/` and adding one line to
-`ROUTES` and one to `NAV_GROUPS` in `src/index.html`. Route render callbacks are
-lazy arrows, and the shell defers `app.start()` to `DOMContentLoaded`, so a
-module injected after the shell is still defined in time.
+Adding a module means dropping a file in `app-modules/`, **giving it an entry in
+`app-modules/manifest.json`** (the build fails, naming the file, if you do not),
+and adding one line to `ROUTES` and one to `NAV_GROUPS` in `src/index.html`.
+Route render callbacks are lazy arrows, and the shell defers `app.start()` to
+`DOMContentLoaded`, so a module injected after the shell is still defined in time.
+
+### The module contract
+
+`src/app-modules/manifest.json` is the one list of modules. Its order IS the
+load order (not the file names), and each entry declares what the module
+requires, provides, draws (`routes`), stores (`storageKeys`), subscribes to
+(`hooks`) and - when there is no way round it yet - replaces (`patches`). The
+file's own `$doc` block explains every field.
+
+- `tools/build.mjs` and `tools/assemble-bank.mjs` (the headless bank behind the
+  content lints and the ESP32 card exporter) both read it through
+  `tools/module-manifest.mjs`. `node tools/module-manifest.mjs` prints the load
+  order and checks it.
+- To add to a core screen, subscribe to a named extension point -
+  `G.ext.on("board:rendered", fn)` - instead of wrapping a core function. Core
+  lists its points in `G.ext` (`src/index.html`, util.js) and in the manifest's
+  `core.extensionPoints`; an unknown name is refused out loud.
+- A guarded call - `typeof G.x.y === "function"`, `G.x && G.x.y(...)` - is a
+  promise that the API may be missing. `node tools/test-module-contract.mjs`
+  boots both builds, visits every route, and fails (file and line) on a guarded
+  API that does not exist unless the manifest lists it under `optionalApis`
+  with a reason. That is the check that would have caught v1.12.1's silently
+  skipped classification-marking refusal. It also fails on an undeclared
+  monkeypatch, route, storage key, hook or cross-module call.
 
 ## Quick start
 
