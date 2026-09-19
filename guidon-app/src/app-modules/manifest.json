@@ -18,7 +18,22 @@
   },
   "core": {
     "extensionPoints": ["board:rendered", "drills:rendered", "prt:rendered"],
-    "optionalApis": []
+    "optionalApis": [
+      { "name": "G.native.isNative", "why": "Defined by src/native.js, which tools/build.mjs adds to web/ only (the Capacitor / Tauri glue). The single-file build does not carry it, so every caller must work without it." },
+      { "name": "G.native.applySystemBars", "why": "Defined by src/native.js, which tools/build.mjs adds to web/ only (the Capacitor / Tauri glue). The single-file build does not carry it, so every caller must work without it." },
+      { "name": "G.native.setImmersive", "why": "Defined by src/native.js, which tools/build.mjs adds to web/ only (the Capacitor / Tauri glue). The single-file build does not carry it, so every caller must work without it." },
+      { "name": "G.pwa.isNative", "why": "Defined by src/pwa.js, which tools/build.mjs adds to web/ only (install, update and platform detection for the installable bundle). The single-file build does not carry it, so every caller must work without it." },
+      { "name": "G.pwa.isIOS", "why": "Defined by src/pwa.js, which tools/build.mjs adds to web/ only (install, update and platform detection for the installable bundle). The single-file build does not carry it, so every caller must work without it." },
+      { "name": "G.pwa.isAndroid", "why": "Defined by src/pwa.js, which tools/build.mjs adds to web/ only (install, update and platform detection for the installable bundle). The single-file build does not carry it, so every caller must work without it." },
+      { "name": "G.pwa.applyUpdate", "why": "Defined by src/pwa.js, which tools/build.mjs adds to web/ only (install, update and platform detection for the installable bundle). The single-file build does not carry it, so every caller must work without it." },
+      { "name": "G.pwa.fmtBytes", "why": "Defined by src/pwa.js, which tools/build.mjs adds to web/ only (install, update and platform detection for the installable bundle). The single-file build does not carry it, so every caller must work without it." },
+      { "name": "G.notify.supported", "why": "Defined by src/notify.js, which tools/build.mjs adds to web/ only (on-device reminders through the native notification plugin). The single-file build does not carry it, so every caller must work without it." },
+      { "name": "G.notify.scheduleForReminder", "why": "Defined by src/notify.js, which tools/build.mjs adds to web/ only (on-device reminders through the native notification plugin). The single-file build does not carry it, so every caller must work without it." },
+      { "name": "G.notify.cancelForReminder", "why": "Defined by src/notify.js, which tools/build.mjs adds to web/ only (on-device reminders through the native notification plugin). The single-file build does not carry it, so every caller must work without it." },
+      { "name": "G.biometric.supported", "why": "Defined by src/biometric.js, which tools/build.mjs adds to web/ only (the fingerprint / face lock on the native shells). The single-file build does not carry it, so every caller must work without it." },
+      { "name": "G.biometric.setSecureScreen", "why": "Defined by src/biometric.js, which tools/build.mjs adds to web/ only (the fingerprint / face lock on the native shells). The single-file build does not carry it, so every caller must work without it." },
+      { "name": "G.pdfjsAssets.ensure", "why": "Defined by src/pdfjs-defer.js, which loads the PDF reader on demand in web/, where the build moves it out to a side file. The single-file build keeps the PDF reader inline (window.pdfjsLib is already there), so it has no loader." }
+    ]
   },
   "modules": [
     {
@@ -176,7 +191,8 @@
       "id": "content-pack-finalize",
       "kind": "finalize",
       "headless": true,
-      "requires": [],
+      "note": "Must load after EVERY content pack - the manifest check enforces that by kind, not through this list. The three ids below are only the modules whose API it touches (it copies the final fingerprint into the board-supplement audit record).",
+      "requires": ["board-supplement-core", "board-supplement-integration", "board-supplement-bankhash"],
       "provides": ["G.contentPacks.finalized"],
       "routes": [],
       "storageKeys": [],
