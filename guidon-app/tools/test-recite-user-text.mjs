@@ -78,11 +78,11 @@ const pickMode = async (label) => {
 await openRecite();
 const section = await page.evaluate(() => {
   const pane = document.querySelector("[data-recite-own]");
-  const heading = pane && pane.querySelector('[role="heading"]');
+  const heading = pane && pane.querySelector("h3");
   const builtIn = document.querySelector('.list-detail-list [role="listbox"][aria-label="Recitable creeds"]');
   return {
     heading: heading ? heading.textContent : "",
-    headingLevel: heading ? heading.getAttribute("aria-level") : "",
+    pageHeading: (document.querySelector("#route h2") || {}).textContent || "",
     note: pane ? (pane.querySelector(".hint") || {}).textContent || "" : "",
     // The heading must sit OUTSIDE the built-in listbox, not be one of its options.
     separate: !!(pane && builtIn && !builtIn.contains(pane) && !pane.contains(builtIn)),
@@ -90,8 +90,8 @@ const section = await page.evaluate(() => {
     firstMode: (document.querySelector('[aria-label="Study mode"] .search-chip[aria-pressed="true"]') || {}).textContent || "",
   };
 });
-section.heading === "My unit" && section.headingLevel === "3" && section.separate && section.builtInRows >= 3
-  ? ok("\"My unit\" is its own heading under the built-in creeds, not an entry in their list")
+section.heading === "My unit" && section.pageHeading === "Recitation Drill" && section.separate && section.builtInRows >= 3
+  ? ok("\"My unit\" is its own heading (an h3 under the page's h2) below the built-in creeds, not an entry in their list")
   : bad("My unit section malformed: " + JSON.stringify(section));
 /only on this device/i.test(section.note) && /never shared or sent/i.test(section.note)
   ? ok("the section says in plain words that the text stays on this device")

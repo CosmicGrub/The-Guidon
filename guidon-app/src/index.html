@@ -33396,7 +33396,9 @@ window.G = window.G || {};
     function renderOwn(focus) {
       if (!ownApi) return;
       util.clear(ownPane);
-      ownPane.appendChild(el("div.eyebrow", { text: "My unit", role: "heading", "aria-level": "3", style: "margin-top:14px" }));
+      // A real heading (the page title is the h2), so it reads as its own
+      // section by eye and to a screen reader's heading list alike.
+      ownPane.appendChild(el("h3", { text: "My unit", style: "font-size:1rem;margin:18px 0 6px" }));
       ownPane.appendChild(el("p.hint", { text:
         "Add your own unit song, creed or motto and drill it the same way. It is saved only on this device and is never shared or sent anywhere." }));
       if (own.length) {

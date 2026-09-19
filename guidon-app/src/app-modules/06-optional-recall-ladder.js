@@ -153,7 +153,16 @@
     opts = opts || {};
     var util = G.util, el = util.el;
     var id = item && item.id;
-    var current = function () { return typeof opts.isCurrent === "function" ? !!opts.isCurrent() : true; };
+    // Leaving the ladder and coming straight back starts a SECOND mount in
+    // the same container while the first one may still have a save in
+    // flight. isCurrent() alone cannot tell the two apart (the mode is
+    // "ladder" again), so each mount takes a number and only the newest one
+    // may draw - otherwise the older one could repaint a step the Soldier
+    // has already moved on from.
+    var turn = (container.__ladderTurn = (container.__ladderTurn || 0) + 1);
+    var current = function () {
+      return container.__ladderTurn === turn && (typeof opts.isCurrent === "function" ? !!opts.isCurrent() : true);
+    };
     var revealed = false;
 
     function draw(state, focus) {
