@@ -134,7 +134,14 @@ seed.topKeys === 19 ? ok("seed has all 19 top-level sections") : bad(`expected 1
 // 112 source cards / 224 prompt links are accounted for, so this count guard
 // still protects the built seed against silent truncation without requiring
 // duplicate cards just to make the arithmetic match the source documents.
-seed.board === 1265 ? ok("1,265 board cards intact") : bad(`board cards: ${seed.board}, expected 1265`);
+// 1274 as of the leader-readiness batch (PR #183): its own two gap modules
+// (06-army-program-board-gaps: AER/ACS/SUDCC x2 = 6, 07-supply-discipline-
+// board-gaps: 3) added 9 cards the 1265 literal it shipped with did not
+// count - main CI was red on this line from #182/#183 until this fix.
+// Breakdown at the time of writing: 997 static seed cards + 277 registered
+// at load by src/app-modules content packs (pb-core 141, pb-deck 75,
+// opsec-cyber 34, pb-spirit-cav 17, creed 1, prog-* 6, supply-* 3).
+seed.board === 1274 ? ok("1,274 board cards intact (997 seed + 277 from content packs)") : bad(`board cards: ${seed.board}, expected 1274`);
 // 3623 as of the same quick-win pass: deleted "RAC-OT" (an OCR/scrape
 // duplicate artifact of "RAS-OT", not a real distinct acronym) and 7
 // redundant unhyphenated staff-designator overlay entries (S2, S3, G1,
