@@ -25,7 +25,7 @@ Everything below is stored **only on your device** — never on a server, becaus
 - **Storage locations:** an on-device database (IndexedDB, database name `guidon`) holding your profile, saved answers, quiz/board-drill history, and progress; plus a small amount of on-device browser storage (localStorage) for interface preferences like your selected theme.
 - **Profile information you enter:** things like your name, rank, MOS, ETS date, target board date, study weak points, and readiness answers, which you type in to personalize your action plan and drills.
 - **Practice and progress data:** quiz attempts, Mock Board results, streaks, and scenario progress, generated as you use the app.
-- **Squad roster (optional, leader-facing only):** if you use the roster feature, you may enter the names, ranks, and counseling dates of Soldiers you lead. This is the one place GUIDON stores information about people other than you, so it gets extra protection — see the next section.
+- **Squad roster (optional, leader-facing only):** if you use the roster feature, it asks for initials, a callsign, or a roster number for each Soldier — not full legal names — plus a rank and counseling dates. This is the one place GUIDON stores information about people other than you, so it gets extra protection — see the next section.
 
 None of the above ever leaves your device on its own. Nothing here is ever sent to a server.
 
