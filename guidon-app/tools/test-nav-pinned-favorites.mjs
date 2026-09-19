@@ -47,6 +47,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { openAsOwner } from "./device-storage.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -68,7 +69,10 @@ const readPins = (page) => page.evaluate(() => {
   page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push("[sidebar] " + m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("[sidebar] pageerror: " + e.message));
   await page.goto(url, { waitUntil: "load" });
-  await dismissOnboarding(page);
+  // A real profile, not a Guest session: what this suite checks is kept on the
+  // device, and a Guest session saves nothing (the storage contract - see
+  // tools/device-storage.mjs and test-guest-saves-nothing.mjs).
+  await openAsOwner(page, url);
   await page.waitForTimeout(700);
 
   // ---- Home never gets a pin toggle - it's rendered directly by
@@ -184,7 +188,7 @@ const readPins = (page) => page.evaluate(() => {
   page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push("[drawer] " + m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("[drawer] pageerror: " + e.message));
   await page.goto(url, { waitUntil: "load" });
-  await dismissOnboarding(page);
+  await openAsOwner(page, url);
   await page.waitForTimeout(700);
 
   await page.locator(".nav-more-btn").click();
@@ -234,7 +238,7 @@ const readPins = (page) => page.evaluate(() => {
   page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push("[dock] " + m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("[dock] pageerror: " + e.message));
   await page.goto(url, { waitUntil: "load" });
-  await dismissOnboarding(page);
+  await openAsOwner(page, url);
   await page.waitForTimeout(700);
 
   const dockHashes = () => page.evaluate(() => Array.from(document.querySelectorAll(".nav > a[data-hash]")).map((a) => a.getAttribute("data-hash")));
@@ -327,7 +331,7 @@ const readPins = (page) => page.evaluate(() => {
   page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push("[cross-tier] " + m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("[cross-tier] pageerror: " + e.message));
   await page.goto(url, { waitUntil: "load" });
-  await dismissOnboarding(page);
+  await openAsOwner(page, url);
   await page.waitForTimeout(700);
 
   // Account, not Board Prep - see Part 1's own comment on why Board Prep
@@ -361,7 +365,7 @@ const readPins = (page) => page.evaluate(() => {
   page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push("[reload] " + m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("[reload] pageerror: " + e.message));
   await page.goto(url, { waitUntil: "load" });
-  await dismissOnboarding(page);
+  await openAsOwner(page, url);
   await page.waitForTimeout(700);
 
   // Account, not Board Prep - see Part 1's own comment on why Board Prep
@@ -402,7 +406,7 @@ const readPins = (page) => page.evaluate(() => {
   page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push("[sidebar-focus] " + m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("[sidebar-focus] pageerror: " + e.message));
   await page.goto(url, { waitUntil: "load" });
-  await dismissOnboarding(page);
+  await openAsOwner(page, url);
   await page.waitForTimeout(700);
 
   // Account, not Board Prep - see Part 1's own comment on why Board Prep
@@ -469,7 +473,7 @@ const readPins = (page) => page.evaluate(() => {
   page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push("[landscape-focus] " + m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("[landscape-focus] pageerror: " + e.message));
   await page.goto(url, { waitUntil: "load" });
-  await dismissOnboarding(page);
+  await openAsOwner(page, url);
   await page.waitForTimeout(700);
 
   const isDock = await page.evaluate(() => !!document.querySelector(".nav-more-btn"));
@@ -525,7 +529,7 @@ for (const { width, height, tier } of [{ width: 700, height: 900, tier: "600-799
   page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push("[pin-btn-overlap@" + width + "] " + m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("[pin-btn-overlap@" + width + "] pageerror: " + e.message));
   await page.goto(url, { waitUntil: "load" });
-  await dismissOnboarding(page);
+  await openAsOwner(page, url);
   await page.waitForTimeout(300);
 
   await page.locator(".nav .nav-group-header", { hasText: "Account" }).click();
@@ -585,7 +589,7 @@ for (const { width, height, tier } of [{ width: 700, height: 900, tier: "600-799
   page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push("[row-heights] " + m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("[row-heights] pageerror: " + e.message));
   await page.goto(url, { waitUntil: "load" });
-  await dismissOnboarding(page);
+  await openAsOwner(page, url);
   await page.waitForTimeout(300);
 
   for (const header of await page.locator(".nav-group-header").all()) {
@@ -624,7 +628,7 @@ for (const { width, height, tier } of [{ width: 700, height: 900, tier: "600-799
     });
   });
   await page.goto(url, { waitUntil: "load" });
-  await dismissOnboarding(page);
+  await openAsOwner(page, url);
   await page.waitForTimeout(300);
 
   const hasFoldClass = await page.evaluate(() => document.documentElement.classList.contains("device-fold-narrow"));

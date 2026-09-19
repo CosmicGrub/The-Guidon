@@ -16,23 +16,19 @@
  * widget and clicks through it, the same real-selector-from-source method
  * test-baseline-coverage.mjs uses for its 11 routes.
  */
-import { chromium } from "playwright";
-import { serve } from "./server.mjs";
-import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { bootApp, ok, bad, finish, waitForRoute, clickWhenStable, until, expectNoConsoleNoise } from "./testkit.mjs";
 
-let fails = 0;
-const ok = (m) => console.log("  PASS  " + m);
-const bad = (m) => { fails++; console.log("  FAIL  " + m); };
+const { page, noise } = await bootApp({ noiseLevels: ["error"] });
 
-const { server, url } = await serve("web");
-const browser = await chromium.launch();
-const page = await (await browser.newContext()).newPage();
-const noise = [];
-page.on("console", (m) => { if (m.type() === "error") noise.push(m.text()); });
-page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
-
-await page.goto(url, { waitUntil: "load" });
-await dismissOnboarding(page);
+// Home reads its widgets' data as it draws, so "Home is open" is not yet
+// "this widget is drawn": rebuild Home from scratch, then wait for the one
+// widget the next section is about. A widget that never shows is left for
+// that section's own assertion to report.
+const reopenHome = async (widget) => {
+  await waitForRoute(page, "#/home", { fresh: true });
+  await until(page, (sel) => !!document.querySelector(sel), widget, { timeout: 8000 });
+};
+const hashBecomes = (h) => until(page, (want) => location.hash === want, h, { timeout: 8000 });
 
 // ==================== 1) ETS countdown banner ====================
 // 45 days out: <=90 -> amber (not <=30 red, not plain green), and every
@@ -48,10 +44,7 @@ await page.evaluate(async (days) => {
   await window.G.store.setSetting("etsDate", iso);
 }, etsDays);
 
-await page.evaluate(() => { location.hash = "#/"; });
-await page.waitForTimeout(150);
-await page.evaluate(() => { location.hash = "#/home"; });
-await page.waitForTimeout(500);
+await reopenHome(".ets-banner");
 
 const etsBanner = page.locator(".ets-banner");
 (await etsBanner.count()) ? ok(".ets-banner renders for a set etsDate") : bad(".ets-banner did not render");
@@ -73,11 +66,10 @@ const etsActionText = await page.locator(".ets-action").textContent().catch(() =
   : bad("ETS action line: " + JSON.stringify(etsActionText));
 
 // Clicking "Transition ->" navigates to #/transition.
-await page.locator(".ets-nav-btn").click();
-await page.waitForTimeout(200);
+await clickWhenStable(page, ".ets-nav-btn");
+await hashBecomes("#/transition");
 (await page.evaluate(() => location.hash)) === "#/transition" ? ok("'Transition →' button navigates to #/transition") : bad("hash after ETS nav click: " + (await page.evaluate(() => location.hash)));
-await page.evaluate(() => { location.hash = "#/home"; });
-await page.waitForTimeout(400);
+await waitForRoute(page, "#/home");
 
 // ==================== 2) Daily streak banner ====================
 // Seeded with lastActive === today (local) so G.streak.tick() (called live
@@ -92,10 +84,7 @@ await page.evaluate(async () => {
   const iso = today.getFullYear() + "-" + String(today.getMonth() + 1).padStart(2, "0") + "-" + String(today.getDate()).padStart(2, "0");
   await window.G.db.setSetting("streak:v1", { lastActive: iso, count: 4, longestCount: 9 });
 });
-await page.evaluate(() => { location.hash = "#/"; });
-await page.waitForTimeout(150);
-await page.evaluate(() => { location.hash = "#/home"; });
-await page.waitForTimeout(500);
+await reopenHome(".streak-banner");
 
 const streakBanner = page.locator(".streak-banner");
 (await streakBanner.count()) ? ok(".streak-banner renders for a >=2-day streak") : bad(".streak-banner did not render");
@@ -125,20 +114,17 @@ const dueSeed = await page.evaluate(async () => {
 });
 dueSeed === 12 ? ok("seeded 12 real board questions as due for review") : bad("expected 12 seeded questions, got " + dueSeed);
 
-await page.evaluate(() => { location.hash = "#/"; });
-await page.waitForTimeout(150);
-await page.evaluate(() => { location.hash = "#/home"; });
-await page.waitForTimeout(500);
+await reopenHome(".card.click");
+await until(page, () => Array.from(document.querySelectorAll(".card.click")).some((c) => /board cards due for review/.test(c.textContent || "")), null, { timeout: 8000 });
 
 const dueCard = page.locator(".card.click", { hasText: /board cards due for review/ });
 (await dueCard.count()) ? ok("due-for-review card renders with the seeded count") : bad("due-for-review card not found");
 const dueCardText = await dueCard.textContent().catch(() => "");
 /12 board cards due for review/.test(dueCardText || "") ? ok("due-for-review card shows the exact seeded count (12)") : bad("due-card text: " + dueCardText);
-await dueCard.click();
-await page.waitForTimeout(200);
+await clickWhenStable(page, dueCard);
+await hashBecomes("#/board");
 (await page.evaluate(() => location.hash)) === "#/board" ? ok("clicking the due-for-review card navigates to #/board") : bad("hash after due-card click: " + (await page.evaluate(() => location.hash)));
-await page.evaluate(() => { location.hash = "#/home"; });
-await page.waitForTimeout(400);
+await waitForRoute(page, "#/home");
 
 // ==================== 4) "Recommended next" scenario card ====================
 const rec = await page.evaluate(async () => {
@@ -146,14 +132,15 @@ const rec = await page.evaluate(async () => {
   return r && r.scenario ? { id: r.scenario.id, title: r.scenario.title, isReplay: !!r.isReplay } : null;
 });
 if (rec) {
+  await until(page, (title) => Array.from(document.querySelectorAll(".card.click h3")).some((h) => (h.textContent || "").includes(title)), rec.title, { timeout: 8000 });
   const recCard = page.locator(".card.click", { has: page.locator("h3", { hasText: rec.title }) });
   (await recCard.count()) ? ok("'Recommended next' card renders the same scenario store.recommendNext() picked (" + rec.title + ")") : bad("recommended card not found for '" + rec.title + "'");
   const eyebrow = await recCard.locator(".eyebrow").textContent().catch(() => "");
   (eyebrow || "").trim() === (rec.isReplay ? "Sharpen up" : "Recommended next")
     ? ok("card eyebrow matches isReplay state ('" + eyebrow.trim() + "')")
     : bad("eyebrow text: " + JSON.stringify(eyebrow) + " (isReplay=" + rec.isReplay + ")");
-  await recCard.click();
-  await page.waitForTimeout(300);
+  await clickWhenStable(page, recCard);
+  await until(page, (title) => location.hash === "#/train" && (document.body.textContent || "").includes(title), rec.title, { timeout: 8000 });
   (await page.evaluate(() => location.hash)) === "#/train" ? ok("clicking the recommended card navigates to #/train") : bad("hash after recommended-card click: " + (await page.evaluate(() => location.hash)));
   // G.nav.seed()'d the exact scenario id - Train's own render consumes it on
   // load and opens straight into that scenario rather than its plain list,
@@ -168,11 +155,5 @@ if (rec) {
   bad("store.recommendNext() returned no scenario - cannot verify the 'Recommended next' card");
 }
 
-const relevantNoise = noise.filter((n) => !/favicon/.test(n));
-relevantNoise.length === 0 ? ok("no console errors/warnings") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));
-
-await browser.close();
-await server.close();
-
-console.log(fails ? `\n${fails} FAILURE(S)` : "\nHOME DASHBOARD: all passed");
-process.exit(fails ? 1 : 0);
+expectNoConsoleNoise(noise, { ignore: [/favicon/], pass: "no console errors/warnings" });
+await finish("HOME DASHBOARD");

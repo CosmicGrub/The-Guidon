@@ -50,6 +50,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { openAsOwner } from "./device-storage.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -176,9 +177,10 @@ const browser = await chromium.launch();
   const noise = [];
   page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 
-  await page.goto(url, { waitUntil: "load" });
-  await page.waitForTimeout(700);
-  await dismissOnboarding(page);
+  // A real profile, not a Guest session: the self-heal entry checked below has
+  // to survive the reload the Fix button triggers, and a Guest session saves
+  // nothing (the storage contract - tools/device-storage.mjs).
+  await openAsOwner(page, url);
   await page.waitForTimeout(300);
 
   await page.evaluate(() => { location.hash = "#/selftest"; });

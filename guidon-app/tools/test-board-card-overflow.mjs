@@ -25,9 +25,7 @@
  *
  * Run: node tools/test-board-card-overflow.mjs [webdir]
  */
-import { chromium } from "playwright";
-import { serve } from "./server.mjs";
-import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { bootApp, openSession, ok, bad, finish, waitForRoute, until } from "./testkit.mjs";
 
 const WEB = process.argv[2] || "web";
 const CONTEXTS = [
@@ -35,10 +33,6 @@ const CONTEXTS = [
   { name: "fold-closed", width: 344, height: 882, touch: true },
 ];
 const STEP_CAP = 3000; // hard ceiling per context, well above any real deck
-
-let fails = 0;
-const ok = (m) => console.log("  PASS  " + m);
-const bad = (m) => { fails++; console.log("  FAIL  " + m); };
 
 // Same shape as verify.mjs OVERFLOW_PROBE, plus the front-face prompt and
 // every offender (not only the widest) so a FAIL line is self-diagnosing.
@@ -66,21 +60,17 @@ const PROBE = () => {
 };
 
 const t0 = Date.now();
-const { server, url } = await serve(WEB);
-const browser = await chromium.launch();
-try {
+{
   for (const vp of CONTEXTS) {
     const tag = `${vp.name} ${vp.width}x${vp.height} touch=${vp.touch}`;
     console.log(`\n[${tag}]`);
-    const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, hasTouch: vp.touch });
-    const page = await ctx.newPage();
-    const noise = [];
-    page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
+    // One browser for both: the first context boots it, the second joins it.
+    // noiseLevels: [] keeps this suite's own contract - page errors only.
+    const session = { dir: WEB, viewport: { width: vp.width, height: vp.height }, contextOptions: { hasTouch: vp.touch }, noiseLevels: [] };
+    const { context: ctx, page, noise } = vp === CONTEXTS[0] ? await bootApp(session) : await openSession(session);
 
-    await page.goto(url, { waitUntil: "load" });
-    await dismissOnboarding(page);
-    await page.evaluate(() => { location.hash = "#/board"; });
-    await page.waitForTimeout(800);
+    await waitForRoute(page, "#/board");
+    await until(page, () => !!document.querySelector('button.qz-nav-btn[aria-label="Next card"]') && [...document.querySelectorAll(".stat .v")].some((e) => /^Card \d+\/\d+/.test(e.textContent || "")), null, { timeout: 8000 });
 
     const hasNext = await page.evaluate(() => !!document.querySelector('button.qz-nav-btn[aria-label="Next card"]'));
     const first = await page.evaluate(PROBE);
@@ -102,7 +92,14 @@ try {
         bad(`${tag}: card ${o.card}/${o.total} doc=${o.doc} wide=${o.wide.length} (${offenders}) :: "${o.prompt}"`);
       }
       await page.evaluate(() => { document.querySelector('button.qz-nav-btn[aria-label="Next card"]')?.click(); });
-      await page.waitForTimeout(25);
+      // The next probe must read the NEXT card: wait for the live tally to
+      // move on rather than hoping 25ms was enough on a slow runner.
+      const movedOn = await until(page, (was) => { const t = [...document.querySelectorAll(".stat .v")].map((e) => e.textContent || "").find((x) => /^Card \d+\/\d+/.test(x)) || ""; const m = /^Card (\d+)\//.exec(t); return !!m && Number(m[1]) !== was; }, o.card, { timeout: 8000 });
+      // A deck that will not move must stop the walk HERE. Waiting out every
+      // remaining card is 8s x the whole deck x two screens - hours, so CI
+      // kills the chunk at its time limit with no FAIL line - and a deck that
+      // never left card 1 then reads as "wrapped back to card 1" below.
+      if (!movedOn) { bad(`${tag}: "Next card" did not move the deck on from card ${o.card}/${o.total} within 8s :: "${o.prompt}"`); break; }
     }
     const after = await page.evaluate(PROBE);
     stepped === total ? ok(`${tag}: stepped all ${stepped}/${total} cards, ${hits} with overflow`)
@@ -113,10 +110,7 @@ try {
     noise.length === 0 ? ok(`${tag}: zero page errors`) : bad(`${tag}: ${noise.length} page errors; first: ${noise[0]}`);
     await ctx.close();
   }
-} finally {
-  await browser.close();
-  server.close();
 }
 
-console.log(`\n${fails === 0 ? "ALL PASS" : fails + " FAIL"} - board-card-overflow (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
-process.exit(fails);
+console.log(`\nboard-card-overflow took ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+await finish("BOARD CARD OVERFLOW");

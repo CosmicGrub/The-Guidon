@@ -51,6 +51,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { openAsOwner } from "./device-storage.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -86,7 +87,10 @@ page.setDefaultTimeout(5000);
 watch(page, "[main]");
 await page.clock.install({ time: FRIDAY });
 await page.goto(url, { waitUntil: "load" });
-await dismissOnboarding(page);
+// A real profile, not a Guest session: this suite checks that what it does is
+// still there after a reload, and a Guest session saves nothing (the storage
+// contract - see tools/device-storage.mjs and test-guest-saves-nothing.mjs).
+await openAsOwner(page, url);
 
 const sleep = (ms) => page.waitForTimeout(ms);
 async function openPlanner(p, view) {

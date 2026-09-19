@@ -27,7 +27,17 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { openAsOwner } from "./device-storage.mjs";
 import { CATEGORY_PILLAR } from "./pillar-map.mjs";
+import { loadManifest } from "./content-manifest.mjs";
+
+// How big the 92A deck is comes from the committed content manifest, not a
+// typed 40: adding a 92A card must not break this suite, and losing one is
+// already refused by the manifest's own ratchet (tools/content-manifest.mjs).
+const REVIEWED = loadManifest().board;
+const MOS_92A_CARDS = REVIEWED.byMos["92A"] || 0;
+const CATEGORIES_92A = Object.keys(REVIEWED.byCategory).filter((c) => /^92A/.test(c));
+const CARDS_IN_92A_CATEGORIES = CATEGORIES_92A.reduce((n, c) => n + REVIEWED.byCategory[c], 0);
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -42,7 +52,10 @@ page.on("console", (m) => { if (["error", "warning"].includes(m.type())) noise.p
 page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 
 await page.goto(url, { waitUntil: "load" });
-await dismissOnboarding(page);
+// A real profile, not a Guest session: this suite checks that what it does is
+// still there after a reload, and a Guest session saves nothing (the storage
+// contract - see tools/device-storage.mjs and test-guest-saves-nothing.mjs).
+await openAsOwner(page, url);
 await page.evaluate(() => { location.hash = "#/home"; });
 await page.waitForFunction(() => window.G && G.store && G.store.boardQuestions().length > 900, null, { timeout: 30000 });
 
@@ -267,7 +280,7 @@ console.log("\nC17 - honest card-back headings and real citations");
   /* (d) citations: a publication designator, not "Army sustainment doctrine" */
   const PUB = /\b(AR|DA PAM|ATP|ADP|FM|TC|TM) \d/;
   const mos = bank.filter((q) => /^92A/.test(q.category));
-  mos.length === 40 ? ok("all 40 92A prompts are in the bank") : bad(mos.length + " 92A prompts found (expected 40 - run this suite with no tier or MOS filter)");
+  (mos.length > 0 && mos.length === CARDS_IN_92A_CATEGORIES) ? ok(`all ${mos.length} 92A prompts the content manifest records are in the bank`) : bad(mos.length + " 92A prompts found (the content manifest records " + CARDS_IN_92A_CATEGORIES + " - run this suite with no tier or MOS filter)");
   const uncited = mos.filter((q) => !PUB.test(q.source));
   uncited.length === 0 ? ok("every 92A card cites at least one Army publication by number") : bad(uncited.length + " 92A cards cite no publication: " + uncited.slice(0, 6).map((q) => q.id + " [" + q.source + "]").join("; "));
   const vague = packCards.filter((q) => /Army sustainment doctrine|Army supply procedures|Applicable Army program regulations|GCSS-Army procedures|CMF 92 career guidance|^GCSS-Army$/.test(q.source));
@@ -393,11 +406,11 @@ console.log("\nU13 - 92A cards stay out of another MOS's pools");
   infantry.mosCards === 0 ? ok("an 11B's question pool holds no 92A-only cards") : bad("11B pool still holds " + infantry.mosCards + " MOS-only cards");
   infantry.options === 0 ? ok("...Board Drill's category picker offers an 11B no \"92A — ...\" categories") : bad("11B still sees " + infantry.options + " 92A categories in the picker");
   const supply = await asMos("92a");
-  supply.mosCards === 40 ? ok("a 92A (typed in lower case) gets all 40") : bad("92A pool holds " + supply.mosCards + " MOS-only cards");
-  supply.options >= 10 ? ok("...and sees the 92A categories in the picker (" + supply.options + ")") : bad("92A sees " + supply.options + " 92A categories");
-  (supply.supplyPillar - infantry.supplyPillar === 40) ? ok(`the Maintenance & Supply pillar is ${infantry.supplyPillar} cards for the 11B and ${supply.supplyPillar} for the 92A - the 40 MOS cards no longer count against another MOS's readiness`) : bad("M&S pillar: 11B " + infantry.supplyPillar + ", 92A " + supply.supplyPillar);
+  (supply.mosCards > 0 && supply.mosCards === MOS_92A_CARDS) ? ok("a 92A (typed in lower case) gets all " + MOS_92A_CARDS) : bad("92A pool holds " + supply.mosCards + " MOS-only cards, the content manifest records " + MOS_92A_CARDS);
+  (supply.options > 0 && supply.options === CATEGORIES_92A.length) ? ok("...and sees the 92A categories in the picker (" + supply.options + ")") : bad("92A sees " + supply.options + " 92A categories");
+  (MOS_92A_CARDS > 0 && supply.supplyPillar - infantry.supplyPillar === MOS_92A_CARDS) ? ok(`the Maintenance & Supply pillar is ${infantry.supplyPillar} cards for the 11B and ${supply.supplyPillar} for the 92A - the ${MOS_92A_CARDS} MOS cards no longer count against another MOS's readiness`) : bad("M&S pillar: 11B " + infantry.supplyPillar + ", 92A " + supply.supplyPillar);
   const skill = await asMos("92A2O");
-  skill.mosCards === 40 ? ok("an MOS typed with its skill level (92A2O) still matches") : bad("92A2O pool holds " + skill.mosCards);
+  skill.mosCards === MOS_92A_CARDS ? ok("an MOS typed with its skill level (92A2O) still matches") : bad("92A2O pool holds " + skill.mosCards);
 }
 
 /* ---- zero console noise ---- */

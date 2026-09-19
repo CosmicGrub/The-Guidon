@@ -277,13 +277,18 @@ window.G = window.G || {};
       // tierFilter setting and would understate the true corpus size for
       // anyone who has narrowed their tier - the same reasoning
       // doctrineSeed()'s own unfiltered entries.length already follows.
+      // 2026-09: the OTHER half of that sentence was still typed - "336
+      // entries" sat here while the library grew past 350. Both numbers now
+      // come from the same raw seed read; tools/test-live-content-figures.mjs
+      // holds what this card shows to the content manifest.
       get implemented() {
         try {
           const s = G.store && G.store.seed && G.store.seed();
           const n = (s && s.board && s.board.questions && s.board.questions.length) || null;
-          if (n) return "336 entries and " + n.toLocaleString() + " board cards.";
+          const d = (s && s.doctrine && s.doctrine.entries && s.doctrine.entries.length) || null;
+          if (n && d) return d.toLocaleString() + " entries and " + n.toLocaleString() + " board cards.";
         } catch (e) {}
-        return "336 entries and an unknown number of board cards.";
+        return "Doctrine entries and board cards.";
       },
       ask: "armypubs.army.mil for the current edition of any publication you are quoting.", link: "#/doctrine" },
 

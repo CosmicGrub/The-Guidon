@@ -29,6 +29,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { openAsOwner } from "./device-storage.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -42,7 +43,10 @@ page.on("console", (m) => { if (m.type() === "error") noise.push(m.text()); });
 page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 
 await page.goto(url, { waitUntil: "load" });
-await dismissOnboarding(page);
+// A real profile, not a Guest session: this suite checks that what it does is
+// still there after a reload, and a Guest session saves nothing (the storage
+// contract - see tools/device-storage.mjs and test-guest-saves-nothing.mjs).
+await openAsOwner(page, url);
 
 const DRILLS_KEY = "guidon:drills:v1";
 // Clean slate regardless of anything a prior test left in this shared kv row.
@@ -126,9 +130,9 @@ await page.evaluate(() => {
 await page.waitForTimeout(200);
 
 await page.reload({ waitUntil: "load" });
-// A reload re-runs onboarding for a guest session (the profile is
-// in-memory only) - dismiss it again before touching #/drills underneath it
-// (same idiom test-flush-on-background.mjs's own reload step establishes).
+// Under the real profile this suite runs as there is no welcome screen after
+// a reload; dismissOnboarding() returns at once in that case and is kept only
+// as a guard before touching #/drills.
 await dismissOnboarding(page);
 await openEssayDrill();
 

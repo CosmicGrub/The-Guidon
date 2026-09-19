@@ -34,6 +34,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { waitForRoute } from "./testkit.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -202,8 +203,13 @@ const creedLinks = await page.evaluate(() => Array.from(document.querySelectorAl
   ? ok("#/creeds offers no \"Practice reciting this\" link for a text the app does not carry")
   : bad("#/creeds still links the entry to a recitable record: " + JSON.stringify(creedLinks));
 
-await page.evaluate(() => { location.hash = "#/recite"; });
-await page.waitForSelector(".list-detail-list .list-detail-row");
+// #/creeds and #/recite share the same ".list-detail-list .list-detail-row"
+// markup, so a bare waitForSelector can resolve against #/creeds' own rows,
+// still on screen for a moment after the hash changes, before #/recite
+// replaces them - and #/creeds really does list an entry matching /cav/i.
+// waitForRoute (tools/testkit.mjs) tags the outgoing screen first and waits
+// for a real swap.
+await waitForRoute(page, "#/recite", { ready: ".list-detail-list .list-detail-row" });
 const reciteRows = await page.evaluate(() => Array.from(document.querySelectorAll(".list-detail-list .list-detail-row")).map((r) => r.textContent));
 const reciteText = await page.evaluate(() => document.getElementById("route").innerText);
 !reciteRows.some((t) => /spirit|cav/i.test(t)) && hasProbe(reciteText).length === 0

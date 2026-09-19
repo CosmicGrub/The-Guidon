@@ -10,25 +10,12 @@
  *   - Escape exits; navigating away exits (a fixed overlay must never outlive
  *     the view that owns it); grade toasts stay visible above the overlay
  */
-import { chromium } from "playwright";
-import { serve } from "./server.mjs";
-import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { bootApp, ok, bad, finish, waitForRoute, until, expectNoConsoleNoise } from "./testkit.mjs";
 
-let fails = 0;
-const ok = (m) => console.log("  PASS  " + m);
-const bad = (m) => { fails++; console.log("  FAIL  " + m); };
+const { page, noise } = await bootApp({ viewport: { width: 412, height: 915 }, contextOptions: { hasTouch: true } });
+await waitForRoute(page, "#/board", { ready: ".qz-wrap .qz-card" });
 
-const { server, url } = await serve("web");
-const browser = await chromium.launch();
-const page = await (await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true })).newPage();
-const noise = [];
-page.on("console", (m) => { if (["error", "warning"].includes(m.type())) noise.push(m.type() + ": " + m.text()); });
-page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
-
-await page.goto(url, { waitUntil: "load" });
-await dismissOnboarding(page);
-await page.evaluate(() => { location.hash = "#/board"; });
-await page.waitForTimeout(1200);
+const inTheater = () => document.documentElement.classList.contains("qz-theater");
 
 // --- button exists, in the nav row ---
 const btn = await page.evaluate(() => {
@@ -39,7 +26,8 @@ btn ? ok(`fullscreen button in the nav row ("${btn.label}", ${btn.text})`) : bad
 
 // --- enter theater ---
 await page.evaluate(() => document.querySelector(".qz-fs-btn").click());
-await page.waitForTimeout(600);
+// In theater AND laid out: the wrap has finished growing to the viewport.
+await until(page, () => { const w = document.querySelector(".qz-wrap"); const r = w && w.getBoundingClientRect(); return document.documentElement.classList.contains("qz-theater") && !!r && r.width >= innerWidth - 1 && r.height >= innerHeight - 1; }, null, { timeout: 5000 });
 const on = await page.evaluate(() => {
   const wrap = document.querySelector(".qz-wrap");
   const r = wrap.getBoundingClientRect();
@@ -68,11 +56,11 @@ on.topbarCovered ? ok("topbar is underneath the overlay (hit-test)") : bad("topb
 // --- study loop inside theater: flip, grade, next card keeps theater ---
 await page.evaluate(() => document.querySelector(".qz-wrap").focus());
 await page.keyboard.press("Space");
-await page.waitForTimeout(700);
+await until(page, () => !!document.querySelector(".qz-card.flipped"), null, { timeout: 5000 });
 const flipped = await page.evaluate(() => !!document.querySelector(".qz-card.flipped"));
 flipped ? ok("card flips inside theater") : bad("card did not flip in theater");
 await page.keyboard.press("3");
-await page.waitForTimeout(900);
+await until(page, () => !document.querySelector(".qz-card.flipped"), null, { timeout: 5000 });
 const afterGrade = await page.evaluate(() => ({
   theater: document.documentElement.classList.contains("qz-theater"),
   flippedReset: !document.querySelector(".qz-card.flipped"),
@@ -84,15 +72,14 @@ Number(afterGrade.toastZ) > 800 ? ok(`toast lifted above the overlay (z-index ${
 
 // --- Escape exits ---
 await page.keyboard.press("Escape");
-await page.waitForTimeout(500);
+await until(page, () => !document.documentElement.classList.contains("qz-theater"), null, { timeout: 5000 });
 const afterEsc = await page.evaluate(() => document.documentElement.classList.contains("qz-theater"));
 !afterEsc ? ok("Escape exits theater") : bad("Escape did not exit");
 
 // --- navigation away cleans up a re-entered theater ---
 await page.evaluate(() => document.querySelector(".qz-fs-btn").click());
-await page.waitForTimeout(400);
-await page.evaluate(() => { location.hash = "#/home"; });
-await page.waitForTimeout(900);
+await until(page, inTheater, null, { timeout: 5000 });
+await waitForRoute(page, "#/home");
 const afterNav = await page.evaluate(() => ({
   cls: document.documentElement.classList.contains("qz-theater"),
   overlay: !!document.querySelector(".qz-wrap"),
@@ -100,11 +87,5 @@ const afterNav = await page.evaluate(() => ({
 !afterNav.cls ? ok("navigating away removes the theater class") : bad("theater class survived navigation");
 !afterNav.overlay ? ok("no orphaned overlay after navigation") : bad("qz-wrap still in DOM on another view");
 
-const KNOWN = [/Removing XFA form data/];
-const unexpected = noise.filter((n) => !KNOWN.some((k) => k.test(n)));
-unexpected.length === 0 ? ok("no console errors/warnings") : bad(unexpected.length + " console msgs; first: " + unexpected[0]);
-
-await browser.close();
-server.close();
-console.log("\n" + (fails ? `THEATER: ${fails} FAILURE(S)` : "THEATER: all passed"));
-process.exit(fails ? 1 : 0);
+expectNoConsoleNoise(noise, { ignore: [/Removing XFA form data/], pass: "no console errors/warnings" });
+await finish("THEATER");

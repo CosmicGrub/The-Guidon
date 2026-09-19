@@ -28,6 +28,7 @@ import { readFileSync, copyFileSync, unlinkSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { readSeed, writeSeed } from "./seed-io.mjs";
+import { loadManifest } from "./content-manifest.mjs";
 
 const REAL_PATH = "src/index.html";
 
@@ -53,9 +54,11 @@ bq1 && bq1.q === "What are the seven Army Values?" && bq1.source === "ADP 6-22"
   ? ok('known card "bq1" (Army Values, ADP 6-22) survived parsing intact')
   : bad("known card bq1 missing or changed: " + JSON.stringify(bq1));
 
-Array.isArray(real.data.board.questions) && real.data.board.questions.length > 900
-  ? ok(`board.questions has a plausible real count (${real.data.board.questions.length})`)
-  : bad("board.questions count looks wrong: " + (real.data.board.questions || []).length);
+// Exact, not "more than 900": the content manifest records how many cards the
+// STATIC seed holds on its own, before any content pack adds to it.
+Array.isArray(real.data.board.questions) && real.data.board.questions.length === loadManifest().seedOnly.board
+  ? ok(`board.questions holds exactly the ${real.data.board.questions.length} seed-only cards the content manifest records`)
+  : bad("board.questions holds " + (real.data.board.questions || []).length + " cards, the content manifest records " + loadManifest().seedOnly.board + " in the static seed (seedOnly.board) - if the seed really changed, run: node tools/content-manifest.mjs --write");
 
 JSON.stringify(real.data) === real.raw
   ? ok("JSON.stringify(readSeed().data) reproduces the extracted raw text exactly")

@@ -158,8 +158,10 @@ await page.locator("button", { hasText: /Import backup/ }).click();
 await page.locator('input[type="file"]').setInputFiles(corruptPath);
 await page.waitForTimeout(300);
 const preConfirmText = await page.locator(".gm-box").textContent();
-/streak:v1/.test(preConfirmText || "") ? ok("The import confirm dialog names the corrupted key (streak:v1) BEFORE any commit, not after") : bad("confirm dialog did not name the corrupted row up front: " + (preConfirmText || "").slice(0, 300));
-/corrupted and will be skipped/.test(preConfirmText || "") ? ok("The dialog states plainly that the named item(s) will be skipped") : bad("confirm dialog did not explain the consequence: " + (preConfirmText || "").slice(0, 300));
+// Named in the Soldier's words, not by storage key: the dialog used to print
+// the raw key ("streak:v1"), which tells the person reading it nothing.
+/your study streak/.test(preConfirmText || "") && !/streak:v1/.test(preConfirmText || "") ? ok("The import confirm dialog names the damaged item in plain words (\"your study streak\") BEFORE any commit, not after") : bad("confirm dialog did not name the damaged item up front in plain words: " + (preConfirmText || "").slice(0, 300));
+/1 item in this file is damaged and will be left out/.test(preConfirmText || "") && /Everything else will be restored/.test(preConfirmText || "") ? ok("The dialog states plainly that the named item will be left out and the rest restored") : bad("confirm dialog did not explain the consequence: " + (preConfirmText || "").slice(0, 300));
 // Cancel rather than confirm - this stage only verifies the preview text,
 // the real restore path is already proven above.
 await page.locator(".gm-box button", { hasText: /Cancel/ }).click().catch(async () => {
@@ -191,7 +193,7 @@ await page.locator("button", { hasText: /Import backup/ }).click();
 await page.locator('input[type="file"]').setInputFiles(currCorruptPath);
 await page.waitForTimeout(300);
 const currPreConfirmText = await page.locator(".gm-box").textContent();
-/curr:some-lesson-id/.test(currPreConfirmText || "") ? ok("The import confirm dialog names a corrupted curr: row before any commit, not after") : bad("confirm dialog did not name the corrupted curr: row: " + (currPreConfirmText || "").slice(0, 300));
+/lesson progress/.test(currPreConfirmText || "") && !/curr:some-lesson-id/.test(currPreConfirmText || "") ? ok("The import confirm dialog names a damaged curr: row in plain words (\"lesson progress\") before any commit, not after") : bad("confirm dialog did not name the damaged curr: row in plain words: " + (currPreConfirmText || "").slice(0, 300));
 await page.locator(".gm-box button", { hasText: /Cancel/ }).click().catch(async () => {
   await page.keyboard.press("Escape");
 });

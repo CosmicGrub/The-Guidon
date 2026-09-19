@@ -48,6 +48,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { deviceKvGet, putOnDevice, seedOwnerProfile } from "./device-storage.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -119,23 +120,19 @@ async function dismissOnboardingVia(mode) {
 }
 /** Wipes any stored profile so the next load/reload needs onboarding again. */
 async function clearStoredProfile() {
-  await page.evaluate(async () => { try { await window.G.db.put("kv", { k: "guidon:profile:v1", v: null }); } catch (e) {} });
+  await putOnDevice(page, { stores: { kv: [{ k: "guidon:profile:v1", v: null }] } });
 }
+// These three put rows ON THE DEVICE, underneath the app
+// (tools/device-storage.mjs), not through G.db. This suite moves between
+// Guest, Kiosk and Personal on purpose, and a Guest or Kiosk session saves
+// nothing: a G.db.put() made from inside one only reaches memory and is
+// gone at the next reload - which is exactly when these fixtures are needed.
 async function seedPersonalProfile() {
-  await page.evaluate(async () => {
-    await window.G.db.put("kv", { k: "guidon:profile:v1", v: {
-      onboardingComplete: true, mode: "personal", tier: "E5", rank: "SGT",
-      displayName: "SGT TESTFIRE", lastName: "TESTFIRE", anonymous: false,
-      studyWeakPoints: [], readinessConcerns: [], actionPlan: [], promoPoints: {},
-    } });
-  });
+  await seedOwnerProfile(page);
 }
 async function setBiometricLockSetting(v) {
-  await page.evaluate(async (val) => {
-    const s = await window.G.db.get("kv", "settings");
-    const sv = Object.assign({}, s && s.v, { biometricLock: val });
-    await window.G.db.put("kv", { k: "settings", v: sv });
-  }, v);
+  const row = await deviceKvGet(page, "settings");
+  await putOnDevice(page, { stores: { kv: [{ k: "settings", v: Object.assign({}, row && row.v, { biometricLock: v }) }] } });
 }
 
 // ============================================================
@@ -457,16 +454,13 @@ webBoot.supported === false ? ok("G.biometric.supported() is false with no nativ
 // Even if biometricLock were somehow already true in storage (e.g. a device
 // that later opened this same profile in a browser without biometrics), the
 // gate must still resolve instantly and never lock anyone out on web.
-await webPage.evaluate(async () => {
-  await window.G.db.put("kv", { k: "guidon:profile:v1", v: {
-    onboardingComplete: true, mode: "personal", tier: "E5", rank: "SGT",
-    displayName: "SGT WEBTEST", lastName: "WEBTEST", anonymous: false,
-    studyWeakPoints: [], readinessConcerns: [], actionPlan: [], promoPoints: {},
-  } });
-  const s = await window.G.db.get("kv", "settings");
-  const sv = Object.assign({}, s && s.v, { biometricLock: true });
-  await window.G.db.put("kv", { k: "settings", v: sv });
-});
+// On the device, not through G.db: webPage is in a Guest session here, and a
+// Guest session saves nothing (see the helpers near the top of this file).
+await seedOwnerProfile(webPage, { displayName: "SGT WEBTEST", lastName: "WEBTEST" });
+{
+  const row = await deviceKvGet(webPage, "settings");
+  await putOnDevice(webPage, { stores: { kv: [{ k: "settings", v: Object.assign({}, row && row.v, { biometricLock: true }) }] } });
+}
 await webPage.reload({ waitUntil: "load" });
 await webPage.waitForTimeout(900);
 

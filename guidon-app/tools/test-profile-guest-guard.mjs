@@ -20,6 +20,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { deviceKvGet, putOnDevice } from "./device-storage.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -32,6 +33,10 @@ const noise = [];
 page.on("console", (m) => { if (m.type() === "error") noise.push(m.text()); });
 page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 
+// Every "writes nothing to storage" check below reads the DEVICE itself, not
+// G.db: inside a Guest or Kiosk session G.db answers from memory by design.
+const profileRowOnDevice = () => deviceKvGet(page, "guidon:profile:v1");
+
 // ======================================================================
 // Part 1: Guest session - "Regenerate plan" and the promo-points slider
 // must never write guidon:profile:v1 to IndexedDB.
@@ -41,7 +46,7 @@ await page.waitForTimeout(700);
 await dismissOnboarding(page);
 await page.waitForTimeout(400);
 
-const rowBeforeGuest = await page.evaluate(async () => window.G.db.get("kv", "guidon:profile:v1"));
+const rowBeforeGuest = await profileRowOnDevice();
 rowBeforeGuest === undefined ? ok("Guest session starts with no guidon:profile:v1 row in storage") : bad("unexpected pre-existing profile row: " + JSON.stringify(rowBeforeGuest));
 
 await page.evaluate(() => { location.hash = "#/profile"; });
@@ -53,14 +58,14 @@ if (await regenBtn.count()) {
   await regenBtn.click();
   await page.waitForTimeout(300);
 }
-const rowAfterRegenGuest = await page.evaluate(async () => window.G.db.get("kv", "guidon:profile:v1"));
+const rowAfterRegenGuest = await profileRowOnDevice();
 rowAfterRegenGuest === undefined ? ok("Clicking 'Regenerate plan' in a Guest session still writes nothing to storage") : bad("Regenerate plan wrote a profile row during a Guest session: " + JSON.stringify(rowAfterRegenGuest));
 
 const rangeInput = page.locator("input.promo-range").first();
 if (await rangeInput.count()) {
   await rangeInput.evaluate((el) => { el.value = String(Math.min(20, Number(el.max) || 20)); el.dispatchEvent(new Event("input", { bubbles: true })); });
   await page.waitForTimeout(500); // clears the 300ms debounce
-  const rowAfterSlider = await page.evaluate(async () => window.G.db.get("kv", "guidon:profile:v1"));
+  const rowAfterSlider = await profileRowOnDevice();
   rowAfterSlider === undefined ? ok("Dragging the promo-points quick-estimate slider in a Guest session still writes nothing to storage") : bad("promo-points autosave wrote a profile row during a Guest session: " + JSON.stringify(rowAfterSlider));
 } else {
   bad("promo-points quick-estimate slider (input.promo-range) not found on the Guest Profile view");
@@ -85,18 +90,20 @@ if (await kioskRegenBtn.count()) {
   await kioskRegenBtn.click();
   await page.waitForTimeout(300);
 }
-const rowAfterRegenKiosk = await page.evaluate(async () => window.G.db.get("kv", "guidon:profile:v1"));
+const rowAfterRegenKiosk = await profileRowOnDevice();
 rowAfterRegenKiosk === undefined ? ok("Clicking 'Regenerate plan' in a Kiosk session still writes nothing to storage") : bad("Regenerate plan wrote a profile row during a Kiosk session: " + JSON.stringify(rowAfterRegenKiosk));
 
 // Simulate a real profile already saved on this device from BEFORE this
 // Kiosk session started (a shared/public device a Soldier used earlier).
-// This is a raw db.put, not saveProfile() - representing storage state the
-// active Kiosk _cache never read and has no relationship to.
+// Put on the device underneath the app (tools/device-storage.mjs), not with
+// G.db.put(): a Kiosk session saves nothing, so a put made from inside it
+// would only reach memory. This is storage state the active Kiosk _cache
+// never read and has no relationship to.
 const MARKER = "QA-KIOSK-GUARD-" + Date.now();
-await page.evaluate((marker) => window.G.db.put("kv", { k: "guidon:profile:v1", v: {
-  onboardingComplete: true, mode: "personal", tier: "E6", rank: "SSG", lastName: marker,
-} }), MARKER);
-const seeded = await page.evaluate(async () => window.G.db.get("kv", "guidon:profile:v1"));
+await putOnDevice(page, { stores: { kv: [{ k: "guidon:profile:v1", v: {
+  onboardingComplete: true, mode: "personal", tier: "E6", rank: "SSG", lastName: MARKER,
+} }] } });
+const seeded = await profileRowOnDevice();
 seeded && seeded.v && seeded.v.lastName === MARKER ? ok("A real personal profile was seeded into storage while the Kiosk session stayed active") : bad("seed failed: " + JSON.stringify(seeded));
 
 const switchBtn = page.locator("button", { hasText: /Switch account or mode/ });
@@ -110,7 +117,7 @@ await Promise.all([
   })(),
 ]);
 await page.waitForTimeout(300);
-const rowAfterSwitch = await page.evaluate(async () => window.G.db.get("kv", "guidon:profile:v1"));
+const rowAfterSwitch = await profileRowOnDevice();
 (rowAfterSwitch && rowAfterSwitch.v && rowAfterSwitch.v.lastName === MARKER)
   ? ok("The real profile row survives 'Switch account or mode' clicked from an active Kiosk session (deleteProfile() correctly skipped)")
   : bad("the seeded real profile row was deleted/altered by a Kiosk session's Switch button: " + JSON.stringify(rowAfterSwitch));

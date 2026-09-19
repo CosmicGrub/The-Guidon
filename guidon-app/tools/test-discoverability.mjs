@@ -9,23 +9,13 @@
  * behavior (a real mailto: href, real label text, real routing, real title
  * attributes), not just that the elements exist.
  */
-import { chromium } from "playwright";
-import { serve } from "./server.mjs";
-import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { bootApp, ok, bad, finish, waitForRoute, clickWhenStable, until, expectNoConsoleNoise } from "./testkit.mjs";
 
-let fails = 0;
-const ok = (m) => console.log("  PASS  " + m);
-const bad = (m) => { fails++; console.log("  FAIL  " + m); };
+const { page, noise } = await bootApp();
 
-const { server, url } = await serve("web");
-const browser = await chromium.launch();
-const page = await (await browser.newContext()).newPage();
-const noise = [];
-page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push(m.type() + ": " + m.text()); });
-page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
-
-await page.goto(url, { waitUntil: "load" });
-await dismissOnboarding(page);
+// A button by its visible words, checked in the page so a missing button is
+// the assertion's failure to report, not a thrown wait.
+const hasButton = (words) => until(page, (w) => Array.from(document.querySelectorAll("button")).some((b) => (b.textContent || "").includes(w)), words, { timeout: 5000 });
 
 // ---- nav-button title tooltips (G.demoNotes) ----
 const navTitles = await page.evaluate(() => {
@@ -65,8 +55,8 @@ freshnessLabel && /Currency/i.test(freshnessLabel) ? bad("#/currency nav label s
 // in-page disclaimer says its MOS shortage/growth/SRB data changes
 // roughly every six months - the single most self-described-perishable
 // content in the app - yet this tracker never listed it as a domain. ----
-await page.evaluate(() => { location.hash = "#/currency"; });
-await page.waitForTimeout(500);
+await waitForRoute(page, "#/currency");
+await until(page, () => /MOS shortage.growth and reclassification/.test(document.body.textContent || ""), null, { timeout: 5000 });
 const careerDomainText = await page.evaluate(() => document.body.textContent || "");
 /MOS shortage.growth and reclassification/.test(careerDomainText)
   ? ok("Freshness tracker now lists the MOS/Career domain")
@@ -83,30 +73,28 @@ const diagLabel = await page.evaluate(() => {
 diagLabel && /Diagnostics/i.test(diagLabel) ? ok("#/selftest nav label reads 'Diagnostics'") : bad("#/selftest nav label is not 'Diagnostics': " + diagLabel);
 diagLabel && /Self-?Test/i.test(diagLabel) ? bad("#/selftest nav label still says 'Self-Test': " + diagLabel) : ok("no lingering 'Self-Test' text in the nav label");
 
-await page.evaluate(() => { location.hash = "#/board"; });
-await page.waitForTimeout(200);
-await page.evaluate(() => { location.hash = "#/selftest"; });
-await page.waitForTimeout(400);
+await waitForRoute(page, "#/board");
+await waitForRoute(page, "#/selftest");
+await until(page, () => !!document.querySelector("#view h2, main h2"), null, { timeout: 5000 });
 const diagHeading = await page.evaluate(() => (document.querySelector("#view h2, main h2") || {}).textContent);
 diagHeading === "Diagnostics" ? ok("#/selftest page heading reads 'Diagnostics'") : bad("#/selftest heading was: " + diagHeading);
 
 // ---- Take a tour button routes to #/kiosk ----
-await page.evaluate(() => { location.hash = "#/settings"; });
-await page.waitForTimeout(400);
+await waitForRoute(page, "#/settings");
+await hasButton("Take a tour");
 const tourBtnCount = await page.locator('button:has-text("Take a tour")').count();
 tourBtnCount === 1 ? ok("Settings has exactly one 'Take a tour' button") : bad("expected 1 'Take a tour' button, found " + tourBtnCount);
 if (tourBtnCount) {
-  await page.locator('button:has-text("Take a tour")').first().click();
-  await page.waitForTimeout(300);
+  await clickWhenStable(page, page.locator('button:has-text("Take a tour")').first());
+  await until(page, () => location.hash === "#/kiosk", null, { timeout: 5000 });
   const hash = await page.evaluate(() => location.hash);
   hash === "#/kiosk" ? ok("'Take a tour' routes to #/kiosk") : bad("'Take a tour' routed to " + hash + " instead of #/kiosk");
 }
 
 // ---- Feedback mailto channel ----
-await page.evaluate(() => { location.hash = "#/board"; });
-await page.waitForTimeout(200);
-await page.evaluate(() => { location.hash = "#/settings"; });
-await page.waitForTimeout(400);
+await waitForRoute(page, "#/board");
+await waitForRoute(page, "#/settings");
+await hasButton("Report a bug or send feedback");
 const fbBtnCount = await page.locator('button:has-text("Report a bug or send feedback")').count();
 fbBtnCount === 1 ? ok("Settings has exactly one feedback button") : bad("expected 1 feedback button, found " + fbBtnCount);
 if (fbBtnCount) {
@@ -116,15 +104,11 @@ if (fbBtnCount) {
   // Clicking triggers an external mailto: handoff (no in-app navigation, no
   // crash) - confirmed by the hash staying put and no page errors.
   const hashBefore = await page.evaluate(() => location.hash);
-  await page.locator('button:has-text("Report a bug or send feedback")').first().click();
-  await page.waitForTimeout(400);
+  await clickWhenStable(page, page.locator('button:has-text("Report a bug or send feedback")').first());
+  await page.waitForTimeout(400); // hygiene-ok: proving the app does NOT navigate needs a fixed window - there is no state to wait for
   const hashAfter = await page.evaluate(() => location.hash);
   hashAfter === hashBefore ? ok("clicking feedback button doesn't navigate away in-app") : bad("feedback button changed the in-app hash from " + hashBefore + " to " + hashAfter);
 }
 
-noise.length === 0 ? ok("no console errors/warnings") : bad(noise.length + " console error(s)/warning(s): " + noise.slice(0, 5).join(" | "));
-
-await browser.close();
-server.close();
-console.log("\n" + (fails ? `DISCOVERABILITY: ${fails} FAILURE(S)` : "DISCOVERABILITY: all passed"));
-process.exit(fails ? 1 : 0);
+expectNoConsoleNoise(noise, { pass: "no console errors/warnings" });
+await finish("DISCOVERABILITY");

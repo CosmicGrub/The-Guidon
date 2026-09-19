@@ -23,10 +23,35 @@ android/            Android app (Capacitor)
 
 `src/app-modules/*.js` is application content, so it goes into the standalone
 build too; `pwa.js`/`native.js`/`pdf-defer.js` are packaging and are web-only.
-Adding a module means dropping a file in `app-modules/` and adding one line to
-`ROUTES` and one to `NAV_GROUPS` in `src/index.html`. Route render callbacks are
-lazy arrows, and the shell defers `app.start()` to `DOMContentLoaded`, so a
-module injected after the shell is still defined in time.
+Adding a module means dropping a file in `app-modules/`, **giving it an entry in
+`app-modules/manifest.json`** (the build fails, naming the file, if you do not),
+and adding one line to `ROUTES` and one to `NAV_GROUPS` in `src/index.html`.
+Route render callbacks are lazy arrows, and the shell defers `app.start()` to
+`DOMContentLoaded`, so a module injected after the shell is still defined in time.
+
+### The module contract
+
+`src/app-modules/manifest.json` is the one list of modules. Its order IS the
+load order (not the file names), and each entry declares what the module
+requires, provides, draws (`routes`), stores (`storageKeys`), subscribes to
+(`hooks`) and - when there is no way round it yet - replaces (`patches`). The
+file's own `$doc` block explains every field.
+
+- `tools/build.mjs` and `tools/assemble-bank.mjs` (the headless bank behind the
+  content lints and the ESP32 card exporter) both read it through
+  `tools/module-manifest.mjs`. `node tools/module-manifest.mjs` prints the load
+  order and checks it.
+- To add to a core screen, subscribe to a named extension point -
+  `G.ext.on("board:rendered", fn)` - instead of wrapping a core function. Core
+  lists its points in `G.ext` (`src/index.html`, util.js) and in the manifest's
+  `core.extensionPoints`; an unknown name is refused out loud.
+- A guarded call - `typeof G.x.y === "function"`, `G.x && G.x.y(...)` - is a
+  promise that the API may be missing. `node tools/test-module-contract.mjs`
+  boots both builds, visits every route, and fails (file and line) on a guarded
+  API that does not exist unless the manifest lists it under `optionalApis`
+  with a reason. That is the check that would have caught v1.12.1's silently
+  skipped classification-marking refusal. It also fails on an undeclared
+  monkeypatch, route, storage key, hook or cross-module call.
 
 ## Quick start
 
@@ -44,6 +69,28 @@ debugging:
 ```bash
 adb forward tcp:9222 localabstract:webview_devtools_remote_$(adb shell pidof app.guidon.trainer)
 ```
+
+### Writing a new suite
+
+```bash
+node tools/new-suite.mjs board-drill-thing "what it proves"   # add --node for a suite with no browser
+node tools/new-suite.mjs --register board-drill-thing         # a suite file that already exists
+```
+
+One command writes `tools/test-<name>.mjs`, adds the `test:<name>` script,
+appends it to the run-parallel list inside `"test"` and regenerates the CI
+matrix - a suite with a script entry that is not in that list is never run by
+anything. The generated file fails on a TODO until you write it.
+
+New suites are built on `tools/testkit.mjs`: `bootApp()` (server, the suite's
+one browser, onboarding dismissed; `openSession()` for another viewport,
+profile or the standalone build), `waitForRoute()`, `clickWhenStable()`,
+`until()`, `liveCount()` and `expectNoConsoleNoise()`.
+`tools/lint-test-hygiene.mjs` holds every suite to its committed count of
+fixed sleeps, swallowed waits and literal deck sizes
+(`tools/test-hygiene-baseline.json`); the numbers only go down. After cleaning
+a suite up, bank it with `node tools/lint-test-hygiene.mjs --write`;
+`--report` lists what is left.
 
 ## Shipping
 
@@ -70,6 +117,18 @@ both are tested.
 
 ## Rules worth not relearning
 
+- **Never type a content count.** How many cards, doctrine entries, scenarios, terms
+  or MOS entries the app holds lives in one generated, committed file:
+  `tools/content-manifest.json`. After any content change run
+  `node tools/content-manifest.mjs --write` and commit the result with it;
+  `npm run lint:patterns` fails, naming each figure, if you forget. A count may rise
+  freely. If one FELL - a total, a board category, a doctrine topic - `--write`
+  refuses until you say why: `--write --allow-shrink "<reason>"` records the drop and
+  the reason in the file, so content never goes missing quietly (the ESP32 handheld
+  once shipped 61 cards short and nothing noticed). Suites and tools
+  `import { loadManifest }` instead of carrying a number; the card exporter checks its
+  export against the same file; README and the project map carry a generated block.
+  `node tools/content-manifest.mjs --figures` prints the live figures any time.
 - **Never anchor a build edit on `</body>`.** Markup-shaped strings live inside the
   JS in this file; the print-summary code emits a literal `</body></html>`. Anchor on
   the document terminator. Every replacement in `tools/build.mjs` fails loudly if it

@@ -7419,6 +7419,53 @@ window.G = window.G || {};
     },
   };
 
+  // ---------------- G.ext: named extension points ----------------
+  // WHY: the 2026-09 feature modules (src/app-modules) added their launch
+  // panels to Board Drill, Leadership Drills and Physical Readiness by
+  // REPLACING G.board.render / G.drills.render / G.views.prt with wrappers
+  // of their own. That works only while nobody else wraps the same function,
+  // depends on the order the files load in, and is invisible from here - a
+  // refactor of one of those renders could drop a module's panel and nothing
+  // would say so. An extension point is the same hook, declared: core says
+  // WHERE it may be extended (EXT_POINTS below - add a name here and call
+  // G.ext.run(name, ...) at that spot), a module subscribes with
+  // G.ext.on(name, fn), and src/app-modules/manifest.json lists both sides
+  // (core.extensionPoints, each module's "hooks") so tools/test-module-
+  // contract.mjs can hold them to it.
+  //
+  // Two rules make it safe to call from a render:
+  //  - a handler that throws (or returns a promise that rejects) is logged
+  //    and skipped; the host screen and the other handlers carry on.
+  //  - an unknown point name is refused OUT LOUD, in on() and in run(). A
+  //    handler registered for a misspelt point would otherwise never run and
+  //    nothing would notice - the same silent skip as a typeof guard around a
+  //    function that no longer exists. console.error is the loud path here:
+  //    every browser suite asserts a clean console.
+  var EXT_POINTS = ["board:rendered", "drills:rendered", "prt:rendered"];
+  var _extHandlers = Object.create(null);
+  function extLog(what, name, e) { if (window.console) console.error("G.ext: " + what + " (" + name + ")", e || ""); }
+  G.ext = {
+    points: function () { return EXT_POINTS.slice(); },
+    count: function (name) { return (_extHandlers[name] || []).length; },
+    on: function (name, fn) {
+      if (EXT_POINTS.indexOf(name) === -1) { extLog("no such extension point, handler ignored", name); return false; }
+      if (typeof fn !== "function") { extLog("handler is not a function, ignored", name); return false; }
+      (_extHandlers[name] || (_extHandlers[name] = [])).push(fn);
+      return true;
+    },
+    run: function (name) {
+      if (EXT_POINTS.indexOf(name) === -1) { extLog("no such extension point, nothing run", name); return; }
+      var args = Array.prototype.slice.call(arguments, 1);
+      var list = (_extHandlers[name] || []).slice();
+      for (var i = 0; i < list.length; i++) {
+        try {
+          var out = list[i].apply(null, args);
+          if (out && typeof out.then === "function") out.then(null, function (e) { extLog("a handler failed", name, e); });
+        } catch (e) { extLog("a handler failed", name, e); }
+      }
+    },
+  };
+
   G.util = util;
 })();
 
@@ -7441,6 +7488,14 @@ window.G = window.G || {};
    exported/imported JSON backup FILE format, not this IndexedDB database -
    the two have never needed to move together and there's no reason they
    would.
+
+   THE STORAGE CONTRACT: this section is the ONLY code that touches
+   IndexedDB or window.localStorage for writing. Everything else goes
+   through G.db (get/put/del/putMany/delMany/all/clear and the helpers built
+   on them) or G.db.local (the few small localStorage preferences). That is
+   what lets one rule hold for every feature, present and future: a Guest or
+   Kiosk session saves nothing - see "Session-only storage" below.
+   tools/lint-storage-contract.mjs holds the line.
    ------------------------------------------------------------------ */
 window.G = window.G || {};
 // Placeholder values only - tools/build.mjs always overwrites all four from
@@ -7528,6 +7583,123 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
+  }
+
+  // ── Session-only storage: Guest and Kiosk sessions really save nothing ────
+  // Owner decision, 2026-09-19 (audit decision 15). The screen says "Guest
+  // session - nothing is saved after you close the app", and until now that
+  // was only true of the PROFILE row (saveProfile()'s own guard). Every
+  // feature's data - card grades, PT plans, Board Simulator notes, Team
+  // Training counts, "My unit" texts, settings - was still written to the
+  // device like any other key, from ~80 call sites that would each have had
+  // to remember to check. It is decided ONCE, here, underneath all of them:
+  //
+  //   while a session-only profile is active, a write lands in `session`
+  //   (memory) instead of on the device, and a read looks there first and
+  //   falls through to the device for anything the session has not touched.
+  //
+  // So every tool keeps working for the length of the session, a real
+  // owner's rows already on the device are never modified, deleted or
+  // overwritten (a session delete is a tombstone in memory, not a delete),
+  // and closing or reloading the app discards the lot. What a session can
+  // READ of the device is deliberately unchanged.
+  //
+  // WHO decides: sessionOnly() below. The profile module calls
+  // db.session.begin() at the two places a guest/kiosk profile is created;
+  // the profile check inside sessionOnly() is the net under that - a future
+  // path that builds such a profile without calling begin() is still caught,
+  // because the active profile's own mode is the truth. The net only ever
+  // turns the layer ON. Turning it off is db.session.end(): an explicit act,
+  // made in one place (finishing real account setup from inside a session).
+  // It is NEVER inferred from "there is no profile row on the device": a
+  // fresh install, a deleted profile and a directly seeded profile all look
+  // alike there (the What's New lesson), and everything before the Soldier
+  // has picked a mode must keep saving normally.
+  //
+  // Rows are copied on the way in and on the way out, exactly as IndexedDB
+  // does: several callers keep mutating the object they just saved (the
+  // Board Simulator's `state`), and handing the same object back from a
+  // later get() would let those edits appear "saved" without a save.
+  const session = { on: false, kind: "", rows: {}, gone: {}, cleared: {}, local: {} };
+  function copyRow(v) {
+    if (v == null || typeof v !== "object") return v;
+    return typeof structuredClone === "function" ? structuredClone(v) : JSON.parse(JSON.stringify(v));
+  }
+  function rowKey(row) { return row && row.k != null ? row.k : row && row.id; }
+  function dropSession() { session.rows = {}; session.gone = {}; session.cleared = {}; session.local = {}; }
+  function beginSession(kind) {
+    session.kind = kind === "kiosk" ? "kiosk" : "guest";
+    if (session.on) return;
+    session.on = true;
+    if (db._invalidateKvCache) db._invalidateKvCache();
+  }
+  function sessionOnly() {
+    if (session.on) return true;
+    let p = null;
+    try { p = G.profile && G.profile.cached ? G.profile.cached() : null; } catch (e) { p = null; }
+    if (p && (p.mode === "guest" || p.mode === "kiosk")) beginSession(p.mode);
+    return session.on;
+  }
+  // Wraps whichever backend is live (IndexedDB, or the localStorage/memory
+  // fallbacks installMemoryFallback() swaps in). Applied BEFORE wrapKvCache()
+  // every time, so the kv cache and the cross-window bus (src/xwin.js) sit on
+  // top of it unchanged and see one consistent store.
+  function wrapSessionOnly() {
+    const raw = { get: db.get, put: db.put, del: db.del, putMany: db.putMany, delMany: db.delMany, all: db.all, clear: db.clear };
+    const rowsOf = (s) => session.rows[s] || (session.rows[s] = new Map());
+    const goneOf = (s) => session.gone[s] || (session.gone[s] = new Set());
+    const write = (s, row) => {
+      const k = rowKey(row);
+      // The same refusal IndexedDB gives a row with no key, so a caller's
+      // own error handling behaves identically in and out of a session.
+      if (k == null) throw new Error("Row has no key");
+      rowsOf(s).set(k, copyRow(row));
+      goneOf(s).delete(k);
+    };
+    const erase = (s, k) => { rowsOf(s).delete(k); goneOf(s).add(k); };
+    const settle = (fn) => { try { return Promise.resolve(fn()); } catch (e) { return Promise.reject(e); } };
+
+    db.get = function (s, k) {
+      if (!sessionOnly()) return raw.get.call(db, s, k);
+      if (rowsOf(s).has(k)) return settle(() => copyRow(rowsOf(s).get(k)));
+      if (session.cleared[s] || goneOf(s).has(k)) return Promise.resolve(undefined);
+      return raw.get.call(db, s, k);
+    };
+    db.put = function (s, row) {
+      if (!sessionOnly()) return raw.put.call(db, s, row);
+      return settle(() => { write(s, row); });
+    };
+    db.del = function (s, k) {
+      if (!sessionOnly()) return raw.del.call(db, s, k);
+      return settle(() => { erase(s, k); });
+    };
+    // One bad row must not take the batch down - the same promise the real
+    // putMany()/delMany() make.
+    db.putMany = function (s, rows) {
+      if (!sessionOnly()) return raw.putMany.call(db, s, rows);
+      (rows || []).forEach((row) => { try { write(s, row); } catch (e) { /* skipped, like a row IndexedDB refuses */ } });
+      return Promise.resolve();
+    };
+    db.delMany = function (s, keys) {
+      if (!sessionOnly()) return raw.delMany.call(db, s, keys);
+      (keys || []).forEach((k) => erase(s, k));
+      return Promise.resolve();
+    };
+    db.all = function (s) {
+      if (!sessionOnly()) return raw.all.call(db, s);
+      const mine = rowsOf(s), gone = goneOf(s);
+      const onDevice = session.cleared[s] ? Promise.resolve([]) : raw.all.call(db, s);
+      return onDevice.then((rows) => {
+        const out = (rows || []).filter((r) => { const k = rowKey(r); return !mine.has(k) && !gone.has(k); });
+        mine.forEach((r) => out.push(copyRow(r)));
+        return out;
+      });
+    };
+    db.clear = function (s) {
+      if (!sessionOnly()) return raw.clear.call(db, s);
+      session.rows[s] = new Map(); session.gone[s] = new Set(); session.cleared[s] = true;
+      return Promise.resolve();
+    };
   }
 
   // Upgrade-roadmap first wave, item 12: a shared cache for the "scan the
@@ -7700,6 +7872,7 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
         };
         db.ready = () => Promise.resolve();
         db._backend = "localStorage";
+        wrapSessionOnly();
         wrapKvCache();
         return;
       }
@@ -7716,9 +7889,53 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
       db.clear = (s) => { mem[s] = {}; return Promise.resolve(); };
       db.ready = () => Promise.resolve();
       db._backend = "memory";
+      wrapSessionOnly();
       wrapKvCache();
     },
     _backend: "indexeddb",
+
+    // --- session-only storage (see "Session-only storage" above open()) ---
+    session: {
+      // Called by the profile module when a Guest or Kiosk profile becomes
+      // the active one. Safe to call twice.
+      begin(kind) { beginSession(kind); },
+      // Forget everything the session held and let writes reach the device
+      // again. If the active profile is STILL a guest/kiosk one, the very
+      // next read or write turns the layer straight back on (sessionOnly()'s
+      // net) - so the caller makes the real profile active first.
+      end() {
+        session.on = false; session.kind = "";
+        dropSession();
+        if (db._invalidateKvCache) db._invalidateKvCache();
+      },
+      active() { return sessionOnly(); },
+      kind() { return sessionOnly() ? session.kind : ""; },
+    },
+
+    // --- small on-device preferences (browser localStorage) ---
+    // The few things kept outside the database so they can be read before it
+    // opens (the no-flash appearance mirror) or because they are one-word
+    // flags (which menu groups are open, recent searches, "seen this hint").
+    // They go through here, never through window.localStorage directly, so
+    // they obey the same rule as everything else: in a Guest or Kiosk
+    // session a write stays in memory and the device is left untouched.
+    // tools/lint-storage-contract.mjs fails the build on a direct write
+    // anywhere outside this section. Never throws: a blocked localStorage
+    // (private mode, file://) reads as "nothing saved", as it always has.
+    local: {
+      get(k) {
+        if (sessionOnly() && Object.prototype.hasOwnProperty.call(session.local, k)) return session.local[k];
+        try { return window.localStorage.getItem(k); } catch (e) { return null; }
+      },
+      set(k, v) {
+        if (sessionOnly()) { session.local[k] = String(v); return; }
+        try { window.localStorage.setItem(k, String(v)); } catch (e) {}
+      },
+      remove(k) {
+        if (sessionOnly()) { session.local[k] = null; return; }
+        try { window.localStorage.removeItem(k); } catch (e) {}
+      },
+    },
     // See MIGRATIONS/runMigrations() above open() - exposed here (not kept
     // private) so tools/test-schema-migration.mjs can inject a disposable
     // migration and invoke this SAME real function against a scratch
@@ -7728,6 +7945,7 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
     _runMigrations: runMigrations,
   };
 
+  wrapSessionOnly();
   wrapKvCache();
   G.db = db;
 })();
@@ -8086,6 +8304,22 @@ window.G = window.G || {};
     },
     // Read by src/xwin.js's receipt path - see _dirtySettings above.
     _dirtySettingsKeys() { return Array.from(_dirtySettings); },
+    // Put the live settings back to exactly what is saved on the device,
+    // dropping any edit that has not been written (and any pending write).
+    // One caller: finishing real account setup from inside a Guest or Kiosk
+    // session (profile module), so the session's own settings changes are
+    // not carried into the new account. Edits the SAME object in place -
+    // other modules hold on to what settings() returned. Announces nothing:
+    // that caller restarts the app straight afterwards.
+    async reloadSettings() {
+      if (_settingsDebounce) { clearTimeout(_settingsDebounce); _settingsDebounce = null; }
+      _dirtySettings.clear();
+      let saved = null;
+      try { saved = await db.getSetting("settings", null); } catch (e) { saved = null; }
+      const fresh = Object.assign({}, DEFAULT_SETTINGS, saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {});
+      Object.keys(state.settings).forEach((k) => { if (!(k in fresh)) delete state.settings[k]; });
+      Object.assign(state.settings, fresh);
+    },
 
     // ---- doctrine ----
     // Enhancement backlog round 3, "Redundant IndexedDB reads and
@@ -11499,7 +11733,7 @@ window.G = window.G || {};
     // works elsewhere in the app.
     const BOARD_HINT_KEY = "guidon:board-drill-hint-seen:v1";
     let boardHintSeen = false;
-    try { boardHintSeen = localStorage.getItem(BOARD_HINT_KEY) === "1"; } catch (e) {}
+    boardHintSeen = G.db.local.get(BOARD_HINT_KEY) === "1";
     mount.appendChild(el("p.hint", { text: boardHintSeen
       // PC/desktop intuitivism pass: this used to drop the keyboard mention
       // entirely on repeat visits (kept only in the longer first-run copy
@@ -11507,7 +11741,7 @@ window.G = window.G || {};
       // desktop keyboard user actually sees every time.
       ? clickVerb() + " a card (or press Space) to flip it, then grade yourself 1-4."
       : clickVerb() + " a card (or press Space) to flip it. Grade yourself 1-4 — Needs Help, Somewhat, Know It, or Down Cold — and spaced repetition schedules your next review accordingly. Filter by study level: Beginner, Intermediate, or Expert (by-the-book verbatim). Star a card to add it to your personal bookmark deck." }));
-    if (!boardHintSeen) { try { localStorage.setItem(BOARD_HINT_KEY, "1"); } catch (e) {} }
+    if (!boardHintSeen) G.db.local.set(BOARD_HINT_KEY, "1");
     const drillDetail = el("div");
     drillDetail.appendChild(pillarChipBar);
     drillDetail.appendChild(catChipBar);
@@ -15345,6 +15579,11 @@ window.G = window.G || {};
       const boardSeed = G.nav && G.nav.consume("board-category");
       if (boardSeed) G.board._filterCat = boardSeed;
       set("drill");
+      // Extension point (G.ext, util.js): modules add to this screen here -
+      // today the Board Simulator launch panel - instead of replacing
+      // G.board.render with a wrapper. Runs last, on the route mount, so
+      // whatever a handler appends lands below the tab body.
+      G.ext.run("board:rendered", mount);
     },
   };
 
@@ -21837,7 +22076,20 @@ window.G = window.G || {};
       desc: "Leadership scenarios that branch on the choice actually made, not a quiz with one right answer.",
       watch: "Pick a branch and let it resolve — then show the ADP 6-22 competency it just scored against." },
     { title: "Board Drill", route: "#/board",
-      desc: "984 board cards, a real 3D flip, spaced repetition scheduling the next review.",
+      // Was a typed "984 board cards" - still on screen in the Guided Tour
+      // long after the bank had grown past it. Same fix as
+      // DEMO_NOTES["#/board"] above: a getter over the raw seed (every
+      // content pack has pushed its cards in long before a tour stop
+      // renders), never the Soldier's own tier-filtered pool.
+      // tools/test-live-content-figures.mjs holds it to the content manifest.
+      get desc() {
+        try {
+          const s = window.GUIDON_SEED;
+          const n = (s && s.board && s.board.questions && s.board.questions.length) || null;
+          if (n) return n.toLocaleString() + " board cards, a real 3D flip, spaced repetition scheduling the next review.";
+        } catch (e) {}
+        return "Board cards with a real 3D flip, spaced repetition scheduling the next review.";
+      },
       watch: "Flip a card and grade it Down Cold — show the review interval it just set, out loud." },
     { title: "Rapid Fire", open: () => openBoardTab("_openRapidFire"),
       desc: "The pass-the-device party mode living inside Board Drill — Party, Solo, or head-to-head Team play on the same real card deck.",
@@ -22329,7 +22581,10 @@ window.G = window.G || {};
       'E1': "E1 / PVT -- Junior Soldier Foundations, Customs & Courtesies, and Army Values are your priority courses. The goal is fundamentals before anything else.",
       'E2': "E2 / PV2 -- Same track as PVT: Foundations, Customs, and Warfighting. You are still building the base -- master these before moving up.",
       'E3': "E3 / PFC -- Customs mastery expected. Start familiarizing yourself with Standards & Discipline and Army Programs. Your SPC board is coming.",
-      'E4': "E4 / SPC -- SGT Board Prep is your #1 course. Covers the 261 board questions, report-in procedures, NCO Creed, and uniform standards. NCO Roles and Military Presence are also priority. Everything feeds your board.",
+      // No typed count here: this said "the 261 board questions" - a bank size
+      // from long ago - to every new SPC on the first screen they read.
+      // tools/test-live-content-figures.mjs sweeps every rank preview.
+      'E4': "E4 / SPC -- SGT Board Prep is your #1 course. Covers the board questions you will be asked, report-in procedures, NCO Creed, and uniform standards. NCO Roles and Military Presence are also priority. Everything feeds your board.",
       'E5': "E5 / SGT -- Developing Others and MDMP/TLP are now your professional responsibilities. You counsel Soldiers, receive OPORDs, and execute TLPs. Army Leadership and NCO Core Competencies apply to your daily work.",
       'E6': "E6 / SSG -- Developing NCOs (not just Soldiers) is your primary task. MDMP at section level, Army Programs accountability, and organizational leadership are your focus. You are a force multiplier for your SGTs.",
       'E7': "E7 / SFC -- GUIDON's board-prep depth tops out at E6; from here, SLC Prep covers SLC/MLC/SMC at survey level rather than full course depth. Army Leadership doctrine still applies at every tier.",
@@ -22626,7 +22881,7 @@ window.G = window.G || {};
         el("div.ob-mode-grid", {}, [
           modeBtn("👤", "Personal Account", "Persistent profile, action plan, progress tracking.", "personal"),
           modeBtn("🔒", "Guest Session", "Session-only — no data saved after you close the app.", "guest"),
-          modeBtn("📺", "Kiosk / Demo Mode", "Guided tour or free-explore walk-through — for classrooms, unit training, or showing someone else.", "kiosk"),
+          modeBtn("📺", "Kiosk / Demo Mode", "Guided tour or free-explore walk-through — for classrooms, unit training, or showing someone else. Nothing is saved.", "kiosk"),
         ]),
       ]));
 
@@ -23138,6 +23393,22 @@ window.G = window.G || {};
       const saveBtn = el("button.btn.primary.ob-next", { text: "Save profile & start →", type:"button" });
       saveBtn.addEventListener("click", async () => {
         const profile = Object.assign({}, data, { mode: data.mode || "personal", guestSession: false });
+        // Setting up a real account from INSIDE a Guest or Kiosk session
+        // (Kiosk's Profile screen offers "Redo my setup", which reaches this
+        // wizard with no reload in between). The new account must start
+        // clean: nothing the session did may ride along into it. So the real
+        // profile becomes the active one FIRST (that is what the storage
+        // layer reads), everything the session held is dropped, the settings
+        // screens go back to what is really on the device, and once the
+        // profile is written the app restarts - other screens can still be
+        // holding session state of their own, and a restart is the one way
+        // to be sure none of it is saved later under the new account.
+        const leavingSession = !!(db.session && db.session.active());
+        if (leavingSession) {
+          _cache = profile;
+          db.session.end();
+          if (G.store && G.store.reloadSettings) await G.store.reloadSettings();
+        }
         await saveProfile(profile);
         _cache = profile;
         // Sync key fields to settings
@@ -23146,6 +23417,14 @@ window.G = window.G || {};
           if (profile.tier) await G.store.setSetting("tierFilter", profile.tier);
           if (profile.retirementSystem) await G.store.setSetting("retirementSystem", profile.retirementSystem);
           if (profile.displayName) await G.store.setSetting("userName", profile.displayName);
+        }
+        if (leavingSession) {
+          // The settings save above is debounced; write it now rather than
+          // trusting a timer to beat the restart.
+          try { if (G.store && G.store.settings) await db.setSetting("settings", G.store.settings()); } catch (e) {}
+          location.hash = "#/home";
+          location.reload();
+          return;
         }
         if (onComplete) onComplete(profile);
       });
@@ -23163,6 +23442,10 @@ window.G = window.G || {};
         { id:"g-3", priority:"medium", category:"Promotion",  action:"Work out your promotion points on the PPW worksheet", route:"#/board", icon:"\u00a2" },
         { id:"g-4", priority:"medium", category:"Channels",   action:"Find out who to see when your points are wrong", route:"#/channels", icon:"\u260e" }
       ] });
+      // From here until the app is closed or reloaded, nothing any screen
+      // saves reaches the device (see "Session-only storage" in the db
+      // section) - not just this profile row.
+      if (db.session) db.session.begin("guest");
       if (onComplete) onComplete(_cache);
     }
 
@@ -23177,6 +23460,9 @@ window.G = window.G || {};
         onboardingComplete:true, createdAt:Date.now(),
       });
       _cache = kiosk;
+      // A demo on a shared or borrowed device saves nothing either - same
+      // rule, same place, as a Guest session above.
+      if (db.session) db.session.begin("kiosk");
       try { sessionStorage.removeItem("guidon-demo-mode"); sessionStorage.removeItem("guidon-demo-step"); } catch (e) {} // fresh choice of guided/free each time kiosk is (re)entered
       if (onComplete) onComplete(kiosk);
       location.hash = "#/kiosk"; // land on the Guided Tour / Free Mode picker, not Home
@@ -23220,7 +23506,7 @@ window.G = window.G || {};
       acct.appendChild(el("div.eyebrow", { text: "Account" }));
       acct.appendChild(el("h3", { text: profile.displayName || "Unnamed profile", style:"margin:2px 0 2px" }));
       const modeLabel = profile.mode === "guest" ? "Guest session \u00b7 nothing is saved after you close the app"
-                      : profile.mode === "kiosk" ? "Kiosk / demo mode"
+                      : profile.mode === "kiosk" ? "Kiosk / demo mode · nothing is saved after you close the app"
                       : profile.anonymous ? "Personal account \u00b7 anonymous (rank only, no name stored)"
                       : "Personal account";
       acct.appendChild(el("p.hint", { text: modeLabel, style:"margin:0 0 10px" }));
@@ -25891,6 +26177,11 @@ window.G = window.G || {};
 
     mount.appendChild(el("p.hint", { style:"margin-top:12px", text:
       "Rubric point values and sequences are from the BLC ISAP (600-C44), TC 3-21.5 and ATP 7-22.02. Academies vary \u2014 confirm specifics against the assignment sheet you are given." }));
+    // Extension point (G.ext, util.js): the screen is fully drawn by now
+    // (this function has already awaited its saved state), so a module's
+    // panel - today the Team Training / PT Planner launcher - lands below
+    // everything above. Replaces a wrapper around G.drills.render.
+    G.ext.run("drills:rendered", mount);
   }
 
   G.drills = { render };
@@ -28052,8 +28343,40 @@ window.G = window.G || {};
     // counts.
     "prt:plan:v1": function (v) { return !!v && typeof v === "object" && !Array.isArray(v) && !!v.days && typeof v.days === "object" && !Array.isArray(v.days); },
     "pt:history:v1": function (v) { return Array.isArray(v) && v.every(function (r) { return r && typeof r === "object" && typeof r.date === "string"; }); },
-    "team:training:v1": function (v) { return !!v && typeof v === "object" && !Array.isArray(v); },
+    // The counseling plan of action: one typed answer per field. Found by
+    // tools/lint-storage-contract.mjs (s3) as the one saved item with no
+    // check at all. Its print button splits each answer into lines, so a
+    // field that is not text would throw there.
+    "counsel:poa": function (v) { return isPlainObject(v) && Object.keys(v).every(function (f) { return typeof v[f] === "string"; }); },
+    // One { count, last } pair per exercise. team-training.js adds 1 to
+    // count and prints it on the exercise card ("Local completions: N"); a
+    // count that is not a number would print as NaN from then on.
+    "team:training:v1": function (v) {
+      return isPlainObject(v) && Object.keys(v).every(function (id) {
+        var s = v[id];
+        return isPlainObject(s) && typeof s.count === "number" && isFinite(s.count) && s.count >= 0 && (s.last == null || typeof s.last === "number");
+      });
+    },
+    // Board Simulator (mock-board-simulator.js): three done-flags, the
+    // Soldier's after-action notes and the "a step was opened" markers. Its
+    // own load() rebuilds the notes and markers field by field, so the
+    // checks here are the ones load() does NOT make: the row is an object,
+    // a flag that is present is a real true/false (a "false" string would
+    // read as done), and the notes are text.
+    "board:sim:v1": function (v) {
+      if (!isPlainObject(v)) return false;
+      var flags = ["reportingDone", "knowledgeDone", "judgmentDone"];
+      for (var i = 0; i < flags.length; i++) if (flags[i] in v && typeof v[flags[i]] !== "boolean") return false;
+      if ("aarDraft" in v) {
+        if (!isPlainObject(v.aarDraft)) return false;
+        var notes = ["strong", "improve", "next"];
+        for (var j = 0; j < notes.length; j++) if (notes[j] in v.aarDraft && typeof v.aarDraft[notes[j]] !== "string") return false;
+      }
+      if ("opened" in v && !isPlainObject(v.opened)) return false;
+      return true;
+    },
   };
+  function isPlainObject(v) { return !!v && typeof v === "object" && !Array.isArray(v); }
   // Exact-string-keyed KV_VALIDATORS above can never validate a
   // dynamically-keyed family like "srs:<questionId>" - one row per board
   // question ever graded (1,000+), no single literal key to register.
@@ -28070,7 +28393,28 @@ window.G = window.G || {};
     // already falls back to the first step for anything that is not a
     // plain object; this turns that silent self-heal into a visible
     // "skipped" on restore, the same as srs: above.
-    { prefix: "recall-ladder:", test: function (v) { return v && typeof v === "object" && !Array.isArray(v); } },
+    // Tightened from "any plain object": the two fields the ladder keeps
+    // must be the kinds it keeps (a step name, a small count), so a row of
+    // the right outline but the wrong contents is also a visible skip.
+    { prefix: "recall-ladder:", test: function (v) { return isPlainObject(v) && typeof v.level === "string" && typeof v.streak === "number" && isFinite(v.streak); } },
+    // board:reps:<YYYY-MM-DD> - 5-Minute Board Reps, one small tally per day
+    // ({ sets, cards, recalled, missed:[card ids], ts }). Found by
+    // tools/lint-storage-contract.mjs (s3). recordReps() adds to the three
+    // counts and Home reads them, so each one that is present must be a
+    // number, and the carry-over list must be a list.
+    { prefix: "board:reps:", test: function (v) {
+      if (!isPlainObject(v)) return false;
+      var counts = ["sets", "cards", "recalled"];
+      for (var i = 0; i < counts.length; i++) if (counts[i] in v && (typeof v[counts[i]] !== "number" || !isFinite(v[counts[i]]))) return false;
+      return v.missed == null || Array.isArray(v.missed);
+    } },
+    // recite:<textId> - Recitation Drill's "Chunk & memorize" progress, one
+    // row per creed or My unit text ({ chunksLearned:[line numbers],
+    // direction }). The reader calls chunksLearned.indexOf() on it, so a
+    // row that is an object but carries a non-list there would throw the
+    // first time that text is opened. ("guidon:recite:own:v1" - the My unit
+    // texts themselves - is an exact key above and never reaches here.)
+    { prefix: "recite:", test: function (v) { return isPlainObject(v) && (v.chunksLearned == null || (Array.isArray(v.chunksLearned) && v.chunksLearned.every(function (n) { return typeof n === "number"; }))); } },
     // curr:<lessonId> - one row per curriculum lesson ever touched
     // (curriculum.js's own setP()), same "no single literal key" problem
     // as srs: above - 106+ lessons across the full curriculum, growing
@@ -28106,6 +28450,66 @@ window.G = window.G || {};
     var validator = KV_VALIDATORS[row.k] || prefixValidatorFor(row.k);
     if (!validator) return true;
     return !!validator(row.k === "forms:saved" ? row : row.v);
+  }
+
+  // What a saved item IS, in the Soldier's words. A restore that leaves
+  // something out has to say what, and "board:sim:v1" says nothing to the
+  // person reading it. Exact names first, then families; anything not
+  // listed is just "another saved item" - never the raw name.
+  var KEY_LABELS = {
+    "guidon:profile:v1": "your profile",
+    "settings": "your settings",
+    "board:sim:v1": "Board Simulator progress and notes",
+    "team:training:v1": "Team Training completion counts",
+    "prt:plan:v1": "your PT plan",
+    "pt:history:v1": "your completed PT sessions",
+    "guidon:recite:own:v1": "your My unit texts",
+    "board:mockHistory:v1": "Mock Board history",
+    "idp:goals": "your IDP goals",
+    "counsel:poa": "your counseling plan of action",
+    "streak:v1": "your study streak",
+    "reminders:v1": "your reminders",
+    "guidon:calendar:v1": "your calendar",
+    "forms:saved": "saved form drafts",
+    "guidon:ppw:v1": "your promotion points worksheet",
+    "progress:weeklyGoal:v1": "your weekly study goal",
+    "writing:bulletHistory:v1": "Bullet Builder history",
+    "resilience:practiceLog:v1": "your resilience practice log",
+    "finance:salaryNeg:v1": "salary worksheet",
+    "risk:all": "saved risk assessments",
+    "guidon:leader:roster:v1": "the squad roster",
+  };
+  var KEY_LABEL_FAMILIES = [
+    { prefix: "srs:", label: "Board Drill review progress" },
+    { prefix: "board:reps:", label: "5-Minute Board Reps history" },
+    { prefix: "recall-ladder:", label: "Recall ladder progress" },
+    { prefix: "recite:", label: "Recitation Drill progress" },
+    { prefix: "curr:", label: "lesson progress" },
+    { prefix: "boardQuiz:best:", label: "quiz best scores" },
+    { prefix: "guidon:", label: "a checklist or study record" },
+  ];
+  function describeKey(k) {
+    k = String(k == null ? "" : k);
+    if (Object.prototype.hasOwnProperty.call(KEY_LABELS, k)) return KEY_LABELS[k];
+    for (var i = 0; i < KEY_LABEL_FAMILIES.length; i++) if (k.indexOf(KEY_LABEL_FAMILIES[i].prefix) === 0) return KEY_LABEL_FAMILIES[i].label;
+    return "another saved item";
+  }
+  // "Board Simulator progress and notes, your PT plan and Recall ladder
+  // progress (3)" - each kind once, with a count when there are several.
+  function describeKeys(keys) {
+    var order = [], counts = {};
+    (keys || []).forEach(function (k) { var l = describeKey(k); if (!counts[l]) { counts[l] = 0; order.push(l); } counts[l]++; });
+    var parts = order.map(function (l) { return counts[l] > 1 ? l + " (" + counts[l] + ")" : l; });
+    if (parts.length <= 1) return parts.join("");
+    return parts.slice(0, -1).join(", ") + " and " + parts[parts.length - 1];
+  }
+  // The one sentence both restore screens show when something was left out.
+  function skippedSummary(keys) {
+    keys = keys || [];
+    if (!keys.length) return "";
+    var profile = keys.indexOf("guidon:profile:v1") !== -1;
+    return (keys.length === 1 ? "1 damaged item was left out: " : keys.length + " damaged items were left out: ") + describeKeys(keys) +
+      ". Everything else was restored." + (profile ? " The profile already on this device was kept." : "");
   }
 
   // House-rule audit finding: failedStores (below) already made a failed
@@ -28228,6 +28632,10 @@ window.G = window.G || {};
     }
     var restored = { kv: 0, userScenarios: 0, attempts: 0 };
     var skipped = { kv: 0, userScenarios: 0 };
+    // Which kv rows were left out, by key - so the restore screens can say
+    // WHAT was damaged in the Soldier's words (skippedSummary() above)
+    // instead of only how many.
+    var skippedKeys = [];
     // Deep-gap follow-up ("Profile Data-Loss & Persistence Bugs" bucket):
     // the header comment above used to advertise importAll(obj, {merge})
     // with a documented "replace" option, and a `merge` flag was computed
@@ -28268,12 +28676,12 @@ window.G = window.G || {};
           var pv = row.v;
           var pvOk = pv && typeof pv === "object" && typeof pv.onboardingComplete === "boolean" && typeof pv.mode === "string";
           if (!pvOk) {
-            skipped.kv++;
+            skipped.kv++; skippedKeys.push(row.k);
             if (G.selfheal) G.selfheal.log("kv-reject", row.k, "malformed profile row rejected during backup import (missing onboardingComplete/mode) - existing profile kept");
             continue;
           }
         } else if (!validateKvRow(row)) {
-          skipped.kv++;
+          skipped.kv++; skippedKeys.push(row.k);
           if (G.selfheal) G.selfheal.log("kv-reject", row.k, "row failed validation during backup import, discarded");
           continue;
         }
@@ -28311,7 +28719,7 @@ window.G = window.G || {};
       }
       if (atRows.length) { try { await G.db.putMany("attempts", atRows); restored.attempts += atRows.length; } catch (e) { failedStores.push("attempts"); logImportFail("attempts", e); } }
     }
-    return { restored: restored, skipped: skipped, failedStores: failedStores };
+    return { restored: restored, skipped: skipped, skippedKeys: skippedKeys, failedStores: failedStores };
   }
 
   // Enhancement backlog round 1, "Settings Import Backup" bucket:
@@ -28328,6 +28736,15 @@ window.G = window.G || {};
   // so every caller handles the same three outcomes the same way.
   function confirmAndImportFile(file) {
     return new Promise(function (resolve) {
+      // A Guest or Kiosk session saves nothing (db section, "Session-only
+      // storage"), so a restore made from inside one would say "Restored",
+      // reload, and be gone - the worst possible answer to give someone
+      // moving to a new phone. Say so before anything is read, and say
+      // where to go instead. Both restore screens show this as it is.
+      if (G.db.session && G.db.session.active()) {
+        resolve({ status: "error", message: "nothing is saved in a Guest or Kiosk session, so a backup can't be restored here. Open Profile, choose “Switch account or mode”, set up a Personal Account, and import your backup there." });
+        return;
+      }
       var reader = new FileReader();
       reader.onload = function () {
         var obj;
@@ -28350,7 +28767,8 @@ window.G = window.G || {};
           });
         }
         var msg = "Import this backup?" + (sum ? "\n\nIt contains: " + (sum.kv || 0) + " saved items, " + (sum.userScenarios || 0) + " authored scenarios, " + (sum.attempts || 0) + " quiz attempts." : "") + "\n\nYour existing data will be kept; matching items will be overwritten by the backup." + (hasProfileRow ? " This includes your name, rank, and board date." : "") +
-          (kvRejected.length ? "\n\n" + kvRejected.length + " item(s) in this file are corrupted and will be skipped: " + kvRejected.slice(0, 8).join(", ") + (kvRejected.length > 8 ? ", …" : "") + "." : "");
+          // Named in the Soldier's words (describeKeys), never by storage key.
+          (kvRejected.length ? "\n\n" + (kvRejected.length === 1 ? "1 item in this file is damaged and will be left out: " : kvRejected.length + " items in this file are damaged and will be left out: ") + describeKeys(kvRejected) + ". Everything else will be restored." : "");
         G.modal.confirm(msg, { title: "Import backup" }).then(function (ok) {
           if (!ok) { resolve({ status: "cancelled" }); return; }
           importAll(obj).then(function (res) {
@@ -28363,7 +28781,7 @@ window.G = window.G || {};
             // previously "Restored 0 items, 0 scenarios, 0 attempts."
             // rendered with the same "ok" styling as a real success,
             // looking exactly like a no-op restore rather than a failure.
-            resolve({ status: "success", restored: r, skipped: sk, failedStores: fs });
+            resolve({ status: "success", restored: r, skipped: sk, skippedKeys: res.skippedKeys || [], failedStores: fs });
           }).catch(function (e) {
             resolve({ status: "error", message: e && e.message ? e.message : "unknown error" });
           });
@@ -28449,7 +28867,8 @@ window.G = window.G || {};
           return;
         }
         status.textContent = "Restored " + r.kv + " items, " + r.userScenarios + " scenarios, " + r.attempts + " attempts." +
-          (sk && sk.kv ? " " + sk.kv + " item(s) skipped (malformed profile entry rejected — your existing profile was kept)." : "") +
+          // (This used to blame the profile for every skipped item, whatever it was.)
+          (sk && sk.kv ? " " + skippedSummary(result.skippedKeys) : "") +
           " Reloading…";
         status.className = "backup-status hint ok";
         if (G.util.announce) G.util.announce("Backup restored.");
@@ -28475,7 +28894,7 @@ window.G = window.G || {};
     return "Backup downloaded";
   }
 
-  G.backup = { exportAll: exportAll, downloadAll: downloadAll, importAll: importAll, renderControls: renderControls, confirmAndImportFile: confirmAndImportFile, validateKvRow: validateKvRow, exportDoneMessage: exportDoneMessage, getLastExportAt: getLastExportAt, formatLastExport: formatLastExport };
+  G.backup = { exportAll: exportAll, downloadAll: downloadAll, importAll: importAll, renderControls: renderControls, confirmAndImportFile: confirmAndImportFile, validateKvRow: validateKvRow, describeKey: describeKey, skippedSummary: skippedSummary, exportDoneMessage: exportDoneMessage, getLastExportAt: getLastExportAt, formatLastExport: formatLastExport };
 })();
 // END backup.js
 
@@ -32231,8 +32650,8 @@ window.G = window.G || {};
     // re-triggering the first-run treatment every refresh.
     const HOME_VISITED_KEY = "guidon:home-visited:v1";
     let homeVisited = false;
-    try { homeVisited = localStorage.getItem(HOME_VISITED_KEY) === "1"; } catch (e) {}
-    try { localStorage.setItem(HOME_VISITED_KEY, "1"); } catch (e) {}
+    homeVisited = G.db.local.get(HOME_VISITED_KEY) === "1";
+    G.db.local.set(HOME_VISITED_KEY, "1");
 
     // ── ETS countdown + milestone alerts ────────────────────────────────────
     try {
@@ -34193,7 +34612,11 @@ window.G = window.G || {};
     startExercise();
   }
 
-  views.prt = function (mount) {
+  // The Hub itself lives in prtHub() so views.prt (below it) has exactly ONE
+  // place where the screen is known to be drawn - prtHub returns early when
+  // there is no PRT content, and an extension point placed at the bottom of
+  // it would be skipped on that path.
+  function prtHub(mount) {
     util.clear(mount);
     mount.appendChild(el("div.section-title", {}, [el("h2", { text: "Physical Readiness" }), el("div.rule")]));
 
@@ -34337,6 +34760,15 @@ window.G = window.G || {};
     }
     renderList();
     renderDetail();
+  }
+
+  // Extension point (G.ext, util.js): modules add to the Hub here - today
+  // the PT Planner launch panel - instead of replacing G.views.prt with a
+  // wrapper. prtRunDrill's "back to the Hub" calls views.prt again, so a
+  // panel added here comes back with the Hub, as it did under the wrapper.
+  views.prt = function (mount) {
+    prtHub(mount);
+    G.ext.run("prt:rendered", mount);
   };
 
   views.doctrine = function (mount) {
@@ -34872,7 +35304,7 @@ window.G = window.G || {};
     // open/closed state already persists (guidon-nav-open-groups).
     const advancedPanels = [];
     let settingsAdvancedOpen = false;
-    try { settingsAdvancedOpen = localStorage.getItem("guidon-settings-advanced-open") === "1"; } catch (e) {}
+    settingsAdvancedOpen = G.db.local.get("guidon-settings-advanced-open") === "1";
 
     // ---- APPEARANCE (v0.43: themes grouped + typography + size/spacing + motion) ----
     if (G.theme) {
@@ -35512,7 +35944,7 @@ window.G = window.G || {};
         settingsAdvancedWrap.style.display = open ? "" : "none";
         settingsAdvToggle.textContent = open ? "Hide advanced settings ▴" : "Show advanced settings ▾";
         settingsAdvToggle.setAttribute("aria-expanded", String(open));
-        try { localStorage.setItem("guidon-settings-advanced-open", open ? "1" : "0"); } catch (e) {}
+        G.db.local.set("guidon-settings-advanced-open", open ? "1" : "0");
       });
       mount.appendChild(advPanel);
     }
@@ -35553,7 +35985,7 @@ window.G = window.G || {};
         // write failure previously looked identical to a clean restore.
         if (fs.length) { util.toast("Restore failed to write to this device (" + fs.join(", ") + ") — try again. Reloading…"); return; }
         util.toast("Restored " + r.kv + " item(s), " + r.userScenarios + " scenario(s), " + r.attempts + " attempt(s)." +
-          (sk && sk.kv ? " " + sk.kv + " skipped (malformed profile rejected)." : "") + " Reloading…");
+          (sk && sk.kv ? " " + G.backup.skippedSummary(result.skippedKeys) : "") + " Reloading…");
       });
     });
     // Same "Export backup"/"Import backup" wording as the Profile view's own
@@ -35779,7 +36211,7 @@ window.G = window.G || {};
     const RECENT_KEY = "guidon-search-recent";
     function getRecentSearches() {
       try {
-        const v = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
+        const v = JSON.parse(G.db.local.get(RECENT_KEY) || "[]");
         return Array.isArray(v) ? v.filter((s) => typeof s === "string" && s) : [];
       } catch (e) { return []; }
     }
@@ -35788,7 +36220,7 @@ window.G = window.G || {};
       try {
         const list = getRecentSearches().filter((s) => s.toLowerCase() !== term.toLowerCase());
         list.unshift(term);
-        localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 5)));
+        G.db.local.set(RECENT_KEY, JSON.stringify(list.slice(0, 5)));
       } catch (e) {}
     }
     inp.addEventListener("blur", () => addRecentSearch(inp.value.trim()));
@@ -36444,13 +36876,13 @@ window.G = window.G || {};
   // over what every other localStorage call site in this file treats as a
   // simple, recoverable "default to false and keep booting" case.
   let isFirstEverVisit = false;
-  try { isFirstEverVisit = localStorage.getItem("guidon-nav-open-groups") === null; } catch (e) {}
+  try { isFirstEverVisit = G.db.local.get("guidon-nav-open-groups") === null; } catch (e) {}
   if (isFirstEverVisit && window.innerWidth >= 1200) navOpenGroups.add("prep");
   try {
-    const saved = JSON.parse(localStorage.getItem("guidon-nav-open-groups") || "[]");
+    const saved = JSON.parse(G.db.local.get("guidon-nav-open-groups") || "[]");
     if (Array.isArray(saved)) saved.forEach((id) => navOpenGroups.add(id));
   } catch (e) {}
-  function persistNavOpenGroups() { try { localStorage.setItem("guidon-nav-open-groups", JSON.stringify(Array.from(navOpenGroups))); } catch (e) {} }
+  function persistNavOpenGroups() { try { G.db.local.set("guidon-nav-open-groups", JSON.stringify(Array.from(navOpenGroups))); } catch (e) {} }
   function groupForHash(hash) { return NAV_GROUPS.find((g) => g.hashes.indexOf(hash) !== -1); }
 
   // Nav overhaul Milestone 2 (docs/design/nav-adaptive-rail.md §3/§4.4):
@@ -36468,10 +36900,10 @@ window.G = window.G || {};
   // immediately above.
   let navPinned = [];
   try {
-    const savedPins = JSON.parse(localStorage.getItem("guidon-nav-pinned-routes") || "[]");
+    const savedPins = JSON.parse(G.db.local.get("guidon-nav-pinned-routes") || "[]");
     if (Array.isArray(savedPins)) navPinned = savedPins.filter((h) => typeof h === "string");
   } catch (e) {}
-  function persistNavPinned() { try { localStorage.setItem("guidon-nav-pinned-routes", JSON.stringify(navPinned)); } catch (e) {} }
+  function persistNavPinned() { try { G.db.local.set("guidon-nav-pinned-routes", JSON.stringify(navPinned)); } catch (e) {} }
   function isPinned(hash) { return navPinned.indexOf(hash) !== -1; }
   // Home is never given a pin toggle (see renderGroupsInto's g.label===null
   // branch) so it can never reach here through the UI - the "#/home"
@@ -37915,7 +38347,11 @@ window.G = window.G || {};
         autoNight: !!s.autoNight, autoNightTheme: s.autoNightTheme || null,
         autoNightStart: s.autoNightStart, autoNightEnd: s.autoNightEnd,
       };
-      localStorage.setItem("guidon:appearance:v1", JSON.stringify(mirror));
+      // Through G.db.local, not window.localStorage: a Guest or Kiosk
+      // session's theme choice must not become the look the NEXT person's
+      // app opens with (the pre-paint script at the top of this file reads
+      // this key before anything else runs).
+      G.db.local.set("guidon:appearance:v1", JSON.stringify(mirror));
     } catch (e) {}
   }
 

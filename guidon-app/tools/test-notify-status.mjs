@@ -34,6 +34,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { openAsOwner } from "./device-storage.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -91,7 +92,10 @@ await context.addInitScript(() => {
 });
 
 await page.goto(url, { waitUntil: "load" });
-await dismissOnboarding(page);
+// A real profile, not a Guest session: this suite checks that what it does is
+// still there after a reload, and a Guest session saves nothing (the storage
+// contract - see tools/device-storage.mjs and test-guest-saves-nothing.mjs).
+await openAsOwner(page, url);
 
 // 0) Sanity: the mock actually landed before notify.js's own module-scope
 //    isNative check ran, and G.notify picked up the new export.
@@ -129,7 +133,7 @@ const notifPanel = page.locator(".notify-live-status");
 
 const notifCheckbox = page.getByRole("checkbox", { name: "Reminder notifications", exact: true });
 (await notifCheckbox.isChecked()) === false
-  ? ok("checkbox starts unchecked (fresh guest profile - notifyReminders defaults off)")
+  ? ok("checkbox starts unchecked (fresh profile - notifyReminders defaults off)")
   : bad("checkbox unexpectedly started checked");
 
 async function liveStatus() {
@@ -223,8 +227,8 @@ stillChecked && revokedStatus && revokedStatus.warn
 
 // ============================================================
 // 3) The refresh survives a real reload too (on-mount, not only
-//    visibilitychange) - settings persist in real IndexedDB across reload
-//    even for a guest profile (unlike the in-memory profile itself), so the
+//    visibilitychange) - under the real profile this suite runs as, settings
+//    persist across a reload (a Guest session's would not), so the
 //    toggle should still read checked and the live status should still show
 //    revoked immediately, with no visibilitychange needed at all.
 // ============================================================
@@ -236,7 +240,7 @@ await page.waitForTimeout(500);
 const afterReloadChecked = await page.getByRole("checkbox", { name: "Reminder notifications", exact: true }).isChecked();
 const afterReloadStatus = await liveStatus();
 afterReloadChecked
-  ? ok("notifyReminders=true survives a real reload (real IndexedDB, unlike the guest profile itself)")
+  ? ok("notifyReminders=true survives a real reload under a real profile")
   : bad("checkbox lost its 'on' state after reload: " + afterReloadChecked);
 afterReloadStatus && afterReloadStatus.warn && /not granted/i.test(afterReloadStatus.text)
   ? ok("a fresh mount (reload, no visibilitychange involved) ALSO shows the revoked state immediately - the on-mount check works standalone")
@@ -259,7 +263,58 @@ afterOffStatus && !afterOffStatus.warn && /0 reminders currently scheduled/.test
   : bad("live status did not clear after turning the toggle off: " + JSON.stringify(afterOffStatus));
 
 // ============================================================
-// 5) The document-level visibilitychange listener self-cleans instead of
+// 5) A Guest/Kiosk session never really requests the OS permission.
+//    G.db.session is the storage-contract's session-only layer (Guest and
+//    Kiosk really save nothing, ROADMAP 3g item B): turning the toggle on
+//    there must not leave a lasting device-level side effect either. Before
+//    this fix, requestPermission() had no sessionOnly() guard - only
+//    scheduleForReminder()/cancelForReminder() did - so a session really
+//    could grant the OS permission for real, and if the device owner's OWN
+//    notifyReminders setting was already true, their next real launch could
+//    then start scheduling reminders on a permission a SESSION had granted.
+//    A separate context/page (its own storage) in the SAME browser, same
+//    mocked native shell, so this cannot be confused with the owner
+//    session above.
+// ============================================================
+const guestCtx = await browser.newContext();
+const guestPage = await guestCtx.newPage();
+const guestNoise = [];
+guestPage.on("pageerror", (e) => guestNoise.push("pageerror: " + e.message));
+guestPage.on("console", (m) => { if (m.type() === "error") guestNoise.push("console.error: " + m.text()); });
+await guestCtx.addInitScript(() => {
+  window.__mockPerm = "granted"; // the OS would say yes if really asked
+  window.__requestPermissionsCalls = 0;
+  window.Capacitor = {
+    isNativePlatform: () => true,
+    Plugins: {
+      LocalNotifications: {
+        checkPermissions: async () => ({ display: window.__mockPerm }),
+        requestPermissions: async () => { window.__requestPermissionsCalls++; return { display: window.__mockPerm }; },
+        schedule: async () => ({}),
+        cancel: async () => ({}),
+        getPending: async () => ({ notifications: [] }),
+      },
+    },
+  };
+});
+await guestPage.goto(url, { waitUntil: "load" });
+await dismissOnboarding(guestPage, { mode: "guest" });
+const guestSessionActive = await guestPage.evaluate(() => !!(window.G && G.db && G.db.session && G.db.session.active()));
+guestSessionActive ? ok("the guest page really is a session-only profile (G.db.session.active())") : bad("the guest page did not enter a session-only profile - this section proves nothing");
+const guestResult = await guestPage.evaluate(() => window.G.notify.requestPermission());
+const guestCalls = await guestPage.evaluate(() => window.__requestPermissionsCalls);
+guestResult === "denied"
+  ? ok(`G.notify.requestPermission() returns "denied" in a Guest session without ever asking (got "${guestResult}")`)
+  : bad(`G.notify.requestPermission() under Guest returned "${guestResult}" - it should report "denied" without prompting`);
+guestCalls === 0
+  ? ok("the real OS permission prompt (LocalNotifications.requestPermissions) was never called during the Guest session - no lasting device-level side effect")
+  : bad(`the real OS permission prompt WAS called ${guestCalls} time(s) during a Guest session - this is the leak Codex review flagged on PR #190`);
+const guestRelevantNoise = guestNoise.filter((n) => !/favicon/i.test(n));
+guestRelevantNoise.length === 0 ? ok("no console/page errors in the Guest section") : bad("Guest section console noise: " + guestRelevantNoise.join(" | "));
+await guestCtx.close();
+
+// ============================================================
+// 6) The document-level visibilitychange listener self-cleans instead of
 //    stacking one more every time Settings is visited (this view has no
 //    route-teardown hook - see the comment above onNotifVisible in
 //    src/index.html). Spy on add/removeEventListener("visibilitychange", ...)
