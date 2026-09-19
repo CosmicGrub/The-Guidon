@@ -111,6 +111,21 @@ const total = (c) => c.sleeps + c.swallowedWaits + c.literalCounts;
   check(wronglyFlagged.length === 0, `(c) none of ${notDecks.length} look-alikes is flagged: screen tiles called "cards", a fixture the suite made, a product limit, a floor (>=), 0/1, a plain loop`, () => "wrongly flagged: " + JSON.stringify(wronglyFlagged));
 
   check(mask("a = \"x)\"; // (\nb(/\\)/, 'y(');").replace(/[^()]/g, "") === "()", "mask() leaves only real code parens - strings, comments and regex literals cannot unbalance the scan");
+
+  // A template INSIDE a template hole. Read as "up to the next backtick" the
+  // outer template ended early, the apostrophe in "'s" opened a string, and
+  // that string ran on to the next apostrophe in the file - two lines down,
+  // past the sleep and the swallowed wait, which were then counted as nothing.
+  const nested = "const who = `${rows.map((r) => `${r.name}'s`).join(\", \")}`;\n"
+    + "await page.waitForTimeout(500);\n"
+    + "await page.waitForFunction(() => window.ready).catch(() => {});\n"
+    + "const t = 'x';\n";
+  const n = rules(nested);
+  check(n.sleeps === 1 && n.swallowedWaits === 1, "a nested template with an apostrophe in it cannot hide the sleep and the swallowed wait on the lines after it", () => JSON.stringify(n) + " masked: " + JSON.stringify(mask(nested)));
+  check(mask(nested).length === nested.length && mask(nested).split("\n").length === nested.split("\n").length && !/rows|name/.test(mask(nested)),
+    "and the template is still blanked whole, hole included, with every offset and line break where it was");
+  const stray = "const half = \"no closing quote on this line;\nawait page.waitForTimeout(500);\nconst s = \"x\";\n";
+  check(rules(stray).sleeps === 1, "a quote left open costs its own line at most, never the rest of the file");
 }
 
 /* =====================================================================

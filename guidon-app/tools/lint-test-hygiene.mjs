@@ -69,18 +69,33 @@ const FIX = {
    mask(): the source with comment, string, template and regex CONTENTS
    blanked to spaces. Offsets and line breaks are preserved, so an index in
    the masked text is the same index in the file, and paren matching cannot
-   be thrown by a ")" in a message or an apostrophe in a comment. Template
-   `${ }` holes are blanked with the rest of the template: a wait hidden
-   inside one is not something these suites do.
+   be thrown by a ")" in a message or an apostrophe in a comment.
+
+   Template `${ }` holes are blanked with the rest of the template (a wait
+   hidden inside one is not something these suites do) - but they are READ as
+   code, so the template ends where JavaScript says it ends. Reading a
+   template as "everything up to the next backtick" got a NESTED one wrong:
+     `${rows.map((r) => `${r.name}'s`).join(", ")}`
+   left the apostrophe outside any string, and that "string" then swallowed
+   every line down to the next apostrophe in the file - sleeps included. For
+   the same reason a '...' or "..." string ends at the end of its line, as it
+   does in JavaScript: a stray quote can cost a line, never the rest of the file.
    --------------------------------------------------------------------- */
 const REGEX_MAY_FOLLOW = new Set(["(", ",", "=", ":", "[", "!", "&", "|", "?", "{", "}", ";", "+", "-", "*", "%", "<", ">", "~", "^"]);
 const REGEX_AFTER_WORD = /(?:^|[^\w$.])(?:return|typeof|instanceof|in|of|new|delete|void|throw|case|do|else|yield|await)$/;
-export function mask(text) {
+export function mask(text) { return maskFrom(text, 0, false).out; }
+
+/* Masks from `start`. Inside a template hole (`inHole`) it stops AT the "}"
+   that closes the hole and says where that was. */
+function maskFrom(text, start, inHole) {
   let out = "";
-  let i = 0;
+  let i = start;
+  let braces = 0;
   const blank = (ch) => (ch === "\n" || ch === "\r" ? ch : " ");
   while (i < text.length) {
     const c = text[i], c2 = text[i + 1];
+    if (inHole && c === "{") braces++;
+    if (inHole && c === "}") { if (braces === 0) return { out, end: i }; braces--; }
     if (c === "/" && c2 === "/") { while (i < text.length && text[i] !== "\n") { out += " "; i++; } continue; }
     if (c === "/" && c2 === "*") {
       out += "  "; i += 2;
@@ -88,10 +103,24 @@ export function mask(text) {
       if (i < text.length) { out += "  "; i += 2; }
       continue;
     }
-    if (c === '"' || c === "'" || c === "`") {
+    if (c === '"' || c === "'") {
       out += c; i++;
-      while (i < text.length && text[i] !== c) {
+      while (i < text.length && text[i] !== c && text[i] !== "\n") {
         if (text[i] === "\\" && i + 1 < text.length) { out += " " + blank(text[i + 1]); i += 2; continue; }
+        out += blank(text[i]); i++;
+      }
+      if (i < text.length && text[i] === c) { out += c; i++; }
+      continue;
+    }
+    if (c === "`") {
+      out += c; i++;
+      while (i < text.length && text[i] !== "`") {
+        if (text[i] === "\\" && i + 1 < text.length) { out += " " + blank(text[i + 1]); i += 2; continue; }
+        if (text[i] === "$" && text[i + 1] === "{") {
+          const stop = Math.min(text.length, maskFrom(text, i + 2, true).end + 1); // just past the hole's own "}"
+          for (; i < stop; i++) out += blank(text[i]);
+          continue;
+        }
         out += blank(text[i]); i++;
       }
       if (i < text.length) { out += c; i++; }
@@ -119,7 +148,7 @@ export function mask(text) {
     }
     out += c; i++;
   }
-  return out;
+  return { out, end: text.length };
 }
 
 /* 1-based line of an offset, by binary search over the line starts (a file
