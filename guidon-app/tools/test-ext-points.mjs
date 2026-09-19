@@ -31,6 +31,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { loadModules } from "./module-manifest.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -85,7 +86,13 @@ const api = await page.evaluate(() => ({
   wrapped: [G.board.render._roadmapWrapped, G.drills.render._roadmapWrapped, G.views.prt._roadmapWrapped].map((v) => v === true),
 }));
 check(api.has && JSON.stringify(api.points) === JSON.stringify(PANELS.map((p) => p.point)), `core declares its extension points: ${JSON.stringify(api.points)}`, "G.ext.points() is " + JSON.stringify(api.points));
-check(api.counts && api.counts.every((n) => n === 1), "each point has exactly one subscriber today (the launch panels)", "subscriber counts: " + JSON.stringify(api.counts));
+// How many subscribers a point SHOULD have is the manifest's to say ("hooks"), not a number kept here:
+// the day a second module subscribes to one of them, this must not fail for the wrong reason.
+const declaredHooks = loadModules().modules.flatMap((m) => m.hooks || []);
+const wantCounts = PANELS.map((p) => declaredHooks.filter((h) => h === p.point).length);
+check(api.counts && JSON.stringify(api.counts) === JSON.stringify(wantCounts) && wantCounts.every((n) => n >= 1),
+  `each point has exactly the subscribers the manifest's "hooks" declare (${JSON.stringify(wantCounts)}; at least the launch panel on each)`,
+  `subscriber counts ${JSON.stringify(api.counts)}, but the manifest's "hooks" declare ${JSON.stringify(wantCounts)}`);
 check(api.wrapped.every((w) => w === false), "G.board.render, G.drills.render and G.views.prt are core's own functions - no module has replaced them with a wrapper", "still wrapped (board, drills, prt): " + JSON.stringify(api.wrapped));
 
 /* ---- each panel: once, last, same words, buttons work ---- */

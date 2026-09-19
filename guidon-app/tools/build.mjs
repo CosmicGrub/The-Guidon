@@ -520,7 +520,8 @@ function assertRouteModulesPresent(html, label) {
  * Exported (and main() honours GUIDON_APP_MODULE_DIR) only so
  * tools/test-module-manifest.mjs can prove, against stand-in folders, that
  * the order really is the manifest's and that a refusal really stops the
- * build; nothing else passes a different folder.
+ * build; nothing else passes a different folder, and main() never BUILDS from
+ * one - with GUIDON_APP_MODULE_DIR set it checks that folder and stops.
  */
 async function assembleAppModules(appModuleDir) {
   const { loadModules } = await import("./module-manifest.mjs");
@@ -676,7 +677,19 @@ async function main() {
   // Order and membership come from src/app-modules/manifest.json - see
   // assembleAppModules(). It throws (naming the file) before anything below
   // is written, so a bad manifest never leaves a half-built web/ or dist/.
-  const appModules = await assembleAppModules(process.env.GUIDON_APP_MODULE_DIR || "src/app-modules");
+  //
+  // GUIDON_APP_MODULE_DIR points this step at a stand-in folder so
+  // tools/test-module-manifest.mjs can watch the REAL build refuse a bad one.
+  // It must never be a way to ship: an environment variable left set in a
+  // shell or a CI job would otherwise build web/ and dist/ from some other
+  // folder and still print "build ok". So with it set the build only CHECKS
+  // that folder and stops - nothing is written either way.
+  const standInModuleDir = process.env.GUIDON_APP_MODULE_DIR;
+  const appModules = await assembleAppModules(standInModuleDir || "src/app-modules");
+  if (standInModuleDir) {
+    console.log(`build: GUIDON_APP_MODULE_DIR is set, so this run only checked ${standInModuleDir} against its manifest.json (it passed). NOTHING WAS BUILT - that switch exists for tools/test-module-manifest.mjs; unset it to build.`);
+    return;
+  }
 
   /* =========================================================== standalone */
   // Identical to source apart from a favicon that matches the real app icon,

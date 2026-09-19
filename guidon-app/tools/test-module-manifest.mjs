@@ -146,6 +146,26 @@ try {
       `build with an unlisted module: exit ${r.status}, output ${JSON.stringify((r.stderr + r.stdout).slice(0, 400))}`);
     const after = [stamp("web/index.html"), stamp("dist/guidon-standalone.html")];
     check(JSON.stringify(before) === JSON.stringify(after), "and it stopped before touching web/ or dist/", "the refused build still rewrote an output file");
+
+    // The switch that made the check above possible must not be a way to SHIP.
+    // A VALID stand-in - the real folder plus one extra module that its manifest
+    // does list - would otherwise be built into web/ and dist/ by anyone (or any
+    // CI job) with the variable left set, and the build would still say "build ok".
+    const valid = join(scratch, "valid-copy"); mkdirSync(valid);
+    for (const f of real.files) copyFileSync(join(APP_MODULE_DIR, f), join(valid, f));
+    const MARK = "STAND-IN-MODULE-" + process.pid;
+    writeFileSync(join(valid, "zz-stand-in.js"), `/* ${MARK} */\n`);
+    const m2 = JSON.parse(readFileSync(join(APP_MODULE_DIR, "manifest.json"), "utf8"));
+    m2.modules.push(entry("zz-stand-in.js", "zz-stand-in"));
+    writeFileSync(join(valid, "manifest.json"), JSON.stringify(m2));
+    const r2 = spawnSync(process.execPath, ["tools/build.mjs"], { encoding: "utf8", env: { ...process.env, GUIDON_APP_MODULE_DIR: valid } });
+    const shipped = ["web/index.html", "dist/guidon-standalone.html"].filter((p) => existsSync(p) && readFileSync(p, "utf8").includes(MARK));
+    check(r2.status === 0 && /NOTHING WAS BUILT/.test(r2.stdout) && !/build ok/.test(r2.stdout),
+      "pointed at a VALID stand-in folder, the real build checks it, says nothing was built, and does not claim \"build ok\"",
+      `build with a valid stand-in: exit ${r2.status}, output ${JSON.stringify((r2.stderr + r2.stdout).slice(0, 400))}`);
+    check(shipped.length === 0 && JSON.stringify(before) === JSON.stringify([stamp("web/index.html"), stamp("dist/guidon-standalone.html")]),
+      "and the stand-in's module is in neither web/ nor dist/ - GUIDON_APP_MODULE_DIR cannot change what ships",
+      `the stand-in module was BUILT INTO ${shipped.join(" and ") || "(outputs rewritten)"} - rebuild with \`npm run build\` before trusting web/ or dist/`);
   }
 } finally {
   rmSync(scratch, { recursive: true, force: true });
