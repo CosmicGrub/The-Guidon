@@ -18,6 +18,7 @@
     "test-board-drill-face-parity.mjs": { "sleeps": 12, "swallowedWaits": 0, "literalCounts": 0 },
     "test-board-drill-gestures.mjs": { "sleeps": 15, "swallowedWaits": 0, "literalCounts": 0 },
     "test-board-drill-grading.mjs": { "sleeps": 6, "swallowedWaits": 0, "literalCounts": 0 },
+    "test-board-drill-mouse-click-grading.mjs": { "sleeps": 4, "swallowedWaits": 0, "literalCounts": 0 },
     "test-board-drill-pc-parity.mjs": { "sleeps": 10, "swallowedWaits": 0, "literalCounts": 0 },
     "test-board-drill-preflip-hiding.mjs": { "sleeps": 4, "swallowedWaits": 0, "literalCounts": 0 },
     "test-board-drill-readiness-heatmap.mjs": { "sleeps": 2, "swallowedWaits": 1, "literalCounts": 1 },
