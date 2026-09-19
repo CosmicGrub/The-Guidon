@@ -41,9 +41,13 @@
 #
 # Inputs (environment), on top of what ios-simulator-run.sh reads:
 #   IOS_DEVICE_TIMEOUT  seconds one device may take per attempt   (default 600)
-#   IOS_TOTAL_BUDGET    seconds after which no NEW retry is started, so this
-#                       script - not the job-level timeout - writes the
-#                       verdict and the evidence still uploads (default 2700)
+#   IOS_TOTAL_BUDGET    seconds this whole script may spend          (default 2700)
+#                       Every attempt's deadline is cut to what is left of it,
+#                       a retry is only started when a full deadline still
+#                       fits, and a device whose turn comes after it is spent
+#                       is reported "not run" - so this script, not the 60 min
+#                       job timeout, writes the verdict. Without it four wedged
+#                       devices cost 4 x 600 s + two retries = the whole hour.
 #   IOS_VERIFIER        verifier to run (default: ios-simulator-run.sh next to
 #                       this file). Exists so the wrapper itself can be tested.
 #   IOS_EVIDENCE_DIR    evidence directory (default: ../artifacts/ios). The
@@ -63,6 +67,11 @@ DEVICE_TIMEOUT="${IOS_DEVICE_TIMEOUT:-600}"
 TOTAL_BUDGET="${IOS_TOTAL_BUDGET:-2700}"
 BUNDLE="${BUNDLE_ID:-app.guidon.trainer}"
 STARTED="$(date +%s)"
+
+# Both numbers go into shell arithmetic; "10m" or an empty override would turn
+# the deadline into a syntax error halfway through the matrix.
+case "$DEVICE_TIMEOUT" in ''|*[!0-9]*|0) echo "::error::IOS_DEVICE_TIMEOUT must be a whole number of seconds above 0 (got '$DEVICE_TIMEOUT')"; exit 2 ;; esac
+case "$TOTAL_BUDGET" in ''|*[!0-9]*) echo "::error::IOS_TOTAL_BUDGET must be a whole number of seconds (got '$TOTAL_BUDGET')"; exit 2 ;; esac
 
 mkdir -p "$OUT/attempt-1" "$OUT/summaries"
 
@@ -130,11 +139,12 @@ slug_for() {
 # verdict after all devices have been checked.
 run_device() {
   local device="$1"
+  local deadline="$2"
   local saved_devices="$DEVICES"
   local saved_step_summary="${GITHUB_STEP_SUMMARY-}"
   export DEVICES="$device"
   unset GITHUB_STEP_SUMMARY
-  run_timed "$DEVICE_TIMEOUT" bash "$BASE"
+  run_timed "$deadline" bash "$BASE"
   local rc=$?
   export DEVICES="$saved_devices"
   if [ -n "$saved_step_summary" ]; then
@@ -214,9 +224,20 @@ for raw in "${DEVICE_LIST[@]}"; do
   [ -n "$device" ] || continue
   slug="$(slug_for "$device")"
 
-  echo "::group::Simulator verifier: $device (attempt 1)"
+  # What is left of the budget bounds this attempt too, not only retries.
+  remaining=$(( TOTAL_BUDGET - ($(date +%s) - STARTED) ))
+  if [ "$remaining" -le 0 ]; then
+    overall=1
+    echo "::error::$device: not run - the ${TOTAL_BUDGET}s budget was spent on the devices before it"
+    ROWS+=("| $device | FAIL | not run: the job's time budget was spent before this device's turn |")
+    continue
+  fi
+  deadline="$DEVICE_TIMEOUT"
+  [ "$remaining" -lt "$deadline" ] && deadline="$remaining"
+
+  echo "::group::Simulator verifier: $device (attempt 1, deadline ${deadline}s)"
   rm -f "$SUMMARY"
-  run_device "$device"
+  run_device "$device" "$deadline"
   first_rc=$?
   first_row="$(parse_row)"
   first_result="${first_row%%$'\t'*}"
@@ -234,7 +255,7 @@ for raw in "${DEVICE_LIST[@]}"; do
   retryable=0
   if [ "$first_rc" -eq 124 ]; then
     retryable=1
-    first_detail="simulator verifier timed out after ${DEVICE_TIMEOUT}s"
+    first_detail="simulator verifier timed out after ${deadline}s"
   elif [ "$first_result" = "FAIL" ] && is_transient_detail "$first_detail"; then
     retryable=1
   fi
@@ -272,9 +293,10 @@ for raw in "${DEVICE_LIST[@]}"; do
   fi
   clean_simulators
 
-  echo "::group::Simulator verifier: $device (attempt 2)"
+  # The budget check above guarantees a full deadline fits for the retry.
+  echo "::group::Simulator verifier: $device (attempt 2, deadline ${DEVICE_TIMEOUT}s)"
   rm -f "$SUMMARY"
-  run_device "$device"
+  run_device "$device" "$DEVICE_TIMEOUT"
   second_rc=$?
   second_row="$(parse_row)"
   second_result="${second_row%%$'\t'*}"
@@ -302,7 +324,7 @@ done
   echo
   echo "App: \`$APP_PATH\`"
   echo "Bundle: \`$BUNDLE\`"
-  echo "Per-device deadline: ${DEVICE_TIMEOUT}s"
+  echo "Per-device deadline: ${DEVICE_TIMEOUT}s (whole run: ${TOTAL_BUDGET}s)"
   echo
   echo "| Device | Result | Detail |"
   echo "|---|---|---|"

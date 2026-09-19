@@ -29,7 +29,11 @@
  *   - a verifier that dies without a verdict is NOT retried
  *   - a crash report naming the app blocks the retry; one naming some other
  *     process does not
- *   - when the job's time budget is spent, no retry is started
+ *   - the whole run has a time budget: a retry that no longer fits is not
+ *     started, an attempt is cut to what is left, and a device whose turn
+ *     comes after the budget is spent is reported "not run" (red) - so the
+ *     wrapper, not the job timeout, always gets to write the verdict
+ *   - a deadline that is not a number is refused up front
  *   - the default deadline is longer than the slowest healthy device measured
  *
  * bash: on Windows this looks for Git Bash (or $GUIDON_BASH) first, because a
@@ -193,9 +197,27 @@ const FLAKE = "process died after launch; never progressed past the launch scree
   check(b.code === 0 && b.callsFor("Phone A") === 2, "a crash report from some other process does not block the retry", `exit ${b.code}, calls ${JSON.stringify(b.calls)}`);
 }
 
-/* 10 */ {
-  const r = await run(["Phone A|1|fail:" + FLAKE, "Phone A|2|pass"], { devices: "Phone A", env: { IOS_TOTAL_BUDGET: "0" } });
-  check(r.code === 1 && r.callsFor("Phone A") === 1 && /time budget was spent/.test(r.summary), "with the job's time budget spent, no retry is started and the row says so", `exit ${r.code}, calls ${JSON.stringify(r.calls)}, summary ${r.summary}`);
+/* 10 - the whole-run budget. Without it four wedged devices cost
+   4 x deadline + retries, which at the real numbers is the job's entire hour:
+   the job timeout then kills the step before any verdict is written. */
+{
+  // A retry needs a full deadline (3 s) to fit in what is left of the budget (2 s): refused.
+  const r = await run(["Phone A|1|fail:" + FLAKE, "Phone A|2|pass"], { devices: "Phone A", env: { IOS_TOTAL_BUDGET: "2" } });
+  check(r.code === 1 && r.callsFor("Phone A") === 1 && /not retried, the job's time budget was spent/.test(r.summary), "when a full retry no longer fits in the time budget, no retry is started and the row says so", `exit ${r.code}, calls ${JSON.stringify(r.calls)}, summary ${r.summary}`);
+
+  // First attempts are bounded too: device 1 wedges for the whole budget, device 2 is reported, not run.
+  const s = await run(["Phone A|1|hang", "Pad B|1|pass"], { env: { IOS_TOTAL_BUDGET: "3" } });
+  check(s.code === 1 && s.callsFor("Phone A") === 1 && s.callsFor("Pad B") === 0 && /Pad B \| FAIL \| not run: the job's time budget was spent/.test(s.summary),
+    "a device whose turn comes after the budget is spent is reported 'not run' (red), not started", `exit ${s.code}, calls ${JSON.stringify(s.calls)}, summary ${s.summary}`);
+  check(s.seconds < 20, `...so the whole run stays inside its budget (${s.seconds.toFixed(1)} s for a 3 s budget, not one deadline per device)`, `took ${s.seconds.toFixed(1)} s`);
+
+  // ...and an attempt that starts with less than a full deadline left gets only what is left.
+  const t = await run(["Phone A|1|hang"], { devices: "Phone A", env: { IOS_DEVICE_TIMEOUT: "30", IOS_TOTAL_BUDGET: "4" } });
+  check(t.code === 1 && t.callsFor("Phone A") === 1 && /Phone A \| FAIL \| simulator verifier timed out after [34]s; not retried/.test(t.summary) && t.seconds < 20,
+    `an attempt is cut to what is left of the budget (30 s deadline, 4 s budget: killed after ${t.seconds.toFixed(1)} s)`, `exit ${t.code}, ${t.seconds.toFixed(1)} s, calls ${JSON.stringify(t.calls)}, summary ${t.summary}`);
+
+  const u = await run(["Phone A|1|pass"], { devices: "Phone A", env: { IOS_DEVICE_TIMEOUT: "10m" } });
+  check(u.code === 2 && u.calls.length === 0 && /IOS_DEVICE_TIMEOUT must be a whole number/.test(u.log), "a deadline that is not a number is refused up front (exit 2), not discovered as a shell error mid-matrix", `exit ${u.code}, ${u.log}`);
 }
 
 /* 11 */ {
