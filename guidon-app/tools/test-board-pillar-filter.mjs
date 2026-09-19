@@ -12,10 +12,22 @@
  *     card mastery (the same isMasteredSrs predicate the Board Readiness
  *     Score uses) beside scenarios completed (store.getProgress()'s
  *     best-attempt ids) - a separate panel, deliberately NOT blended into
- *     the existing score - with "Drill <pillar>" buttons that land on Board
+ *     the existing score - with "Study <pillar>" buttons that land on Board
  *     Drill with that pillar chip active (one-shot G.board._filterPillar).
+ *     The label used to be "Drill " + pillar, which read "Drill Drill & Board
+ *     Etiquette" for the sixth pillar; no label may stutter, and each
+ *     button's accessible name says which pillar's cards it opens. The
+ *     "Needs Work" buttons one panel up had the same fault ("Drill Drill and
+ *     Ceremony (TC 3-21.5)") and are held to the same rule (section 6).
  *  3. At phone width all three quick-filter rows become single, horizontally
- *     scrollable rows (.qf-row) instead of a 12-row wall above the card.
+ *     scrollable rows (.qf-row) instead of a 12-row wall above the card -
+ *     GENUINELY scrollable (a real wheel gesture reaches the last chip; a
+ *     row that merely clipped its chips used to pass), with the keyboard
+ *     focus ring never cut off by the scroller (it used to lose its whole
+ *     top edge, and its left edge on the first chip), and with the chip a
+ *     Readiness button made active actually on screen. The scroll/ring
+ *     checks live in ./chip-row-assertions.mjs so the next chip row can
+ *     reuse them.
  *
  * Every expected number here is computed live from the seed and the SRS
  * store in the page, never hard-coded.
@@ -23,10 +35,12 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { checkRowScrollsToEnd, checkFocusRingNeverClipped, checkRingPaints, chipInsideRow } from "./chip-row-assertions.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
 const bad = (m) => { fails++; console.log("  FAIL  " + m); };
+const report = (results) => results.forEach((r) => (r.ok ? ok : bad)(r.msg));
 
 const CANON = ["Doctrinal Thinking", "Programs & Support", "Leadership & Counseling", "Maintenance & Supply", "Training Management", "Drill & Board Etiquette"];
 
@@ -163,7 +177,7 @@ await page.waitForTimeout(900);
 const rollup = await page.evaluate(async () => {
   const panel = document.querySelector(".readiness-pillars");
   if (!panel) return null;
-  const rows = [...panel.querySelectorAll(".readiness-pillar-row")].map((r) => ({ p: r.getAttribute("data-pillar"), k: r.querySelector(".stat .k").textContent, v: r.querySelector(".stat .v").textContent, hasDrill: !!r.querySelector("button") }));
+  const rows = [...panel.querySelectorAll(".readiness-pillar-row")].map((r) => ({ p: r.getAttribute("data-pillar"), k: r.querySelector(".stat .k").textContent, v: r.querySelector(".stat .v").textContent, hasDrill: !!r.querySelector("button"), btnText: (r.querySelector("button") || {}).textContent || "", btnName: r.querySelector("button") ? (r.querySelector("button").getAttribute("aria-label") || r.querySelector("button").textContent) : "" }));
   const all = G.store.boardQuestions();
   const srs = await G.board.loadAllSrs(all.map((q) => q.id));
   const prog = await G.store.getProgress();
@@ -185,7 +199,18 @@ if (rollup) {
   const msRow = rollup.rows.find((r) => r.p === gradePillar);
   const msMastered = msRow ? Number((msRow.v.match(/\((\d+)\/\d+ cards\)/) || [])[1]) : NaN;
   msMastered === 4 ? ok(`the four "${gradePillar}" cards just graded Know It show up as exactly 4 mastered in that pillar's row ("${msRow.v}")`) : bad(`"${gradePillar}" row after grading four of its cards: ` + JSON.stringify(msRow));
-  rollup.rows.every((r) => r.hasDrill) ? ok("every pillar row has a Drill button") : bad("a pillar row lacks its Drill button");
+  rollup.rows.every((r) => r.hasDrill) ? ok("every pillar row has a button that opens its cards") : bad("a pillar row lacks its button");
+  // The label was "Drill " + pillar: fine for five pillars, "Drill Drill &
+  // Board Etiquette" for the sixth. Wording-agnostic on purpose - whatever
+  // the verb is, no label may say a word twice in a row, the visible text
+  // must name the pillar, and the accessible name must contain the visible
+  // text (WCAG 2.5.3 Label in Name), say it opens cards, and be unique.
+  const STUTTER = /\b(\w+)\s+\1\b/i;
+  const stutters = rollup.rows.filter((r) => STUTTER.test(r.btnText) || STUTTER.test(r.btnName));
+  stutters.length === 0 ? ok(`no rollup button repeats a word back to back (${rollup.rows.map((r) => '"' + r.btnText + '"').join(", ")})`) : bad("rollup button label stutters: " + JSON.stringify(stutters.map((r) => [r.btnText, r.btnName])));
+  const named = rollup.rows.every((r) => r.btnText.includes(r.p) && r.btnName.includes(r.btnText) && /cards/i.test(r.btnName));
+  const uniqueNames = new Set(rollup.rows.map((r) => r.btnName)).size === rollup.rows.length;
+  (named && uniqueNames) ? ok(`each button names its pillar, and its accessible name contains the visible label and says it opens cards (e.g. "${rollup.rows[rollup.rows.length - 1].btnName}")`) : bad("rollup button names: " + JSON.stringify(rollup.rows.map((r) => [r.p, r.btnText, r.btnName])));
   const bands = await page.evaluate(() => [...document.querySelectorAll(".readiness-pillar-row")].map((row) => {
     const pct = Number(((row.querySelector(".stat .v") || {}).textContent || "").match(/^(\d+)%/)?.[1]);
     const bar = row.querySelector(".bar");
@@ -200,11 +225,14 @@ if (rollup) {
   const act = bar.chips.filter((c) => c.active).map((c) => c.text.replace(/\s*\(\d+\)$/, ""));
   const sz = await deckSize();
   (JSON.stringify(act) === JSON.stringify([drillTarget]) && sz === live.counts[drillTarget])
-    ? ok(`"Drill ${drillTarget}" lands on Board Drill with that pillar chip active and a ${sz}-card deck`)
-    : bad(`after Drill ${drillTarget}: active ${JSON.stringify(act)}, deck ${sz}`);
+    ? ok(`the "${drillTarget}" button lands on Board Drill with that pillar chip active and a ${sz}-card deck`)
+    : bad(`after the ${drillTarget} button: active ${JSON.stringify(act)}, deck ${sz}`);
   const flagCleared = await page.evaluate(() => G.board._filterPillar == null);
   flagCleared ? ok("the one-shot _filterPillar flag was consumed") : bad("_filterPillar still set");
 }
+// Desktop keeps the wrapping layout (no scroller), so nothing clips the ring
+// there - kept as a guard that the phone-width fix never leaks upward.
+report(await checkFocusRingNeverClipped(page, BAR("pillar"), "at 1200px the pillar"));
 
 /* ---- 5. phone width: single scrollable rows ---- */
 const page2 = await (await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })).newPage();
@@ -221,26 +249,92 @@ const phone = await page2.evaluate(() => {
   };
 });
 const singleRow = phone.rows.every((r) => r.nowrap && r.h < r.chipH * 1.8);
-(singleRow && !phone.pageOverflow) ? ok(`at 390px all three quick-filter rows are single rows (heights ${phone.rows.map((r) => Math.round(r.h)).join("/")}px, ${phone.rows.filter((r) => r.scrolls).length} scroll horizontally) with no page overflow`) : bad("phone-width rows: " + JSON.stringify(phone));
+(singleRow && !phone.pageOverflow) ? ok(`at 390px all three quick-filter rows are single rows (heights ${phone.rows.map((r) => Math.round(r.h)).join("/")}px, ${phone.rows.filter((r) => r.scrolls).length} overflow sideways) with no page overflow`) : bad("phone-width rows: " + JSON.stringify(phone));
 
-// A chip made active by a deep link must be VISIBLE in the phone-width
+// "Single row, nowrap, no page overflow" is equally true of a row that just
+// CLIPS its chips. Prove each row is a real scroller, to its last chip, with
+// a real wheel gesture - then that keyboard focus is fully visible on every
+// chip (standard ring and the wider Bold Focus ring), and actually painted.
+for (const l of ["pillar", "category", "regulation"]) report(await checkRowScrollsToEnd(page2, BAR(l), "at 390px the " + l));
+for (const l of ["pillar", "category", "regulation"]) report(await checkFocusRingNeverClipped(page2, BAR(l), "at 390px the " + l));
+for (const l of ["pillar", "category", "regulation"]) report(await checkFocusRingNeverClipped(page2, BAR(l), "at 390px the " + l, { boldFocus: true }));
+report(await checkRingPaints(page2, BAR("pillar"), "at 390px the pillar"));
+const phoneAfter = await page2.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+!phoneAfter ? ok("...and the page still has no horizontal overflow after scrolling and tabbing through the rows") : bad("page overflows horizontally at 390px after using the rows");
+
+// A chip made active from Readiness must be VISIBLE in the phone-width
 // scroller, not parked off-screen at scrollLeft 0 (the row used to look like
-// nothing was selected). Use the LAST pillar - the one furthest right.
+// nothing was selected). Through the REAL button, on the phone-width page -
+// the first version of this check set the one-shot flag from script and so
+// never exercised the Readiness button at 390px at all. The LAST pillar is
+// the one furthest right (and the one whose label used to stutter).
 const lastPillar = CANON[CANON.length - 1];
-await page2.evaluate((p) => { G.board._filterPillar = p; location.hash = "#/home"; }, lastPillar);
-await page2.waitForTimeout(500);
-await page2.evaluate(() => { location.hash = "#/board"; });
+await page2.evaluate(() => { G.board._openReadiness && G.board._openReadiness(); });
+await page2.waitForTimeout(900);
+const lastBtn = page2.locator(`.readiness-pillar-row[data-pillar="${lastPillar}"] button`);
+const lastBtnBox = await lastBtn.evaluate((b) => { const r = b.getBoundingClientRect(); return { text: b.textContent, right: r.right, vw: document.documentElement.clientWidth, pageOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth }; }).catch(() => null);
+(lastBtnBox && lastBtnBox.right <= lastBtnBox.vw && !lastBtnBox.pageOverflow) ? ok(`at 390px the "${lastBtnBox.text}" button fits the screen (no horizontal overflow on Readiness)`) : bad("Readiness rollup button at 390px: " + JSON.stringify(lastBtnBox));
+await lastBtn.click();
 await page2.waitForTimeout(1000);
-const reveal = await page2.evaluate(() => {
-  const bar = document.querySelector('.search-filters[aria-label="Quick-filter by pillar"]');
-  const chip = bar && bar.querySelector(".search-chip.active");
-  if (!bar || !chip) return null;
-  const b = bar.getBoundingClientRect(), c = chip.getBoundingClientRect();
-  return { text: chip.textContent, scrollLeft: Math.round(bar.scrollLeft), inView: c.left >= b.left - 1 && c.right <= b.right + 1 };
+const reveal = await chipInsideRow(page2, BAR("pillar"), ".search-chip.active");
+(reveal && reveal.text.startsWith(lastPillar) && reveal.inside && reveal.scrollLeft > 0)
+  ? ok(`at 390px the Readiness button for "${lastPillar}" lands on Board Drill with that chip scrolled fully into view (row scrollLeft ${reveal.scrollLeft}px), not left off-screen`)
+  : bad("chip visibility at phone width after the Readiness button: " + JSON.stringify(reveal));
+
+/* ---- 6. the "Needs Work" buttons on the same tab ---- */
+// Same stutter, one panel up: those buttons were "Drill " + category, and a
+// real category is named "Drill and Ceremony (TC 3-21.5)" - so a Soldier
+// weak in it was offered "Drill Drill and Ceremony (TC 3-21.5)". The panel
+// only lists the three weakest categories, so make that category the weakest
+// for certain: a fresh profile where every OTHER card is mastered and one of
+// its own was missed (real stored study records, written the way the heatmap
+// suite seeds them - the label code under test is untouched).
+const page3 = await (await browser.newContext({ viewport: { width: 1200, height: 900 } })).newPage();
+page3.on("console", (m) => { if (["error", "warning"].includes(m.type())) noise.push(m.type() + "(p3): " + m.text()); });
+page3.on("pageerror", (e) => noise.push("pageerror(p3): " + e.message));
+await page3.goto(url, { waitUntil: "load" });
+await dismissOnboarding(page3);
+const weakCat = await page3.evaluate(async () => {
+  const all = G.store.boardQuestions();
+  const cat = [...new Set(all.map((q) => q.category))].find((c) => /^drill\b/i.test(c));
+  if (!cat) return null;
+  const others = all.filter((q) => q.category !== cat), own = all.filter((q) => q.category === cat);
+  for (let i = 0; i < others.length; i += 100) {
+    await Promise.all(others.slice(i, i + 100).map((q) => G.db.put("kv", { k: "srs:" + q.id, v: { reps: 2, ease: 2.4, interval: 3, due: Date.now() + 864e5, misses: 0, lastGrade: 2 } })));
+  }
+  await G.db.put("kv", { k: "srs:" + own[0].id, v: { reps: 0, ease: 2.3, interval: 0, due: 0, misses: 1, lastGrade: 0 } });
+  return { cat, total: own.length };
 });
-(reveal && reveal.text.startsWith(lastPillar) && reveal.inView && reveal.scrollLeft > 0)
-  ? ok(`at 390px a deep-linked "${lastPillar}" chip is scrolled into view (row scrollLeft ${reveal.scrollLeft}px), not left off-screen`)
-  : bad("deep-linked chip visibility at phone width: " + JSON.stringify(reveal));
+if (!weakCat) {
+  ok("no card category starts with the word \"Drill\" any more - nothing for a \"Drill ...\" label to collide with");
+} else {
+  await page3.evaluate(() => { location.hash = "#/board"; });
+  await page3.waitForTimeout(900);
+  await page3.evaluate(() => { G.board._openReadiness && G.board._openReadiness(); });
+  await page3.waitForTimeout(900);
+  const needs = await page3.evaluate(() => {
+    const panel = [...document.querySelectorAll(".panel")].find((p) => { const e = p.querySelector(".eyebrow"); return e && e.textContent.trim() === "Needs Work"; });
+    if (!panel) return null;
+    return [...panel.querySelectorAll("button")].map((b) => ({ cat: ((b.parentElement.querySelector(".stat .k") || {}).textContent || ""), text: b.textContent.trim(), name: (b.getAttribute("aria-label") || b.textContent).trim() }));
+  });
+  const STUTTER2 = /\b(\w+)\s+\1\b/i;
+  const mine = needs && needs.find((n) => n.cat === weakCat.cat);
+  mine ? ok(`"${weakCat.cat}" is listed under Needs Work (button "${mine.text}")`) : bad("Needs Work does not list the seeded weakest category: " + JSON.stringify(needs));
+  if (needs && mine) {
+    const bad2 = needs.filter((n) => STUTTER2.test(n.text) || STUTTER2.test(n.name));
+    bad2.length === 0 ? ok(`no Needs Work button repeats a word back to back (${needs.map((n) => '"' + n.text + '"').join(", ")})`) : bad("Needs Work button label stutters: " + JSON.stringify(bad2));
+    needs.every((n) => n.text.includes(n.cat) && n.name.includes(n.text))
+      ? ok(`each Needs Work button names its category, and its accessible name contains the visible label (e.g. "${mine.name}")`)
+      : bad("Needs Work button names: " + JSON.stringify(needs));
+    await page3.evaluate((cat) => {
+      const panel = [...document.querySelectorAll(".panel")].find((p) => { const e = p.querySelector(".eyebrow"); return e && e.textContent.trim() === "Needs Work"; });
+      [...panel.querySelectorAll("button")].find((b) => (b.parentElement.querySelector(".stat .k") || {}).textContent === cat).click();
+    }, weakCat.cat);
+    await page3.waitForTimeout(1000);
+    const landed = await page3.evaluate(() => { const s = Array.from(document.querySelectorAll(".stat")).find((x) => /This session/.test(x.textContent)); const m = s && ((s.querySelector(".v") || {}).textContent || "").match(/Card \d+\/(\d+)/); return m ? Number(m[1]) : null; });
+    landed === weakCat.total ? ok(`...and the relabelled button still opens Board Drill on exactly that category's ${landed} cards`) : bad(`after the Needs Work button: deck ${landed} vs ${weakCat.total} "${weakCat.cat}" cards`);
+  }
+}
 
 noise.length === 0 ? ok("no console errors/warnings or page errors") : bad(`console noise: ${noise.join(" | ")}`);
 console.log(fails === 0 ? "\nBOARD PILLAR FILTER: all passed" : `\nBOARD PILLAR FILTER: ${fails} failed`);
