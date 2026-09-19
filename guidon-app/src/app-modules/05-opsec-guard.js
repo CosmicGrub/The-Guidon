@@ -280,14 +280,16 @@ window.G = window.G || {};
     // acknowledgement modal would steal those clicks and turn unrelated suites flaky.
     // The guard API remains fully testable, while real interactive launches still see it.
     if (typeof navigator !== "undefined" && navigator.webdriver === true) return;
-    let acknowledged = false;
-    try { acknowledged = localStorage.getItem(ACK_KEY) === "accepted"; } catch (e) {}
+    // Kept through G.db.local like every other small on-device flag: a Guest
+    // or Kiosk session's "I understand" is not remembered for the next
+    // person who opens the app on this device.
+    const acknowledged = G.db.local.get(ACK_KEY) === "accepted";
     if (acknowledged || !G.modal || typeof G.modal.confirm !== "function") return;
     setTimeout(async function () {
       try {
         // Without a title the dialog's heading (and its accessible name) fell back to the generic "Confirm".
         const ok = await G.modal.confirm(DISCLAIMER, { title: "Before you start", okText: "I understand", cancelText: "Not yet" });
-        if (ok) try { localStorage.setItem(ACK_KEY, "accepted"); } catch (e) {}
+        if (ok) G.db.local.set(ACK_KEY, "accepted");
       } catch (e) {}
     }, 250);
   }

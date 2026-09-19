@@ -38,6 +38,16 @@ window.G = window.G || {};
     return Math.abs(h) % 2147483647 || 1;
   }
 
+  // The phone's own notification schedule outlives the app, so it is a place
+  // things get "saved" that G.db never sees. A Guest or Kiosk session saves
+  // nothing (the storage contract, index.html's db section): it must not
+  // leave a notification behind for a reminder that vanishes with the
+  // session, and it must not cancel one the device's real owner is counting
+  // on just because the session hid that reminder from itself.
+  function sessionOnly() {
+    return !!(G.db && G.db.session && G.db.session.active());
+  }
+
   async function checkPermission() {
     const p = plugin();
     if (!p) return "unsupported";
@@ -67,6 +77,7 @@ window.G = window.G || {};
   async function scheduleForReminder(r) {
     const p = plugin();
     if (!p || !r || !r.date) return false;
+    if (sessionOnly()) return false;
     try {
       const s = (G.store && G.store.settings && G.store.settings()) || {};
       if (!s.notifyReminders) return false;
@@ -102,6 +113,7 @@ window.G = window.G || {};
   async function cancelForReminder(reminderId) {
     const p = plugin();
     if (!p) return false;
+    if (sessionOnly()) return false;
     try { await p.cancel({ notifications: [{ id: notifId(reminderId) }] }); return true; }
     catch (e) { return false; }
   }

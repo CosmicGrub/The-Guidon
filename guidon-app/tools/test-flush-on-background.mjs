@@ -32,6 +32,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { openAsOwner } from "./device-storage.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -45,7 +46,10 @@ page.on("console", (m) => { if (m.type() === "error") noise.push(m.text()); });
 page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 
 await page.goto(url, { waitUntil: "load" });
-await dismissOnboarding(page);
+// A real profile, not a Guest session: this suite checks that what it does is
+// still there after a reload, and a Guest session saves nothing (the storage
+// contract - see tools/device-storage.mjs and test-guest-saves-nothing.mjs).
+await openAsOwner(page, url);
 
 async function gotoFullPPW() {
   await page.evaluate(() => { location.hash = "#/board"; });
@@ -85,12 +89,10 @@ await page.evaluate(() => {
 await page.waitForTimeout(150);
 
 await page.reload({ waitUntil: "load" });
-// A reload re-runs onboarding for a guest session (the profile is
-// in-memory only, unlike guidon:ppw:v1 itself, which is real IndexedDB and
-// survives) - dismiss it again, same as the very first page load above,
-// before touching the Points/Full PPW view underneath it (same idiom
-// test-ppw.mjs's own persistence check and test-settings-toggles.mjs both
-// already establish).
+// Under the real profile this suite runs as there is no welcome screen after
+// a reload (a Guest session would show one - and would have saved nothing to
+// check). dismissOnboarding() returns at once in that case; it stays as a
+// guard before touching the Points/Full PPW view.
 await dismissOnboarding(page);
 await gotoFullPPW();
 

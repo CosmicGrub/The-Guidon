@@ -31,6 +31,7 @@
  */
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 import { bootApp, ok, bad, finish, waitForRoute, clickWhenStable, until, expectNoConsoleNoise } from "./testkit.mjs";
+import { OWNER_PROFILE } from "./device-storage.mjs";
 
 const KEY = "guidon:recite:own:v1";
 const TITLE = "Alpha Troop motto";
@@ -40,8 +41,15 @@ const MARKER = "carry the load together";
 // The listener goes on before the page navigates, so "no request left the
 // page at any point" covers the app's own start-up too.
 const outside = [];
+// A real profile, not a Guest session: this suite checks that what it does is
+// still there after a reload, and a Guest session now saves nothing by design
+// (the storage contract - see tools/device-storage.mjs and
+// test-guest-saves-nothing.mjs). bootApp's own seeded-profile path (a plain
+// object for `profile`) does the same seed-then-reload openAsOwner() would,
+// through the one boot helper every suite shares.
 const { page, noise } = await bootApp({
   viewport: { width: 390, height: 844 },
+  profile: OWNER_PROFILE,
   beforeLoad: ({ page, url }) => { page.on("request", (r) => { if (!r.url().startsWith(url) && !/^(data|blob|about):/.test(r.url())) outside.push(r.url()); }); },
 });
 
@@ -248,8 +256,9 @@ wide <= 0 ? ok("a long unbroken name or word wraps in the list and in every mode
 const longId = (await ownRows())[1].id;
 
 // ---- reload, backup, delete, restore -------------------------------------
-// A guest session shows the welcome screen again on every load (the same
-// reload step tools/test-recite.mjs uses); what was saved is still there.
+// Under the real profile this suite runs as, the app reopens straight into
+// itself and what was saved is still there. (dismissOnboarding() is a no-op
+// then - it returns at once when no welcome screen shows up.)
 await page.reload({ waitUntil: "load" });
 await dismissOnboarding(page);
 await openRecite();

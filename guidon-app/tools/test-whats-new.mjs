@@ -45,6 +45,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { putOnDevice, seedOwnerProfile } from "./device-storage.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -57,20 +58,15 @@ const noise = [];
 page.on("console", (m) => { if (m.type() === "error") noise.push("console: " + m.text()); });
 page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 
+// Both of these put rows ON THE DEVICE, underneath the app
+// (tools/device-storage.mjs), not through G.db: several steps below seed
+// from inside a Guest session, and a Guest session saves nothing - a
+// G.db.put() there only reaches memory and is gone at the next reload.
 async function seedPersonalProfile() {
-  await page.evaluate(async () => {
-    await window.G.db.put("kv", { k: "guidon:profile:v1", v: {
-      onboardingComplete: true, mode: "personal", tier: "E5", rank: "SGT",
-      displayName: "SGT TESTFIRE", lastName: "TESTFIRE", anonymous: false,
-      studyWeakPoints: [], readinessConcerns: [], actionPlan: [], promoPoints: {},
-    } });
-  });
+  await seedOwnerProfile(page);
 }
 async function setWhatsNewSeen(version) {
-  await page.evaluate(async (v) => {
-    if (v === null) { await window.G.db.put("kv", { k: "guidon:whatsnew:v1", v: null }); return; }
-    await window.G.db.put("kv", { k: "guidon:whatsnew:v1", v: { lastSeenVersion: v } });
-  }, version);
+  await putOnDevice(page, { stores: { kv: [{ k: "guidon:whatsnew:v1", v: version === null ? null : { lastSeenVersion: version } }] } });
 }
 async function panelState() {
   return page.evaluate(() => {

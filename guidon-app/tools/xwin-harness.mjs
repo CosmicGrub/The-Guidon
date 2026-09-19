@@ -53,7 +53,7 @@
  *   ENGINE               "webkit" or "chromium", for the suite's header.
  */
 import { chromium, webkit } from "playwright";
-import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { ensureOwner } from "./device-storage.mjs";
 
 export const ENGINE = process.env.PW_BROWSER === "webkit" ? "webkit" : "chromium";
 const engine = ENGINE === "webkit" ? webkit : chromium;
@@ -67,12 +67,13 @@ async function bootPage(context, url, hash, onboardingTimeout) {
   page.on("console", (m) => { if (m.type() === "error") noise.push("console: " + m.text()); });
   page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
   await page.goto(url + hash, { waitUntil: "load" });
-  // Same onboarding dismissal every browser suite uses (test-home-dashboard,
-  // test-progress-cache, perf-routes): a fresh profile shows the overlay and
-  // "Guest Session" is chosen; a second page at the same origin usually
-  // finds the choice already persisted (dismissOnboarding's own alreadyClear
-  // fast path), so its look is short.
-  await dismissOnboarding(page, { timeoutMs: onboardingTimeout });
+  // Both pages run as ONE real profile that is already on the device. They
+  // used to be two Guest sessions - and a Guest session saves nothing (the
+  // storage contract, tools/device-storage.mjs), so page A's writes would
+  // never reach the shared database that page B is supposed to read them
+  // from. The first page finds the welcome screen, puts the profile on the
+  // device and reloads; the second finds the profile already there.
+  await ensureOwner(page, { timeoutMs: onboardingTimeout });
   await page.waitForFunction(
     () => !!(window.G && G.db && G.store && G.routes && G.theme && typeof G.store.settings === "function"),
     null, { timeout: 15000 });

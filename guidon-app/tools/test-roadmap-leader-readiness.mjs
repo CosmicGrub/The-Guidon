@@ -8,6 +8,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { openAsOwner } from "./device-storage.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -22,7 +23,10 @@ page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 
 await page.goto(url, { waitUntil:"load" });
 await page.waitForTimeout(700);
-await dismissOnboarding(page);
+// A real profile, not a Guest session: this suite checks that what it does is
+// still there after a reload, and a Guest session saves nothing (the storage
+// contract - see tools/device-storage.mjs and test-guest-saves-nothing.mjs).
+await openAsOwner(page, url);
 await page.waitForTimeout(250);
 
 const routeTruth = await page.evaluate(() => ({

@@ -100,6 +100,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { openAsOwner } from "./device-storage.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -114,7 +115,10 @@ page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 
 await page.goto(url, { waitUntil: "load" });
 await page.waitForTimeout(700);
-await dismissOnboarding(page);
+// A real profile, not a Guest session: this suite checks that what it does is
+// still there after a reload, and a Guest session saves nothing (the storage
+// contract - see tools/device-storage.mjs and test-guest-saves-nothing.mjs).
+await openAsOwner(page, url);
 await page.waitForTimeout(300);
 
 // Clean slate: this kv row can carry state across runs on a shared profile
@@ -178,7 +182,20 @@ await page.evaluate(() => { window.__preE9Recitable = window.G.store.recitable()
 
 // Real interaction: change the actual Focus tier <select> in Settings, the
 // same control/locator tools/test-settings-toggles.mjs already drives.
+// Under a real profile (see the top of this file) Settings asks before a
+// Focus-tier change, because it also updates the saved rank. Say yes.
+const acceptTierChange = async () => {
+  const box = page.locator(".gm-box button", { hasText: /^Continue$/ });
+  try {
+    await box.waitFor({ state: "visible", timeout: 1500 });
+    await box.click();
+    // The answer only takes effect once the dialog has finished closing.
+    await page.locator(".gm-box").waitFor({ state: "detached", timeout: 3000 });
+    await page.waitForTimeout(250);
+  } catch (e) { /* no question asked: nothing to accept */ }
+};
 await tierSel.selectOption("E9");
+await acceptTierChange();
 await page.waitForTimeout(200);
 const afterE9 = await page.evaluate(() => {
   const list = window.G.store.recitable();
@@ -193,6 +210,7 @@ afterE9.refChanged
 
 // Switch back to "All ranks" - the full set (including creed-7) must return.
 await tierSel.selectOption("all");
+await acceptTierChange();
 await page.waitForTimeout(200);
 const afterAll = await page.evaluate(() => window.G.store.recitable().map((q) => q.id).sort());
 JSON.stringify(afterAll) === JSON.stringify(beforeTierChange)
