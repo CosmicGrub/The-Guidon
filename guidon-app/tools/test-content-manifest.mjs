@@ -274,8 +274,34 @@ try {
   writeFileSync(MANIFEST, JSON.stringify(recorded, null, 2) + "\n", "utf8");
   r = run("--base", BASE);
   check(r.code === 0 && /nothing fell without a recorded reason/.test(r.out), "the same fall WITH a new shrinks entry naming both figures passes", "base recorded: exit " + r.code + "\n" + r.out);
+  // A hand-edited (or honestly mistyped) shrinks entry naming the RIGHT figure
+  // with the WRONG numbers must not pass just because a Set of names doesn't
+  // check them - live-code review on the PR that introduced this ratchet
+  // found exactly this: the real fall is 8 -> 5, a record claiming 8 -> 6
+  // (a smaller, misleading drop) should not "explain" it.
+  const wrongNumbers = JSON.parse(JSON.stringify(noHistory));
+  wrongNumbers.shrinks = [{ date: "2026-09-19", appVersion: null, reason: REASON, drops: [{ figure: "totals.board", from: 8, to: 6 }, { figure: 'board.byCategory["Army Values"]', from: 6, to: 3 }] }];
+  writeFileSync(MANIFEST, JSON.stringify(wrongNumbers, null, 2) + "\n", "utf8");
+  r = run("--base", BASE);
+  check(r.code === 1 && /totals\.board fell from 8 to 5 with no shrinks entry/.test(r.out), "a shrinks entry naming the right figure but the WRONG numbers (claims 8 -> 6; the real fall is 8 -> 5) is NOT accepted as an explanation", "wrong-numbers record: exit " + r.code + "\n" + r.out);
+  check(unrecordedFalls(richer, wrongNumbers).length === 1, "(straight from unrecordedFalls(): the mismatched drop is reported)");
+  // A genuinely multi-step history - recorded honestly across two separate
+  // --allow-shrink commits (8 -> 6, then later 6 -> 5) - IS a real explanation
+  // of the same overall 8 -> 5 fall, and must still pass: the fix walks a
+  // chain of compatible steps, it does not demand one single entry cover the
+  // whole distance.
+  const chained = JSON.parse(JSON.stringify(noHistory));
+  chained.shrinks = [
+    { date: "2026-09-10", appVersion: null, reason: "First reviewed trim of this content", drops: [{ figure: "totals.board", from: 8, to: 6 }] },
+    { date: "2026-09-19", appVersion: null, reason: REASON, drops: [{ figure: "totals.board", from: 6, to: 5 }, { figure: 'board.byCategory["Army Values"]', from: 6, to: 3 }] },
+  ];
+  writeFileSync(MANIFEST, JSON.stringify(chained, null, 2) + "\n", "utf8");
+  r = run("--base", BASE);
+  check(r.code === 0 && /nothing fell without a recorded reason/.test(r.out), "a genuine two-step history (8 -> 6, then 6 -> 5) chains to explain the same real 8 -> 5 fall", "chained record: exit " + r.code + "\n" + r.out);
+  check(unrecordedFalls(richer, chained).length === 0, "(straight from unrecordedFalls(): a valid chain reports no problem)");
   const baseWithHistory = JSON.parse(JSON.stringify(richer)); baseWithHistory.shrinks = [{ date: "2026-01-01", appVersion: null, reason: "An older, already reviewed removal of content", drops: [{ figure: "totals.board", from: 9, to: 8 }] }];
   writeFileSync(BASE, JSON.stringify(baseWithHistory, null, 2) + "\n", "utf8");
+  writeFileSync(MANIFEST, JSON.stringify(recorded, null, 2) + "\n", "utf8");
   r = run("--base", BASE);
   check(r.code === 1 && /history was rewritten/.test(r.out), "an earlier shrinks entry that has gone missing fails: the history only grows", "base rewritten: exit " + r.code + "\n" + r.out);
   check(unrecordedFalls(richer, recorded).length === 0 && unrecordedFalls(richer, noHistory).length === 2, "(the same verdicts straight from unrecordedFalls(): 0 problems when recorded, 2 when not)");

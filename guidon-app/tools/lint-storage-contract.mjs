@@ -239,6 +239,31 @@ for (const s of all) {
   // put("kv", { k: <expr>, ... })
   const rePut = /\.\s*put\s*\(\s*(["'])kv\1\s*,\s*\{\s*k\s*:\s*([^,{}]+?)\s*,/g;
   while ((m = rePut.exec(s.code))) { const k = keyOfExpr(m[2], m.index); if (k && looksLikeKey(k)) note(k, s, m.index); }
+  // putMany("kv", [ {k: <expr>, ...}, {k: <expr>, ...}, ... ]) - a bulk write
+  // (backup restore, a seeded batch) is a supported, commonly used path, and
+  // its rows go through backup export exactly like a single put() row does,
+  // so a key introduced only through putMany needs the same (s3) coverage.
+  // findArrayEnd walks bracket depth (masked code, so a "]"/"[" inside a
+  // string or comment was already blanked) to the array literal's real
+  // closing bracket, so a key expression that itself contains "]" (an
+  // indexed lookup) cannot end the scan early.
+  const findArrayEnd = (code, openIdx) => {
+    let depth = 0;
+    for (let i = openIdx; i < code.length; i++) {
+      if (code[i] === "[") depth++;
+      else if (code[i] === "]") { depth--; if (depth === 0) return i; }
+    }
+    return code.length;
+  };
+  const rePutMany = /\.\s*putMany\s*\(\s*(["'])kv\1\s*,\s*(\[)/g;
+  while ((m = rePutMany.exec(s.code))) {
+    const openIdx = m.index + m[0].length - 1;
+    const end = findArrayEnd(s.code, openIdx);
+    const body = s.code.slice(openIdx, end);
+    const reRow = /\{\s*k\s*:\s*([^,{}]+?)\s*,/g;
+    let rm;
+    while ((rm = reRow.exec(body))) { const k = keyOfExpr(rm[1], openIdx + rm.index); if (k && looksLikeKey(k)) note(k, s, openIdx + rm.index); }
+  }
 }
 const covered = (k) => exact.has(k) || families.some((p) => k.indexOf(p) === 0 || (k.endsWith(":") && p === k));
 // `--list`: print every saved-item key the scan saw, where, and how it is

@@ -57,7 +57,18 @@ window.G = window.G || {};
 
   // The one and only place this ever prompts the OS permission dialog —
   // called from Settings' own toggle, never on boot.
+  //
+  // The OS permission grant outlives the app the same way a scheduled
+  // notification does (see sessionOnly()'s own comment above) - it is a
+  // device-level side effect G.db's session-only layer cannot see or undo.
+  // Refusing here, before the real prompt ever fires, keeps a session's
+  // "nothing is saved" promise true at the OS level too: without this, a
+  // Guest turning the toggle on could grant the permission for real, and if
+  // the device owner's own notifyReminders setting was already true from
+  // before, THEIR next real launch would start scheduling reminders on a
+  // permission a session - not them - had just turned on.
   async function requestPermission() {
+    if (sessionOnly()) return "denied";
     const p = plugin();
     if (!p) return "unsupported";
     try { const r = await p.requestPermissions(); return (r && r.display) || "denied"; }

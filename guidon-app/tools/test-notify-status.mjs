@@ -263,7 +263,58 @@ afterOffStatus && !afterOffStatus.warn && /0 reminders currently scheduled/.test
   : bad("live status did not clear after turning the toggle off: " + JSON.stringify(afterOffStatus));
 
 // ============================================================
-// 5) The document-level visibilitychange listener self-cleans instead of
+// 5) A Guest/Kiosk session never really requests the OS permission.
+//    G.db.session is the storage-contract's session-only layer (Guest and
+//    Kiosk really save nothing, ROADMAP 3g item B): turning the toggle on
+//    there must not leave a lasting device-level side effect either. Before
+//    this fix, requestPermission() had no sessionOnly() guard - only
+//    scheduleForReminder()/cancelForReminder() did - so a session really
+//    could grant the OS permission for real, and if the device owner's OWN
+//    notifyReminders setting was already true, their next real launch could
+//    then start scheduling reminders on a permission a SESSION had granted.
+//    A separate context/page (its own storage) in the SAME browser, same
+//    mocked native shell, so this cannot be confused with the owner
+//    session above.
+// ============================================================
+const guestCtx = await browser.newContext();
+const guestPage = await guestCtx.newPage();
+const guestNoise = [];
+guestPage.on("pageerror", (e) => guestNoise.push("pageerror: " + e.message));
+guestPage.on("console", (m) => { if (m.type() === "error") guestNoise.push("console.error: " + m.text()); });
+await guestCtx.addInitScript(() => {
+  window.__mockPerm = "granted"; // the OS would say yes if really asked
+  window.__requestPermissionsCalls = 0;
+  window.Capacitor = {
+    isNativePlatform: () => true,
+    Plugins: {
+      LocalNotifications: {
+        checkPermissions: async () => ({ display: window.__mockPerm }),
+        requestPermissions: async () => { window.__requestPermissionsCalls++; return { display: window.__mockPerm }; },
+        schedule: async () => ({}),
+        cancel: async () => ({}),
+        getPending: async () => ({ notifications: [] }),
+      },
+    },
+  };
+});
+await guestPage.goto(url, { waitUntil: "load" });
+await dismissOnboarding(guestPage, { mode: "guest" });
+const guestSessionActive = await guestPage.evaluate(() => !!(window.G && G.db && G.db.session && G.db.session.active()));
+guestSessionActive ? ok("the guest page really is a session-only profile (G.db.session.active())") : bad("the guest page did not enter a session-only profile - this section proves nothing");
+const guestResult = await guestPage.evaluate(() => window.G.notify.requestPermission());
+const guestCalls = await guestPage.evaluate(() => window.__requestPermissionsCalls);
+guestResult === "denied"
+  ? ok(`G.notify.requestPermission() returns "denied" in a Guest session without ever asking (got "${guestResult}")`)
+  : bad(`G.notify.requestPermission() under Guest returned "${guestResult}" - it should report "denied" without prompting`);
+guestCalls === 0
+  ? ok("the real OS permission prompt (LocalNotifications.requestPermissions) was never called during the Guest session - no lasting device-level side effect")
+  : bad(`the real OS permission prompt WAS called ${guestCalls} time(s) during a Guest session - this is the leak Codex review flagged on PR #190`);
+const guestRelevantNoise = guestNoise.filter((n) => !/favicon/i.test(n));
+guestRelevantNoise.length === 0 ? ok("no console/page errors in the Guest section") : bad("Guest section console noise: " + guestRelevantNoise.join(" | "));
+await guestCtx.close();
+
+// ============================================================
+// 6) The document-level visibilitychange listener self-cleans instead of
 //    stacking one more every time Settings is visited (this view has no
 //    route-teardown hook - see the comment above onNotifVisible in
 //    src/index.html). Spy on add/removeEventListener("visibilitychange", ...)

@@ -244,9 +244,37 @@ export function unrecordedFalls(base, committed) {
   const problems = [];
   const bs = Array.isArray(base.shrinks) ? base.shrinks : [], cs = Array.isArray(committed.shrinks) ? committed.shrinks : [];
   if (JSON.stringify(cs.slice(0, bs.length)) !== JSON.stringify(bs)) problems.push(`the shrinks history was rewritten: the earlier manifest's ${bs.length} entr${bs.length === 1 ? "y" : "ies"} must still be there, first and unchanged (the history only grows)`);
-  const recorded = new Set();
-  for (const e of cs.slice(bs.length)) for (const d of e.drops || []) recorded.add(d.figure);
-  for (const x of diffFigures(base, committed)) if (x.fell && !recorded.has(x.figure)) problems.push(`${x.figure} fell from ${num(x.from)} to ${x.to === undefined ? "nothing" : num(x.to)} with no shrinks entry recording why - regenerate with: node tools/content-manifest.mjs --write --allow-shrink "<reason>"`);
+  // Group by figure name, in the order the entries were appended, so a
+  // legitimately multi-step history (95 recorded across one commit, then 80
+  // recorded across a later one) can be walked as a chain. A Set of names
+  // alone would let a hand-written record with the RIGHT name but the WRONG
+  // numbers - a live 100 -> 80 "explained" by a record claiming 100 -> 90 -
+  // pass silently; this is the exact gap a live-code reviewer found on the
+  // PR that introduced this ratchet.
+  const dropsByFigure = new Map();
+  for (const e of cs.slice(bs.length)) for (const d of e.drops || []) {
+    if (!dropsByFigure.has(d.figure)) dropsByFigure.set(d.figure, []);
+    dropsByFigure.get(d.figure).push({ from: d.from, to: d.to });
+  }
+  for (const x of diffFigures(base, committed)) {
+    if (!x.fell) continue;
+    const wantTo = x.to === undefined ? 0 : x.to; // a vanished figure is recorded as falling to 0 (see the --write side, and validateManifest's own "to" < "from" check)
+    const steps = dropsByFigure.get(x.figure) || [];
+    // Walk every step whose recorded "from" matches where the chain currently
+    // stands, in the order recorded; a chain "explains" the real fall only if
+    // it starts at the real base value and its last step lands on the real,
+    // live current value - both are ground truth read from the manifests
+    // themselves, so a hand-edited number cannot satisfy this by coincidence.
+    let at = x.from, explained = false, used = new Set();
+    for (let guard = 0; guard < steps.length; guard++) {
+      const i = steps.findIndex((s, idx) => !used.has(idx) && s.from === at);
+      if (i === -1) break;
+      used.add(i);
+      at = steps[i].to;
+      if (at === wantTo) { explained = true; break; }
+    }
+    if (!explained) problems.push(`${x.figure} fell from ${num(x.from)} to ${x.to === undefined ? "nothing" : num(x.to)} with no shrinks entry (or chain of entries) whose recorded numbers actually reach that - regenerate with: node tools/content-manifest.mjs --write --allow-shrink "<reason>"`);
+  }
   return problems;
 }
 

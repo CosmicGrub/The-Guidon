@@ -90,6 +90,17 @@ r.code !== 0 && /\(s3\) saved item planted-family: /.test(r.out)
   ? ok("(s3) a new saved-item FAMILY (put(\"kv\", { k: \"prefix:\" + id })) with no restore check fails too")
   : bad("(s3) planted unchecked family was not caught: exit " + r.code + "\n" + r.out);
 
+// 4b) (s3) a NEW key persisted only through a bulk putMany("kv", [...]) row -
+//     a supported, commonly used path (backup restore does exactly this),
+//     found by a live-code reviewer to slip past a scanner that only read
+//     setSetting() and single-row put(). Two rows in the array, so the same
+//     scan also has to keep going past the first "{...}" instead of stopping
+//     at its first match.
+r = planted((dir) => writeModule(dir, "zz-planted.js", '(function () { function saveAll(rows) { return G.db.putMany("kv", [{ k: "planted:bulk:a", v: 1 }, { k: "planted:bulk:b", v: 2 }]); } G.planted = { saveAll: saveAll }; })();\n'));
+r.code !== 0 && /\(s3\) saved item planted:bulk:a \(app-modules\/zz-planted\.js:1\) has no restore check/.test(r.out) && /\(s3\) saved item planted:bulk:b \(app-modules\/zz-planted\.js:1\) has no restore check/.test(r.out)
+  ? ok("(s3) a new saved item introduced only through putMany(\"kv\", [{k: ...}, {k: ...}]) fails too - both rows in the array are seen")
+  : bad("(s3) planted putMany-only keys were not caught: exit " + r.code + "\n" + r.out);
+
 // 5) (s3) the ratchet: a listed key that gained a check must leave the list
 r = planted((dir) => editIndex(dir, (s) => s.replace('"settings": function (v)', '"boardQuiz:timedMode": function (v) { return typeof v === "boolean"; },\n    "settings": function (v)')));
 r.code !== 0 && /UNCHECKED lists "boardQuiz:timedMode" but it has a restore check now/.test(r.out)
