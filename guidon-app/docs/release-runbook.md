@@ -119,20 +119,30 @@ These are repository settings, not files, so no PR can make them:
 2. Tag rule on `refs/tags/v*`: block update and deletion, so "a version tag is
    permanent" is enforced by GitHub rather than by habit.
 
-## Where things stand (2026-09-19, as v1.12.1 is prepared)
+## Where things stand (2026-09-19, after v1.12.1)
 
-- Tagged: v1.9.0 (complete); v1.10.0 (cut from a commit CI never ran on, with
-  two Windows files only - the signed Android APK/AAB and both fixed-name
-  download files were attached on 2026-09-18, and its CHANGELOG entry was
-  written retroactively with v1.12.1); v1.10.1 (published retroactively on
-  2026-09-18 from its original commit, every platform attached).
-- 1.11.0 and 1.12.0 were version-bumped on main but never cut. The hosted web
-  app did run builds calling themselves 1.11.0 and 1.12.0. Do **not** tag
-  either number: a corrected build under an already-used number would put
-  two different "1.12.0"s in the wild. The owner's decision (2026-09-19) is
-  that v1.12.1 supersedes both; the CHANGELOG records them as
-  "prepared, not released" and their What's New entries stay
-  `released: false`.
-- The in-app download buttons (`#/share`) resolve again: v1.10.0 is Latest and
-  now carries `GUIDON-android.apk` and `GUIDON-windows-setup.exe`. v1.12.1
-  takes Latest only when its finalize step finds it complete.
+- **v1.12.1 is Latest and complete**: every platform file plus both fixed-name
+  download files. It was the first release cut end to end through this
+  runbook. Two things learned doing it:
+  - Run `node guidon-app/tools/lint-release-state.mjs --cut` locally with
+    `.release-prep` in place BEFORE merging the cut. It reads the CHANGELOG
+    heading and the first line under it; an opening paragraph that mentions
+    *other* versions as "never released" reads as this version marking itself
+    unreleased. Open the entry with a plain "Released <date> ..." line.
+  - Step 4 needs no commit. Once the tag exists, run **Release assets** by hand
+    with the tag filled in (and **Release Apple** from main). Attach the locally
+    signed Android files first and the same run finishes the release and marks
+    it Latest, so a separate `finalize_only` run is only needed when the Android
+    files arrive later. The Android build can start from the cut commit while
+    the cut is still waiting on CI: the tag will point at exactly that commit.
+- Earlier tags: v1.9.0 (complete); v1.10.0 (cut from a commit CI never ran on,
+  Windows files only - Android and both fixed-name files attached on
+  2026-09-18, CHANGELOG entry written retroactively); v1.10.1 (published
+  retroactively on 2026-09-18 from its original commit, every platform
+  attached).
+- 1.11.0 and 1.12.0 were version-bumped on main but never cut, and never will
+  be: builds calling themselves 1.11.0 and 1.12.0 ran on the hosted web app, and
+  a corrected build under an already-used number would put two different
+  "1.12.0"s in the wild. v1.12.1 supersedes both; the CHANGELOG records them as
+  "prepared, not released" and their What's New entries stay `released: false`.
+- Full record of why: `GUIDON files/AUDIT-2026-09.md`.
