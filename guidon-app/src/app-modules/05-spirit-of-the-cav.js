@@ -23,6 +23,13 @@
    paste the text themselves, it is stored only on their device, and it is
    never part of the app.
 
+   THE RULE FOR ANY FUTURE TEXT: a bundled record that carries words to
+   recite (lines[] or fullText) must say why GUIDON may reproduce them -
+     rights: { author, firstPublished, basis, evidence, checkedOn }
+   with basis one of "us-gov-work" | "pd-age" | "permission". "A Soldier
+   gave it to us" is not a basis. tools/test-spirit-of-the-cav.mjs enforces
+   it against the assembled content, this file's records included.
+
    IDs: pb-spirit-cav-09-1 / -09-2 are kept from the original release so a
    Soldier's review history on those two facts carries over.
 */

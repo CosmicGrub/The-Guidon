@@ -25,6 +25,9 @@
  *    anywhere in the bank or the Creeds list cites "user-supplied" anything.
  *  - The Creeds page shows the entry with a real source line and points the
  *    Soldier at Recitation Drill's "My unit" section instead of the words.
+ *  - The general rule, so the next unit song cannot arrive the same way: any
+ *    bundled record carrying text to recite must record why GUIDON may
+ *    reproduce it (see "the rights gate" below for the rights{} shape).
  */
 import { chromium } from "playwright";
 import { readFileSync } from "node:fs";
@@ -130,6 +133,56 @@ truth.creed && truth.creed.fullTextLength === 0 && truth.creed.lineCount === 0 &
   truth.creed.status === "unit-tradition" && !truth.creed.linkedBoardId
   ? ok("the Creeds entry is title-and-history only, with a real source and the date it was checked")
   : bad("Creeds entry malformed: " + JSON.stringify(truth.creed));
+
+// ---- 2b. the rights gate: no bundled text without a recorded basis -------
+// The general rule behind this suite (audit recommendation R33). It reads the
+// ASSEMBLED content - the seed plus everything the src/app-modules content
+// files push in at load - because that is where the song came in: the seed
+// lints never see module-delivered records.
+//
+// Any bundled record that carries text to recite (a non-empty lines[] or
+// fullText) must say why GUIDON may reproduce it:
+//   rights: { author, firstPublished, basis, evidence, checkedOn }
+//     basis      "us-gov-work" | "pd-age" | "permission"   ("unknown" fails)
+//     evidence   a citation or address a reviewer can open
+//     checkedOn  YYYY-MM-DD, the day somebody actually checked
+// The ten records below shipped before this rule, all citing an official Army
+// issuing body; they are listed by id so the list cannot quietly grow. A NEW
+// text needs a rights record - it does not get added here. (A Soldier's own
+// "My unit" text is not bundled, so it is outside this gate by construction:
+// tools/test-recite-user-text.mjs proves it never enters this content.)
+const SHIPPED_BEFORE_THE_RULE = ["creed-4", "creed-5", "creed-7", "creed-soldiers", "creed-nco", "creed-ranger", "creed-army-values",
+  "creed-night-stalker", "creed-combat-medic", "creed-cadet"];
+const rightsGate = await page.evaluate((grandfathered) => {
+  const BASES = ["us-gov-work", "pd-age", "permission"];
+  const str = (v) => typeof v === "string" && v.trim().length > 0;
+  const validRights = (r) => !!r && typeof r === "object" && str(r.author) && str(r.firstPublished) && BASES.indexOf(r.basis) !== -1 &&
+    str(r.evidence) && /^\d{4}-\d{2}-\d{2}$/.test(r.checkedOn || "");
+  const carriesText = (rec) => (Array.isArray(rec.lines) && rec.lines.length > 0) || str(rec.fullText);
+  const needsRights = (rec) => carriesText(rec) && !validRights(rec.rights) && grandfathered.indexOf(rec.id) === -1;
+  const seed = window.GUIDON_SEED;
+  const all = (seed.board.questions || []).map((r) => ({ where: "board", r })).concat((seed.creeds || []).map((r) => ({ where: "creeds", r })));
+  return {
+    textRecords: all.filter((x) => carriesText(x.r)).length,
+    offenders: all.filter((x) => needsRights(x.r)).map((x) => x.where + ":" + x.r.id),
+    // The rule itself, tried on made-up records, so a typo that makes it
+    // accept everything cannot hide behind today's clean content.
+    selfCheck: {
+      noRights: needsRights({ id: "zz-1", lines: ["a line"] }),
+      unknownBasis: needsRights({ id: "zz-2", fullText: "text", rights: { author: "A", firstPublished: "1950", basis: "unknown", evidence: "x", checkedOn: "2026-09-19" } }),
+      noDate: needsRights({ id: "zz-3", fullText: "text", rights: { author: "A", firstPublished: "1950", basis: "permission", evidence: "letter on file" } }),
+      complete: needsRights({ id: "zz-4", fullText: "text", rights: { author: "U.S. Army", firstPublished: "2003", basis: "us-gov-work", evidence: "TC 7-22.7", checkedOn: "2026-09-19" } }),
+      titleOnly: needsRights({ id: "zz-5", fullText: "", lines: [] }),
+    },
+  };
+}, SHIPPED_BEFORE_THE_RULE);
+rightsGate.textRecords > 0 && rightsGate.offenders.length === 0
+  ? ok("every bundled text to recite (" + rightsGate.textRecords + " records, seed and content files together) either predates the rule by id or records why GUIDON may reproduce it")
+  : bad("bundled text with no recorded rights basis: " + JSON.stringify(rightsGate.offenders) + " (" + rightsGate.textRecords + " text records seen)");
+const sc = rightsGate.selfCheck;
+sc.noRights === true && sc.unknownBasis === true && sc.noDate === true && sc.complete === false && sc.titleOnly === false
+  ? ok("the rule rejects text with no rights record, an \"unknown\" basis or no check date, and accepts a complete record or a title-only entry")
+  : bad("the rights rule itself is wrong: " + JSON.stringify(sc));
 
 // ---- 3. what the Soldier actually sees --------------------------------
 await page.evaluate(() => { location.hash = "#/creeds"; });
