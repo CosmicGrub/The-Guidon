@@ -214,6 +214,10 @@ try {
   afterToggle.hit && afterToggle.value.value !== "All" && afterToggle.value.ticked.length === 2 && afterToggle.value.ticked.every(inPicks)
     ? ok("switching to Mock Board Live redraws the screen and the picker still shows Custom mix with both boxes ticked")
     : bad("picker after the mode toggle: " + JSON.stringify(afterToggle.value));
+  const boardSum = await text(H, ".sg-custom-summary");
+  boardSum === "2 categories picked - " + DECK_N + " cards to deal this board from."
+    ? ok("in Mock Board Live the same count is worded as what it is there: \"" + boardSum + "\"")
+    : bad("summary line in Mock Board Live: " + JSON.stringify(boardSum));
   const focusAfterToggle = await H.evaluate(() => document.activeElement && document.activeElement !== document.body);
   focusAfterToggle ? ok("the redraw did not drop keyboard focus to <body>") : bad("focus fell to <body> after the mode toggle");
   await H.evaluate(() => [...document.querySelectorAll(".sg-view .segmented button")].find((b) => b.textContent.trim() === "Rapid-Fire relay").click());

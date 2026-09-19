@@ -1468,8 +1468,10 @@
       function summarize(aloud) {
         var n = rt.ui.categories.length, cards = 0;
         rt.ui.categories.forEach(function (c) { cards += counts[c] || 0; });
+        /* A relay round plays the whole deck; a board deals only "Cards" of
+           them - so the same count is worded as what it is in each mode. */
         var text = n
-          ? n + (n === 1 ? " category" : " categories") + " picked - " + cards + (cards === 1 ? " card" : " cards") + " in this room's deck."
+          ? n + (n === 1 ? " category" : " categories") + " picked - " + cards + (cards === 1 ? " card" : " cards") + (rt.ui.mode === "board" ? " to deal this board from." : " in this room's deck.")
           : "No categories picked yet - pick at least one, or this room uses every category.";
         summary.textContent = text;
         if (aloud) say(text);
