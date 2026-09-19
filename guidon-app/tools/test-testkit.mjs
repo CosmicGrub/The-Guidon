@@ -85,7 +85,16 @@ const throws = async (fn) => { try { await fn(); return null; } catch (e) { retu
    2. bootApp / openSession against the real built app.
    ===================================================================== */
 const headless = assembleBank();
-const boot = await bootApp({ viewport: { width: 1100, height: 800 }, seedKv: { "testkit:probe": { hello: "from before boot" } } });
+const requested = [];
+const boot = await bootApp({
+  viewport: { width: 1100, height: 800 },
+  seedKv: { "testkit:probe": { hello: "from before boot" } },
+  beforeLoad: async ({ page, url }) => {
+    page.on("request", (r) => requested.push(r.url()));
+    await page.addInitScript(() => { window.__testkitInit = typeof window.G; });
+    requested.push("beforeLoad saw " + url + " at " + page.url());
+  },
+});
 const { page, noise } = boot;
 
 {
@@ -100,6 +109,10 @@ const { page, noise } = boot;
   check(state.width === 1100, "the viewport asked for is the viewport the page has", () => "innerWidth " + state.width);
   check(boot.browser && boot.context && boot.server && /^http:\/\/127\.0\.0\.1:\d+\/$/.test(boot.url) && Array.isArray(noise),
     "bootApp() hands back { browser, context, page, server, url, noise }", () => Object.keys(boot).join(","));
+
+  const init = await page.evaluate(() => window.__testkitInit);
+  check(requested[0] === "beforeLoad saw " + boot.url + " at about:blank" && requested[1] === boot.url && init === "undefined",
+    "beforeLoad() runs before the page navigates: its listener sees the very first request, and its init script runs before any app code", () => JSON.stringify({ first: requested.slice(0, 2), init }));
 
   const again = await throws(() => bootApp());
   check(again && /ONE browser/.test(again) && /openSession/.test(again), "a second bootApp() in the same suite is refused and points at openSession()", () => String(again));

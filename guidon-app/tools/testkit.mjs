@@ -149,7 +149,10 @@ const DEFAULT_ENTRY = { dist: "guidon-standalone.html" };
  *   seedKv:  { key: value } | [{ k, v }]  rows for the "kv" store
  *
  * Other options: entry (file inside dir; dist/ defaults to the standalone
- * file), noiseLevels, noiseTag, contextOptions, launchOptions.
+ * file), noiseLevels, noiseTag, contextOptions, launchOptions, and
+ * beforeLoad({ page, context, url }) - called after the page exists and
+ * BEFORE it navigates, for a request listener that must not miss the first
+ * request, an addInitScript, or a CDP session.
  */
 export async function bootApp(opts = {}) {
   if (active) {
@@ -196,12 +199,15 @@ async function serverFor(dir, entry) {
  * one-browser rule. Pass `noise: boot.noise` to keep collecting into the
  * one array.
  */
-export async function openSession({ dir = "web", entry, viewport, profile = "guest", seedKv = null, noise, noiseLevels = ["error", "warning"], noiseTag = "", contextOptions = {} } = {}) {
+export async function openSession({ dir = "web", entry, viewport, profile = "guest", seedKv = null, noise, noiseLevels = ["error", "warning"], noiseTag = "", contextOptions = {}, beforeLoad = null } = {}) {
   if (!active || active.closed) throw new Error("testkit.openSession(): call bootApp() first");
   const { server, url } = await serverFor(dir, entry);
   const context = await active.browser.newContext(Object.assign({}, viewport ? { viewport } : {}, contextOptions));
   const page = await context.newPage();
   const into = captureNoise(page, { levels: noiseLevels, tag: noiseTag, into: noise || [] });
+  // The suite's chance to listen from the very first request, add an init
+  // script, or open a CDP session - before anything has loaded.
+  if (beforeLoad) await beforeLoad({ page, context, url });
   await page.goto(url, { waitUntil: "load" });
 
   const rows = kvRows(seedKv);
