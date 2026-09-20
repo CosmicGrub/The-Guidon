@@ -25094,23 +25094,41 @@ window.G = window.G || {};
   ];
 
   // ── PRT sessions (ATP 7-22.02) — the two you may be assigned at BLC ──
-  const PD = ["Bend & reach","Rear lunge","High jumper","Rower","Squat bender",
-              "Windmill","Forward lunge","Prone row","Bent-leg body twist","Push-up"];
+  // Content-integrity check (roadmap audit, 2026-09-20): PD's ten names below
+  // are exactly window.GUIDON_SEED.prt.drills' "pd" entry's own exercise
+  // names, which carry a full per-exercise startingPosition/
+  // movementDescription transcription verified against ATP 7-22.02
+  // (tools/lint-prt-sources.mjs gates that record) - confirmed by hand, and
+  // corrected here to match that record's exact spelling/capitalization
+  // (was "Bend & reach", "High jumper", "Push-up", etc. - the same ten
+  // exercises, but not a literal match). The other seven blocks' exercise
+  // names (SSD/CD1/CD2/HSD/MMD1/MMD2/RD) are cross-referenced against the
+  // same source and believed accurate, but GUIDON has not done that same
+  // per-exercise citation pass on them - they have no seed.prt.drills
+  // record, exactly like app-modules/pt-planner.js's own PRT_PENDING_DRILLS
+  // map already says for these same drill IDs. PRT_UNVERIFIED_IDS (below)
+  // drives the "(content pending)" tag prtDrill() draws onto those seven
+  // blocks, so this screen and PT Planner's own session-block summary never
+  // disagree about which drills are verified.
+  const PD = ["Bend and Reach","Rear Lunge","High Jumper","Rower","Squat Bender",
+              "Windmill","Forward Lunge","Prone Row","Bent-Leg Body Twist","Push-Up"];
   const RD = ["Overhead arm pull","Rear lunge","Extend and flex","Thigh stretch",
               "Single-leg over","Groin stretch","Calf stretch","Hamstring stretch"];
+  // Matches app-modules/pt-planner.js's PRT_PENDING_DRILLS keys exactly.
+  const PRT_UNVERIFIED_IDS = new Set(["ssd","cd1","cd2","hsd","mmd1","mmd2","rd"]);
   const PRT = {
     strength: { label:"Strength & Mobility Session", blocks:[
-      { n:"Preparation Drill (PD)", items:PD },
-      { n:"Shoulder Stability Drill (SSD)", items:["I raise","T raise","Y raise","L raise","W raise"] },
-      { n:"Conditioning Drill 1 (CD 1)", items:["Power jump","V-up","Mountain climber","Leg-tuck and twist","Single-leg push-up"] },
-      { n:"Conditioning Drill 2 (CD 2)", items:["Turn and lunge","Supine bicycle","Half jacks","Swimmer","8-count push-up"] },
-      { n:"Recovery Drill (RD)", items:RD } ] },
+      { id:"pd",   n:"Preparation Drill (PD)", items:PD },
+      { id:"ssd",  n:"Shoulder Stability Drill (SSD)", items:["I raise","T raise","Y raise","L raise","W raise"] },
+      { id:"cd1",  n:"Conditioning Drill 1 (CD 1)", items:["Power jump","V-up","Mountain climber","Leg-tuck and twist","Single-leg push-up"] },
+      { id:"cd2",  n:"Conditioning Drill 2 (CD 2)", items:["Turn and lunge","Supine bicycle","Half jacks","Swimmer","8-count push-up"] },
+      { id:"rd",   n:"Recovery Drill (RD)", items:RD } ] },
     endurance: { label:"Endurance & Mobility Session", blocks:[
-      { n:"Preparation Drill (PD)", items:PD },
-      { n:"Hip Stability Drill (HSD)", items:["Lateral leg raise","Medial leg raise","Bent-leg lateral raise","Single-leg tuck","Single-leg over"] },
-      { n:"Military Movement Drill 1 (MMD 1)", items:["Verticals","Laterals","Shuttle sprint"] },
-      { n:"Military Movement Drill 2 (MMD 2)", items:["Power skip","Crossovers","Crouch run"] },
-      { n:"Recovery Drill (RD)", items:RD } ] }
+      { id:"pd",   n:"Preparation Drill (PD)", items:PD },
+      { id:"hsd",  n:"Hip Stability Drill (HSD)", items:["Lateral leg raise","Medial leg raise","Bent-leg lateral raise","Single-leg tuck","Single-leg over"] },
+      { id:"mmd1", n:"Military Movement Drill 1 (MMD 1)", items:["Verticals","Laterals","Shuttle sprint"] },
+      { id:"mmd2", n:"Military Movement Drill 2 (MMD 2)", items:["Power skip","Crossovers","Crouch run"] },
+      { id:"rd",   n:"Recovery Drill (RD)", items:RD } ] }
   };
 
   // ── 1009S information brief rubric (100 points) ──
@@ -25324,8 +25342,10 @@ window.G = window.G || {};
       // DRILLS "prt" blurb comment above - was "DA Form 2977", corrected to DD Form 2977.
       p.appendChild(el("div.feedback.warn", { text:
         "Bring a complete hard copy of the DD Form 2977 Deliberate Risk Assessment Worksheet and brief the overall risk level to the squad \u2014 those are scored steps before a single exercise happens. Each step is all-or-nothing; 70 to pass." }));
+      p.appendChild(el("p.hint", { style:"margin-top:6px", text:
+        "Preparation Drill (PD) is verified word-for-word against ATP 7-22.02 (see #/prt). Blocks marked \u201c(content pending)\u201d list the same doctrinal sequence and exercise names, cross-checked against ATP 7-22.02, but have not yet had that same per-exercise citation pass \u2014 use them as a sequence reference, not a substitute for the source ATP." }));
       const seg = el("div.segmented", { style:"margin:8px 0" });
-      const listBox = el("div");
+      const listBox = el("div", { "data-prt-drill-blocks":"1" });
       p.appendChild(seg); p.appendChild(listBox); stage.appendChild(p);
       function draw() {
         util.clear(seg); util.clear(listBox);
@@ -25336,7 +25356,8 @@ window.G = window.G || {};
           seg.appendChild(b);
         });
         PRT[which].blocks.forEach(bl => {
-          listBox.appendChild(el("div.ob-plan-label", { text: bl.n, style:"margin-top:10px" }));
+          const label = bl.n + (PRT_UNVERIFIED_IDS.has(bl.id) ? " (content pending)" : "");
+          listBox.appendChild(el("div.ob-plan-label", { text: label, style:"margin-top:10px" }));
           const ul = el("ul", { style:"margin:4px 0 0 18px" });
           bl.items.forEach(x => ul.appendChild(el("li", { text: x, style:"margin:2px 0" })));
           listBox.appendChild(ul);
@@ -26184,7 +26205,11 @@ window.G = window.G || {};
     G.ext.run("drills:rendered", mount);
   }
 
-  G.drills = { render };
+  // _PRT / _PRT_UNVERIFIED_IDS: pure data, exported for tests (same
+  // convention as app-modules/pt-planner.js's own underscore-prefixed
+  // exports) - lets a suite confirm prtDrill()'s verified/pending tagging
+  // without re-deriving PRT's content by scraping rendered DOM text.
+  G.drills = { render, _PRT:PRT, _PRT_UNVERIFIED_IDS:Array.from(PRT_UNVERIFIED_IDS) };
 })();
 // END drills.js
 
