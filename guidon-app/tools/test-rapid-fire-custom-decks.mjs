@@ -21,6 +21,7 @@ import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 import { loadManifest } from "./content-manifest.mjs";
+import { clickButtonByText } from "./testkit.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -42,24 +43,14 @@ await page.waitForTimeout(300);
 // behind shouldn't change this file's own counts.
 await page.evaluate(() => window.G.db.setSetting("rapidFire:savedDecks", []));
 
-async function clickButtonByText(text, scopeSel) {
-  return page.evaluate(({ text, scopeSel }) => {
-    const scope = scopeSel ? document.querySelector(scopeSel) : document;
-    if (!scope) return false;
-    const btn = [...scope.querySelectorAll("button")].find((b) => b.textContent.trim() === text);
-    if (!btn) return false;
-    btn.click();
-    return true;
-  }, { text, scopeSel });
-}
 async function openRapidFireSetup() {
   await page.evaluate(() => { location.hash = "#/home"; });
   await page.waitForTimeout(200);
   await page.evaluate(() => { location.hash = "#/board"; });
   await page.waitForTimeout(400);
-  await clickButtonByText("Board Drill");
+  await clickButtonByText(page, "Board Drill");
   await page.waitForTimeout(150);
-  await clickButtonByText("Rapid Fire");
+  await clickButtonByText(page, "Rapid Fire");
   await page.waitForFunction(
     () => [...document.querySelectorAll(".segmented button")].some((b) => b.textContent.trim() === "Party"),
     { timeout: 30000 }
@@ -108,7 +99,7 @@ await openRapidFireSetup();
 // the counts below to whatever band the guest profile maps to. Switched to
 // "All difficulties" so this file's own category-only assertions stay
 // isolated from that separate, already-covered feature.
-await clickButtonByText("All difficulties");
+await clickButtonByText(page, "All difficulties");
 await page.waitForTimeout(150);
 const pickerHiddenBefore = await page.evaluate(() => {
   const box = document.querySelector(".rf-custom-decks");
@@ -175,10 +166,10 @@ const twoCatSum = aftCount + counselCount;
 
 // ==================== a custom-mix round actually only draws from the checked categories ====================
 console.log("\n-- starting a round with this custom mix only ever draws AFT/Counseling cards --");
-await clickButtonByText("Start Round");
+await clickButtonByText(page, "Start Round");
 await page.waitForTimeout(250);
 if (await page.evaluate(() => !!document.querySelector(".rf-explainer"))) {
-  await clickButtonByText("Got it — let's go");
+  await clickButtonByText(page, "Got it — let's go");
   await page.waitForTimeout(250);
 }
 await page.waitForTimeout(200);
@@ -195,16 +186,16 @@ const onlyKnownCats = [...seenCategories].every((c) => c === "Army Fitness Test 
 onlyKnownCats && seenCategories.size > 0
   ? ok(`every card drawn across 10 passes came from the custom mix only: ${JSON.stringify([...seenCategories])}`)
   : bad("categories seen during the custom-mix round: " + JSON.stringify([...seenCategories]));
-await clickButtonByText("End Round");
+await clickButtonByText(page, "End Round");
 await page.waitForTimeout(200);
 
 // ==================== Select all / Clear all ====================
 console.log("\n-- 'Select all' and 'Clear all' really (de)select every checkbox --");
-await clickButtonByText("New Deck");
+await clickButtonByText(page, "New Deck");
 await page.waitForTimeout(300);
 await selectCustomMix();
 await page.waitForTimeout(200);
-await clickButtonByText("Select all");
+await clickButtonByText(page, "Select all");
 await page.waitForTimeout(150);
 const allChecked = await page.evaluate(() => [...document.querySelectorAll(".rf-custom-list input[type=checkbox]")].every((cb) => cb.checked));
 allChecked ? ok("'Select all' checks every real category checkbox") : bad("'Select all' left some checkboxes unchecked");
@@ -213,7 +204,7 @@ new RegExp("^" + checkboxCount + " categories selected\\.$").test(hint || "")
   ? ok(`hint updates to "${checkboxCount} categories selected." after Select all`)
   : bad('hint after Select all: ' + JSON.stringify(hint));
 
-await clickButtonByText("Clear all");
+await clickButtonByText(page, "Clear all");
 await page.waitForTimeout(150);
 const noneChecked = await page.evaluate(() => [...document.querySelectorAll(".rf-custom-list input[type=checkbox]")].every((cb) => !cb.checked));
 noneChecked ? ok("'Clear all' unchecks every checkbox") : bad("'Clear all' left some checkboxes checked");
@@ -224,7 +215,7 @@ await checkCategory("Army Fitness Test (AFT)", true);
 await checkCategory("Counseling (ATP 6-22.1)", true);
 await page.waitForTimeout(150);
 await page.evaluate(() => { const i = document.querySelector('input[aria-label="New deck name"]'); i.value = "Fitness + Counseling"; i.dispatchEvent(new Event("input", { bubbles: true })); });
-await clickButtonByText("Save this deck");
+await clickButtonByText(page, "Save this deck");
 await page.waitForTimeout(250);
 
 const persistedDecks = await page.evaluate(async () => window.G.db.getSetting("rapidFire:savedDecks", []));
@@ -236,7 +227,7 @@ const savedChipVisible = await page.evaluate(() => [...document.querySelectorAll
 savedChipVisible ? ok('a "Fitness + Counseling (2)" chip appears in the Saved decks row, showing its own category count') : bad("saved-deck chip not found after saving");
 
 // Leave and come back — the saved deck must survive a real re-render, not just live in this render's own closure.
-await clickButtonByText("New Deck");
+await clickButtonByText(page, "New Deck");
 await page.waitForTimeout(300);
 await openRapidFireSetup();
 await selectCustomMix();

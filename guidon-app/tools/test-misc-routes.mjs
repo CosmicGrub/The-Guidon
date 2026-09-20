@@ -338,6 +338,13 @@ countText2 === "3 results"
 // the newly integrated MOS-specific board curriculum. The test derives the
 // expected result count from the rendered hits instead of freezing the old
 // pre-curriculum assumption that 92A could only exist in the MOS database.
+// ROADMAP 3g item G: the board half of that curriculum is hidden by default
+// now - this suite runs as a Guest session (no profile.mos), so without an
+// explicit opt-in store.boardQuestions() would serve zero 92A cards and the
+// "Board Questions" section below would never appear. Session-only storage
+// (Guest saves nothing - see the storage contract), so the in-memory setting
+// change is enough; no reload happens anywhere in this file.
+await page.evaluate(() => G.mosDecks && G.mosDecks.setOptedIn && G.mosDecks.setOptedIn("92A", true));
 await page.evaluate(() => { location.hash = "#/search"; });
 await page.waitForTimeout(500);
 const searchInput3 = page.locator('input[aria-label="Global search"]');
@@ -400,16 +407,16 @@ sectionHeadings.length === 12
   : bad(`#/privacy rendered ${sectionHeadings.length} section headings, expected 12: ${JSON.stringify(sectionHeadings)}`);
 
 const rosterSection = await page.evaluate(() => {
-  const h3 = [...document.querySelectorAll(".panel h3")].find((h) => /squad roster gets extra protection/i.test(h.textContent || ""));
+  const h3 = [...document.querySelectorAll(".panel h3")].find((h) => /squad roster and risk worksheet get extra protection/i.test(h.textContent || ""));
   if (!h3) return null;
   const panel = h3.closest(".panel");
   return [...panel.querySelectorAll("p")].map((p) => p.textContent).join(" ");
 });
 rosterSection
-  ? (/excluded by default/i.test(rosterSection) && /explicit opt-in/i.test(rosterSection)
-      ? ok('#/privacy: "The squad roster gets extra protection" section states the real backup-exclusion behavior (excluded by default, explicit opt-in to include)')
+  ? (/excluded by default/i.test(rosterSection) && /explicit.*opt-in/i.test(rosterSection)
+      ? ok('#/privacy: "The squad roster and Risk Worksheet get extra protection" section states the real backup-exclusion behavior (excluded by default, explicit opt-in to include)')
       : bad(`#/privacy: squad roster section text did not match expected claims: "${rosterSection}"`))
-  : bad('#/privacy: "The squad roster gets extra protection" section not found');
+  : bad('#/privacy: "The squad roster and Risk Worksheet get extra protection" section not found');
 
 const contactSection = await page.evaluate(() => {
   const h3 = [...document.querySelectorAll(".panel h3")].find((h) => /^Contact$/i.test((h.textContent || "").trim()));

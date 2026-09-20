@@ -107,7 +107,7 @@ window.G = window.G || {};
     priv.appendChild(el("p.hint", { text:
       "If this device is shared, issued, or you are about to hand it to someone, clear the roster." }));
     priv.appendChild(el("p.hint", { text:
-      "The roster is deliberately LEFT OUT of GUIDON backup files, so exporting your study data will not quietly carry other people's information with it. That also means it does not follow you to a new device - if you replace this one, you re-enter it." }));
+      "The roster is LEFT OUT of GUIDON backup files by default, so exporting your study data will not quietly carry other people's information with it. Moving to a new device? Backup & restore has an \"include the leader roster and any saved Risk Worksheets\" checkbox next to Export backup - check it only for that export, then leave it unchecked again." }));
     mount.appendChild(priv);
 
     // Roadmap audit round 4, "Accessibility: missing accessible names, live

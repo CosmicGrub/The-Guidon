@@ -557,3 +557,58 @@ export async function liveCount(page, { kind = "board", category = null, scope =
   }
   return res.n;
 }
+
+/* ---------------------------------------------------------------------
+   clickButtonByText / clickButtonStartingWith
+   --------------------------------------------------------------------- */
+/**
+ * The Rapid Fire test family (test-rapid-fire*.mjs, 6 files) each carried an
+ * identical, unguarded copy of this helper - a single page.evaluate() that
+ * looks for the button ONCE and returns false if it isn't there yet. Every
+ * one of this session's recurring CI-only "Team mode button was not
+ * available" / similar failures traced back to exactly this: the helper
+ * fires the instant it's called, with no wait for the target screen to
+ * finish rendering, and a 2-vCPU CI runner under the 4-suites-per-chunk
+ * Chromium contention this repo already documents elsewhere takes far
+ * longer to paint a fresh screen than a local laptop - so a call that always
+ * succeeds locally can lose that race in CI. It reproduced 0/6 times across
+ * 6 local runs and failed on CI 3 separate times across 3 unrelated PRs
+ * before this fix - a textbook "waitForFunction needs more patience, not a
+ * new fix" case, except the old helper had NO patience at all, not just too
+ * little.
+ *
+ * These shared, POLLING versions replace all 6 files' local copies: wait
+ * (via until(), the same house pattern waitForRoute/clickWhenStable use) for
+ * a matching, non-disabled button to exist before clicking it, so a slow
+ * render is outlived instead of raced. Same call shape as before (text /
+ * prefix, optional scopeSel) plus the `page` these top-level exports need
+ * explicitly instead of inheriting a module-scoped variable.
+ */
+export async function clickButtonByText(page, text, scopeSel, { timeout = PATIENCE_MS } = {}) {
+  await until(page, ({ text, scopeSel }) => {
+    const scope = scopeSel ? document.querySelector(scopeSel) : document;
+    if (!scope) return false;
+    const btn = [...scope.querySelectorAll("button")].find((b) => b.textContent.trim() === text);
+    return !!(btn && !btn.disabled && btn.getAttribute("aria-disabled") !== "true");
+  }, { text, scopeSel }, { timeout });
+  return page.evaluate(({ text, scopeSel }) => {
+    const scope = scopeSel ? document.querySelector(scopeSel) : document;
+    if (!scope) return false;
+    const btn = [...scope.querySelectorAll("button")].find((b) => b.textContent.trim() === text);
+    if (!btn) return false;
+    btn.click();
+    return true;
+  }, { text, scopeSel });
+}
+export async function clickButtonStartingWith(page, prefix, { timeout = PATIENCE_MS } = {}) {
+  await until(page, (prefix) => {
+    const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim().startsWith(prefix));
+    return !!(btn && !btn.disabled && btn.getAttribute("aria-disabled") !== "true");
+  }, prefix, { timeout });
+  return page.evaluate((prefix) => {
+    const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim().startsWith(prefix));
+    if (!btn) return false;
+    btn.click();
+    return true;
+  }, prefix);
+}

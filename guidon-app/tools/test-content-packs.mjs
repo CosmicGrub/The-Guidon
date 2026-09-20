@@ -40,6 +40,20 @@ page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 await page.goto(url, { waitUntil: "load" });
 await page.waitForFunction(() => window.G && G.contentPacks && G.contentPacks.finalized, null, { timeout: 15000 }).catch(() => {});
 
+// ROADMAP 3g item G: store.boardQuestions() now hides a MOS-tagged card
+// (92A today) by default - see its own comment in src/index.html - so it
+// no longer equals the raw assembled bank for a Soldier with no MOS on
+// their profile and nothing opted into. This suite is about a DIFFERENT
+// invariant ("the store and the headless assembler are the same bank"),
+// so every registered MOS deck is opted into first (data-driven via
+// G.mosDecks.available(), never a hardcoded "92A") to restore the
+// no-filtering baseline the comparison below actually needs.
+await page.evaluate(() => {
+  if (window.G && G.mosDecks && G.mosDecks.available && G.mosDecks.setOptedIn) {
+    G.mosDecks.available().forEach((d) => G.mosDecks.setOptedIn(d.code, true));
+  }
+});
+
 const live = await page.evaluate(() => {
   const S = window.GUIDON_SEED;
   return {

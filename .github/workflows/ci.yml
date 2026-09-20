@@ -691,6 +691,8 @@ jobs:
             tests: "test:new-suite-scaffold test:content-manifest test:live-content-figures test:guest-saves-nothing"
           - name: "54-backupnewtools-storagecontractlint-cyberfundamentals-drillsprtsourcing"
             tests: "test:backup-new-tools test:storage-contract-lint test:cyber-fundamentals test:drills-prt-sourcing"
+          - name: "55-mosdecks"
+            tests: "test:mos-decks"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
