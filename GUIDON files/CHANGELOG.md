@@ -2,6 +2,20 @@
 
 All notable changes to GUIDON will be documented in this file. Format loosely follows [Keep a Changelog](http://keepachangelog.com/). This is the technical record for developers - the app itself shows a short, plain-language summary of each release to Soldiers directly (G.whatsNew, src/index.html), not this file.
 
+## 2026-09-20 - v1.13.0: Cybersecurity Fundamentals, a safer backup, and ROADMAP 3g Wave 1
+
+Released 2026-09-20 for every platform.
+
+**Content.** New "Cybersecurity Fundamentals" module (`src/app-modules/07-cyber-fundamentals.js`, ROADMAP 3g/OPSEC-audit scoped): 35 board cards, 13 new/expanded dictionary terms and a 16-question knowledge check across 8 topics the existing Cybersecurity & OPSEC module didn't cover - malicious code and ransomware, insider threat, AI-enabled social engineering and deepfakes, telework/mobile security, IoT, SCIF/PED handling, Zero Trust and password hygiene, and secure generative-AI tool use. Every card was independently fact-checked against a second research pass before shipping. Renders as a second, clearly-labeled section on the existing `#/cyber-opsec` route rather than a new nav item, wrapping `G.opsec.render` under the module manifest's `patches` contract.
+
+**OPSEC/legal audit (`GUIDON files/AUDIT-2026-09.md`).** A 12-agent audit of the app's bundled content, citations, and OPSEC-guard coverage found the core design holds up (every existing citation still current, zero UCMJ-violation-rewarded scenarios, a clean icon). Fixed: two personal names removed from the Transition/ETS module (one plausibly matching a real, identifiable person); five stale or wrong regulatory citations corrected (a cancelled CUI manual, a 22-years-stale AR 380-5 date, a wrong-instrument-type-and-topic DoDD/DoDI 5240.06 mixup); the Risk Worksheet's synthetic-only warning now renders before the quick-start templates instead of after, and its saved record is excluded from normal backups by default; the privacy policy's roster wording corrected to match the roster tool's actual initials/callsign/roster-number-only guidance. Open items needing the owner's own JAG/chain-of-command review (an Army-trademark-in-branding question, the Department of the Army seal on bundled reference PDFs, OPSEC-screening scope) are recorded in `GUIDON_COMMAND_LEGAL_PACKAGE.md`, not decided here.
+
+**Backup.** Exporting a backup now offers a reachable "include the leader roster and any saved Risk Worksheets" checkbox next to both Export backup buttons (Profile view and Settings), off by default - closing a gap where excluding that data from backups (this release) had left no way to actually carry it to a new device. The import confirmation now names private rows (roster, Risk Worksheets) in plain words before a restore is committed, and neither the export-count nor the import-disclosure treats an emptied roster or worksheet store as real omitted data.
+
+**ROADMAP 3g Wave 1** (`GUIDON files/ROADMAP.md` section 3g, items A-D): a module manifest with named extension points replacing alphabetical load order and function-wrapping (`src/app-modules/manifest.json`, `tools/module-manifest.mjs`, `tools/test-module-contract.mjs`); backup validators for every storage key added since v1.9.0, with Guest/Kiosk sessions confirmed to save nothing; a shared Playwright test kit (`tools/testkit.mjs`) with a swallowed-wait/fixed-sleep lint ratchet; generated content floors (`tools/content-manifest.mjs`) replacing hand-bumped literal counts in every lint and doc.
+
+**Also.** Page-to-page cross-fade transitions via the View Transitions API, hardened with a no-op fallback where the API or the transition itself is unavailable. A CI-only flake in the Rapid Fire test family root-caused and fixed: a shared click helper duplicated across 6 test files had no wait/retry logic at all, racing under CI's Chromium contention while always passing locally.
+
 ## 2026-09-19 - v1.12.1: audit fixes, one assembled content bank, and an honest release pipeline
 
 *Released 2026-09-19 for every platform. It replaces v1.11.0 and v1.12.0, which are recorded below as prepared only.*

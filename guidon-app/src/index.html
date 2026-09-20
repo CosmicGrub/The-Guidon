@@ -8100,6 +8100,36 @@ window.G = window.G || {};
     return res.json();
   }
 
+  // Canonical PRT session/drill-composition defaults (ROADMAP 3g item I: one
+  // PRT session model shared by PT Planner and #/prt). This used to live as
+  // PRT_SESSION_DEFS/PRT_PENDING_DRILLS in src/app-modules/pt-planner.js,
+  // injected into window.GUIDON_SEED.prt at that module's own load time by
+  // an ensurePrtSessionModel() IIFE - a runtime-seed-mutation-at-load-time
+  // pattern ROADMAP 3g item E is separately fixing for content packs in
+  // general. Owning the defaults here instead means seed.prt.sessions/
+  // .pendingDrills are guaranteed present the instant the seed loads (see
+  // loadContent() below), regardless of module load order or whether
+  // pt-planner.js's module even runs. Only PD has fully authored/verified
+  // exercise text today (see seed.prt.drills); the remaining drill ids are
+  // explicit placeholders, never fabricated doctrine - docs/design/pt-scheduler.md §2a.
+  const DEFAULT_PRT_SESSIONS = [
+    { id: "strength", label: "Strength & Mobility Session", blocks: [
+      { drillId: "pd" }, { drillId: "ssd" }, { drillId: "cd1" }, { drillId: "cd2" }, { drillId: "rd" }
+    ] },
+    { id: "endurance", label: "Endurance & Mobility Session", blocks: [
+      { drillId: "pd" }, { drillId: "hsd" }, { drillId: "mmd1" }, { drillId: "mmd2" }, { drillId: "rd" }
+    ] }
+  ];
+  const DEFAULT_PRT_PENDING_DRILLS = {
+    ssd: "Shoulder Stability Drill",
+    cd1: "Conditioning Drill 1",
+    cd2: "Conditioning Drill 2",
+    hsd: "Hip Stability Drill",
+    mmd1: "Military Movement Drill 1",
+    mmd2: "Military Movement Drill 2",
+    rd: "Recovery Drill"
+  };
+
   // Load seed content. In the single-file build, content is embedded as window.GUIDON_SEED
   // (no fetch/network). In the served multi-file build, fetch the data/*.json and snapshot
   // into IDB.meta so we survive offline afterward. Same modules, both paths.
@@ -8132,7 +8162,23 @@ window.G = window.G || {};
       // actually loading #/prt in a real browser rather than trusting the
       // seed content and the accessor code each looked right in isolation.
       state.seed.creeds = S.creeds || [];
-      state.seed.prt = S.prt || { drills: [] };
+      // The sessions/pendingDrills defaults are applied IN PLACE onto S.prt
+      // itself (window.GUIDON_SEED.prt), not onto a copy assigned only to
+      // state.seed.prt - the same object identity the rest of this whitelist
+      // already relies on for every other key (state.seed.X is S.X, not a
+      // clone of it). This matters here specifically because pt-planner.js's
+      // prtSession()/prtDrillLabel() (and this app's own regression suite)
+      // read window.GUIDON_SEED.prt.sessions/.pendingDrills DIRECTLY, not
+      // through store.prtMeta()/state.seed.prt - a copy would leave the raw
+      // seed's own .sessions/.pendingDrills missing even though state.seed.prt
+      // looked complete. Real content already authored on S.prt (today:
+      // drills[]; future: authored sessions/pendingDrills) is left untouched -
+      // see DEFAULT_PRT_SESSIONS/DEFAULT_PRT_PENDING_DRILLS above.
+      if (!S.prt || typeof S.prt !== "object") S.prt = {};
+      if (!Array.isArray(S.prt.drills)) S.prt.drills = [];
+      if (!Array.isArray(S.prt.sessions) || !S.prt.sessions.length) S.prt.sessions = DEFAULT_PRT_SESSIONS;
+      if (!S.prt.pendingDrills || typeof S.prt.pendingDrills !== "object") S.prt.pendingDrills = DEFAULT_PRT_PENDING_DRILLS;
+      state.seed.prt = S.prt;
       return;
     }
     const files = {
@@ -8468,7 +8514,31 @@ window.G = window.G || {};
       }
       return list;
     },
-    prtMeta() { return state.seed.prt || { drills: [] }; },
+    // Mode-agnostic: guarantees the same drills/sessions/pendingDrills shape
+    // regardless of which loadContent() path populated state.seed.prt.
+    // The embedded-seed boot path (the only one any build ships today)
+    // already normalizes window.GUIDON_SEED.prt (and therefore state.seed.prt,
+    // the same object reference) with these exact defaults at load time - see
+    // loadContent() above. But loadContent() also has a documented, currently
+    // unshipped "fetched content" path (no window.GUIDON_SEED at all;
+    // state.seed.prt comes straight from a fetched data/prt.json or that
+    // key's own defaultSeedFor() fallback) that never touches
+    // window.GUIDON_SEED and can hand this a plain {drills:[]} with no
+    // sessions/pendingDrills at all. Falling back to the same
+    // DEFAULT_PRT_SESSIONS/DEFAULT_PRT_PENDING_DRILLS here too - rather than
+    // only in loadContent()'s embedded-seed branch - makes prtMeta() the one
+    // place both #/prt's prtHub and pt-planner.js's prtSession()/
+    // prtDrillLabel() can read through and always get a complete shape,
+    // whichever path the seed took (PR #194 review: pt-planner.js used to
+    // read window.GUIDON_SEED.prt directly, which this fixes at its root).
+    prtMeta() {
+      const p = state.seed.prt || {};
+      return Object.assign({}, p, {
+        drills: Array.isArray(p.drills) ? p.drills : [],
+        sessions: (Array.isArray(p.sessions) && p.sessions.length) ? p.sessions : DEFAULT_PRT_SESSIONS,
+        pendingDrills: (p.pendingDrills && typeof p.pendingDrills === "object") ? p.pendingDrills : DEFAULT_PRT_PENDING_DRILLS,
+      });
+    },
 
     // ---- scenarios ----
     // Memoized: rebuilding the merged seed+user map on every call was a hot path
@@ -25275,23 +25345,49 @@ window.G = window.G || {};
   ];
 
   // ── PRT sessions (ATP 7-22.02) — the two you may be assigned at BLC ──
-  const PD = ["Bend & reach","Rear lunge","High jumper","Rower","Squat bender",
-              "Windmill","Forward lunge","Prone row","Bent-leg body twist","Push-up"];
+  // Content-integrity check (roadmap audit, 2026-09-20): every exercise name
+  // below was checked, word for word, against the actual bundled source -
+  // docs-source/ATP_7-22.02_Holistic_Health_and_Fitness_Drills_and_Exercises.pdf
+  // (extracted with pdftotext) - not against memory. PD's ten names match
+  // window.GUIDON_SEED.prt.drills' "pd" entry's own exercise names, which
+  // carry a full per-exercise startingPosition/movementDescription
+  // transcription verified against ATP 7-22.02 (tools/lint-prt-sources.mjs
+  // gates that record); corrected here to match that record's exact
+  // spelling/capitalization (was "Bend & reach", "High jumper", "Push-up",
+  // etc. - the same ten exercises, but not a literal match). Checking the
+  // other seven blocks against the source PDF directly (not just the "pd"
+  // record) turned up three real misses, now fixed: CD2's "Half jacks" ->
+  // "Half jack" (the exercise is named in the singular) and "8-count
+  // push-up" -> "8-count T push-up" (a different, specific variant - the
+  // source calls it "8-Count T Push-Up"); MMD1's "Verticals"/"Laterals" ->
+  // "Vertical"/"Lateral" (singular); MMD2's "Crossovers" -> "Crossover"
+  // (singular). None of the seven non-PD blocks have a
+  // startingPosition/movementDescription transcription or a per-exercise
+  // citation in window.GUIDON_SEED.prt.drills, exactly like
+  // app-modules/pt-planner.js's own PRT_PENDING_DRILLS map already says for
+  // these same drill IDs. PRT_UNVERIFIED_IDS (below) drives the "(content
+  // pending)" tag prtDrill() draws onto those seven blocks, so this screen
+  // and PT Planner's own session-block summary never disagree about which
+  // drills carry that fuller, per-exercise verification.
+  const PD = ["Bend and Reach","Rear Lunge","High Jumper","Rower","Squat Bender",
+              "Windmill","Forward Lunge","Prone Row","Bent-Leg Body Twist","Push-Up"];
   const RD = ["Overhead arm pull","Rear lunge","Extend and flex","Thigh stretch",
               "Single-leg over","Groin stretch","Calf stretch","Hamstring stretch"];
+  // Matches app-modules/pt-planner.js's PRT_PENDING_DRILLS keys exactly.
+  const PRT_UNVERIFIED_IDS = new Set(["ssd","cd1","cd2","hsd","mmd1","mmd2","rd"]);
   const PRT = {
     strength: { label:"Strength & Mobility Session", blocks:[
-      { n:"Preparation Drill (PD)", items:PD },
-      { n:"Shoulder Stability Drill (SSD)", items:["I raise","T raise","Y raise","L raise","W raise"] },
-      { n:"Conditioning Drill 1 (CD 1)", items:["Power jump","V-up","Mountain climber","Leg-tuck and twist","Single-leg push-up"] },
-      { n:"Conditioning Drill 2 (CD 2)", items:["Turn and lunge","Supine bicycle","Half jacks","Swimmer","8-count push-up"] },
-      { n:"Recovery Drill (RD)", items:RD } ] },
+      { id:"pd",   n:"Preparation Drill (PD)", items:PD },
+      { id:"ssd",  n:"Shoulder Stability Drill (SSD)", items:["I raise","T raise","Y raise","L raise","W raise"] },
+      { id:"cd1",  n:"Conditioning Drill 1 (CD 1)", items:["Power jump","V-up","Mountain climber","Leg-tuck and twist","Single-leg push-up"] },
+      { id:"cd2",  n:"Conditioning Drill 2 (CD 2)", items:["Turn and lunge","Supine bicycle","Half jack","Swimmer","8-count T push-up"] },
+      { id:"rd",   n:"Recovery Drill (RD)", items:RD } ] },
     endurance: { label:"Endurance & Mobility Session", blocks:[
-      { n:"Preparation Drill (PD)", items:PD },
-      { n:"Hip Stability Drill (HSD)", items:["Lateral leg raise","Medial leg raise","Bent-leg lateral raise","Single-leg tuck","Single-leg over"] },
-      { n:"Military Movement Drill 1 (MMD 1)", items:["Verticals","Laterals","Shuttle sprint"] },
-      { n:"Military Movement Drill 2 (MMD 2)", items:["Power skip","Crossovers","Crouch run"] },
-      { n:"Recovery Drill (RD)", items:RD } ] }
+      { id:"pd",   n:"Preparation Drill (PD)", items:PD },
+      { id:"hsd",  n:"Hip Stability Drill (HSD)", items:["Lateral leg raise","Medial leg raise","Bent-leg lateral raise","Single-leg tuck","Single-leg over"] },
+      { id:"mmd1", n:"Military Movement Drill 1 (MMD 1)", items:["Vertical","Lateral","Shuttle sprint"] },
+      { id:"mmd2", n:"Military Movement Drill 2 (MMD 2)", items:["Power skip","Crossover","Crouch run"] },
+      { id:"rd",   n:"Recovery Drill (RD)", items:RD } ] }
   };
 
   // ── 1009S information brief rubric (100 points) ──
@@ -25505,8 +25601,10 @@ window.G = window.G || {};
       // DRILLS "prt" blurb comment above - was "DA Form 2977", corrected to DD Form 2977.
       p.appendChild(el("div.feedback.warn", { text:
         "Bring a complete hard copy of the DD Form 2977 Deliberate Risk Assessment Worksheet and brief the overall risk level to the squad \u2014 those are scored steps before a single exercise happens. Each step is all-or-nothing; 70 to pass." }));
+      p.appendChild(el("p.hint", { style:"margin-top:6px", text:
+        "Preparation Drill (PD) is verified word-for-word, exercise by exercise, against ATP 7-22.02 (see #/prt). Blocks marked \u201c(content pending)\u201d have had only their exercise names and sequence checked against the same source, not the full per-exercise starting position/movement text \u2014 use them as a sequence reference, not a substitute for the source ATP." }));
       const seg = el("div.segmented", { style:"margin:8px 0" });
-      const listBox = el("div");
+      const listBox = el("div", { "data-prt-drill-blocks":"1" });
       p.appendChild(seg); p.appendChild(listBox); stage.appendChild(p);
       function draw() {
         util.clear(seg); util.clear(listBox);
@@ -25517,7 +25615,8 @@ window.G = window.G || {};
           seg.appendChild(b);
         });
         PRT[which].blocks.forEach(bl => {
-          listBox.appendChild(el("div.ob-plan-label", { text: bl.n, style:"margin-top:10px" }));
+          const label = bl.n + (PRT_UNVERIFIED_IDS.has(bl.id) ? " (content pending)" : "");
+          listBox.appendChild(el("div.ob-plan-label", { text: label, style:"margin-top:10px" }));
           const ul = el("ul", { style:"margin:4px 0 0 18px" });
           bl.items.forEach(x => ul.appendChild(el("li", { text: x, style:"margin:2px 0" })));
           listBox.appendChild(ul);
@@ -26365,7 +26464,11 @@ window.G = window.G || {};
     G.ext.run("drills:rendered", mount);
   }
 
-  G.drills = { render };
+  // _PRT / _PRT_UNVERIFIED_IDS: pure data, exported for tests (same
+  // convention as app-modules/pt-planner.js's own underscore-prefixed
+  // exports) - lets a suite confirm prtDrill()'s verified/pending tagging
+  // without re-deriving PRT's content by scraping rendered DOM text.
+  G.drills = { render, _PRT:PRT, _PRT_UNVERIFIED_IDS:Array.from(PRT_UNVERIFIED_IDS) };
 })();
 // END drills.js
 

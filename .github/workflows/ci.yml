@@ -689,10 +689,12 @@ jobs:
             tests: "test:ext-points test:module-contract test:testkit test:hygiene-ratchet"
           - name: "53-newsuitescaffold-contentmanifest-livecontentfigures-guestsavesnothing"
             tests: "test:new-suite-scaffold test:content-manifest test:live-content-figures test:guest-saves-nothing"
-          - name: "54-backupnewtools-storagecontractlint-cyberfundamentals-mosdecks"
-            tests: "test:backup-new-tools test:storage-contract-lint test:cyber-fundamentals test:mos-decks"
-          - name: "55-contentpackengine-lintcontentpacks-mergeseedcontentpacks"
-            tests: "test:content-pack-engine test:lint-content-packs test:merge-seed-content-packs"
+          - name: "54-backupnewtools-storagecontractlint-cyberfundamentals-drillsprtsourcing"
+            tests: "test:backup-new-tools test:storage-contract-lint test:cyber-fundamentals test:drills-prt-sourcing"
+          - name: "55-mosdecks-prtsessionfetchedseed-contentpackengine-lintcontentpacks"
+            tests: "test:mos-decks test:prt-session-fetched-seed test:content-pack-engine test:lint-content-packs"
+          - name: "56-mergeseedcontentpacks"
+            tests: "test:merge-seed-content-packs"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
