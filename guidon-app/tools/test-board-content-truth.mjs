@@ -2,8 +2,9 @@
  * Board content truth - one bank, one true answer.
  *
  * The board supplement and the two "gap" card packs (src/app-modules/
- * 00-/01-/06-/07-*.js) are added to the seed's question bank at page load,
- * AFTER every seed lint has run - so nothing checked that what they teach
+ * 00-/01-/06-/07-*.js) are merged into the seed's question bank at build
+ * time (tools/content-pack-engine.mjs), AFTER every seed lint has run - so
+ * nothing checked that what they teach
  * agrees with the publication they cite, or with the seed card sitting next
  * to them in the same category. A multi-agent audit found the deck teaching
  * two different answers to the same board question in several places. Every
@@ -30,6 +31,7 @@ import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 import { openAsOwner } from "./device-storage.mjs";
 import { CATEGORY_PILLAR } from "./pillar-map.mjs";
 import { loadManifest } from "./content-manifest.mjs";
+import { assembleBank } from "./assemble-bank.mjs";
 
 // How big the 92A deck is comes from the committed content manifest, not a
 // typed 40: adding a 92A card must not break this suite, and losing one is
@@ -336,7 +338,15 @@ console.log("\nCategories - a pack never splits a seed subject under a second na
 /* ---- U14: the same question is one card - and the Quiz never offers a twin's right answer as a wrong option ---- */
 console.log("\nU14 - near-duplicate prompts are one card, on the older id");
 {
-  const totals = await page.evaluate(() => G.boardSupplement && G.boardSupplement.totals);
+  // ROADMAP 3g E: 00-board-supplement-core.js's merge/fold bookkeeping used
+  // to be left on window.G.boardSupplement for this suite to read off the
+  // live page. It now runs at build time and never touches window.G at all,
+  // so this reads the SAME totals from a fresh headless run of the real
+  // engine (tools/assemble-bank.mjs) instead - board-supplement-core's own
+  // define() return value, reached by id, exactly as
+  // 01-board-supplement-92a.js reaches it through ctx.pack() at merge time.
+  const core = assembleBank().packs["board-supplement-core"];
+  const totals = core && core.boardSupplement && core.boardSupplement.totals;
   (totals && totals.folded >= 28 && totals.unresolved === 0) ? ok(`${totals.folded} supplement prompts were folded into an older card; every fold target exists`) : bad("fold totals: " + JSON.stringify(totals));
   /* Same tokenizer the audit used: stop-worded, stemmed Jaccard similarity of the QUESTION text. */
   const STOP = new Set("what is the a an of to and or in for are does do you your should be by on with as that which who how why when it its this their they at from must can".split(" "));

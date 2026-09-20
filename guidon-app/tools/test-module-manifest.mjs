@@ -60,14 +60,29 @@ if (real) {
   const packs = real.modules.filter((m) => m.kind === "content-pack" || m.kind === "finalize");
   check(packs.length > 0 && packs.every((m) => m.headless), `all ${packs.length} content packs and the finalize pass are evaluated headlessly`, "a content pack is not headless");
 
+  // ROADMAP 3g E: every content-pack/finalize entry must be "emit":"build"
+  // (it calls G.contentPack.define() and is merged at build time, never
+  // spliced into the page as a <script>); every other entry must be
+  // "runtime" or leave the field out - EMITS/emitOf() are module-manifest.mjs's
+  // own reader, so a real drift here is a manifest problem, not a test one.
+  check(packs.every((m) => m.emit === "build"), `all ${packs.length} content packs and the finalize pass are "emit":"build"`, "a content pack or the finalize pass is not \"emit\":\"build\": " + JSON.stringify(packs.filter((m) => m.emit !== "build").map((m) => [m.file, m.emit])));
+  const nonPacks = real.modules.filter((m) => m.kind !== "content-pack" && m.kind !== "finalize");
+  check(nonPacks.every((m) => m.emit === undefined || m.emit === "runtime"), "every non-content-pack, non-finalize entry is \"runtime\" or leaves \"emit\" out", "a feature/release-note entry declares \"emit\":\"build\": " + JSON.stringify(nonPacks.filter((m) => m.emit !== undefined && m.emit !== "runtime").map((m) => [m.file, m.emit])));
+
   // The headless bank reads the SAME list (it used to pick "files that start with two digits").
   const headless = contentPackFiles();
   check(JSON.stringify(headless) === JSON.stringify(real.headlessFiles),
-    `tools/assemble-bank.mjs evaluates exactly the manifest's headless files, in manifest order (${headless.length})`,
+    `tools/assemble-bank.mjs's contentPackFiles() lists exactly the manifest's headless files, in manifest order (${headless.length})`,
     "assemble-bank's file list differs from the manifest's headless list: " + JSON.stringify({ assemble: headless, manifest: real.headlessFiles }));
+  // The engine that actually MERGES the bank (tools/content-pack-engine.mjs,
+  // through assembleBank()'s thin wrapper) runs a NARROWER list than
+  // contentPackFiles() above - only "emit":"build" modules, not every
+  // headless one (a headless FEATURE module such as 05-opsec-guard.js never
+  // touches the seed, so it never needs to run here at all).
+  const emitBuildFiles = real.modules.filter((m) => m.emit === "build").map((m) => m.file);
   const bank = assembleBank();
-  check(JSON.stringify(bank.modules.map((m) => m.file)) === JSON.stringify(real.headlessFiles) && bank.modules.every((m) => !m.error),
-    "assembleBank() ran those files in that order with no error", "assembleBank() ran " + JSON.stringify(bank.modules.map((m) => [m.file, m.error])));
+  check(JSON.stringify(bank.modules.map((m) => m.file)) === JSON.stringify(emitBuildFiles) && bank.modules.every((m) => !m.error),
+    "assembleBank() ran exactly the manifest's \"emit\":\"build\" modules, in that order, with no error", "assembleBank() ran " + JSON.stringify(bank.modules.map((m) => [m.file, m.error])));
 }
 
 /* ---- planted defects: the checker and the REAL build must both refuse, naming the file ---- */
@@ -121,14 +136,25 @@ try {
     check(out.startsWith("<script>\nwindow.GUIDON_PILLAR_MAP = "), "the pillar map is still injected ahead of the first module", "the pillar-map script is no longer first");
   }
 
-  // The built outputs: every manifest module exactly once, in manifest order,
-  // and dist/ and web/ carry the SAME module bytes (one bundle on every fork).
+  // The built outputs: every manifest "emit":"runtime" module exactly once,
+  // in manifest order, and dist/ and web/ carry the SAME module bytes (one
+  // bundle on every fork). An "emit":"build" module (every content-pack and
+  // the finalize pass) is never spliced in as a <script> at all - it ran
+  // once already, merged into the seed literal itself (see
+  // tools/build.mjs's mergeSeedContentPacks(), checked separately below).
   if (real && existsSync("web/index.html") && existsSync("dist/guidon-standalone.html")) {
     const expected = await assembleAppModules(APP_MODULE_DIR);
+    const runtimeCount = real.modules.filter((m) => m.emit !== "build").length;
     for (const out of ["web/index.html", "dist/guidon-standalone.html"]) {
       const html = readFileSync(out, "utf8");
       const at = html.indexOf(expected);
-      check(at > 0 && html.indexOf(expected, at + 1) === -1, `${out} carries the pillar map and all ${real.files.length} modules, byte for byte, once, in manifest order`, `${out} does not contain the manifest-ordered module block exactly once (rebuild? index ${at})`);
+      check(at > 0 && html.indexOf(expected, at + 1) === -1, `${out} carries the pillar map and all ${runtimeCount} "emit":"runtime" modules, byte for byte, once, in manifest order`, `${out} does not contain the manifest-ordered module block exactly once (rebuild? index ${at})`);
+      for (const m of real.modules) {
+        const scriptTag = `<script>\n${readFileSync(join(APP_MODULE_DIR, m.file), "utf8")}\n</script>\n`;
+        const present = html.includes(scriptTag);
+        if (m.emit === "build") check(!present, `${out} never carries ${m.file} as its own <script> ("emit":"build")`, `${out} DOES carry ${m.file} as a <script> - an "emit":"build" module must never be spliced into a real page`);
+        else check(present, `${out} carries ${m.file} as its own <script> ("emit":"runtime")`, `${out} is missing ${m.file}'s <script> - an "emit":"runtime" module must still be spliced in`);
+      }
     }
   } else bad("web/index.html or dist/guidon-standalone.html is missing - run `npm run build` before this suite");
 
