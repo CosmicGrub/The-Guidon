@@ -28557,8 +28557,15 @@ window.G = window.G || {};
       var excluded = 0;
       if (!opts.includePrivate) {
         kv = kv.filter(function (row) {
-          if (row && isPrivateKey(row.k)) { excluded++; return false; }
-          return true;
+          if (!row || !isPrivateKey(row.k)) return true;
+          // Codex review on PR #193: both private rows (the roster,
+          // risk:all) hold their entries in an array, wiped to v:[] once
+          // the last one is deleted/cleared - counting that as "excluded"
+          // told a Soldier with an empty roster their (nonexistent) roster
+          // was left out of an otherwise-complete backup. Only a row that
+          // actually holds something is real omitted data.
+          if (Array.isArray(row.v) && row.v.length) excluded++;
+          return false;
         });
       }
       payload.stores.kv = kv;
@@ -28772,6 +28779,17 @@ window.G = window.G || {};
         var hasProfileRow = !!(obj && obj.stores && Array.isArray(obj.stores.kv) &&
           obj.stores.kv.some(function (row) { return row && row.k === "guidon:profile:v1"; }));
         var kvRejected = [];
+        // Codex review on PR #193: exportAll({includePrivate:true}) made a
+        // backup that carries the roster and/or a Risk Worksheet reachable -
+        // importing one used to fold those rows into the same generic "N
+        // saved items" count as everything else, so a Soldier approved the
+        // restore with no idea it would also write another person's roster
+        // entries or a resource assessment onto this device. A row holding
+        // nothing (v: [] after everything in it was deleted) isn't real
+        // private data to disclose - same "don't warn about an empty
+        // collection" principle exportAll()'s own excludedPrivateEntries
+        // count uses below.
+        var privateKeysPresent = [];
         if (obj && obj.stores && Array.isArray(obj.stores.kv)) {
           obj.stores.kv.forEach(function (row) {
             if (!row || row.k == null) return;
@@ -28782,9 +28800,11 @@ window.G = window.G || {};
             } else if (!validateKvRow(row)) {
               kvRejected.push(row.k);
             }
+            if (isPrivateKey(row.k) && Array.isArray(row.v) && row.v.length) privateKeysPresent.push(row.k);
           });
         }
         var msg = "Import this backup?" + (sum ? "\n\nIt contains: " + (sum.kv || 0) + " saved items, " + (sum.userScenarios || 0) + " authored scenarios, " + (sum.attempts || 0) + " quiz attempts." : "") + "\n\nYour existing data will be kept; matching items will be overwritten by the backup." + (hasProfileRow ? " This includes your name, rank, and board date." : "") +
+          (privateKeysPresent.length ? " This file also carries " + describeKeys(privateKeysPresent) + " - other people's information or a resource assessment, not your own study data - which will be written to this device too." : "") +
           // Named in the Soldier's words (describeKeys), never by storage key.
           (kvRejected.length ? "\n\n" + (kvRejected.length === 1 ? "1 item in this file is damaged and will be left out: " : kvRejected.length + " items in this file are damaged and will be left out: ") + describeKeys(kvRejected) + ". Everything else will be restored." : "");
         G.modal.confirm(msg, { title: "Import backup" }).then(function (ok) {
