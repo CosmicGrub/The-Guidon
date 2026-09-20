@@ -6,11 +6,33 @@
    00-board-supplement-core.js's own define() return value, reached through
    ctx.pack("board-supplement-core") because this file's manifest entry
    declares that id under "requires".
+
+   ROADMAP 3g G x E reconciliation: item G's own design called
+   window.G.mosDecks.register({code,label,pillar}) directly from this file,
+   at its (then) runtime load - correct when this was a browser <script>.
+   Now that this pack is "emit":"build" and runs once in content-pack-
+   engine.mjs's Node sandbox, there is no browser and no window.G.mosDecks
+   to call into; a runtime register() call here would either throw or
+   silently register into a throwaway sandbox object nobody ever reads.
+   The fix keeps item G's own standing rule ("declare the deck once, inside
+   its own pack file, never hardcode a MOS elsewhere") but moves WHERE it's
+   declared to: this pack pushes its {code,label,pillar} entry onto
+   bank.mosDecks, the same way it pushes cards onto bank.board.questions -
+   baked into the shipped seed like every other pack-added fact, per item
+   E's own "one bank by construction" principle. 00-mos-decks-core.js (still
+   a runtime "feature" module) seeds its in-memory registry from
+   window.GUIDON_SEED.mosDecks at load, THEN still accepts register() calls
+   from any future MOS pack that is itself a runtime "feature" module rather
+   than a build-time content pack - both mechanisms feed the same registry.
 */
 (function () {
   "use strict";
   G.contentPack.define("board-supplement-92a", function (bank, ctx) {
   var mergeDeck = ctx.pack("board-supplement-core").mergeDeck;
+  bank.mosDecks = Array.isArray(bank.mosDecks) ? bank.mosDecks : [];
+  if (!bank.mosDecks.some(function (d) { return d && d.code === "92A"; })) {
+    bank.mosDecks.push({ code: "92A", label: "92A Automated Logistical Specialist", pillar: "Maintenance & Supply" });
+  }
 
   mergeDeck({ id: "deck40-general", cards: [
     {n:1,title:"Army Values",category:"Army Values",source:"ADP 6-22",qa:[["What are the seven Army Values?","Loyalty, Duty, Respect, Selfless Service, Honor, Integrity, and Personal Courage — LDRSHIP."],["What does Duty mean?","Fulfill your obligations and accomplish tasks as part of a team.",{sameAs:"av-duty"}]]},

@@ -58,6 +58,16 @@ await page.goto(url, { waitUntil: "load" });
 // still there after a reload, and a Guest session saves nothing (the storage
 // contract - see tools/device-storage.mjs and test-guest-saves-nothing.mjs).
 await openAsOwner(page, url);
+// ROADMAP 3g item G: MOS-tagged content (the 92A deck this whole suite
+// audits) is hidden by default now - visible only to a matching profile.mos
+// or an explicit opt-in (G.mosDecks.setOptedIn). OWNER_PROFILE carries no
+// MOS, so every content-accuracy assertion below (citations, category/pillar
+// mapping, verbatim labeling, ...) needs 92A explicitly opted into first, or
+// it would be auditing a bank with the 92A deck silently missing. No wait is
+// needed here: setOptedIn() updates the in-memory settings object
+// synchronously (see its own comment) and nothing reloads the page again
+// until U13 below.
+await page.evaluate(() => G.mosDecks && G.mosDecks.setOptedIn && G.mosDecks.setOptedIn("92A", true));
 await page.evaluate(() => { location.hash = "#/home"; });
 await page.waitForFunction(() => window.G && G.store && G.store.boardQuestions().length > 900, null, { timeout: 30000 });
 
@@ -392,8 +402,24 @@ console.log("\nU14 - near-duplicate prompts are one card, on the older id");
 /* ---- U13: MOS-only cards are for Soldiers in that MOS ---- */
 console.log("\nU13 - 92A cards stay out of another MOS's pools");
 {
+  // Everything above ran as OWNER_PROFILE (no MOS on the profile) with 92A
+  // explicitly opted into via G.mosDecks.setOptedIn - see the top of this
+  // file - so every content-accuracy check above saw the full bank. This
+  // section tests the OTHER half of ROADMAP 3g item G's visibility rule
+  // (profile.mos matching) in isolation from opt-in, so the opt-in is turned
+  // back off first, so "11B" genuinely tests the mismatched/non-opted-in
+  // case this behavior has always had, unchanged by this round's work.
+  await page.evaluate(() => G.mosDecks && G.mosDecks.setOptedIn && G.mosDecks.setOptedIn("92A", false));
+  // A fixed wait, not a poll: store.setSetting()'s own 300ms debounce has no
+  // in-page event to observe, and - confirmed while writing this suite -
+  // opening a second, throwaway IndexedDB connection to poll the "settings"
+  // row directly (the obvious alternative) races the app's own pending
+  // write and reproducibly leaves the wrong value on disk, a worse bug than
+  // the fixed wait it was meant to replace. asMos() below reloads the page
+  // immediately after this, so the write must land before that happens.
+  await page.waitForTimeout(400); // hygiene-ok: waits out setSetting's 300ms debounce before asMos()'s reload; a poll here has been shown to corrupt the pending write itself (see the comment above)
   /* A guest profile lives only in memory, so a real personal profile + reload is the way to give the app an MOS
-     (same pattern as test-ppw / test-career). Everything above ran as a guest with no MOS: all 40 cards were in the pool. */
+     (same pattern as test-ppw / test-career). */
   const asMos = async (mos) => {
     await page.evaluate(async (m) => { await G.db.put("kv", { k: "guidon:profile:v1", v: { onboardingComplete: true, mode: "personal", tier: "E5", rank: "SGT", mos: m } }); }, mos);
     await page.reload({ waitUntil: "load" });

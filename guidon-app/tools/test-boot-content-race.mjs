@@ -104,6 +104,23 @@ await page.goto(url, { waitUntil: "load" });
 await page.waitForFunction(() => !!(window.G && window.G.routes && window.G.routes.length && window.G.store));
 ok("app shell globals exist while content is still artificially delayed");
 
+// ROADMAP 3g item G: store.boardQuestions() now hides a MOS-tagged card
+// (92A today) by default unless the Soldier's profile.mos matches it or
+// they opted in - see that function's own comment in src/index.html. This
+// suite has nothing to do with MOS filtering; it is about the cache NOT
+// permanently locking in an early empty read (see the file header). Opt
+// into every registered MOS deck (data-driven via G.mosDecks.available(),
+// never a hardcoded "92A") so `late.board` below can still be compared
+// against the content manifest's UNFILTERED total. G.mosDecks itself does
+// not depend on the artificially delayed db.ready() - it is a plain
+// in-memory registry - so this is safe to call immediately, before the
+// delayed content finishes loading.
+await page.evaluate(() => {
+  if (window.G && G.mosDecks && G.mosDecks.available && G.mosDecks.setOptedIn) {
+    G.mosDecks.available().forEach((d) => G.mosDecks.setOptedIn(d.code, true));
+  }
+});
+
 // Fire the same hashchange-driven render path the real bug's culprit call
 // used, for all five memoized functions at once - #/board, #/doctrine,
 // #/train, #/creeds and #/prt each touch boardQuestions()/doctrine()/
