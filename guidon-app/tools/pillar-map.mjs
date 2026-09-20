@@ -124,6 +124,7 @@ export const PACK_CATEGORIES = {
   "92A — Leadership": MS, "92A — Scenarios": MS,
   "Army Profession": DB,
   "Cybersecurity & OPSEC": null,
+  "Cybersecurity Fundamentals": null,
 };
 
 export function pillarForBoard(q) { return CATEGORY_PILLAR[q.category] || PACK_CATEGORIES[q.category] || null; }
