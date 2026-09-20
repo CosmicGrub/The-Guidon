@@ -49,6 +49,18 @@
       "optionalApis": []
     },
     {
+      "file": "00-mos-decks-core.js",
+      "id": "mos-decks-core",
+      "kind": "feature",
+      "note": "ROADMAP 3g item G. The catalog + opt-in API every MOS content pack (92A today) registers into and every runtime consumer (store.boardQuestions()/scenarios(), the Readiness tab, Settings) reads, so 'which MOS decks exist' and 'is this one active for this Soldier' each have exactly one definition. storageKeys lists \"mosOptIn\" because tools/module-contract.mjs's storage scan matches ANY `.setSetting(` call by name, not just db's own - setOptedIn() calls G.store.setSetting(\"mosOptIn\", ...), which edits one field of the single \"settings\" kv row (DEFAULT_SETTINGS.mosOptIn in src/index.html), not a standalone kv key; lint-storage-contract.mjs's own setSetting scan already excludes store.setSetting for exactly this reason (see its comment), so no new KV_VALIDATORS entry is needed.",
+      "headless": true,
+      "requires": [],
+      "provides": ["G.mosDecks.register", "G.mosDecks.available", "G.mosDecks.normalize", "G.mosDecks.optedIn", "G.mosDecks.setOptedIn", "G.mosDecks.activeCodes"],
+      "routes": [],
+      "storageKeys": ["mosOptIn"],
+      "optionalApis": []
+    },
+    {
       "file": "00-roadmap-bootstrap.js",
       "id": "roadmap-bootstrap",
       "kind": "feature",
@@ -70,7 +82,7 @@
       "id": "board-supplement-92a",
       "kind": "content-pack",
       "headless": true,
-      "requires": ["board-supplement-core"],
+      "requires": ["board-supplement-core", "mos-decks-core"],
       "provides": [],
       "routes": [],
       "storageKeys": [],

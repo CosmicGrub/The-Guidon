@@ -338,6 +338,13 @@ countText2 === "3 results"
 // the newly integrated MOS-specific board curriculum. The test derives the
 // expected result count from the rendered hits instead of freezing the old
 // pre-curriculum assumption that 92A could only exist in the MOS database.
+// ROADMAP 3g item G: the board half of that curriculum is hidden by default
+// now - this suite runs as a Guest session (no profile.mos), so without an
+// explicit opt-in store.boardQuestions() would serve zero 92A cards and the
+// "Board Questions" section below would never appear. Session-only storage
+// (Guest saves nothing - see the storage contract), so the in-memory setting
+// change is enough; no reload happens anywhere in this file.
+await page.evaluate(() => G.mosDecks && G.mosDecks.setOptedIn && G.mosDecks.setOptedIn("92A", true));
 await page.evaluate(() => { location.hash = "#/search"; });
 await page.waitForTimeout(500);
 const searchInput3 = page.locator('input[aria-label="Global search"]');

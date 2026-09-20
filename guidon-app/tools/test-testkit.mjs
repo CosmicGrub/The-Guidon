@@ -137,6 +137,22 @@ const { page, noise } = boot;
    3. liveCount reads the running app, and agrees with assemble-bank.
    ===================================================================== */
 {
+  // ROADMAP 3g item G: a MOS-tagged card/category (92A today) is hidden by
+  // default now unless the Soldier's profile.mos matches it or they opted
+  // in - see store.boardQuestions()'s own comment in src/index.html. This
+  // `page` boots as a Guest with no MOS on its profile, so without opting
+  // in every registered deck first (data-driven via G.mosDecks.available(),
+  // never a hardcoded "92A"), "visible" would fall permanently short of
+  // "bank" by the hidden cards/categories - the wrong control for THIS
+  // section, whose whole point is proving liveCount() agrees with
+  // assemble-bank when nothing narrows the pool. Section 6 below is the one
+  // that deliberately tests a MISMATCHED MOS narrowing the pool, on its own
+  // fresh session - unaffected by this.
+  await page.evaluate(() => {
+    if (window.G && G.mosDecks && G.mosDecks.available && G.mosDecks.setOptedIn) {
+      G.mosDecks.available().forEach((d) => G.mosDecks.setOptedIn(d.code, true));
+    }
+  });
   const H = headless.data;
   const want = headless.finalCounts;
   const got = {

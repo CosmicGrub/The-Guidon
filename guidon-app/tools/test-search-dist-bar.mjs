@@ -240,6 +240,14 @@ const singleDomain = await page.evaluate(() => ({
   : bad(`"reflective belt" stopped being a single-domain/single-hit query (cards=${singleDomain.cards}, sections=${singleDomain.sections})`);
 
 /* ---- 92A is now deliberately multi-domain after the curriculum supplement ---- */
+// ROADMAP 3g item G: 92A board content is hidden by default now (a Guest
+// session, like this whole suite runs as, has no profile.mos to match it),
+// so store.boardQuestions() - which Global Search reads - would otherwise
+// return zero 92A hits and this query would no longer be multi-domain at
+// all. Opt in explicitly first; this is a Guest session (session-only
+// storage - see the storage contract), so the in-memory setting change is
+// all this suite ever needs, with no reload and no debounce to wait out.
+await page.evaluate(() => G.mosDecks && G.mosDecks.setOptedIn && G.mosDecks.setOptedIn("92A", true));
 await search("92A");
 const mosExpanded = await page.evaluate(() => ({
   cards: document.querySelectorAll(".search-hit").length,
