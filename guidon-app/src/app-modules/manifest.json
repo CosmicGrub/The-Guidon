@@ -177,6 +177,18 @@
       "optionalApis": []
     },
     {
+      "file": "07-cyber-fundamentals.js",
+      "id": "cyber-fundamentals",
+      "kind": "content-pack",
+      "headless": true,
+      "requires": ["opsec-cyber-curriculum"],
+      "provides": [],
+      "routes": [],
+      "storageKeys": [],
+      "optionalApis": [],
+      "patches": [{ "name": "G.opsec.render", "when": "load", "why": "Adds a second, clearly-labeled Cybersecurity Fundamentals section to the existing #/cyber-opsec screen (2026-09 OPSEC/legal audit's own placement recommendation) rather than a new route. Calls the original render first, then appends its own section; replaced entirely once a real board:rendered-style extension point exists for this screen." }]
+    },
+    {
       "file": "07-supply-discipline-board-gaps.js",
       "id": "supply-discipline-board-gaps",
       "kind": "content-pack",
