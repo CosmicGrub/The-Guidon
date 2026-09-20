@@ -4,6 +4,15 @@
 (function () {
   "use strict";
   var G = window.G = window.G || {};
+  // ROADMAP 3g item G: register this pack with the MOS decks catalog before
+  // anything else, so G.mosDecks.available() lists 92A even in the unlikely
+  // event boardSupplementMergeDeck itself is missing below. Guarded the same
+  // way every optional cross-module call in this app-modules folder is -
+  // 00-mos-decks-core.js loads first (manifest.json "requires"), but a
+  // corrupted or stand-in build should not throw here.
+  if (G.mosDecks && typeof G.mosDecks.register === "function") {
+    G.mosDecks.register({ code: "92A", label: "92A Automated Logistical Specialist", pillar: "Maintenance & Supply" });
+  }
   if (typeof G.boardSupplementMergeDeck !== "function") return;
 
   G.boardSupplementMergeDeck({ id: "deck40-general", cards: [
