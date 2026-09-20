@@ -29,6 +29,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { clickButtonByText } from "./testkit.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -46,22 +47,12 @@ await page.waitForTimeout(700);
 await dismissOnboarding(page);
 await page.waitForTimeout(300);
 
-async function clickButtonByText(text, scopeSel) {
-  return page.evaluate(({ text, scopeSel }) => {
-    const scope = scopeSel ? document.querySelector(scopeSel) : document;
-    if (!scope) return false;
-    const btn = [...scope.querySelectorAll("button")].find((b) => b.textContent.trim() === text);
-    if (!btn) return false;
-    btn.click();
-    return true;
-  }, { text, scopeSel });
-}
 async function enterRapidFireFresh() {
   await page.evaluate(() => { location.hash = "#/board"; });
   await page.waitForTimeout(400);
-  await clickButtonByText("Board Drill");
+  await clickButtonByText(page, "Board Drill");
   await page.waitForTimeout(150);
-  const clicked = await clickButtonByText("Rapid Fire");
+  const clicked = await clickButtonByText(page, "Rapid Fire");
   await page.waitForFunction(
     () => [...document.querySelectorAll(".segmented button")].some((b) => b.textContent.trim() === "Party"),
     { timeout: 30000 }
@@ -69,10 +60,10 @@ async function enterRapidFireFresh() {
   return clicked;
 }
 async function startRound() {
-  await clickButtonByText("Start Round");
+  await clickButtonByText(page, "Start Round");
   await page.waitForTimeout(250);
   if (await page.evaluate(() => !!document.querySelector(".rf-explainer"))) {
-    await clickButtonByText("Got it — let's go");
+    await clickButtonByText(page, "Got it — let's go");
     await page.waitForTimeout(250);
   }
   await page.waitForTimeout(200);
@@ -81,7 +72,7 @@ async function hudText() { return page.evaluate(() => (document.querySelector(".
 async function liveText() { return page.evaluate(() => { const r = document.getElementById("a11y-live"); return r ? r.textContent : null; }); }
 async function tapCorrect() { await page.evaluate(() => document.querySelector(".rf-judge-correct")?.click()); await page.waitForTimeout(120); }
 async function tapPass() { await page.evaluate(() => document.querySelector(".rf-judge-pass")?.click()); await page.waitForTimeout(120); }
-async function tapEndRound() { await clickButtonByText("End Round"); await page.waitForTimeout(200); }
+async function tapEndRound() { await clickButtonByText(page, "End Round"); await page.waitForTimeout(200); }
 function pointsIn(text) { const m = /(\d+)\s*pts/.exec(text || ""); return m ? Number(m[1]) : null; }
 
 // ==================== Party: streak bonus grows per consecutive correct, resets on Pass ====================
@@ -199,7 +190,7 @@ noPlayedByLine
 // ==================== Team mode: points is flavor, NOT a new win condition ====================
 console.log("\n-- Team mode: each team's own Points tile, winner still decided by Correct count --");
 await enterRapidFireFresh();
-await clickButtonByText("Team");
+await clickButtonByText(page, "Team");
 await page.waitForTimeout(200);
 const teamInputs = await page.evaluate(() => [...document.querySelectorAll('input[aria-label^="Team"]')].map((i) => i));
 // Fill both team-name fields the same way Setup expects (real typed input,
