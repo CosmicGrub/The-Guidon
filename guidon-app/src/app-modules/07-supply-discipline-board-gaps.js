@@ -14,8 +14,8 @@
  */
 (function () {
   "use strict";
-  var seed = window.GUIDON_SEED;
-  var list = seed && seed.board && Array.isArray(seed.board.questions) ? seed.board.questions : null;
+  G.contentPack.define("supply-discipline-board-gaps", function (bank) {
+  var list = bank && bank.board && Array.isArray(bank.board.questions) ? bank.board.questions : null;
   if (!list) return;
   var have = new Set(list.map(function (q) { return q && q.id; }));
   function add(q) { if (q && !have.has(q.id)) { q.verbatim = false; list.push(q); have.add(q.id); } }
@@ -83,9 +83,11 @@
     tags:["statement-of-charges","da-form-7923","flipl","financial-liability","property-accountability"]
   });
 
-  window.G = window.G || {};
-  window.G.supplyDisciplineGapCards = {
-    ids:["supply-csdp-current-1","supply-statement-charges-7923","supply-statement-charges-use"],
-    verifiedAsOf:"2026-09-19"
+  return {
+    supplyDisciplineGapCards: {
+      ids:["supply-csdp-current-1","supply-statement-charges-7923","supply-statement-charges-use"],
+      verifiedAsOf:"2026-09-19"
+    }
   };
+  });
 })();

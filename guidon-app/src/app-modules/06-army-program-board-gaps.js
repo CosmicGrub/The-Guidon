@@ -19,8 +19,8 @@
  */
 (function () {
   "use strict";
-  var seed = window.GUIDON_SEED;
-  var list = seed && seed.board && Array.isArray(seed.board.questions) ? seed.board.questions : null;
+  G.contentPack.define("army-program-board-gaps", function (bank) {
+  var list = bank && bank.board && Array.isArray(bank.board.questions) ? bank.board.questions : null;
   if (!list) return;
 
   var have = new Set(list.map(function (q) { return q && q.id; }));
@@ -112,12 +112,14 @@
     tags:["sudcc","asap","behavioral-health","army-programs"]
   });
 
-  window.G = window.G || {};
-  window.G.armyProgramGapCards = {
-    ids:["prog-aer-1","prog-aer-2","prog-acs-1","prog-sudcc-2"],
-    /* prog-acs-2 and prog-sudcc-1 were near-duplicates of seed cards acs-1 and
-       sudcc-1; their verified wording now lives on those older ids. */
-    foldedIntoSeed:{ "prog-acs-2":"acs-1", "prog-sudcc-1":"sudcc-1" },
-    verifiedAsOf:"2026-09-19"
+  return {
+    armyProgramGapCards: {
+      ids:["prog-aer-1","prog-aer-2","prog-acs-1","prog-sudcc-2"],
+      /* prog-acs-2 and prog-sudcc-1 were near-duplicates of seed cards acs-1 and
+         sudcc-1; their verified wording now lives on those older ids. */
+      foldedIntoSeed:{ "prog-acs-2":"acs-1", "prog-sudcc-1":"sudcc-1" },
+      verifiedAsOf:"2026-09-19"
+    }
   };
+  });
 })();

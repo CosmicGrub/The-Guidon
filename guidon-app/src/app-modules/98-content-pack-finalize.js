@@ -1,40 +1,41 @@
-/* GUIDON - content-pack finalize pass. Runs AFTER every numbered content pack
-   (alphabetical module order; only the 99-release-* notes follow it) and
-   BEFORE the app boots, so everything downstream sees one finished bank.
-
-   Why it exists (audit of the 2026-09 content packs): packs push records
-   straight into window.GUIDON_SEED. Two jobs were being done badly, by
-   hand, in more than one place:
-
-   1. PILLAR TAGS. The six-pillar taxonomy has exactly one definition,
-      tools/pillar-map.mjs, which the seed is linted against. Packs cannot
-      import a Node tool, so the first pack carried a hand-copied table - it
-      had already drifted (it lacked "Discipline", leaving two live cards out
-      of the pillar filter and the Readiness rollup). The build now injects
-      that one definition as window.GUIDON_PILLAR_MAP (tools/build.mjs, and
-      tools/assemble-bank.mjs for headless tooling), and this pass applies
-      it to every record a pack added. A pack never needs to know the
-      taxonomy; the map is authoritative, so a hand-set tag that disagrees
-      is corrected here and reported by tools/lint-content-packs.mjs.
-
-   2. THE BANK FINGERPRINT. Study rooms compare board.contentHash so two
-      devices know they hold the same deck. tools/build.mjs stamps it from
-      the STATIC seed; packs add cards afterwards, so it has to be restamped
-      from the final bank. The earlier restamp (03-board-supplement-
-      bankhash.js) ran fourth of fifteen modules: every pack loading after
-      it - Spirit of the CAV, the OPSEC curriculum, the Army-program and
-      supply cards - changed the deck without changing its fingerprint.
-      Same two-accumulator FNV-1a shape as before (a compatibility
-      fingerprint, not a security hash), computed once, last.
-
-   No DOM, no G.* dependencies: it must run identically in the page and in
-   tools/assemble-bank.mjs's headless sandbox.
-*/
+/* GUIDON - content-pack finalize pass. Runs AFTER every content pack
+ * (manifest order; only the 99-release-* notes follow it) and, since ROADMAP
+ * 3g E, at BUILD TIME rather than in the browser - so everything downstream
+ * sees one finished bank before the app ever ships.
+ *
+ * Why it exists (audit of the 2026-09 content packs): packs push records
+ * straight into the seed. Two jobs were being done badly, by hand, in more
+ * than one place:
+ *
+ * 1. PILLAR TAGS. The six-pillar taxonomy has exactly one definition,
+ *    tools/pillar-map.mjs, which the seed is linted against. A pack cannot
+ *    import a Node tool, so the first pack carried a hand-copied table - it
+ *    had already drifted (it lacked "Discipline", leaving two live cards out
+ *    of the pillar filter and the Readiness rollup). The build injects that
+ *    one definition as window.GUIDON_PILLAR_MAP (tools/build.mjs, and
+ *    tools/content-pack-engine.mjs for headless tooling), and this pass
+ *    applies it to every record a pack added. A pack never needs to know the
+ *    taxonomy; the map is authoritative, so a hand-set tag that disagrees is
+ *    corrected here and reported by tools/lint-content-packs.mjs.
+ *
+ * 2. THE BANK FINGERPRINT. Study rooms compare board.contentHash so two
+ *    devices know they hold the same deck. tools/build.mjs's seedAsJsonParse
+ *    stamps a placeholder from the STATIC seed before any pack runs; this
+ *    pass restamps it from the FINAL bank, once, last, after every content
+ *    pack (including the earlier restamps in 03-board-supplement-bankhash.js
+ *    and the two Cyber/OPSEC content packs) has already run. Same
+ *    two-accumulator FNV-1a shape as before (a compatibility fingerprint,
+ *    not a security hash), computed once, last.
+ *
+ * No DOM, no window.G dependencies: it must run identically whether
+ * tools/build.mjs merges it into the shipped seed or a tool re-runs
+ * tools/content-pack-engine.mjs against the same static seed later.
+ */
 (function () {
   "use strict";
-  var seed = window.GUIDON_SEED;
-  if (!seed || !seed.board || !Array.isArray(seed.board.questions)) return;
-  var map = window.GUIDON_PILLAR_MAP || null;
+  G.contentPack.define("content-pack-finalize", function (bank, ctx) {
+  if (!bank || !bank.board || !Array.isArray(bank.board.questions)) return null;
+  var map = (typeof window !== "undefined" && window.GUIDON_PILLAR_MAP) || null;
   var stats = { board: 0, doctrine: 0, scenarios: 0, corrected: 0 };
   var corrections = [];
 
@@ -63,16 +64,16 @@
     "sc-opsec-fitness-tracking", "sc-cui-spillage-reporting",
   ] };
   var waveTagged = 0;
-  ((seed.scenarios && seed.scenarios.scenarios) || []).forEach(function (sc) {
+  ((bank.scenarios && bank.scenarios.scenarios) || []).forEach(function (sc) {
     if (sc && NEW_WAVE.scenarioIds.indexOf(sc.id) !== -1 && !sc.since) { sc.since = NEW_WAVE.since; waveTagged++; }
   });
   if (map) {
-    apply(seed.board.questions, function (q) { return (map.category || {})[q.category] || null; }, "board");
-    apply(seed.doctrine && seed.doctrine.entries, function (e) { return (map.doctrineId || {})[e.id] || (map.topic || {})[e.topic] || null; }, "doctrine");
+    apply(bank.board.questions, function (q) { return (map.category || {})[q.category] || null; }, "board");
+    apply(bank.doctrine && bank.doctrine.entries, function (e) { return (map.doctrineId || {})[e.id] || (map.topic || {})[e.topic] || null; }, "doctrine");
     // Same lane rule as tools/pillar-map.mjs pillarForScenario(); the lint's
     // rule (f2) runs the REAL function over the assembled bank, so if this
     // copy of four lines ever drifts from it, the lint fails.
-    apply(seed.scenarios && seed.scenarios.scenarios, function (s) {
+    apply(bank.scenarios && bank.scenarios.scenarios, function (s) {
       if ((map.scenarioId || {})[s.id]) return map.scenarioId[s.id];
       if (/^sc-iot-/.test(s.id)) return "Doctrinal Thinking";
       if (/^sc-(tccc|medevac|opsec|cyber|cui)-/.test(s.id)) return null;
@@ -92,13 +93,20 @@
     h1 ^= 31; h1 = Math.imul(h1, 0x01000193) >>> 0;
     h2 ^= 127; h2 = Math.imul(h2, 0xc2b2ae35) >>> 0;
   }
-  var qs = seed.board.questions;
+  var qs = bank.board.questions;
   for (var k = 0; k < qs.length; k++) { feed(qs[k].id); feed(qs[k].category); feed(qs[k].q); feed(qs[k].boardAnswer || qs[k].a); }
   function hex(n) { return ("00000000" + (n >>> 0).toString(16)).slice(-8); }
-  seed.board.contentHash = hex(h1) + hex(h2);
+  bank.board.contentHash = hex(h1) + hex(h2);
 
-  var G = window.G = window.G || {};
-  G.contentPacks = G.contentPacks || {};
-  G.contentPacks.finalized = { newWave: { since: NEW_WAVE.since, expected: NEW_WAVE.scenarioIds.length, tagged: waveTagged }, pillarsApplied: stats, corrections: corrections, cards: qs.length, contentHash: seed.board.contentHash, hadMap: !!map };
-  if (G.boardSupplement && G.boardSupplement.audit) G.boardSupplement.audit.contentHash = seed.board.contentHash;
+  var finalized = { newWave: { since: NEW_WAVE.since, expected: NEW_WAVE.scenarioIds.length, tagged: waveTagged }, pillarsApplied: stats, corrections: corrections, cards: qs.length, contentHash: bank.board.contentHash, hadMap: !!map };
+  // Optional, "if present" - the same graceful degradation the original
+  // window.G.boardSupplement check had (a fixture or a future build that
+  // never runs board-supplement-integration must not fail here just because
+  // this one audit-sync line has nothing to reach).
+  if (ctx.hasPack("board-supplement-integration")) {
+    var integration = ctx.pack("board-supplement-integration");
+    if (integration && integration.audit) integration.audit.contentHash = bank.board.contentHash;
+  }
+  return finalized;
+  });
 })();
