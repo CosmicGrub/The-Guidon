@@ -25094,22 +25094,30 @@ window.G = window.G || {};
   ];
 
   // ── PRT sessions (ATP 7-22.02) — the two you may be assigned at BLC ──
-  // Content-integrity check (roadmap audit, 2026-09-20): PD's ten names below
-  // are exactly window.GUIDON_SEED.prt.drills' "pd" entry's own exercise
-  // names, which carry a full per-exercise startingPosition/
-  // movementDescription transcription verified against ATP 7-22.02
-  // (tools/lint-prt-sources.mjs gates that record) - confirmed by hand, and
-  // corrected here to match that record's exact spelling/capitalization
-  // (was "Bend & reach", "High jumper", "Push-up", etc. - the same ten
-  // exercises, but not a literal match). The other seven blocks' exercise
-  // names (SSD/CD1/CD2/HSD/MMD1/MMD2/RD) are cross-referenced against the
-  // same source and believed accurate, but GUIDON has not done that same
-  // per-exercise citation pass on them - they have no seed.prt.drills
-  // record, exactly like app-modules/pt-planner.js's own PRT_PENDING_DRILLS
-  // map already says for these same drill IDs. PRT_UNVERIFIED_IDS (below)
-  // drives the "(content pending)" tag prtDrill() draws onto those seven
-  // blocks, so this screen and PT Planner's own session-block summary never
-  // disagree about which drills are verified.
+  // Content-integrity check (roadmap audit, 2026-09-20): every exercise name
+  // below was checked, word for word, against the actual bundled source -
+  // docs-source/ATP_7-22.02_Holistic_Health_and_Fitness_Drills_and_Exercises.pdf
+  // (extracted with pdftotext) - not against memory. PD's ten names match
+  // window.GUIDON_SEED.prt.drills' "pd" entry's own exercise names, which
+  // carry a full per-exercise startingPosition/movementDescription
+  // transcription verified against ATP 7-22.02 (tools/lint-prt-sources.mjs
+  // gates that record); corrected here to match that record's exact
+  // spelling/capitalization (was "Bend & reach", "High jumper", "Push-up",
+  // etc. - the same ten exercises, but not a literal match). Checking the
+  // other seven blocks against the source PDF directly (not just the "pd"
+  // record) turned up three real misses, now fixed: CD2's "Half jacks" ->
+  // "Half jack" (the exercise is named in the singular) and "8-count
+  // push-up" -> "8-count T push-up" (a different, specific variant - the
+  // source calls it "8-Count T Push-Up"); MMD1's "Verticals"/"Laterals" ->
+  // "Vertical"/"Lateral" (singular); MMD2's "Crossovers" -> "Crossover"
+  // (singular). None of the seven non-PD blocks have a
+  // startingPosition/movementDescription transcription or a per-exercise
+  // citation in window.GUIDON_SEED.prt.drills, exactly like
+  // app-modules/pt-planner.js's own PRT_PENDING_DRILLS map already says for
+  // these same drill IDs. PRT_UNVERIFIED_IDS (below) drives the "(content
+  // pending)" tag prtDrill() draws onto those seven blocks, so this screen
+  // and PT Planner's own session-block summary never disagree about which
+  // drills carry that fuller, per-exercise verification.
   const PD = ["Bend and Reach","Rear Lunge","High Jumper","Rower","Squat Bender",
               "Windmill","Forward Lunge","Prone Row","Bent-Leg Body Twist","Push-Up"];
   const RD = ["Overhead arm pull","Rear lunge","Extend and flex","Thigh stretch",
@@ -25121,13 +25129,13 @@ window.G = window.G || {};
       { id:"pd",   n:"Preparation Drill (PD)", items:PD },
       { id:"ssd",  n:"Shoulder Stability Drill (SSD)", items:["I raise","T raise","Y raise","L raise","W raise"] },
       { id:"cd1",  n:"Conditioning Drill 1 (CD 1)", items:["Power jump","V-up","Mountain climber","Leg-tuck and twist","Single-leg push-up"] },
-      { id:"cd2",  n:"Conditioning Drill 2 (CD 2)", items:["Turn and lunge","Supine bicycle","Half jacks","Swimmer","8-count push-up"] },
+      { id:"cd2",  n:"Conditioning Drill 2 (CD 2)", items:["Turn and lunge","Supine bicycle","Half jack","Swimmer","8-count T push-up"] },
       { id:"rd",   n:"Recovery Drill (RD)", items:RD } ] },
     endurance: { label:"Endurance & Mobility Session", blocks:[
       { id:"pd",   n:"Preparation Drill (PD)", items:PD },
       { id:"hsd",  n:"Hip Stability Drill (HSD)", items:["Lateral leg raise","Medial leg raise","Bent-leg lateral raise","Single-leg tuck","Single-leg over"] },
-      { id:"mmd1", n:"Military Movement Drill 1 (MMD 1)", items:["Verticals","Laterals","Shuttle sprint"] },
-      { id:"mmd2", n:"Military Movement Drill 2 (MMD 2)", items:["Power skip","Crossovers","Crouch run"] },
+      { id:"mmd1", n:"Military Movement Drill 1 (MMD 1)", items:["Vertical","Lateral","Shuttle sprint"] },
+      { id:"mmd2", n:"Military Movement Drill 2 (MMD 2)", items:["Power skip","Crossover","Crouch run"] },
       { id:"rd",   n:"Recovery Drill (RD)", items:RD } ] }
   };
 
@@ -25343,7 +25351,7 @@ window.G = window.G || {};
       p.appendChild(el("div.feedback.warn", { text:
         "Bring a complete hard copy of the DD Form 2977 Deliberate Risk Assessment Worksheet and brief the overall risk level to the squad \u2014 those are scored steps before a single exercise happens. Each step is all-or-nothing; 70 to pass." }));
       p.appendChild(el("p.hint", { style:"margin-top:6px", text:
-        "Preparation Drill (PD) is verified word-for-word against ATP 7-22.02 (see #/prt). Blocks marked \u201c(content pending)\u201d list the same doctrinal sequence and exercise names, cross-checked against ATP 7-22.02, but have not yet had that same per-exercise citation pass \u2014 use them as a sequence reference, not a substitute for the source ATP." }));
+        "Preparation Drill (PD) is verified word-for-word, exercise by exercise, against ATP 7-22.02 (see #/prt). Blocks marked \u201c(content pending)\u201d have had only their exercise names and sequence checked against the same source, not the full per-exercise starting position/movement text \u2014 use them as a sequence reference, not a substitute for the source ATP." }));
       const seg = el("div.segmented", { style:"margin:8px 0" });
       const listBox = el("div", { "data-prt-drill-blocks":"1" });
       p.appendChild(seg); p.appendChild(listBox); stage.appendChild(p);
