@@ -144,10 +144,29 @@ function locateSeedLiteral(html) {
  * against this function's already-merged literal - "no double work", since
  * that function already assumed the literal was strict JSON before this
  * change existed.
+ *
+ * MUST NOT silently skip. Unlike seedAsJsonParse() below (a pure boot-perf
+ * optimization that is safe to skip - the seed still works as a plain object
+ * literal either way), skipping this step is a CONTENT bug: assembleAppModules()
+ * unconditionally excludes every "emit":"build" content pack from the page
+ * regardless of whether this function ran, so a silent skip here would ship
+ * a build with no pack content AND no runtime pack scripts to fall back on -
+ * missing hundreds of board cards with the build still printing "build ok"
+ * (PR #196 review finding). If the seed literal is not in the one shape this
+ * function knows how to parse, that is a hard build failure, named clearly,
+ * not a build that quietly ships less than it should.
  */
 function mergeSeedContentPacks(html, moduleDir) {
   const loc = locateSeedLiteral(html);
-  if (!loc) return { html, skipped: true, merge: null };
+  if (!loc) {
+    throw new Error(
+      "build: window.GUIDON_SEED is not a plain object literal ({...}) at the point content packs must merge into it - " +
+      "cannot proceed without silently shipping a build missing every \"emit\":\"build\" content pack's content. " +
+      "Expected `window.GUIDON_SEED = {...}` (a JSON object literal); if the seed's on-disk shape genuinely changed " +
+      "(for example it is already `JSON.parse(\"...\")`-wrapped at this point in the pipeline), update this function " +
+      "to parse the new shape - do not let this fall through to a skip."
+    );
+  }
   const { objStart, objEnd } = loc;
   const literal = html.slice(objStart, objEnd);
   let seedObj;
@@ -162,7 +181,7 @@ function mergeSeedContentPacks(html, moduleDir) {
     throw new Error("build: content pack(s) failed to merge: " + broken.map((m) => `${m.file}: ${m.error}`).join("; "));
   }
   const newLiteral = JSON.stringify(seedObj);
-  return { html: html.slice(0, objStart) + newLiteral + html.slice(objEnd), skipped: false, merge };
+  return { html: html.slice(0, objStart) + newLiteral + html.slice(objEnd), merge };
 }
 
 function seedAsJsonParse(html) {
@@ -1030,9 +1049,10 @@ async function main() {
   /* ------------------------------ report ------------------------------ */
   const kb = (s) => (Buffer.byteLength(s, "utf8") / 1048576).toFixed(2) + " MB";
   console.log("build ok");
-  console.log(seedMerge.skipped
-    ? "  content packs                 seed literal was not a plain object (unexpected shape) - no packs merged"
-    : `  content packs                 ${seedMerge.merge.modules.length} merged (${seedMerge.merge.staticCounts.board} seed + packs = ${seedMerge.merge.finalCounts.board} board / ${seedMerge.merge.finalCounts.doctrine} doctrine / ${seedMerge.merge.finalCounts.scenarios} scenarios), fingerprint ${seedMerge.merge.finalized ? seedMerge.merge.finalized.contentHash : "(no finalize pass)"}`);
+  // mergeSeedContentPacks() throws rather than skips on an unexpected seed
+  // shape (see its own header), so by the time main() gets here seedMerge.merge
+  // always exists - this line has nothing to report other than success.
+  console.log(`  content packs                 ${seedMerge.merge.modules.length} merged (${seedMerge.merge.staticCounts.board} seed + packs = ${seedMerge.merge.finalCounts.board} board / ${seedMerge.merge.finalCounts.doctrine} doctrine / ${seedMerge.merge.finalCounts.scenarios} scenarios), fingerprint ${seedMerge.merge.finalized ? seedMerge.merge.finalized.contentHash : "(no finalize pass)"}`);
   console.log(seed.skipped
     ? "  seed                          left as an object literal (unexpected shape)"
     : `  seed                          JSON.parse, ${seed.keys} top-level keys (~94ms faster boot at 6x CPU)`);
