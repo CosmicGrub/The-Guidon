@@ -54,6 +54,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { clickButtonByText, clickButtonStartingWith } from "./testkit.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -72,28 +73,10 @@ await dismissOnboarding(page);
 await page.waitForTimeout(300);
 
 // ── Helpers, same shapes as tools/test-rapid-fire-solo-team.mjs ──────────
-async function clickButtonByText(text, scopeSel) {
-  return page.evaluate(({ text, scopeSel }) => {
-    const scope = scopeSel ? document.querySelector(scopeSel) : document;
-    if (!scope) return false;
-    const btn = [...scope.querySelectorAll("button")].find((b) => b.textContent.trim() === text);
-    if (!btn) return false;
-    btn.click();
-    return true;
-  }, { text, scopeSel });
-}
-async function clickButtonStartingWith(prefix) {
-  return page.evaluate((prefix) => {
-    const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim().startsWith(prefix));
-    if (!btn) return false;
-    btn.click();
-    return true;
-  }, prefix);
-}
 async function enterRapidFireFresh() {
-  await clickButtonByText("Board Drill");
+  await clickButtonByText(page, "Board Drill");
   await page.waitForTimeout(150);
-  const clicked = await clickButtonByText("Rapid Fire");
+  const clicked = await clickButtonByText(page, "Rapid Fire");
   await page.waitForFunction(
     () => [...document.querySelectorAll(".rf-mode-seg button")].some((b) => b.textContent.trim() === "Party"),
     { timeout: 30000 }
@@ -112,14 +95,14 @@ async function setCategory(name) {
 async function dismissExplainerIfShown() {
   await page.waitForTimeout(200);
   const hasExplainer = await page.evaluate(() => !!document.querySelector(".rf-explainer"));
-  if (hasExplainer) { await clickButtonByText("Got it — let's go"); await page.waitForTimeout(200); }
+  if (hasExplainer) { await clickButtonByText(page, "Got it — let's go"); await page.waitForTimeout(200); }
 }
 async function currentQuestionText() {
   return page.evaluate(() => document.querySelector(".rf-question")?.textContent || null);
 }
 async function tapCorrect() { await page.evaluate(() => document.querySelector(".rf-judge-correct")?.click()); await page.waitForTimeout(150); }
 async function tapPass() { await page.evaluate(() => document.querySelector(".rf-judge-pass")?.click()); await page.waitForTimeout(150); }
-async function tapEndRound() { await clickButtonByText("End Round"); await page.waitForTimeout(200); }
+async function tapEndRound() { await clickButtonByText(page, "End Round"); await page.waitForTimeout(200); }
 async function passNDistinct(n) {
   // Requires "Remove for this round" so each Pass consumes a distinct card.
   const passed = [];
@@ -169,7 +152,7 @@ async function finalRecapText() {
 }
 async function setupTeamMatch(teamNames) {
   await enterRapidFireFresh();
-  const teamClicked = await clickButtonByText("Team");
+  const teamClicked = await clickButtonByText(page, "Team");
   if (!teamClicked) throw new Error("Rapid Fire Team mode button was not available");
   await page.waitForFunction(
     () => document.querySelectorAll(".rf-team-row input").length >= 2,
@@ -179,7 +162,7 @@ async function setupTeamMatch(teamNames) {
   // via the real "+ Add team" control for a 3+-team match (spec: "2+ named
   // teams", cfg.teams.push("") on click - see src/index.html).
   for (let i = 2; i < teamNames.length; i++) {
-    const added = await clickButtonByText("+ Add team");
+    const added = await clickButtonByText(page, "+ Add team");
     if (!added) throw new Error("Rapid Fire + Add team control was not available");
     await page.waitForFunction(
       (count) => document.querySelectorAll(".rf-team-row input").length >= count,
@@ -199,10 +182,10 @@ async function setupTeamMatch(teamNames) {
   }, teamNames);
   await page.waitForTimeout(80);
   await setCategory("Army Fitness Test (AFT)");
-  await clickButtonByText("All difficulties");
-  await clickButtonByText("Untimed");
-  await clickButtonByText("Remove for this round");
-  await clickButtonByText("Start Round");
+  await clickButtonByText(page, "All difficulties");
+  await clickButtonByText(page, "Untimed");
+  await clickButtonByText(page, "Remove for this round");
+  await clickButtonByText(page, "Start Round");
   await dismissExplainerIfShown();
 }
 
@@ -216,7 +199,7 @@ let st = await screenState();
   ? ok("The very first team (Alpha) is never offered a steal - a plain handoff, nobody played before them")
   : bad("Alpha's initial handoff unexpectedly mentions a steal: " + JSON.stringify(st));
 
-await clickButtonStartingWith("Start Alpha");
+await clickButtonStartingWith(page, "Start Alpha");
 await page.waitForTimeout(200);
 const alphaPassed = await passNDistinct(3);
 await tapCorrect(); await tapCorrect(); // Alpha: 2 correct, 3 passed (distinct, Remove mode)
@@ -229,7 +212,7 @@ st = await screenState();
   ? ok('Alpha\'s 3 real Passes correctly offer Bravo a "Steal chance!" naming the real count (3 cards)')
   : bad("expected a 3-card steal offer for Bravo: " + JSON.stringify(st));
 
-await clickButtonByText("Steal! (3 cards)");
+await clickButtonByText(page, "Steal! (3 cards)");
 await page.waitForTimeout(250);
 st = await screenState();
 st.hasRfCard ? ok("Accepting Steal starts a real round screen (.rf-card), not another handoff") : bad("steal round did not start a real card screen: " + JSON.stringify(st));
@@ -258,7 +241,7 @@ st = await screenState();
   ? ok("That handoff correctly says 'Ready when you are, Bravo' - not 'Pass the device to Bravo,' since Bravo already has it from the steal offer they just resolved")
   : bad("expected the device-already-here copy after an accepted steal, got: " + JSON.stringify(st.onHandoff));
 
-await clickButtonStartingWith("Start Bravo");
+await clickButtonStartingWith(page, "Start Bravo");
 await page.waitForTimeout(200);
 st = await screenState();
 /Correct:\s*0/.test(st.correctText || "")
@@ -305,7 +288,7 @@ alphaBlockHasStealLine === false
    3) Skip declines cleanly - no merge, no steal-bonus line, cards gone.
    ======================================================================== */
 await setupTeamMatch(["Alpha", "Bravo"]);
-await clickButtonStartingWith("Start Alpha");
+await clickButtonStartingWith(page, "Start Alpha");
 await page.waitForTimeout(200);
 await passNDistinct(2);
 await tapCorrect(); await tapCorrect(); await tapCorrect(); // Alpha: 3 correct, 2 passed
@@ -315,7 +298,7 @@ st = await screenState();
   ? ok("A fresh match: Alpha's 2 Passes correctly offer Bravo a 2-card steal chance")
   : bad("expected a 2-card steal offer: " + JSON.stringify(st));
 
-await clickButtonByText("Skip to your turn");
+await clickButtonByText(page, "Skip to your turn");
 await page.waitForTimeout(200);
 st = await screenState();
 (st.onHandoff && /Bravo/.test(st.onHandoff) && !/steal chance/i.test(st.onHandoff))
@@ -325,7 +308,7 @@ st = await screenState();
   ? ok("That handoff also says 'Ready when you are, Bravo' after Skip - the redundant self-instruction is gone on this path too")
   : bad("expected the device-already-here copy after a Skip, got: " + JSON.stringify(st.onHandoff));
 
-await clickButtonStartingWith("Start Bravo");
+await clickButtonStartingWith(page, "Start Bravo");
 await page.waitForTimeout(200);
 await tapCorrect();
 await tapEndRound();
@@ -342,7 +325,7 @@ const recap2 = await finalRecapText();
    feature must be fully invisible when nothing was actually passed.
    ======================================================================== */
 await setupTeamMatch(["Alpha", "Bravo"]);
-await clickButtonStartingWith("Start Alpha");
+await clickButtonStartingWith(page, "Start Alpha");
 await page.waitForTimeout(200);
 await tapCorrect(); await tapCorrect();
 await tapEndRound();
@@ -353,7 +336,7 @@ st = await screenState();
 /Pass the device to Bravo/.test(st.onHandoff || "")
   ? ok("This genuinely plain handoff (no steal offer preceded it) still says the real 'Pass the device to Bravo' - the fix only suppresses that line on the two paths coming out of a steal offer, not this one")
   : bad("expected the normal 'Pass the device' copy on a real, un-preceded handoff: " + JSON.stringify(st.onHandoff));
-await clickButtonStartingWith("Start Bravo");
+await clickButtonStartingWith(page, "Start Bravo");
 await page.waitForTimeout(200);
 await tapCorrect();
 await tapEndRound();
@@ -364,7 +347,7 @@ await tapEndRound();
    never offered to anyone (game ends straight to the Final Recap).
    ======================================================================== */
 await setupTeamMatch(["Alpha", "Bravo", "Charlie"]);
-await clickButtonStartingWith("Start Alpha");
+await clickButtonStartingWith(page, "Start Alpha");
 await page.waitForTimeout(200);
 await passNDistinct(2);
 await tapCorrect(); await tapCorrect();
@@ -374,7 +357,7 @@ st = await screenState();
   ? ok("3-team match: Alpha's 2 Passes offer Bravo a real 2-card steal")
   : bad("expected Bravo's 2-card offer: " + JSON.stringify(st));
 
-await clickButtonByText("Steal! (2 cards)");
+await clickButtonByText(page, "Steal! (2 cards)");
 await page.waitForTimeout(250);
 // Bravo accepts the steal, gets 1 right and re-Passes the other one - that
 // re-Pass is the card this test expects to chain forward to Charlie.
@@ -386,7 +369,7 @@ st = await screenState();
   ? ok("Bravo's steal round (1 correct, 1 re-Pass) finishes into Bravo's OWN real handoff")
   : bad("post-Bravo-steal-round state: " + JSON.stringify(st));
 
-await clickButtonStartingWith("Start Bravo");
+await clickButtonStartingWith(page, "Start Bravo");
 await page.waitForTimeout(200);
 await tapCorrect(); await tapCorrect(); await tapCorrect(); // Bravo's own turn: all correct, no new passes
 await tapEndRound();
@@ -395,9 +378,9 @@ st = await screenState();
   ? ok("CHAIN CONFIRMED: the one card Bravo re-Passed during their OWN accepted steal round correctly flows forward into Charlie's own steal offer (1 card) - mergeStealIntoTurn's passTally union genuinely works across two hops, not just one")
   : bad("expected the chained 1-card offer for Charlie: " + JSON.stringify(st));
 
-await clickButtonByText("Skip to your turn"); // decline it, this test only needed to confirm the offer itself existed
+await clickButtonByText(page, "Skip to your turn"); // decline it, this test only needed to confirm the offer itself existed
 await page.waitForTimeout(200);
-await clickButtonStartingWith("Start Charlie");
+await clickButtonStartingWith(page, "Start Charlie");
 await page.waitForTimeout(200);
 await passNDistinct(2); // Charlie passes on 2 real cards of their own
 await tapCorrect();
@@ -411,7 +394,7 @@ st.onFinalRecap
    7) MAX_STEAL_CARDS caps an offer at 8 even when more were passed.
    ======================================================================== */
 await setupTeamMatch(["Alpha", "Bravo"]);
-await clickButtonStartingWith("Start Alpha");
+await clickButtonStartingWith(page, "Start Alpha");
 await page.waitForTimeout(200);
 await passNDistinct(9); // AFT has 17 real questions - 9 distinct Passes (Remove mode) is safely within range
 await tapCorrect();
@@ -420,9 +403,9 @@ st = await screenState();
 (st.onHandoff && /steal chance/i.test(st.onHandoff) && /8 cards/i.test(st.onHandoff) && !/9 cards/i.test(st.onHandoff))
   ? ok("MAX_STEAL_CARDS holds: 9 real Passes still cap the offer at exactly 8 cards, never 9")
   : bad("expected the offer capped at 8 cards after 9 real passes: " + JSON.stringify(st));
-await clickButtonByText("Skip to your turn");
+await clickButtonByText(page, "Skip to your turn");
 await page.waitForTimeout(200);
-await clickButtonStartingWith("Start Bravo");
+await clickButtonStartingWith(page, "Start Bravo");
 await page.waitForTimeout(200);
 await tapCorrect();
 await tapEndRound();
@@ -437,7 +420,7 @@ await tapEndRound();
    the next team ever saw it).
    ======================================================================== */
 await setupTeamMatch(["Alpha", "Bravo", "Charlie"]);
-await clickButtonStartingWith("Start Alpha");
+await clickButtonStartingWith(page, "Start Alpha");
 await page.waitForTimeout(200);
 const [chainedCard] = await passNDistinct(1);
 await tapCorrect(); await tapCorrect();
@@ -447,7 +430,7 @@ st = await screenState();
   ? ok("Regression setup: Alpha's 1 real Pass offers Bravo a 1-card steal")
   : bad("expected a 1-card offer for Bravo: " + JSON.stringify(st));
 
-await clickButtonByText("Steal! (1 card)");
+await clickButtonByText(page, "Steal! (1 card)");
 await page.waitForTimeout(250);
 // Bravo re-Passes the ONE stolen card - this is the chained card that must
 // survive the cap below. Its steal round then ends on its own (1-card
@@ -455,7 +438,7 @@ await page.waitForTimeout(250);
 await tapPass();
 await page.waitForTimeout(200);
 
-await clickButtonStartingWith("Start Bravo");
+await clickButtonStartingWith(page, "Start Bravo");
 await page.waitForTimeout(200);
 // Bravo's OWN turn now racks up 8 BRAND-NEW distinct passes - enough on
 // its own to fill stealableCardsFrom's entire MAX_STEAL_CARDS=8 cap, if
@@ -474,7 +457,7 @@ st = await screenState();
   ? ok("Bravo's combined passes (1 chained + 8 own) correctly cap Charlie's offer at 8, not 9")
   : bad("expected Charlie's offer capped at 8: " + JSON.stringify(st));
 
-await clickButtonByText("Steal! (8 cards)");
+await clickButtonByText(page, "Steal! (8 cards)");
 await page.waitForTimeout(250);
 const charlieSteals = [];
 for (let i = 0; i < 8; i++) { charlieSteals.push(await currentQuestionText()); await tapCorrect(); }
@@ -482,7 +465,7 @@ charlieSteals.includes(chainedCard)
   ? ok("REGRESSION FIX CONFIRMED: the chained card Bravo re-Passed during their OWN steal round survives the 8-card cap and is genuinely offered to Charlie, even though Bravo separately racked up 8 brand-new passes of their own")
   : bad("the chained card did not survive the cap - expected it among Charlie's 8 stolen cards: chained=" + JSON.stringify(chainedCard) + " shown=" + JSON.stringify(charlieSteals));
 await page.waitForTimeout(200);
-await clickButtonStartingWith("Start Charlie");
+await clickButtonStartingWith(page, "Start Charlie");
 await page.waitForTimeout(200);
 await tapCorrect();
 await tapEndRound();
