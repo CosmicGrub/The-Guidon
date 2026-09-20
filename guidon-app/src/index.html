@@ -18992,13 +18992,19 @@ window.G = window.G || {};
         G.risk._pendingModel = Object.assign({}, model, t.data);
         G.risk.render(mount);
       });
+      // Codex review on PR #191: this warning used to sit AFTER the
+      // quick-start card, whose own hint said "adjust for your specific
+      // situation" - inviting the exact real-facility/location/vulnerability
+      // data entry the warning prohibits, and reading second. The boundary
+      // now comes first, and the quick-start hint itself names what "adjust"
+      // means here (a fictional scenario), so the two pieces of copy agree.
+      mount.appendChild(el("div.feedback.warn", { text: "Practice tool — reproduces DA Form 7278 (DA PAM 190-51). The authoritative Resource Value, Aggressor Likelihood (Table 3-18) and Risk Level (Table 1-2) tables are in DA PAM 190-51; for an official determination use your physical-security office / SMS(CM). Use a synthetic or hypothetical resource, location and vulnerability here — never a real facility name, a real location, or real vulnerability data (same rule as MOI import)." }));
+
       mount.appendChild(el("div.card", { style: "margin-bottom:12px" }, [
         el("label", { text: "Quick-start template" }),
         tmplSel,
-        el("p.hint", { text: "Load a pre-filled scenario as a starting point, then adjust for your specific situation." }),
+        el("p.hint", { text: "Load a pre-filled scenario as a starting point, then adjust the fictional details further (still no real facility, location, or vulnerability data)." }),
       ]));
-
-      mount.appendChild(el("div.feedback.warn", { text: "Practice tool — reproduces DA Form 7278 (DA PAM 190-51). The authoritative Resource Value, Aggressor Likelihood (Table 3-18) and Risk Level (Table 1-2) tables are in DA PAM 190-51; for an official determination use your physical-security office / SMS(CM). Use a synthetic or hypothetical resource, location and vulnerability here — never a real facility name, a real location, or real vulnerability data (same rule as MOI import)." }));
 
       // header fields
       const header = el("div.panel");
@@ -28726,8 +28732,15 @@ window.G = window.G || {};
       var excluded = 0;
       if (!opts.includePrivate) {
         kv = kv.filter(function (row) {
-          if (row && isPrivateKey(row.k)) { excluded++; return false; }
-          return true;
+          if (!row || !isPrivateKey(row.k)) return true;
+          // Codex review on PR #193: both private rows (the roster,
+          // risk:all) hold their entries in an array, wiped to v:[] once
+          // the last one is deleted/cleared - counting that as "excluded"
+          // told a Soldier with an empty roster their (nonexistent) roster
+          // was left out of an otherwise-complete backup. Only a row that
+          // actually holds something is real omitted data.
+          if (Array.isArray(row.v) && row.v.length) excluded++;
+          return false;
         });
       }
       payload.stores.kv = kv;
@@ -28746,8 +28759,15 @@ window.G = window.G || {};
     return payload;
   }
 
-  function downloadAll() {
-    return exportAll().then(function (payload) {
+  // Codex review on PR #191: PRIVATE_PREFIXES made roster and risk-worksheet
+  // rows permanently unbackupable, since neither user-facing "Export backup"
+  // button ever called exportAll({ includePrivate: true }) - the option
+  // existed but nothing reachable in the UI could set it. downloadAll() now
+  // forwards its own opts to exportAll() so a caller (the "include" checkbox
+  // both export panels add below) can opt in per export, while every
+  // existing call site with no opts keeps today's private-excluded default.
+  function downloadAll(opts) {
+    return exportAll(opts).then(function (payload) {
       // G.util.download branches to the native Filesystem+Share path on
       // Android on its own — see task #200; blob+<a download> never worked there.
       // Await it and only report success once the save genuinely completed —
@@ -28934,6 +28954,17 @@ window.G = window.G || {};
         var hasProfileRow = !!(obj && obj.stores && Array.isArray(obj.stores.kv) &&
           obj.stores.kv.some(function (row) { return row && row.k === "guidon:profile:v1"; }));
         var kvRejected = [];
+        // Codex review on PR #193: exportAll({includePrivate:true}) made a
+        // backup that carries the roster and/or a Risk Worksheet reachable -
+        // importing one used to fold those rows into the same generic "N
+        // saved items" count as everything else, so a Soldier approved the
+        // restore with no idea it would also write another person's roster
+        // entries or a resource assessment onto this device. A row holding
+        // nothing (v: [] after everything in it was deleted) isn't real
+        // private data to disclose - same "don't warn about an empty
+        // collection" principle exportAll()'s own excludedPrivateEntries
+        // count uses below.
+        var privateKeysPresent = [];
         if (obj && obj.stores && Array.isArray(obj.stores.kv)) {
           obj.stores.kv.forEach(function (row) {
             if (!row || row.k == null) return;
@@ -28944,9 +28975,11 @@ window.G = window.G || {};
             } else if (!validateKvRow(row)) {
               kvRejected.push(row.k);
             }
+            if (isPrivateKey(row.k) && Array.isArray(row.v) && row.v.length) privateKeysPresent.push(row.k);
           });
         }
         var msg = "Import this backup?" + (sum ? "\n\nIt contains: " + (sum.kv || 0) + " saved items, " + (sum.userScenarios || 0) + " authored scenarios, " + (sum.attempts || 0) + " quiz attempts." : "") + "\n\nYour existing data will be kept; matching items will be overwritten by the backup." + (hasProfileRow ? " This includes your name, rank, and board date." : "") +
+          (privateKeysPresent.length ? " This file also carries " + describeKeys(privateKeysPresent) + " - other people's information or a resource assessment, not your own study data - which will be written to this device too." : "") +
           // Named in the Soldier's words (describeKeys), never by storage key.
           (kvRejected.length ? "\n\n" + (kvRejected.length === 1 ? "1 item in this file is damaged and will be left out: " : kvRejected.length + " items in this file are damaged and will be left out: ") + describeKeys(kvRejected) + ". Everything else will be restored." : "");
         G.modal.confirm(msg, { title: "Import backup" }).then(function (ok) {
@@ -28991,6 +29024,17 @@ window.G = window.G || {};
     refreshLastBackupHint();
     panel.appendChild(lastBackupHint);
 
+    // Codex review on PR #191: this checkbox is the reachable opt-in the
+    // review found missing - unchecked (the safe default), Export backup
+    // behaves exactly as before; checked, it hands downloadAll() the option
+    // that was already there but nothing in the UI could ever set.
+    var includePrivateCb = el("input", { type: "checkbox", id: "backup-include-private" });
+    var includePrivateRow = el("label.mini-row", { for: "backup-include-private", style: "gap:6px;align-items:flex-start;margin:4px 0 8px" }, [
+      includePrivateCb,
+      el("span.hint", { text: "Also include the leader roster and any saved Risk Worksheets. Off by default because these can hold other people's names or a real facility/vulnerability if you didn't follow the synthetic-data guidance - only include them if you specifically need to carry that data to another device." }),
+    ]);
+    panel.appendChild(includePrivateRow);
+
     var row = el("div.backup-actions");
     var exportBtn = el("button.btn.sm", { type: "button", gi: "download", giSize: 14, text: "Export backup" });
     // busyButton() WIRES a click listener itself (see its own definition) -
@@ -29001,13 +29045,14 @@ window.G = window.G || {};
     // fired whatever busyButton listeners had piled up from earlier clicks
     // AND attached one more. Wiring it directly, the same way the DA 4856
     // filler's own genFill button already does correctly, fixes both.
+    function doExport() { return downloadAll({ includePrivate: includePrivateCb.checked }); }
     if (G.util.busyButton) {
-      G.util.busyButton(exportBtn, downloadAll, {
+      G.util.busyButton(exportBtn, doExport, {
         busy: "Exporting…", doneMs: 6000,
         done: function (payload) { refreshLastBackupHint(); return exportDoneMessage(payload); },
       });
     } else {
-      exportBtn.addEventListener("click", downloadAll);
+      exportBtn.addEventListener("click", doExport);
     }
     row.appendChild(exportBtn);
 
@@ -29070,6 +29115,13 @@ window.G = window.G || {};
     if (payload && payload.failedStores && payload.failedStores.length) {
       return "Backup downloaded, but " + payload.failedStores.join(" and ") + " could not be read and " +
         (payload.failedStores.length === 1 ? "is" : "are") + " MISSING from this file — don't rely on it alone, and check Diagnostics.";
+    }
+    // Codex review on PR #191: a backup that quietly left out the roster
+    // and/or every risk worksheet still said only "Backup downloaded" -
+    // indistinguishable from a complete one. Name what was left out (the
+    // "include" checkbox above is how a Soldier gets it into the next one).
+    if (payload && payload.excludedPrivateEntries && !payload.includesOtherPeoplesData) {
+      return "Backup downloaded (the leader roster and/or risk worksheets were left out — check \"include\" above if you need them on the new device).";
     }
     return "Backup downloaded";
   }
@@ -35311,7 +35363,7 @@ window.G = window.G || {};
   views.privacy = function (mount) {
     util.clear(mount);
     mount.appendChild(el("div.section-title", {}, [ el("h2", { text: "Privacy Policy" }), el("div.rule") ]));
-    mount.appendChild(el("p.hint", { text: "Last updated September 6, 2026. Applies to every version of GUIDON — standalone, PWA, desktop, and Android — since they all run from the same source." }));
+    mount.appendChild(el("p.hint", { text: "Last updated September 19, 2026. Applies to every version of GUIDON — standalone, PWA, desktop, and Android — since they all run from the same source." }));
     const SECTIONS = [
       // P1 of the "No server, ever" promise (desktop roadmap, locked decision
       // Q1): the second "short version" paragraph is THE unified sentence -
@@ -35331,15 +35383,16 @@ window.G = window.G || {};
         "Profile information you enter: things like your name, rank, MOS, ETS date, target board date, study weak points, and readiness answers, which you type in to personalize your action plan and drills.",
         "Practice and progress data: quiz attempts, Mock Board results, streaks, and scenario progress, generated as you use the app.",
         "Squad roster (optional, leader-facing only): if you use the roster feature, it asks for initials, a callsign, or a roster number for each Soldier — not full legal names — plus a rank and counseling dates. This is the one place GUIDON stores information about people other than you, so it gets extra protection — see the next section.",
+        "Risk Worksheet (optional, practice tool only): the DA Form 7278 practice tool asks for a resource, a location, and other worksheet fields. It is meant for a synthetic or hypothetical scenario, never a real facility, location, or vulnerability — but because the fields could be used to enter real information, GUIDON gives any saved worksheet the same extra protection as the roster (see the next section).",
         "None of the above ever leaves your device on its own. Nothing here is ever sent to a server.",
       ] },
-      { h: "The squad roster gets extra protection", p: [
-        "Because the roster feature is the only place GUIDON stores data about someone other than the app's user, it is treated differently from everything else:",
-        "If you ever export a backup of your GUIDON data (a JSON file you create yourself, entirely on-device, for your own safekeeping), the squad roster is excluded by default. Your own profile, progress, and drill history are included; roster entries about other people are not.",
-        "Including the roster in a backup requires a separate, explicit opt-in action — it is never bundled in by accident.",
+      { h: "The squad roster and Risk Worksheet get extra protection", p: [
+        "The roster can hold data about someone other than the app's user, and the Risk Worksheet's fields could hold real facility or vulnerability information if its synthetic-only guidance isn't followed. Both are treated differently from everything else GUIDON stores:",
+        "If you ever export a backup of your GUIDON data (a JSON file you create yourself, entirely on-device, for your own safekeeping), the squad roster and any saved Risk Worksheets are excluded by default. Your own profile, progress, and drill history are included; roster entries and risk worksheets are not.",
+        "Including them in a backup requires a separate, explicit “include” opt-in, checked off (unchecked by default) right next to the Export backup button — never bundled in by accident.",
         "This default-exclude / explicit-opt-in behavior is checked automatically before every release.",
       ] },
-      { h: "Backups are yours, not ours", p: ["GUIDON can generate a backup file (JSON) of your data on request. This file is created locally in your browser and saved to your device, the same way any file download works. GUIDON does not upload it anywhere; the developer never sees it. What you do with that file afterward (keep it, delete it, email it to yourself, put it on a shared drive) is entirely your choice and outside GUIDON's control. If you choose to share a backup file that includes the optional squad roster data, you are sharing information about other people, so consider that before doing so."] },
+      { h: "Backups are yours, not ours", p: ["GUIDON can generate a backup file (JSON) of your data on request. This file is created locally in your browser and saved to your device, the same way any file download works. GUIDON does not upload it anywhere; the developer never sees it. What you do with that file afterward (keep it, delete it, email it to yourself, put it on a shared drive) is entirely your choice and outside GUIDON's control. If you choose to include the optional squad roster or Risk Worksheet data in a backup you share, you are sharing information about other people or a resource assessment, so consider that before doing so."] },
       { h: "No accounts, no analytics, no ads, no third parties", p: [
         "No sign-up, login, or account system of any kind — the “profile” in GUIDON is just a local save file, not an identity tied to you.",
         "No analytics or usage tracking of any kind.",
@@ -36226,10 +36279,20 @@ window.G = window.G || {};
       }).catch(() => {});
     }
     refreshLastBackupHint();
-    G.util.busyButton(exportBtn, G.backup.downloadAll, {
+    // Codex review on PR #191: same reachable opt-in as the Profile view's
+    // own Backup & restore panel (backup.js's renderControls()) - unchecked
+    // (the safe default) behaves exactly as before; checked, it's the only
+    // way either "Export backup" button can ever include the roster or a
+    // saved Risk Worksheet in the file.
+    const includePrivateCb = el("input", { type: "checkbox", id: "settings-backup-include-private" });
+    G.util.busyButton(exportBtn, () => G.backup.downloadAll({ includePrivate: includePrivateCb.checked }), {
       busy: "Exporting…", doneMs: 6000, fail: "Export failed — try again.",
       done: (payload) => { refreshLastBackupHint(); return G.backup.exportDoneMessage(payload); },
     });
+    dataPanel.appendChild(el("label.mini-row", { for: "settings-backup-include-private", style: "gap:6px;align-items:flex-start;margin-top:8px" }, [
+      includePrivateCb,
+      el("span.hint", { text: "Also include the leader roster and any saved Risk Worksheets (off by default)." }),
+    ]));
     dataPanel.appendChild(el("div.btn-row", { style: "margin-top:8px" }, [
       exportBtn,
       // Roadmap audit round 4, "Native platform deeper integration gaps"

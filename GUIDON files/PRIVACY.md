@@ -1,6 +1,6 @@
 # Privacy Policy — GUIDON
 
-**Last updated:** September 6, 2026
+**Last updated:** September 19, 2026
 
 This is the Privacy Policy for **GUIDON** (Army Leader Development Trainer), distributed as a standalone HTML app, an installable web app (PWA), a Windows desktop app, and an Android app (package `app.guidon.trainer`). It applies to every version of GUIDON, since they all run from the same source and behave identically with respect to data.
 
@@ -26,20 +26,21 @@ Everything below is stored **only on your device** — never on a server, becaus
 - **Profile information you enter:** things like your name, rank, MOS, ETS date, target board date, study weak points, and readiness answers, which you type in to personalize your action plan and drills.
 - **Practice and progress data:** quiz attempts, Mock Board results, streaks, and scenario progress, generated as you use the app.
 - **Squad roster (optional, leader-facing only):** if you use the roster feature, it asks for initials, a callsign, or a roster number for each Soldier — not full legal names — plus a rank and counseling dates. This is the one place GUIDON stores information about people other than you, so it gets extra protection — see the next section.
+- **Risk Worksheet (optional, practice tool only):** the DA Form 7278 practice tool asks for a resource, a location, and other worksheet fields. It is meant for a synthetic or hypothetical scenario, never a real facility, location, or vulnerability — but because the fields could be used to enter real information, GUIDON gives any saved worksheet the same extra protection as the roster (see the next section).
 
 None of the above ever leaves your device on its own. Nothing here is ever sent to a server.
 
-## The squad roster gets extra protection
+## The squad roster and Risk Worksheet get extra protection
 
-Because the roster feature is the only place GUIDON stores data about someone other than the app's user, it is treated differently from everything else:
+The roster can hold data about someone other than the app's user, and the Risk Worksheet's fields could hold real facility or vulnerability information if its synthetic-only guidance isn't followed. Both are treated differently from everything else GUIDON stores:
 
-- If you ever export a backup of your GUIDON data (a JSON file you create yourself, entirely on-device, for your own safekeeping), **the squad roster is excluded by default.** Your own profile, progress, and drill history are included; roster entries about other people are not.
-- Including the roster in a backup requires a separate, explicit opt-in action — it is never bundled in by accident.
+- If you ever export a backup of your GUIDON data (a JSON file you create yourself, entirely on-device, for your own safekeeping), **the squad roster and any saved Risk Worksheets are excluded by default.** Your own profile, progress, and drill history are included; roster entries and risk worksheets are not.
+- Including them in a backup requires a separate, explicit "include" opt-in, checked off (unchecked by default) right next to the Export backup button — never bundled in by accident.
 - This default-exclude / explicit-opt-in behavior is checked automatically before every release.
 
 ## Backups are yours, not ours
 
-GUIDON can generate a backup file (JSON) of your data on request. This file is created locally in your browser and saved to your device, the same way any file download works. GUIDON does not upload it anywhere; the developer never sees it. What you do with that file afterward (keep it, delete it, email it to yourself, put it on a shared drive) is entirely your choice and outside GUIDON's control. If you choose to share a backup file that includes the optional squad roster data, you are sharing information about other people, so consider that before doing so.
+GUIDON can generate a backup file (JSON) of your data on request. This file is created locally in your browser and saved to your device, the same way any file download works. GUIDON does not upload it anywhere; the developer never sees it. What you do with that file afterward (keep it, delete it, email it to yourself, put it on a shared drive) is entirely your choice and outside GUIDON's control. If you choose to include the optional squad roster or Risk Worksheet data in a backup you share, you are sharing information about other people or a resource assessment, so consider that before doing so.
 
 ## No accounts, no analytics, no ads, no third parties
 

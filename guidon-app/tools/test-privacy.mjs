@@ -71,6 +71,20 @@ opt.keys.includes("guidon:leader:roster:v1")
   ? ok("opt-in export CAN include the roster when explicitly requested") : bad("opt-in did not include roster");
 opt.flag === true ? ok("opt-in payload flags includesOtherPeoplesData = true") : bad("opt-in flag = " + opt.flag);
 
+// Codex review on PR #193: an empty roster (v: [] once the last Soldier is
+// deleted) used to still count as 1 excluded entry - a device with nothing
+// private on it at all was told its (nonexistent) roster was left out of an
+// otherwise-complete backup.
+await page.evaluate(async () => { await G.db.put("kv", { k: "guidon:leader:roster:v1", v: [] }); });
+const empty = await page.evaluate(async () => {
+  const p = await G.backup.exportAll();
+  return { excluded: p.excludedPrivateEntries };
+});
+empty.excluded === 0 ? ok("an empty roster is not counted as an excluded private entry") : bad("empty-roster excluded count = " + empty.excluded);
+// Put a real roster back so the rest of this file's DOM checks (unaffected
+// by this probe) still see the same seeded state as before.
+await page.evaluate(async () => { await G.db.put("kv", { k: "guidon:leader:roster:v1", v: [{ rank:"SPC", name:"J.R.", counseled:"2026-06-01" }] }); });
+
 await page.evaluate(async () => { await G.db.del ? 0 : 0; });
 
 /* ======================================================================
