@@ -8505,7 +8505,31 @@ window.G = window.G || {};
       }
       return list;
     },
-    prtMeta() { return state.seed.prt || { drills: [] }; },
+    // Mode-agnostic: guarantees the same drills/sessions/pendingDrills shape
+    // regardless of which loadContent() path populated state.seed.prt.
+    // The embedded-seed boot path (the only one any build ships today)
+    // already normalizes window.GUIDON_SEED.prt (and therefore state.seed.prt,
+    // the same object reference) with these exact defaults at load time - see
+    // loadContent() above. But loadContent() also has a documented, currently
+    // unshipped "fetched content" path (no window.GUIDON_SEED at all;
+    // state.seed.prt comes straight from a fetched data/prt.json or that
+    // key's own defaultSeedFor() fallback) that never touches
+    // window.GUIDON_SEED and can hand this a plain {drills:[]} with no
+    // sessions/pendingDrills at all. Falling back to the same
+    // DEFAULT_PRT_SESSIONS/DEFAULT_PRT_PENDING_DRILLS here too - rather than
+    // only in loadContent()'s embedded-seed branch - makes prtMeta() the one
+    // place both #/prt's prtHub and pt-planner.js's prtSession()/
+    // prtDrillLabel() can read through and always get a complete shape,
+    // whichever path the seed took (PR #194 review: pt-planner.js used to
+    // read window.GUIDON_SEED.prt directly, which this fixes at its root).
+    prtMeta() {
+      const p = state.seed.prt || {};
+      return Object.assign({}, p, {
+        drills: Array.isArray(p.drills) ? p.drills : [],
+        sessions: (Array.isArray(p.sessions) && p.sessions.length) ? p.sessions : DEFAULT_PRT_SESSIONS,
+        pendingDrills: (p.pendingDrills && typeof p.pendingDrills === "object") ? p.pendingDrills : DEFAULT_PRT_PENDING_DRILLS,
+      });
+    },
 
     // ---- scenarios ----
     // Memoized: rebuilding the merged seed+user map on every call was a hot path

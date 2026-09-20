@@ -29,24 +29,30 @@
   // injected into window.GUIDON_SEED.prt at this module's own load time by
   // an ensurePrtSessionModel() IIFE, now live in core (src/index.html's
   // loadContent(), see DEFAULT_PRT_SESSIONS/DEFAULT_PRT_PENDING_DRILLS
-  // there) so they are guaranteed present on the seed the instant it loads,
-  // regardless of module load order or whether this module even runs. The
-  // functions below read window.GUIDON_SEED.prt.sessions/.pendingDrills
-  // directly - the `|| []`/`|| {}` fallbacks are only this file's usual
-  // defensive try/catch pattern, not a local-literal fallback.
+  // there). The functions below read them through G.store.prtMeta() - the
+  // SAME mode-agnostic reader #/prt's own prtHub already uses - rather than
+  // window.GUIDON_SEED.prt directly. That distinction matters: core's own
+  // seed normalization only guarantees the shape on the embedded-seed boot
+  // path (the one every build ships today); loadContent() also has a
+  // documented, currently unshipped "fetched content" path that never
+  // touches window.GUIDON_SEED at all, and store.prtMeta() is hardened to
+  // return the complete shape on THAT path too (see its own comment in
+  // src/index.html) while a direct window.GUIDON_SEED.prt read would not
+  // have been. The `|| []`/`|| {}` fallbacks below are only this file's
+  // usual defensive try/catch pattern.
   function prtSession(id) {
     var sessions = [];
-    try { sessions = (window.GUIDON_SEED.prt && window.GUIDON_SEED.prt.sessions) || []; } catch (e) {}
+    try { sessions = (G.store.prtMeta().sessions) || []; } catch (e) {}
     return sessions.find(function (s) { return s && s.id === id; }) || null;
   }
   function prtDrillLabel(id) {
     try {
-      var drills = (window.GUIDON_SEED.prt && window.GUIDON_SEED.prt.drills) || [];
+      var drills = (G.store.prtMeta().drills) || [];
       var real = drills.find(function (d) { return d && d.id === id; });
       if (real) return { label:String(real.name || id), pending:false };
     } catch (e) {}
     var pending = {};
-    try { pending = (window.GUIDON_SEED.prt && window.GUIDON_SEED.prt.pendingDrills) || {}; } catch (e) {}
+    try { pending = (G.store.prtMeta().pendingDrills) || {}; } catch (e) {}
     return { label:pending[id] || id, pending:true };
   }
   function prtSessionSummary(id) {
