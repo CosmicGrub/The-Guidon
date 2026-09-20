@@ -38,6 +38,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { clickButtonByText, clickButtonStartingWith } from "./testkit.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -55,16 +56,6 @@ await page.waitForTimeout(700);
 await dismissOnboarding(page);
 await page.waitForTimeout(300);
 
-async function clickButtonByText(text, scopeSel) {
-  return page.evaluate(({ text, scopeSel }) => {
-    const scope = scopeSel ? document.querySelector(scopeSel) : document;
-    if (!scope) return false;
-    const btn = [...scope.querySelectorAll("button")].find((b) => b.textContent.trim() === text);
-    if (!btn) return false;
-    btn.click();
-    return true;
-  }, { text, scopeSel });
-}
 async function setCategory(name) {
   return page.evaluate((name) => {
     const sel = document.querySelector('select[aria-label="Filter by category"]');
@@ -75,32 +66,24 @@ async function setCategory(name) {
   }, name);
 }
 async function startRound() {
-  await clickButtonByText("Start Round");
+  await clickButtonByText(page, "Start Round");
   await page.waitForTimeout(250);
   const hasExplainer = await page.evaluate(() => !!document.querySelector(".rf-explainer"));
   if (hasExplainer) {
-    await clickButtonByText("Got it — let's go");
+    await clickButtonByText(page, "Got it — let's go");
     await page.waitForTimeout(250);
   }
   await page.waitForTimeout(200);
 }
-async function tapReveal() { return clickButtonByText("Reveal answer", ".rf-card"); }
+async function tapReveal() { return clickButtonByText(page, "Reveal answer", ".rf-card"); }
 async function tapCorrect() { await page.evaluate(() => document.querySelector(".rf-judge-correct")?.click()); await page.waitForTimeout(120); }
 async function tapPass() { await page.evaluate(() => document.querySelector(".rf-judge-pass")?.click()); await page.waitForTimeout(120); }
-async function tapEndRound() { await clickButtonByText("End Round"); await page.waitForTimeout(200); }
+async function tapEndRound() { await clickButtonByText(page, "End Round"); await page.waitForTimeout(200); }
 async function tapQzCard() { await page.evaluate(() => document.querySelector(".qz-card")?.click()); await page.waitForTimeout(120); }
-async function clickButtonStartingWith(prefix) {
-  return page.evaluate((prefix) => {
-    const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim().startsWith(prefix));
-    if (!btn) return false;
-    btn.click();
-    return true;
-  }, prefix);
-}
 async function enterRapidFireFresh() {
   await page.evaluate(() => { location.hash = "#/board"; });
   await page.waitForTimeout(300);
-  await clickButtonByText("Rapid Fire");
+  await clickButtonByText(page, "Rapid Fire");
   // A fixed waitForTimeout here can race the Rapid Fire tab's own content
   // swap under CI load: ".segmented button" is used by both the outer
   // Board Drill tab bar and the inner Party/Solo/Team selector, so a query
@@ -145,18 +128,18 @@ await page.evaluate(() => {
 //    Play Again, a second round. ───────────────────────────────────────
 await page.evaluate(() => { location.hash = "#/board"; });
 await page.waitForTimeout(400);
-await clickButtonByText("Rapid Fire");
+await clickButtonByText(page, "Rapid Fire");
 await page.waitForTimeout(300);
 
 await setCategory("Counseling (ATP 6-22.1)");
-await clickButtonByText("All difficulties");
-await clickButtonByText("30s");
-await clickButtonByText("Match my rank");
-await clickButtonByText("All difficulties"); // back to a non-empty pool
-await clickButtonByText("Remove for this round");
-await clickButtonByText("Requeue");
-await clickButtonByText("⚙ Needs Work");
-await clickButtonByText("⚙ Needs Work"); // toggle back off — Counseling (ATP 6-22.1) stays selected
+await clickButtonByText(page, "All difficulties");
+await clickButtonByText(page, "30s");
+await clickButtonByText(page, "Match my rank");
+await clickButtonByText(page, "All difficulties"); // back to a non-empty pool
+await clickButtonByText(page, "Remove for this round");
+await clickButtonByText(page, "Requeue");
+await clickButtonByText(page, "⚙ Needs Work");
+await clickButtonByText(page, "⚙ Needs Work"); // toggle back off — Counseling (ATP 6-22.1) stays selected
 await startRound();
 
 await tapReveal();
@@ -176,7 +159,7 @@ const onRecap1 = await page.evaluate(() =>
 );
 onRecap1 ? ok("first round reached Recap") : bad("first round did not reach Recap — session setup broken, results below may be incomplete");
 
-await clickButtonByText("Play Again");
+await clickButtonByText(page, "Play Again");
 await page.waitForTimeout(300);
 await tapReveal();
 await tapCorrect();
@@ -196,11 +179,11 @@ await tapEndRound(); // no-op if already at Recap; harmless if a round is someho
 // ── Stage 2: a full Solo session (real flip-to-reveal + self-graded
 //    Correct/Pass), same spy still watching from above ────────────────────
 await enterRapidFireFresh();
-await clickButtonByText("Solo");
+await clickButtonByText(page, "Solo");
 await setCategory("Army Fitness Test (AFT)");
-await clickButtonByText("All difficulties");
-await clickButtonByText("Untimed");
-await clickButtonByText("Start Round"); // Solo skips the explainer entirely
+await clickButtonByText(page, "All difficulties");
+await clickButtonByText(page, "Untimed");
+await clickButtonByText(page, "Start Round"); // Solo skips the explainer entirely
 await page.waitForTimeout(250);
 await tapQzCard(); // flip to reveal — Solo's own reveal mechanic, not Party's Reveal button
 await tapCorrect();
@@ -217,20 +200,20 @@ onSoloRecap ? ok("the Solo session reached its own Recap") : bad("Solo session d
 // ── Stage 2: a full 2-team Team match through to the Final Recap, same
 //    spy still watching ────────────────────────────────────────────────
 await enterRapidFireFresh();
-await clickButtonByText("Team");
+await clickButtonByText(page, "Team");
 await page.evaluate(() => {
   const inputs = [...document.querySelectorAll(".rf-team-row input")];
   inputs[0].value = "Alpha"; inputs[0].dispatchEvent(new Event("input"));
   inputs[1].value = "Bravo"; inputs[1].dispatchEvent(new Event("input"));
 });
 await setCategory("Army Fitness Test (AFT)");
-await clickButtonByText("All difficulties");
-await clickButtonByText("Untimed");
-await clickButtonByText("Start Round");
+await clickButtonByText(page, "All difficulties");
+await clickButtonByText(page, "Untimed");
+await clickButtonByText(page, "Start Round");
 await page.waitForTimeout(250);
 const hadTeamExplainer = await page.evaluate(() => !!document.querySelector(".rf-explainer"));
-if (hadTeamExplainer) { await clickButtonByText("Got it — let's go"); await page.waitForTimeout(250); }
-await clickButtonStartingWith("Start Alpha");
+if (hadTeamExplainer) { await clickButtonByText(page, "Got it — let's go"); await page.waitForTimeout(250); }
+await clickButtonStartingWith(page, "Start Alpha");
 await page.waitForTimeout(200);
 await tapCorrect();
 await tapPass();
@@ -239,9 +222,9 @@ await tapEndRound();
 // (see tools/test-rapid-fire-steal-round.mjs for dedicated coverage) -
 // Skip it so this test's own no-writes assertion still sees a clean run
 // through to the Final Recap.
-await clickButtonByText("Skip to your turn");
+await clickButtonByText(page, "Skip to your turn");
 await page.waitForTimeout(200);
-await clickButtonStartingWith("Start Bravo");
+await clickButtonStartingWith(page, "Start Bravo");
 await page.waitForTimeout(200);
 await tapCorrect();
 await tapCorrect();

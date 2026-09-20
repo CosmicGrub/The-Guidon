@@ -60,6 +60,7 @@ import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 import { loadManifest } from "./content-manifest.mjs";
+import { clickButtonByText } from "./testkit.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -79,16 +80,6 @@ await page.waitForTimeout(300);
 
 // ── Small DOM-query helpers, matching this suite's established style
 //    (page.evaluate + querySelectorAll/find, not the Locator API) ────────
-async function clickButtonByText(text, scopeSel) {
-  return page.evaluate(({ text, scopeSel }) => {
-    const scope = scopeSel ? document.querySelector(scopeSel) : document;
-    if (!scope) return false;
-    const btn = [...scope.querySelectorAll("button")].find((b) => b.textContent.trim() === text);
-    if (!btn) return false;
-    btn.click();
-    return true;
-  }, { text, scopeSel });
-}
 async function openBoard() {
   await page.evaluate(() => { location.hash = "#/board"; });
   await page.waitForTimeout(400);
@@ -97,9 +88,9 @@ async function openBoard() {
  *  visiting another tab first, then Rapid Fire — same shape a Soldier
  *  really leaving and returning to the tab would produce. */
 async function enterRapidFireFresh() {
-  await clickButtonByText("Board Drill");
+  await clickButtonByText(page, "Board Drill");
   await page.waitForTimeout(150);
-  const clicked = await clickButtonByText("Rapid Fire");
+  const clicked = await clickButtonByText(page, "Rapid Fire");
   // A fixed waitForTimeout here can race the Rapid Fire tab's own content
   // swap under CI load: ".segmented button" is used by both the outer
   // Board Drill tab bar and the inner Party/Solo/Team selector, so a query
@@ -142,15 +133,15 @@ async function needsWorkNoteVisible() {
     return !!n && n.style.display !== "none";
   });
 }
-async function clickNeedsWorkChip() { return clickButtonByText("⚙ Needs Work"); }
+async function clickNeedsWorkChip() { return clickButtonByText(page, "⚙ Needs Work"); }
 /** Starts a round from the Setup screen, transparently handling the
  *  one-time quick-start explainer if it's the first round this session. */
 async function startRound() {
-  await clickButtonByText("Start Round");
+  await clickButtonByText(page, "Start Round");
   await page.waitForTimeout(250);
   const hasExplainer = await page.evaluate(() => !!document.querySelector(".rf-explainer"));
   if (hasExplainer) {
-    await clickButtonByText("Got it — let's go");
+    await clickButtonByText(page, "Got it — let's go");
     await page.waitForTimeout(250);
   }
   await page.waitForTimeout(200);
@@ -186,7 +177,7 @@ async function roundState() {
     };
   });
 }
-async function tapReveal() { return clickButtonByText("Reveal answer", ".rf-card"); }
+async function tapReveal() { return clickButtonByText(page, "Reveal answer", ".rf-card"); }
 async function tapCorrect() {
   await page.evaluate(() => document.querySelector(".rf-judge-correct")?.click());
   await page.waitForTimeout(150);
@@ -195,7 +186,7 @@ async function tapPass() {
   await page.evaluate(() => document.querySelector(".rf-judge-pass")?.click());
   await page.waitForTimeout(150);
 }
-async function tapEndRound() { await clickButtonByText("End Round"); await page.waitForTimeout(200); }
+async function tapEndRound() { await clickButtonByText(page, "End Round"); await page.waitForTimeout(200); }
 async function fireVisibility(state) {
   await page.evaluate((s) => {
     Object.defineProperty(document, "visibilityState", { value: s, configurable: true });
@@ -247,7 +238,7 @@ afterSwitch.hasStartBtn ? ok("Rapid Fire's Setup screen renders (real 'Start Rou
 //     no tier or MOS filter, so the live count must equal them exactly.
 const categoryCount = (cat) => page.evaluate((c) => G.store.boardQuestions().filter((q) => q.category === c).length, cat);
 const reviewedSize = loadManifest().board.byCategory;
-await clickButtonByText("All difficulties");
+await clickButtonByText(page, "All difficulties");
 await setCategory("Army Fitness Test (AFT)");
 const aftCount = await categoryCount("Army Fitness Test (AFT)");
 let note = await poolNoteText();
@@ -283,7 +274,7 @@ note = await poolNoteText();
 new RegExp("^" + bandCounts.beginner + " questions in this deck\\.$").test(note || "")
   ? ok(`Setup's default 'Match my rank' band shows the real beginner-band count (${bandCounts.beginner}), proving the guest's real E4 tier is actually applied`)
   : bad(`default 'Match my rank' pool note (expected ${bandCounts.beginner} beginner-band questions): ` + note);
-await clickButtonByText("All difficulties");
+await clickButtonByText(page, "All difficulties");
 note = await poolNoteText();
 new RegExp("^" + bandCounts.total + " questions in this deck\\.$").test(note || "")
   ? ok(`clicking 'All difficulties' widens the pool to the real full count (${bandCounts.total}) — the control genuinely changes the filter, not cosmetic`)
@@ -292,7 +283,7 @@ new RegExp("^" + bandCounts.total + " questions in this deck\\.$").test(note || 
 // 2c) "Needs Work" — fallback case FIRST (fresh guest profile, no attempt
 // history seeded yet anywhere in this session).
 await enterRapidFireFresh();
-await clickButtonByText("All difficulties");
+await clickButtonByText(page, "All difficulties");
 const beforeFallback = await needsWorkNoteVisible();
 !beforeFallback ? ok("no-history fallback note is hidden before 'Needs Work' is toggled on") : bad("fallback note visible before Needs Work was even clicked");
 await clickNeedsWorkChip();
@@ -314,7 +305,7 @@ await page.evaluate(async () => {
   await G.db.put("kv", { k: "srs:" + q.id, v: { reps: 1, ease: 2.3, interval: 1, due: 0, misses: 0, lastGrade: 0 } });
 });
 await enterRapidFireFresh();
-await clickButtonByText("All difficulties");
+await clickButtonByText(page, "All difficulties");
 await clickNeedsWorkChip();
 const afterSeedFallbackVisible = await needsWorkNoteVisible();
 !afterSeedFallbackVisible ? ok("once real SRS history exists, the no-history fallback note no longer shows for 'Needs Work'") : bad("fallback note still shown even after real SRS history was seeded");
@@ -334,13 +325,13 @@ new RegExp("^" + expectedNeedsWork + " questions in this deck\\.$").test(note ||
 // ════════════════════════════════════════════════════════════════════
 await enterRapidFireFresh();
 await setCategory("Counseling (ATP 6-22.1)"); // every question here HAS acceptableAnswer
-await clickButtonByText("All difficulties");
-await clickButtonByText("Start Round");
+await clickButtonByText(page, "All difficulties");
+await clickButtonByText(page, "Start Round");
 await page.waitForTimeout(300);
 const explainerShown = await page.evaluate(() => !!document.querySelector(".rf-explainer"));
 explainerShown ? ok("the one-time quick-start explainer shows before this Soldier's first-ever Rapid Fire round") : bad("no quick-start explainer shown on the very first round of the session");
 if (explainerShown) {
-  await clickButtonByText("Got it — let's go");
+  await clickButtonByText(page, "Got it — let's go");
   await page.waitForTimeout(300);
 }
 
@@ -411,7 +402,7 @@ const recapPanelText = await page.evaluate(() => {
   return panel ? panel.innerText : "";
 });
 /Counseling \(ATP 6-22\.1\)/.test(recapPanelText) ? ok("Recap's cross-link names the round's own category ('Counseling (ATP 6-22.1)', the only one this round touched)") : bad("Recap panel text does not mention Counseling (ATP 6-22.1): " + recapPanelText.slice(0, 400));
-const clicked = await clickButtonByText("Practice in Flashcards →");
+const clicked = await clickButtonByText(page, "Practice in Flashcards →");
 await page.waitForTimeout(500);
 clicked ? ok("Recap's 'Practice in Flashcards →' cross-link button is clickable") : bad("cross-link button not found on Recap");
 const drillCatValue = await page.evaluate(() => {
@@ -433,8 +424,8 @@ drillActiveAfterLink ? ok("the cross-link switches to the Flashcards ('Board Dri
 // ════════════════════════════════════════════════════════════════════
 await enterRapidFireFresh();
 await setCategory("Army Fitness Test (AFT)");
-await clickButtonByText("All difficulties");
-await clickButtonByText("Start Round");
+await clickButtonByText(page, "All difficulties");
+await clickButtonByText(page, "Start Round");
 await page.waitForTimeout(300);
 const explainerAgain = await page.evaluate(() => !!document.querySelector(".rf-explainer"));
 !explainerAgain ? ok("the quick-start explainer does NOT show again on a later round in the same session (one-time, persisted 'seen' flag)") : bad("explainer showed again on a second round");
@@ -468,7 +459,7 @@ saved.length > 0
   : bad(`could not find any real cards in "${fallbackCat}" to synthesize the Reveal-fallback fixture`);
 await enterRapidFireFresh();
 await setCategory(fallbackCat);
-await clickButtonByText("All difficulties");
+await clickButtonByText(page, "All difficulties");
 await startRound();
 st = await roundState();
 const realCard2 = await page.evaluate(({ qText, cat }) => {
@@ -501,9 +492,9 @@ await page.evaluate(({ cat, saved }) => {
 // ════════════════════════════════════════════════════════════════════
 await enterRapidFireFresh();
 await setCategory("Army Fitness Test (AFT)");
-await clickButtonByText("All difficulties");
-await clickButtonByText("Untimed");
-await clickButtonByText("Remove for this round");
+await clickButtonByText(page, "All difficulties");
+await clickButtonByText(page, "Untimed");
+await clickButtonByText(page, "Remove for this round");
 await startRound();
 for (let i = 0; i < aftCount; i++) await tapPass();
 st = await roundState();
@@ -513,8 +504,8 @@ st.onRecap
 
 await enterRapidFireFresh();
 await setCategory("Army Fitness Test (AFT)");
-await clickButtonByText("All difficulties");
-await clickButtonByText("Untimed");
+await clickButtonByText(page, "All difficulties");
+await clickButtonByText(page, "Untimed");
 // "Requeue" is already the Setup default — left untouched here on purpose.
 await startRound();
 for (let i = 0; i < 5; i++) await tapPass();
@@ -540,8 +531,8 @@ async function clearCapacitor() { await page.evaluate(() => { delete window.Capa
 
 await enterRapidFireFresh();
 await setCategory("Army Fitness Test (AFT)");
-await clickButtonByText("All difficulties");
-await clickButtonByText("Untimed");
+await clickButtonByText(page, "All difficulties");
+await clickButtonByText(page, "Untimed");
 await mockHaptics();
 await startRound();
 await tapCorrect();
@@ -561,9 +552,9 @@ await clearCapacitor();
 // confirm zero haptics calls fire for the same Correct/Pass actions.
 await enterRapidFireFresh();
 await setCategory("Army Fitness Test (AFT)");
-await clickButtonByText("All difficulties");
-await clickButtonByText("Untimed");
-await clickButtonByText("Off"); // Sound / Haptics: Off
+await clickButtonByText(page, "All difficulties");
+await clickButtonByText(page, "Untimed");
+await clickButtonByText(page, "Off"); // Sound / Haptics: Off
 await mockHaptics();
 await startRound();
 await tapCorrect();
@@ -582,8 +573,8 @@ await clearCapacitor();
 async function timerAt(label) {
   await enterRapidFireFresh();
   await setCategory("Army Fitness Test (AFT)");
-  await clickButtonByText("All difficulties");
-  if (label) await clickButtonByText(label);
+  await clickButtonByText(page, "All difficulties");
+  if (label) await clickButtonByText(page, label);
   await startRound();
   const s = await roundState();
   await tapEndRound();
@@ -608,8 +599,8 @@ tAtUntimed === "0s" ? ok("selecting Untimed starts a round showing an elapsed '0
 // ════════════════════════════════════════════════════════════════════
 await enterRapidFireFresh();
 await setCategory("Army Fitness Test (AFT)");
-await clickButtonByText("All difficulties");
-await clickButtonByText("30s");
+await clickButtonByText(page, "All difficulties");
+await clickButtonByText(page, "30s");
 await startRound();
 st = await roundState();
 st.timerText === "30s" ? ok("a 30s timed round starts showing '30s'") : bad("initial timer text for a 30s round: " + st.timerText);
@@ -635,8 +626,8 @@ await tapEndRound();
 // ════════════════════════════════════════════════════════════════════
 await enterRapidFireFresh();
 await setCategory("Army Fitness Test (AFT)"); // the live deck (aftCount, read above)
-await clickButtonByText("All difficulties");
-await clickButtonByText("Untimed");
+await clickButtonByText(page, "All difficulties");
+await clickButtonByText(page, "Untimed");
 // Requeue (default) so passed cards keep coming back around.
 await startRound();
 for (let i = 0; i < aftCount + 3; i++) await tapPass(); // more taps than cards in the live deck -> guarantees at least one card passed 2x+
