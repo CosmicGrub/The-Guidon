@@ -8474,7 +8474,17 @@ window.G = window.G || {};
     // Memoized: rebuilding the merged seed+user map on every call was a hot path
     // (engine, views, and every scenario(id) lookup all hit it). Cache is keyed on
     // the inputs that can change it and invalidated by _bumpScenarios().
-    scenarios() {
+    // _scenarioCacheKey() is the ONE definition of that key, shared by
+    // scenarios() and scenario(id) below - a real bug this fixes: scenario(id)
+    // used to hand-roll its own copy of this string to decide whether
+    // scenarios()'s cache was still valid, and when the MOS component
+    // (activeMos, added for ROADMAP 3g item G) landed only in scenarios()'s
+    // own key, scenario(id)'s copy could never match it again - every single
+    // scenario(id) call silently fell through to `this.scenarios()` instead
+    // of reusing the cached byId map, defeating the memoization this
+    // comment promises. One function neither caller can drift out of sync
+    // with again.
+    _scenarioCacheKey() {
       const s = state.settings;
       // Same first-boot content race as boardQuestions()/doctrine() -
       // see boardQuestions()'s comment. !!state.seed.scenarios flips false
@@ -8488,8 +8498,14 @@ window.G = window.G || {};
       // this memo exactly like it does boardQuestions()'s.
       const prof = (window.G && G.profile && G.profile.cached) ? G.profile.cached() : null;
       const activeMos = (G.mosDecks && G.mosDecks.activeCodes) ? G.mosDecks.activeCodes(prof) : [];
-      const key = (s.tierFilter || "all") + "|" + state.userScenarios.length + "|" + state._scenarioRev + "|" + !!state.seed.scenarios + "|" + activeMos.join(",");
+      return (s.tierFilter || "all") + "|" + state.userScenarios.length + "|" + state._scenarioRev + "|" + !!state.seed.scenarios + "|" + activeMos.join(",");
+    },
+    scenarios() {
+      const s = state.settings;
+      const key = this._scenarioCacheKey();
       if (state._scenarioCache && state._scenarioCache.key === key) return state._scenarioCache.list;
+      const prof = (window.G && G.profile && G.profile.cached) ? G.profile.cached() : null;
+      const activeMos = (G.mosDecks && G.mosDecks.activeCodes) ? G.mosDecks.activeCodes(prof) : [];
       const seed = (state.seed.scenarios && state.seed.scenarios.scenarios) || [];
       const map = new Map();
       seed.forEach((sc) => map.set(sc.id, Object.assign({ _origin: "seed" }, sc)));
@@ -8503,8 +8519,7 @@ window.G = window.G || {};
       return list;
     },
     scenario(id) {
-      const s = state.settings;
-      const key = (s.tierFilter || "all") + "|" + state.userScenarios.length + "|" + state._scenarioRev;
+      const key = this._scenarioCacheKey();
       if (!state._scenarioCache || state._scenarioCache.key !== key) this.scenarios();
       return state._scenarioCache.byId.get(id) || null;
     },
@@ -10335,7 +10350,7 @@ window.G = window.G || {};
       });
     }
 
-    let queue = [], idx = 0, seen = 0, recalled = 0, srsMap = {}, dueOnlyMode = false, leechOnlyMode = false, starOnlyMode = false;
+    let queue = [], idx = 0, seen = 0, recalled = 0, srsMap = {}, dueOnlyMode = false, leechOnlyMode = false, starOnlyMode = false, mosFilterCode = null;
     let flipped = false;
     // "5-Minute Board Reps" (ROADMAP §3f Phase 1): a capped daily set - due
     // cards first, then leeches, then the Soldier's weakest categories -
@@ -10385,6 +10400,13 @@ window.G = window.G || {};
       if (diff !== "All") pool = pool.filter((q) => G.board.normDifficulty(q.difficulty) === diff);
       if (regFilter !== "All") pool = pool.filter((q) => (regIndex.get(q.id) || []).includes(regFilter));
       if (pillarFilter !== "All") pool = pool.filter((q) => q.pillar === pillarFilter);
+      // ROADMAP 3g item G: the "Study <MOS>" deep link's one-shot flag,
+      // consumed above into mosFilterCode - narrows the deck to exactly the
+      // cards tagged with that MOS code. Composes with the other filters
+      // like every one above it (a Soldier could, in principle, also pick a
+      // category within their MOS deck), but starts as the ONLY narrowing
+      // filter active when arrived at fresh via the Readiness button.
+      if (mosFilterCode) pool = pool.filter((q) => Array.isArray(q.mos) && q.mos.some((m) => ((G.mosDecks && G.mosDecks.normalize) ? G.mosDecks.normalize(m) : String(m).toUpperCase()) === mosFilterCode));
       // One db.all("kv") cursor scan instead of N parallel db.get()s -
       // scoped to the FULL bank (all), not just the filtered pool, so the
       // single resulting srsMap also covers what refreshCatList()/
@@ -11350,6 +11372,23 @@ window.G = window.G || {};
       repsMode = true;
       G.board._filterReps = null;
     }
+    // ROADMAP 3g item G / AUDIT-2026-09.md's own requirement ("a lane has
+    // its own picker entry"): the Readiness tab's "Study <MOS>" button sets
+    // this one-shot flag so a Soldier can study the COMPLETE MOS deck as
+    // one queue, not just its individual categories one at a time. Same
+    // one-shot convention as _filterCat/_filterDue/_filterReps immediately
+    // above - read once here, then cleared, so a later, ordinary visit to
+    // Board Drill does not silently keep re-narrowing the deck. Validated
+    // against `all` (already gated through store.boardQuestions()'s own
+    // MOS visibility rule) rather than trusted blindly, so a stale or
+    // invalid code cannot silently produce an empty deck; build() below
+    // reads mosFilterCode the same way it reads dueOnlyMode/starOnlyMode.
+    if (G.board._filterMos) {
+      const wantMos = (G.mosDecks && G.mosDecks.normalize) ? G.mosDecks.normalize(G.board._filterMos) : String(G.board._filterMos).toUpperCase();
+      const hasMos = (q) => Array.isArray(q.mos) && q.mos.some((m) => ((G.mosDecks && G.mosDecks.normalize) ? G.mosDecks.normalize(m) : String(m).toUpperCase()) === wantMos);
+      if (wantMos && all.some(hasMos)) mosFilterCode = wantMos;
+      G.board._filterMos = null;
+    }
     catSel.addEventListener("change", build);
     diffSel.addEventListener("change", build);
 
@@ -11769,6 +11808,29 @@ window.G = window.G || {};
       : clickVerb() + " a card (or press Space) to flip it. Grade yourself 1-4 — Needs Help, Somewhat, Know It, or Down Cold — and spaced repetition schedules your next review accordingly. Filter by study level: Beginner, Intermediate, or Expert (by-the-book verbatim). Star a card to add it to your personal bookmark deck." }));
     if (!boardHintSeen) G.db.local.set(BOARD_HINT_KEY, "1");
     const drillDetail = el("div");
+    // Visible feedback for the one-shot MOS deep link consumed above: unlike
+    // _filterCat/_filterPillar, which land on an EXISTING dropdown/chip row
+    // a Soldier can already see is active, there is no persistent MOS
+    // control in this screen (a whole new always-empty-for-most-Soldiers
+    // chip row was judged not worth the added chrome for a single deck) -
+    // without this banner a narrower-than-usual deck would have no visible
+    // explanation. "Study everything again" clears just this narrowing,
+    // leaving category/level/regulation/pillar untouched.
+    if (mosFilterCode) {
+      const mosDeckLabel = (((G.mosDecks && G.mosDecks.available) ? G.mosDecks.available() : []).find((d) => d.code === mosFilterCode) || {}).label || mosFilterCode;
+      const mosBanner = el("div.panel", { style: "margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap" }, [
+        // lint-patterns.mjs check (c): the space-between+flex-wrap
+        // container above needs one child that can shrink/ellipsize
+        // (flex:1 1 auto + min-width:0) and one that keeps its natural
+        // width (flex:0 0 auto + white-space:nowrap), or the two collide
+        // once the row goes narrow (a long MOS label at phone width).
+        el("span", { style: "flex:1 1 auto;min-width:0", text: "Studying: " + mosDeckLabel }),
+        el("button.btn.ghost.sm", { type: "button", text: "Study everything again", style: "flex:0 0 auto;white-space:nowrap",
+          "aria-label": "Clear the " + mosDeckLabel + " filter and study everything again",
+          onclick: () => { mosFilterCode = null; mosBanner.remove(); build(); } }),
+      ]);
+      drillDetail.appendChild(mosBanner);
+    }
     drillDetail.appendChild(pillarChipBar);
     drillDetail.appendChild(catChipBar);
     drillDetail.appendChild(regChipBar);
@@ -13639,10 +13701,23 @@ window.G = window.G || {};
       const prog = store.getProgress ? await store.getProgress().catch(() => null) : null;
       const doneIds = new Set((prog && prog.completedIds) || []);
       const scsAll = store.scenarios ? store.scenarios() : [];
+      // ROADMAP 3g item G / AUDIT-2026-09.md's own requirement for this lane
+      // ("does not inflate the six promotion-board pillars"): a MOS-tagged
+      // card or scenario already gets its own row in the "MOS Deck
+      // Readiness" panel below. Counting it AGAIN here under its pillar
+      // (92A cards are all "Maintenance & Supply") would double-count it
+      // the instant a Soldier opts in - the six universal pillars must read
+      // exactly the same before and after that opt-in. Excluded ONLY from
+      // this rollup's own selection, not from `all`/`store.scenarios()`
+      // themselves - the Board Readiness Score above and the All Categories
+      // heatmap below are unaffected and correctly keep counting a Soldier's
+      // own active MOS content as part of their overall readiness.
+      const nonMosAll = all.filter((q) => !Array.isArray(q.mos) || !q.mos.length);
+      const nonMosScsAll = scsAll.filter((s) => !Array.isArray(s.mos) || !s.mos.length);
       const pillarRows = (G.board.PILLARS || []).map((p) => {
-        const cards = all.filter((q) => q.pillar === p);
+        const cards = nonMosAll.filter((q) => q.pillar === p);
         const mastered = cards.filter((q) => G.board.isMasteredSrs(srsData[q.id])).length;
-        const scs = scsAll.filter((s) => s.pillar === p);
+        const scs = nonMosScsAll.filter((s) => s.pillar === p);
         return { p, total: cards.length, mastered, pct: cards.length ? Math.round((mastered / cards.length) * 100) : 0, scTotal: scs.length, scDone: scs.filter((s) => doneIds.has(s.id)).length };
       }).filter((r) => r.total || r.scTotal);
       if (pillarRows.length) {
@@ -13713,6 +13788,17 @@ window.G = window.G || {};
               text: (cards.length ? pct + "%  (" + mastered + "/" + cards.length + " cards)" : "no cards") + (scs.length ? "  ·  " + scDone + "/" + scs.length + " scenarios" : "") }),
           ]));
           if (cards.length) row.appendChild(el("div.bar" + (pct >= 85 ? ".green" : pct >= 60 ? ".cyan" : ""), {}, [el("span", { style: "transform:scaleX(" + (pct / 100) + ")" })]));
+          // AUDIT-2026-09.md's own requirement for this lane: "a lane has
+          // its own picker entry" - the complete MOS deck as one study
+          // queue, the same "Study <X>" convention the pillar rollup above
+          // and the weakest-categories panel both already use (never
+          // "Drill " + name - see those buttons' own comments on the
+          // stutter that caused for a name that already starts with the
+          // word being prefixed). Arrives at Board Drill through the
+          // one-shot G.board._filterMos flag, consumed inside renderDrill()
+          // the same way _filterPillar is.
+          if (cards.length) row.appendChild(el("button.btn.ghost.sm", { type: "button", text: "Study " + d.label, "aria-label": "Study " + d.label + " cards", style: "margin-top:4px",
+            onclick: () => { G.board._filterMos = d.code; G.board.render(mount.parentElement || mount); } }));
           mosPanel.appendChild(row);
         });
         mount.appendChild(mosPanel);
@@ -15341,16 +15427,14 @@ window.G = window.G || {};
     // _filterCat/_filterDue/_filterReps) Readiness's "Study <pillar>" sets.
     PILLARS: ["Doctrinal Thinking", "Programs & Support", "Leadership & Counseling", "Maintenance & Supply", "Training Management", "Drill & Board Etiquette"],
     _filterPillar: null,
-    // ROADMAP 3g item G: one-shot entry flag reserved for a future "Study
-    // <MOS>" deep link out of the Readiness tab's "MOS Deck Readiness"
-    // panel, same one-shot convention as _filterCat/_filterPillar/
-    // _filterDue/_filterReps above (set by the caller, consumed and reset
-    // to null by renderDrill). Declared now so the convention and the name
-    // are reserved; NOT YET consumed anywhere - the panel that would set it
-    // links to #/board with the pillar filter instead (a MOS's cards and
-    // its pillar are the same set today, one deck in). Wiring a real
-    // MOS-only queue (distinct from pillar, once a second MOS deck's cards
-    // do not all share one pillar) is deferred rather than guessed at here.
+    // ROADMAP 3g item G / AUDIT-2026-09.md's own requirement for this lane
+    // ("a lane has its own picker entry"): one-shot entry flag the
+    // Readiness tab's "Study <MOS>" button sets, same one-shot convention
+    // as _filterCat/_filterPillar/_filterDue/_filterReps above (set by the
+    // caller, consumed and reset to null by renderDrill - see that
+    // function's own comment). Filters Board Drill's queue to exactly the
+    // cards tagged with that MOS code, independent of pillar/category -
+    // real even where a MOS's cards all happen to share one pillar today.
     _filterMos: null,
     // Heading for a card-back answer that is study-guide wording rather than
     // a quotation (a card marked verbatim:false). "By the Book (verbatim

@@ -26,7 +26,18 @@
  *   - drive the real screen (Settings' own checkbox, Board Drill's own
  *     Readiness tab), never stub the thing under test.
  */
-import { bootApp, ok, bad, check, finish, waitForRoute, until, expectNoConsoleNoise, PERSONAL_PROFILE } from "./testkit.mjs";
+import { bootApp, ok, bad, check, finish, waitForRoute, clickWhenStable, until, expectNoConsoleNoise, PERSONAL_PROFILE } from "./testkit.mjs";
+
+// Both the pillar rollup and the MOS Deck Readiness panel show the same
+// "Maintenance & Supply"/"92A" row shape - a .stat with a .k label and a .v
+// value ("NN%  (mastered/total cards)  ·  done/total scenarios" or "no
+// cards"). One reader for both, keyed by the row's data attribute.
+const rowValueText = (page, selector) => page.evaluate((sel) => {
+  const row = document.querySelector(sel);
+  return row ? (row.querySelector(".stat .v") || {}).textContent : null;
+}, selector);
+const MS_PILLAR_ROW = '.readiness-pillar-row[data-pillar="Maintenance & Supply"]';
+const MOS_92A_ROW = '.readiness-mos-deck-row[data-mos="92A"]';
 
 // The Settings checkbox itself is visually hidden behind this app's custom
 // "switch" look (a styled <span class="track"> sibling carries the visible
@@ -68,6 +79,13 @@ await page.evaluate(() => { G.board._openReadiness && G.board._openReadiness(); 
 await until(page, () => !!document.querySelector(".readiness-pillars"));
 const readinessBefore = await page.evaluate(() => !!document.querySelector(".readiness-mos-decks"));
 check(!readinessBefore, "no \"MOS Deck Readiness\" panel renders when nothing is active", "the .readiness-mos-decks panel rendered with nothing opted in and no matching MOS");
+// Baseline for the (Codex review) double-counting regression check below:
+// the Maintenance & Supply pillar rollup's own numbers with nothing
+// opted in - AR 710-4/supply-discipline content already lives there
+// without any MOS involved, so this row exists and is non-trivial even
+// before 92A is ever touched.
+const pillarBefore = await rowValueText(page, MS_PILLAR_ROW);
+check(!!pillarBefore, "the Maintenance & Supply pillar row exists before 92A is ever opted into", "no Maintenance & Supply pillar row found in the default state");
 
 /* ---- (b) opting in via the real Settings checkbox makes 92A visible ---- */
 await waitForRoute(page, "#/settings", { ready: page.locator("label", { hasText: "MOS Decks" }) });
@@ -103,6 +121,39 @@ check(readinessAfter.hasPanel, "\"MOS Deck Readiness\" panel renders once 92A is
 check(readinessAfter.mosAttr === "92A", "the panel's row is for the 92A deck", () => "row data-mos = " + JSON.stringify(readinessAfter.mosAttr));
 const cardsMatch = readinessAfter.text && readinessAfter.text.match(/(\d+)\/(\d+) cards/);
 check(!!cardsMatch && Number(cardsMatch[2]) > 0, "the row shows a real, non-zero card count", () => "row text = " + JSON.stringify(readinessAfter.text));
+
+/* ---- (g) opting into 92A does not double-count it into the universal
+   Maintenance & Supply pillar rollup (Codex review fix 1 / AUDIT-2026-09.md's
+   own requirement for this lane: "does not inflate the six promotion-board
+   pillars") ---- */
+const pillarAfterOptIn = await rowValueText(page, MS_PILLAR_ROW);
+check(pillarAfterOptIn === pillarBefore,
+  `opting into 92A leaves the Maintenance & Supply pillar rollup exactly as it was (${pillarBefore})`,
+  () => `before opting in: ${JSON.stringify(pillarBefore)}; after: ${JSON.stringify(pillarAfterOptIn)}`);
+check(readinessAfter.text !== pillarAfterOptIn,
+  "...while the MOS Deck Readiness row reports its own, separately-counted 92A numbers",
+  () => `MOS row: ${JSON.stringify(readinessAfter.text)}; pillar row: ${JSON.stringify(pillarAfterOptIn)}`);
+
+/* ---- (h) "Study 92A..." gives the MOS deck its own picker entry (Codex
+   review fix 2 / AUDIT-2026-09.md's own requirement: "a lane has its own
+   picker entry") - a complete study queue of exactly the MOS-tagged cards,
+   reached through the one-shot G.board._filterMos flag ---- */
+const expectedMosPool = await page.evaluate(() =>
+  G.store.boardQuestions().filter((q) => Array.isArray(q.mos) && q.mos.some((m) => G.mosDecks.normalize(m) === "92A")).length);
+await clickWhenStable(page, page.locator(MOS_92A_ROW + " button", { hasText: "Study" }));
+await until(page, () => !!document.querySelector(".qz-front .qz-prompt"));
+const studyDeckSize = await page.evaluate(() => {
+  const s = Array.from(document.querySelectorAll(".stat")).find((x) => /This session/.test(x.textContent));
+  const t = s ? (s.querySelector(".v") || {}).textContent : "";
+  const m = t && t.match(/Card \d+\/(\d+)/);
+  return m ? Number(m[1]) : null;
+});
+check(expectedMosPool > 0, "there really are 92A-tagged cards to study (sanity check on the count this test compares against)", () => "expectedMosPool = " + expectedMosPool);
+check(studyDeckSize === expectedMosPool,
+  `"Study ${deckLabel}" opens a Board Drill queue of exactly the ${expectedMosPool} 92A-tagged cards, nothing else`,
+  () => `deck shows ${studyDeckSize} cards, expected exactly ${expectedMosPool}`);
+const studyBannerVisible = await page.evaluate((label) => (document.body.textContent || "").includes("Studying: " + label), deckLabel);
+check(studyBannerVisible, "a visible banner names the active MOS filter (so a smaller-than-usual deck is never unexplained)", "no \"Studying: <label>\" banner found after clicking Study 92A...");
 
 /* ---- (c) toggling back off removes both again ---- */
 await waitForRoute(page, "#/settings", { ready: page.locator("label", { hasText: "MOS Decks" }) });
@@ -147,6 +198,34 @@ check(Array.isArray(onboardedResult.optedIn) && onboardedResult.optedIn.length =
 check(onboardedResult.mosCards > 0,
   `entering "92A" as your MOS during onboarding is enough on its own to see 92A board content (${onboardedResult.mosCards} cards, no Settings checkbox needed)`,
   "profile.mos=\"92A\" alone did not surface any MOS-tagged board cards");
+
+/* ---- (i) store.scenario(id) actually reuses scenarios()'s cache (Codex
+   review fix 3) ---- */
+// The MOS opt-in above folded G.mosDecks.activeCodes() into
+// store.scenarios()'s cache key, but scenario(id) used to compare against
+// its OWN hand-rolled, shorter copy of that key - the two could never
+// match, so every scenario(id) call silently fell through to a full
+// scenarios() recompute (a fresh array, a fresh Map) instead of reusing
+// the cached byId lookup this file's own comment promises. Proven here by
+// reference identity, not by content equality (a recompute would still
+// produce an array/objects that DEEPLY equal the original - only a
+// reference comparison catches "this was rebuilt for no reason"): the
+// array store.scenarios() returns, and the object store.scenario(id)
+// returns, must both be the EXACT SAME reference across repeated calls
+// with nothing in between that could legitimately invalidate the cache
+// (no profile change, no settings change, no scenario edit).
+const cacheIdentity = await onboarded.page.evaluate(() => {
+  const listBefore = G.store.scenarios();
+  const anyId = listBefore.length ? listBefore[0].id : null;
+  const r1 = anyId ? G.store.scenario(anyId) : null;
+  const r2 = anyId ? G.store.scenario(anyId) : null;
+  const listAfter = G.store.scenarios();
+  return { anyId, sameList: listBefore === listAfter, sameObj: !!r1 && r1 === r2 };
+});
+check(!!cacheIdentity.anyId, "there is at least one scenario to look up (sanity check)", "store.scenarios() returned an empty list");
+check(cacheIdentity.sameList, "scenario(id) does not silently force scenarios() to recompute its cached list (same array reference before and after)", () => JSON.stringify(cacheIdentity));
+check(cacheIdentity.sameObj, "two scenario(id) calls in a row for the same id return the identical cached object, not two freshly rebuilt copies", () => JSON.stringify(cacheIdentity));
+await onboarded.context.close();
 
 expectNoConsoleNoise(noise);
 await finish("MOS DECKS");
