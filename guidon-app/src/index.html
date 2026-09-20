@@ -8091,6 +8091,36 @@ window.G = window.G || {};
     return res.json();
   }
 
+  // Canonical PRT session/drill-composition defaults (ROADMAP 3g item I: one
+  // PRT session model shared by PT Planner and #/prt). This used to live as
+  // PRT_SESSION_DEFS/PRT_PENDING_DRILLS in src/app-modules/pt-planner.js,
+  // injected into window.GUIDON_SEED.prt at that module's own load time by
+  // an ensurePrtSessionModel() IIFE - a runtime-seed-mutation-at-load-time
+  // pattern ROADMAP 3g item E is separately fixing for content packs in
+  // general. Owning the defaults here instead means seed.prt.sessions/
+  // .pendingDrills are guaranteed present the instant the seed loads (see
+  // loadContent() below), regardless of module load order or whether
+  // pt-planner.js's module even runs. Only PD has fully authored/verified
+  // exercise text today (see seed.prt.drills); the remaining drill ids are
+  // explicit placeholders, never fabricated doctrine - docs/design/pt-scheduler.md §2a.
+  const DEFAULT_PRT_SESSIONS = [
+    { id: "strength", label: "Strength & Mobility Session", blocks: [
+      { drillId: "pd" }, { drillId: "ssd" }, { drillId: "cd1" }, { drillId: "cd2" }, { drillId: "rd" }
+    ] },
+    { id: "endurance", label: "Endurance & Mobility Session", blocks: [
+      { drillId: "pd" }, { drillId: "hsd" }, { drillId: "mmd1" }, { drillId: "mmd2" }, { drillId: "rd" }
+    ] }
+  ];
+  const DEFAULT_PRT_PENDING_DRILLS = {
+    ssd: "Shoulder Stability Drill",
+    cd1: "Conditioning Drill 1",
+    cd2: "Conditioning Drill 2",
+    hsd: "Hip Stability Drill",
+    mmd1: "Military Movement Drill 1",
+    mmd2: "Military Movement Drill 2",
+    rd: "Recovery Drill"
+  };
+
   // Load seed content. In the single-file build, content is embedded as window.GUIDON_SEED
   // (no fetch/network). In the served multi-file build, fetch the data/*.json and snapshot
   // into IDB.meta so we survive offline afterward. Same modules, both paths.
@@ -8123,7 +8153,23 @@ window.G = window.G || {};
       // actually loading #/prt in a real browser rather than trusting the
       // seed content and the accessor code each looked right in isolation.
       state.seed.creeds = S.creeds || [];
-      state.seed.prt = S.prt || { drills: [] };
+      // The sessions/pendingDrills defaults are applied IN PLACE onto S.prt
+      // itself (window.GUIDON_SEED.prt), not onto a copy assigned only to
+      // state.seed.prt - the same object identity the rest of this whitelist
+      // already relies on for every other key (state.seed.X is S.X, not a
+      // clone of it). This matters here specifically because pt-planner.js's
+      // prtSession()/prtDrillLabel() (and this app's own regression suite)
+      // read window.GUIDON_SEED.prt.sessions/.pendingDrills DIRECTLY, not
+      // through store.prtMeta()/state.seed.prt - a copy would leave the raw
+      // seed's own .sessions/.pendingDrills missing even though state.seed.prt
+      // looked complete. Real content already authored on S.prt (today:
+      // drills[]; future: authored sessions/pendingDrills) is left untouched -
+      // see DEFAULT_PRT_SESSIONS/DEFAULT_PRT_PENDING_DRILLS above.
+      if (!S.prt || typeof S.prt !== "object") S.prt = {};
+      if (!Array.isArray(S.prt.drills)) S.prt.drills = [];
+      if (!Array.isArray(S.prt.sessions) || !S.prt.sessions.length) S.prt.sessions = DEFAULT_PRT_SESSIONS;
+      if (!S.prt.pendingDrills || typeof S.prt.pendingDrills !== "object") S.prt.pendingDrills = DEFAULT_PRT_PENDING_DRILLS;
+      state.seed.prt = S.prt;
       return;
     }
     const files = {
