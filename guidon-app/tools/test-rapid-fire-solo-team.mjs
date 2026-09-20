@@ -49,6 +49,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { clickButtonByText, clickButtonStartingWith } from "./testkit.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -67,32 +68,14 @@ await dismissOnboarding(page);
 await page.waitForTimeout(300);
 
 // ── Small DOM-query helpers, matching test-rapid-fire.mjs's own style ────
-async function clickButtonByText(text, scopeSel) {
-  return page.evaluate(({ text, scopeSel }) => {
-    const scope = scopeSel ? document.querySelector(scopeSel) : document;
-    if (!scope) return false;
-    const btn = [...scope.querySelectorAll("button")].find((b) => b.textContent.trim() === text);
-    if (!btn) return false;
-    btn.click();
-    return true;
-  }, { text, scopeSel });
-}
-async function clickButtonStartingWith(prefix) {
-  return page.evaluate((prefix) => {
-    const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim().startsWith(prefix));
-    if (!btn) return false;
-    btn.click();
-    return true;
-  }, prefix);
-}
 async function openBoard() {
   await page.evaluate(() => { location.hash = "#/board"; });
   await page.waitForTimeout(400);
 }
 async function enterRapidFireFresh() {
-  await clickButtonByText("Board Drill");
+  await clickButtonByText(page, "Board Drill");
   await page.waitForTimeout(150);
-  const clicked = await clickButtonByText("Rapid Fire");
+  const clicked = await clickButtonByText(page, "Rapid Fire");
   // A fixed waitForTimeout here raced the Rapid Fire tab's own content swap
   // under CI's slower/contended runs: ".segmented button" is used by BOTH
   // the outer Board Drill tab bar AND the inner Party/Solo/Team selector,
@@ -163,7 +146,7 @@ async function enterRapidFireFresh() {
   return clicked;
 }
 async function setMode(mode) {
-  return clickButtonByText(mode); // "Party" | "Solo" | "Team"
+  return clickButtonByText(page, mode); // "Party" | "Solo" | "Team"
 }
 async function setCategory(name) {
   return page.evaluate((name) => {
@@ -178,7 +161,7 @@ async function dismissExplainerIfShown() {
   await page.waitForTimeout(200);
   const hasExplainer = await page.evaluate(() => !!document.querySelector(".rf-explainer"));
   if (hasExplainer) {
-    await clickButtonByText("Got it — let's go");
+    await clickButtonByText(page, "Got it — let's go");
     await page.waitForTimeout(200);
   }
 }
@@ -213,8 +196,8 @@ async function roundState() {
 async function tapQzCard() { await page.evaluate(() => document.querySelector(".qz-card")?.click()); await page.waitForTimeout(120); }
 async function tapCorrect() { await page.evaluate(() => document.querySelector(".rf-judge-correct")?.click()); await page.waitForTimeout(150); }
 async function tapPass() { await page.evaluate(() => document.querySelector(".rf-judge-pass")?.click()); await page.waitForTimeout(150); }
-async function tapEndRound() { await clickButtonByText("End Round"); await page.waitForTimeout(200); }
-async function tapLeaveRound() { await clickButtonByText("Leave round"); await page.waitForTimeout(200); }
+async function tapEndRound() { await clickButtonByText(page, "End Round"); await page.waitForTimeout(200); }
+async function tapLeaveRound() { await clickButtonByText(page, "Leave round"); await page.waitForTimeout(200); }
 async function startBtnDisabled() {
   return page.evaluate(() => {
     const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === "Start Round");
@@ -239,9 +222,9 @@ defaultActive ? ok("Party is the default active mode on a fresh visit (Stage 1's
 // Party round screen shape (Stage 1's own, unchanged) — real .rf-card + a
 // real Reveal-answer button, no .qz-card anywhere.
 await setCategory("Army Fitness Test (AFT)");
-await clickButtonByText("All difficulties");
-await clickButtonByText("Untimed");
-await clickButtonByText("Start Round");
+await clickButtonByText(page, "All difficulties");
+await clickButtonByText(page, "Untimed");
+await clickButtonByText(page, "Start Round");
 await dismissExplainerIfShown();
 let st = await roundState();
 (st.hasRfCard && !st.hasQzCard && st.revealBtnPresent)
@@ -255,9 +238,9 @@ await tapEndRound();
 await enterRapidFireFresh();
 await setMode("Solo");
 await setCategory("Army Fitness Test (AFT)");
-await clickButtonByText("All difficulties");
-await clickButtonByText("Untimed");
-await clickButtonByText("Start Round");
+await clickButtonByText(page, "All difficulties");
+await clickButtonByText(page, "Untimed");
+await clickButtonByText(page, "Start Round");
 await page.waitForTimeout(250);
 st = await roundState();
 (st.hasQzCard && !st.hasRfCard && !st.revealBtnPresent)
@@ -307,9 +290,9 @@ await tapEndRound();
 await enterRapidFireFresh();
 await setMode("Solo");
 await setCategory("Army Fitness Test (AFT)");
-await clickButtonByText("All difficulties");
-await clickButtonByText("Untimed");
-await clickButtonByText("Start Round");
+await clickButtonByText(page, "All difficulties");
+await clickButtonByText(page, "Untimed");
+await clickButtonByText(page, "Start Round");
 await page.waitForTimeout(250);
 await tapQzCard(); await tapCorrect();
 st = await roundState();
@@ -327,9 +310,9 @@ await tapEndRound();
 await enterRapidFireFresh();
 await setMode("Solo");
 await setCategory("Army Fitness Test (AFT)");
-await clickButtonByText("All difficulties");
+await clickButtonByText(page, "All difficulties");
 // 60s is Setup's default — left untouched.
-await clickButtonByText("Start Round");
+await clickButtonByText(page, "Start Round");
 await page.waitForTimeout(250);
 st = await roundState();
 st.timerText === "60s" ? ok("Solo: the untouched Setup default (60s) really starts a Solo round showing '60s' — the same real timer state Party uses") : bad("Solo default timer text: " + st.timerText);
@@ -340,10 +323,10 @@ await tapEndRound();
 await enterRapidFireFresh();
 await setMode("Solo");
 await setCategory("Army Fitness Test (AFT)");
-await clickButtonByText("All difficulties");
-await clickButtonByText("Untimed");
-await clickButtonByText("Remove for this round");
-await clickButtonByText("Start Round");
+await clickButtonByText(page, "All difficulties");
+await clickButtonByText(page, "Untimed");
+await clickButtonByText(page, "Remove for this round");
+await clickButtonByText(page, "Start Round");
 await page.waitForTimeout(250);
 // The live deck size, not a literal: packs can add cards to a seed category (AFT went
 // 17 -> 20 when a duplicate pack category was merged into it), and "pass every card"
@@ -358,10 +341,10 @@ st.onRecap
 await enterRapidFireFresh();
 await setMode("Solo");
 await setCategory("Army Fitness Test (AFT)");
-await clickButtonByText("All difficulties");
-await clickButtonByText("Untimed");
+await clickButtonByText(page, "All difficulties");
+await clickButtonByText(page, "Untimed");
 // Requeue is Setup's default — left untouched.
-await clickButtonByText("Start Round");
+await clickButtonByText(page, "Start Round");
 await page.waitForTimeout(250);
 for (let i = 0; i < 5; i++) { await tapQzCard(); await tapPass(); }
 st = await roundState();
@@ -418,16 +401,16 @@ await page.waitForTimeout(80);
 //    cumulative scores.
 // ════════════════════════════════════════════════════════════════════
 await setCategory("Army Fitness Test (AFT)");
-await clickButtonByText("All difficulties");
-await clickButtonByText("Untimed");
-await clickButtonByText("Start Round");
+await clickButtonByText(page, "All difficulties");
+await clickButtonByText(page, "Untimed");
+await clickButtonByText(page, "Start Round");
 await dismissExplainerIfShown();
 st = await roundState();
 (st.onHandoff && /Alpha/.test(st.onHandoff) && /Team 1 of 2/.test(st.onHandoff))
   ? ok("Team mode starts with a real handoff screen naming Team 1 (Alpha)")
   : bad("initial team handoff state: " + JSON.stringify(st));
 
-await clickButtonStartingWith("Start Alpha");
+await clickButtonStartingWith(page, "Start Alpha");
 await page.waitForTimeout(200);
 st = await roundState();
 (st.hasRfCard && !st.hasQzCard && st.revealBtnPresent)
@@ -450,10 +433,10 @@ st = await roundState();
 /Steal chance!/i.test(st.onHandoff || "")
   ? ok("Alpha's one Pass correctly offers Bravo a steal chance before their own turn")
   : bad("expected a 'Steal chance!' offer after a turn with a real pass: " + JSON.stringify(st));
-await clickButtonByText("Skip to your turn");
+await clickButtonByText(page, "Skip to your turn");
 await page.waitForTimeout(200);
 
-await clickButtonStartingWith("Start Bravo");
+await clickButtonStartingWith(page, "Start Bravo");
 await page.waitForTimeout(200);
 st = await roundState();
 (st.hasRfCard && !st.hasQzCard && st.revealBtnPresent && /Correct:\s*0/.test(st.correctText || ""))
@@ -487,8 +470,8 @@ await page.evaluate(() => { document.documentElement.classList.add("reduce-motio
 await enterRapidFireFresh();
 await setMode("Solo");
 await setCategory("Army Fitness Test (AFT)");
-await clickButtonByText("All difficulties");
-await clickButtonByText("Start Round");
+await clickButtonByText(page, "All difficulties");
+await clickButtonByText(page, "Start Round");
 await page.waitForTimeout(250);
 const reduceMotionState = await page.evaluate(() => {
   const card = document.querySelector(".qz-card");
@@ -528,9 +511,9 @@ hardcodedColorCheck.length === 0
 // ════════════════════════════════════════════════════════════════════
 await enterRapidFireFresh();
 await setCategory("Army Fitness Test (AFT)");
-await clickButtonByText("All difficulties");
-await clickButtonByText("Untimed");
-await clickButtonByText("Start Round");
+await clickButtonByText(page, "All difficulties");
+await clickButtonByText(page, "Untimed");
+await clickButtonByText(page, "Start Round");
 await dismissExplainerIfShown();
 
 const leaveBtnInfo = await page.evaluate(() => {
@@ -566,9 +549,9 @@ afterLeave.onSetup ? ok("Leave round returns to a sane prior view (the Rapid Fir
 // score/streak from the round that was just abandoned (state isn't
 // corrupted by the bail-out).
 await setCategory("Army Fitness Test (AFT)");
-await clickButtonByText("All difficulties");
-await clickButtonByText("Untimed");
-await clickButtonByText("Start Round");
+await clickButtonByText(page, "All difficulties");
+await clickButtonByText(page, "Untimed");
+await clickButtonByText(page, "Start Round");
 await dismissExplainerIfShown();
 st = await roundState();
 (/Correct:\s*0/.test(st.correctText || "") && st.streakText === "")
@@ -589,9 +572,9 @@ async function liveRegionText() {
 }
 await enterRapidFireFresh();
 await setCategory("Army Fitness Test (AFT)");
-await clickButtonByText("All difficulties");
-await clickButtonByText("Untimed");
-await clickButtonByText("Start Round");
+await clickButtonByText(page, "All difficulties");
+await clickButtonByText(page, "Untimed");
+await clickButtonByText(page, "Start Round");
 await dismissExplainerIfShown();
 
 await tapCorrect();
