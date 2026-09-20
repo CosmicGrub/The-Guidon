@@ -22,7 +22,15 @@
  * "headless": true (tools/module-manifest.mjs). The contract: it must be
  * loadable with no DOM (it runs before the app boots anyway); it may extend
  * window.GUIDON_SEED and hang things off window.G.
+ *
+ * --seed <index.html> / --modules <dir> point this at a STAND-IN bank
+ * instead of the real one - same convention as tools/content-manifest.mjs's
+ * own --seed/--modules - so tools/test-lint-content-packs.mjs can prove a
+ * deliberately malformed pack record is really caught, against a small
+ * fixture, without depending on the real app's content staying malformed-
+ * card-free forever.
  */
+import path from "node:path";
 import { assembleBank } from "./assemble-bank.mjs";
 import { PILLARS, PACK_CATEGORIES, pillarForBoard, pillarForDoctrine, pillarForScenario } from "./pillar-map.mjs";
 
@@ -32,8 +40,14 @@ const ok = (m) => console.log("  PASS  " + m);
 const bad = (m) => { fails++; console.log("  FAIL  " + m); };
 const show = (arr, n = 6) => JSON.stringify(arr.slice(0, n)) + (arr.length > n ? ` (+${arr.length - n} more)` : "");
 
+const argv = process.argv.slice(2);
+const argOf = (f) => { const i = argv.indexOf(f); return i !== -1 && argv[i + 1] !== undefined && !argv[i + 1].startsWith("--") ? argv[i + 1] : null; };
+const bankOpts = {};
+if (argOf("--seed")) bankOpts.seedPath = path.resolve(argOf("--seed"));
+if (argOf("--modules")) bankOpts.moduleDir = path.resolve(argOf("--modules")) + path.sep;
+
 console.log("lint-content-packs: records added by src/app-modules content packs meet the same rules as the seed\n");
-const r = assembleBank();
+const r = assembleBank(bankOpts);
 const B = r.data.board.questions, D = r.data.doctrine.entries, S = r.data.scenarios.scenarios;
 const packB = B.filter((q) => q.__pack), packD = D.filter((e) => e.__pack), packS = S.filter((s) => s.__pack);
 const from = (x) => `${x.id} [${x.__pack}]`;

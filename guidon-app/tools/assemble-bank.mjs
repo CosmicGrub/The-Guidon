@@ -64,7 +64,17 @@ export function assembleBank({ seedPath = SEED_PATH, moduleDir = APP_MODULE_DIR 
   const board = (data.board && data.board.questions) || [];
   const doctrine = (data.doctrine && data.doctrine.entries) || [];
   const scenarios = (data.scenarios && data.scenarios.scenarios) || [];
-  let bi = 0, di = 0, si = 0;
+  // Cursors start AFTER the static seed's own records, not at 0: packs
+  // append onto arrays that already hold merged.staticCounts.* seed records
+  // (measured BEFORE any pack ran), so the first pack's contribution begins
+  // at that offset, not at index 0. Starting at 0 tagged the first N static
+  // seed records as pack-owned and left the real, appended pack records
+  // untagged - silently routing lint-content-packs.mjs's pack-only checks
+  // (category/field/pillar/duplicate-question/scenario-structure) at
+  // unrelated static seed records instead of the actual new content, so a
+  // genuinely malformed pack card could pass with nothing ever looking at
+  // it (found in PR #196 review).
+  let bi = merged.staticCounts.board, di = merged.staticCounts.doctrine, si = merged.staticCounts.scenarios;
   for (const m of merged.modules) {
     for (let i = 0; i < m.added.board; i++) { const r = board[bi + i]; if (r) r.__pack = m.file; }
     bi += m.added.board;
