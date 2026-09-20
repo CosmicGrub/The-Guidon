@@ -2,9 +2,14 @@
 
 All notable changes to GUIDON will be documented in this file. Format loosely follows [Keep a Changelog](http://keepachangelog.com/). This is the technical record for developers - the app itself shows a short, plain-language summary of each release to Soldiers directly (G.whatsNew, src/index.html), not this file.
 
-## 2026-09-20 - v1.13.0: Cybersecurity Fundamentals, a safer backup, and ROADMAP 3g Wave 1
+## 2026-09-20 - v1.13.0: Cybersecurity Fundamentals, MOS decks, a safer backup, and ROADMAP 3g Waves 1-2 (partial)
 
-Released 2026-09-20 for every platform.
+Released 2026-09-20 for every platform. **Correction (same day):** the tag was cut via a manual `workflow_dispatch` re-run after a CI flake, by which point ROADMAP 3g items G and I (below) had already landed on `main` - the release ended up a superset of what was originally scoped for this version. This entry (and the in-app What's New note) were updated after the fact to describe what actually shipped; the tagged code itself is unchanged.
+
+**ROADMAP 3g Wave 2 (partial - items G and I; E and H are still in review as of this writing).**
+- **Item G, MOS decks as an opt-in lane** (`src/app-modules/00-mos-decks-core.js`, new): a MOS-tagged board card or scenario (92A today) is now hidden by default and surfaced only when a Soldier's own profile MOS matches it or they explicitly opt in from Settings -> Study Preferences -> MOS Decks. A new "MOS Deck Readiness" row on the Readiness tab, and a "Study <MOS>" deep link into a Board Drill queue scoped to exactly that deck - both driven by one registry (`G.mosDecks`) so a future MOS pack needs no special-casing anywhere else in the app. MOS-tagged content is deliberately excluded from the universal six-pillar Readiness rollup so opting in never inflates a promotion-board pillar score.
+- **Item I, one PRT session model** (`src/app-modules/pt-planner.js`, core seed normalization): PT Planner and `#/prt` now read PRT session/drill composition through one place (`store.prtMeta()`) instead of PT Planner injecting its own copy into the seed at load time - the exact "runtime module mutates the shared seed as a side effect" pattern ROADMAP 3g's structural work is retiring app-wide.
+- **PRT session builder content fix** (`#/drills`, unrelated PR #197): the Preparation Drill's exercise names now match PT Planner's and `#/prt`'s own sourced spelling exactly (they had quietly drifted), and every other drill block now says "(content pending)" instead of showing unsourced exercise names as if they were verified doctrine.
 
 **Content.** New "Cybersecurity Fundamentals" module (`src/app-modules/07-cyber-fundamentals.js`, ROADMAP 3g/OPSEC-audit scoped): 35 board cards, 13 new/expanded dictionary terms and a 16-question knowledge check across 8 topics the existing Cybersecurity & OPSEC module didn't cover - malicious code and ransomware, insider threat, AI-enabled social engineering and deepfakes, telework/mobile security, IoT, SCIF/PED handling, Zero Trust and password hygiene, and secure generative-AI tool use. Every card was independently fact-checked against a second research pass before shipping. Renders as a second, clearly-labeled section on the existing `#/cyber-opsec` route rather than a new nav item, wrapping `G.opsec.render` under the module manifest's `patches` contract.
 
