@@ -1,12 +1,18 @@
 /* GUIDON - second intake deck: 20 general board cards + 20 MOS 92A cards.
    00-board-supplement-core.js owns the merge/dedupe path. This file keeps
-   the user's second deck separately auditable while feeding the same bank. */
+   the user's second deck separately auditable while feeding the same bank.
+
+   ROADMAP 3g E: mergeDeck is no longer read off window.G - it is
+   00-board-supplement-core.js's own define() return value, reached through
+   ctx.pack("board-supplement-core") because this file's manifest entry
+   declares that id under "requires".
+*/
 (function () {
   "use strict";
-  var G = window.G = window.G || {};
-  if (typeof G.boardSupplementMergeDeck !== "function") return;
+  G.contentPack.define("board-supplement-92a", function (bank, ctx) {
+  var mergeDeck = ctx.pack("board-supplement-core").mergeDeck;
 
-  G.boardSupplementMergeDeck({ id: "deck40-general", cards: [
+  mergeDeck({ id: "deck40-general", cards: [
     {n:1,title:"Army Values",category:"Army Values",source:"ADP 6-22",qa:[["What are the seven Army Values?","Loyalty, Duty, Respect, Selfless Service, Honor, Integrity, and Personal Courage — LDRSHIP."],["What does Duty mean?","Fulfill your obligations and accomplish tasks as part of a team.",{sameAs:"av-duty"}]]},
     {n:2,title:"Soldier's Creed",category:"Warrior Ethos",source:"ADP 6-22 / Soldier's Creed",qa:[["What is the Warrior Ethos?","I will always place the mission first; I will never accept defeat; I will never quit; I will never leave a fallen comrade.",{sameAs:"bq9"}],["What does the Soldier's Creed describe?","The professional identity, commitment, discipline, and Warrior Ethos expected of an American Soldier.",{sameAs:"pb-core72-07-1"}]]},
     {n:3,title:"NCO Leadership",category:"Leadership",source:"ADP 6-22",qa:[["What is leadership?","The activity of influencing people by providing purpose, direction, and motivation to accomplish the mission and improve the organization."],["What are the three leader attributes?","Character, Presence, and Intellect.",{sameAs:"attr-2"}]]},
@@ -29,7 +35,7 @@
     {n:20,title:"Weapons Fundamentals",category:"Weapons (TC 3-22.9)",source:"TC 3-22.9",qa:[["What publication covers the M4/M16 rifle and carbine?","TC 3-22.9.",{sameAs:"pb-core72-61-1"}],["What are the four weapon safety rules commonly reinforced in Army training?","Treat every weapon as if it is loaded; never point the weapon at anything you do not intend to destroy; keep your finger straight and off the trigger until ready to fire; ensure positive identification of the target and its surroundings.",{sameAs:"wpn-9"}]]}
   ]});
 
-  G.boardSupplementMergeDeck({ id: "deck40-92a", cards: [
+  mergeDeck({ id: "deck40-92a", cards: [
     {n:21,title:"92A Mission",category:"92A — MOS Fundamentals",source:"DA PAM 611-21 (20 Dec 2022), MOS 92A",qa:[["What is the primary role of a 92A Automated Logistical Specialist?","Receive, store, and issue supplies and equipment; maintain inventory and logistics records; and operate Army logistics ERP processes that support readiness."],["What does a 92A20 add at the Sergeant skill level?","Supervision and training, inventory analysis, controlled-stock management, requisition and issue resolution, ERP reconciliation, inventories, and logistics planning support."]]},
     {n:22,title:"GCSS-Army",category:"92A — GCSS-Army",source:"ATP 4-42 (2 Nov 2020), paras 2-16 to 2-17; GCSS-Army training site (GTRAC)",qa:[["What does GCSS-Army provide?","The automated system the Army uses to carry out materiel management in supply support activities, unit supply rooms, property book offices, and maintenance supply rooms - one integrated enterprise resource planning (ERP) system."],["Where is current GCSS-Army web-based training found?","The GCSS-Army Training and Certification system, GTRAC."]]},
     {n:23,title:"GTRAC",category:"92A — GCSS-Army",source:"GCSS-Army Training and Certification (GTRAC) site - a training portal, not a publication; GCSS-Army itself: ATP 4-42 (2 Nov 2020), para 2-16",qa:[["What four courses should new GCSS-Army students begin with?","GCSS-Army Overview, Basic Navigation, Intermediate Navigation, and Use GCSS-Army Reports."],["What is the goal of GTRAC training?","Full understanding and effective use of GCSS-Army, not merely passing the assessments."]]},
@@ -51,4 +57,5 @@
     {n:39,title:"92A Sergeant Responsibilities",category:"92A — Leadership",source:"DA PAM 611-21 (20 Dec 2022), MOS 92A20; DA PAM 600-25 (11 Sep 2023)",qa:[["As a 92A Sergeant, what leadership role should you expect?","Supervise and train Soldiers, provide technical guidance, enforce standards, manage inventory and supply actions, and support logistics planning."],["What makes a strong 92A NCO?","Technical GCSS-Army proficiency, disciplined accountability, accurate records, proactive problem-solving, training subordinates, and mission-focused customer support."]]},
     {n:40,title:"92A Board Scenarios",category:"92A — Scenarios",source:"AR 710-2 (1 Jul 2024), paras 4-26 and 6-6",qa:[["A customer says a critical part is overdue. What do you do?","Verify the requirement and priority, research the order and status in the system, identify the cause, coordinate with the appropriate supply channel, communicate the status, and document follow-up."],["You discover an inventory discrepancy. What do you do?","Verify the physical count and item data, research transactions and locations, notify the appropriate supervisor, document the findings, and process only authorized adjustments."]]}
   ]});
+  });
 })();

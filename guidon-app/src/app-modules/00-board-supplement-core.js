@@ -5,50 +5,39 @@
    areas, search, study rooms, etc.) sees the same cards with no parallel
    study silo. Exact-question matches preserve the existing id/SRS history;
    the intake provenance is appended instead of creating a duplicate.
+
+   ROADMAP 3g E: "emit":"build" content pack - runs once, at build time
+   (tools/content-pack-engine.mjs), through the one authoring call every
+   content pack uses, G.contentPack.define(id, builder). mergeDeck and the
+   shared audit object used to hang off window.G (window.G.boardSupplement,
+   window.G.boardSupplementMergeDeck) so 01-board-supplement-92a.js could call
+   back into them; they are exposed the same way to any pack that declares
+   this id under "requires", through ctx.pack("board-supplement-core") - see
+   01-board-supplement-92a.js. The category -> pillar table used to be a HAND
+   COPY of tools/pillar-map.mjs's own table (its own comment admitted it could
+   drift); ctx.pillarFor(category) is that real table now, imported directly
+   by the Node build, so it cannot drift again.
 */
 (function () {
   "use strict";
-  var G = window.G = window.G || {};
-  var seed = window.GUIDON_SEED;
-  if (!seed || !seed.board || !Array.isArray(seed.board.questions)) return;
+  G.contentPack.define("board-supplement-core", function (bank, ctx) {
+  if (!bank || !bank.board || !Array.isArray(bank.board.questions)) return { mergeDeck: function () {}, boardSupplement: { decks: [], totals: {} } };
 
   function norm(s) {
-    return String(s || "").toLowerCase().replace(/[\u2018\u2019]/g, "'")
+    return String(s || "").toLowerCase().replace(/[‘’]/g, "'")
       .replace(/[^a-z0-9]+/g, " ").trim();
-  }
-  /* INTERIM: a hand copy of the rows of tools/pillar-map.mjs CATEGORY_PILLAR
-     this deck uses (a later change feeds the real map in at build time). It
-     must agree with that map for every category a deck uses - "Discipline"
-     was missing, so two cards fell out of the Leadership & Counseling pillar
-     filter and readiness row. tools/test-board-content-truth.mjs compares the
-     live bank against pillar-map.mjs so a gap here fails a test. */
-  function pillarFor(cat) {
-    var m = {
-      "Army Values":"Drill & Board Etiquette", "Warrior Ethos":"Drill & Board Etiquette",
-      "Creeds":"Drill & Board Etiquette", "NCO Creed":"Drill & Board Etiquette",
-      "Chain of Command":"Leadership & Counseling", "NCO Support Channel":"Leadership & Counseling",
-      "Customs & Courtesies":"Drill & Board Etiquette", "Board Procedures":"Drill & Board Etiquette",
-      "AR 670-1 — Uniform Standards":"Drill & Board Etiquette", "Awards":"Leadership & Counseling",
-      "AR 623-3 — Evaluations":"Leadership & Counseling", "Army Programs":"Programs & Support",
-      "SHARP (AR 600-52)":"Programs & Support", "Equal Opportunity (AR 600-20)":"Programs & Support",
-      "UCMJ":"Leadership & Counseling", "Promotions":"Leadership & Counseling",
-      "Discipline":"Leadership & Counseling",
-      "Counseling (ATP 6-22.1)":"Leadership & Counseling", "Leadership":"Leadership & Counseling",
-      "Mission Command (ADP 6-0)":"Doctrinal Thinking", "Risk Management":"Doctrinal Thinking",
-      "AR 350-1 (Training Regulation / METL)":"Training Management"
-    };
-    return m[cat] || null;
   }
   /* Prompts already folded into an older card (normalized question -> older
      id). It outlives one deck so that the SAME prompt in a later deck folds
      to the same card instead of being added as new. */
   var foldedPrompts = new Map();
+  var boardSupplement = { decks: [], totals: { sourceCards: 0, qas: 0, added: 0, matched: 0, folded: 0, unresolved: 0 } };
   function mergeDeck(deck) {
-    var bank = seed.board.questions;
+    var questions = bank.board.questions;
     var byQ = new Map();
     var byId = new Map();
     var ids = new Set();
-    bank.forEach(function (q) { byQ.set(norm(q.q), q); byId.set(q.id, q); ids.add(q.id); });
+    questions.forEach(function (q) { byQ.set(norm(q.q), q); byId.set(q.id, q); ids.add(q.id); });
     foldedPrompts.forEach(function (olderId, key) { if (!byQ.has(key) && byId.has(olderId)) byQ.set(key, byId.get(olderId)); });
     var stats = { sourceCards: deck.cards.length, qas: 0, added: 0, matched: 0, folded: 0, unresolved: 0 };
     deck.cards.forEach(function (card) {
@@ -108,15 +97,13 @@
           difficulty: card.difficulty || "basic",
           sourceCards: [sourceCard]
         };
-        var p = pillarFor(card.category); if (p) rec.pillar = p;
-        bank.push(rec); byQ.set(k, rec); byId.set(id, rec); ids.add(id); stats.added++;
+        var p = ctx.pillarFor(card.category); if (p) rec.pillar = p;
+        questions.push(rec); byQ.set(k, rec); byId.set(id, rec); ids.add(id); stats.added++;
       });
     });
-    G.boardSupplement = G.boardSupplement || { decks: [], totals: { sourceCards: 0, qas: 0, added: 0, matched: 0, folded: 0, unresolved: 0 } };
-    G.boardSupplement.decks.push({ id: deck.id, stats: stats });
-    Object.keys(stats).forEach(function (k) { G.boardSupplement.totals[k] = (G.boardSupplement.totals[k] || 0) + stats[k]; });
+    boardSupplement.decks.push({ id: deck.id, stats: stats });
+    Object.keys(stats).forEach(function (k) { boardSupplement.totals[k] = (boardSupplement.totals[k] || 0) + stats[k]; });
   }
-  G.boardSupplementMergeDeck = mergeDeck;
 
   mergeDeck({ id: "core72", cards: [
     {n:1,title:"Army Values: LDRSHIP",category:"Army Values",source:"ADP 6-22",qa:[["What are the seven Army Values?","Loyalty, Duty, Respect, Selfless Service, Honor, Integrity, and Personal Courage."],["What mnemonic is commonly used to remember the Army Values?","LDRSHIP."]]},
@@ -192,4 +179,7 @@
     {n:71,title:"Terrain Features",category:"Land Navigation (TC 3-25.26)",source:"TC 3-25.26",qa:[["What are the five major terrain features?","Hill, ridge, valley, saddle, and depression.",{sameAs:"bq-nav-02"}],["Name three commonly taught minor terrain features.","Draw, spur, and cliff.",{sameAs:"tc32526-3"}]]},
     {n:72,title:"Compass & Pace Count",category:"Land Navigation (TC 3-25.26)",source:"TC 3-25.26",qa:[["What is pace count used for?","Estimating distance traveled on the ground.",{sameAs:"landnav-9"}],["Why must you account for declination when required?","Grid north and magnetic north differ. Correct conversion prevents directional error when moving between a map and compass."]]}
   ]});
+
+  return { mergeDeck: mergeDeck, boardSupplement: boardSupplement };
+  });
 })();
