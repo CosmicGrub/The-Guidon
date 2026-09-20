@@ -1,97 +1,79 @@
 /**
  * assemble-bank: the ONE way tooling sees GUIDON's content - the static seed
- * (window.GUIDON_SEED inside src/index.html) PLUS everything the content
- * packs in src/app-modules add to it when the page loads.
+ * (window.GUIDON_SEED inside src/index.html) merged with every "emit":"build"
+ * content pack, through tools/content-pack-engine.mjs.
  *
- * Why this exists (2026-09-18 audit of PRs #177-#183): content started
- * arriving from numbered src/app-modules/NN-*.js "packs" that push into the
- * seed at load - 277 of the app's 1,274 board cards and 8 of its scenarios at
- * the time of writing. Every gate the seed is held to (lint-board-taxonomy,
- * the consistency counts, the pillar map, the duplicate-category guard) read
- * ONLY the static seed, so packs shipped 81 untagged cards, near-duplicate
- * categories ("Land Navigation" beside "Land Navigation (TC 3-25.26)") and
- * a duplicated question without anything noticing; the ESP32 card exporter
- * and the study-room bank fingerprint each hard-coded WHICH packs exist and
- * silently drifted (the handheld deck was 61 cards short).
+ * ROADMAP 3g E rewrite: before this, content only existed after a content
+ * pack's <script> had run in a real browser, so this file ran the SAME
+ * files a SECOND time, in its own hand-built node:vm sandbox, hoping never
+ * to disagree with the real page (2026-09-18 audit of PRs #177-#183: it
+ * once had, by 81 untagged cards and a fingerprint stamped before the deck
+ * that was supposed to cover). Content packs now run through ONE authoring
+ * call, G.contentPack.define(id, builder), and ONE engine that runs it -
+ * tools/build.mjs bakes its result into the seed before the page ever
+ * ships; this file is now a thin wrapper around the SAME engine, so a tool
+ * and the real app cannot disagree by construction.
  *
- * The fix is not another list of module names kept by this tool. It is this:
- * evaluate every headless module exactly the way the page does (same order
- * tools/build.mjs injects them in), with no browser, against a parsed copy of
- * the seed - and hand the RESULT to every tool.
- *
- * WHICH files, and in WHAT order, comes from src/app-modules/manifest.json
- * through tools/module-manifest.mjs - the same reader the build uses, so the
- * two cannot disagree. (This tool used to pick "files whose name starts with
- * two digits" and sort them itself: a second, implicit copy of the load
- * order.) A module is evaluated here when its entry says "headless": true;
- * the manifest check refuses a content pack or the finalize pass that is not,
- * and the build refuses a file that is not listed at all - so a new pack is
- * still covered the moment it can ship.
- *
- * The contract this imposes on a headless module (enforced by
- * tools/lint-content-packs.mjs): it must be loadable with no DOM - it may
- * read and extend window.GUIDON_SEED and hang things off window.G at load,
- * and must defer anything that needs the page (routes, views, listeners) to
- * DOMContentLoaded or a function called later. Every pack written so far
- * already works this way, because they all have to run before the app boots.
+ * WHICH files, and in WHAT order, still comes from src/app-modules/
+ * manifest.json through tools/module-manifest.mjs - the same reader the
+ * build uses (tools/content-pack-engine.mjs itself reads it), so the two
+ * cannot disagree. A module is merged when its entry says "emit":"build"
+ * (every content-pack and the finalize pass; enforced by
+ * tools/module-manifest.mjs's checkManifest()) - a new pack is still
+ * covered the moment it can ship.
  */
-import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { join } from "node:path";
-import vm from "node:vm";
 import { readSeed } from "./seed-io.mjs";
-import { runtimePillarMap } from "./pillar-map.mjs";
 import { loadModules, APP_MODULE_DIR } from "./module-manifest.mjs";
+import { mergeContentPacks } from "./content-pack-engine.mjs";
 
 export const SEED_PATH = fileURLToPath(new URL("../src/index.html", import.meta.url));
 export { APP_MODULE_DIR };
 
-/** The modules evaluated headlessly, in manifest (= build) order. Throws,
- *  naming the file, if the manifest and the folder disagree - a bank
- *  assembled from a list the build would refuse is not worth linting. */
+/** Every module the manifest marks "headless": true, in manifest order -
+ *  broader than "emit":"build" (it also covers headless FEATURE modules,
+ *  such as 05-opsec-guard.js, that are safe to load with no DOM but never
+ *  touch the seed). Kept for tools/test-module-manifest.mjs's own check that
+ *  this list still agrees with the manifest; assembleBank() below no longer
+ *  goes through it - see mergeContentPacks() in tools/content-pack-engine.mjs
+ *  for the narrower "emit":"build" selection the actual bank merge uses. */
 export function contentPackFiles(dir = APP_MODULE_DIR) {
   return loadModules(dir).headlessFiles;
 }
 
-const counts = (d) => ({
-  board: ((d.board && d.board.questions) || []).length,
-  doctrine: ((d.doctrine && d.doctrine.entries) || []).length,
-  scenarios: ((d.scenarios && d.scenarios.scenarios) || []).length,
-});
-
 /**
- * Returns { data, staticCounts, finalCounts, modules: [{ file, added, error }] }.
- * `data` is the seed AFTER every pack has run; records a pack added carry a
- * non-enumerable-free, plain `__pack` provenance string ONLY in the returned
- * copy (never written anywhere) so lints can say which file a bad record
- * came from.
+ * Returns { data, staticCounts, finalCounts, modules, logs, packs, finalized, G } -
+ * see tools/content-pack-engine.mjs's mergeContentPacks() for the exact
+ * shape of each field. `data` is the seed AFTER every "emit":"build" content
+ * pack has run; a record a pack added carries a non-enumerable-free, plain
+ * `__pack` provenance string ONLY in the returned copy (never written
+ * anywhere) so lints can say which file a bad record came from - the same
+ * contract this function always had.
  */
 export function assembleBank({ seedPath = SEED_PATH, moduleDir = APP_MODULE_DIR } = {}) {
   const { data } = readSeed(seedPath);
-  const staticCounts = counts(data);
-  const logs = [];
-  const noop = () => {};
-  const elementStub = () => ({ style: {}, classList: { add: noop, remove: noop, toggle: noop, contains: () => false }, setAttribute: noop, appendChild: noop, addEventListener: noop, querySelector: () => null, querySelectorAll: () => [] });
-  const documentStub = { readyState: "loading", addEventListener: noop, removeEventListener: noop, querySelector: () => null, querySelectorAll: () => [], getElementById: () => null, createElement: elementStub, body: elementStub(), documentElement: elementStub(), head: elementStub() };
-  const storageStub = { getItem: () => null, setItem: noop, removeItem: noop };
-  const win = { GUIDON_SEED: data, GUIDON_PILLAR_MAP: runtimePillarMap(), G: {}, addEventListener: noop, removeEventListener: noop, document: documentStub, location: { hash: "", href: "", protocol: "http:" }, localStorage: storageStub, sessionStorage: storageStub, navigator: { userAgent: "assemble-bank" }, matchMedia: () => ({ matches: false, addEventListener: noop, addListener: noop }), setTimeout: noop, clearTimeout: noop, setInterval: noop, clearInterval: noop, requestAnimationFrame: noop };
-  win.window = win; win.self = win; win.globalThis = win;
-  const sandbox = Object.assign(win, { console: { log: noop, info: noop, debug: noop, warn: (...a) => logs.push("warn: " + a.join(" ")), error: (...a) => logs.push("error: " + a.join(" ")) } });
-  vm.createContext(sandbox);
-
-  const modules = [];
-  const tag = (list, seen, file) => { for (const r of list) { if (r && !seen.has(r)) { seen.add(r); r.__pack = file; } } };
-  const seenB = new Set(data.board.questions), seenD = new Set(data.doctrine.entries), seenS = new Set(data.scenarios.scenarios);
-  for (const file of contentPackFiles(moduleDir)) {
-    const before = counts(data);
-    let error = null;
-    try { vm.runInContext(readFileSync(join(moduleDir, file), "utf8"), sandbox, { filename: file }); }
-    catch (e) { error = (e && e.message) ? e.message : String(e); }
-    const after = counts(data);
-    tag(data.board.questions, seenB, file); tag(data.doctrine.entries, seenD, file); tag(data.scenarios.scenarios, seenS, file);
-    modules.push({ file, added: { board: after.board - before.board, doctrine: after.doctrine - before.doctrine, scenarios: after.scenarios - before.scenarios }, error });
+  const merged = mergeContentPacks(data, moduleDir);
+  // mergeContentPacks() itself never tags provenance - build.mjs calls it
+  // directly (tools/build.mjs's mergeSeedContentPacks()) and a __pack key
+  // must never leak into the shipped seed. This wrapper is the one caller
+  // lints rely on for "which file added this record", so it derives the tag
+  // from the same per-module added-counts the engine already returns: every
+  // pack only ever APPENDS new records (never reorders or removes one), so
+  // each pack's contribution is exactly the index range its own "added"
+  // count carved out of the final, fully-merged array.
+  const board = (data.board && data.board.questions) || [];
+  const doctrine = (data.doctrine && data.doctrine.entries) || [];
+  const scenarios = (data.scenarios && data.scenarios.scenarios) || [];
+  let bi = 0, di = 0, si = 0;
+  for (const m of merged.modules) {
+    for (let i = 0; i < m.added.board; i++) { const r = board[bi + i]; if (r) r.__pack = m.file; }
+    bi += m.added.board;
+    for (let i = 0; i < m.added.doctrine; i++) { const r = doctrine[di + i]; if (r) r.__pack = m.file; }
+    di += m.added.doctrine;
+    for (let i = 0; i < m.added.scenarios; i++) { const r = scenarios[si + i]; if (r) r.__pack = m.file; }
+    si += m.added.scenarios;
   }
-  return { data, staticCounts, finalCounts: counts(data), modules, logs, G: sandbox.G };
+  return merged;
 }
 
 // CLI: node tools/assemble-bank.mjs  -> prints the per-pack breakdown.

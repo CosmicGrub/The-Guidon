@@ -45,7 +45,10 @@ const errLogs = r.logs.filter((l) => l.startsWith("error:"));
 errLogs.length === 0 ? ok("(p1) no pack wrote to console.error while loading") : bad(`(p1) pack console.error output: ${show(errLogs, 3)}`);
 
 // (p2) the finalize pass ran from the one pillar definition and had nothing to overrule.
-const fin = r.G && r.G.contentPacks && r.G.contentPacks.finalized;
+// ROADMAP 3g E: 98-content-pack-finalize.js's return value, not a window.G
+// global (it stopped touching window.G at all - the finalize pass runs at
+// build time now, where there is no window.G for a Soldier's page to see).
+const fin = r.finalized;
 (fin && fin.hadMap) ? ok(`(p2) 98-content-pack-finalize ran from the injected pillar map (${fin.cards} cards fingerprinted, last)`) : bad("(p2) 98-content-pack-finalize did not run, or ran without window.GUIDON_PILLAR_MAP");
 (fin && fin.corrections.length === 0)
   ? ok("(p2) no pack hand-set a pillar that tools/pillar-map.mjs disagrees with")
