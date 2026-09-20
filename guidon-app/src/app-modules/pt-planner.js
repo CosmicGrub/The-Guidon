@@ -23,51 +23,37 @@
   // Canonical multi-drill session model from docs/design/pt-scheduler.md §2a.
   // Only PD has fully authored/verified exercise text today. The remaining
   // drill IDs are explicit placeholders, never fabricated doctrine.
-  var PRT_SESSION_DEFS = [
-    { id:"strength", label:"Strength & Mobility Session", blocks:[
-      { drillId:"pd" }, { drillId:"ssd" }, { drillId:"cd1" }, { drillId:"cd2" }, { drillId:"rd" }
-    ]},
-    { id:"endurance", label:"Endurance & Mobility Session", blocks:[
-      { drillId:"pd" }, { drillId:"hsd" }, { drillId:"mmd1" }, { drillId:"mmd2" }, { drillId:"rd" }
-    ]}
-  ];
-  var PRT_PENDING_DRILLS = {
-    ssd:"Shoulder Stability Drill",
-    cd1:"Conditioning Drill 1",
-    cd2:"Conditioning Drill 2",
-    hsd:"Hip Stability Drill",
-    mmd1:"Military Movement Drill 1",
-    mmd2:"Military Movement Drill 2",
-    rd:"Recovery Drill"
-  };
-  function ensurePrtSessionModel() {
-    try {
-      var seed = window.GUIDON_SEED;
-      if (!seed || !seed.prt) return;
-      if (!Array.isArray(seed.prt.sessions) || !seed.prt.sessions.length) {
-        seed.prt.sessions = PRT_SESSION_DEFS.map(function (s) {
-          return { id:s.id, label:s.label, blocks:s.blocks.map(function (b) { return { drillId:b.drillId }; }) };
-        });
-      }
-      if (!seed.prt.pendingDrills || typeof seed.prt.pendingDrills !== "object") {
-        seed.prt.pendingDrills = Object.assign({}, PRT_PENDING_DRILLS);
-      }
-    } catch (e) {}
-  }
-  ensurePrtSessionModel();
-
+  //
+  // ROADMAP 3g item I: the session/pending-drill defaults that used to live
+  // here as a module-local PRT_SESSION_DEFS/PRT_PENDING_DRILLS literal,
+  // injected into window.GUIDON_SEED.prt at this module's own load time by
+  // an ensurePrtSessionModel() IIFE, now live in core (src/index.html's
+  // loadContent(), see DEFAULT_PRT_SESSIONS/DEFAULT_PRT_PENDING_DRILLS
+  // there). The functions below read them through G.store.prtMeta() - the
+  // SAME mode-agnostic reader #/prt's own prtHub already uses - rather than
+  // window.GUIDON_SEED.prt directly. That distinction matters: core's own
+  // seed normalization only guarantees the shape on the embedded-seed boot
+  // path (the one every build ships today); loadContent() also has a
+  // documented, currently unshipped "fetched content" path that never
+  // touches window.GUIDON_SEED at all, and store.prtMeta() is hardened to
+  // return the complete shape on THAT path too (see its own comment in
+  // src/index.html) while a direct window.GUIDON_SEED.prt read would not
+  // have been. The `|| []`/`|| {}` fallbacks below are only this file's
+  // usual defensive try/catch pattern.
   function prtSession(id) {
     var sessions = [];
-    try { sessions = (window.GUIDON_SEED.prt && window.GUIDON_SEED.prt.sessions) || []; } catch (e) {}
-    return sessions.find(function (s) { return s && s.id === id; }) || PRT_SESSION_DEFS.find(function (s) { return s.id === id; }) || null;
+    try { sessions = (G.store.prtMeta().sessions) || []; } catch (e) {}
+    return sessions.find(function (s) { return s && s.id === id; }) || null;
   }
   function prtDrillLabel(id) {
     try {
-      var drills = (window.GUIDON_SEED.prt && window.GUIDON_SEED.prt.drills) || [];
+      var drills = (G.store.prtMeta().drills) || [];
       var real = drills.find(function (d) { return d && d.id === id; });
       if (real) return { label:String(real.name || id), pending:false };
     } catch (e) {}
-    return { label:PRT_PENDING_DRILLS[id] || id, pending:true };
+    var pending = {};
+    try { pending = (G.store.prtMeta().pendingDrills) || {}; } catch (e) {}
+    return { label:pending[id] || id, pending:true };
   }
   function prtSessionSummary(id) {
     var s = prtSession(id);
@@ -793,8 +779,6 @@
     _nextDateForDay:nextDateForDay,
     PLAN_FILE_SCHEMA:PLAN_FILE_SCHEMA,
     _session:prtSession,
-    _sessionSummary:prtSessionSummary,
-    SESSION_DEFS:PRT_SESSION_DEFS,
-    PENDING_DRILLS:PRT_PENDING_DRILLS
+    _sessionSummary:prtSessionSummary
   };
 })();
