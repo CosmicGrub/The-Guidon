@@ -12,6 +12,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { until } from "./testkit.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -199,6 +200,57 @@ await page.locator(".gm-box button", { hasText: /Cancel/ }).click().catch(async 
 });
 await page.waitForTimeout(200);
 fs.unlinkSync(currCorruptPath);
+
+// ---- Codex review on PR #193: private rows (roster / Risk Worksheet)
+// disclosed in the import confirm BEFORE any commit ----
+// exportAll({includePrivate:true}) makes a backup that carries the roster
+// reachable, but importing one used to fold it into the same generic "N
+// saved items" count as everything else - approving the dialog gave no
+// hint it would also write another person's roster entries onto this
+// device. A hand-built file (not a fresh export) stands in for one made
+// with the "include" checkbox on, so this proves the DIALOG's own logic
+// without needing to drive that checkbox here too (test-privacy.mjs
+// already proves the checkbox/opts.includePrivate plumbing itself).
+const rosterPath = path.join(os.tmpdir(), "guidon-test-backup-roster-" + Date.now() + ".json");
+const withRoster = JSON.parse(JSON.stringify(parsed));
+withRoster.stores.kv.push({ k: "guidon:leader:roster:v1", v: [{ rank: "SPC", name: "J.R.", counseled: "2026-06-01" }] });
+fs.writeFileSync(rosterPath, JSON.stringify(withRoster));
+
+await page.evaluate(() => { location.hash = "#/profile"; });
+await page.locator("button", { hasText: /Import backup/ }).click();
+await page.locator('input[type="file"]').setInputFiles(rosterPath);
+await page.locator(".gm-box").waitFor({ state: "visible", timeout: 5000 });
+const rosterPreConfirmText = await page.locator(".gm-box").textContent();
+/the squad roster/.test(rosterPreConfirmText || "") && /other people's information/.test(rosterPreConfirmText || "")
+  ? ok("a backup carrying the roster is disclosed in plain words (\"the squad roster\", \"other people's information\") BEFORE the import is confirmed")
+  : bad("confirm dialog did not disclose the roster before commit: " + (rosterPreConfirmText || "").slice(0, 400));
+await page.locator(".gm-box button", { hasText: /Cancel/ }).click().catch(async () => {
+  await page.keyboard.press("Escape");
+});
+(await until(page, () => !document.querySelector(".gm-box"))) || bad("the roster-disclosure confirm dialog did not close after Cancel");
+fs.unlinkSync(rosterPath);
+
+// An EMPTY roster (v: [] - everyone was deleted before this backup was
+// made) is not real private data to disclose - same principle as
+// exportAll()'s own excludedPrivateEntries count (test-privacy.mjs).
+const emptyRosterPath = path.join(os.tmpdir(), "guidon-test-backup-empty-roster-" + Date.now() + ".json");
+const withEmptyRoster = JSON.parse(JSON.stringify(parsed));
+withEmptyRoster.stores.kv.push({ k: "guidon:leader:roster:v1", v: [] });
+fs.writeFileSync(emptyRosterPath, JSON.stringify(withEmptyRoster));
+
+await page.evaluate(() => { location.hash = "#/profile"; });
+await page.locator("button", { hasText: /Import backup/ }).click();
+await page.locator('input[type="file"]').setInputFiles(emptyRosterPath);
+await page.locator(".gm-box").waitFor({ state: "visible", timeout: 5000 });
+const emptyRosterPreConfirmText = await page.locator(".gm-box").textContent();
+!/squad roster/.test(emptyRosterPreConfirmText || "")
+  ? ok("an EMPTY roster row in the file is not disclosed as private data (nothing to disclose)")
+  : bad("confirm dialog disclosed an empty roster as if it held real data: " + (emptyRosterPreConfirmText || "").slice(0, 400));
+await page.locator(".gm-box button", { hasText: /Cancel/ }).click().catch(async () => {
+  await page.keyboard.press("Escape");
+});
+(await until(page, () => !document.querySelector(".gm-box"))) || bad("the empty-roster confirm dialog did not close after Cancel");
+fs.unlinkSync(emptyRosterPath);
 
 // Direct unit check on the shared validator itself (used by BOTH
 // importAll() and Diagnostics' live "Data validity scan" per backup.js's
