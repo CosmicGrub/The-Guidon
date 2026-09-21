@@ -5897,6 +5897,25 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
   .date-grid-row { grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); }
 }
 
+/* Tasking Board (PT Planner's Phase B layout, ROADMAP 3g "customizable
+   screen layouts", src/app-modules/pt-planner.js renderTaskingBoard()) - a
+   company-ops-board metaphor: Mission Library chips staged one at a time
+   onto a 7-day Week Board. Deliberately its OWN classes, not a reuse of
+   .date-grid-row/-col above: Tasking Board is a PT-Planner-only view, not a
+   second screen sharing G.dateGrid.renderWeek, so a future reader grepping
+   .date-grid-row still finds only that real shared component. Effort color
+   (--red/--cyan/--green) is set inline per element, same "real CSS var,
+   never a hardcoded hex" convention as .date-grid-col's borderTopColor. */
+.tb-chip { border-left-width:3px; border-left-style:solid; text-align:left; display:flex; flex-direction:column; align-items:flex-start; gap:2px; }
+.tb-chip[aria-pressed="true"] { border-color:var(--amber); box-shadow:var(--glow-amber); }
+.tb-week-row { display:grid; grid-template-columns:repeat(7,1fr); gap:8px; }
+.tb-day { border-left-width:4px; border-left-style:solid; min-width:0; }
+.tb-guard-strip { display:flex; gap:4px; margin:6px 0; }
+.tb-guard-seg { flex:1; height:10px; border-radius:3px; }
+@media (max-width:640px) {
+  .tb-week-row { grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); }
+}
+
 /* Master-detail split (Board Drill, Doctrine, Squad Roster) - a narrow
    list pane next to a wider detail pane. Gated at >=1024px deliberately:
    below that, a ~280px list pane leaves too little room for a comfortable
