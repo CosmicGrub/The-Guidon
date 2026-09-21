@@ -71,7 +71,17 @@ page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 // while store.init()'s db.ready() is still pending) into something this
 // test can deterministically land a hashchange inside of, instead of
 // depending on a real fresh-profile IndexedDB being slow by chance.
-const DELAY_MS = 700;
+//
+// 700ms flaked in CI (not locally): this shard runs 4 concurrent Chromium
+// suites on a 2-vCPU runner (see ci.yml's PER_CHUNK note), and under that
+// contention page.goto()+the initial page.evaluate()/waitForTimeout() round
+// trips below can themselves burn most or all of a 700ms budget before the
+// hashchanges even fire - "content had already loaded before the
+// hashchanges fired" in CI, never seen on an uncontended machine. 2500ms
+// gives real headroom over that contended setup cost while still being
+// nowhere near a real IndexedDB open's actual duration (near-instant), so
+// the race window this test exists to exercise is still reliably hit.
+const DELAY_MS = 2500;
 await page.addInitScript((delayMs) => {
   const realOpen = window.indexedDB.open.bind(window.indexedDB);
   window.indexedDB.open = function (...args) {
