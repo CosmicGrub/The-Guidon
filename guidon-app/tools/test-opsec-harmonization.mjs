@@ -126,7 +126,7 @@ const group=readFileSync(APP+"src/app-modules/studygroup.js","utf8");
 expect(index.includes('{ hash: "#/cyber-opsec", label: "Cybersecurity & OPSEC"'), "#/cyber-opsec is a declared application route");
 expect(/hashes:\s*\[[^\]]*"#\/cyber-opsec"/.test(index), "Cyber/OPSEC route is present in declared navigation");
 expect(index.includes('"#/cyber-opsec": { d:'), "Guided Tour metadata covers the new route");
-expect(moi.includes("G.opsecGuard.screen(combined)") && moi.indexOf("G.opsecGuard.screen(combined)") < moi.indexOf("runMatching(combined)") && !/screened\.text|sanitizeInput/.test(moi), "MOI import checks the text before matching, and the parser is given the ORIGINAL text - never a rewritten copy");
+expect(moi.includes("G.opsecGuard.screen(combined)") && moi.indexOf("G.opsecGuard.screen(combined)") < moi.indexOf("runMatching(combined,") && !/screened\.text|sanitizeInput/.test(moi), "MOI import checks the text before matching, and the parser is given the ORIGINAL text - never a rewritten copy");
 expect(!moi.includes("Soldier handed a real MOI"), "MOI copy no longer encourages real operational MOIs");
 expect(leader.includes("G.opsecGuard.screen(") && !/sanitizeInput|decisionMessage/.test(leader) && leader.includes("Use initials, a callsign, or a roster number"), "Squad Roster checks the one free-text field and states the minimized-data rule in its own words");
 expect(group.includes("Personal / explicitly authorized networks only") && group.includes("Offline-first design is not an ATO or network authorization"), "Study Rooms permanently states the official-network authorization boundary");

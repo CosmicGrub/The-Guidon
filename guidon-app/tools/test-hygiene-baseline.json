@@ -85,7 +85,7 @@
     "test-live-content-figures.mjs": { "sleeps": 1, "swallowedWaits": 2, "literalCounts": 0 },
     "test-medevac-9line-scenario.mjs": { "sleeps": 6, "swallowedWaits": 0, "literalCounts": 0 },
     "test-misc-routes.mjs": { "sleeps": 34, "swallowedWaits": 0, "literalCounts": 0 },
-    "test-moi-import.mjs": { "sleeps": 18, "swallowedWaits": 2, "literalCounts": 0 },
+    "test-moi-import.mjs": { "sleeps": 17, "swallowedWaits": 2, "literalCounts": 0 },
     "test-money-list-detail.mjs": { "sleeps": 10, "swallowedWaits": 0, "literalCounts": 0 },
     "test-motion-os-default.mjs": { "sleeps": 3, "swallowedWaits": 0, "literalCounts": 0 },
     "test-native-unit.mjs": { "sleeps": 3, "swallowedWaits": 1, "literalCounts": 0 },

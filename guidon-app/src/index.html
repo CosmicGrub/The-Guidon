@@ -699,21 +699,20 @@ html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after 
 .reco .eyebrow { color: var(--text); }
 
 /* ---- Board: SRS due chip ---- */
-/* min-width:44px (Apple HIG / WCAG 2.5.5) is load-bearing, not decorative:
-   dueChip/leechChip are created with placeholder text ("…") and only get
-   their real "⏰ 12 due"/"🔴 3 leeches" content once renderDrill()'s build()
-   finishes its async SRS-map load (see the flashcard drill below). Real
-   content is always well over 44px once it lands, but the placeholder alone
-   collapses to ~28px with this rule's own padding - a genuine, if narrow,
-   window where the tap target fails Apple HIG. Caught by
-   tools/verify-ios-webkit.mjs's iPad sweep, whose ~150ms per-route settle
-   sometimes samples that window under CI runner load. The floor guarantees
-   the footprint from the moment the button is created, independent of
-   timing, rather than trying to out-guess the race with wider placeholder
-   text. box-sizing:border-box (global, see `* { box-sizing }` above) makes
-   this the true rendered width, padding included. */
+/* min-width/min-height:44px - same literal Apple-HIG tap-target convention
+   already used for .chip.search-chip/.mb-cat-chip elsewhere in this file
+   (grep "min-height: 44px" for the others). dueChip/leechChip (index.html,
+   Board's Rapid Fire build()) are created with placeholder text "…" and
+   only get their real "N due"/"N leeches" content once build() resolves
+   the SRS pool - content-only sizing (no min set) measured at ~28px wide
+   during that window, under the 44px minimum; tools/test-ios-webkit-
+   ratchet.mjs's real-Safari sweep caught it reliably once the app's total
+   boot/parse cost grew enough to widen that window past the sweep's own
+   settle wait. A guaranteed minimum footprint fixes the real defect at its
+   source instead of chasing boot-timing margins. */
 .due-chip { font-family: var(--font-mono); font-size: .69rem; color: var(--btn-ink, #1a1206);
-  background: var(--amber); border-radius: 999px; padding: 2px 9px; min-width: 44px; text-align: center; }
+  background: var(--amber); border-radius: 999px; padding: 2px 9px;
+  min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; }
 /* Was background:var(--line-2);color:var(--text-dim) - two tokens meant for
    subtle borders/secondary text, never designed to pair with each other as a
    text-on-background combo. That passed unnoticed for a long time because
@@ -16187,7 +16186,15 @@ window.G = window.G || {};
   // ---------------- Board-date countdown (mirrors the ETS countdown pattern
   // already established in transition.js — same banner shape/coloring logic,
   // adapted for a board date instead of an ETS date) ----------------
-  function renderBoardCountdown() {
+  // onDateSet: optional, called once a board date is successfully set from
+  // this component's own inline "no date yet" input (never on the display-
+  // mode toggle, which doesn't change whether a date exists). Existing
+  // callers (records.js's Board Prep screen, Home) omit it and see no
+  // behavior change - added so a caller whose OWN layout depends on
+  // "does a board date exist" (moi-import.js's Remind-me button) can
+  // refresh itself instead of staying stale until the Soldier navigates
+  // away and back.
+  function renderBoardCountdown(onDateSet) {
     const wrap = el("div");
 
     function draw() {
@@ -16218,6 +16225,7 @@ window.G = window.G || {};
           await store.setSetting("boardDate", dateIn.value);
           try { if (G.util.announce) G.util.announce("Board date set."); } catch (e) {}
           draw();
+          try { if (typeof onDateSet === "function") onDateSet(); } catch (e) {}
         });
         row.appendChild(dateIn); row.appendChild(setBtn);
         wrap.appendChild(row);
@@ -29012,6 +29020,48 @@ window.G = window.G || {};
           Array.isArray(s.blocks) && s.blocks.every(function (b) { return b && typeof b === "object" && typeof b.drillId === "string"; });
       });
     },
+    // MOI Import Phase 1 (app-modules/moi-import.js): guidon:moi:plan:v1 is
+    // now the LEGACY single-plan row - a one-time migration source into
+    // guidon:moi:plans:v1 below, never the live storage again. Its reader
+    // (buildResultView() and friends, before the Phase 1 rewrite) walks
+    // v.topics as an array of topic-name strings with no null-guard, so
+    // that is the one shape check that matters. `v === null` is ALSO valid
+    // here on purpose: render()'s own migration flow nulls this row (never
+    // deletes it) the moment migration finishes, so a null value is this
+    // key's real, permanent "done" state, not a corrupted one - without
+    // this, Diagnostics' "Data validity scan" (which runs every
+    // KV_VALIDATORS check against whatever is already sitting in
+    // IndexedDB, not just a backup being restored) would flag every
+    // migrated device's kv store as corrupted, forever, for a row this app
+    // itself intentionally wrote.
+    "guidon:moi:plan:v1": function (v) {
+      return v === null || (v && typeof v === "object" && Array.isArray(v.topics) && v.topics.every(function (t) { return typeof t === "string"; }));
+    },
+    // The REAL, current MOI Import storage: an array of "plan family"
+    // records, each { id, createdAt, current, history }. Every reader
+    // (openPlan(), menu(), buildResultView()) walks family.current.topics
+    // and reads family.id, so those are the two fields that matter here -
+    // `current`'s own deeper shape (topicCoverage/topicLinks/topicTiers) is
+    // rebuilt field-by-field the same defensive way the legacy plan always
+    // was, so a partial `current` degrades rather than throwing.
+    // `history`, when present, must be an array of real objects - not
+    // checked field-by-field (buildDiffPanel()'s own `latest.diff || {...}`
+    // fallback already tolerates a missing/malformed `diff`), but a `null`
+    // ENTRY itself (e.g. a restored `history:[null]`) would pass a check
+    // that only looked at Array.isArray(f.history), then crash
+    // buildDiffPanel() the moment that family is opened - `latest.diff`
+    // dereferences `latest` before that fallback ever runs.
+    "guidon:moi:plans:v1": function (v) {
+      return Array.isArray(v) && v.every(function (f) {
+        if (!f || typeof f !== "object" || typeof f.id !== "string") return false;
+        if (!f.current || typeof f.current !== "object" || !Array.isArray(f.current.topics)) return false;
+        if (f.history !== undefined) {
+          if (!Array.isArray(f.history)) return false;
+          if (!f.history.every(function (h) { return h && typeof h === "object"; })) return false;
+        }
+        return true;
+      });
+    },
   };
   function isPlainObject(v) { return !!v && typeof v === "object" && !Array.isArray(v); }
   // Exact-string-keyed KV_VALIDATORS above can never validate a
@@ -29101,6 +29151,8 @@ window.G = window.G || {};
     "prt:plan:v1": "your PT plan",
     "pt:history:v1": "your completed PT sessions",
     "guidon:prt:customSessions:v1": "your custom PT sessions",
+    "guidon:moi:plan:v1": "your imported MOI study plan",
+    "guidon:moi:plans:v1": "your imported MOI study plans",
     "guidon:recite:own:v1": "your My unit texts",
     "board:mockHistory:v1": "Mock Board history",
     "idp:goals": "your IDP goals",

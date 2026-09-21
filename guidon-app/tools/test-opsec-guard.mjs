@@ -195,13 +195,34 @@ const clickButton = (pg, re) => pg.evaluate((src) => {
   return false;
 }, re.source);
 async function openCapture(pg) {
-  await pg.evaluate(async () => { await window.G.db.put("kv", { k: window.G.moiImport.KEY, v: null }); });
+  // MOI Import Phase 1 (2026-09-21): the real storage moved to a
+  // multi-plan array, guidon:moi:plans:v1 (G.moiImport.PLANS_KEY) - the
+  // legacy single-plan key (KEY) is now a one-time migration source only,
+  // and Landing shows a MENU (not the "Import an MOI" empty-state button)
+  // once any family exists. Resetting PLANS_KEY to [] too, not just KEY,
+  // keeps this helper's own contract - "always lands on the true empty
+  // state" - true regardless of how many plans an earlier case in this
+  // same run built.
+  await pg.evaluate(async () => {
+    await window.G.db.put("kv", { k: window.G.moiImport.KEY, v: null });
+    await window.G.db.put("kv", { k: window.G.moiImport.PLANS_KEY, v: [] });
+  });
   await pg.evaluate(() => { location.hash = "#/home"; });
   await pg.waitForTimeout(200);
   await pg.evaluate(() => { location.hash = "#/moi"; });
   await pg.waitForFunction(() => [...document.querySelectorAll("button")].some((b) => /Import an MOI/.test(b.textContent || "")), null, { timeout: 10000 });
   await clickButton(pg, /Import an MOI/);
   await pg.waitForSelector("textarea", { timeout: 5000 });
+}
+// The just-built plan's own content - Build() now writes a plan FAMILY to
+// PLANS_KEY, never to the legacy KEY. openCapture() resets PLANS_KEY to []
+// on every call, so at most one family exists whenever this is read.
+async function readSavedPlan(pg) {
+  return pg.evaluate(async () => {
+    const r = await window.G.db.get("kv", window.G.moiImport.PLANS_KEY);
+    const families = (r && r.v) || [];
+    return families.length ? JSON.stringify(families[families.length - 1].current) : null;
+  });
 }
 async function pasteAndFind(pg, text) {
   await pg.evaluate((t) => { const ta = document.querySelector("textarea"); ta.value = t; ta.dispatchEvent(new Event("input", { bubbles: true })); }, text);
@@ -272,10 +293,12 @@ summary = await reviewSummary(page);
 (summary && /^2 matched/.test(summary)) ? ok(`(POC line) both publications still match: "${summary}"`) : bad(`(POC line) summary: "${summary}"`);
 
 await clickButton(page, /^Build/);
-await page.waitForFunction(() => [...document.querySelectorAll("button")].some((b) => /^Replace$/.test((b.textContent || "").trim())), null, { timeout: 8000 }).catch(() => {});
+// "Replace" became "Re-import a revision" in the Phase 1 overhaul (this
+// row's still there, just renamed - see moi-import.js's own openPlan()).
+await page.waitForFunction(() => [...document.querySelectorAll("button")].some((b) => /^Re-import a revision$/.test((b.textContent || "").trim())), null, { timeout: 8000 }).catch(() => {});
 n = await notice(page);
 (n && n.kind === "note" && n.visible) ? ok("(POC line) built without dismissing it - the notice follows onto the finished plan") : bad("(POC line) the notice was lost on Build: " + JSON.stringify(n));
-const savedPlan = await page.evaluate(async () => { const r = await window.G.db.get("kv", window.G.moiImport.KEY); return r && r.v ? JSON.stringify(r.v) : null; });
+const savedPlan = await readSavedPlan(page);
 (savedPlan && !/270-555-0101|jane\.doe|SSG DOE/.test(savedPlan))
   ? ok("(POC line) the saved plan holds no phone number, address or name from the flagged line")
   : bad("(POC line) flagged text was written into the saved plan: " + (savedPlan || "").slice(0, 300));
