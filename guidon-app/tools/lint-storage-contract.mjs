@@ -74,7 +74,7 @@ const UNCHECKED = {
   "rapidFire:seenExplainer": "one true/false flag",
   "rapidFire:savedDecks": "predates this lint - Rapid Fire's saved decks; needs a real check (tracked in the storage report)",
   "writing:drafts:v1": "predates this lint - Writing drafts; needs a real check (tracked in the storage report)",
-  "guidon:moi:plan:v1": "predates this lint - the MOI study plan; its reader rebuilds it field by field, still needs a real check",
+  "guidon:moi:legacyMigrated:v1": "one true/false flag; read with a truthiness test only (marks the one-time guidon:moi:plan:v1 -> guidon:moi:plans:v1 migration done, MOI Import Phase 1)",
 };
 
 let fails = 0;
