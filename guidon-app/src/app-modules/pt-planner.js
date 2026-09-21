@@ -9,8 +9,17 @@
  * renderClassic() with no behavior change; "shared-grid" draws the same
  * weekday-grid component Career Calendar's own shared-grid layout uses
  * (src/app-modules/date-grid.js), fed from this week's planned sessions.
- * Phase B adds the "Tasking Board" layout by pushing one more entry onto
- * LAYOUTS - nothing else in this file needs to change for that.
+ *
+ * Phase B adds a third, PT-Planner-ONLY layout, "Tasking Board" (a
+ * company-ops-board metaphor: a Mission Library of PRESETS staged one at a
+ * time onto a 7-day Week Board - see renderTaskingBoard() below), by pushing
+ * one more entry onto LAYOUTS. It reuses every real data/persistence path
+ * renderClassic() already has - clonePreset(), savePlan(), ratioOf(), say() -
+ * and introduces no new one. The only change to renderClassic() itself is
+ * pulling its hard:recovery counts/message strings (countsLine()/
+ * ratioMessage(), just above renderClassic()) out to module scope so both
+ * layouts print the exact same words instead of a second copy of them
+ * silently drifting out of sync.
  */
 (function () {
   "use strict";
@@ -368,6 +377,20 @@
       if (d) tally(c, d.type, d.effort);
     });
     return guardFrom(c);
+  }
+  // The exact "<n> hard · <n> recovery or rest · <n> moderate" line and the
+  // exact hard:recovery flag message renderClassic()'s own two check panels
+  // show - pulled out to module scope (ROADMAP 3g Phase B) so the Tasking
+  // Board layout's own guard panel can print the SAME words a Soldier
+  // already sees in Classic, instead of a second copy of this text silently
+  // drifting out of sync with it.
+  function countsLine(r) {
+    return r.hard + " hard · " + (r.recovery + r.rest) + " recovery or rest · " + r.moderate + " moderate";
+  }
+  function ratioMessage(r) {
+    return r.warn
+      ? "Flag: this week has more than about 3 hard sessions for each recovery or rest day, which is GUIDON's planning guide. This is a warning, not a lockout—adjust it or keep it deliberately."
+      : "No hard-to-recovery flag (GUIDON's planning guide is about 3 hard sessions for each recovery or rest day). This does not certify the plan; leader judgment still applies.";
   }
   function historyRatio(list, nowMs) {
     var now = new Date(nowMs || Date.now()); now.setHours(23,59,59,999);
@@ -820,15 +843,10 @@
       lastWarn = w;
       return note;
     }
-    function countsLine(r) {
-      return r.hard + " hard · " + (r.recovery + r.rest) + " recovery or rest · " + r.moderate + " moderate";
-    }
     function drawRatio() {
       var r = ratioOf(plan);
       ratioCounts.textContent = countsLine(r);
-      ratioMsg.textContent = r.warn
-        ? "Flag: this week has more than about 3 hard sessions for each recovery or rest day, which is GUIDON's planning guide. This is a warning, not a lockout—adjust it or keep it deliberately."
-        : "No hard-to-recovery flag (GUIDON's planning guide is about 3 hard sessions for each recovery or rest day). This does not certify the plan; leader judgment still applies.";
+      ratioMsg.textContent = ratioMessage(r);
     }
 
     async function drawHistoryGuard(generation) {
@@ -1219,13 +1237,171 @@
     mount.appendChild(foot);
   }
 
+  // ---- Tasking Board layout (ROADMAP 3g "customizable screen layouts", Phase B) ----
+  // A company-ops-board metaphor: a "Mission Library" of available sessions
+  // (today, every PRESETS entry - a future custom-session composer would add
+  // more chips here the same way) staged ONE AT A TIME, then assigned onto a
+  // day of the "Week Board" (plan.days, the same weekly template
+  // renderClassic()'s own Week view edits - never plan.overrides/
+  // dayEntryForDate(), which is a per-DATE concept the Week view does not use
+  // either). Every write goes through savePlan(plan) - the exact function
+  // renderClassic()'s own commit() calls - and every announcement goes
+  // through say() - the exact function renderClassic() calls throughout.
+  // effort -> color is fixed by the Phase B brief: hard=red, moderate=cyan,
+  // recovery=green (the app's real --red/--cyan/--green tokens, applied
+  // inline per element - see date-grid.js's own toneColor() for the same
+  // "real CSS var, never a hardcoded hex" convention).
+  function effortColor(effort) {
+    return effort === "hard" ? "var(--red)" : effort === "recovery" ? "var(--green)" : "var(--cyan)";
+  }
+  // A Mission Library chip's "content pending" tag: true when ANY block of
+  // that preset's session has a placeholder drill. Reuses prtSessionSummary()
+  // (the exact function that already appends " (content pending)" per block
+  // for the day-card "Session blocks:" line in renderClassic()) rather than
+  // re-deriving pending status from prtDrillLabel() a second time.
+  function sessionHasPendingContent(sessionId) {
+    if (!sessionId) return false;
+    return /\(content pending\)/.test(prtSessionSummary(sessionId));
+  }
+
+  async function renderTaskingBoard(mount) {
+    util.clear(mount);
+    var plan = await loadPlan();
+    var staged = null; // a PRESETS id, while one Mission Library chip is staged
+    // Same pattern as renderClassic()'s own flagNote() (this file, ~line 473):
+    // "" unless an assignment just changed the guard's warn state.
+    var lastWarn = ratioOf(plan).warn; // the state on arrival is not a change to announce
+    function flagNote() {
+      var w = ratioOf(plan).warn, note = "";
+      if (lastWarn !== null && w !== lastWarn) {
+        note = w ? " Heads up: this week now has more than about 3 hard sessions for each recovery or rest day."
+                 : " The hard-to-recovery flag is now clear.";
+      }
+      lastWarn = w;
+      return note;
+    }
+
+    mount.appendChild(el("div.section-title", {}, [el("h2", { text:"PT Planner" }), el("div.rule")]));
+    mount.appendChild(el("p.hint", { text:"Tasking Board layout — stage a session from the Mission Library, then assign it to a day on the Week Board. Change this in Settings → Screen Layouts." }));
+
+    var content = el("div", { "data-tb-content":"1" });
+    mount.appendChild(content);
+
+    // Same technique renderClassic()'s own refocus() uses (a CSS selector
+    // re-queried after the redraw it names, since the exact node clicked may
+    // not exist anymore - e.g. an Assign button that disappears once staged
+    // is cleared). Falls through silently (never throws) if the node is
+    // gone, same as renderClassic().
+    function refocus(focusSelector) {
+      if (!focusSelector) return;
+      var n = null;
+      try { n = mount.querySelector(focusSelector); } catch (e) {}
+      try { if (n) n.focus(); } catch (e) {}
+    }
+
+    function draw(focusSelector) {
+      util.clear(content);
+
+      // ---- Mission Library ----
+      var lib = el("div.panel", { "data-tb-library":"1" });
+      lib.appendChild(el("div.eyebrow", { text:"Mission Library" }));
+      lib.appendChild(el("p.hint", { text:"Tap a session to stage it, then tap Assign on a day below." }));
+      var chipsRow = el("div", { style:"display:flex;flex-wrap:wrap;gap:8px" });
+      Object.keys(PRESETS).forEach(function (id) {
+        var p = PRESETS[id];
+        var isStaged = staged === id;
+        var pending = sessionHasPendingContent(p.sessionId);
+        var chip = el("button.btn.sm.ghost.tb-chip", {
+          type:"button",
+          "data-tb-chip":id,
+          "aria-pressed":String(isStaged),
+          style:"border-left-color:" + effortColor(p.effort)
+        });
+        chip.appendChild(el("span", { text:p.title }));
+        chip.appendChild(el("span.hint", { text:effortLabel(p.effort).toUpperCase() + (pending ? " · content pending" : "") }));
+        if (isStaged) chip.appendChild(el("span.badge.amber", { text:"STAGED" }));
+        chip.addEventListener("click", function () {
+          if (staged === id) { staged = null; say(p.title + " un-staged."); }
+          else { staged = id; say(p.title + " staged. Choose a day on the Week Board and tap Assign."); }
+          draw('[data-tb-chip="' + id + '"]');
+        });
+        chipsRow.appendChild(chip);
+      });
+      lib.appendChild(chipsRow);
+      content.appendChild(lib);
+
+      // ---- Week Board ----
+      var week = el("div.panel", { "data-tb-week":"1" });
+      week.appendChild(el("div.eyebrow", { text:"Week Board" }));
+      var grid = el("div.tb-week-row", { role:"list", "aria-label":"Week board" });
+      DAY_KEYS.forEach(function (key, idx) {
+        var entry = plan.days[key];
+        var col = el("div.panel.tb-day", { role:"listitem", tabIndex:"-1", "data-tb-day":key, style:"border-left-color:" + effortColor(entry.effort) });
+        col.appendChild(el("div.eyebrow", { text:DAY_NAMES[idx].slice(0, 3) }));
+        col.appendChild(el("div", { text:entry.title, style:"font-weight:600;overflow-wrap:anywhere" }));
+        col.appendChild(el("p.hint", { text:effortLabel(entry.effort).toUpperCase() + (entry.type === "rest" ? "" : " · " + entry.type) }));
+        if (staged) {
+          var stagedPreset = PRESETS[staged];
+          var assign = el("button.btn.sm.ghost", { type:"button", text:"Assign", "aria-label":"Assign " + stagedPreset.title + " to " + DAY_NAMES[idx], "data-tb-assign":key });
+          assign.addEventListener("click", async function () {
+            var picked = clonePreset(staged);
+            var previous = plan.days[key];
+            var stagedId = staged;
+            plan.days[key] = picked;
+            var savedOk = await savePlan(plan);
+            if (savedOk) {
+              staged = null;
+              say(DAY_NAMES[idx] + " assigned " + picked.title + "." + flagNote());
+            } else {
+              // Nothing persisted - put the in-memory plan back exactly as it
+              // was so the redraw never shows an assignment that didn't
+              // survive a reload, and keep the chip staged so the Soldier
+              // can just try Assign again instead of re-picking it.
+              plan.days[key] = previous;
+              staged = stagedId;
+              util.toast("Could not save the PT plan. Still staged — try Assign again.");
+            }
+            draw('[data-tb-day="' + key + '"]');
+          });
+          col.appendChild(assign);
+        }
+        grid.appendChild(col);
+      });
+      week.appendChild(grid);
+      content.appendChild(week);
+
+      // ---- Guard: the SAME hard:recovery check renderClassic() computes
+      // for the planned week (ratioOf(plan)), shown as a 7-segment colored
+      // strip (decorative - aria-hidden, since the real information is the
+      // text panel right under it, exactly like renderClassic()'s own
+      // role="group" ratio panel) plus that real accessible text.
+      var r = ratioOf(plan);
+      var guard = el("div.panel", { role:"group", "aria-label":"Hard to recovery check for the planned week", "data-tb-guard":"1" });
+      guard.appendChild(el("div.eyebrow", { text:"Hard : recovery check" }));
+      var strip = el("div.tb-guard-strip", { "aria-hidden":"true" });
+      DAY_KEYS.forEach(function (key) {
+        var entry = plan.days[key];
+        strip.appendChild(el("div.tb-guard-seg", { style:"background:" + effortColor(entry.effort) }));
+      });
+      guard.appendChild(strip);
+      guard.appendChild(el("strong", { text:countsLine(r) }));
+      guard.appendChild(el("p.hint", { text:ratioMessage(r) }));
+      content.appendChild(guard);
+
+      refocus(focusSelector);
+    }
+
+    draw();
+  }
+
   // A simple id -> {label, render} map. Phase B adds a screen-specific
   // "Tasking Board" layout by pushing one more entry onto this object -
   // nothing else in this file (including the dispatcher below) needs to
   // change for that.
   var LAYOUTS = {
     classic: { label:"Classic", render:renderClassic },
-    "shared-grid": { label:"Shared grid (with Career Calendar)", render:renderSharedGrid }
+    "shared-grid": { label:"Shared grid (with Career Calendar)", render:renderSharedGrid },
+    "tasking-board": { label:"Tasking Board", render:renderTaskingBoard }
   };
 
   // Thin dispatcher: reads the Soldier's chosen layout from Settings, falls
