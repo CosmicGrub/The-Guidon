@@ -23,7 +23,8 @@
  * Parts (one browser; lint-ci-matrix counts launch( calls):
  *   (a) Node: web/index.html carries the generated block - exactly one
  *       @supports-not block holding one html { } base rule plus one
- *       html[data-theme="<id>"] rule per registry theme (24), five static
+ *       html[data-theme="<id>"] rule per registry theme (live count, read
+ *       from THEMES itself - see registryIds below), five static
  *       #rrggbb --ink-* declarations each; the ids equal the THEMES
  *       registry; dist/guidon-standalone.html carries the identical block;
  *       the existing html { --ink-*: color-mix(...) } rule is still there.
@@ -34,8 +35,9 @@
  *       resolves --amber/--green/--red/--cyan/--violet/--text for every
  *       theme through the real cascade (:root, html.light, the theme
  *       block), Node blends round(.6*accent + .4*text) per channel - must
- *       match the generated static hex within 1 per channel, all 24 x 5.
- *   (d) Chromium, all 24 themes: an element coloured var(--ink-<x>) renders
+ *       match the generated static hex within 1 per channel, every theme x
+ *       every token (registryIds.length * TOKENS.length).
+ *   (d) Chromium, every theme: an element coloured var(--ink-<x>) renders
  *       (getComputedStyle().color, the engine's own color-mix result) within
  *       1 per channel of the static hex - the formula matches the engine.
  *   (e) the measurement behind the @supports decision (see above).
@@ -93,9 +95,9 @@ const distBlock = parseBlock(dist, "dist/guidon-standalone.html");
 if (webBlock) {
   const ids = Object.keys(webBlock.rules);
   const complete = ids.filter((id) => TOKENS.every((t) => /^#[0-9a-f]{6}$/.test(webBlock.rules[id][t] || "")));
-  ids.length === 24 && complete.length === 24
-    ? ok(`(a) web/index.html: 24 theme rules inside the @supports-not block, 5 static #rrggbb --ink-* declarations each`)
-    : bad(`(a) web/index.html: ${ids.length} theme rules, ${complete.length} with all 5 static declarations (want 24/24)`);
+  ids.length === registryIds.length && complete.length === registryIds.length
+    ? ok(`(a) web/index.html: ${registryIds.length} theme rules inside the @supports-not block, 5 static #rrggbb --ink-* declarations each`)
+    : bad(`(a) web/index.html: ${ids.length} theme rules, ${complete.length} with all 5 static declarations (want ${registryIds.length}/${registryIds.length})`);
   const missing = registryIds.filter((id) => !ids.includes(id));
   const extra = ids.filter((id) => !registryIds.includes(id));
   !missing.length && !extra.length
@@ -198,13 +200,14 @@ for (const s of bSamples) {
     ? ok(`(b) ${s.id}: --ink-amber computes to the color-mix form (${s.ink.slice(0, 60)}), not the static hex`)
     : bad(`(b) ${s.id}: --ink-amber = "${s.ink}"`);
 }
+const expectedMeasured = registryIds.length * TOKENS.length;
 if (webBlock) {
-  cMismatch.length === 0 && measured === 120
-    ? ok(`(c) independent blend of the engine-resolved tokens matches every generated static hex within 1 per channel (${measured} of 24 x 5)`)
-    : bad(`(c) ${cMismatch.length} blend mismatch(es) of ${measured}: ${cMismatch.slice(0, 4).join(" | ")}`);
-  dMismatch.length === 0 && measured === 120
-    ? ok(`(d) Chromium's own color-mix() rendering of var(--ink-*) matches the static hex within 1 per channel, all 24 themes`)
-    : bad(`(d) ${dMismatch.length} rendered mismatch(es): ${dMismatch.slice(0, 4).join(" | ")}`);
+  cMismatch.length === 0 && measured === expectedMeasured
+    ? ok(`(c) independent blend of the engine-resolved tokens matches every generated static hex within 1 per channel (${measured} of ${registryIds.length} x ${TOKENS.length})`)
+    : bad(`(c) ${cMismatch.length} blend mismatch(es) of ${measured} (expected ${expectedMeasured}): ${cMismatch.slice(0, 4).join(" | ")}`);
+  dMismatch.length === 0 && measured === expectedMeasured
+    ? ok(`(d) Chromium's own color-mix() rendering of var(--ink-*) matches the static hex within 1 per channel, all ${registryIds.length} themes`)
+    : bad(`(d) ${dMismatch.length} rendered mismatch(es) (measured ${measured}, expected ${expectedMeasured}): ${dMismatch.slice(0, 4).join(" | ")}`);
 }
 
 /* (f) the boot notice: stub CSS.supports for the color-mix query only. */

@@ -7,6 +7,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
+import { until } from "./testkit.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -227,6 +228,61 @@ narrowGrid && narrowGrid.cardCount === 6 && narrowGrid.allSameLeft
   ? ok("all 6 date cards share the same left edge at 375px (genuinely stacked)")
   : bad("date cards not cleanly stacked at 375px: " + JSON.stringify(narrowGrid));
 await narrowCtx.close();
+
+/* ROADMAP 3g "customizable screen layouts" Phase A, Part 1 item 5: leap-day
+   regression for addMonths()'s overflow fix. setMonth() alone silently rolls
+   a Feb-29 "last" date + 24 months into Mar 1 of a non-leap year (the target
+   month is shorter than the day-of-month being carried forward) - clamped
+   now via setDate(0) when the day-of-month changes underneath it. Calls the
+   real shipped computeRows() directly (not a re-implementation) with a
+   synthetic saved/today pair so the exact production code path is what's
+   under test. */
+const leapCheck = await page.evaluate(() => {
+  const saved = { wpnQual: "2024-02-29" };
+  const today = new Date(2024, 1, 29);
+  const rows = window.G.calendar.computeRows(saved, today);
+  const row = rows.find((r) => /weapons qualification/i.test(r.label));
+  if (!row || !row.when) return null;
+  const d = row.when;
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+});
+leapCheck === "2026-02-28"
+  ? ok("leap-day regression: Feb 29 2024 weapons-qual + 24 months clamps to Feb 28 2026, not Mar 1")
+  : bad("leap-day due date was " + JSON.stringify(leapCheck) + ", expected \"2026-02-28\"");
+
+/* ROADMAP 3g Part 1 item 4: reminder lifecycle. Calendar's "Remind me" on a
+   TRACKED row now stamps source:"calendar:"+key (G.reminders.addManaged);
+   editing that field's date must clear the stale reminder made for the OLD
+   due date via G.reminders.clearManagedFor - the real bug this fixes (a
+   reminder that used to survive forever once its date was corrected).
+   testkit's until() polls the real state (G.reminders.load(), the same
+   storage the app itself reads) instead of a fixed sleep. */
+await page.evaluate((v) => {
+  const inp = document.querySelector('input[type="date"][aria-label="Last weapons qualification"]');
+  inp.value = v;
+  inp.dispatchEvent(new Event("change"));
+}, monthsAgo(1));
+await page.evaluate(() => {
+  const card = [...document.querySelectorAll(".card")].find((c) => /weapons qualification/i.test((c.querySelector(".k") || {}).textContent || ""));
+  const btn = card && [...card.querySelectorAll("button")].find((b) => b.textContent.trim() === "Remind me");
+  if (btn) btn.click();
+});
+await until(page, async () => (await window.G.reminders.load()).some((r) => r.source === "calendar:wpnQual"), null, { timeout: 4000 });
+const stampedRows = (await page.evaluate(async () => await window.G.reminders.load())).filter((r) => r.source === "calendar:wpnQual");
+stampedRows.length === 1
+  ? ok("\"Remind me\" on the weapons-qual row stamps source:\"calendar:wpnQual\"")
+  : bad("reminders with source calendar:wpnQual after adding: " + JSON.stringify(stampedRows));
+
+await page.evaluate((v) => {
+  const inp = document.querySelector('input[type="date"][aria-label="Last weapons qualification"]');
+  inp.value = v;
+  inp.dispatchEvent(new Event("change"));
+}, monthsAgo(2));
+await until(page, async () => !(await window.G.reminders.load()).some((r) => r.source === "calendar:wpnQual"), null, { timeout: 4000 });
+const afterEdit = (await page.evaluate(async () => await window.G.reminders.load())).filter((r) => r.source === "calendar:wpnQual");
+afterEdit.length
+  ? bad("editing the weapons-qual date left a stale reminder: " + JSON.stringify(afterEdit))
+  : ok("editing the weapons-qual date clears the reminder made for the OLD date (no stale source:\"calendar:wpnQual\" row left behind)");
 
 noise.length === 0 ? ok("no console errors/warnings") : bad(noise.length + " console msgs; first: " + noise[0]);
 

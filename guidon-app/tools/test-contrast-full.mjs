@@ -42,10 +42,11 @@ import { serve } from "./server.mjs";
 import fs from "node:fs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 
-const THEMES = ["blackout","bone-neutral","clay-warm","desert-cadence","field-manual","graphite-calm",
-      "harbor-mid","ink-paper","nautical-dusk","night-vision","overcast-glare","parade-rest",
-      "parchment-read","pine-dusk","range-red","sandstone-sun","sepia-study","signal-amber",
-      "slate-focus","slate-quiet","squadron-blue","subdued","topographic","umber-lamp"];
+const THEMES = ["amber-dusk","ash-quiet","blackout","bone-neutral","clay-warm","desert-cadence",
+      "field-manual","forest-quiet","graphite-calm","harbor-mid","ink-paper","nautical-dusk",
+      "night-shift","night-vision","overcast-glare","parade-rest","parchment-read","pine-dusk",
+      "range-red","sandstone-sun","sepia-study","signal-amber","slate-focus","slate-quiet",
+      "soft-contrast","squadron-blue","subdued","topographic","umber-lamp","warm-paper"];
 
 const axeSrc = fs.readFileSync(new URL(import.meta.resolve("axe-core/axe.min.js")), "utf8");
 
