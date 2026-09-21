@@ -900,6 +900,18 @@
     util.clear(mount);
     var plan = await loadPlan();
     var staged = null; // a PRESETS id, while one Mission Library chip is staged
+    // Same pattern as renderClassic()'s own flagNote() (this file, ~line 473):
+    // "" unless an assignment just changed the guard's warn state.
+    var lastWarn = ratioOf(plan).warn; // the state on arrival is not a change to announce
+    function flagNote() {
+      var w = ratioOf(plan).warn, note = "";
+      if (lastWarn !== null && w !== lastWarn) {
+        note = w ? " Heads up: this week now has more than about 3 hard sessions for each recovery or rest day."
+                 : " The hard-to-recovery flag is now clear.";
+      }
+      lastWarn = w;
+      return note;
+    }
 
     mount.appendChild(el("div.section-title", {}, [el("h2", { text:"PT Planner" }), el("div.rule")]));
     mount.appendChild(el("p.hint", { text:"Tasking Board layout — stage a session from the Mission Library, then assign it to a day on the Week Board. Change this in Settings → Screen Layouts." }));
@@ -965,11 +977,22 @@
           var assign = el("button.btn.sm.ghost", { type:"button", text:"Assign", "aria-label":"Assign " + stagedPreset.title + " to " + DAY_NAMES[idx], "data-tb-assign":key });
           assign.addEventListener("click", async function () {
             var picked = clonePreset(staged);
+            var previous = plan.days[key];
+            var stagedId = staged;
             plan.days[key] = picked;
             var savedOk = await savePlan(plan);
-            staged = null;
-            if (savedOk) say(DAY_NAMES[idx] + " assigned " + picked.title + ".");
-            else util.toast("Could not save the PT plan.");
+            if (savedOk) {
+              staged = null;
+              say(DAY_NAMES[idx] + " assigned " + picked.title + "." + flagNote());
+            } else {
+              // Nothing persisted - put the in-memory plan back exactly as it
+              // was so the redraw never shows an assignment that didn't
+              // survive a reload, and keep the chip staged so the Soldier
+              // can just try Assign again instead of re-picking it.
+              plan.days[key] = previous;
+              staged = stagedId;
+              util.toast("Could not save the PT plan. Still staged — try Assign again.");
+            }
             draw('[data-tb-day="' + key + '"]');
           });
           col.appendChild(assign);
