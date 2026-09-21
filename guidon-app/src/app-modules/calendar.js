@@ -260,6 +260,62 @@ window.G = window.G || {};
     return rows;
   }
 
+  // Builds the Open/Remind-me button row for one computeRows() row. Pulled
+  // out of renderClassic's own buildUpcoming() (ROADMAP 3g Phase B, "The
+  // Zero Board") so the Zero Board layout's expandable tiles can offer the
+  // exact same reminder-creation path - G.reminders.addManaged() stamping
+  // r.source, the MAX-reminder toast, the scheduleForReminder() call, the
+  // util.announce() confirmation, and the button disabling itself in place -
+  // instead of a second, easy-to-drift-apart copy of this logic. Nothing
+  // about the BEHAVIOR changed by extracting this; renderClassic's own call
+  // site below is otherwise identical to what it replaced.
+  function buildRowButtons(r) {
+    const btnRow = el("div", { style: "display:flex;gap:6px;flex-wrap:wrap;margin-top:6px" });
+    if (r.link) {
+      const b = el("button.btn.sm.ghost", { type: "button", text: "Open" });
+      b.addEventListener("click", function () { location.hash = r.link; });
+      btnRow.appendChild(b);
+    }
+    if (G.reminders && G.reminders.addManaged) {
+      const rb = el("button.btn.sm.ghost", { type: "button", text: "Remind me" });
+      rb.addEventListener("click", async function () {
+        const updated = await G.reminders.addManaged({ kind: r.remKind || "other", label: r.label, date: isoLocal(r.when), source: r.source || "" });
+        if (!updated) { try { util.toast && util.toast("You've reached the " + G.reminders.MAX + "-reminder limit — remove an old one first."); } catch (e) {} return; }
+        try { if (G.notify) await G.notify.scheduleForReminder(updated[updated.length - 1]); } catch (e) {}
+        try { if (util.announce) util.announce("Reminder set for " + fmt(r.when) + "."); } catch (e) {}
+        rb.disabled = true;
+        rb.textContent = "Reminder set";
+      });
+      btnRow.appendChild(rb);
+    }
+    return btnRow;
+  }
+
+  // The single most urgent row app-wide, INCLUDING a deeply overdue one -
+  // Zero Board's "NEXT ZERO" hero. computeRows() already sorts ascending by
+  // `days` (so an overdue row's very negative day-count already sorts
+  // first), but this reads the minimum directly rather than assuming that
+  // ordering is a permanent contract of computeRows() - a small pure
+  // function, not a re-derivation of any urgency math.
+  function pickHeroRow(rows) {
+    let best = null;
+    rows.forEach(function (r) { if (!best || r.days < best.days) best = r; });
+    return best;
+  }
+
+  // {level, color, word} for one row, calling the row's OWN urgency function
+  // (board/ETS rows carry urgencyFn:util.boardUrgency/util.etsUrgency; every
+  // other row falls back to util.genericUrgency, same fallback buildWeekCells
+  // already uses) exactly once - the single source for both which SHELF a
+  // Zero Board row belongs on and what color/word it renders with, so the
+  // two can never disagree the way two independently-thresholded checks
+  // could.
+  function zoneInfo(r) {
+    const fn = r.urgencyFn || util.genericUrgency;
+    const info = fn(r.days);
+    return { level: info.level, color: info.color, word: r.days < 0 ? "OVERDUE" : r.days + " days" };
+  }
+
   async function renderClassic(mount) {
     util.clear(mount);
     mount.appendChild(el("div.section-title", {}, [
@@ -306,12 +362,6 @@ window.G = window.G || {};
         head.appendChild(el("span.v", { text: u.word, style: "flex:0 0 auto;white-space:nowrap" }));
         card.appendChild(head);
         card.appendChild(el("div.hint", { text: fmt(r.when) + " — " + r.note }));
-        const btnRow = el("div", { style: "display:flex;gap:6px;flex-wrap:wrap;margin-top:6px" });
-        if (r.link) {
-          const b = el("button.btn.sm.ghost", { type: "button", text: "Open" });
-          b.addEventListener("click", function () { location.hash = r.link; });
-          btnRow.appendChild(b);
-        }
         // Audit finding (ux-consistency): the two Money-tab quick-adds
         // (salary-negotiation follow-up, USAJOBS closing date) already let a
         // Soldier turn a date into a native reminder in one click - every
@@ -324,22 +374,9 @@ window.G = window.G || {};
         // addManaged() (not add()) stamps r.source when this row has one (a
         // TRACKED field) - see the date-change handler in buildInputs()
         // below, which clears a stale reminder by that same source when the
-        // field's date is edited.
-        if (G.reminders && G.reminders.addManaged) {
-          const rb = el("button.btn.sm.ghost", { type: "button", text: "Remind me" });
-          rb.addEventListener("click", async function () {
-            const updated = await G.reminders.addManaged({ kind: r.remKind || "other", label: r.label, date: isoLocal(r.when), source: r.source || "" });
-            if (!updated) { try { util.toast && util.toast("You've reached the " + G.reminders.MAX + "-reminder limit — remove an old one first."); } catch (e) {} return; }
-            // Same fix as the Money-tab quick-adds: add() alone never
-            // schedules the native notification, syncAll() would only ever
-            // catch it on the next cold boot.
-            try { if (G.notify) await G.notify.scheduleForReminder(updated[updated.length - 1]); } catch (e) {}
-            try { if (util.announce) util.announce("Reminder set for " + fmt(r.when) + "."); } catch (e) {}
-            rb.disabled = true;
-            rb.textContent = "Reminder set";
-          });
-          btnRow.appendChild(rb);
-        }
+        // field's date is edited. buildRowButtons() (shared with Zero
+        // Board's own tiles, above) is what actually builds this.
+        const btnRow = buildRowButtons(r);
         if (btnRow.childNodes.length) card.appendChild(btnRow);
         upcoming.appendChild(card);
       });
@@ -576,12 +613,213 @@ window.G = window.G || {};
     mount.appendChild(foot);
   }
 
-  // A simple id -> {label, render} map. Phase B adds a screen-specific
-  // "Zero Board" layout by pushing one more entry onto this object - nothing
-  // else in this file (including the dispatcher below) needs to change.
+  // ---- Zero Board layout (ROADMAP 3g "customizable screen layouts" Phase B) ----
+  // "Urgency itself as the entire visual language" - a range-control
+  // countdown board, not a calendar grid. A NEXT ZERO hero for the single
+  // soonest item app-wide, a cyan DTG (days-to-go) readout for Today/Board/
+  // ETS, three RED/AMBER/STANDBY shelves holding every OTHER computeRows()
+  // row bucketed by its own real urgency zone, and a violet reference strip
+  // for any tracked fact with no due date at all (today, only "tos"). Every
+  // shelf/tile is built fresh from computeRows() on each render() call, so a
+  // date edit made on Classic and then switched back to here (or a whole-
+  // page reload) simply lands each row on the correct shelf - no separate
+  // "did urgency change zones" transition logic needed.
+
+  /** Renders one collapsed/expandable tile for a shelf row. Collapsed shows
+   *  only the big day-count digit and the label (no date, no consequence
+   *  text - the brief's "collapsed tile" contract); a click reveals the real
+   *  date and consequence text plus the row's real Open/Remind-me buttons
+   *  (buildRowButtons(), same function Classic's own cards use) in place,
+   *  no navigation. The tile head's own aria-label states zone + label +
+   *  day-count collapsed, and on expand gains the date/consequence text as a
+   *  SUFFIX (never replaces the collapsed wording) so a screen-reader user
+   *  hears strictly more, never different, information. */
+  function buildTile(zoneTitle, level, row) {
+    const z = zoneInfo(row);
+    const overdue = row.days < 0;
+    // border-left-COLOR only (not the whole shorthand) - width/style stay in
+    // CSS so .zb-overdue's own heavier border-left-width below can win over
+    // this inline color without needing !important.
+    const wrap = el("div.zb-tile.zb-tile-" + level + (overdue ? ".zb-overdue" : ""), { style: "border-left-color:" + z.color });
+    const collapsedName = zoneTitle + " zone: " + row.label + ", " + z.word.toLowerCase();
+    const head = el("button.zb-tile-head", { type: "button", "aria-expanded": "false", "aria-label": collapsedName });
+    const headRow = el("div", { style: "display:flex;align-items:flex-start;justify-content:space-between;gap:4px" });
+    headRow.appendChild(el("div.zb-tile-count", { text: overdue ? "OVERDUE" : String(row.days), "aria-hidden": "true" }));
+    headRow.appendChild(el("span.zb-tile-chev", { "aria-hidden": "true", gi: "chevron-right", giSize: 14 }));
+    head.appendChild(headRow);
+    head.appendChild(el("div.zb-tile-label", { text: row.label, "aria-hidden": "true" }));
+    const body = el("div.zb-tile-body", { hidden: "hidden" });
+    body.appendChild(el("p.hint", { text: fmt(row.when) + " — " + row.note }));
+    const btnRow = buildRowButtons(row);
+    if (btnRow.childNodes.length) body.appendChild(btnRow);
+    head.addEventListener("click", function () {
+      const open = body.hasAttribute("hidden");
+      if (open) {
+        body.removeAttribute("hidden");
+        head.setAttribute("aria-expanded", "true");
+        head.setAttribute("aria-label", collapsedName + ". Due " + fmt(row.when) + " — " + row.note);
+      } else {
+        body.setAttribute("hidden", "hidden");
+        head.setAttribute("aria-expanded", "false");
+        head.setAttribute("aria-label", collapsedName);
+      }
+    });
+    wrap.appendChild(head);
+    wrap.appendChild(body);
+    // Overdue emphasis: a heavier static border ALWAYS (zb-overdue, above -
+    // satisfied whether or not motion is allowed), plus a pulse ONLY when
+    // util.prefersReducedMotion() says motion is fine - the shared app-wide
+    // predicate (src/index.html), not a re-derived media-query check. The
+    // CSS itself also zeroes .zb-pulse's animation under
+    // prefers-reduced-motion as defense in depth, same double-guard pattern
+    // this file's own view-transition CSS already uses.
+    if (overdue && !util.prefersReducedMotion()) wrap.classList.add("zb-pulse");
+    return wrap;
+  }
+
+  function buildShelf(title, level, rows) {
+    const shelf = el("section.zb-shelf.zb-shelf-" + level, {
+      "aria-label": title + " shelf, " + rows.length + " item" + (rows.length === 1 ? "" : "s") });
+    const head = el("div.zb-shelf-head");
+    // The shelf's real visible text label - RED/AMBER/STANDBY - is never
+    // color-only; the color (zb-shelf-<level> below) is a reinforcing
+    // accent on top of it, not the only signal.
+    head.appendChild(el("span.zb-shelf-title", { text: title }));
+    head.appendChild(el("span.zb-shelf-count", { text: String(rows.length) }));
+    shelf.appendChild(head);
+    if (!rows.length) {
+      shelf.appendChild(el("p.hint", { text: "Nothing here." }));
+      return shelf;
+    }
+    const grid = el("div.zb-shelf-grid");
+    rows.forEach(function (r) { grid.appendChild(buildTile(title, level, r)); });
+    shelf.appendChild(grid);
+    return shelf;
+  }
+
+  /** The NEXT ZERO hero: the single most urgent row app-wide, in oversized
+   *  type, colored via its OWN real urgency function (zoneInfo(), same
+   *  source of truth the shelves use) with a real Open action. */
+  function buildHero(row) {
+    const wrap = el("div.zb-hero" + (row ? "" : ".zb-hero-empty"));
+    wrap.appendChild(el("div.eyebrow", { text: "NEXT ZERO" }));
+    if (!row) {
+      wrap.appendChild(el("p.hint", { text: "Nothing tracked yet. Switch to Classic in Settings → Screen Layouts to add a date." }));
+      return wrap;
+    }
+    const z = zoneInfo(row);
+    const overdue = row.days < 0;
+    wrap.style.borderLeftColor = z.color;
+    if (overdue) wrap.classList.add("zb-overdue");
+    if (overdue && !util.prefersReducedMotion()) wrap.classList.add("zb-pulse");
+    wrap.appendChild(el("div.zb-hero-label", { text: row.label }));
+    wrap.appendChild(el("div.zb-hero-count", { text: z.word }));
+    wrap.appendChild(el("p.hint", { text: fmt(row.when) + " — " + row.note }));
+    const btnRow = buildRowButtons(row);
+    if (btnRow.childNodes.length) wrap.appendChild(btnRow);
+    return wrap;
+  }
+
+  /** The compact DTG (days-to-go) readout: Today / Promotion board / ETS,
+   *  all three framed in --cyan regardless of how close any of them are -
+   *  deliberately NOT run through util.boardUrgency/util.etsUrgency here,
+   *  because those two dates already get their own dedicated red/amber/
+   *  green treatment down in the shelves (as ordinary computeRows() rows);
+   *  this strip is orientation chrome, not a second urgency vocabulary. */
+  function buildDtgReadout(saved, today) {
+    const be = resolveBoardEts(saved);
+    const wrap = el("div.zb-dtg", { role: "group", "aria-label": "Days to go readout" });
+    function seg(label, days, dateText) {
+      const s = el("div.zb-dtg-seg");
+      s.appendChild(el("div.zb-dtg-label", { text: label }));
+      s.appendChild(el("div.zb-dtg-count", { text: days == null ? "—" : (days < 0 ? "OVERDUE" : days === 0 ? "TODAY" : days + "d") }));
+      s.appendChild(el("div.hint", { text: dateText }));
+      return s;
+    }
+    wrap.appendChild(seg("Today", 0, fmt(today)));
+    wrap.appendChild(seg("Promotion board", be.boardDate ? daysBetween(today, be.boardDate) : null, be.boardDate ? fmt(be.boardDate) : "Not set"));
+    wrap.appendChild(seg("ETS", be.etsDate ? daysBetween(today, be.etsDate) : null, be.etsDate ? fmt(be.etsDate) : "Not set"));
+    return wrap;
+  }
+
+  /** The violet no-due-date reference strip: any TRACKED field that is
+   *  reference-only (no `future` flag AND no `months`, computeRows()'s own
+   *  "reference-only, no due date" guard a few hundred lines up - currently
+   *  just "tos", read generically rather than hardcoded so a future TRACKED
+   *  entry of the same shape picks this up automatically) with a value
+   *  saved. Never red/amber/green - there is no due date here to be urgent
+   *  about, so coloring it that way would just be noise. Reuses
+   *  monthsBetween(), the exact same whole-calendar-months arithmetic
+   *  Classic's own "Your dates" tosStat already shows. Returns null when
+   *  nothing reference-only has a value yet, so the caller can skip it
+   *  entirely rather than rendering an empty strip. */
+  function buildReferenceStrip(saved, today) {
+    const refFields = TRACKED.filter(function (t) { return !t.future && !t.months; });
+    const withDates = refFields.filter(function (t) { return !!parseDate(saved[t.key]); });
+    if (!withDates.length) return null;
+    const wrap = el("div.zb-reference");
+    wrap.appendChild(el("div.eyebrow", { text: "Reference — no due date" }));
+    withDates.forEach(function (t) {
+      const n = monthsBetween(parseDate(saved[t.key]), today);
+      const row = el("div.zb-reference-row");
+      row.appendChild(el("span.k", { text: t.label }));
+      row.appendChild(el("span.hint", { text: n + " month" + (n === 1 ? "" : "s") + " so far — " + t.consequence }));
+      wrap.appendChild(row);
+    });
+    return wrap;
+  }
+
+  async function renderZeroBoard(mount) {
+    util.clear(mount);
+    mount.appendChild(el("div.section-title", {}, [
+      el("h2", { text: "Career Calendar" }), el("div.rule") ]));
+    mount.appendChild(el("p.hint", { text:
+      "The Zero Board — urgency itself as the layout. Every tracked date sorted onto a RED, AMBER or STANDBY shelf by real days-to-go. Change this in Settings → Screen Layouts." }));
+
+    let saved = {};
+    try { const r = await G.db.get("kv", KEY); saved = (r && r.v) || {}; } catch (e) { /* offline-safe */ }
+    const today = todayMidnight();
+    const rows = computeRows(saved, today);
+
+    // role=status aria-live=polite mirrors renderClassic's own `upcoming`
+    // panel (its comment a few hundred lines up explains why: a rebuild
+    // that changes what a screen-reader user is told needs to actually be
+    // announced). Nothing here rebuilds after the initial render - there is
+    // no in-place editor on this layout, Classic already owns that - but
+    // expanding a tile reveals genuinely new text inside this same region,
+    // which this announces exactly the way Classic's own dynamic updates do.
+    const host = el("div.zb-board", { role: "status", "aria-live": "polite" });
+    mount.appendChild(host);
+
+    host.appendChild(buildHero(pickHeroRow(rows)));
+    host.appendChild(buildDtgReadout(saved, today));
+
+    const shelves = { red: [], amber: [], green: [] };
+    rows.forEach(function (r) { (shelves[zoneInfo(r).level] || shelves.green).push(r); });
+    host.appendChild(buildShelf("RED", "red", shelves.red));
+    host.appendChild(buildShelf("AMBER", "amber", shelves.amber));
+    host.appendChild(buildShelf("STANDBY", "green", shelves.green));
+
+    const ref = buildReferenceStrip(saved, today);
+    if (ref) host.appendChild(ref);
+
+    const foot = el("div.panel", { style: "margin-top:10px" });
+    foot.appendChild(el("p.hint", { text: "Switch to Classic in Settings → Screen Layouts for the full editable list and the career timeline." }));
+    const b = el("button.btn.sm.ghost", { type: "button", text: "Records Readiness" });
+    b.addEventListener("click", function () { location.hash = "#/records"; });
+    foot.appendChild(b);
+    mount.appendChild(foot);
+  }
+
+  // A simple id -> {label, render} map. Phase B adds the screen-specific
+  // "Zero Board" layout ("zero-board", above) as one more entry - nothing
+  // else in this file (including the dispatcher below) needs to change for
+  // that, and Settings' own layout picker (src/index.html) enumerates
+  // G.calendar.LAYOUTS dynamically, so it appears there automatically too.
   const LAYOUTS = {
     classic: { label: "Classic", render: renderClassic },
     "shared-grid": { label: "Shared grid (with PT Planner)", render: renderSharedGrid },
+    "zero-board": { label: "The Zero Board", render: renderZeroBoard },
   };
 
   // Thin dispatcher: reads the Soldier's chosen layout from Settings, falls

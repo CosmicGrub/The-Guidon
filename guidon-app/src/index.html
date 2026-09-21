@@ -5924,6 +5924,63 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
 .tb-guard-strip { display:flex; gap:4px; margin:6px 0; }
 .tb-guard-seg { flex:1; height:10px; border-radius:3px; }
 
+/* The Zero Board (js/calendar.js renderZeroBoard(), ROADMAP 3g "customizable
+   screen layouts" Phase B) - urgency itself as the layout, so the CSS carries
+   most of the visual language: a hero strip, a neutral cyan DTG readout, and
+   three color-cued but always text-labeled RED/AMBER/STANDBY shelves.
+   Border-left WIDTH/STYLE stay here (so .zb-overdue's heavier width can beat
+   an inline color without !important); the actual COLOR is set inline per
+   row from its own real urgency function (calendar.js's zoneInfo()), never
+   hard-coded per zone here - same "computed, not guessed" discipline this
+   route's other layouts already follow. */
+.zb-board { display:flex; flex-direction:column; gap:4px; }
+.zb-hero { border:1px solid var(--line); border-left-style:solid; border-left-width:4px; border-radius:var(--radius-sm);
+  background:var(--panel); padding:14px; margin-bottom:4px; }
+.zb-hero-label { font-size:1.05rem; font-weight:700; margin-top:2px; }
+.zb-hero-count { font-size:2.1rem; font-weight:800; font-variant-numeric:tabular-nums; line-height:1.15; margin-top:2px; }
+.zb-hero.zb-overdue { border-left-width:8px; }
+@media (prefers-reduced-motion: no-preference) {
+  .zb-hero.zb-pulse { animation: zb-pulse 1.7s ease-in-out infinite; }
+}
+@keyframes zb-pulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(0,0,0,0); }
+  50% { box-shadow: 0 0 16px color-mix(in srgb, var(--red) 55%, transparent); }
+}
+/* Defense in depth, same double-guard pattern this file's own view-transition
+   CSS already uses a few hundred lines up: calendar.js only adds .zb-pulse
+   when util.prefersReducedMotion() says motion is fine, but if that check
+   were ever bypassed this still stops the animation at the OS/browser level. */
+@media (prefers-reduced-motion: reduce) {
+  .zb-hero.zb-pulse, .zb-tile.zb-pulse { animation: none; }
+}
+.zb-dtg { display:flex; gap:10px; flex-wrap:wrap; margin:4px 0 10px; }
+.zb-dtg-seg { flex:1 1 130px; border:1px solid var(--cyan); border-radius:var(--radius-sm);
+  background:color-mix(in srgb, var(--cyan) 8%, var(--panel)); padding:8px 10px; }
+.zb-dtg-label { font-family:var(--font-head); font-size:.68rem; letter-spacing:.08em; text-transform:uppercase; color:var(--text-dim); }
+.zb-dtg-count { font-size:1.25rem; font-weight:700; font-variant-numeric:tabular-nums; color:var(--ink-cyan); }
+.zb-shelf { margin-top:10px; }
+.zb-shelf-head { display:flex; align-items:baseline; gap:8px; margin-bottom:6px; }
+.zb-shelf-title { font-family:var(--font-head); font-size:.78rem; letter-spacing:.1em; text-transform:uppercase; font-weight:700; }
+.zb-shelf-red .zb-shelf-title { color:var(--ink-red); }
+.zb-shelf-amber .zb-shelf-title { color:var(--ink-amber); }
+.zb-shelf-green .zb-shelf-title { color:var(--ink-green); }
+.zb-shelf-count { font-size:.74rem; color:var(--text-dim); }
+.zb-shelf-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px; }
+.zb-tile { border:1px solid var(--line); border-left-style:solid; border-left-width:4px; border-radius:var(--radius-sm);
+  background:var(--panel); overflow:hidden; }
+.zb-tile.zb-overdue { border-left-width:8px; }
+.zb-tile-head { width:100%; text-align:left; background:none; border:0; padding:9px 10px; cursor:pointer;
+  display:flex; flex-direction:column; gap:2px; font:inherit; color:inherit; }
+.zb-tile-count { font-size:1.4rem; font-weight:800; font-variant-numeric:tabular-nums; }
+.zb-tile-label { font-size:.78rem; color:var(--text-dim); overflow-wrap:anywhere; }
+.zb-tile-chev { flex:0 0 auto; margin-top:4px; transition:transform .15s ease; }
+[aria-expanded="true"] .zb-tile-chev { transform:rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .zb-tile-chev { transition:none; } }
+.zb-tile-body { padding:0 10px 10px; }
+.zb-reference { margin-top:10px; border-left:3px solid var(--violet); border-radius:0 var(--radius-sm) var(--radius-sm) 0;
+  background:color-mix(in srgb, var(--violet) 6%, var(--panel)); padding:10px 12px; }
+.zb-reference-row { display:flex; flex-direction:column; gap:2px; margin-top:4px; }
+
 /* Master-detail split (Board Drill, Doctrine, Squad Roster) - a narrow
    list pane next to a wider detail pane. Gated at >=1024px deliberately:
    below that, a ~280px list pane leaves too little room for a comfortable
