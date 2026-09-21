@@ -28915,6 +28915,36 @@ window.G = window.G || {};
           Array.isArray(s.blocks) && s.blocks.every(function (b) { return b && typeof b === "object" && typeof b.drillId === "string"; });
       });
     },
+    // MOI Import Phase 1 (app-modules/moi-import.js): guidon:moi:plan:v1 is
+    // now the LEGACY single-plan row - a one-time migration source into
+    // guidon:moi:plans:v1 below, never the live storage again. Its reader
+    // (buildResultView() and friends, before the Phase 1 rewrite) walks
+    // v.topics as an array of topic-name strings with no null-guard, so
+    // that is the one shape check that matters. `v === null` is ALSO valid
+    // here on purpose: render()'s own migration flow nulls this row (never
+    // deletes it) the moment migration finishes, so a null value is this
+    // key's real, permanent "done" state, not a corrupted one - without
+    // this, Diagnostics' "Data validity scan" (which runs every
+    // KV_VALIDATORS check against whatever is already sitting in
+    // IndexedDB, not just a backup being restored) would flag every
+    // migrated device's kv store as corrupted, forever, for a row this app
+    // itself intentionally wrote.
+    "guidon:moi:plan:v1": function (v) {
+      return v === null || (v && typeof v === "object" && Array.isArray(v.topics) && v.topics.every(function (t) { return typeof t === "string"; }));
+    },
+    // The REAL, current MOI Import storage: an array of "plan family"
+    // records, each { id, createdAt, current, history }. Every reader
+    // (openPlan(), menu(), buildResultView()) walks family.current.topics
+    // and reads family.id, so those are the two fields that matter here -
+    // `current`'s own deeper shape (topicCoverage/topicLinks/topicTiers) is
+    // rebuilt field-by-field the same defensive way the legacy plan always
+    // was, so a partial `current` degrades rather than throwing.
+    "guidon:moi:plans:v1": function (v) {
+      return Array.isArray(v) && v.every(function (f) {
+        return f && typeof f === "object" && typeof f.id === "string" &&
+          f.current && typeof f.current === "object" && Array.isArray(f.current.topics);
+      });
+    },
   };
   function isPlainObject(v) { return !!v && typeof v === "object" && !Array.isArray(v); }
   // Exact-string-keyed KV_VALIDATORS above can never validate a
@@ -29004,6 +29034,8 @@ window.G = window.G || {};
     "prt:plan:v1": "your PT plan",
     "pt:history:v1": "your completed PT sessions",
     "guidon:prt:customSessions:v1": "your custom PT sessions",
+    "guidon:moi:plan:v1": "your imported MOI study plan",
+    "guidon:moi:plans:v1": "your imported MOI study plans",
     "guidon:recite:own:v1": "your My unit texts",
     "board:mockHistory:v1": "Mock Board history",
     "idp:goals": "your IDP goals",

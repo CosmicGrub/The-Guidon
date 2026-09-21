@@ -390,7 +390,7 @@
       "requires": ["opsec-guard", "library"],
       "provides": ["G.moiImport.render"],
       "routes": ["#/moi"],
-      "storageKeys": ["guidon:moi:plan:v1"],
+      "storageKeys": ["guidon:moi:plan:v1", "guidon:moi:plans:v1", "guidon:moi:legacyMigrated:v1"],
       "optionalApis": []
     },
     {
