@@ -5878,6 +5878,25 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
 .cal-timeline-body { flex:1 1 auto; min-width:0; }
 .cal-timeline-line { width:2px; height:20px; background:var(--line-2); margin:2px 0 2px 5px; }
 
+/* Shared weekday grid (G.dateGrid.renderWeek, src/app-modules/date-grid.js) -
+   ROADMAP 3g "customizable screen layouts" Phase A: one real component that
+   both PT Planner's and Career Calendar's "Shared grid" layout render
+   through, so "shared" means the same drawn component, not two screens that
+   independently happen to look similar. col.style.borderTopColor is set
+   inline per-cell from the cell's own tone (--red/--amber/--green/--text-dim
+   - see date-grid.js's own toneColor()), never a hardcoded hex. */
+.date-grid-switch { margin-bottom:10px; }
+.date-grid-row { display:grid; grid-template-columns:repeat(7,1fr); gap:8px; }
+.date-grid-col { border:1px solid var(--line); border-top:3px solid var(--text-dim); border-radius:var(--radius-sm); background:var(--panel); padding:8px; min-width:0; display:flex; flex-direction:column; gap:4px; }
+.date-grid-col.is-today { border-color:var(--amber); box-shadow:var(--glow-amber); }
+.date-grid-weekday { font-family:var(--font-head); font-size:.7rem; letter-spacing:.06em; text-transform:uppercase; color:var(--text-dim); }
+.date-grid-date { font-size:.72rem; color:var(--text-mute); }
+.date-grid-title { font-weight:600; font-size:.86rem; overflow-wrap:anywhere; }
+.date-grid-sub { font-size:.78rem; color:var(--text-dim); overflow-wrap:anywhere; }
+@media (max-width:640px) {
+  .date-grid-row { grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); }
+}
+
 /* Master-detail split (Board Drill, Doctrine, Squad Roster) - a narrow
    list pane next to a wider detail pane. Gated at >=1024px deliberately:
    below that, a ~280px list pane leaves too little room for a comfortable
@@ -6189,6 +6208,127 @@ html[data-theme="sandstone-sun"] {
   --green: #5a6349; --cyan: #858a77; --red: #c05a52; --violet: #927277;
   --btn-ink: #f5f7f8;
   --glow-amber: none;
+}
+
+/* ===== COMFORT SET (Screen Layouts Phase A) =================================
+   Six more eye-comfort themes, same token contract and same design principles
+   as the FOCUS SET above (never pure #000/#fff, one restrained accent, small
+   surface steps, --text-dim solved for real AA against both --bg and --panel -
+   verified live by tools/test-contrast-full.mjs, not just eyeballed). Each one
+   has its own distinct rationale rather than being a copy of an existing
+   theme with new colors swapped in - see the comment on each block for how it
+   differs from the closest existing theme in the set above. ============= */
+html[data-theme="amber-dusk"] {
+  /* Warm, reduced-blue-light dark: near-black warm ground (lower blue
+     channel throughout than Umber Lamp's #191512), a muted (lower-
+     saturation) amber than Umber Lamp's #d0a068, and a deliberately
+     softened red - Umber Lamp's own red (#af534c) is fairly neutral;
+     this one is warmer and duller, in keeping with "softened reds". */
+  --bg: #181310; --bg-2: #211a15; --bg-3: #291f19;
+  --panel: #1f1712; --panel-2: #291f18;
+  --line: #332619; --line-2: #402f1f; --border: #4d3a26;
+  --text: #ecdfd0; --text-1: #d8ccbd; --text-2: #c7bcae;
+  --text-dim: #b7ab9c; --text-mute: #8f8475;
+  --amber: #c99a5c; --amber-dim: #96723f; --brass: #d4ac78;
+  --green: #a39a80; --cyan: #a39d8a; --red: #a85f4f; --violet: #a58f8a;
+  --btn-ink: #14100c;
+  --glow-amber: none;
+}
+html[data-theme="ash-quiet"] {
+  /* Low-contrast-but-AA dark for long reading sessions: a fully neutral
+     warm-grey ("ash"), not the existing Slate Quiet's cool blue-grey
+     (#20242a/#8fb0cc) or Subdued's colder, more separated neutral scale
+     (#15191d/#c7ced4) - smaller bg-to-panel step than either, and the
+     accent stays inside the same neutral family instead of introducing a
+     hue, so nothing on screen fights for attention during a long session. */
+  --bg: #212120; --bg-2: #282826; --bg-3: #2f2f2c;
+  --panel: #262624; --panel-2: #2d2d2a;
+  --line: #3a3a35; --line-2: #48483f; --border: #57574c;
+  --text: #e7e5de; --text-1: #d3d1ca; --text-2: #c3c1ba;
+  --text-dim: #aeaca4; --text-mute: #88867e;
+  --amber: #a7ae9c; --amber-dim: #818871; --brass: #b9c0ad;
+  --green: #a7ae9c; --cyan: #93a7a6; --red: #af7a71; --violet: #a79bab;
+  --btn-ink: #131311;
+  --glow-amber: none;
+}
+html[data-theme="warm-paper"] {
+  /* A genuinely warm cream/off-white light theme with soft ink-BLACK text -
+     the real differentiator from Parchment Read and Sepia Study, both of
+     which already cover "warm off-white paper" but pair it with brown ink
+     text (#26221d / #33291c). This is warmer/creamier in the background
+     than either (more saturated cream, not just desaturated tan) while the
+     body text itself is a near-neutral soft black, not brown - crisp
+     reading contrast without Ink & Paper's harsh pure-white glare. */
+  --bg: #f2e9d8; --bg-2: #ece0c9; --bg-3: #e4d7bb;
+  --panel: #f9f2e2; --panel-2: #efe6d2;
+  --line: #ddcfae; --line-2: #cbba91; --border: #b9a67c;
+  --text: #1e1c18; --text-1: #332f27; --text-2: #453f34;
+  --text-dim: #5a5346; --text-mute: #8c8471;
+  --amber: #6b4a26; --amber-dim: #8f6a3e; --brass: #5c3f22;
+  --green: #4f5c3f; --cyan: #4a6560; --red: #9a4636; --violet: #6a5468;
+  --btn-ink: #f7f1e4;
+  --glow-amber: none;
+}
+html[data-theme="night-shift"] {
+  /* Deep, almost-monochrome dark for late-night use, biased toward warm
+     ambers/reds with minimal blue content anywhere in the palette -
+     distinct from Blackout (true #000, literal red-only) and Range Red
+     (warm oxblood but a fuller, more saturated palette): this stays near-
+     black rather than true black (per this set's own "never pure #000"
+     rule) and pulls EVERY accent role - not just amber/red - toward the
+     same warm family, so even the --green/--cyan roles read as warm
+     olive/tan rather than green/blue while staying just distinguishable
+     from each other (a fully-collapsed single hue, as Blackout uses, would
+     erase the good/info/danger distinction those roles carry elsewhere). */
+  --bg: #120e0c; --bg-2: #1a1512; --bg-3: #211a16;
+  --panel: #171210; --panel-2: #1f1815;
+  --line: #2c221c; --line-2: #392c23; --border: #493729;
+  --text: #e8dcd0; --text-1: #d4c7ba; --text-2: #c4b6a8;
+  --text-dim: #b3a495; --text-mute: #8a7c6e;
+  --amber: #d99a55; --amber-dim: #a5723a; --brass: #dba868;
+  --green: #9a9560; --cyan: #b3a58f; --red: #cf6a52; --violet: #b98a78;
+  --btn-ink: #120e0c;
+  --glow-amber: none;
+}
+html[data-theme="forest-quiet"] {
+  /* A muted, desaturated green-grey dark theme - checked against BOTH
+     existing green-leaning themes before picking colors: Topographic (the
+     saturated forest-green contour theme, --amber:#7bbf6a) is the obvious
+     one to avoid duplicating, but Pine Dusk (Focus set, --amber:#84b394,
+     "desaturated forest greys with a sage accent") already sits much
+     closer to this brief and needed the real differentiation. This pushes
+     further: a flatter, greyer, lower-saturation sage (#8a9484 vs Pine
+     Dusk's more visibly-green #84b394) and a green-grey --green role
+     (#93a597) rather than Pine Dusk's blue-grey one (#a8b8c0), so it reads
+     calmer and stonier next to Pine Dusk's still-fairly-green cast. */
+  --bg: #181c19; --bg-2: #212521; --bg-3: #282c28;
+  --panel: #1e221e; --panel-2: #272b27;
+  --line: #333730; --line-2: #42463e; --border: #50554b;
+  --text: #dfe3dc; --text-1: #cbcfc7; --text-2: #bbc0b7;
+  --text-dim: #aab0a5; --text-mute: #83887f;
+  --amber: #8a9484; --amber-dim: #6b7364; --brass: #9aa593;
+  --green: #93a597; --cyan: #7fa39c; --red: #a8574f; --violet: #8a93a0;
+  --btn-ink: #14170f;
+  --glow-amber: none;
+}
+html[data-theme="soft-contrast"] {
+  /* Deliberately tuned for light sensitivity: no pure black background, no
+     pure white text (same as every theme in this file), PLUS - the real
+     differentiator - explicit --shadow/--glow-amber overrides gentler than
+     the root/Night Vision ("Instrument-Panel") defaults (0 6px 24px
+     rgba(0,0,0,.45) shadow, a two-layer ring+18px-blur glow). A soft
+     lavender-grey accent rather than a bright amber/cyan keeps hover/focus
+     states visible without adding glare. */
+  --bg: #1c1c22; --bg-2: #232329; --bg-3: #2a2a30;
+  --panel: #212127; --panel-2: #28282f;
+  --line: #34343c; --line-2: #42424b; --border: #4f4f59;
+  --text: #e2e1e8; --text-1: #cecdd4; --text-2: #bebdc5;
+  --text-dim: #aeadb6; --text-mute: #86858f;
+  --amber: #b8a8d0; --amber-dim: #8e80a6; --brass: #c4b6db;
+  --green: #9ec2ab; --cyan: #9cb8c9; --red: #c08a94; --violet: #b8a8d0;
+  --btn-ink: #16161a;
+  --shadow: 0 3px 10px rgba(0,0,0,.22);
+  --glow-amber: 0 0 0 1px rgba(184,168,208,.22);
 }
 </style>
 </head>
@@ -7287,6 +7427,64 @@ window.G = window.G || {};
     return { color: "var(--green)", level: "green" };
   };
 
+  // "YYYY-MM-DD" for a LOCAL Date - promoted from three byte-identical
+  // copies (pt-planner.js's localISO, calendar.js's isoLocal, records.js's
+  // isoLocal). NOT d.toISOString(), which converts to UTC first and can
+  // silently roll the date a day either direction depending on the
+  // Soldier's timezone - see calendar.js's own isoLocal comment, the
+  // original source of that warning.
+  util.localISO = function (d) {
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  };
+
+  // Screen Layouts (ROADMAP 3g "customizable screen layouts", Phase A) and
+  // three earlier callers (renderBoardCountdown, generateActionPlan, Home's
+  // ETS banner) all separately re-derive "board date" / "ETS date" from the
+  // same two sources - the chosen profile first, then the app-wide Settings
+  // copy the two-way sync keeps in step with it - so a personal profile's
+  // own date wins, and a guest/kiosk session (no profile) still sees
+  // whatever was set directly in Settings. calendar.js's buildUpcoming()/
+  // buildTimeline() were the clearest duplicate (the identical chain typed
+  // out twice in one file); this is that chain, pulled out once so it can
+  // never drift between callers again. Returns the raw "YYYY-MM-DD" string
+  // (or "") - same contract calendar.js's own inline version returned -
+  // parsing is left to the caller via util.parseISODate().
+  util.resolveBoardDate = function () {
+    try {
+      var prof = (G.profile && G.profile.cached) ? G.profile.cached() : null;
+      var settings = (G.store && G.store.settings) ? G.store.settings() : {};
+      return (prof && prof.boardDate) || (settings && settings.boardDate) || "";
+    } catch (e) { return ""; }
+  };
+  // Same precedence as util.resolveBoardDate (profile, then Settings), with
+  // one addition: `legacyFallback` is checked LAST, for a caller that has
+  // its own already-known value to fall back to when neither profile nor
+  // Settings has one (calendar.js's own `saved.ets` - a date some Soldiers
+  // saved directly in Calendar before ETS moved to the profile/Settings
+  // pair; kept reachable rather than silently orphaned).
+  util.resolveETSDate = function (legacyFallback) {
+    try {
+      var prof = (G.profile && G.profile.cached) ? G.profile.cached() : null;
+      var settings = (G.store && G.store.settings) ? G.store.settings() : {};
+      return (prof && prof.etsDate) || (settings && settings.etsDate) || legacyFallback || "";
+    } catch (e) { return legacyFallback || ""; }
+  };
+
+  // Promotion month cut-off: BLC/ALC graduation must be a matter of record
+  // by the 26th calendar day of the board month (AR 600-8-19 para 3-17a).
+  // Merges calendar.js's fixedAnchors() cutoff math with records.js's own
+  // independently-written nextCutoff() - byte-identical logic, two names.
+  // `today` is a LOCAL midnight Date; returns a LOCAL midnight Date for the
+  // next cutoff (today's 26th if it hasn't passed yet, otherwise next
+  // month's).
+  util.nextPromotionCutoff = function (today) {
+    var t = today || new Date();
+    var base = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+    var cut = new Date(base.getFullYear(), base.getMonth(), 26);
+    if (cut.getTime() < base.getTime()) cut = new Date(base.getFullYear(), base.getMonth() + 1, 26);
+    return cut;
+  };
+
   // Simple skeleton block (n shimmer rows) for loading states.
   util.skeleton = function (n) {
     var wrap = util.el("div.skeleton-wrap", { "aria-hidden": "true" });
@@ -8062,6 +8260,14 @@ window.G = window.G || {};
     // until they opt in here. Read by G.mosDecks.activeCodes(), never
     // directly - see that function for the full visibility rule.
     mosOptIn: [],
+    // ROADMAP 3g "customizable screen layouts", Phase A: per-screen layout
+    // choice, read by each module's own LAYOUTS registry (pt-planner.js/
+    // calendar.js) - "classic" is today's existing view unchanged; an id
+    // this device doesn't recognise (e.g. a Phase-B layout that shipped on
+    // another device and was later removed here) falls back to "classic"
+    // at read time, never stored back over the unrecognised value.
+    ptPlannerLayout: "classic",
+    calendarLayout: "classic",
   };
 
   let _settingsDebounce = null;
@@ -9160,6 +9366,25 @@ window.G = window.G || {};
     { id: "ink-paper", name: "Ink & Paper", kind: "light", group: "High-contrast",
       swatches: ["#ffffff", "#f4f4f4", "#111111", "#004a99"],
       blurb: "Max-contrast light (AAA). Black on white, print-legible." },
+    // ── Comfort set (Screen Layouts Phase A) ──────────────────────────
+    { id: "amber-dusk", name: "Amber Dusk", kind: "dark", group: "Comfort",
+      swatches: ["#181310", "#1f1712", "#c99a5c", "#a85f4f"],
+      blurb: "Warm reduced-blue-light dark — muted amber, softened reds, a near-black warm ground." },
+    { id: "ash-quiet", name: "Ash Quiet", kind: "dark", group: "Comfort",
+      swatches: ["#212120", "#262624", "#a7ae9c", "#93a7a6"],
+      blurb: "Neutral warm-grey dark, small surface steps — sized for long indoor reading sessions." },
+    { id: "warm-paper", name: "Warm Paper", kind: "light", group: "Comfort",
+      swatches: ["#f2e9d8", "#f9f2e2", "#6b4a26", "#9a4636"],
+      blurb: "Genuinely warm cream paper with soft ink-black text — no harsh pure-white glare." },
+    { id: "night-shift", name: "Night Shift", kind: "dark", group: "Comfort",
+      swatches: ["#120e0c", "#171210", "#d99a55", "#cf6a52"],
+      blurb: "Deep near-monochrome dark, minimal blue — warm ambers and reds for late-night use." },
+    { id: "forest-quiet", name: "Forest Quiet", kind: "dark", group: "Comfort",
+      swatches: ["#181c19", "#1e221e", "#8a9484", "#7fa39c"],
+      blurb: "Muted, greyed-down forest green — flatter and calmer than a saturated green theme." },
+    { id: "soft-contrast", name: "Soft Contrast", kind: "dark", group: "Comfort",
+      swatches: ["#1c1c22", "#212127", "#b8a8d0", "#9cb8c9"],
+      blurb: "Tuned for light sensitivity — no pure black, no pure white, gentler glow and shadow." },
   ];
   const THEME_IDS = THEMES.map((t) => t.id);
   const DEFAULT_THEME = "field-manual";
@@ -15874,9 +16099,11 @@ window.G = window.G || {};
       // The board date belongs to the chosen profile, not to global settings —
       // so a personal profile keeps its own board date and display preference.
       // Settings remains the fallback (and the store that setSetting writes to),
-      // which keeps guest/kiosk sessions working unchanged.
+      // which keeps guest/kiosk sessions working unchanged. `prof` is still
+      // fetched here (not just inside util.resolveBoardDate) because
+      // boardDateDisplay's own mode line just below also reads it.
       const prof = (G.profile && G.profile.cached) ? G.profile.cached() : null;
-      const boardDate = (prof && prof.boardDate) ? prof.boardDate : settings.boardDate;
+      const boardDate = util.resolveBoardDate();
       if (!boardDate) {
         // .panel here (not just .mini-row) so this matches the bordered card
         // language the hero block right above it already established -- the
@@ -22610,7 +22837,12 @@ window.G = window.G || {};
   function generateActionPlan(profile) {
     const plan = [];
     const tier = profile.tier || "E4";
-    const ets  = profile.etsDate;
+    // Prefer whatever this specific `profile` argument already carries (it
+    // may be in-progress onboarding-wizard data that hasn't been saved yet,
+    // so it must win over anything already on disk) - util.resolveETSDate()
+    // only fills in when profile.etsDate itself is empty, e.g. a Guest/Kiosk
+    // regenerate-plan call whose profile object never carries etsDate at all.
+    const ets  = profile.etsDate || util.resolveETSDate();
     // Rank-transition item — `tier` above used to be read and never
     // referenced again in this function. Now it surfaces the real
     // next-step promotion mechanism for the Soldier's own grade, sourced
@@ -23664,7 +23896,13 @@ window.G = window.G || {};
         _cache = profile;
         // Sync key fields to settings
         if (G.store && G.store.setSetting) {
-          if (profile.etsDate) await G.store.setSetting("etsDate", profile.etsDate);
+          // Unlike the other three fields below, this one is unconditional:
+          // etsDate was only mirrored when truthy, so redoing setup and
+          // clearing a previously-set ETS date left the OLD value sitting in
+          // settings forever (Home's ETS banner - and anything else reading
+          // settings.etsDate directly - kept showing it). Mirroring "" just
+          // as faithfully as a real date closes that gap.
+          await G.store.setSetting("etsDate", profile.etsDate || "");
           if (profile.tier) await G.store.setSetting("tierFilter", profile.tier);
           if (profile.retirementSystem) await G.store.setSetting("retirementSystem", profile.retirementSystem);
           if (profile.displayName) await G.store.setSetting("userName", profile.displayName);
@@ -29355,15 +29593,56 @@ window.G = window.G || {};
       var dupIdx = list.findIndex(function (r) { return r.kind === kind && r.label === label && r.date === date; });
       if (dupIdx !== -1) {
         var existing = list.splice(dupIdx, 1)[0];
+        // Re-stamp `source` when this call names one, even for a row that
+        // already existed (e.g. re-scheduling the same PT week, or a
+        // Calendar row whose kind/label/date happen to repeat) - otherwise a
+        // pre-existing row created before `source` existed, or one added by
+        // a caller that didn't pass it, could never become findable by
+        // clearManagedFor() afterwards even though this call clearly means
+        // to own it now.
+        if (entry.source) existing.source = entry.source;
         list.push(existing);
         await save(list);
         return list;
       }
       if (list.length >= MAX_REMINDERS) return null;
-      list.push({ id: uid(), kind: kind, label: label, date: date, note: entry.note || "" });
+      // `source` (Screen Layouts / ROADMAP 3g): which module wrote this row,
+      // so it can be swept later without guessing from kind+date alone (see
+      // clearManagedFor()'s own comment). Undefined on any row written
+      // before this existed or by a caller that didn't pass one - every
+      // reader already treats a missing/falsy field as "not managed by
+      // anything", so this is silently backward compatible.
+      list.push({ id: uid(), kind: kind, label: label, date: date, note: entry.note || "", source: entry.source || "" });
       await save(list);
       return list;
     });
+  }
+  // addManaged/clearManagedFor (Screen Layouts / ROADMAP 3g): the shared
+  // version of the source-stamped-reminder pattern pt-planner.js used to
+  // keep as its own private REMINDER_NOTE/clearPtRemindersFor (kind==="pt"
+  // && date===iso && note===REMINDER_NOTE). A real `source` field, not a
+  // kind+date sweep: Calendar's own kinds (weapons/acft/board/promopoints/
+  // other) are all reachable from the manual reminder editor's KINDS list
+  // above, so a caller sweeping by kind+date alone risks deleting a
+  // Soldier's own hand-made reminder that happens to share both. `source`
+  // is opaque to this module - callers use their own convention (pt-planner.js
+  // uses "pt-planner", calendar.js uses "calendar:"+TRACKED key).
+  async function addManaged(entry) {
+    return add({ kind: entry.kind, label: entry.label, date: entry.date, note: entry.note || "", source: entry.source || "" });
+  }
+  async function clearManagedFor(opts) {
+    opts = opts || {};
+    if (!opts.source) return;
+    try {
+      var list = await load();
+      var mine = list.filter(function (r) {
+        return r && r.source === opts.source && (opts.date === undefined || r.date === opts.date);
+      });
+      for (var i = 0; i < mine.length; i++) {
+        await remove(mine[i].id);
+        try { if (G.notify && G.notify.cancelForReminder) await G.notify.cancelForReminder(mine[i].id); } catch (e) {}
+      }
+    } catch (e) {}
   }
   async function remove(id) {
     return _serialize(async function () {
@@ -29691,6 +29970,7 @@ window.G = window.G || {};
     KINDS: KINDS,
     MAX: MAX_REMINDERS,
     load: load, add: add, remove: remove, bucket: bucket,
+    addManaged: addManaged, clearManagedFor: clearManagedFor,
     renderStrip: renderStrip, renderEditor: renderEditor,
     _daysUntil: daysUntil, // exported for tests
     _buildTimeline: buildTimeline, // exported for tests (90-day density strip)
@@ -32990,10 +33270,21 @@ window.G = window.G || {};
 
     // ── ETS countdown + milestone alerts ────────────────────────────────────
     try {
-      const s = store.settings ? store.settings() : {};
-      if (s.etsDate) {
+      // Was settings.etsDate only, with no profile fallback at all - unlike
+      // every other board/ETS reader in the app (renderBoardCountdown, the
+      // Transition tab), a personal profile's own etsDate was silently
+      // ignored here unless it happened to also be mirrored into settings.
+      // util.resolveETSDate() (profile, then settings, same precedence as
+      // everywhere else) fixes that, and also fixes the related staleness
+      // bug: this banner used to read settings.etsDate straight from the
+      // stored object, which stayed stale forever if a profile's own
+      // etsDate was ever cleared without also being mirrored (see the
+      // profile-save fix alongside this one) - now it re-resolves live from
+      // the profile every render instead of trusting a possibly-stale copy.
+      const etsRaw = util.resolveETSDate();
+      if (etsRaw) {
         const today = new Date(); today.setHours(0,0,0,0);
-        const ets = new Date(s.etsDate + "T00:00:00");
+        const ets = new Date(etsRaw + "T00:00:00");
         const daysOut = Math.round((ets - today) / 86400000);
         if (daysOut >= 0) {
           // Urgency tier — shared with the Transition tab's own banner via
@@ -33361,6 +33652,43 @@ window.G = window.G || {};
           sub: checklistsComplete === 4 ? "All complete" : anyChecklistProgress ? "Keep going" : "Not started",
           hash: "#/records", tone: checklistsComplete === 4 ? "green" : "amber",
         });
+      } catch (e) {}
+
+      // 5) Career Calendar tracked dates (ROADMAP 3g Part 2). Reads the SAME
+      // computeRows() the Calendar screen itself now uses - fixedAnchors()
+      // alone (the promotion-month cut-off and the Credentialing Assistance
+      // FY reset) always contributes 2 rows even for a profile that has
+      // never touched Calendar at all, so those 2 universal rows do NOT
+      // count as "progress": rows.length > 2 (at least one real Soldier-
+      // entered date) is the gate, same "day one shouldn't look like day
+      // thirty" reasoning as the IDP-goals/checklists tiles above - a
+      // brand-new profile must not have THIS tile alone pull up the whole
+      // strip a step early.
+      try {
+        if (G.calendar && G.calendar.KEY && G.calendar.computeRows) {
+          let calSaved = {};
+          try {
+            const r = await G.db.get("kv", G.calendar.KEY);
+            const v = r && r.v;
+            calSaved = (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
+          } catch (e) {}
+          const calToday = new Date(); calToday.setHours(0, 0, 0, 0);
+          const calRows = G.calendar.computeRows(calSaved, calToday) || [];
+          const realCalProgress = calRows.length > 2;
+          if (realCalProgress) hasAnyProgress = true;
+          let calTone = "cyan";
+          if (calRows.length) {
+            const top = calRows[0];
+            const fn = top.urgencyFn || util.genericUrgency;
+            const lvl = fn(top.days).level;
+            calTone = lvl === "red" ? "red" : lvl === "amber" ? "amber" : "green";
+          }
+          tiles.push({
+            label: "Career Calendar", value: calRows.length ? String(calRows.length) : "—",
+            sub: realCalProgress ? "Dates tracked" : "Add your dates",
+            hash: "#/calendar", tone: calTone,
+          });
+        }
       } catch (e) {}
 
       // hasAnyProgress gate added (intuitivism pass): tiles.length>=2 alone
@@ -35771,6 +36099,52 @@ window.G = window.G || {};
       // the combined "Appearance & Accessibility" zone header) instead of
       // its own full-width mount row - see that header's comment.
       accGrid.appendChild(apPanel);
+
+      // ---- SCREEN LAYOUTS panel (ROADMAP 3g "customizable screen layouts",
+      // Phase A) ---- Same idea as the Theme picker above, but for LAYOUT
+      // (structure/information-architecture) rather than color: PT Planner
+      // and Career Calendar each choose their own layout independently.
+      // "Shared grid" is the one layout every build ships today - both
+      // screens can render through the same weekday-grid component
+      // (G.dateGrid.renderWeek) instead of their own screen-specific view.
+      // Phase B adds one more screen-specific option to each <select> below
+      // by pushing a new entry onto that module's own LAYOUTS registry -
+      // nothing here needs to change for that to "just work" (an id this
+      // <select> doesn't offer falls back to "classic" on read, same as an
+      // id this DEVICE doesn't recognise at all - see DEFAULT_SETTINGS'
+      // own comment on ptPlannerLayout/calendarLayout).
+      // No margin-top: this becomes accGrid's SECOND child, sharing row 1
+      // with apPanel (which also has none) - see accSummary's own comment a
+      // few hundred lines below for why a same-row grid sibling must not
+      // carry its own margin-top (align-items:start means it just pushes
+      // that one cell down from the row's start line, breaking row
+      // alignment instead of being absorbed like block-flow margins are).
+      const layoutPanel = el("div.panel");
+      layoutPanel.appendChild(el("label", { text: "Screen Layouts" }));
+      layoutPanel.appendChild(el("p.hint", { text: "Choose how PT Planner and Career Calendar are laid out. \"Shared grid\" draws both through the same weekday-grid view, so the two screens can look and feel unified." }));
+      function layoutSelect(label, settingKey, layoutsSource, hash) {
+        const wrap = el("div", { style: "margin-top:10px" });
+        wrap.appendChild(el("label", { text: label, style: "margin:0 0 4px;display:block" }));
+        const sel = el("select", { "aria-label": label });
+        const options = (layoutsSource && layoutsSource.LAYOUTS) || { classic: { label: "Classic" } };
+        Object.keys(options).forEach((id) => {
+          sel.appendChild(el("option", { value: id, text: options[id].label || id, selected: (s2[settingKey] || "classic") === id ? "selected" : null }));
+        });
+        sel.addEventListener("change", async () => {
+          await store.setSetting(settingKey, sel.value);
+          // Same re-tap-to-refresh mechanism the nav's own hash links use
+          // (see renderNav's onclick comment) - a plain setSetting() alone
+          // does nothing to a screen that is already mounted and showing
+          // its own layout, since nothing about changing a Settings value
+          // re-triggers routing on its own.
+          if (location.hash === hash) { try { route(); } catch (e) {} }
+        });
+        wrap.appendChild(sel);
+        return wrap;
+      }
+      layoutPanel.appendChild(layoutSelect("PT Planner layout", "ptPlannerLayout", G.ptPlanner, "#/pt-plan"));
+      layoutPanel.appendChild(layoutSelect("Career Calendar layout", "calendarLayout", G.calendar, "#/calendar"));
+      accGrid.appendChild(layoutPanel);
 
       // ---- ACCESSIBILITY & FOCUS panel ----
       // tabindex="-1": a valid programmatic focus target (for

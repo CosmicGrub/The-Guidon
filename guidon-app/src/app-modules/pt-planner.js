@@ -2,11 +2,20 @@
  * ROADMAP §3e: persisted day/week/month planning, template + suggestion model,
  * non-blocking hard:recovery warning, history, export, and existing reminder
  * pipeline integration. Offline-first; no recurrence service or server.
+ *
+ * ROADMAP 3g "customizable screen layouts", Phase A: this screen now renders
+ * through a small LAYOUTS registry (see the bottom of this file) instead of
+ * one hardcoded render() - "classic" is this file's original view, renamed
+ * renderClassic() with no behavior change; "shared-grid" draws the same
+ * weekday-grid component Career Calendar's own shared-grid layout uses
+ * (src/app-modules/date-grid.js), fed from this week's planned sessions.
+ * Phase B adds the "Tasking Board" layout by pushing one more entry onto
+ * LAYOUTS - nothing else in this file needs to change for that.
  */
 (function () {
   "use strict";
   var G = window.G || (window.G = {});
-  var util = G.util, el = util.el, db = G.db;
+  var util = G.util, el = util.el, db = G.db, store = G.store;
   var KEY = "prt:plan:v1";
   var HISTORY_KEY = "pt:history:v1";
   var DAY_KEYS = ["sun","mon","tue","wed","thu","fri","sat"];
@@ -197,24 +206,11 @@
     return run;
   }
   function say(msg) { try { if (G.util && G.util.announce) G.util.announce(msg); } catch (e) {} }
-  // Once a date is logged its planner-made reminder has done its job; leaving
-  // it would show "PT: ... - Today" on Home for a session already completed.
-  // (Reminders whose date has simply passed are expired by G.reminders
-  // itself - see EXPIRING_KINDS there - so nothing here needs a clock.)
-  var REMINDER_NOTE = "From PT Planner";
-  async function clearPtRemindersFor(iso) {
-    if (!G.reminders || !G.reminders.load || !G.reminders.remove) return;
-    try {
-      var mine = (await G.reminders.load()).filter(function (r) { return r && r.kind === "pt" && r.date === iso && r.note === REMINDER_NOTE; });
-      for (var i = 0; i < mine.length; i++) {
-        await G.reminders.remove(mine[i].id);
-        try { if (G.notify && G.notify.cancelForReminder) await G.notify.cancelForReminder(mine[i].id); } catch (e) {}
-      }
-    } catch (e) {}
-  }
-  function localISO(d) {
-    return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
-  }
+  // Local wrapper over util.localISO (src/index.html, next to
+  // util.parseISODate) - promoted from a byte-identical copy this file used
+  // to carry directly. Kept as a one-line wrapper so every existing call site
+  // in this file (localISO(...)) keeps working unchanged.
+  function localISO(d) { return util.localISO(d); }
   // ONE rule for both checks (the planned week and the completed 7 days), so
   // they can never disagree about the same week:
   //  - a rest day relieves hard training exactly like a recovery session
@@ -285,16 +281,20 @@
   // nothing was added. The session is looked up for the concrete date the
   // reminder will carry, never for the weekday alone: that date may have been
   // changed to rest (no reminder) or from rest to a session (reminder, with
-  // that session's name).
+  // that session's name). Uses G.reminders.addManaged() (not add()) so the
+  // reminder is stamped source:"pt-planner" - the completion handler below
+  // (and "Mark today complete") can then clear it by that source instead of
+  // its own private kind+date+note sweep (see the deleted REMINDER_NOTE/
+  // clearPtRemindersFor this replaced).
   async function addPtReminder(plan, dayIndex, quiet) {
-    if (!G.reminders || !G.reminders.add) return "failed";
+    if (!G.reminders || !G.reminders.addManaged) return "failed";
     var date = nextDateForDay(dayIndex);
     var entry = dayEntryForDate(plan, new Date(date + "T12:00:00"));
     if (!entry || entry.type === "rest") {
       if (!quiet) util.toast("That date is a rest day - no reminder added.");
       return "rest";
     }
-    var list = await G.reminders.add({ kind:"pt", label:"PT: " + entry.title, date:date, note:REMINDER_NOTE });
+    var list = await G.reminders.addManaged({ kind:"pt", label:"PT: " + entry.title, date:date, source:"pt-planner" });
     if (!list) { util.toast("Reminder limit reached."); return "full"; }
     var r = list[list.length - 1];
     try { if (G.notify && G.notify.scheduleForReminder) await G.notify.scheduleForReminder(r); } catch (e) {}
@@ -305,7 +305,22 @@
     return e === "hard" ? "Hard" : e === "recovery" ? "Recovery" : "Moderate";
   }
 
-  async function render(mount) {
+  // {week, history} readiness snapshot - a thin export over the ratio math
+  // this module already computes for its own two check panels (drawRatio()/
+  // drawHistoryGuard() inside renderClassic() below). No new bucketing logic;
+  // exists so a future cross-feature consumer (Home's dashboard, Phase B's
+  // Tasking Board layout) can read the same numbers without re-deriving them.
+  async function readinessSignal() {
+    try {
+      var plan = await loadPlan();
+      var hist = await loadHistory();
+      return { week: ratioOf(plan), history: historyRatio(hist) };
+    } catch (e) {
+      return { week: null, history: null };
+    }
+  }
+
+  async function renderClassic(mount) {
     util.clear(mount);
     var plan = await loadPlan();
     var activeView = "week";
@@ -581,7 +596,14 @@
         var ok = await logCompletion({ date:todayKey, title:e.title, effort:e.effort, type:e.type, ts:Date.now() });
         if (!ok) { complete.removeAttribute("aria-disabled"); util.toast("Could not save the PT log."); return; }
         complete.textContent = "Today logged";
-        await clearPtRemindersFor(todayKey);
+        // Once a date is logged its planner-made reminder has done its job;
+        // leaving it would show "PT: ... - Today" on Home for a session
+        // already completed. (Reminders whose date has simply passed are
+        // expired by G.reminders itself - see EXPIRING_KINDS there - so
+        // nothing here needs a clock.) clearManagedFor (G.reminders, shared
+        // across modules) replaces this file's own former private
+        // REMINDER_NOTE/clearPtRemindersFor sweep.
+        try { if (G.reminders && G.reminders.clearManagedFor) await G.reminders.clearManagedFor({ source:"pt-planner", date:todayKey }); } catch (e2) {}
         var after = await drawHistoryGuard(drawGeneration);
         // The toast is a live region, so this is also what is read out.
         util.toast("PT session logged." + (after && after.warn ? " Heads up: your last 7 days are over the hard-to-recovery guide." : ""));
@@ -764,6 +786,91 @@
     draw();
   }
 
+  // ---- shared-grid layout (ROADMAP 3g "customizable screen layouts") ----
+  // Builds the coming 7 days' worth of date-cells from dayEntryForDate()
+  // (the same canonical per-date resolver Classic uses - override wins over
+  // template) and the PRESETS/custom-session effort tag, mapped to tone.
+  function buildWeekCells(plan) {
+    var out = [];
+    var start = new Date(); start.setHours(0,0,0,0);
+    for (var i = 0; i < 7; i++) {
+      var d = new Date(start); d.setDate(start.getDate() + i);
+      var entry = dayEntryForDate(plan, d);
+      var level = entry.type === "rest" ? "neutral"
+        : entry.effort === "hard" ? "red"
+        : entry.effort === "recovery" ? "green"
+        : "amber";
+      out.push({
+        iso: localISO(d),
+        date: d.toLocaleDateString("en-US", { month:"short", day:"numeric" }),
+        weekday: DAY_NAMES[d.getDay()].slice(0, 3),
+        isToday: i === 0,
+        title: entry.title,
+        sub: effortLabel(entry.effort) + (entry.type === "rest" ? "" : " · " + entry.type),
+        tone: { level: level },
+        link: entry.route || "",
+        source: "pt-planner",
+        actions: [],
+      });
+    }
+    return out;
+  }
+
+  async function renderSharedGrid(mount) {
+    util.clear(mount);
+    mount.appendChild(el("div.section-title", {}, [el("h2", { text:"PT Planner" }), el("div.rule")]));
+    mount.appendChild(el("p.hint", { text:"Shared grid layout — the same weekday-grid component Career Calendar's own shared-grid layout uses, switched to this week's planned PT. Change this in Settings → Screen Layouts." }));
+
+    var plan = await loadPlan();
+    var cells = buildWeekCells(plan);
+    var host = el("div.panel");
+    mount.appendChild(host);
+
+    // The switcher navigates to the OTHER screen's own route rather than
+    // rendering its data inline here - PT Planner and Career Calendar each
+    // choose their layout independently (ptPlannerLayout/calendarLayout are
+    // separate settings), so jumping over lets that screen's OWN choice
+    // decide what it shows next, instead of this screen guessing.
+    function draw(activeSource) {
+      if (activeSource === "calendar") { location.hash = "#/calendar"; return; }
+      if (!G.dateGrid || !G.dateGrid.renderWeek) {
+        util.clear(host);
+        host.appendChild(el("p.hint", { text:"The shared weekday-grid component isn't available - try Classic in Settings → Screen Layouts." }));
+        return;
+      }
+      G.dateGrid.renderWeek(host, cells, {
+        activeSource: "pt-planner",
+        sources: [{ id:"pt-planner", label:"PT Planner" }, { id:"calendar", label:"Career Calendar" }],
+        onSwitch: draw,
+      });
+    }
+    draw("pt-planner");
+
+    var foot = el("div.panel", { style:"margin-top:10px" });
+    foot.appendChild(el("p.hint", { text:"Showing the next 7 days only. Switch to Classic in Settings → Screen Layouts for Day/Week/Month, the hard:recovery checks, and history log." }));
+    mount.appendChild(foot);
+  }
+
+  // A simple id -> {label, render} map. Phase B adds a screen-specific
+  // "Tasking Board" layout by pushing one more entry onto this object -
+  // nothing else in this file (including the dispatcher below) needs to
+  // change for that.
+  var LAYOUTS = {
+    classic: { label:"Classic", render:renderClassic },
+    "shared-grid": { label:"Shared grid (with Career Calendar)", render:renderSharedGrid }
+  };
+
+  // Thin dispatcher: reads the Soldier's chosen layout from Settings, falls
+  // back to "classic" for an id this build doesn't recognise (e.g. a Phase-B
+  // layout picked on another device and later removed here).
+  async function render(mount) {
+    var s = {};
+    try { s = (store && store.settings) ? store.settings() : {}; } catch (e) {}
+    var layoutId = (s && s.ptPlannerLayout) || "classic";
+    var layout = LAYOUTS[layoutId] || LAYOUTS.classic;
+    await layout.render(mount);
+  }
+
   G.ptPlanner = {
     render:render,
     KEY:KEY,
@@ -771,6 +878,8 @@
     PRESETS:PRESETS,
     TEMPLATES:TEMPLATES,
     LEADER_CHECKLIST:LEADER_CHECKLIST,
+    LAYOUTS:LAYOUTS,
+    readinessSignal:readinessSignal,
     _ratio:ratioOf,
     _historyRatio:historyRatio,
     _planFromTemplate:planFromTemplate,

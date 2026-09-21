@@ -25,26 +25,22 @@ window.G = window.G || {};
 
   // Promotion month cut-off: BLC/ALC graduation must be a matter of record by
   // the 26th calendar day of the board month (AR 600-8-19 para 3-17a) - the
-  // same date "The clock" group below warns about and calendar.js's own
-  // fixedAnchors() computes. Duplicated rather than read off G.calendar:
-  // four lines, and this module has no business depending on calendar.js's
-  // internal shape (or its load order) just to get one date.
-  function nextCutoff() {
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    let cut = new Date(today.getFullYear(), today.getMonth(), 26);
-    if (cut.getTime() < today.getTime()) cut = new Date(today.getFullYear(), today.getMonth() + 1, 26);
-    return cut;
-  }
+  // same date "The clock" group below warns about. Used to be its own
+  // independently-written copy of this math; now a one-line wrapper over
+  // util.nextPromotionCutoff (src/index.html, next to util.parseISODate),
+  // which merges this with calendar.js's own byte-identical fixedAnchors()
+  // cutoff math so the two can never silently drift apart again.
+  function nextCutoff() { return util.nextPromotionCutoff(new Date()); }
   function fmt(d) {
     return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
   }
-  // "YYYY-MM-DD" in LOCAL time for G.reminders.add() - not d.toISOString(),
-  // which converts to UTC first and can silently roll the date a day either
-  // direction depending on the Soldier's timezone.
-  function isoLocal(d) {
-    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
-  }
+  // "YYYY-MM-DD" in LOCAL time for G.reminders.add() - promoted to
+  // util.localISO (src/index.html, next to util.parseISODate); kept as a
+  // one-line wrapper so every existing call site in this file keeps working
+  // unchanged. NOT d.toISOString(), which converts to UTC first and can
+  // silently roll the date a day either direction depending on the
+  // Soldier's timezone.
+  function isoLocal(d) { return util.localISO(d); }
 
   /* Grouped because the fix path differs per group - different system, different
      office, different lead time. Ordered by how often each one actually bites. */
@@ -156,6 +152,17 @@ window.G = window.G || {};
       saved = (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
     } catch (e) { /* offline-safe */ }
 
+    // Cross-check for the "My weapons qualification is inside 24 months"
+    // item below (rec-2-4) against the SAME date Career Calendar tracks -
+    // read once, here, alongside this screen's own `saved` read.
+    let calSaved = {};
+    try {
+      if (G.calendar && G.calendar.KEY) {
+        const cr = await G.db.get("kv", G.calendar.KEY);
+        calSaved = (cr && cr.v) || {};
+      }
+    } catch (e) { /* offline-safe */ }
+
     const warn = el("div.panel", { style: "margin:10px 0;border-left:3px solid var(--red)" });
     warn.appendChild(el("div.eyebrow", { text: "The rule that costs people a cycle" }));
     warn.appendChild(el("p", { text:
@@ -215,10 +222,41 @@ window.G = window.G || {};
         box.checked = !!saved[id];
         box.addEventListener("change", function () {
           saved[id] = box.checked; refresh(); persist();
+          if (gi === 2 && ii === 4) refreshWpnCallout();
         });
         const lab = el("label", { "for": id, text: label, style: "cursor:pointer" });
         row.appendChild(box); row.appendChild(lab);
         p.appendChild(row);
+        // Weapons-qual cross-check (rec-2-4, "My weapons qualification is
+        // inside 24 months"): a quiet advisory sourced from Career
+        // Calendar's own tracked wpnQual date, never auto-toggling and
+        // never overwriting either field - this checkbox and Calendar's own
+        // date stay two independently-Soldier-maintained facts. Same
+        // amber-bordered advisory-panel style as "Remind me before the
+        // cutoff" below.
+        if (gi === 2 && ii === 4) {
+          var wpnCallout = el("div.panel", { style: "margin-top:6px;margin-bottom:2px;border-left:3px solid var(--amber)", "data-wpn-qual-callout": "1" });
+          p.appendChild(wpnCallout);
+          var refreshWpnCallout = function () {
+            util.clear(wpnCallout);
+            var status = { hasDate: false };
+            try { if (G.calendar && G.calendar.wpnQualStatus) status = G.calendar.wpnQualStatus(calSaved, new Date()); } catch (e) {}
+            if (!status.hasDate) {
+              wpnCallout.appendChild(el("p.hint", { text: "No weapons-qualification date entered in Career Calendar yet - add one there to cross-check this box." }));
+              const link = el("button.btn.sm.ghost", { type: "button", text: "Open Career Calendar" });
+              link.addEventListener("click", function () { location.hash = "#/calendar"; });
+              wpnCallout.appendChild(link);
+            } else if (status.overdue && box.checked) {
+              wpnCallout.appendChild(el("p", { style: "color:var(--red)", text:
+                "Mismatch: Career Calendar shows your weapons qualification as overdue, but this box is checked. Double-check the date on both screens before your board." }));
+            } else if (status.overdue) {
+              wpnCallout.appendChild(el("p.hint", { text: "Career Calendar shows your weapons qualification as overdue." }));
+            } else {
+              wpnCallout.appendChild(el("p.hint", { text: "Career Calendar shows your weapons qualification is current (not overdue)." }));
+            }
+          };
+          refreshWpnCallout();
+        }
       });
       groupGrid.appendChild(p);
     });
