@@ -8356,6 +8356,21 @@ window.G = window.G || {};
     // until they opt in here. Read by G.mosDecks.activeCodes(), never
     // directly - see that function for the full visibility rule.
     mosOptIn: [],
+    // MOI Scope (ROADMAP 3g phase 2, MOI Import Phase 2): the Soldier's own
+    // explicit "In Scope" opt-ins - an array of saved MOI plan FAMILY ids
+    // (G.moiImport.PLANS_KEY families, src/app-modules/moi-import.js) whose
+    // topics/board categories should narrow store.boardQuestions()/
+    // store.doctrine(). Off (empty) by default for every family, the same
+    // hidden-by-default precedent mosOptIn just above establishes for MOS
+    // Decks - see 00-mos-decks-core.js's own header comment for why a
+    // narrowing opt-in defaults off rather than on. Per-family, not a single
+    // global switch: with Phase 1's multi-plan history, a Soldier can have
+    // more than one saved plan (a current board's, an old one kept for
+    // reference) and the two must not be forced to the same on/off state.
+    // The active filter is the UNION of every family whose id is in this
+    // array - see G.moiImport.activeFocusSet()'s own comment. Written only
+    // through G.moiImport.setInScope(), never directly.
+    moiScopeFamilies: [],
     // ROADMAP 3g "customizable screen layouts", Phase A: per-screen layout
     // choice, read by each module's own LAYOUTS registry (pt-planner.js/
     // calendar.js) - "classic" is today's existing view unchanged; an id
@@ -8591,6 +8606,29 @@ window.G = window.G || {};
     } catch (e) { /* non-fatal: app still boots fine without migration */ }
   }
 
+  // MOI Scope (ROADMAP 3g phase 2, MOI Import Phase 2): narrows
+  // store.boardQuestions()/store.doctrine() to the topics/board categories
+  // of whichever saved MOI plan families the Soldier has opted "In Scope"
+  // (Settings -> Study Preferences -> MOI Plans, or the plan's own card/
+  // detail view - G.moiImport, src/app-modules/moi-import.js). Feature-
+  // detected exactly like G.mosDecks is inside boardQuestions() below: a
+  // missing G.moiImport (stand-in/corrupted build) fails OPEN to "no
+  // filtering," never throws and never hides content nobody asked to hide.
+  // moiScopeOptIns() returns a SORTED copy so it can double as a stable
+  // cache-key component (join order must never cause a spurious cache miss
+  // - the same reasoning activeMos.join(",") already relies on for MOS).
+  function moiScopeOptIns() {
+    const s = state.settings;
+    return (Array.isArray(s.moiScopeFamilies) ? s.moiScopeFamilies.slice() : []).sort();
+  }
+  function moiScopeFocus() {
+    if (!G.moiImport || !G.moiImport.activeFocusSet) return null;
+    const optedIn = moiScopeOptIns();
+    if (!optedIn.length) return null;
+    const families = G.moiImport.cachedFamilies ? G.moiImport.cachedFamilies() : [];
+    return G.moiImport.activeFocusSet(families, optedIn);
+  }
+
   const store = {
     DIMS, COMPS, ATTEMPTS_CAP,
 
@@ -8625,6 +8663,25 @@ window.G = window.G || {};
       await migrateLegacyLocalStorage();
       await loadContent();
       state.userScenarios = (await db.allUserScenarios()) || [];
+      // MOI Scope (ROADMAP 3g phase 2): warms G.moiImport's own family
+      // cache here, mirroring loadContent()'s role just above for
+      // state.seed - boardQuestions()/doctrine() read
+      // G.moiImport.cachedFamilies() SYNCHRONOUSLY mid-render (see their
+      // own comments) and must never see a stale-empty cache just because
+      // #/moi hasn't rendered yet this session. Without this, a Soldier who
+      // opted a plan "In Scope" in an earlier session and goes straight to
+      // #/board on a fresh launch would see the pool silently narrow to
+      // NOTHING (an empty cached-families list still "matches" a non-empty
+      // opt-in array by finding zero families, not by failing open) -
+      // exactly the ambiguous-empty-set risk activeFocusSet()'s own comment
+      // warns against. app-modules/*.js (moi-import.js included) load
+      // before this file's own app.start() runs (tools/build.mjs splices
+      // them in right before </body>, and app.start() only fires on
+      // DOMContentLoaded - see index.html's own closing script), so
+      // G.moiImport is always defined by the time store.init() reaches here
+      // in a real build; the typeof guard only covers a stand-in/corrupted
+      // build, same as every other optional cross-module call in this file.
+      try { if (G.moiImport && G.moiImport.currentFamilies) await G.moiImport.currentFamilies(); } catch (e) {}
       state.ready = true;
       util.emit("store:ready");
     },
@@ -8707,7 +8764,11 @@ window.G = window.G || {};
       // unconditional hashchange->route() path before then would cache an
       // empty base list under this key FOREVER, with nothing to ever
       // invalidate it once real content actually loaded.
-      const baseKey = (s.tierFilter || "all") + "|" + !!s.showInTransition + "|" + !!s.showCommunity + "|" + !!state.seed.doctrine;
+      // MOI Scope (ROADMAP 3g phase 2): same cache-key extension as
+      // boardQuestions()'s own moiScopeIds just above - folded in here too
+      // so a Settings/plan-card opt-in toggle invalidates this base cache.
+      const moiScopeIds = moiScopeOptIns();
+      const baseKey = (s.tierFilter || "all") + "|" + !!s.showInTransition + "|" + !!s.showCommunity + "|" + !!state.seed.doctrine + "|" + moiScopeIds.join(",");
       if (!state._doctrineBaseCache || state._doctrineBaseCache.key !== baseKey) {
         let base = (state.seed.doctrine && state.seed.doctrine.entries) || [];
         base = base.filter((d) => {
@@ -8716,6 +8777,11 @@ window.G = window.G || {};
           if (s.tierFilter !== "all" && d.tier && util.expandTierTokens(d.tier).indexOf(s.tierFilter) === -1) return false;
           return true;
         });
+        // MOI Scope filter - appended AFTER every existing filter above,
+        // matching boardQuestions()'s own placement/reasoning. null (no
+        // family opted in) is a no-op - see activeFocusSet()'s own comment.
+        const moiFocus = moiScopeFocus();
+        if (moiFocus) base = base.filter((d) => moiFocus.topics.has(d.topic));
         state._doctrineBaseCache = { key: baseKey, list: base };
       }
       let list = state._doctrineBaseCache.list;
@@ -8984,11 +9050,22 @@ window.G = window.G || {};
       const prof = (window.G && G.profile && G.profile.cached) ? G.profile.cached() : null;
       const myMos = (G.mosDecks && G.mosDecks.normalize) ? G.mosDecks.normalize(prof && prof.mos) : String((prof && prof.mos) || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
       const activeMos = (G.mosDecks && G.mosDecks.activeCodes) ? G.mosDecks.activeCodes(prof) : [];
-      const key = (s.tierFilter || "all") + "|" + !!state.seed.board + "|" + myMos + "|" + activeMos.join(",");
+      // MOI Scope (ROADMAP 3g phase 2): folded into the cache key the same
+      // way activeMos is just above - a Settings/plan-card opt-in toggle
+      // must invalidate this memo exactly like flipping a MOS opt-in does.
+      const moiScopeIds = moiScopeOptIns();
+      const key = (s.tierFilter || "all") + "|" + !!state.seed.board + "|" + myMos + "|" + activeMos.join(",") + "|" + moiScopeIds.join(",");
       if (state._boardQuestionsCache && state._boardQuestionsCache.key === key) return state._boardQuestionsCache.list;
       let list = (state.seed.board && state.seed.board.questions) || [];
       if (s.tierFilter !== "all") list = list.filter((q) => !q.tier || util.expandTierTokens(q.tier).indexOf(s.tierFilter) !== -1);
       list = list.filter((q) => !Array.isArray(q.mos) || !q.mos.length || q.mos.some((m) => activeMos.indexOf((G.mosDecks && G.mosDecks.normalize) ? G.mosDecks.normalize(m) : String(m).toUpperCase()) !== -1));
+      // MOI Scope filter - appended AFTER every existing filter above, per
+      // this feature's own design: it narrows an already-eligible pool, it
+      // never re-includes something tier/MOS already excluded. null (no
+      // family opted in) is a no-op, never an empty-set false narrowing -
+      // see activeFocusSet()'s own comment on why that distinction matters.
+      const moiFocus = moiScopeFocus();
+      if (moiFocus) list = list.filter((q) => moiFocus.boardCategories.has(q.category));
       state._boardQuestionsCache = { key, list };
       return list;
     },
@@ -12221,6 +12298,28 @@ window.G = window.G || {};
           onclick: () => { mosFilterCode = null; mosBanner.remove(); build(); } }),
       ]);
       drillDetail.appendChild(mosBanner);
+    }
+    // MOI Scope (ROADMAP 3g phase 2, MOI Import Phase 2): PERSISTENT
+    // banner, unlike mosBanner just above (a one-shot deep-link flag reset
+    // by build()) - shown every time this tab renders for as long as at
+    // least one saved MOI plan family is opted "In Scope" (Settings ->
+    // Study Preferences -> MOI Plans, or the plan's own card - G.moiImport,
+    // src/app-modules/moi-import.js; see activeFocusSet()'s own comment for
+    // the union-of-opted-in-families rule). Never an unlabeled narrowed
+    // pool that looks like the full corpus, just smaller - the real risk
+    // this banner exists to prevent. No dismiss control: it goes away on
+    // its own the moment every opted-in family is turned back off, or the
+    // Soldier navigates to a different screen - never an intrusive modal.
+    const moiScopeIds = store.settings().moiScopeFamilies || [];
+    if (moiScopeIds.length && G.moiImport && G.moiImport.cachedFamilies) {
+      const scopedNames = G.moiImport.cachedFamilies()
+        .filter((f) => moiScopeIds.indexOf(f.id) !== -1)
+        .map((f) => (f.current && f.current.name) || "your MOI");
+      if (scopedNames.length) {
+        drillDetail.appendChild(el("div.panel.moi-scope-banner", { style: "margin-bottom:8px" }, [
+          el("span", { text: "Narrowed to your MOI: " + scopedNames.join(", ") + ". Turn this off in Settings → Study Preferences → MOI Plans, or from the plan itself." }),
+        ]));
+      }
     }
     drillDetail.appendChild(pillarChipBar);
     drillDetail.appendChild(catChipBar);
@@ -35620,6 +35719,23 @@ window.G = window.G || {};
       mount.appendChild(el("p.hint", { text: stampParts.join(" · ") }));
     }
 
+    // MOI Scope (ROADMAP 3g phase 2, MOI Import Phase 2): identical
+    // persistent banner to Board Drill's own (see renderDrill's block,
+    // index.html, for the full reasoning) - a separate copy, not a shared
+    // function, because this view lives in its own module IIFE with no
+    // shared lexical scope to renderDrill's.
+    const moiScopeIds = store.settings().moiScopeFamilies || [];
+    if (moiScopeIds.length && G.moiImport && G.moiImport.cachedFamilies) {
+      const scopedNames = G.moiImport.cachedFamilies()
+        .filter((f) => moiScopeIds.indexOf(f.id) !== -1)
+        .map((f) => (f.current && f.current.name) || "your MOI");
+      if (scopedNames.length) {
+        mount.appendChild(el("div.panel.moi-scope-banner", { style: "margin-bottom:10px" }, [
+          el("span", { text: "Narrowed to your MOI: " + scopedNames.join(", ") + ". Turn this off in Settings → Study Preferences → MOI Plans, or from the plan itself." }),
+        ]));
+      }
+    }
+
     // ── Topic filter chips ─────────────────────────────────────────────────
     const allEntries = store.doctrine("");
     const topicCounts = {};
@@ -36761,6 +36877,39 @@ window.G = window.G || {};
         ]));
       });
       prefGrid.appendChild(mosPanel);
+    }
+
+    // MOI Scope (ROADMAP 3g phase 2, MOI Import Phase 2): mirrors the MOS
+    // Decks panel immediately above it - one checkbox per saved MOI plan
+    // family (G.moiImport, src/app-modules/moi-import.js), each
+    // independently opt-in and OFF by default (see moiScopeFamilies's own
+    // comment on DEFAULT_SETTINGS), read/written through G.moiImport's own
+    // inScopeIds()/setInScope() the same way MOS Decks reads/writes through
+    // G.mosDecks.optedIn()/setOptedIn() just above. Deliberately per-family,
+    // not one global switch: a Soldier can opt more than one saved plan in
+    // at once (two concurrent boards) or keep an old plan around unopted
+    // (reference only, never narrows anything). Only rendered when the
+    // Soldier actually has at least one saved plan - an empty list here
+    // would just be a confusing checkbox-less panel. This is the mirror of
+    // the SAME toggle moi-import.js's own menu()/openPlan() render on each
+    // plan's own card/detail view - both read/write the identical setting,
+    // so either one always reflects what the other last did.
+    const moiFamiliesList = (G.moiImport && G.moiImport.cachedFamilies) ? G.moiImport.cachedFamilies() : [];
+    if (moiFamiliesList.length) {
+      const moiPanel = el("div.panel", { style: "margin-top:12px" });
+      moiPanel.appendChild(el("label", { text: "MOI Plans" }));
+      moiPanel.appendChild(el("p.hint", { text: "Narrow Board Drill and Doctrine down to only what one or more of your saved MOI plans assign. Off by default for every plan — turn on any plan below to focus on just its topics, or turn on more than one if you're studying for multiple boards at once." }));
+      const moiOptedIn = G.moiImport.inScopeIds ? G.moiImport.inScopeIds() : [];
+      moiFamiliesList.slice().sort((a, b) => (b.current.importedAt || 0) - (a.current.importedAt || 0)).forEach((family) => {
+        const famName = (family.current && family.current.name) || "Your MOI";
+        const input = el("input", { type: "checkbox", "aria-label": "Narrow Board Drill and Doctrine to " + famName + "'s topics" });
+        input.checked = moiOptedIn.indexOf(family.id) !== -1;
+        input.addEventListener("change", () => { G.moiImport.setInScope(family.id, input.checked); });
+        moiPanel.appendChild(el("div", { style: "margin:12px 0" }, [
+          el("div.switch", {}, [el("label.toggle", { style: "margin:0" }, [input, el("span.track")]), el("span", { text: famName })]),
+        ]));
+      });
+      prefGrid.appendChild(moiPanel);
     }
 
     // Intuitivism pass: this standalone toggle was a literal functional
