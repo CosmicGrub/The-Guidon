@@ -691,8 +691,10 @@ jobs:
             tests: "test:new-suite-scaffold test:content-manifest test:live-content-figures test:guest-saves-nothing"
           - name: "54-backupnewtools-storagecontractlint-cyberfundamentals-drillsprtsourcing"
             tests: "test:backup-new-tools test:storage-contract-lint test:cyber-fundamentals test:drills-prt-sourcing"
-          - name: "55-mosdecks-prtsessionfetchedseed-screenlayouts-pttaskingboard"
-            tests: "test:mos-decks test:prt-session-fetched-seed test:screen-layouts test:pt-tasking-board"
+          - name: "55-mosdecks-prtsessionfetchedseed-ptsessioncomposer-screenlayouts"
+            tests: "test:mos-decks test:prt-session-fetched-seed test:pt-session-composer test:screen-layouts"
+          - name: "56-pttaskingboard"
+            tests: "test:pt-tasking-board"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
