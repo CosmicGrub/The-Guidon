@@ -260,6 +260,93 @@ someStrictlySplit
   : bad("no topic's per-topic count is less than the aggregate - suspicious, looks undivided: " + JSON.stringify(fanout));
 
 /* ------------------------------------------------------------------------
+   UCMJ Article citation grammar (Phase 2 extension): a SEPARATE grammar
+   alongside the AR/ADP/ATP/... one above - matchCitation()'s own 5-tier
+   logic gets zero changes, only tokenizeCitations/normalizeCitation/
+   buildCitationRegistry gain a second, UCMJ-specific recognition path.
+   Every case below is checked against the REAL seed, same as the AR/TC
+   cases above - never a hand-built fixture.
+   ------------------------------------------------------------------------ */
+
+// ---- tokenizeCitations: the four shapes the brief calls out ----
+const ucmjTokenCases = await page.evaluate(() => ({
+  dotArt: window.G.moiImport.tokenizeCitations("UCMJ Art. 92"),
+  wordArticle: window.G.moiImport.tokenizeCitations("UCMJ Article 15"),
+  slashPair: window.G.moiImport.tokenizeCitations("UCMJ Art 92 / 134"),
+  lettered: window.G.moiImport.tokenizeCitations("UCMJ Art 112a"),
+  // Non-regression: the pre-existing AR/TC grammar is completely
+  // untouched by adding a second, independent scan alongside it.
+  singleAr: window.G.moiImport.tokenizeCitations("AR 600-20"),
+}));
+JSON.stringify(ucmjTokenCases.dotArt) === JSON.stringify(["UCMJ 92"])
+  ? ok("tokenizeCitations('UCMJ Art. 92') -> ['UCMJ 92']")
+  : bad("tokenizeCitations('UCMJ Art. 92') -> " + JSON.stringify(ucmjTokenCases.dotArt));
+JSON.stringify(ucmjTokenCases.wordArticle) === JSON.stringify(["UCMJ 15"])
+  ? ok("tokenizeCitations('UCMJ Article 15') -> ['UCMJ 15'] (Article/Art./Art alternation)")
+  : bad("tokenizeCitations('UCMJ Article 15') -> " + JSON.stringify(ucmjTokenCases.wordArticle));
+(ucmjTokenCases.slashPair.includes("UCMJ 92") && ucmjTokenCases.slashPair.includes("UCMJ 134") && ucmjTokenCases.slashPair.length === 2)
+  ? ok("tokenizeCitations('UCMJ Art 92 / 134') surfaces BOTH halves as independent candidates, the same way the AR/TC slash case does: " + JSON.stringify(ucmjTokenCases.slashPair))
+  : bad("tokenizeCitations('UCMJ Art 92 / 134') -> " + JSON.stringify(ucmjTokenCases.slashPair));
+JSON.stringify(ucmjTokenCases.lettered) === JSON.stringify(["UCMJ 112a"])
+  ? ok("tokenizeCitations('UCMJ Art 112a') preserves the lettered subsection raw -> ['UCMJ 112a']")
+  : bad("tokenizeCitations('UCMJ Art 112a') -> " + JSON.stringify(ucmjTokenCases.lettered));
+JSON.stringify(ucmjTokenCases.singleAr) === JSON.stringify(["AR 600-20"])
+  ? ok("tokenizeCitations('AR 600-20') is untouched by the UCMJ grammar addition - still exactly ['AR 600-20']")
+  : bad("tokenizeCitations('AR 600-20') -> " + JSON.stringify(ucmjTokenCases.singleAr) + " (expected no change from the UCMJ addition)");
+
+// ---- normalizeCitation: shape, glyph-fold scope, lettered subsection ----
+const ucmjNormCases = await page.evaluate(() => ({
+  plain: window.G.moiImport.normalizeCitation("UCMJ Art. 92"),
+  lettered: window.G.moiImport.normalizeCitation("UCMJ Art 112a"),
+  roundTripBare: window.G.moiImport.normalizeCitation("UCMJ 134"), // tokenizeCitations' own slash-continuation output must round-trip
+}));
+JSON.stringify(ucmjNormCases.plain) === JSON.stringify({ pubType: "UCMJ", number: "92", glyphFolded: false })
+  ? ok("normalizeCitation('UCMJ Art. 92') -> {pubType:'UCMJ', number:'92', glyphFolded:false}")
+  : bad("normalizeCitation('UCMJ Art. 92') -> " + JSON.stringify(ucmjNormCases.plain));
+JSON.stringify(ucmjNormCases.lettered) === JSON.stringify({ pubType: "UCMJ", number: "112A", glyphFolded: false })
+  ? ok("normalizeCitation('UCMJ Art 112a') preserves the lettered subsection (uppercased) -> number:'112A'")
+  : bad("normalizeCitation('UCMJ Art 112a') -> " + JSON.stringify(ucmjNormCases.lettered));
+JSON.stringify(ucmjNormCases.roundTripBare) === JSON.stringify({ pubType: "UCMJ", number: "134", glyphFolded: false })
+  ? ok("normalizeCitation('UCMJ 134') (tokenizeCitations' own bare slash-continuation candidate) round-trips correctly")
+  : bad("normalizeCitation('UCMJ 134') -> " + JSON.stringify(ucmjNormCases.roundTripBare));
+
+// ---- matchCitation: a real doctrine entry, against the LIVE seed - confirm
+// the entry still exists and record whatever tier it actually resolves to
+// (never assumed - this app's own doc-ucmj-art92 entry is also cited by
+// other content packs, so its real tier may be fan-out, not unique). ----
+const ucmjMatch = await page.evaluate(() => window.G.moiImport.matchCitation("UCMJ Art. 92"));
+(ucmjMatch.tier !== "unmatched" && ucmjMatch.normalized === "UCMJ 92" && ucmjMatch.counts && ucmjMatch.counts.doctrineCards > 0)
+  ? ok("matchCitation('UCMJ Art. 92') resolves against the LIVE seed to tier '" + ucmjMatch.tier + "' (doc-ucmj-art92 confirmed still present, " + ucmjMatch.counts.doctrineCards + " doctrine card(s)/" + ucmjMatch.counts.selfCheckQuestions + " self-check question(s), topics: " + JSON.stringify(ucmjMatch.topics) + ")")
+  : bad("matchCitation('UCMJ Art. 92') did not resolve against the live seed: " + JSON.stringify(ucmjMatch) + " - has the doc-ucmj-art92 entry been removed/renamed?");
+
+// ---- registry population regression: a real combined ref from the live
+// seed (semicolon-joined doctrine source.ref) now registers BOTH halves,
+// where the old single-shot record() call could only ever credit one. ----
+const combinedRefCase = await page.evaluate(() => {
+  const tokens = window.G.moiImport.tokenizeCitations("UCMJ Art. 15; AR 27-10");
+  return {
+    tokens: tokens,
+    ucmj15: window.G.moiImport.matchCitation("UCMJ 15"),
+    ar2710: window.G.moiImport.matchCitation("AR 27-10"),
+  };
+});
+(combinedRefCase.tokens.includes("UCMJ 15") && combinedRefCase.tokens.includes("AR 27-10"))
+  ? ok("tokenizeCitations('UCMJ Art. 15; AR 27-10') (a real, semicolon-combined doctrine source.ref in the live seed) surfaces BOTH halves: " + JSON.stringify(combinedRefCase.tokens))
+  : bad("tokenizeCitations('UCMJ Art. 15; AR 27-10') -> " + JSON.stringify(combinedRefCase.tokens));
+(combinedRefCase.ucmj15.tier !== "unmatched" && combinedRefCase.ar2710.tier !== "unmatched")
+  ? ok("Both halves of the combined ref now register in the citation registry: 'UCMJ 15' -> tier '" + combinedRefCase.ucmj15.tier + "', 'AR 27-10' -> tier '" + combinedRefCase.ar2710.tier + "' (before this fix, buildCitationRegistry()'s single-shot record() call could only ever credit the FIRST citation-shaped run it found in the field, silently dropping the other)")
+  : bad("combined-ref registry population: UCMJ 15 -> " + JSON.stringify(combinedRefCase.ucmj15.tier) + ", AR 27-10 -> " + JSON.stringify(combinedRefCase.ar2710.tier) + " (expected neither unmatched)");
+// A second, real board q.source example of the same combined-ref shape
+// (slash-joined this time, not semicolon) - "UCMJ Art. 138 / AR 27-10".
+const combinedRefCase2 = await page.evaluate(() => {
+  const tokens = window.G.moiImport.tokenizeCitations("UCMJ Art. 138 / AR 27-10");
+  return { tokens: tokens, ucmj138: window.G.moiImport.matchCitation("UCMJ 138") };
+});
+(combinedRefCase2.tokens.includes("UCMJ 138") && combinedRefCase2.tokens.includes("AR 27-10") && combinedRefCase2.ucmj138.tier !== "unmatched")
+  ? ok("Real board q.source 'UCMJ Art. 138 / AR 27-10' (slash-combined) also registers both halves - 'UCMJ 138' resolves to tier '" + combinedRefCase2.ucmj138.tier + "'")
+  : bad("slash-combined board source case: " + JSON.stringify(combinedRefCase2));
+
+/* ------------------------------------------------------------------------
    diffPlans() - fully hand-built plan snapshots, no dependency on seed
    content. Covers added/removed/coverageChanged, a self-diff (no changes),
    and a null previous snapshot (every topic reads as added).
@@ -430,6 +517,11 @@ noRevisionLabelOnFreshCapture ? ok("Capture for a brand-new plan (targetFamilyId
 // tier 'glyph-folded'). FM 3-22.9 is the documented alias -> TC 3-22.9,
 // added in the Phase 1 pass specifically to exercise the new "Superseded
 // citation" tier badge (Part B) end to end, not just in matchCitation().
+// "UCMJ Art. 92" (Phase 2, the UCMJ Article citation grammar) exercises the
+// new grammar through the REAL end-to-end Review -> matched-list -> Build ->
+// deep-link flow, not just the pure-function assertions in part (a) above -
+// a real, live-seed doctrine entry (doc-ucmj-art92), confirmed to resolve to
+// a real matched tier above.
 const MOI_TEXT_A = [
   "1st Battalion, 5th Infantry Regiment",
   "BOARD MOI - ASSIGNED STUDY TOPICS",
@@ -442,6 +534,9 @@ const MOI_TEXT_A = [
   "",
   "MARKSMANSHIP:",
   "Study FM 3-22.9 before the board.",
+  "",
+  "MILITARY JUSTICE:",
+  "Study UCMJ Art. 92 before the board.",
   "",
   "REVIEW:",
   "Double-check AR GOO-9 before the board.",
@@ -473,9 +568,9 @@ const summaryText = await page.evaluate(() => {
   const hint = h3 && h3.nextElementSibling;
   return hint ? hint.textContent : null;
 });
-summaryText && /3 matched/.test(summaryText) && /1 need a look/.test(summaryText) && /1 not found/.test(summaryText)
-  ? ok("Summary strip reads '3 matched · 1 need a look · 1 not found': \"" + summaryText + "\"")
-  : bad("Summary strip text: \"" + summaryText + "\" (expected 3 matched / 1 needs review / 1 not found)");
+summaryText && /4 matched/.test(summaryText) && /1 need a look/.test(summaryText) && /1 not found/.test(summaryText)
+  ? ok("Summary strip reads '4 matched · 1 need a look · 1 not found': \"" + summaryText + "\"")
+  : bad("Summary strip text: \"" + summaryText + "\" (expected 4 matched / 1 needs review / 1 not found)");
 
 const matchedText = await page.evaluate(() => {
   const segBtns = [...document.querySelectorAll(".segmented button")];
@@ -490,6 +585,9 @@ matchedText.indexOf("ADP 6-22") !== -1
 matchedText.indexOf("AR 623-3") !== -1
   ? ok("Matched list includes AR 623-3 (chapter suffix correctly stripped and matched)")
   : bad("Matched list missing AR 623-3: " + matchedText.slice(0, 300));
+matchedText.indexOf("UCMJ 92") !== -1
+  ? ok("Matched list includes UCMJ 92 (Phase 2 grammar, exercised end to end through the real Review UI)")
+  : bad("Matched list missing UCMJ 92: " + matchedText.slice(0, 300));
 matchedText.indexOf("TC 3-22.9") !== -1 && matchedText.indexOf("superseded FM 3-22.9") !== -1
   ? ok("Matched list includes TC 3-22.9, noted as superseded FM 3-22.9")
   : bad("Matched list missing the FM 3-22.9 -> TC 3-22.9 alias row: " + matchedText.slice(0, 300));
