@@ -699,8 +699,20 @@ html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after 
 .reco .eyebrow { color: var(--text); }
 
 /* ---- Board: SRS due chip ---- */
+/* min-width/min-height:44px - same literal Apple-HIG tap-target convention
+   already used for .chip.search-chip/.mb-cat-chip elsewhere in this file
+   (grep "min-height: 44px" for the others). dueChip/leechChip (index.html,
+   Board's Rapid Fire build()) are created with placeholder text "…" and
+   only get their real "N due"/"N leeches" content once build() resolves
+   the SRS pool - content-only sizing (no min set) measured at ~28px wide
+   during that window, under the 44px minimum; tools/test-ios-webkit-
+   ratchet.mjs's real-Safari sweep caught it reliably once the app's total
+   boot/parse cost grew enough to widen that window past the sweep's own
+   settle wait. A guaranteed minimum footprint fixes the real defect at its
+   source instead of chasing boot-timing margins. */
 .due-chip { font-family: var(--font-mono); font-size: .69rem; color: var(--btn-ink, #1a1206);
-  background: var(--amber); border-radius: 999px; padding: 2px 9px; }
+  background: var(--amber); border-radius: 999px; padding: 2px 9px;
+  min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; }
 /* Was background:var(--line-2);color:var(--text-dim) - two tokens meant for
    subtle borders/secondary text, never designed to pair with each other as a
    text-on-background combo. That passed unnoticed for a long time because
