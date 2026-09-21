@@ -28959,6 +28959,19 @@ window.G = window.G || {};
       if ("opened" in v && !isPlainObject(v.opened)) return false;
       return true;
     },
+    // ROADMAP 3g custom PT sessions (app-modules/pt-planner.js): a Soldier's
+    // own "Build your own session" list, one row per saved session. Every
+    // reader (both day-assignment pickers, the hard:recovery guard via
+    // tally(), prtSessionSummary()) reads label/effort/type/blocks off each
+    // entry unconditionally, so each must really carry them - same
+    // per-element rigor as guidon:recite:own:v1/idp:goals above.
+    "guidon:prt:customSessions:v1": function (v) {
+      return Array.isArray(v) && v.every(function (s) {
+        return s && typeof s === "object" && typeof s.id === "string" && typeof s.label === "string" &&
+          typeof s.effort === "string" && typeof s.type === "string" &&
+          Array.isArray(s.blocks) && s.blocks.every(function (b) { return b && typeof b === "object" && typeof b.drillId === "string"; });
+      });
+    },
   };
   function isPlainObject(v) { return !!v && typeof v === "object" && !Array.isArray(v); }
   // Exact-string-keyed KV_VALIDATORS above can never validate a
@@ -29047,6 +29060,7 @@ window.G = window.G || {};
     "team:training:v1": "Team Training completion counts",
     "prt:plan:v1": "your PT plan",
     "pt:history:v1": "your completed PT sessions",
+    "guidon:prt:customSessions:v1": "your custom PT sessions",
     "guidon:recite:own:v1": "your My unit texts",
     "board:mockHistory:v1": "Mock Board history",
     "idp:goals": "your IDP goals",
