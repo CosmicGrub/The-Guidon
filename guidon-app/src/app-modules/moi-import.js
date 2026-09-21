@@ -573,16 +573,29 @@ window.G = window.G || {};
             legacyPlan = (lr && lr.v && typeof lr.v === "object") ? lr.v : null;
           } catch (e) {}
           const migratedFamilies = migratePlansArray(families, legacyPlan);
+          // Only clear the legacy row and mark migration done once the
+          // new home for that data (or the fact there was none) is safely
+          // persisted. Writing PLANS_KEY can fail (quota, offline write
+          // error) - swallowing that and nulling KEY/setting the flag
+          // anyway would lose both the only copy of the data AND the
+          // chance to retry migration on the next render(). writeOk stays
+          // true when there was nothing to migrate, so that case still
+          // clears KEY/sets the flag exactly as before.
+          let writeOk = true;
           if (migratedFamilies.length) {
-            families = migratedFamilies;
-            try { await G.db.put("kv", { k: PLANS_KEY, v: families }); } catch (e) {}
+            try {
+              await G.db.put("kv", { k: PLANS_KEY, v: migratedFamilies });
+              families = migratedFamilies;
+            } catch (e) { writeOk = false; }
           }
-          // Nulled, never deleted - see KV_VALIDATORS' own comment on this
-          // key (index.html, backup section) for why a null row IS this
-          // key's legitimate "done, permanently" state rather than
-          // corruption.
-          try { await G.db.put("kv", { k: KEY, v: null }); } catch (e) {}
-          try { await G.db.setSetting(LEGACY_MIGRATED_FLAG, true); } catch (e) {}
+          if (writeOk) {
+            // Nulled, never deleted - see KV_VALIDATORS' own comment on this
+            // key (index.html, backup section) for why a null row IS this
+            // key's legitimate "done, permanently" state rather than
+            // corruption.
+            try { await G.db.put("kv", { k: KEY, v: null }); } catch (e) {}
+            try { await G.db.setSetting(LEGACY_MIGRATED_FLAG, true); } catch (e) {}
+          }
         }
       } catch (e) { /* non-fatal: matches core's own migrateLegacyLocalStorage() try/catch */ }
     }
@@ -706,7 +719,18 @@ window.G = window.G || {};
         if (!(await G.modal.confirm("Delete this imported MOI plan? This can't be undone.", { okText: "Delete", danger: true }))) return;
         // Part C5: filters this ONE family out and re-saves PLANS_KEY,
         // rather than nulling the single legacy row the old code did.
-        families = families.filter((f) => f.id !== family.id);
+        // Re-read PLANS_KEY fresh right before the write (never trust the
+        // in-memory `families` this route loaded at render time): another
+        // tab/window may have added or revised a family since then, and a
+        // stale read-modify-write here would silently erase that work when
+        // this write lands second - the same "reload before you overwrite
+        // a shared row" discipline build() already follows in Part C7.
+        let freshFamilies = families;
+        try {
+          const fr = await G.db.get("kv", PLANS_KEY);
+          if (fr && Array.isArray(fr.v)) freshFamilies = fr.v;
+        } catch (e) {}
+        families = freshFamilies.filter((f) => f.id !== family.id);
         try { await G.db.put("kv", { k: PLANS_KEY, v: families }); } catch (e) {}
         // Part D3: the board-date reminder (if any) is tied to a fixed
         // source, not to which family it was set from - see D2's own
@@ -735,10 +759,15 @@ window.G = window.G || {};
           // stack one board-countdown reminder per imported MOI, which
           // reads as N duplicate nags for the SAME board date rather than
           // N useful reminders - the fixed source keeps it to the one
-          // reminder that actually matters, and clicking it again from a
-          // different family's screen just re-stamps the same row (see
-          // G.reminders.add()'s own duplicate-collapse behavior) rather
-          // than creating a second one.
+          // reminder that actually matters.
+          // G.reminders.add()'s own duplicate-collapse only matches on
+          // (kind,label,date), and label embeds the plan NAME - so clicking
+          // this from two differently-named families on the same board date
+          // would NOT collapse into one reminder without an explicit clear
+          // first. Clear by source before adding so there is truly only
+          // ever one MOI board reminder regardless of which family's name
+          // was in the label of whatever reminder existed before.
+          try { if (G.reminders.clearManagedFor) await G.reminders.clearManagedFor({ source: "moi:plan" }); } catch (e) {}
           const updated = await G.reminders.addManaged({ kind: "board", label: "Finish studying: " + (plan.name || "your MOI"), date: util.resolveBoardDate(), source: "moi:plan" });
           if (!updated) { try { util.toast("You've reached the " + G.reminders.MAX + "-reminder limit — remove an old one first."); } catch (e) {} return; }
           // Matches calendar.js's own "Remind me" button (grep it there):
@@ -763,7 +792,18 @@ window.G = window.G || {};
       // util.resolveBoardDate() internally, and colors itself via the
       // shared util.boardUrgency() scale - no second countdown UI here.
       if (typeof G.renderBoardCountdown === "function") {
-        try { stage.appendChild(G.renderBoardCountdown()); } catch (e) {}
+        // onDateSet: the button row above was built BEFORE this renders,
+        // from whatever util.resolveBoardDate() returned at that moment -
+        // if the Soldier had no date yet, "Remind me before board" was
+        // never created at all (see the guard above). Setting one from
+        // THIS component's own inline input redraws only itself, not this
+        // whole function, so without this callback the button would stay
+        // missing until View/Hide toggled or the route was reopened. A
+        // full re-render of openPlan() is the simplest correct fix - it's
+        // the exact same "redraw the whole function" pattern View/Hide,
+        // Delete and Build's own success path already use for every other
+        // state change on this screen.
+        try { stage.appendChild(G.renderBoardCountdown(() => openPlan(family, expanded))); } catch (e) {}
       }
 
       if (expanded) stage.appendChild(buildResultView(plan));
@@ -773,7 +813,7 @@ window.G = window.G || {};
       // RECENT history entry's own stored diff (never recomputed here), so
       // what a Soldier reads matches exactly what build() recorded the
       // moment that revision was imported, even after a reload.
-      if (family.history && family.history.length) stage.appendChild(buildDiffPanel(family));
+      if (family.history && family.history.length && family.history[0]) stage.appendChild(buildDiffPanel(family));
 
       // A "heads up" from the import just finished that the Soldier has not
       // dismissed yet follows them here (Build cleared the Review screen it

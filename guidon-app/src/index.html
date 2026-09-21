@@ -16174,7 +16174,15 @@ window.G = window.G || {};
   // ---------------- Board-date countdown (mirrors the ETS countdown pattern
   // already established in transition.js — same banner shape/coloring logic,
   // adapted for a board date instead of an ETS date) ----------------
-  function renderBoardCountdown() {
+  // onDateSet: optional, called once a board date is successfully set from
+  // this component's own inline "no date yet" input (never on the display-
+  // mode toggle, which doesn't change whether a date exists). Existing
+  // callers (records.js's Board Prep screen, Home) omit it and see no
+  // behavior change - added so a caller whose OWN layout depends on
+  // "does a board date exist" (moi-import.js's Remind-me button) can
+  // refresh itself instead of staying stale until the Soldier navigates
+  // away and back.
+  function renderBoardCountdown(onDateSet) {
     const wrap = el("div");
 
     function draw() {
@@ -16205,6 +16213,7 @@ window.G = window.G || {};
           await store.setSetting("boardDate", dateIn.value);
           try { if (G.util.announce) G.util.announce("Board date set."); } catch (e) {}
           draw();
+          try { if (typeof onDateSet === "function") onDateSet(); } catch (e) {}
         });
         row.appendChild(dateIn); row.appendChild(setBtn);
         wrap.appendChild(row);
@@ -29023,10 +29032,22 @@ window.G = window.G || {};
     // `current`'s own deeper shape (topicCoverage/topicLinks/topicTiers) is
     // rebuilt field-by-field the same defensive way the legacy plan always
     // was, so a partial `current` degrades rather than throwing.
+    // `history`, when present, must be an array of real objects - not
+    // checked field-by-field (buildDiffPanel()'s own `latest.diff || {...}`
+    // fallback already tolerates a missing/malformed `diff`), but a `null`
+    // ENTRY itself (e.g. a restored `history:[null]`) would pass a check
+    // that only looked at Array.isArray(f.history), then crash
+    // buildDiffPanel() the moment that family is opened - `latest.diff`
+    // dereferences `latest` before that fallback ever runs.
     "guidon:moi:plans:v1": function (v) {
       return Array.isArray(v) && v.every(function (f) {
-        return f && typeof f === "object" && typeof f.id === "string" &&
-          f.current && typeof f.current === "object" && Array.isArray(f.current.topics);
+        if (!f || typeof f !== "object" || typeof f.id !== "string") return false;
+        if (!f.current || typeof f.current !== "object" || !Array.isArray(f.current.topics)) return false;
+        if (f.history !== undefined) {
+          if (!Array.isArray(f.history)) return false;
+          if (!f.history.every(function (h) { return h && typeof h === "object"; })) return false;
+        }
+        return true;
       });
     },
   };
