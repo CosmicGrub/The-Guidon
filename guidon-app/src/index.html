@@ -28862,6 +28862,21 @@ window.G = window.G || {};
     }
     return false;
   }
+  // Both call sites below (the export-time excluded-count and the
+  // import-time warning) used to test Array.isArray(v) && v.length only -
+  // true for every private key that existed when that check was written
+  // (the roster and risk:all both hold their entries in an array). Squad
+  // MOI Briefing Tracker (leader.js) added the first OBJECT-shaped private
+  // key (guidon:leader:roster:moi:v1, a 5-scalar snapshot) - an
+  // array-only check would silently treat a real attached-MOI snapshot as
+  // "nothing to disclose", the exact false negative the comments on both
+  // call sites explicitly guard against for the array case. Same "empty is
+  // not real data" principle, generalized to either shape.
+  function privateKeyHasContent(v) {
+    if (Array.isArray(v)) return v.length > 0;
+    if (v && typeof v === "object") return Object.keys(v).length > 0;
+    return false;
+  }
 
   // Content-checks for other known kv keys beyond the profile row (added
   // alongside it) - previously only guidon:profile:v1 was validated at
@@ -28965,6 +28980,25 @@ window.G = window.G || {};
     // separate mechanism that had no entry, so a malformed roster row was
     // invisible to both backup-import validation and the live kvscan.
     "guidon:leader:roster:v1": function (v) { return Array.isArray(v) && v.every(function (s) { return s && typeof s === "object"; }); },
+    // Squad MOI Briefing Tracker (leader.js, MOI Import Phase 2): the
+    // leader's own small attached-MOI snapshot - covered by the same
+    // "guidon:leader:roster" PRIVATE_PREFIXES match as the roster row just
+    // above (excluded from backup by default for the same reason). Exactly
+    // 5 scalars by design (see leader.js's own MOI_KEY comment for why it
+    // is deliberately this small) - name/dueDate are leader- or
+    // Soldier-typed text, importedAt/savedAt are timestamps written by
+    // Date.now()/plan.importedAt, topicCount is a plain count. There is no
+    // "row absent" special case to allow here the way guidon:moi:plan:v1's
+    // own null-is-valid state needs (comment above) - Detach really
+    // deletes this row (G.db.del), it never nulls it.
+    "guidon:leader:roster:moi:v1": function (v) {
+      return v && typeof v === "object" && !Array.isArray(v) &&
+        typeof v.name === "string" &&
+        (v.importedAt == null || typeof v.importedAt === "number") &&
+        typeof v.dueDate === "string" &&
+        typeof v.topicCount === "number" && isFinite(v.topicCount) && v.topicCount >= 0 &&
+        typeof v.savedAt === "number" && isFinite(v.savedAt);
+    },
     // PT Planner's two rows and Team Training's one shipped with no entry
     // here: they rode every backup export/import unchecked and were
     // invisible to Diagnostics' live "Data validity scan". Same shape-only
@@ -29168,6 +29202,7 @@ window.G = window.G || {};
     "finance:salaryNeg:v1": "salary worksheet",
     "risk:all": "saved risk assessments",
     "guidon:leader:roster:v1": "the squad roster",
+    "guidon:leader:roster:moi:v1": "the roster's attached MOI",
   };
   var KEY_LABEL_FAMILIES = [
     { prefix: "srs:", label: "Board Drill review progress" },
@@ -29237,13 +29272,13 @@ window.G = window.G || {};
       if (!opts.includePrivate) {
         kv = kv.filter(function (row) {
           if (!row || !isPrivateKey(row.k)) return true;
-          // Codex review on PR #193: both private rows (the roster,
-          // risk:all) hold their entries in an array, wiped to v:[] once
-          // the last one is deleted/cleared - counting that as "excluded"
-          // told a Soldier with an empty roster their (nonexistent) roster
-          // was left out of an otherwise-complete backup. Only a row that
-          // actually holds something is real omitted data.
-          if (Array.isArray(row.v) && row.v.length) excluded++;
+          // Codex review on PR #193: private rows are wiped to an empty
+          // value once the last thing in them is deleted/cleared -
+          // counting that as "excluded" told a Soldier with an empty
+          // roster their (nonexistent) roster was left out of an
+          // otherwise-complete backup. Only a row that actually holds
+          // something is real omitted data (privateKeyHasContent() above).
+          if (privateKeyHasContent(row.v)) excluded++;
           return false;
         });
       }
@@ -29479,7 +29514,7 @@ window.G = window.G || {};
             } else if (!validateKvRow(row)) {
               kvRejected.push(row.k);
             }
-            if (isPrivateKey(row.k) && Array.isArray(row.v) && row.v.length) privateKeysPresent.push(row.k);
+            if (isPrivateKey(row.k) && privateKeyHasContent(row.v)) privateKeysPresent.push(row.k);
           });
         }
         var msg = "Import this backup?" + (sum ? "\n\nIt contains: " + (sum.kv || 0) + " saved items, " + (sum.userScenarios || 0) + " authored scenarios, " + (sum.attempts || 0) + " quiz attempts." : "") + "\n\nYour existing data will be kept; matching items will be overwritten by the backup." + (hasProfileRow ? " This includes your name, rank, and board date." : "") +

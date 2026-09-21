@@ -351,10 +351,12 @@
       "id": "leader",
       "kind": "feature",
       "headless": false,
+      "note": "Squad MOI Briefing Tracker (Phase 2 of the MOI Import overhaul) reads G.moiImport.PLANS_KEY at runtime (the attach/replace picker) - moi-import.js loads LATER in this list, so that call is declared under \"uses\", not \"requires\". It writes only a small leader-owned snapshot (guidon:leader:roster:moi:v1); it never reads or writes guidon:moi:plans:v1/guidon:moi:plan:v1 themselves.",
       "requires": ["opsec-guard"],
+      "uses": ["moi-import"],
       "provides": ["G.leader.render"],
       "routes": ["#/leader"],
-      "storageKeys": ["guidon:leader:roster:v1"],
+      "storageKeys": ["guidon:leader:roster:v1", "guidon:leader:roster:moi:v1"],
       "optionalApis": []
     },
     {
