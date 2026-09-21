@@ -79,9 +79,9 @@ async function checkBuiltArtifact(path, label) {
   const prePaintT = JSON.parse(tMatch[1]);
   const prePaintLight = JSON.parse(lightMatch[1]);
 
-  real.ids.length === 24
-    ? ok(`${label}: real THEMES registry has 24 themes (sanity check on the fixture itself)`)
-    : bad(`${label}: real THEMES registry has ${real.ids.length} themes, expected 24 - update this test's expectation if a theme was legitimately added/removed`);
+  real.ids.length === 30
+    ? ok(`${label}: real THEMES registry has 30 themes (sanity check on the fixture itself)`)
+    : bad(`${label}: real THEMES registry has ${real.ids.length} themes, expected 30 - update this test's expectation if a theme was legitimately added/removed`);
 
   JSON.stringify(prePaintT) === JSON.stringify(real.ids)
     ? ok(`${label}: pre-paint "var T" is IDENTICAL to THEME_IDS - ${prePaintT.length} ids, same order`)
