@@ -30,10 +30,18 @@
 import { bootApp, check, finish, waitForRoute, until, clickWhenStable, expectNoConsoleNoise, PERSONAL_PROFILE } from "./testkit.mjs";
 
 /** YYYY-MM-DD for "n months before today", computed the same way a Soldier
- *  would - identical helper to test-calendar.mjs's own monthsAgo(). */
+ *  would - identical helper to test-calendar.mjs's own monthsAgo(). Pins the
+ *  day to 1 before changing the month (setMonth on today's own day-of-month
+ *  can overflow into the following month, e.g. subtracting 5 months from
+ *  Jul 31 lands on "Feb 31" which JS normalizes into March - the same class
+ *  of bug src/app-modules/calendar.js's addMonths() had before this round's
+ *  leap-day fix), then clamps back to today's day-of-month or the target
+ *  month's real last day, whichever is smaller. */
 function monthsAgo(n) {
-  const d = new Date();
-  d.setMonth(d.getMonth() - n);
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth() - n, 1);
+  const lastDayOfTargetMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(now.getDate(), lastDayOfTargetMonth));
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
