@@ -401,7 +401,7 @@
       "requires": ["roadmap-bootstrap", "date-grid"],
       "provides": ["G.ptPlanner.render"],
       "routes": ["#/pt-plan"],
-      "storageKeys": ["prt:plan:v1", "pt:history:v1"],
+      "storageKeys": ["prt:plan:v1", "pt:history:v1", "guidon:prt:customSessions:v1"],
       "optionalApis": []
     },
     {
