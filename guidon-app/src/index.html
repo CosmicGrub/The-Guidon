@@ -699,8 +699,21 @@ html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after 
 .reco .eyebrow { color: var(--text); }
 
 /* ---- Board: SRS due chip ---- */
+/* min-width:44px (Apple HIG / WCAG 2.5.5) is load-bearing, not decorative:
+   dueChip/leechChip are created with placeholder text ("…") and only get
+   their real "⏰ 12 due"/"🔴 3 leeches" content once renderDrill()'s build()
+   finishes its async SRS-map load (see the flashcard drill below). Real
+   content is always well over 44px once it lands, but the placeholder alone
+   collapses to ~28px with this rule's own padding - a genuine, if narrow,
+   window where the tap target fails Apple HIG. Caught by
+   tools/verify-ios-webkit.mjs's iPad sweep, whose ~150ms per-route settle
+   sometimes samples that window under CI runner load. The floor guarantees
+   the footprint from the moment the button is created, independent of
+   timing, rather than trying to out-guess the race with wider placeholder
+   text. box-sizing:border-box (global, see `* { box-sizing }` above) makes
+   this the true rendered width, padding included. */
 .due-chip { font-family: var(--font-mono); font-size: .69rem; color: var(--btn-ink, #1a1206);
-  background: var(--amber); border-radius: 999px; padding: 2px 9px; }
+  background: var(--amber); border-radius: 999px; padding: 2px 9px; min-width: 44px; text-align: center; }
 /* Was background:var(--line-2);color:var(--text-dim) - two tokens meant for
    subtle borders/secondary text, never designed to pair with each other as a
    text-on-background combo. That passed unnoticed for a long time because
