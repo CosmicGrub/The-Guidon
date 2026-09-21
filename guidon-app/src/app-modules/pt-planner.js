@@ -11,7 +11,7 @@
   var HISTORY_KEY = "pt:history:v1";
   var DAY_KEYS = ["sun","mon","tue","wed","thu","fri","sat"];
   var DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-  var TITLE_MAX = 80; // a custom session name; also enforced on anything read from storage or a file
+  var TITLE_MAX = 80; // a custom session name (the ad hoc per-day one, and a saved custom session's own label); also enforced on anything read from storage or a file
   var LEADER_CHECKLIST = [
     "Confirm task, conditions, standards, and the leader responsible for the session.",
     "Complete the applicable risk-management process and brief controls before training.",
@@ -40,10 +40,20 @@
   // src/index.html) while a direct window.GUIDON_SEED.prt read would not
   // have been. The `|| []`/`|| {}` fallbacks below are only this file's
   // usual defensive try/catch pattern.
-  function prtSession(id) {
+  // `customSessions` (a Soldier's own guidon:prt:customSessions:v1 rows, see
+  // the custom-session block below) is an optional extra place to look once
+  // `id` is not one of store.prtMeta().sessions' own built-in entries - the
+  // same "REBUILT from the canonical source, never the input" rule PRESETS
+  // ids already get (see clonePreset's own comment), just extended to a
+  // second canonical source. Passing nothing (existing callers, existing
+  // tests) preserves the exact old behaviour: only seed sessions resolve.
+  function prtSession(id, customSessions) {
     var sessions = [];
     try { sessions = (G.store.prtMeta().sessions) || []; } catch (e) {}
-    return sessions.find(function (s) { return s && s.id === id; }) || null;
+    var found = sessions.find(function (s) { return s && s.id === id; });
+    if (found) return found;
+    var cs = findCustomSession(customSessions, id);
+    return cs ? { id:cs.id, label:cs.label, blocks:cs.blocks || [] } : null;
   }
   function prtDrillLabel(id) {
     try {
@@ -55,8 +65,15 @@
     try { pending = (G.store.prtMeta().pendingDrills) || {}; } catch (e) {}
     return { label:pending[id] || id, pending:true };
   }
-  function prtSessionSummary(id) {
-    var s = prtSession(id);
+  // Unchanged for a built-in seed session (strength/endurance): resolves
+  // every block through prtDrillLabel(), same as always. A custom session's
+  // blocks only ever reference a real store.prtMeta().drills id today (the
+  // composer's palette offers nothing else - see the "Build your own
+  // session" panel inside render() below),
+  // so they resolve through the exact same, un-forked path - a day assigned
+  // a custom session shows its blocks exactly like a built-in one.
+  function prtSessionSummary(id, customSessions) {
+    var s = prtSession(id, customSessions);
     if (!s) return "";
     return (s.blocks || []).map(function (b) {
       var d = prtDrillLabel(b.drillId);
@@ -92,9 +109,98 @@
     }
   };
 
-  function clonePreset(id) {
-    var p = PRESETS[id] || PRESETS.custom;
-    return { id:p.id, title:p.title, type:p.type, effort:p.effort, route:p.route || "", sessionId:p.sessionId || "" };
+  // ROADMAP 3g: "Build your own session" custom sessions - one Soldier-named,
+  // Soldier-ordered set of drill blocks, saved once and then usable anywhere
+  // a PRESETS id already is (the day-assignment pickers, a day card's
+  // summary line), with none of THOSE call sites special-cased for it. The
+  // row shape mirrors store.prtMeta().sessions' own {id, label, blocks} on
+  // purpose (see the id/label naming below), plus the effort/type/createdAt
+  // a PT Planner session also needs.
+  var CUSTOM_KEY = "guidon:prt:customSessions:v1";
+  // Real PRESETS value sets (see PRESETS above): "recovery"/"moderate"/"hard"
+  // for effort (identical to the ad hoc per-day custom-effort picker at
+  // makeDayCard's own [data-pt-effort] select, so the hard:recovery guard's
+  // tally() - which only branches on these three - treats a custom session
+  // exactly like a built-in one). "rest" and the single ad hoc "custom"
+  // preset are not real choices here: "rest" is "no training" (a composed,
+  // multi-block session is never that) and "custom" is that OTHER, unnamed,
+  // one-off per-day bucket (PRESETS.custom) - a saved, reusable session is
+  // neither, so the type choice is the two PRESETS values that actually
+  // describe something built from drill blocks.
+  var CUSTOM_EFFORTS = ["recovery","moderate","hard"];
+  var CUSTOM_TYPES = ["drill","session"];
+  // Defensive, not merely trusting: a hand-edited IDB row or a restored
+  // backup that slipped past KV_VALIDATORS (below) must not crash the
+  // planner the first time it reads this list. Same "shape-check every
+  // field, drop what fails" rigor normalizePlan()'s own normalizeEntry()
+  // already applies to a plan file.
+  function normalizeCustomSessions(v) {
+    if (!Array.isArray(v)) return [];
+    var seen = {}, out = [];
+    v.forEach(function (s) {
+      if (!s || typeof s !== "object" || Array.isArray(s)) return;
+      if (typeof s.id !== "string" || !s.id || seen[s.id]) return;
+      var label = typeof s.label === "string" ? s.label.replace(/\s+/g, " ").trim().slice(0, TITLE_MAX) : "";
+      if (!label) return;
+      var blocks = Array.isArray(s.blocks)
+        ? s.blocks.filter(function (b) { return b && typeof b === "object" && typeof b.drillId === "string" && b.drillId; })
+            .map(function (b) { return { drillId:b.drillId }; })
+        : [];
+      if (!blocks.length) return;
+      seen[s.id] = true;
+      out.push({
+        id:s.id, label:label,
+        effort:CUSTOM_EFFORTS.indexOf(s.effort) >= 0 ? s.effort : "moderate",
+        type:CUSTOM_TYPES.indexOf(s.type) >= 0 ? s.type : "session",
+        blocks:blocks,
+        createdAt:typeof s.createdAt === "number" && isFinite(s.createdAt) ? s.createdAt : Date.now()
+      });
+    });
+    return out;
+  }
+  async function loadCustomSessions() {
+    try { return normalizeCustomSessions(await db.getSetting(CUSTOM_KEY, [])); }
+    catch (e) { return []; }
+  }
+  async function saveCustomSessions(list) {
+    try { await db.setSetting(CUSTOM_KEY, normalizeCustomSessions(list)); return true; }
+    catch (e) { try { util.toast("Could not save your custom PT sessions."); } catch (_) {} return false; }
+  }
+  function findCustomSession(list, id) {
+    if (!id || !Array.isArray(list)) return null;
+    return list.find(function (s) { return s && s.id === id; }) || null;
+  }
+  // A day-plan entry ({id, title, type, effort, route, sessionId}) built from
+  // a saved custom session - the exact same output shape clonePreset()
+  // returns for a built-in id, so nothing downstream (normalizeEntry, a
+  // day card, the hard:recovery guard) can tell the difference. `sessionId`
+  // is the custom session's own id, so prtSessionSummary() (fed the same
+  // customSessions list) resolves its blocks through the one shared summary
+  // path - never a fork.
+  function cloneCustomSession(cs) {
+    return { id:cs.id, title:cs.label, type:cs.type, effort:cs.effort, route:"", sessionId:cs.id };
+  }
+  // "custom-<timestamp>", bumped past any collision with a PRESETS id or an
+  // id already in use - short, generated, and never reused.
+  function nextCustomId(existing) {
+    var used = {};
+    Object.keys(PRESETS).forEach(function (k) { used[k] = true; });
+    (existing || []).forEach(function (s) { if (s && s.id) used[s.id] = true; });
+    var n = Date.now(), id = "custom-" + n;
+    while (used[id]) { n++; id = "custom-" + n; }
+    return id;
+  }
+  // `customSessions`, when given, is checked once `id` is not a PRESETS key -
+  // the same "id not recognized -> fall through" shape clonePreset already
+  // had, just with one more canonical source before the generic ad hoc
+  // "Custom PT" fallback. Every existing call site (templates, which only
+  // ever pass a PRESETS id) keeps working with no second argument at all.
+  function clonePreset(id, customSessions) {
+    var p = PRESETS[id];
+    if (p) return { id:p.id, title:p.title, type:p.type, effort:p.effort, route:p.route || "", sessionId:p.sessionId || "" };
+    var cs = findCustomSession(customSessions, id);
+    if (cs) return cloneCustomSession(cs);
+    return clonePreset("custom", customSessions);
   }
   function planFromTemplate(id) {
     var t = TEMPLATES[id] || TEMPLATES.balanced;
@@ -108,10 +214,26 @@
   // handed-over file cannot point "Open training tool" somewhere else. Only a
   // custom session keeps anything of its own: a name (length-capped) and an
   // effort. Returns null for something that is not a session record at all.
-  function normalizeEntry(d) {
+  // A custom session id that still exists resolves to ITS current
+  // label/blocks (rebuilt from customSessions, never from `d` - same rule as
+  // a PRESETS id). One that no longer exists (deleted since this plan was
+  // saved) falls straight through to the generic ad hoc "custom" bucket
+  // below, which keeps `d.title`/`d.effort` from the stored plan - so a day
+  // that had a deleted custom session degrades to a plain, renamable custom
+  // PT entry with its old name and effort intact, exactly like any other
+  // unrecognized id already did before this feature existed.
+  function normalizeEntry(d, customSessions) {
     if (!d || typeof d !== "object" || Array.isArray(d)) return null;
-    var id = typeof d.id === "string" && Object.prototype.hasOwnProperty.call(PRESETS, d.id) ? d.id : "custom";
-    if (id !== "custom") return clonePreset(id);
+    // "custom" is a PRESETS key too (the generic ad hoc bucket, PRESETS.custom
+    // itself), but it is EXCLUDED from this shortcut on purpose: unlike every
+    // other PRESETS id, "custom" carries no fixed title of its own - a
+    // clonePreset("custom", ...) always returns the generic "Custom PT", which
+    // would silently wipe out whatever the Soldier actually typed into that
+    // day's name field. It falls through to the ad hoc branch below instead,
+    // same as any id this function does not otherwise recognize.
+    if (typeof d.id === "string" && d.id !== "custom" && Object.prototype.hasOwnProperty.call(PRESETS, d.id)) return clonePreset(d.id, customSessions);
+    var cs = findCustomSession(customSessions, typeof d.id === "string" ? d.id : null);
+    if (cs) return cloneCustomSession(cs);
     var title = typeof d.title === "string" ? d.title.replace(/\s+/g, " ").trim().slice(0, TITLE_MAX) : "";
     return { id:"custom", title:title || "Custom PT", type:"custom",
       effort:["hard","moderate","recovery"].indexOf(d.effort) >= 0 ? d.effort : "moderate", route:"", sessionId:"" };
@@ -121,7 +243,7 @@
   // the leader sheet look a little behind). Older ones are dropped on the
   // next save so the row cannot grow without bound over years of use.
   var OVERRIDE_KEEP_DAYS = 35;
-  function normalizeOverrides(v, nowMs) {
+  function normalizeOverrides(v, nowMs, customSessions) {
     var out = {};
     if (!v || typeof v !== "object" || Array.isArray(v)) return out;
     var floor = new Date(nowMs || Date.now()); floor.setHours(0,0,0,0); floor.setDate(floor.getDate() - OVERRIDE_KEEP_DAYS);
@@ -129,22 +251,25 @@
       if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return;
       var d = new Date(iso + "T12:00:00");
       if (!Number.isFinite(d.getTime()) || localISO(d) !== iso || d < floor) return;
-      var e = normalizeEntry(v[iso]);
+      var e = normalizeEntry(v[iso], customSessions);
       if (e) out[iso] = e;
     });
     return out;
   }
-  function normalizePlan(v, nowMs) {
+  // `customSessions` is optional (existing callers/tests that never pass it
+  // get the exact old behaviour: any id outside PRESETS degrades to the ad
+  // hoc "custom" bucket, same as before this feature existed).
+  function normalizePlan(v, nowMs, customSessions) {
     if (!v || typeof v !== "object" || Array.isArray(v)) return planFromTemplate("balanced");
     var out = {
       version:1,
       templateId:typeof v.templateId === "string" && Object.prototype.hasOwnProperty.call(TEMPLATES, v.templateId) ? v.templateId : "balanced",
       weekStart:"sun",
       days:{},
-      overrides:normalizeOverrides(v.overrides, nowMs)
+      overrides:normalizeOverrides(v.overrides, nowMs, customSessions)
     };
     DAY_KEYS.forEach(function (k) {
-      out.days[k] = normalizeEntry(v.days && v.days[k]) || clonePreset(TEMPLATES[out.templateId].days[k]);
+      out.days[k] = normalizeEntry(v.days && v.days[k], customSessions) || clonePreset(TEMPLATES[out.templateId].days[k], customSessions);
     });
     return out;
   }
@@ -160,15 +285,18 @@
       if (!data || typeof data !== "object" || data.schema !== PLAN_FILE_SCHEMA) return { plan:null, message:NOT_A_PLAN };
       var p = data.plan;
       if (!p || typeof p !== "object" || Array.isArray(p) || !p.days || typeof p.days !== "object" || Array.isArray(p.days)) return { plan:null, message:NOT_A_PLAN };
-      return { plan:normalizePlan(p), message:"" };
+      // A custom session id in an imported file only resolves on THIS device
+      // if a session by that id is also saved here (e.g. re-importing your
+      // own export) - never taken on faith from the file itself.
+      return { plan:normalizePlan(p, null, await loadCustomSessions()), message:"" };
     } catch (e) { return { plan:null, message:NOT_A_PLAN }; }
   }
-  async function loadPlan() {
-    try { return normalizePlan(await db.getSetting(KEY, null)); }
+  async function loadPlan(customSessions) {
+    try { return normalizePlan(await db.getSetting(KEY, null), null, customSessions || await loadCustomSessions()); }
     catch (e) { return planFromTemplate("balanced"); }
   }
-  async function savePlan(plan) {
-    try { await db.setSetting(KEY, normalizePlan(plan)); return true; }
+  async function savePlan(plan, customSessions) {
+    try { await db.setSetting(KEY, normalizePlan(plan, null, customSessions || await loadCustomSessions())); return true; }
     catch (e) { try { util.toast("Could not save the PT plan."); } catch (_) {} return false; }
   }
   async function loadHistory() {
@@ -307,7 +435,12 @@
 
   async function render(mount) {
     util.clear(mount);
-    var plan = await loadPlan();
+    // Loaded once and kept in sync (reassigned) by the "Build your own
+    // session" panel below whenever it saves or deletes one - every reader in
+    // this render (both day-assignment pickers, prtSessionSummary()) shares
+    // this one snapshot rather than re-reading storage on every keystroke.
+    var customSessions = await loadCustomSessions();
+    var plan = await loadPlan(customSessions);
     var activeView = "week";
     var drawGeneration = 0;
     // One-step Undo for the changes that rearrange or replace the whole week
@@ -321,7 +454,7 @@
     // Every plan edit ends here: save, announce, redraw, put focus back.
     async function commit(message, focusSelector, keepUndo) {
       if (!keepUndo) undo = null;
-      await savePlan(plan);
+      await savePlan(plan, customSessions);
       if (message) say(message);
       draw(focusSelector);
     }
@@ -370,6 +503,237 @@
     controls.appendChild(ih);
 
     mount.appendChild(controls);
+
+    // ---- "Build your own session" (ROADMAP 3g custom PT sessions) --------
+    // A persistent panel (not inside the Day/Week/Month tabpanel) so it is
+    // reachable no matter which view is open - every view's own picker is
+    // where a saved session actually gets USED. Phase 1: plain buttons only
+    // (Add / Move up / Move down / Remove) - native HTML5 drag-and-drop is a
+    // deliberate Phase 2 follow-up, not attempted here.
+    var sessionsHost = el("div.panel", { "data-pt-sessions":"1" });
+    mount.appendChild(sessionsHost);
+    // In-progress draft while the composer is open; null the rest of the
+    // time. Never persisted itself - only Save writes anything to storage.
+    var builder = null;
+    // The SAME verification-completeness fact #/drills' own PRT session
+    // builder tags (src/index.html, prtDrill()/PRT_UNVERIFIED_IDS) - see that
+    // code's own comment on why "(content pending)" means "sequence checked,
+    // full per-exercise text not yet verified against ATP 7-22.02", not
+    // "unusable". This is intentionally a different question from
+    // prtDrillLabel()'s own "pending" (used by prtSessionSummary() below,
+    // unchanged): that one asks "does ANY seed.prt.drills record exist for
+    // this id at all" (true for every real drill, "pd" included, regardless
+    // of how much of it is verified); this one asks "how much of a REAL
+    // drill's own content is verified" - the finer question a Soldier
+    // choosing what to put in their own session actually needs answered.
+    function drillContentPending(d) {
+      var exs = (d && Array.isArray(d.exercises)) ? d.exercises : [];
+      return !exs.length || exs.some(function (ex) { return !ex || ex.sourceStatus !== "verified"; });
+    }
+    function availableDrills() {
+      try { return (G.store.prtMeta().drills) || []; } catch (e) { return []; }
+    }
+    function drillById(id) {
+      return availableDrills().find(function (d) { return d && d.id === id; }) || null;
+    }
+    function blockLabel(drillId) {
+      var d = drillById(drillId);
+      return d ? d.name + (drillContentPending(d) ? " (content pending)" : "") : drillId;
+    }
+    function moveBlock(index, dir) {
+      var j = index + dir;
+      if (j < 0 || j >= builder.blocks.length) return;
+      var tmp = builder.blocks[index]; builder.blocks[index] = builder.blocks[j]; builder.blocks[j] = tmp;
+      var label = blockLabel(builder.blocks[j].drillId);
+      var pos = j === 0 ? "Now first." : j === builder.blocks.length - 1 ? "Now last." : "Now item " + (j + 1) + " of " + builder.blocks.length + ".";
+      say("Moved " + label + (dir < 0 ? " up. " : " down. ") + pos);
+      drawSessions(dir < 0 ? '[data-pt-build-up="' + j + '"]' : '[data-pt-build-down="' + j + '"]');
+    }
+    function removeBlock(index) {
+      var removed = builder.blocks.splice(index, 1)[0];
+      var label = blockLabel(removed.drillId);
+      say("Removed " + label + ". " + builder.blocks.length + " item" + (builder.blocks.length === 1 ? "" : "s") + " in this session.");
+      var focusSel = builder.blocks.length ? ('[data-pt-build-remove="' + Math.min(index, builder.blocks.length - 1) + '"]') : ('[data-pt-build-add="' + removed.drillId + '"]');
+      drawSessions(focusSel);
+    }
+    // Every action here redraws only sessionsHost (never the whole plan) and
+    // refocuses through the SAME refocus() every other dynamic list in this
+    // file already uses - Save and Delete are the two exceptions that also
+    // change what the day-assignment pickers list, so they additionally call
+    // the outer draw() (with no focus argument, so it never fights this
+    // panel's own refocus).
+    function drawSessions(focusSelector) {
+      util.clear(sessionsHost);
+      sessionsHost.appendChild(el("div.eyebrow", { text:"Your PT sessions" }));
+      if (!builder) {
+        sessionsHost.appendChild(el("p.hint", { text:"Combine available drills into a session with your own name. Once saved, it shows up anywhere PT Planner assigns a session, exactly like a built-in one." }));
+        var openBtn = el("button.btn.sm.ghost", { type:"button", text:"Build your own session", "data-pt-build-open":"1" });
+        openBtn.addEventListener("click", function () {
+          builder = { name:"", effort:"moderate", type:"session", blocks:[] };
+          drawSessions("[data-pt-build-name]");
+        });
+        sessionsHost.appendChild(openBtn);
+        if (customSessions.length) {
+          var manage = el("div", { style:"margin-top:10px" });
+          manage.appendChild(el("div.eyebrow", { text:"Manage custom sessions" }));
+          customSessions.forEach(function (cs, idx) {
+            var row = el("div.mini-row", { style:"justify-content:space-between;align-items:center;flex-wrap:wrap" });
+            row.appendChild(el("div", {}, [
+              el("strong", { text:cs.label }),
+              el("p.hint", { text:effortLabel(cs.effort) + " effort · " + cs.blocks.length + " item" + (cs.blocks.length === 1 ? "" : "s"), style:"margin:2px 0 0" })
+            ]));
+            var del = el("button.btn.sm.ghost", { type:"button", text:"Delete", "aria-label":"Delete " + cs.label, "data-pt-build-delete":cs.id });
+            del.addEventListener("click", async function () {
+              if (del.getAttribute("aria-disabled") === "true") return;
+              del.setAttribute("aria-disabled", "true");
+              var go = !(G.modal && G.modal.confirm) || await G.modal.confirm(
+                "Delete \"" + cs.label + "\"?\n\nAny day currently using it will show as a plain custom PT entry you can rename, keeping its current name and effort.",
+                { title:"Delete this session?", okText:"Delete", danger:true });
+              if (!go) { del.removeAttribute("aria-disabled"); return; }
+              var filtered = customSessions.filter(function (s) { return s.id !== cs.id; });
+              customSessions = filtered;
+              await saveCustomSessions(customSessions);
+              // Degrade any day/date that pointed at the deleted session
+              // right away - the same "unknown id -> plain custom PT" rule
+              // normalizeEntry() already applies to a stranger's plan file,
+              // just triggered immediately instead of on the next load.
+              plan = normalizePlan(plan, null, customSessions);
+              await savePlan(plan, customSessions);
+              say("Deleted \"" + cs.label + "\".");
+              draw();
+              var nextFocus = filtered[idx] || filtered[idx - 1];
+              drawSessions(nextFocus ? '[data-pt-build-delete="' + nextFocus.id + '"]' : "[data-pt-build-open]");
+            });
+            row.appendChild(del);
+            manage.appendChild(row);
+          });
+          sessionsHost.appendChild(manage);
+        }
+      } else {
+        sessionsHost.appendChild(el("p.hint", { text:"Add drills in the order the session should run, then name it and save. Reorder with Move up / Move down - drag-and-drop is not supported yet." }));
+
+        var palette = el("div.panel", { "data-pt-build-palette":"1" });
+        palette.appendChild(el("div.eyebrow", { text:"Available drills" }));
+        var drills = availableDrills();
+        if (!drills.length) {
+          palette.appendChild(el("p.hint", { text:"No drills are available to add yet." }));
+        } else {
+          drills.forEach(function (d) {
+            var row = el("div.mini-row", { style:"justify-content:space-between;align-items:center;flex-wrap:wrap" });
+            var pending = drillContentPending(d);
+            var info = el("div", {}, [ el("strong", { text:d.name + (pending ? " (content pending)" : "") }) ]);
+            if (d.purpose) info.appendChild(el("p.hint", { text:d.purpose, style:"margin:2px 0 0" }));
+            row.appendChild(info);
+            var add = el("button.btn.sm.ghost", { type:"button", text:"Add", "aria-label":"Add " + d.name, "data-pt-build-add":d.id });
+            add.addEventListener("click", function () {
+              builder.blocks.push({ drillId:d.id });
+              say("Added " + d.name + ". " + builder.blocks.length + " item" + (builder.blocks.length === 1 ? "" : "s") + " in this session.");
+              drawSessions('[data-pt-build-add="' + d.id + '"]');
+            });
+            row.appendChild(add);
+            palette.appendChild(row);
+          });
+        }
+        sessionsHost.appendChild(palette);
+
+        var canvas = el("div.panel", { "data-pt-build-canvas":"1" });
+        canvas.appendChild(el("div.eyebrow", { text:"This session, in order" }));
+        if (!builder.blocks.length) {
+          canvas.appendChild(el("p.hint", { text:"No drills added yet. Add at least one from the list above." }));
+        } else {
+          var ol = el("ol", { style:"margin:6px 0 0;padding-left:20px" });
+          builder.blocks.forEach(function (b, i) {
+            var li = el("li", { style:"margin:6px 0" });
+            var row = el("div.mini-row", { style:"justify-content:space-between;align-items:center;flex-wrap:wrap" });
+            row.appendChild(el("span", { text:blockLabel(b.drillId) }));
+            var btns = el("div.btn-row", { style:"gap:6px" });
+            var up = el("button.btn.sm.ghost", { type:"button", text:"Move up", "aria-label":"Move " + blockLabel(b.drillId) + " up", "data-pt-build-up":String(i) });
+            if (i === 0) up.setAttribute("aria-disabled", "true");
+            up.addEventListener("click", function () { if (up.getAttribute("aria-disabled") !== "true") moveBlock(i, -1); });
+            var down = el("button.btn.sm.ghost", { type:"button", text:"Move down", "aria-label":"Move " + blockLabel(b.drillId) + " down", "data-pt-build-down":String(i) });
+            if (i === builder.blocks.length - 1) down.setAttribute("aria-disabled", "true");
+            down.addEventListener("click", function () { if (down.getAttribute("aria-disabled") !== "true") moveBlock(i, 1); });
+            var rm = el("button.btn.sm.ghost", { type:"button", text:"Remove", "aria-label":"Remove " + blockLabel(b.drillId), "data-pt-build-remove":String(i) });
+            rm.addEventListener("click", function () { removeBlock(i); });
+            btns.appendChild(up); btns.appendChild(down); btns.appendChild(rm);
+            row.appendChild(btns);
+            li.appendChild(row);
+            ol.appendChild(li);
+          });
+          canvas.appendChild(ol);
+        }
+        sessionsHost.appendChild(canvas);
+
+        var form = el("div.panel");
+        var nrow = el("div.mini-row");
+        nrow.appendChild(el("label", { text:"Name" }));
+        var nameInput = el("input", { type:"text", "aria-label":"Name this PT session", placeholder:"e.g. Leg day", maxlength:String(TITLE_MAX), value:builder.name, "data-pt-build-name":"1" });
+        nrow.appendChild(nameInput);
+        form.appendChild(nrow);
+        var erow = el("div.mini-row");
+        erow.appendChild(el("label", { text:"Effort" }));
+        var effortSel = el("select", { "aria-label":"Training effort for this session", "data-pt-build-effort":"1" });
+        [["recovery","Recovery"],["moderate","Moderate"],["hard","Hard"]].forEach(function (pair) { effortSel.appendChild(el("option", { value:pair[0], text:pair[1] })); });
+        effortSel.value = builder.effort;
+        effortSel.addEventListener("change", function () { builder.effort = effortSel.value; });
+        erow.appendChild(effortSel);
+        form.appendChild(erow);
+        var typrow = el("div.mini-row");
+        typrow.appendChild(el("label", { text:"Type" }));
+        var typeSel = el("select", { "aria-label":"Session type", "data-pt-build-type":"1" });
+        [["drill","Drill"],["session","Session"]].forEach(function (pair) { typeSel.appendChild(el("option", { value:pair[0], text:pair[1] })); });
+        typeSel.value = builder.type;
+        typeSel.addEventListener("change", function () { builder.type = typeSel.value; });
+        typrow.appendChild(typeSel);
+        form.appendChild(typrow);
+        sessionsHost.appendChild(form);
+
+        var actions = el("div.btn-row");
+        var saveBtn = el("button.btn.sm.primary", { type:"button", text:"Save session", "data-pt-build-save":"1" });
+        function updateSaveState() {
+          var ready = !!nameInput.value.trim() && builder.blocks.length > 0;
+          saveBtn.setAttribute("aria-disabled", String(!ready));
+        }
+        // No redraw on every keystroke (same reasoning as the ad hoc
+        // per-day custom-title field above: a redraw here would drop typing
+        // focus) - only the Save button's own state is touched directly.
+        nameInput.addEventListener("input", function () { builder.name = nameInput.value; updateSaveState(); });
+        updateSaveState();
+        saveBtn.addEventListener("click", async function () {
+          if (saveBtn.getAttribute("aria-disabled") === "true") return;
+          saveBtn.setAttribute("aria-disabled", "true");
+          var name = (builder.name || "").replace(/\s+/g, " ").trim().slice(0, TITLE_MAX);
+          if (!name || !builder.blocks.length) { saveBtn.removeAttribute("aria-disabled"); return; }
+          var record = { id:nextCustomId(customSessions), label:name, effort:builder.effort, type:builder.type,
+            blocks:builder.blocks.map(function (b) { return { drillId:b.drillId }; }), createdAt:Date.now() };
+          var next = customSessions.concat([record]);
+          var saved = await saveCustomSessions(next);
+          if (!saved) { saveBtn.removeAttribute("aria-disabled"); return; }
+          customSessions = next;
+          builder = null;
+          say("Saved \"" + name + "\". Available for any day this week.");
+          draw();
+          drawSessions("[data-pt-build-open]");
+        });
+        actions.appendChild(saveBtn);
+        var cancelBtn = el("button.btn.sm.ghost", { type:"button", text:"Cancel", "data-pt-build-cancel":"1" });
+        cancelBtn.addEventListener("click", async function () {
+          if (builder.blocks.length) {
+            var go = !(G.modal && G.modal.confirm) || await G.modal.confirm(
+              "Discard this in-progress PT session?\n\n" + builder.blocks.length + " item" + (builder.blocks.length === 1 ? "" : "s") + " will be lost.",
+              { title:"Discard session?", okText:"Discard", danger:true });
+            if (!go) return;
+          }
+          builder = null;
+          say("Session discarded.");
+          drawSessions("[data-pt-build-open]");
+        });
+        actions.appendChild(cancelBtn);
+        sessionsHost.appendChild(actions);
+      }
+      refocus(focusSelector);
+    }
+    drawSessions();
 
     // Undo bar. Persistent host, filled by draw() while an Undo is on offer.
     var undoHost = el("div", { "data-pt-undo-host":"1" });
@@ -486,9 +850,12 @@
       card.appendChild(el("div.eyebrow", { text:DAY_NAMES[dayIndex] + (dated ? " · today" : "") }));
       var sel = el("select", { "aria-label":"Session for " + (dated ? "today" : DAY_NAMES[dayIndex]), "data-pt-session":key });
       Object.keys(PRESETS).forEach(function (id) { sel.appendChild(el("option", { value:id, text:PRESETS[id].title })); });
-      sel.value = PRESETS[entry.id] ? entry.id : "custom";
+      // Every saved custom session lists here too, right alongside the
+      // built-in ones - no separate picker, no special-casing.
+      customSessions.forEach(function (cs) { sel.appendChild(el("option", { value:cs.id, text:cs.label })); });
+      sel.value = (PRESETS[entry.id] || findCustomSession(customSessions, entry.id)) ? entry.id : "custom";
       sel.addEventListener("change", async function () {
-        var picked = clonePreset(sel.value);
+        var picked = clonePreset(sel.value, customSessions);
         if (dated) plan.overrides[dated.iso] = picked; else plan.days[key] = picked;
         await commit((dated ? "Today" : DAY_NAMES[dayIndex]) + " set to " + picked.title + (dated ? ", for this date only." : ".") + flagNote(), 'select[data-pt-session="' + key + '"]');
       });
@@ -501,7 +868,7 @@
           // the Undo offer (if any) is withdrawn, like after any other edit.
           undo = null; drawUndo();
           if (dated) hint.textContent = effortLabel(target().effort) + " effort · custom · changed for this date";
-          await savePlan(plan);
+          await savePlan(plan, customSessions);
         });
         card.appendChild(custom);
         var effort = el("select", { "aria-label":"Training effort for " + DAY_NAMES[dayIndex], "data-pt-effort":key });
@@ -519,7 +886,7 @@
       var hint = el("p.hint", { text:effortLabel(entry.effort) + " effort · " + entry.type + (changed ? " · changed for this date" : "") });
       card.appendChild(hint);
       if (entry.sessionId) {
-        var summary = prtSessionSummary(entry.sessionId);
+        var summary = prtSessionSummary(entry.sessionId, customSessions);
         if (summary) card.appendChild(el("p.hint", { text:"Session blocks: " + summary, "data-pt-session-blocks":entry.sessionId }));
       }
       var actions = el("div.btn-row");
@@ -709,9 +1076,10 @@
         let label = d.toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
         let sel = el("select", { "aria-label":"Session for " + label, "data-pt-date-session":iso });
         Object.keys(PRESETS).forEach(function (id) { sel.appendChild(el("option", { value:id, text:PRESETS[id].title })); });
-        sel.value = PRESETS[e.id] ? e.id : "custom";
+        customSessions.forEach(function (cs) { sel.appendChild(el("option", { value:cs.id, text:cs.label })); });
+        sel.value = (PRESETS[e.id] || findCustomSession(customSessions, e.id)) ? e.id : "custom";
         sel.addEventListener("change", async function () {
-          let picked = clonePreset(sel.value);
+          let picked = clonePreset(sel.value, customSessions);
           plan.overrides[iso] = picked;
           await commit(label + " set to " + picked.title + ", for this date only.", 'select[data-pt-date-session="' + iso + '"]');
         });
@@ -768,6 +1136,7 @@
     render:render,
     KEY:KEY,
     HISTORY_KEY:HISTORY_KEY,
+    CUSTOM_SESSIONS_KEY:CUSTOM_KEY,
     PRESETS:PRESETS,
     TEMPLATES:TEMPLATES,
     LEADER_CHECKLIST:LEADER_CHECKLIST,
@@ -779,6 +1148,8 @@
     _nextDateForDay:nextDateForDay,
     PLAN_FILE_SCHEMA:PLAN_FILE_SCHEMA,
     _session:prtSession,
-    _sessionSummary:prtSessionSummary
+    _sessionSummary:prtSessionSummary,
+    _normalizeCustomSessions:normalizeCustomSessions,
+    _nextCustomId:nextCustomId
   };
 })();
