@@ -41,6 +41,11 @@ export const APP_MODULE_DIR = fileURLToPath(new URL("../src/app-modules/", impor
 export const MANIFEST_NAME = "manifest.json";
 export const KINDS = ["content-pack", "feature", "finalize", "release-note"];
 export const PATCH_WHEN = ["load", "call"];
+export const EMITS = ["build", "runtime"];
+/** The effective "emit" of a module entry: the field if present, else the
+ *  kind-based default (content-pack/finalize -> "build", everything else ->
+ *  "runtime"). Centralised so a caller never re-derives this default. */
+export const emitOf = (m) => m.emit || ((m.kind === "content-pack" || m.kind === "finalize") ? "build" : "runtime");
 
 const API_NAME = /^G(\.[A-Za-z_$][\w$]*)+$/;
 const ROUTE = /^#\/[a-z0-9-]+$/;
@@ -95,6 +100,11 @@ export function checkManifest(manifest, onDisk) {
     if (typeof m.id !== "string" || !ID.test(m.id)) problems.push(`${where}: "id" must be lower-case words joined by dashes (got ${JSON.stringify(m.id)})`);
     if (!KINDS.includes(m.kind)) problems.push(`${where}: "kind" must be one of ${KINDS.join(" | ")} (got ${JSON.stringify(m.kind)})`);
     if (typeof m.headless !== "boolean") problems.push(`${where}: "headless" must be true or false - true means tools/assemble-bank.mjs evaluates this file with no page`);
+    if (m.kind === "content-pack" || m.kind === "finalize") {
+      if (m.emit !== "build") problems.push(`${where}: a ${m.kind} must be "emit": "build" (got ${JSON.stringify(m.emit)}) - it calls G.contentPack.define() and is merged into the seed at build time, never spliced into the page as a <script>`);
+    } else if (m.emit !== undefined && m.emit !== "runtime") {
+      problems.push(`${where}: "emit" must be omitted or "runtime" for a ${m.kind} (got ${JSON.stringify(m.emit)}) - only content-pack and finalize modules may be "build"`);
+    }
     for (const f of LIST_FIELDS) if (!Array.isArray(m[f])) problems.push(`${where}: "${f}" must be a list (use [] when there is nothing to declare)`);
     for (const f of OPTIONAL_LIST_FIELDS) if (m[f] !== undefined && !Array.isArray(m[f])) problems.push(`${where}: "${f}" must be a list when present`);
     for (const f of ["requires", "uses", "routes", "storageKeys", "clearsKeys", "provides", "hooks"]) if (Array.isArray(m[f]) && !isStrList(m[f])) problems.push(`${where}: "${f}" must contain only non-empty strings`);

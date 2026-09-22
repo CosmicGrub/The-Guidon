@@ -2,44 +2,44 @@
 /**
  * CI gate for the user-supplied promotion-board curriculum intake.
  *
- * Executes the same pre-start app modules against the real source seed and
- * proves that every supplied source card / Q&A prompt is represented after
+ * Proves that every supplied source card / Q&A prompt is represented after
  * dedupe, that 92A prompts carry MOS/curriculum metadata, that the two 92A
  * judgment prompts also reach the scenario-training engine, and that the
  * final study-room content fingerprint is re-stamped after the merge.
+ *
+ * ROADMAP 3g E rewrite: this suite used to hand-roll its OWN node:vm sandbox
+ * over a hardcoded list of five files (00-04), executed as self-running
+ * IIFEs - exactly the second, independently-written evaluator the rest of
+ * this migration exists to retire. It now runs the real
+ * tools/assemble-bank.mjs (the SAME engine tools/build.mjs bakes into the
+ * shipped seed) over the REAL manifest, and reads the 00-04 packs' own
+ * audit state through the engine's `packs` map instead of a private
+ * window.G.boardSupplement global that no longer exists at runtime. Running
+ * the real manifest (all 12 content-pack/finalize files, not just five) is
+ * strictly MORE representative of the true shipped bank than the old
+ * isolated five-file sandbox was, and every assertion below is unaffected
+ * by the other seven packs also running (they touch different ids/
+ * categories entirely - see tools/lint-content-packs.mjs's own uniqueness
+ * checks for that guarantee).
  */
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import vm from "node:vm";
 import { readSeed } from "./seed-io.mjs";
-
-const APP = fileURLToPath(new URL("../", import.meta.url));
-const SEED_PATH = fileURLToPath(new URL("../src/index.html", import.meta.url));
-const MODULES = [
-  "src/app-modules/00-board-supplement-core.js",
-  "src/app-modules/01-board-supplement-92a.js",
-  "src/app-modules/02-board-supplement-integration.js",
-  "src/app-modules/03-board-supplement-bankhash.js",
-  "src/app-modules/04-board-supplement-92a-scenarios.js",
-];
+import { assembleBank, SEED_PATH } from "./assemble-bank.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
 const bad = (m) => { fails++; console.error("  FAIL  " + m); };
 const expect = (cond, pass, fail = pass) => cond ? ok(pass) : bad(fail);
 
-const { data } = readSeed(SEED_PATH);
-const before = data.board.questions.length;
-const scenariosBefore = data.scenarios?.scenarios?.length || 0;
-const sandbox = { window: { GUIDON_SEED: data, G: {} }, console };
-sandbox.window.window = sandbox.window;
-const ctx = vm.createContext(sandbox);
-for (const rel of MODULES) {
-  vm.runInContext(readFileSync(APP + rel, "utf8"), ctx, { filename: rel });
-}
+const { data: staticSeed } = readSeed(SEED_PATH);
+const before = staticSeed.board.questions.length;
+const scenariosBefore = staticSeed.scenarios?.scenarios?.length || 0;
+
+const assembled = assembleBank();
+const data = assembled.data;
 
 const bank = data.board.questions;
-const audit = sandbox.window.G.boardSupplement?.audit;
+const integration = assembled.packs["board-supplement-integration"];
+const audit = integration && integration.audit;
 expect(!!audit, "runtime supplement audit exists");
 expect(audit?.expectedSourceCards === 112, "audit expects all 112 supplied source cards", `expectedSourceCards=${audit?.expectedSourceCards}`);
 expect(audit?.expectedQAPrompts === 224, "audit expects all 224 supplied Q&A prompts", `expectedQAPrompts=${audit?.expectedQAPrompts}`);

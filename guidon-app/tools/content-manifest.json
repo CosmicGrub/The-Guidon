@@ -22,7 +22,7 @@
     "counselingDrillBank": 70,
     "resourceCategories": 24,
     "resourceLinks": 78,
-    "seedSections": 19
+    "seedSections": 20
   },
   "seedOnly": {
     "board": 997,
@@ -60,12 +60,12 @@
       "doctrine": 0,
       "scenarios": 0
     },
-    "06-opsec-cyber-curriculum.js": {
+    "06-opsec-cyber-curriculum-content.js": {
       "board": 34,
       "doctrine": 0,
       "scenarios": 4
     },
-    "07-cyber-fundamentals.js": {
+    "07-cyber-fundamentals-content.js": {
       "board": 35,
       "doctrine": 0,
       "scenarios": 0

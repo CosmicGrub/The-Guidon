@@ -36,8 +36,8 @@
 (function () {
   "use strict";
 
-  var seed = window.GUIDON_SEED;
-  if (!seed || !seed.board || !Array.isArray(seed.board.questions)) return;
+  G.contentPack.define("spirit-of-the-cav", function (bank) {
+  if (!bank || !bank.board || !Array.isArray(bank.board.questions)) return;
 
   // Every source below was opened and read on CHECKED, and each card says
   // only what its source says. They are official U.S. Army pages and news
@@ -105,12 +105,12 @@
   ];
 
   var have = {};
-  seed.board.questions.forEach(function (q) { have[q.id] = true; });
-  cards.forEach(function (c) { if (!have[c.id]) seed.board.questions.push(c); });
+  bank.board.questions.forEach(function (q) { have[q.id] = true; });
+  cards.forEach(function (c) { if (!have[c.id]) bank.board.questions.push(c); });
 
-  seed.creeds = Array.isArray(seed.creeds) ? seed.creeds : [];
-  if (!seed.creeds.some(function (c) { return c.id === "creed-spirit-of-the-cav"; })) {
-    seed.creeds.push({
+  bank.creeds = Array.isArray(bank.creeds) ? bank.creeds : [];
+  if (!bank.creeds.some(function (c) { return c.id === "creed-spirit-of-the-cav"; })) {
+    bank.creeds.push({
       id: "creed-spirit-of-the-cav",
       kind: "song",
       group: "Maneuver & Combat Arms",
@@ -137,4 +137,5 @@
       linkedBoardId: null
     });
   }
+  });
 })();

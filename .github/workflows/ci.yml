@@ -545,7 +545,7 @@ jobs:
         # Pinned to the immutable commit the "v2.5.1" tag resolves to (`gh
         # api repos/google/osv-scanner-action/commits/v2.5.1`), same
         # mutable-tag concern as every actions/* pin above.
-        uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc  # v2.6.0
+        uses: google/osv-scanner-action/osv-scanner-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67  # v2.5.1
         with:
           scan-args: |-
             --recursive
@@ -695,6 +695,8 @@ jobs:
             tests: "test:drills-prt-sourcing test:mos-decks test:prt-session-fetched-seed test:pt-session-composer"
           - name: "56-screenlayouts-calendarzeroboard-pttaskingboard-leadermoitracker"
             tests: "test:screen-layouts test:calendar-zero-board test:pt-tasking-board test:leader-moi-tracker"
+          - name: "57-contentpackengine-lintcontentpacks-mergeseedcontentpacks"
+            tests: "test:content-pack-engine test:lint-content-packs test:merge-seed-content-packs"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
