@@ -27,7 +27,7 @@
  * Attach/date-input/Remind-me/Detach buttons), never stub the thing under
  * test; ends with the zero-console-noise check.
  */
-import { bootApp, check, finish, waitForRoute, until, clickWhenStable, expectNoConsoleNoise, PERSONAL_PROFILE } from "./testkit.mjs";
+import { bootApp, check, finish, waitForRoute, until, untilAsync, clickWhenStable, expectNoConsoleNoise, PERSONAL_PROFILE } from "./testkit.mjs";
 
 const boot = await bootApp({ profile: PERSONAL_PROFILE });
 const { page, noise } = boot;
@@ -74,7 +74,7 @@ await page.evaluate(() => {
   set(ranks[0], "SPC"); set(names[0], "A.A.");
   set(ranks[1], "SGT"); set(names[1], "B.B.");
 });
-const rosterSeeded = await until(page, async () => {
+const rosterSeeded = await untilAsync(page, async () => {
   const r = await window.G.db.get("kv", window.G.leader.KEY);
   return !!(r && r.v && r.v.length === 2 && r.v[0].name === "A.A." && r.v[1].name === "B.B.");
 });
@@ -107,7 +107,7 @@ await page.evaluate((d) => {
 }, PLAN_A_DUE);
 
 await clickWhenStable(page, page.locator("button", { hasText: /^Build/ }));
-const builtOk = await until(page, async (due) => {
+const builtOk = await untilAsync(page, async (due) => {
   const r = await window.G.db.get("kv", window.G.moiImport.PLANS_KEY);
   return !!(r && Array.isArray(r.v) && r.v.length === 1 && r.v[0].current && r.v[0].current.dueDate === due && r.v[0].current.topics.length > 0);
 }, PLAN_A_DUE);
@@ -136,7 +136,7 @@ check(attachOneState.buttons.length === 1 && attachOneState.buttons[0].indexOf("
   "exactly one direct Attach button is offered when only one plan family exists (no picker)", () => JSON.stringify(attachOneState.buttons));
 
 await clickWhenStable(page, page.locator("#leader-moi-panel button", { hasText: /^Attach / }));
-const attached = await until(page, async (planA) => {
+const attached = await untilAsync(page, async (planA) => {
   const r = await window.G.db.get("kv", window.G.leader.MOI_KEY);
   return !!(r && r.v && r.v.name === planA.name && r.v.dueDate === planA.dueDate && r.v.topicCount === planA.topicCount && typeof r.v.savedAt === "number");
 }, planA);
@@ -149,7 +149,7 @@ check(attached, "Attach writes the roster-level snapshot copying exactly name/im
 // the very next call under contention. Wait for a settled, readable row
 // (same two-step wait-then-read shape as `attached` above) before reading
 // its shape, instead of trusting a single call to observe it immediately.
-const snapshotReadable = await until(page, async () => {
+const snapshotReadable = await untilAsync(page, async () => {
   const r = await window.G.db.get("kv", window.G.leader.MOI_KEY);
   return !!(r && r.v);
 });
@@ -224,7 +224,7 @@ await page.evaluate(() => {
   const btn = [...row.querySelectorAll("button")].find((b) => /^Remind me$/.test(b.textContent.trim()));
   btn.click();
 });
-const reminded = await until(page, async () => (await window.G.reminders.load()).some((r) => r.source === "leader-moi:1"));
+const reminded = await untilAsync(page, async () => (await window.G.reminders.load()).some((r) => r.source === "leader-moi:1"));
 check(reminded, "clicking Remind me on the un-briefed Soldier creates a real reminder stamped source:\"leader-moi:1\"");
 
 const reminderRow = await page.evaluate(async () => (await window.G.reminders.load()).find((r) => r.source === "leader-moi:1"));
@@ -273,13 +273,18 @@ check(pickerNames.length === 2 && pickerNames.some((t) => t.indexOf("Plan B Test
   "the picker lists both saved plan families by name and import date", () => JSON.stringify(pickerNames));
 
 await clickWhenStable(page, page.locator("#leader-moi-panel .card-results-grid button", { hasText: "Plan B Test MOI" }));
-const switched = await until(page, async () => {
+const switched = await untilAsync(page, async () => {
   const r = await window.G.db.get("kv", window.G.leader.MOI_KEY);
   return !!(r && r.v && r.v.name === "Plan B Test MOI" && r.v.topicCount === 3 && r.v.dueDate === "2027-01-10");
 });
 check(switched, "picking Plan B overwrites the snapshot with Plan B's own name/dueDate/topicCount");
 
-const sweptOnReplace = await page.evaluate(async () => (await window.G.reminders.load()).some((r) => r.source === "leader-moi:1"));
+// The snapshot write above and the old-reminder sweep are two separate
+// effects of the same replace action - waiting only for the snapshot (above)
+// does not guarantee the sweep has ALSO landed yet, so this needs its own
+// real wait rather than a single unguarded read right after.
+const sweepSettled = await untilAsync(page, async () => !(await window.G.reminders.load()).some((r) => r.source === "leader-moi:1"));
+const sweptOnReplace = !sweepSettled;
 check(!sweptOnReplace, "replacing the attached MOI sweeps the OLD snapshot's per-soldier reminders first (leader-moi:1 is gone)");
 
 const rosterAfterReplace = await page.evaluate(async () => {
@@ -302,7 +307,7 @@ await page.evaluate(() => {
   const b = [...document.querySelectorAll(".gm-back button")].find((x) => /detach/i.test(x.textContent || ""));
   if (b) b.click();
 });
-const detached = await until(page, async () => {
+const detached = await untilAsync(page, async () => {
   const r = await window.G.db.get("kv", window.G.leader.MOI_KEY);
   return !r;
 });
@@ -337,7 +342,7 @@ const reattachOptions = await page.evaluate(() => [...document.querySelectorAll(
 check(reattachOptions.length === 2, "post-Detach re-attach still offers a pick between both saved plan families", () => JSON.stringify(reattachOptions));
 
 await clickWhenStable(page, page.locator("#leader-moi-panel .card-results-grid button", { hasText: planA.name }));
-const reattached = await until(page, async (planA) => {
+const reattached = await untilAsync(page, async (planA) => {
   const r = await window.G.db.get("kv", window.G.leader.MOI_KEY);
   return !!(r && r.v && r.v.name === planA.name && r.v.dueDate === planA.dueDate);
 }, planA);

@@ -408,6 +408,48 @@ export async function until(page, fn, arg, { timeout = PATIENCE_MS } = {}) {
 }
 
 /* ---------------------------------------------------------------------
+   untilAsync
+   --------------------------------------------------------------------- */
+/**
+ * untilAsync(page, fn, arg, { timeout }) - the until() to reach for when
+ * `fn` itself needs to `await` something (almost always a G.db.get() read).
+ *
+ * page.waitForFunction() (what until() wraps) does NOT reliably await an
+ * async predicate's resolved value in this Playwright version - measured
+ * directly, in isolation: an async predicate awaiting a flag that only
+ * flips to the target value after a real 300ms timer reports the condition
+ * met within 1-12ms, a false positive, regardless of polling mode. A plain
+ * synchronous predicate checking the identical condition waits correctly.
+ * `until(page, async () => (await G.db.get(...)).v === x)` therefore
+ * provides ZERO real waiting - it happens to keep passing locally only
+ * because the real async work it should have waited for usually finishes
+ * within Node's own round-trip overhead, and fails under real CI
+ * contention once that margin runs out (confirmed: this is what broke
+ * tools/test-leader-moi-tracker.mjs in CI while passing every time
+ * locally, unloaded).
+ *
+ * The fix: run the poll ENTIRELY in-page (a self-rescheduling setTimeout
+ * loop against the real async source of truth, exactly where an async
+ * condition can actually be awaited) and expose one synchronous boolean
+ * flag for until() to watch - real condition-based waiting, not a fixed
+ * sleep and not the broken async-predicate idiom above.
+ */
+export async function untilAsync(page, fn, arg, { timeout = PATIENCE_MS } = {}) {
+  const fnSource = fn.toString();
+  await page.evaluate(({ fnSource, arg }) => {
+    window.__untilAsyncFlag = false;
+    const predicate = new Function("arg", "return (" + fnSource + ")(arg)");
+    (async function poll() {
+      let ok = false;
+      try { ok = await predicate(arg); } catch (e) { ok = false; }
+      if (ok) { window.__untilAsyncFlag = true; return; }
+      setTimeout(poll, 20);
+    })();
+  }, { fnSource, arg });
+  return until(page, () => window.__untilAsyncFlag === true, null, { timeout });
+}
+
+/* ---------------------------------------------------------------------
    clickWhenStable
    --------------------------------------------------------------------- */
 /**
