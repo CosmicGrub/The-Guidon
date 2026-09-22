@@ -114,15 +114,21 @@ for (const P of PANELS) {
     // Focus only takes once the route change has settled (measured the same
     // on the build before this change: a focus() in the first ~300 ms after
     // navigation is dropped), so keep asking until the button really has it.
+    // 30000ms, not 15000ms: under the CI shard's 8-concurrent-Chromium
+    // contention model this poll otherwise loses the race outright (caught
+    // once - the button was never focused inside 15000ms, so the fallback
+    // read of document.activeElement still showed the route's own heading) -
+    // widening costs nothing on a normal run since waitForFunction resolves
+    // the instant its condition is true.
     await page.waitForFunction(([t, l]) => {
       const b = Array.from(document.querySelectorAll("#route [data-roadmap-launch='" + t + "'] .btn-row button")).filter((x) => x.textContent === l)[0];
       if (!b) return false;
       b.focus();
       return document.activeElement === b;
-    }, [P.title, label], { timeout: 15000 }).catch(() => {});
+    }, [P.title, label], { timeout: 30000 }).catch(() => {});
     const focused = await page.evaluate(() => ((document.activeElement && document.activeElement.textContent) || "").trim().slice(0, 60));
     await page.keyboard.press("Enter");
-    const arrived = await page.waitForFunction(([h, t]) => { const hd = document.querySelector("#route h2"); return location.hash === h && !!hd && hd.textContent.trim() === t; }, [target, targetHeading], { timeout: 15000 }).then(() => true, () => false);
+    const arrived = await page.waitForFunction(([h, t]) => { const hd = document.querySelector("#route h2"); return location.hash === h && !!hd && hd.textContent.trim() === t; }, [target, targetHeading], { timeout: 30000 }).then(() => true, () => false);
     check(focused === label && arrived, `${P.hash}: "${label}" takes keyboard focus and Enter opens ${target}`, `${P.hash}: "${label}" did not open ${target} (focused ${JSON.stringify(focused)}, now at ${await page.evaluate(() => location.hash)})`);
   }
 }
