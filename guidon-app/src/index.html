@@ -7246,6 +7246,42 @@ window.G = window.G || {};
       }
     }
     function motionOK() { return !util.prefersReducedMotion(); }
+    // Root cause of a real onboarding/biometric-lock race (measured directly:
+    // #ob-overlay detached from the DOM, then #app stayed `inert` for another
+    // ~376ms before _popModalInert actually cleared it - reproduced on a
+    // clean main build, unrelated to any feature branch): close() below used
+    // to ALWAYS wait for either a "transitionend" on backdrop or a 400ms
+    // fallback timer before calling finishClose(), on the assumption every
+    // backdrop animates its own close via CSS keyed off .modaltrap-open (true
+    // for .gm-back/.cpdf-backdrop/.nav-drawer-back, which all declare
+    // `transition:` on that class). .ob-overlay (onboarding's first-boot
+    // overlay, and the biometric-lock screen's own overlay) declares no such
+    // transition at all, so "transitionend" can never fire for it - every
+    // close of an .ob-overlay-backed modalTrap was blocked on the full 400ms
+    // fallback for zero visual benefit, since nothing was ever animating.
+    // Worse: onboarding's own completion callback (src/index.html's boot
+    // code) calls `overlay.remove()` itself immediately, synchronously,
+    // independent of this close() - so the overlay's DOM removal (what
+    // tools/dismiss-onboarding.mjs's callers wait on) raced roughly 400ms
+    // ahead of #app's inert actually clearing, leaving #app real-inert (thus
+    // unfocusable/unclickable for every Soldier, not just tests) for that
+    // whole window after onboarding visually finished. Checking the backdrop's
+    // OWN computed transition-duration (declared unconditionally on the base
+    // class, not gated to .modaltrap-open, so it reads correctly whether or
+    // not the class is present yet) tells us whether there is anything to
+    // actually wait for; when there isn't, finishClose() runs immediately,
+    // same as the existing motionOK()-false / reduced-motion bypass just
+    // below it.
+    function hasCloseTransition() {
+      if (!backdrop) return false;
+      try {
+        var durations = getComputedStyle(backdrop).transitionDuration.split(",");
+        for (var i = 0; i < durations.length; i++) {
+          if (parseFloat(durations[i]) > 0) return true;
+        }
+      } catch (e) {}
+      return false;
+    }
     function finishClose() {
       if (backdrop && backdrop.parentNode) backdrop.remove();
       // _popModalInert BEFORE the focus restore below, not after: prevFocus
@@ -7261,13 +7297,14 @@ window.G = window.G || {};
     }
     function close() {
       document.removeEventListener("keydown", onKey, true);
-      if (backdrop && motionOK()) {
+      if (backdrop && motionOK() && hasCloseTransition()) {
         backdrop.classList.remove("modaltrap-open");
         var done = false;
         var finish = function () { if (done) return; done = true; finishClose(); };
         backdrop.addEventListener("transitionend", finish, { once: true });
         setTimeout(finish, 400);
       } else {
+        if (backdrop) backdrop.classList.remove("modaltrap-open");
         finishClose();
       }
     }
