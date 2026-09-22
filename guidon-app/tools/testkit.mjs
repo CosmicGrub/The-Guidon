@@ -424,7 +424,9 @@ export async function until(page, fn, arg, { timeout = PATIENCE_MS } = {}) {
  * provides ZERO real waiting - it happens to keep passing locally only
  * because the real async work it should have waited for usually finishes
  * within Node's own round-trip overhead, and fails under real CI
- * contention once that margin runs out.
+ * contention once that margin runs out (confirmed: this is what broke
+ * tools/test-leader-moi-tracker.mjs in CI while passing every time
+ * locally, unloaded).
  *
  * The fix drives the poll from NODE, one page.evaluate() call per tick,
  * instead of page.waitForFunction()'s broken predicate wrapper -

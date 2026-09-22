@@ -79,7 +79,7 @@ const SCENARIOS = [
     const v = window.G.author && window.G.author.validate ? window.G.author.validate(sc) : null;
     const n2 = sc.nodes.n2;
     return {
-      id, found: true, doctrineRef: sc.doctrine && sc.doctrine[0] && sc.doctrine[0].ref,
+      id, found: true, doctrineRef: sc.doctrine && sc.doctrine[0] && sc.doctrine[0].pub,
       competency: sc.competency, nodeCount: Object.keys(sc.nodes).length, choiceCount: n2 ? n2.choices.length : 0,
       distinctEnds: n2 ? new Set(n2.choices.map((c) => c.goto)).size : 0, validate: v,
     };

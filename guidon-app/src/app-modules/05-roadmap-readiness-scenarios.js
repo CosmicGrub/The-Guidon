@@ -19,8 +19,8 @@
     estMinutes:10,
     difficulty:"Intermediate",
     doctrine:[
-      { ref:"ADP 6-0", para:"Mission command principles and disciplined initiative", asOf:"current library copy" },
-      { ref:"ADP 6-22", para:"Leadership and team development", asOf:"current library copy" }
+      { pub:"ADP 6-0", para:"Mission command principles and disciplined initiative", edition:"current library copy", quoteKind:"paraphrase" },
+      { pub:"ADP 6-22", para:"Leadership and team development", edition:"current library copy", quoteKind:"paraphrase" }
     ],
     defaultMode:"course",
     renderModes:["course","text","cyoa"],
@@ -75,7 +75,7 @@
     competency:["Presence","Intellect","Leads"],
     estMinutes:5,
     difficulty:"Board Prep",
-    doctrine:[{ ref:"Unit board MOI / sponsor instructions", para:"Local reporting and board procedures", asOf:"current board cycle" }],
+    doctrine:[{ pub:"Unit board MOI / sponsor instructions", para:"Local reporting and board procedures", edition:"current board cycle", quoteKind:"paraphrase" }],
     defaultMode:"course",
     renderModes:["course","text"],
     scene:"PROMOTION BOARD — REPORTING PHASE",

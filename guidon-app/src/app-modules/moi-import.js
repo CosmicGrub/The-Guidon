@@ -404,7 +404,7 @@ window.G = window.G || {};
 
     const doctrineEntries = (seed.doctrine && seed.doctrine.entries) || [];
     doctrineEntries.forEach((d) => {
-      const ref = (d.source && d.source.ref) || d.ref || "";
+      const ref = (d.source && d.source.length ? d.source.map((s) => s.pub).join("; ") : "");
       // tokenizeCitations(), not a single-shot record() - a real ref field
       // sometimes combines two citations via semicolon or slash ("UCMJ
       // Art. 15; AR 27-10", "UCMJ Art. 120; AR 600-52"). A single-shot
@@ -445,7 +445,7 @@ window.G = window.G || {};
     // number itself when its topics list is empty (see buildMatchedRow()).
     const scenarios = (seed.scenarios && seed.scenarios.scenarios) || [];
     scenarios.forEach((sc) => {
-      (sc.doctrine || []).forEach((d) => record(d.ref, null, "doctrine"));
+      (sc.doctrine || []).forEach((d) => { if (d && typeof d === "object") record(d.pub, null, "doctrine"); });
     });
 
     // Forms Trainer entries carry a "reference" field (e.g. "ATP 6-22.1,

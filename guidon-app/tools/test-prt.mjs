@@ -93,7 +93,7 @@ const truth = await page.evaluate(() => {
     firstId: exercises[0].id, lastId: exercises[exercises.length - 1].id,
     exercises: exercises.map((e) => ({ id: e.id, name: e.name, sourceStatus: e.sourceStatus,
       startingPosition: e.startingPosition, movementDescription: e.movementDescription,
-      sourceRef: e.source && e.source.ref, sourcePara: e.source && e.source.para })) };
+      sourceRef: e.source && e.source.map((s) => s.pub).join("; "), sourcePara: e.source && e.source.map((s) => s.para).filter(Boolean).join("; ") })) };
 });
 truth && truth.count > 0
   ? ok(`seed ground truth: drill "${truth.name}" (${truth.abbr}) has ${truth.count} exercises`)

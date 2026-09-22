@@ -216,7 +216,7 @@ present.fiveEvents ? ok("the five-event AFT is described") : bad("five-event AFT
 const citationFix = await page.evaluate(() => {
   const entries = (window.GUIDON_SEED.doctrine && window.GUIDON_SEED.doctrine.entries) || [];
   const citing = (topic, pubSubstring) => entries.filter((e) =>
-    e.topic === topic && e.source && typeof e.source.ref === "string" && e.source.ref.includes(pubSubstring));
+    e.topic === topic && Array.isArray(e.source) && e.source.some((s) => typeof s.pub === "string" && s.pub.includes(pubSubstring)));
   return {
     operationsFm30: citing("Operations", "FM 3-0").map((e) => e.id),
     tacticalFm390: citing("Tactical Operations", "FM 3-90").map((e) => e.id),

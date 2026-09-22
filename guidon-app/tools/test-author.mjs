@@ -192,7 +192,7 @@ const handAuthored = {
   id: "sc-qa-import-" + Date.now(),
   title: "Hand-Imported QA Scenario",
   tier: ["E4"], competency: ["Leads"], estMinutes: 2, difficulty: "Basic",
-  doctrine: [{ ref: "ADP 6-22", para: "1-1", asOf: "2019-07" }],
+  doctrine: [{ pub: "ADP 6-22", para: "1-1", edition: "2019-07", quoteKind: "paraphrase" }],
   defaultMode: "course", renderModes: ["text", "course", "cyoa"], scene: "TEST — 0900",
   start: "n1",
   nodes: {

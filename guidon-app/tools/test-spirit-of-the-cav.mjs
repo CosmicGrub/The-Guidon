@@ -96,7 +96,7 @@ const truth = await page.evaluate((probes) => {
     inCreedsDeck: bank.filter((q) => q.category === "Creeds" && (/^pb-spirit-cav-/.test(q.id) || /1st cavalry|first team|garryowen|spirit of the cav/i.test(q.q + " " + q.a))).map((q) => q.id),
     creed: (function () {
       const c = creeds.find((x) => x.id === "creed-spirit-of-the-cav");
-      return c ? { fullTextLength: String(c.fullText || "").length, ref: c.source && c.source.ref, asOf: c.source && c.source.asOf, status: c.source && c.source.status,
+      return c ? { fullTextLength: String(c.fullText || "").length, ref: c.source && c.source[0] && c.source[0].pub, asOf: c.source && c.source[0] && c.source[0].edition, status: c.source && c.source[0] && c.source[0].status,
         linkedBoardId: c.linkedBoardId, lineCount: Array.isArray(c.lines) ? c.lines.length : 0 } : null;
     })(),
   };
