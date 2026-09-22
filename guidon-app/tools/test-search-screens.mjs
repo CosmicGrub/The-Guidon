@@ -10,7 +10,7 @@
  *
  * Settings is one #/settings route holding many distinct sections, so its
  * entries carry a `settingsAnchor` DOM id that goTo() seeds through
- * G.nav.seed("settings", id) - views.settings's own render consumes it once
+ * G.nav.seed("settingsAnchor", id) - views.settings's own render consumes it once
  * (G.nav.consume), at the very end of its build, and scrolls/focuses that
  * panel, opening the collapsed "Advanced" section first via
  * openSettingsAdvanced() when the target lives inside it (Forms Fill Mode

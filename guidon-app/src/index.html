@@ -37227,7 +37227,7 @@ window.G = window.G || {};
     // target lives inside settingsAdvancedWrap, so a hit for something like
     // Forms Fill Mode opens Advanced first instead of scrolling to a
     // display:none target that was never visible to begin with.
-    const settingsSeed = G.nav.consume("settings");
+    const settingsSeed = G.nav.consume("settingsAnchor");
     if (settingsSeed) {
       const target = mount.querySelector("#" + settingsSeed);
       if (target) {
@@ -37432,7 +37432,13 @@ window.G = window.G || {};
     // excludes Home/Train/Board/Settings/Search/Profile/Kiosk/Privacy - those
     // are either always one glance away in the nav or not really "content" a
     // Soldier searches for. `settingsAnchor` (optional) is a DOM id inside
-    // #/settings that goTo() below seeds via G.nav.seed("settings", id) -
+    // #/settings that goTo() below seeds via G.nav.seed("settingsAnchor", id) -
+    // a DISTINCT G.nav target from the self-heal "settings-backfill" jump-
+    // link's own "settings" slot (tools/test-selfheal-jumplinks.mjs), which
+    // seeds an unrelated comma-separated backfilled-field list under that
+    // exact same-looking name - reusing it would silently steal/clear that
+    // value on every #/settings render, whether or not this search hit's
+    // own anchor was even involved. -
     // views.settings's own render consumes it to scroll/focus that panel,
     // opening the collapsed Advanced section first if the id lives there
     // (see openSettingsAdvanced's own doc comment).
@@ -37826,7 +37832,7 @@ window.G = window.G || {};
               G.nav.seed("career", h.mosSeed);
             }
             if (type === "screen" && h.settingsAnchor) {
-              G.nav.seed("settings", h.settingsAnchor);
+              G.nav.seed("settingsAnchor", h.settingsAnchor);
             }
             location.hash = h.route;
           };
