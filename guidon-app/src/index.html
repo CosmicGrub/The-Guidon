@@ -36303,7 +36303,7 @@ window.G = window.G || {};
       mount.appendChild(el("div.settings-zone-h", { text: "Appearance & Accessibility" }));
       accGrid = el("div.panel-grid-2");
       mount.appendChild(accGrid);
-      const apPanel = el("div.panel");
+      const apPanel = el("div.panel", { id: "settings-theme-panel" });
       apPanel.appendChild(el("label", { text: "Theme" }));
 
       // Collapsed by default: the always-open 24-theme wall made Settings the
@@ -36438,7 +36438,7 @@ window.G = window.G || {};
       // carry its own margin-top (align-items:start means it just pushes
       // that one cell down from the row's start line, breaking row
       // alignment instead of being absorbed like block-flow margins are).
-      const layoutPanel = el("div.panel");
+      const layoutPanel = el("div.panel", { id: "settings-layout-panel" });
       layoutPanel.appendChild(el("label", { text: "Screen Layouts" }));
       layoutPanel.appendChild(el("p.hint", { text: "Choose how PT Planner and Career Calendar are laid out. \"Shared grid\" draws both through the same weekday-grid view, so the two screens can look and feel unified." }));
       function layoutSelect(label, settingKey, layoutsSource, hash) {
@@ -36593,7 +36593,7 @@ window.G = window.G || {};
       // that can never do anything. The permission prompt fires from THIS
       // toggle alone, never at launch. */
       if (G.notify && G.notify.supported()) {
-        const notif = el("div.panel", { style: "margin-top:12px" });
+        const notif = el("div.panel", { id: "settings-notif-panel", style: "margin-top:12px" });
         notif.appendChild(el("label", { text: "Notifications" }));
         const notifInput = el("input", { type: "checkbox", "aria-label": "Reminder notifications" });
         notifInput.checked = !!s2.notifyReminders;
@@ -36692,7 +36692,7 @@ window.G = window.G || {};
       // else, and never on plain route navigation - see that module's own
       // header comment for the full fail-open reasoning.
       if (G.biometric && G.biometric.supported()) {
-        const bio = el("div.panel", { style: "margin-top:12px" });
+        const bio = el("div.panel", { id: "settings-bio-panel", style: "margin-top:12px" });
         bio.appendChild(el("label", { text: "Biometric lock" }));
         const bioInput = el("input", { type: "checkbox", "aria-label": "Biometric lock for Personal Account" });
         bioInput.checked = !!s2.biometricLock;
@@ -36825,7 +36825,7 @@ window.G = window.G || {};
     prefGrid.appendChild(tierPanel);
 
     // forms fill mode
-    const fmPanel = el("div.panel", { style: "margin-top:12px" });
+    const fmPanel = el("div.panel", { id: "settings-formsmode-panel", style: "margin-top:12px" });
     fmPanel.appendChild(el("label", { text: "Forms fill mode" }));
     const fmSeg = el("div.segmented");
     // Roadmap audit (Tier 3 batch 2): a third option here, "pdf-overlay"
@@ -37044,7 +37044,7 @@ window.G = window.G || {};
     mount.appendChild(el("div.settings-zone-h", { text: "Data, Help & About" }));
     const dataGrid = el("div.panel-grid-2");
     mount.appendChild(dataGrid);
-    const dataPanel = el("div.panel", { style: "margin-top:12px" });
+    const dataPanel = el("div.panel", { id: "settings-databackup-panel", style: "margin-top:12px" });
     dataPanel.appendChild(el("label", { text: "Data & Backup" }));
     const importInput = el("input", { type: "file", accept: "application/json,.json", style: "display:none" });
     // Enhancement backlog round 1, "Settings Import Backup" bucket: this
@@ -37217,6 +37217,30 @@ window.G = window.G || {};
     shareLink.addEventListener("click", () => { location.hash = "#/share"; });
     aboutPanel.appendChild(shareLink);
     dataGrid.appendChild(aboutPanel);
+
+    // Global Search's "screen" hits (views.search's SCREEN_ENTRIES,
+    // settingsAnchor field) seed a target panel's id through G.nav here, the
+    // same one-shot read-and-cleared handoff train/resources/career search
+    // hits already use. Consumed once, at the very end of render() after
+    // every panel (including the collapsed Advanced section) exists in the
+    // DOM - reusing openSettingsAdvanced (a few hundred lines up) when the
+    // target lives inside settingsAdvancedWrap, so a hit for something like
+    // Forms Fill Mode opens Advanced first instead of scrolling to a
+    // display:none target that was never visible to begin with.
+    const settingsSeed = G.nav.consume("settings");
+    if (settingsSeed) {
+      const target = mount.querySelector("#" + settingsSeed);
+      if (target) {
+        if (settingsAdvancedWrap && settingsAdvancedWrap.contains(target)) {
+          openSettingsAdvanced("#" + settingsSeed);
+        } else {
+          setTimeout(() => {
+            target.scrollIntoView({ block: "center", behavior: util.prefersReducedMotion() ? "auto" : "smooth" });
+            if (target.focus) target.focus({ preventScroll: true });
+          }, 60);
+        }
+      }
+    }
   };
 
 
@@ -37241,10 +37265,10 @@ window.G = window.G || {};
     // of this commit (no content until Milestone 3), so these two types
     // will show zero hits until then, exactly like any other type with no
     // matching records - no special-casing needed for an empty store.
-    const TYPES = ["all","scenario","board","doctrine","creed","prt","lesson","resource","career"];
-    const TYPE_ICON = { all:"⊞", scenario:"▶", board:"★", doctrine:"▤", creed:"🏳", prt:"⛹", lesson:"📖", resource:"🧭", career:"🎖" };
-    const TYPE_COLOR = { scenario:"var(--ink-amber)", board:"var(--ink-cyan)", doctrine:"var(--ink-violet)", creed:"var(--ink-green)", prt:"var(--ink-red)", lesson:"var(--ink-green)", resource:"var(--ink-red)", career:"var(--ink-blue)", all:"var(--text-dim)" };
-    const TYPE_LABEL = { all:"All", scenario:"Scenarios", board:"Board Q", doctrine:"Doctrine", creed:"Creeds & Identities", prt:"Physical Readiness", lesson:"Lessons", resource:"Resources", career:"MOS/Career" };
+    const TYPES = ["all","scenario","board","doctrine","creed","prt","lesson","resource","career","screen"];
+    const TYPE_ICON = { all:"⊞", scenario:"▶", board:"★", doctrine:"▤", creed:"🏳", prt:"⛹", lesson:"📖", resource:"🧭", career:"🎖", screen:"▣" };
+    const TYPE_COLOR = { scenario:"var(--ink-amber)", board:"var(--ink-cyan)", doctrine:"var(--ink-violet)", creed:"var(--ink-green)", prt:"var(--ink-red)", lesson:"var(--ink-green)", resource:"var(--ink-red)", career:"var(--ink-blue)", screen:"var(--ink-cyan)", all:"var(--text-dim)" };
+    const TYPE_LABEL = { all:"All", scenario:"Scenarios", board:"Board Q", doctrine:"Doctrine", creed:"Creeds & Identities", prt:"Physical Readiness", lesson:"Lessons", resource:"Resources", career:"MOS/Career", screen:"Screens & Settings" };
 
     let activeFilter = "all";
     const filterBar = el("div.search-filters");
@@ -37393,6 +37417,70 @@ window.G = window.G || {};
     // own "Resilience"/"Health" drift above.
     const UNINDEXED_DOMAIN_HASHES = ["#/forms", "#/counsel", "#/develop", "#/write", "#/money", "#/health", "#/transition"];
 
+    // "screen" search type: a Soldier who types a screen's own name, or a
+    // real-world word for what it does ("dark mode", "PCS", "PRT"), gets a
+    // direct hit - not just the eight UNINDEXED_DOMAIN_HASHES routes above
+    // (which only surface as a fallback chip on a TOTAL zero-hit query, and
+    // only by their exact G.routes label), and not just the six SECTION_ORDER
+    // content domains, which cover real records (doctrine entries, board
+    // questions, scenarios...) but never the ~30 screens themselves. Hashes
+    // and labels are still resolved from the live G.routes/G.demoNotes at
+    // render time (never hand-copied - same discipline UNINDEXED_DOMAIN_HASHES
+    // above already follows), but `keywords` is necessarily hand-authored:
+    // it exists specifically to catch words the route's own short nav label
+    // never uses ("PCS" for Assignments, "dark mode" for Theme). Deliberately
+    // excludes Home/Train/Board/Settings/Search/Profile/Kiosk/Privacy - those
+    // are either always one glance away in the nav or not really "content" a
+    // Soldier searches for. `settingsAnchor` (optional) is a DOM id inside
+    // #/settings that goTo() below seeds via G.nav.seed("settings", id) -
+    // views.settings's own render consumes it to scroll/focus that panel,
+    // opening the collapsed Advanced section first if the id lives there
+    // (see openSettingsAdvanced's own doc comment).
+    const SCREEN_ENTRIES = [
+      { hash: "#/forms", keywords: "DA forms fillable PDF hand receipt counseling form" },
+      { hash: "#/counsel", keywords: "counseling builder developmental initial DA 4856" },
+      { hash: "#/develop", keywords: "IDP individual development plan career goals" },
+      { hash: "#/write", keywords: "writing tool memo SITREP bullets awards" },
+      { hash: "#/money", keywords: "finance pay BAH LES TSP budget" },
+      { hash: "#/health", keywords: "resilience mental health ACE sleep stress" },
+      { hash: "#/transition", keywords: "ETS separation terminal leave VA benefits" },
+      { hash: "#/moi", keywords: "memorandum of instruction board topics import" },
+      { hash: "#/group", keywords: "study room LAN room collaborative drill" },
+      { hash: "#/records", keywords: "PT test height weight ACFT checklist" },
+      { hash: "#/calendar", keywords: "career calendar board date key dates" },
+      { hash: "#/cyber-opsec", keywords: "OPSEC cyber awareness social media risk" },
+      { hash: "#/creeds", keywords: "soldier's creed NCO creed branch history" },
+      { hash: "#/prt", keywords: "PRT drill and ceremony ACFT prep physical training" },
+      { hash: "#/recite", keywords: "memorization recite creeds oral board prep" },
+      { hash: "#/dictionary", keywords: "army acronyms glossary definitions terms" },
+      { hash: "#/library", keywords: "regulations library AR list field manuals" },
+      { hash: "#/learn", keywords: "courses curriculum lessons" },
+      { hash: "#/blc", keywords: "basic leader course NCOPDS" },
+      { hash: "#/alc", keywords: "advanced leader course NCOPDS" },
+      { hash: "#/slc", keywords: "senior leader course NCOPDS" },
+      { hash: "#/drills", keywords: "leadership scenario drills" },
+      { hash: "#/leader", keywords: "squad roster leader roster soldier tracker" },
+      { hash: "#/risk", keywords: "risk worksheet composite risk management DA 7566" },
+      { hash: "#/career", keywords: "military occupational specialty job info reclass" },
+      { hash: "#/assignments", keywords: "PCS orders duty station" },
+      { hash: "#/channels", keywords: "chain of command contacts" },
+      { hash: "#/fitness", keywords: "ACFT scores PT log workout tracker" },
+      { hash: "#/resources", keywords: "apprenticeships tuition assistance benefits" },
+      { hash: "#/progress", keywords: "study stats streak activity history" },
+      { hash: "#/currency", keywords: "content freshness how current is this" },
+      { hash: "#/share", keywords: "install app QR code download link" },
+      { hash: "#/author", keywords: "write your own scenario custom content" },
+      { hash: "#/selftest", keywords: "self test troubleshoot app health check" },
+      { hash: "#/storage", keywords: "storage usage clear data database" },
+      { hash: "#/settings", label: "Settings — Theme", keywords: "theme dark mode appearance", settingsAnchor: "settings-theme-panel" },
+      { hash: "#/settings", label: "Settings — Screen Layouts", keywords: "screen layouts tasking board zero board", settingsAnchor: "settings-layout-panel" },
+      { hash: "#/settings", label: "Settings — Notifications", keywords: "notifications reminders alerts", settingsAnchor: "settings-notif-panel" },
+      { hash: "#/settings", label: "Settings — Biometric Lock", keywords: "biometric lock fingerprint face unlock PIN", settingsAnchor: "settings-bio-panel" },
+      { hash: "#/settings", label: "Settings — Data & Backup", keywords: "backup export import restore data", settingsAnchor: "settings-databackup-panel" },
+      { hash: "#/settings", label: "Settings — Accessibility", keywords: "accessibility screen reader high contrast text size", settingsAnchor: "settings-acc-panel" },
+      { hash: "#/settings", label: "Settings — Forms Fill Mode", keywords: "forms fill mode PDF replica overlay", settingsAnchor: "settings-formsmode-panel" },
+    ];
+
     function runSearch(q) {
       util.clear(resultsDiv);
       util.clear(entryList);
@@ -37437,7 +37525,7 @@ window.G = window.G || {};
       const res  = store.resources ? store.resources() : { categories: [] };
       const car  = store.career ? store.career() : { mos: [] };
 
-      const allHits = { scenario:[], board:[], doctrine:[], creed:[], prt:[], lesson:[], resource:[], career:[] };
+      const allHits = { scenario:[], board:[], doctrine:[], creed:[], prt:[], lesson:[], resource:[], career:[], screen:[] };
 
       // Roadmap audit round 4, "Performance: startup cost, layout thrashing, and memory leaks"
       // bucket: every one of these six per-record `hay` strings used to be rebuilt from raw
@@ -37587,6 +37675,19 @@ window.G = window.G || {};
           }
         });
       }
+      if (activeFilter === "all" || activeFilter === "screen") {
+        SCREEN_ENTRIES.forEach((entry, i) => {
+          const r = (G.routes || []).find((x) => x.hash === entry.hash);
+          if (!r) return; // route renamed/removed since this list was written — fail soft
+          if (entry._hay === undefined) entry._hay = ((entry.label || r.label) + " " + (entry.keywords || "")).toLowerCase();
+          if (entry._hay.includes(ql)) {
+            const note = G.demoNotes && G.demoNotes[entry.hash];
+            allHits.screen.push({ type:"screen", id:entry.hash + ":" + i, title: entry.label || r.label,
+              sub: entry.settingsAnchor ? "Settings" : "Screen", meta: note ? note.d : "",
+              route: entry.hash, settingsAnchor: entry.settingsAnchor });
+          }
+        });
+      }
 
       const totalHits = Object.values(allHits).reduce((s,a) => s+a.length, 0);
       if (!totalHits) {
@@ -37657,8 +37758,8 @@ window.G = window.G || {};
       }
 
       // Render by group (sections)
-      const SECTION_ORDER = ["scenario","board","doctrine","creed","prt","lesson","resource","career"];
-      const SECTION_LABEL = { scenario:"Scenarios", board:"Board Questions", doctrine:"Doctrine", creed:"Creeds & Identities", prt:"Physical Readiness", lesson:"Lessons", resource:"Resources", career:"MOS / Career" };
+      const SECTION_ORDER = ["scenario","board","doctrine","creed","prt","lesson","resource","career","screen"];
+      const SECTION_LABEL = { scenario:"Scenarios", board:"Board Questions", doctrine:"Doctrine", creed:"Creeds & Identities", prt:"Physical Readiness", lesson:"Lessons", resource:"Resources", career:"MOS / Career", screen:"Screens & Settings" };
       const MAX_PER = activeFilter === "all" ? 8 : 40;
 
       SECTION_ORDER.forEach((type) => {
@@ -37723,6 +37824,9 @@ window.G = window.G || {};
             }
             if (type === "career" && h.mosSeed) {
               G.nav.seed("career", h.mosSeed);
+            }
+            if (type === "screen" && h.settingsAnchor) {
+              G.nav.seed("settings", h.settingsAnchor);
             }
             location.hash = h.route;
           };

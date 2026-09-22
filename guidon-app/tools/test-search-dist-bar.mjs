@@ -59,7 +59,7 @@ async function search(q) {
 }
 
 /* ---- multi-domain query: proportionality + color + section order ---- */
-const SECTION_ORDER = ["scenario", "board", "doctrine", "lesson", "resource", "career"];
+const SECTION_ORDER = ["scenario", "board", "doctrine", "lesson", "resource", "career", "screen"];
 await search("counsel");
 
 const barSnapshot = await page.evaluate((SECTION_ORDER) => {
@@ -95,7 +95,7 @@ for (const t of SECTION_ORDER) {
   await page.evaluate((label) => {
     const chip = [...document.querySelectorAll(".search-chip")].find((b) => b.textContent.includes(label));
     if (chip) chip.click();
-  }, { scenario: "Scenarios", board: "Board Q", doctrine: "Doctrine", lesson: "Lessons", resource: "Resources", career: "MOS/Career" }[t]);
+  }, { scenario: "Scenarios", board: "Board Q", doctrine: "Doctrine", lesson: "Lessons", resource: "Resources", career: "MOS/Career", screen: "Screens & Settings" }[t]);
   await page.waitForTimeout(150);
   const text = await page.evaluate(() => (document.querySelector(".search-count") || {}).textContent || "");
   const m = /^(\d+)/.exec(text.trim());
@@ -155,7 +155,7 @@ proportionalityOk
 // Color: each segment's background must be the exact TYPE_COLOR value for
 // its domain - the same map driving the filter chips and card accents.
 const TYPE_COLOR = { scenario: "var(--ink-amber)", board: "var(--ink-cyan)", doctrine: "var(--ink-violet)",
-  lesson: "var(--ink-green)", resource: "var(--ink-red)", career: "var(--ink-blue)" };
+  lesson: "var(--ink-green)", resource: "var(--ink-red)", career: "var(--ink-blue)", screen: "var(--ink-cyan)" };
 let colorOk = true;
 expectedOrder.forEach((domain, idx) => {
   if (state.segBg[idx] !== TYPE_COLOR[domain]) {
