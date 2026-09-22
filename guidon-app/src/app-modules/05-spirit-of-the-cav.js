@@ -124,12 +124,13 @@
       fullText: "",
       history: "\"Spirit of the Cav\" is the division song of the 1st Cavalry Division, the \"First Team.\" Its Troopers sing it at the close of division ceremonies. The division's official page gives its start as 13 September 1921 at Fort Bliss, Texas. The words of the song are not included in GUIDON because they are not GUIDON's to share. If this is your unit, you can add your own copy in Recitation Drill, under My unit - it stays on your device.",
       coreTenets: [],
-      source: {
-        ref: SRC_SONG + "; " + SRC_DIVISION,
+      source: [{
+        pub: SRC_SONG + "; " + SRC_DIVISION,
         para: "",
-        asOf: CHECKED,
+        edition: CHECKED,
+        quoteKind: "paraphrase",
         status: "unit-tradition"
-      },
+      }],
       tier: "all",
       tags: ["spirit-of-the-cav", "1st-cavalry-division", "first-team", "garryowen", "song", "unit-tradition"],
       // No recitable record exists for it any more, so there is nothing for
