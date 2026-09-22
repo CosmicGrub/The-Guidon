@@ -9928,6 +9928,27 @@ window.G = window.G || {};
     catch (e) { return "Tap"; }
   }
 
+  // ROADMAP 3g item H's completion contract, dispatched exactly once per
+  // session regardless of which of the three real exit controls fires it.
+  // Two things review caught about the first pass: (1) the persistent
+  // header (below) is ALSO the header on an outcome screen - renderOutcome/
+  // renderTrainingOutcome both set sess.finished=true and then still
+  // sess.container.appendChild(renderHeader(sess)) themselves - so a bare
+  // "header Exit always means cancelled" was wrong the instant a Soldier
+  // reached the AAR and clicked the top Exit instead of the bottom Done;
+  // completed/cancelled here are derived from sess.finished instead of
+  // being hard-coded per call site. (2) an outcome screen can show BOTH the
+  // header's Exit and its own Done button at once, and a caller that
+  // doesn't tear the player down on the first callback (mid-render, before
+  // this fires) could see a second, contradictory one if the Soldier
+  // clicked the other control too - guarded here, not per call site, so
+  // every exit path gets it for free.
+  function reportExit(sess) {
+    if (sess._exitReported) return;
+    sess._exitReported = true;
+    if (sess.onExit) sess.onExit({ completed: !!sess.finished, cancelled: !sess.finished, scenarioId: sess.sc.id });
+  }
+
   // ---------- header + mode switch ----------
   function renderHeader(sess) {
     const sc = sess.sc;
@@ -9995,7 +10016,7 @@ window.G = window.G || {};
       ]),
       progBar,
       seg,
-      el("button.btn.ghost.sm", { gi: "x", giSize: 13, text: "Exit", onclick: () => sess.onExit && sess.onExit() }),
+      el("button.btn.ghost.sm", { gi: "x", giSize: 13, text: "Exit", onclick: () => reportExit(sess) }),
     ]);
     return head;
   }
@@ -10349,7 +10370,7 @@ window.G = window.G || {};
     });
     acts.appendChild(replay);
     const exit = el("button.btn.ghost", { type: "button", gi: "x", giSize: 13, text: "Exit" });
-    exit.addEventListener("click", () => sess.onExit && sess.onExit());
+    exit.addEventListener("click", () => reportExit(sess));
     acts.appendChild(exit);
     root.appendChild(acts);
     sess.container.appendChild(root);
@@ -10565,7 +10586,7 @@ window.G = window.G || {};
         restart(sess, next);
       } }),
       el("button.btn.ghost", { gi: "printer", giSize: 14, text: "Print / Save", onclick: () => printAAR(sess, node, grade, total) }),
-      el("button.btn.ghost", { text: "Done", onclick: () => sess.onExit && sess.onExit() }),
+      el("button.btn.ghost", { text: "Done", onclick: () => reportExit(sess) }),
     ]));
     sess.container.appendChild(root);
     // focus the grade heading for screen-reader users
@@ -10585,6 +10606,20 @@ window.G = window.G || {};
     util.printHTML("After-Action Review — " + sess.sc.title, html);
   }
 
+  // ROADMAP 3g item H: G.engine.run()'s completion contract. onExit is called
+  // exactly once per session with { completed, cancelled, scenarioId } -
+  // completed:true at a real outcome screen (the AAR "Done" button, a
+  // training module's pass/fail "Exit"), completed:false/cancelled:true at
+  // the persistent header's "Exit" (bailed out mid-play). It is NEVER called
+  // for the fourth, honest way a session ends - the Soldier navigates away
+  // by the nav bar/back button with no callback firing at all - so a
+  // consumer that must not miss that case (mock-board-simulator.js's
+  // reconcileScenarios/finishedRunSince) still needs its own attempt-log
+  // fallback; this contract only replaces the GUESSING that fallback used to
+  // have to do for the two paths that DO call back. 00-roadmap-bootstrap.js's
+  // Collective-mode wrapper (runCollective/finish/header) already reports
+  // this exact shape and is the reference implementation this section was
+  // written to match, not the other way around.
   G.engine = {
     _pending: null,   // set by cross-links; consumed by views.train on next render
     run(scenarioId, mode, container, onExit) {
