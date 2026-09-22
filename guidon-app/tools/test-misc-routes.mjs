@@ -327,11 +327,15 @@ await page.waitForTimeout(300);
 
 const countText2 = await page.evaluate(() => (document.querySelector(".search-count") || {}).textContent || "");
 const segTitles2 = await page.evaluate(() => [...document.querySelectorAll(".search-dist-seg")].map((s) => s.title));
-countText2 === "3 results"
-  ? ok('Search "PT test": exactly 3 results across scenario/board/lesson content')
-  : bad(`Search "PT test": count text was "${countText2}", expected "3 results"`);
-(segTitles2.some((t) => t.startsWith("1 Scenarios")) && segTitles2.some((t) => t.startsWith("1 Board Q")) && segTitles2.some((t) => t.startsWith("1 Lessons")))
-  ? ok(`Search "PT test": distribution bar correctly attributes 1 hit to each of scenario/board/lesson (${JSON.stringify(segTitles2)})`)
+// 4th hit added by the "screen" search type (Records' own keywords list
+// "PT test" among the real-world words that route's short nav label never
+// uses - see views.search's SCREEN_ENTRIES) - a real, intentional new hit,
+// not a regression in the pre-existing scenario/board/lesson three.
+countText2 === "4 results"
+  ? ok('Search "PT test": exactly 4 results across scenario/board/lesson/screen content')
+  : bad(`Search "PT test": count text was "${countText2}", expected "4 results"`);
+(segTitles2.some((t) => t.startsWith("1 Scenarios")) && segTitles2.some((t) => t.startsWith("1 Board Q")) && segTitles2.some((t) => t.startsWith("1 Lessons")) && segTitles2.some((t) => t.startsWith("1 Screens & Settings")))
+  ? ok(`Search "PT test": distribution bar correctly attributes 1 hit to each of scenario/board/lesson/screen (${JSON.stringify(segTitles2)})`)
   : bad(`Search "PT test": distribution bar segment titles were ${JSON.stringify(segTitles2)}`);
 
 // A bare MOS-code query now intentionally crosses both the Career Center and
