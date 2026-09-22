@@ -390,9 +390,9 @@
       "kind": "feature",
       "headless": false,
       "requires": ["opsec-guard", "library"],
-      "provides": ["G.moiImport.render"],
+      "provides": ["G.moiImport.render", "G.moiImport.activeFocusSet", "G.moiImport.cachedFamilies", "G.moiImport.currentFamilies", "G.moiImport.inScopeIds", "G.moiImport.setInScope"],
       "routes": ["#/moi"],
-      "storageKeys": ["guidon:moi:plan:v1", "guidon:moi:plans:v1", "guidon:moi:legacyMigrated:v1"],
+      "storageKeys": ["guidon:moi:plan:v1", "guidon:moi:plans:v1", "guidon:moi:legacyMigrated:v1", "moiScopeFamilies"],
       "optionalApis": []
     },
     {

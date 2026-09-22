@@ -80,6 +80,42 @@ window.G = window.G || {};
   // afterward never has the legacy plan resurrected on a later boot.
   const LEGACY_MIGRATED_FLAG = "guidon:moi:legacyMigrated:v1";
 
+  // Part E (MOI Scope, ROADMAP 3g phase 2): in-memory cache of PLANS_KEY's
+  // current value, kept in sync on every write path below (render()'s own
+  // initial load and its legacy-migration write, the Delete handler, and
+  // build()'s own save) - mirrors G.profile's own _cache/current()/cached()
+  // split (index.html, grep "_cache = await loadProfile") so a SYNCHRONOUS
+  // caller can read a same-boot-session-fresh answer with no async G.db
+  // call. store.boardQuestions()/store.doctrine() (index.html) are exactly
+  // that caller: they must read this mid-render, and app.start()'s own boot
+  // sequence (store.init(), index.html) also awaits currentFamilies() once
+  // at boot so this cache is never cold just because #/moi hasn't rendered
+  // yet this session - see that call site's own comment for why an empty
+  // cache would be a real correctness bug here, not just a stale read.
+  let _familiesCache = null;
+  function updateFamiliesCache(list) { _familiesCache = Array.isArray(list) ? list : []; }
+  // Synchronous read of whatever is cached right now - [] (never null) both
+  // before the first populate and once populated-but-empty, so a caller
+  // never needs its own null-guard on top of this one. Mirrors G.profile's
+  // own cached().
+  function cachedFamilies() { return _familiesCache || []; }
+  // Async populate, mirroring G.profile's own current(): returns the cache
+  // as-is if already populated this session (by this call, render()'s own
+  // load, or a write path above), otherwise does the one G.db read PLANS_KEY
+  // needs and populates it. Exists mainly for app.start()'s own boot-time
+  // warm call (index.html, store.init()) - see that call site's comment for
+  // why the cache must not stay cold just because #/moi hasn't rendered yet.
+  async function currentFamilies() {
+    if (_familiesCache !== null) return _familiesCache;
+    let list = [];
+    try {
+      const r = await G.db.get("kv", PLANS_KEY);
+      list = (r && Array.isArray(r.v)) ? r.v : [];
+    } catch (e) { /* offline-safe, matches render()'s own G.db.get try/catch */ }
+    updateFamiliesCache(list);
+    return _familiesCache;
+  }
+
   /* ======================================================================
      PURE MATCHING PIPELINE - no DOM, no G.db, fully unit-testable.
      ====================================================================== */
@@ -522,6 +558,82 @@ window.G = window.G || {};
     }];
   }
 
+  // 8. Part E (MOI Scope, ROADMAP 3g phase 2 - the real design question
+  // Phase 1's multi-plan rewrite raised: with more than one saved plan
+  // FAMILY now possible, which family's topics should narrow #/board and
+  // #/doctrine? Resolved as PER-FAMILY OPT-IN, not a single global switch -
+  // a Soldier prepping for two concurrent boards can opt both families in;
+  // one who keeps an old plan around for reference opts only the current
+  // one. activeFocusSet(families, optedInIds): the UNION, across every
+  // family whose id is in optedInIds, of that family's current.topics and
+  // current.topicLinks[t].boardCategory.
+  //
+  // Deliberately topicLinks[t].boardCategory, NOT generatedDrillCategories:
+  // the latter is populated only when the Soldier left "Generate a practice
+  // drill now" checked at Build time (review()'s own optWrap, genDrillCb) -
+  // see build()'s own `generatedDrillCategories: genDrill ? ... : []` line.
+  // A family built with that box unchecked would carry [] there forever,
+  // silently under-narrowing #/board to nothing for that family even though
+  // its topics have real board coverage. topicLinks is populated for every
+  // topic regardless of that checkbox (build()'s topicAgg loop sets
+  // a.boardCategory unconditionally), so it is the field this function
+  // must read - and the correct behavior it's exercised against was
+  // re-verified here directly against build()'s current source, not
+  // assumed from the original single-plan proposal.
+  //
+  // Returns null - never an empty-but-active {topics:Set(),
+  // boardCategories:Set()} - when optedInIds is empty. Mirrors
+  // G.mosDecks.activeCodes()'s own "no signal = show everything" contract
+  // (00-mos-decks-core.js): a caller that got an empty Set back and filtered
+  // against it would silently narrow the pool to NOTHING, which reads as a
+  // real (if confusing) result rather than "filtering is off" - the exact
+  // ambiguous-empty-set trap this return shape is designed to avoid. Every
+  // caller (store.boardQuestions()/store.doctrine(), index.html) checks the
+  // return value truthy before filtering, never assumes a Set.
+  function activeFocusSet(families, optedInIds) {
+    const ids = Array.isArray(optedInIds) ? optedInIds : [];
+    if (!ids.length) return null;
+    const idSet = new Set(ids);
+    const topics = new Set(), boardCategories = new Set();
+    (families || []).forEach((family) => {
+      if (!family || !idSet.has(family.id) || !family.current) return;
+      const plan = family.current;
+      (plan.topics || []).forEach((t) => topics.add(t));
+      const links = plan.topicLinks || {};
+      Object.keys(links).forEach((t) => {
+        const bc = links[t] && links[t].boardCategory;
+        if (bc) boardCategories.add(bc);
+      });
+    });
+    return { topics: topics, boardCategories: boardCategories };
+  }
+
+  // inScopeIds()/setInScope(): the Settings/plan-card read-write pair for
+  // the moiScopeFamilies setting, mirroring G.mosDecks.optedIn()/
+  // setOptedIn() (00-mos-decks-core.js) down to the same guard shape - []
+  // when G.store isn't present yet (tools/assemble-bank.mjs's headless
+  // sandbox), and a no-op write when the requested state already holds (no
+  // pointless settings write or change event). Exported so index.html's
+  // Settings panel and this file's own menu()/openPlan() toggles both read
+  // and write through the ONE place this array is shaped, instead of each
+  // hand-rolling the add/remove logic and risking the two drifting apart.
+  function inScopeIds() {
+    if (!window.G || !G.store || typeof G.store.settings !== "function") return [];
+    let s;
+    try { s = G.store.settings(); } catch (e) { return []; }
+    return (s && Array.isArray(s.moiScopeFamilies)) ? s.moiScopeFamilies.slice() : [];
+  }
+  function setInScope(familyId, on) {
+    if (!familyId || !window.G || !G.store || typeof G.store.setSetting !== "function") return;
+    const cur = inScopeIds();
+    const has = cur.indexOf(familyId) !== -1;
+    let next = cur;
+    if (on && !has) next = cur.concat([familyId]);
+    else if (!on && has) next = cur.filter((id) => id !== familyId);
+    else return;
+    G.store.setSetting("moiScopeFamilies", next);
+  }
+
   /* ======================================================================
      RENDERING - a plain route, one mount, no navigation between states.
      ====================================================================== */
@@ -553,6 +665,7 @@ window.G = window.G || {};
       const r = await G.db.get("kv", PLANS_KEY);
       families = (r && Array.isArray(r.v)) ? r.v : [];
     } catch (e) { /* offline-safe, matches records.js's own G.db.get try/catch */ }
+    updateFamiliesCache(families);
 
     // One-time legacy migration (Part C3): guidon:moi:plan:v1 -> one family
     // inside guidon:moi:plans:v1. Mirrors index.html's own LEGACY_KEYS
@@ -586,6 +699,7 @@ window.G = window.G || {};
             try {
               await G.db.put("kv", { k: PLANS_KEY, v: migratedFamilies });
               families = migratedFamilies;
+              updateFamiliesCache(families);
             } catch (e) { writeOk = false; }
           }
           if (writeOk) {
@@ -654,6 +768,25 @@ window.G = window.G || {};
         btn.appendChild(el("p.hint", { style: "margin:4px 0 0", text: (dateStr ? "Imported " + dateStr + " · " : "") + topicCount + " topic" + (topicCount === 1 ? "" : "s") }));
         btn.addEventListener("click", () => openPlan(family, false));
         card.appendChild(btn);
+        // Part E (MOI Scope): a SIBLING of btn above, not nested inside it -
+        // a checkbox inside a <button> is invalid markup and would double-
+        // fire on every click. Real checkbox + visible text label (this
+        // app's own .switch/.toggle/.track convention - grep "MOS Decks" in
+        // Settings' render code for the identical shape), not a repurposed
+        // button - native checkbox semantics already give it a correct
+        // accessible name/state with no extra aria-checked needed. Toggling
+        // re-draws this whole menu() (same full-redraw convention every
+        // other state change on this route already uses) so its checked
+        // state and Settings' own mirrored list can never show two
+        // different answers.
+        const scopeInput = el("input", { type: "checkbox",
+          "aria-label": "Narrow Board Drill and Doctrine to " + (family.current.name || "this MOI") + "'s topics" });
+        scopeInput.checked = inScopeIds().indexOf(family.id) !== -1;
+        scopeInput.addEventListener("change", () => { setInScope(family.id, scopeInput.checked); menu(); });
+        card.appendChild(el("div.switch", { style: "margin-top:8px" }, [
+          el("label.toggle", { style: "margin:0" }, [scopeInput, el("span.track")]),
+          el("span", { text: "In Scope — narrow Board Drill and Doctrine to this plan's topics" }),
+        ]));
         grid.appendChild(card);
       });
       stage.appendChild(grid);
@@ -732,6 +865,7 @@ window.G = window.G || {};
         } catch (e) {}
         families = freshFamilies.filter((f) => f.id !== family.id);
         try { await G.db.put("kv", { k: PLANS_KEY, v: families }); } catch (e) {}
+        updateFamiliesCache(families);
         // Part D3: the board-date reminder (if any) is tied to a fixed
         // source, not to which family it was set from - see D2's own
         // comment on why. There is only ever one MOI board reminder
@@ -780,6 +914,23 @@ window.G = window.G || {};
         row.appendChild(remindBtn);
       }
       head.appendChild(row);
+      // Part E (MOI Scope): same real checkbox + .switch/.toggle/.track
+      // convention as menu()'s own card toggle above - this is the OTHER
+      // half of the "either place you can see a plan, you can see and
+      // flip its scope" requirement (the card in menu(), and this detail
+      // view). Toggling re-invokes openPlan() with the SAME expanded state
+      // (the full-redraw convention every other control on this screen
+      // already uses), so View/Hide, the diff panel and this toggle's own
+      // checked state can never disagree with each other or with Settings'
+      // mirrored list.
+      const scopeInput = el("input", { type: "checkbox",
+        "aria-label": "Narrow Board Drill and Doctrine to " + (plan.name || "this MOI") + "'s topics" });
+      scopeInput.checked = inScopeIds().indexOf(family.id) !== -1;
+      scopeInput.addEventListener("change", () => { setInScope(family.id, scopeInput.checked); openPlan(family, expanded); });
+      head.appendChild(el("div.switch", { style: "margin-top:10px" }, [
+        el("label.toggle", { style: "margin:0" }, [scopeInput, el("span.track")]),
+        el("span", { text: "In Scope — narrow Board Drill and Doctrine to this plan's topics" }),
+      ]));
       stage.appendChild(head);
 
       // Part D1: an existing, already-shared component (grep
@@ -1591,6 +1742,7 @@ window.G = window.G || {};
           try {
             await G.db.put("kv", { k: PLANS_KEY, v: nextFamilies });
             families = nextFamilies;
+            updateFamiliesCache(families);
             try { util.toast("MOI plan saved."); } catch (e2) {}
           } catch (e) { try { util.toast("Couldn't save your plan."); } catch (e2) {} }
         }
@@ -1680,6 +1832,18 @@ window.G = window.G || {};
     MOI_CITATION_ALIASES: MOI_CITATION_ALIASES,
     KEY: KEY,
     PLANS_KEY: PLANS_KEY,
+    // Part E (MOI Scope, ROADMAP 3g phase 2): activeFocusSet is pure and
+    // exported for tools/test-moi-scope.mjs to exercise directly, the same
+    // way diffPlans already is for tools/test-moi-import.mjs. cachedFamilies/
+    // currentFamilies/inScopeIds/setInScope are the read/write surface
+    // store.boardQuestions()/store.doctrine() and index.html's Settings
+    // panel (and this file's own menu()/openPlan() toggles) all go through -
+    // see each function's own comment.
+    activeFocusSet: activeFocusSet,
+    cachedFamilies: cachedFamilies,
+    currentFamilies: currentFamilies,
+    inScopeIds: inScopeIds,
+    setInScope: setInScope,
   };
 })();
 // END moi-import.js
