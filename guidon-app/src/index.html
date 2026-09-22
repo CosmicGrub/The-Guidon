@@ -25853,8 +25853,22 @@ window.G = window.G || {};
   // pending)" tag prtDrill() draws onto those seven blocks, so this screen
   // and PT Planner's own session-block summary never disagree about which
   // drills carry that fuller, per-exercise verification.
-  const PD = ["Bend and Reach","Rear Lunge","High Jumper","Rower","Squat Bender",
+  // ROADMAP item I's remaining third: PD's own ten names now READ from
+  // window.GUIDON_SEED.prt.drills' "pd" entry via G.store.prtMeta() - the
+  // same source #/prt and PT Planner already read through - instead of
+  // duplicating them here by hand, which is exactly how they quietly
+  // drifted before (see the content-integrity comment above). The literal
+  // array survives only as a fallback for the narrow case this module's
+  // own tests already exercise: seed not yet loaded/malformed.
+  const PD_FALLBACK = ["Bend and Reach","Rear Lunge","High Jumper","Rower","Squat Bender",
               "Windmill","Forward Lunge","Prone Row","Bent-Leg Body Twist","Push-Up"];
+  function pdExerciseNames() {
+    const meta = G.store && G.store.prtMeta ? G.store.prtMeta() : null;
+    const pd = meta && Array.isArray(meta.drills) ? meta.drills.find((d) => d.id === "pd") : null;
+    const names = pd && Array.isArray(pd.exercises) ? pd.exercises.slice().sort((a, b) => a.order - b.order).map((e) => e.name) : null;
+    return (names && names.length) ? names : PD_FALLBACK;
+  }
+  const PD = pdExerciseNames();
   const RD = ["Overhead arm pull","Rear lunge","Extend and flex","Thigh stretch",
               "Single-leg over","Groin stretch","Calf stretch","Hamstring stretch"];
   // Matches app-modules/pt-planner.js's PRT_PENDING_DRILLS keys exactly.
