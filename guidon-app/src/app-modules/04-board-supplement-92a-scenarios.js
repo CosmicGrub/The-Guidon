@@ -6,8 +6,8 @@
 */
 (function () {
   "use strict";
-  var seed = window.GUIDON_SEED;
-  var list = seed && seed.scenarios && Array.isArray(seed.scenarios.scenarios) ? seed.scenarios.scenarios : null;
+  G.contentPack.define("board-supplement-92a-scenarios", function (bank) {
+  var list = bank && bank.scenarios && Array.isArray(bank.scenarios.scenarios) ? bank.scenarios.scenarios : null;
   if (!list) return;
   var have = new Set(list.map(function (s) { return s.id; }));
 
@@ -73,5 +73,6 @@
       "end-force": { prompt: "", end: true, outcome: "Repeatedly counting toward an expected answer defeats the purpose of the inventory. The unexplained discrepancy remains and the record cannot be trusted." },
       "end-ignore": { prompt: "", end: true, outcome: "The unresearched mismatch remains in the account and can surface later as a larger shortage, excess, issue error, or readiness problem." }
     }
+  });
   });
 })();

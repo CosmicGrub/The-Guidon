@@ -46,6 +46,7 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ICON_TARGETS } from "./icon-spec.mjs";
+import { mergeContentPacks } from "./content-pack-engine.mjs";
 
 const SRC = "src/index.html";
 const PWA = "src/pwa.js";
@@ -97,16 +98,21 @@ const DIST = "dist";
  * to an on-demand sibling file - a smaller-scoped version of the same lever,
  * rather than deferring the whole seed at once.
  */
-function seedAsJsonParse(html) {
+/**
+ * Finds `window.GUIDON_SEED = {...}`'s object literal inside `html`,
+ * brace-matched through string literals so a brace inside content text can
+ * never fool it. Returns the literal's [start, end) character offsets, or
+ * null when the assignment is not a plain `{...}` literal (already
+ * transformed, or shaped differently than expected - callers must not
+ * guess). Shared by mergeSeedContentPacks() and seedAsJsonParse() below, so
+ * "where the seed literal is" is written once.
+ */
+function locateSeedLiteral(html) {
   const START = "window.GUIDON_SEED = ";
   const at = html.indexOf(START);
   if (at < 0) throw new Error("build: GUIDON_SEED assignment not found");
   const objStart = at + START.length;
-  if (html[objStart] !== "{") {
-    // Already transformed, or shaped differently than expected. Do not guess.
-    return { html, skipped: true };
-  }
-  // Brace-match through string literals so braces inside content cannot fool it.
+  if (html[objStart] !== "{") return null;
   let depth = 0, inStr = false, esc = false, objEnd = -1;
   for (let p = objStart; p < html.length; p++) {
     const c = html[p];
@@ -118,7 +124,73 @@ function seedAsJsonParse(html) {
     else if (c === "}") { depth--; if (depth === 0) { objEnd = p + 1; break; } }
   }
   if (objEnd < 0) throw new Error("build: could not brace-match the GUIDON_SEED literal");
+  return { objStart, objEnd };
+}
 
+/**
+ * ROADMAP 3g E - the single highest-value change in that roadmap section:
+ * every "emit":"build" content pack (tools/content-pack-engine.mjs, the SAME
+ * G.contentPack.define() engine tools/assemble-bank.mjs's thin wrapper uses)
+ * is merged into the static seed literal HERE, before assembleAppModules()
+ * below ever splices a <script> into the page. Before this, a content pack
+ * mutated window.GUIDON_SEED as its own <script> ran in the real browser, so
+ * the shipped seed and "the true bank" were two things kept in sync only by
+ * two independently-written evaluators agreeing with each other. Now the
+ * seed IS the merged bank before it ships; assembleAppModules() below never
+ * even sees an emit:"build" file.
+ *
+ * Runs on `html` while the seed is still a plain `{...}` object literal;
+ * seedAsJsonParse()'s own JSON.parse-wrapping transform runs AFTERWARD,
+ * against this function's already-merged literal - "no double work", since
+ * that function already assumed the literal was strict JSON before this
+ * change existed.
+ *
+ * MUST NOT silently skip. Unlike seedAsJsonParse() below (a pure boot-perf
+ * optimization that is safe to skip - the seed still works as a plain object
+ * literal either way), skipping this step is a CONTENT bug: assembleAppModules()
+ * unconditionally excludes every "emit":"build" content pack from the page
+ * regardless of whether this function ran, so a silent skip here would ship
+ * a build with no pack content AND no runtime pack scripts to fall back on -
+ * missing hundreds of board cards with the build still printing "build ok"
+ * (PR #196 review finding). If the seed literal is not in the one shape this
+ * function knows how to parse, that is a hard build failure, named clearly,
+ * not a build that quietly ships less than it should.
+ */
+function mergeSeedContentPacks(html, moduleDir) {
+  const loc = locateSeedLiteral(html);
+  if (!loc) {
+    throw new Error(
+      "build: window.GUIDON_SEED is not a plain object literal ({...}) at the point content packs must merge into it - " +
+      "cannot proceed without silently shipping a build missing every \"emit\":\"build\" content pack's content. " +
+      "Expected `window.GUIDON_SEED = {...}` (a JSON object literal); if the seed's on-disk shape genuinely changed " +
+      "(for example it is already `JSON.parse(\"...\")`-wrapped at this point in the pipeline), update this function " +
+      "to parse the new shape - do not let this fall through to a skip."
+    );
+  }
+  const { objStart, objEnd } = loc;
+  const literal = html.slice(objStart, objEnd);
+  let seedObj;
+  try {
+    seedObj = JSON.parse(literal);
+  } catch (e) {
+    throw new Error(`build: GUIDON_SEED is no longer strict JSON, so content packs cannot be merged into it (${e.message})`);
+  }
+  const merge = mergeContentPacks(seedObj, moduleDir);
+  const broken = merge.modules.filter((m) => m.error);
+  if (broken.length) {
+    throw new Error("build: content pack(s) failed to merge: " + broken.map((m) => `${m.file}: ${m.error}`).join("; "));
+  }
+  const newLiteral = JSON.stringify(seedObj);
+  return { html: html.slice(0, objStart) + newLiteral + html.slice(objEnd), merge };
+}
+
+function seedAsJsonParse(html) {
+  const loc = locateSeedLiteral(html);
+  if (!loc) {
+    // Already transformed, or shaped differently than expected. Do not guess.
+    return { html, skipped: true };
+  }
+  const { objStart, objEnd } = loc;
   const literal = html.slice(objStart, objEnd);
   let parsed;
   try {
@@ -142,7 +214,17 @@ function seedAsJsonParse(html) {
   // bankSig cares about) so an unrelated edit elsewhere in the seed - a
   // doctrine entry, a dictionary term - can't needlessly force every
   // existing session's bankSig to disagree.
-  if (parsed.board && Array.isArray(parsed.board.questions)) {
+  //
+  // ROADMAP 3g E: mergeSeedContentPacks() above now runs BEFORE this
+  // function, so by the time this literal is parsed, 98-content-pack-
+  // finalize.js has already stamped the REAL fingerprint (FNV-1a over
+  // id/category/q/boardAnswer, covering every pack's cards too) directly
+  // onto parsed.board.contentHash. Only stamp the sha256 fallback below when
+  // that has not happened - an unbuilt seed with no content packs at all, or
+  // a caller that skips the merge - so this can never silently overwrite the
+  // one fingerprint the study-room protocol and tools/test-content-packs.mjs
+  // both expect the shipped page to carry.
+  if (parsed.board && Array.isArray(parsed.board.questions) && parsed.board.contentHash === undefined) {
     parsed.board.contentHash = createHash("sha256").update(JSON.stringify(parsed.board.questions)).digest("hex").slice(0, 16);
   }
   // JSON.stringify produces a correctly-escaped JS string literal. Hand-rolling
@@ -524,13 +606,21 @@ function assertRouteModulesPresent(html, label) {
  * one - with GUIDON_APP_MODULE_DIR set it checks that folder and stops.
  */
 async function assembleAppModules(appModuleDir) {
-  const { loadModules } = await import("./module-manifest.mjs");
-  const appModuleFiles = loadModules(appModuleDir).files;
+  const { loadModules, emitOf } = await import("./module-manifest.mjs");
+  const { modules } = loadModules(appModuleDir);
+  // ROADMAP 3g E: an "emit":"build" module (every content-pack and the
+  // finalize pass) already ran once, in mergeSeedContentPacks() above,
+  // merged straight into the seed literal this same build wrote back into
+  // `src` - it is never spliced in here as a <script>, or it would run a
+  // second time, in the browser, against an already-merged bank. Only
+  // "emit":"runtime" files (the default for every other kind) become
+  // <script> blocks, same as always.
+  const runtimeFiles = modules.filter((m) => emitOf(m) !== "build").map((m) => m.file);
   // The six-pillar taxonomy (tools/pillar-map.mjs, the ONE definition) as
   // plain data for the running app - see 98-content-pack-finalize.js.
   const { runtimePillarMap } = await import("./pillar-map.mjs");
   let appModules = `<script>\nwindow.GUIDON_PILLAR_MAP = ${JSON.stringify(runtimePillarMap()).replace(/</g, "\\u003c")};\n</script>\n`;
-  for (const f of appModuleFiles) {
+  for (const f of runtimeFiles) {
     appModules += `<script>\n${await readFile(join(appModuleDir, f), "utf8")}\n</script>\n`;
   }
   return appModules;
@@ -685,6 +775,15 @@ async function main() {
   // folder and still print "build ok". So with it set the build only CHECKS
   // that folder and stops - nothing is written either way.
   const standInModuleDir = process.env.GUIDON_APP_MODULE_DIR;
+  // ROADMAP 3g E: merge every "emit":"build" content pack into the seed
+  // BEFORE assembleAppModules() decides which files still become <script>s -
+  // see mergeSeedContentPacks()'s own header for why this has to run first.
+  // Uses the same stand-in module dir the check-only path below uses, so a
+  // broken content pack in a stand-in folder is caught the same way a bad
+  // manifest already is - never a way to ship one, since nothing is written
+  // to web/ or dist/ until well after this.
+  const seedMerge = mergeSeedContentPacks(src, standInModuleDir || "src/app-modules");
+  src = seedMerge.html;
   const appModules = await assembleAppModules(standInModuleDir || "src/app-modules");
   if (standInModuleDir) {
     console.log(`build: GUIDON_APP_MODULE_DIR is set, so this run only checked ${standInModuleDir} against its manifest.json (it passed). NOTHING WAS BUILT - that switch exists for tools/test-module-manifest.mjs; unset it to build.`);
@@ -950,6 +1049,10 @@ async function main() {
   /* ------------------------------ report ------------------------------ */
   const kb = (s) => (Buffer.byteLength(s, "utf8") / 1048576).toFixed(2) + " MB";
   console.log("build ok");
+  // mergeSeedContentPacks() throws rather than skips on an unexpected seed
+  // shape (see its own header), so by the time main() gets here seedMerge.merge
+  // always exists - this line has nothing to report other than success.
+  console.log(`  content packs                 ${seedMerge.merge.modules.length} merged (${seedMerge.merge.staticCounts.board} seed + packs = ${seedMerge.merge.finalCounts.board} board / ${seedMerge.merge.finalCounts.doctrine} doctrine / ${seedMerge.merge.finalCounts.scenarios} scenarios), fingerprint ${seedMerge.merge.finalized ? seedMerge.merge.finalized.contentHash : "(no finalize pass)"}`);
   console.log(seed.skipped
     ? "  seed                          left as an object literal (unexpected shape)"
     : `  seed                          JSON.parse, ${seed.keys} top-level keys (~94ms faster boot at 6x CPU)`);
@@ -972,4 +1075,4 @@ if (isMain) {
   main().catch((e) => { console.error(String(e.message || e)); process.exit(1); });
 }
 
-export { deriveThemeIds, assembleAppModules, main };
+export { deriveThemeIds, assembleAppModules, mergeSeedContentPacks, main };

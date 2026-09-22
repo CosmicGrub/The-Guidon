@@ -19,6 +19,18 @@
  *   - the bank fingerprint is stamped LAST, from the final bank (the earlier
  *     restamp ran fourth of fifteen modules, so every later pack changed the
  *     deck without changing its fingerprint).
+ *
+ * ROADMAP 3g E rewrite: 98-content-pack-finalize.js used to run live in the
+ * browser and leave G.contentPacks.finalized behind for this suite to poll
+ * with page.waitForFunction(). It now runs at BUILD TIME
+ * (tools/content-pack-engine.mjs) and never touches window.G at all - there
+ * is no runtime global left to poll. What the finalize pass on THIS run
+ * would have produced now comes from headless.finalized (a fresh, in-Node
+ * re-run of the same engine tools/build.mjs used to bake the shipped seed),
+ * and the suite's job becomes proving the page's BAKED-IN board.contentHash
+ * and pillar tags agree with that recomputation - the same "page vs
+ * headless must never disagree" spirit the rest of this suite already had,
+ * just without a live poll for a global that no longer exists.
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
@@ -38,7 +50,7 @@ const noise = [];
 page.on("console", (m) => { if (["error", "warning"].includes(m.type())) noise.push(m.type() + ": " + m.text()); });
 page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 await page.goto(url, { waitUntil: "load" });
-await page.waitForFunction(() => window.G && G.contentPacks && G.contentPacks.finalized, null, { timeout: 15000 }).catch(() => {});
+await page.waitForFunction(() => window.G && G.store && G.store.boardQuestions().length > 0, null, { timeout: 15000 }).catch(() => {});
 
 // ROADMAP 3g item G: store.boardQuestions() now hides a MOS-tagged card
 // (92A today) by default - see its own comment in src/index.html - so it
@@ -61,7 +73,6 @@ const live = await page.evaluate(() => {
     doctrine: S.doctrine.entries.map((e) => [e.id, e.topic, e.pillar || null]),
     scenarios: S.scenarios.scenarios.map((s) => [s.id, s.pillar || null]),
     hash: S.board.contentHash,
-    fin: (window.G && G.contentPacks && G.contentPacks.finalized) || null,
     map: window.GUIDON_PILLAR_MAP || null,
     storeCount: G.store.boardQuestions().length,
   };
@@ -102,8 +113,13 @@ JSON.stringify(reallyAdded) === JSON.stringify(manifest.packs)
 
 /* ---- finalize pass: one pillar definition, fingerprint stamped last ---- */
 JSON.stringify(live.map) === JSON.stringify(runtimePillarMap()) ? ok("the build injects tools/pillar-map.mjs into the page verbatim (window.GUIDON_PILLAR_MAP)") : bad("window.GUIDON_PILLAR_MAP differs from tools/pillar-map.mjs runtimePillarMap()");
-(live.fin && live.fin.hadMap && live.fin.cards === live.board.length) ? ok(`the finalize pass ran last over the full bank (${live.fin.cards} cards) from the injected map`) : bad("finalize state: " + JSON.stringify(live.fin));
-(live.fin && Array.isArray(live.fin.corrections) && live.fin.corrections.length === 0) ? ok("no pack's own pillar had to be overruled by the map") : bad("finalize overruled pack pillars: " + JSON.stringify(live.fin && live.fin.corrections));
+// 98-content-pack-finalize.js's own return value from THIS headless run -
+// the finalize pass no longer leaves anything on window.G for the live page
+// to report (see this file's header).
+const fin = headless.finalized;
+(fin && fin.hadMap && fin.cards === live.board.length) ? ok(`the finalize pass ran last over the full bank (${fin.cards} cards) from the injected map`) : bad("finalize state: " + JSON.stringify(fin));
+(fin && Array.isArray(fin.corrections) && fin.corrections.length === 0) ? ok("no pack's own pillar had to be overruled by the map") : bad("finalize overruled pack pillars: " + JSON.stringify(fin && fin.corrections));
+fin && fin.contentHash === live.hash ? ok(`the page's baked-in fingerprint matches the finalize pass's own recomputation (${live.hash})`) : bad(`baked-in contentHash ${live.hash} vs the finalize pass's recomputation ${fin && fin.contentHash}`);
 const packIds = new Set(headless.data.board.questions.filter((q) => q.__pack).map((q) => q.id));
 const untagged = headless.data.board.questions.filter((q) => packIds.has(q.id) && pillarForBoard(q) && q.pillar !== pillarForBoard(q)).map((q) => q.id);
 untagged.length === 0 ? ok(`every one of the ${packIds.size} pack cards whose category is mapped carries that pillar (none left out of the pillar filter)`) : bad("pack cards missing their mapped pillar: " + JSON.stringify(untagged.slice(0, 8)));

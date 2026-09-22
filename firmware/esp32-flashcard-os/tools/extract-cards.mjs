@@ -72,7 +72,11 @@ function main() {
   const failed = assembled.modules.filter((m) => m.error);
   if (failed.length) throw new Error("extract-cards: content pack(s) failed to load: " + failed.map((m) => m.file + " (" + m.error + ")").join("; "));
   const data = assembled.data;
-  const audit = assembled.G && assembled.G.boardSupplement && assembled.G.boardSupplement.audit;
+  // ROADMAP 3g E: 02-board-supplement-integration.js's audit no longer hangs
+  // off window.G (content packs stopped touching it) - it is that pack's own
+  // G.contentPack.define() return value, reached by id.
+  const integration = assembled.packs && assembled.packs["board-supplement-integration"];
+  const audit = integration && integration.audit;
   if (!audit || audit.complete !== true) {
     throw new Error("extract-cards: promotion-board supplement audit did not complete: " + JSON.stringify(audit || null));
   }

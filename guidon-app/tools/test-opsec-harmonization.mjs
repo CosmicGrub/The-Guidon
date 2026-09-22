@@ -3,15 +3,20 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { readSeed } from "./seed-io.mjs";
+import { mergeContentPacks } from "./content-pack-engine.mjs";
 
 const APP = fileURLToPath(new URL("../", import.meta.url));
 const INDEX = fileURLToPath(new URL("../src/index.html", import.meta.url));
-const modules = [
-  "src/app-modules/00-board-supplement-core.js",
-  "src/app-modules/01-board-supplement-92a.js",
-  "src/app-modules/02-board-supplement-integration.js",
-  "src/app-modules/03-board-supplement-bankhash.js",
-  "src/app-modules/04-board-supplement-92a-scenarios.js",
+// ROADMAP 3g E: the content packs this suite cares about (00-04,
+// 06-opsec-cyber-curriculum-content) now run through the ONE real engine,
+// tools/content-pack-engine.mjs - the same one tools/build.mjs bakes into
+// the shipped seed - instead of a second, hand-rolled evaluator here. Only
+// the two RUNTIME/feature modules (05-opsec-guard.js, its screening API;
+// 06-opsec-cyber-curriculum.js, the #/cyber-opsec screen's own G.opsec.*
+// surface) still run as plain <script>-style top-level code in this file's
+// own lightweight sandbox - they own no seed data, so they are not part of
+// the content-pack merge at all.
+const RUNTIME_MODULES = [
   "src/app-modules/05-opsec-guard.js",
   "src/app-modules/06-opsec-cyber-curriculum.js",
 ];
@@ -36,7 +41,18 @@ const sandbox = {
 };
 windowMock.window=windowMock;
 const ctx=vm.createContext(sandbox);
-for(const rel of modules) vm.runInContext(readFileSync(APP+rel,"utf8"),ctx,{filename:rel});
+
+// Every "emit":"build" content pack (the real manifest, not a hand-picked
+// subset) merges into `data` in place - running the full set is strictly
+// MORE representative of the real shipped bank than isolating six files
+// ever was, and every assertion below is unaffected by the other packs
+// (they touch different ids/categories entirely; tools/lint-content-packs.mjs
+// enforces that globally).
+const merge = mergeContentPacks(data, APP + "src/app-modules");
+const broken = merge.modules.filter(m => m.error);
+if (broken.length) throw new Error("content pack(s) failed to merge: " + broken.map(m => `${m.file}: ${m.error}`).join("; "));
+
+for(const rel of RUNTIME_MODULES) vm.runInContext(readFileSync(APP+rel,"utf8"),ctx,{filename:rel});
 
 /* The sensitive-text check is FINDINGS ONLY: it reports what it saw and where,
    and never hands a caller edited text. (The first version rewrote its input,
@@ -107,13 +123,20 @@ const promptSeen=new Map(), promptDup=[];
 for (const q of data.board.questions) { const k=String(q.q||"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim(); if (promptSeen.has(k)) promptDup.push(`"${q.q}" (${promptSeen.get(k)} and ${q.id})`); else promptSeen.set(k,q.id); }
 expect(promptDup.length===0, "no two board questions ask the identical prompt (opsec-cyber-01 used to repeat bq-opsec-02's \"What is OPSEC?\" with a different answer)", promptDup.join(" | "));
 
-const audit=G.opsec?.audit;
-expect(audit?.cardsPresent===34, "all 34 Cybersecurity & OPSEC board questions are represented", `cardsPresent=${audit?.cardsPresent}`);
-expect(audit?.termsPresent===20, "all 20 required Cyber/OPSEC terms are represented after dedupe/update", `termsPresent=${audit?.termsPresent}`);
-expect(audit?.scenariosPresent===4, "all four synthetic Cyber/OPSEC scenarios are in the canonical scenario bank", `scenariosPresent=${audit?.scenariosPresent}`);
-expect(G.opsec?.selfCheck?.length===10, "10-question local Cyber/OPSEC knowledge audit exists");
+// ROADMAP 3g E: 06-opsec-cyber-curriculum.js (the runtime half) no longer
+// exposes G.opsec.audit - the counts it reported are read directly off the
+// merged bank instead (06-opsec-cyber-curriculum-content.js's own define()
+// return value, reached by id, covers the same "did every card/term reach
+// the bank" question the old audit answered).
+const contentPack = merge.packs["opsec-cyber-curriculum-content"];
+expect(!!contentPack && Array.isArray(contentPack.cardIds) && contentPack.cardIds.length===34, "all 34 Cybersecurity & OPSEC board questions were pushed by the content pack", `cardIds.length=${contentPack && contentPack.cardIds.length}`);
 const category=data.board.questions.filter(q=>q.category==="Cybersecurity & OPSEC");
+expect(contentPack.cardIds.every(id=>category.some(q=>q.id===id)), "every card the content pack pushed is represented in the canonical board bank");
 expect(category.length===34, "canonical board bank contains exactly 34 Cybersecurity & OPSEC questions", `category count=${category.length}`);
+const REQUIRED_TERMS=["CUI","OPSEC","RMF","ATO","AO","PII","CAC","SCIF","ISSM","ISSO","ISSE","POA&M","STIG","DISA","DLP","MFA","PKI","FOUO","CMMC","DoDIN"];
+const termsPresent=REQUIRED_TERMS.filter(k=>data.acronyms.terms.some(t=>String(t.a||"").toUpperCase()===k.toUpperCase())).length;
+expect(termsPresent===20, "all 20 required Cyber/OPSEC terms are represented after dedupe/update", `termsPresent=${termsPresent}`);
+expect(G.opsec?.selfCheck?.length===10, "10-question local Cyber/OPSEC knowledge audit exists");
 const scenarioIds=["sc-opsec-social-engineering","sc-cyber-removable-media","sc-opsec-fitness-tracking","sc-cui-spillage-reporting"];
 const scs=data.scenarios?.scenarios||[];
 expect(scenarioIds.every(id=>scs.some(s=>s.id===id)), "canonical Train scenario bank contains all four required scenario ids");
@@ -149,9 +172,10 @@ expect(legal.includes("DoDI 8510.01 — Risk Management Framework for DoD System
 const wf=readFileSync(fileURLToPath(new URL("../../.github/workflows/opsec-harmonization.yml", import.meta.url)),"utf8").split(/\r?\n/).filter(l=>!/^\s*#/.test(l)).join("\n");
 const pushBlock=(wf.match(/\n  push:\n([\s\S]*?)(?=\n\S|\n  \S|$)/)||[])[1]||"";
 expect(/^\s+branches:\s*\[\s*main\s*\]\s*$/m.test(pushBlock) && !/feature\//.test(wf), "the OPSEC Harmonization workflow runs on pushes to main (not on a merged feature branch)", JSON.stringify(pushBlock.slice(0,160)));
-expect(/\n  pull_request:\n/.test(wf) && ["guidon-app/src/**","guidon-app/tools/fixtures/opsec-guard-cases.json","guidon-app/tools/seed-io.mjs","GUIDON_COMMAND_LEGAL_PACKAGE.md"].every(p=>wf.split("'"+p+"'").length===3), "...and on pull requests, with every file this suite reads listed under both triggers");
+expect(/\n  pull_request:\n/.test(wf) && ["guidon-app/src/**","guidon-app/tools/fixtures/opsec-guard-cases.json","guidon-app/tools/seed-io.mjs","guidon-app/tools/content-pack-engine.mjs","guidon-app/tools/module-manifest.mjs","guidon-app/tools/pillar-map.mjs","GUIDON_COMMAND_LEGAL_PACKAGE.md"].every(p=>wf.split("'"+p+"'").length===3), "...and on pull requests, with every file this suite reads listed under both triggers");
 expect(!readFileSync(APP+"src/app-modules/05-opsec-guard.js","utf8").match(/fetch\s*\(|XMLHttpRequest|analytics|telemetry/i), "OPSEC guard introduces no outbound network/telemetry primitive");
 expect(!readFileSync(APP+"src/app-modules/06-opsec-cyber-curriculum.js","utf8").match(/fetch\s*\(|XMLHttpRequest|analytics|telemetry/i), "Cyber/OPSEC curriculum introduces no outbound network/telemetry primitive");
+expect(!readFileSync(APP+"src/app-modules/06-opsec-cyber-curriculum-content.js","utf8").match(/fetch\s*\(|XMLHttpRequest|analytics|telemetry/i), "...nor does its content pack half");
 
 console.log(`\nOPSEC curriculum totals: board=${data.board.questions.length}, scenarios=${scs.length}, acronyms=${data.acronyms?.terms?.length||0}`);
 console.log(fails ? `OPSEC HARMONIZATION: ${fails} FAILURE(S)` : "OPSEC HARMONIZATION: all passed");

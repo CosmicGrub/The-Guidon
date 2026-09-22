@@ -5,7 +5,10 @@ name: OPSEC Harmonization
 # ran on main again. Same shape as board-supplement.yml: pull requests that
 # touch these paths, and pushes to main. The paths cover everything the suite
 # reads: the app source (modules, guest page template), its fixture table, the
-# seed reader, the review package, and the lint the second step runs.
+# seed reader, the content-pack merge engine and its own manifest/pillar-map
+# readers (ROADMAP 3g E: the suite now merges content packs through the real
+# tools/content-pack-engine.mjs instead of its own hand-rolled evaluator), the
+# review package, and the lint the second step runs.
 on:
   pull_request:
     paths:
@@ -13,6 +16,9 @@ on:
       - 'guidon-app/tools/test-opsec-harmonization.mjs'
       - 'guidon-app/tools/fixtures/opsec-guard-cases.json'
       - 'guidon-app/tools/seed-io.mjs'
+      - 'guidon-app/tools/content-pack-engine.mjs'
+      - 'guidon-app/tools/module-manifest.mjs'
+      - 'guidon-app/tools/pillar-map.mjs'
       - 'guidon-app/tools/lint-patterns.mjs'
       - 'GUIDON_COMMAND_LEGAL_PACKAGE.md'
       - '.github/workflows/opsec-harmonization.yml'
@@ -23,6 +29,9 @@ on:
       - 'guidon-app/tools/test-opsec-harmonization.mjs'
       - 'guidon-app/tools/fixtures/opsec-guard-cases.json'
       - 'guidon-app/tools/seed-io.mjs'
+      - 'guidon-app/tools/content-pack-engine.mjs'
+      - 'guidon-app/tools/module-manifest.mjs'
+      - 'guidon-app/tools/pillar-map.mjs'
       - 'guidon-app/tools/lint-patterns.mjs'
       - 'GUIDON_COMMAND_LEGAL_PACKAGE.md'
       - '.github/workflows/opsec-harmonization.yml'
