@@ -149,6 +149,72 @@ window.G = window.G || {};
     return new RegExp("\\b(" + PUB_TYPE_FRAGMENT + ")\\s+(" + NUM_LOOSE_SRC + ")", flags);
   }
 
+  // UCMJ Article citations - a SEPARATE grammar, deliberately not folded
+  // into PUB_TYPE_FRAGMENT/NUM_LOOSE_SRC above. Real MOI/board content
+  // interposes "Article"/"Art."/"Art" between the word "UCMJ" and the
+  // article number ("UCMJ Art. 92", "UCMJ Article 15") - a shape AR/ADP/
+  // ATP/etc. never have - and the number itself is a bare integer with an
+  // optional single trailing letter for a lettered subsection ("112a" -
+  // wrongful use of a controlled substance), never NUM_LOOSE_SRC's dot/
+  // dash-compound decimal shape. Same OCR-glyph tolerance as NUM_LOOSE_SRC
+  // (this file's own GLYPH_FOLD table's charset), just without the "." / "-"
+  // continuation NUM_LOOSE_SRC allows, since a UCMJ article number is never
+  // written as a compound decimal.
+  // Two SEPARATE capture groups, not one - digit-run and the optional
+  // trailing letter - deliberately, not just for convenience. Both groups'
+  // char classes are checked greedily left-to-right by the regex engine, so
+  // group 1 (the glyph-tolerant digit class) always consumes every
+  // glyph-eligible character it can BEFORE group 2 ever gets a look - a
+  // trailing character only ever lands in group 2 (the lettered-subsection
+  // suffix) when it is NOT one of the five OCR-confusable glyph letters
+  // (O/o, I/i, L/l, B/b, G/g). That is what makes the split
+  // deterministic: found the hard way while sanity-checking this file
+  // against a synthetic "AR Art. GO" case - an EARLIER version of this
+  // extension captured the whole run in one group and then re-split it with
+  // a second, separate `/[A-Za-z]$/` regex on the already-matched string,
+  // which cannot tell "GO" (two glyph digits, folds whole to "60") apart
+  // from "G" + a genuine trailing letter "O" (it isn't one - 'O' is itself
+  // glyph-confusable - but the bug would have mis-split it as one anyway).
+  // Two independently-matched groups make that ambiguity impossible instead
+  // of papering over it.
+  const UCMJ_NUM_SRC = "([0-9OoIiLlBbGg]+)([A-Za-z]?)";
+  // Deviation from the literal brief (documented in the PR description): the
+  // "Article"/"Art."/"Art" keyword is wrapped in a NON-capturing OPTIONAL
+  // group here rather than required. Why: tokenizeCitations()'s own
+  // slash-continuation candidate ("UCMJ Art 92 / 134" surfacing "UCMJ 134"
+  // as an independent second candidate, mirroring the existing TC
+  // 3-21.5/3-21.8 case) and matchCitation()'s bare-tuple lookups both need
+  // to hand a bare "UCMJ <number>" string BACK into this same regex later
+  // (matchCitation() is called directly on tokenizeCitations()'s own output
+  // in the existing AR/TC tests, and the equivalent UCMJ coverage below
+  // does the same) - requiring "Art" unconditionally would make that
+  // round-trip fail for the surfaced-but-bare second half. Checked against
+  // the real corpus (grep every "UCMJ..." ref/source string in the seed):
+  // there is no bare "UCMJ <number>" mention anywhere without "Article"/
+  // "Art."/"Art" already present, so making the keyword optional adds zero
+  // real false-positive risk today while making the round-trip correct.
+  function ucmjArticleRegex(flags) {
+    return new RegExp("\\bUCMJ\\s*,?\\s*(?:Art(?:icles?|\\.)?\\s+)?" + UCMJ_NUM_SRC, flags);
+  }
+
+  // Shared by both tokenizer loops in tokenizeCitations() below (the
+  // existing AR/ADP/ATP/... scan and the UCMJ Article scan added alongside
+  // it) - pushes the primary "PUBTYPE NUMBER" candidate a match just
+  // produced, then looks immediately past it for a "/"-joined continuation
+  // ("TC 3-21.5/3-21.8", "UCMJ Art 92 / 134") and surfaces THAT as a second,
+  // independent candidate under the same pub type. Real MOI shorthand can
+  // mean either one dual citation or two separate ones sharing a pub type,
+  // and the two are NOT interchangeable (see matchCitation's own header
+  // comment on AR 600-8-2 vs AR 600-8-22) - this never decides which one is
+  // real, it just surfaces both and lets matchCitation's exact-tuple lookup
+  // sort it out on its own, with no fuzzy fallback either way.
+  function surfaceCandidateAndSlash(out, str, lastIndex, pubType, number) {
+    out.push(pubType + " " + number);
+    const rest = str.slice(lastIndex);
+    const slash = /^\s*\/\s*([0-9OoIiLlBbGg]+(?:[.\-][0-9OoIiLlBbGg]+)*)/.exec(rest);
+    if (slash && /\d/.test(slash[1])) out.push(pubType + " " + slash[1]);
+  }
+
   // 1. tokenizeCitations(text): every pub-type + number-shaped run in the
   // text, as plain "PUBTYPE NUMBER" candidate strings. Comma/semicolon/
   // newline act as strong delimiters between distinct citations - not via
@@ -169,20 +235,29 @@ window.G = window.G || {};
       // would tokenize into something that can never resolve to anything
       // and would just clutter the Not-found list for no reason.
       if (!/\d/.test(number)) continue;
-      out.push(pubType + " " + number);
-      // "/"-joined second half ("TC 3-21.5/3-21.8", "AR 600-8-2 / 22").
-      // Real MOI shorthand can mean either one dual citation or two
-      // separate ones sharing a pub type, and the two are NOT
-      // interchangeable (see matchCitation's own header comment on
-      // AR 600-8-2 vs AR 600-8-22). This tokenizer refuses to guess which:
-      // it surfaces the right-hand side as an INDEPENDENT second candidate
-      // under the same pub type, and matchCitation resolves each candidate
-      // on its own with no fuzzy fallback - an invented candidate that
-      // isn't a real citation just falls out unmatched instead of silently
-      // misattributing.
-      const rest = str.slice(re.lastIndex);
-      const slash = /^\s*\/\s*([0-9OoIiLlBbGg]+(?:[.\-][0-9OoIiLlBbGg]+)*)/.exec(rest);
-      if (slash && /\d/.test(slash[1])) out.push(pubType + " " + slash[1]);
+      // "/"-joined second half ("TC 3-21.5/3-21.8", "AR 600-8-2 / 22"),
+      // surfaced by the shared helper above - see its own comment.
+      surfaceCandidateAndSlash(out, str, re.lastIndex, pubType, number);
+    }
+    // UCMJ Article grammar - a second, independent scan with its own regex
+    // (see ucmjArticleRegex's own comment on why this can't be folded into
+    // the loop above). Runs AFTER the AR/ADP/ATP/... loop so existing
+    // candidates keep the exact same order they always have; UCMJ
+    // candidates are simply appended. Same digit-noise guard and slash-
+    // continuation surfacing as the loop above - "UCMJ Art 92 / 134"
+    // surfaces "UCMJ 92" AND "UCMJ 134" as two independent candidates the
+    // same way "TC 3-21.5/3-21.8" already does for AR/TC-style citations.
+    const ucmjRe = ucmjArticleRegex("gi");
+    let um;
+    while ((um = ucmjRe.exec(str))) {
+      // um[1] = digit run, um[2] = optional trailing letter (see
+      // UCMJ_NUM_SRC's own comment on why these are two groups, not one) -
+      // rejoined here only for the raw candidate string; normalizeCitation
+      // (below) reads the two groups separately again when it re-parses
+      // this exact candidate later.
+      const number = um[1] + (um[2] || "");
+      if (!/\d/.test(number)) continue;
+      surfaceCandidateAndSlash(out, str, ucmjRe.lastIndex, "UCMJ", number);
     }
     return out;
   }
@@ -207,13 +282,32 @@ window.G = window.G || {};
     // by a number - "reach 5" - would have been misread as a chapter
     // suffix and chopped).
     const m = citationRegex("i").exec(str);
-    if (!m) return null;
-    const pubType = m[1].toUpperCase().replace(/\s+/g, " ");
-    const rawNumber = m[2];
-    // The narrow glyph-fold - ONLY within this already-isolated digit-run,
-    // never against pubType or anything else in the string.
-    const number = rawNumber.replace(/[OoIiLlBbGg]/g, (c) => GLYPH_FOLD[c]);
-    return { pubType: pubType, number: number, glyphFolded: number !== rawNumber };
+    if (m) {
+      const pubType = m[1].toUpperCase().replace(/\s+/g, " ");
+      const rawNumber = m[2];
+      // The narrow glyph-fold - ONLY within this already-isolated digit-run,
+      // never against pubType or anything else in the string.
+      const number = rawNumber.replace(/[OoIiLlBbGg]/g, (c) => GLYPH_FOLD[c]);
+      return { pubType: pubType, number: number, glyphFolded: number !== rawNumber };
+    }
+    // UCMJ Article grammar - checked only once the AR/ADP/ATP/... grammar
+    // above has already missed, so every existing pub type's own
+    // normalization path is completely unchanged (provably: this is a new
+    // branch reached only on citationRegex's own null return, never taken
+    // for anything citationRegex itself would have matched).
+    const um = ucmjArticleRegex("i").exec(str);
+    if (um) {
+      // um[1] = digit run, um[2] = optional trailing letter - already split
+      // by the regex itself (see UCMJ_NUM_SRC's own comment), never by a
+      // second pass over the matched text. The narrow glyph-fold below
+      // applies ONLY to the digit run, same discipline as the AR/ADP/ATP/...
+      // path above, never to "UCMJ" or the lettered-subsection suffix.
+      const rawDigits = um[1];
+      const letter = (um[2] || "").toUpperCase();
+      const digits = rawDigits.replace(/[OoIiLlBbGg]/g, (c) => GLYPH_FOLD[c]);
+      return { pubType: "UCMJ", number: digits + letter, glyphFolded: digits !== rawDigits };
+    }
+    return null;
   }
 
   // 4. Hand-curated, deliberately small: seeded ONLY from supersessions
@@ -311,7 +405,17 @@ window.G = window.G || {};
     const doctrineEntries = (seed.doctrine && seed.doctrine.entries) || [];
     doctrineEntries.forEach((d) => {
       const ref = (d.source && d.source.ref) || d.ref || "";
-      record(ref, d.topic, "doctrine");
+      // tokenizeCitations(), not a single-shot record() - a real ref field
+      // sometimes combines two citations via semicolon or slash ("UCMJ
+      // Art. 15; AR 27-10", "UCMJ Art. 120; AR 600-52"). A single-shot
+      // normalizeCitation() can only ever pull out the FIRST citation-shaped
+      // run in the string; tokenizeCitations() surfaces every one, so every
+      // half of a combined ref gets its own registry entry instead of only
+      // ever crediting the first. For the common single-citation case this
+      // is provably identical to before: tokenizeCitations("AR 600-20")
+      // returns exactly ["AR 600-20"], the same one record() call the old
+      // code made directly.
+      tokenizeCitations(ref).forEach((tok) => record(tok, d.topic, "doctrine"));
       // A category string occasionally embeds a real citation itself
       // (board.questions do this a lot - "Weapons (TC 3-22.9)"); checked
       // defensively here too even though doctrine topics rarely do it.
@@ -320,7 +424,10 @@ window.G = window.G || {};
 
     const boardQuestions = (seed.board && seed.board.questions) || [];
     boardQuestions.forEach((q) => {
-      record(q.source, q.category, "board");
+      // Same tokenizeCitations() switch as the doctrine loop just above,
+      // and for the same real reason - board q.source combines two
+      // citations via semicolon or slash too ("UCMJ Art. 138 / AR 27-10").
+      tokenizeCitations(q.source).forEach((tok) => record(tok, q.category, "board"));
       tokenizeCitations(q.category || "").forEach((tok) => record(tok, q.category, "board"));
     });
 
