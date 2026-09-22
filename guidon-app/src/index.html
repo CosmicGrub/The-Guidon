@@ -4090,7 +4090,12 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   font-size:0.72rem; font-weight:700; text-transform:uppercase;
   letter-spacing:0.05em; background:rgba(255,255,255,0.08); color:var(--text-dim); }
 .badge.amber { background:rgba(255,176,32,0.15); color:var(--amber); }
-.badge.green  { background:rgba(0,212,101,0.12); color:var(--green); }
+/* --ink-green, not raw --green, for the accent-as-text case (same fix shape
+   as .wr-ex.good .wr-ex-tag above): tools/test-contrast-full.mjs measured
+   this badge failing AA on the "New" pill (#/train scenario cards) across
+   all 5 light themes, e.g. bone-neutral at 4.33:1 (#5c6b58 on #cee7d8,
+   4.5:1 required). */
+.badge.green  { background:rgba(0,212,101,0.12); color:var(--ink-green); }
 .badge.cyan   { background:rgba(0,212,255,0.12); color:var(--cyan); }
 .badge.red    { background:rgba(255,93,93,0.12);  color:var(--red); }
 .badge.violet { background:rgba(167,139,250,0.12); color:var(--violet); }
