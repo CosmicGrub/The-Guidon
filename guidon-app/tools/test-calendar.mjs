@@ -7,7 +7,7 @@
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
-import { until } from "./testkit.mjs";
+import { untilAsync } from "./testkit.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -263,7 +263,7 @@ leapCheck === "2026-02-28"
    editing that field's date must clear the stale reminder made for the OLD
    due date via G.reminders.clearManagedFor - the real bug this fixes (a
    reminder that used to survive forever once its date was corrected).
-   testkit's until() polls the real state (G.reminders.load(), the same
+   testkit's untilAsync() polls the real state (G.reminders.load(), the same
    storage the app itself reads) instead of a fixed sleep. */
 await page.evaluate((v) => {
   const inp = document.querySelector('input[type="date"][aria-label="Last weapons qualification"]');
@@ -275,7 +275,7 @@ await page.evaluate(() => {
   const btn = card && [...card.querySelectorAll("button")].find((b) => b.textContent.trim() === "Remind me");
   if (btn) btn.click();
 });
-await until(page, async () => (await window.G.reminders.load()).some((r) => r.source === "calendar:wpnQual"), null, { timeout: 4000 });
+await untilAsync(page, async () => (await window.G.reminders.load()).some((r) => r.source === "calendar:wpnQual"), null, { timeout: 4000 });
 const stampedRows = (await page.evaluate(async () => await window.G.reminders.load())).filter((r) => r.source === "calendar:wpnQual");
 stampedRows.length === 1
   ? ok("\"Remind me\" on the weapons-qual row stamps source:\"calendar:wpnQual\"")
@@ -286,7 +286,7 @@ await page.evaluate((v) => {
   inp.value = v;
   inp.dispatchEvent(new Event("change"));
 }, monthsAgo(2));
-await until(page, async () => !(await window.G.reminders.load()).some((r) => r.source === "calendar:wpnQual"), null, { timeout: 4000 });
+await untilAsync(page, async () => !(await window.G.reminders.load()).some((r) => r.source === "calendar:wpnQual"), null, { timeout: 4000 });
 const afterEdit = (await page.evaluate(async () => await window.G.reminders.load())).filter((r) => r.source === "calendar:wpnQual");
 afterEdit.length
   ? bad("editing the weapons-qual date left a stale reminder: " + JSON.stringify(afterEdit))

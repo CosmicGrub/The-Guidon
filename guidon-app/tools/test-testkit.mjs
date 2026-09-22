@@ -34,7 +34,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { assembleBank } from "./assemble-bank.mjs";
 import {
   bootApp, openSession, ok, bad, check, finish, captureNoise, expectNoConsoleNoise,
-  clickWhenStable, waitForRoute, waitForBoot, liveCount, until, PERSONAL_PROFILE, PROFILE_KEY,
+  clickWhenStable, waitForRoute, waitForBoot, liveCount, until, untilAsync, PERSONAL_PROFILE, PROFILE_KEY,
 } from "./testkit.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -279,6 +279,25 @@ const { page, noise } = boot;
   for (let i = noise.length - 1; i >= 0; i--) if (/predicate blew up/.test(noise[i])) noise.splice(i, 1);
   check(early === false && arrived === true && gaveUp === false && Date.now() - u0 < 4000 && broke && /predicate blew up/.test(broke),
     "until() is true once the state arrives, false when time runs out, and still throws a real error", () => JSON.stringify({ early, arrived, gaveUp, broke }));
+
+  // untilAsync(): the until() to reach for when the predicate itself needs
+  // to `await` something. Regression guard for a real bug found 2026-09-22:
+  // page.waitForFunction() (what until() wraps) does not reliably await an
+  // ASYNC predicate's resolved value - it can report the condition met
+  // within a few ms even while the real value it awaits doesn't flip until
+  // much later, a false positive that a plain `until(page, async () => ...)`
+  // call would not catch. This checks untilAsync() actually waits out a
+  // real, awaited 250ms delay - not just that it eventually returns true.
+  const earlyAsync = await page.evaluate(() => { window.__lateAsync = false; setTimeout(() => { window.__lateAsync = true; }, 250); return window.__lateAsync; });
+  const beforeAsync = Date.now();
+  const arrivedAsync = await untilAsync(page, async () => { await new Promise((r) => setTimeout(r, 0)); return window.__lateAsync === true; });
+  const asyncElapsed = Date.now() - beforeAsync;
+  const u0b = Date.now();
+  const gaveUpAsync = await untilAsync(page, async () => { await new Promise((r) => setTimeout(r, 0)); return window.__neverSetAsync === true; }, null, { timeout: 500 });
+  const withArg = await untilAsync(page, async (target) => { await new Promise((r) => setTimeout(r, 0)); return window.__lateAsync === target; }, true, { timeout: 500 });
+  check(earlyAsync === false && arrivedAsync === true && asyncElapsed >= 200 && gaveUpAsync === false && Date.now() - u0b < 4000 && withArg === true,
+    "untilAsync() genuinely waits out a real async condition (not a false-positive false-passing instantly) and still returns false on a real timeout",
+    () => JSON.stringify({ earlyAsync, arrivedAsync, asyncElapsed, gaveUpAsync, withArg }));
 }
 
 /* =====================================================================

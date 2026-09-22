@@ -7,7 +7,7 @@
  * history saving only the first board per sitting, and locking in the
  * default self-rating instead of the Soldier's actual slider input.
  */
-import { bootApp, ok, bad, finish, waitForRoute, clickWhenStable, until, expectNoConsoleNoise } from "./testkit.mjs";
+import { bootApp, ok, bad, finish, waitForRoute, clickWhenStable, until, untilAsync, expectNoConsoleNoise } from "./testkit.mjs";
 
 // Guest session, past onboarding.
 const { page, noise } = await bootApp();
@@ -45,7 +45,7 @@ async function playOneBoard(selfRatingValue) {
 
 // --- board 1: neutral self-rating ---
 await playOneBoard(null);
-await until(page, async () => (((await window.G.db.get("kv", "board:mockHistory:v1")) || {}).v || []).length === 1);
+await untilAsync(page, async () => (((await window.G.db.get("kv", "board:mockHistory:v1")) || {}).v || []).length === 1);
 const doneVisible = await page.evaluate(() => /After-Action Review/i.test(document.body.textContent || ""));
 doneVisible ? ok("finishing a board reaches the After-Action Review scorecard") : bad("scorecard not shown");
 
@@ -63,7 +63,7 @@ await clickWhenStable(page, page.locator("button.btn.primary", { hasText: /new b
 await until(page, () => !!document.querySelector("button.mb-start"));
 await playOneBoard(5);
 // The 5/5/5 self-rating is saved a moment after the sliders move.
-await until(page, async (first) => { const h = ((await window.G.db.get("kv", "board:mockHistory:v1")) || {}).v || []; return h.length === 2 && h[1].pct > first; }, hist1[0] ? hist1[0].pct : 0, { timeout: 5000 });
+await untilAsync(page, async (first) => { const h = ((await window.G.db.get("kv", "board:mockHistory:v1")) || {}).v || []; return h.length === 2 && h[1].pct > first; }, hist1[0] ? hist1[0].pct : 0, { timeout: 5000 });
 const hist2 = await history();
 hist2.length === 2 ? ok("'New board' resets history tracking - board 2 also saves (was silently dropped)") : bad("history length after board 2: " + hist2.length);
 (hist2.length === 2 && hist2[1].pct > hist1[0].pct)
