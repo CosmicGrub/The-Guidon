@@ -142,10 +142,21 @@ const attached = await until(page, async (planA) => {
 }, planA);
 check(attached, "Attach writes the roster-level snapshot copying exactly name/importedAt/dueDate/topicCount/savedAt from the chosen family");
 
-// The snapshot is deliberately small - never a citation list, topic names or coverage.
+// The snapshot is deliberately small - never a citation list, topic names or
+// coverage. A raw one-shot G.db.get() here (no retry) crashed under heavy CI
+// load with "Cannot read properties of undefined (reading 'v')" - the row
+// the until() above just confirmed exists became transiently unreadable on
+// the very next call under contention. Wait for a settled, readable row
+// (same two-step wait-then-read shape as `attached` above) before reading
+// its shape, instead of trusting a single call to observe it immediately.
+const snapshotReadable = await until(page, async () => {
+  const r = await window.G.db.get("kv", window.G.leader.MOI_KEY);
+  return !!(r && r.v);
+});
+check(snapshotReadable, "the snapshot row is settled and readable before inspecting its shape");
 const snapshotShape = await page.evaluate(async () => {
   const r = await window.G.db.get("kv", window.G.leader.MOI_KEY);
-  return r.v ? Object.keys(r.v).sort() : null;
+  return (r && r.v) ? Object.keys(r.v).sort() : null;
 });
 check(JSON.stringify(snapshotShape) === JSON.stringify(["dueDate", "importedAt", "name", "savedAt", "topicCount"].sort()),
   "the snapshot holds exactly the 5 documented scalar fields, nothing more", () => JSON.stringify(snapshotShape));
