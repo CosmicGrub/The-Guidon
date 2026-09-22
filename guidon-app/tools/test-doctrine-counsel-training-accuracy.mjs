@@ -60,10 +60,10 @@ const truth = await page.evaluate(() => {
   const propAcct = ["doc-flipl-financial-liability-investigation-of", "doc-hand-receipt-types-and-responsibilities"].map(byId).filter(Boolean);
   const newCards = ["counsel-proc-1", "counsel-proc-2", "adp70-8step-1", "adp70-8step-2"].map((id) => { const q = cards.find((c) => c.id === id); return q ? { id, category: q.category, pillar: q.pillar } : null; });
   return {
-    cp: cp ? { title: cp.title, ref: cp.source.ref, asOf: cp.source.asOf, confidence: cp.confidence, pillar: cp.pillar } : null,
-    ts: ts ? { title: ts.title, ref: ts.source.ref, asOf: ts.source.asOf, confidence: ts.confidence, pillar: ts.pillar } : null,
-    c4856: c4856 ? { ref: c4856.source.ref, asOf: c4856.source.asOf } : null,
-    propAcctAsOf: propAcct.map((e) => e.source.asOf),
+    cp: cp ? { title: cp.title, ref: cp.source[0].pub, asOf: cp.source[0].edition, confidence: cp.confidence, pillar: cp.pillar } : null,
+    ts: ts ? { title: ts.title, ref: ts.source[0].pub, asOf: ts.source[0].edition, confidence: ts.confidence, pillar: ts.pillar } : null,
+    c4856: c4856 ? { ref: c4856.source[0].pub, asOf: c4856.source[0].edition } : null,
+    propAcctAsOf: propAcct.map((e) => e.source[0].edition),
     newCards,
   };
 });

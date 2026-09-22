@@ -130,7 +130,7 @@ console.log("\nC16 - weapon safety rules say what TC 3-22.9 says");
   (d && /positive identification of the target and its surroundings/i.test(d.body) && !/keep the weapon on SAFE/i.test(d.body))
     ? ok("doctrine entry doc-weapons-1 lists TC 3-22.9's four rules (Rule 4 = positive identification)")
     : bad("doc-weapons-1 body: " + (d ? d.body.slice(0, 200) : "missing"));
-  (d && d.source && d.source.para === "1-6 to 1-14") ? ok("...and cites the paragraphs the rules are in (1-6 to 1-14)") : bad("doc-weapons-1 source: " + JSON.stringify(d && d.source));
+  (d && d.source && d.source.some((s) => s.para === "1-6 to 1-14")) ? ok("...and cites the paragraphs the rules are in (1-6 to 1-14)") : bad("doc-weapons-1 source: " + JSON.stringify(d && d.source));
 }
 
 /* ---- C19: the NCO Creed is an official text - quote it exactly or not at all ---- */
@@ -191,13 +191,13 @@ console.log("\nC40/U31/U28 - the bank teaches one answer, from the current editi
 
   /* (3) CSDP: AR 710-4 (15 Apr 2026) chapter 3 establishes it; AR 710-2 (1 Jul 2024) para 2-3 only points there. */
   const csdpDoc = doctrine.find((d) => d.id === "doc-maint-3");
-  (csdpDoc && /AR 710-4/.test(csdpDoc.source.ref) && !/AR 710-2/.test(csdpDoc.source.ref) && !/Program \(AR 710-2\)/.test(csdpDoc.body))
+  (csdpDoc && csdpDoc.source.some((s) => /AR 710-4/.test(s.pub)) && !csdpDoc.source.some((s) => /AR 710-2/.test(s.pub)) && !/Program \(AR 710-2\)/.test(csdpDoc.body))
     ? ok("doctrine entry doc-maint-3 puts the CSDP under AR 710-4, matching the card") : bad("doc-maint-3 source: " + JSON.stringify(csdpDoc && csdpDoc.source));
   const csdpCards = bank.filter((q) => /Command Supply Discipline Program \(CSDP\)/.test(q.q));
   (csdpCards.length >= 1 && csdpCards.every((q) => /AR 710-4/.test(q.source) && !/USARJ|command policy/i.test(allText(q))))
     ? ok("the CSDP card cites AR 710-4 itself - not one command's local policy memo") : bad("CSDP card sources: " + JSON.stringify(csdpCards.map((q) => q.source)));
   /* The real consumer: searching doctrine for "CSDP" must not surface an AR 710-2 answer. */
-  const found = await page.evaluate(() => G.store.doctrine("Command Supply Discipline").map((d) => ({ id: d.id, ref: d.source && d.source.ref })));
+  const found = await page.evaluate(() => G.store.doctrine("Command Supply Discipline").map((d) => ({ id: d.id, ref: (d.source || []).map((s) => s.pub).join("; ") })));
   (found.length >= 1 && found.every((d) => !/710-2/.test(d.ref || ""))) ? ok("a doctrine search for the CSDP returns only AR 710-4 entries") : bad("doctrine search: " + JSON.stringify(found));
 
   /* (3b) Hand-receipt and inventory rules moved from the 2008 AR 710-2 to AR 710-4 (15 Apr 2026): Table 16-1, Table 1-1, para 4-7. */
@@ -297,7 +297,7 @@ console.log("\nC17 - honest card-back headings and real citations");
   uncited.length === 0 ? ok("every 92A card cites at least one Army publication by number") : bad(uncited.length + " 92A cards cite no publication: " + uncited.slice(0, 6).map((q) => q.id + " [" + q.source + "]").join("; "));
   const vague = packCards.filter((q) => /Army sustainment doctrine|Army supply procedures|Applicable Army program regulations|GCSS-Army procedures|CMF 92 career guidance|^GCSS-Army$/.test(q.source));
   vague.length === 0 ? ok("no pack card is sourced to a vague phrase (\"Army sustainment doctrine\", \"Army supply procedures\", ...)") : bad("vague sources: " + vague.slice(0, 6).map((q) => q.id + " [" + q.source + "]").join("; "));
-  const scRefs = await page.evaluate(() => ["sc-92a-critical-part-overdue", "sc-92a-inventory-discrepancy"].map((id) => { const s = G.store.scenario(id); return s ? (s.doctrine || []).map((d) => d.ref) : null; }));
+  const scRefs = await page.evaluate(() => ["sc-92a-critical-part-overdue", "sc-92a-inventory-discrepancy"].map((id) => { const s = G.store.scenario(id); return s ? (s.doctrine || []).map((d) => d.pub) : null; }));
   scRefs.every((r) => r && r.length && r.every((x) => PUB.test(x))) ? ok("both 92A Train scenarios cite numbered publications too (" + scRefs.map((r) => r.join(" + ")).join("; ") + ")") : bad("92A scenario doctrine refs: " + JSON.stringify(scRefs));
   const classI = bank.find((q) => q.q === "What is Class I?");
   (classI && !/drinking water/.test(classI.a)) ? ok("Class I is subsistence; water is not folded into it (ATP 4-42 paras 1-22, 1-38)") : bad("Class I answer: " + (classI && classI.a));

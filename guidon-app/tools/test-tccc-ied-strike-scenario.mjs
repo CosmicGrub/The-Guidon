@@ -61,7 +61,7 @@ async function newPage() {
     const sc = window.G.store.scenario("sc-tccc-ied-strike");
     if (!sc) return { found: false };
     const v = window.G.author && window.G.author.validate ? window.G.author.validate(sc) : null;
-    return { found: true, doctrineRef: sc.doctrine && sc.doctrine[0] && sc.doctrine[0].ref, competency: sc.competency, tier: sc.tier, nodeCount: Object.keys(sc.nodes).length, validate: v };
+    return { found: true, doctrineRef: sc.doctrine && sc.doctrine[0] && sc.doctrine[0].pub, competency: sc.competency, tier: sc.tier, nodeCount: Object.keys(sc.nodes).length, validate: v };
   });
   truth.found ? ok('seed ground truth: found scenario "sc-tccc-ied-strike"') : bad("sc-tccc-ied-strike not found in GUIDON_SEED.scenarios.scenarios");
   truth.doctrineRef === "ATP 4-02.11" ? ok("cites the real, current ATP 4-02.11 (not the superseded TC 4-02.1)") : bad("wrong/missing doctrine ref: " + truth.doctrineRef);

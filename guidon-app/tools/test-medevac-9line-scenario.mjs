@@ -55,7 +55,7 @@ async function newPage() {
     const sc = window.G.store.scenario("sc-medevac-9line-callin");
     if (!sc) return { found: false };
     const v = window.G.author && window.G.author.validate ? window.G.author.validate(sc) : null;
-    return { found: true, doctrineRef: sc.doctrine && sc.doctrine[0] && sc.doctrine[0].ref, nodeCount: Object.keys(sc.nodes).length, validate: v };
+    return { found: true, doctrineRef: sc.doctrine && sc.doctrine[0] && sc.doctrine[0].pub, nodeCount: Object.keys(sc.nodes).length, validate: v };
   });
   truth.found ? ok('seed ground truth: found scenario "sc-medevac-9line-callin"') : bad("sc-medevac-9line-callin not found");
   truth.doctrineRef === "ATP 4-02.2" ? ok("cites the real ATP 4-02.2 (the 9-line's actual source publication)") : bad("wrong/missing doctrine ref: " + truth.doctrineRef);

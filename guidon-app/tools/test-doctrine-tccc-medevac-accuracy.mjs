@@ -58,7 +58,7 @@ const truth = await page.evaluate(() => {
     tcccConfidence: tccc ? tccc.confidence : null,
     tccc1Exists: !!tccc1,
     medevacTitle: medevac ? medevac.title : null,
-    medevacSourceRef: medevac && medevac.source ? medevac.source.ref : null,
+    medevacSourceRef: medevac && medevac.source && medevac.source[0] ? medevac.source[0].pub : null,
   };
 });
 
