@@ -18,6 +18,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { until } from "./testkit.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -52,8 +53,26 @@ async function referenceIconHTML(page, name) {
 }
 
 async function clickAndCheckNav(page, beforeHash) {
+  // { force: true } really is required: aria-disabled="true" makes
+  // Playwright's own actionability check refuse a plain click outright
+  // ("element is not enabled") even though nothing blocks pointer-events -
+  // confirmed by reverting this once and watching it time out 100% of the
+  // time, not just under load. A forced click bypasses that check, but a
+  // trusted force-click's dispatch can itself still be swallowed by
+  // Chromium under extreme CI contention (the same class of flake
+  // clickAndFindNativeTab() in test-nav-tier2ab.mjs already documents and
+  // retries once for) - a hash-unchanged pass with an empty toast is
+  // consistent with exactly that: the click dispatch never actually
+  // reached the page, so nothing ran, including the onclick that would
+  // have changed the hash away OR set the toast. Retry the click once if
+  // the toast never shows up, same shape as that established fix.
   await page.locator('.nav a[data-hash="#/group"]').click({ force: true });
   await page.waitForTimeout(300);
+  const toastShown = await until(page, () => !!(document.getElementById("toast") && document.getElementById("toast").textContent), undefined, { timeout: 2000 });
+  if (!toastShown) {
+    await page.locator('.nav a[data-hash="#/group"]').click({ force: true });
+    await until(page, () => !!(document.getElementById("toast") && document.getElementById("toast").textContent), undefined, { timeout: 2000 });
+  }
   return page.evaluate(() => location.hash);
 }
 
