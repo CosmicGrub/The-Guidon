@@ -1601,8 +1601,21 @@ window.G = window.G || {};
       const genDrillCb = el("input", { type: "checkbox", id: "moi-opt-drill" }); genDrillCb.checked = true;
       optWrap.appendChild(el("div", { style: "display:flex;gap:8px;align-items:center;margin:4px 0" }, [savePlanCb, el("label", { "for": "moi-opt-save", text: "Save as my study plan" })]));
       optWrap.appendChild(el("div", { style: "display:flex;gap:8px;align-items:center;margin:4px 0" }, [genDrillCb, el("label", { "for": "moi-opt-drill", text: "Generate a practice drill now" })]));
+      // Squad MOI Briefing Tracker (leader.js, Phase 2): an optional due
+      // date for THIS plan, carried onto plan.dueDate below. Nothing here
+      // reads or writes it beyond storing the typed value - a leader who
+      // later attaches this plan to their roster (a separate, leader-owned
+      // snapshot leader.js writes on its own, never this module's concern)
+      // copies it in as a plain scalar at that moment. Blank is a completely
+      // normal value: most Soldiers importing an MOI have no reason to set
+      // one at all.
+      const dueDateInp = el("input", { type: "date", id: "moi-opt-duedate", "aria-label": "Due date (optional)" });
+      optWrap.appendChild(el("div", { style: "margin:8px 0 4px" }, [
+        el("label", { "for": "moi-opt-duedate", text: "Due date (optional)", style: "display:block;margin-bottom:4px" }),
+        dueDateInp,
+      ]));
       const buildBtn = el("button.btn.primary", { type: "button", text: "Build →", style: "margin-top:8px" });
-      buildBtn.addEventListener("click", () => build(items, sourceText, savePlanCb.checked, genDrillCb.checked, targetFamilyId));
+      buildBtn.addEventListener("click", () => build(items, sourceText, savePlanCb.checked, genDrillCb.checked, dueDateInp.value, targetFamilyId));
       optWrap.appendChild(buildBtn);
       stage.appendChild(optWrap);
 
@@ -1729,7 +1742,7 @@ window.G = window.G || {};
     }
 
     // ---- Build -----------------------------------------------------------
-    function build(items, sourceText, savePlan, genDrill, targetFamilyId) {
+    function build(items, sourceText, savePlan, genDrill, dueDate, targetFamilyId) {
       const topicAgg = new Map(); // topicName -> { doctrineCards, selfCheckQuestions, citationKey, boardCategory, tier }
       const boardCatsForDrill = new Set();
       items.forEach((it) => {
@@ -1778,6 +1791,11 @@ window.G = window.G || {};
       const plan = {
         name: cleanForPlan(detectMoiName(sourceText)) || ("MOI imported " + new Date().toLocaleDateString()),
         importedAt: Date.now(),
+        // Squad MOI Briefing Tracker (leader.js, Phase 2): an optional,
+        // Soldier-typed "when is this due" date, always a plain "" or a
+        // YYYY-MM-DD string, never inferred or required. A blank value is
+        // normal and just as valid as a real date to every reader of it.
+        dueDate: dueDate || "",
         topics: topicNames,
         topicCoverage: topicCoverage,
         topicLinks: topicLinks,

@@ -28,6 +28,28 @@ window.G = window.G || {};
   const KEY = "guidon:leader:roster:v1";
   const DAY = 86400000;
 
+  // Squad MOI Briefing Tracker (Phase 2 of the MOI Import overhaul). A
+  // DELIBERATELY small snapshot the leader creates via an explicit action -
+  // { name, importedAt, dueDate, topicCount, savedAt }, 5 scalars, nothing
+  // else. No citation list, no topic names, no coverage counts: GUIDON has
+  // no account system, no sync layer, no cross-device channel of any kind,
+  // so a Soldier's own guidon:moi:plans:v1 data physically cannot and must
+  // not appear on a leader's device. This is a SNAPSHOT, not a live link -
+  // it does not update itself if the Soldier's own MOI plan changes later
+  // (there is no channel for that anyway); a leader who wants a fresh one
+  // takes a new explicit action (see attachFamily()/the "Replace" flow
+  // below). What this key answers is the narrow, honest question leader.js
+  // was already built to answer for counselling/AFT/weapons/NCOER: has this
+  // Soldier been walked through the MOI, as a dated fact the LEADER
+  // personally records - never a performance narrative, never a synced fact
+  // from the Soldier's own device.
+  const MOI_KEY = "guidon:leader:roster:moi:v1";
+  // Rendered list is capped the same way buildList()'s own LIST_CAP is
+  // (see its comment above) - a per-Soldier date input + hint + Remind
+  // button is 3+ live DOM nodes with their own listeners, and this panel
+  // renders one row per roster entry regardless of the text filter above.
+  const MOI_LIST_CAP = 25;
+
   /* Tracked per Soldier. Dates only - deliberately no free-text assessment. */
   // Enhancement backlog round 4, "Isolated feature-parity gaps across
   // study and career tools" bucket: added remindKind/remindLabel to all
@@ -96,6 +118,26 @@ window.G = window.G || {};
     async function persist() {
       try { await G.db.put("kv", { k: KEY, v: roster }); } catch (e) { /* offline-safe */ }
     }
+
+    // ---- Squad MOI Briefing Tracker: load the leader's own snapshot (if
+    // any) and the list of MOI plan families G.moiImport has saved on THIS
+    // device (if that module is even present in this build - guarded, like
+    // every other cross-module read this file does). Neither read touches
+    // the Soldier's own citations/coverage - loadMoiFamilies() only needs
+    // family.current.name/importedAt/topics.length for the attach picker
+    // below.
+    let moiSnapshot = null;
+    try { const mr = await G.db.get("kv", MOI_KEY); moiSnapshot = (mr && mr.v) || null; } catch (e) { /* offline-safe */ }
+    async function loadMoiFamilies() {
+      if (!G.moiImport || !G.moiImport.PLANS_KEY) return [];
+      try {
+        const r = await G.db.get("kv", G.moiImport.PLANS_KEY);
+        return (r && Array.isArray(r.v)) ? r.v : [];
+      } catch (e) { return []; }
+    }
+    let moiFamilies = await loadMoiFamilies();
+    let moiPicking = false; // true while "Replace shared MOI" is mid-flow
+    let moiListExpanded = false;
 
     /* ---- the privacy statement, first, not buried ---- */
     const priv = el("div.panel", { style: "margin-bottom:10px;border-left:3px solid var(--amber)" });
@@ -203,6 +245,228 @@ window.G = window.G || {};
         }
       }
       renderFlagged();
+    }
+
+    // ---- Squad MOI Briefing Tracker --------------------------------------
+    // A leader-entered date against a fixed, one-time due date - not the
+    // "N days since X" recurring cadence FIELDS/overdueFor() model above.
+    // Deliberately NOT folded into FIELDS: overdueFor() would either treat
+    // moiBriefed as perpetually re-due every `days` (wrong - an MOI
+    // briefing is a one-time completion, not a recurring requirement) or
+    // need its own special case bolted onto a table whose one job is
+    // representing a single shared shape. A separate small panel, matching
+    // its own real shape, is more honest than forcing a second shape into
+    // FIELDS.
+    function moiHintFor(sol) {
+      const briefed = sol.moiBriefed || "";
+      const due = moiSnapshot.dueDate ? parseDate(moiSnapshot.dueDate) : null;
+      if (!briefed) {
+        if (!due) return "Not yet briefed.";
+        const since = daysSince(due);
+        return since > 0
+          ? "Not yet briefed - " + since + " day" + (since === 1 ? "" : "s") + " past the due date."
+          : "Not yet briefed. Due in " + (-since) + " day" + (since === -1 ? "" : "s") + ".";
+      }
+      let text = "Briefed " + briefed + ".";
+      const bd = parseDate(briefed);
+      if (bd && due) text += bd.getTime() <= due.getTime() ? " On time." : " After the due date.";
+      return text;
+    }
+
+    // The "Attach an MOI" / "Squad MOI coverage" panel - one panel, two
+    // states. role="status" aria-live="polite" only on the coverage state
+    // (same convention `summary` above already establishes): that state
+    // rebuilds itself as a tally changes, the same reason buildSummary()
+    // wired it up in the first place. The attach/pick state is a one-time
+    // action, not a live status, so it carries neither attribute.
+    const moiPanel = el("div.panel", { id: "leader-moi-panel", style: "margin-bottom:10px" });
+
+    async function attachFamily(family) {
+      const plan = (family && family.current) || {};
+      // A previous snapshot's per-Soldier reminders (if any) are tied to
+      // ITS due date, which this new snapshot may not share - clear them
+      // before writing the new one, the same "clear before you add" order
+      // moi-import.js's own board-date reminder already follows on Replace.
+      // Best-effort and never fatal: a reminder cleanup failure must not
+      // block attaching the MOI itself.
+      try {
+        if (G.reminders && G.reminders.clearManagedFor) {
+          for (let i = 0; i < roster.length; i++) await G.reminders.clearManagedFor({ source: "leader-moi:" + i });
+        }
+      } catch (e) {}
+      moiSnapshot = {
+        name: plan.name || "Your MOI",
+        importedAt: plan.importedAt || null,
+        dueDate: plan.dueDate || "",
+        topicCount: (plan.topics || []).length,
+        savedAt: Date.now(),
+      };
+      try { await G.db.put("kv", { k: MOI_KEY, v: moiSnapshot }); } catch (e) { /* offline-safe */ }
+      moiPicking = false;
+      try { util.toast && util.toast("MOI attached to the roster."); } catch (e) {}
+      try { if (util.announce) util.announce("MOI attached: " + moiSnapshot.name + "."); } catch (e) {}
+      buildMoiPanel();
+    }
+
+    function buildMoiPanel() {
+      util.clear(moiPanel);
+      // Nothing attached and nothing available to attach - the panel is
+      // absent/inert, not just visually collapsed (no interactive controls
+      // in it at all).
+      if (!moiSnapshot && !moiFamilies.length) {
+        moiPanel.style.display = "none";
+        moiPanel.removeAttribute("role"); moiPanel.removeAttribute("aria-live");
+        return;
+      }
+      moiPanel.style.display = "";
+
+      if (!moiSnapshot || moiPicking) {
+        moiPanel.removeAttribute("role"); moiPanel.removeAttribute("aria-live");
+        moiPanel.appendChild(el("div.eyebrow", { text: "Attach an MOI" }));
+        if (!moiFamilies.length) {
+          moiPanel.appendChild(el("p.hint", { text: "No saved MOI plans are available to attach right now." }));
+        } else {
+          moiPanel.appendChild(el("p.hint", { text:
+            "Attach one of your saved MOI plans to the roster so you can record, as a leader, whether each Soldier has been walked through it. This copies only the MOI's name, import date, due date and topic count - never the Soldier's own citations or coverage - and it will NOT update itself later if the Soldier's own plan changes. Want a fresh copy? Attach again." }));
+          const sorted = moiFamilies.slice().sort((a, b) => ((b.current && b.current.importedAt) || 0) - ((a.current && a.current.importedAt) || 0));
+          if (sorted.length === 1) {
+            const only = sorted[0];
+            const btn = el("button.btn.sm", { type: "button", text: "Attach “" + ((only.current && only.current.name) || "your MOI") + "”" });
+            btn.addEventListener("click", () => attachFamily(only));
+            moiPanel.appendChild(btn);
+          } else {
+            // More than one saved plan family: the SAME picker convention
+            // moi-import.js's own menu() already uses to let a Soldier pick
+            // among several saved plans (card-results-grid of panel
+            // buttons, name + import date) - not a new pattern.
+            moiPanel.appendChild(el("p.hint", { text: "Pick which one:" }));
+            const grid = el("div.card-results-grid", { style: "margin-top:6px" });
+            sorted.forEach((family) => {
+              const plan = family.current || {};
+              const topicCount = (plan.topics || []).length;
+              const card = el("div.panel", { style: "margin-bottom:0" });
+              const fbtn = el("button", { type: "button",
+                "aria-label": "Attach " + (plan.name || "your MOI") + ", " + topicCount + " topic" + (topicCount === 1 ? "" : "s"),
+                style: "width:100%;text-align:left;background:none;border:none;cursor:pointer;padding:0;color:inherit;font:inherit" });
+              fbtn.appendChild(el("div.eyebrow", { text: plan.name || "Your MOI" }));
+              const dateStr = plan.importedAt ? new Date(plan.importedAt).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "";
+              fbtn.appendChild(el("p.hint", { style: "margin:4px 0 0", text: (dateStr ? "Imported " + dateStr + " · " : "") + topicCount + " topic" + (topicCount === 1 ? "" : "s") }));
+              fbtn.addEventListener("click", () => attachFamily(family));
+              card.appendChild(fbtn);
+              grid.appendChild(card);
+            });
+            moiPanel.appendChild(grid);
+          }
+        }
+        if (moiSnapshot) {
+          // Mid-"Replace" - offer a way back to the coverage view without
+          // picking a new one.
+          const cancelBtn = el("button.btn.sm.ghost", { type: "button", text: "Cancel", style: "margin-top:8px" });
+          cancelBtn.addEventListener("click", () => { moiPicking = false; buildMoiPanel(); });
+          moiPanel.appendChild(cancelBtn);
+        }
+        return;
+      }
+
+      // ---- Coverage state: moiSnapshot exists and we are not mid-Replace.
+      moiPanel.setAttribute("role", "status"); moiPanel.setAttribute("aria-live", "polite");
+      moiPanel.appendChild(el("div.eyebrow", { text: "Squad MOI coverage" }));
+      const dueStr = moiSnapshot.dueDate ? new Date(moiSnapshot.dueDate + "T00:00:00").toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "no due date set";
+      moiPanel.appendChild(el("p", { text: (moiSnapshot.name || "Your MOI") + " · due " + dueStr }));
+
+      const tallyEl = el("p.hint");
+      function refreshTally() {
+        const briefedCount = roster.filter((s) => s.moiBriefed).length;
+        tallyEl.textContent = briefedCount + " of " + roster.length + (roster.length === 1 ? " Soldier" : " Soldiers") + " briefed";
+      }
+      refreshTally();
+      moiPanel.appendChild(tallyEl);
+
+      if (!roster.length) {
+        moiPanel.appendChild(el("p.hint", { text: "No Soldiers on the roster yet." }));
+      } else {
+        const rowsWrap = el("div");
+        const indexed = roster.map((sol, idx) => ({ sol: sol, idx: idx }));
+        const shown = moiListExpanded ? indexed : indexed.slice(0, MOI_LIST_CAP);
+        shown.forEach((entry) => {
+          const sol = entry.sol, idx = entry.idx;
+          const row = el("div", { "data-moi-row-idx": String(idx), style: "margin-top:8px;padding-top:8px;border-top:1px solid var(--line)" });
+          row.appendChild(el("div.k", { text: (sol.rank ? sol.rank + " " : "") + (sol.name || "(unnamed)") }));
+          // Same per-field date-input + persist() + hint-refresh shape as
+          // every FIELDS row above (grep refreshHint()/inp.addEventListener
+          // there) - just for one field, across every Soldier, in one place,
+          // instead of once per Soldier's own card.
+          const inp = el("input.ob-input", { type: "date", value: sol.moiBriefed || "",
+            "aria-label": "MOI briefed for roster entry " + (idx + 1), style: "width:100%;margin-top:4px" });
+          row.appendChild(inp);
+          const hintEl = el("div.hint");
+          function refreshHint() { hintEl.textContent = moiHintFor(sol); }
+          refreshHint();
+          row.appendChild(hintEl);
+
+          const rb = el("button.btn.sm.ghost", { type: "button", text: "Remind me", style: "margin-top:6px" });
+          function refreshRemindVisibility() { rb.style.display = (sol.moiBriefed || !moiSnapshot.dueDate) ? "none" : ""; }
+          refreshRemindVisibility();
+          if (G.reminders && G.reminders.addManaged) {
+            rb.addEventListener("click", async function () {
+              const who = (sol.rank ? sol.rank + " " : "") + (sol.name || "Soldier " + (idx + 1));
+              // No dedicated Reminders kind for an MOI briefing (same
+              // no-kind-for-this gap NCOER already has above - remindKind:
+              // "other") - "other" is the established fallback, not a new
+              // one invented for this feature.
+              const updated = await G.reminders.addManaged({ kind: "other", label: "Brief " + who + " on " + (moiSnapshot.name || "the MOI"), date: moiSnapshot.dueDate, source: "leader-moi:" + idx });
+              if (!updated) { try { util.toast && util.toast("You've reached the " + G.reminders.MAX + "-reminder limit — remove an old one first."); } catch (e) {} return; }
+              try { if (G.notify) await G.notify.scheduleForReminder(updated[updated.length - 1]); } catch (e) {}
+              try { if (util.announce) util.announce("Reminder set: Brief " + who + "."); } catch (e) {}
+              rb.disabled = true; rb.textContent = "Reminder set";
+            });
+            row.appendChild(rb);
+          }
+
+          inp.addEventListener("change", function () {
+            sol.moiBriefed = inp.value; persist();
+            if (!sol.moiBriefed) { rb.disabled = false; rb.textContent = "Remind me"; } // cleared - offer it again
+            refreshHint(); refreshTally(); refreshRemindVisibility();
+          });
+          rowsWrap.appendChild(row);
+        });
+        moiPanel.appendChild(rowsWrap);
+        if (!moiListExpanded && roster.length > MOI_LIST_CAP) {
+          const more = el("button.btn.sm.ghost", { type: "button",
+            text: "Show all " + roster.length + " (" + (roster.length - MOI_LIST_CAP) + " more)", style: "margin-top:8px" });
+          more.addEventListener("click", function () { moiListExpanded = true; buildMoiPanel(); });
+          moiPanel.appendChild(more);
+        }
+      }
+
+      const actionsRow = el("div.btn-row", { style: "gap:8px;flex-wrap:wrap;margin-top:10px" });
+      const replaceBtn = el("button.btn.sm.ghost", { type: "button", text: "Replace shared MOI" });
+      replaceBtn.addEventListener("click", () => { moiPicking = true; buildMoiPanel(); });
+      actionsRow.appendChild(replaceBtn);
+      // Destructive-action confirm, mirroring this file's own "Clear
+      // roster" pattern below (G.modal.confirm + danger:true) - deletes
+      // ONLY the shared snapshot. Every Soldier's own moiBriefed date is
+      // left exactly as recorded: it is the leader's own completed-action
+      // record, not a live sync flag tied to the snapshot's existence.
+      const detachBtn = el("button.btn.sm.ghost", { type: "button", text: "Detach shared MOI" });
+      detachBtn.addEventListener("click", async () => {
+        const yes = await G.modal.confirm(
+          "Detach the shared MOI from this roster? Each Soldier's briefed date stays exactly as recorded - only the shared MOI snapshot goes.",
+          { okText: "Detach", danger: true });
+        if (!yes) return;
+        try {
+          if (G.reminders && G.reminders.clearManagedFor) {
+            for (let i = 0; i < roster.length; i++) await G.reminders.clearManagedFor({ source: "leader-moi:" + i });
+          }
+        } catch (e) {}
+        moiSnapshot = null; moiPicking = false;
+        try { await G.db.del("kv", MOI_KEY); } catch (e) { /* offline-safe */ }
+        try { util.toast && util.toast("Shared MOI detached."); } catch (e) {}
+        try { if (util.announce) util.announce("Shared MOI detached."); } catch (e) {}
+        buildMoiPanel();
+      });
+      actionsRow.appendChild(detachBtn);
+      moiPanel.appendChild(actionsRow);
     }
 
     let filterTerm = "";
@@ -363,7 +627,7 @@ window.G = window.G || {};
           const label = (sol.rank ? sol.rank + " " : "") + (sol.name || "this entry");
           const yes = await G.modal.confirm("Remove " + label + " from the roster?", { okText: "Remove", danger: true });
           if (!yes) return;
-          roster.splice(idx, 1); await persist(); buildSummary(); buildList();
+          roster.splice(idx, 1); await persist(); buildSummary(); buildList(); buildMoiPanel();
           // Deep-gap follow-up ("Screen-Reader Announcements" bucket): same
           // fix reminders.js's own row-remove handler already applies (see
           // its own "redraw() clears and rebuilds every row" comment,
@@ -489,8 +753,13 @@ window.G = window.G || {};
     const controls = el("div.panel", { style: "margin-bottom:10px" });
     const addBtn = el("button.btn.primary", { type: "button", text: "+ Add Soldier", style: "margin-right:6px" });
     addBtn.addEventListener("click", async function () {
-      roster.push({ rank: "", name: "", mos: "", counseled: "", aft: "", wpn: "", ncoer: "" });
-      await persist(); buildSummary(); buildList();
+      // moiBriefed: "" - stored inline exactly like counseled/aft/wpn/ncoer
+      // above, a leader-entered date only, default unset. Not one of
+      // FIELDS: see moiHintFor()'s own comment on why this field's shape
+      // (one-time completion against a fixed due date) doesn't fit
+      // overdueFor()'s recurring-cadence model.
+      roster.push({ rank: "", name: "", mos: "", counseled: "", aft: "", wpn: "", ncoer: "", moiBriefed: "" });
+      await persist(); buildSummary(); buildList(); buildMoiPanel();
     });
     const clrBtn = el("button.btn.sm.ghost", { type: "button", text: "Clear roster" });
     clrBtn.addEventListener("click", async function () {
@@ -499,7 +768,7 @@ window.G = window.G || {};
         "Delete all " + roster.length + " roster entries from this device? This cannot be undone.",
         { okText: "Delete all", danger: true });
       if (!yes) return;
-      roster = []; await persist(); buildSummary(); buildList();
+      roster = []; await persist(); buildSummary(); buildList(); buildMoiPanel();
     });
     controls.appendChild(addBtn); controls.appendChild(clrBtn);
 
@@ -522,6 +791,7 @@ window.G = window.G || {};
 
     const rosterDetail = el("div");
     rosterDetail.appendChild(summary);
+    rosterDetail.appendChild(moiPanel);
     rosterDetail.appendChild(controls);
     rosterDetail.appendChild(list);
     mount.appendChild(el("div.list-detail", {}, [rosterList, rosterDetail]));
@@ -539,8 +809,9 @@ window.G = window.G || {};
 
     buildSummary();
     buildList();
+    buildMoiPanel();
   }
 
-  G.leader = { render: render, FIELDS: FIELDS, KEY: KEY, overdueFor: overdueFor };
+  G.leader = { render: render, FIELDS: FIELDS, KEY: KEY, overdueFor: overdueFor, MOI_KEY: MOI_KEY };
 })();
 // END leader.js

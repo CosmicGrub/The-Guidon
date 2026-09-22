@@ -693,8 +693,8 @@ jobs:
             tests: "test:guest-saves-nothing test:backup-new-tools test:storage-contract-lint test:cyber-fundamentals"
           - name: "55-drillsprtsourcing-mosdecks-prtsessionfetchedseed-ptsessioncomposer"
             tests: "test:drills-prt-sourcing test:mos-decks test:prt-session-fetched-seed test:pt-session-composer"
-          - name: "56-screenlayouts-calendarzeroboard-pttaskingboard"
-            tests: "test:screen-layouts test:calendar-zero-board test:pt-tasking-board"
+          - name: "56-screenlayouts-calendarzeroboard-pttaskingboard-leadermoitracker"
+            tests: "test:screen-layouts test:calendar-zero-board test:pt-tasking-board test:leader-moi-tracker"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
