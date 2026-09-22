@@ -392,10 +392,33 @@ Hair / Yellow Ribbon," needs a real musicologist/legal read before
 either version ships); and several titles (including "I Wish That All
 the Ladies") that are real and old but need an explicit content-policy
 call (default-off/opt-in/exclude) rather than default inclusion.
-**Blocked on**: the policy decision for the borderline titles, and
-deciding where this content actually lives in the app (new route vs.
-folded into Creeds & Branch Identities) before any of the ~35 cleared
-cadences ship as real content.
+**Owner decisions made (2026-09-22):** cadences fold into the existing
+Creeds & Branch Identities screen as a new group, not a separate route;
+borderline titles (e.g. "I Wish That All the Ladies") ship default-off,
+opt-in via Settings, not excluded outright.
+
+**New blocker found the same day, upstream of both decisions above:**
+the actual cadence text can't be authored by an AI coding assistant -
+"never reproduce song lyrics in any form" is a hard, non-negotiable
+constraint on that tooling, independent of this project's own copyright
+clearance for the ~35 titles. Concretely: someone (a human, following
+this file's own citation-honesty standard) needs to type or paste the
+actual cleared verses in, the same way `creed-spirit-of-the-cav`
+(`src/app-modules/05-spirit-of-the-cav.js`) already handles a text this
+project can't reproduce - title + history + real citation, no verse
+text, "add your own copy in Recitation Drill under My unit" as the
+honest alternative - which is very likely the right shape for the
+borderline/default-off titles regardless of who sources them. No seed
+schema work is blocked by this (Wave 1's `source:[{pub,edition,para,
+quoteKind}]` shape, shipped in v1.15.0, is exactly what a cadence entry
+would use), and no UI work is blocked either - there is just nothing to
+attach it to until real title+text pairs exist. Next session picking
+this up: get the real ~35-title list (with citations) from a source
+that doesn't require an AI to output lyric text - a human copy-paste
+pass, or a research agent instructed to extract titles/citations/history
+ONLY and never the verses themselves - then build the Creeds "Cadences"
+group and the default-off Settings toggle against that real list, not
+before.
 
 ---
 
