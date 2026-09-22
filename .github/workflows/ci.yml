@@ -695,8 +695,8 @@ jobs:
             tests: "test:drills-prt-sourcing test:mos-decks test:prt-session-fetched-seed test:pt-session-composer"
           - name: "56-screenlayouts-calendarzeroboard-pttaskingboard-leadermoitracker"
             tests: "test:screen-layouts test:calendar-zero-board test:pt-tasking-board test:leader-moi-tracker"
-          - name: "57-contentpackengine-lintcontentpacks-mergeseedcontentpacks"
-            tests: "test:content-pack-engine test:lint-content-packs test:merge-seed-content-packs"
+          - name: "57-contentpackengine-lintcontentpacks-mergeseedcontentpacks-searchscreens"
+            tests: "test:content-pack-engine test:lint-content-packs test:merge-seed-content-packs test:search-screens"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same

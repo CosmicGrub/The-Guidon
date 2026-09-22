@@ -36303,7 +36303,7 @@ window.G = window.G || {};
       mount.appendChild(el("div.settings-zone-h", { text: "Appearance & Accessibility" }));
       accGrid = el("div.panel-grid-2");
       mount.appendChild(accGrid);
-      const apPanel = el("div.panel", { id: "settings-theme-panel" });
+      const apPanel = el("div.panel", { id: "settings-theme-panel", tabindex: "-1" });
       apPanel.appendChild(el("label", { text: "Theme" }));
 
       // Collapsed by default: the always-open 24-theme wall made Settings the
@@ -36438,7 +36438,7 @@ window.G = window.G || {};
       // carry its own margin-top (align-items:start means it just pushes
       // that one cell down from the row's start line, breaking row
       // alignment instead of being absorbed like block-flow margins are).
-      const layoutPanel = el("div.panel", { id: "settings-layout-panel" });
+      const layoutPanel = el("div.panel", { id: "settings-layout-panel", tabindex: "-1" });
       layoutPanel.appendChild(el("label", { text: "Screen Layouts" }));
       layoutPanel.appendChild(el("p.hint", { text: "Choose how PT Planner and Career Calendar are laid out. \"Shared grid\" draws both through the same weekday-grid view, so the two screens can look and feel unified." }));
       function layoutSelect(label, settingKey, layoutsSource, hash) {
@@ -36593,7 +36593,7 @@ window.G = window.G || {};
       // that can never do anything. The permission prompt fires from THIS
       // toggle alone, never at launch. */
       if (G.notify && G.notify.supported()) {
-        const notif = el("div.panel", { id: "settings-notif-panel", style: "margin-top:12px" });
+        const notif = el("div.panel", { id: "settings-notif-panel", tabindex: "-1", style: "margin-top:12px" });
         notif.appendChild(el("label", { text: "Notifications" }));
         const notifInput = el("input", { type: "checkbox", "aria-label": "Reminder notifications" });
         notifInput.checked = !!s2.notifyReminders;
@@ -36692,7 +36692,7 @@ window.G = window.G || {};
       // else, and never on plain route navigation - see that module's own
       // header comment for the full fail-open reasoning.
       if (G.biometric && G.biometric.supported()) {
-        const bio = el("div.panel", { id: "settings-bio-panel", style: "margin-top:12px" });
+        const bio = el("div.panel", { id: "settings-bio-panel", tabindex: "-1", style: "margin-top:12px" });
         bio.appendChild(el("label", { text: "Biometric lock" }));
         const bioInput = el("input", { type: "checkbox", "aria-label": "Biometric lock for Personal Account" });
         bioInput.checked = !!s2.biometricLock;
@@ -37044,7 +37044,7 @@ window.G = window.G || {};
     mount.appendChild(el("div.settings-zone-h", { text: "Data, Help & About" }));
     const dataGrid = el("div.panel-grid-2");
     mount.appendChild(dataGrid);
-    const dataPanel = el("div.panel", { id: "settings-databackup-panel", style: "margin-top:12px" });
+    const dataPanel = el("div.panel", { id: "settings-databackup-panel", tabindex: "-1", style: "margin-top:12px" });
     dataPanel.appendChild(el("label", { text: "Data & Backup" }));
     const importInput = el("input", { type: "file", accept: "application/json,.json", style: "display:none" });
     // Enhancement backlog round 1, "Settings Import Backup" bucket: this
