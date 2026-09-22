@@ -95,19 +95,24 @@
   }
 
   // ---- Completion contract --------------------------------------------------
-  // A step is recorded as done ONLY on a real completion signal. "The practice
-  // screen closed" is not one: the scenario engine's header Exit button and
-  // its outcome screen's Done button both come back through the same callback
-  // with no arguments, so tapping Exit on the very first question used to mark
-  // the step Complete. The signals accepted, per kind of step:
-  //   scenario  - the engine's own exit result says completed:true (the
-  //               collective adapter reports one today), OR the attempt log
-  //               gained a row for this step's scenario since the step was
-  //               opened. The engine saves exactly one attempt row at the
-  //               moment the Soldier reaches an outcome screen and at no other
-  //               time, so that row IS "finished a run" - including finish,
-  //               Replay, then Exit halfway, which a bare finished/cancelled
-  //               flag on the last session would lose.
+  // A step is recorded as done ONLY on a real completion signal. ROADMAP 3g
+  // item H: G.engine.run()'s onExit now reports { completed, cancelled,
+  // scenarioId } for both real exit paths (the header's Exit button and an
+  // outcome screen's Done/module-exit button) - before that fix, both came
+  // back through the same callback with no arguments at all, so tapping Exit
+  // on the very first question used to mark the step Complete. The signals
+  // accepted, per kind of step:
+  //   scenario  - the engine's own exit result says completed:true, OR the
+  //               attempt log gained a row for this step's scenario since the
+  //               step was opened. That second check stays even now that the
+  //               first one is real: the engine's callback is never called at
+  //               all for the fourth, honest way a session ends - navigating
+  //               away by the nav bar or back button - and that case needs
+  //               its own signal. The engine saves exactly one attempt row at
+  //               the moment the Soldier reaches an outcome screen and at no
+  //               other time, so that row IS "finished a run" - including
+  //               finish, Replay, then Exit halfway, which a bare
+  //               finished/cancelled flag on the last session would lose.
   //   mockboard - the Mock Board's own history gained an entry since the step
   //               was opened (reconcileKnowledge below).
   // Both are checked again on every render, so finishing and then leaving by
@@ -121,8 +126,9 @@
   }
   // The one question both paths ask (the practice screen's own close
   // callback, and the check at the top of every redraw). `result` is whatever
-  // the practice screen handed back when it closed - today the shared
-  // scenario engine hands back nothing at all, for Exit and Done alike.
+  // the practice screen handed back when it closed - a real
+  // { completed, cancelled, scenarioId } object now, for the two paths that
+  // call back at all (see the completion-contract note above).
   // A finished run outranks a later "cancelled": finish, Replay, Exit halfway
   // is still one finished run.
   async function scenarioStepFinished(marker, result) {

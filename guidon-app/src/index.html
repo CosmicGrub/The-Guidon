@@ -9995,7 +9995,7 @@ window.G = window.G || {};
       ]),
       progBar,
       seg,
-      el("button.btn.ghost.sm", { gi: "x", giSize: 13, text: "Exit", onclick: () => sess.onExit && sess.onExit() }),
+      el("button.btn.ghost.sm", { gi: "x", giSize: 13, text: "Exit", onclick: () => sess.onExit && sess.onExit({ completed: false, cancelled: true, scenarioId: sess.sc.id }) }),
     ]);
     return head;
   }
@@ -10349,7 +10349,7 @@ window.G = window.G || {};
     });
     acts.appendChild(replay);
     const exit = el("button.btn.ghost", { type: "button", gi: "x", giSize: 13, text: "Exit" });
-    exit.addEventListener("click", () => sess.onExit && sess.onExit());
+    exit.addEventListener("click", () => sess.onExit && sess.onExit({ completed: true, cancelled: false, scenarioId: sess.sc.id }));
     acts.appendChild(exit);
     root.appendChild(acts);
     sess.container.appendChild(root);
@@ -10565,7 +10565,7 @@ window.G = window.G || {};
         restart(sess, next);
       } }),
       el("button.btn.ghost", { gi: "printer", giSize: 14, text: "Print / Save", onclick: () => printAAR(sess, node, grade, total) }),
-      el("button.btn.ghost", { text: "Done", onclick: () => sess.onExit && sess.onExit() }),
+      el("button.btn.ghost", { text: "Done", onclick: () => sess.onExit && sess.onExit({ completed: true, cancelled: false, scenarioId: sess.sc.id }) }),
     ]));
     sess.container.appendChild(root);
     // focus the grade heading for screen-reader users
@@ -10585,6 +10585,20 @@ window.G = window.G || {};
     util.printHTML("After-Action Review — " + sess.sc.title, html);
   }
 
+  // ROADMAP 3g item H: G.engine.run()'s completion contract. onExit is called
+  // exactly once per session with { completed, cancelled, scenarioId } -
+  // completed:true at a real outcome screen (the AAR "Done" button, a
+  // training module's pass/fail "Exit"), completed:false/cancelled:true at
+  // the persistent header's "Exit" (bailed out mid-play). It is NEVER called
+  // for the fourth, honest way a session ends - the Soldier navigates away
+  // by the nav bar/back button with no callback firing at all - so a
+  // consumer that must not miss that case (mock-board-simulator.js's
+  // reconcileScenarios/finishedRunSince) still needs its own attempt-log
+  // fallback; this contract only replaces the GUESSING that fallback used to
+  // have to do for the two paths that DO call back. 00-roadmap-bootstrap.js's
+  // Collective-mode wrapper (runCollective/finish/header) already reports
+  // this exact shape and is the reference implementation this section was
+  // written to match, not the other way around.
   G.engine = {
     _pending: null,   // set by cross-links; consumed by views.train on next render
     run(scenarioId, mode, container, onExit) {
