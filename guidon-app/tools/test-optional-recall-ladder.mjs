@@ -34,6 +34,7 @@ import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 import { openAsOwner } from "./device-storage.mjs";
+import { untilAsync } from "./testkit.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -210,7 +211,11 @@ s.gradeRow && /twice in a row/.test(s.status) && s.focus === "got"
   ? ok("the ladder itself wrote NO review record - there is no second scheduler")
   : bad("the ladder wrote a review record on its own: " + JSON.stringify(await srsRow()));
 await page.locator("[data-ladder-mastered] .qz-grade-btn", { hasText: "Down Cold" }).click();
-await page.waitForFunction(async (id) => !!(await window.G.db.get("kv", "srs:" + id)), CREED, { timeout: 5000 }).catch(() => {});
+// page.waitForFunction() with an ASYNC predicate does not reliably await the
+// predicate's resolved value in this environment - untilAsync() polls the
+// real async DB read entirely in-page instead (see its own comment in
+// testkit.mjs).
+await untilAsync(page, async (id) => !!(await window.G.db.get("kv", "srs:" + id)), CREED, { timeout: 5000 });
 const graded = await srsRow();
 graded && graded.lastGrade === 3
   ? ok("tapping a grade there writes the card's ordinary review record (lastGrade 3), through the same path as every other grade")

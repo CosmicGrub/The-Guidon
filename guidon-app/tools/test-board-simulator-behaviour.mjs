@@ -29,6 +29,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { untilAsync } from "./testkit.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -232,7 +233,10 @@ for (let i = 0; i < 5; i++) {
   await page.locator("button.mb-score-btn").first().click();
 }
 await page.waitForFunction(() => !!document.querySelector(".mb-done"), null, WAIT).catch(() => {});
-await page.waitForFunction(async () => ((await G.db.getSetting("board:mockHistory:v1", [])) || []).length === 1, null, WAIT).catch(() => {});
+// page.waitForFunction() with an ASYNC predicate does not reliably await the
+// predicate's resolved value in this environment - untilAsync() polls the
+// real async DB read entirely in-page instead (see its own comment).
+await untilAsync(page, async () => ((await G.db.getSetting("board:mockHistory:v1", [])) || []).length === 1, null, WAIT);
 const rows = await srsRows();
 (rows.length === 5 && rows.every((r) => r.reps <= 1 && r.misses <= 1))
   ? ok("one Mock Board of 5 questions wrote exactly 5 review-schedule rows, each graded once (no double write)")
@@ -251,7 +255,8 @@ JSON.stringify(await srsRows()) === JSON.stringify(rows) ? ok("the simulator its
 /* ---- 5. Start over asks first, then lands focus somewhere useful ---- */
 await section("section 5", async () => {
 await page.locator("#board-sim-strong").fill("Kept answers short and looked at the president.");
-await page.waitForFunction(async () => ((await G.db.getSetting("board:sim:v1", {})).aarDraft || {}).strong === "Kept answers short and looked at the president.", null, WAIT).catch(() => {});
+// Same async-predicate waitForFunction gotcha as above.
+await untilAsync(page, async () => ((await G.db.getSetting("board:sim:v1", {})).aarDraft || {}).strong === "Kept answers short and looked at the president.", null, WAIT);
 await page.locator("button[data-board-sim-reset]").click();
 const dialog = page.locator(".gm-box[role=dialog]");
 await dialog.waitFor({ state: "visible", timeout: 20000 }).catch(() => {});
@@ -295,7 +300,8 @@ await page.evaluate(() => {
   G.engine.run("sc-iot-range-safety", "course", host, () => host.remove());
 });
 (await playToOutcome(page, "#outside-run")) ? ok(`the same scenario ("${abandoned}") finished outside the simulator`) : bad("outside run never reached an outcome");
-await page.waitForFunction(async () => (await G.db.allAttempts()).some((a) => a.scenarioId === "sc-iot-range-safety"), null, WAIT).catch(() => {});
+// Same async-predicate waitForFunction gotcha as above.
+await untilAsync(page, async () => (await G.db.allAttempts()).some((a) => a.scenarioId === "sc-iot-range-safety"), null, WAIT);
 await openSim();
 s = await stored();
 (s.judgmentDone === false && (await eyebrow(3)) === "Step 3") ? ok("...and that outside run does not tick the simulator's step 3") : bad("an outside run completed step 3: " + JSON.stringify(s));

@@ -428,25 +428,36 @@ export async function until(page, fn, arg, { timeout = PATIENCE_MS } = {}) {
  * tools/test-leader-moi-tracker.mjs in CI while passing every time
  * locally, unloaded).
  *
- * The fix: run the poll ENTIRELY in-page (a self-rescheduling setTimeout
- * loop against the real async source of truth, exactly where an async
- * condition can actually be awaited) and expose one synchronous boolean
- * flag for until() to watch - real condition-based waiting, not a fixed
- * sleep and not the broken async-predicate idiom above.
+ * The fix drives the poll from NODE, one page.evaluate() call per tick,
+ * instead of page.waitForFunction()'s broken predicate wrapper -
+ * page.evaluate() DOES correctly await a returned promise (standard,
+ * documented Playwright behaviour, unlike waitForFunction's polling). An
+ * earlier version of this helper ran a self-rescheduling setTimeout loop
+ * entirely in-page instead; that shape had three real problems this one
+ * does not: every call shared one window-level flag, so an abandoned
+ * (timed-out) loop whose condition later turned true could flip a LATER,
+ * unrelated call's result; a throwing predicate was swallowed into "not
+ * yet true" and polled until a plain timeout instead of surfacing (unlike
+ * until()'s own "still throws a real error" contract); and the daemon was
+ * torn down for good on a full page navigation, silently never satisfying
+ * a still-pending wait. Driving the loop from Node has none of those: all
+ * state is a local closure (no cross-call collisions, nothing left
+ * running after this function returns), a thrown predicate error rejects
+ * this call's own page.evaluate() and propagates immediately, and each
+ * tick's page.evaluate() simply targets whatever document is current.
  */
 export async function untilAsync(page, fn, arg, { timeout = PATIENCE_MS } = {}) {
   const fnSource = fn.toString();
-  await page.evaluate(({ fnSource, arg }) => {
-    window.__untilAsyncFlag = false;
-    const predicate = new Function("arg", "return (" + fnSource + ")(arg)");
-    (async function poll() {
-      let ok = false;
-      try { ok = await predicate(arg); } catch (e) { ok = false; }
-      if (ok) { window.__untilAsyncFlag = true; return; }
-      setTimeout(poll, 20);
-    })();
-  }, { fnSource, arg });
-  return until(page, () => window.__untilAsyncFlag === true, null, { timeout });
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    const ok = await page.evaluate(({ fnSource, arg }) => {
+      const predicate = new Function("arg", "return (" + fnSource + ")(arg)");
+      return predicate(arg);
+    }, { fnSource, arg });
+    if (ok) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise((r) => setTimeout(r, 20));
+  }
 }
 
 /* ---------------------------------------------------------------------
