@@ -18,6 +18,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { until } from "./testkit.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -99,6 +100,13 @@ async function clickAndCheckNav(page, beforeHash) {
 
   const beforeHash = await page.evaluate(() => location.hash);
   const afterHash = await clickAndCheckNav(page, beforeHash);
+  // clickAndCheckNav's own 300ms wait is tuned for the hash-unchanged check
+  // above, not the toast - under heavy CI contention the toast's text node
+  // can still be empty at that point (seen live: "toast text ...: \"\"" on
+  // a run where the click and hash check both landed fine). Wait for the
+  // real condition - the toast actually holding text - instead of assuming
+  // one fixed timeout covers two different UI updates.
+  await until(page, () => !!(document.getElementById("toast") && document.getElementById("toast").textContent));
   const toastText = await page.evaluate(() => document.getElementById("toast")?.textContent || "");
   afterHash === beforeHash
     ? ok("clicking the greyed #/group nav entry does NOT navigate in a plain browser tab (stayed on " + beforeHash + ")")
