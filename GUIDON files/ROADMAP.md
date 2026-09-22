@@ -372,8 +372,9 @@ themed UI wrapper — explicitly NOT a live generative-AI opponent
 (would make this the app's first-ever online-required feature) and NOT
 the literal PostgreSQL/REST-API architecture originally proposed for it.
 
-**Cadences — research complete, content-policy decisions pending.** A
-103-agent research pass (Wayback/archive.org-backed, two independent
+**Cadences — research complete; two of three blockers resolved; the
+classified title list itself is NOT preserved anywhere in this repo.**
+A 103-agent research pass (Wayback/archive.org-backed, two independent
 runs after a session-restart casualty) found: no Army doctrinal source
 for cadence lyrics exists (confirmed against ~70 years of drill
 manuals), but the U.S. Army Center of Military History runs a real,
@@ -392,33 +393,58 @@ Hair / Yellow Ribbon," needs a real musicologist/legal read before
 either version ships); and several titles (including "I Wish That All
 the Ladies") that are real and old but need an explicit content-policy
 call (default-off/opt-in/exclude) rather than default inclusion.
-**Owner decisions made (2026-09-22):** cadences fold into the existing
-Creeds & Branch Identities screen as a new group, not a separate route;
-borderline titles (e.g. "I Wish That All the Ladies") ship default-off,
-opt-in via Settings, not excluded outright.
 
-**New blocker found the same day, upstream of both decisions above:**
-the actual cadence text can't be authored by an AI coding assistant -
-"never reproduce song lyrics in any form" is a hard, non-negotiable
-constraint on that tooling, independent of this project's own copyright
-clearance for the ~35 titles. Concretely: someone (a human, following
-this file's own citation-honesty standard) needs to type or paste the
-actual cleared verses in, the same way `creed-spirit-of-the-cav`
-(`src/app-modules/05-spirit-of-the-cav.js`) already handles a text this
-project can't reproduce - title + history + real citation, no verse
-text, "add your own copy in Recitation Drill under My unit" as the
-honest alternative - which is very likely the right shape for the
-borderline/default-off titles regardless of who sources them. No seed
-schema work is blocked by this (Wave 1's `source:[{pub,edition,para,
-quoteKind}]` shape, shipped in v1.15.0, is exactly what a cadence entry
-would use), and no UI work is blocked either - there is just nothing to
-attach it to until real title+text pairs exist. Next session picking
-this up: get the real ~35-title list (with citations) from a source
-that doesn't require an AI to output lyric text - a human copy-paste
-pass, or a research agent instructed to extract titles/citations/history
-ONLY and never the verses themselves - then build the Creeds "Cadences"
-group and the default-off Settings toggle against that real list, not
-before.
+**Owner decisions made (2026-09-22) — RESOLVED, no longer blocking:**
+cadences fold into the existing Creeds & Branch Identities screen as a
+new group, not a separate route; borderline titles (e.g. "I Wish That
+All the Ladies") ship default-off, opt-in via Settings, not excluded
+outright.
+
+**New blocker found the same day, upstream of both decisions above —
+STILL BLOCKING:** the actual cadence text can't be authored by an AI
+coding assistant - "never reproduce song lyrics in any form" is a hard,
+non-negotiable constraint on that tooling, independent of this
+project's own copyright clearance for the ~35 titles. Concretely:
+someone (a human, following this file's own citation-honesty standard)
+needs to type or paste the actual cleared verses in, the same way
+`creed-spirit-of-the-cav` (`src/app-modules/05-spirit-of-the-cav.js`)
+already handles a text this project can't reproduce - title + history
++ real citation, no verse text, "add your own copy in Recitation Drill
+under My unit" as the honest alternative - which is very likely the
+right shape for the borderline/default-off titles regardless of who
+sources them. Every cadence entry needs BOTH schemas, not just the
+citation one: Wave 1's `source:[{pub,edition,para,quoteKind}]` shape
+(shipped in v1.15.0) for the citation itself, AND (whenever `fullText`
+or `lines[]` is non-empty) the rights gate's own
+`rights:{author,firstPublished,basis,evidence,checkedOn}` record -
+`basis` one of `"us-gov-work"|"pd-age"|"permission"` - or
+`tools/test-spirit-of-the-cav.mjs`'s rights gate fails the build the
+same way it already does for any other un-rights-recorded bundled
+text. A creed-shaped citation object also needs its own `status` field
+(e.g. `"doctrine"`, `"unit-tradition"`, `"official-heraldry"` - see
+`CREED_SOURCE_STATUS_LABEL` in `src/index.html`) - `views.creeds`
+unconditionally appends `" — " + statusLabel` to the rendered source
+line, so a citation missing `status` renders the literal text
+"— undefined" to a real Soldier, not just an omitted label.
+
+**The classified title list itself - which specific titles are
+cleared/excluded/borderline/commercially-landmined, and why - was
+never saved to this repo, only summarized in this section's own prose
+above** (one named example per class, not the full ~35-plus-exclusions
+set the original 103-agent pass actually produced). That pass's real
+verdicts cannot be reconstructed from this file alone. Next session
+picking this up has two real options, not one: (a) if the original
+pass's output still exists somewhere outside this repo (another
+session's transcript, a doc the owner has), retrieve and save it here
+first, rather than re-deriving it; (b) otherwise, commission a fresh
+research pass explicitly scoped to extract titles, citations, and
+classification history ONLY and never reproduce the verses themselves,
+since anything that pass finds will need to survive being read and
+acted on by an AI assistant later, same as this one did. Only once a
+real, saved title list exists (clearing that FIRST blocker, sourcing
+the actual verse text) does building the Creeds "Cadences" group and
+the default-off Settings toggle against it become real work rather
+than speculative UI.
 
 ---
 
