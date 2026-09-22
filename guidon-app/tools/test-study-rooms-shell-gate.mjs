@@ -53,8 +53,26 @@ async function referenceIconHTML(page, name) {
 }
 
 async function clickAndCheckNav(page, beforeHash) {
+  // { force: true } really is required: aria-disabled="true" makes
+  // Playwright's own actionability check refuse a plain click outright
+  // ("element is not enabled") even though nothing blocks pointer-events -
+  // confirmed by reverting this once and watching it time out 100% of the
+  // time, not just under load. A forced click bypasses that check, but a
+  // trusted force-click's dispatch can itself still be swallowed by
+  // Chromium under extreme CI contention (the same class of flake
+  // clickAndFindNativeTab() in test-nav-tier2ab.mjs already documents and
+  // retries once for) - a hash-unchanged pass with an empty toast is
+  // consistent with exactly that: the click dispatch never actually
+  // reached the page, so nothing ran, including the onclick that would
+  // have changed the hash away OR set the toast. Retry the click once if
+  // the toast never shows up, same shape as that established fix.
   await page.locator('.nav a[data-hash="#/group"]').click({ force: true });
   await page.waitForTimeout(300);
+  const toastShown = await until(page, () => !!(document.getElementById("toast") && document.getElementById("toast").textContent), undefined, { timeout: 2000 });
+  if (!toastShown) {
+    await page.locator('.nav a[data-hash="#/group"]').click({ force: true });
+    await until(page, () => !!(document.getElementById("toast") && document.getElementById("toast").textContent), undefined, { timeout: 2000 });
+  }
   return page.evaluate(() => location.hash);
 }
 
@@ -100,13 +118,6 @@ async function clickAndCheckNav(page, beforeHash) {
 
   const beforeHash = await page.evaluate(() => location.hash);
   const afterHash = await clickAndCheckNav(page, beforeHash);
-  // clickAndCheckNav's own 300ms wait is tuned for the hash-unchanged check
-  // above, not the toast - under heavy CI contention the toast's text node
-  // can still be empty at that point (seen live: "toast text ...: \"\"" on
-  // a run where the click and hash check both landed fine). Wait for the
-  // real condition - the toast actually holding text - instead of assuming
-  // one fixed timeout covers two different UI updates.
-  await until(page, () => !!(document.getElementById("toast") && document.getElementById("toast").textContent));
   const toastText = await page.evaluate(() => document.getElementById("toast")?.textContent || "");
   afterHash === beforeHash
     ? ok("clicking the greyed #/group nav entry does NOT navigate in a plain browser tab (stayed on " + beforeHash + ")")
