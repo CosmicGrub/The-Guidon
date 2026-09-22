@@ -2,6 +2,10 @@
 
 All notable changes to GUIDON will be documented in this file. Format loosely follows [Keep a Changelog](http://keepachangelog.com/). This is the technical record for developers - the app itself shows a short, plain-language summary of each release to Soldiers directly (G.whatsNew, src/index.html), not this file.
 
+## 2026-09-22 - v1.14.1: MOI Import findable in Search
+
+**Search: add `#/moi` to `UNINDEXED_DOMAIN_HASHES`** (`src/index.html`, `views.search`'s `runSearch()`). A user reported not being able to find MOI Import in the app. Reproduced: `#/moi` is a real, reachable route in the Board Prep nav group, but it was missing from the list of routes Search's zero-hit empty state points to - unlike Forms/Counsel/Develop/Write/Money/Health/ETS-Separating, which all render an honest "Also in GUIDON — not indexed by Search yet" chip pointing straight at the route, searching "MOI Import" returned a bare "No results" with no pointer anywhere. `tools/test-search-empty-domains.mjs`'s `EXPECTED_HASHES` updated to match (now 8 domains, was 7).
+
 ## 2026-09-21 - v1.14.0: custom PT sessions, customizable screen layouts, and a full MOI Import overhaul
 
 **PT Planner: custom session composer** (`src/app-modules/pt-planner.js`, PR #200). A Soldier builds a named PT session from available drills via a plain, fully keyboard/screen-reader-accessible Add/Move-up/Move-down/Remove interface, saves it to a new `guidon:prt:customSessions:v1` kv row, and it then behaves exactly like a built-in preset everywhere PT Planner already lists sessions - the day-assignment dropdown, session summaries, the 7-day hard:recovery guard - with zero special-casing. `clonePreset()`/`normalizeEntry()`/`normalizePlan()`/`prtSession()`/`prtSessionSummary()` all take an optional `customSessions` list and resolve a custom id through the same path a built-in id uses. Deliberately buttons-only in this release - native drag-and-drop is a scoped follow-up, not an oversight.
