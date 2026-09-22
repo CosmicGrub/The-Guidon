@@ -56,11 +56,12 @@ await page.evaluate(() => {
   document.body.appendChild(d);
 });
 
-// All 24 theme ids, kept in sync with html[data-theme] selectors in the source.
-const THEMES = ["blackout","bone-neutral","clay-warm","desert-cadence","field-manual","graphite-calm",
-      "harbor-mid","ink-paper","nautical-dusk","night-vision","overcast-glare","parade-rest",
-      "parchment-read","pine-dusk","range-red","sandstone-sun","sepia-study","signal-amber",
-      "slate-focus","slate-quiet","squadron-blue","subdued","topographic","umber-lamp"];
+// All 30 theme ids, kept in sync with html[data-theme] selectors in the source.
+const THEMES = ["amber-dusk","ash-quiet","blackout","bone-neutral","clay-warm","desert-cadence",
+      "field-manual","forest-quiet","graphite-calm","harbor-mid","ink-paper","nautical-dusk",
+      "night-shift","night-vision","overcast-glare","parade-rest","parchment-read","pine-dusk",
+      "range-red","sandstone-sun","sepia-study","signal-amber","slate-focus","slate-quiet",
+      "soft-contrast","squadron-blue","subdued","topographic","umber-lamp","warm-paper"];
 
 // [selector, minimum ratio, what it is]
 const SAMPLES = [
@@ -224,7 +225,7 @@ for (const theme of THEMES) {
   }
 }
 problems.length === 0
-  ? ok(`24 themes x ${SAMPLES.length + 1} home/train surfaces all meet contrast minimums`)
+  ? ok(`30 themes x ${SAMPLES.length + 1} home/train surfaces all meet contrast minimums`)
   : bad(problems.length + " contrast problems; first: " + problems[0]);
 
 const formsProblems = []; // folded into the main sweep via the probe
@@ -243,7 +244,7 @@ for (const theme of THEMES) {
   }
 }
 boardProblems.length === 0
-  ? ok("24 themes x board card + grade labels all meet contrast minimums")
+  ? ok("30 themes x board card + grade labels all meet contrast minimums")
   : bad(boardProblems.length + " board contrast problems; first: " + boardProblems[0]);
 
 // Search view sweep
@@ -260,7 +261,7 @@ for (const theme of THEMES) {
   }
 }
 searchProblems.length === 0
-  ? ok("24 themes x 6 search filter chips all meet contrast minimums")
+  ? ok("30 themes x 6 search filter chips all meet contrast minimums")
   : bad(searchProblems.length + " search contrast problems; first: " + searchProblems[0]);
 
 // Settings view sweep
@@ -277,7 +278,7 @@ for (const theme of THEMES) {
   }
 }
 settingsProblems.length === 0
-  ? ok("24 themes x .fin-h section heading meet contrast minimums")
+  ? ok("30 themes x .fin-h section heading meet contrast minimums")
   : bad(settingsProblems.length + " settings contrast problems; first: " + settingsProblems[0]);
 
 if (problems.length || formsProblems.length || boardProblems.length || searchProblems.length || settingsProblems.length) {

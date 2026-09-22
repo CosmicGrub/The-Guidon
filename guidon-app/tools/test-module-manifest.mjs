@@ -49,7 +49,16 @@ if (real) {
   // RATCHET: the first manifest must reproduce the order the build used until
   // now (plain .sort() of the folder). When a later change reorders modules on
   // purpose, set this to false in that same change and say why in the commit.
-  const ORDER_IS_STILL_ALPHABETICAL = true;
+  //
+  // ROADMAP 3g "customizable screen layouts" Phase A: date-grid.js
+  // (src/app-modules/date-grid.js) was inserted right before calendar.js -
+  // "date-grid" sorts alphabetically AFTER "calendar", but it must LOAD
+  // before both calendar.js and pt-planner.js (each declares it under their
+  // own "requires": ["date-grid"], and module-manifest.mjs's own load-order
+  // check enforces that a "requires" target sits at an earlier array
+  // position). Alphabetical order could not satisfy that dependency, so this
+  // is exactly the "later, deliberate reorder" this ratchet exists to allow.
+  const ORDER_IS_STILL_ALPHABETICAL = false;
   if (ORDER_IS_STILL_ALPHABETICAL) {
     const firstDiff = real.files.findIndex((f, i) => f !== onDisk[i]);
     check(firstDiff === -1, "manifest order is exactly the alphabetical order the build used before the manifest existed - behaviour unchanged",

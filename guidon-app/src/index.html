@@ -699,8 +699,20 @@ html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after 
 .reco .eyebrow { color: var(--text); }
 
 /* ---- Board: SRS due chip ---- */
+/* min-width/min-height:44px - same literal Apple-HIG tap-target convention
+   already used for .chip.search-chip/.mb-cat-chip elsewhere in this file
+   (grep "min-height: 44px" for the others). dueChip/leechChip (index.html,
+   Board's Rapid Fire build()) are created with placeholder text "…" and
+   only get their real "N due"/"N leeches" content once build() resolves
+   the SRS pool - content-only sizing (no min set) measured at ~28px wide
+   during that window, under the 44px minimum; tools/test-ios-webkit-
+   ratchet.mjs's real-Safari sweep caught it reliably once the app's total
+   boot/parse cost grew enough to widen that window past the sweep's own
+   settle wait. A guaranteed minimum footprint fixes the real defect at its
+   source instead of chasing boot-timing margins. */
 .due-chip { font-family: var(--font-mono); font-size: .69rem; color: var(--btn-ink, #1a1206);
-  background: var(--amber); border-radius: 999px; padding: 2px 9px; }
+  background: var(--amber); border-radius: 999px; padding: 2px 9px;
+  min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; }
 /* Was background:var(--line-2);color:var(--text-dim) - two tokens meant for
    subtle borders/secondary text, never designed to pair with each other as a
    text-on-background combo. That passed unnoticed for a long time because
@@ -4078,7 +4090,12 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   font-size:0.72rem; font-weight:700; text-transform:uppercase;
   letter-spacing:0.05em; background:rgba(255,255,255,0.08); color:var(--text-dim); }
 .badge.amber { background:rgba(255,176,32,0.15); color:var(--amber); }
-.badge.green  { background:rgba(0,212,101,0.12); color:var(--green); }
+/* --ink-green, not raw --green, for the accent-as-text case (same fix shape
+   as .wr-ex.good .wr-ex-tag above): tools/test-contrast-full.mjs measured
+   this badge failing AA on the "New" pill (#/train scenario cards) across
+   all 5 light themes, e.g. bone-neutral at 4.33:1 (#5c6b58 on #cee7d8,
+   4.5:1 required). */
+.badge.green  { background:rgba(0,212,101,0.12); color:var(--ink-green); }
 .badge.cyan   { background:rgba(0,212,255,0.12); color:var(--cyan); }
 .badge.red    { background:rgba(255,93,93,0.12);  color:var(--red); }
 .badge.violet { background:rgba(167,139,250,0.12); color:var(--violet); }
@@ -5878,6 +5895,109 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
 .cal-timeline-body { flex:1 1 auto; min-width:0; }
 .cal-timeline-line { width:2px; height:20px; background:var(--line-2); margin:2px 0 2px 5px; }
 
+/* Shared weekday grid (G.dateGrid.renderWeek, src/app-modules/date-grid.js) -
+   ROADMAP 3g "customizable screen layouts" Phase A: one real component that
+   both PT Planner's and Career Calendar's "Shared grid" layout render
+   through, so "shared" means the same drawn component, not two screens that
+   independently happen to look similar. col.style.borderTopColor is set
+   inline per-cell from the cell's own tone (--red/--amber/--green/--text-dim
+   - see date-grid.js's own toneColor()), never a hardcoded hex. */
+.date-grid-switch { margin-bottom:10px; }
+.date-grid-row { display:grid; grid-template-columns:repeat(7,1fr); gap:8px; }
+.date-grid-col { border:1px solid var(--line); border-top:3px solid var(--text-dim); border-radius:var(--radius-sm); background:var(--panel); padding:8px; min-width:0; display:flex; flex-direction:column; gap:4px; }
+.date-grid-col.is-today { border-color:var(--amber); box-shadow:var(--glow-amber); }
+.date-grid-weekday { font-family:var(--font-head); font-size:.7rem; letter-spacing:.06em; text-transform:uppercase; color:var(--text-dim); }
+.date-grid-date { font-size:.72rem; color:var(--text-mute); }
+.date-grid-title { font-weight:600; font-size:.86rem; overflow-wrap:anywhere; }
+.date-grid-sub { font-size:.78rem; color:var(--text-dim); overflow-wrap:anywhere; }
+@media (max-width:640px) {
+  .date-grid-row { grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); }
+}
+
+/* Tasking Board (PT Planner's Phase B layout, ROADMAP 3g "customizable
+   screen layouts", src/app-modules/pt-planner.js renderTaskingBoard()) - a
+   company-ops-board metaphor: Mission Library chips staged one at a time
+   onto a 7-day Week Board. Deliberately its OWN classes, not a reuse of
+   .date-grid-row/-col above: Tasking Board is a PT-Planner-only view, not a
+   second screen sharing G.dateGrid.renderWeek, so a future reader grepping
+   .date-grid-row still finds only that real shared component. Effort color
+   (--red/--cyan/--green) is set inline per element, same "real CSS var,
+   never a hardcoded hex" convention as .date-grid-col's borderTopColor. */
+.tb-chip { border-left-width:3px; border-left-style:solid; text-align:left; display:flex; flex-direction:column; align-items:flex-start; gap:2px; }
+.tb-chip[aria-pressed="true"] { border-color:var(--amber); box-shadow:var(--glow-amber); }
+/* auto-fit (not the fixed repeat(7,1fr) this started as, and not
+   .date-grid-row's own auto-fill above): a fixed 7-column grid only ever
+   measured against the VIEWPORT, so a 640px cutoff missed every width where
+   a side rail (96px collapsed / 208px expanded) has already eaten into the
+   real content width - at 800px viewport with the wider rail, each of the 7
+   columns had only ~65px, crushing the Assign button and session name into
+   single characters. auto-fit sizes against the container's actual
+   available width regardless of any rail, wrapping onto more rows once
+   fewer than 7 tracks of >=110px fit, and (unlike auto-fill) collapses any
+   leftover empty tracks so 7 real items still stretch to fill a wide row
+   edge to edge instead of bunching left with dead space on the right. */
+.tb-week-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:8px; }
+.tb-day { border-left-width:4px; border-left-style:solid; min-width:0; }
+.tb-guard-strip { display:flex; gap:4px; margin:6px 0; }
+.tb-guard-seg { flex:1; height:10px; border-radius:3px; }
+
+/* The Zero Board (js/calendar.js renderZeroBoard(), ROADMAP 3g "customizable
+   screen layouts" Phase B) - urgency itself as the layout, so the CSS carries
+   most of the visual language: a hero strip, a neutral cyan DTG readout, and
+   three color-cued but always text-labeled RED/AMBER/STANDBY shelves.
+   Border-left WIDTH/STYLE stay here (so .zb-overdue's heavier width can beat
+   an inline color without !important); the actual COLOR is set inline per
+   row from its own real urgency function (calendar.js's zoneInfo()), never
+   hard-coded per zone here - same "computed, not guessed" discipline this
+   route's other layouts already follow. */
+.zb-board { display:flex; flex-direction:column; gap:4px; }
+.zb-hero { border:1px solid var(--line); border-left-style:solid; border-left-width:4px; border-radius:var(--radius-sm);
+  background:var(--panel); padding:14px; margin-bottom:4px; }
+.zb-hero-label { font-size:1.05rem; font-weight:700; margin-top:2px; }
+.zb-hero-count { font-size:2.1rem; font-weight:800; font-variant-numeric:tabular-nums; line-height:1.15; margin-top:2px; }
+.zb-hero.zb-overdue { border-left-width:8px; }
+@media (prefers-reduced-motion: no-preference) {
+  .zb-hero.zb-pulse { animation: zb-pulse 1.7s ease-in-out infinite; }
+}
+@keyframes zb-pulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(0,0,0,0); }
+  50% { box-shadow: 0 0 16px color-mix(in srgb, var(--red) 55%, transparent); }
+}
+/* Defense in depth, same double-guard pattern this file's own view-transition
+   CSS already uses a few hundred lines up: calendar.js only adds .zb-pulse
+   when util.prefersReducedMotion() says motion is fine, but if that check
+   were ever bypassed this still stops the animation at the OS/browser level. */
+@media (prefers-reduced-motion: reduce) {
+  .zb-hero.zb-pulse, .zb-tile.zb-pulse { animation: none; }
+}
+.zb-dtg { display:flex; gap:10px; flex-wrap:wrap; margin:4px 0 10px; }
+.zb-dtg-seg { flex:1 1 130px; border:1px solid var(--cyan); border-radius:var(--radius-sm);
+  background:color-mix(in srgb, var(--cyan) 8%, var(--panel)); padding:8px 10px; }
+.zb-dtg-label { font-family:var(--font-head); font-size:.68rem; letter-spacing:.08em; text-transform:uppercase; color:var(--text-dim); }
+.zb-dtg-count { font-size:1.25rem; font-weight:700; font-variant-numeric:tabular-nums; color:var(--ink-cyan); }
+.zb-shelf { margin-top:10px; }
+.zb-shelf-head { display:flex; align-items:baseline; gap:8px; margin-bottom:6px; }
+.zb-shelf-title { font-family:var(--font-head); font-size:.78rem; letter-spacing:.1em; text-transform:uppercase; font-weight:700; }
+.zb-shelf-red .zb-shelf-title { color:var(--ink-red); }
+.zb-shelf-amber .zb-shelf-title { color:var(--ink-amber); }
+.zb-shelf-green .zb-shelf-title { color:var(--ink-green); }
+.zb-shelf-count { font-size:.74rem; color:var(--text-dim); }
+.zb-shelf-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px; }
+.zb-tile { border:1px solid var(--line); border-left-style:solid; border-left-width:4px; border-radius:var(--radius-sm);
+  background:var(--panel); overflow:hidden; }
+.zb-tile.zb-overdue { border-left-width:8px; }
+.zb-tile-head { width:100%; text-align:left; background:none; border:0; padding:9px 10px; cursor:pointer;
+  display:flex; flex-direction:column; gap:2px; font:inherit; color:inherit; }
+.zb-tile-count { font-size:1.4rem; font-weight:800; font-variant-numeric:tabular-nums; }
+.zb-tile-label { font-size:.78rem; color:var(--text-dim); overflow-wrap:anywhere; }
+.zb-tile-chev { flex:0 0 auto; margin-top:4px; transition:transform .15s ease; }
+[aria-expanded="true"] .zb-tile-chev { transform:rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .zb-tile-chev { transition:none; } }
+.zb-tile-body { padding:0 10px 10px; }
+.zb-reference { margin-top:10px; border-left:3px solid var(--violet); border-radius:0 var(--radius-sm) var(--radius-sm) 0;
+  background:color-mix(in srgb, var(--violet) 6%, var(--panel)); padding:10px 12px; }
+.zb-reference-row { display:flex; flex-direction:column; gap:2px; margin-top:4px; }
+
 /* Master-detail split (Board Drill, Doctrine, Squad Roster) - a narrow
    list pane next to a wider detail pane. Gated at >=1024px deliberately:
    below that, a ~280px list pane leaves too little room for a comfortable
@@ -6189,6 +6309,127 @@ html[data-theme="sandstone-sun"] {
   --green: #5a6349; --cyan: #858a77; --red: #c05a52; --violet: #927277;
   --btn-ink: #f5f7f8;
   --glow-amber: none;
+}
+
+/* ===== COMFORT SET (Screen Layouts Phase A) =================================
+   Six more eye-comfort themes, same token contract and same design principles
+   as the FOCUS SET above (never pure #000/#fff, one restrained accent, small
+   surface steps, --text-dim solved for real AA against both --bg and --panel -
+   verified live by tools/test-contrast-full.mjs, not just eyeballed). Each one
+   has its own distinct rationale rather than being a copy of an existing
+   theme with new colors swapped in - see the comment on each block for how it
+   differs from the closest existing theme in the set above. ============= */
+html[data-theme="amber-dusk"] {
+  /* Warm, reduced-blue-light dark: near-black warm ground (lower blue
+     channel throughout than Umber Lamp's #191512), a muted (lower-
+     saturation) amber than Umber Lamp's #d0a068, and a deliberately
+     softened red - Umber Lamp's own red (#af534c) is fairly neutral;
+     this one is warmer and duller, in keeping with "softened reds". */
+  --bg: #181310; --bg-2: #211a15; --bg-3: #291f19;
+  --panel: #1f1712; --panel-2: #291f18;
+  --line: #332619; --line-2: #402f1f; --border: #4d3a26;
+  --text: #ecdfd0; --text-1: #d8ccbd; --text-2: #c7bcae;
+  --text-dim: #b7ab9c; --text-mute: #8f8475;
+  --amber: #c99a5c; --amber-dim: #96723f; --brass: #d4ac78;
+  --green: #a39a80; --cyan: #a39d8a; --red: #a85f4f; --violet: #a58f8a;
+  --btn-ink: #14100c;
+  --glow-amber: none;
+}
+html[data-theme="ash-quiet"] {
+  /* Low-contrast-but-AA dark for long reading sessions: a fully neutral
+     warm-grey ("ash"), not the existing Slate Quiet's cool blue-grey
+     (#20242a/#8fb0cc) or Subdued's colder, more separated neutral scale
+     (#15191d/#c7ced4) - smaller bg-to-panel step than either, and the
+     accent stays inside the same neutral family instead of introducing a
+     hue, so nothing on screen fights for attention during a long session. */
+  --bg: #212120; --bg-2: #282826; --bg-3: #2f2f2c;
+  --panel: #262624; --panel-2: #2d2d2a;
+  --line: #3a3a35; --line-2: #48483f; --border: #57574c;
+  --text: #e7e5de; --text-1: #d3d1ca; --text-2: #c3c1ba;
+  --text-dim: #aeaca4; --text-mute: #88867e;
+  --amber: #a7ae9c; --amber-dim: #818871; --brass: #b9c0ad;
+  --green: #a7ae9c; --cyan: #93a7a6; --red: #af7a71; --violet: #a79bab;
+  --btn-ink: #131311;
+  --glow-amber: none;
+}
+html[data-theme="warm-paper"] {
+  /* A genuinely warm cream/off-white light theme with soft ink-BLACK text -
+     the real differentiator from Parchment Read and Sepia Study, both of
+     which already cover "warm off-white paper" but pair it with brown ink
+     text (#26221d / #33291c). This is warmer/creamier in the background
+     than either (more saturated cream, not just desaturated tan) while the
+     body text itself is a near-neutral soft black, not brown - crisp
+     reading contrast without Ink & Paper's harsh pure-white glare. */
+  --bg: #f2e9d8; --bg-2: #ece0c9; --bg-3: #e4d7bb;
+  --panel: #f9f2e2; --panel-2: #efe6d2;
+  --line: #ddcfae; --line-2: #cbba91; --border: #b9a67c;
+  --text: #1e1c18; --text-1: #332f27; --text-2: #453f34;
+  --text-dim: #5a5346; --text-mute: #8c8471;
+  --amber: #6b4a26; --amber-dim: #8f6a3e; --brass: #5c3f22;
+  --green: #4f5c3f; --cyan: #4a6560; --red: #9a4636; --violet: #6a5468;
+  --btn-ink: #f7f1e4;
+  --glow-amber: none;
+}
+html[data-theme="night-shift"] {
+  /* Deep, almost-monochrome dark for late-night use, biased toward warm
+     ambers/reds with minimal blue content anywhere in the palette -
+     distinct from Blackout (true #000, literal red-only) and Range Red
+     (warm oxblood but a fuller, more saturated palette): this stays near-
+     black rather than true black (per this set's own "never pure #000"
+     rule) and pulls EVERY accent role - not just amber/red - toward the
+     same warm family, so even the --green/--cyan roles read as warm
+     olive/tan rather than green/blue while staying just distinguishable
+     from each other (a fully-collapsed single hue, as Blackout uses, would
+     erase the good/info/danger distinction those roles carry elsewhere). */
+  --bg: #120e0c; --bg-2: #1a1512; --bg-3: #211a16;
+  --panel: #171210; --panel-2: #1f1815;
+  --line: #2c221c; --line-2: #392c23; --border: #493729;
+  --text: #e8dcd0; --text-1: #d4c7ba; --text-2: #c4b6a8;
+  --text-dim: #b3a495; --text-mute: #8a7c6e;
+  --amber: #d99a55; --amber-dim: #a5723a; --brass: #dba868;
+  --green: #9a9560; --cyan: #b3a58f; --red: #cf6a52; --violet: #b98a78;
+  --btn-ink: #120e0c;
+  --glow-amber: none;
+}
+html[data-theme="forest-quiet"] {
+  /* A muted, desaturated green-grey dark theme - checked against BOTH
+     existing green-leaning themes before picking colors: Topographic (the
+     saturated forest-green contour theme, --amber:#7bbf6a) is the obvious
+     one to avoid duplicating, but Pine Dusk (Focus set, --amber:#84b394,
+     "desaturated forest greys with a sage accent") already sits much
+     closer to this brief and needed the real differentiation. This pushes
+     further: a flatter, greyer, lower-saturation sage (#8a9484 vs Pine
+     Dusk's more visibly-green #84b394) and a green-grey --green role
+     (#93a597) rather than Pine Dusk's blue-grey one (#a8b8c0), so it reads
+     calmer and stonier next to Pine Dusk's still-fairly-green cast. */
+  --bg: #181c19; --bg-2: #212521; --bg-3: #282c28;
+  --panel: #1e221e; --panel-2: #272b27;
+  --line: #333730; --line-2: #42463e; --border: #50554b;
+  --text: #dfe3dc; --text-1: #cbcfc7; --text-2: #bbc0b7;
+  --text-dim: #aab0a5; --text-mute: #83887f;
+  --amber: #8a9484; --amber-dim: #6b7364; --brass: #9aa593;
+  --green: #93a597; --cyan: #7fa39c; --red: #a8574f; --violet: #8a93a0;
+  --btn-ink: #14170f;
+  --glow-amber: none;
+}
+html[data-theme="soft-contrast"] {
+  /* Deliberately tuned for light sensitivity: no pure black background, no
+     pure white text (same as every theme in this file), PLUS - the real
+     differentiator - explicit --shadow/--glow-amber overrides gentler than
+     the root/Night Vision ("Instrument-Panel") defaults (0 6px 24px
+     rgba(0,0,0,.45) shadow, a two-layer ring+18px-blur glow). A soft
+     lavender-grey accent rather than a bright amber/cyan keeps hover/focus
+     states visible without adding glare. */
+  --bg: #1c1c22; --bg-2: #232329; --bg-3: #2a2a30;
+  --panel: #212127; --panel-2: #28282f;
+  --line: #34343c; --line-2: #42424b; --border: #4f4f59;
+  --text: #e2e1e8; --text-1: #cecdd4; --text-2: #bebdc5;
+  --text-dim: #aeadb6; --text-mute: #86858f;
+  --amber: #b8a8d0; --amber-dim: #8e80a6; --brass: #c4b6db;
+  --green: #9ec2ab; --cyan: #9cb8c9; --red: #c08a94; --violet: #b8a8d0;
+  --btn-ink: #16161a;
+  --shadow: 0 3px 10px rgba(0,0,0,.22);
+  --glow-amber: 0 0 0 1px rgba(184,168,208,.22);
 }
 </style>
 </head>
@@ -7287,6 +7528,64 @@ window.G = window.G || {};
     return { color: "var(--green)", level: "green" };
   };
 
+  // "YYYY-MM-DD" for a LOCAL Date - promoted from three byte-identical
+  // copies (pt-planner.js's localISO, calendar.js's isoLocal, records.js's
+  // isoLocal). NOT d.toISOString(), which converts to UTC first and can
+  // silently roll the date a day either direction depending on the
+  // Soldier's timezone - see calendar.js's own isoLocal comment, the
+  // original source of that warning.
+  util.localISO = function (d) {
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  };
+
+  // Screen Layouts (ROADMAP 3g "customizable screen layouts", Phase A) and
+  // three earlier callers (renderBoardCountdown, generateActionPlan, Home's
+  // ETS banner) all separately re-derive "board date" / "ETS date" from the
+  // same two sources - the chosen profile first, then the app-wide Settings
+  // copy the two-way sync keeps in step with it - so a personal profile's
+  // own date wins, and a guest/kiosk session (no profile) still sees
+  // whatever was set directly in Settings. calendar.js's buildUpcoming()/
+  // buildTimeline() were the clearest duplicate (the identical chain typed
+  // out twice in one file); this is that chain, pulled out once so it can
+  // never drift between callers again. Returns the raw "YYYY-MM-DD" string
+  // (or "") - same contract calendar.js's own inline version returned -
+  // parsing is left to the caller via util.parseISODate().
+  util.resolveBoardDate = function () {
+    try {
+      var prof = (G.profile && G.profile.cached) ? G.profile.cached() : null;
+      var settings = (G.store && G.store.settings) ? G.store.settings() : {};
+      return (prof && prof.boardDate) || (settings && settings.boardDate) || "";
+    } catch (e) { return ""; }
+  };
+  // Same precedence as util.resolveBoardDate (profile, then Settings), with
+  // one addition: `legacyFallback` is checked LAST, for a caller that has
+  // its own already-known value to fall back to when neither profile nor
+  // Settings has one (calendar.js's own `saved.ets` - a date some Soldiers
+  // saved directly in Calendar before ETS moved to the profile/Settings
+  // pair; kept reachable rather than silently orphaned).
+  util.resolveETSDate = function (legacyFallback) {
+    try {
+      var prof = (G.profile && G.profile.cached) ? G.profile.cached() : null;
+      var settings = (G.store && G.store.settings) ? G.store.settings() : {};
+      return (prof && prof.etsDate) || (settings && settings.etsDate) || legacyFallback || "";
+    } catch (e) { return legacyFallback || ""; }
+  };
+
+  // Promotion month cut-off: BLC/ALC graduation must be a matter of record
+  // by the 26th calendar day of the board month (AR 600-8-19 para 3-17a).
+  // Merges calendar.js's fixedAnchors() cutoff math with records.js's own
+  // independently-written nextCutoff() - byte-identical logic, two names.
+  // `today` is a LOCAL midnight Date; returns a LOCAL midnight Date for the
+  // next cutoff (today's 26th if it hasn't passed yet, otherwise next
+  // month's).
+  util.nextPromotionCutoff = function (today) {
+    var t = today || new Date();
+    var base = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+    var cut = new Date(base.getFullYear(), base.getMonth(), 26);
+    if (cut.getTime() < base.getTime()) cut = new Date(base.getFullYear(), base.getMonth() + 1, 26);
+    return cut;
+  };
+
   // Simple skeleton block (n shimmer rows) for loading states.
   util.skeleton = function (n) {
     var wrap = util.el("div.skeleton-wrap", { "aria-hidden": "true" });
@@ -8062,6 +8361,29 @@ window.G = window.G || {};
     // until they opt in here. Read by G.mosDecks.activeCodes(), never
     // directly - see that function for the full visibility rule.
     mosOptIn: [],
+    // MOI Scope (ROADMAP 3g phase 2, MOI Import Phase 2): the Soldier's own
+    // explicit "In Scope" opt-ins - an array of saved MOI plan FAMILY ids
+    // (G.moiImport.PLANS_KEY families, src/app-modules/moi-import.js) whose
+    // topics/board categories should narrow store.boardQuestions()/
+    // store.doctrine(). Off (empty) by default for every family, the same
+    // hidden-by-default precedent mosOptIn just above establishes for MOS
+    // Decks - see 00-mos-decks-core.js's own header comment for why a
+    // narrowing opt-in defaults off rather than on. Per-family, not a single
+    // global switch: with Phase 1's multi-plan history, a Soldier can have
+    // more than one saved plan (a current board's, an old one kept for
+    // reference) and the two must not be forced to the same on/off state.
+    // The active filter is the UNION of every family whose id is in this
+    // array - see G.moiImport.activeFocusSet()'s own comment. Written only
+    // through G.moiImport.setInScope(), never directly.
+    moiScopeFamilies: [],
+    // ROADMAP 3g "customizable screen layouts", Phase A: per-screen layout
+    // choice, read by each module's own LAYOUTS registry (pt-planner.js/
+    // calendar.js) - "classic" is today's existing view unchanged; an id
+    // this device doesn't recognise (e.g. a Phase-B layout that shipped on
+    // another device and was later removed here) falls back to "classic"
+    // at read time, never stored back over the unrecognised value.
+    ptPlannerLayout: "classic",
+    calendarLayout: "classic",
   };
 
   let _settingsDebounce = null;
@@ -8289,6 +8611,29 @@ window.G = window.G || {};
     } catch (e) { /* non-fatal: app still boots fine without migration */ }
   }
 
+  // MOI Scope (ROADMAP 3g phase 2, MOI Import Phase 2): narrows
+  // store.boardQuestions()/store.doctrine() to the topics/board categories
+  // of whichever saved MOI plan families the Soldier has opted "In Scope"
+  // (Settings -> Study Preferences -> MOI Plans, or the plan's own card/
+  // detail view - G.moiImport, src/app-modules/moi-import.js). Feature-
+  // detected exactly like G.mosDecks is inside boardQuestions() below: a
+  // missing G.moiImport (stand-in/corrupted build) fails OPEN to "no
+  // filtering," never throws and never hides content nobody asked to hide.
+  // moiScopeOptIns() returns a SORTED copy so it can double as a stable
+  // cache-key component (join order must never cause a spurious cache miss
+  // - the same reasoning activeMos.join(",") already relies on for MOS).
+  function moiScopeOptIns() {
+    const s = state.settings;
+    return (Array.isArray(s.moiScopeFamilies) ? s.moiScopeFamilies.slice() : []).sort();
+  }
+  function moiScopeFocus() {
+    if (!G.moiImport || !G.moiImport.activeFocusSet) return null;
+    const optedIn = moiScopeOptIns();
+    if (!optedIn.length) return null;
+    const families = G.moiImport.cachedFamilies ? G.moiImport.cachedFamilies() : [];
+    return G.moiImport.activeFocusSet(families, optedIn);
+  }
+
   const store = {
     DIMS, COMPS, ATTEMPTS_CAP,
 
@@ -8323,6 +8668,25 @@ window.G = window.G || {};
       await migrateLegacyLocalStorage();
       await loadContent();
       state.userScenarios = (await db.allUserScenarios()) || [];
+      // MOI Scope (ROADMAP 3g phase 2): warms G.moiImport's own family
+      // cache here, mirroring loadContent()'s role just above for
+      // state.seed - boardQuestions()/doctrine() read
+      // G.moiImport.cachedFamilies() SYNCHRONOUSLY mid-render (see their
+      // own comments) and must never see a stale-empty cache just because
+      // #/moi hasn't rendered yet this session. Without this, a Soldier who
+      // opted a plan "In Scope" in an earlier session and goes straight to
+      // #/board on a fresh launch would see the pool silently narrow to
+      // NOTHING (an empty cached-families list still "matches" a non-empty
+      // opt-in array by finding zero families, not by failing open) -
+      // exactly the ambiguous-empty-set risk activeFocusSet()'s own comment
+      // warns against. app-modules/*.js (moi-import.js included) load
+      // before this file's own app.start() runs (tools/build.mjs splices
+      // them in right before </body>, and app.start() only fires on
+      // DOMContentLoaded - see index.html's own closing script), so
+      // G.moiImport is always defined by the time store.init() reaches here
+      // in a real build; the typeof guard only covers a stand-in/corrupted
+      // build, same as every other optional cross-module call in this file.
+      try { if (G.moiImport && G.moiImport.currentFamilies) await G.moiImport.currentFamilies(); } catch (e) {}
       state.ready = true;
       util.emit("store:ready");
     },
@@ -8405,7 +8769,11 @@ window.G = window.G || {};
       // unconditional hashchange->route() path before then would cache an
       // empty base list under this key FOREVER, with nothing to ever
       // invalidate it once real content actually loaded.
-      const baseKey = (s.tierFilter || "all") + "|" + !!s.showInTransition + "|" + !!s.showCommunity + "|" + !!state.seed.doctrine;
+      // MOI Scope (ROADMAP 3g phase 2): same cache-key extension as
+      // boardQuestions()'s own moiScopeIds just above - folded in here too
+      // so a Settings/plan-card opt-in toggle invalidates this base cache.
+      const moiScopeIds = moiScopeOptIns();
+      const baseKey = (s.tierFilter || "all") + "|" + !!s.showInTransition + "|" + !!s.showCommunity + "|" + !!state.seed.doctrine + "|" + moiScopeIds.join(",");
       if (!state._doctrineBaseCache || state._doctrineBaseCache.key !== baseKey) {
         let base = (state.seed.doctrine && state.seed.doctrine.entries) || [];
         base = base.filter((d) => {
@@ -8414,6 +8782,11 @@ window.G = window.G || {};
           if (s.tierFilter !== "all" && d.tier && util.expandTierTokens(d.tier).indexOf(s.tierFilter) === -1) return false;
           return true;
         });
+        // MOI Scope filter - appended AFTER every existing filter above,
+        // matching boardQuestions()'s own placement/reasoning. null (no
+        // family opted in) is a no-op - see activeFocusSet()'s own comment.
+        const moiFocus = moiScopeFocus();
+        if (moiFocus) base = base.filter((d) => moiFocus.topics.has(d.topic));
         state._doctrineBaseCache = { key: baseKey, list: base };
       }
       let list = state._doctrineBaseCache.list;
@@ -8682,11 +9055,22 @@ window.G = window.G || {};
       const prof = (window.G && G.profile && G.profile.cached) ? G.profile.cached() : null;
       const myMos = (G.mosDecks && G.mosDecks.normalize) ? G.mosDecks.normalize(prof && prof.mos) : String((prof && prof.mos) || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
       const activeMos = (G.mosDecks && G.mosDecks.activeCodes) ? G.mosDecks.activeCodes(prof) : [];
-      const key = (s.tierFilter || "all") + "|" + !!state.seed.board + "|" + myMos + "|" + activeMos.join(",");
+      // MOI Scope (ROADMAP 3g phase 2): folded into the cache key the same
+      // way activeMos is just above - a Settings/plan-card opt-in toggle
+      // must invalidate this memo exactly like flipping a MOS opt-in does.
+      const moiScopeIds = moiScopeOptIns();
+      const key = (s.tierFilter || "all") + "|" + !!state.seed.board + "|" + myMos + "|" + activeMos.join(",") + "|" + moiScopeIds.join(",");
       if (state._boardQuestionsCache && state._boardQuestionsCache.key === key) return state._boardQuestionsCache.list;
       let list = (state.seed.board && state.seed.board.questions) || [];
       if (s.tierFilter !== "all") list = list.filter((q) => !q.tier || util.expandTierTokens(q.tier).indexOf(s.tierFilter) !== -1);
       list = list.filter((q) => !Array.isArray(q.mos) || !q.mos.length || q.mos.some((m) => activeMos.indexOf((G.mosDecks && G.mosDecks.normalize) ? G.mosDecks.normalize(m) : String(m).toUpperCase()) !== -1));
+      // MOI Scope filter - appended AFTER every existing filter above, per
+      // this feature's own design: it narrows an already-eligible pool, it
+      // never re-includes something tier/MOS already excluded. null (no
+      // family opted in) is a no-op, never an empty-set false narrowing -
+      // see activeFocusSet()'s own comment on why that distinction matters.
+      const moiFocus = moiScopeFocus();
+      if (moiFocus) list = list.filter((q) => moiFocus.boardCategories.has(q.category));
       state._boardQuestionsCache = { key, list };
       return list;
     },
@@ -9160,6 +9544,25 @@ window.G = window.G || {};
     { id: "ink-paper", name: "Ink & Paper", kind: "light", group: "High-contrast",
       swatches: ["#ffffff", "#f4f4f4", "#111111", "#004a99"],
       blurb: "Max-contrast light (AAA). Black on white, print-legible." },
+    // ── Comfort set (Screen Layouts Phase A) ──────────────────────────
+    { id: "amber-dusk", name: "Amber Dusk", kind: "dark", group: "Comfort",
+      swatches: ["#181310", "#1f1712", "#c99a5c", "#a85f4f"],
+      blurb: "Warm reduced-blue-light dark — muted amber, softened reds, a near-black warm ground." },
+    { id: "ash-quiet", name: "Ash Quiet", kind: "dark", group: "Comfort",
+      swatches: ["#212120", "#262624", "#a7ae9c", "#93a7a6"],
+      blurb: "Neutral warm-grey dark, small surface steps — sized for long indoor reading sessions." },
+    { id: "warm-paper", name: "Warm Paper", kind: "light", group: "Comfort",
+      swatches: ["#f2e9d8", "#f9f2e2", "#6b4a26", "#9a4636"],
+      blurb: "Genuinely warm cream paper with soft ink-black text — no harsh pure-white glare." },
+    { id: "night-shift", name: "Night Shift", kind: "dark", group: "Comfort",
+      swatches: ["#120e0c", "#171210", "#d99a55", "#cf6a52"],
+      blurb: "Deep near-monochrome dark, minimal blue — warm ambers and reds for late-night use." },
+    { id: "forest-quiet", name: "Forest Quiet", kind: "dark", group: "Comfort",
+      swatches: ["#181c19", "#1e221e", "#8a9484", "#7fa39c"],
+      blurb: "Muted, greyed-down forest green — flatter and calmer than a saturated green theme." },
+    { id: "soft-contrast", name: "Soft Contrast", kind: "dark", group: "Comfort",
+      swatches: ["#1c1c22", "#212127", "#b8a8d0", "#9cb8c9"],
+      blurb: "Tuned for light sensitivity — no pure black, no pure white, gentler glow and shadow." },
   ];
   const THEME_IDS = THEMES.map((t) => t.id);
   const DEFAULT_THEME = "field-manual";
@@ -11900,6 +12303,28 @@ window.G = window.G || {};
           onclick: () => { mosFilterCode = null; mosBanner.remove(); build(); } }),
       ]);
       drillDetail.appendChild(mosBanner);
+    }
+    // MOI Scope (ROADMAP 3g phase 2, MOI Import Phase 2): PERSISTENT
+    // banner, unlike mosBanner just above (a one-shot deep-link flag reset
+    // by build()) - shown every time this tab renders for as long as at
+    // least one saved MOI plan family is opted "In Scope" (Settings ->
+    // Study Preferences -> MOI Plans, or the plan's own card - G.moiImport,
+    // src/app-modules/moi-import.js; see activeFocusSet()'s own comment for
+    // the union-of-opted-in-families rule). Never an unlabeled narrowed
+    // pool that looks like the full corpus, just smaller - the real risk
+    // this banner exists to prevent. No dismiss control: it goes away on
+    // its own the moment every opted-in family is turned back off, or the
+    // Soldier navigates to a different screen - never an intrusive modal.
+    const moiScopeIds = store.settings().moiScopeFamilies || [];
+    if (moiScopeIds.length && G.moiImport && G.moiImport.cachedFamilies) {
+      const scopedNames = G.moiImport.cachedFamilies()
+        .filter((f) => moiScopeIds.indexOf(f.id) !== -1)
+        .map((f) => (f.current && f.current.name) || "your MOI");
+      if (scopedNames.length) {
+        drillDetail.appendChild(el("div.panel.moi-scope-banner", { style: "margin-bottom:8px" }, [
+          el("span", { text: "Narrowed to your MOI: " + scopedNames.join(", ") + ". Turn this off in Settings → Study Preferences → MOI Plans, or from the plan itself." }),
+        ]));
+      }
     }
     drillDetail.appendChild(pillarChipBar);
     drillDetail.appendChild(catChipBar);
@@ -15865,7 +16290,15 @@ window.G = window.G || {};
   // ---------------- Board-date countdown (mirrors the ETS countdown pattern
   // already established in transition.js — same banner shape/coloring logic,
   // adapted for a board date instead of an ETS date) ----------------
-  function renderBoardCountdown() {
+  // onDateSet: optional, called once a board date is successfully set from
+  // this component's own inline "no date yet" input (never on the display-
+  // mode toggle, which doesn't change whether a date exists). Existing
+  // callers (records.js's Board Prep screen, Home) omit it and see no
+  // behavior change - added so a caller whose OWN layout depends on
+  // "does a board date exist" (moi-import.js's Remind-me button) can
+  // refresh itself instead of staying stale until the Soldier navigates
+  // away and back.
+  function renderBoardCountdown(onDateSet) {
     const wrap = el("div");
 
     function draw() {
@@ -15874,9 +16307,11 @@ window.G = window.G || {};
       // The board date belongs to the chosen profile, not to global settings —
       // so a personal profile keeps its own board date and display preference.
       // Settings remains the fallback (and the store that setSetting writes to),
-      // which keeps guest/kiosk sessions working unchanged.
+      // which keeps guest/kiosk sessions working unchanged. `prof` is still
+      // fetched here (not just inside util.resolveBoardDate) because
+      // boardDateDisplay's own mode line just below also reads it.
       const prof = (G.profile && G.profile.cached) ? G.profile.cached() : null;
-      const boardDate = (prof && prof.boardDate) ? prof.boardDate : settings.boardDate;
+      const boardDate = util.resolveBoardDate();
       if (!boardDate) {
         // .panel here (not just .mini-row) so this matches the bordered card
         // language the hero block right above it already established -- the
@@ -15894,6 +16329,7 @@ window.G = window.G || {};
           await store.setSetting("boardDate", dateIn.value);
           try { if (G.util.announce) G.util.announce("Board date set."); } catch (e) {}
           draw();
+          try { if (typeof onDateSet === "function") onDateSet(); } catch (e) {}
         });
         row.appendChild(dateIn); row.appendChild(setBtn);
         wrap.appendChild(row);
@@ -22610,7 +23046,12 @@ window.G = window.G || {};
   function generateActionPlan(profile) {
     const plan = [];
     const tier = profile.tier || "E4";
-    const ets  = profile.etsDate;
+    // Prefer whatever this specific `profile` argument already carries (it
+    // may be in-progress onboarding-wizard data that hasn't been saved yet,
+    // so it must win over anything already on disk) - util.resolveETSDate()
+    // only fills in when profile.etsDate itself is empty, e.g. a Guest/Kiosk
+    // regenerate-plan call whose profile object never carries etsDate at all.
+    const ets  = profile.etsDate || util.resolveETSDate();
     // Rank-transition item — `tier` above used to be read and never
     // referenced again in this function. Now it surfaces the real
     // next-step promotion mechanism for the Soldier's own grade, sourced
@@ -23664,7 +24105,13 @@ window.G = window.G || {};
         _cache = profile;
         // Sync key fields to settings
         if (G.store && G.store.setSetting) {
-          if (profile.etsDate) await G.store.setSetting("etsDate", profile.etsDate);
+          // Unlike the other three fields below, this one is unconditional:
+          // etsDate was only mirrored when truthy, so redoing setup and
+          // clearing a previously-set ETS date left the OLD value sitting in
+          // settings forever (Home's ETS banner - and anything else reading
+          // settings.etsDate directly - kept showing it). Mirroring "" just
+          // as faithfully as a real date closes that gap.
+          await G.store.setSetting("etsDate", profile.etsDate || "");
           if (profile.tier) await G.store.setSetting("tierFilter", profile.tier);
           if (profile.retirementSystem) await G.store.setSetting("retirementSystem", profile.retirementSystem);
           if (profile.displayName) await G.store.setSetting("userName", profile.displayName);
@@ -28519,6 +28966,21 @@ window.G = window.G || {};
     }
     return false;
   }
+  // Both call sites below (the export-time excluded-count and the
+  // import-time warning) used to test Array.isArray(v) && v.length only -
+  // true for every private key that existed when that check was written
+  // (the roster and risk:all both hold their entries in an array). Squad
+  // MOI Briefing Tracker (leader.js) added the first OBJECT-shaped private
+  // key (guidon:leader:roster:moi:v1, a 5-scalar snapshot) - an
+  // array-only check would silently treat a real attached-MOI snapshot as
+  // "nothing to disclose", the exact false negative the comments on both
+  // call sites explicitly guard against for the array case. Same "empty is
+  // not real data" principle, generalized to either shape.
+  function privateKeyHasContent(v) {
+    if (Array.isArray(v)) return v.length > 0;
+    if (v && typeof v === "object") return Object.keys(v).length > 0;
+    return false;
+  }
 
   // Content-checks for other known kv keys beyond the profile row (added
   // alongside it) - previously only guidon:profile:v1 was validated at
@@ -28622,6 +29084,25 @@ window.G = window.G || {};
     // separate mechanism that had no entry, so a malformed roster row was
     // invisible to both backup-import validation and the live kvscan.
     "guidon:leader:roster:v1": function (v) { return Array.isArray(v) && v.every(function (s) { return s && typeof s === "object"; }); },
+    // Squad MOI Briefing Tracker (leader.js, MOI Import Phase 2): the
+    // leader's own small attached-MOI snapshot - covered by the same
+    // "guidon:leader:roster" PRIVATE_PREFIXES match as the roster row just
+    // above (excluded from backup by default for the same reason). Exactly
+    // 5 scalars by design (see leader.js's own MOI_KEY comment for why it
+    // is deliberately this small) - name/dueDate are leader- or
+    // Soldier-typed text, importedAt/savedAt are timestamps written by
+    // Date.now()/plan.importedAt, topicCount is a plain count. There is no
+    // "row absent" special case to allow here the way guidon:moi:plan:v1's
+    // own null-is-valid state needs (comment above) - Detach really
+    // deletes this row (G.db.del), it never nulls it.
+    "guidon:leader:roster:moi:v1": function (v) {
+      return v && typeof v === "object" && !Array.isArray(v) &&
+        typeof v.name === "string" &&
+        (v.importedAt == null || typeof v.importedAt === "number") &&
+        typeof v.dueDate === "string" &&
+        typeof v.topicCount === "number" && isFinite(v.topicCount) && v.topicCount >= 0 &&
+        typeof v.savedAt === "number" && isFinite(v.savedAt);
+    },
     // PT Planner's two rows and Team Training's one shipped with no entry
     // here: they rode every backup export/import unchecked and were
     // invisible to Diagnostics' live "Data validity scan". Same shape-only
@@ -28663,6 +29144,61 @@ window.G = window.G || {};
       }
       if ("opened" in v && !isPlainObject(v.opened)) return false;
       return true;
+    },
+    // ROADMAP 3g custom PT sessions (app-modules/pt-planner.js): a Soldier's
+    // own "Build your own session" list, one row per saved session. Every
+    // reader (both day-assignment pickers, the hard:recovery guard via
+    // tally(), prtSessionSummary()) reads label/effort/type/blocks off each
+    // entry unconditionally, so each must really carry them - same
+    // per-element rigor as guidon:recite:own:v1/idp:goals above.
+    "guidon:prt:customSessions:v1": function (v) {
+      return Array.isArray(v) && v.every(function (s) {
+        return s && typeof s === "object" && typeof s.id === "string" && typeof s.label === "string" &&
+          typeof s.effort === "string" && typeof s.type === "string" &&
+          Array.isArray(s.blocks) && s.blocks.every(function (b) { return b && typeof b === "object" && typeof b.drillId === "string"; });
+      });
+    },
+    // MOI Import Phase 1 (app-modules/moi-import.js): guidon:moi:plan:v1 is
+    // now the LEGACY single-plan row - a one-time migration source into
+    // guidon:moi:plans:v1 below, never the live storage again. Its reader
+    // (buildResultView() and friends, before the Phase 1 rewrite) walks
+    // v.topics as an array of topic-name strings with no null-guard, so
+    // that is the one shape check that matters. `v === null` is ALSO valid
+    // here on purpose: render()'s own migration flow nulls this row (never
+    // deletes it) the moment migration finishes, so a null value is this
+    // key's real, permanent "done" state, not a corrupted one - without
+    // this, Diagnostics' "Data validity scan" (which runs every
+    // KV_VALIDATORS check against whatever is already sitting in
+    // IndexedDB, not just a backup being restored) would flag every
+    // migrated device's kv store as corrupted, forever, for a row this app
+    // itself intentionally wrote.
+    "guidon:moi:plan:v1": function (v) {
+      return v === null || (v && typeof v === "object" && Array.isArray(v.topics) && v.topics.every(function (t) { return typeof t === "string"; }));
+    },
+    // The REAL, current MOI Import storage: an array of "plan family"
+    // records, each { id, createdAt, current, history }. Every reader
+    // (openPlan(), menu(), buildResultView()) walks family.current.topics
+    // and reads family.id, so those are the two fields that matter here -
+    // `current`'s own deeper shape (topicCoverage/topicLinks/topicTiers) is
+    // rebuilt field-by-field the same defensive way the legacy plan always
+    // was, so a partial `current` degrades rather than throwing.
+    // `history`, when present, must be an array of real objects - not
+    // checked field-by-field (buildDiffPanel()'s own `latest.diff || {...}`
+    // fallback already tolerates a missing/malformed `diff`), but a `null`
+    // ENTRY itself (e.g. a restored `history:[null]`) would pass a check
+    // that only looked at Array.isArray(f.history), then crash
+    // buildDiffPanel() the moment that family is opened - `latest.diff`
+    // dereferences `latest` before that fallback ever runs.
+    "guidon:moi:plans:v1": function (v) {
+      return Array.isArray(v) && v.every(function (f) {
+        if (!f || typeof f !== "object" || typeof f.id !== "string") return false;
+        if (!f.current || typeof f.current !== "object" || !Array.isArray(f.current.topics)) return false;
+        if (f.history !== undefined) {
+          if (!Array.isArray(f.history)) return false;
+          if (!f.history.every(function (h) { return h && typeof h === "object"; })) return false;
+        }
+        return true;
+      });
     },
   };
   function isPlainObject(v) { return !!v && typeof v === "object" && !Array.isArray(v); }
@@ -28752,6 +29288,9 @@ window.G = window.G || {};
     "team:training:v1": "Team Training completion counts",
     "prt:plan:v1": "your PT plan",
     "pt:history:v1": "your completed PT sessions",
+    "guidon:prt:customSessions:v1": "your custom PT sessions",
+    "guidon:moi:plan:v1": "your imported MOI study plan",
+    "guidon:moi:plans:v1": "your imported MOI study plans",
     "guidon:recite:own:v1": "your My unit texts",
     "board:mockHistory:v1": "Mock Board history",
     "idp:goals": "your IDP goals",
@@ -28767,6 +29306,7 @@ window.G = window.G || {};
     "finance:salaryNeg:v1": "salary worksheet",
     "risk:all": "saved risk assessments",
     "guidon:leader:roster:v1": "the squad roster",
+    "guidon:leader:roster:moi:v1": "the roster's attached MOI",
   };
   var KEY_LABEL_FAMILIES = [
     { prefix: "srs:", label: "Board Drill review progress" },
@@ -28836,13 +29376,13 @@ window.G = window.G || {};
       if (!opts.includePrivate) {
         kv = kv.filter(function (row) {
           if (!row || !isPrivateKey(row.k)) return true;
-          // Codex review on PR #193: both private rows (the roster,
-          // risk:all) hold their entries in an array, wiped to v:[] once
-          // the last one is deleted/cleared - counting that as "excluded"
-          // told a Soldier with an empty roster their (nonexistent) roster
-          // was left out of an otherwise-complete backup. Only a row that
-          // actually holds something is real omitted data.
-          if (Array.isArray(row.v) && row.v.length) excluded++;
+          // Codex review on PR #193: private rows are wiped to an empty
+          // value once the last thing in them is deleted/cleared -
+          // counting that as "excluded" told a Soldier with an empty
+          // roster their (nonexistent) roster was left out of an
+          // otherwise-complete backup. Only a row that actually holds
+          // something is real omitted data (privateKeyHasContent() above).
+          if (privateKeyHasContent(row.v)) excluded++;
           return false;
         });
       }
@@ -29078,7 +29618,7 @@ window.G = window.G || {};
             } else if (!validateKvRow(row)) {
               kvRejected.push(row.k);
             }
-            if (isPrivateKey(row.k) && Array.isArray(row.v) && row.v.length) privateKeysPresent.push(row.k);
+            if (isPrivateKey(row.k) && privateKeyHasContent(row.v)) privateKeysPresent.push(row.k);
           });
         }
         var msg = "Import this backup?" + (sum ? "\n\nIt contains: " + (sum.kv || 0) + " saved items, " + (sum.userScenarios || 0) + " authored scenarios, " + (sum.attempts || 0) + " quiz attempts." : "") + "\n\nYour existing data will be kept; matching items will be overwritten by the backup." + (hasProfileRow ? " This includes your name, rank, and board date." : "") +
@@ -29355,15 +29895,56 @@ window.G = window.G || {};
       var dupIdx = list.findIndex(function (r) { return r.kind === kind && r.label === label && r.date === date; });
       if (dupIdx !== -1) {
         var existing = list.splice(dupIdx, 1)[0];
+        // Re-stamp `source` when this call names one, even for a row that
+        // already existed (e.g. re-scheduling the same PT week, or a
+        // Calendar row whose kind/label/date happen to repeat) - otherwise a
+        // pre-existing row created before `source` existed, or one added by
+        // a caller that didn't pass it, could never become findable by
+        // clearManagedFor() afterwards even though this call clearly means
+        // to own it now.
+        if (entry.source) existing.source = entry.source;
         list.push(existing);
         await save(list);
         return list;
       }
       if (list.length >= MAX_REMINDERS) return null;
-      list.push({ id: uid(), kind: kind, label: label, date: date, note: entry.note || "" });
+      // `source` (Screen Layouts / ROADMAP 3g): which module wrote this row,
+      // so it can be swept later without guessing from kind+date alone (see
+      // clearManagedFor()'s own comment). Undefined on any row written
+      // before this existed or by a caller that didn't pass one - every
+      // reader already treats a missing/falsy field as "not managed by
+      // anything", so this is silently backward compatible.
+      list.push({ id: uid(), kind: kind, label: label, date: date, note: entry.note || "", source: entry.source || "" });
       await save(list);
       return list;
     });
+  }
+  // addManaged/clearManagedFor (Screen Layouts / ROADMAP 3g): the shared
+  // version of the source-stamped-reminder pattern pt-planner.js used to
+  // keep as its own private REMINDER_NOTE/clearPtRemindersFor (kind==="pt"
+  // && date===iso && note===REMINDER_NOTE). A real `source` field, not a
+  // kind+date sweep: Calendar's own kinds (weapons/acft/board/promopoints/
+  // other) are all reachable from the manual reminder editor's KINDS list
+  // above, so a caller sweeping by kind+date alone risks deleting a
+  // Soldier's own hand-made reminder that happens to share both. `source`
+  // is opaque to this module - callers use their own convention (pt-planner.js
+  // uses "pt-planner", calendar.js uses "calendar:"+TRACKED key).
+  async function addManaged(entry) {
+    return add({ kind: entry.kind, label: entry.label, date: entry.date, note: entry.note || "", source: entry.source || "" });
+  }
+  async function clearManagedFor(opts) {
+    opts = opts || {};
+    if (!opts.source) return;
+    try {
+      var list = await load();
+      var mine = list.filter(function (r) {
+        return r && r.source === opts.source && (opts.date === undefined || r.date === opts.date);
+      });
+      for (var i = 0; i < mine.length; i++) {
+        await remove(mine[i].id);
+        try { if (G.notify && G.notify.cancelForReminder) await G.notify.cancelForReminder(mine[i].id); } catch (e) {}
+      }
+    } catch (e) {}
   }
   async function remove(id) {
     return _serialize(async function () {
@@ -29691,6 +30272,7 @@ window.G = window.G || {};
     KINDS: KINDS,
     MAX: MAX_REMINDERS,
     load: load, add: add, remove: remove, bucket: bucket,
+    addManaged: addManaged, clearManagedFor: clearManagedFor,
     renderStrip: renderStrip, renderEditor: renderEditor,
     _daysUntil: daysUntil, // exported for tests
     _buildTimeline: buildTimeline, // exported for tests (90-day density strip)
@@ -32990,10 +33572,21 @@ window.G = window.G || {};
 
     // ── ETS countdown + milestone alerts ────────────────────────────────────
     try {
-      const s = store.settings ? store.settings() : {};
-      if (s.etsDate) {
+      // Was settings.etsDate only, with no profile fallback at all - unlike
+      // every other board/ETS reader in the app (renderBoardCountdown, the
+      // Transition tab), a personal profile's own etsDate was silently
+      // ignored here unless it happened to also be mirrored into settings.
+      // util.resolveETSDate() (profile, then settings, same precedence as
+      // everywhere else) fixes that, and also fixes the related staleness
+      // bug: this banner used to read settings.etsDate straight from the
+      // stored object, which stayed stale forever if a profile's own
+      // etsDate was ever cleared without also being mirrored (see the
+      // profile-save fix alongside this one) - now it re-resolves live from
+      // the profile every render instead of trusting a possibly-stale copy.
+      const etsRaw = util.resolveETSDate();
+      if (etsRaw) {
         const today = new Date(); today.setHours(0,0,0,0);
-        const ets = new Date(s.etsDate + "T00:00:00");
+        const ets = new Date(etsRaw + "T00:00:00");
         const daysOut = Math.round((ets - today) / 86400000);
         if (daysOut >= 0) {
           // Urgency tier — shared with the Transition tab's own banner via
@@ -33361,6 +33954,43 @@ window.G = window.G || {};
           sub: checklistsComplete === 4 ? "All complete" : anyChecklistProgress ? "Keep going" : "Not started",
           hash: "#/records", tone: checklistsComplete === 4 ? "green" : "amber",
         });
+      } catch (e) {}
+
+      // 5) Career Calendar tracked dates (ROADMAP 3g Part 2). Reads the SAME
+      // computeRows() the Calendar screen itself now uses - fixedAnchors()
+      // alone (the promotion-month cut-off and the Credentialing Assistance
+      // FY reset) always contributes 2 rows even for a profile that has
+      // never touched Calendar at all, so those 2 universal rows do NOT
+      // count as "progress": rows.length > 2 (at least one real Soldier-
+      // entered date) is the gate, same "day one shouldn't look like day
+      // thirty" reasoning as the IDP-goals/checklists tiles above - a
+      // brand-new profile must not have THIS tile alone pull up the whole
+      // strip a step early.
+      try {
+        if (G.calendar && G.calendar.KEY && G.calendar.computeRows) {
+          let calSaved = {};
+          try {
+            const r = await G.db.get("kv", G.calendar.KEY);
+            const v = r && r.v;
+            calSaved = (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
+          } catch (e) {}
+          const calToday = new Date(); calToday.setHours(0, 0, 0, 0);
+          const calRows = G.calendar.computeRows(calSaved, calToday) || [];
+          const realCalProgress = calRows.length > 2;
+          if (realCalProgress) hasAnyProgress = true;
+          let calTone = "cyan";
+          if (calRows.length) {
+            const top = calRows[0];
+            const fn = top.urgencyFn || util.genericUrgency;
+            const lvl = fn(top.days).level;
+            calTone = lvl === "red" ? "red" : lvl === "amber" ? "amber" : "green";
+          }
+          tiles.push({
+            label: "Career Calendar", value: calRows.length ? String(calRows.length) : "—",
+            sub: realCalProgress ? "Dates tracked" : "Add your dates",
+            hash: "#/calendar", tone: calTone,
+          });
+        }
       } catch (e) {}
 
       // hasAnyProgress gate added (intuitivism pass): tiles.length>=2 alone
@@ -35129,6 +35759,23 @@ window.G = window.G || {};
       mount.appendChild(el("p.hint", { text: stampParts.join(" · ") }));
     }
 
+    // MOI Scope (ROADMAP 3g phase 2, MOI Import Phase 2): identical
+    // persistent banner to Board Drill's own (see renderDrill's block,
+    // index.html, for the full reasoning) - a separate copy, not a shared
+    // function, because this view lives in its own module IIFE with no
+    // shared lexical scope to renderDrill's.
+    const moiScopeIds = store.settings().moiScopeFamilies || [];
+    if (moiScopeIds.length && G.moiImport && G.moiImport.cachedFamilies) {
+      const scopedNames = G.moiImport.cachedFamilies()
+        .filter((f) => moiScopeIds.indexOf(f.id) !== -1)
+        .map((f) => (f.current && f.current.name) || "your MOI");
+      if (scopedNames.length) {
+        mount.appendChild(el("div.panel.moi-scope-banner", { style: "margin-bottom:10px" }, [
+          el("span", { text: "Narrowed to your MOI: " + scopedNames.join(", ") + ". Turn this off in Settings → Study Preferences → MOI Plans, or from the plan itself." }),
+        ]));
+      }
+    }
+
     // ── Topic filter chips ─────────────────────────────────────────────────
     const allEntries = store.doctrine("");
     const topicCounts = {};
@@ -35772,6 +36419,52 @@ window.G = window.G || {};
       // its own full-width mount row - see that header's comment.
       accGrid.appendChild(apPanel);
 
+      // ---- SCREEN LAYOUTS panel (ROADMAP 3g "customizable screen layouts",
+      // Phase A) ---- Same idea as the Theme picker above, but for LAYOUT
+      // (structure/information-architecture) rather than color: PT Planner
+      // and Career Calendar each choose their own layout independently.
+      // "Shared grid" is the one layout every build ships today - both
+      // screens can render through the same weekday-grid component
+      // (G.dateGrid.renderWeek) instead of their own screen-specific view.
+      // Phase B adds one more screen-specific option to each <select> below
+      // by pushing a new entry onto that module's own LAYOUTS registry -
+      // nothing here needs to change for that to "just work" (an id this
+      // <select> doesn't offer falls back to "classic" on read, same as an
+      // id this DEVICE doesn't recognise at all - see DEFAULT_SETTINGS'
+      // own comment on ptPlannerLayout/calendarLayout).
+      // No margin-top: this becomes accGrid's SECOND child, sharing row 1
+      // with apPanel (which also has none) - see accSummary's own comment a
+      // few hundred lines below for why a same-row grid sibling must not
+      // carry its own margin-top (align-items:start means it just pushes
+      // that one cell down from the row's start line, breaking row
+      // alignment instead of being absorbed like block-flow margins are).
+      const layoutPanel = el("div.panel");
+      layoutPanel.appendChild(el("label", { text: "Screen Layouts" }));
+      layoutPanel.appendChild(el("p.hint", { text: "Choose how PT Planner and Career Calendar are laid out. \"Shared grid\" draws both through the same weekday-grid view, so the two screens can look and feel unified." }));
+      function layoutSelect(label, settingKey, layoutsSource, hash) {
+        const wrap = el("div", { style: "margin-top:10px" });
+        wrap.appendChild(el("label", { text: label, style: "margin:0 0 4px;display:block" }));
+        const sel = el("select", { "aria-label": label });
+        const options = (layoutsSource && layoutsSource.LAYOUTS) || { classic: { label: "Classic" } };
+        Object.keys(options).forEach((id) => {
+          sel.appendChild(el("option", { value: id, text: options[id].label || id, selected: (s2[settingKey] || "classic") === id ? "selected" : null }));
+        });
+        sel.addEventListener("change", async () => {
+          await store.setSetting(settingKey, sel.value);
+          // Same re-tap-to-refresh mechanism the nav's own hash links use
+          // (see renderNav's onclick comment) - a plain setSetting() alone
+          // does nothing to a screen that is already mounted and showing
+          // its own layout, since nothing about changing a Settings value
+          // re-triggers routing on its own.
+          if (location.hash === hash) { try { route(); } catch (e) {} }
+        });
+        wrap.appendChild(sel);
+        return wrap;
+      }
+      layoutPanel.appendChild(layoutSelect("PT Planner layout", "ptPlannerLayout", G.ptPlanner, "#/pt-plan"));
+      layoutPanel.appendChild(layoutSelect("Career Calendar layout", "calendarLayout", G.calendar, "#/calendar"));
+      accGrid.appendChild(layoutPanel);
+
       // ---- ACCESSIBILITY & FOCUS panel ----
       // tabindex="-1": a valid programmatic focus target (for
       // openSettingsAdvanced's jump-button) without joining the normal
@@ -36224,6 +36917,39 @@ window.G = window.G || {};
         ]));
       });
       prefGrid.appendChild(mosPanel);
+    }
+
+    // MOI Scope (ROADMAP 3g phase 2, MOI Import Phase 2): mirrors the MOS
+    // Decks panel immediately above it - one checkbox per saved MOI plan
+    // family (G.moiImport, src/app-modules/moi-import.js), each
+    // independently opt-in and OFF by default (see moiScopeFamilies's own
+    // comment on DEFAULT_SETTINGS), read/written through G.moiImport's own
+    // inScopeIds()/setInScope() the same way MOS Decks reads/writes through
+    // G.mosDecks.optedIn()/setOptedIn() just above. Deliberately per-family,
+    // not one global switch: a Soldier can opt more than one saved plan in
+    // at once (two concurrent boards) or keep an old plan around unopted
+    // (reference only, never narrows anything). Only rendered when the
+    // Soldier actually has at least one saved plan - an empty list here
+    // would just be a confusing checkbox-less panel. This is the mirror of
+    // the SAME toggle moi-import.js's own menu()/openPlan() render on each
+    // plan's own card/detail view - both read/write the identical setting,
+    // so either one always reflects what the other last did.
+    const moiFamiliesList = (G.moiImport && G.moiImport.cachedFamilies) ? G.moiImport.cachedFamilies() : [];
+    if (moiFamiliesList.length) {
+      const moiPanel = el("div.panel", { style: "margin-top:12px" });
+      moiPanel.appendChild(el("label", { text: "MOI Plans" }));
+      moiPanel.appendChild(el("p.hint", { text: "Narrow Board Drill and Doctrine down to only what one or more of your saved MOI plans assign. Off by default for every plan — turn on any plan below to focus on just its topics, or turn on more than one if you're studying for multiple boards at once." }));
+      const moiOptedIn = G.moiImport.inScopeIds ? G.moiImport.inScopeIds() : [];
+      moiFamiliesList.slice().sort((a, b) => (b.current.importedAt || 0) - (a.current.importedAt || 0)).forEach((family) => {
+        const famName = (family.current && family.current.name) || "Your MOI";
+        const input = el("input", { type: "checkbox", "aria-label": "Narrow Board Drill and Doctrine to " + famName + "'s topics" });
+        input.checked = moiOptedIn.indexOf(family.id) !== -1;
+        input.addEventListener("change", () => { G.moiImport.setInScope(family.id, input.checked); });
+        moiPanel.appendChild(el("div", { style: "margin:12px 0" }, [
+          el("div.switch", {}, [el("label.toggle", { style: "margin:0" }, [input, el("span.track")]), el("span", { text: famName })]),
+        ]));
+      });
+      prefGrid.appendChild(moiPanel);
     }
 
     // Intuitivism pass: this standalone toggle was a literal functional

@@ -153,7 +153,15 @@ async function focusedId(page) {
       { modifiers: ["Control"] }
     );
     if (newPage) {
-      await newPage.waitForLoadState("load").catch(() => {});
+      // Not waitForLoadState("load"): a popup page starts at about:blank,
+      // which itself satisfies "load" instantly - calling this too soon
+      // after tab creation (before the real href navigation has even
+      // committed) can resolve against that initial about:blank state, so
+      // newPage.url() below still reads "about:blank" (seen in CI on
+      // 2026-09-21, run 35672559218). Wait for the actual condition being
+      // asserted - the URL reaching the target route - instead of a load
+      // event that doesn't reliably tell us which navigation it belongs to.
+      await newPage.waitForURL((u) => u.href.endsWith("#/doctrine"), { timeout: 15000 }).catch(() => {});
       const hashAfter = await page.evaluate(() => location.hash);
       newPage.url().endsWith("#/doctrine") ? ok("Ctrl+click on a sidebar item opens a real new tab at the right route") : bad("Ctrl+click new tab URL: " + newPage.url());
       hashAfter === hashBefore ? ok("Ctrl+click leaves the original tab's route untouched") : bad(`Ctrl+click changed the original tab's hash: ${hashBefore} -> ${hashAfter}`);
@@ -175,7 +183,10 @@ async function focusedId(page) {
       { button: "middle" }
     );
     if (newPage) {
-      await newPage.waitForLoadState("load").catch(() => {});
+      // Same about:blank race as the Ctrl+click check above - wait for the
+      // actual target route, not a "load" event that can resolve against
+      // the popup's initial blank state before the real navigation starts.
+      await newPage.waitForURL((u) => u.href.endsWith("#/calendar"), { timeout: 15000 }).catch(() => {});
       const hashAfter = await page.evaluate(() => location.hash);
       newPage.url().endsWith("#/calendar") ? ok("middle-click on a sidebar item opens a real new tab at the right route") : bad("middle-click new tab URL: " + newPage.url());
       hashAfter === hashBefore ? ok("middle-click leaves the original tab's route untouched") : bad(`middle-click changed the original tab's hash: ${hashBefore} -> ${hashAfter}`);

@@ -2,16 +2,34 @@
  * ROADMAP §3e: persisted day/week/month planning, template + suggestion model,
  * non-blocking hard:recovery warning, history, export, and existing reminder
  * pipeline integration. Offline-first; no recurrence service or server.
+ *
+ * ROADMAP 3g "customizable screen layouts", Phase A: this screen now renders
+ * through a small LAYOUTS registry (see the bottom of this file) instead of
+ * one hardcoded render() - "classic" is this file's original view, renamed
+ * renderClassic() with no behavior change; "shared-grid" draws the same
+ * weekday-grid component Career Calendar's own shared-grid layout uses
+ * (src/app-modules/date-grid.js), fed from this week's planned sessions.
+ *
+ * Phase B adds a third, PT-Planner-ONLY layout, "Tasking Board" (a
+ * company-ops-board metaphor: a Mission Library of PRESETS staged one at a
+ * time onto a 7-day Week Board - see renderTaskingBoard() below), by pushing
+ * one more entry onto LAYOUTS. It reuses every real data/persistence path
+ * renderClassic() already has - clonePreset(), savePlan(), ratioOf(), say() -
+ * and introduces no new one. The only change to renderClassic() itself is
+ * pulling its hard:recovery counts/message strings (countsLine()/
+ * ratioMessage(), just above renderClassic()) out to module scope so both
+ * layouts print the exact same words instead of a second copy of them
+ * silently drifting out of sync.
  */
 (function () {
   "use strict";
   var G = window.G || (window.G = {});
-  var util = G.util, el = util.el, db = G.db;
+  var util = G.util, el = util.el, db = G.db, store = G.store;
   var KEY = "prt:plan:v1";
   var HISTORY_KEY = "pt:history:v1";
   var DAY_KEYS = ["sun","mon","tue","wed","thu","fri","sat"];
   var DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-  var TITLE_MAX = 80; // a custom session name; also enforced on anything read from storage or a file
+  var TITLE_MAX = 80; // a custom session name (the ad hoc per-day one, and a saved custom session's own label); also enforced on anything read from storage or a file
   var LEADER_CHECKLIST = [
     "Confirm task, conditions, standards, and the leader responsible for the session.",
     "Complete the applicable risk-management process and brief controls before training.",
@@ -40,10 +58,20 @@
   // src/index.html) while a direct window.GUIDON_SEED.prt read would not
   // have been. The `|| []`/`|| {}` fallbacks below are only this file's
   // usual defensive try/catch pattern.
-  function prtSession(id) {
+  // `customSessions` (a Soldier's own guidon:prt:customSessions:v1 rows, see
+  // the custom-session block below) is an optional extra place to look once
+  // `id` is not one of store.prtMeta().sessions' own built-in entries - the
+  // same "REBUILT from the canonical source, never the input" rule PRESETS
+  // ids already get (see clonePreset's own comment), just extended to a
+  // second canonical source. Passing nothing (existing callers, existing
+  // tests) preserves the exact old behaviour: only seed sessions resolve.
+  function prtSession(id, customSessions) {
     var sessions = [];
     try { sessions = (G.store.prtMeta().sessions) || []; } catch (e) {}
-    return sessions.find(function (s) { return s && s.id === id; }) || null;
+    var found = sessions.find(function (s) { return s && s.id === id; });
+    if (found) return found;
+    var cs = findCustomSession(customSessions, id);
+    return cs ? { id:cs.id, label:cs.label, blocks:cs.blocks || [] } : null;
   }
   function prtDrillLabel(id) {
     try {
@@ -55,8 +83,15 @@
     try { pending = (G.store.prtMeta().pendingDrills) || {}; } catch (e) {}
     return { label:pending[id] || id, pending:true };
   }
-  function prtSessionSummary(id) {
-    var s = prtSession(id);
+  // Unchanged for a built-in seed session (strength/endurance): resolves
+  // every block through prtDrillLabel(), same as always. A custom session's
+  // blocks only ever reference a real store.prtMeta().drills id today (the
+  // composer's palette offers nothing else - see the "Build your own
+  // session" panel inside render() below),
+  // so they resolve through the exact same, un-forked path - a day assigned
+  // a custom session shows its blocks exactly like a built-in one.
+  function prtSessionSummary(id, customSessions) {
+    var s = prtSession(id, customSessions);
     if (!s) return "";
     return (s.blocks || []).map(function (b) {
       var d = prtDrillLabel(b.drillId);
@@ -92,9 +127,98 @@
     }
   };
 
-  function clonePreset(id) {
-    var p = PRESETS[id] || PRESETS.custom;
-    return { id:p.id, title:p.title, type:p.type, effort:p.effort, route:p.route || "", sessionId:p.sessionId || "" };
+  // ROADMAP 3g: "Build your own session" custom sessions - one Soldier-named,
+  // Soldier-ordered set of drill blocks, saved once and then usable anywhere
+  // a PRESETS id already is (the day-assignment pickers, a day card's
+  // summary line), with none of THOSE call sites special-cased for it. The
+  // row shape mirrors store.prtMeta().sessions' own {id, label, blocks} on
+  // purpose (see the id/label naming below), plus the effort/type/createdAt
+  // a PT Planner session also needs.
+  var CUSTOM_KEY = "guidon:prt:customSessions:v1";
+  // Real PRESETS value sets (see PRESETS above): "recovery"/"moderate"/"hard"
+  // for effort (identical to the ad hoc per-day custom-effort picker at
+  // makeDayCard's own [data-pt-effort] select, so the hard:recovery guard's
+  // tally() - which only branches on these three - treats a custom session
+  // exactly like a built-in one). "rest" and the single ad hoc "custom"
+  // preset are not real choices here: "rest" is "no training" (a composed,
+  // multi-block session is never that) and "custom" is that OTHER, unnamed,
+  // one-off per-day bucket (PRESETS.custom) - a saved, reusable session is
+  // neither, so the type choice is the two PRESETS values that actually
+  // describe something built from drill blocks.
+  var CUSTOM_EFFORTS = ["recovery","moderate","hard"];
+  var CUSTOM_TYPES = ["drill","session"];
+  // Defensive, not merely trusting: a hand-edited IDB row or a restored
+  // backup that slipped past KV_VALIDATORS (below) must not crash the
+  // planner the first time it reads this list. Same "shape-check every
+  // field, drop what fails" rigor normalizePlan()'s own normalizeEntry()
+  // already applies to a plan file.
+  function normalizeCustomSessions(v) {
+    if (!Array.isArray(v)) return [];
+    var seen = {}, out = [];
+    v.forEach(function (s) {
+      if (!s || typeof s !== "object" || Array.isArray(s)) return;
+      if (typeof s.id !== "string" || !s.id || seen[s.id]) return;
+      var label = typeof s.label === "string" ? s.label.replace(/\s+/g, " ").trim().slice(0, TITLE_MAX) : "";
+      if (!label) return;
+      var blocks = Array.isArray(s.blocks)
+        ? s.blocks.filter(function (b) { return b && typeof b === "object" && typeof b.drillId === "string" && b.drillId; })
+            .map(function (b) { return { drillId:b.drillId }; })
+        : [];
+      if (!blocks.length) return;
+      seen[s.id] = true;
+      out.push({
+        id:s.id, label:label,
+        effort:CUSTOM_EFFORTS.indexOf(s.effort) >= 0 ? s.effort : "moderate",
+        type:CUSTOM_TYPES.indexOf(s.type) >= 0 ? s.type : "session",
+        blocks:blocks,
+        createdAt:typeof s.createdAt === "number" && isFinite(s.createdAt) ? s.createdAt : Date.now()
+      });
+    });
+    return out;
+  }
+  async function loadCustomSessions() {
+    try { return normalizeCustomSessions(await db.getSetting(CUSTOM_KEY, [])); }
+    catch (e) { return []; }
+  }
+  async function saveCustomSessions(list) {
+    try { await db.setSetting(CUSTOM_KEY, normalizeCustomSessions(list)); return true; }
+    catch (e) { try { util.toast("Could not save your custom PT sessions."); } catch (_) {} return false; }
+  }
+  function findCustomSession(list, id) {
+    if (!id || !Array.isArray(list)) return null;
+    return list.find(function (s) { return s && s.id === id; }) || null;
+  }
+  // A day-plan entry ({id, title, type, effort, route, sessionId}) built from
+  // a saved custom session - the exact same output shape clonePreset()
+  // returns for a built-in id, so nothing downstream (normalizeEntry, a
+  // day card, the hard:recovery guard) can tell the difference. `sessionId`
+  // is the custom session's own id, so prtSessionSummary() (fed the same
+  // customSessions list) resolves its blocks through the one shared summary
+  // path - never a fork.
+  function cloneCustomSession(cs) {
+    return { id:cs.id, title:cs.label, type:cs.type, effort:cs.effort, route:"", sessionId:cs.id };
+  }
+  // "custom-<timestamp>", bumped past any collision with a PRESETS id or an
+  // id already in use - short, generated, and never reused.
+  function nextCustomId(existing) {
+    var used = {};
+    Object.keys(PRESETS).forEach(function (k) { used[k] = true; });
+    (existing || []).forEach(function (s) { if (s && s.id) used[s.id] = true; });
+    var n = Date.now(), id = "custom-" + n;
+    while (used[id]) { n++; id = "custom-" + n; }
+    return id;
+  }
+  // `customSessions`, when given, is checked once `id` is not a PRESETS key -
+  // the same "id not recognized -> fall through" shape clonePreset already
+  // had, just with one more canonical source before the generic ad hoc
+  // "Custom PT" fallback. Every existing call site (templates, which only
+  // ever pass a PRESETS id) keeps working with no second argument at all.
+  function clonePreset(id, customSessions) {
+    var p = PRESETS[id];
+    if (p) return { id:p.id, title:p.title, type:p.type, effort:p.effort, route:p.route || "", sessionId:p.sessionId || "" };
+    var cs = findCustomSession(customSessions, id);
+    if (cs) return cloneCustomSession(cs);
+    return clonePreset("custom", customSessions);
   }
   function planFromTemplate(id) {
     var t = TEMPLATES[id] || TEMPLATES.balanced;
@@ -108,10 +232,26 @@
   // handed-over file cannot point "Open training tool" somewhere else. Only a
   // custom session keeps anything of its own: a name (length-capped) and an
   // effort. Returns null for something that is not a session record at all.
-  function normalizeEntry(d) {
+  // A custom session id that still exists resolves to ITS current
+  // label/blocks (rebuilt from customSessions, never from `d` - same rule as
+  // a PRESETS id). One that no longer exists (deleted since this plan was
+  // saved) falls straight through to the generic ad hoc "custom" bucket
+  // below, which keeps `d.title`/`d.effort` from the stored plan - so a day
+  // that had a deleted custom session degrades to a plain, renamable custom
+  // PT entry with its old name and effort intact, exactly like any other
+  // unrecognized id already did before this feature existed.
+  function normalizeEntry(d, customSessions) {
     if (!d || typeof d !== "object" || Array.isArray(d)) return null;
-    var id = typeof d.id === "string" && Object.prototype.hasOwnProperty.call(PRESETS, d.id) ? d.id : "custom";
-    if (id !== "custom") return clonePreset(id);
+    // "custom" is a PRESETS key too (the generic ad hoc bucket, PRESETS.custom
+    // itself), but it is EXCLUDED from this shortcut on purpose: unlike every
+    // other PRESETS id, "custom" carries no fixed title of its own - a
+    // clonePreset("custom", ...) always returns the generic "Custom PT", which
+    // would silently wipe out whatever the Soldier actually typed into that
+    // day's name field. It falls through to the ad hoc branch below instead,
+    // same as any id this function does not otherwise recognize.
+    if (typeof d.id === "string" && d.id !== "custom" && Object.prototype.hasOwnProperty.call(PRESETS, d.id)) return clonePreset(d.id, customSessions);
+    var cs = findCustomSession(customSessions, typeof d.id === "string" ? d.id : null);
+    if (cs) return cloneCustomSession(cs);
     var title = typeof d.title === "string" ? d.title.replace(/\s+/g, " ").trim().slice(0, TITLE_MAX) : "";
     return { id:"custom", title:title || "Custom PT", type:"custom",
       effort:["hard","moderate","recovery"].indexOf(d.effort) >= 0 ? d.effort : "moderate", route:"", sessionId:"" };
@@ -121,7 +261,7 @@
   // the leader sheet look a little behind). Older ones are dropped on the
   // next save so the row cannot grow without bound over years of use.
   var OVERRIDE_KEEP_DAYS = 35;
-  function normalizeOverrides(v, nowMs) {
+  function normalizeOverrides(v, nowMs, customSessions) {
     var out = {};
     if (!v || typeof v !== "object" || Array.isArray(v)) return out;
     var floor = new Date(nowMs || Date.now()); floor.setHours(0,0,0,0); floor.setDate(floor.getDate() - OVERRIDE_KEEP_DAYS);
@@ -129,22 +269,25 @@
       if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return;
       var d = new Date(iso + "T12:00:00");
       if (!Number.isFinite(d.getTime()) || localISO(d) !== iso || d < floor) return;
-      var e = normalizeEntry(v[iso]);
+      var e = normalizeEntry(v[iso], customSessions);
       if (e) out[iso] = e;
     });
     return out;
   }
-  function normalizePlan(v, nowMs) {
+  // `customSessions` is optional (existing callers/tests that never pass it
+  // get the exact old behaviour: any id outside PRESETS degrades to the ad
+  // hoc "custom" bucket, same as before this feature existed).
+  function normalizePlan(v, nowMs, customSessions) {
     if (!v || typeof v !== "object" || Array.isArray(v)) return planFromTemplate("balanced");
     var out = {
       version:1,
       templateId:typeof v.templateId === "string" && Object.prototype.hasOwnProperty.call(TEMPLATES, v.templateId) ? v.templateId : "balanced",
       weekStart:"sun",
       days:{},
-      overrides:normalizeOverrides(v.overrides, nowMs)
+      overrides:normalizeOverrides(v.overrides, nowMs, customSessions)
     };
     DAY_KEYS.forEach(function (k) {
-      out.days[k] = normalizeEntry(v.days && v.days[k]) || clonePreset(TEMPLATES[out.templateId].days[k]);
+      out.days[k] = normalizeEntry(v.days && v.days[k], customSessions) || clonePreset(TEMPLATES[out.templateId].days[k], customSessions);
     });
     return out;
   }
@@ -160,15 +303,18 @@
       if (!data || typeof data !== "object" || data.schema !== PLAN_FILE_SCHEMA) return { plan:null, message:NOT_A_PLAN };
       var p = data.plan;
       if (!p || typeof p !== "object" || Array.isArray(p) || !p.days || typeof p.days !== "object" || Array.isArray(p.days)) return { plan:null, message:NOT_A_PLAN };
-      return { plan:normalizePlan(p), message:"" };
+      // A custom session id in an imported file only resolves on THIS device
+      // if a session by that id is also saved here (e.g. re-importing your
+      // own export) - never taken on faith from the file itself.
+      return { plan:normalizePlan(p, null, await loadCustomSessions()), message:"" };
     } catch (e) { return { plan:null, message:NOT_A_PLAN }; }
   }
-  async function loadPlan() {
-    try { return normalizePlan(await db.getSetting(KEY, null)); }
+  async function loadPlan(customSessions) {
+    try { return normalizePlan(await db.getSetting(KEY, null), null, customSessions || await loadCustomSessions()); }
     catch (e) { return planFromTemplate("balanced"); }
   }
-  async function savePlan(plan) {
-    try { await db.setSetting(KEY, normalizePlan(plan)); return true; }
+  async function savePlan(plan, customSessions) {
+    try { await db.setSetting(KEY, normalizePlan(plan, null, customSessions || await loadCustomSessions())); return true; }
     catch (e) { try { util.toast("Could not save the PT plan."); } catch (_) {} return false; }
   }
   async function loadHistory() {
@@ -197,24 +343,11 @@
     return run;
   }
   function say(msg) { try { if (G.util && G.util.announce) G.util.announce(msg); } catch (e) {} }
-  // Once a date is logged its planner-made reminder has done its job; leaving
-  // it would show "PT: ... - Today" on Home for a session already completed.
-  // (Reminders whose date has simply passed are expired by G.reminders
-  // itself - see EXPIRING_KINDS there - so nothing here needs a clock.)
-  var REMINDER_NOTE = "From PT Planner";
-  async function clearPtRemindersFor(iso) {
-    if (!G.reminders || !G.reminders.load || !G.reminders.remove) return;
-    try {
-      var mine = (await G.reminders.load()).filter(function (r) { return r && r.kind === "pt" && r.date === iso && r.note === REMINDER_NOTE; });
-      for (var i = 0; i < mine.length; i++) {
-        await G.reminders.remove(mine[i].id);
-        try { if (G.notify && G.notify.cancelForReminder) await G.notify.cancelForReminder(mine[i].id); } catch (e) {}
-      }
-    } catch (e) {}
-  }
-  function localISO(d) {
-    return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
-  }
+  // Local wrapper over util.localISO (src/index.html, next to
+  // util.parseISODate) - promoted from a byte-identical copy this file used
+  // to carry directly. Kept as a one-line wrapper so every existing call site
+  // in this file (localISO(...)) keeps working unchanged.
+  function localISO(d) { return util.localISO(d); }
   // ONE rule for both checks (the planned week and the completed 7 days), so
   // they can never disagree about the same week:
   //  - a rest day relieves hard training exactly like a recovery session
@@ -244,6 +377,20 @@
       if (d) tally(c, d.type, d.effort);
     });
     return guardFrom(c);
+  }
+  // The exact "<n> hard · <n> recovery or rest · <n> moderate" line and the
+  // exact hard:recovery flag message renderClassic()'s own two check panels
+  // show - pulled out to module scope (ROADMAP 3g Phase B) so the Tasking
+  // Board layout's own guard panel can print the SAME words a Soldier
+  // already sees in Classic, instead of a second copy of this text silently
+  // drifting out of sync with it.
+  function countsLine(r) {
+    return r.hard + " hard · " + (r.recovery + r.rest) + " recovery or rest · " + r.moderate + " moderate";
+  }
+  function ratioMessage(r) {
+    return r.warn
+      ? "Flag: this week has more than about 3 hard sessions for each recovery or rest day, which is GUIDON's planning guide. This is a warning, not a lockout—adjust it or keep it deliberately."
+      : "No hard-to-recovery flag (GUIDON's planning guide is about 3 hard sessions for each recovery or rest day). This does not certify the plan; leader judgment still applies.";
   }
   function historyRatio(list, nowMs) {
     var now = new Date(nowMs || Date.now()); now.setHours(23,59,59,999);
@@ -285,16 +432,20 @@
   // nothing was added. The session is looked up for the concrete date the
   // reminder will carry, never for the weekday alone: that date may have been
   // changed to rest (no reminder) or from rest to a session (reminder, with
-  // that session's name).
+  // that session's name). Uses G.reminders.addManaged() (not add()) so the
+  // reminder is stamped source:"pt-planner" - the completion handler below
+  // (and "Mark today complete") can then clear it by that source instead of
+  // its own private kind+date+note sweep (see the deleted REMINDER_NOTE/
+  // clearPtRemindersFor this replaced).
   async function addPtReminder(plan, dayIndex, quiet) {
-    if (!G.reminders || !G.reminders.add) return "failed";
+    if (!G.reminders || !G.reminders.addManaged) return "failed";
     var date = nextDateForDay(dayIndex);
     var entry = dayEntryForDate(plan, new Date(date + "T12:00:00"));
     if (!entry || entry.type === "rest") {
       if (!quiet) util.toast("That date is a rest day - no reminder added.");
       return "rest";
     }
-    var list = await G.reminders.add({ kind:"pt", label:"PT: " + entry.title, date:date, note:REMINDER_NOTE });
+    var list = await G.reminders.addManaged({ kind:"pt", label:"PT: " + entry.title, date:date, source:"pt-planner" });
     if (!list) { util.toast("Reminder limit reached."); return "full"; }
     var r = list[list.length - 1];
     try { if (G.notify && G.notify.scheduleForReminder) await G.notify.scheduleForReminder(r); } catch (e) {}
@@ -305,9 +456,29 @@
     return e === "hard" ? "Hard" : e === "recovery" ? "Recovery" : "Moderate";
   }
 
-  async function render(mount) {
+  // {week, history} readiness snapshot - a thin export over the ratio math
+  // this module already computes for its own two check panels (drawRatio()/
+  // drawHistoryGuard() inside renderClassic() below). No new bucketing logic;
+  // exists so a future cross-feature consumer (Home's dashboard, Phase B's
+  // Tasking Board layout) can read the same numbers without re-deriving them.
+  async function readinessSignal() {
+    try {
+      var plan = await loadPlan();
+      var hist = await loadHistory();
+      return { week: ratioOf(plan), history: historyRatio(hist) };
+    } catch (e) {
+      return { week: null, history: null };
+    }
+  }
+
+  async function renderClassic(mount) {
     util.clear(mount);
-    var plan = await loadPlan();
+    // Loaded once and kept in sync (reassigned) by the "Build your own
+    // session" panel below whenever it saves or deletes one - every reader in
+    // this render (both day-assignment pickers, prtSessionSummary()) shares
+    // this one snapshot rather than re-reading storage on every keystroke.
+    var customSessions = await loadCustomSessions();
+    var plan = await loadPlan(customSessions);
     var activeView = "week";
     var drawGeneration = 0;
     // One-step Undo for the changes that rearrange or replace the whole week
@@ -321,7 +492,7 @@
     // Every plan edit ends here: save, announce, redraw, put focus back.
     async function commit(message, focusSelector, keepUndo) {
       if (!keepUndo) undo = null;
-      await savePlan(plan);
+      await savePlan(plan, customSessions);
       if (message) say(message);
       draw(focusSelector);
     }
@@ -370,6 +541,237 @@
     controls.appendChild(ih);
 
     mount.appendChild(controls);
+
+    // ---- "Build your own session" (ROADMAP 3g custom PT sessions) --------
+    // A persistent panel (not inside the Day/Week/Month tabpanel) so it is
+    // reachable no matter which view is open - every view's own picker is
+    // where a saved session actually gets USED. Phase 1: plain buttons only
+    // (Add / Move up / Move down / Remove) - native HTML5 drag-and-drop is a
+    // deliberate Phase 2 follow-up, not attempted here.
+    var sessionsHost = el("div.panel", { "data-pt-sessions":"1" });
+    mount.appendChild(sessionsHost);
+    // In-progress draft while the composer is open; null the rest of the
+    // time. Never persisted itself - only Save writes anything to storage.
+    var builder = null;
+    // The SAME verification-completeness fact #/drills' own PRT session
+    // builder tags (src/index.html, prtDrill()/PRT_UNVERIFIED_IDS) - see that
+    // code's own comment on why "(content pending)" means "sequence checked,
+    // full per-exercise text not yet verified against ATP 7-22.02", not
+    // "unusable". This is intentionally a different question from
+    // prtDrillLabel()'s own "pending" (used by prtSessionSummary() below,
+    // unchanged): that one asks "does ANY seed.prt.drills record exist for
+    // this id at all" (true for every real drill, "pd" included, regardless
+    // of how much of it is verified); this one asks "how much of a REAL
+    // drill's own content is verified" - the finer question a Soldier
+    // choosing what to put in their own session actually needs answered.
+    function drillContentPending(d) {
+      var exs = (d && Array.isArray(d.exercises)) ? d.exercises : [];
+      return !exs.length || exs.some(function (ex) { return !ex || ex.sourceStatus !== "verified"; });
+    }
+    function availableDrills() {
+      try { return (G.store.prtMeta().drills) || []; } catch (e) { return []; }
+    }
+    function drillById(id) {
+      return availableDrills().find(function (d) { return d && d.id === id; }) || null;
+    }
+    function blockLabel(drillId) {
+      var d = drillById(drillId);
+      return d ? d.name + (drillContentPending(d) ? " (content pending)" : "") : drillId;
+    }
+    function moveBlock(index, dir) {
+      var j = index + dir;
+      if (j < 0 || j >= builder.blocks.length) return;
+      var tmp = builder.blocks[index]; builder.blocks[index] = builder.blocks[j]; builder.blocks[j] = tmp;
+      var label = blockLabel(builder.blocks[j].drillId);
+      var pos = j === 0 ? "Now first." : j === builder.blocks.length - 1 ? "Now last." : "Now item " + (j + 1) + " of " + builder.blocks.length + ".";
+      say("Moved " + label + (dir < 0 ? " up. " : " down. ") + pos);
+      drawSessions(dir < 0 ? '[data-pt-build-up="' + j + '"]' : '[data-pt-build-down="' + j + '"]');
+    }
+    function removeBlock(index) {
+      var removed = builder.blocks.splice(index, 1)[0];
+      var label = blockLabel(removed.drillId);
+      say("Removed " + label + ". " + builder.blocks.length + " item" + (builder.blocks.length === 1 ? "" : "s") + " in this session.");
+      var focusSel = builder.blocks.length ? ('[data-pt-build-remove="' + Math.min(index, builder.blocks.length - 1) + '"]') : ('[data-pt-build-add="' + removed.drillId + '"]');
+      drawSessions(focusSel);
+    }
+    // Every action here redraws only sessionsHost (never the whole plan) and
+    // refocuses through the SAME refocus() every other dynamic list in this
+    // file already uses - Save and Delete are the two exceptions that also
+    // change what the day-assignment pickers list, so they additionally call
+    // the outer draw() (with no focus argument, so it never fights this
+    // panel's own refocus).
+    function drawSessions(focusSelector) {
+      util.clear(sessionsHost);
+      sessionsHost.appendChild(el("div.eyebrow", { text:"Your PT sessions" }));
+      if (!builder) {
+        sessionsHost.appendChild(el("p.hint", { text:"Combine available drills into a session with your own name. Once saved, it shows up anywhere PT Planner assigns a session, exactly like a built-in one." }));
+        var openBtn = el("button.btn.sm.ghost", { type:"button", text:"Build your own session", "data-pt-build-open":"1" });
+        openBtn.addEventListener("click", function () {
+          builder = { name:"", effort:"moderate", type:"session", blocks:[] };
+          drawSessions("[data-pt-build-name]");
+        });
+        sessionsHost.appendChild(openBtn);
+        if (customSessions.length) {
+          var manage = el("div", { style:"margin-top:10px" });
+          manage.appendChild(el("div.eyebrow", { text:"Manage custom sessions" }));
+          customSessions.forEach(function (cs, idx) {
+            var row = el("div.mini-row", { style:"justify-content:space-between;align-items:center;flex-wrap:wrap" });
+            row.appendChild(el("div", {}, [
+              el("strong", { text:cs.label }),
+              el("p.hint", { text:effortLabel(cs.effort) + " effort · " + cs.blocks.length + " item" + (cs.blocks.length === 1 ? "" : "s"), style:"margin:2px 0 0" })
+            ]));
+            var del = el("button.btn.sm.ghost", { type:"button", text:"Delete", "aria-label":"Delete " + cs.label, "data-pt-build-delete":cs.id });
+            del.addEventListener("click", async function () {
+              if (del.getAttribute("aria-disabled") === "true") return;
+              del.setAttribute("aria-disabled", "true");
+              var go = !(G.modal && G.modal.confirm) || await G.modal.confirm(
+                "Delete \"" + cs.label + "\"?\n\nAny day currently using it will show as a plain custom PT entry you can rename, keeping its current name and effort.",
+                { title:"Delete this session?", okText:"Delete", danger:true });
+              if (!go) { del.removeAttribute("aria-disabled"); return; }
+              var filtered = customSessions.filter(function (s) { return s.id !== cs.id; });
+              customSessions = filtered;
+              await saveCustomSessions(customSessions);
+              // Degrade any day/date that pointed at the deleted session
+              // right away - the same "unknown id -> plain custom PT" rule
+              // normalizeEntry() already applies to a stranger's plan file,
+              // just triggered immediately instead of on the next load.
+              plan = normalizePlan(plan, null, customSessions);
+              await savePlan(plan, customSessions);
+              say("Deleted \"" + cs.label + "\".");
+              draw();
+              var nextFocus = filtered[idx] || filtered[idx - 1];
+              drawSessions(nextFocus ? '[data-pt-build-delete="' + nextFocus.id + '"]' : "[data-pt-build-open]");
+            });
+            row.appendChild(del);
+            manage.appendChild(row);
+          });
+          sessionsHost.appendChild(manage);
+        }
+      } else {
+        sessionsHost.appendChild(el("p.hint", { text:"Add drills in the order the session should run, then name it and save. Reorder with Move up / Move down - drag-and-drop is not supported yet." }));
+
+        var palette = el("div.panel", { "data-pt-build-palette":"1" });
+        palette.appendChild(el("div.eyebrow", { text:"Available drills" }));
+        var drills = availableDrills();
+        if (!drills.length) {
+          palette.appendChild(el("p.hint", { text:"No drills are available to add yet." }));
+        } else {
+          drills.forEach(function (d) {
+            var row = el("div.mini-row", { style:"justify-content:space-between;align-items:center;flex-wrap:wrap" });
+            var pending = drillContentPending(d);
+            var info = el("div", {}, [ el("strong", { text:d.name + (pending ? " (content pending)" : "") }) ]);
+            if (d.purpose) info.appendChild(el("p.hint", { text:d.purpose, style:"margin:2px 0 0" }));
+            row.appendChild(info);
+            var add = el("button.btn.sm.ghost", { type:"button", text:"Add", "aria-label":"Add " + d.name, "data-pt-build-add":d.id });
+            add.addEventListener("click", function () {
+              builder.blocks.push({ drillId:d.id });
+              say("Added " + d.name + ". " + builder.blocks.length + " item" + (builder.blocks.length === 1 ? "" : "s") + " in this session.");
+              drawSessions('[data-pt-build-add="' + d.id + '"]');
+            });
+            row.appendChild(add);
+            palette.appendChild(row);
+          });
+        }
+        sessionsHost.appendChild(palette);
+
+        var canvas = el("div.panel", { "data-pt-build-canvas":"1" });
+        canvas.appendChild(el("div.eyebrow", { text:"This session, in order" }));
+        if (!builder.blocks.length) {
+          canvas.appendChild(el("p.hint", { text:"No drills added yet. Add at least one from the list above." }));
+        } else {
+          var ol = el("ol", { style:"margin:6px 0 0;padding-left:20px" });
+          builder.blocks.forEach(function (b, i) {
+            var li = el("li", { style:"margin:6px 0" });
+            var row = el("div.mini-row", { style:"justify-content:space-between;align-items:center;flex-wrap:wrap" });
+            row.appendChild(el("span", { text:blockLabel(b.drillId) }));
+            var btns = el("div.btn-row", { style:"gap:6px" });
+            var up = el("button.btn.sm.ghost", { type:"button", text:"Move up", "aria-label":"Move " + blockLabel(b.drillId) + " up", "data-pt-build-up":String(i) });
+            if (i === 0) up.setAttribute("aria-disabled", "true");
+            up.addEventListener("click", function () { if (up.getAttribute("aria-disabled") !== "true") moveBlock(i, -1); });
+            var down = el("button.btn.sm.ghost", { type:"button", text:"Move down", "aria-label":"Move " + blockLabel(b.drillId) + " down", "data-pt-build-down":String(i) });
+            if (i === builder.blocks.length - 1) down.setAttribute("aria-disabled", "true");
+            down.addEventListener("click", function () { if (down.getAttribute("aria-disabled") !== "true") moveBlock(i, 1); });
+            var rm = el("button.btn.sm.ghost", { type:"button", text:"Remove", "aria-label":"Remove " + blockLabel(b.drillId), "data-pt-build-remove":String(i) });
+            rm.addEventListener("click", function () { removeBlock(i); });
+            btns.appendChild(up); btns.appendChild(down); btns.appendChild(rm);
+            row.appendChild(btns);
+            li.appendChild(row);
+            ol.appendChild(li);
+          });
+          canvas.appendChild(ol);
+        }
+        sessionsHost.appendChild(canvas);
+
+        var form = el("div.panel");
+        var nrow = el("div.mini-row");
+        nrow.appendChild(el("label", { text:"Name" }));
+        var nameInput = el("input", { type:"text", "aria-label":"Name this PT session", placeholder:"e.g. Leg day", maxlength:String(TITLE_MAX), value:builder.name, "data-pt-build-name":"1" });
+        nrow.appendChild(nameInput);
+        form.appendChild(nrow);
+        var erow = el("div.mini-row");
+        erow.appendChild(el("label", { text:"Effort" }));
+        var effortSel = el("select", { "aria-label":"Training effort for this session", "data-pt-build-effort":"1" });
+        [["recovery","Recovery"],["moderate","Moderate"],["hard","Hard"]].forEach(function (pair) { effortSel.appendChild(el("option", { value:pair[0], text:pair[1] })); });
+        effortSel.value = builder.effort;
+        effortSel.addEventListener("change", function () { builder.effort = effortSel.value; });
+        erow.appendChild(effortSel);
+        form.appendChild(erow);
+        var typrow = el("div.mini-row");
+        typrow.appendChild(el("label", { text:"Type" }));
+        var typeSel = el("select", { "aria-label":"Session type", "data-pt-build-type":"1" });
+        [["drill","Drill"],["session","Session"]].forEach(function (pair) { typeSel.appendChild(el("option", { value:pair[0], text:pair[1] })); });
+        typeSel.value = builder.type;
+        typeSel.addEventListener("change", function () { builder.type = typeSel.value; });
+        typrow.appendChild(typeSel);
+        form.appendChild(typrow);
+        sessionsHost.appendChild(form);
+
+        var actions = el("div.btn-row");
+        var saveBtn = el("button.btn.sm.primary", { type:"button", text:"Save session", "data-pt-build-save":"1" });
+        function updateSaveState() {
+          var ready = !!nameInput.value.trim() && builder.blocks.length > 0;
+          saveBtn.setAttribute("aria-disabled", String(!ready));
+        }
+        // No redraw on every keystroke (same reasoning as the ad hoc
+        // per-day custom-title field above: a redraw here would drop typing
+        // focus) - only the Save button's own state is touched directly.
+        nameInput.addEventListener("input", function () { builder.name = nameInput.value; updateSaveState(); });
+        updateSaveState();
+        saveBtn.addEventListener("click", async function () {
+          if (saveBtn.getAttribute("aria-disabled") === "true") return;
+          saveBtn.setAttribute("aria-disabled", "true");
+          var name = (builder.name || "").replace(/\s+/g, " ").trim().slice(0, TITLE_MAX);
+          if (!name || !builder.blocks.length) { saveBtn.removeAttribute("aria-disabled"); return; }
+          var record = { id:nextCustomId(customSessions), label:name, effort:builder.effort, type:builder.type,
+            blocks:builder.blocks.map(function (b) { return { drillId:b.drillId }; }), createdAt:Date.now() };
+          var next = customSessions.concat([record]);
+          var saved = await saveCustomSessions(next);
+          if (!saved) { saveBtn.removeAttribute("aria-disabled"); return; }
+          customSessions = next;
+          builder = null;
+          say("Saved \"" + name + "\". Available for any day this week.");
+          draw();
+          drawSessions("[data-pt-build-open]");
+        });
+        actions.appendChild(saveBtn);
+        var cancelBtn = el("button.btn.sm.ghost", { type:"button", text:"Cancel", "data-pt-build-cancel":"1" });
+        cancelBtn.addEventListener("click", async function () {
+          if (builder.blocks.length) {
+            var go = !(G.modal && G.modal.confirm) || await G.modal.confirm(
+              "Discard this in-progress PT session?\n\n" + builder.blocks.length + " item" + (builder.blocks.length === 1 ? "" : "s") + " will be lost.",
+              { title:"Discard session?", okText:"Discard", danger:true });
+            if (!go) return;
+          }
+          builder = null;
+          say("Session discarded.");
+          drawSessions("[data-pt-build-open]");
+        });
+        actions.appendChild(cancelBtn);
+        sessionsHost.appendChild(actions);
+      }
+      refocus(focusSelector);
+    }
+    drawSessions();
 
     // Undo bar. Persistent host, filled by draw() while an Undo is on offer.
     var undoHost = el("div", { "data-pt-undo-host":"1" });
@@ -441,15 +843,10 @@
       lastWarn = w;
       return note;
     }
-    function countsLine(r) {
-      return r.hard + " hard · " + (r.recovery + r.rest) + " recovery or rest · " + r.moderate + " moderate";
-    }
     function drawRatio() {
       var r = ratioOf(plan);
       ratioCounts.textContent = countsLine(r);
-      ratioMsg.textContent = r.warn
-        ? "Flag: this week has more than about 3 hard sessions for each recovery or rest day, which is GUIDON's planning guide. This is a warning, not a lockout—adjust it or keep it deliberately."
-        : "No hard-to-recovery flag (GUIDON's planning guide is about 3 hard sessions for each recovery or rest day). This does not certify the plan; leader judgment still applies.";
+      ratioMsg.textContent = ratioMessage(r);
     }
 
     async function drawHistoryGuard(generation) {
@@ -486,9 +883,12 @@
       card.appendChild(el("div.eyebrow", { text:DAY_NAMES[dayIndex] + (dated ? " · today" : "") }));
       var sel = el("select", { "aria-label":"Session for " + (dated ? "today" : DAY_NAMES[dayIndex]), "data-pt-session":key });
       Object.keys(PRESETS).forEach(function (id) { sel.appendChild(el("option", { value:id, text:PRESETS[id].title })); });
-      sel.value = PRESETS[entry.id] ? entry.id : "custom";
+      // Every saved custom session lists here too, right alongside the
+      // built-in ones - no separate picker, no special-casing.
+      customSessions.forEach(function (cs) { sel.appendChild(el("option", { value:cs.id, text:cs.label })); });
+      sel.value = (PRESETS[entry.id] || findCustomSession(customSessions, entry.id)) ? entry.id : "custom";
       sel.addEventListener("change", async function () {
-        var picked = clonePreset(sel.value);
+        var picked = clonePreset(sel.value, customSessions);
         if (dated) plan.overrides[dated.iso] = picked; else plan.days[key] = picked;
         await commit((dated ? "Today" : DAY_NAMES[dayIndex]) + " set to " + picked.title + (dated ? ", for this date only." : ".") + flagNote(), 'select[data-pt-session="' + key + '"]');
       });
@@ -501,7 +901,7 @@
           // the Undo offer (if any) is withdrawn, like after any other edit.
           undo = null; drawUndo();
           if (dated) hint.textContent = effortLabel(target().effort) + " effort · custom · changed for this date";
-          await savePlan(plan);
+          await savePlan(plan, customSessions);
         });
         card.appendChild(custom);
         var effort = el("select", { "aria-label":"Training effort for " + DAY_NAMES[dayIndex], "data-pt-effort":key });
@@ -519,7 +919,7 @@
       var hint = el("p.hint", { text:effortLabel(entry.effort) + " effort · " + entry.type + (changed ? " · changed for this date" : "") });
       card.appendChild(hint);
       if (entry.sessionId) {
-        var summary = prtSessionSummary(entry.sessionId);
+        var summary = prtSessionSummary(entry.sessionId, customSessions);
         if (summary) card.appendChild(el("p.hint", { text:"Session blocks: " + summary, "data-pt-session-blocks":entry.sessionId }));
       }
       var actions = el("div.btn-row");
@@ -581,7 +981,14 @@
         var ok = await logCompletion({ date:todayKey, title:e.title, effort:e.effort, type:e.type, ts:Date.now() });
         if (!ok) { complete.removeAttribute("aria-disabled"); util.toast("Could not save the PT log."); return; }
         complete.textContent = "Today logged";
-        await clearPtRemindersFor(todayKey);
+        // Once a date is logged its planner-made reminder has done its job;
+        // leaving it would show "PT: ... - Today" on Home for a session
+        // already completed. (Reminders whose date has simply passed are
+        // expired by G.reminders itself - see EXPIRING_KINDS there - so
+        // nothing here needs a clock.) clearManagedFor (G.reminders, shared
+        // across modules) replaces this file's own former private
+        // REMINDER_NOTE/clearPtRemindersFor sweep.
+        try { if (G.reminders && G.reminders.clearManagedFor) await G.reminders.clearManagedFor({ source:"pt-planner", date:todayKey }); } catch (e2) {}
         var after = await drawHistoryGuard(drawGeneration);
         // The toast is a live region, so this is also what is read out.
         util.toast("PT session logged." + (after && after.warn ? " Heads up: your last 7 days are over the hard-to-recovery guide." : ""));
@@ -709,9 +1116,10 @@
         let label = d.toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
         let sel = el("select", { "aria-label":"Session for " + label, "data-pt-date-session":iso });
         Object.keys(PRESETS).forEach(function (id) { sel.appendChild(el("option", { value:id, text:PRESETS[id].title })); });
-        sel.value = PRESETS[e.id] ? e.id : "custom";
+        customSessions.forEach(function (cs) { sel.appendChild(el("option", { value:cs.id, text:cs.label })); });
+        sel.value = (PRESETS[e.id] || findCustomSession(customSessions, e.id)) ? e.id : "custom";
         sel.addEventListener("change", async function () {
-          let picked = clonePreset(sel.value);
+          let picked = clonePreset(sel.value, customSessions);
           plan.overrides[iso] = picked;
           await commit(label + " set to " + picked.title + ", for this date only.", 'select[data-pt-date-session="' + iso + '"]');
         });
@@ -764,13 +1172,259 @@
     draw();
   }
 
+  // ---- shared-grid layout (ROADMAP 3g "customizable screen layouts") ----
+  // Builds the coming 7 days' worth of date-cells from dayEntryForDate()
+  // (the same canonical per-date resolver Classic uses - override wins over
+  // template) and the PRESETS/custom-session effort tag, mapped to tone.
+  function buildWeekCells(plan) {
+    var out = [];
+    var start = new Date(); start.setHours(0,0,0,0);
+    for (var i = 0; i < 7; i++) {
+      var d = new Date(start); d.setDate(start.getDate() + i);
+      var entry = dayEntryForDate(plan, d);
+      var level = entry.type === "rest" ? "neutral"
+        : entry.effort === "hard" ? "red"
+        : entry.effort === "recovery" ? "green"
+        : "amber";
+      out.push({
+        iso: localISO(d),
+        date: d.toLocaleDateString("en-US", { month:"short", day:"numeric" }),
+        weekday: DAY_NAMES[d.getDay()].slice(0, 3),
+        isToday: i === 0,
+        title: entry.title,
+        sub: effortLabel(entry.effort) + (entry.type === "rest" ? "" : " · " + entry.type),
+        tone: { level: level },
+        link: entry.route || "",
+        source: "pt-planner",
+        actions: [],
+      });
+    }
+    return out;
+  }
+
+  async function renderSharedGrid(mount) {
+    util.clear(mount);
+    mount.appendChild(el("div.section-title", {}, [el("h2", { text:"PT Planner" }), el("div.rule")]));
+    mount.appendChild(el("p.hint", { text:"Shared grid layout — the same weekday-grid component Career Calendar's own shared-grid layout uses, switched to this week's planned PT. Change this in Settings → Screen Layouts." }));
+
+    var plan = await loadPlan();
+    var cells = buildWeekCells(plan);
+    var host = el("div.panel");
+    mount.appendChild(host);
+
+    // The switcher navigates to the OTHER screen's own route rather than
+    // rendering its data inline here - PT Planner and Career Calendar each
+    // choose their layout independently (ptPlannerLayout/calendarLayout are
+    // separate settings), so jumping over lets that screen's OWN choice
+    // decide what it shows next, instead of this screen guessing.
+    function draw(activeSource) {
+      if (activeSource === "calendar") { location.hash = "#/calendar"; return; }
+      if (!G.dateGrid || !G.dateGrid.renderWeek) {
+        util.clear(host);
+        host.appendChild(el("p.hint", { text:"The shared weekday-grid component isn't available - try Classic in Settings → Screen Layouts." }));
+        return;
+      }
+      G.dateGrid.renderWeek(host, cells, {
+        activeSource: "pt-planner",
+        sources: [{ id:"pt-planner", label:"PT Planner" }, { id:"calendar", label:"Career Calendar" }],
+        onSwitch: draw,
+      });
+    }
+    draw("pt-planner");
+
+    var foot = el("div.panel", { style:"margin-top:10px" });
+    foot.appendChild(el("p.hint", { text:"Showing the next 7 days only. Switch to Classic in Settings → Screen Layouts for Day/Week/Month, the hard:recovery checks, and history log." }));
+    mount.appendChild(foot);
+  }
+
+  // ---- Tasking Board layout (ROADMAP 3g "customizable screen layouts", Phase B) ----
+  // A company-ops-board metaphor: a "Mission Library" of available sessions
+  // (today, every PRESETS entry - a future custom-session composer would add
+  // more chips here the same way) staged ONE AT A TIME, then assigned onto a
+  // day of the "Week Board" (plan.days, the same weekly template
+  // renderClassic()'s own Week view edits - never plan.overrides/
+  // dayEntryForDate(), which is a per-DATE concept the Week view does not use
+  // either). Every write goes through savePlan(plan) - the exact function
+  // renderClassic()'s own commit() calls - and every announcement goes
+  // through say() - the exact function renderClassic() calls throughout.
+  // effort -> color is fixed by the Phase B brief: hard=red, moderate=cyan,
+  // recovery=green (the app's real --red/--cyan/--green tokens, applied
+  // inline per element - see date-grid.js's own toneColor() for the same
+  // "real CSS var, never a hardcoded hex" convention).
+  function effortColor(effort) {
+    return effort === "hard" ? "var(--red)" : effort === "recovery" ? "var(--green)" : "var(--cyan)";
+  }
+  // A Mission Library chip's "content pending" tag: true when ANY block of
+  // that preset's session has a placeholder drill. Reuses prtSessionSummary()
+  // (the exact function that already appends " (content pending)" per block
+  // for the day-card "Session blocks:" line in renderClassic()) rather than
+  // re-deriving pending status from prtDrillLabel() a second time.
+  function sessionHasPendingContent(sessionId) {
+    if (!sessionId) return false;
+    return /\(content pending\)/.test(prtSessionSummary(sessionId));
+  }
+
+  async function renderTaskingBoard(mount) {
+    util.clear(mount);
+    var plan = await loadPlan();
+    var staged = null; // a PRESETS id, while one Mission Library chip is staged
+    // Same pattern as renderClassic()'s own flagNote() (this file, ~line 473):
+    // "" unless an assignment just changed the guard's warn state.
+    var lastWarn = ratioOf(plan).warn; // the state on arrival is not a change to announce
+    function flagNote() {
+      var w = ratioOf(plan).warn, note = "";
+      if (lastWarn !== null && w !== lastWarn) {
+        note = w ? " Heads up: this week now has more than about 3 hard sessions for each recovery or rest day."
+                 : " The hard-to-recovery flag is now clear.";
+      }
+      lastWarn = w;
+      return note;
+    }
+
+    mount.appendChild(el("div.section-title", {}, [el("h2", { text:"PT Planner" }), el("div.rule")]));
+    mount.appendChild(el("p.hint", { text:"Tasking Board layout — stage a session from the Mission Library, then assign it to a day on the Week Board. Change this in Settings → Screen Layouts." }));
+
+    var content = el("div", { "data-tb-content":"1" });
+    mount.appendChild(content);
+
+    // Same technique renderClassic()'s own refocus() uses (a CSS selector
+    // re-queried after the redraw it names, since the exact node clicked may
+    // not exist anymore - e.g. an Assign button that disappears once staged
+    // is cleared). Falls through silently (never throws) if the node is
+    // gone, same as renderClassic().
+    function refocus(focusSelector) {
+      if (!focusSelector) return;
+      var n = null;
+      try { n = mount.querySelector(focusSelector); } catch (e) {}
+      try { if (n) n.focus(); } catch (e) {}
+    }
+
+    function draw(focusSelector) {
+      util.clear(content);
+
+      // ---- Mission Library ----
+      var lib = el("div.panel", { "data-tb-library":"1" });
+      lib.appendChild(el("div.eyebrow", { text:"Mission Library" }));
+      lib.appendChild(el("p.hint", { text:"Tap a session to stage it, then tap Assign on a day below." }));
+      var chipsRow = el("div", { style:"display:flex;flex-wrap:wrap;gap:8px" });
+      Object.keys(PRESETS).forEach(function (id) {
+        var p = PRESETS[id];
+        var isStaged = staged === id;
+        var pending = sessionHasPendingContent(p.sessionId);
+        var chip = el("button.btn.sm.ghost.tb-chip", {
+          type:"button",
+          "data-tb-chip":id,
+          "aria-pressed":String(isStaged),
+          style:"border-left-color:" + effortColor(p.effort)
+        });
+        chip.appendChild(el("span", { text:p.title }));
+        chip.appendChild(el("span.hint", { text:effortLabel(p.effort).toUpperCase() + (pending ? " · content pending" : "") }));
+        if (isStaged) chip.appendChild(el("span.badge.amber", { text:"STAGED" }));
+        chip.addEventListener("click", function () {
+          if (staged === id) { staged = null; say(p.title + " un-staged."); }
+          else { staged = id; say(p.title + " staged. Choose a day on the Week Board and tap Assign."); }
+          draw('[data-tb-chip="' + id + '"]');
+        });
+        chipsRow.appendChild(chip);
+      });
+      lib.appendChild(chipsRow);
+      content.appendChild(lib);
+
+      // ---- Week Board ----
+      var week = el("div.panel", { "data-tb-week":"1" });
+      week.appendChild(el("div.eyebrow", { text:"Week Board" }));
+      var grid = el("div.tb-week-row", { role:"list", "aria-label":"Week board" });
+      DAY_KEYS.forEach(function (key, idx) {
+        var entry = plan.days[key];
+        var col = el("div.panel.tb-day", { role:"listitem", tabIndex:"-1", "data-tb-day":key, style:"border-left-color:" + effortColor(entry.effort) });
+        col.appendChild(el("div.eyebrow", { text:DAY_NAMES[idx].slice(0, 3) }));
+        col.appendChild(el("div", { text:entry.title, style:"font-weight:600;overflow-wrap:anywhere" }));
+        col.appendChild(el("p.hint", { text:effortLabel(entry.effort).toUpperCase() + (entry.type === "rest" ? "" : " · " + entry.type) }));
+        if (staged) {
+          var stagedPreset = PRESETS[staged];
+          var assign = el("button.btn.sm.ghost", { type:"button", text:"Assign", "aria-label":"Assign " + stagedPreset.title + " to " + DAY_NAMES[idx], "data-tb-assign":key });
+          assign.addEventListener("click", async function () {
+            var picked = clonePreset(staged);
+            var previous = plan.days[key];
+            var stagedId = staged;
+            plan.days[key] = picked;
+            var savedOk = await savePlan(plan);
+            if (savedOk) {
+              staged = null;
+              say(DAY_NAMES[idx] + " assigned " + picked.title + "." + flagNote());
+            } else {
+              // Nothing persisted - put the in-memory plan back exactly as it
+              // was so the redraw never shows an assignment that didn't
+              // survive a reload, and keep the chip staged so the Soldier
+              // can just try Assign again instead of re-picking it.
+              plan.days[key] = previous;
+              staged = stagedId;
+              util.toast("Could not save the PT plan. Still staged — try Assign again.");
+            }
+            draw('[data-tb-day="' + key + '"]');
+          });
+          col.appendChild(assign);
+        }
+        grid.appendChild(col);
+      });
+      week.appendChild(grid);
+      content.appendChild(week);
+
+      // ---- Guard: the SAME hard:recovery check renderClassic() computes
+      // for the planned week (ratioOf(plan)), shown as a 7-segment colored
+      // strip (decorative - aria-hidden, since the real information is the
+      // text panel right under it, exactly like renderClassic()'s own
+      // role="group" ratio panel) plus that real accessible text.
+      var r = ratioOf(plan);
+      var guard = el("div.panel", { role:"group", "aria-label":"Hard to recovery check for the planned week", "data-tb-guard":"1" });
+      guard.appendChild(el("div.eyebrow", { text:"Hard : recovery check" }));
+      var strip = el("div.tb-guard-strip", { "aria-hidden":"true" });
+      DAY_KEYS.forEach(function (key) {
+        var entry = plan.days[key];
+        strip.appendChild(el("div.tb-guard-seg", { style:"background:" + effortColor(entry.effort) }));
+      });
+      guard.appendChild(strip);
+      guard.appendChild(el("strong", { text:countsLine(r) }));
+      guard.appendChild(el("p.hint", { text:ratioMessage(r) }));
+      content.appendChild(guard);
+
+      refocus(focusSelector);
+    }
+
+    draw();
+  }
+
+  // A simple id -> {label, render} map. Phase B adds a screen-specific
+  // "Tasking Board" layout by pushing one more entry onto this object -
+  // nothing else in this file (including the dispatcher below) needs to
+  // change for that.
+  var LAYOUTS = {
+    classic: { label:"Classic", render:renderClassic },
+    "shared-grid": { label:"Shared grid (with Career Calendar)", render:renderSharedGrid },
+    "tasking-board": { label:"Tasking Board", render:renderTaskingBoard }
+  };
+
+  // Thin dispatcher: reads the Soldier's chosen layout from Settings, falls
+  // back to "classic" for an id this build doesn't recognise (e.g. a Phase-B
+  // layout picked on another device and later removed here).
+  async function render(mount) {
+    var s = {};
+    try { s = (store && store.settings) ? store.settings() : {}; } catch (e) {}
+    var layoutId = (s && s.ptPlannerLayout) || "classic";
+    var layout = LAYOUTS[layoutId] || LAYOUTS.classic;
+    await layout.render(mount);
+  }
+
   G.ptPlanner = {
     render:render,
     KEY:KEY,
     HISTORY_KEY:HISTORY_KEY,
+    CUSTOM_SESSIONS_KEY:CUSTOM_KEY,
     PRESETS:PRESETS,
     TEMPLATES:TEMPLATES,
     LEADER_CHECKLIST:LEADER_CHECKLIST,
+    LAYOUTS:LAYOUTS,
+    readinessSignal:readinessSignal,
     _ratio:ratioOf,
     _historyRatio:historyRatio,
     _planFromTemplate:planFromTemplate,
@@ -779,6 +1433,8 @@
     _nextDateForDay:nextDateForDay,
     PLAN_FILE_SCHEMA:PLAN_FILE_SCHEMA,
     _session:prtSession,
-    _sessionSummary:prtSessionSummary
+    _sessionSummary:prtSessionSummary,
+    _normalizeCustomSessions:normalizeCustomSessions,
+    _nextCustomId:nextCustomId
   };
 })();

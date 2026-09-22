@@ -127,12 +127,12 @@ const badgeReport = await page.evaluate(() => {
   return rows;
 });
 
-badgeReport.length === 24
-  ? ok(`theme wall rendered exactly 24 swatch buttons`)
-  : bad(`theme wall rendered ${badgeReport.length} swatch buttons, expected 24`);
+badgeReport.length === 30
+  ? ok(`theme wall rendered exactly 30 swatch buttons`)
+  : bad(`theme wall rendered ${badgeReport.length} swatch buttons, expected 30`);
 
 badgeReport.every((r) => r.visible)
-  ? ok(`all 24 swatch buttons are actually on-screen (offsetParent set) after opening the wall - not just present in a hidden DOM`)
+  ? ok(`all 30 swatch buttons are actually on-screen (offsetParent set) after opening the wall - not just present in a hidden DOM`)
   : bad(`${badgeReport.filter((r) => !r.visible).length} swatch button(s) not actually visible after opening the wall`);
 
 const badgedNames = badgeReport.filter((r) => r.hasBadge).map((r) => r.name);

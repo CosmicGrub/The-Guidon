@@ -1,27 +1,62 @@
 /**
- * MOI Import Engine, Phase 1 (#/moi, G.moiImport): a Soldier imports a board
- * MOI (memorandum of instruction - a memo assigning doctrine citations as
- * study topics) and gets a curated study dashboard, plus an optional
- * practice drill, built from exactly what that MOI assigns.
+ * MOI Import Engine, Phase 1 overhaul (#/moi, G.moiImport): a Soldier imports
+ * a board MOI (memorandum of instruction - a memo assigning doctrine
+ * citations as study topics) and gets a curated study dashboard, plus an
+ * optional practice drill, built from exactly what that MOI assigns.
  *
- * Two halves, matching this module's own "pure matching pipeline, separate
- * from rendering" split:
+ * This suite covers the ORIGINAL single-plan pipeline/interaction pass AND
+ * the Phase 1 overhaul on top of it (two real bug fixes plus multi-plan
+ * history, match-tier badges and board-date awareness):
  *
- *  (a) tokenizeCitations/normalizeCitation/matchCitation exercised directly
- *      via window.G.moiImport against the REAL seed - the same pattern
- *      test-rankutils.mjs already uses for G.rankUtils. Covers a clean
- *      citation, a chapter/para suffix, a glyph-confused citation, an
- *      ambiguous "/"-joined pair (including the AR 600-8-2 vs AR 600-8-22
- *      substring-collision case matchCitation's own header comment calls
- *      out by name), the FM 3-22.9 -> TC 3-22.9 alias, and a genuinely
- *      unmatched fabricated citation - asserting each lands in the correct
- *      one of the 5 confidence tiers.
+ *  (a) tokenizeCitations/normalizeCitation/matchCitation/diffPlans exercised
+ *      directly via window.G.moiImport against the REAL seed - the same
+ *      pattern test-rankutils.mjs already uses for G.rankUtils. Covers every
+ *      confidence tier, the AR 600-8-2/AR 600-8-22 substring-collision
+ *      guarantee, the FM 3-22.9 alias, a genuinely unmatched fabricated
+ *      citation, diffPlans()'s own added/removed/coverageChanged logic
+ *      against fully hand-built plan snapshots, and a live regression check
+ *      that a real fan-out citation's per-topic counts are NOT inflated
+ *      (Part A2's bug fix) - conservation (per-topic counts sum exactly to
+ *      the shared aggregate) plus a genuine split (at least one topic's
+ *      count is strictly less than the aggregate, not just "never exceeds
+ *      it," which a still-broken implementation could pass by accident).
  *
- *  (b) A real interaction pass: paste a small synthetic MOI-like text block
- *      into the route, click through to Review, confirm the expected
- *      topics land in Matched (and a fabricated one in Not found), Build a
- *      saved plan with a practice drill, and confirm the result view's
- *      deep links into #/doctrine and #/board actually navigate.
+ *  (b) Legacy migration: seeds the OLD single-plan kv shape
+ *      (guidon:moi:plan:v1) directly, boots #/moi, and confirms it becomes
+ *      exactly one plan family with no data loss, the legacy row is nulled,
+ *      the migration flag is set, and - critically - deleting that migrated
+ *      family and then re-seeding the (now nulled) legacy key again never
+ *      resurrects it on a later boot.
+ *
+ *  (c) A full interaction pass for Plan A: paste a synthetic MOI-like text
+ *      block covering all three review buckets PLUS a superseded citation
+ *      (FM 3-22.9) into the route, confirm Review shows the right tier
+ *      badges (Part B: "Exact match" / "Superseded citation") next to the
+ *      coverage badges, exercise the glyph-folded manual-review flow, Build
+ *      a saved plan with a practice drill, and confirm the persisted
+ *      dashboard renders the same tier badges (Part B4) and its deep links
+ *      into #/doctrine, #/board and #/library actually navigate.
+ *
+ *  (d) Plan B: a second, DISTINCT plan built from a single real fan-out
+ *      citation (AR 350-1) - doubles as the end-to-end version of (a)'s A2
+ *      regression (the persisted plan.topicCoverage per topic must equal
+ *      that citation's own topicCounts share, not its combined aggregate)
+ *      and confirms Landing's menu now shows two plan-family cards.
+ *
+ *  (e) Re-importing a revision of Plan A (a citation dropped, a citation
+ *      added) and confirming the "What changed since..." disclosure's
+ *      stored diff matches diffPlans() computed fresh from the two real
+ *      persisted snapshots.
+ *
+ *  (f) Board-date awareness (Part D): the countdown banner and "Remind me
+ *      before board" button are absent/inert with no board date set, and
+ *      appear/work (reminder added with source "moi:plan", button disables
+ *      and relabels) once one is.
+ *
+ *  (g) Delete removes only ONE family (Plan B) and leaves Plan A intact,
+ *      AND clears the "moi:plan" reminder even though it was set while a
+ *      DIFFERENT family (Plan A) was open - the fixed, not per-family,
+ *      reminder source this file's own openPlan() comment documents.
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
@@ -30,6 +65,15 @@ import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
 const bad = (m) => { fails++; console.log("  FAIL  " + m); };
+
+/** YYYY-MM-DD for "n days from today", local date arithmetic - same
+    technique test-reminders-urgency-parity.mjs / test-consistency-extended.mjs
+    already use. */
+function daysFromNowStr(n) {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 const { server, url } = await serve("web");
 const browser = await chromium.launch();
@@ -45,10 +89,7 @@ page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
 // but the 404 still lands in the console as noise. Same environment-aware
 // forgiveness test-library.mjs already uses for the identical probe: count
 // the real network-response 404s on /docs/*.pdf and forgive exactly that
-// many console entries, never a blanket 404 allowance. First surfaced the
-// very first time this suite ran in CI at all (it had been one of 8 suites
-// silently never wired into the matrix) - passed locally every time because
-// web/docs/ is present here.
+// many console entries, never a blanket 404 allowance.
 let docsProbe404 = 0;
 page.on("response", (r) => { try { if (!r.ok() && /\/docs\/.*\.pdf$/i.test(new URL(r.url()).pathname)) docsProbe404++; } catch (e) {} });
 
@@ -57,6 +98,20 @@ await page.waitForTimeout(700);
 await dismissOnboarding(page);
 await page.waitForTimeout(300);
 
+// ---- Clean slate: these keys can carry state across test runs on a shared
+// profile. LEGACY_MIGRATED_FLAG is not exported (only KEY/PLANS_KEY/
+// diffPlans/render/the pure matching functions are, per G.moiImport's own
+// export table) - its literal value is hardcoded here, matching the one
+// other place a non-exported constant's literal has to be known: the app's
+// own KV_VALIDATORS/manifest entries for it (grep
+// "guidon:moi:legacyMigrated:v1" in src/index.html / manifest.json).
+const LEGACY_MIGRATED_FLAG = "guidon:moi:legacyMigrated:v1";
+await page.evaluate(async (FLAG) => {
+  await window.G.db.put("kv", { k: window.G.moiImport.KEY, v: null });
+  await window.G.db.put("kv", { k: window.G.moiImport.PLANS_KEY, v: [] });
+  await window.G.db.setSetting(FLAG, false);
+}, LEGACY_MIGRATED_FLAG);
+
 /* ========================================================================
    (a) Pure matching pipeline, against the real seed
    ======================================================================== */
@@ -64,10 +119,11 @@ await page.waitForTimeout(300);
 const apiPresent = await page.evaluate(() =>
   !!(window.G && window.G.moiImport && window.G.moiImport.tokenizeCitations &&
      window.G.moiImport.normalizeCitation && window.G.moiImport.matchCitation &&
-     window.G.moiImport.buildCitationRegistry));
+     window.G.moiImport.buildCitationRegistry && window.G.moiImport.diffPlans &&
+     window.G.moiImport.PLANS_KEY));
 apiPresent
-  ? ok("window.G.moiImport is present with tokenizeCitations/normalizeCitation/matchCitation/buildCitationRegistry")
-  : bad("window.G.moiImport (or one of its pure functions) is missing");
+  ? ok("window.G.moiImport is present with the pure pipeline, diffPlans, KEY and PLANS_KEY")
+  : bad("window.G.moiImport (or one of its exports) is missing");
 
 // ---- clean citation: exact match, no suffix, no confusion ----
 const cleanResult = await page.evaluate(() => window.G.moiImport.matchCitation("AR 350-1"));
@@ -77,6 +133,9 @@ cleanResult.tier === "exact-fanout"
 cleanResult.normalized === "AR 350-1" && cleanResult.counts && cleanResult.counts.doctrineCards > 0
   ? ok("Clean citation carries real doctrineCards/selfCheckQuestions counts from the registry")
   : bad("Clean citation result shape wrong: " + JSON.stringify(cleanResult));
+cleanResult.topicCounts && typeof cleanResult.topicCounts === "object"
+  ? ok("matchCitation() result now carries a topicCounts object (Part A2)")
+  : bad("matchCitation('AR 350-1') has no topicCounts: " + JSON.stringify(cleanResult));
 
 // ---- chapter/para suffix stripped down to the bare tuple ----
 const suffixNorm = await page.evaluate(() => window.G.moiImport.normalizeCitation("AR 623-3, Ch 2"));
@@ -148,8 +207,8 @@ aliasTableHasIt
 
 // ---- genuinely unmatched fabricated citation ----
 const unmatchedResult = await page.evaluate(() => window.G.moiImport.matchCitation("AR 999-99"));
-unmatchedResult.tier === "unmatched" && (!unmatchedResult.topics || unmatchedResult.topics.length === 0)
-  ? ok("Fabricated citation 'AR 999-99' correctly resolves to tier 'unmatched' with no topics")
+unmatchedResult.tier === "unmatched" && (!unmatchedResult.topics || unmatchedResult.topics.length === 0) && unmatchedResult.topicCounts === null
+  ? ok("Fabricated citation 'AR 999-99' correctly resolves to tier 'unmatched' with no topics and topicCounts:null")
   : bad("matchCitation('AR 999-99') -> " + JSON.stringify(unmatchedResult));
 
 // ---- never a fuzzy fallback: a near-miss one-digit-off citation that IS
@@ -159,17 +218,265 @@ registrySize > 50
   ? ok("buildCitationRegistry() returns a real, sizeable registry (" + registrySize + " citation keys) - confirms it scanned the actual seed, not an empty/stub one")
   : bad("buildCitationRegistry() size looks wrong: " + registrySize);
 
+/* ------------------------------------------------------------------------
+   Part A2 regression: per-topic counts on a real fan-out citation must NOT
+   be inflated. Before this fix, EVERY topic a fan-out citation touches
+   showed that citation's combined total; the real bug this closes.
+   ------------------------------------------------------------------------ */
+const fanout = await page.evaluate(() => {
+  const m = window.G.moiImport.matchCitation("AR 350-1");
+  return { tier: m.tier, topics: m.topics, counts: m.counts, topicCounts: m.topicCounts };
+});
+fanout.tier === "exact-fanout" && fanout.topics.length > 1
+  ? ok("AR 350-1 is a real fan-out citation (" + fanout.topics.length + " topics) - the shape this A2 regression needs")
+  : bad("AR 350-1 is not fan-out as expected, this regression check needs a different fixture: " + JSON.stringify(fanout));
+const fanoutKeys = Object.keys(fanout.topicCounts || {});
+fanoutKeys.length === fanout.topics.length && fanout.topics.every((t) => fanoutKeys.includes(t))
+  ? ok("matchCitation('AR 350-1').topicCounts has exactly one entry per topic (" + fanoutKeys.length + ")")
+  : bad("topicCounts keys don't match topics: " + JSON.stringify(fanout));
+const sumDoc = fanoutKeys.reduce((s, t) => s + fanout.topicCounts[t].doctrineCards, 0);
+const sumQ = fanoutKeys.reduce((s, t) => s + fanout.topicCounts[t].selfCheckQuestions, 0);
+// <= the shared aggregate, not necessarily ===: buildCitationRegistry()'s
+// own record() deliberately records SOME sources (a scenario's doctrine[]
+// list, a Forms Trainer entry's reference field - see their own comments in
+// moi-import.js) with topic:null, which still adds to the shared `counts`
+// aggregate but has nothing to key a per-topic bucket on, by design. A
+// citation cited by both real-topic sources and topic-less ones (AR 350-1
+// is: 6 real-topic doctrine entries plus 4 topic-less scenarios and 1
+// topic-less form, all doctrineCards) will legitimately sum to LESS than
+// its aggregate on the per-topic side - that gap is real, documented
+// behavior, not the A2 bug. The two checks just below (never inflated,
+// genuinely split) are what actually prove the fix.
+sumDoc <= fanout.counts.doctrineCards && sumQ <= fanout.counts.selfCheckQuestions
+  ? ok("per-topic counts never exceed the shared aggregate in total either (" + sumDoc + "/" + sumQ + " summed across " + fanoutKeys.length + " topics, vs aggregate " + fanout.counts.doctrineCards + "/" + fanout.counts.selfCheckQuestions + " - any shortfall is topic-less scenario/forms coverage, not lost data)")
+  : bad("per-topic sum " + sumDoc + "/" + sumQ + " EXCEEDS the shared aggregate " + fanout.counts.doctrineCards + "/" + fanout.counts.selfCheckQuestions + " - real over-counting");
+const anyInflated = fanoutKeys.some((t) => fanout.topicCounts[t].doctrineCards > fanout.counts.doctrineCards || fanout.topicCounts[t].selfCheckQuestions > fanout.counts.selfCheckQuestions);
+!anyInflated
+  ? ok("no single topic's per-topic count exceeds the shared aggregate (the exact bug this fixes - every topic used to show the FULL combined total)")
+  : bad("a topic's per-topic count exceeds the shared aggregate - still inflated: " + JSON.stringify(fanout));
+const someStrictlySplit = fanoutKeys.some((t) => fanout.topicCounts[t].doctrineCards < fanout.counts.doctrineCards || fanout.topicCounts[t].selfCheckQuestions < fanout.counts.selfCheckQuestions);
+someStrictlySplit
+  ? ok("at least one topic's per-topic count is strictly LESS than the shared aggregate - the counts are genuinely split, not just duplicated under a passing-by-accident check")
+  : bad("no topic's per-topic count is less than the aggregate - suspicious, looks undivided: " + JSON.stringify(fanout));
+
+/* ------------------------------------------------------------------------
+   UCMJ Article citation grammar (Phase 2 extension): a SEPARATE grammar
+   alongside the AR/ADP/ATP/... one above - matchCitation()'s own 5-tier
+   logic gets zero changes, only tokenizeCitations/normalizeCitation/
+   buildCitationRegistry gain a second, UCMJ-specific recognition path.
+   Every case below is checked against the REAL seed, same as the AR/TC
+   cases above - never a hand-built fixture.
+   ------------------------------------------------------------------------ */
+
+// ---- tokenizeCitations: the four shapes the brief calls out ----
+const ucmjTokenCases = await page.evaluate(() => ({
+  dotArt: window.G.moiImport.tokenizeCitations("UCMJ Art. 92"),
+  wordArticle: window.G.moiImport.tokenizeCitations("UCMJ Article 15"),
+  slashPair: window.G.moiImport.tokenizeCitations("UCMJ Art 92 / 134"),
+  lettered: window.G.moiImport.tokenizeCitations("UCMJ Art 112a"),
+  // Non-regression: the pre-existing AR/TC grammar is completely
+  // untouched by adding a second, independent scan alongside it.
+  singleAr: window.G.moiImport.tokenizeCitations("AR 600-20"),
+}));
+JSON.stringify(ucmjTokenCases.dotArt) === JSON.stringify(["UCMJ 92"])
+  ? ok("tokenizeCitations('UCMJ Art. 92') -> ['UCMJ 92']")
+  : bad("tokenizeCitations('UCMJ Art. 92') -> " + JSON.stringify(ucmjTokenCases.dotArt));
+JSON.stringify(ucmjTokenCases.wordArticle) === JSON.stringify(["UCMJ 15"])
+  ? ok("tokenizeCitations('UCMJ Article 15') -> ['UCMJ 15'] (Article/Art./Art alternation)")
+  : bad("tokenizeCitations('UCMJ Article 15') -> " + JSON.stringify(ucmjTokenCases.wordArticle));
+(ucmjTokenCases.slashPair.includes("UCMJ 92") && ucmjTokenCases.slashPair.includes("UCMJ 134") && ucmjTokenCases.slashPair.length === 2)
+  ? ok("tokenizeCitations('UCMJ Art 92 / 134') surfaces BOTH halves as independent candidates, the same way the AR/TC slash case does: " + JSON.stringify(ucmjTokenCases.slashPair))
+  : bad("tokenizeCitations('UCMJ Art 92 / 134') -> " + JSON.stringify(ucmjTokenCases.slashPair));
+JSON.stringify(ucmjTokenCases.lettered) === JSON.stringify(["UCMJ 112a"])
+  ? ok("tokenizeCitations('UCMJ Art 112a') preserves the lettered subsection raw -> ['UCMJ 112a']")
+  : bad("tokenizeCitations('UCMJ Art 112a') -> " + JSON.stringify(ucmjTokenCases.lettered));
+JSON.stringify(ucmjTokenCases.singleAr) === JSON.stringify(["AR 600-20"])
+  ? ok("tokenizeCitations('AR 600-20') is untouched by the UCMJ grammar addition - still exactly ['AR 600-20']")
+  : bad("tokenizeCitations('AR 600-20') -> " + JSON.stringify(ucmjTokenCases.singleAr) + " (expected no change from the UCMJ addition)");
+
+// ---- normalizeCitation: shape, glyph-fold scope, lettered subsection ----
+const ucmjNormCases = await page.evaluate(() => ({
+  plain: window.G.moiImport.normalizeCitation("UCMJ Art. 92"),
+  lettered: window.G.moiImport.normalizeCitation("UCMJ Art 112a"),
+  roundTripBare: window.G.moiImport.normalizeCitation("UCMJ 134"), // tokenizeCitations' own slash-continuation output must round-trip
+}));
+JSON.stringify(ucmjNormCases.plain) === JSON.stringify({ pubType: "UCMJ", number: "92", glyphFolded: false })
+  ? ok("normalizeCitation('UCMJ Art. 92') -> {pubType:'UCMJ', number:'92', glyphFolded:false}")
+  : bad("normalizeCitation('UCMJ Art. 92') -> " + JSON.stringify(ucmjNormCases.plain));
+JSON.stringify(ucmjNormCases.lettered) === JSON.stringify({ pubType: "UCMJ", number: "112A", glyphFolded: false })
+  ? ok("normalizeCitation('UCMJ Art 112a') preserves the lettered subsection (uppercased) -> number:'112A'")
+  : bad("normalizeCitation('UCMJ Art 112a') -> " + JSON.stringify(ucmjNormCases.lettered));
+JSON.stringify(ucmjNormCases.roundTripBare) === JSON.stringify({ pubType: "UCMJ", number: "134", glyphFolded: false })
+  ? ok("normalizeCitation('UCMJ 134') (tokenizeCitations' own bare slash-continuation candidate) round-trips correctly")
+  : bad("normalizeCitation('UCMJ 134') -> " + JSON.stringify(ucmjNormCases.roundTripBare));
+
+// ---- matchCitation: a real doctrine entry, against the LIVE seed - confirm
+// the entry still exists and record whatever tier it actually resolves to
+// (never assumed - this app's own doc-ucmj-art92 entry is also cited by
+// other content packs, so its real tier may be fan-out, not unique). ----
+const ucmjMatch = await page.evaluate(() => window.G.moiImport.matchCitation("UCMJ Art. 92"));
+(ucmjMatch.tier !== "unmatched" && ucmjMatch.normalized === "UCMJ 92" && ucmjMatch.counts && ucmjMatch.counts.doctrineCards > 0)
+  ? ok("matchCitation('UCMJ Art. 92') resolves against the LIVE seed to tier '" + ucmjMatch.tier + "' (doc-ucmj-art92 confirmed still present, " + ucmjMatch.counts.doctrineCards + " doctrine card(s)/" + ucmjMatch.counts.selfCheckQuestions + " self-check question(s), topics: " + JSON.stringify(ucmjMatch.topics) + ")")
+  : bad("matchCitation('UCMJ Art. 92') did not resolve against the live seed: " + JSON.stringify(ucmjMatch) + " - has the doc-ucmj-art92 entry been removed/renamed?");
+
+// ---- registry population regression: a real combined ref from the live
+// seed (semicolon-joined doctrine source.ref) now registers BOTH halves,
+// where the old single-shot record() call could only ever credit one. ----
+const combinedRefCase = await page.evaluate(() => {
+  const tokens = window.G.moiImport.tokenizeCitations("UCMJ Art. 15; AR 27-10");
+  return {
+    tokens: tokens,
+    ucmj15: window.G.moiImport.matchCitation("UCMJ 15"),
+    ar2710: window.G.moiImport.matchCitation("AR 27-10"),
+  };
+});
+(combinedRefCase.tokens.includes("UCMJ 15") && combinedRefCase.tokens.includes("AR 27-10"))
+  ? ok("tokenizeCitations('UCMJ Art. 15; AR 27-10') (a real, semicolon-combined doctrine source.ref in the live seed) surfaces BOTH halves: " + JSON.stringify(combinedRefCase.tokens))
+  : bad("tokenizeCitations('UCMJ Art. 15; AR 27-10') -> " + JSON.stringify(combinedRefCase.tokens));
+(combinedRefCase.ucmj15.tier !== "unmatched" && combinedRefCase.ar2710.tier !== "unmatched")
+  ? ok("Both halves of the combined ref now register in the citation registry: 'UCMJ 15' -> tier '" + combinedRefCase.ucmj15.tier + "', 'AR 27-10' -> tier '" + combinedRefCase.ar2710.tier + "' (before this fix, buildCitationRegistry()'s single-shot record() call could only ever credit the FIRST citation-shaped run it found in the field, silently dropping the other)")
+  : bad("combined-ref registry population: UCMJ 15 -> " + JSON.stringify(combinedRefCase.ucmj15.tier) + ", AR 27-10 -> " + JSON.stringify(combinedRefCase.ar2710.tier) + " (expected neither unmatched)");
+// A second, real board q.source example of the same combined-ref shape
+// (slash-joined this time, not semicolon) - "UCMJ Art. 138 / AR 27-10".
+const combinedRefCase2 = await page.evaluate(() => {
+  const tokens = window.G.moiImport.tokenizeCitations("UCMJ Art. 138 / AR 27-10");
+  return { tokens: tokens, ucmj138: window.G.moiImport.matchCitation("UCMJ 138") };
+});
+(combinedRefCase2.tokens.includes("UCMJ 138") && combinedRefCase2.tokens.includes("AR 27-10") && combinedRefCase2.ucmj138.tier !== "unmatched")
+  ? ok("Real board q.source 'UCMJ Art. 138 / AR 27-10' (slash-combined) also registers both halves - 'UCMJ 138' resolves to tier '" + combinedRefCase2.ucmj138.tier + "'")
+  : bad("slash-combined board source case: " + JSON.stringify(combinedRefCase2));
+
+/* ------------------------------------------------------------------------
+   diffPlans() - fully hand-built plan snapshots, no dependency on seed
+   content. Covers added/removed/coverageChanged, a self-diff (no changes),
+   and a null previous snapshot (every topic reads as added).
+   ------------------------------------------------------------------------ */
+const diffCases = await page.evaluate(() => {
+  const f = window.G.moiImport.diffPlans;
+  const a = { topics: ["Alpha", "Bravo"], topicCoverage: { Alpha: { doctrineCards: 1, selfCheckQuestions: 0 }, Bravo: { doctrineCards: 2, selfCheckQuestions: 1 } } };
+  const b = { topics: ["Bravo", "Charlie"], topicCoverage: { Bravo: { doctrineCards: 3, selfCheckQuestions: 1 }, Charlie: { doctrineCards: 0, selfCheckQuestions: 2 } } };
+  return { d1: f(a, b), d2: f(a, a), d3: f(null, b) };
+});
+JSON.stringify(diffCases.d1.added) === JSON.stringify(["Charlie"])
+  ? ok("diffPlans: 'Charlie' (new in b) correctly detected as added")
+  : bad("diffPlans added: " + JSON.stringify(diffCases.d1.added));
+JSON.stringify(diffCases.d1.removed) === JSON.stringify(["Alpha"])
+  ? ok("diffPlans: 'Alpha' (dropped from a) correctly detected as removed")
+  : bad("diffPlans removed: " + JSON.stringify(diffCases.d1.removed));
+diffCases.d1.coverageChanged.length === 1 && diffCases.d1.coverageChanged[0].topic === "Bravo" &&
+  diffCases.d1.coverageChanged[0].before.doctrineCards === 2 && diffCases.d1.coverageChanged[0].after.doctrineCards === 3
+  ? ok("diffPlans: 'Bravo' present in both, coverage change (2->3 doctrine cards) correctly detected as the ONLY coverageChanged entry (Alpha/Charlie are add/remove, not a change)")
+  : bad("diffPlans coverageChanged: " + JSON.stringify(diffCases.d1.coverageChanged));
+diffCases.d2.added.length === 0 && diffCases.d2.removed.length === 0 && diffCases.d2.coverageChanged.length === 0
+  ? ok("diffPlans: diffing a plan against itself yields no changes")
+  : bad("diffPlans self-diff not empty: " + JSON.stringify(diffCases.d2));
+JSON.stringify(diffCases.d3.added.slice().sort()) === JSON.stringify(["Bravo", "Charlie"]) && diffCases.d3.removed.length === 0
+  ? ok("diffPlans: a null previous snapshot treats every next topic as added, nothing removed")
+  : bad("diffPlans(null, b): " + JSON.stringify(diffCases.d3));
+
 /* ========================================================================
-   (b) End-to-end interaction: paste MOI text -> Review -> Build -> links
+   (b) Legacy migration: guidon:moi:plan:v1 -> one family in
+   guidon:moi:plans:v1, at most once, ever
    ======================================================================== */
 
-// Clean slate: this key can carry state across test runs on a shared profile.
-await page.evaluate(async () => {
-  const KEY = window.G.moiImport.KEY;
-  await window.G.db.put("kv", { k: KEY, v: null });
-});
+const LEGACY_PLAN = {
+  name: "Legacy Test Battalion",
+  importedAt: Date.now() - 1000000,
+  topics: ["Legacy Topic One", "Legacy Topic Two"],
+  topicCoverage: { "Legacy Topic One": { doctrineCards: 2, selfCheckQuestions: 1 }, "Legacy Topic Two": { doctrineCards: 0, selfCheckQuestions: 3 } },
+  topicLinks: { "Legacy Topic One": { citationKey: "AR 1-1", boardCategory: null }, "Legacy Topic Two": { citationKey: "AR 2-2", boardCategory: "Legacy Topic Two" } },
+  groups: null,
+  generatedDrillCategories: [],
+};
+await page.evaluate((plan) => window.G.db.put("kv", { k: window.G.moiImport.KEY, v: plan }), LEGACY_PLAN);
 await page.evaluate(() => { location.hash = "#/moi"; });
-await page.waitForTimeout(500);
+await page.waitForFunction(() => !!document.querySelector(".empty-state, .card-results-grid"), { timeout: 5000 });
+
+const afterMigration = await page.evaluate(async () => {
+  const legacyRow = await window.G.db.get("kv", window.G.moiImport.KEY);
+  const plansRow = await window.G.db.get("kv", window.G.moiImport.PLANS_KEY);
+  return { legacyValue: legacyRow && legacyRow.v, families: (plansRow && plansRow.v) || [] };
+});
+afterMigration.legacyValue === null
+  ? ok("Migration nulls the legacy guidon:moi:plan:v1 row (not deleted - see its KV_VALIDATORS comment)")
+  : bad("legacy row after migration: " + JSON.stringify(afterMigration.legacyValue));
+afterMigration.families.length === 1
+  ? ok("Migration produced exactly ONE plan family from the legacy row")
+  : bad("families after migration: " + JSON.stringify(afterMigration.families.map((f) => f.id)));
+const migratedFamily = afterMigration.families[0];
+migratedFamily && migratedFamily.id === "legacy-" + LEGACY_PLAN.importedAt && migratedFamily.history.length === 0
+  ? ok("Migrated family carries the documented id shape ('legacy-' + importedAt) and an empty history")
+  : bad("migrated family shape: " + JSON.stringify(migratedFamily));
+migratedFamily && JSON.stringify(migratedFamily.current.topics) === JSON.stringify(LEGACY_PLAN.topics) &&
+  JSON.stringify(migratedFamily.current.topicCoverage) === JSON.stringify(LEGACY_PLAN.topicCoverage)
+  ? ok("Migrated family's `current` matches the legacy plan exactly - no data loss")
+  : bad("migrated current plan: " + JSON.stringify(migratedFamily && migratedFamily.current));
+const migratedFlag = await page.evaluate((FLAG) => window.G.db.getSetting(FLAG, false), LEGACY_MIGRATED_FLAG);
+migratedFlag === true
+  ? ok("Migration sets the one-time migration flag")
+  : bad("migration flag after migrating: " + JSON.stringify(migratedFlag));
+
+const menuAfterMigration = await page.evaluate(() => document.body.textContent || "");
+/Your MOI plans/.test(menuAfterMigration) && /Legacy Test Battalion/.test(menuAfterMigration)
+  ? ok("Landing shows the menu (not the empty state) with the migrated plan's card after migration")
+  : bad("Landing after migration did not show the expected menu/card");
+
+// ---- Delete the migrated family, then simulate a stray legacy row
+// reappearing (an anomaly that should never happen post-Phase-1, but
+// proves the migration flag - not just an empty legacy row - is what
+// actually gates re-migration) - confirms a Soldier who deletes every
+// migrated plan never has it resurrected. ----
+await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => /Legacy Test Battalion/.test(b.textContent || ""));
+  if (btn) btn.click();
+});
+await page.waitForFunction(() => [...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Delete"), { timeout: 5000 });
+await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Delete");
+  if (btn) btn.click();
+});
+await page.waitForTimeout(300);
+await page.evaluate(() => {
+  const b = [...document.querySelectorAll(".gm-back button")].find((x) => /delete/i.test(x.textContent || ""));
+  if (b) b.click();
+});
+await page.waitForTimeout(400);
+// Structural check (.empty-state is the real CSS class util.emptyState()
+// creates), not a body.textContent regex - "No MOI imported yet" is also a
+// JS string literal inside moi-import.js's own embedded <script>, which
+// textContent walks into regardless of what actually rendered (see the
+// scoped p.hint checks above for the same gotcha, hit for real while
+// writing this suite).
+const emptyAfterDelete = await page.evaluate(() => !!document.querySelector(".empty-state"));
+emptyAfterDelete ? ok("Deleting the migrated family returns Landing to the empty state") : bad("Landing did not return to empty state after deleting the migrated family");
+
+await page.evaluate((plan) => window.G.db.put("kv", { k: window.G.moiImport.KEY, v: plan }), LEGACY_PLAN);
+await page.reload({ waitUntil: "load" });
+// A full reload re-runs the whole boot sequence (store init, seed load,
+// IndexedDB open) from a cold start - no single DOM milestone captures
+// "fully booted" better than a generous fixed window here, the same
+// reasoning this suite's own very first wait (after the initial page.goto)
+// already relies on. // hygiene-ok: cold-boot reload has no DOM milestone
+await page.waitForTimeout(1200);
+await page.evaluate(() => { location.hash = "#/moi"; });
+await page.waitForFunction(() => !!document.querySelector(".empty-state, .card-results-grid"), { timeout: 5000 });
+const afterSecondBoot = await page.evaluate(async () => {
+  const plansRow = await window.G.db.get("kv", window.G.moiImport.PLANS_KEY);
+  return { families: (plansRow && plansRow.v) || [], hasEmptyState: !!document.querySelector(".empty-state") };
+});
+afterSecondBoot.families.length === 0
+  ? ok("A stray legacy row re-seeded after migration+deletion is NEVER resurrected as a family on a later boot (the migration flag, not the row's presence, gates it)")
+  : bad("families after re-seeding the legacy row post-migration: " + JSON.stringify(afterSecondBoot.families));
+afterSecondBoot.hasEmptyState
+  ? ok("Landing correctly shows the empty state, not a resurrected plan, after the re-seed")
+  : bad("Landing did not show the empty state after the legacy-row re-seed test");
+
+// Clean up before the real interaction pass below.
+await page.evaluate(() => window.G.db.put("kv", { k: window.G.moiImport.KEY, v: null }));
+
+/* ========================================================================
+   (c) Plan A: end-to-end interaction, tier badges (Part B), Build, links
+   ======================================================================== */
 
 const landingHeading = await page.evaluate(() => /MOI Import/.test(document.body.textContent || ""));
 landingHeading ? ok("#/moi route renders with an 'MOI Import' heading") : bad("MOI Import heading not found");
@@ -189,20 +496,33 @@ await page.waitForTimeout(200);
 const captureShown = await page.evaluate(() => !!document.querySelector("textarea"));
 captureShown ? ok("Capture screen shows a paste textarea") : bad("Capture textarea not found");
 
+// Scoped to real rendered p.hint elements, never document.body.textContent -
+// this app's script source is itself embedded inline in <body>, and
+// textContent walks INTO <script> tags, so a raw body-text check for a
+// string that also appears as a JS literal (like this exact copy, written
+// into moi-import.js's own capture() function) is always true regardless of
+// whether anything actually rendered. Confirmed the hard way while writing
+// this suite: an early, unscoped version of this exact check passed on a
+// screen where the element was never created.
+const noRevisionLabelOnFreshCapture = await page.evaluate(() => ![...document.querySelectorAll("p.hint")].some((p) => /Re-importing a revision/.test(p.textContent || "")));
+noRevisionLabelOnFreshCapture ? ok("Capture for a brand-new plan (targetFamilyId null) shows no 'Re-importing a revision' label") : bad("unexpected revision label on a fresh Capture");
+
 // A small synthetic MOI-like block: a detectable unit line, headed blocks
 // citing real, distinct corpus citations (one clean, one with a chapter
-// suffix), a glyph-confused citation for the Needs Review bucket, and a
-// fabricated citation for the Not-found bucket.
+// suffix, one superseded), a glyph-confused citation for the Needs Review
+// bucket, and a fabricated citation for the Not-found bucket.
 //
-// Round 8 roadmap-audit bucket A, fix #6: "AR GOO-9" is this same suite's
-// own glyph-folded unit-test citation from part (a) above (it normalizes to
-// AR 600-9 and is guaranteed to land in tier 'glyph-folded' - see the
-// glyphResult assertions near the top of this file). Before this round the
-// fixture was deliberately built to produce "0 need a look" (a comment here
-// said so), leaving the entire "Needs a look" manual-review branch -
-// including the viewBtn/searchBtn aria-expanded disclosure toggle and the
-// inline topic-search flow - completely untested.
-const MOI_TEXT = [
+// "AR GOO-9" is this same suite's own glyph-folded unit-test citation from
+// part (a) above (it normalizes to AR 600-9 and is guaranteed to land in
+// tier 'glyph-folded'). FM 3-22.9 is the documented alias -> TC 3-22.9,
+// added in the Phase 1 pass specifically to exercise the new "Superseded
+// citation" tier badge (Part B) end to end, not just in matchCitation().
+// "UCMJ Art. 92" (Phase 2, the UCMJ Article citation grammar) exercises the
+// new grammar through the REAL end-to-end Review -> matched-list -> Build ->
+// deep-link flow, not just the pure-function assertions in part (a) above -
+// a real, live-seed doctrine entry (doc-ucmj-art92), confirmed to resolve to
+// a real matched tier above.
+const MOI_TEXT_A = [
   "1st Battalion, 5th Infantry Regiment",
   "BOARD MOI - ASSIGNED STUDY TOPICS",
   "",
@@ -211,6 +531,12 @@ const MOI_TEXT = [
   "",
   "RECORDS:",
   "Review AR 623-3, Ch 2 before the board.",
+  "",
+  "MARKSMANSHIP:",
+  "Study FM 3-22.9 before the board.",
+  "",
+  "MILITARY JUSTICE:",
+  "Study UCMJ Art. 92 before the board.",
   "",
   "REVIEW:",
   "Double-check AR GOO-9 before the board.",
@@ -223,7 +549,7 @@ await page.evaluate((text) => {
   const ta = document.querySelector("textarea");
   ta.value = text;
   ta.dispatchEvent(new Event("input", { bubbles: true }));
-}, MOI_TEXT);
+}, MOI_TEXT_A);
 
 const findClicked = await page.evaluate(() => {
   const btn = [...document.querySelectorAll("button")].find((b) => /Find my topics/.test(b.textContent || ""));
@@ -242,9 +568,9 @@ const summaryText = await page.evaluate(() => {
   const hint = h3 && h3.nextElementSibling;
   return hint ? hint.textContent : null;
 });
-summaryText && /2 matched/.test(summaryText) && /1 need a look/.test(summaryText) && /1 not found/.test(summaryText)
-  ? ok("Summary strip reads '2 matched · 1 need a look · 1 not found': \"" + summaryText + "\"")
-  : bad("Summary strip text: \"" + summaryText + "\" (expected 2 matched / 1 needs review / 1 not found)");
+summaryText && /4 matched/.test(summaryText) && /1 need a look/.test(summaryText) && /1 not found/.test(summaryText)
+  ? ok("Summary strip reads '4 matched · 1 need a look · 1 not found': \"" + summaryText + "\"")
+  : bad("Summary strip text: \"" + summaryText + "\" (expected 4 matched / 1 needs review / 1 not found)");
 
 const matchedText = await page.evaluate(() => {
   const segBtns = [...document.querySelectorAll(".segmented button")];
@@ -259,6 +585,24 @@ matchedText.indexOf("ADP 6-22") !== -1
 matchedText.indexOf("AR 623-3") !== -1
   ? ok("Matched list includes AR 623-3 (chapter suffix correctly stripped and matched)")
   : bad("Matched list missing AR 623-3: " + matchedText.slice(0, 300));
+matchedText.indexOf("UCMJ 92") !== -1
+  ? ok("Matched list includes UCMJ 92 (Phase 2 grammar, exercised end to end through the real Review UI)")
+  : bad("Matched list missing UCMJ 92: " + matchedText.slice(0, 300));
+matchedText.indexOf("TC 3-22.9") !== -1 && matchedText.indexOf("superseded FM 3-22.9") !== -1
+  ? ok("Matched list includes TC 3-22.9, noted as superseded FM 3-22.9")
+  : bad("Matched list missing the FM 3-22.9 -> TC 3-22.9 alias row: " + matchedText.slice(0, 300));
+
+// ---- Part B2: tier badges render on the Matched rows ----
+const matchedTierBadges = await page.evaluate(() => {
+  const cards = [...document.querySelectorAll(".segmented + * .panel, .panel")].filter((p) => p.textContent && (/ADP 6-22|AR 623-3|TC 3-22\.9/.test(p.textContent)));
+  return cards.map((c) => ({ text: c.textContent.slice(0, 60), hasExact: /Exact match/.test(c.textContent), hasSuperseded: /Superseded citation/.test(c.textContent) }));
+});
+matchedTierBadges.some((c) => c.hasExact)
+  ? ok("At least one Matched row shows the 'Exact match' tier badge (Part B2)")
+  : bad("No Matched row shows 'Exact match': " + JSON.stringify(matchedTierBadges));
+matchedTierBadges.some((c) => c.hasSuperseded)
+  ? ok("The FM 3-22.9 row shows the 'Superseded citation' tier badge (Part B2)")
+  : bad("No Matched row shows 'Superseded citation': " + JSON.stringify(matchedTierBadges));
 
 const notFoundText = await page.evaluate(() => {
   const segBtns = [...document.querySelectorAll(".segmented button")];
@@ -271,11 +615,10 @@ notFoundText.indexOf("AR 999-99") !== -1
   : bad("Not-found list missing AR 999-99");
 
 /* ------------------------------------------------------------------------
-   Needs Review (glyph-folded) manual-review flow - round 8 roadmap-audit
-   bucket A, fix #6. AR GOO-9 folds to AR 600-9 and lands in "Needs a look".
-   Exercises the row's Accept/Dismiss/Search controls, the searchBtn
-   aria-expanded disclosure toggle (fix #2), and the inline topic-search
-   accept path end to end.
+   Needs Review (glyph-folded) manual-review flow. AR GOO-9 folds to
+   AR 600-9 and lands in "Needs a look". Exercises the row's Accept/
+   Dismiss/Search controls, the searchBtn aria-expanded disclosure toggle,
+   and the inline topic-search accept path end to end.
    ------------------------------------------------------------------------ */
 await page.evaluate(() => {
   const segBtns = [...document.querySelectorAll(".segmented button")];
@@ -298,8 +641,6 @@ needsRowInitial && needsRowInitial.searchAriaExpanded === "false"
   ? ok("Needs-review row's search toggle starts collapsed with aria-expanded=\"false\"")
   : bad("Needs-review row's search toggle initial aria-expanded: " + JSON.stringify(needsRowInitial && needsRowInitial.searchAriaExpanded));
 
-// Click "Search for the right topic" - aria-expanded should flip and the
-// inline search input should appear.
 await page.evaluate(() => {
   const panel = [...document.querySelectorAll(".panel")].find((p) => /AR GOO-9/.test(p.textContent || ""));
   const btn = panel && [...panel.querySelectorAll("button")].find((b) => /Search for the right topic/.test(b.textContent || ""));
@@ -319,41 +660,24 @@ afterToggle.inputPresent
   ? ok("The inline topic-search input appears once the disclosure is open")
   : bad("inline topic-search input did not appear after opening the disclosure");
 
-// Type a query, then click a matching result (falls back to an empty query
-// if the first one happens to match nothing, to avoid flakiness against the
-// real, non-fixture topic corpus).
-const pickedTopic = await page.evaluate(() => {
+// Dismiss AR GOO-9 rather than accepting it this time (unlike the original
+// suite) - keeps Plan A's accepted topic set limited to ADP 6-22/AR 623-3/
+// TC 3-22.9 only, which section (e) below needs to be able to predict
+// exactly for its revision-diff assertions.
+await page.evaluate(() => {
   const panel = [...document.querySelectorAll(".panel")].find((p) => /AR GOO-9/.test(p.textContent || ""));
-  const input = panel.querySelector('input[aria-label="Search for the right topic"]');
-  function firstResultBtn() { return input.nextElementSibling ? input.nextElementSibling.querySelector("button") : null; }
-  input.value = "e";
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-  let btn = firstResultBtn();
-  if (!btn) {
-    input.value = "";
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    btn = firstResultBtn();
-  }
-  if (!btn) return null;
-  const text = btn.textContent;
-  btn.click();
-  return text;
+  const btn = panel && [...panel.querySelectorAll("button")].find((b) => b.textContent.trim() === "Dismiss");
+  if (btn) btn.click();
 });
-pickedTopic
-  ? ok("Typed a search query and clicked a matching topic result: \"" + pickedTopic + "\"")
-  : bad("No topic-search result was available to click for AR GOO-9");
-
-const afterPick = await page.evaluate(() => {
+const afterDismiss = await page.evaluate(() => {
   const panel = [...document.querySelectorAll(".panel")].find((p) => /AR GOO-9/.test(p.textContent || ""));
   const status = panel && panel.querySelector(".badge");
-  return { statusText: status ? status.textContent : null, statusClass: status ? status.className : null };
+  return status ? status.textContent : null;
 });
-afterPick.statusText === "Accepted" && /(^|\s)green(\s|$)/.test(afterPick.statusClass || "")
-  ? ok("Picking a search result marks the AR GOO-9 item Accepted and its status badge reflects the change")
-  : bad("status badge after picking a search result: " + JSON.stringify(afterPick));
+afterDismiss === "Dismissed"
+  ? ok("Dismissing the AR GOO-9 needs-review row marks it Dismissed (excluded from Build)")
+  : bad("status badge after dismissing: " + JSON.stringify(afterDismiss));
 
-// Switch back to Matched before building, just to leave the UI in a sane
-// state (not load-bearing for the assertions below).
 await page.evaluate(() => {
   const btn = [...document.querySelectorAll(".segmented button")].find((b) => /^Matched/.test(b.textContent || ""));
   if (btn) btn.click();
@@ -367,19 +691,44 @@ optionsDefault.save === true && optionsDefault.drill === true
   ? ok("Both commit-time checkboxes ('Save as my study plan', 'Generate a practice drill now') are checked by default")
   : bad("commit-time checkbox defaults: " + JSON.stringify(optionsDefault));
 
-// A routine visit to #/moi with a saved plan lands collapsed (summary +
-// Replace/View/Delete only) - "View" expands the SAME already-imported
-// branch into the full result view. Used below every time the test
-// navigates away (to follow a deep link) and back, since each such
-// navigation is a fresh route() render that starts collapsed again.
-async function goToMoiExpanded() {
+// Setting location.hash to a value it ALREADY is fires no hashchange event
+// (a no-op) - genuinely landed on more than once below, since Build and
+// openPlan()'s own back button both leave the test sitting at #/moi without
+// ever having navigated away. Routing through the neutral #/home route
+// first guarantees a real hashchange every time, regardless of where the
+// test currently is. Waits for the real state (the hash itself, then the
+// menu's own card grid) rather than a fixed sleep - called too many times
+// below for a fixed window to be anything but wasted time on a fast
+// machine and a flake risk on a loaded one.
+async function goToMoiMenu() {
+  await page.evaluate(() => { location.hash = "#/home"; });
+  await page.waitForFunction(() => location.hash === "#/home", { timeout: 5000 });
   await page.evaluate(() => { location.hash = "#/moi"; });
-  await page.waitForTimeout(400);
+  await page.waitForFunction(() => !!document.querySelector(".card-results-grid"), { timeout: 5000 });
+}
+
+// A routine visit to #/moi with 1+ saved families now lands on the MENU
+// (Part C4 - even a single family no longer jumps straight to its detail
+// view) - open a specific family by name, then "View" to expand. Used
+// below every time the test navigates away (a deep link) and back. Every
+// step waits for the real DOM state it needs next, not a fixed sleep - the
+// menu click always opens the family collapsed ("View" visible; menu()'s
+// own card handler always calls openPlan(family, false)), so waiting for
+// "Hide details" to appear after clicking "View" is a real, deterministic
+// milestone, not a guess at timing.
+async function openFamilyExpanded(nameRe) {
+  await goToMoiMenu();
+  await page.evaluate((re) => {
+    const pattern = new RegExp(re);
+    const btn = [...document.querySelectorAll(".card-results-grid button")].find((b) => pattern.test(b.textContent || ""));
+    if (btn) btn.click();
+  }, nameRe.source);
+  await page.waitForFunction(() => [...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "View"), { timeout: 5000 });
   await page.evaluate(() => {
     const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "View");
     if (btn) btn.click();
   });
-  await page.waitForTimeout(150);
+  await page.waitForFunction(() => [...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Hide details"), { timeout: 5000 });
 }
 
 // ---- Build ----
@@ -391,25 +740,37 @@ const buildClicked = await page.evaluate(() => {
 buildClicked ? ok("'Build →' button found and clicked") : bad("'Build →' button not found");
 await page.waitForTimeout(400);
 
-const persisted = await page.evaluate(async () => {
-  const r = await window.G.db.get("kv", window.G.moiImport.KEY);
-  return r && r.v;
+const persistedFamilies = await page.evaluate(async () => {
+  const r = await window.G.db.get("kv", window.G.moiImport.PLANS_KEY);
+  return (r && r.v) || [];
 });
-persisted && Array.isArray(persisted.topics) && persisted.topics.length
-  ? ok("Build persists a plan to IndexedDB with a real topics list (" + persisted.topics.length + " topics)")
-  : bad("nothing meaningful persisted: " + JSON.stringify(persisted));
-persisted && /1st Battalion|MOI imported/.test(persisted.name || "")
-  ? ok("Persisted plan carries a name ('" + persisted.name + "')")
-  : bad("persisted plan name looks wrong: " + JSON.stringify(persisted && persisted.name));
+persistedFamilies.length === 1
+  ? ok("Build persists exactly one plan family to guidon:moi:plans:v1")
+  : bad("families after building Plan A: " + JSON.stringify(persistedFamilies.map((f) => f.id)));
+const familyA = persistedFamilies[0];
+familyA && Array.isArray(familyA.current.topics) && familyA.current.topics.length
+  ? ok("Plan A's family carries a real topics list (" + familyA.current.topics.length + " topics)")
+  : bad("nothing meaningful persisted for Plan A: " + JSON.stringify(familyA));
+familyA && /1st Battalion|MOI imported/.test(familyA.current.name || "")
+  ? ok("Plan A's persisted family carries a name ('" + familyA.current.name + "')")
+  : bad("Plan A's persisted name looks wrong: " + JSON.stringify(familyA && familyA.current.name));
+familyA && familyA.history.length === 0 && familyA.createdAt === familyA.current.importedAt
+  ? ok("A brand-new family (targetFamilyId null) has empty history and createdAt === its own importedAt")
+  : bad("Plan A's family shape: " + JSON.stringify(familyA));
 
-const resultViewShown = await page.evaluate(() => /Replace/.test(document.body.textContent || "") && /Delete/.test(document.body.textContent || ""));
-resultViewShown ? ok("Build redraws Landing's own 'already imported' branch (Replace/Delete actions visible) as the result view") : bad("result view (Replace/Delete) not shown after Build");
+// Part B3: topicTiers persisted, one entry per topic, each a real tier name.
+familyA && familyA.current.topicTiers && familyA.current.topics.every((t) => !!familyA.current.topicTiers[t])
+  ? ok("Plan A's persisted plan carries topicTiers with a real tier for every topic (Part B3)")
+  : bad("Plan A's topicTiers: " + JSON.stringify(familyA && familyA.current.topicTiers));
 
-// ---- viewBtn's own aria-expanded disclosure state (fix #2): Build's
-// success path starts expanded ("Hide details"/aria-expanded="true"),
-// toggling to collapsed ("View"/aria-expanded="false") and back exercises
-// both directions of the same accessible-disclosure convention searchBtn
-// already had before this round.
+const resultViewShown = await page.evaluate(() => /Re-import a revision/.test(document.body.textContent || "") && /Delete/.test(document.body.textContent || ""));
+resultViewShown ? ok("Build redraws openPlan()'s own detail view (Re-import a revision/Delete actions visible) as the result view") : bad("result view (Re-import a revision/Delete) not shown after Build");
+
+// ---- viewBtn's own aria-expanded disclosure state: Build's success path
+// starts expanded ("Hide details"/aria-expanded="true"), toggling to
+// collapsed ("View"/aria-expanded="false") and back exercises both
+// directions of the same accessible-disclosure convention searchBtn
+// already had.
 const viewBtnInitial = await page.evaluate(() => {
   const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Hide details" || b.textContent.trim() === "View");
   return btn ? { text: btn.textContent.trim(), ariaExpanded: btn.getAttribute("aria-expanded") } : null;
@@ -429,8 +790,6 @@ const viewBtnAfterCollapse = await page.evaluate(() => {
 viewBtnAfterCollapse && viewBtnAfterCollapse.text === "View" && viewBtnAfterCollapse.ariaExpanded === "false"
   ? ok("Clicking the toggle collapses it: reads 'View' with aria-expanded=\"false\"")
   : bad("view/hide-details toggle state after collapsing: " + JSON.stringify(viewBtnAfterCollapse));
-// Re-expand so the deep-link checks below (which need the full result view
-// visible) find their buttons.
 await page.evaluate(() => {
   const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Hide details" || b.textContent.trim() === "View");
   if (btn) btn.click();
@@ -442,6 +801,29 @@ const coverageBadgesShown = await page.evaluate(() => {
   return /Strong|Partial|Gap/.test(text);
 });
 coverageBadgesShown ? ok("Result view shows a Strong/Partial/Gap coverage badge") : bad("no coverage badge text found in the result view");
+
+// ---- Part B4: tier badges also render in the PERSISTED dashboard, not
+// just Review - "Exact match" for ADP 6-22/AR 623-3's topics, "Superseded
+// citation" for TC 3-22.9's topics (via FM 3-22.9's alias). Data-driven
+// (fetched from the live matchCitation() result), never hardcoded topic
+// names - robust to seed content changes.
+const dashboardTierBadges = await page.evaluate(() => {
+  const supersededTopics = window.G.moiImport.matchCitation("FM 3-22.9").topics;
+  const rows = [...document.querySelectorAll(".panel")];
+  function rowFor(topic) { return rows.find((r) => r.textContent && r.textContent.indexOf(topic) !== -1); }
+  const supersededRow = supersededTopics.length ? rowFor(supersededTopics[0]) : null;
+  return {
+    anyExactMatch: /Exact match/.test(document.body.textContent || ""),
+    supersededTopic: supersededTopics[0] || null,
+    supersededRowHasBadge: !!(supersededRow && /Superseded citation/.test(supersededRow.textContent || "")),
+  };
+});
+dashboardTierBadges.anyExactMatch
+  ? ok("Persisted dashboard shows the 'Exact match' tier badge next to a coverage badge (Part B4)")
+  : bad("Persisted dashboard shows no 'Exact match' tier badge");
+(!dashboardTierBadges.supersededTopic || dashboardTierBadges.supersededRowHasBadge)
+  ? ok("Persisted dashboard shows 'Superseded citation' on TC 3-22.9's own topic row" + (dashboardTierBadges.supersededTopic ? " (" + dashboardTierBadges.supersededTopic + ")" : " (no topic to check - alias citation has none in this corpus build)"))
+  : bad("TC 3-22.9's topic row ('" + dashboardTierBadges.supersededTopic + "') does not show 'Superseded citation'");
 
 // ---- working links: #/doctrine deep link ----
 const doctrineLinkClicked = await page.evaluate(() => {
@@ -455,8 +837,8 @@ const doctrineHashAfterClick = await page.evaluate(() => location.hash);
 const onDoctrineRoute = doctrineHashAfterClick === "#/doctrine" && await page.evaluate(() => /Doctrine/.test(document.body.textContent || ""));
 onDoctrineRoute ? ok("The Doctrine deep link actually navigates to #/doctrine and it renders") : bad("Doctrine deep link did not land on a working #/doctrine view (hash: " + doctrineHashAfterClick + ")");
 
-// ---- back to #/moi (re-expanded via View), working #/board deep link ----
-await goToMoiExpanded();
+// ---- back to Plan A (re-expanded via the menu + View), working #/board deep link ----
+await openFamilyExpanded(/1st Battalion/);
 const boardLinkClicked = await page.evaluate(() => {
   const btn = [...document.querySelectorAll("button")].find((b) => /Board →/.test(b.textContent || ""));
   if (btn) { btn.click(); return true; }
@@ -471,9 +853,9 @@ if (boardLinkClicked) {
 }
 
 // ---- working #/library deep link (ADP 6-22 has a real Reference Library
-// entry - reuses G.library._openId, the same mechanism the module already
-// uses elsewhere) ----
-await goToMoiExpanded();
+// entry - reuses G.library._openId, the same mechanism buildTopicLinkRow()
+// shares with buildDiffPanel()'s own added-topics list) ----
+await openFamilyExpanded(/1st Battalion/);
 const libraryLinkClicked = await page.evaluate(() => {
   const btn = [...document.querySelectorAll("button")].find((b) => /Library →/.test(b.textContent || ""));
   if (btn) { btn.click(); return true; }
@@ -488,22 +870,305 @@ if (libraryLinkClicked) {
 }
 
 // ---- practice drill was generated (genDrill was checked by default) ----
-await goToMoiExpanded();
+await openFamilyExpanded(/1st Battalion/);
 const drillShown = await page.evaluate(() => /Practice drill/.test(document.body.textContent || ""));
 drillShown ? ok("A practice-drill section rendered as part of the result view") : bad("no practice-drill section found");
 const drillHasQuestion = await page.evaluate(() => !!document.querySelector(".card p"));
 drillHasQuestion ? ok("The practice drill shows an actual question") : bad("practice drill rendered but no question text found");
 
-// ---- Delete must confirm first (matches every other destructive action's
-// G.modal.confirm({danger:true}) gate - grep test-leader.mjs's own
-// "Remove must confirm" case for the same click-through pattern), then
-// clears the plan back to the empty state ----
-const deleteClicked = await page.evaluate(() => {
+/* ========================================================================
+   (d) Plan B: a second, distinct plan built from a real fan-out citation -
+   doubles as (a)'s A2 regression proved end-to-end through the real Build
+   pipeline, and confirms the menu now lists two families.
+   ======================================================================== */
+
+const arFanout = await page.evaluate(() => window.G.moiImport.matchCitation("AR 350-1"));
+
+// goToMoiMenu(), not a raw hash set: the last thing section (c) did left
+// the test sitting on Plan A's own detail view, already at #/moi - setting
+// location.hash to the value it already is fires no hashchange event.
+await goToMoiMenu();
+await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => /\+ Import another MOI/.test(b.textContent || ""));
+  if (btn) btn.click();
+});
+await page.waitForFunction(() => !!document.querySelector("textarea"), { timeout: 5000 });
+const noRevisionLabelOnPlanB = await page.evaluate(() => ![...document.querySelectorAll("p.hint")].some((p) => /Re-importing a revision/.test(p.textContent || "")));
+noRevisionLabelOnPlanB ? ok("'+ Import another MOI' opens Capture with no revision label (targetFamilyId null, a brand-new family)") : bad("unexpected revision label when starting Plan B");
+
+// No comma right after "Battalion" - detectMoiName()'s UNIT_RE stops
+// capturing at the first comma/period/semicolon, so this unit line is
+// written to capture a full, distinguishing name for the menu-card checks
+// below, unlike Plan A's ("1st Battalion, 5th Infantry Regiment" captures
+// only "1st Battalion" - fine there since that test never needed to
+// distinguish it from a second plan).
+const MOI_TEXT_B = "2nd Battalion 7th Cavalry Regiment\nStudy AR 350-1 before the board.\n";
+await page.evaluate((text) => {
+  const ta = document.querySelector("textarea");
+  ta.value = text;
+  ta.dispatchEvent(new Event("input", { bubbles: true }));
+}, MOI_TEXT_B);
+await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => /Find my topics/.test(b.textContent || ""));
+  if (btn) btn.click();
+});
+await page.waitForFunction(() => /Review your matches/.test(document.body.textContent || "") && !!document.getElementById("moi-opt-save"), { timeout: 5000 }).catch(() => {});
+await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => /^Build/.test((b.textContent || "").trim()));
+  if (btn) btn.click();
+});
+// Waits for the real persisted state (a second family actually written to
+// PLANS_KEY) rather than a fixed sleep after Build - the predicate itself
+// awaits the async G.db.get() call, which Playwright's waitForFunction
+// supports directly.
+await page.waitForFunction(async () => {
+  const r = await window.G.db.get("kv", window.G.moiImport.PLANS_KEY);
+  return ((r && r.v) || []).length === 2;
+}, { timeout: 5000 });
+
+const familiesAfterB = await page.evaluate(async () => {
+  const r = await window.G.db.get("kv", window.G.moiImport.PLANS_KEY);
+  return (r && r.v) || [];
+});
+familiesAfterB.length === 2
+  ? ok("Importing a second, distinct MOI produces a second plan family (2 total)")
+  : bad("families after Plan B: " + JSON.stringify(familiesAfterB.map((f) => f.id)));
+const familyB = familiesAfterB.find((f) => /2nd Battalion/.test(f.current.name || ""));
+familyB
+  ? ok("Plan B's family carries the expected name ('" + familyB.current.name + "')")
+  : bad("Plan B's family not found by name: " + JSON.stringify(familiesAfterB.map((f) => f.current.name)));
+
+// A2 end-to-end: Plan B was built from AR 350-1 ALONE, so each of its
+// topics' persisted topicCoverage must equal that citation's OWN
+// topicCounts share (fetched live above), never its combined `counts`
+// aggregate - the exact real-world shape the A2 bug used to get wrong.
+if (familyB) {
+  const perTopicOk = arFanout.topics.every((t) => {
+    const persisted = familyB.current.topicCoverage[t];
+    const expected = arFanout.topicCounts[t];
+    return persisted && expected && persisted.doctrineCards === expected.doctrineCards && persisted.selfCheckQuestions === expected.selfCheckQuestions;
+  });
+  perTopicOk
+    ? ok("Plan B's persisted per-topic coverage matches AR 350-1's own topicCounts EXACTLY for all " + arFanout.topics.length + " topics (A2 fix, end to end through the real Build pipeline)")
+    : bad("Plan B per-topic coverage mismatch: persisted=" + JSON.stringify(familyB.current.topicCoverage) + " expected=" + JSON.stringify(arFanout.topicCounts));
+  const anyTopicShowsCombinedTotal = arFanout.topics.length > 1 && arFanout.topics.some((t) => {
+    const persisted = familyB.current.topicCoverage[t];
+    return persisted && persisted.doctrineCards === arFanout.counts.doctrineCards && persisted.selfCheckQuestions === arFanout.counts.selfCheckQuestions;
+  });
+  !anyTopicShowsCombinedTotal
+    ? ok("No single topic in Plan B shows AR 350-1's full COMBINED total - confirms the inflation bug is really fixed, not coincidentally passing")
+    : bad("A topic in Plan B still shows the full combined aggregate instead of its own share");
+}
+
+// Build's own success path (just like a routine "Re-import a revision")
+// leaves the test on Plan B's own detail view, already at #/moi.
+await goToMoiMenu();
+const menuCardCount = await page.evaluate(() => document.querySelectorAll(".card-results-grid button").length);
+menuCardCount === 2
+  ? ok("Landing's menu shows exactly 2 plan-family cards")
+  : bad("menu card count: " + menuCardCount);
+
+/* ========================================================================
+   (e) Re-importing a revision of Plan A - "What changed" diff
+   ======================================================================== */
+
+await openFamilyExpanded(/1st Battalion/);
+const reimportClicked = await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Re-import a revision");
+  if (btn) { btn.click(); return true; }
+  return false;
+});
+reimportClicked ? ok("'Re-import a revision' button found and clicked") : bad("'Re-import a revision' button not found");
+await page.waitForFunction(() => !!document.querySelector("textarea"), { timeout: 5000 });
+const revisionLabelShown = await page.evaluate(() => {
+  const p = [...document.querySelectorAll("p.hint")].find((el) => /Re-importing a revision of/.test(el.textContent || ""));
+  return !!(p && /1st Battalion/.test(p.textContent || ""));
+});
+revisionLabelShown ? ok("Capture names which family this revision will update ('Re-importing a revision of “1st Battalion…”')") : bad("revision-context label not shown when re-importing");
+
+// Revision text: drops AR 623-3 entirely, adds AR 350-1 (already known,
+// real, fan-out) - keeps ADP 6-22 and FM 3-22.9 untouched so their topics
+// must NOT appear in added/removed.
+const MOI_TEXT_A_REVISED = [
+  "1st Battalion, 5th Infantry Regiment",
+  "BOARD MOI - ASSIGNED STUDY TOPICS (REVISION)",
+  "",
+  "LEADERSHIP:",
+  "Study ADP 6-22 thoroughly before the board.",
+  "",
+  "MARKSMANSHIP:",
+  "Study FM 3-22.9 before the board.",
+  "",
+  "TRAINING:",
+  "Study AR 350-1 before the board.",
+].join("\n");
+await page.evaluate((text) => {
+  const ta = document.querySelector("textarea");
+  ta.value = text;
+  ta.dispatchEvent(new Event("input", { bubbles: true }));
+}, MOI_TEXT_A_REVISED);
+await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => /Find my topics/.test(b.textContent || ""));
+  if (btn) btn.click();
+});
+await page.waitForFunction(() => /Review your matches/.test(document.body.textContent || "") && !!document.getElementById("moi-opt-save"), { timeout: 5000 }).catch(() => {}); // hygiene-ok: same cold/warm-registry Review-render race as this suite's other two Review waits (a second revision-Build within one run is always warm, but the assertion right after still reports a miss)
+await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => /^Build/.test((b.textContent || "").trim()));
+  if (btn) btn.click();
+});
+// Waits for the real persisted state (the revision actually recorded in
+// familyA's own history) rather than a fixed sleep after Build.
+await page.waitForFunction(async (familyId) => {
+  const r = await window.G.db.get("kv", window.G.moiImport.PLANS_KEY);
+  const f = ((r && r.v) || []).find((x) => x.id === familyId);
+  return !!(f && f.history && f.history.length === 1);
+}, familyA.id, { timeout: 5000 });
+
+const familiesAfterRevision = await page.evaluate(async () => {
+  const r = await window.G.db.get("kv", window.G.moiImport.PLANS_KEY);
+  return (r && r.v) || [];
+});
+familiesAfterRevision.length === 2
+  ? ok("Re-importing a revision of Plan A does NOT create a third family - still 2 total")
+  : bad("families after revising Plan A: " + JSON.stringify(familiesAfterRevision.map((f) => f.id)));
+const familyARevised = familiesAfterRevision.find((f) => f.id === familyA.id);
+familyARevised
+  ? ok("The revision updated the SAME family id Plan A originally got")
+  : bad("Plan A's original family id (" + familyA.id + ") is gone after the revision: " + JSON.stringify(familiesAfterRevision.map((f) => f.id)));
+
+if (familyARevised) {
+  familyARevised.history.length === 1
+    ? ok("The revised family has exactly one history entry (its pre-revision snapshot)")
+    : bad("revised family history length: " + familyARevised.history.length);
+  const storedDiff = familyARevised.history[0] && familyARevised.history[0].diff;
+  // Independently recomputed from the two REAL persisted snapshots (the
+  // original Plan A's `current`, captured as `familyA` above, and the
+  // freshly revised `current`) - a genuine regression check that build()
+  // wired diffPlans() up with the right before/after arguments and stored
+  // exactly what it returned, not a re-assertion of diffPlans() itself
+  // (already covered against fully hand-built data in section (a)).
+  const expectedDiff = await page.evaluate(({ before, after }) => window.G.moiImport.diffPlans(before, after), { before: familyA.current, after: familyARevised.current });
+  JSON.stringify((storedDiff || {}).added) === JSON.stringify(expectedDiff.added) &&
+    JSON.stringify((storedDiff || {}).removed) === JSON.stringify(expectedDiff.removed) &&
+    JSON.stringify((storedDiff || {}).coverageChanged) === JSON.stringify(expectedDiff.coverageChanged)
+    ? ok("The stored diff matches diffPlans(oldSnapshot, newSnapshot) computed fresh from the two real persisted plans - added: " + JSON.stringify(expectedDiff.added) + ", removed: " + JSON.stringify(expectedDiff.removed) + ", coverageChanged: " + expectedDiff.coverageChanged.length)
+    : bad("stored diff " + JSON.stringify(storedDiff) + " != expected " + JSON.stringify(expectedDiff));
+  expectedDiff.removed.length > 0
+    ? ok("The revision genuinely removed at least one topic (AR 623-3 was dropped) - a non-trivial diff, not an empty one")
+    : bad("expected at least one removed topic from dropping AR 623-3, got none: " + JSON.stringify(expectedDiff));
+
+  // ---- "What changed since..." disclosure on the resulting result view ----
+  const diffToggleText = await page.evaluate(() => {
+    const btn = [...document.querySelectorAll("button")].find((b) => /What changed since/.test(b.textContent || ""));
+    return btn ? btn.textContent : null;
+  });
+  diffToggleText && diffToggleText.indexOf("+" + expectedDiff.added.length) !== -1
+    ? ok("The 'What changed since...' toggle's summary count matches the real diff: \"" + diffToggleText + "\"")
+    : bad("diff toggle text: " + JSON.stringify(diffToggleText) + " (expected +" + expectedDiff.added.length + " in there somewhere)");
+  const toggleExpandedInitially = await page.evaluate(() => {
+    const btn = [...document.querySelectorAll("button")].find((b) => /What changed since/.test(b.textContent || ""));
+    return btn ? btn.getAttribute("aria-expanded") : null;
+  });
+  toggleExpandedInitially === "false"
+    ? ok("The diff disclosure starts collapsed (aria-expanded=\"false\")")
+    : bad("diff disclosure initial aria-expanded: " + JSON.stringify(toggleExpandedInitially));
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll("button")].find((b) => /What changed since/.test(b.textContent || ""));
+    if (btn) btn.click();
+  });
+  await page.waitForTimeout(150);
+  const afterDiffToggle = await page.evaluate(() => {
+    const btn = [...document.querySelectorAll("button")].find((b) => /What changed since/.test(b.textContent || ""));
+    return btn ? btn.getAttribute("aria-expanded") : null;
+  });
+  afterDiffToggle === "true"
+    ? ok("Clicking the diff disclosure expands it (aria-expanded=\"true\")")
+    : bad("diff disclosure aria-expanded after click: " + JSON.stringify(afterDiffToggle));
+  if (expectedDiff.removed.length) {
+    const removedTopicShown = await page.evaluate((topic) => (document.body.textContent || "").indexOf(topic) !== -1, expectedDiff.removed[0]);
+    removedTopicShown
+      ? ok("The expanded diff panel lists the removed topic ('" + expectedDiff.removed[0] + "')")
+      : bad("removed topic '" + expectedDiff.removed[0] + "' not found in the expanded diff panel");
+  }
+}
+
+/* ========================================================================
+   (f) Board-date awareness (Part D): absent/inert with no date, present
+   and working once one is set
+   ======================================================================== */
+
+await openFamilyExpanded(/1st Battalion/);
+const noBoardDateState = await page.evaluate(() => ({
+  hasCountdownBanner: !!document.querySelector(".tx-countdown-banner"),
+  hasSetDateInput: !!document.querySelector('input[type="date"][aria-label="Set your board date"]'),
+  hasRemindBtn: [...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Remind me before board"),
+}));
+!noBoardDateState.hasCountdownBanner && noBoardDateState.hasSetDateInput
+  ? ok("With no board date set, G.renderBoardCountdown() shows its own 'set a date' input, not the countdown banner")
+  : bad("board-date-unset state: " + JSON.stringify(noBoardDateState));
+!noBoardDateState.hasRemindBtn
+  ? ok("With no board date set, 'Remind me before board' is absent (inert)")
+  : bad("'Remind me before board' unexpectedly shown with no board date set");
+
+const boardDateStr = daysFromNowStr(10);
+await page.evaluate((d) => window.G.store.setSetting("boardDate", d), boardDateStr);
+await openFamilyExpanded(/1st Battalion/);
+const withBoardDateState = await page.evaluate(() => ({
+  hasCountdownBanner: !!document.querySelector(".tx-countdown-banner"),
+  hasRemindBtn: [...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Remind me before board"),
+}));
+withBoardDateState.hasCountdownBanner
+  ? ok("Once a board date is set, G.renderBoardCountdown()'s real countdown banner (Part D1) appears in openPlan()")
+  : bad("countdown banner did not appear after setting a board date");
+withBoardDateState.hasRemindBtn
+  ? ok("Once a board date is set, 'Remind me before board' (Part D2) appears")
+  : bad("'Remind me before board' did not appear after setting a board date");
+
+const remindersBefore = await page.evaluate(async () => (await window.G.reminders.load()).length);
+await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Remind me before board");
+  if (btn) btn.click();
+});
+await page.waitForTimeout(300);
+const remindersAfter = await page.evaluate(async () => {
+  const list = await window.G.reminders.load();
+  return { count: list.length, last: list[list.length - 1] };
+});
+remindersAfter.count === remindersBefore + 1
+  ? ok("Clicking 'Remind me before board' adds exactly one reminder")
+  : bad("reminder count " + remindersBefore + " -> " + remindersAfter.count + ", expected +1");
+remindersAfter.last && remindersAfter.last.kind === "board" && remindersAfter.last.source === "moi:plan" && /Finish studying:/.test(remindersAfter.last.label) && remindersAfter.last.date === boardDateStr
+  ? ok("The reminder carries kind 'board', source 'moi:plan', a 'Finish studying:' label and the real board date")
+  : bad("reminder shape: " + JSON.stringify(remindersAfter.last));
+const remindBtnAfterClick = await page.evaluate(() => {
+  const btn = [...document.querySelectorAll("button")].find((b) => /Reminder set/.test(b.textContent || ""));
+  return btn ? { text: btn.textContent, disabled: btn.disabled } : null;
+});
+remindBtnAfterClick && remindBtnAfterClick.disabled
+  ? ok("The button confirms success in place (disabled, reads 'Reminder set') - matches calendar.js's own 'Remind me' convention")
+  : bad("button state after click: " + JSON.stringify(remindBtnAfterClick));
+
+/* ========================================================================
+   (g) Delete removes only Plan B and leaves Plan A intact, and clears the
+   "moi:plan" reminder even though it was set while Plan A (a DIFFERENT
+   family) was open - the fixed reminder source openPlan()'s own comment
+   documents.
+   ======================================================================== */
+
+// The last thing section (f) did was click "Remind me before board" on
+// Plan A's own detail view, already at #/moi.
+await goToMoiMenu();
+await page.evaluate(() => {
+  const btn = [...document.querySelectorAll(".card-results-grid button")].find((b) => /2nd Battalion/.test(b.textContent || ""));
+  if (btn) btn.click();
+});
+await page.waitForTimeout(200);
+const deleteBClicked = await page.evaluate(() => {
   const btn = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Delete");
   if (btn) { btn.click(); return true; }
   return false;
 });
-deleteClicked ? ok("'Delete' button found and clicked") : bad("'Delete' button not found");
+deleteBClicked ? ok("'Delete' button found and clicked on Plan B") : bad("'Delete' button not found on Plan B");
 await page.waitForTimeout(300);
 const confirmShown = await page.evaluate(() => !!document.querySelector(".gm-back"));
 confirmShown ? ok("Delete opens a confirm dialog before deleting") : bad("Delete removed the plan without confirming");
@@ -512,86 +1177,39 @@ await page.evaluate(() => {
   if (b) b.click();
 });
 await page.waitForTimeout(400);
-const backToEmpty = await page.evaluate(() => /No MOI imported yet/.test(document.body.textContent || ""));
-backToEmpty ? ok("Deleting the plan returns Landing to the empty-state pitch") : bad("Landing did not return to the empty state after Delete");
-const clearedInDb = await page.evaluate(async () => {
-  const r = await window.G.db.get("kv", window.G.moiImport.KEY);
-  return !(r && r.v && Array.isArray(r.v.topics) && r.v.topics.length);
-});
-clearedInDb ? ok("Delete actually clears the persisted plan in IndexedDB") : bad("plan still persisted in IndexedDB after Delete");
 
-// ---- unsaved-build warning: renderAlreadyImported() runs its own
-// util.clear(stage) as its first statement, so a warning appended to the
-// stage BEFORE calling it gets wiped before ever painting - a real bug
-// caught live (unchecking "Save as my study plan" and inspecting the
-// rendered DOM showed the warning text absent, even though it was present
-// in this module's own source), fixed by inserting the warning AFTER the
-// call instead. Regression-covered here by checking a scoped
-// ".feedback.warn" element rather than raw body.textContent - the latter
-// is a false-positive trap on this exact page, since it naturally
-// includes this module's own inline <script> source, which contains the
-// same string literal, regardless of whether the div actually rendered.
-await page.evaluate(() => { location.hash = "#/moi"; });
-await page.waitForTimeout(300);
-const reimportClicked = await page.evaluate(() => {
-  const btn = [...document.querySelectorAll("button")].find((b) => /Import an MOI/.test(b.textContent || ""));
-  if (btn) { btn.click(); return true; }
-  return false;
+const familiesAfterDeleteB = await page.evaluate(async () => {
+  const r = await window.G.db.get("kv", window.G.moiImport.PLANS_KEY);
+  return (r && r.v) || [];
 });
-reimportClicked ? ok("(unsaved-build case) 'Import an MOI' reopened from the empty state") : bad("(unsaved-build case) could not reopen Capture");
-await page.waitForTimeout(200);
-await page.evaluate((text) => {
-  const ta = document.querySelector("textarea");
-  ta.value = text;
-  ta.dispatchEvent(new Event("input", { bubbles: true }));
-}, MOI_TEXT);
-await page.evaluate(() => {
-  const btn = [...document.querySelectorAll("button")].find((b) => /Find my topics/.test(b.textContent || ""));
-  if (btn) btn.click();
-});
-// Wait for the checkbox itself, not just the "Review your matches" heading
-// text - on this second pass the citation registry is already warm from
-// the first Build above, so matching resolves fast enough that the
-// heading can paint a beat before the options row (checkboxes + Build
-// button) finishes rendering beneath it. Gating on the heading alone was
-// an observed source of flakiness the first Review check upstream never
-// hit, since its slower cold-registry build happened to leave enough of a
-// natural buffer.
-await page.waitForFunction(
-  () => /Review your matches/.test(document.body.textContent || "") && !!document.getElementById("moi-opt-save"),
-  { timeout: 5000 }
-).catch(() => {});
-const saveUnchecked = await page.evaluate(() => {
-  const cb = document.getElementById("moi-opt-save");
-  if (!cb) return false;
-  cb.checked = false;
-  return cb.checked === false;
-});
-saveUnchecked ? ok("(unsaved-build case) 'Save as my study plan' unchecked before Build") : bad("(unsaved-build case) could not uncheck 'Save as my study plan'");
-const unsavedBuildClicked = await page.evaluate(() => {
-  const btn = [...document.querySelectorAll("button")].find((b) => /^Build/.test((b.textContent || "").trim()));
-  if (btn) { btn.click(); return true; }
-  return false;
-});
-unsavedBuildClicked ? ok("(unsaved-build case) 'Build →' clicked with save unchecked") : bad("(unsaved-build case) 'Build →' button not found");
-await page.waitForTimeout(400);
+familiesAfterDeleteB.length === 1 && familiesAfterDeleteB[0].id === familyA.id
+  ? ok("Deleting Plan B removed only that ONE family - Plan A is untouched and still present")
+  : bad("families after deleting Plan B: " + JSON.stringify(familiesAfterDeleteB.map((f) => f.id)) + " (expected only " + familyA.id + ")");
 
-const warnVisible = await page.evaluate(() => {
-  const w = document.querySelector(".feedback.warn");
-  return !!w && /Not saved/.test(w.textContent || "") && !!w.offsetParent;
-});
-warnVisible
-  ? ok("Unchecking 'Save as my study plan' actually shows the 'Not saved' warning in the rendered result view (regression: renderAlreadyImported's own util.clear used to wipe it before paint)")
-  : bad("'Not saved' warning did not render after an unsaved Build");
+const remindersAfterDelete = await page.evaluate(async () => (await window.G.reminders.load()).filter((r) => r.source === "moi:plan"));
+remindersAfterDelete.length === 0
+  ? ok("Deleting Plan B also clears the 'moi:plan' reminder, even though it was set while Plan A (a different family) was open - confirms the fixed, global reminder source documented in openPlan()")
+  : bad("moi:plan reminders after deleting Plan B: " + JSON.stringify(remindersAfterDelete));
 
-const notPersisted = await page.evaluate(async () => {
-  const r = await window.G.db.get("kv", window.G.moiImport.KEY);
-  return !(r && r.v && Array.isArray(r.v.topics) && r.v.topics.length);
-});
-notPersisted ? ok("Unsaved Build does not persist a plan to IndexedDB") : bad("Unsaved Build persisted a plan anyway");
+// Delete's own confirm flow lands back on landing() (via openPlan()'s
+// Delete handler) without ever leaving #/moi.
+await goToMoiMenu();
+const finalMenuState = await page.evaluate(() => ({
+  cardCount: document.querySelectorAll(".card-results-grid button").length,
+  gridText: (document.querySelector(".card-results-grid") || {}).textContent || "",
+}));
+finalMenuState.cardCount === 1 && /1st Battalion/.test(finalMenuState.gridText)
+  ? ok("Landing's menu now shows exactly 1 card, and it's Plan A")
+  : bad("final menu state: " + JSON.stringify({ cardCount: finalMenuState.cardCount, gridText: finalMenuState.gridText.slice(0, 80) }));
 
-// cleanup
-await page.evaluate(async () => { await window.G.db.put("kv", { k: window.G.moiImport.KEY, v: null }); });
+// cleanup - leaves guidon:moi:plan:v1 / guidon:moi:plans:v1 / the migration
+// flag as this suite found them (all empty/false), and clears the last
+// remaining moi:plan reminder.
+await page.evaluate(async () => {
+  await window.G.db.put("kv", { k: window.G.moiImport.KEY, v: null });
+  await window.G.db.put("kv", { k: window.G.moiImport.PLANS_KEY, v: [] });
+  if (window.G.reminders && window.G.reminders.clearManagedFor) await window.G.reminders.clearManagedFor({ source: "moi:plan" });
+});
 
 const DOCS_PROBE_404 = /Failed to load resource: the server responded with a status of 404/;
 let docsAllowance = docsProbe404;
