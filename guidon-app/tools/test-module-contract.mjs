@@ -527,9 +527,18 @@ function judge(facts, manifest, { partial = false } = {}) {
    ===================================================================== */
 const report = (breaches) => show(breaches.map((b) => `[${b.rule}] ${b.msg}`), process.env.CONTRACT_SHOW_ALL ? 999 : 12);
 
+// ROADMAP 3g E: an "emit":"build" module (every content-pack and the
+// finalize pass) calls G.contentPack.define() and is merged into the seed
+// at build time (tools/content-pack-engine.mjs) - it is NEVER spliced into
+// the page as a <script>, deliberately, so it can never again run a second
+// time in a real browser against an already-merged bank. Only "emit":
+// "runtime" modules still produce their own <script> boundary here.
+const runtimeModules = realManifest.modules.filter((m) => m.emit !== "build");
+const buildModules = realManifest.modules.filter((m) => m.emit === "build");
 for (const b of BUILDS) {
   check(b.unsettled.length === 0, `${b.label} build: all ${ROUTES.length} declared routes were visited and drew`, `${b.label} build: route(s) that never finished drawing: ${b.unsettled.join(", ")}`);
-  check(b.perModule.size === realManifest.modules.length && b.ambiguous.length === 0, `${b.label} build: every one of the ${realManifest.modules.length} module scripts was seen loading, each on its own`, `${b.label} build: module scripts seen ${b.perModule.size} of ${realManifest.modules.length}; not separable: ${JSON.stringify(b.ambiguous)}`);
+  check(b.perModule.size === runtimeModules.length && b.ambiguous.length === 0, `${b.label} build: every one of the ${runtimeModules.length} "emit":"runtime" module scripts was seen loading, each on its own`, `${b.label} build: module scripts seen ${b.perModule.size} of ${runtimeModules.length}; not separable: ${JSON.stringify(b.ambiguous)}`);
+  check(buildModules.every((m) => !b.perModule.has(m.file)), `${b.label} build: no "emit":"build" module (content-pack or finalize) was ever seen loading as its own <script>`, `${b.label} build: an "emit":"build" module loaded as a <script> anyway: ${JSON.stringify(buildModules.filter((m) => b.perModule.has(m.file)).map((m) => m.file))}`);
   check(b.noise.length === 0, `${b.label} build: no console errors/warnings or page errors`, `${b.label} build: console noise: ${b.noise.slice(0, 5).join(" | ")}`);
 }
 {

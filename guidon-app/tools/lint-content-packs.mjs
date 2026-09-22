@@ -22,7 +22,15 @@
  * "headless": true (tools/module-manifest.mjs). The contract: it must be
  * loadable with no DOM (it runs before the app boots anyway); it may extend
  * window.GUIDON_SEED and hang things off window.G.
+ *
+ * --seed <index.html> / --modules <dir> point this at a STAND-IN bank
+ * instead of the real one - same convention as tools/content-manifest.mjs's
+ * own --seed/--modules - so tools/test-lint-content-packs.mjs can prove a
+ * deliberately malformed pack record is really caught, against a small
+ * fixture, without depending on the real app's content staying malformed-
+ * card-free forever.
  */
+import path from "node:path";
 import { assembleBank } from "./assemble-bank.mjs";
 import { PILLARS, PACK_CATEGORIES, pillarForBoard, pillarForDoctrine, pillarForScenario } from "./pillar-map.mjs";
 
@@ -32,8 +40,14 @@ const ok = (m) => console.log("  PASS  " + m);
 const bad = (m) => { fails++; console.log("  FAIL  " + m); };
 const show = (arr, n = 6) => JSON.stringify(arr.slice(0, n)) + (arr.length > n ? ` (+${arr.length - n} more)` : "");
 
+const argv = process.argv.slice(2);
+const argOf = (f) => { const i = argv.indexOf(f); return i !== -1 && argv[i + 1] !== undefined && !argv[i + 1].startsWith("--") ? argv[i + 1] : null; };
+const bankOpts = {};
+if (argOf("--seed")) bankOpts.seedPath = path.resolve(argOf("--seed"));
+if (argOf("--modules")) bankOpts.moduleDir = path.resolve(argOf("--modules")) + path.sep;
+
 console.log("lint-content-packs: records added by src/app-modules content packs meet the same rules as the seed\n");
-const r = assembleBank();
+const r = assembleBank(bankOpts);
 const B = r.data.board.questions, D = r.data.doctrine.entries, S = r.data.scenarios.scenarios;
 const packB = B.filter((q) => q.__pack), packD = D.filter((e) => e.__pack), packS = S.filter((s) => s.__pack);
 const from = (x) => `${x.id} [${x.__pack}]`;
@@ -45,7 +59,10 @@ const errLogs = r.logs.filter((l) => l.startsWith("error:"));
 errLogs.length === 0 ? ok("(p1) no pack wrote to console.error while loading") : bad(`(p1) pack console.error output: ${show(errLogs, 3)}`);
 
 // (p2) the finalize pass ran from the one pillar definition and had nothing to overrule.
-const fin = r.G && r.G.contentPacks && r.G.contentPacks.finalized;
+// ROADMAP 3g E: 98-content-pack-finalize.js's return value, not a window.G
+// global (it stopped touching window.G at all - the finalize pass runs at
+// build time now, where there is no window.G for a Soldier's page to see).
+const fin = r.finalized;
 (fin && fin.hadMap) ? ok(`(p2) 98-content-pack-finalize ran from the injected pillar map (${fin.cards} cards fingerprinted, last)`) : bad("(p2) 98-content-pack-finalize did not run, or ran without window.GUIDON_PILLAR_MAP");
 (fin && fin.corrections.length === 0)
   ? ok("(p2) no pack hand-set a pillar that tools/pillar-map.mjs disagrees with")

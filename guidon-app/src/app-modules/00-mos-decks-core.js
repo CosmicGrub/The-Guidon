@@ -28,11 +28,24 @@
 
    STANDING RULE for every MOS-specific content pack from here forward, not
    just 92A: 92A (01-board-supplement-92a.js) is the REFERENCE PATTERN, not a
-   one-off special case. A new MOS pack must:
-     1. call G.mosDecks.register({code, label, pillar}) once, at the top of
-        its own IIFE, guarded the same way 01-board-supplement-92a.js does;
-     2. add "mos-decks-core" to its own manifest.json "requires" so the build
-        guarantees this file has already loaded;
+   one-off special case. Declare the deck once, inside its own pack file,
+   the way that best matches when the pack actually runs (ROADMAP 3g E x G
+   reconciliation - E moved every "content-pack"-kind module to run once at
+   BUILD time, in a Node sandbox with no window.G, after G had already
+   shipped register() as a runtime-only call):
+     1a. a BUILD-TIME pack ("emit":"build", e.g. 01-board-supplement-92a.js)
+         pushes { code, label, pillar } onto bank.mosDecks (create the array
+         if absent) from inside its own G.contentPack.define(...) builder -
+         baked into the shipped seed like every other pack-added fact, read
+         back by this module below via seedFromBakedSeed(); OR
+     1b. a RUNTIME "feature"-kind pack (none exist yet) calls
+         G.mosDecks.register({code, label, pillar}) once, at the top of its
+         own IIFE, guarded the same way 01-board-supplement-92a.js's
+         predecessor did before the E/G reconciliation;
+     2. either way, add "mos-decks-core" to its own manifest.json "requires"
+        so the build guarantees this file has already loaded (build-time
+        packs need this so ctx ordering is right; runtime packs need it so
+        register() has somewhere to land);
      3. tag its own cards/scenarios with a `mos` array (and, if it shares a
         pillar with other content, a matching `pillar` string) - never
         hardcode a MOS check anywhere else in the app. G.mosDecks.available()
@@ -46,12 +59,25 @@
   "use strict";
   var G = window.G = window.G || {};
 
-  // One in-memory registry for the whole session. A MOS content pack calls
-  // register() once, synchronously, while it loads (same timing as
-  // G.boardSupplementMergeDeck calls) - never at render time - so
-  // available() is stable and correct the moment every content pack has
-  // finished loading, headless sandbox included.
+  // One in-memory registry for the whole session, seeded two ways:
+  //  (a) a build-time ("emit":"build") content pack - 01-board-supplement-
+  //      92a.js today - cannot call register() below at all: it runs once
+  //      in content-pack-engine.mjs's Node sandbox, where window.G.mosDecks
+  //      does not exist, so it bakes its {code,label,pillar} entry into the
+  //      shipped seed as bank.mosDecks instead (ROADMAP 3g E x G
+  //      reconciliation - see that pack's own comment). Read here, once, at
+  //      load, from window.GUIDON_SEED.mosDecks.
+  //  (b) a runtime ("feature") MOS pack, if one is ever written, calls
+  //      register() directly, synchronously, while it loads - never at
+  //      render time - same as before.
+  // Either path lands in this same array, so available() never needs to
+  // know which way a given deck arrived.
   var decks = [];
+  (function seedFromBakedSeed() {
+    var seed = window.GUIDON_SEED;
+    var baked = seed && Array.isArray(seed.mosDecks) ? seed.mosDecks : [];
+    baked.forEach(function (d) { register(d); });
+  })();
 
   /* The ONE normalize helper both call sites that used to hand-roll this
      regex now share: src/index.html's store.boardQuestions() (previously an

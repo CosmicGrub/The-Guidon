@@ -45,7 +45,7 @@ const searchInput = page.locator('input[type="search"]');
 // truth in the app; labels are cross-checked against G.routes here so this
 // test also catches a future route-label rename going stale, same as the
 // live code resolving them at render time instead of hand-copying them.
-const EXPECTED_HASHES = ["#/forms", "#/counsel", "#/develop", "#/write", "#/money", "#/health", "#/transition"];
+const EXPECTED_HASHES = ["#/forms", "#/counsel", "#/develop", "#/write", "#/money", "#/health", "#/transition", "#/moi"];
 
 const liveRouteLabels = await page.evaluate((hashes) => {
   return hashes.map((h) => {

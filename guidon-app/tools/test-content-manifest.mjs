@@ -67,10 +67,14 @@ copyFileSync(path.join(HERE, "..", "src", "app-modules", "98-content-pack-finali
 // the module LIST from src/app-modules/manifest.json instead of scanning the
 // folder, so this stand-in folder needs its own tiny one. The finalize
 // entry's "requires" is deliberately empty - the real manifest lists the
-// modules whose APIs it touches, which do not exist in this fixture.
+// modules whose APIs it touches, which do not exist in this fixture (its
+// own optional ctx.hasPack("board-supplement-integration") check is exactly
+// what lets that be true with no throw - see 98-content-pack-finalize.js).
+// ROADMAP 3g E: every content-pack/finalize entry must be "emit":"build" -
+// tools/module-manifest.mjs's checkManifest() refuses one that is not.
 const MODULES_MANIFEST = path.join(MODULES, "manifest.json");
 const writeModulesManifest = ({ broken = false } = {}) => {
-  const entry = (file, kind) => ({ file, id: file.replace(/\.js$/, "").replace(/^\d+-/, ""), kind, headless: true, requires: [], provides: [], routes: [], storageKeys: [], optionalApis: [] });
+  const entry = (file, kind) => ({ file, id: file.replace(/\.js$/, "").replace(/^\d+-/, ""), kind, emit: "build", headless: true, requires: [], provides: [], routes: [], storageKeys: [], optionalApis: [] });
   const modules = [entry("01-stand-in-pack.js", "content-pack")];
   if (broken) modules.push(entry("02-broken-pack.js", "content-pack"));
   modules.push(entry("98-content-pack-finalize.js", "finalize"));
@@ -89,7 +93,11 @@ const seedBank = () => ({
   prt: { drills: [{ id: "pd", exercises: [{}, {}, {}] }] },
 });
 const writeSeed = (bank) => writeFileSync(SEED, "<!doctype html>\n<script>\nwindow.GUIDON_SEED = " + JSON.stringify(bank) + "\n</script>\n", "utf8");
-const writePack = (cards) => writeFileSync(path.join(MODULES, "01-stand-in-pack.js"), "(function () { var S = window.GUIDON_SEED; " + JSON.stringify(cards) + ".forEach(function (c) { S.board.questions.push(c); }); })();\n", "utf8");
+// ROADMAP 3g E: the stand-in pack authors itself through G.contentPack.define(),
+// the same one call every real content pack uses - `bank` IS the seed object
+// (mergeContentPacks() passes it straight through), so this needs no
+// window.GUIDON_SEED indirection any more.
+const writePack = (cards) => writeFileSync(path.join(MODULES, "01-stand-in-pack.js"), "(function () { G.contentPack.define(\"stand-in-pack\", function (bank) { " + JSON.stringify(cards) + ".forEach(function (c) { bank.board.questions.push(c); }); }); })();\n", "utf8");
 const packOf = (n, category = "Army Values") => Array.from({ length: n }, (_, i) => card("p" + (i + 1), category));
 
 const run = (...args) => {

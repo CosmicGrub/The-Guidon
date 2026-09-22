@@ -4,8 +4,8 @@
  */
 (function () {
   "use strict";
-  var seed = window.GUIDON_SEED;
-  var list = seed && seed.scenarios && Array.isArray(seed.scenarios.scenarios) ? seed.scenarios.scenarios : null;
+  G.contentPack.define("roadmap-readiness-scenarios", function (bank) {
+  var list = bank && bank.scenarios && Array.isArray(bank.scenarios.scenarios) ? bank.scenarios.scenarios : null;
   if (!list) return;
   var have = new Set(list.map(function (s) { return s.id; }));
   function add(sc) { if (!have.has(sc.id)) { list.push(sc); have.add(sc.id); } }
@@ -116,5 +116,6 @@
       good:{ end:true, outcome:"Reporting practice complete. Take the procedure you confirmed for your own board into the Mock Board next. In the Board Simulator, the leadership problem and your after-action notes come after that." },
       bad:{ end:true, outcome:"Rebuild your reporting practice around three anchors: your board's current instructions, deliberate military bearing, and honest answers. Rehearse again before you treat any script as memorized." }
     }
+  });
   });
 })();
