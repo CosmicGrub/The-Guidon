@@ -49,6 +49,7 @@ import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 import { deviceKvGet, putOnDevice, seedOwnerProfile } from "./device-storage.mjs";
+import { until } from "./testkit.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -294,15 +295,26 @@ const cancelStatus = await page.evaluate(() => { const p = document.querySelecto
   : bad("unexpected lock-screen status after cancel: " + JSON.stringify(cancelStatus));
 
 // 3b) Retry with a genuinely successful mocked auth lets the Soldier through.
-// #bio-lock-overlay's own modalTrap close() has no CSS transition to key off
-// (unlike .gm-back), so it always falls back to its fixed ~400ms timer —
-// waitFor(detached) rides that out instead of guessing a matching timeout.
+// #bio-lock-overlay's modalTrap close() now (util.modalTrap in index.html)
+// checks the backdrop's own computed transition-duration before deciding
+// whether to wait for "transitionend"/a 400ms fallback - #bio-lock-overlay
+// declares no CSS transition at all, so it closes (and clears #app's inert)
+// essentially synchronously with trap.close() being called, same as
+// #ob-overlay's first-boot onboarding. waitFor(detached) below settles almost
+// immediately now; it no longer doubles as a de facto wait for the SEPARATE
+// async chain (app.start()'s post-gate G.profile.current() IndexedDB read)
+// that actually populates the topbar greeting, so that gets its own real
+// wait rather than inheriting slack from an unrelated animation timer.
 await setBioAuthResult("success");
 await page.getByRole("button", { name: /Unlock with biometrics/ }).click();
 await lockOverlay.waitFor({ state: "detached", timeout: 3000 }).catch(() => {});
 (await lockOverlay.count()) === 0
   ? ok("a successful biometric attempt removes the lock overlay and lets the Soldier through")
   : bad("lock overlay is still present after a successful (mocked) authenticate() call");
+await until(page, () => {
+  const el2 = document.getElementById("topbar-username");
+  return !!(el2 && el2.textContent);
+}, null, { timeout: 2000 });
 const nameAfterUnlock = await page.evaluate(() => { const el2 = document.getElementById("topbar-username"); return el2 ? el2.textContent : null; });
 nameAfterUnlock === "SGT TESTFIRE"
   ? ok("the real profile greeting renders only AFTER a successful unlock")
@@ -345,14 +357,40 @@ const offConfirmBox = page.locator(".gm-box", { hasText: /You won't be asked for
   ? ok('"Turn off biometric lock" from the lock screen asks for a real confirmation first, not a bare bypass')
   : bad("turning off biometric lock from the lock screen skipped confirmation");
 await page.locator(".gm-box button", { hasText: /Turn off/ }).click();
-// Two sequential animated closes chain here — the confirm dialog's own
-// (.gm-back, ~220ms CSS transition) THEN the lock overlay's (no transition
-// defined for #bio-lock-overlay, so it always rides its ~400ms fallback
-// timer) — waitFor(detached) rides out both instead of guessing a sum.
+// The confirm dialog's own close (.gm-back, a real ~220ms CSS transition) is
+// the only animated wait left in this chain - #bio-lock-overlay's own close
+// has none (see the 3b comment above) and now settles essentially
+// synchronously with trap.close(). waitFor(detached) below no longer doubles
+// as an incidental ~620ms buffer, which used to be enough real time for
+// store.setSetting()'s own 300ms debouncedSettingsSave() (src/index.html,
+// near _settingsDebounce) to flush to IndexedDB before this checked it - a
+// COMPLETELY separate timer from either modal's close animation. Waiting on
+// the actual persisted value below (up to comfortably past that 300ms
+// debounce) instead of an unrelated DOM-detach proxy.
 await lockOverlay.waitFor({ state: "detached", timeout: 3000 }).catch(() => {});
 (await lockOverlay.count()) === 0
   ? ok("confirming 'Turn off' from the lock screen actually unlocks — never a permanent lockout with a failed/cancelled prompt")
   : bad("confirming turn-off did not remove the lock overlay");
+// page.waitForFunction() with an ASYNC predicate does not reliably wait here
+// (measured directly, in isolation: it reports the condition met within a
+// few ms even when the real value the predicate awaits doesn't flip until
+// ~300ms later - it does not actually await the predicate's resolved value).
+// This codebase's other waitFor predicates (e.g. dismiss-onboarding.mjs's
+// BOOT_DECIDED_JS) are all synchronous for exactly this reason. Rather than a
+// fixed sleep or that broken async-predicate idiom, poll the real async DB
+// read entirely IN-PAGE (its own setTimeout loop against window.G.db, the
+// actual source of truth) and expose one synchronous boolean flag for
+// until()/waitForFunction to watch - real condition-based waiting, just with
+// the polling loop moved to where an async condition can actually be awaited.
+await page.evaluate(() => {
+  window.__biometricOffFlushed = false;
+  (async function poll() {
+    const r = await window.G.db.get("kv", "settings");
+    if (r && r.v && r.v.biometricLock === false) { window.__biometricOffFlushed = true; return; }
+    setTimeout(poll, 20);
+  })();
+});
+await until(page, () => window.__biometricOffFlushed, null, { timeout: 1500 });
 const settingAfterEmergencyOff = await page.evaluate(async () => { const r = await window.G.db.get("kv", "settings"); return r && r.v && r.v.biometricLock; });
 settingAfterEmergencyOff === false
   ? ok("turning off from the lock screen also persists biometricLock=false (Settings' own toggle reflects it next visit)")

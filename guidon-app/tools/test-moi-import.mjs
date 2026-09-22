@@ -61,6 +61,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { untilAsync } from "./testkit.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -918,13 +919,14 @@ await page.evaluate(() => {
   if (btn) btn.click();
 });
 // Waits for the real persisted state (a second family actually written to
-// PLANS_KEY) rather than a fixed sleep after Build - the predicate itself
-// awaits the async G.db.get() call, which Playwright's waitForFunction
-// supports directly.
-await page.waitForFunction(async () => {
+// PLANS_KEY) rather than a fixed sleep after Build. page.waitForFunction()
+// with an ASYNC predicate does not reliably await the predicate's resolved
+// value in this environment - untilAsync() polls the real async DB read
+// entirely in-page instead (see its own comment in testkit.mjs).
+await untilAsync(page, async () => {
   const r = await window.G.db.get("kv", window.G.moiImport.PLANS_KEY);
   return ((r && r.v) || []).length === 2;
-}, { timeout: 5000 });
+}, null, { timeout: 5000 });
 
 const familiesAfterB = await page.evaluate(async () => {
   const r = await window.G.db.get("kv", window.G.moiImport.PLANS_KEY);
@@ -1017,8 +1019,9 @@ await page.evaluate(() => {
   if (btn) btn.click();
 });
 // Waits for the real persisted state (the revision actually recorded in
-// familyA's own history) rather than a fixed sleep after Build.
-await page.waitForFunction(async (familyId) => {
+// familyA's own history) rather than a fixed sleep after Build. Same
+// async-predicate waitForFunction gotcha as the Plan B wait above.
+await untilAsync(page, async (familyId) => {
   const r = await window.G.db.get("kv", window.G.moiImport.PLANS_KEY);
   const f = ((r && r.v) || []).find((x) => x.id === familyId);
   return !!(f && f.history && f.history.length === 1);
