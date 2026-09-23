@@ -3356,6 +3356,18 @@ mark.dict-hi {
   box-sizing: border-box;
 }
 .ob-input:focus { outline: 2px solid var(--amber); border-color: var(--amber); }
+/* Bare (no .ob-input) <input type="date"> elsewhere in the app - board
+   date on #/home & #/board, the risk worksheet, #/reminders, career/
+   counsel follow-up reminders, MOI's optional due date, and a couple of
+   generic worksheet-field builders - inherit the same data-text-scale
+   font-size problem .ob-input's own comment above explains, without
+   carrying that class to pick up its fix. A type-selector, not a class,
+   closes every current and future bare date input at once. Found via a
+   live check while investigating why tools/ios-webkit-baseline.json's
+   "input[type=date]" entry disagreed between a local run (reproduces on
+   every device) and one CI run (reproduced on none) - real and
+   reproducible in a plain browser, so fixed rather than re-baselined. */
+input[type="date"] { font-size: max(1rem, 16px); }
 .ob-select {
   width: 100%;
   background: var(--bg);

@@ -10,7 +10,6 @@
     { "check": "font<16", "signature": "input[type=search]", "seen": "#/creeds, #/search, 14.3px" },
     { "check": "font<16", "signature": "textarea.wr-bullet-input", "seen": "#/write, 15px" },
     { "check": "font<16", "signature": "input[type=number]", "seen": "#/money, 14.3px" },
-    { "check": "font<16", "signature": "input[type=date]", "seen": "4 routes (#/home, #/board, #/risk, ...), 13px - found while shipping the AFT calculator, but pre-existing and unrelated: the only DOM sites for a bare (no .ob-input) type=\"date\" input are calendar.js/leader.js/moi-import.js/index.html's own core - none touched by that change, and each app-module last changed on main before its branch cut. Not in the 2026-09-19 recorded list above (never re-verified against main since, or a fresh WebKit-version reading of an old near-miss) - out of scope to root-cause or fix from an unrelated change; flagged for a follow-up that actually owns those modules." },
     { "check": "font<16", "signature": "textarea", "seen": "#/risk, 12.2px" },
     { "check": "font<16", "signature": "input[type=number]#promo-goal", "seen": "#/profile, 12.2px" },
     { "check": "font<16", "signature": "textarea#board-sim-strong", "seen": "#/board-sim, 12.2px" },
