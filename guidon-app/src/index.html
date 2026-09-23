@@ -29831,6 +29831,11 @@ window.G = window.G || {};
     // inputs here - a plain object, shape-only check (the reader's own
     // Object.assign onto a fully-defaulted object tolerates a partial row).
     "guidon:ppw:v1": function (v) { return v && typeof v === "object" && !Array.isArray(v); },
+    // fitness.js's AFT Event Score Calculator (#/fitness): raw per-event
+    // performance + age band/sex/standard selections. Same plain-object,
+    // shape-only check as guidon:ppw:v1 above - the reader's own
+    // Object.assign onto a fully-defaulted object tolerates a partial row.
+    "guidon:aft-calc:v1": function (v) { return v && typeof v === "object" && !Array.isArray(v); },
     // Audit finding (security-privacy): leader.js's own header flags this
     // key as holding OTHER people's data (excluded from backup.js's own
     // export via PRIVATE_PREFIXES already) - but content-validation is a
@@ -30053,6 +30058,7 @@ window.G = window.G || {};
     "guidon:calendar:v1": "your calendar",
     "forms:saved": "saved form drafts",
     "guidon:ppw:v1": "your promotion points worksheet",
+    "guidon:aft-calc:v1": "your AFT event score calculator inputs",
     "progress:weeklyGoal:v1": "your weekly study goal",
     "writing:bulletHistory:v1": "Bullet Builder history",
     "resilience:practiceLog:v1": "your resilience practice log",

@@ -23,6 +23,15 @@
  * are deliberately left OUT of the grid (see the comments in fitness.js) -
  * Part 2 confirms both of those are still full width, not just that
  * *something* is now a grid.
+ *
+ * A later change (the AFT Event Score Calculator panel) added two MORE
+ * `.panel-grid-2` groups of its own - the age band/sex/standard control
+ * row, and the 5 raw-performance inputs - between the AFT reference grid
+ * and the CFT section, for the same width-waste reason the original four
+ * reference panels got one. Part 2 below checks all 4 groups generically
+ * (the per-group loop does not hardcode which group is which), so it only
+ * needed its two "exactly N groups" counts bumped from 2 to 4 - the actual
+ * column/shared-row/collapse assertions did not change shape at all.
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
@@ -124,10 +133,12 @@ currencyContent.fitnessLinksToRoute
   : bad("#/currency: Fitness domain entry missing or no longer links to #/fitness: " + JSON.stringify(currencyContent));
 
 // ============================================================================
-// Part 2: #/fitness - the actual fix. Two .panel-grid-2 groups (AFT panels,
-// CFT panels) should be real 2-column grids at >=600px, while the ordered
-// CFT event walkthrough and the MOS code-wall panel stay full width, and
-// everything collapses to a clean single column at 375px.
+// Part 2: #/fitness - the actual fix. Four .panel-grid-2 groups (AFT
+// reference panels, the AFT calculator's control row, the AFT calculator's
+// raw-input row, CFT reference panels) should each be real 2-column grids
+// at >=600px, while the ordered CFT event walkthrough and the MOS code-wall
+// panel stay full width, and everything collapses to a clean single column
+// at 375px.
 // ============================================================================
 await goto("#/fitness");
 
@@ -157,9 +168,9 @@ for (const w of [1024, 768]) {
     const listsWidth = listsPanel ? Math.round(listsPanel.getBoundingClientRect().width) : null;
     return { gridCount: grids.length, gridDetails, evInGrid, evWidth, listsInGrid, listsWidth, mainWidth };
   });
-  info.gridCount === 2
-    ? ok(`#/fitness at ${w}px: exactly 2 .panel-grid-2 groups present (AFT panels, CFT panels)`)
-    : bad(`#/fitness at ${w}px: expected 2 .panel-grid-2 groups, found ${info.gridCount}`);
+  info.gridCount === 4
+    ? ok(`#/fitness at ${w}px: exactly 4 .panel-grid-2 groups present (AFT reference panels, calculator controls, calculator inputs, CFT panels)`)
+    : bad(`#/fitness at ${w}px: expected 4 .panel-grid-2 groups, found ${info.gridCount}`);
   info.gridDetails.forEach((g, i) => {
     g.colCount >= 2
       ? ok(`#/fitness at ${w}px: grid #${i + 1} resolves to ${g.colCount} real columns (not stacked)`)
@@ -193,11 +204,11 @@ const fitnessNarrow = await page.evaluate(() => {
   });
   return { gridCount: grids.length, details };
 });
-fitnessNarrow.gridCount === 2 && fitnessNarrow.details.every((d) => d.display !== "grid")
-  ? ok("#/fitness at 375px: both .panel-grid-2 groups fall back to block layout (no grid) below the 600px breakpoint")
-  : bad("#/fitness at 375px: expected both groups to NOT be display:grid at 375px: " + JSON.stringify(fitnessNarrow));
+fitnessNarrow.gridCount === 4 && fitnessNarrow.details.every((d) => d.display !== "grid")
+  ? ok("#/fitness at 375px: all 4 .panel-grid-2 groups fall back to block layout (no grid) below the 600px breakpoint")
+  : bad("#/fitness at 375px: expected all 4 groups to NOT be display:grid at 375px: " + JSON.stringify(fitnessNarrow));
 fitnessNarrow.details.every((d) => d.allDistinctTops)
-  ? ok("#/fitness at 375px: every panel inside both groups has a distinct top edge - a clean stacked single column, no regression")
+  ? ok("#/fitness at 375px: every panel inside all 4 groups has a distinct top edge - a clean stacked single column, no regression")
   : bad("#/fitness at 375px: panels inside a group share a top edge at mobile width - narrow-viewport regression: " + JSON.stringify(fitnessNarrow));
 
 // Real content spot-check: the specific facts this page exists to carry are
