@@ -324,6 +324,62 @@ const cleanExport = await page.evaluate(async () => {
   ? ok("A clean export does not add a self-heal entry (no false positives)")
   : bad("self-heal count changed on a clean export: before=" + cleanExport.countBefore + " after=" + cleanExport.countAfter);
 
+// ---- ROADMAP 3g follow-up: nav personalization (guidon-nav-pinned-routes)
+// travels with a backup too ----
+// This key lives in localStorage (G.db.local), not any of the IndexedDB
+// stores every other check above/below round-trips - it was never part of
+// exportAll()/importAll()'s payload before this pass, so a Soldier's
+// pinned routes were silently lost on a fresh install or device
+// migration. Same "export -> clear -> import -> confirm it's back"
+// contract as the marker-goal round trip at the top of this file, driven
+// through the same real G.backup.exportAll()/importAll() functions the
+// clean/partial-failure checks just above already call directly (rather
+// than clicking through the UI a second time) - this is the natural home
+// per the task's own note to check an existing test-backup-*.mjs suite
+// first.
+const PIN_MARKER = ["#/doctrine", "#/board"];
+await page.evaluate((pins) => localStorage.setItem("guidon-nav-pinned-routes", JSON.stringify(pins)), PIN_MARKER);
+const pinExportPayload = await page.evaluate(() => window.G.backup.exportAll());
+const pinsInPayload = (pinExportPayload.stores.local || {})["guidon-nav-pinned-routes"];
+pinsInPayload === JSON.stringify(PIN_MARKER)
+  ? ok("exportAll()'s payload.stores.local carries guidon-nav-pinned-routes")
+  : bad("payload.stores.local[\"guidon-nav-pinned-routes\"]: " + JSON.stringify(pinsInPayload));
+
+await page.evaluate(() => localStorage.removeItem("guidon-nav-pinned-routes"));
+const clearedPins = await page.evaluate(() => localStorage.getItem("guidon-nav-pinned-routes"));
+clearedPins === null
+  ? ok("guidon-nav-pinned-routes cleared before import, for a real before/after")
+  : bad("guidon-nav-pinned-routes still present after clearing: " + clearedPins);
+
+const pinImportResult = await page.evaluate((payload) => window.G.backup.importAll(payload), pinExportPayload);
+const pinsAfterImport = await page.evaluate(() => localStorage.getItem("guidon-nav-pinned-routes"));
+pinsAfterImport === JSON.stringify(PIN_MARKER)
+  ? ok("importAll() restores guidon-nav-pinned-routes from payload.stores.local")
+  : bad("guidon-nav-pinned-routes after import: " + pinsAfterImport);
+pinImportResult.restored.local >= 1
+  ? ok("importAll()'s own result reports a real restored.local count (" + pinImportResult.restored.local + ")")
+  : bad("importAll() restored.local count: " + JSON.stringify(pinImportResult.restored));
+
+// A malformed row under this key (not a JSON array of strings) must be
+// rejected, not written - same "named, not silently dropped" contract
+// every kv row already gets, proven here at the function level (the
+// dialog-preview checks above already prove kv rows are named in the
+// confirm UI; this key isn't surfaced there today, so this checks the
+// underlying reject-and-keep-existing behavior directly).
+await page.evaluate((pins) => localStorage.setItem("guidon-nav-pinned-routes", JSON.stringify(pins)), PIN_MARKER);
+const corruptPinPayload = JSON.parse(JSON.stringify(pinExportPayload));
+corruptPinPayload.stores.local["guidon-nav-pinned-routes"] = "not even json";
+const corruptPinResult = await page.evaluate((payload) => window.G.backup.importAll(payload), corruptPinPayload);
+const pinsAfterCorruptImport = await page.evaluate(() => localStorage.getItem("guidon-nav-pinned-routes"));
+(corruptPinResult.skipped.local >= 1 && corruptPinResult.skippedKeys.indexOf("guidon-nav-pinned-routes") !== -1)
+  ? ok("a malformed guidon-nav-pinned-routes row is rejected and counted in skipped.local/skippedKeys")
+  : bad("corrupt pin-routes import result: " + JSON.stringify({ skipped: corruptPinResult.skipped, skippedKeys: corruptPinResult.skippedKeys }));
+pinsAfterCorruptImport === JSON.stringify(PIN_MARKER)
+  ? ok("the existing (good) guidon-nav-pinned-routes value is kept, not overwritten, when the incoming row is malformed")
+  : bad("guidon-nav-pinned-routes after a corrupt import: " + pinsAfterCorruptImport);
+
+await page.evaluate(() => localStorage.removeItem("guidon-nav-pinned-routes"));
+
 const relevantNoise = noise.filter((n) => !/favicon/.test(n));
 relevantNoise.length === 0 ? ok("no console errors/warnings") : bad("console noise: " + relevantNoise.slice(0, 5).join(" | "));
 
