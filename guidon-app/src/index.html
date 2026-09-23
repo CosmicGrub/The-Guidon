@@ -29111,6 +29111,24 @@ window.G = window.G || {};
     util.clear(mount);
     mount.appendChild(el("div.section-title", {}, [ el("h2", { text:"Share & Install" }), el("div.rule") ]));
 
+    // Standing rule: What's New should be reachable on demand, not just the
+    // one-time auto-popup after an update (G.whatsNew.checkOnBoot()) -
+    // named here specifically since a Soldier sharing or reinstalling
+    // GUIDON is already thinking about "what version/what's changed."
+    // Placed above the platform branches below (native/browser/file://) so
+    // it renders unconditionally regardless of which one fires. Same reuse
+    // as Settings' "About GUIDON" panel - the full release history via the
+    // existing show()/"Earlier updates" collapsible, not a duplicate.
+    (function () {
+      const notes = (G.whatsNew && Array.isArray(G.whatsNew.RELEASE_NOTES)) ? G.whatsNew.RELEASE_NOTES : [];
+      const sorted = notes.filter((n) => n && n.version && Array.isArray(n.highlights) && n.highlights.length)
+        .slice().sort((a, b) => G.whatsNew.cmpVersion(b.version, a.version));
+      if (!sorted.length) return;
+      const whatsNewLink = el("button.btn.sm.ghost", { type: "button", gi: "star", giSize: 14, text: "See what's new", style: "margin-bottom:12px" });
+      whatsNewLink.addEventListener("click", () => G.whatsNew.show(sorted));
+      mount.appendChild(whatsNewLink);
+    })();
+
     // Tauri desktop / Capacitor Android: none of the content below this
     // point applies. There is no browser URL to copy or turn into a QR code
     // (location.href is a native window/webview origin, not a link anyone
@@ -36726,6 +36744,23 @@ window.G = window.G || {};
       const pn = el("div.panel", { style: "margin-bottom:14px" });
       pn.appendChild(el("div.fin-h", { text: "About GUIDON" }));
       pn.appendChild(el("p.hint", { text: "Version " + (window.GUIDON_APP_VERSION || "unknown") + " \u00b7 Built " + (window.GUIDON_BUILD_DATE || "unknown") }));
+      // Standing rule: What's New auto-shows once on the first launch after
+      // a real update (G.whatsNew.checkOnBoot(), below), but there was no
+      // way to pull it back up on demand afterward - checked live, zero
+      // other call sites reach G.whatsNew.show() besides that one auto-
+      // trigger. Right next to the version number is where a Soldier
+      // already looks to answer "what changed" - reuses show() with every
+      // real entry (newest first, its own existing "Earlier updates"
+      // collapsible), so this is a real changelog browser, not a
+      // duplicate of the auto-popup.
+      const whatsNewLink = el("button.btn.sm.ghost", { type: "button", gi: "star", giSize: 14, text: "See what's new", style: "margin-top:6px" });
+      whatsNewLink.addEventListener("click", () => {
+        const notes = (G.whatsNew && Array.isArray(G.whatsNew.RELEASE_NOTES)) ? G.whatsNew.RELEASE_NOTES : [];
+        const sorted = notes.filter((n) => n && n.version && Array.isArray(n.highlights) && n.highlights.length)
+          .slice().sort((a, b) => G.whatsNew.cmpVersion(b.version, a.version));
+        if (sorted.length) G.whatsNew.show(sorted);
+      });
+      pn.appendChild(whatsNewLink);
       // P1 of the "No server, ever" promise: the short form of #/privacy's
       // unified sentence. tools/test-privacy.mjs reads this panel and fails
       // if it ever credits a Content Security Policy again (no build ships one).
