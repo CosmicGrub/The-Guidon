@@ -699,8 +699,8 @@ jobs:
             tests: "test:screen-layouts test:calendar-zero-board test:pt-tasking-board test:leader-moi-tracker"
           - name: "58-contentpackengine-lintcontentpacks-mergeseedcontentpacks-searchscreens"
             tests: "test:content-pack-engine test:lint-content-packs test:merge-seed-content-packs test:search-screens"
-          - name: "59-modalinertcloserace-afteventscoring"
-            tests: "test:modal-inert-close-race test:aft-event-scoring"
+          - name: "59-modalinertcloserace-afteventscoring-searchcontentcoverage"
+            tests: "test:modal-inert-close-race test:aft-event-scoring test:search-content-coverage"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
