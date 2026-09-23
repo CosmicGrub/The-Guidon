@@ -2556,6 +2556,23 @@ button:focus:not(:focus-visible),
    keeps the grid unconditionally - no aspect-ratio gating there, since
    real monitors are essentially never inside the 0.7-1.05 band anyway and
    gating desktop on aspect-ratio would just be a no-op with extra risk. */
+/* A CSS grid item defaults to min-width:auto, not 0 - it refuses to shrink
+   below its own content's min-content width (its longest unbreakable run:
+   a word, an inline label, an unbreakable child) even inside a 1fr column
+   that would otherwise fit it. Found chasing a Nav Spotlight CI failure
+   (test:resize-storm, #/settings, a few px of .panel overflow at 628-632px
+   that never reproduced locally - a font-metric-sensitive min-content width
+   landing just past the threshold on CI's Chromium but not this machine's,
+   the classic shape of this exact bug) - but the bug itself predates that
+   change and applies to every .panel/.card inside either grid, at every
+   width the grid is active, regardless of which panel's content happens to
+   be long enough to trigger it on a given render. One global rule, not
+   scoped to a breakpoint, since it only ever matters where display:grid is
+   already active (gated by the rules below) and does nothing where it
+   isn't (a stacked single-column .panel has no sibling column to overflow
+   into in the first place). */
+.panel-grid-2 > .panel, .panel-grid-2 > .card,
+.panel-grid-3 > .panel, .panel-grid-3 > .card { min-width: 0; }
 @media (min-width: 800px) {
   /* align-items:start (wave 2, same reasoning as .card-results-grid above):
      these pair up independent panels of differing natural length (e.g.
