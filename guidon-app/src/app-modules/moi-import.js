@@ -122,11 +122,23 @@ window.G = window.G || {};
 
   function escapeRegExp(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 
-  // The pub-type prefixes this engine recognizes. "DA PAM" is the one
-  // two-word type - sorted longest-first below purely as documented intent
-  // (none of these are literal prefixes of one another, so ordering isn't
-  // load-bearing here, just deliberate).
-  const PUB_TYPES = ["DA PAM", "ADP", "ATP", "AR", "FM", "TC", "TM"];
+  // The pub-type prefixes this engine recognizes. "DA PAM"/"ARMY DIRECTIVE"
+  // are the two-word types - sorted longest-first below so a longer,
+  // more-specific alternative is always tried before a shorter one that
+  // could otherwise falsely consume part of it (this is what keeps "ADP
+  // 6-22" from ever mis-splitting into bare "AD" + "P 6-22": "ADP" itself
+  // sorts ahead of "AD" and the regex only accepts a pub-type token
+  // immediately followed by real whitespace, so "ADP" always wins the
+  // alternation at that position). "AD" added for real Army Directive
+  // citations (e.g. "AD 2026-13", the current AR 600-9/body-composition
+  // directive) - found via a real unit MOI that cited one and confirmed the
+  // seed's own board-question source strings already reference these
+  // ("AR 600-9; Army Directive 2026-13") under the spelled-out form, which
+  // is why "Army Directive" is listed too: normalizeCitation below
+  // canonicalizes both to the same pubType so an abbreviated MOI reference
+  // and the app's own spelled-out seed citations resolve to one registry
+  // key instead of two that can never find each other.
+  const PUB_TYPES = ["DA PAM", "ARMY DIRECTIVE", "ADP", "ATP", "AR", "FM", "TC", "TM", "AD"];
   const PUB_TYPE_FRAGMENT = PUB_TYPES
     .slice()
     .sort((a, b) => b.length - a.length)
@@ -283,7 +295,14 @@ window.G = window.G || {};
     // suffix and chopped).
     const m = citationRegex("i").exec(str);
     if (m) {
-      const pubType = m[1].toUpperCase().replace(/\s+/g, " ");
+      let pubType = m[1].toUpperCase().replace(/\s+/g, " ");
+      // "AD 2026-13" (an abbreviated MOI reference) and "Army Directive
+      // 2026-13" (the seed's own spelled-out source strings - see
+      // PUB_TYPES' own comment) must resolve to ONE registry key, not two
+      // that can never find each other. Canonicalize toward the spelled-out
+      // form since that is what buildCitationRegistry() actually scans out
+      // of the real seed today.
+      if (pubType === "AD") pubType = "ARMY DIRECTIVE";
       const rawNumber = m[2];
       // The narrow glyph-fold - ONLY within this already-isolated digit-run,
       // never against pubType or anything else in the string.
