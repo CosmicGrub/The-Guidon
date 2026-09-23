@@ -764,16 +764,18 @@ html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after 
   /* Theater-entry grow-in transition (enterTheater(), src/index.html) -
      declared unconditionally here rather than gated to html.qz-theater so
      it's already active the instant that rule's fixed/inset also apply.
-     Otherwise a no-op: .qz-wrap's opacity/transform are never touched
-     anywhere outside theater entry (confirmed - the only other opacity/
-     transform writers in this file are .qz-card's own swipe-gesture code,
-     a different element), and the .qz-theater-entering class below is the
-     ONLY thing that ever gives these two properties a different value to
-     transition from. Reduced motion is already handled globally (the
-     html.reduce-motion / prefers-reduced-motion blanket transition-
-     duration override near the top of this file), so no separate guard is
-     needed here. */
-  transition: opacity var(--modal-dur, .22s) var(--modal-ease, ease), transform var(--modal-dur, .22s) var(--modal-ease, ease);
+     Otherwise a no-op: .qz-wrap's opacity is never touched anywhere
+     outside theater entry, and the .qz-theater-entering class below is the
+     ONLY thing that ever gives it a different value to transition from.
+     transform deliberately does NOT live here - see the .qz-theater-
+     entering rule's own comment (PR #234 code review: the Fullscreen API
+     forces transform:none!important on whichever element is actually
+     :fullscreen, which is .qz-wrap on a successful manual entry) - .qz-
+     scene (below) carries that half instead. Reduced motion is already
+     handled globally (the html.reduce-motion / prefers-reduced-motion
+     blanket transition-duration override near the top of this file), so
+     no separate guard is needed here. */
+  transition: opacity var(--modal-dur, .22s) var(--modal-ease, ease);
 }
 .qz-wrap:focus-visible { outline: 3px solid var(--amber); outline-offset: 4px; } /* .qz-wrap (tabIndex="0") is the real tab stop; the ring used to be declared on .qz-card below, which never receives focus */
 
@@ -793,16 +795,30 @@ html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after 
    straight to position:fixed;inset:0 with nothing in between. The card
    growing to fill the newly-available space now reads as one continuous
    motion instead: .qz-theater-entering (below) starts the wrap faded and
-   scaled down; enterTheater() adds it for exactly one frame then removes
-   it (the same double-rAF technique util.modalTrap already uses for every
-   other CSS-transitioned overlay in this file, so the browser has a real
-   FROM value to animate from), letting the transition on .qz-wrap's own
-   base rule (above) carry it to its normal, fully-opaque resting state.
-   Exit is deliberately NOT symmetric - see enterTheater()'s own comment for
-   why animating the close would mean delaying focus-restore/inert-release
-   behind a fade, a real risk this pass isn't taking on. */
+   its .qz-scene child scaled down; enterTheater() adds it for exactly one
+   frame then removes it (the same double-rAF technique util.modalTrap
+   already uses for every other CSS-transitioned overlay in this file, so
+   the browser has a real FROM value to animate from), letting the
+   transitions on .qz-wrap's and .qz-scene's own base rules carry them to
+   their normal resting state. Exit is deliberately NOT symmetric - see
+   enterTheater()'s own comment for why animating the close would mean
+   delaying focus-restore/inert-release behind a fade, a real risk this
+   pass isn't taking on.
+
+   The scale lives on .qz-scene (a plain descendant), not .qz-wrap itself
+   (code-review finding, PR #234): when manual entry succeeds through
+   target.requestFullscreen(), .qz-wrap becomes the actual :fullscreen
+   element, and the Fullscreen API's UA stylesheet forces
+   transform:none!important on THAT element specifically - a scale
+   declared there would be silently suppressed on every desktop browser
+   that supports true fullscreen, leaving only the opacity fade. .qz-scene
+   is never the :fullscreen element itself (only .qz-wrap ever calls
+   requestFullscreen), so the UA override doesn't reach it; opacity stays
+   on .qz-wrap since that property has no such override and fading the
+   whole overlay (chrome included) together is still exactly right. */
 html.qz-theater { overflow: hidden; }
-html.qz-theater .qz-wrap.qz-theater-entering { opacity: 0; transform: scale(.97); }
+html.qz-theater .qz-wrap.qz-theater-entering { opacity: 0; }
+html.qz-theater .qz-wrap.qz-theater-entering .qz-scene { transform: scale(.97); }
 html.qz-theater .qz-wrap {
   position: fixed; inset: 0; z-index: 800;
   background: var(--bg);
@@ -873,6 +889,12 @@ html.qz-theater #toast { z-index: 900; }
      the fisheye look that sets in below ~900px. */
   perspective: 1150px;
   width: 100%;
+  /* Theater-entry grow-in's scale half (see .qz-wrap's own comment above
+     for why it lives here instead of on .qz-wrap itself) - unconditional
+     for the same "otherwise a no-op" reason: nothing else ever sets a
+     transform on .qz-scene, confirmed by grep, so this only ever animates
+     the .qz-theater-entering transition. */
+  transition: transform var(--modal-dur, .22s) var(--modal-ease, ease);
 }
 /* Card size: matches a real 3x5 index card, landscape (5:3 - wider than
    tall, chosen over portrait because a wider card reads multi-line board-
