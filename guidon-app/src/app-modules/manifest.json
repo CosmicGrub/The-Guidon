@@ -385,6 +385,17 @@
       "optionalApis": []
     },
     {
+      "file": "99-release-v1156.js",
+      "id": "release-v1156",
+      "kind": "release-note",
+      "headless": true,
+      "requires": [],
+      "provides": [],
+      "routes": [],
+      "storageKeys": [],
+      "optionalApis": []
+    },
+    {
       "file": "assignments.js",
       "id": "assignments",
       "kind": "feature",
