@@ -3829,6 +3829,30 @@ html.light .feedback.error { background: rgba(220,53,69,0.1); }
    actually resolves to in every theme, the same fix pattern already used
    for the two hardcoded-dark surfaces earlier this session. */
 .search-chip.active { background: color-mix(in srgb, var(--amber) 12%, var(--bg-2)); border-color:var(--amber); }
+/* Board section reorganization: the regulation quick-filter row - the
+   finest-grained, least-often-browsed-first of the three pillar/category/
+   regulation facets - is collapsed behind a disclosure by default instead
+   of a permanent third always-open row (see quickFilterRow/regRow's own
+   comment). ::-webkit-details-marker/list-style:none replace the browser's
+   default triangle with one that matches the app's own chevron rotation
+   idiom; the reduced-motion blanket rule near the top of this file already
+   neutralizes the rotation transition. */
+.qf-disclosure { margin-top:6px; }
+/* The browser's own closed-<details> content suppression is a user-agent-
+   origin rule, which ANY page rule beats regardless of specificity - and
+   .search-filters's own `display:flex` (an ordinary author rule, needed for
+   every OTHER, non-collapsible .search-filters bar) was silently winning,
+   so the regulation row rendered at full height even while collapsed
+   (caught by test-board-regulation-filter.mjs). This explicit :not([open])
+   rule is real author CSS with enough specificity to override that one. */
+.qf-disclosure:not([open]) > .search-filters { display:none; }
+.qf-disclosure summary { cursor:pointer; list-style:none; display:inline-flex; align-items:center; gap:6px;
+  font-family:var(--font-head); font-size:12px; letter-spacing:.5px; text-transform:uppercase;
+  color:var(--text-dim); padding:4px 0; transition:color .15s; }
+.qf-disclosure summary::-webkit-details-marker { display:none; }
+.qf-disclosure summary::before { content:"▸"; font-size:10px; display:inline-block; transition:transform .15s; }
+.qf-disclosure[open] summary::before { transform:rotate(90deg); }
+.qf-disclosure summary:hover { color:var(--text); }
 .search-header { display:flex; align-items:baseline; gap:6px; padding:10px 4px 4px; }
 .search-count { font-family:var(--font-mono); font-size:0.85rem; font-weight:700; color:color-mix(in srgb, var(--amber) 40%, var(--text)); }
 .search-breakdown { font-size:0.78rem; color:var(--text-dim); }
@@ -10830,9 +10854,13 @@ window.G = window.G || {};
     const clickVerbLower = () => clickVerb().toLowerCase();
     const all = store.boardQuestions();
     const categories = ["All", ...Array.from(new Set(all.map((q) => q.category)))];
-
-    const catSel = el("select", { "aria-label": "Filter by category" });
-    categories.forEach((c) => catSel.appendChild(el("option", { value: c, text: c })));
+    // Filter consolidation (board section reorganization): category used to
+    // be a real <select> (catSel) because catList/catChipBar/catSel each grew
+    // their own view onto it at different times. Pillar and regulation were
+    // already plain variables below (pillarFilter/regFilter) - category is
+    // brought in line with them here, so all three facets share one shape and
+    // the deep-link/build()/empty-state code paths read/write the same way.
+    let catFilter = "All";
 
     const DIFF_LABELS = { beginner: "🟢 Beginner", intermediate: "🟡 Intermediate", expert: "🔴 Expert — by-the-book" };
     const diffSel = el("select", { "aria-label": "Filter by study level" });
@@ -11006,12 +11034,13 @@ window.G = window.G || {};
     });
 
     async function build() {
-      const cat = catSel.value || "All";
+      const cat = catFilter || "All";
       const diff = diffSel.value || "All";
       let pool = cat === "All" ? all : all.filter((q) => q.category === cat);
       if (diff !== "All") pool = pool.filter((q) => G.board.normDifficulty(q.difficulty) === diff);
       if (regFilter !== "All") pool = pool.filter((q) => (regIndex.get(q.id) || []).includes(regFilter));
-      if (pillarFilter !== "All") pool = pool.filter((q) => q.pillar === pillarFilter);
+      if (pillarFilter === OTHER_PILLAR) pool = pool.filter((q) => !q.pillar);
+      else if (pillarFilter !== "All") pool = pool.filter((q) => q.pillar === pillarFilter);
       // ROADMAP 3g item G: the "Study <MOS>" deep link's one-shot flag,
       // consumed above into mosFilterCode - narrows the deck to exactly the
       // cards tagged with that MOS code. Composes with the other filters
@@ -11340,7 +11369,7 @@ window.G = window.G || {};
         // starring anything), and the user had to manually check five
         // separate controls to find the culprit.
         const active = [];
-        if (catSel.value && catSel.value !== "All") active.push("category “" + catSel.value + "”");
+        if (catFilter && catFilter !== "All") active.push("category “" + catFilter + "”");
         if (diffSel.value && diffSel.value !== "All") active.push("difficulty “" + diffSel.value + "”");
         if (dueOnlyMode) active.push("Due only");
         if (leechOnlyMode) active.push("Leeches only");
@@ -11961,8 +11990,7 @@ window.G = window.G || {};
 
     // honor pre-filter from Readiness tab
     if (G.board._filterCat) {
-      const matchOpt = Array.from(catSel.options).find((o) => o.value === G.board._filterCat);
-      if (matchOpt) { catSel.value = G.board._filterCat; }
+      if (categories.includes(G.board._filterCat)) { catFilter = G.board._filterCat; }
       G.board._filterCat = null;
     }
     // "Drill N Due Now" set this flag and re-rendered, but nothing ever
@@ -12001,7 +12029,6 @@ window.G = window.G || {};
       if (wantMos && all.some(hasMos)) mosFilterCode = wantMos;
       G.board._filterMos = null;
     }
-    catSel.addEventListener("change", build);
     diffSel.addEventListener("change", build);
 
     // WCAG 2.4.1 Bypass Blocks: below .drill-layout's 1024px split
@@ -12046,14 +12073,14 @@ window.G = window.G || {};
 
     // List-detail left pane (Fold5/tablet fidelity wave 1): a real clickable
     // category list next to the card at >=1024px (.list-detail, see CSS),
-    // driving the exact same catSel value + change event the dropdown above
-    // already does - a supplementary VIEW onto existing state, not a
-    // parallel one, so none of the filtering/theater-mode/keyboard logic in
-    // this function needed to change to add it. Below 1024px .list-detail
-    // is just a plain block and catList sits above the dropdown row,
-    // unused in practice since the dropdown remains the primary control
-    // there - kept in the DOM rather than conditionally built so switching
-    // between tiers via a resize/fold event never needs a re-render.
+    // driving the same catFilter state + build() the chip row below also
+    // does - a supplementary, complete (all categories, not capped to 12)
+    // VIEW onto that state, kept specifically for the due-badge-per-category
+    // glance it alone provides. Below 1024px .list-detail is just a plain
+    // block and catList sits above the chip rows, unused in practice since
+    // the chip row remains the primary control there - kept in the DOM
+    // rather than conditionally built so switching between tiers via a
+    // resize/fold event never needs a re-render.
     const catList = el("div.list-detail-list", { role: "listbox", "aria-label": "Jump to category" });
     async function refreshCatList() {
       // srsMap is the shared bank-wide map build() just loaded (one
@@ -12064,7 +12091,7 @@ window.G = window.G || {};
       categories.forEach((c) => {
         const pool = c === "All" ? all : all.filter((q) => q.category === c);
         const due = pool.filter((q) => G.board.isDueSrs(srsMap[q.id], now)).length;
-        const active = (catSel.value || "All") === c;
+        const active = (catFilter || "All") === c;
         const row = el("button.list-detail-row" + (active ? ".active" : ""), {
           type: "button", role: "option", "aria-selected": String(active),
         }, [
@@ -12072,9 +12099,16 @@ window.G = window.G || {};
           due ? el("span.ldr-badge", { text: due + " due" }) : null,
         ]);
         row.addEventListener("click", () => {
-          if (catSel.value !== c) {
-            catSel.value = c;
-            catSel.dispatchEvent(new Event("change"));
+          if (catFilter !== c) {
+            // Deliberately NOT the chip rows' own reset-narrower-facets
+            // behavior (catRow/pillarRow's pick, below): catList is the
+            // one surviving unscoped, full-catalog picker, kept specifically
+            // so a category outside the current pillar/regulation scope
+            // stays reachable and composes exactly like every other filter
+            // (including into a real, explained empty state) - matching
+            // what catSel used to do before this consolidation.
+            catFilter = c;
+            build();
           }
           // Auto-scroll to the flashcard - catList sits above drillDetail
           // in DOM order on stacked (<1024px) layouts, so picking a
@@ -12087,8 +12121,8 @@ window.G = window.G || {};
           // (scrollIntoView on an already-visible element does nothing)
           // on split layouts where the card sits right next to the list.
           //
-          // Called synchronously, before catSel's own async change handler
-          // (build() -> awaits loadAllSrs() -> refreshCatList()/draw())
+          // Called synchronously, before the build() call just above
+          // (async - awaits loadAllSrs() -> refreshCatList()/draw())
           // has actually rebuilt cardWrap's contents for the new category
           // - so this measures cardWrap's position before that rebuild
           // lands. Not currently a bug: cardWrap is a stable node (never
@@ -12173,8 +12207,8 @@ window.G = window.G || {};
         // ArrowUp-from-row-0 the way Doctrine's row does: unlike Doctrine's
         // "search" box (which sits directly above entryList, both visually
         // and as its literal filter source), catList has no equivalent
-        // control - the category/level filtering it drives lives in
-        // catSel/diffSel inside drillDetail, a DIFFERENT column of
+        // control - the category/level filtering it drives lives in the
+        // category chip row/diffSel inside drillDetail, a DIFFERENT column of
         // .drill-layout (see that CSS rule), not a control positioned
         // above this list. Per this item's own spec: replicate the
         // return-focus contract "only where Doctrine/Board Drill actually
@@ -12196,20 +12230,6 @@ window.G = window.G || {};
       });
     }
 
-    // Topic-chip quick filter: the exact ".search-filters"/".chip.search-
-    // chip" idiom Doctrine's own topic-chip bar established (mechanically
-    // copied since to Dictionary, Resources, and the Scenario Library) -
-    // reused here rather than inventing a second "browse a large catalog by
-    // category" mechanism. catSel's own <select> remains the full, complete
-    // 78-category picker (chips would be unwieldy at that count); this bar
-    // is a faster-access layer over the SAME state, capped to the most
-    // common categories the same way Doctrine caps its own topic bar
-    // (count >= 2, top 12 by frequency) - not a parallel filter, a second
-    // VIEW onto catSel.value + change event, exactly like catList above.
-    const catChipCounts = {};
-    all.forEach((q) => { catChipCounts[q.category] = (catChipCounts[q.category] || 0) + 1; });
-    const topCatChips = Object.entries(catChipCounts).filter(([, n]) => n >= 2)
-      .sort((a, b) => b[1] - a[1]).slice(0, 12).map(([c]) => c);
     // Phone-width .qf-row is a horizontal scroller (CSS, <=640px): a chip made
     // active by a deep link (_filterPillar from Readiness, _filterCat from
     // Needs Work / Rapid Fire) can sit off-screen at scrollLeft 0, so the row
@@ -12243,114 +12263,193 @@ window.G = window.G || {};
       if (c.left - RING_ROOM < portLeft) bar.scrollLeft = Math.floor(bar.scrollLeft - (portLeft - (c.left - RING_ROOM)));
       else if (c.right + RING_ROOM > portRight) bar.scrollLeft = Math.ceil(bar.scrollLeft + (c.right + RING_ROOM) - portRight);
     }
-    // ONE builder for the three quick-filter rows below (category /
-    // regulation / pillar). They were three hand-copies of one idiom, and
-    // every accessibility fix since (focus surviving a redraw, the active
-    // chip scrolled into view, the focus ring kept whole) had to be made
-    // three times over. What they share now lives here once:
+    // ONE builder for the three quick-filter facets below (pillar / category
+    // / regulation). They were three hand-copies of one idiom, and every
+    // accessibility fix since (focus surviving a redraw, the active chip
+    // scrolled into view, the focus ring kept whole) had to be made three
+    // times over. What they share now lives here once:
     //  - role="group", so the row's aria-label is actually announced (a
     //    label on a bare <div> is ignored by screen readers);
-    //  - real <button>s with aria-pressed, built ONCE - refresh() only
-    //    toggles .active/aria-pressed in place (Doctrine's topicBar idiom).
-    //    The first version rebuilt the bar on every build() (util.clear +
-    //    re-append), which destroyed the very <button> a keyboard user had
-    //    just pressed Enter on and dropped focus to <body> - the exact
-    //    failure grade()'s "Item 9 fix" below documents for cardWrap.
-    //    Labels and counts derive from `all`, fixed for the route's
-    //    lifetime, so nothing about the chips ever needs rebuilding;
+    //  - real <button>s with aria-pressed, toggled in place by refresh()
+    //    (Doctrine's topicBar idiom) on every ordinary build(). A version
+    //    that instead rebuilt the bar on every build() (util.clear +
+    //    re-append) destroyed the very <button> a keyboard user had just
+    //    pressed Enter on and dropped focus to <body> - the exact failure
+    //    grade()'s "Item 9 fix" below documents for cardWrap - so refresh()
+    //    alone stays the per-build() contract; only a DELIBERATE, USER-
+    //    INITIATED change to a PARENT facet (picking a pillar, or a
+    //    category) calls .rebuild() on a CHILD row, below, and only then;
+    //  - o.items may be a static [value, text, title?][] array (unchanged
+    //    behavior) or a function returning one, read fresh on every
+    //    .rebuild() - the category/regulation reorganization below needs
+    //    the chip SET itself, not just which chip is active, to react to a
+    //    broader facet's selection (see categoryItemsForScope/
+    //    regItemsForScope below);
     //  - pressing the chip that is already active does nothing; a real
     //    change is applied FIRST and then announced through the live region;
     //  - the active chip and the keyboard-focused chip are kept on screen
     //    in the phone-width scroller (revealChip / showFocusedChip above).
     // o.current() reads the row's state, o.pick(v) applies a new value,
-    // o.say(v) is the announcement; o.items is [value, text, title?] and
-    // the leading "All" chip always has the value "All".
+    // o.say(v) is the announcement; the leading "All" chip always has the
+    // value "All". (el() skips a null/undefined attribute, so a row with no
+    // tooltips - category - simply passes no title.)
     function quickFilterRow(o) {
       const bar = el("div.search-filters.qf-row", { role: "group", "aria-label": o.label });
-      const chips = [["All", el("button.chip.search-chip.active", { type: "button", text: o.allText, "aria-pressed": "true" })]]
-        .concat(o.items.map(([v, text, title]) => [v, el("button.chip.search-chip", { type: "button", text: text, "aria-pressed": "false", title: title })]));
-      chips.forEach(([v, chip]) => {
-        chip.addEventListener("click", () => {
-          if (o.current() === v) return;
-          o.pick(v);
-          try { if (G.util.announce) G.util.announce(o.say(v)); } catch (e) {}
-        });
-        bar.appendChild(chip);
-      });
-      bar.addEventListener("focusin", (e) => { if (e.target !== bar && bar.contains(e.target)) showFocusedChip(bar, e.target); });
-      return { bar: bar, refresh: function () {
+      let chips = [];
+      function refresh() {
         const active = o.current() || "All";
         chips.forEach(([v, chip]) => { const on = active === v; chip.classList.toggle("active", on); chip.setAttribute("aria-pressed", String(on)); if (on) revealChip(bar, chip); });
-      } };
+      }
+      function rebuild() {
+        util.clear(bar);
+        const items = typeof o.items === "function" ? o.items() : o.items;
+        chips = [["All", el("button.chip.search-chip", { type: "button", text: o.allText, "aria-pressed": "false" })]]
+          .concat(items.map(([v, text, title]) => [v, el("button.chip.search-chip", { type: "button", text: text, "aria-pressed": "false", title: title })]));
+        chips.forEach(([v, chip]) => {
+          chip.addEventListener("click", () => {
+            if (o.current() === v) return;
+            o.pick(v);
+            try { if (G.util.announce) G.util.announce(o.say(v)); } catch (e) {}
+          });
+          bar.appendChild(chip);
+        });
+        refresh();
+      }
+      bar.addEventListener("focusin", (e) => { if (e.target !== bar && bar.contains(e.target)) showFocusedChip(bar, e.target); });
+      rebuild();
+      return { bar: bar, refresh: refresh, rebuild: rebuild, count: () => chips.length - 1 };
     }
-    // (el() skips a null/undefined attribute, so a row with no tooltips -
-    // category - simply passes no title.)
-    const catRow = quickFilterRow({
-      label: "Quick-filter by category", allText: "All categories",
-      items: topCatChips.map((c) => [c, c + " (" + catChipCounts[c] + ")"]),
-      current: () => catSel.value,
-      pick: (c) => { catSel.value = c; catSel.dispatchEvent(new Event("change")); },
-      say: (c) => c === "All" ? "Showing all categories." : "Showing " + c + " cards.",
-    });
-    const catChipBar = catRow.bar;
-    function refreshCatChips() { catRow.refresh(); }
-
-    // Regulation quick filter (ROADMAP §3f Phase 1-2, "sort the cards by
-    // subject matter/regulation"): the SAME chip-bar idiom as the category
-    // bar directly above, on a second, independent axis - which publication
-    // a card cites (G.board.regulationsOf(q.source), derived at read time;
-    // see that function's comment for why it is not a seed field). A card
-    // citing two regulations ("AR 600-8-19 / DA PAM 600-8-19") appears
-    // under both. Composes with category/level/due/leech/bookmark filters
-    // in build(). Capped exactly like the category bar (count >= 2, top 12
-    // by frequency) - the bank cites ~150 distinct publications, and a
-    // full list of chips would be its own wall. State is a plain local
-    // (regFilter) rather than a <select>: unlike categories there is no
-    // pre-existing dropdown to stay in sync with.
-    const regIndex = new Map();
-    all.forEach((q) => regIndex.set(q.id, G.board.regulationsOf(q.source)));
-    const regChipCounts = {};
-    regIndex.forEach((regs) => regs.forEach((r) => { regChipCounts[r] = (regChipCounts[r] || 0) + 1; }));
-    const topRegChips = Object.entries(regChipCounts).filter(([, n]) => n >= 2)
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 12).map(([r]) => r);
-    let regFilter = "All";
-    const regRow = quickFilterRow({
-      label: "Quick-filter by regulation", allText: "All regulations",
-      items: topRegChips.map((r) => [r, r + " (" + regChipCounts[r] + ")", "Only cards that cite " + r]),
-      current: () => regFilter,
-      pick: (r) => { regFilter = r; build(); },
-      say: (r) => r === "All" ? "Showing all regulations." : "Showing cards that cite " + r + ".",
-    });
-    const regChipBar = regRow.bar;
-    function refreshRegChips() { regRow.refresh(); }
 
     // Pillar quick filter (ROADMAP §3f: the `pillar` tags the taxonomy pass
     // put on ~700 cards, made usable): the coarsest study axis - one of the
-    // six SGT-board pillars - as the FIRST chip row, above category. Same
-    // quickFilterRow() builder as the two bars above. Canonical
-    // order (G.board.PILLARS, kept in sync with tools/pillar-map.mjs by
+    // six SGT-board pillars, plus a 7th "Other topics" bucket for the ~28%
+    // of the bank (weapons, land nav, TCCC, CBRN, fitness...) that belongs
+    // to no pillar BY DESIGN - as the FIRST chip row. Canonical order
+    // (G.board.PILLARS, kept in sync with tools/pillar-map.mjs by
     // lint-board-taxonomy rule (h)), not by count; a pillar with no tagged
-    // cards is simply absent. Content outside the six (weapons, land nav,
-    // TCCC, CBRN, fitness...) belongs to no pillar BY DESIGN and stays
-    // reachable through "All pillars" and the category axis. The
-    // Readiness tab's "Study <pillar>" buttons arrive through the one-shot
-    // G.board._filterPillar flag, consumed right here (after the state
-    // exists, unlike _filterCat/_filterDue which are consumed earlier
-    // because their state is declared earlier).
+    // cards is simply absent, and "Other topics" itself is omitted if every
+    // card happens to be tagged. The Readiness tab's "Study <pillar>"
+    // buttons arrive through the one-shot G.board._filterPillar flag.
+    const OTHER_PILLAR = "__other__";
     const pillarCounts = {};
-    all.forEach((q) => { if (q.pillar) pillarCounts[q.pillar] = (pillarCounts[q.pillar] || 0) + 1; });
+    let otherPillarCount = 0;
+    all.forEach((q) => { if (q.pillar) pillarCounts[q.pillar] = (pillarCounts[q.pillar] || 0) + 1; else otherPillarCount++; });
     const pillarList = (G.board.PILLARS || []).filter((p) => pillarCounts[p]);
     let pillarFilter = "All";
     if (G.board._filterPillar) {
       if (pillarList.includes(G.board._filterPillar)) pillarFilter = G.board._filterPillar;
       G.board._filterPillar = null;
     }
+    const pillarItems = pillarList.map((p) => [p, p + " (" + pillarCounts[p] + ")", "Only " + p + " cards"]);
+    if (otherPillarCount) pillarItems.push([OTHER_PILLAR, "Other topics (" + otherPillarCount + ")", "Weapons, land navigation, first aid, and other topics outside the six board pillars"]);
+
+    // Board section reorganization (pillar/category/regulation
+    // consolidation): category and regulation used to be three independent,
+    // always-fully-populated flat lists stacked on screen at once - scary
+    // and disconnected for a Soldier who just wants "give me UCMJ cards."
+    // Pillar -> category -> regulation is a real hierarchy in the data
+    // (live 2026-09 counts: 6 pillars each with 2-16 categories; ~150
+    // regulations cited bank-wide, the vast majority tied to one or two
+    // categories) - so category now narrows to whatever pillar is picked,
+    // and regulation narrows to whatever pillar+category is picked, instead
+    // of all three showing the same global top-12 regardless of each
+    // other. Picking a broader facet resets and rebuilds every narrower one
+    // (a category from a now-unselected pillar, or a regulation from a
+    // now-unselected category, could otherwise silently persist as an
+    // impossible combination).
+    function categoryItemsForScope() {
+      const scoped = pillarFilter !== "All";
+      const pool = pillarFilter === OTHER_PILLAR ? all.filter((q) => !q.pillar)
+        : scoped ? all.filter((q) => q.pillar === pillarFilter) : all;
+      const counts = {};
+      pool.forEach((q) => { counts[q.category] = (counts[q.category] || 0) + 1; });
+      let entries = Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      // Unscoped ("All pillars"): the original capped top-12-by-frequency
+      // fast path, unchanged. Scoped to one pillar/"Other topics": every
+      // category in that scope, uncapped - live counts top out at 16, far
+      // short of needing a cap.
+      if (!scoped) entries = entries.filter(([, n]) => n >= 2).slice(0, 12);
+      return entries.map(([c, n]) => [c, c + " (" + n + ")"]);
+    }
+    const catRow = quickFilterRow({
+      label: "Quick-filter by category", allText: "All categories",
+      items: categoryItemsForScope,
+      current: () => catFilter,
+      pick: (c) => {
+        catFilter = c;
+        if (regFilter !== "All") { regFilter = "All"; regDisclosure.open = false; }
+        regRow.rebuild();
+        build();
+      },
+      say: (c) => c === "All" ? "Showing all categories." : "Showing " + c + " cards.",
+    });
+    const catChipBar = catRow.bar;
+    function refreshCatChips() { catRow.refresh(); }
+
+    // Regulation quick filter (ROADMAP §3f Phase 1-2, "sort the cards by
+    // subject matter/regulation"): which publication a card cites
+    // (G.board.regulationsOf(q.source), derived at read time; see that
+    // function's comment for why it is not a seed field). A card citing two
+    // regulations ("AR 600-8-19 / DA PAM 600-8-19") appears under both.
+    // Composes with category/level/due/leech/bookmark filters in build().
+    // The finest-grained of the three axes and, un-scoped, the least likely
+    // to be what a Soldier browses FIRST (138 of ~150 cited publications
+    // never made the old always-visible top-12 at all) - collapsed behind a
+    // disclosure by default rather than a third permanently-open row, and
+    // opened automatically the moment it becomes an active filter (picking
+    // a chip, or a regulation-scoped deep link) or manually by the Soldier.
+    // Regulation search by citation number/format (any spelling MOI Import
+    // already normalizes) is Phase 2, not this pass.
+    const regIndex = new Map();
+    all.forEach((q) => regIndex.set(q.id, G.board.regulationsOf(q.source)));
+    function regScopePool() {
+      let pool = pillarFilter === OTHER_PILLAR ? all.filter((q) => !q.pillar)
+        : pillarFilter !== "All" ? all.filter((q) => q.pillar === pillarFilter) : all;
+      if (catFilter !== "All") pool = pool.filter((q) => q.category === catFilter);
+      return pool;
+    }
+    function regItemsForScope() {
+      const scoped = pillarFilter !== "All" || catFilter !== "All";
+      const counts = {};
+      regScopePool().forEach((q) => (regIndex.get(q.id) || []).forEach((r) => { counts[r] = (counts[r] || 0) + 1; }));
+      let entries = Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      // Same "unscoped stays capped at the global top 12, scoped shows
+      // everything relevant" split as categoryItemsForScope above - a
+      // scoped pool is already small enough that the old >=2-citations
+      // floor would just hide real, useful singleton regulations.
+      if (!scoped) entries = entries.filter(([, n]) => n >= 2);
+      return entries.slice(0, 12).map(([r, n]) => [r, r + " (" + n + ")", "Only cards that cite " + r]);
+    }
+    let regFilter = "All";
+    const regRow = quickFilterRow({
+      label: "Quick-filter by regulation", allText: "All regulations",
+      items: regItemsForScope,
+      current: () => regFilter,
+      pick: (r) => { regFilter = r; if (r !== "All") regDisclosure.open = true; build(); },
+      say: (r) => r === "All" ? "Showing all regulations." : "Showing cards that cite " + r + ".",
+    });
+    const regChipBar = regRow.bar;
+    const regDisclosureSummary = el("summary", { text: "Filter by regulation" });
+    const regDisclosure = el("details.qf-disclosure", {}, [regDisclosureSummary, regChipBar]);
+    function refreshRegChips() {
+      regRow.refresh();
+      const n = regRow.count();
+      regDisclosureSummary.textContent = n ? "Filter by regulation (" + n + " cited here)" : "Filter by regulation";
+    }
+
     const pillarRow = quickFilterRow({
       label: "Quick-filter by pillar", allText: "All pillars",
-      items: pillarList.map((p) => [p, p + " (" + pillarCounts[p] + ")", "Only " + p + " cards"]),
+      items: pillarItems,
       current: () => pillarFilter,
-      pick: (p) => { pillarFilter = p; build(); },
-      say: (p) => p === "All" ? "Showing all pillars." : "Showing " + p + " cards.",
+      pick: (p) => {
+        pillarFilter = p;
+        catFilter = "All";
+        if (regFilter !== "All") { regFilter = "All"; regDisclosure.open = false; }
+        catRow.rebuild();
+        regRow.rebuild();
+        build();
+      },
+      say: (p) => p === "All" ? "Showing all pillars." : "Showing " + (p === OTHER_PILLAR ? "other topics" : p) + " cards.",
     });
     const pillarChipBar = pillarRow.bar;
     function refreshPillarChips() { pillarRow.refresh(); }
@@ -12467,8 +12566,8 @@ window.G = window.G || {};
     }
     drillDetail.appendChild(pillarChipBar);
     drillDetail.appendChild(catChipBar);
-    drillDetail.appendChild(regChipBar);
-    drillDetail.appendChild(el("div.mini-row", {}, [el("label", { text: "Category", style: "margin:0" }), catSel, el("label", { text: "Level", style: "margin:0" }), diffSel, dueChip, leechChip, starChip, shuffleBtn]));
+    drillDetail.appendChild(regDisclosure);
+    drillDetail.appendChild(el("div.mini-row", {}, [el("label", { text: "Level", style: "margin:0" }), diffSel, dueChip, leechChip, starChip, shuffleBtn]));
     drillDetail.appendChild(el("div", { style: "height:8px" }));
     drillDetail.appendChild(tally);
     drillDetail.appendChild(cardWrap);

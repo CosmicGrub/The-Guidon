@@ -342,7 +342,11 @@ try {
 
   /* ---------------- 6a. the rest of the app, DURING the room ---------------- */
   await P.evaluate(() => { location.hash = "#/board"; });
-  const drillCats = await until(() => P.evaluate(() => { const s = document.querySelector('select[aria-label="Filter by category"]'); return s && s.options.length > 3 ? s.options.length : null; }));
+  // catSel (a real <select>, board-filter consolidation removed it) used to
+  // be the thing to count options on - catList's own "Jump to category"
+  // rail lists the identical, full, unscoped category set (including its
+  // own "All" row), so its row count is the equivalent live check.
+  const drillCats = await until(() => P.evaluate(() => { const rows = document.querySelectorAll('.list-detail-list[aria-label="Jump to category"] .list-detail-row'); return rows.length > 3 ? rows.length : null; }));
   const stillSeated = await P.evaluate(() => { const s = G.studyGroup.state(); return !!s && s.joinState === "seated" && !s.terminal; });
   drillCats.hit && drillCats.value === base.cats.length + 1 && stillSeated
     ? ok("with the joiner still seated in the room, Board Drill offers all " + base.cats.length + " categories (the shim left 3 options here)")

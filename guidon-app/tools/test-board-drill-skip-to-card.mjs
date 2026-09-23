@@ -29,6 +29,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
+import { until } from "./testkit.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -196,11 +197,36 @@ function reportNoise(noise, label) {
   afterArrowUp === labels[0]
     ? ok("catList's ArrowUp row-to-row nav still works unchanged")
     : bad(`catList's ArrowUp regressed: expected row 0 ("${labels[0]}"), got "${afterArrowUp}"`);
-  const clickStillWorks = await page.evaluate(() => {
-    const row = document.querySelectorAll(".drill-layout .list-detail-list .list-detail-row")[0];
+  // catSel (a real <select> catList used to sync) was removed in the board-
+  // filter consolidation - catList now drives a plain catFilter variable
+  // directly, with no DOM element left to read a `.value` off of. The row
+  // marking ITSELF active/aria-selected (refreshCatList()'s own contract,
+  // driven by that same catFilter) is the equivalent, still-behavioral
+  // check - but catList rebuilds itself entirely on every category change
+  // (util.clear + rebuild, unchanged pre-existing behavior), so the clicked
+  // row is a DETACHED node by the time build() -> refreshCatList() lands;
+  // re-querying by label after a real wait is required, not re-reading the
+  // stale reference captured before the click.
+  const clickTarget = await page.evaluate(() => {
+    const rows = document.querySelectorAll(".drill-layout .list-detail-list .list-detail-row");
+    const row = rows[1] || rows[0];
+    const label = row.querySelector(".ldr-name")?.textContent || "";
     row.click();
-    return document.querySelector('select[aria-label="Filter by category"]')?.value === (row.querySelector(".ldr-name")?.textContent || "");
+    return label;
   });
+  // build() is async (awaits an IndexedDB SRS scan before refreshCatList()
+  // rebuilds the row set) - wait for the rebuilt row to actually show
+  // itself active rather than a fixed sleep guessing how long that takes.
+  await until(page, (label) => {
+    const rows = [...document.querySelectorAll(".drill-layout .list-detail-list .list-detail-row")];
+    const row = rows.find((r) => (r.querySelector(".ldr-name")?.textContent || "") === label);
+    return !!row && row.classList.contains("active");
+  }, clickTarget);
+  const clickStillWorks = await page.evaluate((label) => {
+    const rows = [...document.querySelectorAll(".drill-layout .list-detail-list .list-detail-row")];
+    const row = rows.find((r) => (r.querySelector(".ldr-name")?.textContent || "") === label);
+    return !!row && row.classList.contains("active") && row.getAttribute("aria-selected") === "true";
+  }, clickTarget);
   clickStillWorks
     ? ok("catList's existing click-to-select still works unchanged")
     : bad("catList's click-to-select regressed after adding the skip link");

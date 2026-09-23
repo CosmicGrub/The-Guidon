@@ -29,7 +29,7 @@
  *   7. The one-time quick-start explainer shows before a Soldier's first-
  *      ever round and never again afterward in the same session.
  *   8. Recap's cross-link into Flashcards actually navigates with the
- *      correct category pre-filtered (the real G.board._filterCat / catSel
+ *      correct category pre-filtered (the real G.board._filterCat / catList
  *      wiring, fed by the real G.nav.seed()/consume() handoff).
  *
  * Two real board-question categories are used as fixed, known-shape
@@ -405,13 +405,19 @@ const recapPanelText = await page.evaluate(() => {
 const clicked = await clickButtonByText(page, "Practice in Flashcards →");
 await page.waitForTimeout(500);
 clicked ? ok("Recap's 'Practice in Flashcards →' cross-link button is clickable") : bad("cross-link button not found on Recap");
+// Board Drill's own category <select> (catSel) was removed in the board-
+// filter consolidation - catFilter is a plain closure variable now, with
+// no DOM element left to read a `.value` off of. catList's own row for the
+// category shows itself selected/active, driven by that same catFilter -
+// the equivalent, still-behavioral proof.
 const drillCatValue = await page.evaluate(() => {
-  const sel = document.querySelector('select[aria-label="Filter by category"]');
-  return sel ? sel.value : null;
+  const rows = [...document.querySelectorAll('.list-detail-list[aria-label="Jump to category"] .list-detail-row')];
+  const row = rows.find((r) => (r.querySelector(".ldr-name")?.textContent || "") === "Counseling (ATP 6-22.1)");
+  return row && row.classList.contains("active") && row.getAttribute("aria-selected") === "true" ? row.querySelector(".ldr-name").textContent : null;
 });
 drillCatValue === "Counseling (ATP 6-22.1)"
   ? ok("clicking the cross-link lands on Board Drill's Flashcards tab with the category filter actually set to 'Counseling (ATP 6-22.1)'")
-  : bad("category filter select after the cross-link click: " + drillCatValue);
+  : bad("catList's row for the category after the cross-link click: " + drillCatValue);
 const drillActiveAfterLink = await page.evaluate(() => {
   const b = [...document.querySelectorAll(".segmented button")].find((x) => x.textContent.trim() === "Board Drill");
   return b ? b.classList.contains("active") : false;

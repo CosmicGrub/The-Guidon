@@ -90,17 +90,22 @@ if (spy.rowCount > 1) {
     : bad("selecting a category did not call scrollIntoView on the flashcard: " + JSON.stringify(calls));
 }
 
-/* ---- topic-chip quick filter: a second VIEW onto catSel, not a second
+/* ---- topic-chip quick filter: a second VIEW onto catFilter, not a second
    filter mechanism - same idiom as Doctrine's own topic-chip bar,
-   mechanically copied here. Verify it's a real, bidirectional sync with
-   the actual <select> and the actual deck, not just cosmetic markup. ---- */
-// Reset first: the catList test above already picked a non-"All" category
-// on this same page/session, so the chip bar's own active state right now
-// correctly reflects THAT filter, not a fresh "All" state - this section
-// tests the chip bar on its own terms, starting from a known "All" state.
+   mechanically copied here. Board section reorganization (2026-09-23)
+   removed catSel (a real <select> both this bar and catList used to sync
+   through) in favor of a plain catFilter variable - catList is now the
+   surviving second, unscoped view of that same state. Verify the sync is
+   real and bidirectional between the two surviving views, not just
+   cosmetic markup. ---- */
+// Reset first via catList's own "All" row (rows[0]): the catList test
+// above already picked a non-"All" category on this same page/session, so
+// the chip bar's own active state right now correctly reflects THAT
+// filter, not a fresh "All" state - this section tests the chip bar on
+// its own terms, starting from a known "All" state.
 await stacked.page.evaluate(() => {
-  const sel = document.querySelector('select[aria-label="Filter by category"]');
-  sel.value = "All"; sel.dispatchEvent(new Event("change"));
+  const rows = [...document.querySelectorAll(".list-detail-list[aria-label='Jump to category'] .list-detail-row")];
+  rows[0].click();
 });
 await stacked.page.waitForTimeout(250);
 const chipInfo = await stacked.page.evaluate(() => {
@@ -114,12 +119,13 @@ const chipInfo = await stacked.page.evaluate(() => {
   };
 });
 chipInfo.barPresent ? ok("Board Drill's quick-filter chip bar renders") : bad("chip bar not found in the DOM");
-chipInfo.firstIsAll ? ok('"All categories" is the first chip and shows active once the select is reset to "All"') : bad('first chip: ' + JSON.stringify(chipInfo));
-chipInfo.capped ? ok(`chip bar is capped (${chipInfo.chipCount} chips total) rather than rendering all 79 categories as chips`) : bad(`chip bar rendered ${chipInfo.chipCount} chips - expected a cap around 13`);
+chipInfo.firstIsAll ? ok('"All categories" is the first chip and shows active once catList\'s own "All" row is clicked') : bad('first chip: ' + JSON.stringify(chipInfo));
+chipInfo.capped ? ok(`chip bar is capped (${chipInfo.chipCount} chips total) rather than rendering all 81 categories as chips`) : bad(`chip bar rendered ${chipInfo.chipCount} chips - expected a cap around 13`);
 
 // Click a real category chip (not "All") and confirm it's a genuine
-// filter, not decoration: the <select> value changes, the deck's own
-// category header changes, and only that one chip is marked active.
+// filter, not decoration: catList's own row for that category shows
+// itself selected too, the deck's own category header changes, and only
+// that one chip is marked active.
 const targetLabel = await stacked.page.evaluate(() => {
   const bar = document.querySelector('.search-filters[aria-label="Quick-filter by category"]');
   const target = bar.querySelectorAll(".search-chip")[1]; // [0] is "All categories"
@@ -128,24 +134,29 @@ const targetLabel = await stacked.page.evaluate(() => {
 });
 // build() is async (awaits an IndexedDB SRS scan before it gets to
 // refreshCatChips()/draw()) - same reason the catList click test above
-// waits before reading its own result.
+// waits before reading its own result. catList rebuilds itself entirely on
+// every category change (unchanged pre-existing behavior - see
+// refreshCatList()'s own comment), so its row is re-queried by label here
+// rather than reusing any reference captured before the click.
 await stacked.page.waitForTimeout(250);
 const afterChipClick = await stacked.page.evaluate((targetLabel) => {
   const bar = document.querySelector('.search-filters[aria-label="Quick-filter by category"]');
   const chips = [...bar.querySelectorAll(".search-chip")];
-  const sel = document.querySelector('select[aria-label="Filter by category"]');
+  const clickedCategory = targetLabel.replace(/\s*\(\d+\)$/, "");
+  const catListRows = [...document.querySelectorAll(".list-detail-list[aria-label='Jump to category'] .list-detail-row")];
+  const catListRow = catListRows.find((r) => (r.querySelector(".ldr-name")?.textContent || "") === clickedCategory);
   const activeChips = chips.filter((c) => c.classList.contains("active"));
   return {
     targetLabel,
-    selectValue: sel.value,
+    catListRowActive: !!catListRow && catListRow.classList.contains("active") && catListRow.getAttribute("aria-selected") === "true",
     activeChipTexts: activeChips.map((c) => c.textContent),
     cardHeaderText: (document.querySelector(".qz-wrap")?.textContent || "").slice(0, 80),
   };
 }, targetLabel);
 const clickedCategory = afterChipClick.targetLabel.replace(/\s*\(\d+\)$/, "");
-afterChipClick.selectValue === clickedCategory
-  ? ok(`clicking the "${clickedCategory}" chip set the real <select>'s value to match`)
-  : bad(`chip click did not sync the select: clicked "${clickedCategory}", select now "${afterChipClick.selectValue}"`);
+afterChipClick.catListRowActive
+  ? ok(`clicking the "${clickedCategory}" chip also marks catList's own row for it selected - one shared state, two views`)
+  : bad(`chip click did not sync catList's row: clicked "${clickedCategory}", catList row active = ${afterChipClick.catListRowActive}`);
 JSON.stringify(afterChipClick.activeChipTexts) === JSON.stringify([afterChipClick.targetLabel])
   ? ok("exactly the clicked chip is marked active - not the old one, not both")
   : bad("active-chip state after click: " + JSON.stringify(afterChipClick.activeChipTexts));
@@ -153,14 +164,13 @@ afterChipClick.cardHeaderText.includes(clickedCategory)
   ? ok(`the flashcard deck itself filtered to "${clickedCategory}" - a real filter, not cosmetic chip state`)
   : bad("card header after chip click: " + JSON.stringify(afterChipClick.cardHeaderText));
 
-// Reverse direction: changing the real <select> (as the dropdown control
-// itself would) must update the chip bar's active state too - proving
-// this is one shared piece of state with two views, not two independent
-// trackers that can drift apart.
-const afterSelectChange = await stacked.page.evaluate(() => {
-  const sel = document.querySelector('select[aria-label="Filter by category"]');
-  sel.value = "All";
-  sel.dispatchEvent(new Event("change"));
+// Reverse direction: picking "All" via catList (as a Soldier using that
+// pane instead of the chip row would) must update the chip bar's active
+// state too - proving this is one shared piece of state with two views,
+// not two independent trackers that can drift apart.
+await stacked.page.evaluate(() => {
+  const rows = [...document.querySelectorAll(".list-detail-list[aria-label='Jump to category'] .list-detail-row")];
+  rows.find((r) => (r.querySelector(".ldr-name")?.textContent || "") === "All")?.click();
 });
 await stacked.page.waitForTimeout(250);
 const afterReset = await stacked.page.evaluate(() => {
@@ -169,8 +179,8 @@ const afterReset = await stacked.page.evaluate(() => {
   return chips.filter((c) => c.classList.contains("active")).map((c) => c.textContent);
 });
 JSON.stringify(afterReset) === JSON.stringify(["All categories"])
-  ? ok('setting the real <select> back to "All" (as the dropdown itself would) re-activates the "All categories" chip')
-  : bad("active-chip state after resetting the select: " + JSON.stringify(afterReset));
+  ? ok('picking "All" via catList (as that pane itself would) re-activates the "All categories" chip')
+  : bad("active-chip state after resetting via catList: " + JSON.stringify(afterReset));
 
 stacked.noise.length === 0 ? ok("no console errors/warnings") : bad("console noise: " + stacked.noise.join(" | "));
 await stacked.page.close();

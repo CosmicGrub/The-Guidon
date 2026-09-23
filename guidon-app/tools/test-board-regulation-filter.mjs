@@ -22,7 +22,13 @@
  *     every card in the filtered deck actually cites that regulation on
  *     its own back face, an impossible category+regulation combination
  *     produces the explanatory empty state naming both, and "All
- *     regulations" restores the deck).
+ *     regulations" restores the deck). Board section reorganization
+ *     (2026-09-23): the regulation row itself is now collapsed behind a
+ *     disclosure by default (see quickFilterRow/regRow in src/index.html);
+ *     category is set here via catList's full, unscoped "Jump to category"
+ *     rail (catSel, a real <select>, was removed) - the one surviving
+ *     control that still composes with regulation as a fully independent
+ *     axis, the same way catSel always did.
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
@@ -31,6 +37,11 @@ import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
 const bad = (m) => { fails++; console.log("  FAIL  " + m); };
+const setCategoryViaList = (page, cat) => page.evaluate((c) => {
+  const rows = [...document.querySelectorAll('.list-detail-list[aria-label="Jump to category"] .list-detail-row')];
+  const row = rows.find((r) => (r.querySelector(".ldr-name") || {}).textContent === c);
+  if (row) row.click();
+}, cat);
 
 const { server, url } = await serve("web");
 const browser = await chromium.launch();
@@ -114,18 +125,35 @@ await page.waitForTimeout(900);
 const readBar = () => page.evaluate(() => {
   const bar = document.querySelector('.search-filters[aria-label="Quick-filter by regulation"]');
   const catBar = document.querySelector('.search-filters[aria-label="Quick-filter by category"]');
+  const disclosure = catBar && catBar.nextElementSibling;
   const chips = bar ? [...bar.querySelectorAll(".search-chip")] : [];
   return {
     present: !!bar,
-    underCatBar: !!(bar && catBar && catBar.nextElementSibling === bar),
+    insideDisclosure: !!(bar && disclosure && disclosure.tagName === "DETAILS" && disclosure.classList.contains("qf-disclosure") && disclosure.contains(bar)),
+    disclosureOpen: !!(disclosure && disclosure.open),
+    summaryText: disclosure ? (disclosure.querySelector("summary") || {}).textContent : null,
     visible: !!(bar && bar.getBoundingClientRect().height > 0),
     chips: chips.map((c) => ({ text: c.textContent, active: c.classList.contains("active"), pressed: c.getAttribute("aria-pressed") })),
   };
 });
 let bar = await readBar();
-(bar.present && bar.underCatBar && bar.visible)
-  ? ok("the regulation chip bar renders, visible, directly under the category chip bar (next sibling)")
-  : bad("regulation chip bar: " + JSON.stringify({ present: bar.present, underCatBar: bar.underCatBar, visible: bar.visible }));
+(bar.present && bar.insideDisclosure)
+  ? ok("the regulation chip bar renders inside a .qf-disclosure, directly under the category chip bar (next sibling)")
+  : bad("regulation chip bar: " + JSON.stringify({ present: bar.present, insideDisclosure: bar.insideDisclosure }));
+// Board section reorganization: regulation is the finest-grained, least-
+// browsed-first of the three facets - collapsed by default rather than a
+// third permanently-open row (pillar/category still are), and opened either
+// by the Soldier or automatically the moment a regulation filter becomes
+// active (exercised via the click below).
+(!bar.disclosureOpen && !bar.visible)
+  ? ok(`the regulation disclosure starts collapsed by default (summary: "${bar.summaryText}")`)
+  : bad("regulation disclosure did not start collapsed: " + JSON.stringify({ disclosureOpen: bar.disclosureOpen, visible: bar.visible, summaryText: bar.summaryText }));
+// No wait needed after: `open` is a synchronous property change (no CSS
+// transition on the row itself - only the summary's own chevron animates),
+// and readBar()'s getBoundingClientRect() forces a layout flush regardless.
+await page.evaluate(() => { const d = document.querySelector(".qf-disclosure"); if (d) d.open = true; });
+bar = await readBar();
+bar.visible ? ok("...and opening it (as a tap on the summary would) makes the row visible with real height") : bad("regulation row still not visible after opening the disclosure");
 (bar.chips[0] && bar.chips[0].text === "All regulations" && bar.chips[0].active && bar.chips[0].pressed === "true")
   ? ok('"All regulations" is the first chip and starts active')
   : bad("first chip: " + JSON.stringify(bar.chips[0]));
@@ -165,7 +193,7 @@ const noCat = await page.evaluate((r) => {
   return cat || null;
 }, leadReg);
 if (noCat) {
-  await page.evaluate((c) => { const sel = document.querySelector('select[aria-label="Filter by category"]'); sel.value = c; sel.dispatchEvent(new Event("change")); }, noCat);
+  await setCategoryViaList(page, noCat);
   await page.waitForTimeout(400);
   const empty = await page.evaluate(() => { const e = document.querySelector(".qz-wrap .empty"); return e ? e.textContent : null; });
   (empty && empty.includes("category “" + noCat + "”") && empty.includes("regulation “" + leadReg + "”"))
@@ -178,7 +206,7 @@ if (noCat) {
     reg: [...document.querySelector('.search-filters[aria-label="Quick-filter by regulation"]').querySelectorAll(".search-chip.active")].map((c) => c.textContent),
   }));
   (axes.reg.length === 1 && axes.reg[0] === leadChip) ? ok("the regulation chip stays active while the category filter changes (independent axes)") : bad("axes: " + JSON.stringify(axes));
-  await page.evaluate(() => { const sel = document.querySelector('select[aria-label="Filter by category"]'); sel.value = "All"; sel.dispatchEvent(new Event("change")); });
+  await setCategoryViaList(page, "All");
   await page.waitForTimeout(400);
 } else {
   bad("could not find a category (>=5 cards) with no card citing " + leadReg);
@@ -202,7 +230,7 @@ for (const [label, idx] of [["regulation", 2], ["category", 1]]) {
     : bad(`focus after Enter on a ${label} chip: ` + JSON.stringify(focus));
   /Showing /.test(focus.live) ? ok(`...and the live region announced the change: "${focus.live.trim()}"`) : bad(`live region after ${label} chip: ` + JSON.stringify(focus.live));
 }
-await page.evaluate(() => { const sel = document.querySelector('select[aria-label="Filter by category"]'); sel.value = "All"; sel.dispatchEvent(new Event("change")); });
+await setCategoryViaList(page, "All");
 await page.waitForTimeout(400);
 
 // "All regulations" restores the full deck.

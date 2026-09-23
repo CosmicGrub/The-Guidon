@@ -51,12 +51,19 @@ console.log(`  (longest board-question answer: ${longest.len} chars, category "$
 await page.evaluate(() => { location.hash = "#/board"; });
 await page.waitForTimeout(1100);
 
+// catSel (a real <select>) was removed in the board-filter consolidation -
+// catList's own full, unscoped "Jump to category" rail is the surviving
+// full-catalog picker to narrow the deck through.
+async function setCategoryViaList(cat) {
+  await page.evaluate((c) => {
+    const rows = [...document.querySelectorAll('.list-detail-list[aria-label="Jump to category"] .list-detail-row')];
+    const row = rows.find((r) => (r.querySelector(".ldr-name")?.textContent || "") === c);
+    if (row) row.click();
+  }, cat);
+}
+
 // Narrow the deck to the target's category so "Next card" finds it quickly.
-await page.evaluate((cat) => {
-  const sel = document.querySelector('select[aria-label="Filter by category"]');
-  sel.value = cat;
-  sel.dispatchEvent(new Event("change"));
-}, longest.category);
+await setCategoryViaList(longest.category);
 await page.waitForTimeout(300);
 
 await page.evaluate(() => {
@@ -134,11 +141,7 @@ const shortest = await page.evaluate(() => {
   for (const q of qs) { const len = (q.a || "").length; if (len < min) { min = len; best = q; } }
   return { q: best.q, category: best.category };
 });
-await page.evaluate((cat) => {
-  const sel = document.querySelector('select[aria-label="Filter by category"]');
-  sel.value = cat;
-  sel.dispatchEvent(new Event("change"));
-}, shortest.category);
+await setCategoryViaList(shortest.category);
 await page.waitForTimeout(300);
 
 const { matched: shortMatched } = await findAndFlip(shortest.q);

@@ -5,9 +5,16 @@
  *  1. Board Drill gets a THIRD quick-filter row, the coarsest axis: one of
  *     the six SGT-board pillars, in canonical order (G.board.PILLARS, which
  *     lint-board-taxonomy rule (h) keeps identical to tools/pillar-map.mjs),
- *     placed above the category row. A real filter composed with category
- *     and regulation; built once and toggled in place so keyboard focus
- *     survives activation; the empty state names it.
+ *     PLUS a trailing "Other topics" chip for the cards the taxonomy pass
+ *     deliberately left untagged (weapons, land nav, TCCC, CBRN...) - placed
+ *     above the category row. A real filter composed with category and
+ *     regulation; built once and toggled in place so keyboard focus
+ *     survives activation; the empty state names it. Board section
+ *     reorganization (2026-09-23): picking a pillar also narrows the
+ *     category row's own chip SET to that pillar's categories (or, un-set,
+ *     the original capped top-12), and category narrows regulation's -
+ *     see quickFilterRow/categoryItemsForScope/regItemsForScope in
+ *     src/index.html for the mechanism.
  *  2. The Readiness tab gets a "Readiness by pillar" rollup: per pillar,
  *     card mastery (the same isMasteredSrs predicate the Board Readiness
  *     Score uses) beside scenarios completed (store.getProgress()'s
@@ -62,6 +69,16 @@ const readBar = (label) => page.evaluate((sel) => {
   return { present: !!bar, chips: chips.map((c) => ({ text: c.textContent, active: c.classList.contains("active"), pressed: c.getAttribute("aria-pressed") })) };
 }, BAR(label));
 const clickChip = (label, i) => page.evaluate(([sel, i]) => { document.querySelector(sel).querySelectorAll(".search-chip")[i].click(); }, [BAR(label), i]);
+// catSel (a real <select>) was removed in the board-filter consolidation -
+// catList's own full, unscoped "Jump to category" rail (kept specifically
+// so every category stays reachable regardless of which pillar chip is
+// active) is the equivalent full-catalog control now. .click() on the row
+// fires it directly, same as a real pointer click would.
+const setCategoryViaList = (cat) => page.evaluate((c) => {
+  const rows = [...document.querySelectorAll('.list-detail-list[aria-label="Jump to category"] .list-detail-row')];
+  const row = rows.find((r) => (r.querySelector(".ldr-name") || {}).textContent === c);
+  if (row) row.click();
+}, cat);
 const tallyText = () => page.evaluate(() => { const s = Array.from(document.querySelectorAll(".stat")).find((x) => /This session/.test(x.textContent)); return s ? (s.querySelector(".v") || {}).textContent : null; });
 const emptyText = () => page.evaluate(() => { const e = document.querySelector(".qz-wrap .empty"); return e ? e.textContent : null; });
 const promptText = () => page.evaluate(() => { const p = document.querySelector(".qz-front .qz-prompt"); return p ? p.textContent.trim() : null; });
@@ -72,24 +89,40 @@ const appPillars = await page.evaluate(() => G.board.PILLARS);
 JSON.stringify(appPillars) === JSON.stringify(CANON) ? ok("G.board.PILLARS is the six canonical pillars in canonical order") : bad("G.board.PILLARS = " + JSON.stringify(appPillars));
 
 /* ---- 2. the pillar chip row ---- */
+const OTHER_LABEL = "Other topics";
 const live = await page.evaluate(() => {
   const all = G.store.boardQuestions();
   const counts = {};
-  all.forEach((q) => { if (q.pillar) counts[q.pillar] = (counts[q.pillar] || 0) + 1; });
+  let otherCount = 0;
+  all.forEach((q) => { if (q.pillar) counts[q.pillar] = (counts[q.pillar] || 0) + 1; else otherCount++; });
   const pillarBar = document.querySelector('.search-filters[aria-label="Quick-filter by pillar"]');
   const catBar = document.querySelector('.search-filters[aria-label="Quick-filter by category"]');
   const regBar = document.querySelector('.search-filters[aria-label="Quick-filter by regulation"]');
-  return { counts, total: all.length, order: !!(pillarBar && catBar && regBar && pillarBar.nextElementSibling === catBar && catBar.nextElementSibling === regBar), qf: [pillarBar, catBar, regBar].every((b) => b && b.classList.contains("qf-row")) };
+  const regWrap = catBar && catBar.nextElementSibling;
+  return {
+    counts, otherCount, total: all.length,
+    order: !!(pillarBar && catBar && regBar && pillarBar.nextElementSibling === catBar
+      && regWrap && regWrap.tagName === "DETAILS" && regWrap.classList.contains("qf-disclosure") && regWrap.contains(regBar)),
+    qf: [pillarBar, catBar, regBar].every((b) => b && b.classList.contains("qf-row")),
+  };
 });
 let bar = await readBar("pillar");
 bar.present ? ok("the pillar chip row renders") : bad("pillar chip row not found");
-live.order ? ok("row order is pillar → category → regulation (each the next sibling of the last)") : bad("chip rows are not in pillar/category/regulation order");
+live.order ? ok("row order is pillar → category → regulation (regulation collapsed inside a .qf-disclosure, next sibling of category)") : bad("chip rows are not in pillar/category/regulation order");
 live.qf ? ok("all three quick-filter rows carry the .qf-row phone-width class") : bad("a quick-filter row lacks .qf-row");
 (bar.chips[0] && bar.chips[0].text === "All pillars" && bar.chips[0].active) ? ok('"All pillars" is the first chip and starts active') : bad("first pillar chip: " + JSON.stringify(bar.chips[0]));
-const chipNames = bar.chips.slice(1).map((c) => c.text.replace(/\s*\(\d+\)$/, ""));
+// The trailing "Other topics" chip (untagged-by-design content) is not part
+// of the six-pillar canon - split it off before checking canonical order.
+const rest = bar.chips.slice(1);
+const otherChip = live.otherCount ? rest[rest.length - 1] : null;
+const canonChips = live.otherCount ? rest.slice(0, -1) : rest;
+const chipNames = canonChips.map((c) => c.text.replace(/\s*\(\d+\)$/, ""));
 JSON.stringify(chipNames) === JSON.stringify(CANON.filter((p) => live.counts[p])) ? ok(`pillar chips are in canonical order: ${chipNames.join(" · ")}`) : bad("pillar chip order: " + JSON.stringify(chipNames));
-const countsOk = bar.chips.slice(1).every((c) => { const name = c.text.replace(/\s*\(\d+\)$/, ""); const n = Number((c.text.match(/\((\d+)\)$/) || [])[1]); return n === live.counts[name]; });
-countsOk ? ok("every pillar chip's count equals the live number of cards tagged with that pillar (" + Object.values(live.counts).reduce((a, b) => a + b, 0) + " of " + live.total + " tagged)") : bad("pillar chip counts disagree with the seed: " + JSON.stringify(bar.chips));
+const countsOk = canonChips.every((c) => { const name = c.text.replace(/\s*\(\d+\)$/, ""); const n = Number((c.text.match(/\((\d+)\)$/) || [])[1]); return n === live.counts[name]; });
+countsOk ? ok("every pillar chip's count equals the live number of cards tagged with that pillar (" + Object.values(live.counts).reduce((a, b) => a + b, 0) + " of " + live.total + " tagged)") : bad("pillar chip counts disagree with the seed: " + JSON.stringify(canonChips));
+(live.otherCount ? (otherChip && otherChip.text === `${OTHER_LABEL} (${live.otherCount})`) : otherChip === null)
+  ? ok(live.otherCount ? `trailing "${otherChip.text}" chip covers the ${live.otherCount} untagged-by-design cards` : "every card is pillar-tagged - no \"Other topics\" chip, correctly")
+  : bad("Other topics chip: " + JSON.stringify(otherChip) + " vs live untagged count " + live.otherCount);
 
 /* ---- 3. a real filter ---- */
 const target = "Programs & Support";
@@ -117,13 +150,18 @@ const otherCat = await page.evaluate((p) => {
   return Object.keys(byCat).find((c) => byCat[c].length >= 5 && byCat[c].every((q) => q.pillar && q.pillar !== p)) || null;
 }, target);
 if (otherCat) {
-  await page.evaluate((c) => { const sel = document.querySelector('select[aria-label="Filter by category"]'); sel.value = c; sel.dispatchEvent(new Event("change")); }, otherCat);
+  // otherCat, by construction above, belongs entirely to a DIFFERENT pillar
+  // than `target` - so it no longer appears as a chip in the now pillar-
+  // scoped category row at all (the point of the scoping). catList's own
+  // full, unscoped "Jump to category" rail is the surviving way to reach
+  // it directly, same as catSel used to be.
+  await setCategoryViaList(otherCat);
   await page.waitForTimeout(450);
   const empty = await emptyText();
   (empty && empty.includes("pillar “" + target + "”") && empty.includes("category “" + otherCat + "”"))
     ? ok(`pillar "${target}" + category "${otherCat}" → explanatory empty state naming both`)
     : bad("empty state for pillar+category: " + JSON.stringify(empty));
-  await page.evaluate(() => { const sel = document.querySelector('select[aria-label="Filter by category"]'); sel.value = "All"; sel.dispatchEvent(new Event("change")); });
+  await setCategoryViaList("All");
   await page.waitForTimeout(450);
 } else bad("no category (>=5 cards) fully outside " + target);
 
@@ -241,6 +279,17 @@ await page2.goto(url, { waitUntil: "load" });
 await dismissOnboarding(page2);
 await page2.evaluate(() => { location.hash = "#/board"; });
 await page2.waitForTimeout(900);
+// The regulation row is collapsed behind a disclosure by default (see the
+// board-filter consolidation) - a fresh page has nothing to open it yet, and
+// a closed <details>'s non-summary content has no rendered box at all, which
+// would fail every geometry check below for a reason that has nothing to do
+// with what they're actually testing. Open it directly, same as a Soldier
+// tapping "Filter by regulation" would. No wait needed after: the `open`
+// property change is a synchronous DOM/style mutation (no CSS transition on
+// the row itself - only the summary's own chevron animates, and reduced-
+// motion neutralizes even that), and getBoundingClientRect() below forces
+// a synchronous layout flush that always reflects the change immediately.
+await page2.evaluate(() => { const d = document.querySelector(".qf-disclosure"); if (d) d.open = true; });
 const phone = await page2.evaluate(() => {
   const bars = ["pillar", "category", "regulation"].map((l) => document.querySelector(`.search-filters[aria-label="Quick-filter by ${l}"]`));
   return {

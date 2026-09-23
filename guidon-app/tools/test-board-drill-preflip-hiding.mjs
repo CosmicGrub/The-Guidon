@@ -62,10 +62,13 @@ await page.waitForTimeout(1100);
 
 // Narrow to the target's own category and force a fresh build() so it
 // re-reads the srs: row we just wrote (build() re-runs loadAllSrs on every
-// category-select change - see src/index.html's renderDrill).
+// category change - see src/index.html's renderDrill). catSel (a real
+// <select>) was removed in the board-filter consolidation - catList's own
+// full, unscoped "Jump to category" rail is the surviving control.
 await page.evaluate((cat) => {
-  const sel = document.querySelector('select[aria-label="Filter by category"]');
-  if (sel) { sel.value = cat; sel.dispatchEvent(new Event("change")); }
+  const rows = [...document.querySelectorAll('.list-detail-list[aria-label="Jump to category"] .list-detail-row')];
+  const row = rows.find((r) => (r.querySelector(".ldr-name")?.textContent || "") === cat);
+  if (row) row.click();
 }, target.category);
 await page.waitForTimeout(300);
 
