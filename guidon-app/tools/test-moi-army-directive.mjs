@@ -32,7 +32,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
-import { until } from "./testkit.mjs";
+import { until, clickWhenStable } from "./testkit.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -244,52 +244,63 @@ await page.evaluate(() => { location.hash = "#/moi"; });
 const landingReady = await until(page, () => /MOI Import/.test(document.body.textContent || ""));
 landingReady ? ok("#/moi lands cleanly before the full-document pass") : bad("#/moi never rendered its landing heading");
 
-const importClicked = await page.evaluate(() => {
-  const btn = [...document.querySelectorAll("button")].find((b) => /Import an MOI/.test(b.textContent || ""));
-  if (btn) { btn.click(); return true; }
-  return false;
-});
-importClicked ? ok("'Import an MOI' opens the Capture screen") : bad("'Import an MOI' button not found");
+// Wait for the BUTTON itself, not just the page's own landing text - the
+// heading can paint before an async-resolved plans list finishes deciding
+// which action buttons the empty/non-empty state shows (the exact gap a
+// generic "landing text present" check would miss). Every step below is
+// gated on the previous one actually succeeding, rather than assuming it
+// did and crashing on a null element two lines later.
+const importBtnPresent = await until(page, () => [...document.querySelectorAll("button")].some((b) => /Import an MOI/.test(b.textContent || "")));
+if (!importBtnPresent) {
+  bad("'Import an MOI' button never appeared on #/moi's landing screen");
+} else {
+  await clickWhenStable(page, "button:has-text('Import an MOI')");
+  ok("'Import an MOI' opens the Capture screen");
 
-const textareaReady = await until(page, () => !!document.querySelector("textarea"));
-textareaReady || bad("Capture textarea never appeared");
+  const textareaReady = await until(page, () => !!document.querySelector("textarea"));
+  if (!textareaReady) {
+    bad("Capture textarea never appeared after 'Import an MOI'");
+  } else {
+    await page.evaluate((text) => {
+      const ta = document.querySelector("textarea");
+      ta.value = text;
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+    }, REDACTED_MOI_TEXT);
 
-await page.evaluate((text) => {
-  const ta = document.querySelector("textarea");
-  ta.value = text;
-  ta.dispatchEvent(new Event("input", { bubbles: true }));
-}, REDACTED_MOI_TEXT);
+    const findBtnPresent = await until(page, () => [...document.querySelectorAll("button")].some((b) => /Find my topics/.test(b.textContent || "")));
+    if (!findBtnPresent) {
+      bad("'Find my topics' button never appeared after pasting the real MOI text");
+    } else {
+      await clickWhenStable(page, "button:has-text('Find my topics')");
+      ok("'Find my topics' found and clicked on the real (redacted) MOI text");
 
-const findClicked = await page.evaluate(() => {
-  const btn = [...document.querySelectorAll("button")].find((b) => /Find my topics/.test(b.textContent || ""));
-  if (btn) { btn.click(); return true; }
-  return false;
-});
-findClicked ? ok("'Find my topics' found and clicked on the real (redacted) MOI text") : bad("'Find my topics' button not found");
+      const reviewShown = await until(page, () => /Review your matches/.test(document.body.textContent || ""), null, { timeout: 8000 });
+      if (!reviewShown) {
+        bad("the Review screen never appeared for the real MOI text");
+      } else {
+        ok("the real (redacted) MOI runs through the actual #/moi Find flow end to end, no crash, reaches Review");
 
-const reviewShown = await until(page, () => /Review your matches/.test(document.body.textContent || ""), null, { timeout: 8000 });
-reviewShown
-  ? ok("the real (redacted) MOI runs through the actual #/moi Find flow end to end, no crash, reaches Review")
-  : bad("the Review screen never appeared for the real MOI text");
+        const matchedBtnPresent = await until(page, () => [...document.querySelectorAll(".segmented button")].some((b) => /^Matched/.test(b.textContent || "")));
+        if (matchedBtnPresent) await clickWhenStable(page, ".segmented button:has-text('Matched')");
+        const matchedText = await page.evaluate(() => [...document.querySelectorAll(".panel")].map((p) => p.textContent).join(" | "));
 
-const matchedText = await page.evaluate(() => {
-  const segBtns = [...document.querySelectorAll(".segmented button")];
-  const matchedBtn = segBtns.find((b) => /^Matched/.test(b.textContent || ""));
-  if (matchedBtn) matchedBtn.click();
-  return [...document.querySelectorAll(".panel")].map((p) => p.textContent).join(" | ");
-});
-/Army Directive/i.test(matchedText)
-  ? ok("the Army Directive citation from the real source document surfaces in the real Matched list, not just the pure-function checks above")
-  : bad("Army Directive not present in the real Matched-list output: " + matchedText.slice(0, 400));
+        /Army Directive/i.test(matchedText)
+          ? ok("the Army Directive citation from the real source document surfaces in the real Matched list, not just the pure-function checks above")
+          : bad("Army Directive not present in the real Matched-list output: " + matchedText.slice(0, 400));
 
-// The compound "AR 670-1/DA PAM 670-1" and "AR 623-3/DA PAM 623-3" refs
-// from the real document - both real-world citation shapes this fix's own
-// header comment discusses (two DIFFERENT pub-type prefixes joined by one
-// slash, distinct from the same-prefix "TC 3-21.5/3-21.8" shape
-// surfaceCandidateAndSlash() already handled before this change).
-/AR 670-1/i.test(matchedText) && /DA PAM 670-1/i.test(matchedText)
-  ? ok("the real document's \"AR 670-1/DA PAM 670-1\" compound reference surfaces both halves in Matched")
-  : bad("AR 670-1 / DA PAM 670-1 compound not both present: " + matchedText.slice(0, 400));
+        // The compound "AR 670-1/DA PAM 670-1" and "AR 623-3/DA PAM 623-3"
+        // refs from the real document - both real-world citation shapes
+        // this fix's own header comment discusses (two DIFFERENT pub-type
+        // prefixes joined by one slash, distinct from the same-prefix
+        // "TC 3-21.5/3-21.8" shape surfaceCandidateAndSlash() already
+        // handled before this change).
+        /AR 670-1/i.test(matchedText) && /DA PAM 670-1/i.test(matchedText)
+          ? ok("the real document's \"AR 670-1/DA PAM 670-1\" compound reference surfaces both halves in Matched")
+          : bad("AR 670-1 / DA PAM 670-1 compound not both present: " + matchedText.slice(0, 400));
+      }
+    }
+  }
+}
 
 noise.length === 0 ? ok("no console errors/warnings anywhere in this suite") : noise.forEach((n) => bad(n));
 
