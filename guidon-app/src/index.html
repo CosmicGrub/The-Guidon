@@ -25884,30 +25884,86 @@ window.G = window.G || {};
   // startingPosition/movementDescription transcription or a per-exercise
   // citation in window.GUIDON_SEED.prt.drills, exactly like
   // app-modules/pt-planner.js's own PRT_PENDING_DRILLS map already says for
-  // these same drill IDs. PRT_UNVERIFIED_IDS (below) drives the "(content
-  // pending)" tag prtDrill() draws onto those seven blocks, so this screen
-  // and PT Planner's own session-block summary never disagree about which
-  // drills carry that fuller, per-exercise verification.
-  const PD = ["Bend and Reach","Rear Lunge","High Jumper","Rower","Squat Bender",
+  // these same drill IDs. buildPrtSessions()'s pendingIds (below, read live
+  // from G.store.prtMeta().pendingDrills) drives the "(content pending)"
+  // tag prtDrill() draws onto those seven blocks, so this screen and PT
+  // Planner's own session-block summary never disagree about which drills
+  // carry that fuller, per-exercise verification.
+  // ROADMAP item I, done in full (review round 2): not just PD's own ten
+  // names, but the whole session/block STRUCTURE now reads from
+  // G.store.prtMeta() - the same source #/prt and PT Planner already read
+  // through - instead of a second, separately hand-maintained copy of it.
+  // Two things were still duplicated after the first pass here: which
+  // blocks exist, in what order, grouped into which of the two sessions
+  // (this file's own PRT object used to hard-code exactly what
+  // DEFAULT_PRT_SESSIONS already declares), and which blocks are
+  // "(content pending)" (this file's own PRT_UNVERIFIED_IDS Set used to
+  // hard-code exactly what DEFAULT_PRT_PENDING_DRILLS's own keys already
+  // say). Left as-is on purpose: each block's actual exercise ITEMS for the
+  // seven blocks with no real seed.prt.drills record - BLOCK_ITEMS below -
+  // since there is nothing live to read those from yet (content pending
+  // means exactly that), and each block's human display label - BLOCK_LABELS
+  // below - since sessions/pendingDrills carry ids and (for pending drills
+  // only) a plain name, not this screen's own "Name (ABBR)" formatting; a
+  // cosmetic label has none of the silent-structural-drift risk a session's
+  // block composition or pending status has.
+  //
+  // Resolved LAZILY, inside buildPrtSessions() below (called fresh by
+  // draw() and by G.drills' own _PRT/_PRT_UNVERIFIED_IDS getters), never at
+  // module-eval time: this whole file is one giant synchronous script, so a
+  // module-level `const` built by calling store.prtMeta() right here would
+  // run before store.init()'s async loadContent() has ever populated
+  // state.seed.prt, permanently freezing this screen on fallback data
+  // regardless of what the real seed says - caught by review on the first
+  // pass (PD only), since PD_FALLBACK happens to already match the seed
+  // byte for byte, a false-positive-passing bug, not a false-failing one.
+  const PD_FALLBACK = ["Bend and Reach","Rear Lunge","High Jumper","Rower","Squat Bender",
               "Windmill","Forward Lunge","Prone Row","Bent-Leg Body Twist","Push-Up"];
+  function pdExerciseNames() {
+    const meta = G.store && G.store.prtMeta ? G.store.prtMeta() : null;
+    const pd = meta && Array.isArray(meta.drills) ? meta.drills.find((d) => d.id === "pd") : null;
+    const names = pd && Array.isArray(pd.exercises) ? pd.exercises.slice().sort((a, b) => a.order - b.order).map((e) => e.name) : null;
+    return (names && names.length) ? names : PD_FALLBACK;
+  }
   const RD = ["Overhead arm pull","Rear lunge","Extend and flex","Thigh stretch",
               "Single-leg over","Groin stretch","Calf stretch","Hamstring stretch"];
-  // Matches app-modules/pt-planner.js's PRT_PENDING_DRILLS keys exactly.
-  const PRT_UNVERIFIED_IDS = new Set(["ssd","cd1","cd2","hsd","mmd1","mmd2","rd"]);
-  const PRT = {
-    strength: { label:"Strength & Mobility Session", blocks:[
-      { id:"pd",   n:"Preparation Drill (PD)", items:PD },
-      { id:"ssd",  n:"Shoulder Stability Drill (SSD)", items:["I raise","T raise","Y raise","L raise","W raise"] },
-      { id:"cd1",  n:"Conditioning Drill 1 (CD 1)", items:["Power jump","V-up","Mountain climber","Leg-tuck and twist","Single-leg push-up"] },
-      { id:"cd2",  n:"Conditioning Drill 2 (CD 2)", items:["Turn and lunge","Supine bicycle","Half jack","Swimmer","8-count T push-up"] },
-      { id:"rd",   n:"Recovery Drill (RD)", items:RD } ] },
-    endurance: { label:"Endurance & Mobility Session", blocks:[
-      { id:"pd",   n:"Preparation Drill (PD)", items:PD },
-      { id:"hsd",  n:"Hip Stability Drill (HSD)", items:["Lateral leg raise","Medial leg raise","Bent-leg lateral raise","Single-leg tuck","Single-leg over"] },
-      { id:"mmd1", n:"Military Movement Drill 1 (MMD 1)", items:["Vertical","Lateral","Shuttle sprint"] },
-      { id:"mmd2", n:"Military Movement Drill 2 (MMD 2)", items:["Power skip","Crossover","Crouch run"] },
-      { id:"rd",   n:"Recovery Drill (RD)", items:RD } ] }
+  const BLOCK_ITEMS = {
+    ssd:["I raise","T raise","Y raise","L raise","W raise"],
+    cd1:["Power jump","V-up","Mountain climber","Leg-tuck and twist","Single-leg push-up"],
+    cd2:["Turn and lunge","Supine bicycle","Half jack","Swimmer","8-count T push-up"],
+    rd:RD,
+    hsd:["Lateral leg raise","Medial leg raise","Bent-leg lateral raise","Single-leg tuck","Single-leg over"],
+    mmd1:["Vertical","Lateral","Shuttle sprint"],
+    mmd2:["Power skip","Crossover","Crouch run"]
   };
+  const BLOCK_LABELS = {
+    pd:"Preparation Drill (PD)", ssd:"Shoulder Stability Drill (SSD)",
+    cd1:"Conditioning Drill 1 (CD 1)", cd2:"Conditioning Drill 2 (CD 2)", rd:"Recovery Drill (RD)",
+    hsd:"Hip Stability Drill (HSD)", mmd1:"Military Movement Drill 1 (MMD 1)", mmd2:"Military Movement Drill 2 (MMD 2)"
+  };
+  // Fallback session shape if store.prtMeta() is ever unavailable (matches
+  // core's own DEFAULT_PRT_SESSIONS/DEFAULT_PRT_PENDING_DRILLS exactly, so
+  // this is the same defensive floor prtMeta() itself already falls back to
+  // - not a second, independently-drifting copy of that decision).
+  const SESSIONS_FALLBACK = [
+    { id:"strength", label:"Strength & Mobility Session", blocks:[{drillId:"pd"},{drillId:"ssd"},{drillId:"cd1"},{drillId:"cd2"},{drillId:"rd"}] },
+    { id:"endurance", label:"Endurance & Mobility Session", blocks:[{drillId:"pd"},{drillId:"hsd"},{drillId:"mmd1"},{drillId:"mmd2"},{drillId:"rd"}] }
+  ];
+  const PENDING_FALLBACK = { ssd:1, cd1:1, cd2:1, hsd:1, mmd1:1, mmd2:1, rd:1 };
+  function buildPrtSessions() {
+    const meta = G.store && G.store.prtMeta ? G.store.prtMeta() : null;
+    const sessions = (meta && Array.isArray(meta.sessions) && meta.sessions.length) ? meta.sessions : SESSIONS_FALLBACK;
+    const pendingDrills = (meta && meta.pendingDrills && typeof meta.pendingDrills === "object") ? meta.pendingDrills : PENDING_FALLBACK;
+    const byId = {};
+    sessions.forEach((s) => {
+      byId[s.id] = { label:s.label, blocks:(s.blocks || []).map((b) => ({
+        id:b.drillId,
+        n:BLOCK_LABELS[b.drillId] || pendingDrills[b.drillId] || b.drillId,
+        items:b.drillId === "pd" ? pdExerciseNames() : (BLOCK_ITEMS[b.drillId] || [])
+      })) };
+    });
+    return { byId, pendingIds:new Set(Object.keys(pendingDrills)) };
+  }
 
   // ── 1009S information brief rubric (100 points) ──
   const BRIEF_RUBRIC = [
@@ -26127,14 +26183,22 @@ window.G = window.G || {};
       p.appendChild(seg); p.appendChild(listBox); stage.appendChild(p);
       function draw() {
         util.clear(seg); util.clear(listBox);
+        // Built fresh on every draw() (not once at module load) so session
+        // composition and pending status track store.prtMeta() live - see
+        // buildPrtSessions()'s own header comment for why this can't be a
+        // module-level const.
+        const built = buildPrtSessions();
         ["strength","endurance"].forEach(k => {
-          const b = el("button", { type:"button", text: PRT[k].label, "aria-pressed": String(k === which) });
+          const sess = built.byId[k];
+          if (!sess) return;
+          const b = el("button", { type:"button", text: sess.label, "aria-pressed": String(k === which) });
           if (k === which) b.classList.add("active");
           b.addEventListener("click", () => { which = k; draw(); });
           seg.appendChild(b);
         });
-        PRT[which].blocks.forEach(bl => {
-          const label = bl.n + (PRT_UNVERIFIED_IDS.has(bl.id) ? " (content pending)" : "");
+        const activeSession = built.byId[which] || built.byId[Object.keys(built.byId)[0]];
+        (activeSession ? activeSession.blocks : []).forEach(bl => {
+          const label = bl.n + (built.pendingIds.has(bl.id) ? " (content pending)" : "");
           listBox.appendChild(el("div.ob-plan-label", { text: label, style:"margin-top:10px" }));
           const ul = el("ul", { style:"margin:4px 0 0 18px" });
           bl.items.forEach(x => ul.appendChild(el("li", { text: x, style:"margin:2px 0" })));
@@ -26986,8 +27050,17 @@ window.G = window.G || {};
   // _PRT / _PRT_UNVERIFIED_IDS: pure data, exported for tests (same
   // convention as app-modules/pt-planner.js's own underscore-prefixed
   // exports) - lets a suite confirm prtDrill()'s verified/pending tagging
-  // without re-deriving PRT's content by scraping rendered DOM text.
-  G.drills = { render, _PRT:PRT, _PRT_UNVERIFIED_IDS:Array.from(PRT_UNVERIFIED_IDS) };
+  // without re-deriving PRT's content by scraping rendered DOM text. Real
+  // getters, not a value captured once at module-eval time - the same
+  // load-order reason buildPrtSessions() itself must be called lazily (see
+  // its own comment): a plain property here would freeze on whatever
+  // store.prtMeta() returned before the seed had loaded, same bug as the
+  // one review caught in PD's own first-pass fix.
+  G.drills = {
+    render,
+    get _PRT() { return buildPrtSessions().byId; },
+    get _PRT_UNVERIFIED_IDS() { return Array.from(buildPrtSessions().pendingIds); }
+  };
 })();
 // END drills.js
 
