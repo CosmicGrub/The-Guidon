@@ -339,8 +339,11 @@ console.log("\nCategories - a pack never splits a seed subject under a second na
   await page.evaluate(() => { location.hash = "#/home"; });
   await page.waitForTimeout(200);
   await page.evaluate(() => { location.hash = "#/board"; });
-  await page.waitForSelector('select[aria-label="Filter by category"]', { timeout: 15000 });
-  const options = await page.evaluate(() => Array.from(document.querySelector('select[aria-label="Filter by category"]').options).map((o) => o.value));
+  // catSel (a real <select>) was removed in the board-filter consolidation -
+  // catList's own "Jump to category" rail lists the identical, full,
+  // unscoped set of category names.
+  await page.waitForSelector('.list-detail-list[aria-label="Jump to category"] .list-detail-row', { timeout: 15000 });
+  const options = await page.evaluate(() => [...document.querySelectorAll('.list-detail-list[aria-label="Jump to category"] .list-detail-row .ldr-name')].map((n) => n.textContent));
   const offered = Object.keys(RENAMED).filter((c) => options.includes(c));
   (offered.length === 0 && Object.values(RENAMED).every((c) => options.includes(c))) ? ok("Board Drill's category picker lists each of the six subjects once, under the seed's name") : bad("category picker still offers: " + offered.join(", "));
 }
@@ -425,7 +428,10 @@ console.log("\nU13 - 92A cards stay out of another MOS's pools");
     await page.reload({ waitUntil: "load" });
     await page.waitForFunction(() => window.G && G.store && G.profile && G.profile.cached && G.profile.cached() && G.store.boardQuestions().length > 900, null, { timeout: 30000 });
     await page.evaluate(() => { location.hash = "#/board"; });
-    await page.waitForSelector('select[aria-label="Filter by category"]', { timeout: 15000 });
+    // catSel (a real <select>) was removed in the board-filter consolidation
+    // - catList's own "Jump to category" rail is the surviving full,
+    // unscoped list of category names to count "92A ..." entries in.
+    await page.waitForSelector('.list-detail-list[aria-label="Jump to category"] .list-detail-row', { timeout: 15000 });
     await page.waitForTimeout(300);
     return page.evaluate(() => {
       const pool = G.store.boardQuestions();
@@ -433,7 +439,7 @@ console.log("\nU13 - 92A cards stay out of another MOS's pools");
       return {
         mosCards: pool.filter((q) => Array.isArray(q.mos) && q.mos.length).length,
         supplyPillar: pool.filter((q) => q.pillar === "Maintenance & Supply").length,
-        options: Array.from(document.querySelector('select[aria-label="Filter by category"]').options).map((o) => o.value).filter((v) => /^92A/.test(v)).length,
+        options: [...document.querySelectorAll('.list-detail-list[aria-label="Jump to category"] .list-detail-row .ldr-name')].map((n) => n.textContent).filter((v) => /^92A/.test(v)).length,
         chip: pillarChip ? pillarChip.textContent.replace(/\s+/g, " ").trim() : null,
       };
     });

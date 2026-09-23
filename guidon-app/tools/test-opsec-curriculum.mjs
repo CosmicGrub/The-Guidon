@@ -217,7 +217,14 @@ const relatedBtn = page.locator("button", { hasText: /^Practice OPSEC & informat
 (await relatedBtn.count()) === 1 ? ok("the page also offers the seed's own OPSEC & Information Security cards (five-step process, Critical Information List)") : bad("related-category practice button missing");
 await relatedBtn.click();
 await page.waitForTimeout(1200);
-const drill = await page.evaluate(() => ({ hash: location.hash, cat: Array.from(document.querySelectorAll("select")).map((s) => s.value).filter((v) => /OPSEC/.test(v)) }));
+// Board Drill's category <select> (catSel) was removed in the board-filter
+// consolidation - catFilter is a plain closure variable now, with no <select>
+// left to scan for. catList's own row for the category shows itself
+// selected, driven by that same catFilter - the equivalent, live check.
+const drill = await page.evaluate(() => ({
+  hash: location.hash,
+  cat: [...document.querySelectorAll('.list-detail-list[aria-label="Jump to category"] .list-detail-row.active .ldr-name')].map((n) => n.textContent),
+}));
 (drill.hash === "#/board" && drill.cat.includes("OPSEC & Information Security")) ? ok("...and opens Board Drill filtered to that category") : bad("related drill: " + JSON.stringify(drill));
 
 /* ======================================================================

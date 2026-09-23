@@ -126,8 +126,8 @@ for (const hash of HASHES) {
    (bypasses the drag-suppression guard the card's own click listener
    carries) and re-sweeps every theme against the now-flipped DOM state.
    #/board always shows a real default card with zero clicks needed first
-   (catSel defaults to "All categories" - build()'s own `cat = catSel.value
-   || "All"` - so there is always a .qz-card here already). Global
+   (catFilter defaults to "All" - build()'s own `cat = catFilter || "All"` -
+   so there is always a .qz-card here already). Global
    transitions are already killed for the whole page (see the addStyleTag
    call above), so the flip is instant - no settle wait beyond a short
    margin. ---- */

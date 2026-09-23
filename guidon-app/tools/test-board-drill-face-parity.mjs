@@ -59,9 +59,13 @@ async function findByPrompt(targetQ, category) {
   // past 1000 cards, so a fixed iteration budget over the UNFILTERED deck
   // isn't a reliable way to reach a specific card. Same technique
   // test-board-drill-reduced-motion-scroll.mjs already uses successfully.
+  // catSel (a real <select>) was removed in the board-filter consolidation -
+  // catList's own full, unscoped "Jump to category" rail is the surviving
+  // control to narrow through.
   await page.evaluate((cat) => {
-    const sel = document.querySelector('select[aria-label="Filter by category"]');
-    if (sel) { sel.value = cat; sel.dispatchEvent(new Event("change")); }
+    const rows = [...document.querySelectorAll('.list-detail-list[aria-label="Jump to category"] .list-detail-row')];
+    const row = rows.find((r) => (r.querySelector(".ldr-name")?.textContent || "") === cat);
+    if (row) row.click();
   }, category);
   await page.waitForTimeout(300);
   for (let i = 0; i < 200; i++) {
@@ -328,8 +332,8 @@ await shortPage.waitForTimeout(1100);
 // real mechanism that brings the card near the viewport top in normal
 // use - reproducing that here rather than relying on auto-select luck.
 await shortPage.evaluate(() => {
-  const sel = document.querySelector('select[aria-label="Filter by category"]');
-  if (sel && sel.options.length > 1) { sel.value = sel.options[1].value; sel.dispatchEvent(new Event("change")); }
+  const rows = [...document.querySelectorAll('.list-detail-list[aria-label="Jump to category"] .list-detail-row')];
+  if (rows.length > 1) rows[1].click(); // rows[0] is "All"
 });
 await shortPage.waitForTimeout(500);
 // The app's own scrollIntoView(block:"start") call (verified separately by

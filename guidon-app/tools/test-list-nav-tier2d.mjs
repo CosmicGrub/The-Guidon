@@ -27,9 +27,9 @@
  *   - Board Drill's catList: ArrowDown/ArrowUp move row-to-row and clamp at
  *     BOTH ends (no return-to-input on ArrowUp from row 0 - catList has no
  *     equivalent control positioned above it the way Doctrine's search box
- *     does; catSel/diffSel live in a different .drill-layout column
- *     entirely); Enter/Space on a focused row sets catSel's value and fires
- *     its change event, exactly like a click on that row does.
+ *     does; the category chip row/diffSel live in a different .drill-layout
+ *     column entirely); Enter/Space on a focused row sets catFilter and
+ *     fires build(), exactly like a click on that row does.
  *   - Existing click-to-select behavior on both lists is unchanged by this
  *     purely-additive keyboard support.
  *
@@ -236,8 +236,14 @@ async function bootTo(hash, viewport) {
       : bad(`ArrowUp from catList row 0: expected to stay on row 0 ("${labels[0]}"), got "${stillOnRow0}"`);
 
     // Enter/Space activates the focused row exactly like a click - sets
-    // catSel's value and fires its change event, filtering the flashcard
-    // queue to that category.
+    // catFilter and fires build(), filtering the flashcard queue to that
+    // category. catSel (a real <select> this test used to read `.value`
+    // off of) was removed in the board-filter consolidation; catList's own
+    // row re-marking itself active/aria-selected (its refreshCatList()
+    // contract, driven by that same catFilter) is the equivalent,
+    // still-behavioral proof - re-queried by label rather than a reference
+    // held from before the activation, since catList rebuilds itself
+    // entirely on every category change (unchanged pre-existing behavior).
     await page.keyboard.press("ArrowDown"); // move onto row 1 (a real, non-"All" category)
     const targetLabel = await page.evaluate(() => document.activeElement?.querySelector(".ldr-name")?.textContent || "");
     // Real, trusted key press - see the matching comment on Doctrine's
@@ -246,10 +252,15 @@ async function bootTo(hash, viewport) {
     // Enter-activates-a-focused-button behavior, not a JS handler).
     await page.keyboard.press("Enter");
     await page.waitForTimeout(400);
-    const catSelValue = await page.evaluate(() => document.querySelector('select[aria-label="Filter by category"]')?.value);
-    catSelValue === targetLabel
-      ? ok(`Enter on catList row "${targetLabel}" activated it, setting the category filter to match (catSel.value === "${catSelValue}")`)
-      : bad(`Enter on catList row "${targetLabel}" did not set the category filter (catSel.value === "${catSelValue}")`);
+    const rowState = (label) => page.evaluate((l) => {
+      const rows = [...document.querySelectorAll(".drill-layout .list-detail-list .list-detail-row")];
+      const row = rows.find((r) => (r.querySelector(".ldr-name")?.textContent || "") === l);
+      return row && row.classList.contains("active") && row.getAttribute("aria-selected") === "true" ? l : null;
+    }, label);
+    const catFilterValue = await rowState(targetLabel);
+    catFilterValue === targetLabel
+      ? ok(`Enter on catList row "${targetLabel}" activated it, setting the category filter to match (catList row active)`)
+      : bad(`Enter on catList row "${targetLabel}" did not set the category filter (catList row active = ${JSON.stringify(catFilterValue)})`);
 
     // Regression: existing click-to-select path on catList still works,
     // switching the filter back to "All" (row 0).
@@ -258,10 +269,10 @@ async function bootTo(hash, viewport) {
       rows[0].click();
     });
     await page.waitForTimeout(400);
-    const backToAll = await page.evaluate(() => document.querySelector('select[aria-label="Filter by category"]')?.value);
+    const backToAll = await rowState(labels[0]);
     backToAll === labels[0]
       ? ok(`existing click-to-select on catList row 0 still works unchanged, resetting the filter to "${backToAll}"`)
-      : bad(`click on catList row 0 did not reset the filter (catSel.value === "${backToAll}", expected "${labels[0]}") - click regression`);
+      : bad(`click on catList row 0 did not reset the filter (catList row active = ${JSON.stringify(backToAll)}, expected "${labels[0]}") - click regression`);
   }
 
   const relevantNoise = noise.filter((n) => !/favicon/.test(n));

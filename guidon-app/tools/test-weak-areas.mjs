@@ -95,17 +95,25 @@ const progressText = await page.evaluate(() => document.body.textContent || "");
 
 // Clicking it should navigate to Board Drill with the category filter set.
 // G.board._filterCat is a one-shot flag - Board Drill's own render() reads
-// it into the visible category <select> and immediately clears it back to
-// null (same pattern the Readiness tab's "Drill <category>" button uses),
-// so the real, durable proof is the select's own value, not the flag.
+// it into catFilter and immediately clears it back to null (same pattern
+// the Readiness tab's "Drill <category>" button uses), so the real, durable
+// proof is catList's own row for that category showing itself selected -
+// catFilter is a plain closure variable now (board-filter consolidation
+// removed the <select> this used to read .value off of), and catList is
+// the one surviving control that lists every category unscoped, matching
+// what the old <select> always guaranteed regardless of chip-row capping.
 const focusRow = page.locator(".prog-pri-row", { hasText: /Focus:/ });
 if (await focusRow.count()) {
   await focusRow.locator("button", { hasText: /Go/ }).click();
   await page.waitForTimeout(600);
-  const catSelValue = await page.locator('select[aria-label="Filter by category"]').first().inputValue().catch(() => null);
-  catSelValue === seeded.cat
+  const catRowState = await page.evaluate((cat) => {
+    const rows = [...document.querySelectorAll('.list-detail-list[aria-label="Jump to category"] .list-detail-row')];
+    const row = rows.find((r) => (r.querySelector(".ldr-name")?.textContent || "") === cat);
+    return row ? { found: true, active: row.classList.contains("active"), selected: row.getAttribute("aria-selected") } : { found: false };
+  }, seeded.cat);
+  (catRowState.found && catRowState.active && catRowState.selected === "true")
     ? ok("Clicking the Board Drill priority navigates to Board Drill with the category filter actually applied")
-    : bad("category filter select shows '" + catSelValue + "', expected '" + seeded.cat + "'");
+    : bad("catList row for '" + seeded.cat + "' after navigating: " + JSON.stringify(catRowState));
 } else {
   bad("could not find the Board Drill priority row to click");
 }
