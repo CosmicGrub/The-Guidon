@@ -76,7 +76,11 @@
     apply(bank.scenarios && bank.scenarios.scenarios, function (s) {
       if ((map.scenarioId || {})[s.id]) return map.scenarioId[s.id];
       if (/^sc-iot-/.test(s.id)) return "Doctrinal Thinking";
-      if (/^sc-(tccc|medevac|opsec|cyber|cui)-/.test(s.id)) return null;
+      // "68w" added alongside "tccc"/"medevac" for the 68W MOS deck - same
+      // medical lane, kept in sync with tools/pillar-map.mjs's own copy (see
+      // that file's pillarForScenario() comment on why this can't just be a
+      // SCENARIO_PILLAR override).
+      if (/^sc-(tccc|medevac|opsec|cyber|cui|68w)-/.test(s.id)) return null;
       if (s.defaultMode === "training") return "Programs & Support";
       return "Leadership & Counseling";
     }, "scenarios");

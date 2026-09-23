@@ -693,12 +693,12 @@ jobs:
             tests: "test:content-manifest test:live-content-figures test:guest-saves-nothing test:backup-new-tools"
           - name: "55-storagecontractlint-cyberfundamentals-drillsprtsourcing-mosdecks"
             tests: "test:storage-contract-lint test:cyber-fundamentals test:drills-prt-sourcing test:mos-decks"
-          - name: "56-prtsessionfetchedseed-ptsessioncomposer-screenlayouts-calendarzeroboard"
-            tests: "test:prt-session-fetched-seed test:pt-session-composer test:screen-layouts test:calendar-zero-board"
-          - name: "57-pttaskingboard-leadermoitracker-contentpackengine-lintcontentpacks"
-            tests: "test:pt-tasking-board test:leader-moi-tracker test:content-pack-engine test:lint-content-packs"
-          - name: "58-mergeseedcontentpacks-searchscreens-modalinertcloserace"
-            tests: "test:merge-seed-content-packs test:search-screens test:modal-inert-close-race"
+          - name: "56-mosdecks68w-prtsessionfetchedseed-ptsessioncomposer-screenlayouts"
+            tests: "test:mos-decks-68w test:prt-session-fetched-seed test:pt-session-composer test:screen-layouts"
+          - name: "57-calendarzeroboard-pttaskingboard-leadermoitracker-contentpackengine"
+            tests: "test:calendar-zero-board test:pt-tasking-board test:leader-moi-tracker test:content-pack-engine"
+          - name: "58-lintcontentpacks-mergeseedcontentpacks-searchscreens-modalinertcloserace"
+            tests: "test:lint-content-packs test:merge-seed-content-packs test:search-screens test:modal-inert-close-race"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same

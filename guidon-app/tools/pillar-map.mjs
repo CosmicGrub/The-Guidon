@@ -122,6 +122,16 @@ export const PACK_CATEGORIES = {
   "92A — Inventory & Stock Control": MS, "92A — Supply Fundamentals": MS, "92A — Supply Transactions": MS,
   "92A — Accountability": MS, "92A — Maintenance Support": MS, "92A — Materiel Management": MS,
   "92A — Leadership": MS, "92A — Scenarios": MS,
+  // 68W (second MOS deck, ROADMAP: "92A is the reference pattern, not a
+  // one-off"): medical content, like the seed's own "TCCC / First Aid" /
+  // "Army Medical System" categories, is outside the six SGT-board pillars
+  // by design (see this file's header) - null, not MS, even though 92A's
+  // own categories above are MS. Do not fold medical content into
+  // Maintenance & Supply just because both happen to be MOS decks.
+  "68W — MOS Fundamentals": null, "68W — Scope of Practice": null,
+  "68W — Casualty Collection & Evacuation": null, "68W — Medical Logistics": null,
+  "68W — Medical Records & Readiness": null, "68W — Legal Protections & Medical Ethics": null,
+  "68W — Recognition": null,
   "Army Profession": DB,
   "Cybersecurity & OPSEC": null,
   "Cybersecurity Fundamentals": null,
@@ -148,10 +158,15 @@ export function pillarForDoctrine(e) { return DOCTRINE_PILLAR[e.id] || TOPIC_PIL
 export function pillarForScenario(s) {
   if (SCENARIO_PILLAR[s.id]) return SCENARIO_PILLAR[s.id];
   if (/^sc-iot-/.test(s.id)) return DT;
-  // Lanes outside the six by design: medical (TCCC / MEDEVAC), and the
+  // Lanes outside the six by design: medical (TCCC / MEDEVAC / 68W), and the
   // OPSEC / cyber / CUI lane - the same call the board side makes by leaving
   // "OPSEC & Information Security" and "Cybersecurity & OPSEC" untagged.
-  if (/^sc-(tccc|medevac|opsec|cyber|cui)-/.test(s.id)) return null;
+  // "68w" added alongside "tccc"/"medevac" when the 68W MOS deck shipped -
+  // same medical lane, same reasoning: SCENARIO_PILLAR can only override TO
+  // a truthy pillar (see the `if (SCENARIO_PILLAR[s.id])` check above), so a
+  // 68W scenario NOT matched here would fall through to the LC default
+  // below and be wrongly tagged Leadership & Counseling.
+  if (/^sc-(tccc|medevac|opsec|cyber|cui|68w)-/.test(s.id)) return null;
   if (s.defaultMode === "training") return PS;
   return LC;
 }
