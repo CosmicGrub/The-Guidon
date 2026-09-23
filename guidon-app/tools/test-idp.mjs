@@ -5,7 +5,7 @@
  * coverage of any kind before this. Covers the fix shipped this same week:
  * Export/Print used to only render after at least one goal existed.
  */
-import { bootApp, ok, bad, finish, waitForRoute, clickWhenStable, until, expectNoConsoleNoise } from "./testkit.mjs";
+import { bootApp, ok, bad, finish, waitForRoute, clickWhenStable, until, untilAsync, expectNoConsoleNoise } from "./testkit.mjs";
 
 const { page, noise } = await bootApp();
 
@@ -32,7 +32,7 @@ buttonsAtZero.printBtn ? ok("Print IDP button renders with zero goals (was missi
 await page.locator(".idp-form input[type=text]").first().fill("Complete BLC and get promoted to SGT");
 await clickWhenStable(page, page.locator("button", { hasText: /\+ Add goal/i }));
 // Saved AND redrawn: the status control only exists on a drawn goal card.
-await until(page, async () => { const r = await window.G.db.get("kv", "idp:goals"); return !!(r && r.v && r.v.length) && !!document.querySelector(".idp-goal-ctl select"); });
+await untilAsync(page, async () => { const r = await window.G.db.get("kv", "idp:goals"); return !!(r && r.v && r.v.length) && !!document.querySelector(".idp-goal-ctl select"); });
 
 const afterAdd = await savedGoals();
 afterAdd.length === 1 ? ok("Add goal persists a new goal to idp:goals") : bad("idp:goals length after add: " + afterAdd.length);
@@ -47,7 +47,7 @@ cardVisible ? ok("the new goal appears in the on-screen list") : bad("new goal n
 const statusSel = page.locator(".idp-goal-ctl select").first();
 if (await statusSel.count()) {
   await statusSel.selectOption("Done");
-  await until(page, async () => { const r = await window.G.db.get("kv", "idp:goals"); return !!(r && r.v && r.v[0] && r.v[0].status === "Done"); });
+  await untilAsync(page, async () => { const r = await window.G.db.get("kv", "idp:goals"); return !!(r && r.v && r.v[0] && r.v[0].status === "Done"); });
   const afterStatus = await savedGoals();
   afterStatus[0] && afterStatus[0].status === "Done"
     ? ok("changing status to Done persists")
@@ -58,7 +58,7 @@ if (await statusSel.count()) {
 
 // --- Remove deletes it ---
 await clickWhenStable(page, page.locator("button", { hasText: /^Remove$/ }).first());
-await until(page, async () => { const r = await window.G.db.get("kv", "idp:goals"); return !!(r && r.v && r.v.length === 0); });
+await untilAsync(page, async () => { const r = await window.G.db.get("kv", "idp:goals"); return !!(r && r.v && r.v.length === 0); });
 const afterRemove = await savedGoals();
 afterRemove.length === 0 ? ok("Remove deletes the goal") : bad("idp:goals length after remove: " + afterRemove.length);
 

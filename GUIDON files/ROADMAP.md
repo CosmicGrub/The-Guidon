@@ -2,7 +2,7 @@
 
 **Read this to know: what's shipped, what's deliberately not built (and why), and what actually comes next.** `GUIDON_PROJECT_MAP.md` is the 10,000-foot *what is this app* orientation; `CHANGELOG.md` is the session-by-session *what changed*; this document is the forward-looking one — pull from it to pick up where the last session left off, and keep it current going forward rather than letting it drift the way the other canonical docs already have once.
 
-**Current version:** v1.15.1 (guidon-app/package.json), 2026-09-22 — ROADMAP 3g item I complete: `#/drills`' PRT session builder now reads its Preparation Drill exercise names through `store.prtMeta()` instead of a hand-maintained duplicate array. v1.15.0 (2026-09-22) shipped ROADMAP item F Wave 1: doctrine, creeds, PRT, and scenario doctrine citations moved to a real `{pub, edition, para, quoteKind}[]` structured schema (see §3g item F below and CHANGELOG.md for the full accounting); board.questions and the remaining free-text sections are Waves 2-3, not yet started. v1.14.2 (2026-09-22) shipped Global Search now covers screens and Settings sub-sections, not just content (a new "screen" search type; searching "dark mode", "PCS", or "TSP" now lands on Theme, Assignments, or Money). v1.14.1 (2026-09-22) was a one-line Search fix (MOI Import now appears in the unindexed-domains fallback instead of returning zero results). v1.14.0 (2026-09-21) shipped a PT Planner custom session composer, ROADMAP 3g "customizable screen layouts" (a shared date-grid layout plus one screen-specific layout each for PT Planner and Career Calendar, six new themes), and a full MOI Import overhaul (multi-plan history with diffing, match-tier badges, board-date awareness, an opt-in per-plan-family topic filter, UCMJ Article citation recognition, and a leader-side dates-only squad briefing tracker). v1.13.0 (2026-09-20) shipped the Cybersecurity Fundamentals module, the 2026-09 OPSEC/legal audit's safe fixes, a reachable backup opt-in for the roster and Risk Worksheets, and ROADMAP 3g Wave 1 (module manifest, storage contract, shared test kit, generated content floors). v1.12.1 (2026-09-19) was the prior audit-fix release: 54 confirmed defects from the 2026-09-15..18 merges fixed, runtime content packs brought under the same lints as the seed. v1.11.0 and v1.12.0 were prepared but never released and are superseded; v1.10.1 was published retroactively. One immutable tag feeds web/PWA + standalone, Android (signed on the owner's machine - see guidon-app/docs/release-runbook.md), Windows, macOS, iOS Simulator parity, and the ESP32 firmware/content fork. See CHANGELOG.md for distribution boundaries.
+**Current version:** v1.15.4 (guidon-app/package.json), 2026-09-22 — ROADMAP 3g item I complete: `#/drills`' PRT session builder now reads its Preparation Drill exercise names, session composition, and pending-drill status through `store.prtMeta()` instead of hand-maintained duplicate data. v1.15.3 (2026-09-22) shipped ROADMAP 3g item H's completion contract: `G.engine.run()`'s solo path now reports a real `{completed, cancelled, scenarioId}` signal, correctly derived from session state and dispatched at most once; Board Simulator's phase registry turned out already real; folding Collective mode into the core engine's own dispatch (today a runtime wrapper, not a render mode) remains open, its own separate round (see CHANGELOG.md's v1.15.3 entry). v1.15.0 (2026-09-22) shipped ROADMAP item F Wave 1: doctrine, creeds, PRT, and scenario doctrine citations moved to a real `{pub, edition, para, quoteKind}[]` structured schema (see §3g item F below and CHANGELOG.md for the full accounting); board.questions and the remaining free-text sections are Waves 2-3, not yet started. v1.14.2 (2026-09-22) shipped Global Search now covers screens and Settings sub-sections, not just content (a new "screen" search type; searching "dark mode", "PCS", or "TSP" now lands on Theme, Assignments, or Money). v1.14.1 (2026-09-22) was a one-line Search fix (MOI Import now appears in the unindexed-domains fallback instead of returning zero results). v1.14.0 (2026-09-21) shipped a PT Planner custom session composer, ROADMAP 3g "customizable screen layouts" (a shared date-grid layout plus one screen-specific layout each for PT Planner and Career Calendar, six new themes), and a full MOI Import overhaul (multi-plan history with diffing, match-tier badges, board-date awareness, an opt-in per-plan-family topic filter, UCMJ Article citation recognition, and a leader-side dates-only squad briefing tracker). v1.13.0 (2026-09-20) shipped the Cybersecurity Fundamentals module, the 2026-09 OPSEC/legal audit's safe fixes, a reachable backup opt-in for the roster and Risk Worksheets, and ROADMAP 3g Wave 1 (module manifest, storage contract, shared test kit, generated content floors). v1.12.1 (2026-09-19) was the prior audit-fix release: 54 confirmed defects from the 2026-09-15..18 merges fixed, runtime content packs brought under the same lints as the seed. v1.11.0 and v1.12.0 were prepared but never released and are superseded; v1.10.1 was published retroactively. One immutable tag feeds web/PWA + standalone, Android (signed on the owner's machine - see guidon-app/docs/release-runbook.md), Windows, macOS, iOS Simulator parity, and the ESP32 firmware/content fork. See CHANGELOG.md for distribution boundaries.
 
 ---
 
@@ -372,8 +372,9 @@ themed UI wrapper — explicitly NOT a live generative-AI opponent
 (would make this the app's first-ever online-required feature) and NOT
 the literal PostgreSQL/REST-API architecture originally proposed for it.
 
-**Cadences — research complete, content-policy decisions pending.** A
-103-agent research pass (Wayback/archive.org-backed, two independent
+**Cadences — research complete; two of three blockers resolved; the
+classified title list itself is NOT preserved anywhere in this repo.**
+A 103-agent research pass (Wayback/archive.org-backed, two independent
 runs after a session-restart casualty) found: no Army doctrinal source
 for cadence lyrics exists (confirmed against ~70 years of drill
 manuals), but the U.S. Army Center of Military History runs a real,
@@ -392,10 +393,58 @@ Hair / Yellow Ribbon," needs a real musicologist/legal read before
 either version ships); and several titles (including "I Wish That All
 the Ladies") that are real and old but need an explicit content-policy
 call (default-off/opt-in/exclude) rather than default inclusion.
-**Blocked on**: the policy decision for the borderline titles, and
-deciding where this content actually lives in the app (new route vs.
-folded into Creeds & Branch Identities) before any of the ~35 cleared
-cadences ship as real content.
+
+**Owner decisions made (2026-09-22) — RESOLVED, no longer blocking:**
+cadences fold into the existing Creeds & Branch Identities screen as a
+new group, not a separate route; borderline titles (e.g. "I Wish That
+All the Ladies") ship default-off, opt-in via Settings, not excluded
+outright.
+
+**New blocker found the same day, upstream of both decisions above —
+STILL BLOCKING:** the actual cadence text can't be authored by an AI
+coding assistant - "never reproduce song lyrics in any form" is a hard,
+non-negotiable constraint on that tooling, independent of this
+project's own copyright clearance for the ~35 titles. Concretely:
+someone (a human, following this file's own citation-honesty standard)
+needs to type or paste the actual cleared verses in, the same way
+`creed-spirit-of-the-cav` (`src/app-modules/05-spirit-of-the-cav.js`)
+already handles a text this project can't reproduce - title + history
++ real citation, no verse text, "add your own copy in Recitation Drill
+under My unit" as the honest alternative - which is very likely the
+right shape for the borderline/default-off titles regardless of who
+sources them. Every cadence entry needs BOTH schemas, not just the
+citation one: Wave 1's `source:[{pub,edition,para,quoteKind}]` shape
+(shipped in v1.15.0) for the citation itself, AND (whenever `fullText`
+or `lines[]` is non-empty) the rights gate's own
+`rights:{author,firstPublished,basis,evidence,checkedOn}` record -
+`basis` one of `"us-gov-work"|"pd-age"|"permission"` - or
+`tools/test-spirit-of-the-cav.mjs`'s rights gate fails the build the
+same way it already does for any other un-rights-recorded bundled
+text. A creed-shaped citation object also needs its own `status` field
+(e.g. `"doctrine"`, `"unit-tradition"`, `"official-heraldry"` - see
+`CREED_SOURCE_STATUS_LABEL` in `src/index.html`) - `views.creeds`
+unconditionally appends `" — " + statusLabel` to the rendered source
+line, so a citation missing `status` renders the literal text
+"— undefined" to a real Soldier, not just an omitted label.
+
+**The classified title list itself - which specific titles are
+cleared/excluded/borderline/commercially-landmined, and why - was
+never saved to this repo, only summarized in this section's own prose
+above** (one named example per class, not the full ~35-plus-exclusions
+set the original 103-agent pass actually produced). That pass's real
+verdicts cannot be reconstructed from this file alone. Next session
+picking this up has two real options, not one: (a) if the original
+pass's output still exists somewhere outside this repo (another
+session's transcript, a doc the owner has), retrieve and save it here
+first, rather than re-deriving it; (b) otherwise, commission a fresh
+research pass explicitly scoped to extract titles, citations, and
+classification history ONLY and never reproduce the verses themselves,
+since anything that pass finds will need to survive being read and
+acted on by an AI assistant later, same as this one did. Only once a
+real, saved title list exists (clearing that FIRST blocker, sourcing
+the actual verse text) does building the Creeds "Cadences" group and
+the default-off Settings toggle against it become real work rather
+than speculative UI.
 
 ---
 
@@ -413,8 +462,8 @@ Source: `GUIDON files/AUDIT-2026-09.md` section 6 (the audit of PRs #172-#183 an
 - E. **SHIPPED.** Build-time content packs behind one API, `G.contentPack.define(id, function (bank, ctx) {...})`, run once by `tools/content-pack-engine.mjs` and merged into the seed before it ever ships (`tools/build.mjs`) instead of a second time, imperatively, in the browser. `tools/assemble-bank.mjs` is now a thin wrapper around that same engine, so lints/the content manifest/the ESP32 exporter can never again disagree with the real app about what the bank holds. All 8 real content packs + the finalize pass ported; the two files found to be hybrids (owning a screen/route as well as pushing content) split into a content half (`emit:"build"`) and a runtime half (`emit:"runtime"`) — `06-opsec-cyber-curriculum.js`/`-content.js` and `07-cyber-fundamentals.js`/`-content.js`. Ids and study history verified byte-identical, in the same order, against the pre-migration bank (997→1265 board cards, 357 doctrine, 187→195 scenarios, fingerprint unchanged).
 - F. Structured citations (`{ pub, edition, para, quoteKind }`) so "verbatim" headings, regulation chips, the superseded-publication check and the rights gate are mechanical. **Wave 1 SHIPPED (v1.15.0):** doctrine.entries, creeds, PRT, and scenario `doctrine[]` - 650 sites, 30 consumers, a new `tools/lint-citation-schema.mjs` gate. **Wave 2 (not started):** board.questions' 997 free-text sources - the largest pool, coupled to `G.board.regulationsOf()`'s existing runtime regex parser (a deliberate prior decision not to persist a structured field, per that function's own header comment) and a separate `q.verbatim` boolean that needs folding into the new `quoteKind` enum; real added complexity beyond Wave 1's rename-only shape, sized as its own round. **Wave 3 (not started):** curriculum/counsel/counsel_bullets/forms/idp/resilience/finance's free-text citations.
 - G. ~~MOS decks as a first-class opt-in lane with their own Readiness row (92A is the first of many).~~ SHIPPED: `G.mosDecks` (`src/app-modules/00-mos-decks-core.js`) is the one registry + opt-in API every MOS content pack registers into and `store.boardQuestions()`/`store.scenarios()`/the Readiness tab's new "MOS Deck Readiness" panel all read through. Product decision made this round: MOS-tagged content is **hidden by default** for every Soldier except one whose own profile.mos (set during onboarding's optional "Your role" step, or edited later) prefix-matches it - not the additive, shown-by-default-and-only-narrowed behavior 92A shipped with originally. An explicit Settings -> Study Preferences -> MOS Decks checkbox is the other way in, for a Soldier studying a MOS that isn't their own. Standing rule for every future MOS pack: 92A is the reference pattern, not a one-off - register through `G.mosDecks.register()` and ship no MOS-specific check anywhere else (see that file's own header comment for the exact steps).
-- H. A real `G.engine.run()` completion contract; Collective mode as an engine render mode; Board Simulator on a phase registry.
-- I. ~~One PRT session model shared by PT Planner, `#/prt` and `#/drills`~~ — **SHIPPED (v1.15.1).** PT Planner and `#/prt` were unified in v1.13.0 (`store.prtMeta()` reads `window.GUIDON_SEED.prt.sessions`/`.pendingDrills`, guaranteed present via core's own seed normalization). The deferred third: `#/drills`' Leadership Drills module (`prtDrill()`) now reads its Preparation Drill exercise names through `store.prtMeta()` too, instead of a hand-maintained literal array that happened to match - eliminating the exact duplication-drift risk a prior audit round caught once already. The other seven PRT blocks have no equivalent seed record to read from (only "pd" is authored in `window.GUIDON_SEED.prt.drills`), so they stay hand-maintained and correctly tagged "(content pending)" until someone sources them - a content task, not a wiring one.
+- H. A real `G.engine.run()` completion contract; ~~Collective mode as an engine render mode~~; Board Simulator on a phase registry. **Completion contract SHIPPED (v1.15.3):** the solo (non-Collective) engine path never told its `onExit` callback whether a session actually completed, forcing Board Simulator to build its own attempt-log side-channel workaround to guess. Fixed: `G.engine.run()`'s solo path now reports `{completed, cancelled, scenarioId}` at all three of its real exit points, correctly derived from `sess.finished` (an outcome screen's own persistent header shares the same Exit control a mid-play screen uses, so a flat "header Exit always means cancelled" was wrong the moment a Soldier reached the AAR) and dispatched at most once per session even if two exit controls are both clicked. **Board Simulator phase registry: already real**, no work needed - its `STEPS` array (`src/app-modules/mock-board-simulator.js`) already drives every step generically from data, not hardcoded branches. **"Collective mode as an engine render mode": still open, correctly NOT marked shipped** (review caught this file overclaiming it) - Collective mode has real, working, user-facing capability since v1.12.0, but as a runtime wrapper that captures and replaces `G.engine.run` (`src/app-modules/00-roadmap-bootstrap.js` lines ~67-68, ~260-264) and dispatches to its own separate `runCollective`, not as a mode `G.engine.run`'s own core dispatch understands (`src/index.html`'s engine module has no `"collective"` case anywhere in its mode switch). Existing since v1.12.0 is not the same claim as being an engine render mode; folding the wrapper's ~200 lines of `renderCollective`/`renderDecision`/`renderSingle`/`finish` into core's own dispatch is real, separate structural work, sized as its own round, not bundled into the completion-contract fix that prompted this note. See CHANGELOG.md's v1.15.3 entry for the completion-contract accounting.
+- I. ~~One PRT session model shared by PT Planner, `#/prt` and `#/drills`~~ — **SHIPPED (v1.15.4).** PT Planner and `#/prt` were unified in v1.13.0 (`store.prtMeta()` reads `window.GUIDON_SEED.prt.sessions`/`.pendingDrills`, guaranteed present via core's own seed normalization). The deferred third: `#/drills`' Leadership Drills module (`prtDrill()`) now reads its Preparation Drill exercise names, session composition, and pending-drill status through `store.prtMeta()` too, instead of hand-maintained duplicate data (`PD`/`PRT`/`PRT_UNVERIFIED_IDS`) - eliminating the exact duplication-drift risk a prior audit round caught once already, this time for the session/block structure as well as the exercise names, caught by a second review pass. Two real bugs fixed along the way: the first pass resolved PD's names at module-eval time, before the seed had loaded, permanently freezing it on fallback data (a false-positive-passing bug, since the fallback matched the seed byte for byte); fixed by resolving everything lazily inside `draw()` and via real `G.drills._PRT`/`_PRT_UNVERIFIED_IDS` getters. The other seven PRT blocks have no equivalent seed record to read from (only "pd" is authored in `window.GUIDON_SEED.prt.drills`), so their exercise items stay hand-maintained and correctly tagged "(content pending)" until someone sources them - a content task, not a wiring one.
 - J. ~~Customizable screen layouts for PT Planner and Career Calendar~~ SHIPPED (v1.14.0): a `LAYOUTS` registry (`{id -> {label, render}}`) in both `pt-planner.js` and `calendar.js`, picked via new "Screen Layouts" Settings entries that read the registry dynamically, so a future layout needs no Settings-UI change to slot in. Three options per screen: Classic (unchanged), Shared grid (`date-grid.js`'s `G.dateGrid.renderWeek()`, one real component both screens render through via a shared date-cell contract), and one screen-specific layout each (Tasking Board for PT Planner, The Zero Board for Career Calendar). Plus six new themes (24 → 30), each passing the real per-theme contrast sweep.
 
 **Later:** data-driven What's New; the legal package as a verified, version-stamped artifact; macOS launch proof, a fixed-name Mac download and notarization-readiness; Study Rooms carrying PT plans and Team Training sessions; per-unit content packs; lanes on the ESP32 handheld.

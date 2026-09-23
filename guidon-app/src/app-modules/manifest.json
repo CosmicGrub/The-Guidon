@@ -352,8 +352,19 @@
       "optionalApis": []
     },
     {
-      "file": "99-release-v1151.js",
-      "id": "release-v1151",
+      "file": "99-release-v1153.js",
+      "id": "release-v1153",
+      "kind": "release-note",
+      "headless": true,
+      "requires": [],
+      "provides": [],
+      "routes": [],
+      "storageKeys": [],
+      "optionalApis": []
+    },
+    {
+      "file": "99-release-v1154.js",
+      "id": "release-v1154",
       "kind": "release-note",
       "headless": true,
       "requires": [],

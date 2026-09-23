@@ -288,10 +288,19 @@ const { page, noise } = boot;
   // much later, a false positive that a plain `until(page, async () => ...)`
   // call would not catch. This checks untilAsync() actually waits out a
   // real, awaited 250ms delay - not just that it eventually returns true.
-  const earlyAsync = await page.evaluate(() => { window.__lateAsync = false; setTimeout(() => { window.__lateAsync = true; }, 250); return window.__lateAsync; });
-  const beforeAsync = Date.now();
+  // Elapsed time is measured entirely from browser-side performance.now()
+  // timestamps (scheduled-at, then read back after the wait resolves) -
+  // never bracketed with Node's own Date.now() around the wait itself, so
+  // IPC/event-loop delay on the Node side (exactly the kind of contention
+  // this regression targets) cannot make the elapsed figure read short.
+  const earlyAsync = await page.evaluate(() => {
+    window.__lateAsync = false;
+    window.__lateAsyncScheduledAt = performance.now();
+    setTimeout(() => { window.__lateAsync = true; }, 250);
+    return window.__lateAsync;
+  });
   const arrivedAsync = await untilAsync(page, async () => { await new Promise((r) => setTimeout(r, 0)); return window.__lateAsync === true; });
-  const asyncElapsed = Date.now() - beforeAsync;
+  const asyncElapsed = await page.evaluate(() => performance.now() - window.__lateAsyncScheduledAt);
   const u0b = Date.now();
   const gaveUpAsync = await untilAsync(page, async () => { await new Promise((r) => setTimeout(r, 0)); return window.__neverSetAsync === true; }, null, { timeout: 500 });
   const withArg = await untilAsync(page, async (target) => { await new Promise((r) => setTimeout(r, 0)); return window.__lateAsync === target; }, true, { timeout: 500 });
