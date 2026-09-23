@@ -7,6 +7,13 @@
  * (UNINDEXED_DOMAIN_HASHES in views.js's views.search) pointing straight at
  * those routes.
  *
+ * Global Search content-coverage pass: Forms/Counsel/Develop/Health moved
+ * OUT of UNINDEXED_DOMAIN_HASHES in that same pass (each got a real,
+ * record-level hit type - see test-search-content-coverage.mjs for THEIR
+ * own coverage) and are asserted absent from this chip row below, same as
+ * the "Mock Board" negative check already did for a different reason.
+ * EXPECTED_HASHES shrank from 8 to the 4 that remain.
+ *
  * This exercises the real thing, not just "nothing throws":
  *   - a genuine zero-hit query renders the chip row with the correct
  *     number of chips, in the documented order, with real G.routes labels
@@ -45,7 +52,7 @@ const searchInput = page.locator('input[type="search"]');
 // truth in the app; labels are cross-checked against G.routes here so this
 // test also catches a future route-label rename going stale, same as the
 // live code resolving them at render time instead of hand-copying them.
-const EXPECTED_HASHES = ["#/forms", "#/counsel", "#/develop", "#/write", "#/money", "#/health", "#/transition", "#/moi"];
+const EXPECTED_HASHES = ["#/write", "#/money", "#/transition", "#/moi"];
 
 const liveRouteLabels = await page.evaluate((hashes) => {
   return hashes.map((h) => {
@@ -141,6 +148,16 @@ if (chips) {
   chips.chips.some((c) => /mock board/i.test(c.text))
     ? bad('a "Mock Board" chip rendered - #/board is already indexed by Search, this would point at a covered route')
     : ok('no stale "Mock Board" chip - correctly dropped since #/board is already indexed');
+
+  // Forms/Counsel/Develop/Health must NOT appear any more - the content-
+  // coverage pass gave each a real hit type and pulled it out of
+  // UNINDEXED_DOMAIN_HASHES (see that array's own comment in views.search).
+  // A stale carry-forward of the old 8-item list would fail this.
+  const stillListed = ["Forms", "Counsel", "Develop", "Health"].filter((label) =>
+    chips.chips.some((c) => c.text === label));
+  stillListed.length === 0
+    ? ok('none of the now-indexed domains (Forms, Counsel, Develop, Health) still appear in the un-indexed chip row')
+    : bad('domain(s) still listed as un-indexed despite now having real coverage: ' + stillListed.join(", "));
 }
 
 /* ---- clicking a chip actually navigates to its real, live route ---- */
@@ -164,20 +181,23 @@ if (moneyChipCount) {
 }
 
 /* ---- a second chip, to make sure this isn't a one-route fluke ---- */
+// "Transition" (#/transition), not "Forms" - Forms moved out of
+// UNINDEXED_DOMAIN_HASHES in the content-coverage pass (see this file's own
+// header comment) and is covered instead by test-search-content-coverage.mjs.
 await page.evaluate(() => { location.hash = "#/search"; });
 await page.waitForTimeout(400);
 await searchInput.fill("zzzzznonexistentqueryxyz");
 await page.waitForTimeout(300);
-const formsChip = page.locator(".search-empty-domains button.chip.search-chip", { hasText: "Forms" }).first();
-if (await formsChip.count()) {
-  await formsChip.click();
+const transitionChip = page.locator(".search-empty-domains button.chip.search-chip", { hasText: "ETS / Separating" }).first();
+if (await transitionChip.count()) {
+  await transitionChip.click();
   await page.waitForTimeout(500);
   const hash2 = await page.evaluate(() => location.hash);
-  hash2 === "#/forms"
-    ? ok('clicking the "Forms" chip navigated location.hash to "#/forms"')
-    : bad('clicking the "Forms" chip left location.hash as "' + hash2 + '", expected "#/forms"');
+  hash2 === "#/transition"
+    ? ok('clicking the "ETS / Separating" chip navigated location.hash to "#/transition"')
+    : bad('clicking the "ETS / Separating" chip left location.hash as "' + hash2 + '", expected "#/transition"');
 } else {
-  bad('no "Forms" chip found to click');
+  bad('no "ETS / Separating" chip found to click');
 }
 
 const relevantNoise = noise.filter((n) => !/favicon/.test(n));

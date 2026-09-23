@@ -20249,6 +20249,21 @@ window.G = window.G || {};
   /* ---------------- catalog view ---------------- */
   function render(mount) {
     var d = data();
+    // Global Search deep-link (views.search's goTo() calls G.nav.seed("forms",
+    // f.id) - see that view's own runSearch() comment, src/index.html) takes
+    // precedence over the plain catalog: a Soldier who searched "4856" and
+    // clicked the hit expects to land ON that form's own detail/replica view,
+    // the same as clicking its catalog card would, not back on the bare
+    // catalog they'd have to search again from. Same G.nav.seed/consume
+    // handoff train/resources/career already use for their own search hits.
+    // Consumed (read-and-cleared) before the catalog below ever builds, so an
+    // ordinary later visit to #/forms (nav click, back button) never replays
+    // a stale seed.
+    var searchSeed = G.nav && G.nav.consume("forms");
+    if (searchSeed && formById(searchSeed)) {
+      openForm(mount, searchSeed);
+      return;
+    }
     U.clear(mount);
     var wrap = U.el("div", { class: "forms-view" });
 
@@ -38272,10 +38287,30 @@ window.G = window.G || {};
     // of this commit (no content until Milestone 3), so these two types
     // will show zero hits until then, exactly like any other type with no
     // matching records - no special-casing needed for an empty store.
-    const TYPES = ["all","scenario","board","doctrine","creed","prt","lesson","resource","career","screen"];
-    const TYPE_ICON = { all:"⊞", scenario:"▶", board:"★", doctrine:"▤", creed:"🏳", prt:"⛹", lesson:"📖", resource:"🧭", career:"🎖", screen:"▣" };
-    const TYPE_COLOR = { scenario:"var(--ink-amber)", board:"var(--ink-cyan)", doctrine:"var(--ink-violet)", creed:"var(--ink-green)", prt:"var(--ink-red)", lesson:"var(--ink-green)", resource:"var(--ink-red)", career:"var(--ink-blue)", screen:"var(--ink-cyan)", all:"var(--text-dim)" };
-    const TYPE_LABEL = { all:"All", scenario:"Scenarios", board:"Board Q", doctrine:"Doctrine", creed:"Creeds & Identities", prt:"Physical Readiness", lesson:"Lessons", resource:"Resources", career:"MOS/Career", screen:"Screens & Settings" };
+    // "dictionary"/"forms"/"counsel"/"develop"/"health" added in the same
+    // pass that gave Global Search real relevance ranking (runSearch's
+    // hitScore() below) - see that block's own comment for why. Dictionary
+    // (G.dictionary / store.acronyms(), ~3,641 terms) was the single
+    // largest dataset in the app and had zero Global Search coverage of
+    // its own - only a generic "#/dictionary" screen chip (SCREEN_ENTRIES
+    // below), never a per-term hit. Forms/Counsel/Develop/Health give real
+    // record-level coverage to four of the eight UNINDEXED_DOMAIN_HASHES
+    // routes this same comment block used to list as having none at all -
+    // see UNINDEXED_DOMAIN_HASHES's own comment further down for which
+    // four remain un-indexed and why. Placed after "career" (the last of
+    // the original nine types) and before "screen" - "screen" stays the
+    // final catch-all fallback type, same position it's always held.
+    const TYPES = ["all","scenario","board","doctrine","creed","prt","lesson","resource","career","dictionary","forms","counsel","develop","health","screen"];
+    const TYPE_ICON = { all:"⊞", scenario:"▶", board:"★", doctrine:"▤", creed:"🏳", prt:"⛹", lesson:"📖", resource:"🧭", career:"🎖", dictionary:"🔤", forms:"📄", counsel:"🗣", develop:"📈", health:"❤", screen:"▣" };
+    // TYPE_COLOR reuses the same 5 real --ink-* tokens (--ink-amber/green/
+    // red/cyan/violet - see :root's own definitions) every existing type
+    // already shares two-plus ways; there's no unique color left to mint
+    // for a 6th/7th/8th/9th/10th type and this codebase has never tried
+    // to (career's own "var(--ink-blue)" above is dead: no --ink-blue
+    // custom property is defined anywhere in this file, a pre-existing
+    // gap outside this pass's scope - left as-is, not compounded further).
+    const TYPE_COLOR = { scenario:"var(--ink-amber)", board:"var(--ink-cyan)", doctrine:"var(--ink-violet)", creed:"var(--ink-green)", prt:"var(--ink-red)", lesson:"var(--ink-green)", resource:"var(--ink-red)", career:"var(--ink-blue)", dictionary:"var(--ink-violet)", forms:"var(--ink-amber)", counsel:"var(--ink-green)", develop:"var(--ink-cyan)", health:"var(--ink-red)", screen:"var(--ink-cyan)", all:"var(--text-dim)" };
+    const TYPE_LABEL = { all:"All", scenario:"Scenarios", board:"Board Q", doctrine:"Doctrine", creed:"Creeds & Identities", prt:"Physical Readiness", lesson:"Lessons", resource:"Resources", career:"MOS/Career", dictionary:"Dictionary", forms:"Forms", counsel:"Counseling", develop:"IDP / Development", health:"Health & Resilience", screen:"Screens & Settings" };
 
     let activeFilter = "all";
     const filterBar = el("div.search-filters");
@@ -38369,6 +38404,42 @@ window.G = window.G || {};
       return span;
     }
 
+    // Real relevance ranking, added alongside the Dictionary/Forms/Counsel/
+    // Develop/Health hit types above. Before this, every type's group was
+    // rendered in whatever order its own store getter happened to return
+    // records in (insertion order in the seed/content-pack JSON) - for a
+    // broad query against a big type like the new 3,641-term Dictionary,
+    // that meant the MAX_PER=8 cap could easily keep 8 records that only
+    // mention the query deep in a long definition while the ONE record
+    // whose acronym IS the query sat uncapped-but-unseen past position 8.
+    // hitScore() runs on hits that already passed their own _hay.includes()
+    // substring filter above (this never changes WHICH records match,
+    // only the ORDER a type's group is in before the existing MAX_PER
+    // slice), and ranks title match > sub match > body match, with an
+    // exact whole-field or whole-word match outscoring a bare substring
+    // within each field - a query that exactly names a record (like
+    // Dictionary's own acronym-first convention, matched in that view's
+    // own sortHits()) should always outrank a record that merely mentions
+    // it in passing. `body` is an extra, longer text field a handful of
+    // hit-builders below set purely for this scoring pass - it is never
+    // rendered (the render loop only reads h.title/h.sub/h.meta), so a
+    // type that doesn't set it just scores 0 for that third tier and ranks
+    // on title/sub alone, same as before this pass for every pre-existing
+    // type that had no natural third field.
+    function escSearchRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+    function hitScore(ql, h) {
+      function fieldScore(text, weight) {
+        if (!text) return 0;
+        const t = String(text).toLowerCase();
+        if (t === ql) return weight;
+        try {
+          if (new RegExp("(^|[^a-z0-9])" + escSearchRe(ql) + "($|[^a-z0-9])").test(t)) return weight * 0.7;
+        } catch (e) { /* ql can't form a bad pattern here - escSearchRe neutralizes every regex metachar - but never let a scoring helper throw and blank the results pane */ }
+        return t.includes(ql) ? weight * 0.4 : 0;
+      }
+      return fieldScore(h.title, 100) + fieldScore(h.sub, 30) + fieldScore(h.body, 10);
+    }
+
     // Adapted from Doctrine's jumpToDocEntry: scroll to and pulse the
     // already-rendered card rather than rebuilding it. The trailing
     // .focus() is new here, not present in Doctrine's version - it's safe
@@ -38422,11 +38493,33 @@ window.G = window.G || {};
     // FROM ROUTES" in this file), so a future route rename can't leave a
     // stale label on one of these chips the way it did for the roadmap's
     // own "Resilience"/"Health" drift above.
-    const UNINDEXED_DOMAIN_HASHES = ["#/forms", "#/counsel", "#/develop", "#/write", "#/money", "#/health", "#/transition", "#/moi"];
+    //
+    // Global Search coverage pass, same audit that added the "dictionary"
+    // hit type (TYPES above): four of the original seven un-indexed
+    // domains actually had clean, flat, non-MOS-gated record arrays sitting
+    // right behind their route the whole time - Forms (store.forms().forms,
+    // 34 DA/DD forms searchable by form number/name - the highest-value gap,
+    // since a Soldier typing a form number like "4856" got nothing before
+    // this), Counsel (store.counsel().skills, 12 counseling-technique
+    // entries), Develop (store.idp().goalTemplates, 25 IDP goal templates,
+    // each with its own real citation), and Health (store.resilience()
+    // .skills + .resources, 17 entries spanning resilience techniques and
+    // real crisis-line contact info). Each now has its own real
+    // allHits-pushing block below, the same _hay-cached substring-match
+    // pattern every other type uses, so they're pulled out of this list.
+    // Money, Write, and Transition were re-checked too and genuinely don't
+    // fit the same pass: their data is nested multi-level objects (budget
+    // buckets, memo/bullet/SITREP templates, milestone timelines) rather
+    // than one flat array of self-contained records - forcing a fit there
+    // would mean flattening structure this same audit didn't have time to
+    // do carefully. MOI stays un-indexed for the same reason Mock Board
+    // isn't its own chip above: it's an import workflow over a Soldier's
+    // own uploaded document, not a bank of GUIDON's own records to search.
+    const UNINDEXED_DOMAIN_HASHES = ["#/write", "#/money", "#/transition", "#/moi"];
 
     // "screen" search type: a Soldier who types a screen's own name, or a
     // real-world word for what it does ("dark mode", "PCS", "PRT"), gets a
-    // direct hit - not just the eight UNINDEXED_DOMAIN_HASHES routes above
+    // direct hit - not just the four UNINDEXED_DOMAIN_HASHES routes above
     // (which only surface as a fallback chip on a TOTAL zero-hit query, and
     // only by their exact G.routes label), and not just the six SECTION_ORDER
     // content domains, which cover real records (doctrine entries, board
@@ -38538,8 +38631,19 @@ window.G = window.G || {};
       const cur  = store.curriculum ? store.curriculum() : {};
       const res  = store.resources ? store.resources() : { categories: [] };
       const car  = store.career ? store.career() : { mos: [] };
+      // New hit types (see TYPES' own comment above): none of these four
+      // getters do any settings/MOS/tier filtering (unlike scenarios()/
+      // boardQuestions()/career() above) - they're plain `state.seed.X ||
+      // default` reads, so every record in them is always in scope for
+      // every Soldier, the same way doctrine()/creeds()/resources() above
+      // already are.
+      const dict = store.acronyms ? store.acronyms() : { terms: [] };
+      const frm  = store.forms ? store.forms() : { forms: [] };
+      const cns  = store.counsel ? store.counsel() : { skills: [] };
+      const idpD = store.idp ? store.idp() : { goalTemplates: [] };
+      const hlt  = store.resilience ? store.resilience() : { skills: [], resources: [] };
 
-      const allHits = { scenario:[], board:[], doctrine:[], creed:[], prt:[], lesson:[], resource:[], career:[], screen:[] };
+      const allHits = { scenario:[], board:[], doctrine:[], creed:[], prt:[], lesson:[], resource:[], career:[], dictionary:[], forms:[], counsel:[], develop:[], health:[], screen:[] };
 
       // Roadmap audit round 4, "Performance: startup cost, layout thrashing, and memory leaks"
       // bucket: every one of these six per-record `hay` strings used to be rebuilt from raw
@@ -38563,7 +38667,7 @@ window.G = window.G || {};
           if (s._hay.includes(ql)) {
             allHits.scenario.push({ type:"scenario", id:s.id, title:s.title,
               sub:(s.competency||[]).join(" · ")+" · "+s.difficulty,
-              meta: (s.tier||[]).join("/"), route:"#/train", scId:s.id });
+              meta: (s.tier||[]).join("/"), body:s.summary||"", route:"#/train", scId:s.id });
           }
         });
       }
@@ -38582,7 +38686,7 @@ window.G = window.G || {};
             const qText = q2.q || "";
             allHits.board.push({ type:"board", id:q2.id,
               title: qText.length > 80 ? qText.slice(0,80)+"…" : qText,
-              sub:"Board: "+q2.category, meta:q2.category, route:"#/board" });
+              sub:"Board: "+q2.category, meta:q2.category, body:q2.a||"", route:"#/board" });
           }
         });
       }
@@ -38598,7 +38702,7 @@ window.G = window.G || {};
             // that it does, coercing an object straight to text would print
             // the literal string "[object Object]" on every doctrine hit.
             allHits.doctrine.push({ type:"doctrine", id:e.title, title:e.title,
-              sub:"Doctrine: "+e.topic, meta:(e.source||[]).map((s)=>s.pub).join(", "), route:"#/doctrine" });
+              sub:"Doctrine: "+e.topic, meta:(e.source||[]).map((s)=>s.pub).join(", "), body:e.body||"", route:"#/doctrine" });
           }
         });
       }
@@ -38621,7 +38725,7 @@ window.G = window.G || {};
           }
           if (c._hay.includes(ql)) {
             allHits.creed.push({ type:"creed", id:c.id, title:c.officialTitle||c.id,
-              sub:"Creeds & Identities: "+(c.branch||c.group||""), meta:(c.source||[]).map((s)=>s.pub).join(", "), route:"#/creeds" });
+              sub:"Creeds & Identities: "+(c.branch||c.group||""), meta:(c.source||[]).map((s)=>s.pub).join(", "), body:c.fullText||c.history||"", route:"#/creeds" });
           }
         });
       }
@@ -38633,7 +38737,7 @@ window.G = window.G || {};
           }
           if (p._hay.includes(ql)) {
             allHits.prt.push({ type:"prt", id:p.id, title:p.name||p.id,
-              sub:"Physical Readiness: "+(p.drillId||"").toUpperCase(), meta:(p.source||[]).map((s)=>s.pub).join(", "), route:"#/prt" });
+              sub:"Physical Readiness: "+(p.drillId||"").toUpperCase(), meta:(p.source||[]).map((s)=>s.pub).join(", "), body:p.movementDescription||"", route:"#/prt" });
           }
         });
       }
@@ -38641,12 +38745,16 @@ window.G = window.G || {};
         (cur.courses||[]).forEach((c) => {
           (c.lessons||[]).forEach((l) => {
             if (l._hay === undefined) {
-              const body = l.body || (l.tiers ? Object.values(l.tiers).join(" ") : "");
-              l._hay = ((l.title||"")+" "+body).toLowerCase();
+              // Cached on the record as `_bodyText` (alongside `_hay`, same
+              // pattern), not just a local const, so the ranking push below -
+              // which only runs on a LATER call once _hay is already cached
+              // and this whole if-block is skipped - still has it to read.
+              l._bodyText = l.body || (l.tiers ? Object.values(l.tiers).join(" ") : "");
+              l._hay = ((l.title||"")+" "+l._bodyText).toLowerCase();
             }
             if (l._hay.includes(ql)) {
               allHits.lesson.push({ type:"lesson", id:l.id, title:l.title,
-                sub:"Learn: "+c.title, meta:"", route:"#/learn" });
+                sub:"Learn: "+c.title, meta:"", body:l._bodyText||"", route:"#/learn" });
             }
           });
         });
@@ -38658,7 +38766,7 @@ window.G = window.G || {};
             if (it._hay === undefined) it._hay = ((it.name||"")+" "+(it.d||"")+" "+(c2.name||"")).toLowerCase();
             if (it._hay.includes(ql)) {
               allHits.resource.push({ type:"resource", id:it.name, title:it.name,
-                sub:c2.name+" — "+it.d, meta:c2.name, route:"#/resources", resSeed:it.name });
+                sub:c2.name+" — "+it.d, meta:c2.name, body:it.d||"", route:"#/resources", resSeed:it.name });
             }
           });
         });
@@ -38682,10 +38790,135 @@ window.G = window.G || {};
           }
           if (m._hay.includes(ql)) {
             allHits.career.push({ type:"career", id:m.code, title:m.code+" — "+m.title,
-              sub:m._cmfName, meta:m.status && m.status !== "normal" ? m.status : "", route:"#/career", mosSeed:m.code });
+              sub:m._cmfName, meta:m.status && m.status !== "normal" ? m.status : "", body:m.notes||"", route:"#/career", mosSeed:m.code });
           }
         });
       }
+
+      // Dictionary/Acronyms (G.dictionary, store.acronyms().terms - ~3,641
+      // Army and Army-applicable joint terms, the single largest dataset in
+      // the app). `_hay` reuses the EXACT SAME cache key and formula
+      // Dictionary's own view (js/dictionary.js, `match()`) already caches
+      // on these same term objects - store.acronyms() returns the same
+      // memoized array/objects both places, so whichever of #/dictionary
+      // or #/search a Soldier visits first primes the cache for the other;
+      // this doesn't duplicate that view's own caching, it shares it.
+      // title is the acronym itself (matches Dictionary's own "acronym
+      // first" convention - see that view's sortHits()); sub is the full
+      // definition, same "longer descriptive sub line" pattern Resources'
+      // own hits already use above; meta is the ARMY/ARMY+JOINT/JOINT
+      // badge text (srcLabel() in dictionary.js renders the identical
+      // three labels from the same `src` field, kept as plain badge()-
+      // free text here since h.meta only ever renders as bare text, never
+      // dictionary.js's styled <span class="tag">).
+      if (activeFilter === "all" || activeFilter === "dictionary") {
+        (dict.terms || []).forEach((t) => {
+          if (t._hay === undefined) t._hay = (t.a + " " + t.d).toLowerCase();
+          if (t._hay.includes(ql)) {
+            allHits.dictionary.push({ type:"dictionary", id:t.a, title:t.a, sub:t.d,
+              meta: t.src === "army" ? "ARMY" : t.src === "both" ? "ARMY+JOINT" : "JOINT",
+              body:t.d, route:"#/dictionary" });
+          }
+        });
+      }
+
+      // Forms (G.forms, store.forms().forms - 34 DA/DD forms). Highest-
+      // value of the newly-indexed UNINDEXED_DOMAIN_HASHES domains (see
+      // that array's own comment above) - a Soldier typing a form number
+      // ("4856", "638") or its plain name ("counseling form", "award
+      // recommendation") now gets a direct hit instead of nothing. formSeed
+      // carries the matched form's id through to forms.js via the same
+      // G.nav.seed("forms", ...) handoff resources/career/train already
+      // use (goTo() below) - forms.js's render() consumes it and opens
+      // that exact form's detail/replica view directly, same as clicking
+      // its catalog card would, rather than landing on the bare catalog.
+      if (activeFilter === "all" || activeFilter === "forms") {
+        (frm.forms || []).forEach((f) => {
+          if (f._hay === undefined) {
+            f._hay = ((f.form||"")+" "+(f.title||"")+" "+(f.purpose||"")+" "+(f.reference||"")+" "+(f.category||"")).toLowerCase();
+          }
+          if (f._hay.includes(ql)) {
+            allHits.forms.push({ type:"forms", id:f.id, title:(f.form||"")+(f.title ? " — "+f.title : ""),
+              sub:"Forms: "+(f.category||""), meta:f.reference||"", body:f.purpose||"",
+              route:"#/forms", formSeed:f.id });
+          }
+        });
+      }
+
+      // Counseling (G.counsel, store.counsel().skills - 12 counseling-
+      // technique entries: the three counseling types, active-listening
+      // qualities, and the rest of ATP 6-22.1's own framing). Distinct
+      // from the "counsel" QUERY text a Soldier might type (which also
+      // matches Forms' DA 4856 entry, Screen's own #/counsel chip, etc. -
+      // real, useful cross-domain overlap, not a collision) and distinct
+      // from #/counsel's own separate `drills` array (scenario ids, not
+      // standalone records - not indexed here, same "doesn't cleanly fit
+      // this pattern" call UNINDEXED_DOMAIN_HASHES's comment makes for
+      // Money/Write/Transition).
+      if (activeFilter === "all" || activeFilter === "counsel") {
+        (cns.skills || []).forEach((sk) => {
+          if (sk._hay === undefined) {
+            sk._hay = ((sk.name||"")+" "+(sk.body||"")+" "+(sk.points||[]).join(" ")).toLowerCase();
+          }
+          if (sk._hay.includes(ql)) {
+            allHits.counsel.push({ type:"counsel", id:sk.name, title:sk.name,
+              sub:"Counseling: "+(sk.ref||""), meta:"", body:sk.body||"", route:"#/counsel" });
+          }
+        });
+      }
+
+      // IDP / Develop (G.idp, store.idp().goalTemplates - 25 real
+      // Individual Development Plan goal templates, each already carrying
+      // its own citation). idp.domains (Institutional/Operational/Self-
+      // Development, 3 broad categories) is deliberately NOT indexed here -
+      // goalTemplates is the concrete, specific-enough-to-search layer;
+      // the 3 domains are closer to a taxonomy than standalone records.
+      if (activeFilter === "all" || activeFilter === "develop") {
+        (idpD.goalTemplates || []).forEach((gt) => {
+          if (gt._hay === undefined) {
+            gt._hay = ((gt.title||"")+" "+(gt.domainLabel||"")+" "+(gt.cite||"")+" "+(gt.measure||"")).toLowerCase();
+          }
+          if (gt._hay.includes(ql)) {
+            allHits.develop.push({ type:"develop", id:gt.id, title:gt.title,
+              sub:"IDP: "+(gt.domainLabel||""), meta:gt.cite||"", body:gt.measure||"", route:"#/develop" });
+          }
+        });
+      }
+
+      // Health / Resilience (G.resilience, store.resilience() - two flat
+      // arrays combined into one hit type: .skills (7 resilience-technique
+      // entries like "Hunt the Good Stuff", each with its own MRT/Penn
+      // Resiliency citation) and .resources (10 real support contacts -
+      // the Veterans Crisis Line, Army Chaplain, and similar - where
+      // `meta` surfaces the actual phone/contact line, not just a
+      // category). resilience.domains' own PER-DOMAIN nested `.skills`
+      // arrays (Physical/Nutritional/Mental/Spiritual/Sleep/Social, ~20
+      // more entries one level deeper) are left for a future pass rather
+      // than forced in here - flattening six differently-shaped nested
+      // collections cleanly was more than this pass's remaining time
+      // allowed; the two flat, top-level arrays already give #/health real
+      // record-level coverage where it had none.
+      if (activeFilter === "all" || activeFilter === "health") {
+        (hlt.skills || []).forEach((sk) => {
+          if (sk._hay === undefined) {
+            sk._hay = ((sk.name||"")+" "+(sk.body||"")+" "+(sk.points||[]).join(" ")+" "+(sk.domain||"")).toLowerCase();
+          }
+          if (sk._hay.includes(ql)) {
+            allHits.health.push({ type:"health", id:sk.name, title:sk.name,
+              sub:"Health: "+(sk.domain||""), meta:sk.ref||"", body:sk.body||"", route:"#/health" });
+          }
+        });
+        (hlt.resources || []).forEach((r) => {
+          if (r._hay === undefined) {
+            r._hay = ((r.name||"")+" "+(r.desc||"")+" "+(r.contact||"")+" "+(r.type||"")).toLowerCase();
+          }
+          if (r._hay.includes(ql)) {
+            allHits.health.push({ type:"health", id:r.name, title:r.name,
+              sub:"Health: "+(r.type||""), meta:r.contact||"", body:r.desc||"", route:"#/health" });
+          }
+        });
+      }
+
       if (activeFilter === "all" || activeFilter === "screen") {
         SCREEN_ENTRIES.forEach((entry, i) => {
           const r = (G.routes || []).find((x) => x.hash === entry.hash);
@@ -38695,7 +38928,7 @@ window.G = window.G || {};
             const note = G.demoNotes && G.demoNotes[entry.hash];
             allHits.screen.push({ type:"screen", id:entry.hash + ":" + i, title: entry.label || r.label,
               sub: entry.settingsAnchor ? "Settings" : "Screen", meta: note ? note.d : "",
-              route: entry.hash, settingsAnchor: entry.settingsAnchor });
+              body: entry.keywords||"", route: entry.hash, settingsAnchor: entry.settingsAnchor });
           }
         });
       }
@@ -38769,13 +39002,21 @@ window.G = window.G || {};
       }
 
       // Render by group (sections)
-      const SECTION_ORDER = ["scenario","board","doctrine","creed","prt","lesson","resource","career","screen"];
-      const SECTION_LABEL = { scenario:"Scenarios", board:"Board Questions", doctrine:"Doctrine", creed:"Creeds & Identities", prt:"Physical Readiness", lesson:"Lessons", resource:"Resources", career:"MOS / Career", screen:"Screens & Settings" };
+      const SECTION_ORDER = ["scenario","board","doctrine","creed","prt","lesson","resource","career","dictionary","forms","counsel","develop","health","screen"];
+      const SECTION_LABEL = { scenario:"Scenarios", board:"Board Questions", doctrine:"Doctrine", creed:"Creeds & Identities", prt:"Physical Readiness", lesson:"Lessons", resource:"Resources", career:"MOS / Career", dictionary:"Dictionary", forms:"Forms", counsel:"Counseling", develop:"IDP / Development", health:"Health & Resilience", screen:"Screens & Settings" };
       const MAX_PER = activeFilter === "all" ? 8 : 40;
 
       SECTION_ORDER.forEach((type) => {
         const group = allHits[type];
         if (!group.length) return;
+        // Real relevance ranking (hitScore() above) - sorts the WHOLE group
+        // (every hit that matched, not just the ones the cap below will
+        // keep) so the cap keeps the group's actual best N, not just its
+        // first N in whatever order the underlying store returned them.
+        // Never changes which records matched, never removes the cap -
+        // exactly the same slice(0, MAX_PER) call as before, just fed a
+        // ranked array instead of the raw one.
+        group.sort((a, b) => hitScore(ql, b) - hitScore(ql, a));
         const section = el("div.search-section");
         if (activeFilter === "all") {
           section.appendChild(el("div.search-section-head", {
@@ -38835,6 +39076,9 @@ window.G = window.G || {};
             }
             if (type === "career" && h.mosSeed) {
               G.nav.seed("career", h.mosSeed);
+            }
+            if (type === "forms" && h.formSeed) {
+              G.nav.seed("forms", h.formSeed);
             }
             if (type === "screen" && h.settingsAnchor) {
               G.nav.seed("settingsAnchor", h.settingsAnchor);

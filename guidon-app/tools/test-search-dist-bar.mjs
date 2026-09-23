@@ -59,10 +59,20 @@ async function search(q) {
 }
 
 /* ---- multi-domain query: proportionality + color + section order ---- */
-const SECTION_ORDER = ["scenario", "board", "doctrine", "lesson", "resource", "career", "screen"];
+// Full canonical order, matching views.search's own SECTION_ORDER exactly
+// (src/index.html) - content-coverage pass added dictionary/forms/counsel/
+// develop/health, all five of which "counsel" (the test query, unrelated to
+// the new "counsel" TYPE it happens to share a name with - Counseling
+// content genuinely matches its own query text) turns out to hit, on top of
+// creed/prt which were ALREADY missing from this list before that pass (both
+// always score 0 hits for "counsel" and get filtered out below, same as any
+// other domain that happens not to match a given query).
+const SECTION_ORDER = ["scenario", "board", "doctrine", "creed", "prt", "lesson", "resource", "career", "dictionary", "forms", "counsel", "develop", "health", "screen"];
+const TYPE_LABEL = { scenario: "Scenarios", board: "Board Q", doctrine: "Doctrine", creed: "Creeds & Identities", prt: "Physical Readiness", lesson: "Lessons", resource: "Resources", career: "MOS/Career", dictionary: "Dictionary", forms: "Forms", counsel: "Counseling", develop: "IDP / Development", health: "Health & Resilience", screen: "Screens & Settings" };
+const SECTION_LABEL = { scenario: "Scenarios", board: "Board Questions", doctrine: "Doctrine", creed: "Creeds & Identities", prt: "Physical Readiness", lesson: "Lessons", resource: "Resources", career: "MOS / Career", dictionary: "Dictionary", forms: "Forms", counsel: "Counseling", develop: "IDP / Development", health: "Health & Resilience", screen: "Screens & Settings" };
 await search("counsel");
 
-const barSnapshot = await page.evaluate((SECTION_ORDER) => {
+const barSnapshot = await page.evaluate(({ SECTION_ORDER, SECTION_LABEL }) => {
   const segs = [...document.querySelectorAll(".search-dist-seg")];
   const sections = [...document.querySelectorAll(".search-section")];
   // Order only (which domains have a section, and in what order) - NOT
@@ -70,8 +80,22 @@ const barSnapshot = await page.evaluate((SECTION_ORDER) => {
   // activeFilter is "all" (see runSearch's own MAX_PER), so a rendered
   // card count is not a valid ground truth for the real per-domain hit
   // count the moment any domain exceeds 8 hits - which "counsel" does.
-  const domainsInOrder = [];
-  sections.forEach((sec, i) => { if (sec.querySelector(".search-section-head")) domainsInOrder.push(SECTION_ORDER[i]); });
+  //
+  // Determined by reading each rendered section's OWN heading text and
+  // matching it against SECTION_LABEL, not by a raw positional index into
+  // SECTION_ORDER - an index-based mapping silently assumes every domain
+  // in SECTION_ORDER has at least one hit (no gaps), which happened to be
+  // true for this query against the old 7-domain list but is false the
+  // moment ANY domain in a longer canonical list scores zero (creed/prt
+  // always do, for this query) - the render loop skips empty groups
+  // entirely (`if (!group.length) return;`), so sections[i] is NOT
+  // SECTION_ORDER[i] in general.
+  const domainsInOrder = sections.map((sec) => {
+    const head = sec.querySelector(".search-section-head");
+    if (!head) return null;
+    const text = head.textContent || "";
+    return SECTION_ORDER.find((t) => text.includes(SECTION_LABEL[t])) || null;
+  }).filter(Boolean);
   return {
     segTitles: segs.map((s) => s.title),
     segFlexGrow: segs.map((s) => Number(s.style.flexGrow)),
@@ -82,7 +106,7 @@ const barSnapshot = await page.evaluate((SECTION_ORDER) => {
       ? document.querySelector(".search-dist-bar").getAttribute("aria-label")
       : null,
   };
-}, SECTION_ORDER);
+}, { SECTION_ORDER, SECTION_LABEL });
 
 // Ground truth for each domain's REAL hit count: switch the filter to that
 // single domain (query text unchanged) and read .search-count - with
@@ -95,7 +119,7 @@ for (const t of SECTION_ORDER) {
   await page.evaluate((label) => {
     const chip = [...document.querySelectorAll(".search-chip")].find((b) => b.textContent.includes(label));
     if (chip) chip.click();
-  }, { scenario: "Scenarios", board: "Board Q", doctrine: "Doctrine", lesson: "Lessons", resource: "Resources", career: "MOS/Career", screen: "Screens & Settings" }[t]);
+  }, TYPE_LABEL[t]);
   await page.waitForTimeout(150);
   const text = await page.evaluate(() => (document.querySelector(".search-count") || {}).textContent || "");
   const m = /^(\d+)/.exec(text.trim());
@@ -155,7 +179,9 @@ proportionalityOk
 // Color: each segment's background must be the exact TYPE_COLOR value for
 // its domain - the same map driving the filter chips and card accents.
 const TYPE_COLOR = { scenario: "var(--ink-amber)", board: "var(--ink-cyan)", doctrine: "var(--ink-violet)",
-  lesson: "var(--ink-green)", resource: "var(--ink-red)", career: "var(--ink-blue)", screen: "var(--ink-cyan)" };
+  creed: "var(--ink-green)", prt: "var(--ink-red)", lesson: "var(--ink-green)", resource: "var(--ink-red)",
+  career: "var(--ink-blue)", dictionary: "var(--ink-violet)", forms: "var(--ink-amber)", counsel: "var(--ink-green)",
+  develop: "var(--ink-cyan)", health: "var(--ink-red)", screen: "var(--ink-cyan)" };
 let colorOk = true;
 expectedOrder.forEach((domain, idx) => {
   if (state.segBg[idx] !== TYPE_COLOR[domain]) {
