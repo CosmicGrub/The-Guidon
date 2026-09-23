@@ -3337,7 +3337,21 @@ mark.dict-hi {
   border-radius: 6px;
   color: var(--text-1);
   padding: 9px 12px;
-  font-size: 1rem;
+  /* max(), not a plain 1rem: html's own font-size is data-text-scale-
+     dependent (5307-5310 above) and the default "standard" scale is
+     .94rem, so a plain "1rem" here computes to ~15px at the app's own
+     default setting - under the 16px iOS focuses-and-zooms-the-page
+     threshold tools/verify-ios-webkit.mjs enforces. Two .ob-input
+     instances (input[type=date] on #/calendar, input[type=search] on
+     #/leader) were already carrying this exact defect, tolerated in
+     tools/ios-webkit-baseline.json rather than fixed. A third
+     (select.ob-input, the AFT calculator's age band/sex/standard
+     selects on #/fitness) is what surfaced it again - fixed at the
+     shared class so all three (and any future .ob-input) are covered
+     at once, and the two pre-existing baseline entries are removed in
+     the same change per that file's own "fix it, don't baseline it"
+     rule, since neither still reproduces after this. */
+  font-size: max(1rem, 16px);
   font-family: var(--font-mono);
   box-sizing: border-box;
 }
