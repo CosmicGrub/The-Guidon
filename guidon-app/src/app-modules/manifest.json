@@ -316,6 +316,19 @@
       "optionalApis": []
     },
     {
+      "file": "13-da2166-ncoer.js",
+      "id": "da2166-ncoer-content",
+      "kind": "content-pack",
+      "emit": "build",
+      "headless": true,
+      "note": "Finds the existing Forms Trainer entry id \"da4856ncoer\" (DA Form 2166-9-2, NCOER for SSG-1SG/MSG) in bank.forms.forms and extends it in place: fixes a real mislabeled rating-scale bug, adds the three missing Part IV attribute bullets (Character/Presence/Intellect) plus rater overall comments, and adds the Part V - Senior Rater section this stub never had. Also pushes 3 matching board-drill flashcards for the facts this pack itself newly confirmed. bank.forms is untouched by tools/assemble-bank.mjs's own board/doctrine/scenario counts() and by lint-content-packs.mjs, which is why this note spells out what it does instead of relying on the usual \"added N cards\" build-log line to say it.",
+      "requires": [],
+      "provides": [],
+      "routes": [],
+      "storageKeys": [],
+      "optionalApis": []
+    },
+    {
       "file": "98-content-pack-finalize.js",
       "id": "content-pack-finalize",
       "kind": "finalize",
