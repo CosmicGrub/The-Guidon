@@ -34985,8 +34985,8 @@ window.G = window.G || {};
 
       if (c.source && c.source.length) {
         var srcParts = c.source.map(function (s) {
-          var statusLabel = CREED_SOURCE_STATUS_LABEL[s.status] || s.status;
-          return s.pub + (s.para ? ", " + s.para : "") + (s.edition ? " (" + s.edition + ")" : "") + " — " + statusLabel;
+          var statusLabel = s.status ? (CREED_SOURCE_STATUS_LABEL[s.status] || s.status) : "";
+          return s.pub + (s.para ? ", " + s.para : "") + (s.edition ? " (" + s.edition + ")" : "") + (statusLabel ? " — " + statusLabel : "");
         });
         card.appendChild(el("p.hint", { text: "Source: " + srcParts.join("; "), style: "margin-top:12px" }));
       }
