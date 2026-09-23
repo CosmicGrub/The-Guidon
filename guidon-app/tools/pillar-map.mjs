@@ -135,6 +135,15 @@ export const PACK_CATEGORIES = {
   "Army Profession": DB,
   "Cybersecurity & OPSEC": null,
   "Cybersecurity Fundamentals": null,
+  // MLC/senior-NCO content pack (10-mlc-senior-leader-content.js): course
+  // facts, organizational/strategic leadership (ADP 6-22 Ch 9-10), NCOER
+  // rater responsibilities, readiness reporting and talent management sit
+  // squarely in the app's existing Leadership & Counseling pillar (the same
+  // pillar "Levels of Leadership" and "Leadership Requirements Model"
+  // already use); the mission-command/MDMP-at-echelon half of the same pack
+  // is operations doctrine, matching "Mission Command (ADP 6-0)" above.
+  "Master Leader Course (MLC)": LC,
+  "Mission Command at Echelon": DT,
 };
 
 export function pillarForBoard(q) { return CATEGORY_PILLAR[q.category] || PACK_CATEGORIES[q.category] || null; }

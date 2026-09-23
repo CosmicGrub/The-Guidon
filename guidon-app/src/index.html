@@ -2700,7 +2700,8 @@ button:focus:not(:focus-visible),
    text nobody wants force-wrapped narrower for no reason. */
 .blc-view p.hint, .blc-view li, .blc-view label,
 .alc-view p.hint, .alc-view li, .alc-view label,
-.slc-view p.hint, .slc-view li, .slc-view label {
+.slc-view p.hint, .slc-view li, .slc-view label,
+.mlc-view p.hint, .mlc-view li, .mlc-view label {
   max-width: 70ch;
 }
 
@@ -22903,6 +22904,8 @@ window.G = window.G || {};
                      w:"'Getting a seat' explains why finishing your technical track early moves you up an entire priority tier." },
     "#/slc":       { d:"SLC and the senior gates above it — MLC and the Sergeants Major Course.",
                      w:"Opens with a PME-transformation warning: course lengths are actively changing and sources disagree." },
+    "#/mlc":       { d:"MLC preparation for SFCs and MSGs — organizational/strategic leadership, mission command at echelon, NCOER rater responsibilities and readiness reporting, built from AR 350-1 and DA PAM 600-25's own course descriptions.",
+                     w:"Open 'The real shift' — organizational and strategic leadership (ADP 6-22 Ch 9-10), the section every course below MLC skips." },
     "#/drills":    { d:"Rehearsable versions of what BLC and ALC actually grade — squad drill, PRT, brief timer, essay rubric, MDMP.",
                      w:"Start the brief rehearsal timer: it colour-codes the 8:00–12:00 acceptable window in real time." },
     "#/doctrine":  { d:"Doctrine entries cross-referenced to ADP, FM, TC and AR sources, searchable by topic.",
@@ -23139,22 +23142,23 @@ window.G = window.G || {};
       { icon:"★", label:"Army Programs & Readiness", why:"SHARP, EO, Safety, and Army programs are your accountability. A complaint in your section reflects on your leadership." },
       { icon:"◆", label:"Army Leadership", why:"Mission Command, the Operations Process, and organizational-level leadership are your emerging domain." },
     ],
-    // E7-E9: GUIDON's deep-dive curriculum (BLC/ALC-style, 17-section
-    // modules) currently only exists through E6/SSG - it would be
-    // dishonest to point a Sergeant Major at fabricated course depth that
-    // doesn't exist yet. These three entries point at what's genuinely
-    // here instead: the survey-level senior-NCO module (#/slc, "SLC &
-    // Beyond") plus the general-purpose leadership/readiness content every
-    // tier shares. Previously SFC-SMA silently mapped to tier E6 and got
-    // the SSG entries above verbatim - wrong content, not just thin content.
+    // E7-E9: MLC / senior-NCO content pack gave E7 and E8 a real, dedicated
+    // deep-dive module (#/mlc, mirroring BLC/ALC/SLC's own shape) plus 41
+    // E7/E8-tagged board cards - so these two tiers now point at genuine
+    // MLC-depth content instead of the old "survey level only" framing.
+    // E9 still has no dedicated Sergeants Major Course module (out of this
+    // pack's scope - MLC only), so it keeps pointing at SLC Prep's own
+    // survey-level SMC section, honestly, the same as before. Previously
+    // SFC-SMA silently mapped to tier E6 and got the SSG entries above
+    // verbatim - wrong content, not just thin content; that bug stays fixed.
     'E7': [
-      { icon:"★", label:"SLC Prep (senior NCO gates)", why:"SLC, MLC and the Sergeants Major Course are covered at survey level in the SLC Prep module — the deep-dive treatment BLC/ALC get further down the ladder." },
-      { icon:"◆", label:"Army Leadership", why:"Organizational and strategic leadership doctrine (ADP 6-22) applies at this level; the module content itself isn't yet tiered specifically for E7." },
-      { icon:"▤", label:"MDMP & Troop Leading Procedures", why:"Staff-level MDMP participation is standard at SFC. The existing module covers the process; it isn't rank-gated content." },
+      { icon:"★", label:"MLC Prep (PRIORITY)", why:"MLC is the NCOPDS gate above SLC and the course you are preparing for as an SFC — organizational/strategic leadership, mission command at echelon, and the rater responsibilities you take on as a senior NCO." },
+      { icon:"◆", label:"Army Leadership", why:"Organizational and strategic leadership doctrine (ADP 6-22 Ch 9-10) is covered in depth inside MLC Prep; this module carries the same doctrine at general-purpose depth." },
+      { icon:"▤", label:"MDMP & Troop Leading Procedures", why:"Staff-level MDMP participation is standard at SFC, and MDMP is now formally part of MLC's own program of instruction." },
     ],
     'E8': [
-      { icon:"★", label:"SLC Prep (senior NCO gates)", why:"MLC and the Sergeants Major Course are covered at survey level here — full MSG/1SG-specific curriculum depth isn't built out yet." },
-      { icon:"◆", label:"Army Leadership", why:"Strategic-leadership doctrine (ADP 6-22) applies; content isn't yet tiered specifically for E8." },
+      { icon:"★", label:"MLC Prep (PRIORITY)", why:"MLC Prep covers the course in real depth for MSGs still owing the school, plus the NCOER-rater and readiness-reporting responsibilities that come with the rank." },
+      { icon:"◆", label:"Army Leadership", why:"Strategic-leadership doctrine (ADP 6-22 Ch 9-10) is covered in depth inside MLC Prep; this module carries the same doctrine at general-purpose depth." },
       { icon:"★", label:"Army Programs & Readiness", why:"SHARP, EO and Safety program ownership scales with rank; the existing module content is shared across tiers, not E8-specific." },
     ],
     'E9': [
@@ -23600,10 +23604,10 @@ window.G = window.G || {};
     promotion:  ["#/board", "#/records", "#/progress", "#/currency"],
     ets:        ["#/transition", "#/money", "#/resources"],
     transition: ["#/transition", "#/career", "#/assignments", "#/resources"],
-    leadership: ["#/drills", "#/leader", "#/develop", "#/risk", "#/blc", "#/alc", "#/slc"],
+    leadership: ["#/drills", "#/leader", "#/develop", "#/risk", "#/blc", "#/alc", "#/slc", "#/mlc"],
     doctrine:   ["#/doctrine", "#/dictionary", "#/library", "#/creeds"],
     counseling: ["#/counsel", "#/write", "#/forms"],
-    nco:        ["#/blc", "#/alc", "#/slc", "#/drills"],
+    nco:        ["#/blc", "#/alc", "#/slc", "#/mlc", "#/drills"],
     risk:       ["#/risk"],
     training:   ["#/train", "#/drills", "#/calendar"],
     pt:         ["#/prt", "#/fitness"],
@@ -23687,8 +23691,8 @@ window.G = window.G || {};
       'E4': "E4 / SPC -- SGT Board Prep is your #1 course. Covers the board questions you will be asked, report-in procedures, NCO Creed, and uniform standards. NCO Roles and Military Presence are also priority. Everything feeds your board.",
       'E5': "E5 / SGT -- Developing Others and MDMP/TLP are now your professional responsibilities. You counsel Soldiers, receive OPORDs, and execute TLPs. Army Leadership and NCO Core Competencies apply to your daily work.",
       'E6': "E6 / SSG -- Developing NCOs (not just Soldiers) is your primary task. MDMP at section level, Army Programs accountability, and organizational leadership are your focus. You are a force multiplier for your SGTs.",
-      'E7': "E7 / SFC -- GUIDON's board-prep depth tops out at E6; from here, SLC Prep covers SLC/MLC/SMC at survey level rather than full course depth. Army Leadership doctrine still applies at every tier.",
-      'E8': "E8 / MSG, 1SG -- Same as E7: SLC Prep is the closest fit for MLC and the Sergeants Major Course, at survey level. Dedicated MSG/1SG course material isn't built out yet.",
+      'E7': "E7 / SFC -- MLC Prep is your #1 course: organizational/strategic leadership, mission command at echelon, and the NCOER-rater responsibilities that come with senior-NCO rank. SLC Prep still covers the SMC gate above MLC at survey level.",
+      'E8': "E8 / MSG, 1SG -- MLC Prep covers the course you may still owe, plus real board-drill content tagged for your grade. SLC Prep covers the Sergeants Major Course above it at survey level.",
       'E9': "E9 / SGM, CSM, SMA -- SLC Prep covers the Sergeants Major Course at survey level, the closest thing GUIDON has to E9-specific content today.",
     };
     return PREVIEW[tier] || "Courses will be sorted by relevance to your rank.";
@@ -26171,6 +26175,7 @@ window.G = window.G || {};
     const links = el("div.panel", { style:"margin-top:10px" });
     links.appendChild(el("div.eyebrow", { text:"Work it here" }));
     [["BLC Prep","#/blc"], ["ALC Prep \u2014 the gate before this","#/alc"],
+     ["MLC Prep \u2014 the next gate","#/mlc"],
      ["Army writing \u2014 essays and briefings","#/write"],
      ["Counseling & developing NCOs","#/counsel"],
      ["Board Drill \u2014 MDMP, mission command","#/board"],
@@ -26190,6 +26195,228 @@ window.G = window.G || {};
   G.slc = { render, KEY, SELF_CHECK };
 })();
 // END slc.js
+
+/* ==== js/mlc.js ==== */
+/* GUIDON — mlc.js : Master Leader Course preparation module (G.mlc)
+   Audience: SFCs and MSGs looking at MLC — the NCOPDS gate above SLC.
+   Public doctrinal and published-course information only.
+
+   Fills a real gap: SLC's own module (slc.js, just above) already survey-
+   covers MLC in one collapsible section for the SSG/SFC audience looking
+   ahead at it; this module is the dedicated deep-dive BLC/ALC/SLC each get
+   for their own course, aimed at the SFC/MSG actually about to attend.
+   Mirrors G.blc/G.alc/G.slc's exact structure — same SECTIONS/SELF_CHECK/
+   KEY shape, same renderSelfCheckWidget call, same collapsible-panel
+   render() — deliberately, per this pack's own house rule: find the
+   established pattern and copy it, don't invent a new one.
+
+   Sourcing: AR 350-1 para 3-38a/b (1 June 2025) and DA PAM 600-25 para
+   2-12e(4) (11 September 2023) for the course's own official description —
+   the same two paragraphs GUIDON's existing board card pmeed-5 already
+   cites, confirmed rather than reinvented. ADP 6-22 Chapters 9-10
+   (Organizational and Strategic Leadership) and ADP 6-0, Command and
+   Control (7 July 2026 edition, which superseded and retitled the 31 July
+   2019 "Mission Command" edition) for the doctrine MLC teaches. AR 623-3
+   and AR 220-1 for the rater/readiness-reporting responsibilities a
+   newly-pinned MSG takes on. NOTE: like BLC/ALC/SLC's own modules, MLC's
+   exact course length and academic-hour count are called out as actively
+   changing under the Army's PME transformation rather than stated as a
+   single fixed number — see the "changed" section below.
+*/
+window.G = window.G || {};
+(function () {
+  "use strict";
+  const util = G.util, el = util.el;
+
+  const SECTIONS = [
+    { id:"what", icon:"◆", title:"What MLC actually is",
+      body:"The Master Leader Course is the fourth course in the NCO Professional Development System — branch-immaterial, resident, and the gate above SLC. Per AR 350-1, MLC exists ‘to acquire the leader skills required for success at both company, troop, and staff assignments throughout the defense establishment.’ Its defining shift from every course below it is scope: MLC moves you from tactical-level leadership toward operational-level thinking — understanding how your formation fits into something much larger than itself.",
+      points:[
+        "Fourth NCOPDS course: BLC → ALC → SLC → MLC → SMC",
+        "Branch-immaterial — like BLC, unlike the MOS-specific ALC/SLC — so your class is mixed-MOS SFCs and MSGs",
+        "SLC is a formal prerequisite — you cannot enroll in MLC without it (AR 350-1, para 3-38a)",
+        "Target training population is grades E-7 and E-8 (AR 350-1, para 3-38b) — SFCs preparing for MSG, and MSGs who still owe the school",
+        "AR 350-1's areas of study: public speaking, other services’ capabilities, mission command, understanding and applying MDMP, decisive action, organizational management, and inter-agency/multinational considerations",
+        "DA PAM 600-25 (para 2-12e(4)) frames the same course as challenging selected SFCs in professional writing, communication, public speaking, critical thinking, organizational and command leadership, management skills, and the joint and operational level of war fighting"
+      ] },
+
+    { id:"changed", icon:"⚠", title:"Read this first — MLC is actively being rebuilt",
+      body:"Like BLC, ALC and SLC, MLC is mid-redesign under the Army's ongoing NCO PME transformation. Treat any specific length or hour count you were told more than a few months ago as suspect, and confirm with your S-1 and NCOLCoE before you plan around it.",
+      points:[
+        "Course length is being extended — public TRADOC/NCO Leadership Center of Excellence reporting describes a move from 15 training days (112 academic hours) to 21 training days (144 academic hours)",
+        "MDMP is newly added to the program of instruction — it was not previously part of MLC",
+        "A multi-day warfighting capstone has been added, reported at roughly three days (about 24 academic hours), in which students apply early MDMP steps in a first-sergeant-relevant scenario",
+        "Public reporting describes Active Component initial operational capability beginning 14 July 2026, with Army Reserve/National Guard full operational capability in October 2026 — which version of the course you attend may depend on exactly when and where you go",
+        "MLC's connection to promotion is itself in motion: GUIDON's own doctrine content already notes MLC “is becoming a requirement for MSG” as the redesign fields it — confirm your own gate rather than assuming last year's rule still applies",
+        "As with BLC/ALC/SLC: this is a real, in-execution change, not a rumor — but the exact current figures belong to your ATRRS course announcement and your NCO Academy, not to any single source written months ago"
+      ] },
+
+    { id:"orgstrat", icon:"▤", title:"The real shift: organizational and strategic leadership",
+      body:"Every NCOPDS course below MLC operates inside ADP 6-22's direct-leadership chapters — face-to-face, one echelon at a time. MLC is where the Leadership Requirements Model gets re-taught at scale: Chapter 9 (Organizational Leadership) and Chapter 10 (Strategic Leadership), each built around the same Leading / Developing / Achieving frame you already know, scaled up.",
+      points:[
+        "Chapter 9 (Organizational Leadership): Leading (para 9-1), Developing (para 9-3), Achieving (para 9-6)",
+        "Chapter 10 (Strategic Leadership): Leading (para 10-2), Developing (para 10-5), Achieving (para 10-7)",
+        "Rank does not determine the level — position does (ADP 6-22, para 1-123): a battalion CSM and the SMA hold comparable rank but operate at very different leadership levels",
+        "An organizational leader's defining communication job: push intent two echelons down, and understand intent two echelons up (para 1-128) — you are no longer giving daily face-to-face guidance to every subordinate",
+        "You verify subordinates actually understand intent through personal observation and visits (para 1-129), not just by reading reports",
+        "Strategic leaders take a long-term view and often will not see their own decisions reach fruition during their tenure (para 1-132) — which is exactly why picking and developing the people who will carry the work forward matters so much"
+      ] },
+
+    { id:"c2", icon:"▣", title:"Command and control, and mission command at echelon",
+      body:"ADP 6-0 was retitled from ‘Mission Command: Command and Control of Army Forces’ to simply ‘Command and Control’ in its 7 July 2026 edition — mission command was not dropped, it is now framed as the Army's approach for exercising command and control, inside a publication about the larger subject. MLC teaches this as a system, not a slogan.",
+      points:[
+        "Four chapters: Ch 1 Fundamentals of Command and Control, Ch 2 Command, Ch 3 Control, Ch 4 The Command and Control Warfighting Function",
+        "Mission command definition (para 1-37): ‘the Army's approach to command and control that empowers subordinate decision making and decentralized execution appropriate to the situation’",
+        "Seven principles (para 1-49): competence, mutual trust, shared understanding, commander's intent, mission orders, disciplined initiative, risk acceptance",
+        "The 2026 revision no longer treats the command post as one static center — forces disperse across multiple C2 nodes for survivability, which changes how a staff section actually operates",
+        "The C2 system is people, processes, networks/data and C2 nodes together — a senior staff NCO is frequently the one who makes the ‘people and processes’ half of that actually work under pressure",
+        "Building mutual trust and shared understanding across a formation — two of the seven principles — is, in practice, a senior NCO's daily work as much as a commander's"
+      ] },
+
+    { id:"mdmp", icon:"⚒", title:"MDMP — newly on the syllabus, and what it asks of you",
+      body:"AR 350-1 lists ‘understanding and applying military decision making process’ among MLC's areas of study — the first time it is formally taught to you at this depth. At the organizational level you are less often the one executing a plan handed down, and more often a contributor to building it.",
+      points:[
+        "The Operations Process (ADP 5-0) has four activities: Plan, Prepare, Execute, Assess — a senior NCO contributes during Plan (staff estimates) and is a key set of eyes during Assess",
+        "A running estimate — a continuously updated status/facts/assumptions/risk product for your own functional area — is the concrete product you are most likely to own",
+        "If your estimate surfaces a real risk late, with no time left to fully war-game it: report it clearly and in time to inform the decision — MDMP is built to run on the best available information under pressure, not to wait for perfect information",
+        "MLC's capstone applies the early MDMP steps — receipt of mission, mission analysis, course of action development — in a first-sergeant-relevant scenario",
+        "JIIM (Joint, Interagency, Intergovernmental, Multinational) considerations sit alongside MDMP in AR 350-1's list — at this level you coordinate outside a single-Service, single-unit bubble more often"
+      ] },
+
+    { id:"ncoer", icon:"★", title:"The NCOER shifts under you — now you're the rater",
+      body:"Most Soldiers arrive at MLC having been rated for years. MLC-level responsibility means becoming the rater — sometimes for the first time — and AR 623-3 puts real obligations on that role that a rated Soldier never had to think about.",
+      points:[
+        "Rater minimum qualifying period: 90 calendar days supervising the rated NCO",
+        "Senior rater minimum qualifying period: 60 calendar days — the senior rater is the rater's own immediate supervisor",
+        "Senior raters (or their designated representative) are responsible for the completed report reaching HRC within 90 calendar days of the THRU date — timeliness is its own, separate obligation from content",
+        "Rater tendency — a pattern of inflated or deflated ratings from one rater — is a documented, tracked problem; an inflated first NCOER you write sets an inaccurate baseline the rated NCO and the Army both then have to live with",
+        "Senior raters are also a checkpoint for the evaluation SYSTEM's integrity — compliance with how reports are prepared and forwarded — not only an evaluator of the one Soldier in front of them"
+      ] },
+
+    { id:"readiness", icon:"⚑", title:"Readiness reporting — whose numbers, whose responsibility",
+      body:"AR 220-1 governs the Commander's Unit Status Report (CUSR) — named that way on purpose, to emphasize that the unit commander is solely responsible for its accuracy. As the senior NCO feeding that report, your role is providing the honest ground truth it is built from.",
+      points:[
+        "AR 220-1 requires reports that neither mask (hide) nor exaggerate readiness deficiencies — an overly rosy report is exactly as much a violation as an overly pessimistic one",
+        "The regulation demands timely, accurate and complete reporting — not a report that looks good, one that is true",
+        "A senior NCO who inflates or sits on bad personnel/training/equipment data is undermining the same standard AR 220-1 exists to protect, one step removed from the actual signature block",
+        "Practical read: when pressure arrives to ‘find a way to get the numbers closer to green’ before a report goes up, the doctrinally sound move is reporting the real numbers AND briefing what is already being done about the shortfall — not choosing between honesty and looking capable"
+      ] },
+
+    { id:"talent", icon:"▲", title:"Talent management — not just filling the next vacancy",
+      body:"The U.S. Army Talent Management Strategy, ‘Force 2025 and Beyond: Ready, Professional, Diverse, and Integrated,’ is the doctrine behind a question MLC expects you to be good at answering: who is actually the right fit for this position, not just who is next in line.",
+      points:[
+        "Talent management means matching a person's actual knowledge, skills, behaviors and preferences to the position that develops them most and benefits the organization most — not defaulting to strict seniority",
+        "Development is framed as a shared investment: the gaining organization, the individual NCO, and the Army's future bench of leaders all benefit from a well-matched placement",
+        "The Enlisted Marketplace / Assignment Interactive Module inside IPPS-A is the practical tool built on this doctrine — letting a Soldier's preference and a gaining unit's stated need both factor into an assignment",
+        "The hard case is real: your best-fit NCO for a demanding, unglamorous slot may not want it. Talent-management doctrine's answer is a genuine conversation about the position's value, not a unilateral order and not simply picking whoever is willing"
+      ] },
+
+    { id:"prep", icon:"⚒", title:"Sharpen the sword — before MLC",
+      body:"By MLC you are being assessed on operational-level judgment, not squad-level execution. Most of it can be built now, at your own unit, before you ever sit in a classroom.",
+      points:[
+        "Read ADP 6-22 Chapters 9 and 10 — organizational and strategic leadership — and be able to explain, in your own words, what changes about HOW you lead as the scope grows",
+        "Read the current ADP 6-0 (7 July 2026, Command and Control) — know the seven mission command principles and what ‘dispersed C2 nodes’ means for how a staff section actually operates now",
+        "If you have never formally rated anyone: ask a mentor to walk you through AR 623-3's rater/senior rater responsibilities and the concept of rater tendency before your first NCOER cycle",
+        "If you contribute to a readiness report at any level, practice giving the honest number FIRST, then the plan to fix it — that habit is exactly what AR 220-1 asks for",
+        "Build or contribute to one real running estimate for your functional area — sustainment, personnel, training — so MDMP participation is not a cold start",
+        "Have one real conversation about talent management: where would a strong subordinate NCO actually grow the most, even if it costs your own section their best performer",
+        "Keep AFT, body composition and records clean — graduation standards still include them, the same as every NCOPDS course below MLC"
+      ] },
+
+    { id:"after", icon:"⇢", title:"After MLC",
+      body:"MLC completion is tied to the next gates above it — and, like everything else in this module, exactly how is still settling under the Army's PME transformation.",
+      points:[
+        "Verify your course completion posted — the same iPERMS/ATRRS follow-through every NCOPDS course requires",
+        "MLC is an eligibility step toward the Sergeants Major Course; SGM-A completion itself remains the formal pin-on requirement for SGM",
+        "MLC's connection to MSG pin-on is explicitly in transition — confirm your own requirement with S-1 and your career counselor rather than assuming a fixed rule",
+        "Start thinking in organizational terms now: what does your formation look like two echelons up, and what do you owe the leaders two echelons down",
+        "The next and highest gate is the Sergeants Major Course — resident (10 months) or by distance learning (moving toward roughly 12 months, down from 18–24)"
+      ] }
+  ];
+
+  const SELF_CHECK = [
+    "I can explain what changes about HOW a leader leads between the direct, organizational, and strategic levels",
+    "I can name ADP 6-0's seven principles of mission command and give a real example of mutual trust or shared understanding I built",
+    "I understand AR 623-3's rater (90-day) and senior rater (60-day) minimum qualifying periods and what each role is actually responsible for",
+    "I can explain rater tendency and why an inflated first NCOER creates a lasting problem",
+    "I know what AR 220-1 requires a readiness report to do — and what it explicitly forbids on both the rosy and the pessimistic side",
+    "I have contributed to, or built, a real running estimate for MDMP in my own functional area",
+    "I can describe talent management as matching fit and development, not just filling the next vacancy",
+    "I have read ADP 6-22 Chapters 9 and 10 and can describe organizational leadership's ‘intent two echelons down, understand it two echelons up’ responsibility",
+    "I know MLC's official areas of study (AR 350-1, para 3-38a) well enough to explain them to a Soldier prepping for the course",
+    "My AFT, body composition and records would survive selection and graduation standards",
+    "I have had at least one real conversation about a subordinate NCO's best developmental placement, even when it was not convenient for my own section"
+  ];
+
+  const KEY = "guidon:mlc:checks:v1";
+
+  async function render(mount) {
+    util.clear(mount);
+    // Same 70ch reading-comfort scoping as blc.js/alc.js/slc.js's own
+    // -view classes - see the .blc-view CSS rule's comment for why a bare
+    // selector would leak onto every other route's .panel text.
+    mount.classList.add("mlc-view");
+    mount.appendChild(el("div.section-title", {}, [
+      el("h2", { text: "MLC Prep" }), el("div.rule") ]));
+    mount.appendChild(el("p.hint", {
+      text: "For sergeants first class and master sergeants — the NCOPDS gate above SLC. MLC shifts you from tactical to operational-level leadership and is built from AR 350-1 and DA PAM 600-25's own course descriptions." }));
+
+    // Same shared self-check widget BLC/ALC/SLC use (util.renderSelfCheckWidget)
+    // - only KEY/SELF_CHECK/note differ per module, matching the established
+    // pattern rather than hand-rolling a fourth copy.
+    await util.renderSelfCheckWidget(mount, {
+      key: KEY,
+      items: SELF_CHECK,
+      idPrefix: "mlc",
+      note: (done, total) => done === total
+        ? "That is operational-level preparation, not just course preparation. It will show in the capstone."
+        : done >= 8 ? "Strong. The remaining items are the ones a rating chain or a readiness report will expose."
+        : done >= 5 ? "Solid base. The rater/senior rater responsibilities and one real running estimate close most of the gap."
+        : "Start with ADP 6-22 Chapters 9-10 and the seven mission command principles — both are free reading and both anchor everything else here.",
+    });
+
+    SECTIONS.forEach((s) => {
+      const panel = el("div.panel", { style:"margin-bottom:10px" });
+      const head = el("button", { type:"button", "aria-expanded":"false",
+        style:"width:100%;text-align:left;background:none;border:none;cursor:pointer;padding:0;color:inherit;font:inherit;min-height:44px;display:flex;align-items:center" });
+      head.appendChild(el("div.eyebrow", { text: s.icon + "  " + s.title }));
+      const bodyWrap = el("div", { style:"display:none" });
+      bodyWrap.appendChild(el("p.hint", { text: s.body, style:"margin-top:4px" }));
+      const ul = el("ul", { style:"margin:8px 0 0 18px" });
+      s.points.forEach(pt => ul.appendChild(el("li", { text: pt, style:"margin:4px 0" })));
+      bodyWrap.appendChild(ul);
+      head.addEventListener("click", () => {
+        const open = bodyWrap.style.display !== "none";
+        bodyWrap.style.display = open ? "none" : "block";
+        head.setAttribute("aria-expanded", open ? "false" : "true");
+      });
+      panel.appendChild(head); panel.appendChild(bodyWrap);
+      mount.appendChild(panel);
+    });
+
+    const links = el("div.panel", { style:"margin-top:10px" });
+    links.appendChild(el("div.eyebrow", { text:"Work it here" }));
+    [["SLC Prep — the gate before this","#/slc"],
+     ["Board Drill — filter Master Leader Course (MLC) / Mission Command at Echelon","#/board"],
+     ["Counseling & DA 4856","#/counsel"],
+     ["Army writing — essays and briefings","#/write"],
+     ["Doctrine library","#/doctrine"],
+     ["Channels & Gates — promotion requirements table","#/channels"]].forEach(([label, hash]) => {
+      const b = el("button.btn.sm.ghost", { type:"button", text: label, style:"margin:4px 6px 0 0" });
+      b.addEventListener("click", () => { location.hash = hash; });
+      links.appendChild(b);
+    });
+    mount.appendChild(links);
+
+    mount.appendChild(el("p.hint", { style:"margin-top:12px",
+      text:"Course length, program of instruction and pin-on/eligibility specifics are moving under the Army's PME transformation and vary by component and report date. Confirm every specific with your S-1, your career counsellor, and the NCO Leadership Center of Excellence course announcement you are scheduled against. Nothing here is a substitute for your ATRRS course announcement." }));
+  }
+
+  // KEY/SELF_CHECK exposed for Home's "My readiness" dashboard strip - see
+  // the matching comment on G.blc above for why.
+  G.mlc = { render, KEY, SELF_CHECK };
+})();
+// END mlc.js
 
 /* ==== js/drills.js ==== */
 /* GUIDON — drills.js : NCOPDS practical drills (G.drills)
@@ -34430,15 +34657,19 @@ window.G = window.G || {};
       // above - that score is purely SRS-grade-derived, and silently
       // blending a checklist-completion signal into it would change what
       // that existing number means without anyone asking for that. G.blc/
-      // G.alc/G.slc now expose KEY+SELF_CHECK, and G.records exposes
+      // G.alc/G.slc/G.mlc now expose KEY+SELF_CHECK, and G.records exposes
       // KEY+TOTAL+VALID_IDS (previously all private to their own closures)
       // specifically so this tile can read each module's real progress
-      // instead of re-deriving its own copy of four different id schemes.
+      // instead of re-deriving its own copy of five different id schemes.
+      // MLC/senior-NCO content pack: G.mlc joined this list the same way
+      // G.blc/G.alc/G.slc already did - no special-casing needed, since the
+      // loop below reads any module via its own SELF_CHECK/KEY shape.
       try {
         const checklists = [
           { mod: G.blc },
           { mod: G.alc },
           { mod: G.slc },
+          { mod: G.mlc },
           { mod: G.records },
         ];
         let checklistsComplete = 0;
@@ -34476,9 +34707,9 @@ window.G = window.G || {};
         // any of these four checklists.
         if (anyChecklistProgress) hasAnyProgress = true;
         tiles.push({
-          label: "PME & Records checklists", value: checklistsComplete + "/4",
-          sub: checklistsComplete === 4 ? "All complete" : anyChecklistProgress ? "Keep going" : "Not started",
-          hash: "#/records", tone: checklistsComplete === 4 ? "green" : "amber",
+          label: "PME & Records checklists", value: checklistsComplete + "/" + checklists.length,
+          sub: checklistsComplete === checklists.length ? "All complete" : anyChecklistProgress ? "Keep going" : "Not started",
+          hash: "#/records", tone: checklistsComplete === checklists.length ? "green" : "amber",
         });
       } catch (e) {}
 
@@ -38026,6 +38257,7 @@ window.G = window.G || {};
       { hash: "#/blc", keywords: "basic leader course NCOPDS" },
       { hash: "#/alc", keywords: "advanced leader course NCOPDS" },
       { hash: "#/slc", keywords: "senior leader course NCOPDS" },
+      { hash: "#/mlc", keywords: "master leader course NCOPDS senior NCO organizational strategic leadership mission command" },
       { hash: "#/drills", keywords: "leadership scenario drills" },
       { hash: "#/leader", keywords: "squad roster leader roster soldier tracker" },
       { hash: "#/risk", keywords: "risk worksheet composite risk management DA 7566" },
@@ -38461,6 +38693,11 @@ window.G = window.G || {};
     // follow the "BLC Prep"/"ALC Prep" sibling pattern, which read as an
     // unexplained inconsistency next to the two labels right above it.
     { hash: "#/slc", label: "SLC Prep", ico: "star", render: (m) => G.slc.render(m) },
+    // MLC / senior-NCO content pack: the NCOPDS gate above SLC had no
+    // dedicated deep-dive module even though BLC/ALC/SLC each got one -
+    // see src/app-modules/10-mlc-senior-leader-content.js's own header for
+    // the gap this fills. Follows the exact BLC/ALC/SLC label/icon pattern.
+    { hash: "#/mlc", label: "MLC Prep", ico: "scale", render: (m) => G.mlc.render(m) },
     // Was "NCOPDS Drills" - the densest bare acronym in the whole nav
     // (Intuitivism pass, terminology lens: even the Guided Tour's own
     // tooltip for this route never expanded it). "Leadership Drills"
@@ -38584,10 +38821,10 @@ window.G = window.G || {};
     // kind to Learn/Forms/Write than to the BLC/ALC/SLC course-prep
     // cluster it used to sit in.
     { id: "study",   label: "Study & Skills", hashes: ["#/learn", "#/forms", "#/write", "#/counsel"] },
-    // PME course-prep self-checks (BLC/ALC/SLC) | leadership practice
+    // PME course-prep self-checks (BLC/ALC/SLC/MLC) | leadership practice
     // tools (Leadership Drills/Squad Roster/My IDP/Risk).
-    { id: "lead",    label: "Leadership",     hashes: ["#/blc", "#/alc", "#/slc", "#/drills", "#/leader", "#/develop", "#/risk"],
-      subdivideAfter: "#/slc" },
+    { id: "lead",    label: "Leadership",     hashes: ["#/blc", "#/alc", "#/slc", "#/mlc", "#/drills", "#/leader", "#/develop", "#/risk"],
+      subdivideAfter: "#/mlc" },
     // Career-track (MOS Center/Assignments/Channels/Transition) | personal
     // (Money/Health/Fitness/Resources). Reordered from the flat list so
     // the two clusters sit contiguous - #/transition moved next to
