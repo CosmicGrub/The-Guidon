@@ -290,6 +290,19 @@
       "optionalApis": []
     },
     {
+      "file": "11-aft-event-scoring-content.js",
+      "id": "aft-event-scoring-content",
+      "kind": "content-pack",
+      "emit": "build",
+      "headless": true,
+      "note": "Standing content-pipeline rule: 5 board-drill cards for the new AFT per-event scoring calculator (aft-scoring.js) - the 60-per-event auto-fail rule, the 300/350 aggregate minimums, the Combat standard's shared-column mechanic, the sex-neutral Plank, and the 5 events in order. Same two sources aft-scoring.js itself cites.",
+      "requires": [],
+      "provides": [],
+      "routes": [],
+      "storageKeys": [],
+      "optionalApis": []
+    },
+    {
       "file": "98-content-pack-finalize.js",
       "id": "content-pack-finalize",
       "kind": "finalize",
@@ -503,14 +516,27 @@
       "optionalApis": []
     },
     {
+      "file": "aft-scoring.js",
+      "id": "aft-scoring",
+      "kind": "feature",
+      "note": "The real per-event AFT (Army Fitness Test) score calculator: raw performance (deadlift lbs, HRP reps, SDC/PLK/2MR times) in, event points and the 0-500 aggregate out, against the real age/sex-normed 'Army Fitness Test Score Tables' (Approved 15 May 2025 / Effective 1 June 2025 - see tools/gen-aft-tables.mjs for the source trail). Pure data + calculation, no DOM of its own - fitness.js's #/fitness screen is the only caller today.",
+      "headless": true,
+      "requires": [],
+      "provides": ["G.aftScoring.AGE_BANDS", "G.aftScoring.EVENTS", "G.aftScoring.EVENT_ORDER", "G.aftScoring.ageToBand", "G.aftScoring.columnFor", "G.aftScoring.scoreEvent", "G.aftScoring.scoreAll", "G.aftScoring.clockToSec", "G.aftScoring.secToClock"],
+      "routes": [],
+      "storageKeys": [],
+      "optionalApis": []
+    },
+    {
       "file": "fitness.js",
       "id": "fitness",
       "kind": "feature",
+      "note": "requires aft-scoring (which loads earlier) for the AFT Event Score Calculator panel on #/fitness - raw per-event performance in, event points + aggregate out. \"Send this aggregate to the PPW\" merges just the aftScore field into guidon:ppw:v1, the same kv row index.html's own PPW worksheet (renderPoints, #/board) reads and writes - a deliberate, single-field, user-triggered cross-link (every other PPW field is read back untouched), not a second owner of that row's usual writes.",
       "headless": false,
-      "requires": [],
+      "requires": ["aft-scoring"],
       "provides": ["G.fitness.render", "G.fitness.AS_OF"],
       "routes": ["#/fitness"],
-      "storageKeys": [],
+      "storageKeys": ["guidon:aft-calc:v1", "guidon:ppw:v1"],
       "optionalApis": []
     },
     {
