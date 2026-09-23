@@ -368,7 +368,9 @@ async function bootWithTier(tier, viewport) {
       ? ok(`the lesson reader's back button correctly names the selected course ("${backBtnText}")`)
       : bad(`back button text "${backBtnText}", expected "‹ ${expectedCourse.title}"`);
 
-    await page.evaluate(() => { document.querySelector(".btn.ghost.sm.no-print").click(); });
+    backBtnText
+      ? await page.evaluate(() => { document.querySelector(".btn.ghost.sm.no-print").click(); })
+      : bad(".btn.ghost.sm.no-print was not present to click (back button never rendered)");
     await page.waitForTimeout(200);
 
     const after = await page.evaluate(() => ({

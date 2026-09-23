@@ -104,11 +104,22 @@ domainsPresent.length >= 3 && domainsPresent.includes("doctrine")
     : bad(`${type} hits never render a .search-hit-meta line - h.meta still being dropped for this domain (found ${entries.length} ${type} hit(s): ${JSON.stringify(entries)})`);
 });
 
-// The doctrine-specific shape-bug check: doctrine's meta must be a clean,
-// short citation string (its source.ref), never the coerced object.
+// The doctrine-specific shape-bug check: doctrine's meta must be a clean
+// citation string (its source array's .pub values, joined), never the
+// coerced object. The real regression this guards against is the literal
+// "[object Object]" string (15 chars) - the length cap only exists to
+// catch something absurd (a whole paragraph landing in meta), not to
+// enforce a specific citation length: a real multi-pub doctrine citation
+// like "Multiple ARs — 600-85, 608-18, H2F, SHARP" legitimately runs
+// longer than a single-pub one, and Global Search's relevance ranking
+// (runSearch's hitScore(), src/index.html) can now surface ANY doctrine
+// hit into the MAX_PER=8-capped "army" query's results, not just whichever
+// ones happened to sort first by raw seed order before that pass - so a
+// tight length threshold tuned against one incidental pre-ranking sample
+// is exactly the kind of assertion ranking should be expected to outgrow.
 const docEntries = (snapshot.byType["doctrine"] || []).filter((e) => e.meta !== null && e.meta.trim() !== "");
 if (docEntries.length) {
-  const bad_ = docEntries.filter((e) => /\[object Object\]/.test(e.meta) || e.meta.length > 40);
+  const bad_ = docEntries.filter((e) => /\[object Object\]/.test(e.meta) || e.meta.length > 160);
   bad_.length === 0
     ? ok(`doctrine .search-hit-meta is a real citation string, not a coerced object (samples: ${docEntries.slice(0,3).map(e=>JSON.stringify(e.meta)).join(", ")})`)
     : bad(`doctrine .search-hit-meta looks wrong: ${JSON.stringify(bad_)}`);

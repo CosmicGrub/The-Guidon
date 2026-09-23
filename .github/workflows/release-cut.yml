@@ -1,9 +1,22 @@
 name: Cut release
 
 # Stage 1 of a release. A version bump lands first; changing .release-prep to
-# that version then creates the immutable source tag + GitHub Release. Only after
-# this job is green should .release-trigger be changed, which fans out the
-# platform asset workflows from the already-created tag.
+# that version then creates the immutable source tag + GitHub Release.
+#
+# FAN-OUT (fixed 2026-09-23). This job used to leave stage 2 - fanning out
+# release-assets.yml/release-apple.yml - to a later push of
+# guidon-app/src/.release-trigger, on the theory that push would fire their
+# own `tags: ['v*']`/`paths: [.release-trigger]` triggers. It never did:
+# GitHub Actions does not start new workflow runs from events authored by
+# GITHUB_TOKEN (this job's own tag push included), and .release-trigger sat
+# unchanged at v1.10.0 in practice - confirmed empirically, v1.15.0/.3/.4 all
+# published with zero assets and no Downloads section, every real fan-out
+# since v1.10.1 having actually happened via a human clicking
+# workflow_dispatch by hand. workflow_dispatch/repository_dispatch are the
+# two exceptions to that GITHUB_TOKEN rule, so the "Create or verify
+# release" step below now dispatches both platform workflows directly
+# instead of relying on a push trigger neither of them can receive from
+# here.
 #
 # WHAT "GREEN" MEANS HERE (changed 2026-09-18). This job used to check only
 # that .release-prep matched package.json, then tag and publish within
@@ -36,7 +49,10 @@ on:
 
 permissions:
   contents: write
-  actions: read
+  # write, not read: needed to dispatch release-assets.yml/release-apple.yml
+  # below (workflow_dispatch is one of the two GITHUB_TOKEN exceptions that
+  # actually starts another workflow run - see the fan-out note above).
+  actions: write
 
 concurrency:
   group: cut-release
@@ -110,3 +126,12 @@ jobs:
             exit 1
           }
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY"
+
+          # Explicit dispatch, not the tag push above: GITHUB_TOKEN-authored
+          # events never start another workflow's push trigger, so without
+          # this the release stays at zero assets until someone remembers
+          # to click workflow_dispatch by hand (see the fan-out note at the
+          # top of this file).
+          echo "Dispatching release-assets.yml and release-apple.yml for $TAG..."
+          gh workflow run release-assets.yml --repo "$GITHUB_REPOSITORY" --ref main -f tag="$TAG"
+          gh workflow run release-apple.yml --repo "$GITHUB_REPOSITORY" --ref main

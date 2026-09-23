@@ -31,8 +31,20 @@
  *
  * `--seed <path>` points it at a different copy so the verifier can be
  * verified. No dependencies beyond tools/seed-io.mjs.
+ *
+ * prt.drills is checked against the ASSEMBLED bank (tools/assemble-bank.mjs:
+ * static seed + every "emit":"build" content pack), not just the static
+ * seed - a content pack can add prt.drills records too (see
+ * src/app-modules/12-prt-drills-expansion.js, the first one that does), and
+ * this citation-shape gate must hold those the same as PD's own static-seed
+ * record. doctrine/creeds/scenarios stay on the static seed only, matching
+ * this lint's original scope, so this change does not also start enforcing
+ * the schema on other packs' doctrine/scenario citations, which is a
+ * separate, pre-existing gap outside this change.
  */
+import path from "node:path";
 import { readSeed } from "./seed-io.mjs";
+import { assembleBank } from "./assemble-bank.mjs";
 
 const argOf = (flag) => { const i = process.argv.indexOf(flag); return i > 0 && process.argv[i + 1] ? process.argv[i + 1] : null; };
 const SEED_PATH = argOf("--seed") || "src/index.html";
@@ -100,8 +112,18 @@ if (creeds.length) {
   ok("creeds: none present (seed section empty) - nothing to check");
 }
 
-// --- prt.drills[].repRule.source and .exercises[].source ---
-const drills = (data.prt && Array.isArray(data.prt.drills)) ? data.prt.drills : [];
+// --- prt.drills[].repRule.source and .exercises[].source (ASSEMBLED bank -
+// see this file's own header for why prt.drills alone reads the merged
+// bank instead of the static seed `data` every other section above uses) ---
+let assembledData = data;
+try {
+  const bankOpts = {};
+  if (argOf("--seed")) bankOpts.seedPath = path.resolve(argOf("--seed"));
+  assembledData = assembleBank(bankOpts).data;
+} catch (e) {
+  bad(`could not assemble the bank for prt.drills: ${e.message}`);
+}
+const drills = (assembledData.prt && Array.isArray(assembledData.prt.drills)) ? assembledData.prt.drills : [];
 if (drills.length) {
   let bad0 = 0;
   drills.forEach((d, i) => {

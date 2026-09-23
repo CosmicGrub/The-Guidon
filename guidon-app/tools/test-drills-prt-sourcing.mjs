@@ -57,6 +57,18 @@
  *       jack"/"8-count T push-up", MMD1's "Vertical"/"Lateral", MMD2's
  *       "Crossover") render as the source's real singular names, not the
  *       wrong plural/incomplete ones this screen previously showed.
+ *
+ * UPDATE (src/app-modules/12-prt-drills-expansion.js): CD1 and CD2 now
+ * carry real, verified seed.prt.drills records too (the same bar "pd"
+ * already cleared), so they graduate out of the "(content pending)" set
+ * the same way "pd" already had - (a)/(b) below now assert that
+ * explicitly for cd1/cd2 too, and (d) checks their shown items against
+ * their own seed record's real exercise names/order, the same "ground
+ * truth read live from the seed" discipline (d) already applied to PD.
+ * The old CD2-specific hardcoded-string check in (e) is now folded into
+ * that stronger, ground-truth (d) check instead of comparing against a
+ * copy of BLOCK_ITEMS.cd2 that no longer exists (CD2's items now come
+ * live from the seed, not that static table).
  */
 import { bootApp, ok, bad, check, finish, waitForRoute, clickWhenStable, until, expectNoConsoleNoise } from "./testkit.mjs";
 
@@ -96,12 +108,21 @@ check(model.unverifiedHere.length > 0 && JSON.stringify(model.unverifiedHere) ==
   `#/drills' unverified drill IDs exactly match the planner's actually-resolved pending set - every block ID absent from seed.prt.drills (${JSON.stringify(model.unverifiedHere)})`,
   () => "mismatch: #/drills unverified=" + JSON.stringify(model.unverifiedHere) + " vs resolved-pending (block IDs absent from seed.prt.drills, seed IDs=" + JSON.stringify(model.seedDrillIds) + ")=" + JSON.stringify(resolvedPending));
 check(model.blockIdsStrength.includes("pd") && model.blockIdsEndurance.includes("pd") && !model.unverifiedHere.includes("pd") && model.seedDrillIds.includes("pd"),
-  "\"pd\" (the one drill with a real seed.prt.drills record) is in both sessions, in the seed, and in neither module's pending/unverified set",
+  "\"pd\" (a drill with a real seed.prt.drills record) is in both sessions, in the seed, and in neither module's pending/unverified set",
   () => "pd placement: strength=" + JSON.stringify(model.blockIdsStrength) + " endurance=" + JSON.stringify(model.blockIdsEndurance) + " unverified=" + JSON.stringify(model.unverifiedHere) + " seed=" + JSON.stringify(model.seedDrillIds));
-check(model.blockIdsStrength.filter((id) => id !== "pd").every((id) => model.unverifiedHere.includes(id)) &&
-  model.blockIdsEndurance.filter((id) => id !== "pd").every((id) => model.unverifiedHere.includes(id)),
-  "every non-PD block in both sessions carries a drill ID in the unverified set",
-  () => "a non-PD block's ID is missing from the unverified set: strength=" + JSON.stringify(model.blockIdsStrength) + " endurance=" + JSON.stringify(model.blockIdsEndurance) + " unverified=" + JSON.stringify(model.unverifiedHere));
+// CD1/CD2 (src/app-modules/12-prt-drills-expansion.js) now clear the same
+// bar "pd" already does: a real seed.prt.drills record, so they too must
+// be absent from the unverified set, same check as pd's above.
+["cd1", "cd2"].forEach((id) => {
+  check(model.blockIdsStrength.includes(id) && !model.unverifiedHere.includes(id) && model.seedDrillIds.includes(id),
+    `"${id}" (now a drill with a real seed.prt.drills record) is in the Strength session, in the seed, and not in the unverified set`,
+    () => `${id} placement: strength=` + JSON.stringify(model.blockIdsStrength) + " unverified=" + JSON.stringify(model.unverifiedHere) + " seed=" + JSON.stringify(model.seedDrillIds));
+});
+const VERIFIED_IDS = ["pd", "cd1", "cd2"];
+check(model.blockIdsStrength.filter((id) => !VERIFIED_IDS.includes(id)).every((id) => model.unverifiedHere.includes(id)) &&
+  model.blockIdsEndurance.filter((id) => !VERIFIED_IDS.includes(id)).every((id) => model.unverifiedHere.includes(id)),
+  "every still-unverified block (ssd/rd in Strength, hsd/mmd1/mmd2/rd in Endurance) carries a drill ID in the unverified set",
+  () => "an unverified block's ID is missing from the unverified set: strength=" + JSON.stringify(model.blockIdsStrength) + " endurance=" + JSON.stringify(model.blockIdsEndurance) + " unverified=" + JSON.stringify(model.unverifiedHere));
 
 /* ========================================================================
    (b) The real screen: block labels on both sessions, driven by real clicks.
@@ -135,10 +156,19 @@ const strengthLabels = await blockLabels();
 const pdLabel = strengthLabels.find((t) => /Preparation Drill \(PD\)/.test(t));
 check(!!pdLabel && !/content pending/.test(pdLabel), `Strength session's Preparation Drill (PD) block is not tagged pending: "${pdLabel}"`,
   () => "PD block label: " + JSON.stringify(pdLabel) + " in " + JSON.stringify(strengthLabels));
-const strengthOthers = strengthLabels.filter((t) => !/Preparation Drill \(PD\)/.test(t));
-check(strengthOthers.length > 0 && strengthOthers.every((t) => /\(content pending\)$/.test(t)),
-  `Strength session's other blocks are all tagged "(content pending)": ${JSON.stringify(strengthOthers)}`,
-  () => "strength blocks missing the pending tag: " + JSON.stringify(strengthOthers));
+// CD1/CD2 now carry a real seed.prt.drills record too (src/app-modules/
+// 12-prt-drills-expansion.js) - same "not tagged pending" bar as PD's own
+// check above, applied to both of Strength's newly-verified blocks.
+["Conditioning Drill 1", "Conditioning Drill 2"].forEach((name) => {
+  const label = strengthLabels.find((t) => t.startsWith(name));
+  check(!!label && !/content pending/.test(label), `Strength session's ${name} block is not tagged pending: "${label}"`,
+    () => name + " block label: " + JSON.stringify(label) + " in " + JSON.stringify(strengthLabels));
+});
+// Still-unverified Strength blocks (SSD, RD) keep the tag.
+const strengthStillPending = strengthLabels.filter((t) => !/Preparation Drill \(PD\)/.test(t) && !/Conditioning Drill (1|2)/.test(t));
+check(strengthStillPending.length > 0 && strengthStillPending.every((t) => /\(content pending\)$/.test(t)),
+  `Strength session's remaining blocks (SSD, RD) are all still tagged "(content pending)": ${JSON.stringify(strengthStillPending)}`,
+  () => "strength blocks missing the pending tag: " + JSON.stringify(strengthStillPending));
 
 await selectSession("Endurance");
 const enduranceLabels = await blockLabels();
@@ -147,7 +177,7 @@ check(!!pdLabel2 && !/content pending/.test(pdLabel2), `Endurance session's Prep
   () => "PD block label: " + JSON.stringify(pdLabel2) + " in " + JSON.stringify(enduranceLabels));
 const enduranceOthers = enduranceLabels.filter((t) => !/Preparation Drill \(PD\)/.test(t));
 check(enduranceOthers.length > 0 && enduranceOthers.every((t) => /\(content pending\)$/.test(t)),
-  `Endurance session's other blocks are all tagged "(content pending)": ${JSON.stringify(enduranceOthers)}`,
+  `Endurance session's other blocks (HSD, MMD1, MMD2, RD - none of which shipped a seed.prt.drills record in this pass) are all tagged "(content pending)": ${JSON.stringify(enduranceOthers)}`,
   () => "endurance blocks missing the pending tag: " + JSON.stringify(enduranceOthers));
 
 /* ========================================================================
@@ -159,34 +189,41 @@ check(/verified word-for-word/i.test(panelText) && /content pending/i.test(panel
   () => "panel text did not explain the distinction: " + panelText.slice(0, 400));
 
 /* ========================================================================
-   (d) PD's exercise names here still match the seed's own verified record,
-   ground truth read live so this stays correct if the transcription changes.
+   (d) PD/CD1/CD2's exercise names here still match each one's own seed
+   record, ground truth read live so this stays correct if the
+   transcription ever changes - the same check, generalized from PD alone
+   (its original shape) to every block id with a real seed.prt.drills
+   record after src/app-modules/12-prt-drills-expansion.js.
    ======================================================================== */
 await selectSession("Strength");
-const pdCheck = await page.evaluate(() => {
-  const shown = ((window.G.drills._PRT.strength.blocks.find((b) => b.id === "pd") || {}).items || []);
-  const seedDrill = ((window.GUIDON_SEED.prt && window.GUIDON_SEED.prt.drills) || []).find((d) => d.id === "pd");
-  const seedNames = seedDrill ? seedDrill.exercises.slice().sort((a, b) => a.order - b.order).map((e) => e.name) : null;
-  return { shown, seedNames, allVerified: seedDrill ? seedDrill.exercises.every((e) => e.sourceStatus === "verified") : false };
-});
-check(Array.isArray(pdCheck.seedNames) && pdCheck.seedNames.length > 0 && pdCheck.allVerified,
-  `the seed's "pd" drill has ${pdCheck.seedNames && pdCheck.seedNames.length} exercises, all sourceStatus:"verified"`,
-  () => "seed pd drill missing/unverified: " + JSON.stringify(pdCheck));
-check(pdCheck.shown.length === (pdCheck.seedNames || []).length &&
-  pdCheck.shown.every((name, i) => name.toLowerCase() === (pdCheck.seedNames[i] || "").toLowerCase()),
-  "the PD block shown here matches the seed's verified exercise names, in the same fixed order (case aside)",
-  () => "PD names here: " + JSON.stringify(pdCheck.shown) + " vs seed's verified names: " + JSON.stringify(pdCheck.seedNames));
+async function checkAgainstSeed(sessionKey, drillId, label) {
+  const result = await page.evaluate(({ sessionKey, drillId }) => {
+    const shown = ((window.G.drills._PRT[sessionKey] && window.G.drills._PRT[sessionKey].blocks.find((b) => b.id === drillId)) || {}).items || [];
+    const seedDrill = ((window.GUIDON_SEED.prt && window.GUIDON_SEED.prt.drills) || []).find((d) => d.id === drillId);
+    const seedNames = seedDrill ? seedDrill.exercises.slice().sort((a, b) => a.order - b.order).map((e) => e.name) : null;
+    return { shown, seedNames, allVerified: seedDrill ? seedDrill.exercises.every((e) => e.sourceStatus === "verified") : false };
+  }, { sessionKey, drillId });
+  check(Array.isArray(result.seedNames) && result.seedNames.length > 0 && result.allVerified,
+    `the seed's "${drillId}" drill has ${result.seedNames && result.seedNames.length} exercises, all sourceStatus:"verified"`,
+    () => `seed ${drillId} drill missing/unverified: ` + JSON.stringify(result));
+  check(result.shown.length === (result.seedNames || []).length &&
+    result.shown.every((name, i) => name.toLowerCase() === (result.seedNames[i] || "").toLowerCase()),
+    `the ${label} block shown here matches the seed's verified exercise names, in the same fixed order (case aside)`,
+    () => `${label} names here: ` + JSON.stringify(result.shown) + " vs seed's verified names: " + JSON.stringify(result.seedNames));
+}
+await checkAgainstSeed("strength", "pd", "PD");
+await checkAgainstSeed("strength", "cd1", "CD1");
+await checkAgainstSeed("strength", "cd2", "CD2");
 
 /* ========================================================================
-   (e) The three real misses a source cross-check caught now render as the
-   source's real names, not the wrong ones this screen used to show.
+   (e) Two real misses a source cross-check caught (MMD1/MMD2's plural
+   exercise names, still static BLOCK_ITEMS today) render as the source's
+   real singular names, not the wrong plural ones this screen used to show.
+   CD2's own equivalent check (its old "Half jacks"/"8-count push-up" fix)
+   is superseded by (d) above, which now reads CD2's items live from its own
+   seed.prt.drills record instead of comparing against the static
+   BLOCK_ITEMS.cd2 table that no longer exists.
    ======================================================================== */
-const cd2Items = await blockItems("Conditioning Drill 2");
-check(Array.isArray(cd2Items) && cd2Items.includes("Half jack") && cd2Items.includes("8-count T push-up") &&
-  !cd2Items.includes("Half jacks") && !cd2Items.includes("8-count push-up"),
-  `CD2 shows the source's real exercise names ("Half jack", "8-count T push-up"): ${JSON.stringify(cd2Items)}`,
-  () => "CD2 items: " + JSON.stringify(cd2Items));
-
 await selectSession("Endurance");
 const mmd1Items = await blockItems("Military Movement Drill 1");
 check(Array.isArray(mmd1Items) && mmd1Items.includes("Vertical") && mmd1Items.includes("Lateral") &&

@@ -25,7 +25,10 @@ const btn = await page.evaluate(() => {
 btn ? ok(`fullscreen button in the nav row ("${btn.label}", ${btn.text})`) : bad("no .qz-fs-btn in .qz-nav-row");
 
 // --- enter theater ---
-await page.evaluate(() => document.querySelector(".qz-fs-btn").click());
+const fsBtnPresent = await until(page, () => !!document.querySelector(".qz-fs-btn"));
+fsBtnPresent
+  ? await page.evaluate(() => document.querySelector(".qz-fs-btn").click())
+  : bad(".qz-fs-btn never appeared to enter theater");
 // In theater AND laid out: the wrap has finished growing to the viewport.
 await until(page, () => { const w = document.querySelector(".qz-wrap"); const r = w && w.getBoundingClientRect(); return document.documentElement.classList.contains("qz-theater") && !!r && r.width >= innerWidth - 1 && r.height >= innerHeight - 1; }, null, { timeout: 5000 });
 const on = await page.evaluate(() => {
@@ -54,7 +57,10 @@ on.topbarCovered ? ok("topbar is underneath the overlay (hit-test)") : bad("topb
 /^exit/i.test(on.btnLabel) ? ok("button relabelled to exit") : bad("button label: " + on.btnLabel);
 
 // --- study loop inside theater: flip, grade, next card keeps theater ---
-await page.evaluate(() => document.querySelector(".qz-wrap").focus());
+const wrapPresentForFocus = await until(page, () => !!document.querySelector(".qz-wrap"));
+wrapPresentForFocus
+  ? await page.evaluate(() => document.querySelector(".qz-wrap").focus())
+  : bad(".qz-wrap never appeared to focus for the study-loop keyboard test");
 await page.keyboard.press("Space");
 await until(page, () => !!document.querySelector(".qz-card.flipped"), null, { timeout: 5000 });
 const flipped = await page.evaluate(() => !!document.querySelector(".qz-card.flipped"));
@@ -77,7 +83,10 @@ const afterEsc = await page.evaluate(() => document.documentElement.classList.co
 !afterEsc ? ok("Escape exits theater") : bad("Escape did not exit");
 
 // --- navigation away cleans up a re-entered theater ---
-await page.evaluate(() => document.querySelector(".qz-fs-btn").click());
+const fsBtnPresentAgain = await until(page, () => !!document.querySelector(".qz-fs-btn"));
+fsBtnPresentAgain
+  ? await page.evaluate(() => document.querySelector(".qz-fs-btn").click())
+  : bad(".qz-fs-btn never appeared to re-enter theater before navigating away");
 await until(page, inTheater, null, { timeout: 5000 });
 await waitForRoute(page, "#/home");
 const afterNav = await page.evaluate(() => ({

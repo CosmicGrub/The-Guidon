@@ -760,7 +760,23 @@ html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after 
 .reps-done { text-align:center; padding: 22px 16px; }
 .reps-done .reps-big { font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; margin: 6px 0 2px; }
 
-.qz-wrap { outline: none; }
+.qz-wrap { outline: none;
+  /* Theater-entry grow-in transition (enterTheater(), src/index.html) -
+     declared unconditionally here rather than gated to html.qz-theater so
+     it's already active the instant that rule's fixed/inset also apply.
+     Otherwise a no-op: .qz-wrap's opacity is never touched anywhere
+     outside theater entry, and the .qz-theater-entering class below is the
+     ONLY thing that ever gives it a different value to transition from.
+     transform deliberately does NOT live here - see the .qz-theater-
+     entering rule's own comment (PR #234 code review: the Fullscreen API
+     forces transform:none!important on whichever element is actually
+     :fullscreen, which is .qz-wrap on a successful manual entry) - .qz-
+     scene (below) carries that half instead. Reduced motion is already
+     handled globally (the html.reduce-motion / prefers-reduced-motion
+     blanket transition-duration override near the top of this file), so
+     no separate guard is needed here. */
+  transition: opacity var(--modal-dur, .22s) var(--modal-ease, ease);
+}
 .qz-wrap:focus-visible { outline: 3px solid var(--amber); outline-offset: 4px; } /* .qz-wrap (tabIndex="0") is the real tab stop; the ring used to be declared on .qz-card below, which never receives focus */
 
 /* ── Fullscreen study (theater mode) ──────────────────────────────────────
@@ -771,8 +787,38 @@ html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after 
    The Fullscreen API and Android immersive bars are progressive enhancement
    layered on top by the drill's JS; when they are unavailable the CSS alone
    still delivers the feature. The study loop's own controls (flip, grade,
-   prev/next, star) stay — they are the point, not a distraction. */
+   prev/next, star) stay — they are the point, not a distraction.
+
+   Fold/rotate motion pass: entering theater (manually, or automatically on
+   a Fold5 folding into a too-short landscape strip - see enterTheater()'s
+   own auto-entry comment) used to be an instant hard cut - .qz-wrap jumping
+   straight to position:fixed;inset:0 with nothing in between. The card
+   growing to fill the newly-available space now reads as one continuous
+   motion instead: .qz-theater-entering (below) starts the wrap faded and
+   its .qz-scene child scaled down; enterTheater() adds it for exactly one
+   frame then removes it (the same double-rAF technique util.modalTrap
+   already uses for every other CSS-transitioned overlay in this file, so
+   the browser has a real FROM value to animate from), letting the
+   transitions on .qz-wrap's and .qz-scene's own base rules carry them to
+   their normal resting state. Exit is deliberately NOT symmetric - see
+   enterTheater()'s own comment for why animating the close would mean
+   delaying focus-restore/inert-release behind a fade, a real risk this
+   pass isn't taking on.
+
+   The scale lives on .qz-scene (a plain descendant), not .qz-wrap itself
+   (code-review finding, PR #234): when manual entry succeeds through
+   target.requestFullscreen(), .qz-wrap becomes the actual :fullscreen
+   element, and the Fullscreen API's UA stylesheet forces
+   transform:none!important on THAT element specifically - a scale
+   declared there would be silently suppressed on every desktop browser
+   that supports true fullscreen, leaving only the opacity fade. .qz-scene
+   is never the :fullscreen element itself (only .qz-wrap ever calls
+   requestFullscreen), so the UA override doesn't reach it; opacity stays
+   on .qz-wrap since that property has no such override and fading the
+   whole overlay (chrome included) together is still exactly right. */
 html.qz-theater { overflow: hidden; }
+html.qz-theater .qz-wrap.qz-theater-entering { opacity: 0; }
+html.qz-theater .qz-wrap.qz-theater-entering .qz-scene { transform: scale(.97); }
 html.qz-theater .qz-wrap {
   position: fixed; inset: 0; z-index: 800;
   background: var(--bg);
@@ -843,6 +889,12 @@ html.qz-theater #toast { z-index: 900; }
      the fisheye look that sets in below ~900px. */
   perspective: 1150px;
   width: 100%;
+  /* Theater-entry grow-in's scale half (see .qz-wrap's own comment above
+     for why it lives here instead of on .qz-wrap itself) - unconditional
+     for the same "otherwise a no-op" reason: nothing else ever sets a
+     transform on .qz-scene, confirmed by grep, so this only ever animates
+     the .qz-theater-entering transition. */
+  transition: transform var(--modal-dur, .22s) var(--modal-ease, ease);
 }
 /* Card size: matches a real 3x5 index card, landscape (5:3 - wider than
    tall, chosen over portrait because a wider card reads multi-line board-
@@ -2648,7 +2700,8 @@ button:focus:not(:focus-visible),
    text nobody wants force-wrapped narrower for no reason. */
 .blc-view p.hint, .blc-view li, .blc-view label,
 .alc-view p.hint, .alc-view li, .alc-view label,
-.slc-view p.hint, .slc-view li, .slc-view label {
+.slc-view p.hint, .slc-view li, .slc-view label,
+.mlc-view p.hint, .mlc-view li, .mlc-view label {
   max-width: 70ch;
 }
 
@@ -3284,11 +3337,37 @@ mark.dict-hi {
   border-radius: 6px;
   color: var(--text-1);
   padding: 9px 12px;
-  font-size: 1rem;
+  /* max(), not a plain 1rem: html's own font-size is data-text-scale-
+     dependent (5307-5310 above) and the default "standard" scale is
+     .94rem, so a plain "1rem" here computes to ~15px at the app's own
+     default setting - under the 16px iOS focuses-and-zooms-the-page
+     threshold tools/verify-ios-webkit.mjs enforces. Two .ob-input
+     instances (input[type=date] on #/calendar, input[type=search] on
+     #/leader) were already carrying this exact defect, tolerated in
+     tools/ios-webkit-baseline.json rather than fixed. A third
+     (select.ob-input, the AFT calculator's age band/sex/standard
+     selects on #/fitness) is what surfaced it again - fixed at the
+     shared class so all three (and any future .ob-input) are covered
+     at once, and the two pre-existing baseline entries are removed in
+     the same change per that file's own "fix it, don't baseline it"
+     rule, since neither still reproduces after this. */
+  font-size: max(1rem, 16px);
   font-family: var(--font-mono);
   box-sizing: border-box;
 }
 .ob-input:focus { outline: 2px solid var(--amber); border-color: var(--amber); }
+/* Bare (no .ob-input) <input type="date"> elsewhere in the app - board
+   date on #/home & #/board, the risk worksheet, #/reminders, career/
+   counsel follow-up reminders, MOI's optional due date, and a couple of
+   generic worksheet-field builders - inherit the same data-text-scale
+   font-size problem .ob-input's own comment above explains, without
+   carrying that class to pick up its fix. A type-selector, not a class,
+   closes every current and future bare date input at once. Found via a
+   live check while investigating why tools/ios-webkit-baseline.json's
+   "input[type=date]" entry disagreed between a local run (reproduces on
+   every device) and one CI run (reproduced on none) - real and
+   reproducible in a plain browser, so fixed rather than re-baselined. */
+input[type="date"] { font-size: max(1rem, 16px); }
 .ob-select {
   width: 100%;
   background: var(--bg);
@@ -6198,6 +6277,19 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
 .list-detail-row .ldr-name { font-weight:600; }
 .list-detail-row .ldr-badge { float:right; font-family:var(--font-mono); font-size:.72rem; color:var(--text-dim); }
 .list-detail-row.active .ldr-badge { color:var(--ink-amber); }
+/* ROADMAP 3g follow-up: content-view "pin from here" rows (Doctrine's
+   entryList, Board Drill's catList, Creeds/Recite's listPane) - a sibling
+   wrapper around the existing .list-detail-row button plus its own
+   G.navPin.button() star, the exact same shape the nav rail's own
+   .nav-item-row already uses and for the identical reason: a <button>
+   can't host a nested <button> (invalid HTML/ARIA), so the star sits next
+   to the row, not inside it. .nav-pin-btn's own rule is fully self-
+   contained (width/flex all !important) so it needs no reuse here beyond
+   giving the row itself room to shrink for it. margin-bottom moves from
+   the row (which no longer sits directly in .list-detail-list's flow) to
+   this wrapper, preserving the same 6px row-to-row gap. */
+.list-detail-row-wrap { display:flex; align-items:stretch; gap:4px; margin-bottom:6px; }
+.list-detail-row-wrap .list-detail-row { flex:1 1 auto; width:auto; min-width:0; margin-bottom:0; }
 /* Squad Roster's "jump to" pulse — a paint-only box-shadow/border transition
    (no width/height/layout property involved), so it needs none of the
    transform:scaleX() treatment the fill-bars elsewhere in this file do. */
@@ -8570,10 +8662,16 @@ window.G = window.G || {};
       { drillId: "pd" }, { drillId: "hsd" }, { drillId: "mmd1" }, { drillId: "mmd2" }, { drillId: "rd" }
     ] }
   ];
+  // "cd1"/"cd2" removed from here: src/app-modules/12-prt-drills-expansion.js
+  // now gives both a real seed.prt.drills record with per-exercise
+  // ATP 7-22.02 citations, the same bar "pd" already cleared, so they are no
+  // longer explicit placeholders. prtDrillLabel() (pt-planner.js) already
+  // resolves "pending" by checking seed.prt.drills directly, so removing
+  // these two keys is the only change needed there; the #/drills PRT
+  // session builder's own BLOCK_ITEMS/drillExerciseNames() (below, this
+  // file) also needed updating to match - see that block's own comment.
   const DEFAULT_PRT_PENDING_DRILLS = {
     ssd: "Shoulder Stability Drill",
-    cd1: "Conditioning Drill 1",
-    cd2: "Conditioning Drill 2",
     hsd: "Hip Stability Drill",
     mmd1: "Military Movement Drill 1",
     mmd2: "Military Movement Drill 2",
@@ -10955,6 +11053,20 @@ window.G = window.G || {};
       if (!document.querySelector(".qz-wrap")) return;
       document.documentElement.classList.add("qz-theater");
       const wrap = document.querySelector(".qz-wrap");
+      // Grow-in transition (CSS: .qz-theater-entering, near .qz-wrap's own
+      // transition declaration) - starts the wrap at a slightly-scaled-
+      // down, transparent state for exactly one frame so the browser has a
+      // real value to transition FROM, then removes the class on the NEXT
+      // frame so the transition actually plays instead of snapping
+      // straight to its resting state (the same double-rAF technique
+      // util.modalTrap already uses for every other CSS-transitioned
+      // overlay in this file). Runs for both manual and automatic entry -
+      // the fold-into-a-too-short-landscape-strip case (opts.auto) is
+      // exactly the moment this is meant to smooth over.
+      if (wrap) {
+        wrap.classList.add("qz-theater-entering");
+        requestAnimationFrame(() => requestAnimationFrame(() => wrap.classList.remove("qz-theater-entering")));
+      }
       const target = focusEl || wrap;
       theaterReturnFocus = document.activeElement;
       if (wrap) trapTheaterFocus(wrap);
@@ -12205,10 +12317,12 @@ window.G = window.G || {};
         // (see that view's near-identical comment for the full rationale -
         // no Enter/Space handler needed since these are real <button>
         // elements that already invoke the click listener above natively
-        // on Enter/Space; plain next/previousElementSibling is a complete
-        // traversal since catList holds only row buttons, nothing else,
-        // per refreshCatList()'s util.clear(catList) + rebuild-from-
-        // categories.forEach() above). Clamps rather than wraps, matching
+        // on Enter/Space; walking the wrapper's own next/previousElement-
+        // Sibling (ROADMAP 3g follow-up: catList holds row WRAPPERS now,
+        // each pairing a row with its own pin toggle - see below) is a
+        // complete traversal since catList holds only row wrappers,
+        // nothing else, per refreshCatList()'s util.clear(catList) +
+        // rebuild-from-categories.forEach() above). Clamps rather than wraps, matching
         // Search. Deliberately does NOT return focus to a filter input on
         // ArrowUp-from-row-0 the way Doctrine's row does: unlike Doctrine's
         // "search" box (which sits directly above entryList, both visually
@@ -12224,15 +12338,36 @@ window.G = window.G || {};
         row.addEventListener("keydown", (e) => {
           if (e.key === "ArrowDown") {
             e.preventDefault();
-            const next = row.nextElementSibling;
+            // catList's DIRECT children are now .list-detail-row-wrap
+            // (ROADMAP 3g follow-up, see the wrapper built below) rather
+            // than the row itself - walk the WRAPPER's own siblings and
+            // reach back in for that sibling's row button, same fix as
+            // Doctrine's entryList (this same file, views.js).
+            const nextWrap = row.closest(".list-detail-row-wrap");
+            const next = nextWrap && nextWrap.nextElementSibling && nextWrap.nextElementSibling.querySelector(".list-detail-row");
             if (next) next.focus();
           } else if (e.key === "ArrowUp") {
             e.preventDefault();
-            const prev = row.previousElementSibling;
+            const prevWrap = row.closest(".list-detail-row-wrap");
+            const prev = prevWrap && prevWrap.previousElementSibling && prevWrap.previousElementSibling.querySelector(".list-detail-row");
             if (prev) prev.focus();
           }
         });
-        catList.appendChild(row);
+        // ROADMAP 3g follow-up: a Soldier browsing Board Drill's category
+        // rail can now pin the "#/board" route right from here, not only
+        // from the nav rail/Sections drawer - see Doctrine's entryList
+        // (views.js, this same file) for the identical pattern and full
+        // rationale (sibling wrapper, same containing route pinned from
+        // every row, G.navPin.syncButtons() keeps every row's star in
+        // sync). G.navPin is app.js's own exposed pin API - a separate
+        // closure from this module (board.js).
+        const catRowWrap = el("div.list-detail-row-wrap", {}, [row]);
+        if (G.navPin && G.navPin.button) {
+          const catPinBtn = G.navPin.button("#/board");
+          catPinBtn.addEventListener("click", () => G.navPin.syncButtons(catList, "#/board"));
+          catRowWrap.appendChild(catPinBtn);
+        }
+        catList.appendChild(catRowWrap);
       });
     }
 
@@ -20114,6 +20249,21 @@ window.G = window.G || {};
   /* ---------------- catalog view ---------------- */
   function render(mount) {
     var d = data();
+    // Global Search deep-link (views.search's goTo() calls G.nav.seed("forms",
+    // f.id) - see that view's own runSearch() comment, src/index.html) takes
+    // precedence over the plain catalog: a Soldier who searched "4856" and
+    // clicked the hit expects to land ON that form's own detail/replica view,
+    // the same as clicking its catalog card would, not back on the bare
+    // catalog they'd have to search again from. Same G.nav.seed/consume
+    // handoff train/resources/career already use for their own search hits.
+    // Consumed (read-and-cleared) before the catalog below ever builds, so an
+    // ordinary later visit to #/forms (nav click, back button) never replays
+    // a stale seed.
+    var searchSeed = G.nav && G.nav.consume("forms");
+    if (searchSeed && formById(searchSeed)) {
+      openForm(mount, searchSeed);
+      return;
+    }
     U.clear(mount);
     var wrap = U.el("div", { class: "forms-view" });
 
@@ -20675,6 +20825,38 @@ window.G = window.G || {};
         if (bulletsRow) bulletsRow.style.opacity = (a === "AAM" || a === "ARCOM" || a === "MSM") ? "1" : "0.5";
       }
       sel.addEventListener("change", upd); upd();
+    },
+    // DA Form 2166-9-2 (NCOER): every Part IV/Part V comment field this form
+    // defines is bullet-format (AR 623-3, para 3-19c(1): DA Form 2166-9-1
+    // and -2 both require bullets; only the -3, for CSM/SGM, uses narrative
+    // - see src/app-modules/13-da2166-ncoer.js, which adds these fields).
+    // Bullet-comment writing is the hard part of this form in real life, so
+    // this reuses G.writing.gradeBullet - the same deterministic grader
+    // behind Write -> Bullet Builder - rather than building a second,
+    // parallel one. Attaches to every bullets-type field the form defines
+    // by id, so a future field addition to this list is the only wiring a
+    // later content change needs.
+    da4856ncoer: function (f, host, inputs, noteHost) {
+      if (!G.writing || typeof G.writing.gradeBullet !== "function") return;
+      var BULLET_FIELD_IDS = ["character", "presence", "intellect", "leads", "develops", "achieves", "raterComments", "srComments"];
+      BULLET_FIELD_IDS.forEach(function (fid) {
+        var row = host.querySelector('[data-fid="' + fid + '"]');
+        var ta = row && row.querySelector("textarea.in");
+        if (!ta) return;
+        var fb = U.el("div", { class: "hint" });
+        row.appendChild(fb);
+        function paint() {
+          var lines = ta.value.split("\n").map(function (s) { return s.trim(); }).filter(function (s) { return s; });
+          if (!lines.length) { fb.textContent = ""; return; }
+          var graded = lines.map(function (line) { return G.writing.gradeBullet(line); });
+          var avg = Math.round(graded.reduce(function (s, g) { return s + g.score; }, 0) / graded.length);
+          var weakest = graded.reduce(function (a, b) { return b.score < a.score ? b : a; });
+          var tip = (weakest.checks || []).filter(function (c) { return !c.pass && c.detail; })[0];
+          fb.textContent = "Bullet strength (same grader as Write → Bullet Builder): " + avg + "/100 avg over " + lines.length + " line" + (lines.length === 1 ? "" : "s") + (tip ? " — " + tip.detail : "");
+        }
+        ta.addEventListener("input", paint);
+        paint();
+      });
     }
   };
 
@@ -22837,6 +23019,8 @@ window.G = window.G || {};
                      w:"'Getting a seat' explains why finishing your technical track early moves you up an entire priority tier." },
     "#/slc":       { d:"SLC and the senior gates above it — MLC and the Sergeants Major Course.",
                      w:"Opens with a PME-transformation warning: course lengths are actively changing and sources disagree." },
+    "#/mlc":       { d:"MLC preparation for SFCs and MSGs — organizational/strategic leadership, mission command at echelon, NCOER rater responsibilities and readiness reporting, built from AR 350-1 and DA PAM 600-25's own course descriptions.",
+                     w:"Open 'The real shift' — organizational and strategic leadership (ADP 6-22 Ch 9-10), the section every course below MLC skips." },
     "#/drills":    { d:"Rehearsable versions of what BLC and ALC actually grade — squad drill, PRT, brief timer, essay rubric, MDMP.",
                      w:"Start the brief rehearsal timer: it colour-codes the 8:00–12:00 acceptable window in real time." },
     "#/doctrine":  { d:"Doctrine entries cross-referenced to ADP, FM, TC and AR sources, searchable by topic.",
@@ -23073,22 +23257,23 @@ window.G = window.G || {};
       { icon:"★", label:"Army Programs & Readiness", why:"SHARP, EO, Safety, and Army programs are your accountability. A complaint in your section reflects on your leadership." },
       { icon:"◆", label:"Army Leadership", why:"Mission Command, the Operations Process, and organizational-level leadership are your emerging domain." },
     ],
-    // E7-E9: GUIDON's deep-dive curriculum (BLC/ALC-style, 17-section
-    // modules) currently only exists through E6/SSG - it would be
-    // dishonest to point a Sergeant Major at fabricated course depth that
-    // doesn't exist yet. These three entries point at what's genuinely
-    // here instead: the survey-level senior-NCO module (#/slc, "SLC &
-    // Beyond") plus the general-purpose leadership/readiness content every
-    // tier shares. Previously SFC-SMA silently mapped to tier E6 and got
-    // the SSG entries above verbatim - wrong content, not just thin content.
+    // E7-E9: MLC / senior-NCO content pack gave E7 and E8 a real, dedicated
+    // deep-dive module (#/mlc, mirroring BLC/ALC/SLC's own shape) plus 41
+    // E7/E8-tagged board cards - so these two tiers now point at genuine
+    // MLC-depth content instead of the old "survey level only" framing.
+    // E9 still has no dedicated Sergeants Major Course module (out of this
+    // pack's scope - MLC only), so it keeps pointing at SLC Prep's own
+    // survey-level SMC section, honestly, the same as before. Previously
+    // SFC-SMA silently mapped to tier E6 and got the SSG entries above
+    // verbatim - wrong content, not just thin content; that bug stays fixed.
     'E7': [
-      { icon:"★", label:"SLC Prep (senior NCO gates)", why:"SLC, MLC and the Sergeants Major Course are covered at survey level in the SLC Prep module — the deep-dive treatment BLC/ALC get further down the ladder." },
-      { icon:"◆", label:"Army Leadership", why:"Organizational and strategic leadership doctrine (ADP 6-22) applies at this level; the module content itself isn't yet tiered specifically for E7." },
-      { icon:"▤", label:"MDMP & Troop Leading Procedures", why:"Staff-level MDMP participation is standard at SFC. The existing module covers the process; it isn't rank-gated content." },
+      { icon:"★", label:"MLC Prep (PRIORITY)", why:"MLC is the NCOPDS gate above SLC and the course you are preparing for as an SFC — organizational/strategic leadership, mission command at echelon, and the rater responsibilities you take on as a senior NCO." },
+      { icon:"◆", label:"Army Leadership", why:"Organizational and strategic leadership doctrine (ADP 6-22 Ch 9-10) is covered in depth inside MLC Prep; this module carries the same doctrine at general-purpose depth." },
+      { icon:"▤", label:"MDMP & Troop Leading Procedures", why:"Staff-level MDMP participation is standard at SFC, and MDMP is now formally part of MLC's own program of instruction." },
     ],
     'E8': [
-      { icon:"★", label:"SLC Prep (senior NCO gates)", why:"MLC and the Sergeants Major Course are covered at survey level here — full MSG/1SG-specific curriculum depth isn't built out yet." },
-      { icon:"◆", label:"Army Leadership", why:"Strategic-leadership doctrine (ADP 6-22) applies; content isn't yet tiered specifically for E8." },
+      { icon:"★", label:"MLC Prep (PRIORITY)", why:"MLC Prep covers the course in real depth for MSGs still owing the school, plus the NCOER-rater and readiness-reporting responsibilities that come with the rank." },
+      { icon:"◆", label:"Army Leadership", why:"Strategic-leadership doctrine (ADP 6-22 Ch 9-10) is covered in depth inside MLC Prep; this module carries the same doctrine at general-purpose depth." },
       { icon:"★", label:"Army Programs & Readiness", why:"SHARP, EO and Safety program ownership scales with rank; the existing module content is shared across tiers, not E8-specific." },
     ],
     'E9': [
@@ -23534,10 +23719,10 @@ window.G = window.G || {};
     promotion:  ["#/board", "#/records", "#/progress", "#/currency"],
     ets:        ["#/transition", "#/money", "#/resources"],
     transition: ["#/transition", "#/career", "#/assignments", "#/resources"],
-    leadership: ["#/drills", "#/leader", "#/develop", "#/risk", "#/blc", "#/alc", "#/slc"],
+    leadership: ["#/drills", "#/leader", "#/develop", "#/risk", "#/blc", "#/alc", "#/slc", "#/mlc"],
     doctrine:   ["#/doctrine", "#/dictionary", "#/library", "#/creeds"],
     counseling: ["#/counsel", "#/write", "#/forms"],
-    nco:        ["#/blc", "#/alc", "#/slc", "#/drills"],
+    nco:        ["#/blc", "#/alc", "#/slc", "#/mlc", "#/drills"],
     risk:       ["#/risk"],
     training:   ["#/train", "#/drills", "#/calendar"],
     pt:         ["#/prt", "#/fitness"],
@@ -23621,8 +23806,8 @@ window.G = window.G || {};
       'E4': "E4 / SPC -- SGT Board Prep is your #1 course. Covers the board questions you will be asked, report-in procedures, NCO Creed, and uniform standards. NCO Roles and Military Presence are also priority. Everything feeds your board.",
       'E5': "E5 / SGT -- Developing Others and MDMP/TLP are now your professional responsibilities. You counsel Soldiers, receive OPORDs, and execute TLPs. Army Leadership and NCO Core Competencies apply to your daily work.",
       'E6': "E6 / SSG -- Developing NCOs (not just Soldiers) is your primary task. MDMP at section level, Army Programs accountability, and organizational leadership are your focus. You are a force multiplier for your SGTs.",
-      'E7': "E7 / SFC -- GUIDON's board-prep depth tops out at E6; from here, SLC Prep covers SLC/MLC/SMC at survey level rather than full course depth. Army Leadership doctrine still applies at every tier.",
-      'E8': "E8 / MSG, 1SG -- Same as E7: SLC Prep is the closest fit for MLC and the Sergeants Major Course, at survey level. Dedicated MSG/1SG course material isn't built out yet.",
+      'E7': "E7 / SFC -- MLC Prep is your #1 course: organizational/strategic leadership, mission command at echelon, and the NCOER-rater responsibilities that come with senior-NCO rank. SLC Prep still covers the SMC gate above MLC at survey level.",
+      'E8': "E8 / MSG, 1SG -- MLC Prep covers the course you may still owe, plus real board-drill content tagged for your grade. SLC Prep covers the Sergeants Major Course above it at survey level.",
       'E9': "E9 / SGM, CSM, SMA -- SLC Prep covers the Sergeants Major Course at survey level, the closest thing GUIDON has to E9-specific content today.",
     };
     return PREVIEW[tier] || "Courses will be sorted by relevance to your rank.";
@@ -26105,6 +26290,7 @@ window.G = window.G || {};
     const links = el("div.panel", { style:"margin-top:10px" });
     links.appendChild(el("div.eyebrow", { text:"Work it here" }));
     [["BLC Prep","#/blc"], ["ALC Prep \u2014 the gate before this","#/alc"],
+     ["MLC Prep \u2014 the next gate","#/mlc"],
      ["Army writing \u2014 essays and briefings","#/write"],
      ["Counseling & developing NCOs","#/counsel"],
      ["Board Drill \u2014 MDMP, mission command","#/board"],
@@ -26124,6 +26310,228 @@ window.G = window.G || {};
   G.slc = { render, KEY, SELF_CHECK };
 })();
 // END slc.js
+
+/* ==== js/mlc.js ==== */
+/* GUIDON — mlc.js : Master Leader Course preparation module (G.mlc)
+   Audience: SFCs and MSGs looking at MLC — the NCOPDS gate above SLC.
+   Public doctrinal and published-course information only.
+
+   Fills a real gap: SLC's own module (slc.js, just above) already survey-
+   covers MLC in one collapsible section for the SSG/SFC audience looking
+   ahead at it; this module is the dedicated deep-dive BLC/ALC/SLC each get
+   for their own course, aimed at the SFC/MSG actually about to attend.
+   Mirrors G.blc/G.alc/G.slc's exact structure — same SECTIONS/SELF_CHECK/
+   KEY shape, same renderSelfCheckWidget call, same collapsible-panel
+   render() — deliberately, per this pack's own house rule: find the
+   established pattern and copy it, don't invent a new one.
+
+   Sourcing: AR 350-1 para 3-38a/b (1 June 2025) and DA PAM 600-25 para
+   2-12e(4) (11 September 2023) for the course's own official description —
+   the same two paragraphs GUIDON's existing board card pmeed-5 already
+   cites, confirmed rather than reinvented. ADP 6-22 Chapters 9-10
+   (Organizational and Strategic Leadership) and ADP 6-0, Command and
+   Control (7 July 2026 edition, which superseded and retitled the 31 July
+   2019 "Mission Command" edition) for the doctrine MLC teaches. AR 623-3
+   and AR 220-1 for the rater/readiness-reporting responsibilities a
+   newly-pinned MSG takes on. NOTE: like BLC/ALC/SLC's own modules, MLC's
+   exact course length and academic-hour count are called out as actively
+   changing under the Army's PME transformation rather than stated as a
+   single fixed number — see the "changed" section below.
+*/
+window.G = window.G || {};
+(function () {
+  "use strict";
+  const util = G.util, el = util.el;
+
+  const SECTIONS = [
+    { id:"what", icon:"◆", title:"What MLC actually is",
+      body:"The Master Leader Course is the fourth course in the NCO Professional Development System — branch-immaterial, resident, and the gate above SLC. Per AR 350-1, MLC exists ‘to acquire the leader skills required for success at both company, troop, and staff assignments throughout the defense establishment.’ Its defining shift from every course below it is scope: MLC moves you from tactical-level leadership toward operational-level thinking — understanding how your formation fits into something much larger than itself.",
+      points:[
+        "Fourth NCOPDS course: BLC → ALC → SLC → MLC → SMC",
+        "Branch-immaterial — like BLC, unlike the MOS-specific ALC/SLC — so your class is mixed-MOS SFCs and MSGs",
+        "SLC is a formal prerequisite — you cannot enroll in MLC without it (AR 350-1, para 3-38a)",
+        "Target training population is grades E-7 and E-8 (AR 350-1, para 3-38b) — SFCs preparing for MSG, and MSGs who still owe the school",
+        "AR 350-1's areas of study: public speaking, other services’ capabilities, mission command, understanding and applying MDMP, decisive action, organizational management, and inter-agency/multinational considerations",
+        "DA PAM 600-25 (para 2-12e(4)) frames the same course as challenging selected SFCs in professional writing, communication, public speaking, critical thinking, organizational and command leadership, management skills, and the joint and operational level of war fighting"
+      ] },
+
+    { id:"changed", icon:"⚠", title:"Read this first — MLC is actively being rebuilt",
+      body:"Like BLC, ALC and SLC, MLC is mid-redesign under the Army's ongoing NCO PME transformation. Treat any specific length or hour count you were told more than a few months ago as suspect, and confirm with your S-1 and NCOLCoE before you plan around it.",
+      points:[
+        "Course length is being extended — public TRADOC/NCO Leadership Center of Excellence reporting describes a move from 15 training days (112 academic hours) to 21 training days (144 academic hours)",
+        "MDMP is newly added to the program of instruction — it was not previously part of MLC",
+        "A multi-day warfighting capstone has been added, reported at roughly three days (about 24 academic hours), in which students apply early MDMP steps in a first-sergeant-relevant scenario",
+        "Public reporting describes Active Component initial operational capability beginning 14 July 2026, with Army Reserve/National Guard full operational capability in October 2026 — which version of the course you attend may depend on exactly when and where you go",
+        "MLC's connection to promotion is itself in motion: GUIDON's own doctrine content already notes MLC “is becoming a requirement for MSG” as the redesign fields it — confirm your own gate rather than assuming last year's rule still applies",
+        "As with BLC/ALC/SLC: this is a real, in-execution change, not a rumor — but the exact current figures belong to your ATRRS course announcement and your NCO Academy, not to any single source written months ago"
+      ] },
+
+    { id:"orgstrat", icon:"▤", title:"The real shift: organizational and strategic leadership",
+      body:"Every NCOPDS course below MLC operates inside ADP 6-22's direct-leadership chapters — face-to-face, one echelon at a time. MLC is where the Leadership Requirements Model gets re-taught at scale: Chapter 9 (Organizational Leadership) and Chapter 10 (Strategic Leadership), each built around the same Leading / Developing / Achieving frame you already know, scaled up.",
+      points:[
+        "Chapter 9 (Organizational Leadership): Leading (para 9-1), Developing (para 9-3), Achieving (para 9-6)",
+        "Chapter 10 (Strategic Leadership): Leading (para 10-2), Developing (para 10-5), Achieving (para 10-7)",
+        "Rank does not determine the level — position does (ADP 6-22, para 1-123): a battalion CSM and the SMA hold comparable rank but operate at very different leadership levels",
+        "An organizational leader's defining communication job: push intent two echelons down, and understand intent two echelons up (para 1-128) — you are no longer giving daily face-to-face guidance to every subordinate",
+        "You verify subordinates actually understand intent through personal observation and visits (para 1-129), not just by reading reports",
+        "Strategic leaders take a long-term view and often will not see their own decisions reach fruition during their tenure (para 1-132) — which is exactly why picking and developing the people who will carry the work forward matters so much"
+      ] },
+
+    { id:"c2", icon:"▣", title:"Command and control, and mission command at echelon",
+      body:"ADP 6-0 was retitled from ‘Mission Command: Command and Control of Army Forces’ to simply ‘Command and Control’ in its 7 July 2026 edition — mission command was not dropped, it is now framed as the Army's approach for exercising command and control, inside a publication about the larger subject. MLC teaches this as a system, not a slogan.",
+      points:[
+        "Four chapters: Ch 1 Fundamentals of Command and Control, Ch 2 Command, Ch 3 Control, Ch 4 The Command and Control Warfighting Function",
+        "Mission command definition (para 1-37): ‘the Army's approach to command and control that empowers subordinate decision making and decentralized execution appropriate to the situation’",
+        "Seven principles (para 1-49): competence, mutual trust, shared understanding, commander's intent, mission orders, disciplined initiative, risk acceptance",
+        "The 2026 revision no longer treats the command post as one static center — forces disperse across multiple C2 nodes for survivability, which changes how a staff section actually operates",
+        "The C2 system is people, processes, networks/data and C2 nodes together — a senior staff NCO is frequently the one who makes the ‘people and processes’ half of that actually work under pressure",
+        "Building mutual trust and shared understanding across a formation — two of the seven principles — is, in practice, a senior NCO's daily work as much as a commander's"
+      ] },
+
+    { id:"mdmp", icon:"⚒", title:"MDMP — newly on the syllabus, and what it asks of you",
+      body:"AR 350-1 lists ‘understanding and applying military decision making process’ among MLC's areas of study — the first time it is formally taught to you at this depth. At the organizational level you are less often the one executing a plan handed down, and more often a contributor to building it.",
+      points:[
+        "The Operations Process (ADP 5-0) has four activities: Plan, Prepare, Execute, Assess — a senior NCO contributes during Plan (staff estimates) and is a key set of eyes during Assess",
+        "A running estimate — a continuously updated status/facts/assumptions/risk product for your own functional area — is the concrete product you are most likely to own",
+        "If your estimate surfaces a real risk late, with no time left to fully war-game it: report it clearly and in time to inform the decision — MDMP is built to run on the best available information under pressure, not to wait for perfect information",
+        "MLC's capstone applies the early MDMP steps — receipt of mission, mission analysis, course of action development — in a first-sergeant-relevant scenario",
+        "JIIM (Joint, Interagency, Intergovernmental, Multinational) considerations sit alongside MDMP in AR 350-1's list — at this level you coordinate outside a single-Service, single-unit bubble more often"
+      ] },
+
+    { id:"ncoer", icon:"★", title:"The NCOER shifts under you — now you're the rater",
+      body:"Most Soldiers arrive at MLC having been rated for years. MLC-level responsibility means becoming the rater — sometimes for the first time — and AR 623-3 puts real obligations on that role that a rated Soldier never had to think about.",
+      points:[
+        "Rater minimum qualifying period: 90 calendar days supervising the rated NCO",
+        "Senior rater minimum qualifying period: 60 calendar days — the senior rater is the rater's own immediate supervisor",
+        "Senior raters (or their designated representative) are responsible for the completed report reaching HRC within 90 calendar days of the THRU date — timeliness is its own, separate obligation from content",
+        "Rater tendency — a pattern of inflated or deflated ratings from one rater — is a documented, tracked problem; an inflated first NCOER you write sets an inaccurate baseline the rated NCO and the Army both then have to live with",
+        "Senior raters are also a checkpoint for the evaluation SYSTEM's integrity — compliance with how reports are prepared and forwarded — not only an evaluator of the one Soldier in front of them"
+      ] },
+
+    { id:"readiness", icon:"⚑", title:"Readiness reporting — whose numbers, whose responsibility",
+      body:"AR 220-1 governs the Commander's Unit Status Report (CUSR) — named that way on purpose, to emphasize that the unit commander is solely responsible for its accuracy. As the senior NCO feeding that report, your role is providing the honest ground truth it is built from.",
+      points:[
+        "AR 220-1 requires reports that neither mask (hide) nor exaggerate readiness deficiencies — an overly rosy report is exactly as much a violation as an overly pessimistic one",
+        "The regulation demands timely, accurate and complete reporting — not a report that looks good, one that is true",
+        "A senior NCO who inflates or sits on bad personnel/training/equipment data is undermining the same standard AR 220-1 exists to protect, one step removed from the actual signature block",
+        "Practical read: when pressure arrives to ‘find a way to get the numbers closer to green’ before a report goes up, the doctrinally sound move is reporting the real numbers AND briefing what is already being done about the shortfall — not choosing between honesty and looking capable"
+      ] },
+
+    { id:"talent", icon:"▲", title:"Talent management — not just filling the next vacancy",
+      body:"The U.S. Army Talent Management Strategy, ‘Force 2025 and Beyond: Ready, Professional, Diverse, and Integrated,’ is the doctrine behind a question MLC expects you to be good at answering: who is actually the right fit for this position, not just who is next in line.",
+      points:[
+        "Talent management means matching a person's actual knowledge, skills, behaviors and preferences to the position that develops them most and benefits the organization most — not defaulting to strict seniority",
+        "Development is framed as a shared investment: the gaining organization, the individual NCO, and the Army's future bench of leaders all benefit from a well-matched placement",
+        "The Enlisted Marketplace / Assignment Interactive Module inside IPPS-A is the practical tool built on this doctrine — letting a Soldier's preference and a gaining unit's stated need both factor into an assignment",
+        "The hard case is real: your best-fit NCO for a demanding, unglamorous slot may not want it. Talent-management doctrine's answer is a genuine conversation about the position's value, not a unilateral order and not simply picking whoever is willing"
+      ] },
+
+    { id:"prep", icon:"⚒", title:"Sharpen the sword — before MLC",
+      body:"By MLC you are being assessed on operational-level judgment, not squad-level execution. Most of it can be built now, at your own unit, before you ever sit in a classroom.",
+      points:[
+        "Read ADP 6-22 Chapters 9 and 10 — organizational and strategic leadership — and be able to explain, in your own words, what changes about HOW you lead as the scope grows",
+        "Read the current ADP 6-0 (7 July 2026, Command and Control) — know the seven mission command principles and what ‘dispersed C2 nodes’ means for how a staff section actually operates now",
+        "If you have never formally rated anyone: ask a mentor to walk you through AR 623-3's rater/senior rater responsibilities and the concept of rater tendency before your first NCOER cycle",
+        "If you contribute to a readiness report at any level, practice giving the honest number FIRST, then the plan to fix it — that habit is exactly what AR 220-1 asks for",
+        "Build or contribute to one real running estimate for your functional area — sustainment, personnel, training — so MDMP participation is not a cold start",
+        "Have one real conversation about talent management: where would a strong subordinate NCO actually grow the most, even if it costs your own section their best performer",
+        "Keep AFT, body composition and records clean — graduation standards still include them, the same as every NCOPDS course below MLC"
+      ] },
+
+    { id:"after", icon:"⇢", title:"After MLC",
+      body:"MLC completion is tied to the next gates above it — and, like everything else in this module, exactly how is still settling under the Army's PME transformation.",
+      points:[
+        "Verify your course completion posted — the same iPERMS/ATRRS follow-through every NCOPDS course requires",
+        "MLC is an eligibility step toward the Sergeants Major Course; SGM-A completion itself remains the formal pin-on requirement for SGM",
+        "MLC's connection to MSG pin-on is explicitly in transition — confirm your own requirement with S-1 and your career counselor rather than assuming a fixed rule",
+        "Start thinking in organizational terms now: what does your formation look like two echelons up, and what do you owe the leaders two echelons down",
+        "The next and highest gate is the Sergeants Major Course — resident (10 months) or by distance learning (moving toward roughly 12 months, down from 18–24)"
+      ] }
+  ];
+
+  const SELF_CHECK = [
+    "I can explain what changes about HOW a leader leads between the direct, organizational, and strategic levels",
+    "I can name ADP 6-0's seven principles of mission command and give a real example of mutual trust or shared understanding I built",
+    "I understand AR 623-3's rater (90-day) and senior rater (60-day) minimum qualifying periods and what each role is actually responsible for",
+    "I can explain rater tendency and why an inflated first NCOER creates a lasting problem",
+    "I know what AR 220-1 requires a readiness report to do — and what it explicitly forbids on both the rosy and the pessimistic side",
+    "I have contributed to, or built, a real running estimate for MDMP in my own functional area",
+    "I can describe talent management as matching fit and development, not just filling the next vacancy",
+    "I have read ADP 6-22 Chapters 9 and 10 and can describe organizational leadership's ‘intent two echelons down, understand it two echelons up’ responsibility",
+    "I know MLC's official areas of study (AR 350-1, para 3-38a) well enough to explain them to a Soldier prepping for the course",
+    "My AFT, body composition and records would survive selection and graduation standards",
+    "I have had at least one real conversation about a subordinate NCO's best developmental placement, even when it was not convenient for my own section"
+  ];
+
+  const KEY = "guidon:mlc:checks:v1";
+
+  async function render(mount) {
+    util.clear(mount);
+    // Same 70ch reading-comfort scoping as blc.js/alc.js/slc.js's own
+    // -view classes - see the .blc-view CSS rule's comment for why a bare
+    // selector would leak onto every other route's .panel text.
+    mount.classList.add("mlc-view");
+    mount.appendChild(el("div.section-title", {}, [
+      el("h2", { text: "MLC Prep" }), el("div.rule") ]));
+    mount.appendChild(el("p.hint", {
+      text: "For sergeants first class and master sergeants — the NCOPDS gate above SLC. MLC shifts you from tactical to operational-level leadership and is built from AR 350-1 and DA PAM 600-25's own course descriptions." }));
+
+    // Same shared self-check widget BLC/ALC/SLC use (util.renderSelfCheckWidget)
+    // - only KEY/SELF_CHECK/note differ per module, matching the established
+    // pattern rather than hand-rolling a fourth copy.
+    await util.renderSelfCheckWidget(mount, {
+      key: KEY,
+      items: SELF_CHECK,
+      idPrefix: "mlc",
+      note: (done, total) => done === total
+        ? "That is operational-level preparation, not just course preparation. It will show in the capstone."
+        : done >= 8 ? "Strong. The remaining items are the ones a rating chain or a readiness report will expose."
+        : done >= 5 ? "Solid base. The rater/senior rater responsibilities and one real running estimate close most of the gap."
+        : "Start with ADP 6-22 Chapters 9-10 and the seven mission command principles — both are free reading and both anchor everything else here.",
+    });
+
+    SECTIONS.forEach((s) => {
+      const panel = el("div.panel", { style:"margin-bottom:10px" });
+      const head = el("button", { type:"button", "aria-expanded":"false",
+        style:"width:100%;text-align:left;background:none;border:none;cursor:pointer;padding:0;color:inherit;font:inherit;min-height:44px;display:flex;align-items:center" });
+      head.appendChild(el("div.eyebrow", { text: s.icon + "  " + s.title }));
+      const bodyWrap = el("div", { style:"display:none" });
+      bodyWrap.appendChild(el("p.hint", { text: s.body, style:"margin-top:4px" }));
+      const ul = el("ul", { style:"margin:8px 0 0 18px" });
+      s.points.forEach(pt => ul.appendChild(el("li", { text: pt, style:"margin:4px 0" })));
+      bodyWrap.appendChild(ul);
+      head.addEventListener("click", () => {
+        const open = bodyWrap.style.display !== "none";
+        bodyWrap.style.display = open ? "none" : "block";
+        head.setAttribute("aria-expanded", open ? "false" : "true");
+      });
+      panel.appendChild(head); panel.appendChild(bodyWrap);
+      mount.appendChild(panel);
+    });
+
+    const links = el("div.panel", { style:"margin-top:10px" });
+    links.appendChild(el("div.eyebrow", { text:"Work it here" }));
+    [["SLC Prep — the gate before this","#/slc"],
+     ["Board Drill — filter Master Leader Course (MLC) / Mission Command at Echelon","#/board"],
+     ["Counseling & DA 4856","#/counsel"],
+     ["Army writing — essays and briefings","#/write"],
+     ["Doctrine library","#/doctrine"],
+     ["Channels & Gates — promotion requirements table","#/channels"]].forEach(([label, hash]) => {
+      const b = el("button.btn.sm.ghost", { type:"button", text: label, style:"margin:4px 6px 0 0" });
+      b.addEventListener("click", () => { location.hash = hash; });
+      links.appendChild(b);
+    });
+    mount.appendChild(links);
+
+    mount.appendChild(el("p.hint", { style:"margin-top:12px",
+      text:"Course length, program of instruction and pin-on/eligibility specifics are moving under the Army's PME transformation and vary by component and report date. Confirm every specific with your S-1, your career counsellor, and the NCO Leadership Center of Excellence course announcement you are scheduled against. Nothing here is a substitute for your ATRRS course announcement." }));
+  }
+
+  // KEY/SELF_CHECK exposed for Home's "My readiness" dashboard strip - see
+  // the matching comment on G.blc above for why.
+  G.mlc = { render, KEY, SELF_CHECK };
+})();
+// END mlc.js
 
 /* ==== js/drills.js ==== */
 /* GUIDON — drills.js : NCOPDS practical drills (G.drills)
@@ -26216,18 +26624,30 @@ window.G = window.G || {};
   // byte for byte, a false-positive-passing bug, not a false-failing one.
   const PD_FALLBACK = ["Bend and Reach","Rear Lunge","High Jumper","Rower","Squat Bender",
               "Windmill","Forward Lunge","Prone Row","Bent-Leg Body Twist","Push-Up"];
-  function pdExerciseNames() {
+  const CD1_FALLBACK = ["Power jump","V-up","Mountain climber","Leg-tuck and twist","Single-leg push-up"];
+  const CD2_FALLBACK = ["Turn and lunge","Supine bicycle","Half jack","Swimmer","8-count T push-up"];
+  // Generalized from this file's own former pdExerciseNames() (ROADMAP 3g
+  // item I) now that CD1/CD2 also carry real, verified seed.prt.drills
+  // records (src/app-modules/12-prt-drills-expansion.js) - any drill id
+  // with a live record reads its own real exercise names/order, the same
+  // way PD's own block always has; LIVE_FALLBACK below (this file) is the
+  // closed set of ids this applies to, so ssd/hsd/mmd1/mmd2/rd (still no
+  // seed.prt.drills record) keep reading the static BLOCK_ITEMS table.
+  function drillExerciseNames(id, fallback) {
     const meta = G.store && G.store.prtMeta ? G.store.prtMeta() : null;
-    const pd = meta && Array.isArray(meta.drills) ? meta.drills.find((d) => d.id === "pd") : null;
-    const names = pd && Array.isArray(pd.exercises) ? pd.exercises.slice().sort((a, b) => a.order - b.order).map((e) => e.name) : null;
-    return (names && names.length) ? names : PD_FALLBACK;
+    const d = meta && Array.isArray(meta.drills) ? meta.drills.find((x) => x.id === id) : null;
+    const names = d && Array.isArray(d.exercises) ? d.exercises.slice().sort((a, b) => a.order - b.order).map((e) => e.name) : null;
+    return (names && names.length) ? names : fallback;
   }
   const RD = ["Overhead arm pull","Rear lunge","Extend and flex","Thigh stretch",
               "Single-leg over","Groin stretch","Calf stretch","Hamstring stretch"];
+  // "cd1"/"cd2" removed from here: both now have a real seed.prt.drills
+  // record, so their items resolve through drillExerciseNames() below (see
+  // LIVE_FALLBACK) instead of this static table. CD1_FALLBACK/CD2_FALLBACK
+  // above are that function's fallback only, for when store.prtMeta() is
+  // unavailable - the same role PD_FALLBACK has always played for "pd".
   const BLOCK_ITEMS = {
     ssd:["I raise","T raise","Y raise","L raise","W raise"],
-    cd1:["Power jump","V-up","Mountain climber","Leg-tuck and twist","Single-leg push-up"],
-    cd2:["Turn and lunge","Supine bicycle","Half jack","Swimmer","8-count T push-up"],
     rd:RD,
     hsd:["Lateral leg raise","Medial leg raise","Bent-leg lateral raise","Single-leg tuck","Single-leg over"],
     mmd1:["Vertical","Lateral","Shuttle sprint"],
@@ -26238,6 +26658,9 @@ window.G = window.G || {};
     cd1:"Conditioning Drill 1 (CD 1)", cd2:"Conditioning Drill 2 (CD 2)", rd:"Recovery Drill (RD)",
     hsd:"Hip Stability Drill (HSD)", mmd1:"Military Movement Drill 1 (MMD 1)", mmd2:"Military Movement Drill 2 (MMD 2)"
   };
+  // The closed set of block drill ids with a real seed.prt.drills record
+  // today, each paired with drillExerciseNames()'s own fallback for that id.
+  const LIVE_FALLBACK = { pd:PD_FALLBACK, cd1:CD1_FALLBACK, cd2:CD2_FALLBACK };
   // Fallback session shape if store.prtMeta() is ever unavailable (matches
   // core's own DEFAULT_PRT_SESSIONS/DEFAULT_PRT_PENDING_DRILLS exactly, so
   // this is the same defensive floor prtMeta() itself already falls back to
@@ -26246,7 +26669,7 @@ window.G = window.G || {};
     { id:"strength", label:"Strength & Mobility Session", blocks:[{drillId:"pd"},{drillId:"ssd"},{drillId:"cd1"},{drillId:"cd2"},{drillId:"rd"}] },
     { id:"endurance", label:"Endurance & Mobility Session", blocks:[{drillId:"pd"},{drillId:"hsd"},{drillId:"mmd1"},{drillId:"mmd2"},{drillId:"rd"}] }
   ];
-  const PENDING_FALLBACK = { ssd:1, cd1:1, cd2:1, hsd:1, mmd1:1, mmd2:1, rd:1 };
+  const PENDING_FALLBACK = { ssd:1, hsd:1, mmd1:1, mmd2:1, rd:1 };
   function buildPrtSessions() {
     const meta = G.store && G.store.prtMeta ? G.store.prtMeta() : null;
     const sessions = (meta && Array.isArray(meta.sessions) && meta.sessions.length) ? meta.sessions : SESSIONS_FALLBACK;
@@ -26256,7 +26679,7 @@ window.G = window.G || {};
       byId[s.id] = { label:s.label, blocks:(s.blocks || []).map((b) => ({
         id:b.drillId,
         n:BLOCK_LABELS[b.drillId] || pendingDrills[b.drillId] || b.drillId,
-        items:b.drillId === "pd" ? pdExerciseNames() : (BLOCK_ITEMS[b.drillId] || [])
+        items:LIVE_FALLBACK[b.drillId] ? drillExerciseNames(b.drillId, LIVE_FALLBACK[b.drillId]) : (BLOCK_ITEMS[b.drillId] || [])
       })) };
     });
     return { byId, pendingIds:new Set(Object.keys(pendingDrills)) };
@@ -29045,6 +29468,24 @@ window.G = window.G || {};
     util.clear(mount);
     mount.appendChild(el("div.section-title", {}, [ el("h2", { text:"Share & Install" }), el("div.rule") ]));
 
+    // Standing rule: What's New should be reachable on demand, not just the
+    // one-time auto-popup after an update (G.whatsNew.checkOnBoot()) -
+    // named here specifically since a Soldier sharing or reinstalling
+    // GUIDON is already thinking about "what version/what's changed."
+    // Placed above the platform branches below (native/browser/file://) so
+    // it renders unconditionally regardless of which one fires. Same reuse
+    // as Settings' "About GUIDON" panel - the full release history via the
+    // existing show()/"Earlier updates" collapsible, not a duplicate.
+    (function () {
+      const notes = (G.whatsNew && Array.isArray(G.whatsNew.RELEASE_NOTES)) ? G.whatsNew.RELEASE_NOTES : [];
+      const sorted = notes.filter((n) => n && n.version && Array.isArray(n.highlights) && n.highlights.length)
+        .slice().sort((a, b) => G.whatsNew.cmpVersion(b.version, a.version));
+      if (!sorted.length) return;
+      const whatsNewLink = el("button.btn.sm.ghost", { type: "button", gi: "star", giSize: 14, text: "See what's new", style: "margin-bottom:12px" });
+      whatsNewLink.addEventListener("click", () => G.whatsNew.show(sorted));
+      mount.appendChild(whatsNewLink);
+    })();
+
     // Tauri desktop / Capacitor Android: none of the content below this
     // point applies. There is no browser URL to copy or turn into a QR code
     // (location.href is a native window/webview origin, not a link anyone
@@ -29385,6 +29826,21 @@ window.G = window.G || {};
   var el = G.util.el;
   var SCHEMA = "guidon.backup/v1";
 
+  // ROADMAP 3g follow-up: nav personalization (which routes a Soldier
+  // pinned, which nav groups they left open) lives in G.db.local -
+  // browser localStorage, read/written only inside the nav module
+  // (index.html's app.js, "guidon-nav-pinned-routes"/"guidon-nav-open-
+  // groups") - never in the "kv"/"userScenarios"/"attempts" IndexedDB
+  // stores everything above/below this constant actually backs up. A
+  // Soldier's pinned routes were silently lost on every fresh install or
+  // device migration, since neither exportAll() nor importAll() below
+  // ever looked at localStorage at all. Both keys are plain JSON arrays
+  // of hash strings (nav's own persistNavPinned()/persistNavOpenGroups())
+  // - small, safe to carry in a backup file, and not "other people's
+  // data" the way PRIVATE_PREFIXES below guards against, so they travel
+  // unconditionally like every other kv-backed preference.
+  var LOCAL_KEYS = ["guidon-nav-pinned-routes", "guidon-nav-open-groups"];
+
   function nowStamp() {
     var d = new Date();
     var p = function (n) { return (n < 10 ? "0" : "") + n; };
@@ -29520,6 +29976,11 @@ window.G = window.G || {};
     // inputs here - a plain object, shape-only check (the reader's own
     // Object.assign onto a fully-defaulted object tolerates a partial row).
     "guidon:ppw:v1": function (v) { return v && typeof v === "object" && !Array.isArray(v); },
+    // fitness.js's AFT Event Score Calculator (#/fitness): raw per-event
+    // performance + age band/sex/standard selections. Same plain-object,
+    // shape-only check as guidon:ppw:v1 above - the reader's own
+    // Object.assign onto a fully-defaulted object tolerates a partial row.
+    "guidon:aft-calc:v1": function (v) { return v && typeof v === "object" && !Array.isArray(v); },
     // Audit finding (security-privacy): leader.js's own header flags this
     // key as holding OTHER people's data (excluded from backup.js's own
     // export via PRIVATE_PREFIXES already) - but content-validation is a
@@ -29742,6 +30203,7 @@ window.G = window.G || {};
     "guidon:calendar:v1": "your calendar",
     "forms:saved": "saved form drafts",
     "guidon:ppw:v1": "your promotion points worksheet",
+    "guidon:aft-calc:v1": "your AFT event score calculator inputs",
     "progress:weeklyGoal:v1": "your weekly study goal",
     "writing:bulletHistory:v1": "Bullet Builder history",
     "resilience:practiceLog:v1": "your resilience practice log",
@@ -29749,6 +30211,8 @@ window.G = window.G || {};
     "risk:all": "saved risk assessments",
     "guidon:leader:roster:v1": "the squad roster",
     "guidon:leader:roster:moi:v1": "the roster's attached MOI",
+    "guidon-nav-pinned-routes": "your pinned nav routes",
+    "guidon-nav-open-groups": "your nav section layout",
   };
   var KEY_LABEL_FAMILIES = [
     { prefix: "srs:", label: "Board Drill review progress" },
@@ -29834,6 +30298,21 @@ window.G = window.G || {};
     } catch (e) { payload.stores.kv = []; failedStores.push("kv"); logExportFail("kv", e); }
     try { payload.stores.userScenarios = await G.db.all("userScenarios"); } catch (e) { payload.stores.userScenarios = []; failedStores.push("userScenarios"); logExportFail("userScenarios", e); }
     try { payload.stores.attempts = await G.db.all("attempts"); } catch (e) { payload.stores.attempts = []; failedStores.push("attempts"); logExportFail("attempts", e); }
+    // Nav personalization (LOCAL_KEYS, above) - a small localStorage
+    // bucket, not an IndexedDB store, so it gets its own per-key
+    // try/catch rather than one call into G.db.all(). Same
+    // try/catch-wrapped access pattern nav's own persistNavPinned()/
+    // persistNavOpenGroups() already use for these exact keys (index.html
+    // app.js) - a blocked localStorage (private mode, file://) reads as
+    // "nothing saved" there and does the same here, never throwing past
+    // this loop. Omits a key entirely when it has never been written
+    // (G.db.local.get returns null) rather than writing a literal "null"
+    // string a hand-inspected backup file would misread as real data.
+    var local = {};
+    LOCAL_KEYS.forEach(function (k) {
+      try { var v = G.db.local.get(k); if (v != null) local[k] = v; } catch (e) {}
+    });
+    payload.stores.local = local;
     // counts for a friendly summary
     payload.summary = {
       kv: (payload.stores.kv || []).length,
@@ -29915,8 +30394,8 @@ window.G = window.G || {};
     if (!obj || obj.schema !== SCHEMA || !obj.stores) {
       throw new Error("This file isn't a GUIDON backup (unexpected format).");
     }
-    var restored = { kv: 0, userScenarios: 0, attempts: 0 };
-    var skipped = { kv: 0, userScenarios: 0 };
+    var restored = { kv: 0, userScenarios: 0, attempts: 0, local: 0 };
+    var skipped = { kv: 0, userScenarios: 0, local: 0 };
     // Which kv rows were left out, by key - so the restore screens can say
     // WHAT was damaged in the Soldier's words (skippedSummary() above)
     // instead of only how many.
@@ -30003,6 +30482,32 @@ window.G = window.G || {};
         if (at && at.id != null) atRows.push(at);
       }
       if (atRows.length) { try { await G.db.putMany("attempts", atRows); restored.attempts += atRows.length; } catch (e) { failedStores.push("attempts"); logImportFail("attempts", e); } }
+    }
+    // Nav personalization (LOCAL_KEYS, above, written by exportAll()) -
+    // localStorage, not IndexedDB, so this is a plain per-key
+    // try/catch-wrapped G.db.local.set() rather than a putMany()
+    // transaction. Each value must still be the real shape nav's own
+    // persistNavPinned()/persistNavOpenGroups() write (a JSON array of
+    // strings) - a hand-edited or corrupted file could carry anything
+    // under these keys, and G.db.local.set() itself does no validation of
+    // its own (it's a thin String(v) wrapper over window.localStorage,
+    // see db.js's own header comment on that section). A row that fails
+    // this check is left out and counted in skipped.local/skippedKeys,
+    // the same "named, not silently dropped" contract every kv row above
+    // already gets.
+    if (obj.stores.local && typeof obj.stores.local === "object") {
+      LOCAL_KEYS.forEach(function (k) {
+        if (!Object.prototype.hasOwnProperty.call(obj.stores.local, k)) return;
+        var raw = obj.stores.local[k];
+        var parsed;
+        try { parsed = typeof raw === "string" ? JSON.parse(raw) : null; } catch (e) { parsed = null; }
+        if (!Array.isArray(parsed) || !parsed.every(function (h) { return typeof h === "string"; })) {
+          skipped.local++; skippedKeys.push(k);
+          if (G.selfheal) G.selfheal.log("kv-reject", k, "malformed nav-personalization row rejected during backup import (not a JSON array of strings) - existing value kept");
+          return;
+        }
+        try { G.db.local.set(k, raw); restored.local++; } catch (e) { failedStores.push("local"); logImportFail("local", e); }
+      });
     }
     return { restored: restored, skipped: skipped, skippedKeys: skippedKeys, failedStores: failedStores };
   }
@@ -34346,15 +34851,19 @@ window.G = window.G || {};
       // above - that score is purely SRS-grade-derived, and silently
       // blending a checklist-completion signal into it would change what
       // that existing number means without anyone asking for that. G.blc/
-      // G.alc/G.slc now expose KEY+SELF_CHECK, and G.records exposes
+      // G.alc/G.slc/G.mlc now expose KEY+SELF_CHECK, and G.records exposes
       // KEY+TOTAL+VALID_IDS (previously all private to their own closures)
       // specifically so this tile can read each module's real progress
-      // instead of re-deriving its own copy of four different id schemes.
+      // instead of re-deriving its own copy of five different id schemes.
+      // MLC/senior-NCO content pack: G.mlc joined this list the same way
+      // G.blc/G.alc/G.slc already did - no special-casing needed, since the
+      // loop below reads any module via its own SELF_CHECK/KEY shape.
       try {
         const checklists = [
           { mod: G.blc },
           { mod: G.alc },
           { mod: G.slc },
+          { mod: G.mlc },
           { mod: G.records },
         ];
         let checklistsComplete = 0;
@@ -34392,9 +34901,9 @@ window.G = window.G || {};
         // any of these four checklists.
         if (anyChecklistProgress) hasAnyProgress = true;
         tiles.push({
-          label: "PME & Records checklists", value: checklistsComplete + "/4",
-          sub: checklistsComplete === 4 ? "All complete" : anyChecklistProgress ? "Keep going" : "Not started",
-          hash: "#/records", tone: checklistsComplete === 4 ? "green" : "amber",
+          label: "PME & Records checklists", value: checklistsComplete + "/" + checklists.length,
+          sub: checklistsComplete === checklists.length ? "All complete" : anyChecklistProgress ? "Keep going" : "Not started",
+          hash: "#/records", tone: checklistsComplete === checklists.length ? "green" : "amber",
         });
       } catch (e) {}
 
@@ -35243,18 +35752,37 @@ window.G = window.G || {};
         // ArrowUp/ArrowDown row-to-row (Dictionary's entryList row idiom,
         // this same file) - clamps at the bottom; ArrowUp from row 0
         // returns focus to the search input directly above this list.
+        // ROADMAP 3g follow-up: listPane's direct children are now
+        // .list-detail-row-wrap (see below), so this walks the wrapper's
+        // own siblings and reaches back in for its row button - same fix
+        // as Doctrine's entryList/Board Drill's catList (this same file's
+        // views.doctrine, and board.js's refreshCatList).
         row.addEventListener("keydown", function (e) {
           if (e.key === "ArrowDown") {
             e.preventDefault();
-            var next = row.nextElementSibling;
+            var nextWrap = row.closest(".list-detail-row-wrap");
+            var next = nextWrap && nextWrap.nextElementSibling && nextWrap.nextElementSibling.querySelector(".list-detail-row");
             if (next) next.focus();
           } else if (e.key === "ArrowUp") {
             e.preventDefault();
-            var prev = row.previousElementSibling;
+            var prevWrap = row.closest(".list-detail-row-wrap");
+            var prev = prevWrap && prevWrap.previousElementSibling && prevWrap.previousElementSibling.querySelector(".list-detail-row");
             if (prev) prev.focus(); else inp.focus();
           }
         });
-        listPane.appendChild(row);
+        // A Soldier browsing Creeds & Branch Identities can now pin
+        // "#/creeds" right from the list they're already scrolling, not
+        // only from the nav rail/Sections drawer - see Doctrine's
+        // entryList for the full rationale (sibling wrapper; every row
+        // pins the same containing route; G.navPin.syncButtons() keeps
+        // every row's star in sync after any one of them is toggled).
+        var creedRowWrap = el("div.list-detail-row-wrap", {}, [row]);
+        if (G.navPin && G.navPin.button) {
+          var creedPinBtn = G.navPin.button("#/creeds");
+          creedPinBtn.addEventListener("click", function () { G.navPin.syncButtons(listPane, "#/creeds"); });
+          creedRowWrap.appendChild(creedPinBtn);
+        }
+        listPane.appendChild(creedRowWrap);
       });
       if (!list.length) listPane.appendChild(el("p.hint", { text: "No matches." }));
     }
@@ -35423,19 +35951,38 @@ window.G = window.G || {};
       row.addEventListener("click", function () { selectRecite(q.id); });
       // ArrowUp/ArrowDown row-to-row (Dictionary's entryList row idiom,
       // this same file) - clamps at both ends, no input sits directly
-      // above this list to hand focus off to.
+      // above this list to hand focus off to. ROADMAP 3g follow-up: this
+      // row is now returned wrapped (see below), so both listPane's and
+      // ownPane's own containers hold .list-detail-row-wrap as their
+      // direct children - walk the wrapper's own siblings and reach back
+      // in for its row button, same fix as Doctrine/Board Drill/Creeds.
       row.addEventListener("keydown", function (e) {
         if (e.key === "ArrowDown") {
           e.preventDefault();
-          var next = row.nextElementSibling;
+          var nextWrap = row.closest(".list-detail-row-wrap");
+          var next = nextWrap && nextWrap.nextElementSibling && nextWrap.nextElementSibling.querySelector(".list-detail-row");
           if (next) next.focus();
         } else if (e.key === "ArrowUp") {
           e.preventDefault();
-          var prev = row.previousElementSibling;
+          var prevWrap = row.closest(".list-detail-row-wrap");
+          var prev = prevWrap && prevWrap.previousElementSibling && prevWrap.previousElementSibling.querySelector(".list-detail-row");
           if (prev) prev.focus();
         }
       });
-      return row;
+      // A Soldier browsing Recitation Drill (either the bundled creeds in
+      // listPane or their own "My unit" texts in ownPane) can now pin
+      // "#/recite" right from here - see Doctrine's entryList for the
+      // full rationale. syncButtons() is scoped to listCol (the shared
+      // outer container holding BOTH panes, above) rather than just this
+      // row's own pane, so toggling a star in either pane updates every
+      // star in both - they all pin the identical single route.
+      var reciteRowWrap = el("div.list-detail-row-wrap", {}, [row]);
+      if (G.navPin && G.navPin.button) {
+        var recitePinBtn = G.navPin.button("#/recite");
+        recitePinBtn.addEventListener("click", function () { G.navPin.syncButtons(listCol, "#/recite"); });
+        reciteRowWrap.appendChild(recitePinBtn);
+      }
+      return reciteRowWrap;
     }
 
     function renderList() {
@@ -36440,12 +36987,14 @@ window.G = window.G || {};
         // above natively; adding an explicit e.preventDefault()+click()
         // here would risk a double-fire depending on browser Enter-on-
         // button timing, for zero behavioral gain. entryList holds ONLY
-        // row buttons (util.clear(entryList) at the top of every draw(),
+        // row wrappers (util.clear(entryList) at the top of every draw(),
         // nothing else ever appended) unlike Search's resultsDiv which
-        // interleaves section-head/hit-card/"+N more" siblings - so plain
-        // next/previousElementSibling is a complete, correct traversal
-        // here with no classList guard needed the way Search's ArrowUp
-        // handler requires one. Clamps rather than wraps at both ends,
+        // interleaves section-head/hit-card/"+N more" siblings - so
+        // walking the wrapper's own next/previousElementSibling (ROADMAP
+        // 3g follow-up: each row is now wrapped with its own pin toggle,
+        // see that wrapper's construction below) is a complete, correct
+        // traversal here with no classList guard needed the way Search's
+        // ArrowUp handler requires one. Clamps rather than wraps at both ends,
         // matching Search's own clamping (Math.min/Math.max there) rather
         // than the wrapping used by, e.g., util.tabbarKeys elsewhere in
         // this file - a different existing helper for a different roving-
@@ -36455,15 +37004,42 @@ window.G = window.G || {};
         row.addEventListener("keydown", (e) => {
           if (e.key === "ArrowDown") {
             e.preventDefault();
-            const next = row.nextElementSibling;
+            // entryList's DIRECT children are now .list-detail-row-wrap
+            // (see below) rather than the row itself - nextElementSibling
+            // off `row` would only ever reach its own wrapper's pin
+            // button, so this walks the WRAPPER's siblings instead and
+            // reaches back in for that sibling's own row button.
+            const nextWrap = row.closest(".list-detail-row-wrap");
+            const next = nextWrap && nextWrap.nextElementSibling && nextWrap.nextElementSibling.querySelector(".list-detail-row");
             if (next) next.focus();
           } else if (e.key === "ArrowUp") {
             e.preventDefault();
-            const prev = row.previousElementSibling;
+            const prevWrap = row.closest(".list-detail-row-wrap");
+            const prev = prevWrap && prevWrap.previousElementSibling && prevWrap.previousElementSibling.querySelector(".list-detail-row");
             if (prev) prev.focus(); else search.focus();
           }
         });
-        entryList.appendChild(row);
+        // ROADMAP 3g follow-up: a Soldier reading Doctrine can now pin the
+        // "#/doctrine" route right from the entry list they're already
+        // scrolling, not only from the nav rail/Sections drawer -
+        // pinToggleButton() itself, exposed as G.navPin.button() (app.js,
+        // this same file, a separate closure - views.js has no direct
+        // reference to it). A sibling wrapper (.list-detail-row-wrap, see
+        // its own CSS comment), not a change to this row - a <button>
+        // can't host a nested <button>. Every row here pins the SAME
+        // single containing route (there's no separate route per doctrine
+        // entry to pin individually), so a toggle from any one star must
+        // update every other row's own star too - G.navPin.syncButtons()
+        // does that in place right after the toggle; nothing else
+        // re-renders entryList's existing rows the way renderNav()
+        // already does for the sidebar.
+        const wrap = el("div.list-detail-row-wrap", {}, [row]);
+        if (G.navPin && G.navPin.button) {
+          const pinBtn = G.navPin.button("#/doctrine");
+          pinBtn.addEventListener("click", () => G.navPin.syncButtons(entryList, "#/doctrine"));
+          wrap.appendChild(pinBtn);
+        }
+        entryList.appendChild(wrap);
         const card = el("div.card.doc-entry-card", { "data-doc-idx": String(i) });
         card.style.borderLeftColor = topicColor;
         // Topic eyebrow + source badge
@@ -36660,6 +37236,23 @@ window.G = window.G || {};
       const pn = el("div.panel", { style: "margin-bottom:14px" });
       pn.appendChild(el("div.fin-h", { text: "About GUIDON" }));
       pn.appendChild(el("p.hint", { text: "Version " + (window.GUIDON_APP_VERSION || "unknown") + " \u00b7 Built " + (window.GUIDON_BUILD_DATE || "unknown") }));
+      // Standing rule: What's New auto-shows once on the first launch after
+      // a real update (G.whatsNew.checkOnBoot(), below), but there was no
+      // way to pull it back up on demand afterward - checked live, zero
+      // other call sites reach G.whatsNew.show() besides that one auto-
+      // trigger. Right next to the version number is where a Soldier
+      // already looks to answer "what changed" - reuses show() with every
+      // real entry (newest first, its own existing "Earlier updates"
+      // collapsible), so this is a real changelog browser, not a
+      // duplicate of the auto-popup.
+      const whatsNewLink = el("button.btn.sm.ghost", { type: "button", gi: "star", giSize: 14, text: "See what's new", style: "margin-top:6px" });
+      whatsNewLink.addEventListener("click", () => {
+        const notes = (G.whatsNew && Array.isArray(G.whatsNew.RELEASE_NOTES)) ? G.whatsNew.RELEASE_NOTES : [];
+        const sorted = notes.filter((n) => n && n.version && Array.isArray(n.highlights) && n.highlights.length)
+          .slice().sort((a, b) => G.whatsNew.cmpVersion(b.version, a.version));
+        if (sorted.length) G.whatsNew.show(sorted);
+      });
+      pn.appendChild(whatsNewLink);
       // P1 of the "No server, ever" promise: the short form of #/privacy's
       // unified sentence. tools/test-privacy.mjs reads this panel and fails
       // if it ever credits a Content Security Policy again (no build ships one).
@@ -37726,10 +38319,30 @@ window.G = window.G || {};
     // of this commit (no content until Milestone 3), so these two types
     // will show zero hits until then, exactly like any other type with no
     // matching records - no special-casing needed for an empty store.
-    const TYPES = ["all","scenario","board","doctrine","creed","prt","lesson","resource","career","screen"];
-    const TYPE_ICON = { all:"⊞", scenario:"▶", board:"★", doctrine:"▤", creed:"🏳", prt:"⛹", lesson:"📖", resource:"🧭", career:"🎖", screen:"▣" };
-    const TYPE_COLOR = { scenario:"var(--ink-amber)", board:"var(--ink-cyan)", doctrine:"var(--ink-violet)", creed:"var(--ink-green)", prt:"var(--ink-red)", lesson:"var(--ink-green)", resource:"var(--ink-red)", career:"var(--ink-blue)", screen:"var(--ink-cyan)", all:"var(--text-dim)" };
-    const TYPE_LABEL = { all:"All", scenario:"Scenarios", board:"Board Q", doctrine:"Doctrine", creed:"Creeds & Identities", prt:"Physical Readiness", lesson:"Lessons", resource:"Resources", career:"MOS/Career", screen:"Screens & Settings" };
+    // "dictionary"/"forms"/"counsel"/"develop"/"health" added in the same
+    // pass that gave Global Search real relevance ranking (runSearch's
+    // hitScore() below) - see that block's own comment for why. Dictionary
+    // (G.dictionary / store.acronyms(), ~3,641 terms) was the single
+    // largest dataset in the app and had zero Global Search coverage of
+    // its own - only a generic "#/dictionary" screen chip (SCREEN_ENTRIES
+    // below), never a per-term hit. Forms/Counsel/Develop/Health give real
+    // record-level coverage to four of the eight UNINDEXED_DOMAIN_HASHES
+    // routes this same comment block used to list as having none at all -
+    // see UNINDEXED_DOMAIN_HASHES's own comment further down for which
+    // four remain un-indexed and why. Placed after "career" (the last of
+    // the original nine types) and before "screen" - "screen" stays the
+    // final catch-all fallback type, same position it's always held.
+    const TYPES = ["all","scenario","board","doctrine","creed","prt","lesson","resource","career","dictionary","forms","counsel","develop","health","screen"];
+    const TYPE_ICON = { all:"⊞", scenario:"▶", board:"★", doctrine:"▤", creed:"🏳", prt:"⛹", lesson:"📖", resource:"🧭", career:"🎖", dictionary:"🔤", forms:"📄", counsel:"🗣", develop:"📈", health:"❤", screen:"▣" };
+    // TYPE_COLOR reuses the same 5 real --ink-* tokens (--ink-amber/green/
+    // red/cyan/violet - see :root's own definitions) every existing type
+    // already shares two-plus ways; there's no unique color left to mint
+    // for a 6th/7th/8th/9th/10th type and this codebase has never tried
+    // to (career's own "var(--ink-blue)" above is dead: no --ink-blue
+    // custom property is defined anywhere in this file, a pre-existing
+    // gap outside this pass's scope - left as-is, not compounded further).
+    const TYPE_COLOR = { scenario:"var(--ink-amber)", board:"var(--ink-cyan)", doctrine:"var(--ink-violet)", creed:"var(--ink-green)", prt:"var(--ink-red)", lesson:"var(--ink-green)", resource:"var(--ink-red)", career:"var(--ink-blue)", dictionary:"var(--ink-violet)", forms:"var(--ink-amber)", counsel:"var(--ink-green)", develop:"var(--ink-cyan)", health:"var(--ink-red)", screen:"var(--ink-cyan)", all:"var(--text-dim)" };
+    const TYPE_LABEL = { all:"All", scenario:"Scenarios", board:"Board Q", doctrine:"Doctrine", creed:"Creeds & Identities", prt:"Physical Readiness", lesson:"Lessons", resource:"Resources", career:"MOS/Career", dictionary:"Dictionary", forms:"Forms", counsel:"Counseling", develop:"IDP / Development", health:"Health & Resilience", screen:"Screens & Settings" };
 
     let activeFilter = "all";
     const filterBar = el("div.search-filters");
@@ -37823,6 +38436,42 @@ window.G = window.G || {};
       return span;
     }
 
+    // Real relevance ranking, added alongside the Dictionary/Forms/Counsel/
+    // Develop/Health hit types above. Before this, every type's group was
+    // rendered in whatever order its own store getter happened to return
+    // records in (insertion order in the seed/content-pack JSON) - for a
+    // broad query against a big type like the new 3,641-term Dictionary,
+    // that meant the MAX_PER=8 cap could easily keep 8 records that only
+    // mention the query deep in a long definition while the ONE record
+    // whose acronym IS the query sat uncapped-but-unseen past position 8.
+    // hitScore() runs on hits that already passed their own _hay.includes()
+    // substring filter above (this never changes WHICH records match,
+    // only the ORDER a type's group is in before the existing MAX_PER
+    // slice), and ranks title match > sub match > body match, with an
+    // exact whole-field or whole-word match outscoring a bare substring
+    // within each field - a query that exactly names a record (like
+    // Dictionary's own acronym-first convention, matched in that view's
+    // own sortHits()) should always outrank a record that merely mentions
+    // it in passing. `body` is an extra, longer text field a handful of
+    // hit-builders below set purely for this scoring pass - it is never
+    // rendered (the render loop only reads h.title/h.sub/h.meta), so a
+    // type that doesn't set it just scores 0 for that third tier and ranks
+    // on title/sub alone, same as before this pass for every pre-existing
+    // type that had no natural third field.
+    function escSearchRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+    function hitScore(ql, h) {
+      function fieldScore(text, weight) {
+        if (!text) return 0;
+        const t = String(text).toLowerCase();
+        if (t === ql) return weight;
+        try {
+          if (new RegExp("(^|[^a-z0-9])" + escSearchRe(ql) + "($|[^a-z0-9])").test(t)) return weight * 0.7;
+        } catch (e) { /* ql can't form a bad pattern here - escSearchRe neutralizes every regex metachar - but never let a scoring helper throw and blank the results pane */ }
+        return t.includes(ql) ? weight * 0.4 : 0;
+      }
+      return fieldScore(h.title, 100) + fieldScore(h.sub, 30) + fieldScore(h.body, 10);
+    }
+
     // Adapted from Doctrine's jumpToDocEntry: scroll to and pulse the
     // already-rendered card rather than rebuilding it. The trailing
     // .focus() is new here, not present in Doctrine's version - it's safe
@@ -37876,11 +38525,33 @@ window.G = window.G || {};
     // FROM ROUTES" in this file), so a future route rename can't leave a
     // stale label on one of these chips the way it did for the roadmap's
     // own "Resilience"/"Health" drift above.
-    const UNINDEXED_DOMAIN_HASHES = ["#/forms", "#/counsel", "#/develop", "#/write", "#/money", "#/health", "#/transition", "#/moi"];
+    //
+    // Global Search coverage pass, same audit that added the "dictionary"
+    // hit type (TYPES above): four of the original seven un-indexed
+    // domains actually had clean, flat, non-MOS-gated record arrays sitting
+    // right behind their route the whole time - Forms (store.forms().forms,
+    // 34 DA/DD forms searchable by form number/name - the highest-value gap,
+    // since a Soldier typing a form number like "4856" got nothing before
+    // this), Counsel (store.counsel().skills, 12 counseling-technique
+    // entries), Develop (store.idp().goalTemplates, 25 IDP goal templates,
+    // each with its own real citation), and Health (store.resilience()
+    // .skills + .resources, 17 entries spanning resilience techniques and
+    // real crisis-line contact info). Each now has its own real
+    // allHits-pushing block below, the same _hay-cached substring-match
+    // pattern every other type uses, so they're pulled out of this list.
+    // Money, Write, and Transition were re-checked too and genuinely don't
+    // fit the same pass: their data is nested multi-level objects (budget
+    // buckets, memo/bullet/SITREP templates, milestone timelines) rather
+    // than one flat array of self-contained records - forcing a fit there
+    // would mean flattening structure this same audit didn't have time to
+    // do carefully. MOI stays un-indexed for the same reason Mock Board
+    // isn't its own chip above: it's an import workflow over a Soldier's
+    // own uploaded document, not a bank of GUIDON's own records to search.
+    const UNINDEXED_DOMAIN_HASHES = ["#/write", "#/money", "#/transition", "#/moi"];
 
     // "screen" search type: a Soldier who types a screen's own name, or a
     // real-world word for what it does ("dark mode", "PCS", "PRT"), gets a
-    // direct hit - not just the eight UNINDEXED_DOMAIN_HASHES routes above
+    // direct hit - not just the four UNINDEXED_DOMAIN_HASHES routes above
     // (which only surface as a fallback chip on a TOTAL zero-hit query, and
     // only by their exact G.routes label), and not just the six SECTION_ORDER
     // content domains, which cover real records (doctrine entries, board
@@ -37925,6 +38596,7 @@ window.G = window.G || {};
       { hash: "#/blc", keywords: "basic leader course NCOPDS" },
       { hash: "#/alc", keywords: "advanced leader course NCOPDS" },
       { hash: "#/slc", keywords: "senior leader course NCOPDS" },
+      { hash: "#/mlc", keywords: "master leader course NCOPDS senior NCO organizational strategic leadership mission command" },
       { hash: "#/drills", keywords: "leadership scenario drills" },
       { hash: "#/leader", keywords: "squad roster leader roster soldier tracker" },
       { hash: "#/risk", keywords: "risk worksheet composite risk management DA 7566" },
@@ -37991,8 +38663,19 @@ window.G = window.G || {};
       const cur  = store.curriculum ? store.curriculum() : {};
       const res  = store.resources ? store.resources() : { categories: [] };
       const car  = store.career ? store.career() : { mos: [] };
+      // New hit types (see TYPES' own comment above): none of these four
+      // getters do any settings/MOS/tier filtering (unlike scenarios()/
+      // boardQuestions()/career() above) - they're plain `state.seed.X ||
+      // default` reads, so every record in them is always in scope for
+      // every Soldier, the same way doctrine()/creeds()/resources() above
+      // already are.
+      const dict = store.acronyms ? store.acronyms() : { terms: [] };
+      const frm  = store.forms ? store.forms() : { forms: [] };
+      const cns  = store.counsel ? store.counsel() : { skills: [] };
+      const idpD = store.idp ? store.idp() : { goalTemplates: [] };
+      const hlt  = store.resilience ? store.resilience() : { skills: [], resources: [] };
 
-      const allHits = { scenario:[], board:[], doctrine:[], creed:[], prt:[], lesson:[], resource:[], career:[], screen:[] };
+      const allHits = { scenario:[], board:[], doctrine:[], creed:[], prt:[], lesson:[], resource:[], career:[], dictionary:[], forms:[], counsel:[], develop:[], health:[], screen:[] };
 
       // Roadmap audit round 4, "Performance: startup cost, layout thrashing, and memory leaks"
       // bucket: every one of these six per-record `hay` strings used to be rebuilt from raw
@@ -38016,7 +38699,7 @@ window.G = window.G || {};
           if (s._hay.includes(ql)) {
             allHits.scenario.push({ type:"scenario", id:s.id, title:s.title,
               sub:(s.competency||[]).join(" · ")+" · "+s.difficulty,
-              meta: (s.tier||[]).join("/"), route:"#/train", scId:s.id });
+              meta: (s.tier||[]).join("/"), body:s.summary||"", route:"#/train", scId:s.id });
           }
         });
       }
@@ -38035,7 +38718,7 @@ window.G = window.G || {};
             const qText = q2.q || "";
             allHits.board.push({ type:"board", id:q2.id,
               title: qText.length > 80 ? qText.slice(0,80)+"…" : qText,
-              sub:"Board: "+q2.category, meta:q2.category, route:"#/board" });
+              sub:"Board: "+q2.category, meta:q2.category, body:q2.a||"", route:"#/board" });
           }
         });
       }
@@ -38051,7 +38734,7 @@ window.G = window.G || {};
             // that it does, coercing an object straight to text would print
             // the literal string "[object Object]" on every doctrine hit.
             allHits.doctrine.push({ type:"doctrine", id:e.title, title:e.title,
-              sub:"Doctrine: "+e.topic, meta:(e.source||[]).map((s)=>s.pub).join(", "), route:"#/doctrine" });
+              sub:"Doctrine: "+e.topic, meta:(e.source||[]).map((s)=>s.pub).join(", "), body:e.body||"", route:"#/doctrine" });
           }
         });
       }
@@ -38074,7 +38757,7 @@ window.G = window.G || {};
           }
           if (c._hay.includes(ql)) {
             allHits.creed.push({ type:"creed", id:c.id, title:c.officialTitle||c.id,
-              sub:"Creeds & Identities: "+(c.branch||c.group||""), meta:(c.source||[]).map((s)=>s.pub).join(", "), route:"#/creeds" });
+              sub:"Creeds & Identities: "+(c.branch||c.group||""), meta:(c.source||[]).map((s)=>s.pub).join(", "), body:c.fullText||c.history||"", route:"#/creeds" });
           }
         });
       }
@@ -38086,7 +38769,7 @@ window.G = window.G || {};
           }
           if (p._hay.includes(ql)) {
             allHits.prt.push({ type:"prt", id:p.id, title:p.name||p.id,
-              sub:"Physical Readiness: "+(p.drillId||"").toUpperCase(), meta:(p.source||[]).map((s)=>s.pub).join(", "), route:"#/prt" });
+              sub:"Physical Readiness: "+(p.drillId||"").toUpperCase(), meta:(p.source||[]).map((s)=>s.pub).join(", "), body:p.movementDescription||"", route:"#/prt" });
           }
         });
       }
@@ -38094,12 +38777,16 @@ window.G = window.G || {};
         (cur.courses||[]).forEach((c) => {
           (c.lessons||[]).forEach((l) => {
             if (l._hay === undefined) {
-              const body = l.body || (l.tiers ? Object.values(l.tiers).join(" ") : "");
-              l._hay = ((l.title||"")+" "+body).toLowerCase();
+              // Cached on the record as `_bodyText` (alongside `_hay`, same
+              // pattern), not just a local const, so the ranking push below -
+              // which only runs on a LATER call once _hay is already cached
+              // and this whole if-block is skipped - still has it to read.
+              l._bodyText = l.body || (l.tiers ? Object.values(l.tiers).join(" ") : "");
+              l._hay = ((l.title||"")+" "+l._bodyText).toLowerCase();
             }
             if (l._hay.includes(ql)) {
               allHits.lesson.push({ type:"lesson", id:l.id, title:l.title,
-                sub:"Learn: "+c.title, meta:"", route:"#/learn" });
+                sub:"Learn: "+c.title, meta:"", body:l._bodyText||"", route:"#/learn" });
             }
           });
         });
@@ -38111,7 +38798,7 @@ window.G = window.G || {};
             if (it._hay === undefined) it._hay = ((it.name||"")+" "+(it.d||"")+" "+(c2.name||"")).toLowerCase();
             if (it._hay.includes(ql)) {
               allHits.resource.push({ type:"resource", id:it.name, title:it.name,
-                sub:c2.name+" — "+it.d, meta:c2.name, route:"#/resources", resSeed:it.name });
+                sub:c2.name+" — "+it.d, meta:c2.name, body:it.d||"", route:"#/resources", resSeed:it.name });
             }
           });
         });
@@ -38135,10 +38822,135 @@ window.G = window.G || {};
           }
           if (m._hay.includes(ql)) {
             allHits.career.push({ type:"career", id:m.code, title:m.code+" — "+m.title,
-              sub:m._cmfName, meta:m.status && m.status !== "normal" ? m.status : "", route:"#/career", mosSeed:m.code });
+              sub:m._cmfName, meta:m.status && m.status !== "normal" ? m.status : "", body:m.notes||"", route:"#/career", mosSeed:m.code });
           }
         });
       }
+
+      // Dictionary/Acronyms (G.dictionary, store.acronyms().terms - ~3,641
+      // Army and Army-applicable joint terms, the single largest dataset in
+      // the app). `_hay` reuses the EXACT SAME cache key and formula
+      // Dictionary's own view (js/dictionary.js, `match()`) already caches
+      // on these same term objects - store.acronyms() returns the same
+      // memoized array/objects both places, so whichever of #/dictionary
+      // or #/search a Soldier visits first primes the cache for the other;
+      // this doesn't duplicate that view's own caching, it shares it.
+      // title is the acronym itself (matches Dictionary's own "acronym
+      // first" convention - see that view's sortHits()); sub is the full
+      // definition, same "longer descriptive sub line" pattern Resources'
+      // own hits already use above; meta is the ARMY/ARMY+JOINT/JOINT
+      // badge text (srcLabel() in dictionary.js renders the identical
+      // three labels from the same `src` field, kept as plain badge()-
+      // free text here since h.meta only ever renders as bare text, never
+      // dictionary.js's styled <span class="tag">).
+      if (activeFilter === "all" || activeFilter === "dictionary") {
+        (dict.terms || []).forEach((t) => {
+          if (t._hay === undefined) t._hay = (t.a + " " + t.d).toLowerCase();
+          if (t._hay.includes(ql)) {
+            allHits.dictionary.push({ type:"dictionary", id:t.a, title:t.a, sub:t.d,
+              meta: t.src === "army" ? "ARMY" : t.src === "both" ? "ARMY+JOINT" : "JOINT",
+              body:t.d, route:"#/dictionary" });
+          }
+        });
+      }
+
+      // Forms (G.forms, store.forms().forms - 34 DA/DD forms). Highest-
+      // value of the newly-indexed UNINDEXED_DOMAIN_HASHES domains (see
+      // that array's own comment above) - a Soldier typing a form number
+      // ("4856", "638") or its plain name ("counseling form", "award
+      // recommendation") now gets a direct hit instead of nothing. formSeed
+      // carries the matched form's id through to forms.js via the same
+      // G.nav.seed("forms", ...) handoff resources/career/train already
+      // use (goTo() below) - forms.js's render() consumes it and opens
+      // that exact form's detail/replica view directly, same as clicking
+      // its catalog card would, rather than landing on the bare catalog.
+      if (activeFilter === "all" || activeFilter === "forms") {
+        (frm.forms || []).forEach((f) => {
+          if (f._hay === undefined) {
+            f._hay = ((f.form||"")+" "+(f.title||"")+" "+(f.purpose||"")+" "+(f.reference||"")+" "+(f.category||"")).toLowerCase();
+          }
+          if (f._hay.includes(ql)) {
+            allHits.forms.push({ type:"forms", id:f.id, title:(f.form||"")+(f.title ? " — "+f.title : ""),
+              sub:"Forms: "+(f.category||""), meta:f.reference||"", body:f.purpose||"",
+              route:"#/forms", formSeed:f.id });
+          }
+        });
+      }
+
+      // Counseling (G.counsel, store.counsel().skills - 12 counseling-
+      // technique entries: the three counseling types, active-listening
+      // qualities, and the rest of ATP 6-22.1's own framing). Distinct
+      // from the "counsel" QUERY text a Soldier might type (which also
+      // matches Forms' DA 4856 entry, Screen's own #/counsel chip, etc. -
+      // real, useful cross-domain overlap, not a collision) and distinct
+      // from #/counsel's own separate `drills` array (scenario ids, not
+      // standalone records - not indexed here, same "doesn't cleanly fit
+      // this pattern" call UNINDEXED_DOMAIN_HASHES's comment makes for
+      // Money/Write/Transition).
+      if (activeFilter === "all" || activeFilter === "counsel") {
+        (cns.skills || []).forEach((sk) => {
+          if (sk._hay === undefined) {
+            sk._hay = ((sk.name||"")+" "+(sk.body||"")+" "+(sk.points||[]).join(" ")).toLowerCase();
+          }
+          if (sk._hay.includes(ql)) {
+            allHits.counsel.push({ type:"counsel", id:sk.name, title:sk.name,
+              sub:"Counseling: "+(sk.ref||""), meta:"", body:sk.body||"", route:"#/counsel" });
+          }
+        });
+      }
+
+      // IDP / Develop (G.idp, store.idp().goalTemplates - 25 real
+      // Individual Development Plan goal templates, each already carrying
+      // its own citation). idp.domains (Institutional/Operational/Self-
+      // Development, 3 broad categories) is deliberately NOT indexed here -
+      // goalTemplates is the concrete, specific-enough-to-search layer;
+      // the 3 domains are closer to a taxonomy than standalone records.
+      if (activeFilter === "all" || activeFilter === "develop") {
+        (idpD.goalTemplates || []).forEach((gt) => {
+          if (gt._hay === undefined) {
+            gt._hay = ((gt.title||"")+" "+(gt.domainLabel||"")+" "+(gt.cite||"")+" "+(gt.measure||"")).toLowerCase();
+          }
+          if (gt._hay.includes(ql)) {
+            allHits.develop.push({ type:"develop", id:gt.id, title:gt.title,
+              sub:"IDP: "+(gt.domainLabel||""), meta:gt.cite||"", body:gt.measure||"", route:"#/develop" });
+          }
+        });
+      }
+
+      // Health / Resilience (G.resilience, store.resilience() - two flat
+      // arrays combined into one hit type: .skills (7 resilience-technique
+      // entries like "Hunt the Good Stuff", each with its own MRT/Penn
+      // Resiliency citation) and .resources (10 real support contacts -
+      // the Veterans Crisis Line, Army Chaplain, and similar - where
+      // `meta` surfaces the actual phone/contact line, not just a
+      // category). resilience.domains' own PER-DOMAIN nested `.skills`
+      // arrays (Physical/Nutritional/Mental/Spiritual/Sleep/Social, ~20
+      // more entries one level deeper) are left for a future pass rather
+      // than forced in here - flattening six differently-shaped nested
+      // collections cleanly was more than this pass's remaining time
+      // allowed; the two flat, top-level arrays already give #/health real
+      // record-level coverage where it had none.
+      if (activeFilter === "all" || activeFilter === "health") {
+        (hlt.skills || []).forEach((sk) => {
+          if (sk._hay === undefined) {
+            sk._hay = ((sk.name||"")+" "+(sk.body||"")+" "+(sk.points||[]).join(" ")+" "+(sk.domain||"")).toLowerCase();
+          }
+          if (sk._hay.includes(ql)) {
+            allHits.health.push({ type:"health", id:sk.name, title:sk.name,
+              sub:"Health: "+(sk.domain||""), meta:sk.ref||"", body:sk.body||"", route:"#/health" });
+          }
+        });
+        (hlt.resources || []).forEach((r) => {
+          if (r._hay === undefined) {
+            r._hay = ((r.name||"")+" "+(r.desc||"")+" "+(r.contact||"")+" "+(r.type||"")).toLowerCase();
+          }
+          if (r._hay.includes(ql)) {
+            allHits.health.push({ type:"health", id:r.name, title:r.name,
+              sub:"Health: "+(r.type||""), meta:r.contact||"", body:r.desc||"", route:"#/health" });
+          }
+        });
+      }
+
       if (activeFilter === "all" || activeFilter === "screen") {
         SCREEN_ENTRIES.forEach((entry, i) => {
           const r = (G.routes || []).find((x) => x.hash === entry.hash);
@@ -38148,7 +38960,7 @@ window.G = window.G || {};
             const note = G.demoNotes && G.demoNotes[entry.hash];
             allHits.screen.push({ type:"screen", id:entry.hash + ":" + i, title: entry.label || r.label,
               sub: entry.settingsAnchor ? "Settings" : "Screen", meta: note ? note.d : "",
-              route: entry.hash, settingsAnchor: entry.settingsAnchor });
+              body: entry.keywords||"", route: entry.hash, settingsAnchor: entry.settingsAnchor });
           }
         });
       }
@@ -38222,13 +39034,21 @@ window.G = window.G || {};
       }
 
       // Render by group (sections)
-      const SECTION_ORDER = ["scenario","board","doctrine","creed","prt","lesson","resource","career","screen"];
-      const SECTION_LABEL = { scenario:"Scenarios", board:"Board Questions", doctrine:"Doctrine", creed:"Creeds & Identities", prt:"Physical Readiness", lesson:"Lessons", resource:"Resources", career:"MOS / Career", screen:"Screens & Settings" };
+      const SECTION_ORDER = ["scenario","board","doctrine","creed","prt","lesson","resource","career","dictionary","forms","counsel","develop","health","screen"];
+      const SECTION_LABEL = { scenario:"Scenarios", board:"Board Questions", doctrine:"Doctrine", creed:"Creeds & Identities", prt:"Physical Readiness", lesson:"Lessons", resource:"Resources", career:"MOS / Career", dictionary:"Dictionary", forms:"Forms", counsel:"Counseling", develop:"IDP / Development", health:"Health & Resilience", screen:"Screens & Settings" };
       const MAX_PER = activeFilter === "all" ? 8 : 40;
 
       SECTION_ORDER.forEach((type) => {
         const group = allHits[type];
         if (!group.length) return;
+        // Real relevance ranking (hitScore() above) - sorts the WHOLE group
+        // (every hit that matched, not just the ones the cap below will
+        // keep) so the cap keeps the group's actual best N, not just its
+        // first N in whatever order the underlying store returned them.
+        // Never changes which records matched, never removes the cap -
+        // exactly the same slice(0, MAX_PER) call as before, just fed a
+        // ranked array instead of the raw one.
+        group.sort((a, b) => hitScore(ql, b) - hitScore(ql, a));
         const section = el("div.search-section");
         if (activeFilter === "all") {
           section.appendChild(el("div.search-section-head", {
@@ -38288,6 +39108,9 @@ window.G = window.G || {};
             }
             if (type === "career" && h.mosSeed) {
               G.nav.seed("career", h.mosSeed);
+            }
+            if (type === "forms" && h.formSeed) {
+              G.nav.seed("forms", h.formSeed);
             }
             if (type === "screen" && h.settingsAnchor) {
               G.nav.seed("settingsAnchor", h.settingsAnchor);
@@ -38360,6 +39183,11 @@ window.G = window.G || {};
     // follow the "BLC Prep"/"ALC Prep" sibling pattern, which read as an
     // unexplained inconsistency next to the two labels right above it.
     { hash: "#/slc", label: "SLC Prep", ico: "star", render: (m) => G.slc.render(m) },
+    // MLC / senior-NCO content pack: the NCOPDS gate above SLC had no
+    // dedicated deep-dive module even though BLC/ALC/SLC each got one -
+    // see src/app-modules/10-mlc-senior-leader-content.js's own header for
+    // the gap this fills. Follows the exact BLC/ALC/SLC label/icon pattern.
+    { hash: "#/mlc", label: "MLC Prep", ico: "scale", render: (m) => G.mlc.render(m) },
     // Was "NCOPDS Drills" - the densest bare acronym in the whole nav
     // (Intuitivism pass, terminology lens: even the Guided Tour's own
     // tooltip for this route never expanded it). "Leadership Drills"
@@ -38483,10 +39311,10 @@ window.G = window.G || {};
     // kind to Learn/Forms/Write than to the BLC/ALC/SLC course-prep
     // cluster it used to sit in.
     { id: "study",   label: "Study & Skills", hashes: ["#/learn", "#/forms", "#/write", "#/counsel"] },
-    // PME course-prep self-checks (BLC/ALC/SLC) | leadership practice
+    // PME course-prep self-checks (BLC/ALC/SLC/MLC) | leadership practice
     // tools (Leadership Drills/Squad Roster/My IDP/Risk).
-    { id: "lead",    label: "Leadership",     hashes: ["#/blc", "#/alc", "#/slc", "#/drills", "#/leader", "#/develop", "#/risk"],
-      subdivideAfter: "#/slc" },
+    { id: "lead",    label: "Leadership",     hashes: ["#/blc", "#/alc", "#/slc", "#/mlc", "#/drills", "#/leader", "#/develop", "#/risk"],
+      subdivideAfter: "#/mlc" },
     // Career-track (MOS Center/Assignments/Channels/Transition) | personal
     // (Money/Health/Fitness/Resources). Reordered from the flat list so
     // the two clusters sit contiguous - #/transition moved next to
@@ -38625,6 +39453,39 @@ window.G = window.G || {};
     }, [G.util.icon("star", 14)]);
     return btn;
   }
+  // ROADMAP 3g follow-up: pinToggleButton()/isPinned()/togglePin() were
+  // only ever reachable from inside this module (renderPinnedInto/
+  // renderGroupsInto above) - a Soldier could only pin a route from the
+  // nav rail or Sections drawer, never from the content view itself while
+  // actually reading it. Exposed here (mirroring G.routes just above)
+  // so a content view's own per-item rows (Doctrine's entryList, Board
+  // Drill's catList, Creeds/Recite's listPane - views.js/board.js, both
+  // separate closures from this one) can embed the exact same star
+  // control, pinning THIS module's own persisted state rather than a
+  // second copy of it. Every row in one of those lists pins the same
+  // containing route (there is no per-entry/per-category route to pin
+  // individually) - syncButtons() below keeps every row's own star in
+  // that list in sync after any ONE of them is toggled, since nothing
+  // else re-renders that content view's list the way renderNav() already
+  // does for the sidebar.
+  G.navPin = {
+    button: pinToggleButton,
+    isPinned: isPinned,
+    toggle: togglePin,
+    syncButtons: function (container, hash) {
+      if (!container) return;
+      const pinned = isPinned(hash);
+      const r = ROUTES.find((x) => x.hash === hash);
+      const label = (pinned ? "Unpin " : "Pin ") + (r ? r.label : hash);
+      const btns = container.querySelectorAll(".nav-pin-btn");
+      for (let i = 0; i < btns.length; i++) {
+        btns[i].classList.toggle("pinned", pinned);
+        btns[i].setAttribute("aria-pressed", pinned ? "true" : "false");
+        btns[i].setAttribute("aria-label", label);
+        btns[i].title = label;
+      }
+    },
+  };
   // The "Pinned" section: every currently-pinned route, oldest-first,
   // rendered as a full row (navButton()'s own <a> + an unpin star) - NOT
   // a collapsible group (no header/chevron/open-close state to persist),

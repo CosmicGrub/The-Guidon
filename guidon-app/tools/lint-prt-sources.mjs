@@ -29,13 +29,23 @@
  *       catches the opposite mistake (marking a record verified without
  *       actually filling it in).
  *
- * No dependencies beyond tools/seed-io.mjs. `--seed <path>` points it at a
- * different copy so the verifier can be verified.
+ * Checks the ASSEMBLED bank (tools/assemble-bank.mjs: the static seed merged
+ * with every "emit":"build" content pack), not just the static seed - a
+ * content pack can add prt.drills records too (see src/app-modules/
+ * 12-prt-drills-expansion.js, the first one that does), and this gate must
+ * hold those to the same rule or a pack could ship fabricated PRT text with
+ * no lint ever looking at it. `--seed`/`--modules` point this at stand-in
+ * files instead, same convention as tools/lint-content-packs.mjs's own
+ * flags, so the verifier can be verified against a small fixture.
  */
-import { readSeed } from "./seed-io.mjs";
+import path from "node:path";
+import { assembleBank } from "./assemble-bank.mjs";
 
-const argOf = (flag) => { const i = process.argv.indexOf(flag); return i > 0 && process.argv[i + 1] ? process.argv[i + 1] : null; };
-const SEED_PATH = argOf("--seed") || "src/index.html";
+const argv = process.argv.slice(2);
+const argOf = (flag) => { const i = argv.indexOf(flag); return i !== -1 && argv[i + 1] !== undefined && !argv[i + 1].startsWith("--") ? argv[i + 1] : null; };
+const bankOpts = {};
+if (argOf("--seed")) bankOpts.seedPath = path.resolve(argOf("--seed"));
+if (argOf("--modules")) bankOpts.moduleDir = path.resolve(argOf("--modules")) + path.sep;
 const VALID_SOURCE_STATUS = ["pending-source", "verified"];
 
 let fails = 0;
@@ -43,13 +53,13 @@ const ok = (m) => console.log("  PASS  " + m);
 const bad = (m) => { fails++; console.log("  FAIL  " + m); };
 const nonEmptyString = (v) => typeof v === "string" && v.trim().length > 0;
 
-console.log("lint-prt-sources: no PRT exercise text ships without a real, verified source\n");
+console.log("lint-prt-sources: no PRT exercise text ships without a real, verified source (assembled bank: static seed + content packs)\n");
 
 let data;
 try {
-  ({ data } = readSeed(SEED_PATH));
+  ({ data } = assembleBank(bankOpts));
 } catch (e) {
-  bad(`could not read/parse the seed at ${SEED_PATH}: ${e.message}`);
+  bad(`could not assemble the bank: ${e.message}`);
   console.log("\nLINT-PRT-SOURCES: " + fails + " FAILURE(S)");
   process.exit(1);
 }

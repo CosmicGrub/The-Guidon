@@ -251,6 +251,84 @@
       "optionalApis": []
     },
     {
+      "file": "08-mos-deck-68w-content.js",
+      "id": "mos-deck-68w-content",
+      "kind": "content-pack",
+      "emit": "build",
+      "headless": true,
+      "note": "Second MOS deck (00-mos-decks-core.js: '92A is the reference pattern, not a one-off'). Pushes 68W board.questions cards straight into the bank (07-cyber-fundamentals-content.js's simpler shape, not 92A's mergeDeck fold-engine - see this file's own header) and registers { code: \"68W\", label, pillar: null } onto bank.mosDecks the same way 01-board-supplement-92a.js registers 92A. requires mos-decks-core for the same documentation-of-intent reason 01-board-supplement-92a.js does, even though (like that file) it pushes onto bank.mosDecks directly rather than calling any ctx.pack(\"mos-decks-core\") API.",
+      "requires": ["mos-decks-core"],
+      "provides": [],
+      "routes": [],
+      "storageKeys": [],
+      "optionalApis": []
+    },
+    {
+      "file": "09-mos-deck-68w-scenarios.js",
+      "id": "mos-deck-68w-scenarios",
+      "kind": "content-pack",
+      "emit": "build",
+      "headless": true,
+      "note": "68W scenario-engine expansion, mirroring 04-board-supplement-92a-scenarios.js's shape. A sibling of 08-mos-deck-68w-content.js, not a dependent (declares no \"requires\" on it, same as 04 declares none on 01) - it only needs bank.scenarios.scenarios to already be an array, which the static seed provides.",
+      "requires": [],
+      "provides": [],
+      "routes": [],
+      "storageKeys": [],
+      "optionalApis": []
+    },
+    {
+      "file": "10-mlc-senior-leader-content.js",
+      "id": "mlc-senior-leader-content",
+      "kind": "content-pack",
+      "emit": "build",
+      "headless": true,
+      "note": "MLC / senior-NCO content pack: fills the E7/E8 gap in the board bank (previously tier-tagged E1-E6 only) with 41 board cards (Master Leader Course course facts; ADP 6-22 organizational/strategic leadership; ADP 6-0 command and control at echelon; AR 623-3 NCOER rater responsibilities; AR 220-1 readiness reporting; talent management) plus 8 MLC-scope scenarios and 2 dictionary terms (CUSR, JIIM). The matching #/mlc route (G.mlc, src/index.html) is presentational, mirroring G.blc/G.alc/G.slc's own shape - this pack is its gradable board-drill half, per the standing content-pipeline rule.",
+      "requires": [],
+      "provides": [],
+      "routes": [],
+      "storageKeys": [],
+      "optionalApis": []
+    },
+    {
+      "file": "11-aft-event-scoring-content.js",
+      "id": "aft-event-scoring-content",
+      "kind": "content-pack",
+      "emit": "build",
+      "headless": true,
+      "note": "Standing content-pipeline rule: 5 board-drill cards for the new AFT per-event scoring calculator (aft-scoring.js) - the 60-per-event auto-fail rule, the 300/350 aggregate minimums, the Combat standard's shared-column mechanic, the sex-neutral Plank, and the 5 events in order. Same two sources aft-scoring.js itself cites.",
+      "requires": [],
+      "provides": [],
+      "routes": [],
+      "storageKeys": [],
+      "optionalApis": []
+    },
+    {
+      "file": "12-prt-drills-expansion.js",
+      "id": "prt-drills-expansion",
+      "kind": "content-pack",
+      "emit": "build",
+      "headless": true,
+      "note": "Adds Conditioning Drill 1, Conditioning Drill 2, Climbing Drill 1, Climbing Drill 2, and the Guerilla Drill (ATP 7-22.02's own spelling, one R) to GUIDON_SEED.prt.drills (previously only \"pd\" had a real record), each with real, per-exercise ATP 7-22.02 citations matching the Preparation Drill's own schema, plus 6 matching board-drill flashcards.",
+      "requires": [],
+      "provides": [],
+      "routes": [],
+      "storageKeys": [],
+      "optionalApis": []
+    },
+    {
+      "file": "13-da2166-ncoer.js",
+      "id": "da2166-ncoer-content",
+      "kind": "content-pack",
+      "emit": "build",
+      "headless": true,
+      "note": "Finds the existing Forms Trainer entry id \"da4856ncoer\" (DA Form 2166-9-2, NCOER for SSG-1SG/MSG) in bank.forms.forms and extends it in place: fixes a real mislabeled rating-scale bug, adds the three missing Part IV attribute bullets (Character/Presence/Intellect) plus rater overall comments, and adds the Part V - Senior Rater section this stub never had. Also pushes 3 matching board-drill flashcards for the facts this pack itself newly confirmed. bank.forms is untouched by tools/assemble-bank.mjs's own board/doctrine/scenario counts() and by lint-content-packs.mjs, which is why this note spells out what it does instead of relying on the usual \"added N cards\" build-log line to say it.",
+      "requires": [],
+      "provides": [],
+      "routes": [],
+      "storageKeys": [],
+      "optionalApis": []
+    },
+    {
       "file": "98-content-pack-finalize.js",
       "id": "content-pack-finalize",
       "kind": "finalize",
@@ -396,6 +474,28 @@
       "optionalApis": []
     },
     {
+      "file": "99-release-v1157.js",
+      "id": "release-v1157",
+      "kind": "release-note",
+      "headless": true,
+      "requires": [],
+      "provides": [],
+      "routes": [],
+      "storageKeys": [],
+      "optionalApis": []
+    },
+    {
+      "file": "99-release-v1160.js",
+      "id": "release-v1160",
+      "kind": "release-note",
+      "headless": true,
+      "requires": [],
+      "provides": [],
+      "routes": [],
+      "storageKeys": [],
+      "optionalApis": []
+    },
+    {
       "file": "assignments.js",
       "id": "assignments",
       "kind": "feature",
@@ -453,14 +553,27 @@
       "optionalApis": []
     },
     {
+      "file": "aft-scoring.js",
+      "id": "aft-scoring",
+      "kind": "feature",
+      "note": "The real per-event AFT (Army Fitness Test) score calculator: raw performance (deadlift lbs, HRP reps, SDC/PLK/2MR times) in, event points and the 0-500 aggregate out, against the real age/sex-normed 'Army Fitness Test Score Tables' (Approved 15 May 2025 / Effective 1 June 2025 - see tools/gen-aft-tables.mjs for the source trail). Pure data + calculation, no DOM of its own - fitness.js's #/fitness screen is the only caller today.",
+      "headless": true,
+      "requires": [],
+      "provides": ["G.aftScoring.AGE_BANDS", "G.aftScoring.EVENTS", "G.aftScoring.EVENT_ORDER", "G.aftScoring.ageToBand", "G.aftScoring.columnFor", "G.aftScoring.scoreEvent", "G.aftScoring.scoreAll", "G.aftScoring.clockToSec", "G.aftScoring.secToClock"],
+      "routes": [],
+      "storageKeys": [],
+      "optionalApis": []
+    },
+    {
       "file": "fitness.js",
       "id": "fitness",
       "kind": "feature",
+      "note": "requires aft-scoring (which loads earlier) for the AFT Event Score Calculator panel on #/fitness - raw per-event performance in, event points + aggregate out. \"Send this aggregate to the PPW\" merges just the aftScore field into guidon:ppw:v1, the same kv row index.html's own PPW worksheet (renderPoints, #/board) reads and writes - a deliberate, single-field, user-triggered cross-link (every other PPW field is read back untouched), not a second owner of that row's usual writes.",
       "headless": false,
-      "requires": [],
+      "requires": ["aft-scoring"],
       "provides": ["G.fitness.render", "G.fitness.AS_OF"],
       "routes": ["#/fitness"],
-      "storageKeys": [],
+      "storageKeys": ["guidon:aft-calc:v1", "guidon:ppw:v1"],
       "optionalApis": []
     },
     {

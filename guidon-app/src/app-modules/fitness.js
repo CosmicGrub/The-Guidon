@@ -48,6 +48,213 @@ window.G = window.G || {};
     return p;
   }
 
+  // AFT Event Score Calculator: the interactive counterpart to the two
+  // reference panels above. Those explain the standards in prose; this
+  // takes a Soldier's actual raw per-event performance and scores it
+  // against the real table (G.aftScoring, aft-scoring.js - see that
+  // file's header for the exact source). Kept as its own function so
+  // render() stays readable; called once, appends into `mount`.
+  //
+  // Persistence: raw inputs + age band/sex/standard selections are saved
+  // to their own kv row (guidon:aft-calc:v1, this module's own key) with
+  // the same 300ms-debounce-plus-flush-hook shape index.html's PPW
+  // worksheet already established (see PPW_KEY/persistPPWDebounced there)
+  // - a Soldier filling this in should not lose it by navigating away.
+  const AFT_CALC_KEY = "guidon:aft-calc:v1";
+  async function buildAftCalculator(mount) {
+    const AS = G.aftScoring;
+    if (!AS) return; // aft-scoring.js failed to load; the reference panels above still work without it.
+
+    const v = { bandIndex: 1, sex: "male", standard: "general",
+      mdl: 0, hrp: 0, sdcMin: 0, sdcSec: 0, plkMin: 0, plkSec: 0, tmrMin: 0, tmrSec: 0 };
+    let hadSavedState = false;
+    try {
+      const saved = await G.db.get("kv", AFT_CALC_KEY);
+      if (saved && saved.v && typeof saved.v === "object") { Object.assign(v, saved.v); hadSavedState = true; }
+    } catch (e) {}
+    // Default the standard from the Soldier's own MOS the same way the
+    // "Your MOS" panel below already does, but only on first use (a saved
+    // choice, even one that no longer matches profile.mos, is left alone -
+    // this is a study aid, not a re-derived fact, and a Soldier evaluating
+    // "what if I were on the combat standard" should not have that flipped
+    // back out from under them on every visit).
+    if (!hadSavedState) {
+      try {
+        const profile = G.profile && G.profile.current ? await G.profile.current() : null;
+        const mos = profile && profile.mos ? profile.mos.trim().toUpperCase() : "";
+        if (mos && AFT_COMBAT_MOS.indexOf(mos) !== -1) v.standard = "combat";
+      } catch (e) {}
+    }
+
+    let _saveTimer = null;
+    async function doPersist() { try { await G.db.put("kv", { k: AFT_CALC_KEY, v: v }); } catch (e) {} }
+    function persistDebounced() { clearTimeout(_saveTimer); _saveTimer = setTimeout(function () { _saveTimer = null; doPersist(); }, 300); }
+    util.onFlush("aft-calc", function () { if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; doPersist(); } });
+
+    const wrap = el("div.panel", { style: "margin-bottom:10px;border-left:3px solid var(--amber)" });
+    wrap.appendChild(el("div.eyebrow", { text: "AFT Event Score Calculator" }));
+    wrap.appendChild(el("p.hint", { text:
+      "Enter your actual raw performance on each event. This scores it against the real, published age- and sex-normed table (" + AS.SOURCE.pub + ", " + AS.SOURCE.edition + ") — the same conversion a grader reads off DA Form 705-TEST — and totals the five events into your 0–500 aggregate. Nothing here is estimated." }));
+
+    const ctl = el("div.panel-grid-2", { style: "margin:8px 0" });
+    function selectRow(label, options, current, onChange) {
+      const c = el("div.card", { style: "margin-bottom:8px" });
+      c.appendChild(el("div.k", { text: label }));
+      const sel = el("select.ob-input", { "aria-label": label, style: "width:100%;margin-top:4px" });
+      options.forEach(function (opt) {
+        const o = el("option", { value: opt[0], text: opt[1] });
+        if (opt[0] === current) o.selected = true;
+        sel.appendChild(o);
+      });
+      sel.addEventListener("change", function () { onChange(sel.value); persistDebounced(); redraw(); });
+      c.appendChild(sel);
+      return c;
+    }
+    const bandOpts = AS.AGE_BANDS.map(function (b, i) { return [String(i), b]; });
+    ctl.appendChild(selectRow("Age band", bandOpts, String(v.bandIndex), function (val) { v.bandIndex = +val; }));
+    ctl.appendChild(selectRow("Sex (general standard only)", [["male", "Male"], ["female", "Female"]], v.sex, function (val) { v.sex = val; }));
+    ctl.appendChild(selectRow("Standard", [["general", "General (300 min, sex-normed)"], ["combat", "Combat (350 min, sex-neutral)"]], v.standard, function (val) { v.standard = val; }));
+    wrap.appendChild(ctl);
+
+    const inputsWrap = el("div.panel-grid-2", { style: "margin:8px 0" });
+    function numField(label, key, min, max, step, unit) {
+      const c = el("div.card", { style: "margin-bottom:8px" });
+      c.appendChild(el("div.k", { text: label }));
+      const row2 = el("div", { style: "display:flex;align-items:center;gap:6px;margin-top:4px" });
+      const inp = el("input", { type: "number", min: String(min), max: String(max), step: String(step || 1),
+        value: String(v[key]), "aria-label": label, style: "width:100px" });
+      inp.addEventListener("input", function () {
+        let n = parseFloat(inp.value); if (isNaN(n)) n = 0;
+        n = Math.max(min, Math.min(max, n));
+        if (inp.value !== String(n)) inp.value = String(n);
+        v[key] = n; persistDebounced(); redraw();
+      });
+      row2.appendChild(inp);
+      if (unit) row2.appendChild(el("span.hint", { text: unit, style: "margin:0" }));
+      c.appendChild(row2);
+      return c;
+    }
+    function timeField(label, minKey, secKey) {
+      const c = el("div.card", { style: "margin-bottom:8px" });
+      c.appendChild(el("div.k", { text: label }));
+      const row2 = el("div", { style: "display:flex;align-items:center;gap:6px;margin-top:4px" });
+      const minInp = el("input", { type: "number", min: "0", max: "59", step: "1", value: String(v[minKey]), "aria-label": label + " minutes", style: "width:60px" });
+      const secInp = el("input", { type: "number", min: "0", max: "59", step: "1", value: String(v[secKey]), "aria-label": label + " seconds", style: "width:60px" });
+      function onChange() {
+        let m = Math.max(0, Math.min(59, parseInt(minInp.value, 10) || 0));
+        let s = Math.max(0, Math.min(59, parseInt(secInp.value, 10) || 0));
+        minInp.value = String(m); secInp.value = String(s);
+        v[minKey] = m; v[secKey] = s; persistDebounced(); redraw();
+      }
+      minInp.addEventListener("input", onChange); secInp.addEventListener("input", onChange);
+      row2.appendChild(minInp); row2.appendChild(el("span", { text: "min", style: "font-size:0.85em" }));
+      row2.appendChild(secInp); row2.appendChild(el("span", { text: "sec", style: "font-size:0.85em" }));
+      c.appendChild(row2);
+      return c;
+    }
+    // Bounds come from aft-scoring.js's own EVENTS metadata (inputMin/Max/
+    // Step) rather than being retyped here, so the input's own clamp can
+    // never quietly drift from what that module documents as the event's
+    // real range.
+    inputsWrap.appendChild(numField(AS.EVENTS.mdl.label, "mdl", AS.EVENTS.mdl.inputMin, AS.EVENTS.mdl.inputMax, AS.EVENTS.mdl.inputStep, "lbs"));
+    inputsWrap.appendChild(numField(AS.EVENTS.hrp.label, "hrp", AS.EVENTS.hrp.inputMin, AS.EVENTS.hrp.inputMax, AS.EVENTS.hrp.inputStep, "reps in 2:00"));
+    inputsWrap.appendChild(timeField("Sprint-Drag-Carry", "sdcMin", "sdcSec"));
+    inputsWrap.appendChild(timeField("Plank", "plkMin", "plkSec"));
+    inputsWrap.appendChild(timeField("2-Mile Run", "tmrMin", "tmrSec"));
+    wrap.appendChild(inputsWrap);
+
+    const resultBox = el("div.panel", { style: "margin-top:8px" });
+    wrap.appendChild(resultBox);
+    mount.appendChild(wrap);
+
+    function redraw() {
+      util.clear(resultBox);
+      const raws = {
+        mdl: v.mdl, hrp: v.hrp,
+        sdc: AS.clockToSec(v.sdcMin, v.sdcSec),
+        plk: AS.clockToSec(v.plkMin, v.plkSec),
+        tmr: AS.clockToSec(v.tmrMin, v.tmrSec)
+      };
+      // scoreAll() (aft-scoring.js) takes an age in years and derives the
+      // band itself via ageToBand() - this calculator asks for a band
+      // directly instead (no birthdate collected; see this function's own
+      // note on why), so each event is scored here with v.bandIndex rather
+      // than routing through scoreAll()'s age-based path.
+      const column = AS.columnFor(v.sex, v.standard);
+      const scores = {}, belowSixty = [];
+      let aggregate = 0;
+      AS.EVENT_ORDER.forEach(function (k) {
+        const pts = AS.scoreEvent(k, v.bandIndex, column, raws[k]);
+        scores[k] = pts; aggregate += pts;
+        if (pts < 60) belowSixty.push(AS.EVENTS[k].short);
+      });
+
+      resultBox.appendChild(el("div.eyebrow", { text: "Event scores" }));
+      const scoreGrid = el("div", { style: "display:flex;flex-wrap:wrap;gap:10px;margin:6px 0" });
+      AS.EVENT_ORDER.forEach(function (k) {
+        const ev = AS.EVENTS[k];
+        const cell = el("div.stat", { style: "min-width:90px" });
+        cell.appendChild(el("span.k", { text: ev.short }));
+        cell.appendChild(el("span.v", { text: String(scores[k]) + " pts" }));
+        scoreGrid.appendChild(cell);
+      });
+      resultBox.appendChild(scoreGrid);
+
+      const total = el("p", { style: "font-size:1.3em;font-weight:600;margin:8px 0 2px" });
+      total.textContent = "Aggregate: " + aggregate + " / 500";
+      resultBox.appendChild(total);
+
+      const min = v.standard === "combat" ? 350 : 300;
+      let statusText, statusColor;
+      if (belowSixty.length) { statusText = "Automatic test failure — below 60 on " + belowSixty.join(", ") + " (every event needs at least 60, whatever the total is)."; statusColor = "var(--red)"; }
+      else if (aggregate >= min) { statusText = (v.standard === "combat" ? "Combat" : "General") + " standard met (" + min + " minimum)."; statusColor = "var(--green)"; }
+      else { statusText = (v.standard === "combat" ? "Combat" : "General") + " standard NOT met — " + (min - aggregate) + " points short of the " + min + " minimum."; statusColor = "var(--amber)"; }
+      resultBox.appendChild(el("p.hint", { text: statusText, style: "color:" + statusColor }));
+      resultBox.appendChild(el("p.hint", { text: "Promotion points at this aggregate: " + aftPointsPreview(aggregate) + ". Send it to the PPW for the full worksheet.", style: "margin-top:2px" }));
+
+      const sendBtn = el("button.btn.sm", { type: "button", text: "Send this aggregate to the PPW" });
+      sendBtn.addEventListener("click", async function () {
+        try {
+          const PPW_KEY = "guidon:ppw:v1";
+          // A deliberate, single-field, user-triggered merge into the PPW
+          // worksheet's own kv row (not this module's key) - the exact
+          // cross-link the roadmap audit flagged as missing: a Soldier
+          // used to have to already know their AFT aggregate before the
+          // PPW calculator could do anything with it. Every other field
+          // in that row is preserved untouched.
+          const existing = await G.db.get("kv", PPW_KEY);
+          const merged = (existing && existing.v && typeof existing.v === "object") ? Object.assign({}, existing.v) : {};
+          merged.aftScore = aggregate;
+          await G.db.put("kv", { k: PPW_KEY, v: merged });
+          sendBtn.textContent = "Sent — opening PPW…";
+          setTimeout(function () { location.hash = "#/board"; }, 300);
+        } catch (e) { sendBtn.textContent = "Could not save — try again"; }
+      });
+      resultBox.appendChild(sendBtn);
+
+      resultBox.appendChild(el("p.hint", { text: "Source: " + AS.SOURCE.pub + " (" + AS.SOURCE.edition + "), via " + AS.SOURCE.via + ". Age band, sex and standard above change which column of that table your raw performance is read against.", style: "margin-top:8px" }));
+    }
+
+    // aftPointsPreview: a tiny read-only mirror of index.html's own
+    // aftPts() (AR 600-8-19 table 3-4 - 120 at 500, 1 at 300, 0 below 300)
+    // so this panel can show the promotion-point number inline without a
+    // circular dependency on core (aft-scoring.js loads before index.html's
+    // own script finishes, and this file has no "requires" on core - core
+    // is always present, by definition). Kept as one clearly-labeled,
+    // clearly-sourced copy of the same small formula, not a reimplementation
+    // of PPW's category caps or worksheet.
+    function aftPointsPreview(score) {
+      const s = Math.round(score || 0);
+      if (s >= 500) return 120;
+      if (s >= 310) return 6 + 3 * Math.floor((s - 310) / 5);
+      if (s >= 305) return 3;
+      if (s >= 300) return 1;
+      return 0;
+    }
+
+    redraw();
+  }
+
   async function render(mount) {
     util.clear(mount);
     mount.appendChild(el("div.section-title", {}, [
@@ -96,6 +303,13 @@ window.G = window.G || {};
       ["No AFT exemption any more", "Army Directive 2026-13 rescinded AD 2025-17 effective 7 July 2026. The old 'a 465 exempts you from taping' rule is gone. Every Soldier meets the body composition standard regardless of AFT score."]
     ]));
     mount.appendChild(aftGrid);
+
+    // The AFT was reference-only up to this point: five events and a
+    // conversion rule explained in prose, with no way to actually run a
+    // Soldier's own numbers. This is the connected flow - raw performance
+    // in, event scores + aggregate out, one button from there into the PPW
+    // (index.html's aftPts()) rather than two disconnected screens.
+    await buildAftCalculator(mount);
 
     mount.appendChild(el("div.eyebrow", { text: "Combat Field Test (CFT)", style: "margin-top:16px" }));
     mount.appendChild(el("p.hint", { text:

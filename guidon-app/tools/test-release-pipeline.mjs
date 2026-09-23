@@ -313,7 +313,24 @@ try {
     "the gate checks THIS exact commit and waits for CI (the release push starts CI at the same moment)");
   check(iState !== -1 && iState < iCreate, "release-cut.yml checks that every version-bearing file agrees before it tags");
   check(/^    if: github\.ref == 'refs\/heads\/main'$/m.test(cutJob || ""), "release-cut.yml refuses to cut from any branch but main (a manual run can be started anywhere)");
-  check(/^\s+actions: read$/m.test(cut), "release-cut.yml may read Actions runs (needed to see the CI result)");
+  // actions: write, not read (fan-out fix, 2026-09-23) - write is the
+  // permission workflow_dispatch itself needs (see the dispatch check
+  // right below) and, per GitHub's own permission model, a write grant on
+  // a scope also carries read for that same scope - so this still proves
+  // "may read Actions runs," just via the broader grant the dispatch step
+  // actually requires.
+  check(/^\s+actions: write$/m.test(cut), "release-cut.yml may read (and dispatch) Actions runs");
+  // The fan-out itself (2026-09-23 fix): a GITHUB_TOKEN-authored tag push
+  // never fires another workflow's own push trigger, so relying on
+  // .release-trigger's push to fan out release-assets.yml/release-apple.yml
+  // silently built nothing - confirmed empirically (v1.15.0/.3/.4 all
+  // published with zero assets). workflow_dispatch is one of the two real
+  // exceptions to that rule, so the cut job now dispatches both directly,
+  // right after it creates the tag/release.
+  check(iCreate !== -1 && /gh workflow run release-assets\.yml[^\n]*--ref main[^\n]*-f tag="\$TAG"/.test(cut) && cut.indexOf('gh release create') < cut.indexOf('gh workflow run release-assets.yml'),
+    "release-cut.yml dispatches release-assets.yml (with the real tag) after creating the release, not before",
+    "release-cut.yml does not dispatch release-assets.yml after tagging - a repeat of the v1.15.0/.3/.4 zero-assets bug");
+  check(/gh workflow run release-apple\.yml[^\n]*--ref main/.test(cut), "release-cut.yml also dispatches release-apple.yml");
   for (const [name, text] of [["release-assets.yml", assets], ["release-apple.yml", apple]]) {
     const resolve = stepsOf(jobBlock(text, "resolve")).find((s) => /release-gate\.mjs/.test(s.run || ""));
     check(!!resolve && /--sha "\$\(git rev-parse "\$\{TAG\}\^\{commit\}"\)"/.test(resolve.run), `${name} refuses to build installers from a tag whose commit CI did not pass`);

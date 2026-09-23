@@ -55,8 +55,11 @@ JSON.stringify(prtSessionModel.strength) === JSON.stringify(["pd","ssd","cd1","c
 JSON.stringify(prtSessionModel.endurance) === JSON.stringify(["pd","hsd","mmd1","mmd2","rd"])
   ? ok("PT Planner publishes the canonical Strength/Endurance session block model")
   : bad("PRT session model mismatch: " + JSON.stringify(prtSessionModel));
-prtSessionModel.pending.length === 7
-  ? ok("seven not-yet-authored PRT drills stay explicit placeholders instead of fabricated content")
+// 5, not 7: "cd1"/"cd2" graduated to real seed.prt.drills records
+// (src/app-modules/12-prt-drills-expansion.js), so core's
+// DEFAULT_PRT_PENDING_DRILLS dropped those two keys.
+prtSessionModel.pending.length === 5
+  ? ok("five not-yet-authored PRT drills stay explicit placeholders instead of fabricated content")
   : bad("pending PRT drill table: " + JSON.stringify(prtSessionModel.pending));
 
 // Seed scenarios and author-validator compatibility.

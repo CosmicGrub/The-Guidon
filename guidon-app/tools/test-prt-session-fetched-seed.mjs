@@ -97,8 +97,12 @@ const strengthDrillIds = strengthSession && strengthSession.blocks ? strengthSes
 check(JSON.stringify(strengthDrillIds) === JSON.stringify(["pd", "ssd", "cd1", "cd2", "rd"]),
   "G.store.prtMeta() still returns the canonical Strength session block list on the fetched-content path",
   () => "prtMeta().sessions: " + JSON.stringify(meta.sessions));
-check(!!meta.pendingDrills && Object.keys(meta.pendingDrills).length === 7,
-  "...and the 7 not-yet-authored pending-drill labels",
+// 5, not 7: src/app-modules/12-prt-drills-expansion.js gave "cd1"/"cd2"
+// real seed.prt.drills records (matching "pd"'s own bar), so core's
+// DEFAULT_PRT_PENDING_DRILLS dropped those two keys - see that const's own
+// comment in src/index.html.
+check(!!meta.pendingDrills && Object.keys(meta.pendingDrills).length === 5,
+  "...and the 5 not-yet-authored pending-drill labels",
   () => "prtMeta().pendingDrills: " + JSON.stringify(meta.pendingDrills));
 
 const apiResult = await page.evaluate(() => ({
