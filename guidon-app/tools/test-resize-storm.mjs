@@ -578,7 +578,10 @@ if (!SKIP.includes("F")) {
   const missing = navInfo.hashes.filter((h) => h !== "#/group" && !reached.includes(h));
   missing.length === 0 ? ok("F: every keyboard-activatable nav route (" + (navInfo.hashes.length - 1) + " of " + navInfo.hashes.length + ", excluding #/group's documented Study Rooms exception) activates from keyboard focus + Enter") : bad("F: " + missing.length + " nav routes not reached by keyboard: " + missing.join(", "));
   await go(page, "#/home");
-  await page.evaluate(() => document.querySelector(".nav a[data-hash]").focus());
+  const navLinkReady = await page.waitForSelector(".nav a[data-hash]", { timeout: 4000 }).catch(() => null);
+  navLinkReady
+    ? await page.evaluate(() => document.querySelector(".nav a[data-hash]").focus())
+    : bad("F: .nav a[data-hash] never appeared at #/home to focus");
   const before = await page.evaluate(() => document.activeElement && document.activeElement.textContent.trim());
   for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowDown");
   const after = await page.evaluate(() => document.activeElement && document.activeElement.textContent.trim());

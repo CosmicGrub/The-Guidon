@@ -239,7 +239,12 @@ await section("6. AAR, facilitator card and linked drills", async () => {
     const c = await counts();
     check(c[id] && c[id].count === 1 && (await focusInfo()).where !== "BODY", id + ": recording works and keeps focus", id + ": counts=" + JSON.stringify(c[id]) + " focus=" + JSON.stringify(await focusInfo()));
   }
-  const labelled = await page.evaluate(() => { document.querySelector('[data-team-start="aar-huddle"]').click(); return Array.from(document.querySelectorAll("[data-team-session] textarea")).every((t) => !!t.getAttribute("aria-label") && !!document.querySelector('label[for="' + t.id + '"]')); });
+  // Same auto-waiting click idiom as the loop above (line 232), instead of
+  // an unguarded document.querySelector(...).click() inside page.evaluate()
+  // - a null element there would throw and crash the whole suite rather
+  // than fail with a diagnosable timeout.
+  await page.locator('[data-team-start="aar-huddle"]').click();
+  const labelled = await page.evaluate(() => Array.from(document.querySelectorAll("[data-team-session] textarea")).every((t) => !!t.getAttribute("aria-label") && !!document.querySelector('label[for="' + t.id + '"]')));
   check(labelled, "every AAR note box has a visible label", "an AAR textarea has no label");
   const all = await counts();
   check(Object.keys(all).length === 3, "three sessions recorded back to back are all kept", "counts: " + JSON.stringify(all));
