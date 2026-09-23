@@ -303,6 +303,19 @@
       "optionalApis": []
     },
     {
+      "file": "12-prt-drills-expansion.js",
+      "id": "prt-drills-expansion",
+      "kind": "content-pack",
+      "emit": "build",
+      "headless": true,
+      "note": "Adds Conditioning Drill 1, Conditioning Drill 2, Climbing Drill 1, Climbing Drill 2, and the Guerilla Drill (ATP 7-22.02's own spelling, one R) to GUIDON_SEED.prt.drills (previously only \"pd\" had a real record), each with real, per-exercise ATP 7-22.02 citations matching the Preparation Drill's own schema, plus 6 matching board-drill flashcards.",
+      "requires": [],
+      "provides": [],
+      "routes": [],
+      "storageKeys": [],
+      "optionalApis": []
+    },
+    {
       "file": "98-content-pack-finalize.js",
       "id": "content-pack-finalize",
       "kind": "finalize",
