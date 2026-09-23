@@ -109,21 +109,23 @@ dictNavOk
   : bad("clicking a dictionary search hit did not navigate to #/dictionary (got " + (await page.evaluate(() => location.hash)) + ")");
 
 /* ============ 2. Relevance ranking ============ */
-// "mos" (against the real seed) matches 9 dictionary terms: exactly ONE
+// "mos" (against the real seed) matches 10 dictionary terms: exactly ONE
 // whose acronym IS "MOS" (Military Occupational Specialty - an exact
-// title-field match) and 8 others (CFT, CMOS, IMAAC, MOSC, NARAC, NOAA,
-// ROWPU, IoT) that merely mention "mos" somewhere in their own acronym or
-// definition text (a substring/whole-word match, never exact). Verified
-// against this exact build before writing this test. Filtered to the
-// Dictionary type alone (MAX_PER=40, well above 9) so the cap can't be
-// the thing deciding which 9 survive - this purely tests sort order.
+// title-field match) and 9 others (CFT, CMOS, IMAAC, MOSC, NARAC, NOAA,
+// NREMT, ROWPU, IoT) that merely mention "mos" somewhere in their own
+// acronym or definition text (a substring/whole-word match, never exact -
+// e.g. IoT's own definition mentions "thermostats", NREMT's mentions
+// "MOS-qualified"). Verified against this exact build before writing this
+// test. Filtered to the Dictionary type alone (MAX_PER=40, well above 10)
+// so the cap can't be the thing deciding which 10 survive - this purely
+// tests sort order.
 await openSearch();
 const mosSnap = await searchAndFilter("mos", "Dictionary");
-mosSnap.count === 9
-  ? ok(`Dictionary-filtered query "mos" renders the expected 9 hits`)
-  : bad(`expected 9 dictionary hits for "mos", got ${mosSnap.count}: ${JSON.stringify(mosSnap.titles)}`);
+mosSnap.count === 10
+  ? ok(`Dictionary-filtered query "mos" renders the expected 10 hits`)
+  : bad(`expected 10 dictionary hits for "mos", got ${mosSnap.count}: ${JSON.stringify(mosSnap.titles)}`);
 mosSnap.titles[0] === "MOS"
-  ? ok(`the exact-acronym match ("MOS") ranks FIRST among ${mosSnap.count} hits, ahead of 8 records that only mention "mos" in passing (real relevance ranking, not seed/insertion order) - order: ${mosSnap.titles.join(", ")}`)
+  ? ok(`the exact-acronym match ("MOS") ranks FIRST among ${mosSnap.count} hits, ahead of 9 records that only mention "mos" in passing (real relevance ranking, not seed/insertion order) - order: ${mosSnap.titles.join(", ")}`)
   : bad(`ranking is wrong: expected "MOS" first, got order ${JSON.stringify(mosSnap.titles)}`);
 
 /* ============ 3. Dictionary respects the existing MAX_PER cap ============ */
