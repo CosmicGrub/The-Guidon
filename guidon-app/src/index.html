@@ -760,7 +760,21 @@ html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after 
 .reps-done { text-align:center; padding: 22px 16px; }
 .reps-done .reps-big { font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; margin: 6px 0 2px; }
 
-.qz-wrap { outline: none; }
+.qz-wrap { outline: none;
+  /* Theater-entry grow-in transition (enterTheater(), src/index.html) -
+     declared unconditionally here rather than gated to html.qz-theater so
+     it's already active the instant that rule's fixed/inset also apply.
+     Otherwise a no-op: .qz-wrap's opacity/transform are never touched
+     anywhere outside theater entry (confirmed - the only other opacity/
+     transform writers in this file are .qz-card's own swipe-gesture code,
+     a different element), and the .qz-theater-entering class below is the
+     ONLY thing that ever gives these two properties a different value to
+     transition from. Reduced motion is already handled globally (the
+     html.reduce-motion / prefers-reduced-motion blanket transition-
+     duration override near the top of this file), so no separate guard is
+     needed here. */
+  transition: opacity var(--modal-dur, .22s) var(--modal-ease, ease), transform var(--modal-dur, .22s) var(--modal-ease, ease);
+}
 .qz-wrap:focus-visible { outline: 3px solid var(--amber); outline-offset: 4px; } /* .qz-wrap (tabIndex="0") is the real tab stop; the ring used to be declared on .qz-card below, which never receives focus */
 
 /* ── Fullscreen study (theater mode) ──────────────────────────────────────
@@ -771,8 +785,24 @@ html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after 
    The Fullscreen API and Android immersive bars are progressive enhancement
    layered on top by the drill's JS; when they are unavailable the CSS alone
    still delivers the feature. The study loop's own controls (flip, grade,
-   prev/next, star) stay — they are the point, not a distraction. */
+   prev/next, star) stay — they are the point, not a distraction.
+
+   Fold/rotate motion pass: entering theater (manually, or automatically on
+   a Fold5 folding into a too-short landscape strip - see enterTheater()'s
+   own auto-entry comment) used to be an instant hard cut - .qz-wrap jumping
+   straight to position:fixed;inset:0 with nothing in between. The card
+   growing to fill the newly-available space now reads as one continuous
+   motion instead: .qz-theater-entering (below) starts the wrap faded and
+   scaled down; enterTheater() adds it for exactly one frame then removes
+   it (the same double-rAF technique util.modalTrap already uses for every
+   other CSS-transitioned overlay in this file, so the browser has a real
+   FROM value to animate from), letting the transition on .qz-wrap's own
+   base rule (above) carry it to its normal, fully-opaque resting state.
+   Exit is deliberately NOT symmetric - see enterTheater()'s own comment for
+   why animating the close would mean delaying focus-restore/inert-release
+   behind a fade, a real risk this pass isn't taking on. */
 html.qz-theater { overflow: hidden; }
+html.qz-theater .qz-wrap.qz-theater-entering { opacity: 0; transform: scale(.97); }
 html.qz-theater .qz-wrap {
   position: fixed; inset: 0; z-index: 800;
   background: var(--bg);
@@ -10927,6 +10957,20 @@ window.G = window.G || {};
       if (!document.querySelector(".qz-wrap")) return;
       document.documentElement.classList.add("qz-theater");
       const wrap = document.querySelector(".qz-wrap");
+      // Grow-in transition (CSS: .qz-theater-entering, near .qz-wrap's own
+      // transition declaration) - starts the wrap at a slightly-scaled-
+      // down, transparent state for exactly one frame so the browser has a
+      // real value to transition FROM, then removes the class on the NEXT
+      // frame so the transition actually plays instead of snapping
+      // straight to its resting state (the same double-rAF technique
+      // util.modalTrap already uses for every other CSS-transitioned
+      // overlay in this file). Runs for both manual and automatic entry -
+      // the fold-into-a-too-short-landscape-strip case (opts.auto) is
+      // exactly the moment this is meant to smooth over.
+      if (wrap) {
+        wrap.classList.add("qz-theater-entering");
+        requestAnimationFrame(() => requestAnimationFrame(() => wrap.classList.remove("qz-theater-entering")));
+      }
       const target = focusEl || wrap;
       theaterReturnFocus = document.activeElement;
       if (wrap) trapTheaterFocus(wrap);
