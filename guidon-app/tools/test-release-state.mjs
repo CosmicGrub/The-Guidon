@@ -234,6 +234,24 @@ try {
     const lintH = spawnSync(process.execPath, ["tools/lint-patterns.mjs"], { encoding: "utf-8" });
     check(/PASS {2}\(h\) all \d+ What's New entries are in plain language/.test(lintH.stdout), "the real What's New entries pass the same rules through lint-patterns check (h)", "lint-patterns (h) does not report the plain-language scan:\n" + (lintH.stdout.match(/.*\(h\).*/g) || []).join("\n"));
   }
+
+  {
+    // lintPublishedAssets() (release fan-out fix, 2026-09-23): the one
+    // function in this file that makes a real network call (`gh release
+    // view`). Its own input-validation paths are fully offline/
+    // deterministic and covered here; the real network path (does a real
+    // tag's real Release actually carry every required asset) is a
+    // deliberate manual-verification tool, not a CI-time check - its own
+    // module header says so - so it is exercised by hand against a real
+    // tag, not mocked here.
+    const { lintPublishedAssets } = await import("./lint-release-state.mjs");
+    const bad1 = lintPublishedAssets({ tag: "not-a-tag", repo: "o/r" });
+    check(bad1.failures.length === 1 && /not a vX\.Y\.Z tag/.test(bad1.failures[0]), "lintPublishedAssets rejects a non-vX.Y.Z tag without ever calling gh");
+    const bad2 = lintPublishedAssets({ tag: "v1.2.3", repo: null });
+    check(bad2.failures.length === 1 && /--repo owner\/name is required/.test(bad2.failures[0]), "lintPublishedAssets refuses a missing --repo without ever calling gh");
+    const cliBad = spawnSync(process.execPath, ["tools/lint-release-state.mjs", "--published", "not-a-tag"], { encoding: "utf-8" });
+    check(cliBad.status === 1 && /not a vX\.Y\.Z tag/.test(cliBad.stdout), "the --published CLI flag itself exits 1 and names the same problem, not just the exported function");
+  }
 } catch (e) {
   bad("suite crashed: " + (e && e.stack ? e.stack : e));
 } finally {
