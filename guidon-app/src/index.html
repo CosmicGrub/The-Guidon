@@ -12100,14 +12100,20 @@ window.G = window.G || {};
         ]);
         row.addEventListener("click", () => {
           if (catFilter !== c) {
-            // Deliberately NOT the chip rows' own reset-narrower-facets
-            // behavior (catRow/pillarRow's pick, below): catList is the
-            // one surviving unscoped, full-catalog picker, kept specifically
-            // so a category outside the current pillar/regulation scope
-            // stays reachable and composes exactly like every other filter
-            // (including into a real, explained empty state) - matching
-            // what catSel used to do before this consolidation.
+            // Deliberately NOT the chip rows' own reset-the-VALUE-of-
+            // narrower-facets behavior (catRow/pillarRow's pick, below):
+            // catList is the one surviving unscoped, full-catalog picker,
+            // kept specifically so a category outside the current pillar's
+            // scope stays reachable and regFilter's own VALUE composes
+            // exactly like every other filter (including into a real,
+            // explained empty state) - matching what catSel used to do
+            // before this consolidation. regRow's DISPLAYED chip set still
+            // needs rebuilding though (code-review finding, PR #233): left
+            // stale, it kept showing the OLD category's regulations/counts
+            // while the deck had already moved to the new one, so a
+            // Soldier could click a chip that looked valid but wasn't.
             catFilter = c;
+            regRow.rebuild();
             build();
           }
           // Auto-scroll to the flashcard - catList sits above drillDetail
@@ -12416,9 +12422,13 @@ window.G = window.G || {};
       // Same "unscoped stays capped at the global top 12, scoped shows
       // everything relevant" split as categoryItemsForScope above - a
       // scoped pool is already small enough that the old >=2-citations
-      // floor would just hide real, useful singleton regulations.
-      if (!scoped) entries = entries.filter(([, n]) => n >= 2);
-      return entries.slice(0, 12).map(([r, n]) => [r, r + " (" + n + ")", "Only cards that cite " + r]);
+      // floor would just hide real, useful singleton regulations. The cap
+      // itself must be equally conditional (code-review finding, PR #233):
+      // a real category can cite well over 12 distinct publications
+      // (Leadership & Counseling alone cites 44), and those beyond the
+      // 12th were previously left with no chip anywhere, scoped or not.
+      if (!scoped) entries = entries.filter(([, n]) => n >= 2).slice(0, 12);
+      return entries.map(([r, n]) => [r, r + " (" + n + ")", "Only cards that cite " + r]);
     }
     let regFilter = "All";
     const regRow = quickFilterRow({

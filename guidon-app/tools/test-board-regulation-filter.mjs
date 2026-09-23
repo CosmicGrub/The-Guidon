@@ -199,13 +199,23 @@ if (noCat) {
   (empty && empty.includes("category “" + noCat + "”") && empty.includes("regulation “" + leadReg + "”"))
     ? ok(`category "${noCat}" + regulation "${leadReg}" -> explanatory empty state naming both filters`)
     : bad("empty state for an impossible category+regulation combination: " + JSON.stringify(empty));
-  // Category chip bar and regulation chip bar are independent axes: the
-  // category chips reflect the category, the regulation chips the regulation.
-  const axes = await page.evaluate(() => ({
-    cat: [...document.querySelector('.search-filters[aria-label="Quick-filter by category"]').querySelectorAll(".search-chip.active")].map((c) => c.textContent),
+  // Category and regulation are independent axes in STATE (regFilter's own
+  // value survives an incompatible category change unchanged - already
+  // proven above by the empty state still naming leadReg) - but the
+  // regulation row's DISPLAYED chip set must be rebuilt to the new
+  // category's real choices, not left showing the OLD category's
+  // regulations/counts (code-review finding, PR #233: a stale chip set let
+  // a Soldier click a chip that looked valid for the new category but
+  // wasn't, producing an avoidable empty deck with no visible reason why).
+  // noCat was chosen so that NO card in it cites leadReg, so the rebuilt
+  // set correctly no longer offers or highlights it at all.
+  const axes = await page.evaluate((leadReg) => ({
     reg: [...document.querySelector('.search-filters[aria-label="Quick-filter by regulation"]').querySelectorAll(".search-chip.active")].map((c) => c.textContent),
-  }));
-  (axes.reg.length === 1 && axes.reg[0] === leadChip) ? ok("the regulation chip stays active while the category filter changes (independent axes)") : bad("axes: " + JSON.stringify(axes));
+    regOffered: [...document.querySelector('.search-filters[aria-label="Quick-filter by regulation"]').querySelectorAll(".search-chip")].some((c) => c.textContent.replace(/\s*\(\d+\)$/, "") === leadReg),
+  }), leadReg);
+  (axes.reg.length === 0 && !axes.regOffered)
+    ? ok(`the regulation row honestly rebuilds to "${noCat}"'s own choices - "${leadReg}" (not cited by any of its cards) is no longer offered or shown active`)
+    : bad("regulation row after an incompatible category change: " + JSON.stringify(axes));
   await setCategoryViaList(page, "All");
   await page.waitForTimeout(400);
 } else {
