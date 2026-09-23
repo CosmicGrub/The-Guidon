@@ -4588,12 +4588,47 @@ html.reduce-transparency #demo-mode-badge { background: var(--panel-2); }
   font-family: var(--font-head); font-size: .62rem; letter-spacing: .08em; text-transform: uppercase;
   color: var(--amber); padding: 6px 10px 2px;
 }
+/* Nav Spotlight: same section shape as Pinned just above, deliberately a
+   different accent (cyan, not amber) - Pinned is a Soldier's own explicit
+   choice, Spotlight is a system suggestion, and the two sitting back-to-
+   back need a visual cue for which is which, not identical styling.
+   --ink-cyan (not raw --cyan) throughout - see the "Text-safe accent
+   variants" comment near :root's own definition of it: raw --cyan is
+   tuned for backgrounds/borders, not guaranteed 4.5:1 as body text across
+   all 24 themes, and none of these three spots has had that per-theme
+   sweep run (lint-patterns.mjs check (a) catches exactly this). */
+.nav-spotlight-section { display: flex; flex-direction: column; gap: 2px; margin-bottom: 4px; }
+.nav-spotlight-label {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-family: var(--font-head); font-size: .62rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink-cyan); padding: 6px 10px 2px;
+}
+.nav-spotlight-off {
+  font-family: var(--font-body); font-size: .62rem; text-transform: none; letter-spacing: normal;
+  color: var(--text-mute); background: none; border: none; cursor: pointer; padding: 0; text-decoration: underline;
+}
+.nav-spotlight-off:hover, .nav-spotlight-off:focus-visible { color: var(--text-dim); }
+.nav-spotlight-more {
+  font-family: var(--font-mono); font-size: .66rem; color: var(--text-mute); padding: 2px 10px 4px;
+}
+/* A route this concern map (or generateActionPlan()) actually justified -
+   navButton()'s own row keeps its normal look, this just tints the icon so
+   the SAME route showing twice (once here, once in its real group below)
+   reads as "here for a reason," not a visual duplicate bug. */
+.nav-spotlight-row .ico { color: var(--ink-cyan); }
 .nav-divider { flex: 0 0 auto; width: 1px; align-self: center; height: 22px; background: var(--line); margin: 0 4px; }
 .nav-group-header {
   cursor: pointer; user-select: none;
 }
 .nav-group-header:hover { color: var(--text); background: transparent; }
 .nav-group-header.open { color: var(--text-dim); }
+/* Nav Spotlight: a group open only because Spotlight opened it (not an
+   explicit navOpenGroups entry) gets a faint cyan cue on its header text -
+   same "system suggested this, not you" signal the Spotlight label itself
+   uses, so the two mechanisms read as one story rather than two unrelated
+   features that happen to both touch group state. --ink-cyan, same reason
+   as .nav-spotlight-label above. */
+.nav-group-header.nav-group-spotlit { color: var(--ink-cyan); }
 .nav-group-body {
   display: flex; flex-direction: column; gap: 2px;
   max-height: 0; opacity: 0; overflow: hidden;
@@ -4699,6 +4734,8 @@ html.reduce-motion .nav-drawer, html[data-motion="minimal"] .nav-drawer { transi
 .nav-drawer-body { display: contents; }
 .nav-drawer .nav-pinned-section { grid-column: 1 / -1; margin-bottom: 0; }
 .nav-drawer .nav-pinned-label { font-size: .68rem; padding: 4px 4px 2px; }
+.nav-drawer .nav-spotlight-section { grid-column: 1 / -1; margin-bottom: 0; }
+.nav-drawer .nav-spotlight-label { font-size: .68rem; padding: 4px 4px 2px; }
 .nav-drawer .nav-group-body {
   grid-column: 1 / -1; gap: 2px;
   /* was a plain block-level list item under a vertical accordion; now a
@@ -8413,6 +8450,19 @@ window.G = window.G || {};
     // array - see G.moiImport.activeFocusSet()'s own comment. Written only
     // through G.moiImport.setInScope(), never directly.
     moiScopeFamilies: [],
+    // Nav Spotlight: surfaces routes matching the Soldier's own stated
+    // priorities at the top of the sidebar (G.priorities.rank(), below) -
+    // never hides anything, unlike mosOptIn/moiScopeFamilies just above.
+    // Off by default; offered as a one-tap suggestion at the end of
+    // onboarding (renderSummaryStep) and editable any time from Settings ->
+    // Study Priorities. navSpotlightConcerns is null until the Soldier
+    // edits it explicitly - null means "follow profile.readinessConcerns
+    // live" (so a stale settings copy can never diverge from an updated
+    // onboarding answer); once set, it is an independent array the Soldier
+    // owns, same "declared once, editable forever" shape moiScopeFamilies
+    // already uses.
+    navSpotlight: false,
+    navSpotlightConcerns: null,
     // ROADMAP 3g "customizable screen layouts", Phase A: per-screen layout
     // choice, read by each module's own LAYOUTS registry (pt-planner.js/
     // calendar.js) - "classic" is today's existing view unchanged; an id
@@ -23331,6 +23381,108 @@ window.G = window.G || {};
     return plan.filter(item => { if (seen.has(item.id)) return false; seen.add(item.id); return true; });
   }
 
+  // ── Priorities engine ────────────────────────────────────────────────────
+  // One shared, ranked "what matters most right now" list. Before this,
+  // any surface that wanted to spotlight or boost something (Nav Spotlight
+  // below; Search's boost and Home's "Top priorities" strip are later
+  // consumers of this exact function, see ROADMAP.md) would have had to
+  // derive its own answer independently and could silently disagree with
+  // every other one. Never hides anything by itself - it only ranks; what a
+  // consumer does with the ranking (spotlight a nav route, boost a search
+  // result) is that consumer's own choice.
+  //
+  // rank() is synchronous - it only reads data already resolved in memory
+  // (a profile object the caller already has, plus generateActionPlan()'s
+  // own synchronous output), so it is safe to call from a render path that
+  // cannot await, like the nav's. It deliberately does NOT fold in
+  // Progress's measured performance (store.getProgress() is async,
+  // IndexedDB-backed) - rankWithProgress() below is the awaitable version
+  // that layers that signal on top, for a consumer that can afford to wait.
+  //
+  // Every entry in this map is a real, hand-checked route this concern
+  // plausibly belongs on - not generated from WEAK_MAP or ROUTES, since
+  // those key on free-text substrings and full-app breadth respectively,
+  // neither of which is "which sidebar item matters for this concern."
+  const PRIORITY_ROUTES = {
+    board:      ["#/board", "#/train", "#/records", "#/doctrine", "#/creeds", "#/prt", "#/recite", "#/dictionary", "#/library", "#/moi"],
+    promotion:  ["#/board", "#/records", "#/progress", "#/currency"],
+    ets:        ["#/transition", "#/money", "#/resources"],
+    transition: ["#/transition", "#/career", "#/assignments", "#/resources"],
+    leadership: ["#/drills", "#/leader", "#/develop", "#/risk", "#/blc", "#/alc", "#/slc"],
+    doctrine:   ["#/doctrine", "#/dictionary", "#/library", "#/creeds"],
+    counseling: ["#/counsel", "#/write", "#/forms"],
+    nco:        ["#/blc", "#/alc", "#/slc", "#/drills"],
+    risk:       ["#/risk"],
+    training:   ["#/train", "#/drills", "#/calendar"],
+    pt:         ["#/prt", "#/fitness"],
+    finance:    ["#/money"],
+  };
+
+  // settings.navSpotlightConcerns overrides profile.readinessConcerns when
+  // set (an explicit Settings edit) - null means "follow onboarding's
+  // answer live," same shape DEFAULT_SETTINGS' own comment documents.
+  function resolveSpotlightConcerns(profile) {
+    let override = null;
+    try {
+      const s = G.store && G.store.settings ? G.store.settings() : null;
+      if (s && Array.isArray(s.navSpotlightConcerns)) override = s.navSpotlightConcerns;
+    } catch (e) {}
+    const source = override || (profile && profile.readinessConcerns) || [];
+    return source.filter((id) => typeof id === "string");
+  }
+
+  function rank(profile) {
+    profile = profile || {};
+    const scored = {}; // route -> { score, reasons: string[] }
+    function bump(route, amount, reason) {
+      if (!scored[route]) scored[route] = { score: 0, reasons: [] };
+      scored[route].score += amount;
+      if (reason && scored[route].reasons.indexOf(reason) === -1) scored[route].reasons.push(reason);
+    }
+    resolveSpotlightConcerns(profile).forEach((id) => {
+      const label = (CONCERNS.find((c) => c.id === id) || {}).label || id;
+      (PRIORITY_ROUTES[id] || []).forEach((route) => { bump(route, 40, "Flagged at onboarding: " + label.replace(/^\S+\s/, "")); });
+    });
+    let plan = [];
+    try { plan = generateActionPlan(profile) || []; } catch (e) {}
+    plan.forEach((item) => {
+      if (!item || !item.route) return;
+      bump(item.route, item.priority === "high" ? 30 : 15, item.action);
+    });
+    return Object.keys(scored)
+      .map((route) => ({ route: route, score: scored[route].score, reasons: scored[route].reasons }))
+      .sort((a, b) => b.score - a.score);
+  }
+
+  // Awaitable widening: layers in Progress's real, measured weakest
+  // competency (the SAME "weakest" concept store.recommendNext() already
+  // uses for Home's scenario-level card, so this can never contradict it)
+  // on top of rank()'s declared-only list. Requires at least 3 attempts
+  // before trusting the signal - a single lucky/unlucky scenario shouldn't
+  // swing the whole nav.
+  async function rankWithProgress(profile) {
+    const base = rank(profile);
+    try {
+      const prog = G.store && G.store.getProgress ? await G.store.getProgress() : null;
+      if (prog && prog.dims && prog.totalAttempts >= 3) {
+        const RANK_COMPS = ["Leads", "Develops", "Achieves"];
+        let weakest = null;
+        RANK_COMPS.forEach((c) => {
+          if (prog.dims[c] && (!weakest || prog.dims[c].pct < prog.dims[weakest].pct)) weakest = c;
+        });
+        if (weakest && prog.dims[weakest].pct < 60) {
+          const reason = "Weakest measured competency: " + weakest + " (" + prog.dims[weakest].pct + "%)";
+          const existing = base.find((r) => r.route === "#/train");
+          if (existing) { existing.score += 45; if (existing.reasons.indexOf(reason) === -1) existing.reasons.push(reason); }
+          else base.push({ route: "#/train", score: 45, reasons: [reason] });
+        }
+      }
+    } catch (e) {}
+    return base.sort((a, b) => b.score - a.score);
+  }
+
+  G.priorities = { rank: rank, rankWithProgress: rankWithProgress, PRIORITY_ROUTES: PRIORITY_ROUTES };
+
   // ── Rank preview text ────────────────────────────────────────────────────
   function getRankPreviewText(tier) {
     const PREVIEW = {
@@ -24150,6 +24302,23 @@ window.G = window.G || {};
       renderItems(HIGH, "Do first (high priority)");
       renderItems(MED, "This week (medium priority)");
 
+      // Nav Spotlight: offered right here, confirmed at the moment it's
+      // relevant, rather than applied silently later off the same
+      // readinessConcerns answer - same reasoning DEFAULT_SETTINGS' own
+      // comment gives for why this defaults off everywhere else. Only
+      // offered when there's something to spotlight; a profile with no
+      // declared concerns would just get an empty Spotlight strip.
+      let spotlightCheckbox = null;
+      if ((data.readinessConcerns || []).length) {
+        const checkRow = el("div.ob-check-row");
+        spotlightCheckbox = el("input", { type: "checkbox", id: "ob-nav-spotlight" });
+        spotlightCheckbox.checked = true;
+        checkRow.appendChild(spotlightCheckbox);
+        checkRow.appendChild(el("label.ob-check-label", { for: "ob-nav-spotlight", text: "Spotlight these priorities in your nav" }));
+        host.appendChild(checkRow);
+        host.appendChild(el("p.hint", { style:"margin-top:2px", text: "Pins your top routes to the top of the sidebar - nothing else moves or disappears. Change this any time from Settings." }));
+      }
+
       data.actionPlan = plan;
       data.onboardingComplete = true;
       data.createdAt = Date.now();
@@ -24157,6 +24326,7 @@ window.G = window.G || {};
       const saveBtn = el("button.btn.primary.ob-next", { text: "Save profile & start →", type:"button" });
       saveBtn.addEventListener("click", async () => {
         const profile = Object.assign({}, data, { mode: data.mode || "personal", guestSession: false });
+        const wantsSpotlight = !!(spotlightCheckbox && spotlightCheckbox.checked);
         // Setting up a real account from INSIDE a Guest or Kiosk session
         // (Kiosk's Profile screen offers "Redo my setup", which reaches this
         // wizard with no reload in between). The new account must start
@@ -24187,6 +24357,7 @@ window.G = window.G || {};
           if (profile.tier) await G.store.setSetting("tierFilter", profile.tier);
           if (profile.retirementSystem) await G.store.setSetting("retirementSystem", profile.retirementSystem);
           if (profile.displayName) await G.store.setSetting("userName", profile.displayName);
+          if (spotlightCheckbox) await G.store.setSetting("navSpotlight", wantsSpotlight);
         }
         if (leavingSession) {
           // The settings save above is debounced; write it now rather than
@@ -37069,6 +37240,20 @@ window.G = window.G || {};
       prefGrid.appendChild(mosPanel);
     }
 
+    // Nav Spotlight (G.priorities.rank(), profile.js): a Soldier's own
+    // stated priorities surfaced at the top of the sidebar - never hides
+    // anything, unlike the MOS Decks/MOI Scope panels around it, so it
+    // reuses toggleRow() rather than a per-item checklist like theirs.
+    // Off by default; also offered once at the end of onboarding (see
+    // renderSummaryStep). The concerns it spotlights are whatever's on the
+    // Soldier's own profile (Profile -> "Regenerate plan" re-reads them) -
+    // no separate copy to keep in sync here.
+    const spotlightPanel = el("div.panel", { style: "margin-top:12px" });
+    spotlightPanel.appendChild(el("label", { text: "Nav Spotlight" }));
+    spotlightPanel.appendChild(toggleRow("Spotlight my priorities in the nav", "navSpotlight",
+      "Pins the routes that match what you flagged during onboarding (or since, via Profile) to the top of the sidebar. Nothing else moves or disappears - turn this off any time, including right from the sidebar itself."));
+    prefGrid.appendChild(spotlightPanel);
+
     // MOI Scope (ROADMAP 3g phase 2, MOI Import Phase 2): mirrors the MOS
     // Decks panel immediately above it - one checkbox per saved MOI plan
     // family (G.moiImport, src/app-modules/moi-import.js), each
@@ -38337,6 +38522,84 @@ window.G = window.G || {};
     container.appendChild(section);
   }
 
+  // Nav Spotlight: reads G.priorities.rank() (profile.js) and surfaces the
+  // top matches right in the sidebar - never hides anything else, see that
+  // function's own header comment for the full rationale. Off by default
+  // (settings.navSpotlight); a Soldier turns it on from the onboarding
+  // summary step's own prompt or from Settings -> Study Priorities.
+  //
+  // rank() itself is synchronous but needs G.profile.current() (async) to
+  // get the profile to rank, so this module keeps its own small cache -
+  // same "compute async, cache, re-render on change" shape
+  // state._progressCache already uses in store.js - rather than making
+  // renderNav()/renderGroupsInto() themselves async, which would touch
+  // every caller of a function this file already treats as a cheap,
+  // synchronous, call-it-whenever DOM rebuild.
+  let spotlightRanked = [];
+  let spotlightRefreshInFlight = false;
+  async function refreshSpotlight() {
+    if (spotlightRefreshInFlight) return;
+    spotlightRefreshInFlight = true;
+    try {
+      const settings = G.store && G.store.settings ? G.store.settings() : null;
+      if (!settings || !settings.navSpotlight) { spotlightRanked = []; return; }
+      const profile = G.profile && G.profile.current ? await G.profile.current() : null;
+      spotlightRanked = G.priorities && G.priorities.rank ? G.priorities.rank(profile || {}) : [];
+    } catch (e) {
+      spotlightRanked = [];
+    } finally {
+      spotlightRefreshInFlight = false;
+    }
+    renderNav();
+  }
+  function renderSpotlightInto(container) {
+    if (!spotlightRanked.length) return;
+    const SPOTLIGHT_CAP = 6;
+    const shown = spotlightRanked.slice(0, SPOTLIGHT_CAP);
+    const section = el("div.nav-spotlight-section");
+    const labelRow = el("div.nav-spotlight-label");
+    labelRow.appendChild(document.createTextNode("Spotlight"));
+    labelRow.appendChild(el("button.nav-spotlight-off", {
+      type: "button",
+      onclick: async () => {
+        if (G.store && G.store.setSetting) await G.store.setSetting("navSpotlight", false);
+        spotlightRanked = [];
+        renderNav();
+      },
+    }, ["Turn off"]));
+    section.appendChild(labelRow);
+    shown.forEach((r) => {
+      const b = navButton(r.route);
+      if (!b) return; // spotlighted route hidden/removed since - skip rather than render a dead row
+      const row = el("div.nav-item-row.nav-spotlight-row", { title: r.reasons.join(" · ") });
+      row.appendChild(b);
+      section.appendChild(row);
+    });
+    if (spotlightRanked.length > SPOTLIGHT_CAP) {
+      section.appendChild(el("div.nav-spotlight-more", { "aria-hidden": "true" }, ["+" + (spotlightRanked.length - SPOTLIGHT_CAP) + " more below"]));
+    }
+    container.appendChild(section);
+  }
+  // Kick off the first load and keep it current: a fresh onboarding
+  // completion, a Settings toggle, or "Regenerate plan" on Profile can all
+  // change what rank() would return, and none of them otherwise touch the
+  // nav. Module-eval-time vs. lazy-resolution bug class (recurring in this
+  // file - see the profile.js PRT-name fix's own comment): this whole
+  // script runs synchronously before app.start()'s DOMContentLoaded
+  // listener even fires, which is well before store.init() has hydrated
+  // state.settings from IndexedDB (store.js emits "store:ready" only once
+  // that finishes). A bare refreshSpotlight() call here would always read
+  // whatever state.settings was initialized to at declaration time, not
+  // the real saved value - silently freezing Nav Spotlight on "off" every
+  // single fresh page load, only ever correcting itself later if a Soldier
+  // happened to flip a setting or reload their profile that session. Wait
+  // for the real signal instead of guessing at one.
+  if (util.on) {
+    util.on("store:ready", () => { refreshSpotlight(); });
+    util.on("settings:change", () => { refreshSpotlight(); });
+    util.on("profile:change", () => { refreshSpotlight(); });
+  }
+
   function buildShell() {
     const app = document.getElementById("app");
     util.clear(app);
@@ -38681,6 +38944,14 @@ window.G = window.G || {};
   // fork of it.
   function renderGroupsInto(container, opts) {
     opts = opts || {};
+    // Nav Spotlight, Tier 2: a group holding a spotlighted route opens by
+    // default alongside whatever navOpenGroups already has explicitly open -
+    // same "the daily hub opens on a first desktop visit" precedent
+    // isFirstEverVisit sets above, generalized to "wherever the Soldier's
+    // own stated priorities point." Built from the FULL ranked list, not
+    // just the capped 6 shown in the Spotlight strip itself - a route can
+    // matter enough to open its group without making the strip's own cap.
+    const spotlightRouteSet = new Set(spotlightRanked.map((r) => r.route));
     NAV_GROUPS.forEach((g) => {
       if (g.label === null) {
         g.hashes.forEach((h) => { const b = navButton(h); if (b) container.appendChild(b); });
@@ -38688,12 +38959,28 @@ window.G = window.G || {};
         // after Home (NAV_GROUPS[0] is always this g.label===null entry -
         // one Home hash, guaranteed by the data), before any labeled
         // group - same "always visible, never collapsed" treatment Home
-        // itself already gets, in both the sidebar and the drawer.
+        // itself already gets, in both the sidebar and the drawer. Nav
+        // Spotlight sits right after it - explicit pins (a Soldier's own
+        // deliberate choice) stay closer to Home than a system suggestion.
         renderPinnedInto(container);
+        renderSpotlightInto(container);
         return;
       }
       container.appendChild(el("div.nav-divider"));
-      const isOpen = navOpenGroups.has(g.id);
+      const spotlightOpen = g.hashes.some((h) => spotlightRouteSet.has(h));
+      // A group can be open for two independent reasons now - an explicit
+      // navOpenGroups entry, or Nav Spotlight deciding it belongs open -
+      // and a Soldier must be able to override EITHER direction and have it
+      // stick across re-renders (route change, resize, another Spotlight
+      // refresh). "closed:<id>" is a second marker in the same Set/storage
+      // key: "this group would open on Spotlight's own logic, but I closed
+      // it anyway." Plain "<id>" keeps meaning what it always has -
+      // "I opened this myself." The two markers never collide (a real route
+      // hash group id never starts with "closed:").
+      const closedOverrideKey = "closed:" + g.id;
+      const explicitlyOpen = navOpenGroups.has(g.id);
+      const closedOverride = navOpenGroups.has(closedOverrideKey);
+      const isOpen = explicitlyOpen || (spotlightOpen && !closedOverride);
       // Children always render (into a .nav-group-body wrapper) rather than
       // only when open -- open/close is then a pure CSS class toggle on
       // existing elements, not a DOM add/remove, so it can actually animate
@@ -38719,13 +39006,29 @@ window.G = window.G || {};
         if (g.subdivideAfter === h) body.appendChild(el("div.nav-divider"));
       });
       const chev = el("span.ico.nav-group-chev", { "aria-hidden": "true" }, [G.util.icon("chevron-right", 14, "▸")]);
-      const header = el("button.nav-group-header" + (isOpen ? ".open" : ""), {
+      const header = el("button.nav-group-header" + (isOpen ? ".open" : "") + (spotlightOpen && !explicitlyOpen ? ".nav-group-spotlit" : ""), {
         "aria-expanded": isOpen ? "true" : "false",
         onclick: () => {
-          const nowOpen = !navOpenGroups.has(g.id);
-          if (nowOpen) navOpenGroups.add(g.id); else navOpenGroups.delete(g.id);
+          const nowOpen = !isOpen;
+          if (nowOpen) {
+            // Opening: clear any earlier "closed despite Spotlight" override.
+            // If Spotlight's own logic already accounts for this group being
+            // open, that alone is enough going forward - no need to ALSO
+            // record an explicit open, which would just be a second reason
+            // for the same result.
+            navOpenGroups.delete(closedOverrideKey);
+            if (!spotlightOpen) navOpenGroups.add(g.id);
+          } else {
+            // Closing: an explicit open (if any) is simply withdrawn. If
+            // Spotlight would otherwise reopen this group right back up on
+            // the next render, record the override so the Soldier's own
+            // "no" sticks until Spotlight's answer itself changes.
+            navOpenGroups.delete(g.id);
+            if (spotlightOpen) navOpenGroups.add(closedOverrideKey);
+          }
           persistNavOpenGroups();
           header.classList.toggle("open", nowOpen);
+          header.classList.remove("nav-group-spotlit");
           header.setAttribute("aria-expanded", nowOpen ? "true" : "false");
           body.classList.toggle("open", nowOpen);
         },
