@@ -46,6 +46,7 @@ import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 import { putOnDevice, seedOwnerProfile } from "./device-storage.mjs";
+import { until } from "./testkit.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -281,6 +282,51 @@ else {
   await page.keyboard.press("Escape");
   await page.waitForTimeout(400);
 }
+
+// ============================================================
+// 11) On-demand access (Settings' About panel and #/share "Share &
+//     Install"): the auto-popup above is a one-time-per-update trigger,
+//     but a Soldier should be able to pull the whole release history back
+//     up any time, from either of the two places named for it. Both
+//     reuse G.whatsNew.show() with EVERY real entry (not just "missed"
+//     ones) - proven here by checking the panel opens with more entries
+//     than a single release ever has on its own.
+// ============================================================
+const PANEL_SEL = '.gm-box[aria-label="What\'s new"]';
+const panelGone = () => until(page, (sel) => !document.querySelector(sel), PANEL_SEL);
+const panelShown = () => until(page, (sel) => !!document.querySelector(sel), PANEL_SEL);
+const findAndClickWhatsNewBtn = () => page.evaluate(() => {
+  const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === "See what's new");
+  if (b) b.click();
+  return !!b;
+});
+
+await page.setViewportSize({ width: 1200, height: 900 });
+await setWhatsNewSeen(null);
+await page.reload({ waitUntil: "load" });
+await until(page, () => window.G && G.whatsNew && G.profile);
+st = await panelState();
+if (st.present) { await page.keyboard.press("Escape"); await panelGone(); } // close the auto-popup from a null-record reload before testing the on-demand button
+
+await page.evaluate(() => { location.hash = "#/settings"; });
+await until(page, () => !!document.querySelector("h2") && document.querySelector("h2").textContent === "Settings");
+const settingsBtnFound = await findAndClickWhatsNewBtn();
+await panelShown();
+let onDemand = await panelState();
+(settingsBtnFound && onDemand.present && onDemand.highlightCount > 5)
+  ? ok(`(11) Settings' "See what's new" button opens the panel with the full history (${onDemand.highlightCount} highlights shown, not just one release's worth)`)
+  : bad("(11) Settings on-demand button: found=" + settingsBtnFound + ", panel=" + JSON.stringify(onDemand));
+if (onDemand.present) { await page.keyboard.press("Escape"); await panelGone(); }
+
+await page.evaluate(() => { location.hash = "#/share"; });
+await until(page, () => !!document.querySelector("h2") && document.querySelector("h2").textContent === "Share & Install");
+const shareBtnFound = await findAndClickWhatsNewBtn();
+await panelShown();
+onDemand = await panelState();
+(shareBtnFound && onDemand.present && onDemand.highlightCount > 5)
+  ? ok(`(11) #/share's "See what's new" button opens the same full-history panel (${onDemand.highlightCount} highlights)`)
+  : bad("(11) #/share on-demand button: found=" + shareBtnFound + ", panel=" + JSON.stringify(onDemand));
+if (onDemand.present) { await page.keyboard.press("Escape"); await panelGone(); }
 
 noise.length === 0 ? ok("no console errors/warnings across the whole run") : bad("console noise: " + JSON.stringify(noise));
 
