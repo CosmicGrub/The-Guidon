@@ -61,6 +61,23 @@
  *      Pause/Resume button - not a direct call into prtRunDrill()'s
  *      internals - so the exact click handler under test is the one a real
  *      Soldier's screen reader would see.
+ *
+ *  (g) src/app-modules/12-prt-drills-expansion.js shipped five more PRT
+ *      drills (CD1, CD2, CL1, CL2, GD) alongside "pd" - #/prt's own prtHub()
+ *      still only ever renders drills[0] ("pd" stays first: the content
+ *      pack only ever pushes onto seed.prt.drills, never reorders it), so
+ *      this section does NOT drive a UI pass for the other five the way (a)
+ *      does for PD. It generalizes (a)'s own "ground truth read live from
+ *      the seed" discipline to the WHOLE window.GUIDON_SEED.prt.drills
+ *      array instead of just index 0: every drill's exercises carry the
+ *      required fields, sequential 1..N order, and a sourceStatus that is
+ *      either "verified" (with real, mutually-distinct starting-position/
+ *      movement text) or "pending-source" (matching the same discipline
+ *      tools/lint-prt-sources.mjs enforces against the assembled bank) -
+ *      plus a handful of real, specific spot-checks so a future edit that
+ *      quietly hollows out one drill's content (while leaving its
+ *      sourceStatus untouched) still fails a real assertion, not just a
+ *      shape check.
  */
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
@@ -171,6 +188,92 @@ allVerified && distinctPositions === truth.exercises.length
   ? ok(`All ${truth.exercises.length} exercises are sourceStatus:"verified" with real, mutually distinct starting-position text`)
   : bad(`Not every exercise is verified with distinct text: allVerified=${allVerified}, distinctPositions=${distinctPositions}/${truth.exercises.length}`);
 
+/* ========================================================================
+   (g) Every additional PRT drill shipped alongside PD (CD1, CD2, CL1, CL2,
+   GD - src/app-modules/12-prt-drills-expansion.js) is present in
+   window.GUIDON_SEED.prt.drills with the same content-integrity properties
+   PD's own record has, read live from the seed (never a copy hard-coded
+   here), generalizing section (a)'s own discipline to the whole array.
+   ======================================================================== */
+const allDrillsTruth = await page.evaluate(() => {
+  const VALID_SOURCE_STATUS = ["pending-source", "verified"];
+  const drills = (window.GUIDON_SEED.prt && window.GUIDON_SEED.prt.drills) || [];
+  return drills.map((d) => {
+    const exercises = (d.exercises || []).slice().sort((a, b) => a.order - b.order);
+    return {
+      id: d.id, name: d.name,
+      orders: exercises.map((e) => e.order),
+      names: exercises.map((e) => e.name),
+      sourceStatuses: exercises.map((e) => e.sourceStatus),
+      allStatusValid: exercises.every((e) => VALID_SOURCE_STATUS.includes(e.sourceStatus)),
+      verifiedHaveText: exercises.filter((e) => e.sourceStatus === "verified")
+        .every((e) => typeof e.startingPosition === "string" && e.startingPosition.trim() && typeof e.movementDescription === "string" && e.movementDescription.trim()),
+      distinctPositions: new Set(exercises.filter((e) => e.sourceStatus === "verified").map((e) => e.startingPosition)).size,
+      verifiedCount: exercises.filter((e) => e.sourceStatus === "verified").length,
+    };
+  });
+});
+const drillIds = allDrillsTruth.map((d) => d.id);
+["pd", "cd1", "cd2", "cl1", "cl2", "gd"].every((id) => drillIds.includes(id))
+  ? ok(`window.GUIDON_SEED.prt.drills carries all 6 expected drills: ${JSON.stringify(drillIds)}`)
+  : bad(`expected drill ids pd/cd1/cd2/cl1/cl2/gd, got: ${JSON.stringify(drillIds)}`);
+
+const EXPECTED_COUNTS = { pd: 10, cd1: 5, cd2: 5, cl1: 5, cl2: 5, gd: 3 };
+allDrillsTruth.forEach((d) => {
+  const expected = EXPECTED_COUNTS[d.id];
+  if (expected === undefined) return; // an id this suite doesn't know about yet - not this section's job to police the roster
+  const sortedOrders = d.orders.slice().sort((a, b) => a - b);
+  const ordersOk = d.orders.length === expected && JSON.stringify(sortedOrders) === JSON.stringify(Array.from({ length: expected }, (_, i) => i + 1));
+  ordersOk
+    ? ok(`"${d.id}" (${d.name}) has ${expected} exercises, order 1..${expected} with no gaps or duplicates`)
+    : bad(`"${d.id}" exercise order mismatch: got ${JSON.stringify(d.orders)}, expected exactly 1..${expected}`);
+  d.allStatusValid
+    ? ok(`"${d.id}": every exercise's sourceStatus is "verified" or "pending-source"`)
+    : bad(`"${d.id}": an exercise has an invalid sourceStatus: ${JSON.stringify(d.sourceStatuses)}`);
+  d.verifiedHaveText
+    ? ok(`"${d.id}": every "verified" exercise actually carries real starting-position/movement text`)
+    : bad(`"${d.id}": a "verified" exercise is missing real starting-position/movement text`);
+  (d.verifiedCount === 0 || d.distinctPositions === d.verifiedCount)
+    ? ok(`"${d.id}": ${d.verifiedCount} verified exercise(s) have mutually distinct starting-position text (no copy-pasted duplicate)`)
+    : bad(`"${d.id}": verified exercises don't all have distinct starting-position text (${d.distinctPositions}/${d.verifiedCount} distinct)`);
+});
+
+// Real, specific spot-checks - not just shape/count checks - so a future
+// edit that hollows out one drill's actual content while leaving its
+// sourceStatus untouched still fails something concrete here.
+const cd1 = allDrillsTruth.find((d) => d.id === "cd1");
+JSON.stringify(cd1 && cd1.names) === JSON.stringify(["Power Jump", "V-Up", "Mountain Climber", "Leg-Tuck and Twist", "Single-Leg Push-Up"])
+  ? ok(`CD1's 5 exercises are the real ATP 7-22.02 sequence, in order: ${JSON.stringify(cd1.names)}`)
+  : bad(`CD1 exercise names/order: ${JSON.stringify(cd1 && cd1.names)}`);
+const cd2 = allDrillsTruth.find((d) => d.id === "cd2");
+JSON.stringify(cd2 && cd2.names) === JSON.stringify(["Turn and Lunge", "Supine Bicycle", "Half Jack", "Swimmer", "8-Count T Push-Up"])
+  ? ok(`CD2's 5 exercises are the real ATP 7-22.02 sequence, in order: ${JSON.stringify(cd2.names)}`)
+  : bad(`CD2 exercise names/order: ${JSON.stringify(cd2 && cd2.names)}`);
+const cl1 = allDrillsTruth.find((d) => d.id === "cl1");
+JSON.stringify(cl1 && cl1.names) === JSON.stringify(["Straight-Arm Pull", "Heel Hook", "Pull-Up", "Leg Tuck", "Alternating Grip Pull-Up"])
+  ? ok(`CL1's 5 exercises are the real ATP 7-22.02 sequence, in order: ${JSON.stringify(cl1.names)}`)
+  : bad(`CL1 exercise names/order: ${JSON.stringify(cl1 && cl1.names)}`);
+const cl2 = allDrillsTruth.find((d) => d.id === "cl2");
+JSON.stringify(cl2 && cl2.names) === JSON.stringify(["Flexed-Arm Hang", "Heel Hook", "Pull-Up", "Leg Tuck", "Alternating Grip Pull-Up"])
+  ? ok(`CL2's 5 exercises are the real ATP 7-22.02 sequence, in order: ${JSON.stringify(cl2.names)}`)
+  : bad(`CL2 exercise names/order: ${JSON.stringify(cl2 && cl2.names)}`);
+const gd = allDrillsTruth.find((d) => d.id === "gd");
+JSON.stringify(gd && gd.names) === JSON.stringify(["Shoulder Roll", "Lunge Walk", "Soldier Carry"])
+  ? ok(`GD's 3 exercises are the real ATP 7-22.02 sequence, in order: ${JSON.stringify(gd.names)}`)
+  : bad(`GD exercise names/order: ${JSON.stringify(gd && gd.names)}`);
+
+// GD's repRule itself asserts something plainly stated (not an inference) -
+// this file's own header for src/app-modules/12-prt-drills-expansion.js
+// explains why: three exercises, no rep-count structure, progressing to up
+// to three sets. Confirm the seed record actually says that.
+const gdRepRule = await page.evaluate(() => {
+  const d = ((window.GUIDON_SEED.prt && window.GUIDON_SEED.prt.drills) || []).find((x) => x.id === "gd");
+  return d ? { sourceStatus: d.repRule.sourceStatus, note: d.repRule.note, standalone: d.repRule.standalone } : null;
+});
+gdRepRule && gdRepRule.sourceStatus === "verified" && gdRepRule.standalone === null && /three sets/.test(gdRepRule.note || "")
+  ? ok('GD\'s repRule is sourceStatus:"verified" and honestly describes set-based (not rep-count) progression')
+  : bad("GD repRule: " + JSON.stringify(gdRepRule));
+
 // Reselect the first exercise so later sections (e)/(f) - which assume the
 // default-selected exercise - aren't left pointed at the last one.
 await page.evaluate((id) => {
@@ -181,14 +284,22 @@ await page.waitForTimeout(150);
 /* ========================================================================
    (b) store.prt(query) - substring search filtering
    ======================================================================== */
+// store.prt() flattens EVERY drill in window.GUIDON_SEED.prt.drills, not
+// just PD's own - expected total is the real sum read live from (g)'s own
+// ground truth above, not the old PD-only count of 10 (src/app-modules/
+// 12-prt-drills-expansion.js added 23 more exercises across 5 drills).
+const expectedFlatCount = allDrillsTruth.reduce((n, d) => n + d.names.length, 0);
 const noQuery = await page.evaluate(() => window.G.store.prt().length);
-truth && noQuery === truth.count
-  ? ok(`store.prt() with no query returns the full flattened exercise list (${noQuery})`)
-  : bad(`store.prt() with no query returned ${noQuery}, expected ${truth && truth.count}`);
+expectedFlatCount > 0 && noQuery === expectedFlatCount
+  ? ok(`store.prt() with no query returns the full flattened exercise list across every drill (${noQuery})`)
+  : bad(`store.prt() with no query returned ${noQuery}, expected ${expectedFlatCount}`);
 
-const nameMatch = await page.evaluate(() => window.G.store.prt("push-up").map((p) => p.name));
-JSON.stringify(nameMatch) === JSON.stringify(["Push-Up"])
-  ? ok('store.prt("push-up") returns exactly the "Push-Up" exercise')
+// "push-up" now matches three real exercises across three different drills
+// (PD's own Push-Up, CD1's Single-Leg Push-Up, CD2's 8-Count T Push-Up) -
+// still a real, sourced substring match, not a broken query.
+const nameMatch = await page.evaluate(() => window.G.store.prt("push-up").map((p) => p.name).sort());
+JSON.stringify(nameMatch) === JSON.stringify(["8-Count T Push-Up", "Push-Up", "Single-Leg Push-Up"])
+  ? ok('store.prt("push-up") returns all three real Push-Up exercises across drills: ' + JSON.stringify(nameMatch))
   : bad('store.prt("push-up") -> ' + JSON.stringify(nameMatch));
 
 const caseInsensitive = await page.evaluate(() => window.G.store.prt("ROWER").map((p) => p.name));

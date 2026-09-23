@@ -8649,10 +8649,16 @@ window.G = window.G || {};
       { drillId: "pd" }, { drillId: "hsd" }, { drillId: "mmd1" }, { drillId: "mmd2" }, { drillId: "rd" }
     ] }
   ];
+  // "cd1"/"cd2" removed from here: src/app-modules/12-prt-drills-expansion.js
+  // now gives both a real seed.prt.drills record with per-exercise
+  // ATP 7-22.02 citations, the same bar "pd" already cleared, so they are no
+  // longer explicit placeholders. prtDrillLabel() (pt-planner.js) already
+  // resolves "pending" by checking seed.prt.drills directly, so removing
+  // these two keys is the only change needed there; the #/drills PRT
+  // session builder's own BLOCK_ITEMS/drillExerciseNames() (below, this
+  // file) also needed updating to match - see that block's own comment.
   const DEFAULT_PRT_PENDING_DRILLS = {
     ssd: "Shoulder Stability Drill",
-    cd1: "Conditioning Drill 1",
-    cd2: "Conditioning Drill 2",
     hsd: "Hip Stability Drill",
     mmd1: "Military Movement Drill 1",
     mmd2: "Military Movement Drill 2",
@@ -26535,18 +26541,30 @@ window.G = window.G || {};
   // byte for byte, a false-positive-passing bug, not a false-failing one.
   const PD_FALLBACK = ["Bend and Reach","Rear Lunge","High Jumper","Rower","Squat Bender",
               "Windmill","Forward Lunge","Prone Row","Bent-Leg Body Twist","Push-Up"];
-  function pdExerciseNames() {
+  const CD1_FALLBACK = ["Power jump","V-up","Mountain climber","Leg-tuck and twist","Single-leg push-up"];
+  const CD2_FALLBACK = ["Turn and lunge","Supine bicycle","Half jack","Swimmer","8-count T push-up"];
+  // Generalized from this file's own former pdExerciseNames() (ROADMAP 3g
+  // item I) now that CD1/CD2 also carry real, verified seed.prt.drills
+  // records (src/app-modules/12-prt-drills-expansion.js) - any drill id
+  // with a live record reads its own real exercise names/order, the same
+  // way PD's own block always has; LIVE_FALLBACK below (this file) is the
+  // closed set of ids this applies to, so ssd/hsd/mmd1/mmd2/rd (still no
+  // seed.prt.drills record) keep reading the static BLOCK_ITEMS table.
+  function drillExerciseNames(id, fallback) {
     const meta = G.store && G.store.prtMeta ? G.store.prtMeta() : null;
-    const pd = meta && Array.isArray(meta.drills) ? meta.drills.find((d) => d.id === "pd") : null;
-    const names = pd && Array.isArray(pd.exercises) ? pd.exercises.slice().sort((a, b) => a.order - b.order).map((e) => e.name) : null;
-    return (names && names.length) ? names : PD_FALLBACK;
+    const d = meta && Array.isArray(meta.drills) ? meta.drills.find((x) => x.id === id) : null;
+    const names = d && Array.isArray(d.exercises) ? d.exercises.slice().sort((a, b) => a.order - b.order).map((e) => e.name) : null;
+    return (names && names.length) ? names : fallback;
   }
   const RD = ["Overhead arm pull","Rear lunge","Extend and flex","Thigh stretch",
               "Single-leg over","Groin stretch","Calf stretch","Hamstring stretch"];
+  // "cd1"/"cd2" removed from here: both now have a real seed.prt.drills
+  // record, so their items resolve through drillExerciseNames() below (see
+  // LIVE_FALLBACK) instead of this static table. CD1_FALLBACK/CD2_FALLBACK
+  // above are that function's fallback only, for when store.prtMeta() is
+  // unavailable - the same role PD_FALLBACK has always played for "pd".
   const BLOCK_ITEMS = {
     ssd:["I raise","T raise","Y raise","L raise","W raise"],
-    cd1:["Power jump","V-up","Mountain climber","Leg-tuck and twist","Single-leg push-up"],
-    cd2:["Turn and lunge","Supine bicycle","Half jack","Swimmer","8-count T push-up"],
     rd:RD,
     hsd:["Lateral leg raise","Medial leg raise","Bent-leg lateral raise","Single-leg tuck","Single-leg over"],
     mmd1:["Vertical","Lateral","Shuttle sprint"],
@@ -26557,6 +26575,9 @@ window.G = window.G || {};
     cd1:"Conditioning Drill 1 (CD 1)", cd2:"Conditioning Drill 2 (CD 2)", rd:"Recovery Drill (RD)",
     hsd:"Hip Stability Drill (HSD)", mmd1:"Military Movement Drill 1 (MMD 1)", mmd2:"Military Movement Drill 2 (MMD 2)"
   };
+  // The closed set of block drill ids with a real seed.prt.drills record
+  // today, each paired with drillExerciseNames()'s own fallback for that id.
+  const LIVE_FALLBACK = { pd:PD_FALLBACK, cd1:CD1_FALLBACK, cd2:CD2_FALLBACK };
   // Fallback session shape if store.prtMeta() is ever unavailable (matches
   // core's own DEFAULT_PRT_SESSIONS/DEFAULT_PRT_PENDING_DRILLS exactly, so
   // this is the same defensive floor prtMeta() itself already falls back to
@@ -26565,7 +26586,7 @@ window.G = window.G || {};
     { id:"strength", label:"Strength & Mobility Session", blocks:[{drillId:"pd"},{drillId:"ssd"},{drillId:"cd1"},{drillId:"cd2"},{drillId:"rd"}] },
     { id:"endurance", label:"Endurance & Mobility Session", blocks:[{drillId:"pd"},{drillId:"hsd"},{drillId:"mmd1"},{drillId:"mmd2"},{drillId:"rd"}] }
   ];
-  const PENDING_FALLBACK = { ssd:1, cd1:1, cd2:1, hsd:1, mmd1:1, mmd2:1, rd:1 };
+  const PENDING_FALLBACK = { ssd:1, hsd:1, mmd1:1, mmd2:1, rd:1 };
   function buildPrtSessions() {
     const meta = G.store && G.store.prtMeta ? G.store.prtMeta() : null;
     const sessions = (meta && Array.isArray(meta.sessions) && meta.sessions.length) ? meta.sessions : SESSIONS_FALLBACK;
@@ -26575,7 +26596,7 @@ window.G = window.G || {};
       byId[s.id] = { label:s.label, blocks:(s.blocks || []).map((b) => ({
         id:b.drillId,
         n:BLOCK_LABELS[b.drillId] || pendingDrills[b.drillId] || b.drillId,
-        items:b.drillId === "pd" ? pdExerciseNames() : (BLOCK_ITEMS[b.drillId] || [])
+        items:LIVE_FALLBACK[b.drillId] ? drillExerciseNames(b.drillId, LIVE_FALLBACK[b.drillId]) : (BLOCK_ITEMS[b.drillId] || [])
       })) };
     });
     return { byId, pendingIds:new Set(Object.keys(pendingDrills)) };

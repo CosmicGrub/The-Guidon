@@ -203,7 +203,7 @@ the history of every deliberate removal - is `guidon-app/tools/content-manifest.
 | MOS entries | 164 |
 | Career management fields | 27 |
 | Creeds, mottoes and identities | 19 |
-| PRT exercises | 10 |
+| PRT exercises | 33 |
 | Curriculum courses | 26 |
 | DA 4856 counseling examples | 59 |
 <!-- content-figures:end -->
