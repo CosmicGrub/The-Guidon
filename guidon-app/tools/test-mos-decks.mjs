@@ -57,12 +57,20 @@ const pillars = await page.evaluate(() => (window.G && G.board && G.board.PILLAR
 check(pillars.length === 6, "G.board.PILLARS still has exactly six universal pillars", () => "PILLARS = " + JSON.stringify(pillars));
 
 /* ---- (d) the MOS deck catalog is genuinely data-driven, not a hardcoded list ---- */
+// Not "decks.length === 1" any more: 08-mos-deck-68w-content.js registers a
+// second deck (68W) alongside 92A (tools/test-mos-decks-68w.mjs is that
+// deck's own copy of this whole suite). This suite's own job is proving the
+// GENERIC mechanism - opt-in, Readiness, onboarding, opt-out - works for
+// "a" deck, so it keeps using 92A as its example rather than re-deriving
+// which decks exist; it only needs 92A to be ONE of the registered decks,
+// found by code rather than assumed to be decks[0].
 const decks = await page.evaluate(() => (window.G && G.mosDecks && G.mosDecks.available) ? G.mosDecks.available() : null);
 check(Array.isArray(decks), "G.mosDecks.available() exists and returns an array", () => "G.mosDecks.available() returned " + JSON.stringify(decks));
-check(!!decks && decks.length === 1 && decks[0].code === "92A",
-  "exactly one MOS deck is registered today (92A) - every consumer (Settings, Readiness, the board filter) reads this catalog rather than naming a MOS itself",
+const deck92a = decks && decks.find((d) => d.code === "92A");
+check(!!decks && decks.length >= 1 && !!deck92a,
+  "the MOS deck catalog is genuinely data-driven and includes 92A - every consumer (Settings, Readiness, the board filter) reads this catalog rather than naming a MOS itself",
   () => "G.mosDecks.available() = " + JSON.stringify(decks));
-const deckLabel = decks && decks[0] ? decks[0].label : null;
+const deckLabel = deck92a ? deck92a.label : null;
 
 /* ---- (a) default state: no opt-in, no matching profile.mos -> everything hidden ---- */
 const before = await page.evaluate(() => ({

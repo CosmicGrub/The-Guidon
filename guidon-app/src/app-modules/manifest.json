@@ -251,6 +251,32 @@
       "optionalApis": []
     },
     {
+      "file": "08-mos-deck-68w-content.js",
+      "id": "mos-deck-68w-content",
+      "kind": "content-pack",
+      "emit": "build",
+      "headless": true,
+      "note": "Second MOS deck (00-mos-decks-core.js: '92A is the reference pattern, not a one-off'). Pushes 68W board.questions cards straight into the bank (07-cyber-fundamentals-content.js's simpler shape, not 92A's mergeDeck fold-engine - see this file's own header) and registers { code: \"68W\", label, pillar: null } onto bank.mosDecks the same way 01-board-supplement-92a.js registers 92A. requires mos-decks-core for the same documentation-of-intent reason 01-board-supplement-92a.js does, even though (like that file) it pushes onto bank.mosDecks directly rather than calling any ctx.pack(\"mos-decks-core\") API.",
+      "requires": ["mos-decks-core"],
+      "provides": [],
+      "routes": [],
+      "storageKeys": [],
+      "optionalApis": []
+    },
+    {
+      "file": "09-mos-deck-68w-scenarios.js",
+      "id": "mos-deck-68w-scenarios",
+      "kind": "content-pack",
+      "emit": "build",
+      "headless": true,
+      "note": "68W scenario-engine expansion, mirroring 04-board-supplement-92a-scenarios.js's shape. A sibling of 08-mos-deck-68w-content.js, not a dependent (declares no \"requires\" on it, same as 04 declares none on 01) - it only needs bank.scenarios.scenarios to already be an array, which the static seed provides.",
+      "requires": [],
+      "provides": [],
+      "routes": [],
+      "storageKeys": [],
+      "optionalApis": []
+    },
+    {
       "file": "98-content-pack-finalize.js",
       "id": "content-pack-finalize",
       "kind": "finalize",
