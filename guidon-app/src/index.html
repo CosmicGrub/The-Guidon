@@ -6277,6 +6277,19 @@ html[data-content-density="dense"] .readiness-val { font-size: 1.25rem; }
 .list-detail-row .ldr-name { font-weight:600; }
 .list-detail-row .ldr-badge { float:right; font-family:var(--font-mono); font-size:.72rem; color:var(--text-dim); }
 .list-detail-row.active .ldr-badge { color:var(--ink-amber); }
+/* ROADMAP 3g follow-up: content-view "pin from here" rows (Doctrine's
+   entryList, Board Drill's catList, Creeds/Recite's listPane) - a sibling
+   wrapper around the existing .list-detail-row button plus its own
+   G.navPin.button() star, the exact same shape the nav rail's own
+   .nav-item-row already uses and for the identical reason: a <button>
+   can't host a nested <button> (invalid HTML/ARIA), so the star sits next
+   to the row, not inside it. .nav-pin-btn's own rule is fully self-
+   contained (width/flex all !important) so it needs no reuse here beyond
+   giving the row itself room to shrink for it. margin-bottom moves from
+   the row (which no longer sits directly in .list-detail-list's flow) to
+   this wrapper, preserving the same 6px row-to-row gap. */
+.list-detail-row-wrap { display:flex; align-items:stretch; gap:4px; margin-bottom:6px; }
+.list-detail-row-wrap .list-detail-row { flex:1 1 auto; width:auto; min-width:0; margin-bottom:0; }
 /* Squad Roster's "jump to" pulse — a paint-only box-shadow/border transition
    (no width/height/layout property involved), so it needs none of the
    transform:scaleX() treatment the fill-bars elsewhere in this file do. */
@@ -12304,10 +12317,12 @@ window.G = window.G || {};
         // (see that view's near-identical comment for the full rationale -
         // no Enter/Space handler needed since these are real <button>
         // elements that already invoke the click listener above natively
-        // on Enter/Space; plain next/previousElementSibling is a complete
-        // traversal since catList holds only row buttons, nothing else,
-        // per refreshCatList()'s util.clear(catList) + rebuild-from-
-        // categories.forEach() above). Clamps rather than wraps, matching
+        // on Enter/Space; walking the wrapper's own next/previousElement-
+        // Sibling (ROADMAP 3g follow-up: catList holds row WRAPPERS now,
+        // each pairing a row with its own pin toggle - see below) is a
+        // complete traversal since catList holds only row wrappers,
+        // nothing else, per refreshCatList()'s util.clear(catList) +
+        // rebuild-from-categories.forEach() above). Clamps rather than wraps, matching
         // Search. Deliberately does NOT return focus to a filter input on
         // ArrowUp-from-row-0 the way Doctrine's row does: unlike Doctrine's
         // "search" box (which sits directly above entryList, both visually
@@ -12323,15 +12338,36 @@ window.G = window.G || {};
         row.addEventListener("keydown", (e) => {
           if (e.key === "ArrowDown") {
             e.preventDefault();
-            const next = row.nextElementSibling;
+            // catList's DIRECT children are now .list-detail-row-wrap
+            // (ROADMAP 3g follow-up, see the wrapper built below) rather
+            // than the row itself - walk the WRAPPER's own siblings and
+            // reach back in for that sibling's row button, same fix as
+            // Doctrine's entryList (this same file, views.js).
+            const nextWrap = row.closest(".list-detail-row-wrap");
+            const next = nextWrap && nextWrap.nextElementSibling && nextWrap.nextElementSibling.querySelector(".list-detail-row");
             if (next) next.focus();
           } else if (e.key === "ArrowUp") {
             e.preventDefault();
-            const prev = row.previousElementSibling;
+            const prevWrap = row.closest(".list-detail-row-wrap");
+            const prev = prevWrap && prevWrap.previousElementSibling && prevWrap.previousElementSibling.querySelector(".list-detail-row");
             if (prev) prev.focus();
           }
         });
-        catList.appendChild(row);
+        // ROADMAP 3g follow-up: a Soldier browsing Board Drill's category
+        // rail can now pin the "#/board" route right from here, not only
+        // from the nav rail/Sections drawer - see Doctrine's entryList
+        // (views.js, this same file) for the identical pattern and full
+        // rationale (sibling wrapper, same containing route pinned from
+        // every row, G.navPin.syncButtons() keeps every row's star in
+        // sync). G.navPin is app.js's own exposed pin API - a separate
+        // closure from this module (board.js).
+        const catRowWrap = el("div.list-detail-row-wrap", {}, [row]);
+        if (G.navPin && G.navPin.button) {
+          const catPinBtn = G.navPin.button("#/board");
+          catPinBtn.addEventListener("click", () => G.navPin.syncButtons(catList, "#/board"));
+          catRowWrap.appendChild(catPinBtn);
+        }
+        catList.appendChild(catRowWrap);
       });
     }
 
@@ -29743,6 +29779,21 @@ window.G = window.G || {};
   var el = G.util.el;
   var SCHEMA = "guidon.backup/v1";
 
+  // ROADMAP 3g follow-up: nav personalization (which routes a Soldier
+  // pinned, which nav groups they left open) lives in G.db.local -
+  // browser localStorage, read/written only inside the nav module
+  // (index.html's app.js, "guidon-nav-pinned-routes"/"guidon-nav-open-
+  // groups") - never in the "kv"/"userScenarios"/"attempts" IndexedDB
+  // stores everything above/below this constant actually backs up. A
+  // Soldier's pinned routes were silently lost on every fresh install or
+  // device migration, since neither exportAll() nor importAll() below
+  // ever looked at localStorage at all. Both keys are plain JSON arrays
+  // of hash strings (nav's own persistNavPinned()/persistNavOpenGroups())
+  // - small, safe to carry in a backup file, and not "other people's
+  // data" the way PRIVATE_PREFIXES below guards against, so they travel
+  // unconditionally like every other kv-backed preference.
+  var LOCAL_KEYS = ["guidon-nav-pinned-routes", "guidon-nav-open-groups"];
+
   function nowStamp() {
     var d = new Date();
     var p = function (n) { return (n < 10 ? "0" : "") + n; };
@@ -30113,6 +30164,8 @@ window.G = window.G || {};
     "risk:all": "saved risk assessments",
     "guidon:leader:roster:v1": "the squad roster",
     "guidon:leader:roster:moi:v1": "the roster's attached MOI",
+    "guidon-nav-pinned-routes": "your pinned nav routes",
+    "guidon-nav-open-groups": "your nav section layout",
   };
   var KEY_LABEL_FAMILIES = [
     { prefix: "srs:", label: "Board Drill review progress" },
@@ -30198,6 +30251,21 @@ window.G = window.G || {};
     } catch (e) { payload.stores.kv = []; failedStores.push("kv"); logExportFail("kv", e); }
     try { payload.stores.userScenarios = await G.db.all("userScenarios"); } catch (e) { payload.stores.userScenarios = []; failedStores.push("userScenarios"); logExportFail("userScenarios", e); }
     try { payload.stores.attempts = await G.db.all("attempts"); } catch (e) { payload.stores.attempts = []; failedStores.push("attempts"); logExportFail("attempts", e); }
+    // Nav personalization (LOCAL_KEYS, above) - a small localStorage
+    // bucket, not an IndexedDB store, so it gets its own per-key
+    // try/catch rather than one call into G.db.all(). Same
+    // try/catch-wrapped access pattern nav's own persistNavPinned()/
+    // persistNavOpenGroups() already use for these exact keys (index.html
+    // app.js) - a blocked localStorage (private mode, file://) reads as
+    // "nothing saved" there and does the same here, never throwing past
+    // this loop. Omits a key entirely when it has never been written
+    // (G.db.local.get returns null) rather than writing a literal "null"
+    // string a hand-inspected backup file would misread as real data.
+    var local = {};
+    LOCAL_KEYS.forEach(function (k) {
+      try { var v = G.db.local.get(k); if (v != null) local[k] = v; } catch (e) {}
+    });
+    payload.stores.local = local;
     // counts for a friendly summary
     payload.summary = {
       kv: (payload.stores.kv || []).length,
@@ -30279,8 +30347,8 @@ window.G = window.G || {};
     if (!obj || obj.schema !== SCHEMA || !obj.stores) {
       throw new Error("This file isn't a GUIDON backup (unexpected format).");
     }
-    var restored = { kv: 0, userScenarios: 0, attempts: 0 };
-    var skipped = { kv: 0, userScenarios: 0 };
+    var restored = { kv: 0, userScenarios: 0, attempts: 0, local: 0 };
+    var skipped = { kv: 0, userScenarios: 0, local: 0 };
     // Which kv rows were left out, by key - so the restore screens can say
     // WHAT was damaged in the Soldier's words (skippedSummary() above)
     // instead of only how many.
@@ -30367,6 +30435,32 @@ window.G = window.G || {};
         if (at && at.id != null) atRows.push(at);
       }
       if (atRows.length) { try { await G.db.putMany("attempts", atRows); restored.attempts += atRows.length; } catch (e) { failedStores.push("attempts"); logImportFail("attempts", e); } }
+    }
+    // Nav personalization (LOCAL_KEYS, above, written by exportAll()) -
+    // localStorage, not IndexedDB, so this is a plain per-key
+    // try/catch-wrapped G.db.local.set() rather than a putMany()
+    // transaction. Each value must still be the real shape nav's own
+    // persistNavPinned()/persistNavOpenGroups() write (a JSON array of
+    // strings) - a hand-edited or corrupted file could carry anything
+    // under these keys, and G.db.local.set() itself does no validation of
+    // its own (it's a thin String(v) wrapper over window.localStorage,
+    // see db.js's own header comment on that section). A row that fails
+    // this check is left out and counted in skipped.local/skippedKeys,
+    // the same "named, not silently dropped" contract every kv row above
+    // already gets.
+    if (obj.stores.local && typeof obj.stores.local === "object") {
+      LOCAL_KEYS.forEach(function (k) {
+        if (!Object.prototype.hasOwnProperty.call(obj.stores.local, k)) return;
+        var raw = obj.stores.local[k];
+        var parsed;
+        try { parsed = typeof raw === "string" ? JSON.parse(raw) : null; } catch (e) { parsed = null; }
+        if (!Array.isArray(parsed) || !parsed.every(function (h) { return typeof h === "string"; })) {
+          skipped.local++; skippedKeys.push(k);
+          if (G.selfheal) G.selfheal.log("kv-reject", k, "malformed nav-personalization row rejected during backup import (not a JSON array of strings) - existing value kept");
+          return;
+        }
+        try { G.db.local.set(k, raw); restored.local++; } catch (e) { failedStores.push("local"); logImportFail("local", e); }
+      });
     }
     return { restored: restored, skipped: skipped, skippedKeys: skippedKeys, failedStores: failedStores };
   }
@@ -35611,18 +35705,37 @@ window.G = window.G || {};
         // ArrowUp/ArrowDown row-to-row (Dictionary's entryList row idiom,
         // this same file) - clamps at the bottom; ArrowUp from row 0
         // returns focus to the search input directly above this list.
+        // ROADMAP 3g follow-up: listPane's direct children are now
+        // .list-detail-row-wrap (see below), so this walks the wrapper's
+        // own siblings and reaches back in for its row button - same fix
+        // as Doctrine's entryList/Board Drill's catList (this same file's
+        // views.doctrine, and board.js's refreshCatList).
         row.addEventListener("keydown", function (e) {
           if (e.key === "ArrowDown") {
             e.preventDefault();
-            var next = row.nextElementSibling;
+            var nextWrap = row.closest(".list-detail-row-wrap");
+            var next = nextWrap && nextWrap.nextElementSibling && nextWrap.nextElementSibling.querySelector(".list-detail-row");
             if (next) next.focus();
           } else if (e.key === "ArrowUp") {
             e.preventDefault();
-            var prev = row.previousElementSibling;
+            var prevWrap = row.closest(".list-detail-row-wrap");
+            var prev = prevWrap && prevWrap.previousElementSibling && prevWrap.previousElementSibling.querySelector(".list-detail-row");
             if (prev) prev.focus(); else inp.focus();
           }
         });
-        listPane.appendChild(row);
+        // A Soldier browsing Creeds & Branch Identities can now pin
+        // "#/creeds" right from the list they're already scrolling, not
+        // only from the nav rail/Sections drawer - see Doctrine's
+        // entryList for the full rationale (sibling wrapper; every row
+        // pins the same containing route; G.navPin.syncButtons() keeps
+        // every row's star in sync after any one of them is toggled).
+        var creedRowWrap = el("div.list-detail-row-wrap", {}, [row]);
+        if (G.navPin && G.navPin.button) {
+          var creedPinBtn = G.navPin.button("#/creeds");
+          creedPinBtn.addEventListener("click", function () { G.navPin.syncButtons(listPane, "#/creeds"); });
+          creedRowWrap.appendChild(creedPinBtn);
+        }
+        listPane.appendChild(creedRowWrap);
       });
       if (!list.length) listPane.appendChild(el("p.hint", { text: "No matches." }));
     }
@@ -35791,19 +35904,38 @@ window.G = window.G || {};
       row.addEventListener("click", function () { selectRecite(q.id); });
       // ArrowUp/ArrowDown row-to-row (Dictionary's entryList row idiom,
       // this same file) - clamps at both ends, no input sits directly
-      // above this list to hand focus off to.
+      // above this list to hand focus off to. ROADMAP 3g follow-up: this
+      // row is now returned wrapped (see below), so both listPane's and
+      // ownPane's own containers hold .list-detail-row-wrap as their
+      // direct children - walk the wrapper's own siblings and reach back
+      // in for its row button, same fix as Doctrine/Board Drill/Creeds.
       row.addEventListener("keydown", function (e) {
         if (e.key === "ArrowDown") {
           e.preventDefault();
-          var next = row.nextElementSibling;
+          var nextWrap = row.closest(".list-detail-row-wrap");
+          var next = nextWrap && nextWrap.nextElementSibling && nextWrap.nextElementSibling.querySelector(".list-detail-row");
           if (next) next.focus();
         } else if (e.key === "ArrowUp") {
           e.preventDefault();
-          var prev = row.previousElementSibling;
+          var prevWrap = row.closest(".list-detail-row-wrap");
+          var prev = prevWrap && prevWrap.previousElementSibling && prevWrap.previousElementSibling.querySelector(".list-detail-row");
           if (prev) prev.focus();
         }
       });
-      return row;
+      // A Soldier browsing Recitation Drill (either the bundled creeds in
+      // listPane or their own "My unit" texts in ownPane) can now pin
+      // "#/recite" right from here - see Doctrine's entryList for the
+      // full rationale. syncButtons() is scoped to listCol (the shared
+      // outer container holding BOTH panes, above) rather than just this
+      // row's own pane, so toggling a star in either pane updates every
+      // star in both - they all pin the identical single route.
+      var reciteRowWrap = el("div.list-detail-row-wrap", {}, [row]);
+      if (G.navPin && G.navPin.button) {
+        var recitePinBtn = G.navPin.button("#/recite");
+        recitePinBtn.addEventListener("click", function () { G.navPin.syncButtons(listCol, "#/recite"); });
+        reciteRowWrap.appendChild(recitePinBtn);
+      }
+      return reciteRowWrap;
     }
 
     function renderList() {
@@ -36808,12 +36940,14 @@ window.G = window.G || {};
         // above natively; adding an explicit e.preventDefault()+click()
         // here would risk a double-fire depending on browser Enter-on-
         // button timing, for zero behavioral gain. entryList holds ONLY
-        // row buttons (util.clear(entryList) at the top of every draw(),
+        // row wrappers (util.clear(entryList) at the top of every draw(),
         // nothing else ever appended) unlike Search's resultsDiv which
-        // interleaves section-head/hit-card/"+N more" siblings - so plain
-        // next/previousElementSibling is a complete, correct traversal
-        // here with no classList guard needed the way Search's ArrowUp
-        // handler requires one. Clamps rather than wraps at both ends,
+        // interleaves section-head/hit-card/"+N more" siblings - so
+        // walking the wrapper's own next/previousElementSibling (ROADMAP
+        // 3g follow-up: each row is now wrapped with its own pin toggle,
+        // see that wrapper's construction below) is a complete, correct
+        // traversal here with no classList guard needed the way Search's
+        // ArrowUp handler requires one. Clamps rather than wraps at both ends,
         // matching Search's own clamping (Math.min/Math.max there) rather
         // than the wrapping used by, e.g., util.tabbarKeys elsewhere in
         // this file - a different existing helper for a different roving-
@@ -36823,15 +36957,42 @@ window.G = window.G || {};
         row.addEventListener("keydown", (e) => {
           if (e.key === "ArrowDown") {
             e.preventDefault();
-            const next = row.nextElementSibling;
+            // entryList's DIRECT children are now .list-detail-row-wrap
+            // (see below) rather than the row itself - nextElementSibling
+            // off `row` would only ever reach its own wrapper's pin
+            // button, so this walks the WRAPPER's siblings instead and
+            // reaches back in for that sibling's own row button.
+            const nextWrap = row.closest(".list-detail-row-wrap");
+            const next = nextWrap && nextWrap.nextElementSibling && nextWrap.nextElementSibling.querySelector(".list-detail-row");
             if (next) next.focus();
           } else if (e.key === "ArrowUp") {
             e.preventDefault();
-            const prev = row.previousElementSibling;
+            const prevWrap = row.closest(".list-detail-row-wrap");
+            const prev = prevWrap && prevWrap.previousElementSibling && prevWrap.previousElementSibling.querySelector(".list-detail-row");
             if (prev) prev.focus(); else search.focus();
           }
         });
-        entryList.appendChild(row);
+        // ROADMAP 3g follow-up: a Soldier reading Doctrine can now pin the
+        // "#/doctrine" route right from the entry list they're already
+        // scrolling, not only from the nav rail/Sections drawer -
+        // pinToggleButton() itself, exposed as G.navPin.button() (app.js,
+        // this same file, a separate closure - views.js has no direct
+        // reference to it). A sibling wrapper (.list-detail-row-wrap, see
+        // its own CSS comment), not a change to this row - a <button>
+        // can't host a nested <button>. Every row here pins the SAME
+        // single containing route (there's no separate route per doctrine
+        // entry to pin individually), so a toggle from any one star must
+        // update every other row's own star too - G.navPin.syncButtons()
+        // does that in place right after the toggle; nothing else
+        // re-renders entryList's existing rows the way renderNav()
+        // already does for the sidebar.
+        const wrap = el("div.list-detail-row-wrap", {}, [row]);
+        if (G.navPin && G.navPin.button) {
+          const pinBtn = G.navPin.button("#/doctrine");
+          pinBtn.addEventListener("click", () => G.navPin.syncButtons(entryList, "#/doctrine"));
+          wrap.appendChild(pinBtn);
+        }
+        entryList.appendChild(wrap);
         const card = el("div.card.doc-entry-card", { "data-doc-idx": String(i) });
         card.style.borderLeftColor = topicColor;
         // Topic eyebrow + source badge
@@ -39016,6 +39177,39 @@ window.G = window.G || {};
     }, [G.util.icon("star", 14)]);
     return btn;
   }
+  // ROADMAP 3g follow-up: pinToggleButton()/isPinned()/togglePin() were
+  // only ever reachable from inside this module (renderPinnedInto/
+  // renderGroupsInto above) - a Soldier could only pin a route from the
+  // nav rail or Sections drawer, never from the content view itself while
+  // actually reading it. Exposed here (mirroring G.routes just above)
+  // so a content view's own per-item rows (Doctrine's entryList, Board
+  // Drill's catList, Creeds/Recite's listPane - views.js/board.js, both
+  // separate closures from this one) can embed the exact same star
+  // control, pinning THIS module's own persisted state rather than a
+  // second copy of it. Every row in one of those lists pins the same
+  // containing route (there is no per-entry/per-category route to pin
+  // individually) - syncButtons() below keeps every row's own star in
+  // that list in sync after any ONE of them is toggled, since nothing
+  // else re-renders that content view's list the way renderNav() already
+  // does for the sidebar.
+  G.navPin = {
+    button: pinToggleButton,
+    isPinned: isPinned,
+    toggle: togglePin,
+    syncButtons: function (container, hash) {
+      if (!container) return;
+      const pinned = isPinned(hash);
+      const r = ROUTES.find((x) => x.hash === hash);
+      const label = (pinned ? "Unpin " : "Pin ") + (r ? r.label : hash);
+      const btns = container.querySelectorAll(".nav-pin-btn");
+      for (let i = 0; i < btns.length; i++) {
+        btns[i].classList.toggle("pinned", pinned);
+        btns[i].setAttribute("aria-pressed", pinned ? "true" : "false");
+        btns[i].setAttribute("aria-label", label);
+        btns[i].title = label;
+      }
+    },
+  };
   // The "Pinned" section: every currently-pinned route, oldest-first,
   // rendered as a full row (navButton()'s own <a> + an unpin star) - NOT
   // a collapsible group (no header/chevron/open-close state to persist),
