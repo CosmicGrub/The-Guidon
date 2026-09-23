@@ -277,6 +277,19 @@
       "optionalApis": []
     },
     {
+      "file": "10-mlc-senior-leader-content.js",
+      "id": "mlc-senior-leader-content",
+      "kind": "content-pack",
+      "emit": "build",
+      "headless": true,
+      "note": "MLC / senior-NCO content pack: fills the E7/E8 gap in the board bank (previously tier-tagged E1-E6 only) with 41 board cards (Master Leader Course course facts; ADP 6-22 organizational/strategic leadership; ADP 6-0 command and control at echelon; AR 623-3 NCOER rater responsibilities; AR 220-1 readiness reporting; talent management) plus 8 MLC-scope scenarios and 2 dictionary terms (CUSR, JIIM). The matching #/mlc route (G.mlc, src/index.html) is presentational, mirroring G.blc/G.alc/G.slc's own shape - this pack is its gradable board-drill half, per the standing content-pipeline rule.",
+      "requires": [],
+      "provides": [],
+      "routes": [],
+      "storageKeys": [],
+      "optionalApis": []
+    },
+    {
       "file": "98-content-pack-finalize.js",
       "id": "content-pack-finalize",
       "kind": "finalize",
