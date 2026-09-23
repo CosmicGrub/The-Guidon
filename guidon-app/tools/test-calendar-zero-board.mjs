@@ -27,7 +27,7 @@
  *   (Settings' own <select>, the tile's own button), never stub the thing
  *   under test.
  */
-import { bootApp, check, finish, waitForRoute, until, clickWhenStable, expectNoConsoleNoise, PERSONAL_PROFILE } from "./testkit.mjs";
+import { bootApp, check, finish, waitForRoute, until, untilAsync, clickWhenStable, expectNoConsoleNoise, PERSONAL_PROFILE } from "./testkit.mjs";
 
 /** YYYY-MM-DD for "n months before today", computed the same way a Soldier
  *  would - identical helper to test-calendar.mjs's own monthsAgo(). Pins the
@@ -70,7 +70,7 @@ async function setTrackedDate(label, key, value) {
     inp.value = value;
     inp.dispatchEvent(new Event("change", { bubbles: true }));
   }, { label, value });
-  return until(page, async ({ key, value }) => {
+  return untilAsync(page, async ({ key, value }) => {
     const row = await window.G.db.get("kv", window.G.calendar.KEY);
     return !!(row && row.v && row.v[key] === value);
   }, { key, value });
@@ -209,7 +209,7 @@ await page.evaluate(() => {
   const btn = [...body.querySelectorAll("button")].find((b) => b.textContent.trim() === "Remind me");
   btn.click();
 });
-const reminded = await until(page, async () => (await window.G.reminders.load()).some((r) => r.source === "calendar:wpnQual"), null, { timeout: 4000 });
+const reminded = await untilAsync(page, async () => (await window.G.reminders.load()).some((r) => r.source === "calendar:wpnQual"), null, { timeout: 4000 });
 check(reminded, "clicking the Zero Board tile's \"Remind me\" creates a reminder stamped source:\"calendar:wpnQual\"");
 const remindAfter = await page.evaluate(async () => {
   const list = await window.G.reminders.load();
