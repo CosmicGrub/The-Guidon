@@ -237,7 +237,14 @@ async function launchCounselGrowth(page) {
 
   // Letter key selects the matching option (whichever it is - correct or
   // wrong doesn't matter, only that the keypress registered a real pick).
-  await page.evaluate(() => document.querySelector(".quiz-card").closest("[tabindex]").focus());
+  const quizCardFocused = await page.evaluate(() => {
+    const card = document.querySelector(".quiz-card");
+    const target = card && card.closest("[tabindex]");
+    if (!target) return false;
+    target.focus();
+    return true;
+  });
+  quizCardFocused || bad(".quiz-card (or its focusable [tabindex] ancestor) was not found to focus before the letter-key press");
   await page.keyboard.press("A");
   await page.waitForTimeout(300);
   const afterLetter = await page.evaluate(() => {
