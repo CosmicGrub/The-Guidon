@@ -38,6 +38,16 @@
  *       .release-prep must name exactly this version, the version must be
  *       newer than every tag, its notes must not be marked unreleased, and
  *       the tag must not already exist on a different commit.
+ *   --published <tag> --repo <owner/name>: everything above only checks
+ *       facts already sitting in the checkout - it never noticed that
+ *       v1.15.0/.3/.4 were published with ZERO assets attached (the
+ *       fan-out that was supposed to build them never ran; see
+ *       release-cut.yml's own fan-out note). This asks GitHub directly
+ *       what a tag's real Release carries, via `gh`, and fails if any
+ *       required asset (tools/release-manifest.mjs's own expectedAssets())
+ *       is missing. Exported as lintPublishedAssets(); lintReleaseState()
+ *       never calls it, so every other caller (--cut, ci.yml,
+ *       test-release-state.mjs) is unaffected.
  *
  * Tags come from `git tag`. A shallow CI checkout has none; then (b)-(d)'s
  * tag comparisons are reported as not checked instead of guessed (ci.yml
@@ -45,14 +55,16 @@
  * never accepts "not checked".
  *
  * Usage: node tools/lint-release-state.mjs [--cut] [--root <repo root>]
- * (from guidon-app/, or anywhere - paths resolve from this file). No network.
+ * (from guidon-app/, or anywhere - paths resolve from this file). No
+ * network, EXCEPT --published <tag> --repo <owner/name>, which is the one
+ * deliberate exception (see above) and requires an authenticated `gh`.
  */
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { readAnchors, parseVersion, compareVersions, androidVersionCode } from "./release-version-files.mjs";
-import { ALIASES } from "./release-manifest.mjs";
+import { ALIASES, expectedAssets, verdict } from "./release-manifest.mjs";
 import { parseReleaseNotes, extractNotesArray } from "./whats-new-rules.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -236,10 +248,49 @@ export function lintReleaseState({ root, cut = false }) {
   return { passes, failures, notes, version: V, tags };
 }
 
+/**
+ * lintPublishedAssets({ tag, repo }) - the one network call this file
+ * makes (see the module header's --published entry). Asks GitHub what a
+ * tag's real Release carries via `gh release view`, then reuses
+ * release-manifest.mjs's own expectedAssets()/verdict() - the exact same
+ * completeness logic release-assets.yml's finalize job already runs - so
+ * "does this release have everything it needs" has one implementation,
+ * not two that can silently drift apart. Requires an authenticated `gh`.
+ */
+export function lintPublishedAssets({ tag, repo }) {
+  const passes = [], failures = [], notes = [];
+  const ok = (m) => passes.push(m), bad = (m) => failures.push(m), note = (m) => notes.push(m);
+  const m = /^v(\d+\.\d+\.\d+)$/.exec(String(tag || ""));
+  if (!m) { bad(`(published) "${tag}" is not a vX.Y.Z tag`); return { passes, failures, notes }; }
+  if (!repo) { bad("(published) --repo owner/name is required"); return { passes, failures, notes }; }
+  const version = m[1];
+  const res = spawnSync("gh", ["release", "view", tag, "--repo", repo, "--json", "assets"], { encoding: "utf-8" });
+  if (res.status !== 0) { bad(`(published) gh release view ${tag} --repo ${repo} failed: ${(res.stderr || res.stdout || "").trim().slice(0, 300)}`); return { passes, failures, notes }; }
+  let present;
+  try { present = JSON.parse(res.stdout).assets.map((a) => a.name); }
+  catch (e) { bad(`(published) could not parse gh release view ${tag}'s JSON output: ${e.message}`); return { passes, failures, notes }; }
+  const v = verdict(version, present);
+  if (!v.complete) bad(`(published) ${tag} is published with ${present.length} asset(s) attached but is missing required: ${v.missingRequired.join(", ")}`);
+  else ok(`(published) ${tag} carries all ${expectedAssets(version).filter((a) => a.required).length} required assets (${present.length} attached total)`);
+  if (v.missingOptional.length) note(`(published) ${tag} is also missing optional assets: ${v.missingOptional.join(", ")}`);
+  return { passes, failures, notes };
+}
+
 /* --------------------------------------------------------------------- */
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
   const argOf = (flag) => { const i = process.argv.indexOf(flag); return i > 0 && process.argv[i + 1] ? process.argv[i + 1] : null; };
+  const publishedTag = argOf("--published");
+  if (publishedTag) {
+    const repo = argOf("--repo");
+    console.log(`lint-release-state --published: does ${publishedTag} really carry the assets it needs? (the one network call this file makes)\n`);
+    const res = lintPublishedAssets({ tag: publishedTag, repo });
+    for (const m of res.passes) console.log("  PASS  " + m);
+    for (const m of res.notes) console.log("  NOTE  " + m);
+    for (const m of res.failures) console.log("  FAIL  " + m);
+    console.log("\n" + (res.failures.length ? `LINT-RELEASE-STATE --published: ${res.failures.length} FAILURE(S)` : "LINT-RELEASE-STATE --published: all passed"));
+    process.exit(res.failures.length ? 1 : 0);
+  }
   const root = path.resolve(argOf("--root") || path.join(HERE, "..", ".."));
   const cut = process.argv.includes("--cut");
   console.log(`lint-release-state: version files, tags, CHANGELOG, What's New and download names${cut ? " (--cut: about to tag)" : ""}\n`);
