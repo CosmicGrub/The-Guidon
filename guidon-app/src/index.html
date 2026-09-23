@@ -20825,6 +20825,38 @@ window.G = window.G || {};
         if (bulletsRow) bulletsRow.style.opacity = (a === "AAM" || a === "ARCOM" || a === "MSM") ? "1" : "0.5";
       }
       sel.addEventListener("change", upd); upd();
+    },
+    // DA Form 2166-9-2 (NCOER): every Part IV/Part V comment field this form
+    // defines is bullet-format (AR 623-3, para 3-19c(1): DA Form 2166-9-1
+    // and -2 both require bullets; only the -3, for CSM/SGM, uses narrative
+    // - see src/app-modules/13-da2166-ncoer.js, which adds these fields).
+    // Bullet-comment writing is the hard part of this form in real life, so
+    // this reuses G.writing.gradeBullet - the same deterministic grader
+    // behind Write -> Bullet Builder - rather than building a second,
+    // parallel one. Attaches to every bullets-type field the form defines
+    // by id, so a future field addition to this list is the only wiring a
+    // later content change needs.
+    da4856ncoer: function (f, host, inputs, noteHost) {
+      if (!G.writing || typeof G.writing.gradeBullet !== "function") return;
+      var BULLET_FIELD_IDS = ["character", "presence", "intellect", "leads", "develops", "achieves", "raterComments", "srComments"];
+      BULLET_FIELD_IDS.forEach(function (fid) {
+        var row = host.querySelector('[data-fid="' + fid + '"]');
+        var ta = row && row.querySelector("textarea.in");
+        if (!ta) return;
+        var fb = U.el("div", { class: "hint" });
+        row.appendChild(fb);
+        function paint() {
+          var lines = ta.value.split("\n").map(function (s) { return s.trim(); }).filter(function (s) { return s; });
+          if (!lines.length) { fb.textContent = ""; return; }
+          var graded = lines.map(function (line) { return G.writing.gradeBullet(line); });
+          var avg = Math.round(graded.reduce(function (s, g) { return s + g.score; }, 0) / graded.length);
+          var weakest = graded.reduce(function (a, b) { return b.score < a.score ? b : a; });
+          var tip = (weakest.checks || []).filter(function (c) { return !c.pass && c.detail; })[0];
+          fb.textContent = "Bullet strength (same grader as Write → Bullet Builder): " + avg + "/100 avg over " + lines.length + " line" + (lines.length === 1 ? "" : "s") + (tip ? " — " + tip.detail : "");
+        }
+        ta.addEventListener("input", paint);
+        paint();
+      });
     }
   };
 
