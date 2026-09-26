@@ -75,6 +75,16 @@ jobs:
       - name: Version files agree and this version was never released
         run: node guidon-app/tools/lint-release-state.mjs --cut
 
+      # The Command/Legal package carries a generated stamp that says which
+      # version's tests it was checked against. It is re-stamped BY HAND at
+      # every release (npm run legal:stamp, after the bump and a fresh build -
+      # docs/release-runbook.md step 2a), so nothing but this step stops a
+      # release going out with the document still stamped for the previous one.
+      # Offline and instant: it does not re-run the suites, it refuses a stamp
+      # that names another version or no longer matches the document/claims.
+      - name: Legal package stamp names this version
+        run: node guidon-app/tools/verify-legal-package.mjs --release
+
       - name: Require green CI on this exact commit
         env:
           GH_TOKEN: ${{ github.token }}

@@ -227,7 +227,7 @@ window.G = window.G || {};
       ask: "Your Career Counselor / Installation Retention Office via RETAIN for the current IN/OUT call.", link: "#/career" },
 
     { area: "Transition and VA benefits", short: "ETS", asOf: "2026-07", volatility: "medium",
-      basis: "BDD filing window and the DD-214 walkthrough; Continuation Pay window moved to 7 years on 1 Jan 2026.",
+      basis: "BDD filing window and the DD-214 walkthrough; Army Continuation Pay window opened at 7 years of service on 1 Jan 2026 (ALARACT 100/2025).",
       implemented: "ETS timeline and the money section.",
       ask: "SFL-TAP and a VSO.", link: "#/transition" },
 

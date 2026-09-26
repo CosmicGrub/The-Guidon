@@ -76,7 +76,7 @@ if (real) {
   // own reader, so a real drift here is a manifest problem, not a test one.
   check(packs.every((m) => m.emit === "build"), `all ${packs.length} content packs and the finalize pass are "emit":"build"`, "a content pack or the finalize pass is not \"emit\":\"build\": " + JSON.stringify(packs.filter((m) => m.emit !== "build").map((m) => [m.file, m.emit])));
   const nonPacks = real.modules.filter((m) => m.kind !== "content-pack" && m.kind !== "finalize");
-  check(nonPacks.every((m) => m.emit === undefined || m.emit === "runtime"), "every non-content-pack, non-finalize entry is \"runtime\" or leaves \"emit\" out", "a feature/release-note entry declares \"emit\":\"build\": " + JSON.stringify(nonPacks.filter((m) => m.emit !== undefined && m.emit !== "runtime").map((m) => [m.file, m.emit])));
+  check(nonPacks.every((m) => m.emit === undefined || m.emit === "runtime"), "every non-content-pack, non-finalize entry is \"runtime\" or leaves \"emit\" out", "a feature entry declares \"emit\":\"build\": " + JSON.stringify(nonPacks.filter((m) => m.emit !== undefined && m.emit !== "runtime").map((m) => [m.file, m.emit])));
 
   // The headless bank reads the SAME list (it used to pick "files that start with two digits").
   const headless = contentPackFiles();
@@ -117,6 +117,9 @@ try {
     { name: "pack-after-finalize", files: [A, B], modules: [entry(A, "alpha", { kind: "finalize", headless: true }), entry(B, "bravo", { kind: "content-pack", headless: true })], expect: /20-bravo\.js: a content pack must load BEFORE the finalize pass/ },
     { name: "pack-not-headless", files: [A], modules: [entry(A, "alpha", { kind: "content-pack", headless: false })], expect: /10-alpha\.js: a content-pack must be "headless": true/ },
     { name: "optional-without-reason", files: [A], modules: [entry(A, "alpha", { optionalApis: [{ name: "G.native.isNative", why: "" }] })], expect: /10-alpha\.js: optional API G\.native\.isNative has no written reason/ },
+    // What's New entries are data (src/data/whats-new.json), not modules: the old "release-note" kind and a leftover 99-release-*.js are each refused with a message that says where the entry goes.
+    { name: "old-release-note-kind", files: [A], modules: [entry(A, "alpha", { kind: "release-note" })], expect: /10-alpha\.js: kind "release-note" no longer exists - What's New entries are data now, not modules - put the entry in src\/data\/whats-new\.json/ },
+    { name: "leftover-release-file", files: [A, "99-release-v9999.js"], modules: [entry(A, "alpha")], expect: /99-release-v9999\.js: What's New entries are data now, not modules - put the entry in src\/data\/whats-new\.json/ },
     { name: "patch-without-when", files: [A], modules: [entry(A, "alpha", { patches: [{ name: "G.engine.run", why: "because it has to for now" }] })], expect: /10-alpha\.js: patch G\.engine\.run needs "when"/ },
   ];
   for (const c of cases) {

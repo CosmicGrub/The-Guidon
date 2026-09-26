@@ -594,32 +594,46 @@ window.G = window.G || {};
         const mosIn = el("input.ob-input", { type: "text", value: sol.mos || "", placeholder: "MOS",
           list: mosListId, maxlength: 6,
           "aria-label": "MOS for roster entry " + (idx + 1), style: "width:80px" });
-        rankIn.addEventListener("change", function () { sol.rank = rankIn.value.trim().toUpperCase(); persist(); buildSummary(); });
-        // Sensitive-text check on the roster's one free-text field. It used to
-        // put the old value back and flash a two-second toast written for MOI
-        // import ("GUIDON stopped this import...", "redacted ... before use") -
-        // the Soldier watched their typing vanish, the words described
-        // something that had not happened, and nothing stayed on screen to
-        // explain it. Now the typed text stays exactly as typed (the check
-        // never edits anything), the entry is simply not saved, and a plain
-        // message sits under the field until the entry is fixed.
-        const nameMsg = el("p.feedback.warn", { id: "roster-name-msg-" + idx, "data-roster-name-msg": String(idx), style: "margin:6px 0 0;display:none" });
-        nameIn.addEventListener("change", function () {
-          const candidate = nameIn.value.trim();
-          const found = (G.opsecGuard && G.opsecGuard.screen) ? G.opsecGuard.screen(candidate).findings : [];
-          if (found.length) {
-            nameMsg.textContent = "Not saved — that looks like " + G.opsecGuard.listWhat(found) + ". Use initials, a callsign, or a roster number instead.";
-            nameMsg.style.display = "";
-            nameIn.setAttribute("aria-invalid", "true");
-            nameIn.setAttribute("aria-describedby", nameMsg.id);
-            try { if (util.announce) util.announce(nameMsg.textContent); } catch (e) {}
-            return;
-          }
-          nameMsg.textContent = ""; nameMsg.style.display = "none";
-          nameIn.removeAttribute("aria-invalid"); nameIn.removeAttribute("aria-describedby");
-          sol.name = candidate; persist(); buildSummary();
-        });
-        mosIn.addEventListener("change", function () { sol.mos = mosIn.value.trim().toUpperCase(); persist(); });
+        // Sensitive-text check on ALL THREE of the roster card's free-text
+        // boxes - Rank, MOS and Initials. (It used to run on Initials alone, on
+        // the belief that was the roster's one free-text field; an SSN typed
+        // into Rank was saved as typed.) The check used to put the old value
+        // back and flash a two-second toast written for MOI import ("GUIDON
+        // stopped this import...", "redacted ... before use") - the Soldier
+        // watched their typing vanish, the words described something that had
+        // not happened, and nothing stayed on screen to explain it. Now the
+        // typed text stays exactly as typed (the check never edits anything),
+        // the entry is simply not saved, and a plain message sits under the
+        // field until the entry is fixed. Rank and MOS are saved in upper case,
+        // so the upper-case form is checked too: marking syntax is only
+        // recognised in capitals, and "secret//noforn" typed here would be
+        // stored as "SECRET//NOFORN". A saved row is never re-checked when the
+        // card draws, so an entry saved before this check existed still shows.
+        function guardedField(input, msgId, msgAttr, instead, upper, save) {
+          const msg = el("p.feedback.warn", { id: msgId, style: "margin:6px 0 0;display:none" });
+          msg.setAttribute(msgAttr, String(idx));
+          input.addEventListener("change", function () {
+            const candidate = input.value.trim();
+            const found = (G.opsecGuard && G.opsecGuard.screen)
+              ? G.opsecGuard.screen(candidate).findings.concat(upper ? G.opsecGuard.screen(candidate.toUpperCase()).findings : [])
+              : [];
+            if (found.length) {
+              msg.textContent = "Not saved — that looks like " + G.opsecGuard.listWhat(found) + ". " + instead;
+              msg.style.display = "";
+              input.setAttribute("aria-invalid", "true");
+              input.setAttribute("aria-describedby", msg.id);
+              try { if (util.announce) util.announce(msg.textContent); } catch (e) {}
+              return;
+            }
+            msg.textContent = ""; msg.style.display = "none";
+            input.removeAttribute("aria-invalid"); input.removeAttribute("aria-describedby");
+            save(upper ? candidate.toUpperCase() : candidate);
+          });
+          return msg;
+        }
+        const rankMsg = guardedField(rankIn, "roster-rank-msg-" + idx, "data-roster-rank-msg", "Type a rank such as SGT or SFC instead.", true, function (v) { sol.rank = v; persist(); buildSummary(); });
+        const mosMsg = guardedField(mosIn, "roster-mos-msg-" + idx, "data-roster-mos-msg", "Type an MOS code such as 11B instead.", true, function (v) { sol.mos = v; persist(); });
+        const nameMsg = guardedField(nameIn, "roster-name-msg-" + idx, "data-roster-name-msg", "Use initials, a callsign, or a roster number instead.", false, function (v) { sol.name = v; persist(); buildSummary(); });
         head.appendChild(rankIn); head.appendChild(mosIn); head.appendChild(nameIn);
 
         const del = el("button.btn.sm.ghost", { type: "button", text: "Remove", "aria-label": "Remove roster entry " + (idx + 1), "data-visible-pos": String(visiblePos) });
@@ -642,6 +656,8 @@ window.G = window.G || {};
         });
         head.appendChild(del);
         card.appendChild(head);
+        card.appendChild(rankMsg);
+        card.appendChild(mosMsg);
         card.appendChild(nameMsg);
 
         // .panel-grid-2 (>=600px, see index.html) lays the 4 date fields out

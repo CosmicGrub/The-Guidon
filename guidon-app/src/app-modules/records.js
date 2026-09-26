@@ -95,7 +95,9 @@ window.G = window.G || {};
     // head-to-toe photo in ASU, a 5-to-7-page essay on direct, organizational,
     // and strategic leadership (ADP 6-22) in APA format (3-5 pages of content
     // plus cover/reference pages), a current AFT scorecard plus DA Form
-    // 5500/5501 where applicable, the primary-weapon qualification score
+    // 5500/5501 where applicable (DA Form 5501 was rescinded by Army Directive
+    // 2026-13, so the checklist item below names only DA Form 5500, even though
+    // a board MOI written before July 2026 may still name both), the primary-weapon qualification score
     // sheet, and (for NCOs) the last three NCOERs where available. Packets
     // that are late or incomplete get returned without action - the same
     // "the clock is working against you" stakes as the group above, which is
@@ -117,7 +119,7 @@ window.G = window.G || {};
         "My Soldier Talent Profile is dated within 30 days of my board",
         "My printed photo is a full head-to-toe shot in ASU, not a headshot",
         "My leadership essay (direct, organizational, and strategic, per ADP 6-22) is 5-7 pages in APA format - 3-5 pages of content plus cover and reference pages",
-        "My current AFT scorecard is in the packet, with DA Form 5500/5501 attached if I'm on a body-composition program",
+        "My current AFT scorecard is in the packet, with DA Form 5500 attached if I'm on a body-composition program",
         "The most recent qualification score sheet for my primary weapon is in the packet",
         "If I'm an NCO, my last three NCOERs are copied into the packet where available" ] }
   ];

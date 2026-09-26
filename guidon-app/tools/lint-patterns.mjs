@@ -792,81 +792,34 @@ console.log("lint-patterns: static regression guard for repeat bug shapes and re
 }
 
 /* ======================================================================
-   (h) G.whatsNew.RELEASE_NOTES (src/index.html) must have an entry whose
-   `version` matches package.json's own "version" - the only way a release
-   can ship without its in-app "What's new" panel silently going stale
-   (still showing the PREVIOUS release's notes, or none at all, to a
-   Soldier who just updated). This is a standing product requirement, not
-   a style preference: see G.whatsNew's own header comment in index.html.
-   A version bump with no matching entry, or an entry whose `highlights`
-   array is empty, both fail loudly here instead of shipping quietly wrong.
-   The entry is matched by VERSION wherever it sits (file order is not
-   version order), and every entry's title and highlights must pass the
-   plain-language rules in tools/whats-new-rules.mjs.
+   (h) What's New: every release entry is one object in
+   src/data/whats-new.json, which tools/build.mjs writes into
+   G.whatsNew.RELEASE_NOTES (src/index.html holds only a placeholder). This
+   is the only way a release can ship without its in-app "What's new" panel
+   silently going stale (still showing the PREVIOUS release's notes, or none
+   at all, to a Soldier who just updated), so it is a standing product
+   requirement, not a style preference: see G.whatsNew's own header comment
+   in index.html. The judging is tools/whats-new-rules.mjs's lintWhatsNew()
+   (the ONE reader of the file - it parses JSON, so nothing is guessed out
+   of source text; tools/test-release-state.mjs plants a defect in each
+   input). It checks:
+     - the placeholder the build fills is in src/index.html exactly once,
+       and nothing was typed into it (an entry there would never be seen by
+       the release checks);
+     - the data file exists and is well formed (a malformed file also fails
+       the build itself; this says so earlier, in the lint chain);
+     - every entry's title and highlights pass the plain-language rules
+       (builder's terms, packaging claims, version numbers, length cap);
+     - package.json's version has an entry, found by VERSION wherever it
+       sits, with at least one highlight - a bump with no matching entry
+       fails loudly here instead of shipping quietly wrong.
    ====================================================================== */
 {
-  function extractBalanced(text, openIdx, openChar, closeChar) {
-    let depth = 0;
-    for (let i = openIdx; i < text.length; i++) {
-      if (text[i] === openChar) depth++;
-      else if (text[i] === closeChar) { depth--; if (depth === 0) return text.slice(openIdx + 1, i); }
-    }
-    return null;
-  }
-  const declIdx = html.indexOf("G.whatsNew = {");
-  if (declIdx === -1) {
-    bad("(h) could not locate the G.whatsNew declaration");
-  } else {
-    const notesDeclIdx = html.indexOf("RELEASE_NOTES: [", declIdx);
-    const body = notesDeclIdx === -1 ? null : extractBalanced(html, html.indexOf("[", notesDeclIdx), "[", "]");
-    if (body == null) {
-      bad("(h) could not extract G.whatsNew.RELEASE_NOTES's balanced array body");
-    } else {
-      // Release notes may live directly in the giant source file OR in tiny
-      // build-injected release modules. The latter keeps routine version bumps
-      // from requiring a multi-megabyte source rewrite while preserving the
-      // exact same runtime G.whatsNew.RELEASE_NOTES array in every fork.
-      const releaseModuleNames = (await readdir("src/app-modules")).filter((n) => /^99-release-v.*\.js$/.test(n)).sort();
-      const releaseModuleText = (await Promise.all(releaseModuleNames.map((n) => readFile("src/app-modules/" + n, "utf-8")))).join("\n");
-      const releaseText = body + "\n" + releaseModuleText;
-      const versions = [...releaseText.matchAll(/version:\s*"([^"]+)"/g)].map((m) => m[1]);
-      const pkgVersion = PKG.version;
-      // The plain-language rule used to be a comment nobody enforced, and
-      // three entries in a row read like a developer changelog ("without
-      // creating a second scenario engine", "packaged from one tagged
-      // source ..."). tools/whats-new-rules.mjs is that rule as code; it
-      // reads titles and highlights only, never comments.
-      {
-        const { parseReleaseNotes, checkCopy } = await import("./whats-new-rules.mjs");
-        const entries = parseReleaseNotes(releaseText);
-        const problems = checkCopy(entries);
-        for (const p of problems) bad("(h) " + p);
-        if (!problems.length) ok(`(h) all ${entries.length} What's New entries are in plain language (no builder's terms, no packaging claims, highlights within length)`);
-      }
-      if (!versions.length) {
-        bad(`(h) G.whatsNew.RELEASE_NOTES is empty - package.json is at ${pkgVersion} with no matching "what's new" entry`);
-      } else if (!versions.includes(pkgVersion)) {
-        // Matched by version, not by position: entries also arrive from
-        // src/app-modules/99-release-*.js in file-name order (where "v11210"
-        // sorts before "v1122"), and the app itself looks the entry up by
-        // version for the same reason.
-        bad(`(h) G.whatsNew.RELEASE_NOTES has no entry for ${pkgVersion} (package.json's version; newest entry found: ${versions[versions.length - 1]}) - add a release-notes entry for ${pkgVersion} (see G.whatsNew's own header comment for the plain-language style this needs)`);
-      } else {
-        // Confirm the CURRENT version's own entry actually has highlights -
-        // catches a bump that added the version key but left the array
-        // empty (e.g. a stub committed to satisfy this check literally).
-        const currentBlockIdx = releaseText.lastIndexOf('version: "' + pkgVersion + '"');
-        const highlightsIdx = releaseText.indexOf("highlights:", currentBlockIdx);
-        const highlightsBody = highlightsIdx === -1 ? null : extractBalanced(releaseText, releaseText.indexOf("[", highlightsIdx), "[", "]");
-        const highlightCount = highlightsBody == null ? 0 : (highlightsBody.match(/"(?:[^"\\]|\\.)*"/g) || []).length;
-        if (!highlightCount) {
-          bad(`(h) G.whatsNew.RELEASE_NOTES's entry for ${pkgVersion} has no highlights - a Soldier updating to this release would see an empty "What's new" panel`);
-        } else {
-          ok(`(h) G.whatsNew.RELEASE_NOTES has a real entry for the current version (${pkgVersion}, ${versions.length} total entries, ${highlightCount} highlight(s) for this one)`);
-        }
-      }
-    }
-  }
+  const { lintWhatsNew, WHATS_NEW_FILE } = await import("./whats-new-rules.mjs");
+  const dataText = await readFile(WHATS_NEW_FILE, "utf-8").catch(() => null);
+  const res = lintWhatsNew({ html, dataText, version: PKG.version });
+  for (const p of res.problems) bad("(h) " + p);
+  for (const p of res.passes) ok("(h) " + p);
 }
 
 console.log("\n" + (fails ? `LINT-PATTERNS: ${fails} FAILURE(S)` : "LINT-PATTERNS: all passed"));

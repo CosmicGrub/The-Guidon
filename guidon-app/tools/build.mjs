@@ -36,6 +36,11 @@
  * below cross-checks the fully ASSEMBLED output instead, and fails the build
  * loudly if a registered route's module genuinely never got assigned.
  *
+ * One more input is DATA, not code: src/data/whats-new.json holds every
+ * "What's new" release entry and is written into G.whatsNew.RELEASE_NOTES's
+ * placeholder in src/index.html (injectWhatsNew() below) for both builds, so
+ * a release adds an object to that file instead of a module.
+ *
  * Nothing is minified or restructured. Every edit below is a targeted,
  * asserted replacement — if the anchor text is not found exactly once, the
  * build fails loudly rather than silently producing a broken artifact.
@@ -47,6 +52,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ICON_TARGETS } from "./icon-spec.mjs";
 import { mergeContentPacks } from "./content-pack-engine.mjs";
+import { readWhatsNewFile, whatsNewLiteral, WHATS_NEW_FILE, WHATS_NEW_ANCHOR } from "./whats-new-rules.mjs";
 
 const SRC = "src/index.html";
 const PWA = "src/pwa.js";
@@ -504,6 +510,34 @@ function sub(html, find, replace, label) {
   return parts[0] + replace + parts[1];
 }
 
+/**
+ * ROADMAP "data-driven What's New": every release entry is one object in
+ * src/data/whats-new.json (tools/whats-new-rules.mjs is its one reader), and
+ * this writes them into src/index.html's G.whatsNew.RELEASE_NOTES placeholder
+ * - the same array the app has always had, so dist/guidon-standalone.html,
+ * web/ and every fork built from them carry it and the running app never
+ * fetches anything. Before this, each release added its own
+ * src/app-modules/99-release-vNNNN.js (a "release-note" module) that pushed
+ * an entry at load time.
+ *
+ * MUST NOT silently skip, for the same reason mergeSeedContentPacks() must
+ * not: a build that shipped an empty list would print "build ok" while every
+ * Soldier who updates sees no notes. A malformed file, an empty one, or a
+ * missing placeholder in src/index.html is a hard failure naming the file.
+ * Copy rules (plain language, length caps) are tools/lint-patterns.mjs check
+ * (h)'s job, not the build's - the build only refuses what it cannot render.
+ *
+ * `file` defaults to the real data file; tools/test-release-state.mjs points
+ * it at a stand-in through GUIDON_WHATS_NEW_FILE (check-only, see main()).
+ */
+function injectWhatsNew(html, file = WHATS_NEW_FILE) {
+  const { raw, problems } = readWhatsNewFile(file);
+  if (problems.length) {
+    throw new Error(`build: ${file} has ${problems.length} problem(s):\n  - ` + problems.join("\n  - "));
+  }
+  return { html: sub(html, WHATS_NEW_ANCHOR, `RELEASE_NOTES: ${whatsNewLiteral(raw)},`, `What's New placeholder (${WHATS_NEW_ANCHOR})`), count: raw.length };
+}
+
 /* ---------------- guest page (collective P3b, X2) ----------------
    dist/guest.html from src/guest.html + the SAME two sources the app
    carries: src/app-modules/room-schema.js verbatim (ONE schema module,
@@ -703,6 +737,21 @@ async function main() {
     `window.GUIDON_APP_VERSION = "${pkg.version}";\nwindow.GUIDON_BUILD_DATE = "${buildDate}";\nwindow.GUIDON_BUILD_SHA = "${buildSha}";\nwindow.GUIDON_BUILD_DIRTY = ${buildDirty};`,
     "app version/build date/sha"
   );
+
+  /* ---------------- What's New entries (both builds) ----------------
+     src/data/whats-new.json -> G.whatsNew.RELEASE_NOTES; see injectWhatsNew().
+     GUIDON_WHATS_NEW_FILE points this step at a stand-in file so
+     tools/test-release-state.mjs can watch the REAL build refuse a bad one.
+     Like GUIDON_APP_MODULE_DIR it must never be a way to ship: with it set
+     the build only CHECKS that file and stops, so a variable left in a shell
+     or a CI job cannot build web/ and dist/ from some other list. */
+  const standInWhatsNew = process.env.GUIDON_WHATS_NEW_FILE;
+  const whatsNew = injectWhatsNew(src, standInWhatsNew || WHATS_NEW_FILE);
+  src = whatsNew.html;
+  if (standInWhatsNew) {
+    console.log(`build: GUIDON_WHATS_NEW_FILE is set, so this run only checked ${standInWhatsNew} (${whatsNew.count} entries, it passed). NOTHING WAS BUILT - that switch exists for tools/test-release-state.mjs; unset it to build.`);
+    return;
+  }
 
   /* ---------------- pre-paint theme-id sync (both builds) ----------------
      See deriveThemeIds()'s header comment for the full history. Derives the
@@ -1052,6 +1101,7 @@ async function main() {
   // mergeSeedContentPacks() throws rather than skips on an unexpected seed
   // shape (see its own header), so by the time main() gets here seedMerge.merge
   // always exists - this line has nothing to report other than success.
+  console.log(`  What's New                    ${whatsNew.count} entries from ${WHATS_NEW_FILE} written into G.whatsNew.RELEASE_NOTES (both builds)`);
   console.log(`  content packs                 ${seedMerge.merge.modules.length} merged (${seedMerge.merge.staticCounts.board} seed + packs = ${seedMerge.merge.finalCounts.board} board / ${seedMerge.merge.finalCounts.doctrine} doctrine / ${seedMerge.merge.finalCounts.scenarios} scenarios), fingerprint ${seedMerge.merge.finalized ? seedMerge.merge.finalized.contentHash : "(no finalize pass)"}`);
   console.log(seed.skipped
     ? "  seed                          left as an object literal (unexpected shape)"
@@ -1075,4 +1125,4 @@ if (isMain) {
   main().catch((e) => { console.error(String(e.message || e)); process.exit(1); });
 }
 
-export { deriveThemeIds, assembleAppModules, mergeSeedContentPacks, main };
+export { deriveThemeIds, assembleAppModules, mergeSeedContentPacks, injectWhatsNew, main };

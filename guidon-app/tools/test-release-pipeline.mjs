@@ -39,8 +39,9 @@ import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync, existsSync
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { ALIASES, expectedAssets, verdict, renderDownloads, mergeBody, DOWNLOADS_START, DOWNLOADS_END } from "./release-manifest.mjs";
+import { ALIASES, OPTIONAL_ALIASES, expectedAssets, verdict, renderDownloads, mergeBody, DOWNLOADS_START, DOWNLOADS_END } from "./release-manifest.mjs";
 import { decide, gate } from "./release-gate.mjs";
+import { needsOf } from "./lint-release-state.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -125,6 +126,7 @@ function sandbox(label) {
     'case "$*" in',
     '  *"releases/latest"*) cat "$STUB_DIR/latest.txt" 2>/dev/null || true ;;',
     '  *"deployments"*) cat "$STUB_DIR/live.txt" 2>/dev/null || true ;;',
+    '  "release view "*) cat "$STUB_DIR/release-view.json" 2>/dev/null || true ;;',
     '  "release edit "*"--latest"*) printf "%s\\n" "$3" > "$STUB_DIR/latest.txt" ;;',
     "esac",
     "exit 0", ""].join("\n"));
@@ -165,11 +167,16 @@ try {
   const html = readFileSync("src/index.html", "utf-8");
   const linked = [...new Set([...html.matchAll(/\bdl\("([^"]+)"\)/g)].map((m) => m[1]))].sort();
   check(linked.length >= 2, `#/share links to ${linked.length} download name(s): ${linked.join(", ")}`, "could not find the dl(\"...\") download links in the #/share view");
-  check(JSON.stringify(linked) === JSON.stringify(Object.values(ALIASES).sort()),
-    "every file name the app links to is declared in release-manifest.mjs, and nothing extra",
-    `the app links to [${linked.join(", ")}] but release-manifest.mjs declares [${Object.values(ALIASES).sort().join(", ")}]`);
-  for (const a of expectedAssets("9.9.9").filter((x) => x.alias)) {
+  const declaredNames = [...Object.values(ALIASES), ...Object.values(OPTIONAL_ALIASES)].sort();
+  check(JSON.stringify(linked) === JSON.stringify(declaredNames),
+    "every file name the app links to is declared in release-manifest.mjs (required or optional), and nothing extra",
+    `the app links to [${linked.join(", ")}] but release-manifest.mjs declares [${declaredNames.join(", ")}]`);
+  const optionalNames = new Set(Object.values(OPTIONAL_ALIASES));
+  for (const a of expectedAssets("9.9.9").filter((x) => x.alias && !optionalNames.has(x.name))) {
     check(a.required === true, `${a.name} is REQUIRED for a release to count as complete`);
+  }
+  for (const a of expectedAssets("9.9.9").filter((x) => optionalNames.has(x.name))) {
+    check(a.required === false && a.alias === true && a.group === "macos", `${a.name} (the Mac fixed name) is an OPTIONAL alias - the Mac lane can never hold a release out of Latest`);
   }
 
   const androidSteps = stepsOf(jobBlock(assets, "android"));
@@ -312,6 +319,20 @@ try {
   check(iGate !== -1 && /--sha "\$GITHUB_SHA"/.test(cutSteps[iGate].run) && /--workflow ci\.yml/.test(cutSteps[iGate].run) && /--wait-minutes (?!0\b)\d+/.test(cutSteps[iGate].run),
     "the gate checks THIS exact commit and waits for CI (the release push starts CI at the same moment)");
   check(iState !== -1 && iState < iCreate, "release-cut.yml checks that every version-bearing file agrees before it tags");
+  // The Command/Legal package's generated stamp names the version it was verified for; re-stamping it is a manual step of every
+  // release (npm run legal:stamp). Nothing else stops a cut with the previous version's stamp, so the cut must run the check itself.
+  const iLegal = cutSteps.findIndex((s) => /verify-legal-package\.mjs --release\b/.test(s.run || ""));
+  check(iLegal !== -1 && iLegal < iGate && iLegal < iCreate, "release-cut.yml runs verify-legal-package.mjs --release (the stamp names THIS version) before it waits for CI or creates the tag", "release-cut.yml never checks that the Command/Legal package was re-stamped for the version being cut");
+  check(iState !== -1 && /\(g\) --cut/.test(readFileSync("tools/lint-release-state.mjs", "utf-8")) && /legal:stamp/.test(readFileSync("tools/lint-release-state.mjs", "utf-8")), "lint-release-state.mjs --cut also refuses a stale legal stamp itself (check (g), pinned in test-release-state.mjs), so a local --cut run catches it too");
+  {
+    const runbookText = readFileSync("docs/release-runbook.md", "utf-8");
+    const row2a = (runbookText.match(/^\| 2a\. Legal package \|.*$/m) || [""])[0];
+    check(/npm run legal:stamp/.test(row2a) && /verify-legal-package\.mjs --run --write-stamp/.test(row2a) && /npm run build/.test(row2a) && /bump.*->.*build.*->.*stamp.*->.*commit.*->.*cut/.test(row2a) && /the cut refuses/.test(row2a),
+      "the runbook's step 2a gives the order (bump -> build -> stamp -> commit -> cut), the real command (npm run legal:stamp) and says the cut refuses a stale stamp", "docs/release-runbook.md step 2a: " + row2a.slice(0, 200));
+    const row3 = (runbookText.match(/^\| 3\. Cut \|.*$/m) || [""])[0];
+    check(/verify-legal-package\.mjs --release/.test(row3), "the runbook's step 3 says release-cut.yml runs verify-legal-package.mjs --release");
+    check(!/but keep\s+them oldest first/.test(runbookText) && /does not matter to the app or to any check/.test(runbookText), "the runbook does not present What's New entry order as a rule (nothing enforces it and the app sorts by version)");
+  }
   check(/^    if: github\.ref == 'refs\/heads\/main'$/m.test(cutJob || ""), "release-cut.yml refuses to cut from any branch but main (a manual run can be started anywhere)");
   // actions: write, not read (fan-out fix, 2026-09-23) - write is the
   // permission workflow_dispatch itself needs (see the dispatch check
@@ -465,6 +486,194 @@ try {
     const verifyStep = stepsOf(webkitJob).find((s) => /verify-ios-webkit|ios:verify/.test(s.run || ""));
     check(!!verifyStep && !/continue-on-error/.test(verifyStep.text), "the WebKit verification step is blocking (no continue-on-error: a green job means the check passed)", "the WebKit verification step is missing or still has continue-on-error");
     check(existsSync("tools/test-ios-webkit-ratchet.mjs") && existsSync("tools/ios-webkit-baseline.json"), "the baseline ratchet and its own suite are present", "tools/test-ios-webkit-ratchet.mjs or tools/ios-webkit-baseline.json is missing");
+  }
+
+  /* ===================================================================
+     8. The Mac lane: a fixed-name file, a launch proof, Apple signing.
+     None of it may decide whether a release is Latest, and there is no
+     macOS runner and no Apple credential here - so the workflow's own step
+     scripts are run against stand-in hdiutil / ditto / open / pgrep / pkill /
+     sleep, and the parts that need the real tools are said to be unrun.
+     =================================================================== */
+  console.log("\n8. Mac: fixed-name file, launch proof and Apple signing (none of it can decide Latest)");
+  const macJob = jobBlock(apple, "macos");
+  const macSteps = stepsOf(macJob);
+  const codeOnly = (t) => t.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
+  const appleCode = codeOnly(apple), assetsCode = codeOnly(assets);
+  const MAC_NAME = OPTIONAL_ALIASES.macos;
+  const stepIdx = (name) => macSteps.findIndex((s) => s.name === name);
+
+  console.log("  8a. the manifest");
+  {
+    const withoutMac = FULL.filter((n) => !/macos/.test(n));
+    check(MAC_NAME === "GUIDON-macos-universal.dmg" && FULL.includes(MAC_NAME), "the Mac fixed name is GUIDON-macos-universal.dmg and is on the list of expected files");
+    const none = verdict("9.9.9", withoutMac);
+    check(none.complete && none.missingAliases.length === 0 && none.missingOptional.includes(MAC_NAME) && none.macAliasGap === false, "a release with NO Mac build at all is still COMPLETE - the Mac lane can never hold a release out of Latest");
+    const half = verdict("9.9.9", [...withoutMac, "GUIDON-9.9.9-macos-universal.dmg"]);
+    check(half.complete && half.macAliasGap === true && half.missingAliases.length === 0, "a Mac build under its versioned name only is still COMPLETE, and the missing fixed name is flagged (macAliasGap)");
+    const both = verdict("9.9.9", FULL);
+    check(both.complete && both.macAliasGap === false && both.missingOptional.length === 0, "a release carrying both Mac names is complete with nothing left over");
+    check(expectedAssets("9.9.9").filter((a) => a.required).every((a) => !/macos|ios-simulator/.test(a.name)), "no Apple file is in the REQUIRED set");
+    const section = (present) => renderDownloads({ version: "9.9.9", tag: "v9.9.9", repo: "o/r", present });
+    const withMac = section([...withoutMac, "GUIDON-9.9.9-macos-universal.dmg", MAC_NAME]);
+    check(/\| Mac \| \[GUIDON-9\.9\.9-macos-universal\.dmg\]\(/.test(withMac) && !withMac.includes(MAC_NAME), "the Downloads section's Mac row links the versioned file and never lists the fixed name (the page is for people)");
+    const noDmg = section(withoutMac);
+    check(!/\| Mac \|/.test(noDmg) && /\| Mac or Linux \|/.test(noDmg), "with no Mac build attached there is no Mac download row, only the browser one (a row is a promise the link works)");
+    const box = sandbox("manifest-cli-mac");
+    const rel = path.join(box.dir, "release.json"), notes = path.join(box.dir, "notes.md");
+    writeFileSync(rel, JSON.stringify({ body: "", assets: [...withoutMac, "GUIDON-9.9.9-macos-universal.dmg"].map((name) => ({ name })) }));
+    const cli = spawnSync(process.execPath, ["tools/release-manifest.mjs", "finalize", "--version", "9.9.9", "--tag", "v9.9.9", "--repo", "o/r", "--release-json", rel, "--notes-out", notes], { encoding: "utf-8" });
+    check(cli.status === 0 && /COMPLETE/.test(cli.stdout) && /the Mac build is attached as GUIDON-9\.9\.9-macos-universal\.dmg but not as GUIDON-macos-universal\.dmg/.test(cli.stdout), "release-manifest finalize: a Mac build missing its fixed name still exits 0 (complete) and says so", "finalize exited " + cli.status + ": " + cli.stdout);
+  }
+
+  console.log("  8b. the fixed-name file is uploaded with the versioned one, and only the Apple lane's own steps depend on it");
+  const publishMac = stepNamed(macSteps, "Publish macOS DMG");
+  if (!publishMac || !publishMac.run || !BASH) bad("release-apple.yml: no 'Publish macOS DMG' step");
+  else {
+    const box = sandbox("publish-mac");
+    mkdirSync(path.join(box.dir, "release-out"), { recursive: true });
+    writeFileSync(path.join(box.dir, "release-out/GUIDON-9.9.9-macos-universal.dmg"), "DMG-BYTES");
+    const r = runStep(publishMac.run, { box, env: { VERSION: "9.9.9", TAG: "v9.9.9" } });
+    const uploads = r.ghCalls.split("\n").filter((l) => l.startsWith("release upload"));
+    check(r.status === 0 && uploads.length === 1 && /--clobber/.test(uploads[0]) && /release-out\/GUIDON-9\.9\.9-macos-universal\.dmg/.test(uploads[0]) && /release-out\/GUIDON-macos-universal\.dmg(\s|$)/.test(uploads[0]),
+      "Mac publish step uploads the versioned .dmg AND the never-changing GUIDON-macos-universal.dmg in ONE command", "Mac publish step: " + (uploads.join(" | ") || r.stderr));
+    const aliasPath = path.join(box.dir, "release-out/GUIDON-macos-universal.dmg");
+    check(existsSync(aliasPath) && readFileSync(aliasPath, "utf-8") === "DMG-BYTES", "GUIDON-macos-universal.dmg is the same bytes as the versioned .dmg");
+    const empty = sandbox("publish-mac-none");
+    const r2 = runStep(publishMac.run, { box: empty, env: { VERSION: "9.9.9", TAG: "v9.9.9" } });
+    check(r2.status !== 0 && !/release upload/.test(r2.ghCalls), "with no .dmg built the publish step fails and uploads nothing (no alias of nothing)");
+  }
+  check(!!publishMac && !publishMac.if, "Mac publish is not conditional on the launch proof (the proof is informational)");
+  {
+    // The verification record is most useful exactly when a step above it failed, so it must upload on failure too.
+    const rec = stepNamed(macSteps, "Upload macOS verification record");
+    check(!!rec && /^(\$\{\{\s*)?always\(\)(\s*\}\})?$/.test(rec.if || ""), "the macOS verification record is uploaded with if: always() (it survives a failed step above it)", "the 'Upload macOS verification record' step has no if: always(): " + JSON.stringify(rec && rec.if));
+    check(!!rec && /actions\/upload-artifact@[0-9a-f]{40}$/.test(rec.uses || ""), "...and it is still the SHA-pinned upload-artifact action");
+    const proofStep = stepNamed(macSteps, "Prove the DMG launches");
+    const tm = proofStep && /^ +timeout-minutes:\s*(\d+)\s*$/m.exec(proofStep.text);
+    check(!!tm && Number(tm[1]) >= 5 && Number(tm[1]) <= 15, "the launch proof has its own short timeout-minutes (a hung mount cannot hold the job for the whole 60 minutes)", "'Prove the DMG launches' has no sensible timeout-minutes: " + (tm ? tm[1] : "none"));
+  }
+  check(!/--latest\b/.test(appleCode), "release-apple.yml never touches the Latest flag (the whole file, not just the refresh job)");
+  {
+    const waits = needsOf(assetsCode); // scalar, [flow] and block-list forms - the same reader lint-release-state.mjs (f) uses
+    check(waits.length >= 4 && !waits.some((w) => /macos|ios|apple/i.test(w)), `no release-assets.yml job waits on an Apple job (${waits.length} needs: lists checked)`, "a release-assets.yml job waits on an Apple job: " + waits.join(" ; "));
+    check(!/release-apple/.test(assetsCode) && !/Mac|macOS|dmg/i.test((platformStep && platformStep.text) || ""), "the finalize job that marks Latest never mentions the Apple lane or a Mac file");
+    check(/gh workflow run release-apple\.yml[^\n]*--ref main/.test(cut) && /gh workflow run release-assets\.yml[^\n]*--ref main[^\n]*-f tag="\$TAG"/.test(cut), "the release-cut fan-out to both lanes is untouched");
+  }
+  {
+    const uses = new Set([...apple.matchAll(/^\s*(?:-\s*)?uses:\s*(\S+)/gm)].map((m) => m[1]));
+    check([...uses].every((u) => /^actions\/(checkout|setup-node|upload-artifact)@[0-9a-f]{40}$/.test(u)), `release-apple.yml adds no new action - every uses: is one of the three already SHA-pinned (${[...uses].length} distinct)`, "release-apple.yml uses: " + [...uses].join(", "));
+  }
+
+  console.log("  8c. the launch proof (non-gating), run against stand-in macOS tools");
+  const launch = stepNamed(macSteps, "Prove the DMG launches");
+  check(!!launch && launch.id === "launch" && /continue-on-error: true/.test(launch.text), "the launch proof is its own step with continue-on-error: true", "the launch proof is missing or can fail the job");
+  check(stepIdx("Verify universal bundle") !== -1 && stepIdx("Verify universal bundle") < stepIdx("Prove the DMG launches") && stepIdx("Prove the DMG launches") < stepIdx("Publish macOS DMG"), "the proof runs after the bundle is verified and packaged, and before the upload");
+  check(!!launch && !launch.if && /mount|hdiutil attach/.test(launch.run || "") && /open -n/.test(launch.run || ""), "the proof mounts the built disk image and opens the app copied out of it");
+  const stubs = {
+    hdiutil: ['#!/usr/bin/env bash', 'echo "hdiutil $*" >> "$STUB_DIR/tool-calls.txt"', 'case "$1" in', '  attach)', '    [ "${STUB_HDIUTIL:-}" = "fail" ] && exit 1',
+      '    mp=""; while [ $# -gt 0 ]; do [ "$1" = "-mountpoint" ] && mp="$2"; shift; done', '    mkdir -p "$mp"',
+      '    if [ "${STUB_HDIUTIL:-}" != "noapp" ]; then mkdir -p "$mp/GUIDON.app/Contents/MacOS"; echo bin > "$mp/GUIDON.app/Contents/MacOS/guidon"; fi', '    exit 0 ;;', 'esac', 'exit 0', ''],
+    ditto: ['#!/usr/bin/env bash', 'echo "ditto $*" >> "$STUB_DIR/tool-calls.txt"', 'cp -R "$1" "$2"', ''],
+    open: ['#!/usr/bin/env bash', 'echo "open $*" >> "$STUB_DIR/tool-calls.txt"', '[ "${STUB_OPEN_EXIT:-0}" != "0" ] && exit "$STUB_OPEN_EXIT"', ': > "$STUB_DIR/opened"',
+      'if [ -n "${STUB_CRASH:-}" ]; then mkdir -p "$HOME/Library/Logs/DiagnosticReports"; touch -d "now + 30 seconds" "$HOME/Library/Logs/DiagnosticReports/GUIDON-2026-09-25.ips"; fi', 'exit 0', ''],
+    pgrep: ['#!/usr/bin/env bash', 'n=0; [ -f "$STUB_DIR/pgrep-n" ] && n="$(cat "$STUB_DIR/pgrep-n")"', 'n=$((n + 1)); echo "$n" > "$STUB_DIR/pgrep-n"', '[ -f "$STUB_DIR/opened" ] || exit 1',
+      'case "${STUB_PROC:-stays}" in', '  stays) echo 4242; exit 0 ;;', '  dies) if [ "$n" -le 3 ]; then echo 4242; exit 0; fi; exit 1 ;;', '  *) exit 1 ;;', 'esac', ''],
+    pkill: ['#!/usr/bin/env bash', 'echo "pkill $*" >> "$STUB_DIR/tool-calls.txt"', 'exit 0', ''],
+    sleep: ['#!/usr/bin/env bash', 'exit 0', ''],
+  };
+  const proof = (label, opts = {}) => {
+    const box = sandbox("proof-" + label);
+    for (const [name, lines] of Object.entries(stubs)) { writeFileSync(path.join(box.bin, name), lines.join("\n")); try { chmodSync(path.join(box.bin, name), 0o755); } catch (e) {} }
+    if (opts.dmg !== false) { mkdirSync(path.join(box.dir, "release-out"), { recursive: true }); writeFileSync(path.join(box.dir, "release-out/GUIDON-9.9.9-macos-universal.dmg"), "DMG-BYTES"); }
+    const r = runStep(launch.run, { box, env: { VERSION: "9.9.9", HOME: fwd(path.join(box.dir, "home")), LAUNCH_HOLD_SECONDS: "5", LAUNCH_START_TIMEOUT: "3",
+      STUB_HDIUTIL: opts.hdiutil || "", STUB_PROC: opts.proc || "stays", STUB_OPEN_EXIT: String(opts.open || 0), STUB_CRASH: opts.crash ? "1" : "" } });
+    const read = (p) => (existsSync(p) ? readFileSync(p, "utf-8") : "");
+    return { ...r, log: read(path.join(box.dir, "artifacts/apple-release/macos-launch-proof.txt")), tools: read(path.join(box.dir, "tool-calls.txt")) };
+  };
+  if (!launch || !launch.run || !BASH) bad("release-apple.yml: no runnable launch-proof step");
+  else {
+    let p = proof("pass");
+    check(p.status === 0 && /result=passed/.test(p.output) && /result=passed/.test(p.log) && /::notice title=macOS launch proof passed/.test(p.stdout), "app stays up and writes no crash report: reported as passed (a notice), exit 0", "pass: " + p.stdout + p.stderr);
+    check(/hdiutil attach .*-readonly/.test(p.tools) && /hdiutil detach/.test(p.tools) && /ditto /.test(p.tools) && /open -n --stdout .*GUIDON\.app/.test(p.tools), "it mounts the image read-only, copies the app out, unmounts, and opens the copy", p.tools);
+    check(/proof: passed|### macOS launch proof: passed/.test(p.summary) && /never affects whether the release is Latest/.test(p.summary), "the run summary says the result and that it never affects Latest");
+    p = proof("dies", { proc: "dies" });
+    check(p.status === 0 && /result=failed/.test(p.output) && /::warning title=macOS launch proof did not pass \(failed\)/.test(p.stdout) && /exited on its own/.test(p.log), "app starts and then exits: reported as FAILED (a warning), and the step still exits 0", "dies: " + p.stdout + p.stderr);
+    check(/still published/.test(p.stdout) && /do not switch the direct Mac download link on/.test(p.stdout), "a failed proof tells the owner the image is still published and the direct Mac link must stay off");
+    p = proof("never", { proc: "never" });
+    check(p.status === 0 && /result=never-started/.test(p.output) && /::warning/.test(p.stdout), "no process ever appears: reported as never-started (a warning), exit 0");
+    p = proof("crash", { crash: true });
+    check(p.status === 0 && /result=failed/.test(p.output) && /crash report/.test(p.log), "a crash report written while the app ran is a FAILED proof even if the process looks alive");
+    p = proof("open-error", { open: 1 });
+    check(p.status === 0 && /result=failed/.test(p.output) && /would not open the app/.test(p.log), "macOS refusing to open the app is a FAILED proof, exit 0");
+    p = proof("noapp", { hdiutil: "noapp" });
+    check(p.status === 0 && /result=failed/.test(p.output) && /contains no app/.test(p.log), "a disk image with no app in it is a FAILED proof, exit 0");
+    p = proof("mount-fails", { hdiutil: "fail" });
+    check(p.status === 0 && /result=inconclusive/.test(p.output) && /::warning title=macOS launch proof could not run/.test(p.stdout) && /says nothing about the app/.test(p.stdout), "an image that will not mount is INCONCLUSIVE, not a verdict on the app, exit 0");
+    p = proof("no-dmg", { dmg: false });
+    check(p.status === 0 && /result=inconclusive/.test(p.output), "no disk image to open: inconclusive, exit 0");
+    check(/pkill /.test(proof("cleanup", { proc: "never" }).tools), "whatever the result, any app copy still running is stopped on the way out");
+  }
+
+  console.log("  8d. Apple signing: the same three outcomes as Android, and the secrets go nowhere but the steps that need them");
+  const signMac = stepNamed(macSteps, "Check for Apple signing secrets");
+  const SIX = { CERT_B64: "APPLE_CERTIFICATE_BASE64", CERT_PASSWORD: "APPLE_CERTIFICATE_PASSWORD", SIGNING_IDENTITY: "APPLE_SIGNING_IDENTITY", NOTARY_APPLE_ID: "APPLE_ID", NOTARY_PASSWORD: "APPLE_APP_SPECIFIC_PASSWORD", NOTARY_TEAM_ID: "APPLE_TEAM_ID" };
+  if (!signMac || !signMac.run || !BASH) bad("release-apple.yml: the macOS job has no 'Check for Apple signing secrets' step");
+  else {
+    const withAll = (v, except = []) => Object.fromEntries(Object.keys(SIX).map((k) => [k, except.includes(k) ? "" : v]));
+    const none = runStep(signMac.run, { box: sandbox("apple-none"), env: withAll("", Object.keys(SIX)) });
+    check(none.status === 0 && /signing=absent/.test(none.output), "no Apple secrets: the step succeeds and reports signing=absent (the job goes on and builds the ad-hoc .dmg)", "no Apple secrets: " + none.stderr + none.stdout);
+    check(/::notice/.test(none.stdout) && /first-open warning/.test(none.stdout) && /mac-first-launch\.md/.test(none.stdout) && Object.values(SIX).every((n) => none.stdout.includes(n)), "the notice says Mac users get the first-open warning, points at the guide, and names all six secrets to add");
+    check(Object.values(SIX).every((n) => none.summary.includes(n)) && /not\*\* notarized/.test(none.summary) && /release-runbook\.md/.test(none.summary), "the run summary lists the six secrets, says the app was not notarized, and points at the runbook");
+    const SECRET = "s3cr3t-value-that-must-never-appear";
+    const all = runStep(signMac.run, { box: sandbox("apple-all"), env: withAll(SECRET) });
+    check(all.status === 0 && /signing=present/.test(all.output), "all six present: signing=present, so the job signs and notarizes");
+    check(![all.stdout, all.stderr, all.summary, all.output].some((t) => t.includes(SECRET)), "the presence check never prints or writes a secret's value");
+    for (const [envName, secretName] of Object.entries(SIX)) {
+      const one = runStep(signMac.run, { box: sandbox("apple-missing-" + envName), env: withAll(SECRET, [envName]) });
+      check(one.status !== 0 && one.stdout.includes(secretName) && !/signing=/.test(one.output) && !one.stdout.includes(SECRET), `half-configured (only ${secretName} missing) is a hard failure that names it`, `missing ${secretName}: status ${one.status}: ${one.stdout}`);
+    }
+    const twoMissing = runStep(signMac.run, { box: sandbox("apple-two"), env: withAll(SECRET, ["NOTARY_PASSWORD", "NOTARY_TEAM_ID"]) });
+    check(twoMissing.status !== 0 && /APPLE_APP_SPECIFIC_PASSWORD/.test(twoMissing.stdout) && /APPLE_TEAM_ID/.test(twoMissing.stdout), "two missing: both are named in the failure");
+  }
+  {
+    const iSign = stepIdx("Check for Apple signing secrets");
+    const costly = macSteps.findIndex((s) => /npm ci|actions\/setup-node|playwright install|tauri build/.test(s.text));
+    check(iSign !== -1 && iSign < costly, "the secrets check runs before any install or build, so a half-configured certificate costs seconds");
+    const PRESENT = /steps\.apple_sign\.outputs\.signing == 'present'/;
+    const signingOnly = ["Import the Developer ID certificate into a temporary keychain", "Build, sign and notarize universal macOS bundle", "Sign, notarize and staple the disk image", "Verify Developer ID signature and notarization", "Remove the temporary keychain"];
+    for (const n of signingOnly) { const s = stepNamed(macSteps, n); check(!!s && PRESENT.test(s.if || ""), `"${n}" only runs when all six secrets are present`, `"${n}" is missing or not gated on the secrets`); }
+    const plain = stepNamed(macSteps, "Build universal macOS bundle");
+    check(!!plain && /steps\.apple_sign\.outputs\.signing != 'present'/.test(plain.if || "") && /tauri build/.test(plain.run || ""), "with no secrets the ordinary ad-hoc build still runs (the Mac .dmg does not depend on Apple credentials)");
+    check(!stepNamed(macSteps, "Verify universal bundle").if && !stepNamed(macSteps, "Publish macOS DMG").if, "bundle verification and upload run in both modes");
+    const ungated = macSteps.filter((s, i) => i !== iSign && /secrets\./.test(s.text) && !PRESENT.test(s.if || ""));
+    check(ungated.length === 0, "no step but the presence check can see a secret unless all six are present", "these steps read secrets ungated: " + ungated.map((s) => s.name || s.uses).join(", "));
+    const names = [...new Set([...apple.matchAll(/secrets\.([A-Z0-9_]+)/g)].map((m) => m[1]))].sort();
+    const base = names.filter((n) => !/^GUIDON_/.test(n));
+    check(JSON.stringify(base) === JSON.stringify(Object.values(SIX).sort()) && base.every((n) => names.includes("GUIDON_" + n)), "the workflow reads exactly the six documented secrets, each also accepted with a GUIDON_ prefix like the Android ones", "secrets read: " + names.join(", "));
+    check(!/echo[^\n]*\$\{?(CERT_B64|CERT_PASSWORD|SIGNING_IDENTITY|NOTARY_[A-Z_]+|APPLE_[A-Z_]+)\b/.test(appleCode) && !/\bset -[a-z]*x/.test(appleCode), "no script echoes a signing value or turns on command tracing");
+    const runbook = readFileSync("docs/release-runbook.md", "utf-8");
+    check(Object.values(SIX).every((n) => runbook.includes(n)) && /Turning on the direct Mac download/.test(runbook) && /Prove the DMG launches|launch proof/i.test(runbook), "the runbook documents the six secrets, the direct-download switch and the launch proof");
+  }
+
+  console.log("  8e. the Apple lane's release-page refresh says aloud when the fixed name is missing, and never blocks");
+  {
+    const refresh = stepNamed(stepsOf(appleRefresh), "Refresh the Downloads section");
+    if (!refresh || !refresh.run || !BASH) bad("release-apple.yml: refresh_downloads has no 'Refresh the Downloads section' step");
+    else {
+      const attempt = (label, present) => {
+        const box = sandbox("refresh-" + label);
+        writeFileSync(path.join(box.dir, "release-view.json"), JSON.stringify({ body: "notes", assets: present.map((name) => ({ name })) }));
+        return runStep(refresh.run, { box, cwd: path.resolve(".."), env: { VERSION: "9.9.9", TAG: "v9.9.9" } });
+      };
+      const withoutMac = FULL.filter((n) => !/macos/.test(n));
+      let r = attempt("gap", [...withoutMac, "GUIDON-9.9.9-macos-universal.dmg"]);
+      check(r.status === 0 && /::warning title=The fixed-name Mac file is missing/.test(r.stdout) && /release edit v9\.9\.9 .*--notes-file/.test(r.ghCalls) && !/--latest/.test(r.ghCalls), "a Mac build without its fixed name: a warning, the page still refreshed, and the Latest flag untouched", "gap: " + r.status + r.stdout + r.stderr);
+      r = attempt("both", FULL);
+      check(r.status === 0 && !/::warning/.test(r.stdout) && !/--latest/.test(r.ghCalls), "both Mac names attached: no warning");
+      r = attempt("nomac", withoutMac);
+      check(r.status === 0 && !/::warning/.test(r.stdout) && !/--latest/.test(r.ghCalls), "no Mac build at all: no warning either (the Mac lane is optional), and the page is still refreshed");
+    }
   }
 } catch (e) {
   bad("suite crashed: " + (e && e.stack ? e.stack : e));

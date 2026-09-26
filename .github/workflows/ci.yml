@@ -701,6 +701,10 @@ jobs:
             tests: "test:leader-moi-tracker test:content-pack-engine test:lint-content-packs test:merge-seed-content-packs"
           - name: "59-searchscreens-modalinertcloserace-afteventscoring-searchcontentcoverage"
             tests: "test:search-screens test:modal-inert-close-race test:aft-event-scoring test:search-content-coverage"
+          - name: "60-doctrineabcpbrsaccuracy-legalpackageguard-legalpackageapp-legalpackagerooms"
+            tests: "test:doctrine-abcp-brs-accuracy test:legal-package-guard test:legal-package-app test:legal-package-rooms"
+          - name: "61-legalpackagecontent-legalpackageverifier"
+            tests: "test:legal-package-content test:legal-package-verifier"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same

@@ -65,8 +65,12 @@ try {
   /* ---- 1. one run does all four steps ---- */
   const pkg0 = read(pkg), ci0 = read(ci), n0 = list().length;
   const allTests = Object.keys(scripts()).filter((k) => k.startsWith("test:"));
-  // A name that sorts straight after an existing script, whatever the scripts are this month.
-  const anchor = allTests.filter((k) => /^test:[a-z]/.test(k)).sort()[Math.floor(allTests.length / 2)];
+  // A name that sorts straight after an existing script, whatever the scripts are this month: "straight" means no other
+  // script sorts between the anchor and the demo name (with test:mos-decks and test:mos-decks-68w both present, the
+  // demo "test:mos-decks-zz-scaffold-demo" belongs under -68w, so test:mos-decks is not a valid anchor for it).
+  const named = allTests.filter((k) => /^test:[a-z]/.test(k)).sort();
+  const straight = named.filter((k) => !named.some((o) => o > k && o < k + "-zz-scaffold-demo"));
+  const anchor = straight[Math.floor(straight.length / 2)];
   const NAME = anchor.slice(5) + "-zz-scaffold-demo";
   const first = scaffold(NAME, "Proves the scaffold wires a suite into CI");
   const pkg1 = read(pkg), ci1 = read(ci);

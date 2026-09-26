@@ -85,9 +85,25 @@ and **Import backup** in the one you are moving to.
 
 ---
 
-*For maintainers.* The Mac build is signed only on the build machine and is not
-sent to Apple for review, because the project has no Apple Developer ID. That
-is why the first open is refused. The day the release workflow gets a Developer
-ID and Apple review, the steps above stop being necessary and this page and the
-**Mac** panel on Share & Install (`src/index.html`, the share view) should be
-rewritten together. `tools/test-share-mac-first-open.mjs` holds the two in step.
+*For maintainers.* The Mac build is signed only ad hoc on the build machine and
+is not sent to Apple for review, because the project has no Apple Developer ID
+and this repository has no Actions secrets. That is why the first open is
+refused. `release-apple.yml` is ready for the day that changes: when the owner
+adds the six Apple secrets - `APPLE_CERTIFICATE_BASE64`,
+`APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`,
+`APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` - it signs with the Developer
+ID, notarizes, staples and verifies the result. With none of them set it builds
+the ad-hoc `.dmg` as before, green, and says in the run that Mac users will see
+this warning; with only some of them set it fails at once. What each secret is
+and how to add it: `docs/release-runbook.md`, "macOS signing and notarization".
+
+The Mac build is also attached to a release under a never-changing name,
+`GUIDON-macos-universal.dmg`, next to the versioned one. That name is optional
+for a release, so the Share & Install button stays on the releases list until
+the owner switches the direct download on (same runbook, "Mac: the fixed-name
+file"). This page says "not every release includes one" for that reason.
+
+The day the first notarized `.dmg` ships, the steps above stop being necessary
+and this page and the **Mac** panel on Share & Install (`src/index.html`, the
+share view) should be rewritten together. `tools/test-share-mac-first-open.mjs`
+holds the two in step.

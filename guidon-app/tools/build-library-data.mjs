@@ -87,7 +87,7 @@ const DOCS = [
   { id: "ar-600-8-19", file: "AR_600-8-19_Enlisted_Promotions_and_Reductions", citation: "AR 600-8-19",
     title: "Enlisted Promotions and Demotions", note: "The regulation GUIDON's own Board Prep / Records Readiness math is built on." },
   { id: "ar-600-9", file: "AR_600-9_Army_Body_Composition_Program", citation: "AR 600-9",
-    title: "The Army Body Composition Program", note: null },
+    title: "The Army Body Composition Program", note: "This 16 July 2019 text has not been rewritten yet. Army Directive 2026-13 (July 2026) now controls: the waist-to-height ratio (below 0.55) is the only standard, the height/weight tables and tape test are discontinued, and the monthly progress rules were rescinded." },
   { id: "ar-600-20", file: "AR_600-20_Army_Command_Policy", citation: "AR 600-20",
     title: "Army Command Policy", note: null },
   { id: "ar-623-3", file: "AR_623-3_Evaluation_Reporting_System", citation: "AR 623-3",
