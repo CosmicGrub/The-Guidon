@@ -97,7 +97,10 @@
     };
   }
   function moderate(note) {
-    return { cadence: "moderate", note: note, source: { ref: "ATP 7-22.02", para: null, asOf: null } };
+    // Same {pub, edition, para, quoteKind}[] shape as every other citation
+    // (ROADMAP item F). Edition and para stay "" on purpose: the per-exercise
+    // note names the paragraph in prose, and this record never claimed one.
+    return { cadence: "moderate", note: note, source: [{ pub: "ATP 7-22.02", edition: "", para: "", quoteKind: "paraphrase" }] };
   }
 
   function addDrill(d) {

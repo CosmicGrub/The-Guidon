@@ -77,7 +77,7 @@
  */
 import { writeFileSync } from "node:fs";
 import { readSeed } from "./seed-io.mjs";
-import { renderSource } from "./citation-parse.mjs";
+import { renderCitation } from "./cite-schema.mjs";
 
 // ── CLI args ────────────────────────────────────────────────────────────
 function parseArgs(argv) {
@@ -104,9 +104,9 @@ const OPTS = parseArgs(process.argv.slice(2));
 // to the app's own "Related doctrine" cross-linking.
 function splitSources(source) {
   // A card's source is a structured array since ROADMAP item F Wave 2;
-  // renderSource() gives back the exact text it always was, so the split (and
+  // renderCitation() gives back the exact text it always was, so the split (and
   // every result below) is unchanged.
-  return renderSource(source).split(/[,/;(]/).map((s) => s.trim()).filter(Boolean);
+  return renderCitation(source).split(/[,/;(]/).map((s) => s.trim()).filter(Boolean);
 }
 
 function groupByCategory(questions) {

@@ -34,7 +34,7 @@
  *     with nothing left to do exits 0 having changed nothing.
  *   - count-checked: every string source is replaced exactly once.
  *   - the new literal still parses, has the same keys everywhere else, and each
- *     migrated card renders back (tools/citation-parse.mjs renderSource) to its
+ *     migrated card renders back (tools/cite-schema.mjs renderCitation) to its
  *     original text and yields the same regulation ids the old parser did.
  *   - the file is replaced through a temp file + rename (atomic).
  */
@@ -42,7 +42,8 @@ import { readFileSync, writeFileSync, renameSync, unlinkSync, existsSync } from 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readSeed } from "./seed-io.mjs";
-import { cite, renderSource, legacyRegulationsOf, regulationsOfEntries } from "./citation-parse.mjs";
+import { cite, legacyRegulationsOf, regulationsOfEntries } from "./citation-parse.mjs";
+import { renderCitation } from "./cite-schema.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
@@ -166,7 +167,7 @@ for (const c of todo) {
   const kind = c.verbatim === false ? "paraphrase" : "verbatim";
   if (c.sourceStr !== null) {
     const arr = cite(c.sourceStr, kind);
-    if (renderSource(arr) !== c.sourceStr) throw new Error(`card ${c.id}: the structured source does not render back to its original text`);
+    if (renderCitation(arr) !== c.sourceStr) throw new Error(`card ${c.id}: the structured source does not render back to its original text`);
     if (JSON.stringify(regulationsOfEntries(arr)) !== JSON.stringify(legacyRegulationsOf(c.sourceStr))) throw new Error(`card ${c.id}: regulation ids changed for ${JSON.stringify(c.sourceStr)}`);
     edits.push({ start: c.srcRange[0], end: c.srcRange[1], text: JSON.stringify(arr) });
     report.migrated++; report.entries += arr.length; report.kinds[kind] += 1;
@@ -206,8 +207,8 @@ for (let i = 0; i < aq.length; i++) {
   if (JSON.stringify(oKeys) !== JSON.stringify(nKeys)) throw new Error(`card ${o.id}: keys changed`);
   for (const k of oKeys) if (JSON.stringify(o[k]) !== JSON.stringify(n[k])) throw new Error(`card ${o.id}: field ${k} changed`);
   if ("verbatim" in n) throw new Error(`card ${o.id}: verbatim is still there`);
-  const oldText = typeof o.source === "string" ? o.source : renderSource(o.source);
-  if (renderSource(n.source) !== oldText) throw new Error(`card ${o.id}: rendered citation changed`);
+  const oldText = typeof o.source === "string" ? o.source : renderCitation(o.source);
+  if (renderCitation(n.source) !== oldText) throw new Error(`card ${o.id}: rendered citation changed`);
 }
 for (const k of Object.keys(before)) if (k !== "board" && JSON.stringify(before[k]) !== JSON.stringify(after[k])) throw new Error(`section ${k} changed`);
 for (const k of Object.keys(before.board)) if (k !== "questions" && JSON.stringify(before.board[k]) !== JSON.stringify(after.board[k])) throw new Error(`board.${k} changed`);

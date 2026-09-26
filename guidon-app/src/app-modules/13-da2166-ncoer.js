@@ -123,7 +123,7 @@
   ]);
 
   f.useCases = (f.useCases || []).concat([
-    { rarity: "routine", title: "Senior rater profile management", situation: "The senior rater manages a limited number of “Most Qualified” blocks across everyone they senior-rate, to curb rating inflation.", action: "Not every strong NCO gets the top block — the senior rater's narrative comments carry real weight alongside (and sometimes instead of) the box check.", ref: "AR 623-3" }
+    { rarity: "routine", title: "Senior rater profile management", situation: "The senior rater manages a limited number of “Most Qualified” blocks across everyone they senior-rate, to curb rating inflation.", action: "Not every strong NCO gets the top block — the senior rater's narrative comments carry real weight alongside (and sometimes instead of) the box check.", source: [{ pub: "AR 623-3", edition: "", para: "", quoteKind: "paraphrase" }] }
   ]);
 
   // ---- matching board-drill flashcards (content-pipeline standing rule) ----

@@ -27,8 +27,9 @@
  * `edition` and `para` are "" unless the text itself said so in a shape the
  * renderer reproduces.
  *
- * THE SHAPE (one array entry per publication cited):
- *   { pub, edition, para, quoteKind, sep? }
+ * THE SHAPE (one array entry per publication cited; the schema and THE
+ * renderer live in tools/cite-schema.mjs, shared with Wave 3):
+ *   { pub, edition, para, quoteKind, editionFirst?, sepAfter? }
  *   pub        the publication as written ("AR 600-9", "DA Pam 623-3",
  *              "37 USC 403") or, for a source that is not a publication
  *              ("Creeds", "VA.gov", "Local promotion-board MOI"), that named
@@ -40,20 +41,20 @@
  *              (para / chapter / table / appendix / ...) is ever a `para`.
  *   quoteKind  verbatim | paraphrase | synthesis (see the lint header for
  *              how the old `verbatim` boolean folds into it).
- *   sep        second entry onward only, presentation only: the literal
- *              separator that sat in front of this citation in the original
+ *   sepAfter   all but the last entry, presentation only: the literal joiner
+ *              that sat between this citation and the next in the original
  *              text when it was not the default "; " (" / " or ", "). It is
  *              what keeps "AR 623-3 / DA PAM 623-3" reading as before.
+ *   editionFirst  presentation only, set when an entry has BOTH an edition
+ *              and a para: every board citation that carries both wrote the
+ *              edition straight after the publication ("AR 710-2 (1 Jul 2024),
+ *              paras 4-3 and 6-5"), which is not the schema's default order.
  *
- * RENDER (renderSource): entry text is `pub`, then " (edition)" when there
- * is an edition, then ", para" when there is a para; entries join with each
- * entry's `sep` (default "; ").
+ * RENDER: renderCitation() in tools/cite-schema.mjs - the one renderer.
  *
- * No dependencies. Pure functions, no file or network access.
+ * Only tools/cite-schema.mjs is imported. Pure functions, no file or network access.
  */
-
-export const VALID_QUOTE_KIND = ["verbatim", "paraphrase", "synthesis"];
-export const VALID_SEP = ["; ", " / ", ", "];
+import { VALID_QUOTE_KIND, renderCitation } from "./cite-schema.mjs";
 
 /* ---------------------------------------------------------------------
    Publication designators. A segment "starts a citation" when it opens with
@@ -163,21 +164,8 @@ export function regulationsOfEntries(entries) {
 }
 
 /* ---------------------------------------------------------------------
-   Render
-   --------------------------------------------------------------------- */
-export function renderEntry(e) {
-  return String(e.pub) + (e.edition ? " (" + e.edition + ")" : "") + (e.para ? ", " + e.para : "");
-}
-/** The human-readable citation: what a Soldier reads on the card. A plain
- *  string (a Soldier's own recite card, a legacy shape) passes through. */
-export function renderSource(source) {
-  if (typeof source === "string") return source;
-  if (!Array.isArray(source)) return "";
-  return source.map((e, i) => (i ? (e.sep || "; ") : "") + renderEntry(e)).join("");
-}
-
-/* ---------------------------------------------------------------------
-   Parse
+   Parse. (Rendering is renderCitation() in tools/cite-schema.mjs: a parse is
+   only trusted when that one renderer gives back the exact original text.)
    --------------------------------------------------------------------- */
 /** Split `s` at every top-level separator (outside parentheses and quotes):
  *  "; ", " / ", and ", " when a new publication designator follows.
@@ -224,20 +212,23 @@ function parseSegment(seg) {
     else return whole("whole-pub");
   }
   const entry = { pub, edition, para };
+  // The text wrote the edition straight after the publication, ahead of the
+  // locator: say so, or the shared renderer would move it behind the locator.
+  if (edition && para) entry.editionFirst = true;
   // Never trade exactness or a regulation chip for structure: the entry must
   // render back to this exact text, and running the regulation rules on the
   // `pub` alone must find every regulation the whole segment names.
   const same = JSON.stringify(legacyRegulationsOf(pub)) === JSON.stringify(legacyRegulationsOf(seg));
-  if (renderEntry(entry) !== seg || !same) return whole("whole-pub");
+  if (renderCitation([entry]) !== seg || !same) return whole("whole-pub");
   return { entry, publication: true, cls: "canonical" };
 }
 
 /**
- * parseSource(text) -> { entries: [{pub, edition, para, sep?}], publication: [bool], cls: [string] }
+ * parseSource(text) -> { entries: [{pub, edition, para, editionFirst?, sepAfter?}], publication: [bool], cls: [string] }
  *   entries      one per citation, WITHOUT quoteKind (the caller stamps it)
  *   publication  per entry: did it open with a real publication designator?
  *   cls          per entry: "canonical" | "whole-pub" | "residue" (see parseSegment)
- * Guarantee: renderSource(entries) === text, or the whole text is ONE entry.
+ * Guarantee: renderCitation(entries) === text, or the whole text is ONE entry.
  */
 export function parseSource(text) {
   const s = String(text == null ? "" : text);
@@ -269,10 +260,12 @@ export function parseSource(text) {
     if (!g.text) return;
     const r = parseSegment(g.text);
     const e = r.entry;
-    if (i > 0 && g.sep && g.sep !== "; ") e.sep = g.sep;
+    // g.sep is what sat IN FRONT of this segment; the schema keeps a non-default
+    // joiner on the entry BEFORE it (sepAfter), so it is handed back one step.
+    if (i > 0 && g.sep && g.sep !== "; " && entries.length) entries[entries.length - 1].sepAfter = g.sep;
     entries.push(e); publication.push(r.publication); cls.push(r.cls);
   });
-  if (!entries.length || renderSource(entries) !== s) return keepWhole();
+  if (!entries.length || renderCitation(entries) !== s) return keepWhole();
   return { entries, publication, cls };
 }
 
@@ -294,7 +287,8 @@ export function cite(text, quoteKind) {
   return r.entries.map((e, i) => {
     const kind = quoteKind === "verbatim" && anyPub && !r.publication[i] ? "paraphrase" : quoteKind;
     const out = { pub: e.pub, edition: e.edition, para: e.para, quoteKind: kind };
-    if (e.sep) out.sep = e.sep;
+    if (e.editionFirst) out.editionFirst = true;
+    if (e.sepAfter) out.sepAfter = e.sepAfter;
     return out;
   });
 }

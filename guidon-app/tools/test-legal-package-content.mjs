@@ -32,7 +32,7 @@ import { finish } from "./testkit.mjs";
 import { check, tag, list } from "./legal-package-kit.mjs";
 import { readSeed } from "./seed-io.mjs";
 import { mergeContentPacks } from "./content-pack-engine.mjs";
-import { renderSource } from "./citation-parse.mjs";
+import { renderCitation } from "./cite-schema.mjs";
 import { startRoomServer } from "./room-server.mjs";
 
 const APP = fileURLToPath(new URL("../", import.meta.url));
@@ -49,7 +49,7 @@ const cards = data.board.questions;
 const CAT = "Cybersecurity & OPSEC";
 const cyber = cards.filter((q) => q.category === CAT);
 // A board card's citation is a structured array since ROADMAP item F Wave 2; this suite reasons about the text a Soldier reads.
-const srcText = (q) => renderSource(q.source);
+const srcText = (q) => renderCitation(q.source);
 const card = (id) => cards.find((q) => q.id === id) || { id, q: "", a: "", source: "" };
 const scenario = (id) => (data.scenarios.scenarios || []).find((s) => s.id === id);
 const term = (a) => (data.acronyms.terms || []).find((t) => String(t.a).toUpperCase() === a) || { a, d: "" };

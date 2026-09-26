@@ -50,7 +50,7 @@ import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import { readSeed } from "./seed-io.mjs";
 import { PILLARS, TOPIC_PILLAR, pillarForBoard, pillarForDoctrine, pillarForScenario } from "./pillar-map.mjs";
-import { renderSource } from "./citation-parse.mjs";
+import { renderCitation } from "./cite-schema.mjs";
 
 const SEED_PATH = fileURLToPath(new URL("../src/index.html", import.meta.url));
 const { data } = readSeed(SEED_PATH);
@@ -104,7 +104,7 @@ nearDupT.length === 0 ? ok(`(b) no two doctrine topics are near-duplicates of ea
 //     "not blank" check on the citation a Soldier reads. Deliberately NOT
 //     "names a publication" - see the header for the 32 legitimate
 //     non-publication citations.
-const noSrc = B.filter((q) => !renderSource(q.source).trim());
+const noSrc = B.filter((q) => !renderCitation(q.source).trim());
 noSrc.length === 0 ? ok("(c) every board card has a non-empty source citation") : bad(`(c) ${noSrc.length} board card(s) with no source: ${show(noSrc.map((q) => q.id))}`);
 
 // (d) the answer surface every card must carry.

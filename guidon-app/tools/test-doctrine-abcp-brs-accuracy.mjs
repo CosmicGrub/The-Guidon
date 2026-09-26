@@ -55,7 +55,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assembleBank } from "./assemble-bank.mjs";
-import { renderSource } from "./citation-parse.mjs";
+import { renderCitation } from "./cite-schema.mjs";
 import { check, finish } from "./testkit.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -68,7 +68,7 @@ const card = (id) => B.find((q) => q.id === id);
 const all = (o) => JSON.stringify(o);
 // A board card's citation as a Soldier reads it: its source is a structured
 // array (ROADMAP item F Wave 2), rendered by the one renderer.
-const srcText = (q) => renderSource(q.source);
+const srcText = (q) => renderCitation(q.source);
 
 // Every string in the assembled bank, with the path it lives at.
 const strings = [];
@@ -187,7 +187,7 @@ check(cpText.some((x) => /7[–-]10/.test(x.s)) && !cpText.some((x) => /CY2027/.
 const brs = doc("doc-brs-blended-retirement-system-overview");
 check(!!brs && brs.source.some((s) => s.pub === "ALARACT 100/2025" && /paras 3, 4\.A\.2, 4\.A\.3/.test(s.para)) && brs.source.some((s) => s.pub === "37 USC 356"), "the BRS doctrine entry cites ALARACT 100/2025 (paras 3, 4.A.2, 4.A.3) and 37 USC 356, not just a 2023 DoD guide", () => all(brs && brs.source));
 const jsf = data.curriculum.courses.find((c) => c.id === "course-junior-soldier").lessons.find((l) => l.id === "jsf-l4");
-check(/ALARACT 100\/2025/.test(jsf.citation) && /ALARACT 100\/2025/.test(jsf.body), "the Junior Soldier money lesson cites ALARACT 100/2025 for the window");
+check(/ALARACT 100\/2025/.test(renderCitation(jsf.source)) && /ALARACT 100\/2025/.test(jsf.body), "the Junior Soldier money lesson cites ALARACT 100/2025 for the window");
 const idxSrc = readFileSync(path.join(APP, "src/index.html"), "utf8");
 check(/In the Army, the Blended Retirement System window opens at 7 years of service starting 1 January 2026/.test(idxSrc) && /Continuation Pay: ALARACT 100\/2025/.test(idxSrc), "the Channels 'Changed in 2026' panel says it is the Army's window and cites ALARACT 100/2025 (its old source line covered other items)");
 const curSrc = readFileSync(path.join(APP, "src/app-modules/currency.js"), "utf8");
@@ -207,7 +207,7 @@ check(!!memoSrc && /SAMR 637-1/.test(memoSrc.pub) && /paras 3 and 4a\(2\)/.test(
 check(!!memoSrc && !/ALARACT 029\/2025|S1Net|armyng/i.test(all(brs.source)), "...and cites nothing it did not read (no ALARACT 029/2025, no S1Net message, no armyng.com reproduction)", () => all(brs && brs.source));
 check(/ASA\(M&RA\) memorandum, BRS Continuation Pay CY24\/CY25 Implementation Guidance \(SAMR 637-1\), paras 3 and 4\.a\(2\)/.test(srcText(cp1)) && /CY24\/CY25 continuation pay memorandum, para 4\.a\(2\)/.test(all(cp1.keyPoints)),
   "brs-cp-1 cites the CY24/CY25 memorandum for the 2025 window in its source line and in the key point that states it", () => srcText(cp1) + " | " + all(cp1.keyPoints));
-check(/ASA\(M&RA\) CY24\/CY25 continuation pay memorandum \(the earlier 8-12 window, para 4a\(2\)\)/.test(jsf.citation), "the Junior Soldier money lesson's citation names the CY24/CY25 memorandum for the earlier window", () => jsf.citation);
+check(/ASA\(M&RA\) CY24\/CY25 continuation pay memorandum \(the earlier 8-12 window, para 4a\(2\)\)/.test(renderCitation(jsf.source)), "the Junior Soldier money lesson's citation names the CY24/CY25 memorandum for the earlier window", () => renderCitation(jsf.source));
 check(/the Army's 2024\/2025 continuation pay memorandum for the earlier window/.test(idxSrc), "the Channels 'Changed in 2026' sources line names the Army's 2024/2025 continuation pay memorandum for the earlier window");
 check(/Army continuation pay windows from ALARACT 100\/2025 \(2026 and 2027\) and the Army's 2024\/2025 continuation pay memorandum \(the earlier 8–12 window\)/.test(data.finance.asOf), "the Money tab's 'current as of' line names both sources of the continuation pay windows", () => data.finance.asOf);
 

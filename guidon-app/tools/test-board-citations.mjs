@@ -4,7 +4,7 @@
  *
  * WHY THIS SUITE EXISTS. Wave 2 replaced every board card's free-text `source`
  * ("AR 600-9, para 3-9c; DA PAM 600-25") and its card-level `verbatim` flag
- * with `source: [{ pub, edition, para, quoteKind, sep? }]`, for 1,350-odd cards
+ * with `source: [{ pub, edition, para, quoteKind, editionFirst?, sepAfter? }]`, for 1,350-odd cards
  * spread over the static seed and 13 content packs, and it did that with a
  * promise: ZERO visible change for a Soldier. Three things would ship broken,
  * and go unnoticed, without this file:
@@ -29,7 +29,7 @@
  *      regulation ids the OLD free-text G.board.regulationsOf produced from it,
  *      and whether its back printed the study-guide (paraphrase) heading. For
  *      each of those cards in today's assembled bank (static seed + every
- *      content pack, tools/assemble-bank.mjs): renderSource(source) is
+ *      content pack, tools/assemble-bank.mjs): renderCitation(source) is
  *      byte-identical, the regulation ids derived from the entries' `pub` are
  *      identical, and the heading is unchanged. If you INTENTIONALLY change a
  *      card's citation later, this fails on purpose so a reviewer sees it; then
@@ -46,7 +46,8 @@
  *      quoteKind is required; an empty citation is refused.
  *   4. THE GATE. tools/lint-citation-schema.mjs against stand-in banks: a clean
  *      one passes; each of a bare string, a missing pub, a bad quoteKind, an
- *      empty array, a leftover verbatim flag, a bad or misplaced sep, a `para`
+ *      empty array, a leftover verbatim flag, a bad or misplaced sepAfter, the
+ *      retired `sep` key, a stray editionFirst, a `para`
  *      that hides a regulation, and a PACK card with a string source fails,
  *      naming the card (and the pack).
  *      Also here (4b): tools/migrate-board-citations.mjs on a stand-in seed
@@ -66,18 +67,18 @@
  *      Definitions tab prints the exact "Source:" line and the right heading
  *      for a compound, an edition-and-locator, a mixed and a paraphrase card.
  */
-import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, copyFileSync, mkdtempSync, mkdirSync, rmSync, readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { bootApp, waitForRoute, clickWhenStable, until, check, expectNoConsoleNoise, finish } from "./testkit.mjs";
 import { assembleBank } from "./assemble-bank.mjs";
+import { readSeed, writeSeed as writeSeedFile } from "./seed-io.mjs";
 import { mergeContentPacks } from "./content-pack-engine.mjs";
 import { loadModules } from "./module-manifest.mjs";
-import {
-  VALID_QUOTE_KIND, parseSource, cite, renderSource, quoteKindOf, legacyRegulationsOf, regulationsOfEntries,
-} from "./citation-parse.mjs";
+import { VALID_QUOTE_KIND, renderCitation } from "./cite-schema.mjs";
+import { parseSource, cite, quoteKindOf, legacyRegulationsOf, regulationsOfEntries } from "./citation-parse.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP = path.resolve(HERE, "..");
@@ -93,7 +94,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 if (process.argv.includes("--rebaseline")) {
   const bank = assembleBank().data.board.questions;
   const rows = bank.map((q) => {
-    const text = renderSource(q.source);
+    const text = renderCitation(q.source);
     return [q.id, text, legacyRegulationsOf(text), quoteKindOf(q.source) === "verbatim" ? 0 : 1];
   });
   const old = JSON.parse(readFileSync(BASELINE_PATH, "utf8"));
@@ -125,7 +126,7 @@ console.log("1. baseline - every card reads exactly as it did before the migrati
   const textDiff = [], regDiff = [], kindDiff = [];
   for (const q of inBaseline) {
     const b = baseById.get(q.id);
-    const text = renderSource(q.source);
+    const text = renderCitation(q.source);
     if (text !== b.text) textDiff.push(`${q.id}: was ${JSON.stringify(b.text)} now ${JSON.stringify(text)}`);
     const regs = regulationsOfEntries(q.source);
     if (!same(regs, b.regs)) regDiff.push(`${q.id}: was ${JSON.stringify(b.regs)} now ${JSON.stringify(regs)}`);
@@ -149,20 +150,20 @@ console.log("\n2. parser - splits only what it can render back exactly");
   const CASES = [
     ["AR 600-20", [E("AR 600-20")], "a bare publication"],
     ["AR 600-9, para 3-9c; DA PAM 600-25", [E("AR 600-9", { para: "para 3-9c" }), E("DA PAM 600-25")], "a locator and a second publication after a semicolon"],
-    ["AR 623-3 / DA PAM 623-3", [E("AR 623-3"), E("DA PAM 623-3", { sep: " / " })], "an 'A / B' pair keeps its slash (sep) so the line reads as before"],
-    ["ADP 6-22, FM 7-22", [E("ADP 6-22"), E("FM 7-22", { sep: ", " })], "a comma before a second publication is a new entry, joined by its own sep"],
-    ["AR 710-2 (1 Jul 2024), paras 4-3 and 6-5", [E("AR 710-2", { edition: "1 Jul 2024", para: "paras 4-3 and 6-5" })], "an edition in parentheses, then a locator"],
+    ["AR 623-3 / DA PAM 623-3", [E("AR 623-3", { sepAfter: " / " }), E("DA PAM 623-3")], "an 'A / B' pair keeps its slash (sepAfter, on the entry before it) so the line reads as before"],
+    ["ADP 6-22, FM 7-22", [E("ADP 6-22", { sepAfter: ", " }), E("FM 7-22")], "a comma before a second publication is a new entry, joined by its own sepAfter"],
+    ["AR 710-2 (1 Jul 2024), paras 4-3 and 6-5", [E("AR 710-2", { edition: "1 Jul 2024", para: "paras 4-3 and 6-5", editionFirst: true })], "an edition in parentheses, then a locator: editionFirst records that the edition sat right after the publication"],
     ["FM 3-0 (Mar 2025)", [E("FM 3-0", { edition: "Mar 2025" })], "a month-year edition"],
     ["AR 350-1, para 3-38a (1 Jun 2025)", [E("AR 350-1", { para: "para 3-38a (1 Jun 2025)" })], "an edition written AFTER the locator stays inside the locator text (never split apart, never lost)"],
     ["ADP 6-22, Ch 9 (Achieving, para 9-6); Ch 10 (para 1-130)", [E("ADP 6-22", { para: "Ch 9 (Achieving, para 9-6); Ch 10 (para 1-130)" })], "a segment that opens with a locator word continues the citation before it"],
     ["ADP 6-22, 2019", [E("ADP 6-22, 2019")], "a year after a comma is not a shape the renderer can reproduce: kept whole, never guessed into an edition"],
     ["UCMJ, Article 31", [E("UCMJ, Article 31")], "a split that would hide UCMJ Art. 31 from the regulation chips is refused"],
     ["AR 600-9, para 3-9c and AR 25-50", [E("AR 600-9, para 3-9c and AR 25-50")], "a locator that names another publication is refused, so AR 25-50 stays visible to the chips"],
-    ["AR 600-20 (EO, Ch 6) / AR 600-52 (SHARP)", [E("AR 600-20 (EO, Ch 6)"), E("AR 600-52 (SHARP)", { sep: " / " })], "a parenthetical that is not an edition stays in the pub"],
+    ["AR 600-20 (EO, Ch 6) / AR 600-52 (SHARP)", [E("AR 600-20 (EO, Ch 6)", { sepAfter: " / " }), E("AR 600-52 (SHARP)")], "a parenthetical that is not an edition stays in the pub"],
     ["Creeds", [E("Creeds")], "a source that is not a publication is its own named entry"],
-    ["TCCC / STP 21-1-SMCT", [E("TCCC"), E("STP 21-1-SMCT", { sep: " / " })], "a named non-publication next to a real publication splits at a boundary that has a designator beside it"],
+    ["TCCC / STP 21-1-SMCT", [E("TCCC", { sepAfter: " / " }), E("STP 21-1-SMCT")], "a named non-publication next to a real publication splits at a boundary that has a designator beside it"],
     ["DFAS / myPay", [E("DFAS / myPay")], "two neighbours that are both non-publications stay ONE entry (a compound cannot be told from a name with a slash)"],
-    ["ATP 4-42 (2 Nov 2020), paras 2-16 to 2-17; GCSS-Army training site (GTRAC)", [E("ATP 4-42", { edition: "2 Nov 2020", para: "paras 2-16 to 2-17" }), E("GCSS-Army training site (GTRAC)")], "edition + locator, then a named non-publication"],
+    ["ATP 4-42 (2 Nov 2020), paras 2-16 to 2-17; GCSS-Army training site (GTRAC)", [E("ATP 4-42", { edition: "2 Nov 2020", para: "paras 2-16 to 2-17", editionFirst: true }), E("GCSS-Army training site (GTRAC)")], "edition + locator, then a named non-publication"],
     ["DA PAM 611-21, MOS 68W duty descriptions - pending-source: paraphrased from secondary summaries; the exact paragraph was not re-verified", [E("DA PAM 611-21, MOS 68W duty descriptions - pending-source: paraphrased from secondary summaries; the exact paragraph was not re-verified")], "a source that carries its own 'pending-source' note is one statement, never split at its semicolon"],
     ["ADP 6-22 (2019", [E("ADP 6-22 (2019")], "unbalanced parentheses: kept whole"],
     ["AR 600-20;  AR 25-50", [E("AR 600-20;  AR 25-50")], "odd spacing that cannot render back exactly: kept whole"],
@@ -171,7 +172,7 @@ console.log("\n2. parser - splits only what it can render back exactly");
   for (const [text, want, why] of CASES) {
     const got = parseSource(text).entries;
     if (!same(got, want)) wrong.push(`${JSON.stringify(text)} (${why}) -> ${JSON.stringify(got)}`);
-    if (renderSource(got) !== text) wrong.push(`${JSON.stringify(text)} does not render back exactly`);
+    if (renderCitation(got) !== text) wrong.push(`${JSON.stringify(text)} does not render back exactly`);
   }
   check(wrong.length === 0, `all ${CASES.length} judgement cases split (or refuse to split) as designed, and each renders back exactly`, () => wrong.join(" | "));
 
@@ -179,16 +180,16 @@ console.log("\n2. parser - splits only what it can render back exactly");
   const parseBad = [];
   for (const text of distinct) {
     const r = parseSource(text);
-    if (renderSource(r.entries) !== text) parseBad.push(`render ${JSON.stringify(text)}`);
+    if (renderCitation(r.entries) !== text) parseBad.push(`render ${JSON.stringify(text)}`);
     if (!same(regulationsOfEntries(r.entries), legacyRegulationsOf(text))) parseBad.push(`chips ${JSON.stringify(text)}`);
   }
   check(parseBad.length === 0, `all ${distinct.length} distinct baseline citations parse to entries that render back exactly and yield the same regulation chips`, () => show(parseBad, 4));
 
   const drift = [];
   for (const q of bank) {
-    const text = renderSource(q.source);
+    const text = renderCitation(q.source);
     const r = parseSource(text);
-    if (renderSource(r.entries) !== text) drift.push(q.id);
+    if (renderCitation(r.entries) !== text) drift.push(q.id);
   }
   check(drift.length === 0, "every card's CURRENT citation text (including cards added since the baseline) survives the parser exactly - a new citation is held to the same exactness", () => `not exact: ${show(drift)}`);
 
@@ -221,7 +222,7 @@ try {
   const good = runPack('    bank.board.questions.push({ id: "c1", source: ctx.cite("AR 600-9, para 3-9c; DA PAM 600-25", "paraphrase") });');
   const pushed = good.seed.board.questions.find((q) => q.id === "c1");
   check(!good.result.modules[0].error && Array.isArray(pushed && pushed.source), "a pack that calls ctx.cite(text, quoteKind) leaves an ARRAY in the bank", () => JSON.stringify(good.result.modules));
-  check(pushed && renderSource(pushed.source) === "AR 600-9, para 3-9c; DA PAM 600-25" && pushed.source.every((e) => e.quoteKind === "paraphrase"), "...that renders back to the very string the pack wrote, every entry carrying the quoteKind it asked for", () => JSON.stringify(pushed));
+  check(pushed && renderCitation(pushed.source) === "AR 600-9, para 3-9c; DA PAM 600-25" && pushed.source.every((e) => e.quoteKind === "paraphrase"), "...that renders back to the very string the pack wrote, every entry carrying the quoteKind it asked for", () => JSON.stringify(pushed));
   const noKind = runPack('    bank.board.questions.push({ id: "c2", source: ctx.cite("AR 600-9") });');
   check(/01-stand-in-pack\.js: ctx\.cite\("AR 600-9", undefined\) - cite\(\): quoteKind must be one of verbatim, paraphrase, synthesis/.test(noKind.result.modules[0].error || ""), "ctx.cite without a quoteKind is a build error naming the pack file (the author must decide whether the answer is a quotation)", () => JSON.stringify(noKind.result.modules[0]));
   const badKind = runPack('    bank.board.questions.push({ id: "c3", source: ctx.cite("AR 600-9", "guess") });');
@@ -236,14 +237,14 @@ try {
   const SEED = path.join(scratch, "index.html");
   const c1 = (pub, kind = "paraphrase") => ({ pub, edition: "", para: "", quoteKind: kind });
   const card = (id, source, extra = {}) => Object.assign({ id, category: "Army Values", q: "Question " + id + "?", a: "Answer " + id, boardAnswer: "Answer " + id, keyPoints: ["Answer " + id], difficulty: "basic", source }, extra);
-  const writeSeed = (boardQuestions) => writeFileSync(SEED, "<!doctype html>\n<script>\nwindow.GUIDON_SEED = " + JSON.stringify({
-    doctrine: { entries: [{ id: "d1", source: [c1("ADP 6-22")] }] },
-    creeds: [],
-    prt: { drills: [{ id: "pd", repRule: { source: [c1("ATP 7-22.02")] }, exercises: [] }] },
-    scenarios: { scenarios: [{ id: "s1", doctrine: [c1("ADP 6-22")] }] },
-    board: { questions: boardQuestions },
-    acronyms: { terms: [] },
-  }) + "\n</script>\n", "utf8");
+  // The stand-in seed is a copy of the REAL seed with only the board swapped for the cards under test: the lint
+  // gates every Wave 3 collection as well as the board, so a hand-built minimal seed would fail on "no records found".
+  const writeSeed = (boardQuestions) => {
+    copyFileSync(path.join(APP, "src", "index.html"), SEED);
+    const seedData = readSeed(SEED).data;
+    seedData.board.questions = boardQuestions;
+    writeSeedFile(seedData, SEED);
+  };
   const lint = (boardQuestions, packBody = "") => {
     writeSeed(boardQuestions);
     writeFileSync(path.join(MODULES, "manifest.json"), manifestFor([["01-stand-in-pack.js", "stand-in-pack"]]), "utf8");
@@ -253,16 +254,18 @@ try {
   };
   const failsOn = (name, r, ...needles) => check(r.status === 1 && needles.every((n) => (typeof n === "string" ? r.out.includes(n) : n.test(r.out))), `the lint FAILS on ${name}, naming what is wrong`, () => `exit ${r.status}\n${r.out}`);
 
-  const clean = lint([card("ok-1", [c1("AR 600-9"), Object.assign(c1("DA PAM 600-25"), { sep: " / " })])], '    bank.board.questions.push({ id: "pack-ok", category: "Army Values", q: "Q?", a: "A", boardAnswer: "A", keyPoints: ["A"], difficulty: "basic", source: ctx.cite("ADP 6-22, Ch 2", "verbatim") });');
-  check(clean.status === 0 && /board\.questions: all \d+ cards/.test(clean.out), "control: a clean stand-in bank (a static card with a sep, a pack card through ctx.cite) passes", () => `exit ${clean.status}\n${clean.out}`);
+  const clean = lint([card("ok-1", [Object.assign(c1("AR 600-9"), { sepAfter: " / " }), c1("DA PAM 600-25")])], '    bank.board.questions.push({ id: "pack-ok", category: "Army Values", q: "Q?", a: "A", boardAnswer: "A", keyPoints: ["A"], difficulty: "basic", source: ctx.cite("ADP 6-22, Ch 2", "verbatim") });');
+  check(clean.status === 0 && /board\.questions: all \d+ cards/.test(clean.out), "control: a clean stand-in bank (a static card with a sepAfter, a pack card through ctx.cite) passes", () => `exit ${clean.status}\n${clean.out}`);
 
   failsOn("a static card whose source is still a bare string", lint([card("bare-1", "ADP 6-22")]), 'board.questions[0] ("bare-1")', "is not an array (found string)");
   failsOn("an entry with no pub", lint([card("nopub-1", [{ edition: "", para: "", quoteKind: "paraphrase" }])]), '("nopub-1")', 'has no non-empty "pub"');
   failsOn("an entry with an unknown quoteKind", lint([card("kind-1", [c1("ADP 6-22", "guess")])]), '("kind-1")', 'quoteKind is "guess"');
   failsOn("an empty source array", lint([card("empty-1", [])]), '("empty-1")', "empty array");
   failsOn("a card that kept the old verbatim flag", lint([card("verb-1", [c1("ADP 6-22")], { verbatim: false })]), '("verb-1")', 'still carries a "verbatim" field');
-  failsOn("a sep on the first entry", lint([card("sep-1", [Object.assign(c1("ADP 6-22"), { sep: " / " })])]), '("sep-1")', 'carries a "sep"');
-  failsOn("a sep that is not one of the three separators", lint([card("sep-2", [c1("ADP 6-22"), Object.assign(c1("FM 7-22"), { sep: " | " })])]), '("sep-2")', ".sep is");
+  failsOn("a sepAfter on the last entry", lint([card("sep-1", [Object.assign(c1("ADP 6-22"), { sepAfter: " / " })])]), '("sep-1")', 'carries a "sepAfter"');
+  failsOn("a sepAfter that is not one of the joiners", lint([card("sep-2", [Object.assign(c1("ADP 6-22"), { sepAfter: " | " }), c1("FM 7-22")])]), '("sep-2")', ".sepAfter is");
+  failsOn("the retired Wave 2 draft key `sep`", lint([card("sep-3", [c1("ADP 6-22"), Object.assign(c1("FM 7-22"), { sep: " / " })])]), '("sep-3")', 'retired "sep" key');
+  failsOn("an editionFirst that is not true", lint([card("ed-1", [Object.assign(c1("ADP 6-22"), { edition: "2019", para: "Ch 2", editionFirst: "yes" })])]), '("ed-1")', ".editionFirst is");
   failsOn("a para that buries a publication the regulation chips would miss", lint([card("hide-1", [{ pub: "ADP 6-22", edition: "", para: "see also AR 25-50", quoteKind: "paraphrase" }])]), '("hide-1")', /regulation chips read \["ADP 6-22"\]/, "AR 25-50");
   failsOn("a content-pack card that ships a bare string", lint([card("static-ok", [c1("ADP 6-22")])], '    bank.board.questions.push({ id: "pack-bare", category: "Army Values", q: "Q?", a: "A", boardAnswer: "A", keyPoints: ["A"], difficulty: "basic", source: "AR 600-9, para 3-9c" });'), '("pack-bare")', "[pack 01-stand-in-pack.js]", "is not an array (found string)");
   failsOn("a content-pack card that keeps verbatim:false beside ctx.cite", lint([card("static-ok2", [c1("ADP 6-22")])], '    bank.board.questions.push({ id: "pack-verb", category: "Army Values", q: "Q?", a: "A", boardAnswer: "A", keyPoints: ["A"], difficulty: "basic", verbatim: false, source: ctx.cite("ADP 6-22", "paraphrase") });'), '("pack-verb")', 'still carries a "verbatim" field');
@@ -304,7 +307,7 @@ try {
     check(qs.every((q) => Array.isArray(q.source) && !("verbatim" in q)), "afterwards every card has an array source and none has a verbatim key (first, middle and last positions all removed cleanly)", () => JSON.stringify(qs));
     check(kinds("c1") === "verbatim/verbatim" && kinds("c2") === "paraphrase" && kinds("c3") === "paraphrase/paraphrase" && kinds("c4") === "verbatim" && kinds("c6") === "paraphrase/paraphrase",
       "the fold is right: absent or true -> verbatim, false -> paraphrase (and a non-publication beside a publication is paraphrase either way)", () => ["c1", "c2", "c3", "c4", "c6"].map((id) => id + "=" + kinds(id)).join(" "));
-    check(["c1", "c2", "c3", "c4", "c6"].every((id) => renderSource(byId[id].source) === renderSource(seedOf(html).board.questions.find((q) => q.id === id).source)) && byId.c3.source[1].sep === " / ", "every migrated card renders back to the string it had (c3 keeps its ' / ')");
+    check(["c1", "c2", "c3", "c4", "c6"].every((id) => renderCitation(byId[id].source) === renderCitation(seedOf(html).board.questions.find((q) => q.id === id).source)) && byId.c3.source[0].sepAfter === " / ", "every migrated card renders back to the string it had (c3 keeps its ' / ')");
     check(same(byId.c5.source, arrayCard.source) && after.doctrine.entries[0].source === "left alone" && after.curriculum.courses[0].source === "AR 600-20" && after.board.version === "0.1.0", "an already-structured card, another section's string `source` and the board's own fields are untouched");
     check(migrated.startsWith("<!doctype html>\n<p>before</p>\nwindow.GUIDON_SEED = ") && migrated.endsWith(";\n<p>after</p>\n"), "every byte outside the seed literal is unchanged");
     const before = seedOf(html);
@@ -362,8 +365,8 @@ await waitForRoute(page, "#/home");
   });
   check(live.length === bank.length && live.every((r, i) => r.id === bank[i].id), "the page holds the same cards, in the same order, as the assembled bank", () => `page ${live.length} vs bank ${bank.length}`);
   check(live.every((r) => r.isArray), "every card in the page carries an array source");
-  const tDiff = live.filter((r, i) => r.text !== renderSource(bank[i].source)).map((r) => r.id);
-  check(tDiff.length === 0, "G.board.sourceText (browser) returns exactly what renderSource (Node) does, for every card", () => `${tDiff.length} differ: ${show(tDiff)}`);
+  const tDiff = live.filter((r, i) => r.text !== renderCitation(bank[i].source)).map((r) => r.id);
+  check(tDiff.length === 0, "G.board.sourceText (browser) returns exactly what renderCitation (Node) does, for every card", () => `${tDiff.length} differ: ${show(tDiff)}`);
   const rDiff = live.filter((r, i) => !same(r.regs, regulationsOfEntries(bank[i].source))).map((r) => r.id);
   check(rDiff.length === 0, "G.board.regulationsOf (browser) derives exactly the Node regulation ids from the entries, for every card", () => `${rDiff.length} differ: ${show(rDiff)}`);
   const kDiff = live.filter((r, i) => r.kind !== quoteKindOf(bank[i].source)).map((r) => r.id);
@@ -378,16 +381,19 @@ await waitForRoute(page, "#/home");
   check(sDiff.length === 0, `G.board.regulationsOf(string) still returns exactly what the old free-text regex did, for all ${strings.length} distinct citations`, () => show(sDiff, 3));
 
   const edge = await page.evaluate(() => ({
-    joined: G.board.sourceText({ source: [{ pub: "AR 623-3", edition: "", para: "" }, { pub: "DA PAM 623-3", edition: "", para: "", sep: " / " }, { pub: "ADP 6-22", edition: "1 Jul 2019", para: "Ch 2" }] }),
+    joined: G.board.sourceText({ source: [{ pub: "AR 623-3", edition: "", para: "", sepAfter: " / " }, { pub: "DA PAM 623-3", edition: "", para: "" }, { pub: "ADP 6-22", edition: "1 Jul 2019", para: "Ch 2", editionFirst: true }] }),
+    editionLast: G.board.sourceText({ source: [{ pub: "AR 600-20", edition: "15 Apr 2026", para: "Ch 6" }] }),
+    sameAsCiteText: G.board.sourceText({ source: [{ pub: "AR 623-3", edition: "2025", para: "para 1-8", editionFirst: true, sepAfter: " / " }, { pub: "DA PAM 623-3", edition: "", para: "", paraSep: " " }] }) === G.util.citeText([{ pub: "AR 623-3", edition: "2025", para: "para 1-8", editionFirst: true, sepAfter: " / " }, { pub: "DA PAM 623-3", edition: "", para: "", paraSep: " " }]),
     plain: G.board.sourceText({ source: "A Soldier's own note" }),
-    given: G.board.sourceText([{ pub: "FM 7-22", edition: "2020", para: "Table B-1" }]),
+    given: G.board.sourceText([{ pub: "FM 7-22", edition: "2020", para: "Table B-1", editionFirst: true }]),
     none: G.board.sourceText(null),
     legacyFalse: G.board.quoteKindOf({ source: "x", verbatim: false }),
     legacyAbsent: G.board.quoteKindOf({ source: "x" }),
     empty: G.board.regulationsOf([]),
     nothing: G.board.regulationsOf(undefined),
   }));
-  check(edge.joined === "AR 623-3 / DA PAM 623-3; ADP 6-22 (1 Jul 2019), Ch 2", "sourceText joins entries with each entry's own sep ('; ' by default), pub then (edition) then ', para'", () => JSON.stringify(edge.joined));
+  check(edge.joined === "AR 623-3 / DA PAM 623-3; ADP 6-22 (1 Jul 2019), Ch 2", "sourceText joins entries with each entry's own sepAfter ('; ' by default), and puts the edition right after the publication when the entry says editionFirst", () => JSON.stringify(edge.joined));
+  check(edge.editionLast === "AR 600-20, Ch 6 (15 Apr 2026)" && edge.sameAsCiteText, "...otherwise the edition follows the locator, and G.board.sourceText is G.util.citeText - the one renderer in the page, not a second copy", () => JSON.stringify(edge));
   check(edge.plain === "A Soldier's own note" && edge.given === "FM 7-22 (2020), Table B-1" && edge.none === "", "sourceText passes a plain string through, accepts a bare source array, and answers '' for nothing", () => JSON.stringify(edge));
   check(edge.legacyFalse === "paraphrase" && edge.legacyAbsent === "verbatim", "a card that still carries a plain-string source falls back to the old verbatim flag (false -> paraphrase, absent -> verbatim)", () => JSON.stringify(edge));
   check(same(edge.empty, []) && same(edge.nothing, []), "regulationsOf of an empty array or nothing is []", () => JSON.stringify(edge));
@@ -408,7 +414,7 @@ await waitForRoute(page, "#/home");
     const kinds = (q) => q.source.map((e) => e.quoteKind);
     const pick = (label, pred) => { const q = qs.find((x) => pred(x) && unique(x)); return q ? { label, id: q.id, concept: conceptOf(q) } : { label, id: null }; };
     return [
-      pick("a compound written 'A / B'", (q) => q.source.some((e) => e.sep === " / ")),
+      pick("a compound written 'A / B'", (q) => q.source.some((e) => e.sepAfter === " / ")),
       pick("an edition and a locator", (q) => q.source.some((e) => e.edition && e.para)),
       pick("a real publication beside a non-publication", (q) => kinds(q).includes("verbatim") && kinds(q).includes("paraphrase")),
       pick("a study-guide (paraphrase) answer under its own heading", (q) => bybook(q) && kinds(q).every((k) => k === "paraphrase")),
