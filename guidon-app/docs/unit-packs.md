@@ -172,8 +172,9 @@ did not write, and never marks a unit card as a word-for-word quote.
 
 The check is a prevention aid. It looks for particular shapes. It cannot tell
 that something is sensitive because of what it is, or because of what several
-harmless facts add up to. If you are unsure whether something may go in a
-deck, it may not: ask your S2 or OPSEC officer.
+harmless facts add up to. It is a safety net for honest mistakes, not a defense
+against someone who is trying to slip something past it. If you are unsure
+whether something may go in a deck, it may not: ask your S2 or OPSEC officer.
 
 ---
 
