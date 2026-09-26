@@ -701,6 +701,8 @@ jobs:
             tests: "test:leader-moi-tracker test:content-pack-engine test:lint-content-packs test:merge-seed-content-packs"
           - name: "59-searchscreens-modalinertcloserace-afteventscoring-searchcontentcoverage"
             tests: "test:search-screens test:modal-inert-close-race test:aft-event-scoring test:search-content-coverage"
+          - name: "60-roomhandoffcore-roomhandoff"
+            tests: "test:room-handoff-core test:room-handoff"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
