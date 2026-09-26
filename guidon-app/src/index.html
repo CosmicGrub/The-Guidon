@@ -30299,6 +30299,18 @@ window.G = window.G || {};
         return isPlainObject(s) && typeof s.count === "number" && isFinite(s.count) && s.count >= 0 && (s.last == null || typeof s.last === "number");
       });
     },
+    // Saved Team Training sessions (team-training.js "Team sessions"): one
+    // { id, title, steps } row per session, steps being the catalog exercise
+    // ids in the order they run. Every reader walks steps unconditionally
+    // (the card list, "Start session", the room hand-off), so each entry
+    // must really carry text ids in a non-empty array; its own
+    // normalizeSessions() then drops any id the catalog does not have.
+    "team:sessions:v1": function (v) {
+      return Array.isArray(v) && v.every(function (s) {
+        return isPlainObject(s) && typeof s.id === "string" && typeof s.title === "string" &&
+          Array.isArray(s.steps) && s.steps.length > 0 && s.steps.every(function (x) { return typeof x === "string"; });
+      });
+    },
     // Board Simulator (mock-board-simulator.js): three done-flags, the
     // Soldier's after-action notes and the "a step was opened" markers. Its
     // own load() rebuilds the notes and markers field by field, so the
@@ -30458,6 +30470,7 @@ window.G = window.G || {};
     "settings": "your settings",
     "board:sim:v1": "Board Simulator progress and notes",
     "team:training:v1": "Team Training completion counts",
+    "team:sessions:v1": "your saved Team Training sessions",
     "prt:plan:v1": "your PT plan",
     "pt:history:v1": "your completed PT sessions",
     "guidon:prt:customSessions:v1": "your custom PT sessions",

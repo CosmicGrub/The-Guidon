@@ -85,6 +85,18 @@ export function generate() {
     rsInt("MAX_ID", "usize", S.MAX_ID),
     rsInt("MAX_BUILD", "usize", S.MAX_BUILD),
     rsInt("MAX_APP", "usize", S.MAX_APP),
+    /* The hand-off model's kind-blind wire rules (room-schema.js, THE
+       HAND-OFF MODEL): the closed offer envelope, its caps and the key names
+       that may never appear inside one. The Rust host applies exactly these
+       (validate_offer in room.rs); what each KIND's data may hold is the
+       receiving page's job, so nothing kind-specific is generated. */
+    rsStrList("OFFER_KEYS", S.OFFER_KEYS),
+    rsStrList("OFFER_REQUIRED_KEYS", S.OFFER_REQUIRED_KEYS),
+    rsStrList("OFFER_FORBIDDEN_KEYS", S.OFFER_FORBIDDEN_KEYS),
+    rsInt("MAX_OFFER_BYTES", "usize", S.MAX_OFFER_BYTES),
+    rsInt("MAX_OFFER_TITLE", "usize", S.MAX_OFFER_TITLE),
+    rsInt("MAX_OFFER_DEPTH", "u32", S.MAX_OFFER_DEPTH),
+    rsInt("MAX_OFFER_VER", "u64", S.MAX_OFFER_VER),
     "pub const ENDPOINT_WS: &str = " + rsStr(S.ENDPOINTS.ws) + ";",
     "pub const ENDPOINT_JOIN: &str = " + rsStr(S.ENDPOINTS.join) + ";",
     "pub const ENDPOINT_GUEST: &str = " + rsStr(S.ENDPOINTS.guest) + ";",

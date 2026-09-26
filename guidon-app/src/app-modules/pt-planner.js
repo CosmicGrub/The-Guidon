@@ -1098,6 +1098,8 @@
         el("p.hint", { text:"Save the plan as a file and send it however your unit shares files. Anyone with GUIDON opens it here with \"Open a shared plan file\". Nothing is sent by GUIDON itself." }),
         el("div.btn-row", {}, [exp, imp, sheet]), fileIn, impStatus
       ]));
+      var roomPanel = roomSharePanel();
+      if (roomPanel) stage.appendChild(roomPanel);
     }
     function renderMonth() {
       util.clear(stage);
@@ -1235,6 +1237,8 @@
     var foot = el("div.panel", { style:"margin-top:10px" });
     foot.appendChild(el("p.hint", { text:"Showing the next 7 days only. Switch to Classic in Settings → Screen Layouts for Day/Week/Month, the hard:recovery checks, and history log." }));
     mount.appendChild(foot);
+    var roomPanel = roomSharePanel();
+    if (roomPanel) mount.appendChild(roomPanel);
   }
 
   // ---- Tasking Board layout (ROADMAP 3g "customizable screen layouts", Phase B) ----
@@ -1388,10 +1392,193 @@
       guard.appendChild(el("p.hint", { text:ratioMessage(r) }));
       content.appendChild(guard);
 
+      // "Share to my room": a redraw rebuilds the panel, which re-reads the
+      // saved plan when tapped - never a stale copy.
+      var roomPanel = roomSharePanel();
+      if (roomPanel) content.appendChild(roomPanel);
+
       refocus(focusSelector);
     }
 
     draw();
+  }
+
+  // ---- Study Rooms hand-off (AUDIT-2026-09 6M / ROADMAP "Later": Study Rooms
+  // carrying PT plans) --------------------------------------------------------
+  // The weekly plan, sent to a Study Room and added on another Soldier's own
+  // device. The wire model (src/app-modules/room-schema.js, "THE HAND-OFF
+  // MODEL", kind "pt-plan") carries STRUCTURE only: seven day entries, the
+  // custom sessions those days use, and up to a few one-date changes. Never a
+  // profile, a rank, a name, progress, notes or a completed-PT log - the
+  // builder below copies fields out BY NAME, it never passes a stored record
+  // through, and the model refuses a payload that nests a personal key anyway.
+  //
+  // Receiving mirrors the plan file's rule ("REBUILT from the canonical
+  // source, never the input", see normalizeEntry): a built-in session type is
+  // rebuilt from PRESETS by id, a custom session gets a FRESH local id, its
+  // drill blocks are kept only where they are real drills on this device, and
+  // nothing is saved until the person taps "Add to my PT Planner".
+  function handoffGuard() {
+    var g = G.opsecGuard;
+    return g && typeof g.screen === "function" ? g : null;
+  }
+  function handoffDrillIds() {
+    var ids = {};
+    try { ((store.prtMeta().drills) || []).forEach(function (d) { if (d && d.id) ids[d.id] = true; }); } catch (e) {}
+    return ids;
+  }
+  // What a payload says, in this device's own words - the ONE description
+  // both the host's confirm box and a receiver's preview use. Drill blocks
+  // this device does not have are counted, never named (an id is not a word
+  // a Soldier reads).
+  function handoffDescribe(data) {
+    var byKey = {}, known = handoffDrillIds(), missing = 0, unknownTypes = 0;
+    (data.sessions || []).forEach(function (s) {
+      byKey[s.key] = s;
+      s.blocks.forEach(function (id) { if (!known[id]) missing++; });
+    });
+    function sessionLine(s) {
+      var labels = s.blocks.filter(function (id) { return known[id]; }).map(function (id) { var d = prtDrillLabel(id); return d.label + (d.pending ? " (content pending)" : ""); });
+      return s.label + " (" + effortLabel(s.effort) + ")" + (labels.length ? ": " + labels.join(" → ") : "");
+    }
+    function title(e) {
+      if (e.id === "custom") return e.label + " (" + effortLabel(e.effort) + ")";
+      if (e.id === "session") return byKey[e.ref] ? sessionLine(byKey[e.ref]) : "Custom PT";
+      if (e.id !== "custom" && Object.prototype.hasOwnProperty.call(PRESETS, e.id)) return PRESETS[e.id].title;
+      unknownTypes++;
+      return "Custom PT";
+    }
+    var lines = data.days.map(function (e, i) { return DAY_NAMES[i] + ": " + title(e); });
+    (data.dates || []).forEach(function (x) { lines.push(x.date + ": " + title(x.entry)); });
+    return { lines:lines, missing:missing, unknownTypes:unknownTypes, sessions:(data.sessions || []).length };
+  }
+  // Host side: today's saved plan -> a payload, or { ok:false, message }.
+  async function handoffBuild() {
+    var H = G.roomSchema && G.roomSchema.handoff;
+    if (!H) return { ok:false, message:"Study Rooms isn't available in this build." };
+    var guard = handoffGuard();
+    if (!guard) return { ok:false, message:"GUIDON couldn't check the names in this plan, so nothing was sent." };
+    var custom = await loadCustomSessions();
+    var plan = await loadPlan(custom);
+    var L = H.LIMITS, sessions = [], keyOf = {}, texts = [], refuse = "";
+    function entryOut(e) {
+      if (e.id !== "custom" && Object.prototype.hasOwnProperty.call(PRESETS, e.id)) return { id:e.id };
+      var cs = findCustomSession(custom, e.id);
+      if (cs) {
+        if (!keyOf[cs.id]) {
+          if (sessions.length >= L.ptSessions) { refuse = "This plan uses more custom sessions than a room can carry (" + L.ptSessions + "). Save the plan as a file to share instead."; return null; }
+          if (cs.blocks.length > L.ptBlocks) { refuse = "A custom session in this plan has more drill blocks than a room can carry (" + L.ptBlocks + "). Save the plan as a file to share instead."; return null; }
+          keyOf[cs.id] = "s" + (sessions.length + 1);
+          texts.push(cs.label);
+          sessions.push({ key:keyOf[cs.id], label:cs.label, effort:cs.effort, type:cs.type, blocks:cs.blocks.map(function (b) { return b.drillId; }) });
+        }
+        return { id:"session", ref:keyOf[cs.id] };
+      }
+      var label = String(e.title || "Custom PT");
+      texts.push(label);
+      return { id:"custom", label:label, effort:e.effort };
+    }
+    var days = DAY_KEYS.map(function (k) { return entryOut(plan.days[k]); });
+    if (refuse) return { ok:false, message:refuse };
+    var today = localISO(new Date()), dates = [], cut = false;
+    Object.keys(plan.overrides || {}).sort().filter(function (iso) { return iso >= today; }).forEach(function (iso) {
+      if (dates.length >= L.ptDates) { cut = true; return; }
+      var out = entryOut(plan.overrides[iso]);
+      if (out) dates.push({ date:iso, entry:out });
+    });
+    if (refuse) return { ok:false, message:refuse };
+    // Every name a Soldier typed goes through the same check a receiver runs.
+    for (var i = 0; i < texts.length; i++) {
+      var found = guard.screen(texts[i]).findings;
+      if (found.length) return { ok:false, message:H.MESSAGES.guardOut + " (It looks like " + guard.listWhat(found) + ".)" };
+    }
+    var data = { tpl:plan.templateId, days:days };
+    if (sessions.length) data.sessions = sessions;
+    if (dates.length) data.dates = dates;
+    var d = handoffDescribe(data);
+    var lines = d.lines.slice();
+    if (cut) lines.push("(Only the next " + L.ptDates + " changed dates are included.)");
+    return { ok:true, title:"Weekly PT plan", data:data, lines:lines };
+  }
+  // Receiving side, step 1: what the person is being offered, in plain words.
+  function handoffPrepare(data, offer) {
+    var d = handoffDescribe(data);
+    var notes = ["Adding this replaces your current weekly PT plan. Your completed PT history is not touched, and you can undo it straight afterwards."];
+    if (d.sessions) notes.push(d.sessions === 1 ? "One custom session comes with it and is added to your list." : d.sessions + " custom sessions come with it and are added to your list.");
+    if (d.missing) notes.push(d.missing + (d.missing === 1 ? " drill block isn't" : " drill blocks aren't") + " on this device and will be left out.");
+    if (d.unknownTypes) notes.push(d.unknownTypes + (d.unknownTypes === 1 ? " day uses a session type" : " days use a session type") + " this version doesn't know, so " + (d.unknownTypes === 1 ? "it shows" : "they show") + " as Custom PT.");
+    return { ok:true, title:(offer && offer.title) || "Weekly PT plan", lines:d.lines, notes:notes };
+  }
+  function sameBlockList(a, b) {
+    if (a.length !== b.length) return false;
+    for (var i = 0; i < a.length; i++) if (a[i].drillId !== b[i].drillId) return false;
+    return true;
+  }
+  // Step 2, only on the person's own tap: save it. Returns { ok, message,
+  // undo } - undo puts back exactly what was here before (this session only).
+  async function handoffApply(data) {
+    var cur = await loadCustomSessions();
+    var prevPlan = await loadPlan(cur);
+    var known = handoffDrillIds(), list = cur.slice(), keyMap = {}, byKey = {}, left = 0, added = 0;
+    (data.sessions || []).forEach(function (s) {
+      byKey[s.key] = s;
+      var blocks = s.blocks.filter(function (id) { return known[id]; }).map(function (id) { return { drillId:id }; });
+      left += s.blocks.length - blocks.length;
+      if (!blocks.length) { keyMap[s.key] = null; return; }
+      var same = list.find(function (x) { return x.label === s.label && x.effort === s.effort && x.type === s.type && sameBlockList(x.blocks, blocks); });
+      if (same) { keyMap[s.key] = same.id; return; }
+      var id = nextCustomId(list);
+      list.push({ id:id, label:s.label, effort:s.effort, type:s.type, blocks:blocks, createdAt:Date.now() });
+      keyMap[s.key] = id; added++;
+    });
+    function adHoc(label, effort) { return { id:"custom", title:label, type:"custom", effort:effort, route:"", sessionId:"" }; }
+    function entryIn(e) {
+      if (e.id === "custom") return adHoc(e.label, e.effort);
+      if (e.id === "session") {
+        var s = byKey[e.ref], id = s ? keyMap[e.ref] : null;
+        return id ? clonePreset(id, list) : adHoc(s ? s.label : "Custom PT", s ? s.effort : "moderate");
+      }
+      // A built-in id is rebuilt from PRESETS. Anything else - an id this
+      // version does not know, or one that merely LOOKS like a local custom
+      // session's - becomes plain Custom PT: no id from the wire ever picks a
+      // record on this device.
+      if (Object.prototype.hasOwnProperty.call(PRESETS, e.id)) return clonePreset(e.id, list);
+      return adHoc("Custom PT", "moderate");
+    }
+    var plan = { version:1, templateId:data.tpl, weekStart:"sun", days:{}, overrides:{} };
+    DAY_KEYS.forEach(function (k, i) { plan.days[k] = entryIn(data.days[i]); });
+    (data.dates || []).forEach(function (x) { plan.overrides[x.date] = entryIn(x.entry); });
+    if (added && !(await saveCustomSessions(list))) return { ok:false, message:"GUIDON couldn't save the plan. Nothing was changed." };
+    if (!(await savePlan(plan, list))) {
+      if (added) await saveCustomSessions(cur);
+      return { ok:false, message:"GUIDON couldn't save the plan. Nothing was changed." };
+    }
+    return {
+      ok:true,
+      message:"Added. This is now your PT plan." + (left ? " " + left + (left === 1 ? " drill block wasn't" : " drill blocks weren't") + " on this device and " + (left === 1 ? "was" : "were") + " left out." : ""),
+      undo:async function () {
+        await saveCustomSessions(cur);
+        return { ok:await savePlan(prevPlan, cur) };
+      }
+    };
+  }
+  var ROOM_ADAPTER = { kind:"pt-plan", addText:"Add to my PT Planner", openHash:"#/pt-plan", openText:"Open PT Planner", prepare:handoffPrepare, apply:handoffApply };
+  if (G.roomHandoffAdapters) G.roomHandoffAdapters["pt-plan"] = ROOM_ADAPTER;
+  // The "Share to my room" control every layout places (Study Rooms builds
+  // the button, the confirm box and the send; this file only supplies the
+  // payload). null where Study Rooms is not part of the build.
+  function roomShareControl() {
+    if (!(G.studyGroup && typeof G.studyGroup.shareControl === "function")) return null;
+    return G.studyGroup.shareControl({ kind:"pt-plan", buttonText:"Share to my room", build:handoffBuild });
+  }
+  function roomSharePanel() {
+    var c = roomShareControl();
+    if (!c) return null;
+    return el("div.panel", { "data-pt-room-share":"1" }, [
+      el("div.eyebrow", { text:"Share to a Study Room" }),
+      el("p.hint", { text:"If you are hosting a Study Room, send this weekly plan straight to everyone in it. Only the plan's structure goes - no names, ranks, history or notes - and each Soldier previews it and chooses whether to add it." }),
+      c
+    ]);
   }
 
   // A simple id -> {label, render} map. Phase B adds a screen-specific
@@ -1435,6 +1622,11 @@
     _session:prtSession,
     _sessionSummary:prtSessionSummary,
     _normalizeCustomSessions:normalizeCustomSessions,
-    _nextCustomId:nextCustomId
+    _nextCustomId:nextCustomId,
+    // Study Rooms hand-off (see the block above): the adapter Study Rooms
+    // reads (also at G.roomHandoffAdapters["pt-plan"]) plus the payload
+    // builder the "Share to my room" button uses.
+    handoff:ROOM_ADAPTER,
+    handoffBuild:handoffBuild
   };
 })();

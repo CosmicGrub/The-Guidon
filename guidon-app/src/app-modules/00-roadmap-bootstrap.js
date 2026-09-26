@@ -7,6 +7,12 @@
 (function () {
   "use strict";
   var G = window.G || (window.G = {});
+  // The one place a screen registers what it can RECEIVE from a Study Room
+  // (kind -> adapter; see src/app-modules/studygroup.js "HAND-OFFS" and
+  // room-schema.js "THE HAND-OFF MODEL"). PT Planner and Team Training fill it
+  // in as they load; Study Rooms reads it when an offer arrives. It lives
+  // here, first, so no load order between those three matters.
+  G.roomHandoffAdapters = G.roomHandoffAdapters || {};
   if (!G.routes || !G.util) return;
   var util = G.util, el = util.el;
 

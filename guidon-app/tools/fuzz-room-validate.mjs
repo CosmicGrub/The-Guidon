@@ -19,7 +19,8 @@
  *     <index>` regenerates exactly one case standalone for a human to
  *     inspect or hand to `cargo run --features fuzz-validate --bin
  *     fuzz_validate` directly).
- *   - Two generation strategies, chosen deterministically per case:
+ *   - Three generation strategies, chosen deterministically per case (the
+ *     third, "offer", is at the end of this list):
  *       (a) "random"  - coarse-grained, varying shape/depth/type JSON, most
  *           of which never gets past validate()'s early object/key checks -
  *           exercises the very first branches on both sides.
@@ -32,6 +33,12 @@
  *           limit, a `grade` key inserted somewhere, a snapshot field gone
  *           bad, ...) - exercises the deep, rule-for-rule logic both
  *           implementations must agree on bit for bit.
+ *       (c) "offer"   - the hand-off model's offer frame (room-schema.js,
+ *           THE HAND-OFF MODEL): one valid offer with 1-3 offer-specific
+ *           mutations (bad oid/kind/ver/title/data, a personal key at some
+ *           depth in any case, a key buried past the nesting cap, an oversize
+ *           payload). The kind-blind rules are the only ones both sides
+ *           implement, so they must agree exactly.
  *   - The Rust binary (src-tauri/src/bin/fuzz_validate.rs) is spawned ONCE
  *     and fed every generated frame's wire text over stdin, one per line;
  *     it is a strict one-line-in, one-line-out pipe, so verdicts come back
@@ -138,7 +145,8 @@ function randomScalar(rng) {
   }
 }
 const REALISH_KEYS = ["v", "t", "room", "seq", "from", "body", "name", "bankSig", "seatNo", "token",
-  "snapshot", "kind", "value", "cardId", "reason", "n", "phase", "mode", "seats", "grade", "pending", "hold"];
+  "snapshot", "kind", "value", "cardId", "reason", "n", "phase", "mode", "seats", "grade", "pending", "hold",
+  "offer", "oid", "ver", "title", "data", "rank"];
 function randomKey(rng) {
   return rng() < 0.6 ? pick(rng, REALISH_KEYS) : randomString(rng, int(rng, 1, 10));
 }
@@ -197,6 +205,7 @@ function baseFrames(rng) {
     reject: { reason: "nope" },
     kick: { seatNo: 2 },
     ping: { n: 1 }, pong: { n: 1 }, bye: {}, end: { reason: "done" },
+    offer: { offer: { oid: "ABCD2345", kind: "team-session", ver: 1, title: "Squad night", data: { steps: ["contact-relay", "aar-huddle"] } } },
   };
   const out = {};
   for (const t of S.TYPES) {
@@ -213,6 +222,34 @@ const MAX_FIELD_BY_TYPE = {
   kick: [["reason", S.MAX_REASON]],
   end: [["reason", S.MAX_REASON]],
   intent: [["cardId", S.MAX_ID]],
+};
+
+/* The hand-off model's offer mutations (harmless no-op on every other type):
+   a bad oid/kind/ver/title/data, a personal key at some depth (any case), a key
+   buried past the nesting cap, an oversize payload, an unknown extra key. Also
+   drives the dedicated "offer" strategy in generateCase(). */
+const OFFER_MUTATION = (f, rng) => {
+  const o = f.body && f.body.offer;
+  if (!o || typeof o !== "object") return f;
+  const banned = S.OFFER_FORBIDDEN_KEYS.concat(S.OFFER_FORBIDDEN_KEYS.map((k) => k.toUpperCase()), ["displayName", "Rank", "Notes"]);
+  switch (int(rng, 0, 8)) {
+    case 0: o.oid = pick(rng, ["abcd2345", "ABC", "ABCD2345ABCD2", "ABCD2341", 7, null]); break;
+    case 1: o.kind = pick(rng, ["PT-plan", "x", "9plan", "quiz-pack", "a".repeat(25), null, 3]); break;
+    case 2: o.ver = pick(rng, [0, 100, 1.5, "1", null, 99]); break;
+    case 3: o.title = pick(rng, ["T".repeat(41), null, 5, ""]); break;
+    case 4: o.data = pick(rng, [[], "x", null, 1]); break;
+    case 5: (rng() < 0.5 ? o.data : o)[pick(rng, banned)] = "x"; break;
+    case 6: {
+      let d = o.data;
+      const depth = int(rng, 1, 8);
+      for (let i = 0; i < depth; i++) { d.z = {}; d = d.z; }
+      if (rng() < 0.5) d[pick(rng, banned)] = 1;
+      break;
+    }
+    case 7: o.data.pad = "P".repeat(int(rng, 2900, 3300)); break;
+    default: o["q_" + randomString(rng, 3)] = 1;
+  }
+  return f;
 };
 
 const MUTATIONS = [
@@ -274,6 +311,7 @@ const MUTATIONS = [
   },
   // out-of-range intent score value
   (f, rng) => { if (f.t === "intent") f.body.value = pick(rng, [-1, S.MAX_SCORE + 1, 1e10, 1.5]); return f; },
+  OFFER_MUTATION,
   // null out a required top-level field
   (f, rng) => { f[pick(rng, ["from", "room", "t"])] = null; return f; },
   // flip a boolean-typed field to a non-boolean
@@ -331,6 +369,16 @@ function generateCase(seed, index) {
     const frame = randomFrame(rng);
     const wireText = safeStringify(frame);
     return { wireText, jsCompareValue: safeParse(wireText), strategy: "random", meta: {} };
+  }
+  if (roll < 0.62) {
+    /* The hand-off model's offer gets its own strategy: a valid offer frame
+       with one to three offer-specific mutations - the general "mutate"
+       strategy reaches it only 1 case in ~200. */
+    let frame = clone(baseFrames(rng).offer);
+    const n = int(rng, 1, 3);
+    for (let i = 0; i < n; i++) { try { const next = OFFER_MUTATION(frame, rng); if (next !== undefined) frame = next; } catch { /* a later mutation can find an earlier one's damage - skip */ } }
+    const wireText = safeStringify(frame);
+    return { wireText, jsCompareValue: safeParse(wireText), strategy: "offer", meta: {} };
   }
   const { frame, meta } = mutatedFrame(rng);
   const wireText = safeStringify(frame);
