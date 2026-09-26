@@ -28,16 +28,33 @@
        Study Room. Its card ids are namespaced ("unit:<deck>:<card>") so review
        history can never collide with a shipped card, and every place a card
        appears says "Unit deck: <name>".
-     - NEVER carries recitation text. A song or creed is usually somebody's
-       copyrighted work and the project rule is that the app ships none. A deck
-       may only SUGGEST titles ("Unit song", "Unit motto"); they show up as empty
-       "add yours" prompts under My unit, where the Soldier types their own.
+     - GIVES NO PLACE FOR RECITATION TEXT. A song or creed is usually somebody's
+       copyrighted work and the project rule is that the app ships none. The
+       format has no field for words to recite: a deck may only SUGGEST titles
+       ("Unit song", "Unit motto"), which show up as empty "add yours" prompts
+       under My unit, where the Soldier types their own. (That closes the
+       recitation lane, not a card's own text: a question, answer or key point
+       is free text up to its cap, and the author is asked not to put such
+       words there. Nothing in the schema can tell a song from a sentence.)
      - NEVER accepts anything the sensitive-text check finds. Import is refused
        as a whole, naming the card and the field, on ANY finding (classification
        markings, CUI banners, SSN / DoD ID numbers, UIC labels, phone numbers,
        email addresses, future-date-place-activity sentences) and on a
-       roster-like list of names. That check is a prevention aid, never a
-       clearance: a clean result does not mean a deck is releasable.
+       roster-like list of names - read per field, per card's key points and
+       across the deck's short answers. The check reads a folded copy of the
+       text (fullwidth and compatibility forms, dash variants and the most
+       common look-alike letters folded to plain ones; the folded copy is only
+       looked at, never stored) and the format refuses invisible characters
+       outright, so the usual ways of hiding a marking or number do not work.
+       What it cannot do is judge meaning, or catch every look-alike letter.
+       That check is a prevention aid, never a clearance: a clean result does
+       not mean a deck is releasable.
+     - IS HELD TO THE SAME RULES ON THE WAY BACK IN. A deck row that arrives in a
+       restored backup, or is already on the device, goes through validateRow(),
+       which repeats the schema, the size cap AND this screen, so a hand-built
+       row cannot get around the import check. validate() and validateRow() are
+       written to accept exactly the same decks: whatever an import accepts is
+       a row the app keeps (tools/test-unit-pack-format.mjs proves the round trip).
 
    The citation in `source` is the unit's own words. On import it is put
    through a PORT of the conservative parser the bank uses (tools/citation-
@@ -67,8 +84,10 @@
     deckIdMin: 3, deckIdMax: 40, cardIdMax: 30,
     name: 60, unit: 60, packVersion: 20, category: 40,
     question: 300, answer: 1200, keyPoints: 8, keyPoint: 200, source: 200,
+    sourceEntries: 8,                  // separate references a card's source may be split into (see validate())
     reciteTitles: 8, reciteTitle: 60,
-    bytes: 262144                      // 256 KiB of JSON text, measured in UTF-8 bytes
+    bytes: 262144,                     // 256 KiB of JSON text, measured in UTF-8 bytes
+    rowBytes: 393216                   // the SAVED row of a deck: a little larger than the file (each citation becomes a small object)
   };
 
   var TOP_KEYS = ["format", "formatVersion", "id", "name", "unit", "packVersion", "packDate", "cards", "reciteTitles"];
@@ -79,13 +98,23 @@
   var SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
   var VERSION_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
   var ISO_TS_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
-  // Control and direction-override characters have no place in study text; the
-  // second form lets a multi-line answer keep its tabs and line breaks.
-  var BAD_SINGLE = /[\u0000-\u001F\u007F\u2028\u2029\u202A-\u202E\u2066-\u2069\uFEFF\uFFFE\uFFFF]/;
-  var BAD_MULTI = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u2028\u2029\u202A-\u202E\u2066-\u2069\uFEFF\uFFFE\uFFFF]/;
+  // Control, direction-override and INVISIBLE characters have no place in study text: they add nothing
+  // a Soldier can see, and they are how a marking or a number is hidden from a check ("SEC" + a
+  // zero-width space + "RET"). The second form lets a multi-line answer keep its tabs and line breaks.
+  // Invisible = soft hyphen, Arabic letter mark, Mongolian free variation selectors and vowel separator,
+  // zero-width space / joiners / direction marks (U+200B-U+200F), word joiner and the invisible operators
+  // (U+2060-U+2064, U+206A-U+206F), Hangul fillers, variation selectors, interlinear annotation marks, the
+  // object replacement character, and Unicode "tag" characters (U+E0000-U+E01EF, as surrogate pairs).
+  var INVISIBLE_CLASS = "\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180B-\u180E\u200B-\u200F\u2060-\u2064\u206A-\u206F\u3164\uFE00-\uFE0F\uFFA0\uFFF9-\uFFFC";
+  var INVISIBLE_PAIR = "\uDB40[\uDC00-\uDDEF]";
+  var BAD_SINGLE = new RegExp("[\u0000-\u001F\u007F\u2028\u2029\u202A-\u202E\u2066-\u2069\uFEFF\uFFFE\uFFFF" + INVISIBLE_CLASS + "]|" + INVISIBLE_PAIR);
+  var BAD_MULTI = new RegExp("[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u2028\u2029\u202A-\u202E\u2066-\u2069\uFEFF\uFFFE\uFFFF" + INVISIBLE_CLASS + "]|" + INVISIBLE_PAIR);
 
   function isObj(v) { return v !== null && typeof v === "object" && !Array.isArray(v); }
   function hasOwn(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+  // A lookup table keyed by text an author controls ("constructor", "__proto__", "toString"): no prototype at all,
+  // so no such word can collide with an inherited name.
+  function dict() { return Object.create(null); }
   function num(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
 
   // Bytes of a string as UTF-8 (TextEncoder is not in every sandbox this file runs in).
@@ -328,7 +357,7 @@
     if (t.length < 1) { errors.push(err(path, "empty", label + " is empty.")); return null; }
     if (t.length > o.max) { errors.push(err(path, "too-long", label + " is longer than " + num(o.max) + " characters (it has " + num(t.length) + ").")); return null; }
     if ((o.multiline ? BAD_MULTI : BAD_SINGLE).test(value) || hasLoneSurrogate(value)) {
-      errors.push(err(path, "bad-characters", label + " has a hidden or unusual control character" + (o.multiline ? "" : " (a line break or tab)") + ". Retype it as plain text."));
+      errors.push(err(path, "bad-characters", label + " has a hidden or unusual character (a control code, a zero-width or text-direction mark" + (o.multiline ? "" : ", or a line break or tab") + "). Retype it as plain text."));
       return null;
     }
     return t;
@@ -371,7 +400,7 @@
       if (!Array.isArray(rt)) errors.push(err("reciteTitles", "wrong-type", "The list of suggested titles must be a list of short titles."));
       else if (rt.length > LIMITS.reciteTitles) errors.push(err("reciteTitles", "too-many", "The list of suggested titles has " + rt.length + " entries; the most allowed is " + LIMITS.reciteTitles + "."));
       else {
-        var seenT = {};
+        var seenT = dict();
         rt.forEach(function (t, i) {
           var tt = checkText(errors, "reciteTitles[" + i + "]", "Suggested title " + (i + 1), t, { max: LIMITS.reciteTitle });
           if (tt) { var lk = tt.toLowerCase(); if (seenT[lk]) errors.push(err("reciteTitles[" + i + "]", "duplicate", "Suggested title " + (i + 1) + " repeats an earlier one (\"" + tt + "\").")); seenT[lk] = true; }
@@ -384,7 +413,7 @@
     else if (cards.length < 1) errors.push(err("cards", "empty", "The deck has no cards."));
     else if (cards.length > LIMITS.cards) errors.push(err("cards", "too-many", "The deck has " + num(cards.length) + " cards; the most allowed is " + LIMITS.cards + ". Split it into two decks."));
     else {
-      var ids = {}, qs = {}, cats = {}, catCount = 0;
+      var ids = dict(), qs = dict(), cats = dict(), catCount = 0;
       for (var i = 0; i < cards.length; i++) {
         if (full()) { cut = true; break; }
         var c = cards[i], base = "cards[" + i + "]", lab = cardLabel(i, c);
@@ -393,7 +422,8 @@
         checkSlug(errors, base + ".id", lab + ": the card id", c.id, 1, LIMITS.cardIdMax);
         if (typeof c.id === "string") { if (ids[c.id]) errors.push(err(base + ".id", "duplicate", lab + ": the card id \"" + c.id + "\" is used by an earlier card too.")); ids[c.id] = true; }
         var cat = checkText(errors, base + ".category", lab + ": the category", c.category, { max: LIMITS.category });
-        if (cat && !cats[cat.toLowerCase()]) { cats[cat.toLowerCase()] = true; catCount++; }
+        // Counted exactly as typed (after trimming): Board Drill lists "Local SOP" and "local sop" as two categories, so the cap counts two.
+        if (cat && !cats[cat]) { cats[cat] = true; catCount++; }
         var q = checkText(errors, base + ".q", lab + ": the question", c.q, { max: LIMITS.question });
         if (q) { var qk = q.toLowerCase().replace(/\s+/g, " "); if (qs[qk]) errors.push(err(base + ".q", "duplicate", lab + ": the question is the same as an earlier card's.")); qs[qk] = true; }
         checkText(errors, base + ".a", lab + ": the answer", c.a, { max: LIMITS.answer, multiline: true });
@@ -402,13 +432,31 @@
           else if (c.keyPoints.length > LIMITS.keyPoints) errors.push(err(base + ".keyPoints", "too-many", lab + ": has " + c.keyPoints.length + " key points; the most allowed is " + LIMITS.keyPoints + "."));
           else c.keyPoints.forEach(function (k, j) { checkText(errors, base + ".keyPoints[" + j + "]", lab + ": key point " + (j + 1), k, { max: LIMITS.keyPoint }); });
         }
-        if (hasOwn(c, "source")) checkText(errors, base + ".source", lab + ": the source", c.source, { max: LIMITS.source });
+        if (hasOwn(c, "source")) {
+          var st = checkText(errors, base + ".source", lab + ": the source", c.source, { max: LIMITS.source });
+          // The saved row keeps at most LIMITS.sourceEntries entries per card (validateRow), so a source that
+          // would split into more is refused HERE, in plain words, instead of being saved and then vanishing at the next start.
+          if (st !== null) {
+            var pieces = parseSource(st).entries.length;
+            if (pieces > LIMITS.sourceEntries) errors.push(err(base + ".source", "too-many-sources", lab + ": the source lists " + pieces + " separate references; the most GUIDON keeps on one card is " + LIMITS.sourceEntries + ". Shorten it to the ones that matter."));
+          }
+        }
       }
       if (catCount > LIMITS.categories) errors.push(err("cards", "too-many-categories", "The deck uses " + catCount + " different categories; the most allowed is " + LIMITS.categories + "."));
     }
     var size = 0;
     try { size = utf8Bytes(JSON.stringify(pack)); } catch (e) { size = 0; }
     if (size > LIMITS.bytes) errors.push(err("", "too-big", "The deck is " + num(Math.round(size / 1024)) + " KB; the most allowed is " + (LIMITS.bytes / 1024) + " KB."));
+    // The very last rule, and the one that makes the two checks agree: build the row this deck would be saved as
+    // and hold it to the row's own size cap (validateRow does the same to whatever is already on a device).
+    if (errors.length === 0) {
+      try {
+        var rowSize = utf8Bytes(JSON.stringify(toDeck(pack, { importedAt: "2000-01-01T00:00:00.000Z" })));
+        if (rowSize > LIMITS.rowBytes) errors.push(err("", "too-big", "Once saved on the device the deck would be " + num(Math.round(rowSize / 1024)) + " KB; the most GUIDON keeps is " + (LIMITS.rowBytes / 1024) + " KB. Split it into two decks."));
+      } catch (e) {
+        errors.push(err("", "not-a-deck", "This deck could not be read all the way through. Check it and try again."));
+      }
+    }
     return { ok: errors.length === 0, errors: errors.slice(0, MAX_ERRORS), truncated: cut || errors.length > MAX_ERRORS };
   }
 
@@ -432,9 +480,8 @@
   var RANK_NAME_RE = new RegExp("(?:^|[\\s,;(])(?:" + RANKS + ")\\.?[ \\t]+([A-Z][A-Za-z'\u2019-]{1,})", "g");
   var RANK_WORDS = /^(?:Private|Specialist|Corporal|Sergeant|Staff|First|Class|Lieutenant|Captain|Major|Colonel|General|Command|Warrant|Officer|Chief|Master|Second|Brigadier|Cadet|Candidate|Academy|Course|Board|Promotable|Leader|Leaders|NCO|NCOs|Soldier|Soldiers|Promotion|Program|Rank|Ranks|Grade|Pay|Insignia|Board)$/;
   var LAST_FIRST_RE = /^[ \t]*(?:[-*\u2022\d.)]+[ \t]+)?[A-Z][A-Za-z'\u2019-]+,[ \t]+[A-Z][a-z]+(?:[ \t]+[A-Z]\.?)?[ \t]*$/;
-  // A short, honest check for a list of people. It is not a name detector and it does not
-  // replace the person authoring the deck.
-  function rosterLike(text) {
+  // How many lines of `text` look like a person: a rank then a capitalised word, or "Surname, Given".
+  function rosterCounts(text) {
     var lines = String(text).split(/\r\n|\r|\n/);
     var rankLines = 0, lastFirst = 0, pairs = 0, m;
     lines.forEach(function (ln) {
@@ -444,28 +491,90 @@
       if (hit) { rankLines++; pairs += hit; }
       if (LAST_FIRST_RE.test(ln)) lastFirst++;
     });
-    return rankLines >= 3 || pairs >= 4 || lastFirst >= 3;
+    return { rankLines: rankLines, pairs: pairs, lastFirst: lastFirst };
+  }
+  // A short, honest check for a list of people. It is not a name detector and it does not
+  // replace the person authoring the deck. This is the bar for ONE piece of text (an answer, or one
+  // card's key points read together): three lines of it, or four names in it.
+  function rosterLike(text) {
+    var c = rosterCounts(text);
+    return c.rankLines >= 3 || c.pairs >= 4 || c.lastFirst >= 3;
+  }
+  // The same idea across the WHOLE deck: a roster spread one name to a card. Higher on purpose - a unit-history deck may
+  // honestly name a few commanders in its short answers - so it takes six such lines before the deck counts as a list.
+  var WIDE_LINES = 6, SHORT_LINE = 60;
+  function rosterLikeWide(text) {
+    var c = rosterCounts(text);
+    return c.rankLines >= WIDE_LINES || c.lastFirst >= WIDE_LINES;
   }
 
-  function fieldList(pack) {
-    var out = [];
-    function add(where, text, kind) { if (typeof text === "string" && text) out.push({ where: where, text: text, kind: kind || "text" }); }
+  // What the check reads is a FOLDED copy of each field, never the field itself: compatibility forms (fullwidth digits and
+  // letters, mathematical alphabets, ligatures) fold to plain ones, dash variants become "-", combining marks are dropped and
+  // the most common look-alike letters from other alphabets (Cyrillic and Greek capitals that print like Latin ones) become
+  // the Latin letter. It is looked at and thrown away: what is stored and shown is always what was typed. Invisible characters
+  // never get this far (the schema refuses them). NOT covered: a look-alike letter that is not in the table below.
+  var COMBINING_RE = /[\u0300-\u036F\u1AB0-\u1AFF\u1DC0-\u1DFF\u20D0-\u20FF\uFE20-\uFE2F]/g;
+  var DASHES_RE = /[\u2010-\u2015\u2212\uFE58\uFE63]/g;
+  var LOOKALIKE = {
+    "\u0410": "A", "\u0412": "B", "\u0415": "E", "\u041A": "K", "\u041C": "M", "\u041D": "H", "\u041E": "O", "\u0420": "P", "\u0421": "C", "\u0422": "T", "\u0425": "X", "\u0423": "Y", "\u0405": "S", "\u0406": "I", "\u0408": "J",
+    "\u0430": "a", "\u0435": "e", "\u043E": "o", "\u0440": "p", "\u0441": "c", "\u0445": "x", "\u0443": "y", "\u0455": "s", "\u0456": "i", "\u0458": "j", "\u04BB": "h", "\u0501": "d",
+    "\u0391": "A", "\u0392": "B", "\u0395": "E", "\u0396": "Z", "\u0397": "H", "\u0399": "I", "\u039A": "K", "\u039C": "M", "\u039D": "N", "\u039F": "O", "\u03A1": "P", "\u03A4": "T", "\u03A5": "Y", "\u03A7": "X",
+    "\u03BF": "o", "\u03BD": "v", "\u03B9": "i"
+  };
+  var LOOKALIKE_RE = /[\u0405\u0406\u0408\u0410\u0412\u0415\u041A\u041C\u041D\u041E\u0420\u0421\u0422\u0423\u0425\u0430\u0435\u043E\u0440\u0441\u0443\u0445\u0455\u0456\u0458\u04BB\u0501\u0391\u0392\u0395\u0396\u0397\u0399\u039A\u039C\u039D\u039F\u03A1\u03A4\u03A5\u03A7\u03BF\u03BD\u03B9]/g;
+  function fold(s) {
+    var t = String(s);
+    // NFKD, not NFKC: letters and their accents are pulled apart first, so a mark laid on a letter cannot glue itself to it and hide it.
+    try { if (typeof t.normalize === "function") t = t.normalize("NFKD"); } catch (e) { /* an engine with no normalize reads the text as typed */ }
+    return t.replace(COMBINING_RE, "").replace(DASHES_RE, "-").replace(LOOKALIKE_RE, function (c) { return LOOKALIKE[c]; });
+  }
+  // Exactly what toDeck() keeps of a text field, so the check on a deck's file and the check on its saved row read the same words.
+  function norm(s) { return String(s).replace(/\r\n?/g, "\n").trim(); }
+
+  // Everything the screen reads, in one place: the single fields, each card's key points read together, the deck's short
+  // lines read together, and the places where one field of a card ends and the next begins (a number cut in two).
+  function screenParts(pack) {
+    var fields = [], blocks = [], wide = [], seams = [];
+    function add(where, text, kind) {
+      if (typeof text !== "string") return null;
+      var t = norm(text);
+      if (!t) return null;
+      var f = { where: where, text: t, kind: kind || "text" };
+      fields.push(f);
+      return f;
+    }
     add("The deck id", pack.id);
     add("The deck name", pack.name);
     add("The unit label", pack.unit);
     add("The deck's version label", pack.packVersion);
-    (pack.reciteTitles || []).forEach(function (t, i) { add("Suggested title " + (i + 1), t); });
-    (pack.cards || []).forEach(function (c, i) {
-      var lab = cardLabel(i, c);
+    (Array.isArray(pack.reciteTitles) ? pack.reciteTitles : []).forEach(function (t, i) { add("Suggested title " + (i + 1), t); });
+    (Array.isArray(pack.cards) ? pack.cards : []).forEach(function (c, i) {
       if (!isObj(c)) return;
+      var lab = cardLabel(i, c), seq = [];
+      function part(name, text, kind) { var f = add(lab + ", " + name, text, kind); if (f) { f.name = name; seq.push(f); } return f; }
       add(lab + ", id", c.id);
-      add(lab + ", category", c.category);
-      add(lab + ", question", c.q, "prose");
-      add(lab + ", answer", c.a, "prose");
-      (c.keyPoints || []).forEach(function (k, j) { add(lab + ", key point " + (j + 1), k, "prose"); });
-      add(lab + ", source", c.source);
+      part("category", c.category);
+      part("question", c.q, "prose");
+      var a = part("answer", c.a, "prose");
+      if (a && a.text.indexOf("\n") === -1 && a.text.length <= SHORT_LINE) wide.push(a.text);
+      var kps = [];
+      (Array.isArray(c.keyPoints) ? c.keyPoints : []).forEach(function (k, j) {
+        var f = part("key point " + (j + 1), k, "prose");
+        if (f) { kps.push(f.text); if (f.text.length <= SHORT_LINE && f.text.indexOf("\n") === -1) wide.push(f.text); }
+      });
+      if (kps.length > 1) blocks.push({ where: lab + ", key points", text: kps.join("\n") });
+      part("source", c.source);
+      // A field that STARTS with a digit or a dash may be the second half of a number begun earlier in the same card: the
+      // field right before it always is tried, and any earlier field that ENDS with a digit or a dash.
+      for (var k = 1; k < seq.length; k++) {
+        if (!/^[0-9\-]/.test(seq[k].text)) continue;
+        for (var m = 0; m < k; m++) {
+          if (m !== k - 1 && !/[0-9\-]$/.test(seq[m].text)) continue;
+          seams.push({ where: lab + ", where the " + seq[m].name + " runs into the " + seq[k].name, a: seq[m].text, b: seq[k].text });
+        }
+      }
     });
-    return out;
+    return { fields: fields, blocks: blocks, wide: wide, seams: seams };
   }
 
   // An excerpt is context around one finding; it must never repeat a whole identifier that belongs to
@@ -476,6 +585,8 @@
       .replace(/\b\d{5,}(\d{4})\b/g, function (m, tail) { return new Array(m.length - 3).join("\u2022") + tail; });
   }
   var MAX_FINDINGS = 50;
+  var SEAM_CODES = ["ssn", "dod-id", "phone"], SEAM_CHARS = 24;
+  function countByCode(findings) { var o = dict(); (findings || []).forEach(function (f) { o[f.code] = (o[f.code] || 0) + 1; }); return o; }
   function screen(pack, opts) {
     opts = opts || {};
     var guard = G.opsecGuard;
@@ -483,16 +594,43 @@
       return { ok: false, unavailable: true, total: 0, findings: [], message: "GUIDON's sensitive-text check is not available, so this deck was not added." };
     }
     var findings = [], total = 0;
+    var gopts = opts.now != null ? { now: opts.now } : undefined;
     function push(f) { total++; if (findings.length < MAX_FINDINGS) findings.push(f); }
-    fieldList(pack).forEach(function (fld) {
-      var r = guard.screen(fld.text, opts.now != null ? { now: opts.now } : undefined);
+    var parts = screenParts(pack || {});
+    parts.fields.forEach(function (fld) {
+      var text = fold(fld.text);
+      var r = guard.screen(text, gopts);
       (r.findings || []).forEach(function (f) {
         push({ where: fld.where, line: f.line, code: f.code, severity: f.severity, looksLike: f.looksLike || "something sensitive", excerpt: maskExcerpt(f.excerpt || "") });
       });
-      if (fld.kind === "prose" && rosterLike(fld.text)) push({ where: fld.where, line: 1, code: "roster-like", severity: "stop", looksLike: "a list of people's names (a roster)", excerpt: "" });
+      if (fld.kind === "prose" && rosterLike(text)) push({ where: fld.where, line: 1, code: "roster-like", severity: "stop", looksLike: "a list of people's names (a roster)", excerpt: "" });
+    });
+    // One card's key points, read together: a list of names is a list whether it sits in one answer or in the key points.
+    parts.blocks.forEach(function (b) {
+      if (rosterLike(fold(b.text))) push({ where: b.where, line: 1, code: "roster-like", severity: "stop", looksLike: "a list of people's names (a roster)", excerpt: "" });
+    });
+    // A roster spread one name to a card: the deck's short answers and key points, read as one list.
+    if (parts.wide.length >= WIDE_LINES && rosterLikeWide(fold(parts.wide.join("\n")))) {
+      push({ where: "The deck's short answers and key points, read together", line: 1, code: "roster-like", severity: "stop", looksLike: "a list of people's names (a roster) spread across several cards", excerpt: "" });
+    }
+    // An identifier cut in two (an SSN ending one field and starting the next): only what the JOIN makes appear counts, so
+    // ordinary numbers that merely sit next to each other never do.
+    parts.seams.forEach(function (s) {
+      var tail = s.a.slice(-SEAM_CHARS), head = s.b.slice(0, SEAM_CHARS);
+      var joined = guard.screen(fold(tail + head), gopts);
+      var jc = countByCode((joined.findings || []).filter(function (f) { return SEAM_CODES.indexOf(f.code) !== -1; }));
+      var codes = Object.keys(jc);
+      if (!codes.length) return;
+      var tc = countByCode(guard.screen(fold(tail), gopts).findings), hc = countByCode(guard.screen(fold(head), gopts).findings);
+      codes.forEach(function (code) {
+        if (jc[code] <= (tc[code] || 0) + (hc[code] || 0)) return;
+        var f = (joined.findings || []).filter(function (x) { return x.code === code; })[0];
+        push({ where: s.where, line: 1, code: code, severity: f.severity, looksLike: f.looksLike || "something sensitive", excerpt: maskExcerpt(f.excerpt || "") });
+      });
     });
     return { ok: total === 0, total: total, findings: findings, truncated: total > findings.length };
   }
+
   function describeFinding(f) {
     return f.where + (f.line > 1 ? ", line " + f.line : "") + ": this looks like " + f.looksLike + (f.excerpt ? " (\u201c" + f.excerpt + "\u201d)" : "") + ".";
   }
@@ -544,7 +682,7 @@
   }
 
   function summarize(pack) {
-    var cats = {}, order = [];
+    var cats = dict(), order = [];
     pack.cards.forEach(function (c) {
       var k = c.category.trim();
       if (!cats[k]) { cats[k] = 0; order.push(k); }
@@ -564,6 +702,9 @@
      the backup restore, Diagnostics and the app's own boot read all use it. */
   function validateRow(row) {
     var errors = [];
+    var bytes = 0;
+    try { bytes = utf8Bytes(JSON.stringify(row)); } catch (e) { return { ok: false, errors: [err("", "not-a-deck", "A saved unit deck must be plain data.")] }; }
+    if (bytes > LIMITS.rowBytes) return { ok: false, errors: [err("", "too-big", "The saved deck is " + num(Math.round(bytes / 1024)) + " KB; the most GUIDON keeps is " + (LIMITS.rowBytes / 1024) + " KB.")] };
     if (!isObj(row)) return { ok: false, errors: [err("", "not-a-deck", "A saved unit deck must be an object.")] };
     unknownKeys(errors, "", row, ROW_KEYS, "The saved deck");
     if (row.schema !== ROW_SCHEMA) errors.push(err("schema", "bad-schema", "The saved deck has an unknown row version."));
@@ -578,7 +719,7 @@
     else row.reciteTitles.forEach(function (t, i) { checkText(errors, "reciteTitles[" + i + "]", "Suggested title " + (i + 1), t, { max: LIMITS.reciteTitle }); });
     if (!Array.isArray(row.cards) || row.cards.length < 1 || row.cards.length > LIMITS.cards) errors.push(err("cards", "wrong-type", "The saved deck's cards are not a valid list."));
     else {
-      var ids = {};
+      var ids = dict();
       for (var i = 0; i < row.cards.length && errors.length < MAX_ERRORS; i++) {
         var c = row.cards[i], base = "cards[" + i + "]", lab = cardLabel(i, c);
         if (!isObj(c)) { errors.push(err(base, "wrong-type", lab + " must be an object.")); continue; }
@@ -593,10 +734,25 @@
         if (hasOwn(c, "source")) validateSourceEntries(errors, base + ".source", lab, c.source);
       }
     }
+    // A structurally sound row still goes through the sensitive-text screen: a row that came in with a restored backup, or
+    // sat on the device, never went past the import check, and every study tool trusts what is in it.
+    if (errors.length === 0) {
+      var scr = screenRow(row);
+      if (!scr.ok) errors.push(err("", "sensitive-text", scr.unavailable ? "A saved unit deck was left out because GUIDON's sensitive-text check is not available." : "A saved unit deck was left out because its text looks like something that does not belong in a study deck. " + describeFinding(scr.findings[0])));
+    }
     return { ok: errors.length === 0, errors: errors.slice(0, MAX_ERRORS) };
   }
+  // The screen, run on a saved row: the row's words in the shape screen() reads (a citation list rendered back to the text it was made from).
+  function screenRow(row, opts) {
+    return screen({
+      id: row.id, name: row.name, unit: row.unit, packVersion: row.packVersion, reciteTitles: row.reciteTitles,
+      cards: (row.cards || []).map(function (c) {
+        return { id: c.id, category: c.category, q: c.q, a: c.a, keyPoints: c.keyPoints, source: Array.isArray(c.source) ? renderCitation(c.source) : undefined };
+      })
+    }, opts);
+  }
   function validateSourceEntries(errors, path, lab, src) {
-    if (!Array.isArray(src) || src.length < 1 || src.length > 8) { errors.push(err(path, "wrong-type", lab + ": the source is not a valid citation list.")); return; }
+    if (!Array.isArray(src) || src.length < 1 || src.length > LIMITS.sourceEntries) { errors.push(err(path, "wrong-type", lab + ": the source is not a valid citation list.")); return; }
     src.forEach(function (e, i) {
       var p = path + "[" + i + "]";
       if (!isObj(e)) { errors.push(err(p, "wrong-type", lab + ": a source entry must be an object.")); return; }
@@ -619,7 +775,7 @@
     LIMITS: LIMITS, TOP_KEYS: TOP_KEYS.slice(), CARD_KEYS: CARD_KEYS.slice(),
     validate: validate, parse: parse, screen: screen, describeFinding: describeFinding,
     summarize: summarize, toDeck: toDeck, cardsOf: cardsOf,
-    validateRow: validateRow, validRow: validRow, rowKey: rowKey,
+    validateRow: validateRow, validRow: validRow, screenRow: screenRow, rowKey: rowKey,
     unitCardId: unitCardId, isUnitId: isUnitId,
     cite: cite, parseSource: parseSource, renderCitation: renderCitation, regulationsOfEntries: regulationsOfEntries,
     rosterLike: rosterLike, utf8Bytes: utf8Bytes

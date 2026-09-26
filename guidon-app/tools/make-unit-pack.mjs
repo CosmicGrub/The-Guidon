@@ -133,7 +133,18 @@ function fromCsv(text) {
   const cols = header.map((h) => COLUMN_ALIASES[h]);
   header.forEach((h, i) => { if (!cols[i]) fail(1, `the CSV has a column called "${rows[0][i].trim()}" that GUIDON does not use. Columns: category, question, answer, key points, source, id.`); });
   for (const need of ["category", "q", "a"]) if (!cols.includes(need)) fail(1, `the CSV needs a "${need === "q" ? "question" : need === "a" ? "answer" : need}" column.`);
-  const cards = rows.slice(1).map((r) => {
+  // Every row must have exactly as many cells as the header. A comma inside a cell that is not wrapped in quotes splits it in two
+  // ("At 0630, every day" becomes "At 0630" and "every day"), and reading on would quietly drop the words after the comma.
+  const body = rows.slice(1).map((r, i) => ({ r, n: i + 2 })).filter(({ r }) => !(r.length === 1 && !r[0].trim()));
+  for (const { r, n } of body) {
+    if (r.length === header.length) continue;
+    const start = r.join(",").replace(/\s+/g, " ").slice(0, 60);
+    fail(1, `spreadsheet row ${n} (the header is row 1) has ${r.length} cell${r.length === 1 ? "" : "s"} but the header has ${header.length}. It starts: "${start}". ` +
+      (r.length > header.length
+        ? `A comma inside a cell must have quotes around the whole cell, like "At 0630, every day", or it splits the cell in two and the words after it are lost.`
+        : `Add the missing commas at the end of the row (an empty cell is fine).`) + " Nothing was written.");
+  }
+  const cards = body.map(({ r }) => {
     const c = {};
     cols.forEach((name, i) => {
       const v = (r[i] || "").trim();

@@ -1302,6 +1302,15 @@ html[data-motion="cinematic"] { --qz-flip-dur: .95s; --qz-flip-ease: cubic-bezie
   border: 1px solid color-mix(in srgb, var(--violet, #a78bfa) 55%, var(--line-2));
   background: color-mix(in srgb, var(--violet, #a78bfa) 12%, transparent);
 }
+/* Settings -> Unit decks (src/app-modules/unit-decks.js): the choices in the Remove question, the paste box and the file
+   picker are sized for a thumb (44px tall) and a phone keyboard (16px text does not make iOS zoom the page). */
+.unit-deck-choice { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 2px 0; padding: 4px 0; cursor: pointer;
+  font-family: inherit; font-size: 1rem; letter-spacing: normal; text-transform: none; color: var(--text); }
+.unit-deck-choice input[type="radio"] { flex: 0 0 auto; width: 22px; height: 22px; margin: 0; }
+.unit-deck-paste, .unit-deck-file { font-size: 16px; }
+.unit-deck-file { min-height: 44px; }
+fieldset.unit-deck-history { border: 0; margin: 8px 0 0; padding: 0; min-width: 0; }
+fieldset.unit-deck-history > legend { font-weight: 600; padding: 0; margin-bottom: 4px; }
 .qz-star-btn {
   position: absolute; top: 10px; right: 10px; z-index: 2;
   width: 36px; height: 36px; display: grid; place-items: center;
@@ -11523,7 +11532,8 @@ window.G = window.G || {};
       const cat = catFilter || "All";
       const diff = diffSel.value || "All";
       let pool = cat === "All" ? all : all.filter((q) => q.category === cat);
-      if (diff !== "All") pool = pool.filter((q) => G.board.normDifficulty(q.difficulty) === diff);
+      // A unit deck is not levelled by GUIDON (its cards have no difficulty), so a study level never hides it - as with Rapid Fire's rank band.
+      if (diff !== "All") pool = pool.filter((q) => q.unitDeck || G.board.normDifficulty(q.difficulty) === diff);
       if (regFilter !== "All") pool = pool.filter((q) => (regIndex.get(q.id) || []).includes(regFilter));
       if (pillarFilter === OTHER_PILLAR) pool = pool.filter((q) => !q.pillar);
       else if (pillarFilter !== "All") pool = pool.filter((q) => q.pillar === pillarFilter);
@@ -11815,7 +11825,10 @@ window.G = window.G || {};
       // entry, so the cross-link silently never appeared. Split on every
       // separator actually seen in this data and try each resulting
       // candidate in order until one has a real match.
-      const pubRef = sourceLine.split(/[,/;(]/).map((s) => s.trim()).filter(Boolean).find((c) => store.doctrine(c).length) || "";
+      // A unit card's source is the unit's own wording ("Training schedule", "Unit SOP"), which a substring search would tie to
+      // unrelated doctrine, so a unit card offers a link only for a real publication its source names (q.regs, the same rule as the
+      // regulation chips).
+      const pubRef = (q.unitDeck ? (q.regs || []) : sourceLine.split(/[,/;(]/).map((s) => s.trim()).filter(Boolean)).find((c) => store.doctrine(c).length) || "";
       if (pubRef && store.doctrine(pubRef).length) {
         crossLinks.push(el("button.btn.ghost.sm", { gi: "book", giSize: 13, text: "Related doctrine (" + pubRef + ") →",
           onclick: (e) => { e.stopPropagation(); if (G.views) G.views._doctrineSeed = pubRef; location.hash = "#/doctrine"; } }));
@@ -13317,7 +13330,7 @@ window.G = window.G || {};
       const cat = catSel.value || "All";
       const _lvl = (typeof diffSel !== "undefined" && diffSel) ? diffSel.value : "all";
       const best = await db.getSetting(quizBestKey(cat, _lvl), null);
-      const _byLvl = (q) => _lvl === "all" || G.board.normDifficulty(q.difficulty) === _lvl;
+      const _byLvl = (q) => _lvl === "all" || q.unitDeck || G.board.normDifficulty(q.difficulty) === _lvl;
       const n = (cat === "All" ? all : all.filter((q) => q.category === cat)).filter(_byLvl).length;
       const lvlSuffix = _lvl !== "all" ? " · " + _lvl : "";
       bestChip.textContent = (best != null ? "Best score for " + cat + lvlSuffix + ": " + best + "%" : "No quiz score yet for " + cat + lvlSuffix) + "  ·  " + n + " questions";
@@ -13330,7 +13343,7 @@ window.G = window.G || {};
     function buildSession() {
       const cat = catSel.value || "All";
       const _lvl = (typeof diffSel !== "undefined" && diffSel) ? diffSel.value : "all";
-      const _byLvl = (q) => _lvl === "all" || G.board.normDifficulty(q.difficulty) === _lvl;
+      const _byLvl = (q) => _lvl === "all" || q.unitDeck || G.board.normDifficulty(q.difficulty) === _lvl;
       const pool = (cat === "All" ? all : all.filter((q) => q.category === cat)).filter(_byLvl);
       if (pool.length < 2) {
         util.clear(body);
@@ -16788,6 +16801,36 @@ window.G = window.G || {};
     // for Army doctrine. null for every shipped card. Drawn as a text node.
     unitTag(q) {
       return q && q.unitDeck ? el("div.unit-deck-tag", { "data-unit-deck-tag": q.unitDeck.id, text: "Unit deck: " + q.unitDeck.name }) : null;
+    },
+    // What studying a unit deck's cards leaves behind OUTSIDE their own review rows (srs:unit:...) - called by the unit-deck
+    // module when a Soldier resets or removes a deck and chooses to delete progress:
+    //   - "board:reps:<day>" (5-Minute Board Reps) keeps a list of card ids missed that day, which can name a unit card;
+    //   - Rapid Fire's saved custom decks ("rapidFire:savedDecks") can list a unit deck's categories ("Unit: <topic>"). These are
+    //     only touched when `categories` is given, i.e. when the deck itself is going away.
+    // Quiz best scores are deleted by the module itself. Never touches a shipped card's id or a shipped category.
+    async forgetUnitDeckTraces(deckId, categories) {
+      const prefix = "unit:" + deckId + ":";
+      const rows = await G.db.all("kv");
+      for (const row of rows || []) {
+        if (!row || typeof row.k !== "string" || row.k.indexOf("board:reps:") !== 0) continue;
+        const v = row.v;
+        if (!v || typeof v !== "object" || !Array.isArray(v.missed)) continue;
+        const kept = v.missed.filter((id) => !(typeof id === "string" && id.indexOf(prefix) === 0));
+        if (kept.length !== v.missed.length) await G.db.put("kv", { k: row.k, v: Object.assign({}, v, { missed: kept }) });
+      }
+      const gone = new Set((categories || []).map((c) => "Unit: " + c));
+      if (!gone.size) return;
+      const saved = await G.db.getSetting("rapidFire:savedDecks", []);
+      if (!Array.isArray(saved)) return;
+      let changed = false;
+      const next = [];
+      for (const d of saved) {
+        if (!d || !Array.isArray(d.categories)) { next.push(d); continue; }
+        const keep = d.categories.filter((c) => !gone.has(c));
+        if (keep.length === d.categories.length) next.push(d);
+        else { changed = true; if (keep.length) next.push(Object.assign({}, d, { categories: keep })); }
+      }
+      if (changed) await G.db.setSetting("rapidFire:savedDecks", next);
     },
     // Heading for a card-back answer that is study-guide wording rather than
     // a quotation (a card marked verbatim:false). "By the Book (verbatim
@@ -30768,13 +30811,28 @@ window.G = window.G || {};
     // sensitive-text screen refused anything that looked like it did). Board Drill, Quiz, Rapid
     // Fire and search read every card, key point and citation off it, so the WHOLE row is held
     // to the same closed schema and the same caps an import is - one definition,
-    // G.unitPack.validRow - and the key must be exactly unit-deck:<its own id>. With that module
-    // absent the row is refused, never trusted. (The second argument is the row's key.)
+    // G.unitPack.validRow (which also repeats the size cap and the sensitive-text screen an import applies, so a
+    // hand-built backup cannot carry a deck the import would have refused) - and the key must be exactly
+    // unit-deck:<its own id>. With that module absent the row is refused, never trusted. (The second argument is the row's key.)
     { prefix: "unit-deck:", test: function (v, key) {
       if (!G.unitPack || typeof G.unitPack.validRow !== "function") return false;
       return G.unitPack.validRow(v) && (key == null || key === "unit-deck:" + v.id);
     } },
   ];
+  // A device keeps at most G.unitPack.LIMITS.decks unit decks. A restore is per row, so this remembers how many the device holds
+  // and how many the restore has let in: a deck already on the device may be replaced, a new one is left out once the device is full.
+  // (The app's own start-up applies the same limit again to whatever rows are on the device.)
+  function unitDeckRestoreGate() {
+    var limit = (G.unitPack && G.unitPack.LIMITS && G.unitPack.LIMITS.decks) || 10;
+    var have = Object.create(null), n = 0;
+    try { (G.unitDecks && typeof G.unitDecks.list === "function" ? G.unitDecks.list() : []).forEach(function (d) { have["unit-deck:" + d.id] = true; n++; }); } catch (e) { /* no decks known: the start-up limit still applies */ }
+    return function overTheLimit(key) {
+      if (typeof key !== "string" || key.indexOf("unit-deck:") !== 0 || have[key]) return false;
+      if (n >= limit) return true;
+      have[key] = true; n++;
+      return false;
+    };
+  }
   function prefixValidatorFor(key) {
     for (var pi = 0; pi < KV_PREFIX_VALIDATORS.length; pi++) {
       if (key.indexOf(KV_PREFIX_VALIDATORS[pi].prefix) === 0) return KV_PREFIX_VALIDATORS[pi].test;
@@ -31030,6 +31088,7 @@ window.G = window.G || {};
     // build a whole unused, unverifiable destructive-mode feature with no
     // UI anywhere that could ever set merge:false to exercise it.
     var failedStores = [];
+    var unitOver = unitDeckRestoreGate();
 
     // kv entries are {k, v} (forms:saved is the one exception - see above).
     // Validation still runs per row below; only the WRITE moves out of the
@@ -31064,6 +31123,10 @@ window.G = window.G || {};
         } else if (!validateKvRow(row)) {
           skipped.kv++; skippedKeys.push(row.k);
           if (G.selfheal) G.selfheal.log("kv-reject", row.k, "row failed validation during backup import, discarded");
+          continue;
+        } else if (unitOver(row.k)) {
+          skipped.kv++; skippedKeys.push(row.k);
+          if (G.selfheal) G.selfheal.log("kv-reject", row.k, "a unit deck past the limit of " + G.unitPack.LIMITS.decks + " decks on a device, left out of the restore");
           continue;
         }
         // Preserve the row's OWN original shape (not a reconstructed
@@ -31161,6 +31224,7 @@ window.G = window.G || {};
         var hasProfileRow = !!(obj && obj.stores && Array.isArray(obj.stores.kv) &&
           obj.stores.kv.some(function (row) { return row && row.k === "guidon:profile:v1"; }));
         var kvRejected = [];
+        var unitOverPreview = unitDeckRestoreGate();
         // Codex review on PR #193: exportAll({includePrivate:true}) made a
         // backup that carries the roster and/or a Risk Worksheet reachable -
         // importing one used to fold those rows into the same generic "N
@@ -31180,6 +31244,8 @@ window.G = window.G || {};
               var pvOk = pv && typeof pv === "object" && typeof pv.onboardingComplete === "boolean" && typeof pv.mode === "string";
               if (!pvOk) kvRejected.push(row.k);
             } else if (!validateKvRow(row)) {
+              kvRejected.push(row.k);
+            } else if (unitOverPreview(row.k)) {
               kvRejected.push(row.k);
             }
             if (isPrivateKey(row.k) && privateKeyHasContent(row.v)) privateKeysPresent.push(row.k);

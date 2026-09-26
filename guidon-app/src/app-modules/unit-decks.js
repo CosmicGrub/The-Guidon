@@ -8,10 +8,13 @@
    WHERE A DECK LIVES: one row of the app's "kv" store per deck, under
    "unit-deck:<deckId>" - only on this device. It is the Soldier's own study
    material, exactly like their My unit texts: it travels in a backup they
-   choose to export and comes back on restore, where every row is checked again
-   (KV_PREFIX_VALIDATORS in src/index.html calls G.unitPack.validRow). It never
-   enters the shipped bank, the bank fingerprint, the content manifest, the
-   handheld export, a Study Room or any network request.
+   choose to export (every export carries it - there is no opt-in, unlike the
+   roster) and comes back on restore, where every row is checked again
+   (KV_PREFIX_VALIDATORS in src/index.html calls G.unitPack.validRow, which is
+   the schema, the size cap AND the sensitive-text screen, and the same check
+   runs on every row load() reads at start-up, which also keeps at most 10
+   decks). It never enters the shipped bank, the bank fingerprint, the content
+   manifest, the handheld export, a Study Room or any network request.
 
    HOW STUDY TOOLS SEE IT: they do NOT get unit cards from store.boardQuestions()
    (that stays exactly the shipped bank, so nothing that reads it - Study Rooms,
@@ -38,8 +41,14 @@
   // tools/lint-storage-contract.mjs find the keys this module writes and deletes by reading them.
   function deckKey(id) { return "unit-deck:" + id; }
   function srsKey(id) { return "srs:" + id; }
+  // Quiz's best-score row for a category: "boardQuiz:best:<category>" for all levels, "...:<level>" for one level.
+  var QUIZ_LEVELS = ["beginner", "intermediate", "expert"];
+  function quizBestKey(cat, lvl) { return "boardQuiz:best:" + P.CATEGORY_PREFIX + cat + (lvl ? ":" + lvl : ""); }
 
-  var decks = {};          // id -> a row that passed G.unitPack.validRow
+  // Every table below is keyed by text an author controls (a deck id, a category, a title), so none has a prototype:
+  // "constructor" and "__proto__" are ordinary names here, not inherited ones.
+  function dict() { return Object.create(null); }
+  var decks = dict();      // id -> a row that passed G.unitPack.validRow
   var rev = 0;
   var cardMemo = null;     // { rev, list }
 
@@ -57,15 +66,27 @@
   // Called once at start-up (store.init) so the study tools have the decks the moment they draw.
   // A row that fails the check (a hand edit, a damaged backup, a row under the wrong key) is left
   // out and logged - never guessed at, never allowed to crash Board Drill.
+  function reject(key, why) { if (G.selfheal && typeof G.selfheal.log === "function") G.selfheal.log("kv-reject", key, why); }
   function load() {
     if (!G.db || typeof G.db.all !== "function") return Promise.resolve();
     return G.db.all("kv").then(function (rows) {
-      var next = {};
+      var sound = [];
       (rows || []).forEach(function (row) {
         if (!row || typeof row.k !== "string" || row.k.indexOf("unit-deck:") !== 0) return;
         var id = row.k.slice("unit-deck:".length);
-        if (P.validRow(row.v) && row.v.id === id) next[id] = row.v;
-        else if (G.selfheal && typeof G.selfheal.log === "function") G.selfheal.log("kv-reject", row.k, "a saved unit deck did not pass its check and was left out");
+        var chk = P.validateRow(row.v);
+        if (chk.ok && row.v.id === id) { sound.push({ k: row.k, id: id, v: row.v }); return; }
+        var code = chk.errors && chk.errors[0] ? chk.errors[0].code : "";
+        reject(row.k, code === "sensitive-text" ? "a saved unit deck holds text the sensitive-text check refuses, so it was left out"
+          : code === "too-big" ? "a saved unit deck is larger than a unit deck may be and was left out"
+          : "a saved unit deck did not pass its check and was left out");
+      });
+      // No device keeps more than LIMITS.decks: the oldest are kept and the rest left out (a restored backup can carry more).
+      sound.sort(function (a, b) { return a.v.importedAt < b.v.importedAt ? -1 : a.v.importedAt > b.v.importedAt ? 1 : (a.id < b.id ? -1 : 1); });
+      var next = dict();
+      sound.forEach(function (c, i) {
+        if (i < P.LIMITS.decks) next[c.id] = c.v;
+        else reject(c.k, "a saved unit deck is past the limit of " + P.LIMITS.decks + " decks on a device and was left out");
       });
       decks = next;
       bump();
@@ -74,7 +95,7 @@
 
   function list() {
     return sortedRows().map(function (r) {
-      var cats = {};
+      var cats = dict();
       r.cards.forEach(function (c) { cats[c.category] = true; });
       return { id: r.id, name: r.name, unit: r.unit, packVersion: r.packVersion, packDate: r.packDate, importedAt: r.importedAt, enabled: r.enabled,
         cardCount: r.cards.length, categoryCount: Object.keys(cats).length };
@@ -91,7 +112,7 @@
     return out;
   }
   function suggestedTitles() {
-    var seen = {}, out = [];
+    var seen = dict(), out = [];
     sortedRows().forEach(function (r) {
       if (!r.enabled) return;
       r.reciteTitles.forEach(function (t) {
@@ -157,28 +178,50 @@
     }, function () { return { ok: false }; });
   }
 
-  // Deletes the review schedule kept for each of a deck's cards (Board Drill's "srs:" rows).
-  function clearHistory(row) {
-    return Promise.all(row.cards.map(function (c) { return G.db.del("kv", srsKey(P.unitCardId(row.id, c.id))); })).then(function () { return row.cards.length; });
+  // The categories of `row` that no OTHER deck also has: a Quiz score belongs to a category NAME, so a name two decks share
+  // is left alone (it still means something to the deck that stays).
+  function ownCategories(row, others) {
+    var theirs = dict(), mine = dict(), out = [];
+    (others || []).forEach(function (r) { r.cards.forEach(function (c) { theirs[c.category] = true; }); });
+    row.cards.forEach(function (c) { if (!theirs[c.category] && !mine[c.category]) { mine[c.category] = true; out.push(c.category); } });
+    return out;
   }
+  // Deletes what studying a deck's cards left on the device: the review schedule of each card (Board Drill's "srs:" rows), the
+  // Quiz best scores under the deck's category names, and (core's own helper) the deck's card ids in today's-reps lists and, when
+  // the deck itself is going, its categories in Rapid Fire's saved custom decks. Nothing here touches a shipped card's rows.
+  function clearHistory(row, others, deckIsGoing) {
+    var cats = ownCategories(row, others);
+    var dels = row.cards.map(function (c) { return G.db.del("kv", srsKey(P.unitCardId(row.id, c.id))); });
+    cats.forEach(function (cat) {
+      dels.push(G.db.del("kv", quizBestKey(cat)));
+      QUIZ_LEVELS.forEach(function (lvl) { dels.push(G.db.del("kv", quizBestKey(cat, lvl))); });
+    });
+    return Promise.all(dels).then(function () {
+      if (G.board && typeof G.board.forgetUnitDeckTraces === "function") return G.board.forgetUnitDeckTraces(row.id, deckIsGoing ? cats : []);
+    }).then(function () { return row.cards.length; });
+  }
+  function othersThan(id) { return sortedRows().filter(function (r) { return r.id !== id; }); }
   // deleteHistory: false keeps the review progress (it comes back if the deck is added again).
+  // With deleteHistory the progress goes FIRST and the deck row last: if clearing fails the deck is still listed and nothing is
+  // half-removed, and if the process stops in between, what is left is a deck with no progress (the same as "Reset progress"),
+  // never progress on cards of a deck that is no longer there.
   function remove(id, opts) {
     opts = opts || {};
     var cur = decks[id];
     if (!cur) return Promise.resolve({ ok: false });
     var row = copyRow(cur);
-    return Promise.resolve().then(function () { return G.db.del("kv", deckKey(id)); }).then(function () {
-      delete decks[id];
-      bump();
-      return opts.deleteHistory ? clearHistory(row) : 0;
-    }).then(function (n) {
-      return { ok: true, historyDeleted: !!opts.deleteHistory, cards: row.cards.length, cleared: n };
-    }, function () { return { ok: false }; });
+    return Promise.resolve().then(function () { return opts.deleteHistory ? clearHistory(row, othersThan(id), true) : 0; }).then(function (n) {
+      return G.db.del("kv", deckKey(id)).then(function () {
+        delete decks[id];
+        bump();
+        return { ok: true, historyDeleted: !!opts.deleteHistory, cards: row.cards.length, cleared: n };
+      });
+    }).then(null, function () { return { ok: false }; });
   }
   function resetHistory(id) {
     var cur = decks[id];
     if (!cur) return Promise.resolve({ ok: false });
-    return clearHistory(copyRow(cur)).then(function (n) { return { ok: true, cleared: n }; }, function () { return { ok: false }; });
+    return clearHistory(copyRow(cur), othersThan(id), false).then(function (n) { return { ok: true, cleared: n }; }, function () { return { ok: false }; });
   }
 
   /* ---- reading a file the Soldier chose ---- */
@@ -196,8 +239,8 @@
   }
 
   /* ---- Settings -> Study Preferences -> Unit decks ---- */
-  var NOTICE_ADD = "Only add a deck your own unit gave you. It is not for classified or controlled information. GUIDON looks for markings and personal details and will not add a deck that has any, but that check can miss things. The deck stays on this device.";
-  var NOTICE_PREVIEW = "This deck comes from your unit. GUIDON has not checked it for accuracy, so it may be wrong or out of date, and it is not Army doctrine. Your unit's real orders and current publications always win. It never leaves this device. It is not for classified or controlled information.";
+  var NOTICE_ADD = "Only add a deck your own unit gave you. It is not for classified or controlled information. GUIDON looks for markings and personal details and will not add a deck that has any, but that check can miss things. The deck stays on this device and is not sent anywhere. It goes into a backup if you export one.";
+  var NOTICE_PREVIEW = "This deck comes from your unit. GUIDON has not checked it for accuracy, so it may be wrong or out of date, and it is not Army doctrine. Your unit's real orders and current publications always win. GUIDON does not send it anywhere; it stays on this device and goes into any backup you export. It is not for classified or controlled information.";
 
   function trunc(s, n) { s = String(s); return s.length > n ? s.slice(0, n - 1) + "…" : s; }
   function plural(n, one, many) { return n + " " + (n === 1 ? one : many || one + "s"); }
@@ -205,7 +248,7 @@
   function renderPanel() {
     var panel = el("div.panel", { id: PANEL_ID, style: "margin-top:12px" });
     panel.appendChild(el("label", { text: "Unit decks" }));
-    panel.appendChild(el("p.hint", { text: "Study a small deck your own unit wrote, such as local SOP facts, unit history or local board study material. It comes from your unit, not from GUIDON or the Army. It stays on this device, and its cards are labeled “Unit deck” wherever they show up." }));
+    panel.appendChild(el("p.hint", { text: "Study a small deck your own unit wrote, such as local SOP facts, unit history or local board study material. It comes from your unit, not from GUIDON or the Army. It stays on this device (it goes into a backup only if you export one), and its cards are labeled “Unit deck” wherever they show up." }));
     var listWrap = el("div", { "data-unit-decks-list": "1" });
     var addWrap = el("div", { "data-unit-decks-add": "1" });
     panel.appendChild(listWrap);
@@ -235,7 +278,7 @@
         var meta = plural(r.cards.length, "card") + (r.unit ? " · " + r.unit : "") + " · version " + r.packVersion + " (" + r.packDate + ")";
         var resetBtn = el("button.btn.ghost.sm", { type: "button", text: "Reset progress", "aria-label": "Reset your review progress on the unit deck " + r.name, "data-unit-deck-reset": r.id });
         resetBtn.addEventListener("click", function () {
-          G.modal.confirm("Reset your review progress on the " + plural(r.cards.length, "card") + " in “" + r.name + "”? The deck stays. This can't be undone.", { title: "Reset progress?", okText: "Reset", danger: true }).then(function (yes) {
+          G.modal.confirm("Reset your review progress on the " + plural(r.cards.length, "card") + " in “" + r.name + "”? The deck stays. Your Quiz best scores for its topics are cleared too. This can't be undone.", { title: "Reset progress?", okText: "Reset", danger: true }).then(function (yes) {
             if (!yes) return;
             resetHistory(r.id).then(function (res) { util.toast(res.ok ? "Progress on this deck was reset." : "Couldn't reset that."); });
           });
@@ -257,19 +300,25 @@
       }
     }
 
-    // Remove: asks first, and says what happens to the review progress.
+    // Remove: asks first, and says what happens to the progress the Soldier has made on the deck's cards.
     function drawRemove(r, host, opener) {
       util.clear(host);
       var name = "unit-deck-history-" + r.id;
       var keep = el("input", { type: "radio", name: name, id: name + "-keep", value: "keep", checked: "checked" });
       var del = el("input", { type: "radio", name: name, id: name + "-delete", value: "delete" });
+      // The whole label is the tap target (44px tall at phone width, see .unit-deck-choice).
+      function choice(input, text) { return el("label.unit-deck-choice", { for: input.id }, [input, el("span", { text: text })]); }
       var go = el("button.btn.sm", { type: "button", text: "Remove deck", "data-unit-deck-remove-go": r.id });
       var cancel = el("button.btn.ghost.sm", { type: "button", text: "Cancel" });
+      var legendId = name + "-legend";
       var box = el("div", { role: "group", "aria-label": "Remove " + r.name, style: "margin-top:8px;padding:10px;border:1px solid var(--line-2);border-radius:8px" }, [
         el("p", { text: "Remove “" + r.name + "” from this device? Its " + plural(r.cards.length, "card") + " will leave your study tools." }),
-        el("p.hint", { text: "What about your review progress on those cards (what Board Drill has scheduled for you)?" }),
-        el("div", { style: "margin:6px 0" }, [keep, el("label", { for: name + "-keep", style: "display:inline;margin-left:6px;text-transform:none;letter-spacing:normal", text: "Keep it, in case you add this deck again" })]),
-        el("div", { style: "margin:6px 0" }, [del, el("label", { for: name + "-delete", style: "display:inline;margin-left:6px;text-transform:none;letter-spacing:normal", text: "Delete it too" })]),
+        el("fieldset.unit-deck-history", {}, [
+          el("legend", { id: legendId, text: "What about the progress you have made on those cards?" }),
+          el("p.hint", { text: "That is what Board Drill has scheduled for you, your Quiz best scores for the deck's topics, and any Rapid Fire saved deck that lists them." }),
+          choice(keep, "Keep it, in case you add this deck again (it stays on this device and goes into any backup you export)"),
+          choice(del, "Delete it too"),
+        ]),
         el("div", { style: "display:flex;flex-wrap:wrap;gap:8px;margin-top:8px" }, [go, cancel]),
       ]);
       host.appendChild(box);
@@ -278,10 +327,15 @@
       go.addEventListener("click", function () {
         go.disabled = true;
         remove(r.id, { deleteHistory: del.checked }).then(function (res) {
-          if (!res.ok) { go.disabled = false; util.toast("Couldn't remove that deck."); return; }
+          if (!res.ok) {
+            // Progress is cleared before the deck row goes, so a failure leaves the deck listed exactly as it was: nothing is half-removed.
+            go.disabled = false;
+            util.toast("Couldn't remove that deck. It is still on your device. Try again.");
+            return;
+          }
           drawList();
           focusOpen();
-          say(r.name + " was removed." + (res.historyDeleted ? " Your review progress on it was deleted too." : " Your review progress on it was kept."));
+          say(r.name + " was removed." + (res.historyDeleted ? " Your progress on it was deleted too." : " Your progress on it was kept."));
         });
       });
     }
@@ -296,8 +350,8 @@
 
     function drawAddForm() {
       util.clear(addWrap);
-      var fileIn = el("input", { type: "file", id: "unit-deck-file", accept: ".json,application/json,text/plain", "data-unit-deck-file": "1" });
-      var textIn = el("textarea", { id: "unit-deck-text", rows: "5", "data-unit-deck-text": "1", spellcheck: "false", autocomplete: "off" });
+      var fileIn = el("input.unit-deck-file", { type: "file", id: "unit-deck-file", accept: ".json,application/json,text/plain", "data-unit-deck-file": "1" });
+      var textIn = el("textarea.unit-deck-paste", { id: "unit-deck-text", rows: "5", "data-unit-deck-text": "1", spellcheck: "false", autocomplete: "off" });
       var checkBtn = el("button.btn.sm", { type: "button", text: "Check this deck", "data-unit-deck-check": "1" });
       var cancelBtn = el("button.btn.ghost.sm", { type: "button", text: "Cancel" });
       var result = el("div", { "data-unit-deck-result": "1", style: "margin-top:10px" });

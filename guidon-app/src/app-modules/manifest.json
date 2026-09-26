@@ -607,12 +607,12 @@
       "id": "unit-decks",
       "kind": "feature",
       "headless": false,
-      "note": "Per-unit study decks, the on-device half: one kv row per deck under unit-deck:<id> (the Soldier's own study material, so it travels in the backup they choose to export and is checked again on restore), the Settings -> Study Preferences -> Unit decks panel (file or paste, preview, explicit confirm, on/off, remove), and the cards the study tools add through store.studyQuestions(). clearsKeys lists srs:* because Remove and Reset progress delete the review schedule of THIS deck's cards (srs:unit:<deck>:<card>) when the Soldier asks. Guest and Kiosk sessions write through G.db, which keeps a session-only profile's writes in memory.",
+      "note": "Per-unit study decks, the on-device half: one kv row per deck under unit-deck:<id> (the Soldier's own study material, so it travels in the backup they choose to export and is checked again on restore), the Settings -> Study Preferences -> Unit decks panel (file or paste, preview, explicit confirm, on/off, remove), and the cards the study tools add through store.studyQuestions(). clearsKeys lists srs:* and boardQuiz:best:* because Remove (when the Soldier chooses to delete progress) and Reset progress delete the review schedule of THIS deck's cards (srs:unit:<deck>:<card>) and the Quiz best scores under the deck's own category names (boardQuiz:best:Unit: <category>[:<level>]) when the Soldier asks; core's own G.board.forgetUnitDeckTraces clears the deck's card ids from today's-reps lists and, when the deck is removed, its categories from Rapid Fire's saved decks. Every row is re-checked (schema, size and the sensitive-text screen) each time it is read at start-up, and at most 10 decks are kept. Guest and Kiosk sessions write through G.db, which keeps a session-only profile's writes in memory.",
       "requires": ["unit-decks-core"],
       "provides": ["G.unitDecks.load", "G.unitDecks.list", "G.unitDecks.deck", "G.unitDecks.cards", "G.unitDecks.rev", "G.unitDecks.suggestedTitles", "G.unitDecks.inspect", "G.unitDecks.add", "G.unitDecks.setEnabled", "G.unitDecks.remove", "G.unitDecks.resetHistory", "G.unitDecks.readFile", "G.unitDecks.renderPanel"],
       "routes": [],
       "storageKeys": ["unit-deck:*"],
-      "clearsKeys": ["srs:*"],
+      "clearsKeys": ["srs:*", "boardQuiz:best:*"],
       "optionalApis": []
     }
   ]
