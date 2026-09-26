@@ -17,7 +17,12 @@
  *   1. The parser (tools/cite-schema.mjs): a table of the legacy shapes it must
  *      understand, each one required to re-render to the exact input; a
  *      deterministic fuzz of 3,000 strings held to the same round trip; text
- *      it cannot classify stays whole; it never says "verbatim".
+ *      it cannot classify stays whole; it never says "verbatim". The renderer
+ *      also bridges the two `para` conventions (Wave 1 stores a bare number,
+ *      "3-3"; Waves 2 and 3 store the worded locator, "para 1-49"): a Wave 1
+ *      array handed to it prints "ATP 7-22.02, para 3-3", never "..., 3-3",
+ *      in Node and in the page - and no Wave 2/3 record has a bare number, so
+ *      the bridge changes none of their text.
  *   2. The lint (tools/lint-citation-schema.mjs) fails, with a message that
  *      says what to write instead, when each of nine defects is planted in a
  *      copy of the seed - and passes on a clean copy.
@@ -87,6 +92,35 @@ for (const [input, want] of TABLE) {
 check(parseLegacyCitation("").entries.length === 0 && parseLegacyCitation(undefined).entries.length === 0, "empty or missing text is no entries at all, not one empty entry");
 check(renderCitation(undefined) === "" && renderCitation(null) === "" && renderCitation([]) === "" && renderCitation("as typed") === "as typed",
   "rendering a missing source is \"\" (never \"undefined\"); a plain string renders as itself");
+
+// Wave 1 stores a BARE paragraph number ("3-3"); Waves 2 and 3 store the worded locator ("para 1-49", "Ch 6").
+// A Wave 1 array handed to the renderer must never print "ATP 7-22.02, 3-3" (tools/cite-schema.mjs, "TWO CONVENTIONS FOR `para`").
+const WAVE1_SHAPES = [
+  [[{ pub: "ATP 7-22.02", edition: "", para: "3-3", quoteKind: "paraphrase" }], "ATP 7-22.02, para 3-3", "a Wave 1 bare paragraph number is worded"],
+  [[{ pub: "AR 600-8-19", edition: "2026-03", para: "1-34a", quoteKind: "paraphrase" }], "AR 600-8-19, para 1-34a (2026-03)", "...with an edition after it, as the editions always follow the locator"],
+  [[{ pub: "AR 600-20", edition: "2020", para: "4-6b (corrective training)", quoteKind: "paraphrase" }, { pub: "AR 27-10", edition: "", para: "3-3c", quoteKind: "paraphrase" }], "AR 600-20, para 4-6b (corrective training) (2020); AR 27-10, para 3-3c", "...and across two entries"],
+  [[{ pub: "AR 600-20", edition: "", para: "Ch 6", quoteKind: "paraphrase" }], "AR 600-20, Ch 6", "a worded locator (Wave 2/3) is untouched"],
+  [[{ pub: "AR 710-2", edition: "1 Jul 2024", para: "paras 4-3 and 6-5", editionFirst: true, quoteKind: "paraphrase" }], "AR 710-2 (1 Jul 2024), paras 4-3 and 6-5", "a worded locator with editionFirst is untouched"],
+  [[{ pub: "AR 27-10", edition: "", para: "3-3c", paraSep: " ", quoteKind: "paraphrase" }], "AR 27-10 3-3c", "a bare number whose entry sets its own paraSep (a migrated record) is untouched"],
+];
+for (const [source, want, why] of WAVE1_SHAPES) {
+  check(renderCitation(source) === want, `renderCitation: ${why} (${JSON.stringify(want)})`, () => "got " + JSON.stringify(renderCitation(source)));
+}
+{
+  // On the real Wave 1 data (doctrine entries, PRT drills, scenario doctrine refs) no rendered entry is "pub, <bare number>".
+  const w1 = [];
+  (bank.doctrine.entries || []).forEach((e) => w1.push(["doctrine " + e.id, e.source]));
+  (bank.prt.drills || []).forEach((d) => { w1.push(["prt " + d.id + " repRule", d.repRule && d.repRule.source]); (d.exercises || []).forEach((x) => w1.push(["prt " + x.id, x.source])); });
+  (bank.scenarios.scenarios || []).forEach((s) => { if (Array.isArray(s.doctrine) && s.doctrine.some((x) => x && typeof x === "object")) w1.push(["scenario " + s.id, s.doctrine]); });
+  const bareEntries = w1.flatMap(([label, src]) => (Array.isArray(src) ? src : []).filter((e) => e && /^\d/.test(e.para || "") && typeof e.paraSep !== "string").map((e) => [label, e]));
+  const printsBare = bareEntries.filter(([, e]) => renderCitation([e]) !== e.pub + ", para " + e.para + (e.edition ? " (" + e.edition + ")" : ""));
+  check(bareEntries.length > 20 && printsBare.length === 0, `the real Wave 1 collections carry ${bareEntries.length} bare-number paragraphs and every one renders as "pub, para N" (never "pub, N")`, () => JSON.stringify(printsBare.slice(0, 3)));
+  // ...and NO Wave 2 or Wave 3 record has one, which is why bridging the two conventions changes none of their text.
+  const w23 = [...bank.board.questions.map((q) => ["board " + q.id, q.source])];
+  for (const site of WAVE3) for (const { owner, path: p } of site.owners(bank)) w23.push([site.id + " " + p.join("."), owner[site.field]]);
+  const w23Bare = w23.flatMap(([label, src]) => (Array.isArray(src) ? src : []).filter((e) => e && /^\d/.test(e.para || "") && typeof e.paraSep !== "string").map(() => label));
+  check(w23Bare.length === 0, `no Wave 2 or Wave 3 record (${w23.length} checked) has a bare-number para with the default joiner, so the renderer's bridge cannot change their text`, () => `${w23Bare.length}: ${JSON.stringify(w23Bare.slice(0, 3))}`);
+}
 
 // Deterministic fuzz: whatever the input, the parse re-renders to it exactly.
 {
@@ -271,6 +305,10 @@ await page.evaluate(() => { window.__printed = []; window.G.util.printHTML = (t,
   check(tableWrong.length === 0, "G.util.citeText re-renders every legacy shape in the parser table to its exact original text", () => tableWrong.join(" | "));
   const edge = await page.evaluate(() => [window.G.util.citeText(undefined), window.G.util.citeText(null), window.G.util.citeText([]), window.G.util.citeText("as typed"), window.G.util.citeText([null, { pub: "AR 1-1" }])]);
   check(same(edge, ["", "", "", "as typed", "AR 1-1"]), "G.util.citeText: a missing source is \"\", never \"undefined\" or \"[object Object]\"", () => JSON.stringify(edge));
+  // The Wave 1 bare-number bridge, in the page (the twin of the same table in the Node half above)
+  const w1Live = await page.evaluate((rows) => rows.map(([source]) => window.G.util.citeText(source)), WAVE1_SHAPES);
+  const w1Wrong = WAVE1_SHAPES.map(([, want], i) => (w1Live[i] === want ? null : JSON.stringify(w1Live[i]) + " vs " + JSON.stringify(want))).filter(Boolean);
+  check(w1Wrong.length === 0, "G.util.citeText words a Wave 1 bare paragraph number (\"ATP 7-22.02, para 3-3\", never \"ATP 7-22.02, 3-3\") and leaves worded locators and explicit paraSep alone, exactly like renderCitation", () => w1Wrong.join(" | "));
 }
 
 // --- Learn: the course line, every lesson row, every lesson reader, the print sheet

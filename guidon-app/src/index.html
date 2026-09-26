@@ -7159,7 +7159,13 @@ window.G = window.G || {};
       if (!e || typeof e !== "object") continue;
       const pub = e.pub == null ? "" : String(e.pub);
       const edition = e.edition ? " (" + e.edition + ")" : "";
-      const para = e.para ? (typeof e.paraSep === "string" ? e.paraSep : ", ") + e.para : "";
+      // A bare paragraph number ("3-3", "1-34a" - how Wave 1's doctrine, PRT and
+      // scenario citations write `para`) has no locator word of its own, so it
+      // is worded here: "ATP 7-22.02, para 3-3", never "ATP 7-22.02, 3-3".
+      // Waves 2 and 3 store the worded locator ("para 1-49", "Ch 6"), which
+      // starts with a letter and is left alone, and a record that sets its own
+      // paraSep is left alone too, so every existing record reads as before.
+      const para = e.para ? (typeof e.paraSep === "string" ? e.paraSep + e.para : ", " + (/^\d/.test(String(e.para)) ? "para " : "") + e.para) : "";
       out += e.editionFirst === true ? pub + edition + para : pub + para + edition;
       if (i < source.length - 1) out += (typeof e.sepAfter === "string" ? e.sepAfter : "; ");
     }

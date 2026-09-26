@@ -51,6 +51,47 @@
  * A record with no citation simply has no `source` key (an empty array is a
  * lint failure - "no source" and "a source with nothing in it" must not both
  * be spellable).
+ *
+ * TWO CONVENTIONS FOR `para` (read this before writing or reading one):
+ *   - Wave 1 collections (doctrine.entries, prt.drills, scenarios' doctrine
+ *     refs, creeds) store a BARE paragraph number: "3-3", "1-34a", "4-6b".
+ *     Their readers add the words themselves ("ATP 7-22.02, para 3-3" on the
+ *     PRT screen), and the doctrine card footer prints the bare number.
+ *   - Wave 2 (board cards) and Wave 3 (every WAVE3 collection below) store the
+ *     WORDED locator exactly as a Soldier reads it: "para 1-49", "Ch 6",
+ *     "Table B-1". Zero visible change was the rule for those waves, and
+ *     their text already said "para" or "Ch".
+ *   The renderer bridges the two so a Wave 1 array handed to it can never
+ *   print "ATP 7-22.02, 3-3": a `para` that starts with a digit and whose
+ *   entry sets no `paraSep` of its own is a bare number, and is worded
+ *   ("ATP 7-22.02, para 3-3"). A worded locator starts with a letter and is
+ *   untouched, and so is any entry with a paraSep - which is why this changes
+ *   the text of NO existing Wave 2 or Wave 3 record (no such record has a bare
+ *   number with the default joiner; test-section-citations.mjs proves it over
+ *   the whole bank, and the twin in src/index.html is held to the same rule).
+ *   New content in Waves 2 and 3 still writes the worded form.
+ *   The single renderer (renderCitation here, G.util.citeText in the page) is
+ *   what Waves 2 and 3 read through. Wave 1's own readers (the PRT screen, the
+ *   doctrine footer, the creeds card, the scenario AAR line) still format their
+ *   citation inline; they were not rewired.
+ *
+ * `quoteKind` ON THE BOARD, AND HOW "verbatim" GOT THERE. The card-level flag
+ * `verbatim` was folded into quoteKind in Wave 2 (see lint-citation-schema.mjs):
+ *     verbatim: false  -> "paraphrase"
+ *     verbatim absent  -> "verbatim"
+ *     verbatim: true   -> "verbatim"  (no card in the bank ever had it)
+ *   Of the 1,347 board cards the bank held at that fold, 198 said
+ *   verbatim:false (now "paraphrase") and 1,149 had NO flag at all - so those
+ *   1,149 read "verbatim" only because the flag was ABSENT, never because
+ *   anyone checked the quotation against the publication. The rule kept the
+ *   card back reading exactly as it always had; it is NOT a verified-quotation
+ *   claim, and a future rights gate or superseded-publication check must not
+ *   treat it as one. The one place that default was demonstrably wrong is
+ *   fixed: a card marked sourceStatus "pending-source" is now cited
+ *   "paraphrase" (its own citation says the wording is unverified), and
+ *   lint-citation-schema.mjs check (j) fails any pending source that claims
+ *   "verbatim". Promoting a card to a checked verbatim quotation is a content
+ *   decision made card by card, never inferred from a missing field.
  */
 
 export const VALID_QUOTE_KIND = ["verbatim", "paraphrase", "synthesis"];
@@ -60,10 +101,23 @@ export const DEFAULT_PARA_SEP = ", ";
  *  `sepAfter` to this list so a typo cannot ship as punctuation. */
 export const VALID_SEP_AFTER = ["; ", " / ", " · ", ", "];
 
+/** The joiner plus locator for one entry: ", " + para by default, the entry's
+ *  own paraSep when it has one, and "para " added for a bare paragraph number
+ *  (see "TWO CONVENTIONS FOR `para`" in this file's header). "" when no para. */
+export function paraText(e) {
+  if (!e || !e.para) return "";
+  const p = String(e.para);
+  if (typeof e.paraSep === "string") return e.paraSep + p;
+  return DEFAULT_PARA_SEP + (BARE_PARA.test(p) ? "para " : "") + p;
+}
+/** A `para` that starts with a digit is a bare paragraph number ("3-3"), the Wave 1 convention. */
+export const BARE_PARA = /^\d/;
+
 /** The text a Soldier reads for a `source` value. Twin of G.util.citeText in
  *  src/index.html - keep the two in step (test-section-citations.mjs and
  *  test-board-citations.mjs check, over every record in the bank).
- *    entry -> pub + para + " (edition)"     (paraSep, ", " by default, before the para)
+ *    entry -> pub + para + " (edition)"     (paraSep, ", " by default, before the para;
+ *                                             a bare number gets "para " - see paraText)
  *             pub + " (edition)" + para     when editionFirst
  *    join  -> each entry's sepAfter ("; " unless it says otherwise) */
 export function renderCitation(source) {
@@ -74,7 +128,7 @@ export function renderCitation(source) {
     if (!e || typeof e !== "object") return;
     const pub = String(e.pub == null ? "" : e.pub);
     const edition = e.edition ? " (" + e.edition + ")" : "";
-    const para = e.para ? (typeof e.paraSep === "string" ? e.paraSep : DEFAULT_PARA_SEP) + e.para : "";
+    const para = paraText(e);
     out += e.editionFirst === true ? pub + edition + para : pub + para + edition;
     if (i < source.length - 1) out += (typeof e.sepAfter === "string" ? e.sepAfter : DEFAULT_SEP_AFTER);
   });
