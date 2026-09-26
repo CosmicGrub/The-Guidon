@@ -211,23 +211,38 @@ try {
   const packageStep = stepNamed(firmwareSteps, "Package full-fork assets");
   if (!exportStep || !exportStep.run || !packageStep || !packageStep.run || !BASH) bad("release-assets.yml: the ESP32 export/package steps were not found");
   else {
-    const gateAt = exportStep.run.indexOf('names="$(node');
-    check(gateAt !== -1 && /esp32-lanes\.json/.test(exportStep.run.slice(gateAt)) && /test -s sdcard\/lanes\.json/.test(exportStep.run.slice(gateAt)),
+    const gateAt = exportStep.run.indexOf("manifest=../../guidon-app/tools/release-manifest.mjs");
+    check(gateAt !== -1 && /names --version "\$VERSION"/.test(exportStep.run.slice(gateAt)) && /esp32-lanes\.json/.test(exportStep.run.slice(gateAt)) && /test -s sdcard\/lanes\.json/.test(exportStep.run.slice(gateAt)),
       "the ESP32 export step asks release-manifest.mjs whether this version carries the deck list, and insists on the file when it does", "the ESP32 export step does not gate the deck list on release-manifest.mjs");
-    const lay = (label) => {
+    // withTool: true = the tag has release-manifest.mjs (v1.12.1 and later); false = it has none (v1.10.0);
+    // a string = a stand-in tool with that source (one that is there but fails).
+    const lay = (label, withTool = true) => {
       const box = sandbox(label);
       mkdirSync(path.join(box.dir, "firmware/esp32-flashcard-os/sdcard"), { recursive: true });
       mkdirSync(path.join(box.dir, "guidon-app/tools"), { recursive: true });
       mkdirSync(path.join(box.dir, "release-out"), { recursive: true });
-      copyFileSync("tools/release-manifest.mjs", path.join(box.dir, "guidon-app/tools/release-manifest.mjs"));
+      if (withTool === true) copyFileSync("tools/release-manifest.mjs", path.join(box.dir, "guidon-app/tools/release-manifest.mjs"));
+      else if (typeof withTool === "string") writeFileSync(path.join(box.dir, "guidon-app/tools/release-manifest.mjs"), withTool);
       return box;
     };
     const gateScript = "set -euo pipefail\n" + exportStep.run.slice(gateAt);
-    const runGate = (box, version) => runStep(gateScript, { box, env: { VERSION: version }, cwd: path.join(box.dir, "firmware/esp32-flashcard-os") });
+    const runGate = (box, version) => runStep(gateScript, { box, env: { VERSION: version, TAG: "v" + version }, cwd: path.join(box.dir, "firmware/esp32-flashcard-os") });
     let box = lay("lanes-gate-old");
     check(runGate(box, "1.16.0").status === 0, "an older release (v1.16.0, built from its own older exporter, so no lanes.json) still builds - the deck list is not asked of it");
+    // A tag older than v1.12.1 has no release-manifest.mjs at all (v1.10.0 does not): re-running the release
+    // for one must not die asking a tool that is not there. It predates the deck list, so it gets the
+    // historical five-file ESP32 list and builds exactly as it always did.
+    box = lay("lanes-gate-no-tool", false);
+    let r = runGate(box, "1.10.0");
+    check(r.status === 0 && /historical five-file ESP32 list/.test(r.stdout + r.stderr), "an OLD tag with no release-manifest.mjs (v1.10.0) still builds: the step falls back to the historical five-file list and asks nothing of the missing tool", "the export step died for a tag with no release-manifest.mjs: " + r.stdout + r.stderr);
+    box = lay("lanes-gate-no-tool-newer", false);
+    r = runGate(box, "9.9.9");
+    check(r.status === 0, "...and it never demands a deck list from a tag that cannot have one (no tool = predates it), even under a higher version number", "a tag with no tool was refused for its deck list: " + r.stdout + r.stderr);
+    box = lay("lanes-gate-tool-fails", 'process.stderr.write("boom\\n"); process.exit(2);\n');
+    r = runGate(box, "9.9.9");
+    check(r.status !== 0, "a release-manifest.mjs that IS there but fails is not mistaken for an old tag: the step stops (only a missing tool takes the fallback)", "a failing release-manifest.mjs was swallowed by the fallback: " + r.stdout + r.stderr);
     box = lay("lanes-gate-new-missing");
-    let r = runGate(box, "9.9.9");
+    r = runGate(box, "9.9.9");
     check(r.status !== 0, "the next release with no lanes.json written by the exporter FAILS the job, so it cannot go out without its decks", "a new release with no deck list did not stop the export step: " + r.stdout + r.stderr);
     writeFileSync(path.join(box.dir, "firmware/esp32-flashcard-os/sdcard/lanes.json"), "");
     check(runGate(box, "9.9.9").status !== 0, "...and an EMPTY lanes.json fails it too (test -s, not test -f)");

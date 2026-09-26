@@ -438,7 +438,22 @@ jobs:
           # carries it: an older tag, built from its own older exporter, has
           # no such file and must still build; a newer one must not go out
           # without it.
-          names="$(node ../../guidon-app/tools/release-manifest.mjs names --version "$VERSION")"
+          # The question goes to the CHECKED-OUT TAG's own release-manifest.mjs.
+          # A tag older than v1.12.1 has no such tool (v1.10.0 has no
+          # release-manifest.mjs at all), so a re-dispatched rebuild of one would
+          # die right here. That tag predates the deck list, so it gets the
+          # historical five-file list instead and builds as it always did. A tool
+          # that IS there but fails is not an old tag: that still stops the job.
+          manifest=../../guidon-app/tools/release-manifest.mjs
+          if [ -f "$manifest" ]; then
+            names="$(node "$manifest" names --version "$VERSION")"
+          else
+            echo "::notice::$TAG has no release-manifest.mjs (a tag older than v1.12.1): using the historical five-file ESP32 list, no deck list expected"
+            names=""
+            for f in flashcardos.bin bootloader.bin partitions.bin cards.ndjson categories.json; do
+              names="${names}GUIDON-${VERSION}-esp32-${f}"$'\n'
+            done
+          fi
           if grep -qx "GUIDON-${VERSION}-esp32-lanes.json" <<< "$names"; then
             test -s sdcard/lanes.json
           fi
