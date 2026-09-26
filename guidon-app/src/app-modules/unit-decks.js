@@ -49,6 +49,8 @@
   // "constructor" and "__proto__" are ordinary names here, not inherited ones.
   function dict() { return Object.create(null); }
   var decks = dict();      // id -> a row that passed G.unitPack.validRow
+  var pending = dict();    // id -> true while that deck is being SAVED: it already holds its place under the limit of 10
+  var leftOut = [];        // rows on the device that load() did not use: { key, id, reason } (shown in Settings, where they can be removed)
   var rev = 0;
   var cardMemo = null;     // { rev, list }
 
@@ -67,28 +69,39 @@
   // A row that fails the check (a hand edit, a damaged backup, a row under the wrong key) is left
   // out and logged - never guessed at, never allowed to crash Board Drill.
   function reject(key, why) { if (G.selfheal && typeof G.selfheal.log === "function") G.selfheal.log("kv-reject", key, why); }
+  // A row that is left out is NOT deleted (a Soldier may want to look at what is wrong, and start-up must never destroy data), but it is
+  // not hidden either: it is listed in Settings -> Study Preferences -> Unit decks with a Remove button. Until it is removed it stays on
+  // the device and is in any backup that is exported - PRIVACY.md says so.
+  var LEFT_OUT_WHY = {
+    "sensitive-text": "its text looks like something that does not belong in a study deck",
+    "too-big": "it is larger than a unit deck may be",
+    "limit": "you already have " + P.LIMITS.decks + " unit decks, the most GUIDON keeps",
+    "check": "it did not pass GUIDON's check"
+  };
   function load() {
     if (!G.db || typeof G.db.all !== "function") return Promise.resolve();
     return G.db.all("kv").then(function (rows) {
-      var sound = [];
+      var sound = [], skipped = [];
+      function leave(key, id, code, log) { skipped.push({ key: key, id: id, reason: LEFT_OUT_WHY[code] || LEFT_OUT_WHY.check }); reject(key, log); }
       (rows || []).forEach(function (row) {
         if (!row || typeof row.k !== "string" || row.k.indexOf("unit-deck:") !== 0) return;
         var id = row.k.slice("unit-deck:".length);
         var chk = P.validateRow(row.v);
         if (chk.ok && row.v.id === id) { sound.push({ k: row.k, id: id, v: row.v }); return; }
         var code = chk.errors && chk.errors[0] ? chk.errors[0].code : "";
-        reject(row.k, code === "sensitive-text" ? "a saved unit deck holds text the sensitive-text check refuses, so it was left out"
-          : code === "too-big" ? "a saved unit deck is larger than a unit deck may be and was left out"
-          : "a saved unit deck did not pass its check and was left out");
+        if (code === "sensitive-text") leave(row.k, id, "sensitive-text", "a saved unit deck holds text the sensitive-text check refuses, so it was left out");
+        else if (code === "too-big") leave(row.k, id, "too-big", "a saved unit deck is larger than a unit deck may be and was left out");
+        else leave(row.k, id, "check", "a saved unit deck did not pass its check and was left out");
       });
       // No device keeps more than LIMITS.decks: the oldest are kept and the rest left out (a restored backup can carry more).
       sound.sort(function (a, b) { return a.v.importedAt < b.v.importedAt ? -1 : a.v.importedAt > b.v.importedAt ? 1 : (a.id < b.id ? -1 : 1); });
       var next = dict();
       sound.forEach(function (c, i) {
         if (i < P.LIMITS.decks) next[c.id] = c.v;
-        else reject(c.k, "a saved unit deck is past the limit of " + P.LIMITS.decks + " decks on a device and was left out");
+        else leave(c.k, c.id, "limit", "a saved unit deck is past the limit of " + P.LIMITS.decks + " decks on a device and was left out");
       });
       decks = next;
+      leftOut = skipped;
       bump();
     }, function () { /* storage unreadable: no unit decks this session, everything else still works */ });
   }
@@ -102,6 +115,17 @@
     });
   }
   function deck(id) { return decks[id] ? copyRow(decks[id]) : null; }
+  // Saved decks that are on the device but left out of the study tools, and a way to take one off the device.
+  function leftOutRows() { return leftOut.map(function (r) { return { key: r.key, id: r.id, reason: r.reason }; }); }
+  function removeLeftOut(key) {
+    var hit = leftOut.filter(function (r) { return r.key === key; })[0];
+    if (!hit) return Promise.resolve({ ok: false });
+    return Promise.resolve().then(function () { return G.db.del("kv", deckKey(hit.id)); }).then(function () {
+      leftOut = leftOut.filter(function (r) { return r.key !== key; });
+      bump();
+      return { ok: true };
+    }, function () { return { ok: false }; });
+  }
 
   // The cards of every deck that is switched on: what the study tools work with.
   function cards() {
@@ -124,6 +148,13 @@
     return out;
   }
 
+  // Decks on the device plus decks being saved right now that are not on it yet: two adds started together at 9 decks cannot both get the 10th place.
+  function slotsUsed() {
+    var n = Object.keys(decks).length;
+    Object.keys(pending).forEach(function (id) { if (!decks[id]) n++; });
+    return n;
+  }
+
   /* ---- the import check: everything that can refuse a deck, in order ---- */
   // Resolves { ok:true, pack, summary, existing, replaces } or { ok:false, stage, messages[], findings[] }.
   // Nothing is written. add() below runs it again, so the screen cannot be walked around.
@@ -142,7 +173,7 @@
       return { ok: false, stage: "screen", messages: scr.findings.map(P.describeFinding), findings: scr.findings, total: scr.total, truncated: scr.truncated };
     }
     var existing = decks[pack.id] || null;
-    if (!existing && Object.keys(decks).length >= P.LIMITS.decks) {
+    if (!existing && !pending[pack.id] && slotsUsed() >= P.LIMITS.decks) {
       return { ok: false, stage: "limit", messages: ["You already have " + P.LIMITS.decks + " unit decks on this device, which is the most GUIDON keeps. Remove one first."], findings: [] };
     }
     return { ok: true, pack: pack, summary: P.summarize(pack), replaces: existing ? { name: existing.name, unit: existing.unit, packVersion: existing.packVersion, packDate: existing.packDate, enabled: existing.enabled } : null };
@@ -157,11 +188,15 @@
     var existing = decks[chk.pack.id] || null;
     // A deck the Soldier switched off stays off when its newer version is added.
     var row = P.toDeck(chk.pack, { enabled: existing ? existing.enabled : true, importedAt: opts.importedAt });
+    // The place under the limit is taken NOW, in the same breath as the check (before anything asynchronous), and given back when the save ends.
+    pending[row.id] = true;
     return Promise.resolve().then(function () { return G.db.setSetting(deckKey(row.id), row); }).then(function () {
+      delete pending[row.id];
       decks[row.id] = row;
       bump();
       return { ok: true, id: row.id, replaced: !!existing, summary: chk.summary };
     }, function () {
+      delete pending[row.id];
       return { ok: false, stage: "save", messages: ["Couldn't save that on this device. Check that the device has free storage and try again."], findings: [] };
     });
   }
@@ -202,9 +237,10 @@
   }
   function othersThan(id) { return sortedRows().filter(function (r) { return r.id !== id; }); }
   // deleteHistory: false keeps the review progress (it comes back if the deck is added again).
-  // With deleteHistory the progress goes FIRST and the deck row last: if clearing fails the deck is still listed and nothing is
-  // half-removed, and if the process stops in between, what is left is a deck with no progress (the same as "Reset progress"),
-  // never progress on cards of a deck that is no longer there.
+  // With deleteHistory the progress goes FIRST and the deck row last. If clearing fails part-way the deck is still there and still
+  // listed (the Soldier is told and can try again) - some of its progress may already be gone, which is what "Reset progress" would
+  // have done anyway. And if the process stops between the two steps, what is left is a deck with less progress, never progress on
+  // the cards of a deck that is no longer there.
   function remove(id, opts) {
     opts = opts || {};
     var cur = decks[id];
@@ -257,11 +293,39 @@
     var openBtn = null;
     function focusOpen() { if (openBtn && openBtn.isConnected) openBtn.focus(); }
 
+    // Saved decks that are on the device but were left out at start-up (they failed the check, or are past the limit of 10): listed here so
+    // the Soldier can SEE them and take them off the device. They are not studied, and not deleted behind anyone's back.
+    function drawLeftOut() {
+      var rows = leftOut.slice();
+      if (!rows.length) return;
+      var one = rows.length === 1;
+      var box = el("div", { "data-unit-decks-leftout": "1", role: "group", "aria-label": "Saved decks that could not be loaded", style: "margin:12px 0;padding:10px;border:1px solid var(--line-2);border-radius:8px" });
+      box.appendChild(el("p", { style: "font-weight:600", text: plural(rows.length, "saved deck") + " could not be loaded" }));
+      box.appendChild(el("p.hint", { text: "GUIDON left " + (one ? "it" : "them") + " out of your study tools. " + (one ? "It is" : "They are") + " still on this device, and in any backup you export, until you remove " + (one ? "it" : "them") + "." }));
+      rows.forEach(function (r) {
+        var btn = el("button.btn.ghost.sm", { type: "button", text: "Remove it", "aria-label": "Remove the saved deck " + trunc(r.id, 40) + " from this device", "data-unit-deck-leftout-remove": r.key });
+        btn.addEventListener("click", function () {
+          btn.disabled = true;
+          removeLeftOut(r.key).then(function (res) {
+            if (!res.ok) { btn.disabled = false; util.toast("Couldn't remove that. Try again."); return; }
+            drawList();
+            focusOpen();
+            say("A saved deck that could not be loaded was removed from this device.");
+          });
+        });
+        box.appendChild(el("div", { "data-unit-deck-leftout-row": r.key, style: "margin:8px 0;padding-top:8px;border-top:1px solid var(--line-2)" }, [
+          el("p.hint", { text: "A saved deck (" + trunc(r.id, 40) + ") is left out because " + r.reason + "." }), btn,
+        ]));
+      });
+      listWrap.appendChild(box);
+    }
+
     function drawList(focusId) {
       util.clear(listWrap);
       var rows = sortedRows();
       if (!rows.length) {
         listWrap.appendChild(el("p.hint", { "data-unit-decks-empty": "1", text: "No unit decks yet." }));
+        drawLeftOut();
         return;
       }
       rows.forEach(function (r) {
@@ -278,7 +342,7 @@
         var meta = plural(r.cards.length, "card") + (r.unit ? " · " + r.unit : "") + " · version " + r.packVersion + " (" + r.packDate + ")";
         var resetBtn = el("button.btn.ghost.sm", { type: "button", text: "Reset progress", "aria-label": "Reset your review progress on the unit deck " + r.name, "data-unit-deck-reset": r.id });
         resetBtn.addEventListener("click", function () {
-          G.modal.confirm("Reset your review progress on the " + plural(r.cards.length, "card") + " in “" + r.name + "”? The deck stays. Your Quiz best scores for its topics are cleared too. This can't be undone.", { title: "Reset progress?", okText: "Reset", danger: true }).then(function (yes) {
+          G.modal.confirm("Reset your review progress on the " + plural(r.cards.length, "card") + " in “" + r.name + "”? The deck stays. Your Quiz best scores for topics no other deck uses are cleared too. This can't be undone.", { title: "Reset progress?", okText: "Reset", danger: true }).then(function (yes) {
             if (!yes) return;
             resetHistory(r.id).then(function (res) { util.toast(res.ok ? "Progress on this deck was reset." : "Couldn't reset that."); });
           });
@@ -294,6 +358,7 @@
         removeBtn.addEventListener("click", function () { drawRemove(r, confirmWrap, removeBtn); });
         listWrap.appendChild(row);
       });
+      drawLeftOut();
       if (focusId) {
         var t = listWrap.querySelector('[data-unit-deck-toggle="' + focusId + '"]');
         if (t) t.focus();
@@ -315,7 +380,7 @@
         el("p", { text: "Remove “" + r.name + "” from this device? Its " + plural(r.cards.length, "card") + " will leave your study tools." }),
         el("fieldset.unit-deck-history", {}, [
           el("legend", { id: legendId, text: "What about the progress you have made on those cards?" }),
-          el("p.hint", { text: "That is what Board Drill has scheduled for you, your Quiz best scores for the deck's topics, and any Rapid Fire saved deck that lists them." }),
+          el("p.hint", { text: "That is what Board Drill has scheduled for you, your Quiz best scores for topics no other deck uses, and any Rapid Fire saved deck that lists those topics." }),
           choice(keep, "Keep it, in case you add this deck again (it stays on this device and goes into any backup you export)"),
           choice(del, "Delete it too"),
         ]),
@@ -454,7 +519,7 @@
 
   G.unitDecks = {
     PANEL_ID: PANEL_ID,
-    load: load, list: list, deck: deck, cards: cards, rev: function () { return rev; }, suggestedTitles: suggestedTitles,
+    load: load, list: list, deck: deck, leftOut: leftOutRows, removeLeftOut: removeLeftOut, cards: cards, rev: function () { return rev; }, suggestedTitles: suggestedTitles,
     inspect: inspect, add: add, setEnabled: setEnabled, remove: remove, resetHistory: resetHistory,
     readFile: readFile, renderPanel: renderPanel
   };

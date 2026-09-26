@@ -141,7 +141,8 @@ cannot slip through.
 | card `keyPoints` | Optional. Up to 8 points, up to 200 characters each. |
 | card `source` | Optional. Up to 200 characters, your unit's own words, naming no more than 8 separate references (publications or documents split by "; " or " / "). |
 | `reciteTitles` | Optional. Up to 8 titles, up to 60 characters each. Titles only. |
-| Whole file | Up to 256 KB. GUIDON also refuses invisible characters (a zero-width space, a soft hyphen, a text-direction mark and the like) in any text, because they can hide a marking or a number from the check; retype the text if you pasted it from a PDF or a Word file. |
+| Whole file | Up to 256 KB. (A deck GUIDON has saved may be up to 448 KB, a little more, because each citation becomes a small record; the format never lets a deck through that GUIDON could not then keep.) |
+| Hidden characters | GUIDON refuses hidden characters in any text (any Unicode "format" character or ignorable code point: zero-width spaces, soft hyphens, text-direction marks, word joiners, tag characters and the like), because they can hide a marking or a number from the check. Retype the text if you pasted it from a PDF or a Word file. Three are allowed because ordinary text needs them: the emoji variation selector, the joiner that builds emoji, and the non-joiner used in Persian and Indic text. GUIDON ignores those three when it reads. |
 
 **How `source` is shown.** GUIDON reads the source with the same careful parser
 it uses for its own cards. "AR 600-20, para 4-5" becomes a proper citation;
@@ -162,14 +163,22 @@ did not write, and never marks a unit card as a word-for-word quote.
    a banner line, a CUI block), Social Security and DoD ID numbers, unit
    identification codes with their label, telephone numbers, email addresses, a
    sentence with a future date and a place and a unit activity, and text that
-   looks like a list of people's names. Names are looked for in each answer, in
-   each card's key points read together, and across the whole deck's short
-   answers and key points (so a roster cannot be spread one name to a card). A
-   Social Security or phone number split between two fields of one card is
-   caught too. The check reads the words as typed and never edits them; to
-   find things that are written oddly it also reads a plain copy (fullwidth
-   digits and letters, en dashes and a few look-alike letters from other
-   alphabets turned into ordinary ones), and it throws that copy away.
+   looks like a list of people's names: lines that read like "SGT John Smith" or
+   "Smith, John". A rank followed by a billet or a role ("SGT Team Leader",
+   "SFC Platoon Sergeant", "SSG Trains the squad") is a duty, not a person, and
+   never counts; neither does a name with a date after it ("LTC Robert Adams
+   (1942-1944)"), so a unit history can name its commanders. Lines of names
+   are looked for in each answer, in each card's key points read together (three
+   lines is a list), and across the whole deck's short answers and key points
+   (six or more lines of enlisted names, or of "Surname, Given", is a list;
+   officers, warrant officers and a command sergeant major are not counted
+   across cards, because a history names one to a card). When it refuses, the
+   message shows the first three lines that tripped it. A Social Security or
+   phone number split between two fields of one card is caught too. The check
+   reads the words as typed and never edits them; to find things that are
+   written oddly it also reads a plain copy (fullwidth digits and letters,
+   every kind of dash and a few look-alike letters from other alphabets turned
+   into ordinary ones), and it throws that copy away.
 3. **Shows a preview** (name, unit, version, how many cards and categories,
    sample cards) and a notice that the deck comes from the unit, GUIDON has not
    checked it for accuracy, GUIDON does not send it anywhere (it stays on the
@@ -178,18 +187,28 @@ did not write, and never marks a unit card as a word-for-word quote.
 4. **Adds it only when the Soldier taps "Add this deck".**
 
 Then, **every time GUIDON starts, and whenever a backup is restored**, each saved
-deck is checked again the same way (the same format rules, the same size limit
-and the same sensitive-text check). A deck that fails is left out, not shown,
-and noted for Diagnostics, so a backup file edited by hand cannot bring in
-something the import check would have refused. GUIDON keeps at most 10 decks.
+deck is checked again the same way: the same format rules, the same
+sensitive-text check (as of the day the deck was added, so a device with the
+wrong clock does not lose decks), and a size limit (a saved deck may be up to
+448 KB, a little more than the 256 KB file). A deck that fails is left out of
+your study tools and noted for Diagnostics, so a backup file edited by hand
+cannot bring in something the import check would have refused. It is **not
+deleted behind your back**: it stays on the device (and in any backup you
+export) until you remove it, and Settings lists it under "could not be loaded"
+with a **Remove it** button. GUIDON keeps at most 10 decks.
 
 The check is a prevention aid. It looks for particular shapes. It cannot tell
 that something is sensitive because of what it is, or because of what several
 harmless facts add up to. It is a safety net for honest mistakes, not a defense
-against someone who is trying to slip something past it: it turns the most
-common look-alike letters into ordinary ones, but not every one, so a determined
-person can still write a marking that it does not recognise. If you are unsure
-whether something may go in a deck, it may not: ask your S2 or OPSEC officer.
+against someone who is trying to slip something past it. What still gets
+through, plainly: a list of names written another way (ALL-CAPS "SMITH, JOHN",
+"Smith, J.", a lower-case rank, up to five enlisted names one to a card, any
+number of officers one to a card, or names split between key points and the
+answer); a number cut into three pieces or across two cards; digits of other
+alphabets (Devanagari and the like) and the Arabic tatweel; look-alike letters
+outside the few it turns into ordinary ones; and anything that is sensitive
+because of what it means. If you are unsure whether something may go in a deck,
+it may not: ask your S2 or OPSEC officer.
 
 ---
 
@@ -239,13 +258,17 @@ are still in the deck is kept, and a deck they had switched off stays off.
 6. Use the switch beside the deck to turn it off or on.
 7. **Remove deck** asks first. You choose whether to keep or delete your
    progress on its cards (keep it if you might add the deck again). Progress
-   means what Board Drill has scheduled for you, your Quiz best scores for the
-   deck's topics, and any Rapid Fire saved deck that lists those topics; the
-   question says so. **Reset progress** clears the schedule and the Quiz best
-   scores and keeps the deck.
+   means what Board Drill has scheduled for you, your Quiz best scores for topics
+   no other deck uses, and any Rapid Fire saved deck that lists those topics; the
+   question says so. (A Quiz score belongs to a topic name, so a topic that another
+   deck also has keeps its score until that deck goes too.) **Reset progress**
+   clears the schedule and those Quiz best scores and keeps the deck.
 
 Good to know:
 
+- If GUIDON cannot load a saved deck (it fails the check, or you already have 10),
+  Settings says "could not be loaded" and offers **Remove it**. Until you remove it,
+  it stays on the device and in any backup you export.
 - A deck stays on your device. GUIDON does not send it anywhere, and it is not
   shared into Study Rooms. It is not on the handheld flashcard device.
 - Your decks are part of your own study data, so **every backup you export

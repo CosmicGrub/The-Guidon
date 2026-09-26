@@ -576,7 +576,7 @@ let graded = null;
     return { text: g.textContent, keepChecked: g.querySelector('input[value="keep"]').checked, deleteChecked: g.querySelector('input[value="delete"]').checked, focus: document.activeElement && document.activeElement.value,
       legend: lg ? lg.textContent : "", labelsWrapRadios: labels.length === 2 && labels.every((l) => !!l.querySelector('input[type="radio"]')), oneGroup: radios.length === 2 && radios[0].name === radios[1].name && !!radios[0].name, inFieldset: radios.every((r) => !!r.closest("fieldset")) };
   }, DECK);
-  check(/Remove .Pinecone Ridge Demo Squadron study deck. from this device\? Its 8 cards will leave your study tools\./.test(ask.text) && /What about the progress you have made on those cards\?/.test(ask.text) && /what Board Drill has scheduled for you, your Quiz best scores for the deck's topics, and any Rapid Fire saved deck that lists them/.test(ask.text) && /Keep it, in case you add this deck again/.test(ask.text) && /Delete it too/.test(ask.text), "Remove asks first, says what leaves, and says what the progress it offers to keep or delete IS (the schedule, the Quiz best scores, Rapid Fire saved decks), in plain words", () => ask.text);
+  check(/Remove .Pinecone Ridge Demo Squadron study deck. from this device\? Its 8 cards will leave your study tools\./.test(ask.text) && /What about the progress you have made on those cards\?/.test(ask.text) && /what Board Drill has scheduled for you, your Quiz best scores for topics no other deck uses, and any Rapid Fire saved deck that lists those topics/.test(ask.text) && /Keep it, in case you add this deck again/.test(ask.text) && /Delete it too/.test(ask.text), "Remove asks first, says what leaves, and says what the progress it offers to keep or delete IS (the schedule, the Quiz best scores, Rapid Fire saved decks), in plain words", () => ask.text);
   check(ask.legend === "What about the progress you have made on those cards?" && ask.labelsWrapRadios && ask.oneGroup && ask.inFieldset, "the two choices are one radio group inside a fieldset whose legend IS the question, each radio wrapped in its own label (so the question is read with them and the whole label is the target)", () => JSON.stringify(ask));
   check(/it stays on this device and goes into any backup you export/.test(ask.text), "and \"keep it\" says plainly that kept progress stays on the device and in backups");
   check(ask.keepChecked && !ask.deleteChecked && ask.focus === "keep", "\"Keep it\" is the default and holds focus");
@@ -626,7 +626,7 @@ let graded = null;
   await clickWhenStable(page, page.locator('[data-unit-deck-remove-go="' + DECK + '"]'));
   await until(page, () => /Couldn.t remove that deck/.test((document.getElementById("toast") || {}).textContent || ""));
   const failed = await page.evaluate(() => ({ toast: (document.getElementById("toast") || {}).textContent || "", listed: !!document.querySelector('[data-unit-deck="pinecone-ridge-demo"]'), api: G.unitDecks.list().map((d) => d.id), cards: G.unitDecks.cards().length, goEnabled: !document.querySelector('[data-unit-deck-remove-go="pinecone-ridge-demo"]').disabled }));
-  check(/Couldn.t remove that deck\. It is still on your device\. Try again\./.test(failed.toast) && failed.listed && failed.api.includes(DECK) && failed.cards === 8 && failed.goEnabled && (await kv("unit-deck:" + DECK)) !== null, "when clearing the progress fails, the Soldier is told, the deck is still listed and still on the device with all 8 cards (nothing half-removed, no stale list), and the button works again", () => JSON.stringify(failed));
+  check(/Couldn.t remove that deck\. It is still on your device\. Try again\./.test(failed.toast) && failed.listed && failed.api.includes(DECK) && failed.cards === 8 && failed.goEnabled && (await kv("unit-deck:" + DECK)) !== null, "when clearing the progress fails, the Soldier is told, the deck is still listed and still on the device with all 8 cards (the deck is untouched and the list is not stale; some of its progress may already be cleared, and trying again finishes the job), and the button works again", () => JSON.stringify(failed));
   await page.evaluate(() => { G.db.del = window.__realDel; delete window.__realDel; });
   await clickWhenStable(page, page.locator('[data-unit-deck-remove-go="' + DECK + '"]'));
   await until(page, (id) => !document.querySelector('[data-unit-deck="' + id + '"]'), DECK);
@@ -639,17 +639,19 @@ let graded = null;
     for (const [k, v] of [["boardQuiz:best:Unit: Local SOP", 90], ["boardQuiz:best:Unit: Unit history:expert", 55], ["boardQuiz:best:All", 40]]) await G.db.put("kv", { k, v });
     await G.db.put("kv", { k: repsKey, v: { sets: 1, cards: 12, recalled: 9, missed: ["unit:pinecone-ridge-demo:sop-002", "some-shipped-id"], ts: Date.now() } });
     await G.db.setSetting("rapidFire:savedDecks", [{ name: "Mixed", categories: ["Unit: Local SOP"] }]);
+    // A second deck that has the topic "Local SOP" too: its Quiz score belongs to a name both decks use, so Reset must leave it.
+    await G.unitDecks.add({ format: "guidon-unit-pack", formatVersion: 1, id: "shares-topic", name: "Shares a topic", packVersion: "1", packDate: "2026-09-26", cards: [{ id: "s1", category: "Local SOP", q: "A second deck's question about the SOP?", a: "A second deck's answer." }] });
   }, repsKey);
   await clickWhenStable(page, page.locator('[data-unit-deck-reset="' + DECK + '"]'));
   await page.waitForSelector(".gm-box");
   const dlg = await page.evaluate(() => document.querySelector(".gm-box").innerText);
-  check(/Reset your review progress on the 8 cards in .Pinecone Ridge Demo Squadron study deck.\? The deck stays\. Your Quiz best scores for its topics are cleared too\./.test(dlg), "Reset progress asks first, says the deck stays and that the Quiz best scores for its topics are cleared too", () => dlg);
+  check(/Reset your review progress on the 8 cards in .Pinecone Ridge Demo Squadron study deck.\? The deck stays\. Your Quiz best scores for topics no other deck uses are cleared too\./.test(dlg) && !/for its topics/.test(dlg), "Reset progress asks first, says the deck stays and that the Quiz best scores are cleared for topics no other deck uses (not for every topic of the deck)", () => dlg);
   await clickWhenStable(page, page.locator(".gm-box button", { hasText: /^Reset$/ }));
   await untilAsync(page, async () => !(await G.db.get("kv", "srs:unit:pinecone-ridge-demo:sop-001")));
   const afterReset = await traces();
-  check((await bankFacts()).unitCards === 8 && !afterReset.quiz.some((k) => /Unit: /.test(k)) && afterReset.quiz.includes("boardQuiz:best:All") && JSON.stringify(afterReset.missed) === JSON.stringify(["some-shipped-id"]) && JSON.stringify(afterReset.saved) === JSON.stringify(["Mixed=Unit: Local SOP"]),
-    "Reset progress clears the schedule, the Quiz best scores under the deck's topics and its cards in today's reps list, and keeps the deck, the All score and the Rapid Fire saved deck (that is a setting, not progress)", () => JSON.stringify(afterReset));
-  await page.evaluate(async (repsKey) => { await G.db.del("kv", repsKey); await G.db.setSetting("rapidFire:savedDecks", []); await G.db.del("kv", "boardQuiz:best:All"); }, repsKey);
+  check((await bankFacts()).unitCards === 9 && JSON.stringify(afterReset.quiz) === JSON.stringify(["boardQuiz:best:All", "boardQuiz:best:Unit: Local SOP"]) && JSON.stringify(afterReset.missed) === JSON.stringify(["some-shipped-id"]) && JSON.stringify(afterReset.saved) === JSON.stringify(["Mixed=Unit: Local SOP"]),
+    "Reset progress clears the schedule, the Quiz best scores for topics no other deck uses (\"Unit history\", at every level) and its cards in today's reps list, and keeps the deck, the All score, the score of the topic \"Local SOP\" that the other deck also has, and the Rapid Fire saved deck (that is a setting, not progress)", () => JSON.stringify(afterReset));
+  await page.evaluate(async (repsKey) => { await G.unitDecks.remove("shares-topic", { deleteHistory: true }); await G.db.del("kv", repsKey); await G.db.setSetting("rapidFire:savedDecks", []); await G.db.del("kv", "boardQuiz:best:All"); }, repsKey);
 }
 
 { // "Reset drill schedule" is the shipped bank's: a unit deck's progress is reset from the deck's own Reset progress button

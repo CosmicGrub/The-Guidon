@@ -157,7 +157,39 @@ await waitForRoute(page, "#/home", { ready: "#route h1, #route h2" });
   check(why.some((w) => /has-ssn -> a saved unit deck holds text the sensitive-text check refuses/.test(w)) && why.some((w) => /too-big -> a saved unit deck is larger than a unit deck may be/.test(w)), "with the reason (the text the screen refuses, or the size)", () => JSON.stringify(why));
   const cards = await page.evaluate(() => G.unitDecks.cards().map((c) => c.q).join("|"));
   check(!/SECRET|Smith|123-45/.test(cards), "and nothing from a refused row is in the study pool");
+  // Left out is NOT hidden and NOT silent: the rows are still on the device (and in a backup) until the Soldier removes them, so Settings lists
+  // each one, says why in plain words, and offers a Remove button that takes it off the device.
+  const inBackup = await page.evaluate(async () => (await G.backup.exportAll()).stores.kv.map((r) => r.k).filter((k) => /^unit-deck:has-/.test(k)));
+  const hasN = bad.filter((r) => /^unit-deck:has-/.test(r.k)).length;
+  check(inBackup.length === hasN, "(until removed, a left-out row IS still in the backup the app would export - which the privacy text says)", () => JSON.stringify(inBackup));
+  await waitForRoute(page, "#/settings", { fresh: true, ready: "[data-unit-decks-leftout]" });
+  const lo = await page.evaluate(() => ({
+    head: (document.querySelector("[data-unit-decks-leftout] p") || {}).textContent || "", hint: (document.querySelector("[data-unit-decks-leftout] p.hint") || {}).textContent || "",
+    rows: Array.from(document.querySelectorAll("[data-unit-deck-leftout-row]")).map((r) => ({ key: r.getAttribute("data-unit-deck-leftout-row"), text: r.querySelector("p").textContent, btn: (r.querySelector("button") || {}).textContent, aria: (r.querySelector("button") || {}).getAttribute("aria-label") })),
+    api: G.unitDecks.leftOut().map((r) => r.key).sort(),
+  }));
+  check(lo.rows.length === bad.length && JSON.stringify(lo.api) === JSON.stringify(bad.map((r) => r.k).sort()) && /^9 saved decks could not be loaded$/.test(lo.head) && /left them out of your study tools\. They are still on this device, and in any backup you export, until you remove them\./.test(lo.hint), "Settings lists every saved deck that could not be loaded, and says they are still on the device and in any backup until removed", () => JSON.stringify(lo));
+  const said = (k) => (lo.rows.find((r) => r.key === "unit-deck:" + k) || {}).text || "";
+  check(said("has-ssn") === "A saved deck (has-ssn) is left out because its text looks like something that does not belong in a study deck." && said("too-big") === "A saved deck (too-big) is left out because it is larger than a unit deck may be." && said("nine-sources") === "A saved deck (nine-sources) is left out because it did not pass GUIDON's check.", "each says why, in plain words, and never repeats what was in the row", () => JSON.stringify(lo.rows.map((r) => r.text)));
+  check(lo.rows.every((r) => r.btn === "Remove it" && /^Remove the saved deck .+ from this device$/.test(r.aria)), "with a labelled Remove button on each");
+  check(!(await page.locator("#settings-unitdecks-panel").innerText()).includes("123-45-6789"), "and the panel never shows what is inside a left-out deck");
+  await clickWhenStable(page, page.locator('[data-unit-deck-leftout-remove="unit-deck:has-ssn"]'));
+  await until(page, () => !document.querySelector('[data-unit-deck-leftout-row="unit-deck:has-ssn"]'));
+  check(!(await deviceKvGet(page, "unit-deck:has-ssn")) && (await deviceKvGet(page, "unit-deck:has-email")) !== null, "Remove it takes THAT row off the device and only that one");
+  const after1 = await page.evaluate(async () => ({ head: (document.querySelector("[data-unit-decks-leftout] p") || {}).textContent, api: G.unitDecks.leftOut().length, backup: (await G.backup.exportAll()).stores.kv.map((r) => r.k).filter((k) => /^unit-deck:has-/.test(k)).length, focus: document.activeElement && document.activeElement.hasAttribute("data-unit-deck-open") }));
+  check(after1.head === "8 saved decks could not be loaded" && after1.api === 8 && after1.backup === hasN - 1 && after1.focus === true, "the list shrinks, the row is out of the next backup, and focus moves to \"Add a unit deck\"", () => JSON.stringify(after1));
   await page.evaluate(async (ks) => { for (const k of ks) await G.db.del("kv", k); await G.unitDecks.load(); }, bad.map((r) => r.k).concat(["unit-deck:clean-two"]));
+  const none = await page.evaluate(() => G.unitDecks.leftOut().length);
+  check(none === 0, "with the rows gone the list is empty again");
+  // A device with the WRONG CLOCK must not lose decks: a row is judged as of the day it was added.
+  const wrongClock = clone(ROW); wrongClock.id = "clock-check"; wrongClock.name = "Clock check"; wrongClock.importedAt = "2100-01-01T00:00:00.000Z";
+  wrongClock.cards[0].a = "The convoy departs Fort Foo on 15 March 2099.";
+  const early = clone(wrongClock); early.id = "clock-early"; early.name = "Clock early"; early.importedAt = "2026-09-26T00:00:00.000Z";
+  await putOnDevice(page, { stores: { kv: [{ k: "unit-deck:clock-check", v: wrongClock }, { k: "unit-deck:clock-early", v: early }] } });
+  await page.evaluate(async () => { await G.unitDecks.load(); });
+  const clockIds = await deckIds();
+  check(clockIds.includes("clock-check") && !clockIds.includes("clock-early"), "a deck added when its future-dated sentence had already passed is kept at start-up whatever this device's clock says; one added while that date was still ahead is left out, as the import would have refused it", () => JSON.stringify(clockIds));
+  await page.evaluate(async () => { await G.db.del("kv", "unit-deck:clock-check"); await G.db.del("kv", "unit-deck:clock-early"); await G.unitDecks.load(); });
 }
 { // a device keeps at most 10 decks, whatever was put on it
   await page.evaluate(async () => { await G.unitDecks.remove("pinecone-ridge-demo"); });   // (the example deck comes back at the end of this block)
@@ -170,6 +202,8 @@ await waitForRoute(page, "#/home", { ready: "#route h1, #route h2" });
   await untilAsync(page, async () => (await G.selfheal.recent(80)).filter((e) => e.kind === "kv-reject" && /^unit-deck:many-1[123]$/.test(e.key || "")).length >= 3);
   const why = await page.evaluate(async () => (await G.selfheal.recent(80)).filter((e) => e.kind === "kv-reject" && /^unit-deck:many-1[123]$/.test(e.key || "")).map((e) => e.key));
   check(why.length === 3, "and logs the three it left out (past the limit of 10)", () => JSON.stringify(why));
+  const lim = await page.evaluate(() => G.unitDecks.leftOut().map((r) => r.key + " -> " + r.reason).sort());
+  check(JSON.stringify(lim) === JSON.stringify(["unit-deck:many-11 -> you already have 10 unit decks, the most GUIDON keeps", "unit-deck:many-12 -> you already have 10 unit decks, the most GUIDON keeps", "unit-deck:many-13 -> you already have 10 unit decks, the most GUIDON keeps"]), "and lists them in Settings as left out because you already have 10 (so they can be removed)", () => JSON.stringify(lim));
   await page.evaluate(async (ks) => { for (const k of ks) await G.db.del("kv", k); await G.unitDecks.load(); }, thirteen.map((r) => r.k));
   // A restore onto an empty device: the first 10 come in, the rest are named as left out.
   const twelve = Array.from({ length: 12 }, (_, i) => mk(i + 1));
@@ -225,6 +259,18 @@ await waitForRoute(page, "#/home", { ready: "#route h1, #route h2" });
   check(many.replace.ok === true && many.replace.replaced === true && many.n === 10, "but replacing one that is already there is allowed at the limit");
   await page.evaluate(async () => { for (let i = 1; i <= 10; i++) await G.unitDecks.remove("deck-" + i); });
   check((await keys("unit-deck:")).length === 0, "and removing them leaves no row behind");
+  // Two adds started together at nine decks must not both get the tenth place (the check and the save are not one step).
+  const race = await page.evaluate(async () => {
+    const mk = (i) => ({ format: "guidon-unit-pack", formatVersion: 1, id: "race-" + i, name: "Race " + i, packVersion: "1", packDate: "2026-09-26", cards: [{ id: "c1", category: "C", q: "Question " + i + "?", a: "Answer " + i }] });
+    for (let i = 1; i <= 9; i++) await G.unitDecks.add(mk(i));
+    const both = await Promise.all([G.unitDecks.add(mk(10)), G.unitDecks.add(mk(11)), G.unitDecks.add(mk(12))]);
+    const same = await Promise.all([G.unitDecks.add(mk(1)), G.unitDecks.add(mk(1))]);
+    return { okCount: both.filter((r) => r.ok).length, refused: both.filter((r) => !r.ok).map((r) => r.stage), n: G.unitDecks.list().length, sameOk: same.every((r) => r.ok && r.replaced), afterSame: G.unitDecks.list().length };
+  });
+  check(race.okCount === 1 && JSON.stringify(race.refused) === JSON.stringify(["limit", "limit"]) && race.n === 10, "three adds started together at nine decks: exactly one gets the tenth place, the other two are told the limit is reached", () => JSON.stringify(race));
+  check(race.sameOk && race.afterSame === 10, "two replacements of the same deck at once are both fine (a replacement never needs a new place)", () => JSON.stringify(race));
+  await page.evaluate(async () => { for (const d of G.unitDecks.list()) await G.unitDecks.remove(d.id); });
+  check((await keys("unit-deck:")).length === 0, "(and the device is clean again)");
   // On an empty device "constructor" is an ordinary id: nothing is "replaced", and it can be added and removed.
   const proto = await page.evaluate(async () => {
     const pk = { format: "guidon-unit-pack", formatVersion: 1, id: "constructor", name: "Constructor deck", packVersion: "1", packDate: "2026-09-26", cards: [{ id: "tostring", category: "__proto__", q: "constructor", a: "hasOwnProperty" }] };

@@ -218,12 +218,16 @@ const strOf = (n, c = "x") => c.repeat(n);
 // Invisible characters are refused wherever text goes (they are how a marking or a number is hidden from a check), in a single-line
 // field and in a multi-line answer alike; ordinary Unicode still passes.
 {
+  const cp = (n) => String.fromCodePoint(n);
   const HIDDEN = [
-    ["a soft hyphen", "­"], ["a combining grapheme joiner", "͏"], ["an Arabic letter mark", "؜"], ["a Hangul filler", "ㅤ"], ["a Mongolian vowel separator", "᠎"],
-    ["a zero-width space", "​"], ["a zero-width non-joiner", "‌"], ["a zero-width joiner", "‍"], ["a left-to-right mark", "‎"], ["a right-to-left mark", "‏"],
-    ["a word joiner", "⁠"], ["an invisible times", "⁢"], ["a deprecated format character", "⁪"], ["a variation selector", "️"], ["an interlinear annotation mark", "￹"],
-    ["an object replacement character", "￼"], ["a Unicode tag letter", "\u{E0041}"], ["a Unicode tag cancel", "\u{E007F}"], ["a variation selector supplement", "\u{E0100}"],
-  ];
+    ["a soft hyphen", 0xAD], ["a combining grapheme joiner", 0x34F], ["an Arabic letter mark", 0x61C], ["a Hangul filler", 0x3164], ["a Mongolian vowel separator", 0x180E], ["a Mongolian free variation selector", 0x180B], ["the unassigned Mongolian U+180F", 0x180F],
+    ["a zero-width space", 0x200B], ["a left-to-right mark", 0x200E], ["a right-to-left mark", 0x200F],
+    ["a word joiner", 0x2060], ["an invisible times", 0x2062], ["the unassigned U+2065", 0x2065], ["a deprecated format character", 0x206A], ["a variation selector", 0xFE00], ["an interlinear annotation mark", 0xFFF9],
+    ["an unassigned ignorable in the U+FFF0 block", 0xFFF0], ["an object replacement character", 0xFFFC], ["a halfwidth Hangul filler", 0xFFA0],
+    ["a musical symbol beam start (U+1D173)", 0x1D173], ["a musical symbol end phrase (U+1D17A)", 0x1D17A], ["a shorthand format letter overlap (U+1BCA0)", 0x1BCA0], ["a shorthand format up step (U+1BCA3)", 0x1BCA3],
+    ["an Egyptian hieroglyph format control (U+13430)", 0x13430], ["an Egyptian hieroglyph format control (U+13438)", 0x13438],
+    ["a language tag (U+E0001)", 0xE0001], ["a Unicode tag letter", 0xE0041], ["a Unicode tag cancel", 0xE007F], ["an unassigned tag-block ignorable (U+E0FFF)", 0xE0FFF], ["a variation selector supplement", 0xE0100],
+  ].map(([what, n]) => [what, cp(n)]);
   const fields = [
     ["the deck name", (p, c) => { p.name = "Alpha" + c; }, "name"], ["the unit label", (p, c) => { p.unit = "Unit" + c; }, "unit"],
     ["a category", (p, c) => { p.cards[0].category = "Local" + c + "SOP"; }, "cards[0].category"], ["a question", (p, c) => { p.cards[0].q = "When is" + c + " formation?"; }, "cards[0].q"],
@@ -237,7 +241,7 @@ const strOf = (n, c = "x") => c.repeat(n);
     const r = valid(p);
     if (!(!r.ok && r.errors.some((e) => e.code === "bad-characters" && e.path === at))) missed.push(what + " in " + label);
   }
-  check(missed.length === 0, `every invisible character (${HIDDEN.length} kinds) is refused in every text field (${n} combinations), naming the field`, () => missed.slice(0, 4).join("; "));
+  check(missed.length === 0, `every hidden character (${HIDDEN.length} kinds) is refused in every text field (${n} combinations), naming the field`, () => missed.slice(0, 4).join("; "));
   const msg = errsOf(Object.assign(clone(BASE), { name: "Alpha​demo" }))[0].message;
   check(/hidden or unusual character/.test(msg) && /zero-width/.test(msg) && /Retype it as plain text/.test(msg), "and the message says what is wrong in plain words", () => msg);
   // The saved-row check refuses them too (a restored backup or a row already on the device).
@@ -248,6 +252,35 @@ const strOf = (n, c = "x") => c.repeat(n);
     const r2 = clone(row); r2.cards[0].source[0].pub = "Alpha" + ch + "SOP";
     check(!P.validRow(r2), `and so is one with ${what} in a citation`);
   }
+  // The three that ordinary text needs are ALLOWED - and removed from the copy the screen reads, so they hide nothing.
+  const ZWJ = "\u200D", ZWNJ = "\u200C", VS16 = "\uFE0F";
+  for (const [what, ch] of [["the emoji joiner (ZWJ)", ZWJ], ["the non-joiner (ZWNJ, Persian and Indic text)", ZWNJ], ["the emoji variation selector (U+FE0F)", VS16]]) {
+    let allOk = true, why = "";
+    for (const [label, mutate] of fields) { const p = clone(BASE); mutate(p, ch); const r = valid(p); if (!r.ok) { allOk = false; why = label + ": " + JSON.stringify(r.errors.slice(0, 1)); break; } }
+    check(allOk, `${what} is accepted in every text field`, () => why);
+  }
+  const family = clone(BASE); family.cards[0].a = "A family: \u{1F468}" + ZWJ + "\u{1F469}" + ZWJ + "\u{1F467}, a heart \u2764" + VS16 + " and a Persian word \u0645\u06CC" + ZWNJ + "\u062E\u0648\u0627\u0647\u0645";
+  check(valid(family).ok && P.screen(family, { now: NOW }).ok, "an emoji family (with joiners), an emoji with its variation selector and a Persian word with a non-joiner pass the screen");
+  const hides = [
+    ["SEC + ZWJ + RET//NOFORN", "SEC" + ZWJ + "RET//NOFORN", /classification or handling marking/],
+    ["a Social Security number with a ZWNJ and a variation selector inside", "123" + ZWNJ + "-45" + VS16 + "-6789", /Social Security number/],
+    ["CUI//SP-PRVCY broken by a variation selector", "CU" + VS16 + "I//SP-PRVCY", /classification or handling marking/],
+  ];
+  for (const [label, text, looks] of hides) {
+    const p = clone(BASE); p.cards[0].a = text;
+    const v = valid(p), sc = P.screen(p, { now: NOW });
+    check(v.ok && !sc.ok && sc.findings.some((f) => looks.test(f.looksLike)), `the allowed characters hide nothing: ${label} is still refused`, () => JSON.stringify(sc.findings.slice(0, 2)));
+  }
+  check(!valid(Object.assign(clone(BASE), { name: "Alpha \u{1D173}demo" })).ok && !valid((() => { const p = clone(BASE); p.cards[0].a = "SEC\u{1D173}RET//NOFORN"; return p; })()).ok, "SEC + U+1D173 + RET//NOFORN (a musical formatting character, once accepted) is refused as a hidden character");
+  // The whole property, not a list: every code point that is a Format character (Cf) or a Default_Ignorable_Code_Point is refused, except the three.
+  let leaks = [];
+  const allowed = new Set([0x200C, 0x200D, 0xFE0F]);
+  for (let n = 0; n <= 0x10FFFF; n++) {
+    if (n >= 0xD800 && n <= 0xDFFF) continue;
+    const ch = String.fromCodePoint(n);
+    if (/[\p{Cf}\p{Default_Ignorable_Code_Point}]/u.test(ch) && !allowed.has(n) && P.hasHidden("a" + ch + "b", false) !== true) leaks.push("U+" + n.toString(16).toUpperCase());
+  }
+  check(leaks.length === 0, "every one of the 1.1 million Unicode code points that is a format character or default-ignorable is refused (except the three), whatever this engine's Unicode version says", () => leaks.slice(0, 8).join(", "));
   const fine = clone(BASE); fine.cards[0].a = "Thumbs \u{1F44D}, accents éè, CJK 字, and a Cyrillic word: Привет";
   check(valid(fine).ok && P.screen(fine, { now: NOW }).ok, "an answer with an emoji, accents, a CJK character and an ordinary Cyrillic word is accepted and passes the screen");
 }
@@ -441,6 +474,12 @@ const findsAt = (mutate, whereRe, looksRe) => {
     ["Cyrillic and Greek look-alikes in CUI//SP-PRVCY", "СUI//SP-PRVСY Ο", /classification or handling marking/],
     ["en dashes in a Social Security number", "Use 123–45–6789 to look it up.", /Social Security number/],
     ["a minus sign in a Social Security number", "Use 123−45−6789 to look it up.", /Social Security number/],
+    ["Armenian hyphens in a Social Security number", "Use 123\u058A45\u058A6789 to look it up.", /Social Security number/],
+    ["Hebrew maqaf in a Social Security number", "Use 123\u05BE45\u05BE6789 to look it up.", /Social Security number/],
+    ["Mongolian todo soft hyphens in a Social Security number", "Use 123\u180645\u18066789 to look it up.", /Social Security number/],
+    ["wave dashes in a Social Security number", "Use 123\u301C45\u301C6789 to look it up.", /Social Security number/],
+    ["a small em dash and a fullwidth hyphen-minus in a phone number", "Call 555\uFE58123\uFF0D4567 after hours.", /phone number/],
+    ["non-breaking hyphens in a phone number", "Call 555\u2011123\u20114567 now.", /phone number/],
     ["a combining mark laid on a letter of a marking", "ŚECRET//NOFORN", /classification or handling marking/],
     ["a mathematical bold marking", "\u{1D412}\u{1D404}\u{1D402}\u{1D411}\u{1D404}\u{1D413}//NOFORN", /classification or handling marking/],
     ["a circled-digit-free labelled SSN with fullwidth digits", "SSN: １２３４５６７８９", /Social Security number/],
@@ -483,6 +522,72 @@ const findsAt = (mutate, whereRe, looksRe) => {
   check(!P.validRow(rowOf(spread)) && P.validateRow(rowOf(spread)).errors[0].code === "sensitive-text", "a saved row that spreads a roster one name to a card is refused by the row check, with its own code");
   check(!P.validRow(rowOf(deck([{ keyPoints: NAMES }]))), "so is one with the roster in a card's key points");
 }
+
+// Round 2: a rank followed by a billet or a role is a duty, not a person - and a unit history may honestly name its commanders. A list of
+// names (rank + first + last, or "Surname, Given") is still a roster, in a card's key points, in one answer and one to a card.
+{
+  const deck = (cards) => { const p = clone(BASE); p.cards = cards.map((c, i) => Object.assign({ id: "c" + i, category: "Cat", q: "Question number " + i + "?", a: "Answer " + i }, c)); return p; };
+  const verdict = (p) => { const v = valid(p), s = P.screen(p, { now: NOW }); return { ok: v.ok && s.ok, valid: v.ok, s }; };
+  const accept = (label, p) => { const r = verdict(p); check(r.ok, `accepted (an honest deck): ${label}`, () => JSON.stringify(r.valid ? r.s.findings.slice(0, 2) : valid(p).errors.slice(0, 2))); };
+  const refuse = (label, p) => { const r = verdict(p); check(r.valid && !r.s.ok && r.s.findings.some((f) => f.code === "roster-like"), `refused as a roster: ${label}`, () => JSON.stringify(r.s.findings.slice(0, 2))); };
+  const BILLETS = ["SGT Team Leader", "SSG Squad Leader", "SFC Platoon Sergeant", "1LT Platoon Leader", "CPT Company Commander", "MSG Operations Sergeant", "1SG Company First Sergeant", "SGM Battalion Operations"];
+  accept("five rank + billet lines in one card's key points", deck([{ keyPoints: BILLETS.slice(0, 5) }]));
+  accept("rank + verb phrases in key points (\"SGT Leads the fire team\")", deck([{ keyPoints: ["SGT Leads the fire team", "SSG Trains the squad", "SFC Advises the platoon leader"] }]));
+  accept("eight cards whose short answers are rank + billet", deck(BILLETS.map((a) => ({ a }))));
+  accept("all eight billets as ONE multi-line answer", deck([{ a: BILLETS.join("\n") }]));
+  accept("rank titles as headings (\"CW2 Chief Warrant Officer Two\" and the like)", deck([{ keyPoints: ["CW2 Chief Warrant Officer Two", "CW3 Chief Warrant Officer Three", "CW4 Chief Warrant Officer Four", "CSM Command Sergeant Major"] }]));
+  const COMMANDERS = ["LTC Robert Adams", "COL James Baker", "LTC Thomas Cole", "COL William Davis", "LTC Henry Evans", "COL George Ford", "LTC Peter Grant", "COL Samuel Hill"];
+  accept("a unit history: eight one-line commander answers, one to a card (\"LTC Robert Adams\")", deck(COMMANDERS.map((a) => ({ a }))));
+  accept("a unit history: five commanders with their dates, in one card's key points", deck([{ keyPoints: ["LTC Robert Adams (1942-1944)", "COL James Baker (1944-1946)", "LTC Thomas Cole (1946-1949)", "COL William Davis (1949-1951)", "LTC Henry Evans (1951-1953)"] }]));
+  accept("a unit history: five commanders with their dates, one to a card", deck(["LTC Robert Adams, 1942 to 1944", "COL James Baker, 1944 to 1946", "LTC Thomas Cole, 1946 to 1949", "COL William Davis, 1949 to 1951", "LTC Henry Evans, 1951 to 1953"].map((a) => ({ a }))));
+  accept("a schedule full of times and room numbers", deck([{ keyPoints: ["0630 Formation, Bldg 12 Rm 204", "0700-0800 PT at the track", "0830 Class in Rm 118", "1200 Chow", "1300 Motor pool", "1530 Recall in Rm 204"] }, { a: "0630", keyPoints: ["Room 12", "3", "Bldg 4 room 101"] }]));
+  accept("an acronym deck", deck(["SAW Squad Automatic Weapon", "MG Machine Gun", "MSG Message", "PT Physical Training", "SOP Standing Operating Procedure", "COL Column", "GEN General Order", "SPC Specialist", "CPL Corporal", "SGT Sergeant"].map((a) => ({ a }))));
+  accept("rank titles spelled out in key points", deck([{ keyPoints: ["MSG Master Sergeant", "SGT Sergeant", "SFC Sergeant First Class", "CPL Corporal", "PFC Private First Class", "SSG Staff Sergeant"] }]));
+  accept("a publications list", deck([{ keyPoints: ["AR 600-20 Army Command Policy", "AR 600-8-19 Enlisted Promotions", "FM 6-22 Leader Development", "ATP 6-22.1 The Counseling Process", "DA PAM 600-25 NCO Guide", "TC 3-21.5 Drill and Ceremonies"] }]));
+  accept("pairs of code words (\"Alpha, Bravo\") and of ideas (\"Command, Control\")", deck([{ keyPoints: ["Alpha, Bravo", "Charlie, Delta", "Echo, Foxtrot", "Golf, Hotel"] }, { keyPoints: ["Command, Control", "Fire, Movement", "Plan, Prepare", "Team, Squad"] }]));
+  accept("a deck of long answers that each name a person in a sentence", deck(COMMANDERS.map((n) => ({ a: "The squadron's commander during the long winter of the reorganization was " + n + ", who served until relieved." }))));
+  const SMITH = Array.from({ length: 8 }, () => "SGT John Smith");
+  const VARIED = ["SGT John Smith", "SSG Mary Jones", "SPC Sam Brown", "CPL Ann Green", "PFC Tom White", "PVT Joe Black", "SFC Jill Gray", "MSG Bob Blue"];
+  refuse("eight \"SGT John Smith\" lines in one card's key points", deck([{ keyPoints: SMITH }]));
+  refuse("eight \"SGT John Smith\" lines in ONE answer", deck([{ a: SMITH.join("\n") }]));
+  refuse("eight \"SGT John Smith\" answers, one to a card", deck(SMITH.map((a) => ({ a }))));
+  refuse("eight \"SGT John Smith\" key points, one to a card", deck(SMITH.map((n) => ({ keyPoints: [n] }))));
+  refuse("eight different enlisted names, one answer to a card", deck(VARIED.map((a) => ({ a }))));
+  refuse("eight different enlisted names, half answers and half key points", deck(VARIED.map((n, i) => (i % 2 ? { keyPoints: [n] } : { a: n }))));
+  refuse("three officers in ONE card's key points (a list inside one card is a list, whatever the rank)", deck([{ keyPoints: COMMANDERS.slice(0, 3) }]));
+  refuse("a roster with a duty after each name (\"SGT Smith - Alpha Team\")", deck([{ keyPoints: ["SGT Smith - Alpha Team", "SSG Jones - Bravo Team", "SPC Brown - Charlie Team"] }]));
+  refuse("bulleted and numbered lines of names", deck([{ a: "1. SGT John Smith\n2. SSG Mary Jones\n3. SPC Sam Brown" }]));
+  refuse("six \"Surname, Given\" answers, one to a card", deck(["Smith, John", "Jones, Mary", "Brown, Sam", "Green, Ann", "White, Tom", "Black, Joe"].map((a) => ({ a }))));
+  // Officers are not counted ACROSS cards (a history names one per card) - but enlisted names are, and the two are not mixed up.
+  accept("eight officers, one to a card, plus five enlisted names, one to a card (enlisted is below the deck-wide bar of six)", deck(COMMANDERS.concat(VARIED.slice(0, 5)).map((a) => ({ a }))));
+  refuse("six enlisted names hidden among eight officers, one to a card", deck(COMMANDERS.concat(VARIED.slice(0, 6)).map((a) => ({ a }))));
+  // What tripped it is named, so an honest author can see.
+  {
+    const r = verdict(deck(VARIED.map((a) => ({ a }))));
+    const f = r.s.findings.find((x) => x.code === "roster-like");
+    const said = P.describeFinding(f);
+    check(/Card 1 \(c0\), answer: SGT John Smith; Card 2 \(c1\), answer: SSG Mary Jones; Card 3 \(c2\), answer: SPC Sam Brown/.test(said) && !/Card 4/.test(said), "the message for a roster spread over cards names the first THREE cards and lines it found", () => said);
+    const r2 = verdict(deck([{ keyPoints: SMITH }]));
+    const said2 = r2.s.findings.map(P.describeFinding).join(" | ");
+    check(/Card 1 \(c0\), key points: this looks like a list of people's names \(a roster\) \(.SGT John Smith; SGT John Smith; SGT John Smith.\)/.test(said2), "and for one card's key points it quotes the first three lines", () => said2);
+  }
+  // The list of words that are duties, not names: every word on it stops a line counting, and real names are not on it.
+  const words = P.NOT_NAME_WORDS;
+  const wordSet = new Set(words);
+  const AS_NAMES = ["Smith", "Jones", "Brown", "Garcia", "Miller", "Davis", "Rodriguez", "Martinez", "Anderson", "Taylor", "Thomas", "Moore", "Jackson", "Martin", "Lee", "Thompson", "White", "Harris", "Clark", "Lewis", "Robinson", "Walker", "Young", "Allen", "King", "Wright", "Scott", "Torres", "Nguyen", "Hill", "Flores", "Green", "Adams", "Nelson", "Baker", "Hall", "Rivera", "Campbell", "Mitchell", "Carter", "Roberts", "Gomez", "Phillips", "Evans", "Turner", "Diaz", "Parker", "Cruz", "Edwards", "Collins", "Stewart", "Morris", "Morales", "Murphy", "Cook", "Rogers", "Gutierrez", "Ortiz", "Morgan", "Cooper", "Peterson", "Bailey", "Reed", "Kelly", "Howard", "Ramos", "Kim", "Cox", "Ward", "Richardson", "Watson", "Brooks", "Chavez", "Wood", "James", "Bennett", "Gray", "Mendoza", "Ruiz", "Hughes", "Price", "Alvarez", "Castillo", "Sanders", "Patel", "Myers", "Long", "Ross", "Foster", "Jimenez", "John", "Robert", "Michael", "William", "David", "Richard", "Joseph", "Charles", "Christopher", "Daniel", "Matthew", "Anthony", "Mark", "Donald", "Steven", "Paul", "Andrew", "Joshua", "Kenneth", "Kevin", "Brian", "George", "Timothy", "Ronald", "Edward", "Jason", "Jeffrey", "Ryan", "Jacob", "Gary", "Nicholas", "Eric", "Jonathan", "Stephen", "Larry", "Justin", "Scott", "Brandon", "Benjamin", "Samuel", "Gregory", "Alexander", "Frank", "Patrick", "Raymond", "Jack", "Dennis", "Jerry", "Tyler", "Aaron", "Jose", "Adam", "Nathan", "Henry", "Douglas", "Zachary", "Peter", "Kyle", "Mary", "Patricia", "Jennifer", "Linda", "Elizabeth", "Barbara", "Susan", "Jessica", "Sarah", "Karen", "Lisa", "Nancy", "Betty", "Sandra", "Ashley", "Kimberly", "Emily", "Donna", "Michelle", "Carol", "Amanda", "Melissa", "Deborah", "Stephanie", "Rebecca", "Laura", "Sharon", "Cynthia", "Kathleen", "Amy", "Shirley", "Angela", "Helen", "Anna", "Brenda", "Pamela", "Nicole", "Ruth", "Katherine", "Samantha", "Christine", "Emma", "Catherine", "Debra", "Virginia", "Rachel", "Carolyn", "Janet", "Maria"];
+  const swallowed = AS_NAMES.filter((n) => wordSet.has(n.toLowerCase()));
+  check(words.length > 100 && swallowed.length === 0, `the list of ${words.length} duty and title words does not contain a single one of ${AS_NAMES.length} common surnames and given names`, () => swallowed.join(", "));
+  const REQUIRED = ["team", "squad", "section", "platoon", "company", "battalion", "brigade", "commander", "leader", "chief", "sergeant", "advisor", "officer", "manager", "xo", "ncoic", "oic", "nco", "advisor", "director", "instructor", "operator", "specialist", "private", "corporal", "lieutenant", "captain", "colonel", "general", "warrant"];
+  const missingWords = REQUIRED.filter((w) => !wordSet.has(w));
+  check(missingWords.length === 0, "the list holds the echelon, billet and role words a duty description is made of (team, squad, section, platoon, company, battalion, brigade, commander, leader, chief, sergeant, advisor, officer, manager, XO, NCOIC, OIC ...)", () => missingWords.join(", "));
+  const passes = words.filter((w) => { const W = w[0].toUpperCase() + w.slice(1); return rosterCheckLine(P, "SGT " + W + " " + W) > 0 || rosterCheckLine(P, "SGT " + W) > 0; });
+  check(passes.length === 0, "every word on it stops a line from counting as a person, alone or doubled (\"SGT <word>\", \"SGT <Word> <Word>\")", () => passes.join(", "));
+  const upper = words.filter((w) => rosterCheckLine(P, "SGT " + w.toUpperCase()) > 0);
+  check(upper.length === 0, "and in ALL CAPS as well", () => upper.join(", "));
+  check(rosterCheckLine(P, "SGT Smith") === 1 && rosterCheckLine(P, "SGT J. Smith") === 1 && rosterCheckLine(P, "COL Mary O'Brien") === 1 && rosterCheckLine(P, "SGT Smith Team Leader") === 0, "(and a real name still counts: \"SGT Smith\", \"SGT J. Smith\", \"COL Mary O'Brien\"; a billet anywhere in the name stops it)");
+}
+// One line through the same code the screen uses: how many people it names (0 or more).
+function rosterCheckLine(PP, line) { const r = PP.rosterScan(line); return r.pairs; }
 
 // A number cut in two: the end of one field and the start of the next (or of a later one) of the SAME card. Only what the join makes
 // appear counts, so numbers that merely sit next to each other are fine.
@@ -529,7 +634,18 @@ const findsAt = (mutate, whereRe, looksRe) => {
   const RES = ["Battalion SOP 2026", "unit SOP", "Squadron training schedule", "Company policy letter 4", "myPay", "Brigade standing order 4"];
   const WORDS = ["formation", "supply", "the troop", "guidon", "  padded  ", "café", "50-50", "Room 12", "0630", "AR 600-20 2020", "CPT", "Smith", "the first sergeant", "1st Squadron", "(fictional)"];
   const text = (max) => { let s = ""; const n = 1 + Math.floor(rnd() * 8); for (let i = 0; i < n; i++) s += (i ? " " : "") + pick(WORDS); return s.trim().slice(0, max) || "x"; };
-  const source = () => { const n = 1 + Math.floor(rnd() * 11); const parts = []; for (let i = 0; i < n; i++) parts.push(rnd() < 0.7 ? pick(PUBS) + (rnd() < 0.3 ? ", para " + (1 + Math.floor(rnd() * 9)) + "-" + (1 + Math.floor(rnd() * 9)) : "") : pick(RES)); return parts.join(pick(["; ", ", ", " / ", "; "])).slice(0, 200); };
+  // Editions of every length the parser accepts (a month word may be as long as the source allows: "Jan" + 43 x's + " 2019"), and long locators.
+  const edition = () => pick(["Jan 2019", "1 Jul 2024", "2020-03", "2021-05-04", "Sept 2019", "Jan" + "x".repeat(Math.floor(rnd() * 150)) + " 2019", "15 Mar" + "z".repeat(Math.floor(rnd() * 60)) + ". 2022"]);
+  const source = () => {
+    const n = 1 + Math.floor(rnd() * 11), parts = [];
+    for (let i = 0; i < n; i++) {
+      let piece = rnd() < 0.7 ? pick(PUBS) : pick(RES);
+      if (rnd() < 0.3) piece += ", para " + (1 + Math.floor(rnd() * 9)) + "-" + (1 + Math.floor(rnd() * 9)) + (rnd() < 0.15 ? "x".repeat(Math.floor(rnd() * 120)) : "");
+      if (rnd() < 0.25) piece += " (" + edition() + ")";
+      parts.push(piece);
+    }
+    return parts.join(pick(["; ", ", ", " / ", "; "])).slice(0, 200);
+  };
   let accepted = 0, refusedBySource = 0, otherRefused = 0, broken = [];
   for (let n = 0; n < 500; n++) {
     const p = { format: "guidon-unit-pack", formatVersion: 1, id: "gen-" + n, name: text(60), packVersion: "1." + n, packDate: "2026-09-26", cards: [] };
@@ -550,6 +666,54 @@ const findsAt = (mutate, whereRe, looksRe) => {
   }
   check(broken.length === 0, `validate() + screen() and validateRow() agree: of ${accepted + refusedBySource + otherRefused} generated decks, all ${accepted} that the import check accepted make a row the app keeps`, () => JSON.stringify(broken.slice(0, 2)));
   check(accepted > 100 && refusedBySource > 20, `(that table is meaningful: ${accepted} accepted, ${refusedBySource} refused for a source with too many references, ${otherRefused} refused for another reason)`, () => `${accepted}/${refusedBySource}/${otherRefused}`);
+}
+
+// Round 2: an edition longer than 40 characters ("Jan" + 43 x's + " 2019") is a real edition to the parser and used to be refused only by the
+// ROW check, so the deck was accepted at import and vanished at the next start. Every citation field is now bounded by the 200-character
+// source it came from - the same number in both checks.
+{
+  const longEd = "AR 600-8-19 (Jan" + "x".repeat(43) + " 2019)";
+  check(longEd.length <= L.source && P.cite(longEd)[0].edition.length > 40, "(the reviewer's source parses to an edition longer than 40 characters)", () => JSON.stringify(P.cite(longEd)));
+  const p = clone(BASE); p.cards[0].source = longEd;
+  const row = P.toDeck(p, { importedAt: "2026-09-26T12:00:00.000Z" });
+  check(valid(p).ok && P.validRow(row), "a deck whose source has a 51-character edition is accepted and its saved row is kept", () => JSON.stringify(valid(p).errors.concat(P.validateRow(row).errors)));
+  const widest = "AR 1 (Jan" + "x".repeat(L.source - "AR 1 (Jan".length - " 2019)".length) + " 2019)";
+  const p2 = clone(BASE); p2.cards[0].source = widest;
+  const row2 = P.toDeck(p2, { importedAt: "2026-09-26T12:00:00.000Z" });
+  check(widest.length === L.source && valid(p2).ok && P.validRow(row2), "and so is one whose edition fills the whole 200 characters", () => JSON.stringify(P.validateRow(row2).errors));
+  const bad = clone(row); bad.cards[0].source[0].edition = "x".repeat(L.source + 1);
+  check(!P.validRow(bad), "while the row check still refuses an edition past the 200 the source allows");
+  // A fuzz over arbitrary source strings (pieces the parser reacts to, glued at random): whenever the import accepts one, the row check does.
+  let seed = 90210;
+  const rnd = () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const TOK = ["AR ", "DA PAM ", "FM ", "600-20", "6-22", "para ", "Ch ", "Table 4-1", "3-9c", "(", ")", " ", " ", ", ", ", ", "; ", " / ", " · ", "Jan", "Sept", "Mar.", "2019", "2020-03", "x", "x".repeat(40), "y".repeat(90), "\"", "and", "—", ":", "SOP", "Battalion", "supersedes", "USC", "10 ", "U.S.C. 892", "DA Form 4856", "CFR 199"];
+  let tried = 0, accepted = 0, drift = [];
+  for (let n = 0; n < 4000; n++) {
+    let src = ""; const k = 1 + Math.floor(rnd() * 24);
+    for (let i = 0; i < k; i++) src += TOK[Math.floor(rnd() * TOK.length)];
+    src = src.slice(0, L.source);
+    if (!src.trim()) continue;
+    const p3 = clone(BASE); p3.cards[0].source = src;
+    tried++;
+    if (!valid(p3).ok) continue;
+    accepted++;
+    const rv = P.validateRow(P.toDeck(p3, { importedAt: "2026-09-26T12:00:00.000Z" }));
+    if (!rv.ok) drift.push({ src, errors: rv.errors.slice(0, 1) });
+  }
+  check(drift.length === 0 && accepted > 1000, `whenever the import accepts a source, its row is kept: ${accepted} of ${tried} random sources checked, none disagreed`, () => JSON.stringify(drift.slice(0, 2)));
+}
+
+// Round 2: the row is judged as of the day it was ADDED, not the device's clock today. The one rule that reads the calendar (a FUTURE date
+// with a place and a unit activity) would otherwise drop a saved deck at start-up on a device whose clock is wrong.
+{
+  const p = clone(BASE); p.cards[0].a = "The convoy departs Fort Foo on 15 March 2099.";
+  check(!P.screen(p, { now: "2026-09-26" }).ok && P.screen(p, { now: "2100-01-01" }).ok, "(a sentence about a movement on 15 March 2099 is refused when added today, and fine on a device whose clock already reads 2100)");
+  const addedLate = P.toDeck(p, { importedAt: "2100-01-01T00:00:00.000Z" });
+  check(P.validRow(addedLate), "a row added when the date had passed is kept whatever the clock says now (it is judged as of the day it was added)", () => JSON.stringify(P.validateRow(addedLate).errors));
+  const addedEarly = P.toDeck(p, { importedAt: "2026-09-26T00:00:00.000Z" });
+  const v = P.validateRow(addedEarly);
+  check(!v.ok && v.errors[0].code === "sensitive-text", "while a row added when that date was still ahead is refused, exactly as the import refused it");
+  check(P.screenRow(addedLate, { now: "2026-09-26" }).ok === false, "(an explicit 'now' still overrides, for a caller that wants the clock)");
 }
 
 // A deck as large as the file may be, with the most source entries a card may have, is one the row check keeps.
@@ -748,6 +912,17 @@ const findsAt = (mutate, whereRe, looksRe) => {
     [/Quiz best scores/, "Remove and Reset say Quiz best scores are part of the progress"],
     [/the study level in Board Drill and Quiz/, "the study level never hides a unit deck"],
     [/fullwidth\s+digits and letters/, "the plain copy the check reads is described"],
+    [/Quiz best scores for topics\s+no other deck uses/, "Remove and Reset say a topic another deck also has keeps its Quiz score"],
+    [/saved deck may be up to\s+448 KB/, "the saved-row size limit (448 KB) is stated next to the 256 KB file limit"],
+    [/could not be loaded[\s\S]*Remove it/, "a deck that fails the re-check is listed in Settings with a Remove button"],
+    [/not\s+deleted behind your back/, "and it is not deleted behind the Soldier's back"],
+    [/What still gets\s+through, plainly/, "the docs say plainly what the check still lets through"],
+    [/ALL-CAPS "SMITH, JOHN"/, "and name the list shapes it does not catch"],
+    [/Devanagari/, "and the digits of other alphabets"],
+    [/"SGT Team Leader"/, "the docs say a rank followed by a billet is not a person"],
+    [/first three lines that tripped it/, "the docs say the refusal names the first three lines"],
+    [/every kind of dash/, "the docs say every dash is folded"],
+    [/emoji variation selector/, "the docs say which three hidden characters are allowed"],
   ];
   const unsaid = claims.filter(([re]) => !re.test(docs)).map(([, what]) => what);
   check(unsaid.length === 0, "and states what the app really does: backups, Guest and Kiosk, the re-check, no place for recitation words, what Remove deletes, the study level", () => "missing: " + unsaid.join(" | "));
