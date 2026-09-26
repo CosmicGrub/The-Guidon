@@ -705,8 +705,10 @@ jobs:
             tests: "test:doctrine-abcp-brs-accuracy test:legal-package-guard test:legal-package-app test:legal-package-rooms"
           - name: "61-legalpackagecontent-legalpackageverifier-boardcitations-sectioncitations"
             tests: "test:legal-package-content test:legal-package-verifier test:board-citations test:section-citations"
-          - name: "62-esp32lanes"
-            tests: "test:esp32-lanes"
+          - name: "62-esp32lanes-unitpackformat-unitpackcli-unitdecksisolation"
+            tests: "test:esp32-lanes test:unit-pack-format test:unit-pack-cli test:unit-decks-isolation"
+          - name: "63-unitdecks-unitdecksstorage"
+            tests: "test:unit-decks test:unit-decks-storage"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same

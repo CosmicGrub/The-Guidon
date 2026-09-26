@@ -1,0 +1,18 @@
+# A made-up unit and made-up facts: nothing here is real. It exists so the authoring command
+# and GUIDON's tests have a deck to work on, and so a unit leader can see the shape of one.
+# id: pinecone-ridge-demo
+# name: Pinecone Ridge Demo Squadron study deck
+# unit: Pinecone Ridge Demo Squadron (fictional)
+# version: 2026.09
+# date: 2026-09-26
+# recite: Squadron song
+# recite: Squadron motto
+id,category,question,answer,key points,source
+sop-001,Local SOP,What time is Monday morning formation at the demo squadron?,Formation is at 0630. Be in place by 0620.,In place ten minutes early | Uniform is the unit's published uniform of the day,"Pinecone Ridge Demo Squadron SOP 2026, para 2-1"
+sop-002,Local SOP,Where do Soldiers turn in a lost-item report?,"At the squadron supply window, using the demo squadron's lost-item form.",,"Pinecone Ridge Demo Squadron SOP 2026, para 5-3"
+sop-003,Local SOP,Who approves a weekend pass request in the demo squadron?,"The troop commander approves it, after the request goes through the platoon sergeant.",Request goes to the platoon sergeant first | The troop commander approves,"Pinecone Ridge Demo Squadron SOP 2026, para 3-4"
+hist-001,Unit history,What year was the demo squadron activated?,"2026, as an example unit made up for GUIDON's tests.",,Pinecone Ridge Demo Squadron history handout (fictional)
+hist-002,Unit history,What is on the demo squadron's guidon?,A white pine cone on a teal field.,White pine cone | Teal field,Pinecone Ridge Demo Squadron history handout (fictional)
+hist-003,Unit history,What is the demo squadron's nickname?,The Pinecones.,,
+board-001,Local promotion-board study,Name the demo squadron's three local board study topics.,"Local SOP, unit history, and the squadron training calendar.",Local SOP | Unit history | Squadron training calendar,Pinecone Ridge Demo Squadron board SOP (fictional)
+board-002,Local promotion-board study,How long does the demo squadron's local board allow for a Soldier's opening statement?,Three minutes.,,Pinecone Ridge Demo Squadron board SOP (fictional)

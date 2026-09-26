@@ -1,0 +1,87 @@
+{
+  "format": "guidon-unit-pack",
+  "formatVersion": 1,
+  "id": "pinecone-ridge-demo",
+  "name": "Pinecone Ridge Demo Squadron study deck",
+  "unit": "Pinecone Ridge Demo Squadron (fictional)",
+  "packVersion": "2026.09",
+  "packDate": "2026-09-26",
+  "cards": [
+    {
+      "id": "sop-001",
+      "category": "Local SOP",
+      "q": "What time is Monday morning formation at the demo squadron?",
+      "a": "Formation is at 0630. Be in place by 0620.",
+      "keyPoints": [
+        "In place ten minutes early",
+        "Uniform is the unit's published uniform of the day"
+      ],
+      "source": "Pinecone Ridge Demo Squadron SOP 2026, para 2-1"
+    },
+    {
+      "id": "sop-002",
+      "category": "Local SOP",
+      "q": "Where do Soldiers turn in a lost-item report?",
+      "a": "At the squadron supply window, using the demo squadron's lost-item form.",
+      "source": "Pinecone Ridge Demo Squadron SOP 2026, para 5-3"
+    },
+    {
+      "id": "sop-003",
+      "category": "Local SOP",
+      "q": "Who approves a weekend pass request in the demo squadron?",
+      "a": "The troop commander approves it, after the request goes through the platoon sergeant.",
+      "keyPoints": [
+        "Request goes to the platoon sergeant first",
+        "The troop commander approves"
+      ],
+      "source": "Pinecone Ridge Demo Squadron SOP 2026, para 3-4"
+    },
+    {
+      "id": "hist-001",
+      "category": "Unit history",
+      "q": "What year was the demo squadron activated?",
+      "a": "2026, as an example unit made up for GUIDON's tests.",
+      "source": "Pinecone Ridge Demo Squadron history handout (fictional)"
+    },
+    {
+      "id": "hist-002",
+      "category": "Unit history",
+      "q": "What is on the demo squadron's guidon?",
+      "a": "A white pine cone on a teal field.",
+      "keyPoints": [
+        "White pine cone",
+        "Teal field"
+      ],
+      "source": "Pinecone Ridge Demo Squadron history handout (fictional)"
+    },
+    {
+      "id": "hist-003",
+      "category": "Unit history",
+      "q": "What is the demo squadron's nickname?",
+      "a": "The Pinecones."
+    },
+    {
+      "id": "board-001",
+      "category": "Local promotion-board study",
+      "q": "Name the demo squadron's three local board study topics.",
+      "a": "Local SOP, unit history, and the squadron training calendar.",
+      "keyPoints": [
+        "Local SOP",
+        "Unit history",
+        "Squadron training calendar"
+      ],
+      "source": "Pinecone Ridge Demo Squadron board SOP (fictional)"
+    },
+    {
+      "id": "board-002",
+      "category": "Local promotion-board study",
+      "q": "How long does the demo squadron's local board allow for a Soldier's opening statement?",
+      "a": "Three minutes.",
+      "source": "Pinecone Ridge Demo Squadron board SOP (fictional)"
+    }
+  ],
+  "reciteTitles": [
+    "Squadron song",
+    "Squadron motto"
+  ]
+}

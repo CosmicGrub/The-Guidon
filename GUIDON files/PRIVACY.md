@@ -1,6 +1,6 @@
 # Privacy Policy — GUIDON
 
-**Last updated:** September 19, 2026
+**Last updated:** September 26, 2026
 
 This is the Privacy Policy for **GUIDON** (Army Leader Development Trainer), distributed as a standalone HTML app, an installable web app (PWA), a Windows desktop app, and an Android app (package `app.guidon.trainer`). It applies to every version of GUIDON, since they all run from the same source and behave identically with respect to data.
 
@@ -27,6 +27,7 @@ Everything below is stored **only on your device** — never on a server, becaus
 - **Practice and progress data:** quiz attempts, Mock Board results, streaks, and scenario progress, generated as you use the app.
 - **Squad roster (optional, leader-facing only):** if you use the roster feature, it asks for initials, a callsign, or a roster number for each Soldier — not full legal names — plus a rank and counseling dates. This is the one place GUIDON stores information about people other than you, so it gets extra protection — see the next section.
 - **Risk Worksheet (optional, practice tool only):** the DA Form 7278 practice tool asks for a resource, a location, and other worksheet fields. It is meant for a synthetic or hypothetical scenario, never a real facility, location, or vulnerability — but because the fields could be used to enter real information, GUIDON gives any saved worksheet the same extra protection as the roster (see the next section).
+- **Unit decks (optional):** if you add a study deck your own unit wrote (Settings → Study Preferences → Unit decks), GUIDON keeps that deck on your device, the same way it keeps your My unit texts. It comes from a file you choose or text you paste; GUIDON never fetches it from anywhere. Before it is added, GUIDON checks it for classification markings, Social Security and DoD ID numbers, contact details and lists of names, and refuses the whole deck if it finds any. It is meant for a unit's own study facts, not for information about individual Soldiers, and the check can miss things, so the person who wrote the deck is responsible for what is in it. A deck is your own study material, so it is included in a backup you export and comes back when you restore that backup. You can switch it off or remove it at any time.
 
 None of the above ever leaves your device on its own. Nothing here is ever sent to a server.
 
