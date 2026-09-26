@@ -1397,11 +1397,11 @@
    "id": "LP-159",
    "text": "High-level General Article awareness card only",
    "kind": "factual",
-   "verification": "mechanical",
+   "verification": "partial",
    "proof": [
     { "test": "test:legal-package-content" }
    ],
-   "note": "Scoped to the #/cyber-opsec module, which is what the audit matrix describes. The wider board bank has its own UCMJ cards (for example on Article 134 as the 'General Article'); those are not part of this module."
+   "gap": "Proved for the #/cyber-opsec module, which is what the audit matrix describes: one card, a high-level description of the General Article, no penalties or offenses, no self-check question. The wider board bank also carries other Article 134 cards from its UCMJ deck (for example 'What is UCMJ Article 134 and why is it known as the General Article?'); they are general in nature too, and one notes that the Manual for Courts-Martial lists specific enumerated offenses with maximum punishments. 'Only' is true of the training module, not of the whole app - a reviewer should read it that way."
   },
   {
    "id": "LP-160",

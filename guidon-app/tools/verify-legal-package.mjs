@@ -544,7 +544,8 @@ if (isMain) {
       const g = gitFacts(root);
       if (!/^[0-9a-f]{40}$/.test(g.commit)) { console.log("  FAIL  cannot stamp: no git commit found (is this a git checkout?)"); failureCount++; }
       else {
-        const block = renderStamp({ version: res.pkg.version, commit: g.commit, date: dateArg || new Date().toISOString().slice(0, 10), tree: g.tree, docHash: res.docHash, mapHash: res.mapHash, result: "PASS", counts: res.summary });
+        const now = new Date(), p2 = (n) => String(n).padStart(2, "0");
+        const block = renderStamp({ version: res.pkg.version, commit: g.commit, date: dateArg || `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}` /* the date on the machine that ran it */, tree: g.tree, docHash: res.docHash, mapHash: res.mapHash, result: "PASS", counts: res.summary });
         writeFileSync(path.join(root, DOC_NAME), placeStamp(res.docText, block), "utf8");
         console.log(`  PASS  --write-stamp: ${DOC_NAME} stamped (v${res.pkg.version}, commit ${g.commit.slice(0, 12)}, working tree ${g.tree})`);
         if (g.tree !== "clean") console.log("  NOTE  the working tree has uncommitted changes, so the stamp says so; commit them first and stamp again for a stamp that names exactly what was tested");
