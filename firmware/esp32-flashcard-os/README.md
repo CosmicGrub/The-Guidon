@@ -97,6 +97,12 @@ does the same with **decks**:
   every subject in one list, and the Settings screen unchanged. Older
   firmware (flashed before decks) reading the new card files ignores the
   extra information and shows everything as it always did.
+- A `lanes.json` that does not list the Standard (`default`) deck — one that
+  was cut down or only partly copied to the card, so it holds MOS decks alone
+  — is treated exactly like no `lanes.json`: decks stay off. The device never
+  starts on, or falls back to, "the first deck in the file", because that could
+  be an MOS deck the Soldier never chose. (The exporter refuses to write such a
+  file in the first place.)
 
 How the exporter works it out, and how it is checked, is in
 [`tools/lanes.mjs`](tools/lanes.mjs): the MOS decks are read from the same

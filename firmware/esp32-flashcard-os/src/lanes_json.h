@@ -17,8 +17,11 @@
 // Reads /lanes.json into `t`. Only each deck's id, label and card count are
 // kept: the filter drops the per-deck subject-name lists as the file streams
 // past, so the parse holds a few hundred bytes, not the whole file. Returns
-// false (table left empty) for a file that cannot be parsed or lists no deck;
-// *why then names the parse error, if there was one.
+// false (table left empty) for a file that cannot be parsed, lists no deck, or
+// lists no DEFAULT deck (see laneUsable in lanes.h: a list of MOS decks alone
+// would let a fallback open one for a Soldier who never chose it, so such a
+// file is treated exactly like no lanes.json at all); *why then names the
+// reason, if there is one.
 template <typename TInput>
 static inline bool lanesReadTable(TInput &in, LaneTable *t, const char **why) {
   laneTableClear(t);
@@ -34,6 +37,11 @@ static inline bool lanesReadTable(TInput &in, LaneTable *t, const char **why) {
   }
   for (JsonObject l : doc["lanes"].as<JsonArray>()) {
     laneAdd(t, l["id"] | "", l["label"] | "", (uint16_t)(l["count"] | 0));
+  }
+  if (t->n > 0 && !laneUsable(t)) {
+    laneTableClear(t);
+    if (why) *why = "lanes.json lists no default deck";
+    return false;
   }
   return t->n > 0;
 }

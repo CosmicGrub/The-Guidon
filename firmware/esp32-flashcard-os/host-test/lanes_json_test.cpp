@@ -58,10 +58,22 @@ static void unitChecks() {
   check(!readLanes("not json at all", &t, &why) && t.n == 0, "garbage is refused");
   check(!readLanes("{\"lanes\":[]}", &t, &why) && t.n == 0, "a deck list with no decks is refused (decks stay off)");
   check(!readLanes("{\"schema\":1}", &t, &why) && t.n == 0, "a file with no deck list is refused");
+  {
+    // No default ("Standard") deck: only MOS decks. Refused like a missing file, so nothing can fall back to one.
+    const char *mosOnly =
+        "{\"schema\":1,\"lanes\":["
+        "{\"id\":\"92A\",\"label\":\"92A Automated Logistical Specialist\",\"count\":40,\"categories\":[\"92A - MOS Fundamentals\"]},"
+        "{\"id\":\"68W\",\"label\":\"68W Combat Medic\",\"count\":24,\"categories\":[\"68W - MOS Fundamentals\"]}]}";
+    why = NULL;
+    check(!readLanes(mosOnly, &t, &why) && t.n == 0 && why && strstr(why, "no default") != NULL, "a deck list with ONLY MOS decks (no default deck) is refused, leaves no decks, and says why");
+    check(laneResolve(&t, "92A") == -1 && !laneActive(&t, true), "...so nothing resolves to an MOS deck and decks stay off, however well tagged categories.json is");
+    check(readLanes("{\"lanes\":[{\"id\":\"92A\",\"label\":\"x\"},{\"id\":\"default\",\"label\":\"Standard deck\"}]}", &t, &why) && t.n == 2 && laneResolve(&t, "GONE") == 1, "a default deck listed AFTER an MOS deck is fine: it is found by id, and a gone saved deck starts on it, not on index 0");
+  }
   check(readLanes("{\"lanes\":[{\"id\":\"default\"}]}", &t, &why) && strcmp(t.lane[0].label, "default") == 0 && t.lane[0].count == 0, "a deck with no label or count still loads (label falls back to the id, count 0)");
   check(readLanes("{\"lanes\":[{\"id\":7,\"label\":\"x\"},{\"id\":\"default\"},{\"id\":\"default\"},{\"label\":\"no id\"}]}", &t, &why) && t.n == 1, "a non-text id, a repeated id and a missing id are skipped, never crash");
   std::string many = "{\"lanes\":[";
-  for (int i = 0; i < LANES_MAX + 4; i++) { char one[64]; snprintf(one, sizeof(one), "%s{\"id\":\"D%d\"}", i ? "," : "", i); many += one; }
+  // (the first deck is the default one: a list with no default deck is refused, see above)
+  for (int i = 0; i < LANES_MAX + 4; i++) { char one[64]; if (i == 0) snprintf(one, sizeof(one), "{\"id\":\"default\"}"); else snprintf(one, sizeof(one), ",{\"id\":\"D%d\"}", i); many += one; }
   many += "]}";
   check(readLanes(many.c_str(), &t, &why) && t.n == LANES_MAX, "more decks than the table holds: the first LANES_MAX load, the rest are ignored");
   check(readLanes("{\"lanes\":[{\"id\":\"default\",\"label\":\"This label is far longer than the forty-three characters the device keeps for it\"}]}", &t, &why) && strlen(t.lane[0].label) == LANE_LABEL_LEN - 1, "an over-long label is shortened, not overrun");
