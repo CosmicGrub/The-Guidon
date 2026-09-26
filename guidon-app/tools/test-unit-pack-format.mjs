@@ -263,7 +263,8 @@ const strOf = (n, c = "x") => c.repeat(n);
     const r = valid(p);
     check(r.ok, `"${nm}" as a card id, question, category, suggested title and deck id is an ordinary name (no false duplicate)`, () => JSON.stringify(r.errors.slice(0, 2)));
     const sum = P.summarize(p);
-    check(sum.categories.length === 2 && sum.categories[0].name === nm && sum.categories[0].count === 2 && sum.categories[1].name === nm + "s", `the preview counts the category "${nm}" (2 cards) and "${nm}s" (1 card)`, () => JSON.stringify(sum.categories));
+    const inCat = (name) => p.cards.filter((c) => c.category === name).length;
+    check(sum.categories.length === new Set(p.cards.map((c) => c.category)).size && sum.categories[0].name === nm && sum.categories[0].count === inCat(nm) && sum.categories[1].name === nm + "s" && sum.categories[1].count === inCat(nm + "s"), `the preview counts the category "${nm}" (the cards in it, more than one) and "${nm}s" separately`, () => JSON.stringify(sum.categories));
     check(P.validRow(P.toDeck(p)), `and the saved row for it passes the row check`);
   }
   // Duplicates are still found, whatever the word.
