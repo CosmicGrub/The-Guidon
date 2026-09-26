@@ -230,4 +230,9 @@ Good to know:
   and come back when you restore it.
 - In a Guest or Kiosk session you can add a deck, but nothing is saved. It is gone
   when the session ends.
+- A deck that is switched on is always part of what you study. The narrowing that
+  trims the built-in cards (your Focus tier setting, an MOS, an MOI plan set to "In Scope",
+  Rapid Fire's "Match my rank") never hides it. Switch the deck off to hide it.
+- Cards from a unit deck are not counted in Home's due count or in the weak-area
+  lists, which are about the built-in cards.
 - You can keep up to 10 unit decks.

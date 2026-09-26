@@ -268,8 +268,8 @@
       var box = el("div", { role: "group", "aria-label": "Remove " + r.name, style: "margin-top:8px;padding:10px;border:1px solid var(--line-2);border-radius:8px" }, [
         el("p", { text: "Remove “" + r.name + "” from this device? Its " + plural(r.cards.length, "card") + " will leave your study tools." }),
         el("p.hint", { text: "What about your review progress on those cards (what Board Drill has scheduled for you)?" }),
-        el("div", { style: "margin:6px 0" }, [keep, el("label", { for: name + "-keep", style: "display:inline;margin-left:6px", text: "Keep it, in case you add this deck again" })]),
-        el("div", { style: "margin:6px 0" }, [del, el("label", { for: name + "-delete", style: "display:inline;margin-left:6px", text: "Delete it too" })]),
+        el("div", { style: "margin:6px 0" }, [keep, el("label", { for: name + "-keep", style: "display:inline;margin-left:6px;text-transform:none;letter-spacing:normal", text: "Keep it, in case you add this deck again" })]),
+        el("div", { style: "margin:6px 0" }, [del, el("label", { for: name + "-delete", style: "display:inline;margin-left:6px;text-transform:none;letter-spacing:normal", text: "Delete it too" })]),
         el("div", { style: "display:flex;flex-wrap:wrap;gap:8px;margin-top:8px" }, [go, cancel]),
       ]);
       host.appendChild(box);
@@ -331,6 +331,10 @@
           if (!form.isConnected) return;
           if (!chk.ok) drawRefusal(result, chk);
           else drawPreview(result, chk, function () { drawAddButton(); focusOpen(); });
+        }).then(null, function () {
+          // Nothing above is expected to throw; if something does, say so plainly and let the Soldier try again.
+          checkBtn.disabled = false;
+          if (form.isConnected) drawRefusal(result, { stage: "read", messages: ["Something went wrong while checking that deck. Nothing was saved. Try again, or paste the deck text instead."], findings: [] });
         });
       });
     }

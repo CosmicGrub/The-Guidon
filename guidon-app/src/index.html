@@ -9352,9 +9352,11 @@ window.G = window.G || {};
     },
     // Board questions PLUS the cards of the Soldier's own unit decks (Settings ->
     // Study Preferences -> Unit decks; src/app-modules/unit-decks.js). This is the
-    // ONLY accessor that returns a unit card, and it is called by exactly four
-    // study tools - Board Drill, Quiz, Rapid Fire and global search - plus the
-    // Readiness screen's own "Unit deck readiness" row. boardQuestions() above is
+    // ONLY store accessor that returns a unit card, and it is called by exactly three
+    // study tools - Board Drill, Quiz and Rapid Fire. Global search and the Readiness
+    // screen's own "Unit Deck Readiness" row read G.unitDecks.cards() themselves.
+    // tools/test-unit-decks-isolation.mjs holds those call sites to exactly that list.
+    // boardQuestions() above is
     // deliberately untouched: Study Rooms (which would put cards on the LAN),
     // Mock Board, the Home dashboard, weak-area rankings and every count that
     // means "the shipped bank" keep reading it, so a unit card cannot reach any
