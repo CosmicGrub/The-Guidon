@@ -12,7 +12,7 @@
  *   2. the BRS overview entry: the continuation pay window moved from 8-12
  *      to 7-12 years of service "as of 1 Jan 2026".
  * Both were independently re-read from primary sources on 2026-09-25 and
- * CONFIRMED (Army Directive 2026-13, SECARMY, signed 1 July 2026, on
+ * CONFIRMED (Army Directive 2026-13, SECARMY, dated 1 July 2026, on
  * armypubs.army.mil; the Army's ABCP FAQ on army.mil, which lists 7 July 2026
  * as the effective date; ALARACT 100/2025, R 071630Z NOV 25, paras 3, 4.A.2,
  * 4.A.3; 37 USC 356(a)). Reading them also found the app repeating the claim
@@ -63,14 +63,14 @@ const hits = (re) => strings.filter((x) => re.test(x.s)).map((x) => x.p);
 
 // Predicates take the entry so the "verify the verifier" block below can hand them a planted defect.
 const abcpBodyOk = (e, needs, bans) => needs.every((n) => e.body.includes(n)) && !bans.some((b) => e.body.includes(b));
-const NEEDS_1 = ["Army Directive 2026-13", "signed 1 July 2026", "7 July 2026", "0.550 or higher", "at least twice per calendar year", "no AFT score exempts", "tape test", "180-day", "rescinded the old progression requirements"];
-const NEEDS_2 = ["Army Directive 2026-13", "signed 1 July 2026", "7 July 2026", "at least twice per calendar year", ".549 passes and .550 fails", "DA Form 5500", "DA Form 5501 is rescinded", "no age or sex adjustment", "different team", "at least 7 days"];
+const NEEDS_1 = ["Army Directive 2026-13", "dated 1 July 2026", "7 July 2026", "0.550 or higher", "at least twice per calendar year", "no AFT score exempts", "tape test", "180-day", "rescinded the old progression requirements"];
+const NEEDS_2 = ["Army Directive 2026-13", "dated 1 July 2026", "7 July 2026", "at least twice per calendar year", ".549 passes and .550 fails", "DA Form 5500", "DA Form 5501 is rescinded", "no age or sex adjustment", "different team", "at least 7 days"];
 const BANS = ["monthly weigh-ins", "measurable progress", "set timeline", "trained personnel following exact protocol", "privately and with dignity", "Failure to make progress"];
 
 const a1 = doc("doc-abcp-1"), a2 = doc("doc-abcp-2");
 check(!!a1 && !!a2, "both ABCP doctrine entries (doc-abcp-1, doc-abcp-2) are present", "doc-abcp-1 or doc-abcp-2 missing from the assembled bank");
 check(a1 && a2 && a1.topic === "Army Body Composition Program" && a2.topic === "Army Body Composition Program", "both sit under the topic Army Body Composition Program");
-check(a1 && abcpBodyOk(a1, NEEDS_1, BANS), "doc-abcp-1 states the directive facts (signed 1 Jul, effective 7 Jul, 0.550, twice a year, no AFT exemption, tape test, 180-day hold) and none of the rescinded ones (monthly weigh-ins, progress on a timeline)", () => "doc-abcp-1 body: " + (a1 && a1.body));
+check(a1 && abcpBodyOk(a1, NEEDS_1, BANS), "doc-abcp-1 states the directive facts (dated 1 Jul, effective 7 Jul, 0.550, twice a year, no AFT exemption, tape test, 180-day hold) and none of the rescinded ones (monthly weigh-ins, progress on a timeline)", () => "doc-abcp-1 body: " + (a1 && a1.body));
 check(a2 && abcpBodyOk(a2, NEEDS_2, BANS), "doc-abcp-2 states the measurement facts (navel/height, .549 passes and .550 fails, twice a year, 7-day AFT gap, confirmation by a different team, DA 5500 not 5501) and drops the unsourced 'trained personnel'/'privately and with dignity' claims", () => "doc-abcp-2 body: " + (a2 && a2.body));
 // CONFIRMED against the primary text, so they stay "verified" (an in_transition tag would also let the Settings toggle hide the
 // Soldier's own body composition standard). Only a claim that could NOT be verified is downgraded to in_transition.
@@ -86,9 +86,9 @@ check(a1 && a2 && srcOk(a1) && srcOk(a2), "both cite Army Directive 2026-13 as 1
 const d3 = doc("doc-abcp-3");
 check(d3 && !d3.source.some((s) => s.pub === "AR 600-9" && s.edition === "2023") && !/correlates with higher (attrition|long-term)/.test(all(d3)), "doc-abcp-3 no longer cites a nonexistent 2023 AR 600-9 or claims a leadership style 'correlates with' attrition (board card abcp-8 says no such study was found)");
 
-// The dates. AD 2026-13 is signed 1 Jul 2026 ("Effective immediately"); the Army's ABCP FAQ and army.mil release give 7 Jul 2026.
+// The dates. AD 2026-13 is dated 1 Jul 2026 ("Effective immediately"); the Army's ABCP FAQ and army.mil release give 7 Jul 2026.
 check(hits(/2026-13[^.]{0,60}effective 1 Jul(y)? 2026|effective 1 Jul(y)? 2026[^.]{0,40}2026-13|\(effective 1 July 2026\)/i).length === 0,
-  "no card says Army Directive 2026-13 was 'effective 1 Jul 2026' (it was signed 1 Jul; the Army lists 7 Jul as the effective date)", () => "still says effective 1 Jul: " + hits(/2026-13[^.]{0,60}effective 1 Jul(y)? 2026|effective 1 Jul(y)? 2026[^.]{0,40}2026-13|\(effective 1 July 2026\)/i).join(", "));
+  "no card says Army Directive 2026-13 was 'effective 1 Jul 2026' (it was dated 1 Jul; the Army lists 7 Jul as the effective date)", () => "still says effective 1 Jul: " + hits(/2026-13[^.]{0,60}effective 1 Jul(y)? 2026|effective 1 Jul(y)? 2026[^.]{0,40}2026-13|\(effective 1 July 2026\)/i).join(", "));
 check(hits(/early January 2027|running from the directive's effective date/).length === 0,
   "no card invents a start or end date for the 180-day assessment (the directive gives none)", () => hits(/early January 2027|running from the directive's effective date/).join(", "));
 
