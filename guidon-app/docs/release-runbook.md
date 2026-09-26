@@ -11,6 +11,7 @@ each rule is in the header comment of the workflow that enforces it.
 |---|---|---|
 | 1. Get main green | anyone | Every change lands through a PR whose **CI green** check passed. |
 | 2. Bump the version | anyone | `node tools/bump-version.mjs <x.y.z> --write` (one command, every file), plus the What's New and CHANGELOG entries. `npm run lint:patterns` proves the files agree. |
+| 2a. Legal package | anyone | After `npm run build`, run `node tools/verify-legal-package.mjs --run --write-stamp` (from `guidon-app/`): it runs every test the Command/Legal package's claims name and, only if all pass, stamps `GUIDON_COMMAND_LEGAL_PACKAGE.md` with this version and commit; commit the stamp with the bump. `npm run lint:patterns` already checks the package cannot drift; `node tools/verify-legal-package.mjs --release` fails if the stamp is not for the version being cut. |
 | 3. Cut | owner | Commit `guidon-app/src/.release-prep` containing `vX.Y.Z` to main. `release-cut.yml` waits for CI on that exact commit and only then creates the tag and an empty, **not-Latest** release. |
 | 4. Fan out | owner | Commit `guidon-app/src/.release-trigger` containing `vX.Y.Z`. `release-assets.yml` and `release-apple.yml` build from the tag and attach files. |
 | 5. Android | owner, locally | Build, sign and attach the three Android files (below), then run **Release assets** by hand with **finalize_only** ticked. |

@@ -1,0 +1,1727 @@
+{
+ "_about": "Every sentence, clause and table cell of GUIDON_COMMAND_LEGAL_PACKAGE.md, in document order, each with a stable id and either a reason it is not a factual claim or how it is verified. Read by tools/verify-legal-package.mjs (static check in npm run lint:patterns; --run executes the proofs). Ids never change once assigned; a new sentence takes the next free number and is placed where it sits in the document. kind: factual | non-factual. verification: mechanical (named tests assert it) | partial (tests prove part; 'gap' says what a human must check) | unverifiable (no repository test can check it; 'class' and 'reason') | contradicted (the running app disagrees; 'finding'). A proof names a test (an npm script) and either an anchor (words from the assertion in the test that proves it) or, for the tagged suites written for this tool, the claim's own [LP-nnn] tag. Never map a claim to a test that does not assert it.",
+ "schema": 1,
+ "document": "GUIDON_COMMAND_LEGAL_PACKAGE.md",
+ "suites": {
+  "test:opsec-guard": {
+   "needs": ["build"],
+   "about": "MOI Import and the Squad Roster driven through the real built page against tools/fixtures/opsec-guard-cases.json, plus a sweep of the app's own content for false stops."
+  },
+  "test:opsec-harmonization": {
+   "about": "The merged content bank and the runtime modules read without a build: the guard fixture table, the curriculum's counts, the network-boundary wording in studygroup.js and guest.html, and the MOI import order."
+  },
+  "test:opsec-curriculum": {
+   "needs": ["build"],
+   "about": "The Cybersecurity & OPSEC screen through the real page: dictionary meanings kept, no duplicate prompts, the 10-question self-check, Open in Train."
+  },
+  "test:guest-page": {
+   "needs": ["build"],
+   "about": "dist/guest.html served over plain http by the reference room host to a real browser: the boundary and not-endorsed notices in every state, nothing stored, joins and scores."
+  },
+  "test:privacy": {
+   "needs": ["build"],
+   "about": "Backups leave out the squad roster by default; the in-app privacy text equals PRIVACY.md; the study-groups switch defaults off; the offline check reads the connection ledger."
+  },
+  "test:standalone": {
+   "needs": ["build"],
+   "about": "The standalone file opened from file:// walks every route with zero external requests; study groups are off and inert in it."
+  },
+  "test:room-privacy": {
+   "needs": ["build"],
+   "about": "Study rooms with the switch off refuse to connect and record nothing; with it on, exactly one ledger entry per page and no study data in any frame."
+  },
+  "test:legal-package-guard": {
+   "tagged": true,
+   "about": "Every marking shape, identifier, date form and contact detail the package lists is tried one at a time against the real sensitive-text check, and so is each thing it says is not detected; the check only ever reports."
+  },
+  "test:legal-package-app": {
+   "tagged": true,
+   "needs": ["build"],
+   "about": "The first-run statement, MOI Import (every marking shape, uploaded files, the saved plan) and the Squad Roster (fields, wording, every kind of finding, the Rank/MOS finding) through the real page."
+  },
+  "test:legal-package-rooms": {
+   "tagged": true,
+   "needs": ["build"],
+   "about": "A real two-page study room walked through every state, reading the network-boundary panel on the host and the joiner in each."
+  },
+  "test:legal-package-content": {
+   "tagged": true,
+   "needs": ["build"],
+   "about": "The shipped curriculum content, an inventory of every network primitive in the source, the guest-page server's routes, the ATO/NIPRNet statements and the release-checklist facts."
+  }
+ },
+ "claims": [
+  {
+   "id": "LP-001",
+   "text": "GUIDON Command / Legal / OPSEC Review Package",
+   "kind": "non-factual",
+   "reason": "A heading or label; it introduces text and asserts nothing about the application."
+  },
+  {
+   "id": "LP-002",
+   "text": "DRAFT FOR REVIEW — NOT A LEGAL OPINION, SECURITY CERTIFICATION, ATO, NETWORK CONNECTION APPROVAL, PUBLIC-RELEASE AUTHORIZATION, OR DOD/ARMY ENDORSEMENT.",
+   "kind": "non-factual",
+   "reason": "The document's own status disclaimer: it states what the package is not (an opinion, certification, ATO, approval, authorization or endorsement) and asserts nothing about how the application behaves."
+  },
+  {
+   "id": "LP-003",
+   "text": "This package documents design controls and testable repository facts so a commander, Command Judge Advocate (CJA), S2/OPSEC officer, cybersecurity representative, privacy official, or Public Affairs reviewer can make the determinations that belong to their authorities.",
+   "kind": "non-factual",
+   "reason": "A statement of the package's purpose and audience; not a claim about the application."
+  },
+  {
+   "id": "LP-004",
+   "text": "Memorandum for Record Template",
+   "kind": "non-factual",
+   "reason": "A heading or label; it introduces text and asserts nothing about the application."
+  },
+  {
+   "id": "LP-005",
+   "text": "MEMORANDUM FOR Commander / Command Judge Advocate / S2 OPSEC Officer / Cybersecurity Representative / Public Affairs Representative",
+   "kind": "non-factual",
+   "reason": "A blank or template line for the reviewer or the memorandum's author to complete; it asserts nothing about the application."
+  },
+  {
+   "id": "LP-006",
+   "text": "SUBJECT: Technical and Information-Protection Review of GUIDON, an Unofficial Leader-Development Study Application",
+   "kind": "non-factual",
+   "reason": "A blank or template line for the reviewer or the memorandum's author to complete; it asserts nothing about the application."
+  },
+  {
+   "id": "LP-007",
+   "text": "Purpose.",
+   "kind": "non-factual",
+   "reason": "A heading or label; it introduces text and asserts nothing about the application."
+  },
+  {
+   "id": "LP-008",
+   "text": "This memorandum provides a review package for GUIDON, an unofficial and independently developed study application.",
+   "kind": "factual",
+   "verification": "partial",
+   "proof": [
+    { "test": "test:legal-package-app" },
+    { "test": "test:opsec-harmonization", "anchor": "the guest page's always-drawn footer carries the boundary and the unofficial / not-endorsed statement" }
+   ],
+   "gap": "That GUIDON is independently developed - written outside DoD and Army - is a fact about who made it. The tests prove only that the application calls itself an unofficial, independent study aid, in its first-run statement and on the guest page footer.",
+   "note": "The same words are the app's own: 'GUIDON is an unofficial, independent study aid'."
+  },
+  {
+   "id": "LP-009",
+   "text": "It describes the application's architecture, built-in content policy, local-data controls, OPSEC/CUI safeguards, networking boundary, and known limitations.",
+   "kind": "non-factual",
+   "reason": "Describes what the memorandum itself contains; a table of contents in prose."
+  },
+  {
+   "id": "LP-010",
+   "text": "It does not request or represent Department of Defense or Department of the Army endorsement.",
+   "kind": "non-factual",
+   "reason": "A disclaimer: what the package, the application or a check is NOT or does not do as an authority. It is a legal position, not a description of behaviour that a test could contradict."
+  },
+  {
+   "id": "LP-011",
+   "text": "Architecture.",
+   "kind": "non-factual",
+   "reason": "A heading or label; it introduces text and asserts nothing about the application."
+  },
+  {
+   "id": "LP-012",
+   "text": "The distributable study experience is designed to operate offline and client-side.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:standalone", "anchor": "zero external requests (no sibling files, no network)" },
+    { "test": "test:standalone", "anchor": "routes from file:// with no overflow" },
+    { "test": "test:legal-package-content" }
+   ],
+   "note": "The standalone file is opened from file:// and walks every route with zero requests; the source scan lists every network primitive the shipped code contains."
+  },
+  {
+   "id": "LP-013",
+   "text": "Core study data and user progress are maintained locally rather than through a GUIDON-operated cloud account or telemetry service.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:standalone", "anchor": "zero external requests (no sibling files, no network)" },
+    { "test": "test:legal-package-content" }
+   ],
+   "note": "Proved by absence: the standalone build makes no request to anything while every screen is walked, and the shipped source contains no network call other than the reviewed inventory (own bundled files, a same-origin service worker, the LAN-only Study Rooms sockets) and no analytics, crash-reporting or advertising library. With nowhere to send it, study data and progress stay in the on-device store."
+  },
+  {
+   "id": "LP-014",
+   "text": "Network-capable Study Rooms are a separate, user-enabled local-room feature and are accompanied by an explicit warning that offline-first design does not itself authorize operation or connection on DoD/Army enterprise networks.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:privacy", "anchor": "studyGroups defaults to false on a fresh profile" },
+    { "test": "test:privacy", "anchor": "Settings renders a toggle labelled" },
+    { "test": "test:standalone", "anchor": "G.studyGroup.host() refuses" },
+    { "test": "test:room-privacy", "anchor": "(1) attach() refuses with the switch off" },
+    { "test": "test:room-privacy", "anchor": "(1) #/group shows the kill-switch-off panel" },
+    { "test": "test:legal-package-rooms" }
+   ]
+  },
+  {
+   "id": "LP-015",
+   "text": "A device hosting a room can also serve a small guest join page over plain http to browsers on the same local network, so that a participant with nothing installed can take a seat",
+   "kind": "factual",
+   "verification": "partial",
+   "proof": [
+    { "test": "test:guest-page", "anchor": "/j/<code> (plain http)" },
+    { "test": "test:guest-page", "anchor": "equals dist/guest.html byte for byte" },
+    { "test": "test:guest-page", "anchor": "bytes (< 200 KB)" },
+    { "test": "test:guest-page", "anchor": "admitted: the guest is seat 3" }
+   ],
+   "gap": "The repository proves the guest page, the room server's routes and a real browser joining over plain http against the Node reference host. The Rust host is exercised by test:room-tauri only when a debug build exists (it skips otherwise, so it is not used as proof here) and by cargo tests; the Android host needs a device. 'Browsers on the same local network' rests on the host binding to the LAN, which the tests exercise on loopback.",
+   "note": "Legal-package paragraph 2 also says the page is 'small'; the build asserts it stays under 200 KB."
+  },
+  {
+   "id": "LP-016",
+   "text": "that page stores nothing and carries its own copy of the warning (paragraph 7).",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:guest-page", "anchor": "nothing stored: localStorage 0, sessionStorage 0, no cookie, 0 IndexedDB databases" },
+    { "test": "test:guest-page", "anchor": "BEFORE joining, the guest page states the network boundary" }
+   ],
+   "note": "The guest page stores nothing (no localStorage, sessionStorage, cookie or IndexedDB) and states the network boundary on its join screen."
+  },
+  {
+   "id": "LP-017",
+   "text": "Built-in content policy.",
+   "kind": "non-factual",
+   "reason": "A heading or label; it introduces text and asserts nothing about the application."
+  },
+  {
+   "id": "LP-018",
+   "text": "Repository-maintained study content is limited by project policy to publicly released, unclassified government publications and synthetic/fictional training examples.",
+   "kind": "factual",
+   "verification": "partial",
+   "proof": [
+    { "test": "test:legal-package-content" },
+    { "test": "test:opsec-guard", "anchor": "none of the app's own cards, scenarios, doctrine entries or dictionary terms is stopped as marked material" }
+   ],
+   "gap": "That every built-in source is a publicly released, unclassified government publication, and every example synthetic, is an editorial and legal judgment made whenever content is added; no test can establish it. The tests prove the policy is stated in the app, that the curriculum teaches the same rule for training data, and that no shipped card, scenario, doctrine entry or dictionary term carries marking syntax or an ID number."
+  },
+  {
+   "id": "LP-019",
+   "text": "The project does not intentionally seed real operational orders, real rosters, real mission grids, classified information, or CUI.",
+   "kind": "factual",
+   "verification": "partial",
+   "proof": [
+    { "test": "test:opsec-guard", "anchor": "none of the app's own cards, scenarios, doctrine entries or dictionary terms is stopped as marked material" },
+    { "test": "test:opsec-guard", "anchor": "none of the app's own content reads as a Social Security or DoD ID number" }
+   ],
+   "gap": "'Does not intentionally' is a statement about intent, and unmarked sensitive content cannot be found mechanically. The sweep proves that none of the shipped bank reads as marked material or as an SSN or DoD ID."
+  },
+  {
+   "id": "LP-020",
+   "text": "Public-source provenance does not by itself constitute a public-release determination for every possible derivative compilation",
+   "kind": "non-factual",
+   "reason": "A statement of the legal or regulatory position the package takes (what a rule requires, what a determination is, who decides). It is for legal counsel to confirm and describes no behaviour of the application."
+  },
+  {
+   "id": "LP-021",
+   "text": "OPSEC aggregation and other release considerations remain relevant.",
+   "kind": "non-factual",
+   "reason": "A caution to the reader; not a statement of fact about the application."
+  },
+  {
+   "id": "LP-022",
+   "text": "User-entered information.",
+   "kind": "non-factual",
+   "reason": "A heading or label; it introduces text and asserts nothing about the application."
+  },
+  {
+   "id": "LP-023",
+   "text": "GUIDON instructs users not to enter classified information, CUI, real operational orders/rosters, mission grids, sensitive identifiers, or information not authorized for storage on the device.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-app" }
+   ],
+   "note": "The union of three surfaces: the first-run statement (classified information, CUI, real operational orders or rosters, sensitive personal data, information not authorized for storage on the device), the MOI Import screen (adds mission grids, sensitive personnel data) and the Squad Roster screen (UICs, DoD IDs, SSNs, phone numbers, email/address data)."
+  },
+  {
+   "id": "LP-024",
+   "text": "The MOI import path checks text before the matching/persistence pipeline.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:opsec-harmonization", "anchor": "MOI import checks the text before matching, and the parser is given the ORIGINAL text - never a rewritten copy" },
+    { "test": "test:opsec-guard", "anchor": "(marked text) the text was not read - no Review screen" },
+    { "test": "test:legal-package-app" }
+   ]
+  },
+  {
+   "id": "LP-025",
+   "text": "The check is findings-only: it reports what it saw and where (line number and a short excerpt),",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-guard" },
+    { "test": "test:opsec-guard", "anchor": "produce exactly their expected findings, and screen() returns every input character-for-character" }
+   ]
+  },
+  {
+   "id": "LP-026",
+   "text": "and it never edits, redacts, or deletes any part of what the user typed, pasted, or uploaded.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-guard" },
+    { "test": "test:legal-package-app" },
+    { "test": "test:opsec-guard", "anchor": "(marked text) the pasted text is exactly as typed" },
+    { "test": "test:opsec-guard", "anchor": "produce exactly their expected findings, and screen() returns every input character-for-character" }
+   ]
+  },
+  {
+   "id": "LP-027",
+   "text": "It does not produce a \"sanitized\" copy of a document.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:opsec-guard", "anchor": "the text-rewriting API (sanitizeInput) is gone" },
+    { "test": "test:opsec-harmonization", "anchor": "no text-rewriting API is exported any more (sanitizeInput is gone)" },
+    { "test": "test:legal-package-guard" }
+   ]
+  },
+  {
+   "id": "LP-028",
+   "text": "What the application does with a finding depends on its kind:",
+   "kind": "non-factual",
+   "reason": "A lead-in to the three items (a, b, c) below; the sentences that carry the claims are separate entries."
+  },
+  {
+   "id": "LP-029",
+   "text": "Marking syntax — the import stops and the text is not read.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:opsec-guard", "anchor": "(marked text) the import stops, and the notice names line 3 and shows the marking it saw" },
+    { "test": "test:opsec-guard", "anchor": "(marked text) the text was not read - no Review screen" },
+    { "test": "test:legal-package-app" }
+   ]
+  },
+  {
+   "id": "LP-030",
+   "text": "Recognized forms are: an upper-case banner line consisting only of TOP SECRET, SECRET, CONFIDENTIAL, CUI, FOUO, or FOR OFFICIAL USE ONLY",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-guard" },
+    { "test": "test:opsec-guard", "anchor": "produce exactly their expected findings, and screen() returns every input character-for-character" }
+   ]
+  },
+  {
+   "id": "LP-031",
+   "text": "an upper-case control string joined by // (for example SECRET//NOFORN, CUI//SP-PRVCY, UNCLASSIFIED//FOUO, TS//SCI)",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-guard" },
+    { "test": "test:opsec-guard", "anchor": "produce exactly their expected findings, and screen() returns every input character-for-character" }
+   ]
+  },
+  {
+   "id": "LP-032",
+   "text": "a parenthesized portion mark — (TS), (S), (C), (CUI), or a spelled-out level — at the start of a line, list item, or sentence,",
+   "kind": "factual",
+   "verification": "contradicted",
+   "proof": [
+    { "test": "test:legal-package-guard" }
+   ],
+   "finding": "A bare (S) or (C) portion mark at the start of a line is NOT stopped when the pasted text also contains a lettered list item such as '(A) ...' or '(B) ...'. The check then reads (S) and (C) as list labels - a deliberate rule so that mnemonics like SALUTE's '(S) Size' and MARCH's '(C) Circulation' do not stop an import - so '(A) Alpha' followed by '(S) The unit departs.' passes with no finding. (TS), (CUI), spelled-out levels and any mark containing // are still stopped in the same text, and a lone '(S)' line stops as the package says. A real marked document that also uses lettered subparagraphs can therefore pass the check on its (S) and (C) marks; the sentence overstates.",
+   "note": "The other half of the sentence (any portion mark containing //) is LP-194 and holds."
+  },
+  {
+   "id": "LP-194",
+   "text": "and any portion mark containing // such as (S//NF) or (U//FOUO)",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-guard" },
+    { "test": "test:opsec-guard", "anchor": "produce exactly their expected findings, and screen() returns every input character-for-character" }
+   ]
+  },
+  {
+   "id": "LP-033",
+   "text": "a CLASSIFICATION: <level> label",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-guard" },
+    { "test": "test:opsec-guard", "anchor": "produce exactly their expected findings, and screen() returns every input character-for-character" }
+   ]
+  },
+  {
+   "id": "LP-034",
+   "text": "a CUI Category: designation line",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-guard" },
+    { "test": "test:opsec-guard", "anchor": "produce exactly their expected findings, and screen() returns every input character-for-character" }
+   ]
+  },
+  {
+   "id": "LP-035",
+   "text": "and a single long line that both opens and closes with the same classification level (a page whose header and footer banners were read as one line).",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-guard" },
+    { "test": "test:opsec-guard", "anchor": "produce exactly their expected findings, and screen() returns every input character-for-character" }
+   ]
+  },
+  {
+   "id": "LP-036",
+   "text": "Other forms are not recognized — in particular lower- or mixed-case wording, a marking word used mid-sentence without //, and any marking that does not follow these shapes.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-guard" },
+    { "test": "test:opsec-guard", "anchor": "produce exactly their expected findings, and screen() returns every input character-for-character" }
+   ],
+   "note": "The label word may be any of CLASSIFICATION / Classification / classification; it is the level word that must be upper case. A lower- or mixed-case level is not recognized, which is what this sentence says."
+  },
+  {
+   "id": "LP-037",
+   "text": "Ordinary study text about markings (for example \"Top Secret, Secret, and Confidential\" or \"CUI is unclassified information…\") is deliberately not treated as marked material.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-guard" },
+    { "test": "test:opsec-guard", "anchor": "(study text about markings) imports normally" },
+    { "test": "test:opsec-guard", "anchor": "none of the app's own cards, scenarios, doctrine entries or dictionary terms is stopped as marked material" }
+   ]
+  },
+  {
+   "id": "LP-038",
+   "text": "Items that warrant a deliberate look — the import pauses and asks.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:opsec-guard", "anchor": "the import pauses, names line 2 and quotes the sentence" },
+    { "test": "test:opsec-guard", "anchor": "the Soldier decides: Continue, or Go back and edit" }
+   ]
+  },
+  {
+   "id": "LP-039",
+   "text": "These are: a Social Security number written with hyphens (NNN-NN-NNNN) or following an SSN label",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-guard" },
+    { "test": "test:opsec-guard", "anchor": "produce exactly their expected findings, and screen() returns every input character-for-character" }
+   ]
+  },
+  {
+   "id": "LP-040",
+   "text": "a ten-digit number following a DoD ID/EDIPI label",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-guard" },
+    { "test": "test:opsec-guard", "anchor": "produce exactly their expected findings, and screen() returns every input character-for-character" }
+   ]
+  },
+  {
+   "id": "LP-041",
+   "text": "a sentence stating that the text is classified (for example \"This document is SECRET.\")",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-guard" },
+    { "test": "test:opsec-guard", "anchor": "produce exactly their expected findings, and screen() returns every input character-for-character" }
+   ]
+  },
+  {
+   "id": "LP-042",
+   "text": "and a sentence that contains a date that has not yet passed, a named place or map grid, and a unit-activity word (movement, convoy, deployment, range, and similar).",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-guard" },
+    { "test": "test:opsec-guard", "anchor": "the import pauses, names line 2 and quotes the sentence" }
+   ]
+  },
+  {
+   "id": "LP-043",
+   "text": "Dates are compared with the device clock and are read in ISO, M/D/YYYY, \"Month D, YYYY\", Army DD MON YY(YY), and date-time-group forms.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-guard" },
+    { "test": "test:opsec-guard", "anchor": "'future' is decided against the clock" }
+   ]
+  },
+  {
+   "id": "LP-044",
+   "text": "The user is shown the line and must choose to continue or go back and edit",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:opsec-guard", "anchor": "the import pauses, names line 2 and quotes the sentence" },
+    { "test": "test:opsec-guard", "anchor": "the Soldier decides: Continue, or Go back and edit" },
+    { "test": "test:opsec-guard", "anchor": "Go back returns to the untouched text with focus in the box" },
+    { "test": "test:legal-package-app" }
+   ]
+  },
+  {
+   "id": "LP-045",
+   "text": "the application does not decide for them.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:opsec-guard", "anchor": "(future movement) Continue reads the text as it is and reaches Review" },
+    { "test": "test:opsec-guard", "anchor": "Go back returns to the untouched text with focus in the box" }
+   ]
+  },
+  {
+   "id": "LP-046",
+   "text": "Routine contact details — the import continues and says so.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:opsec-guard", "anchor": "(POC line) Review carries a plain notice" },
+    { "test": "test:opsec-guard", "anchor": "(POC line) three seconds later the notice is still on screen" }
+   ]
+  },
+  {
+   "id": "LP-047",
+   "text": "A telephone number (other than a toll-free line), an email address, or a six-character code following a UIC label is mentioned in a notice that stays on screen until the user dismisses it.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-guard" },
+    { "test": "test:legal-package-app" },
+    { "test": "test:opsec-guard", "anchor": "(POC line) three seconds later the notice is still on screen" },
+    { "test": "test:opsec-guard", "anchor": "Dismiss removes it and focus lands on the plan" }
+   ]
+  },
+  {
+   "id": "LP-048",
+   "text": "In every case the parser receives the original text, so assigned publication numbers are never altered.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:opsec-harmonization", "anchor": "MOI import checks the text before matching, and the parser is given the ORIGINAL text - never a rewritten copy" },
+    { "test": "test:opsec-guard", "anchor": "(reg + year) all four assigned publications match" }
+   ]
+  },
+  {
+   "id": "LP-049",
+   "text": "The saved study plan holds the matched topics, a detected unit line, and detected section headings",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-app" }
+   ]
+  },
+  {
+   "id": "LP-050",
+   "text": "a unit line or heading in which the check finds anything is left out of the saved plan rather than rewritten.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:opsec-guard", "anchor": "(POC line) the saved plan holds no phone number, address or name from the flagged line" },
+    { "test": "test:opsec-guard", "anchor": "(POC line) the clean heading is kept and the flagged one's topics fall under" },
+    { "test": "test:legal-package-app" }
+   ]
+  },
+  {
+   "id": "LP-051",
+   "text": "Unlabelled ten-digit numbers, unlabelled unit codes, names, addresses, and grid coordinates on their own are not detected.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-guard" },
+    { "test": "test:opsec-guard", "anchor": "produce exactly their expected findings, and screen() returns every input character-for-character" }
+   ]
+  },
+  {
+   "id": "LP-052",
+   "text": "Important limitation of automated screening.",
+   "kind": "non-factual",
+   "reason": "A heading or label; it introduces text and asserts nothing about the application."
+  },
+  {
+   "id": "LP-053",
+   "text": "The input guard is a prevention aid only.",
+   "kind": "non-factual",
+   "reason": "A characterization of what the check is for (a prevention aid), stated as a disclaimer of function; it is not a behaviour a test could contradict."
+  },
+  {
+   "id": "LP-054",
+   "text": "It is not a classification authority, CUI determination, declassification process, sanitization authority, public-release review, privacy review, or legal opinion.",
+   "kind": "non-factual",
+   "reason": "A disclaimer: what the package, the application or a check is NOT or does not do as an authority. It is a legal position, not a description of behaviour that a test could contradict."
+  },
+  {
+   "id": "LP-055",
+   "text": "Information may be sensitive because of context or aggregation even when no configured pattern is detected.",
+   "kind": "non-factual",
+   "reason": "A general caution about how sensitivity works; not a statement about the application."
+  },
+  {
+   "id": "LP-056",
+   "text": "A user who is uncertain must not move the information into a personal study tool and should use established organizational security/privacy/records channels.",
+   "kind": "non-factual",
+   "reason": "A recommendation or request to the reader; it is not a statement of fact."
+  },
+  {
+   "id": "LP-057",
+   "text": "Squad roster boundary.",
+   "kind": "non-factual",
+   "reason": "A heading or label; it introduces text and asserts nothing about the application."
+  },
+  {
+   "id": "LP-058",
+   "text": "The roster is intentionally limited to lightweight readiness-date tracking",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-app" }
+   ],
+   "note": "Fields stored per roster entry: rank, MOS, initials and four readiness dates (plus the optional MOI-briefed date); no narrative field exists."
+  },
+  {
+   "id": "LP-059",
+   "text": "and asks users to use initials, callsigns, or roster numbers rather than full legal names.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-app" }
+   ]
+  },
+  {
+   "id": "LP-060",
+   "text": "Sensitive identifiers and narrative personnel information are expressly prohibited.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-app" }
+   ]
+  },
+  {
+   "id": "LP-061",
+   "text": "The roster's one free-text field (the initials/roster-number field) is run through the same findings-only check:",
+   "kind": "factual",
+   "verification": "contradicted",
+   "proof": [
+    { "test": "test:legal-package-app" }
+   ],
+   "finding": "The roster card has THREE free-text boxes - Rank, MOS and Initials - not one. Only the Initials box is run through the sensitive-text check (leader.js screens nameIn only). Rank has a datalist but accepts any text of any length; MOS is limited to six characters. Typing '123-45-6789' into Rank is saved as typed, with no check and no message. The source comment in leader.js repeats the same belief ('the roster's one free-text field'). The package's sentence is not true of the app as it runs; either Rank and MOS should be checked (or made selection-only) or the sentence corrected."
+  },
+  {
+   "id": "LP-062",
+   "text": "an entry in which the check finds anything is not saved, the typed text is left as typed, and a plain explanation stays beneath the field until the entry is corrected.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-app" },
+    { "test": "test:opsec-guard", "anchor": "(roster) a plain message appears under the field" },
+    { "test": "test:opsec-guard", "anchor": "(roster) the typed text stays exactly as typed instead of vanishing" },
+    { "test": "test:opsec-guard", "anchor": "(roster) and it is not saved" }
+   ],
+   "note": "Applies to the initials box, the one box that is checked (see the finding on LP-061)."
+  },
+  {
+   "id": "LP-063",
+   "text": "The roster remains excluded from normal GUIDON study-data backups by design.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:privacy", "anchor": "default export EXCLUDES the squad roster" },
+    { "test": "test:privacy", "anchor": "opt-in export CAN include the roster when explicitly requested" }
+   ]
+  },
+  {
+   "id": "LP-064",
+   "text": "Study Rooms network boundary.",
+   "kind": "non-factual",
+   "reason": "A heading or label; it introduces text and asserts nothing about the application."
+  },
+  {
+   "id": "LP-065",
+   "text": "The in-app Study Rooms screen states, in every room state, that the feature is for personal/off-duty local Wi-Fi by default and must not be used on DoD/Army enterprise networks unless the organization has explicitly authorized the application and connection under its cybersecurity/network-connection process.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-rooms" },
+    { "test": "test:opsec-harmonization", "anchor": "Study Rooms permanently states the official-network authorization boundary" }
+   ]
+  },
+  {
+   "id": "LP-066",
+   "text": "The host-served browser guest join page — the only GUIDON screen a participant without the app sees —",
+   "kind": "factual",
+   "verification": "partial",
+   "proof": [
+    { "test": "test:legal-package-content" }
+   ],
+   "gap": "The Node reference host is tested end to end, byte for byte, with 14 other paths refused. The Rust host has unit tests for its routes (cargo test, desktop.yml) and test:room-tauri when a debug build exists; the Android host needs a device. 'A participant without the app sees' also assumes the join link the host displays is the only thing a participant is given."
+  },
+  {
+   "id": "LP-067",
+   "text": "states the same boundary on its join screen before the guest joins,",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:guest-page", "anchor": "BEFORE joining, the guest page states the network boundary" },
+    { "test": "test:opsec-harmonization", "anchor": "the host-served guest join page states the official-network boundary" }
+   ]
+  },
+  {
+   "id": "LP-068",
+   "text": "and in every room state its footer repeats \"Personal or explicitly authorized networks only\" together with the statement that GUIDON is unofficial and not endorsed by the Department of Defense, the U.S. Army, or any government agency.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-content" },
+    { "test": "test:guest-page", "anchor": "its footer says GUIDON is unofficial and not endorsed by DoD / the Army / any agency" },
+    { "test": "test:guest-page", "anchor": "the notice is still there while waiting to be admitted" },
+    { "test": "test:guest-page", "anchor": "and during a round, without widening the page" },
+    { "test": "test:guest-page", "anchor": "and after the room ends - every room state carries it" },
+    { "test": "test:opsec-harmonization", "anchor": "the guest page's always-drawn footer carries the boundary and the unofficial / not-endorsed statement" }
+   ]
+  },
+  {
+   "id": "LP-069",
+   "text": "GUIDON does not claim to detect NIPRNet/DoDIN automatically,",
+   "kind": "factual",
+   "verification": "partial",
+   "proof": [
+    { "test": "test:legal-package-content" }
+   ],
+   "gap": "A claim of absence over the whole code base cannot be proven by a scan. The test proves that none of the networking modules (Study Rooms, the room sockets, the guest page) mentions NIPRNet, DoDIN or SIPR at all, and that no shipped text says GUIDON detects a network."
+  },
+  {
+   "id": "LP-070",
+   "text": "and does not represent local-only operation as an Authorization to Operate (ATO).",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-rooms" },
+    { "test": "test:legal-package-content" },
+    { "test": "test:guest-page", "anchor": "BEFORE joining, the guest page states the network boundary" }
+   ]
+  },
+  {
+   "id": "LP-071",
+   "text": "Training module.",
+   "kind": "non-factual",
+   "reason": "A heading or label; it introduces text and asserts nothing about the application."
+  },
+  {
+   "id": "LP-072",
+   "text": "The #/cyber-opsec section contains public/unclassified board-study questions, glossary terms, synthetic decision scenarios, and a local knowledge self-check.",
+   "kind": "factual",
+   "verification": "partial",
+   "proof": [
+    { "test": "test:opsec-harmonization", "anchor": "all 34 Cybersecurity & OPSEC board questions were pushed by the content pack" },
+    { "test": "test:opsec-harmonization", "anchor": "all 20 required Cyber/OPSEC terms are represented after dedupe/update" },
+    { "test": "test:opsec-harmonization", "anchor": "10-question local Cyber/OPSEC knowledge audit exists" },
+    { "test": "test:opsec-harmonization", "anchor": "canonical Train scenario bank contains all four required scenario ids" },
+    { "test": "test:opsec-guard", "anchor": "none of the app's own cards, scenarios, doctrine entries or dictionary terms is stopped as marked material" }
+   ],
+   "gap": "That the questions are drawn from public, unclassified sources and the decision scenarios are synthetic is an editorial judgment. The tests prove the section holds the four kinds of content (board questions, glossary terms, scenarios, a local self-check) and that none of it trips the marking or ID checks."
+  },
+  {
+   "id": "LP-073",
+   "text": "Legal-awareness content distinguishes Article 92, Article 103a (espionage), and Article 134 rather than presenting ordinary cybersecurity mistakes as automatically criminal.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-content" }
+   ]
+  },
+  {
+   "id": "LP-074",
+   "text": "Requested review.",
+   "kind": "non-factual",
+   "reason": "A heading or label; it introduces text and asserts nothing about the application."
+  },
+  {
+   "id": "LP-075",
+   "text": "Reviewers are requested to evaluate the implementation and identify any organization-specific restrictions, required notices, public-release concerns, privacy concerns, connection-approval requirements, or content that should be revised before command-sponsored or government-system use is contemplated.",
+   "kind": "non-factual",
+   "reason": "A recommendation or request to the reader; it is not a statement of fact."
+  },
+  {
+   "id": "LP-076",
+   "text": "Reviewer Findings",
+   "kind": "non-factual",
+   "reason": "A heading or label; it introduces text and asserts nothing about the application."
+  },
+  {
+   "id": "LP-077",
+   "text": "No objection to personal/off-duty use as an unofficial study aid, subject to local policy.",
+   "kind": "non-factual",
+   "reason": "A finding option on the reviewer's form; the reviewer ticks it. It asserts nothing about the application."
+  },
+  {
+   "id": "LP-078",
+   "text": "Additional OPSEC review required.",
+   "kind": "non-factual",
+   "reason": "A finding option on the reviewer's form; the reviewer ticks it. It asserts nothing about the application."
+  },
+  {
+   "id": "LP-079",
+   "text": "Additional cybersecurity/network authorization review required.",
+   "kind": "non-factual",
+   "reason": "A finding option on the reviewer's form; the reviewer ticks it. It asserts nothing about the application."
+  },
+  {
+   "id": "LP-080",
+   "text": "Additional privacy review required.",
+   "kind": "non-factual",
+   "reason": "A finding option on the reviewer's form; the reviewer ticks it. It asserts nothing about the application."
+  },
+  {
+   "id": "LP-081",
+   "text": "Additional Public Affairs/public-release review required.",
+   "kind": "non-factual",
+   "reason": "A finding option on the reviewer's form; the reviewer ticks it. It asserts nothing about the application."
+  },
+  {
+   "id": "LP-082",
+   "text": "Additional legal review required.",
+   "kind": "non-factual",
+   "reason": "A finding option on the reviewer's form; the reviewer ticks it. It asserts nothing about the application."
+  },
+  {
+   "id": "LP-083",
+   "text": "Changes required before further use/presentation: __________________________________________",
+   "kind": "non-factual",
+   "reason": "A blank or template line for the reviewer or the memorandum's author to complete; it asserts nothing about the application."
+  },
+  {
+   "id": "LP-084",
+   "text": "Reviewer name/title: __________________________________________",
+   "kind": "non-factual",
+   "reason": "A blank or template line for the reviewer or the memorandum's author to complete; it asserts nothing about the application."
+  },
+  {
+   "id": "LP-085",
+   "text": "Office/role: _________________________________________________",
+   "kind": "non-factual",
+   "reason": "A blank or template line for the reviewer or the memorandum's author to complete; it asserts nothing about the application."
+  },
+  {
+   "id": "LP-086",
+   "text": "Date: __________________ Signature: ______________________",
+   "kind": "non-factual",
+   "reason": "A blank or template line for the reviewer or the memorandum's author to complete; it asserts nothing about the application."
+  },
+  {
+   "id": "LP-087",
+   "text": "Audit Matrix",
+   "kind": "non-factual",
+   "reason": "A heading or label; it introduces text and asserts nothing about the application."
+  },
+  {
+   "id": "LP-088",
+   "text": "Baseline",
+   "kind": "non-factual",
+   "reason": "A column heading of the audit matrix."
+  },
+  {
+   "id": "LP-089",
+   "text": "Repository safeguard / evidence target",
+   "kind": "non-factual",
+   "reason": "A column heading of the audit matrix."
+  },
+  {
+   "id": "LP-090",
+   "text": "What the control demonstrates",
+   "kind": "non-factual",
+   "reason": "A column heading of the audit matrix."
+  },
+  {
+   "id": "LP-091",
+   "text": "Limitation / reviewer action",
+   "kind": "non-factual",
+   "reason": "A column heading of the audit matrix."
+  },
+  {
+   "id": "LP-092",
+   "text": "AR 530-1 — Operations Security",
+   "kind": "factual",
+   "verification": "unverifiable",
+   "class": "external-citation",
+   "reason": "Names an external authority together with its official title, edition or statute cite. Whether that is the authority's real title or current edition is a check against the published regulation, which no offline repository test can perform; a reviewer or legal counsel confirms it."
+  },
+  {
+   "id": "LP-093",
+   "text": "Public/synthetic seed policy",
+   "kind": "factual",
+   "verification": "partial",
+   "proof": [
+    { "test": "test:legal-package-content" }
+   ],
+   "gap": "The policy statement exists in the app and the curriculum teaches it; that every built-in source is public and every example synthetic is an editorial judgment no test can establish."
+  },
+  {
+   "id": "LP-094",
+   "text": "OPSEC disclaimer",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-app" }
+   ],
+   "note": "The disclaimer is the first-run 'Before you start' statement (G.opsecGuard.DISCLAIMER)."
+  },
+  {
+   "id": "LP-095",
+   "text": "findings-only check ahead of MOI matching/persistence",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:opsec-harmonization", "anchor": "MOI import checks the text before matching, and the parser is given the ORIGINAL text - never a rewritten copy" },
+    { "test": "test:opsec-guard", "anchor": "(marked text) the text was not read - no Review screen" },
+    { "test": "test:opsec-guard", "anchor": "produce exactly their expected findings, and screen() returns every input character-for-character" }
+   ]
+  },
+  {
+   "id": "LP-096",
+   "text": "pause-and-ask on a future date + place + unit activity in one sentence",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:opsec-guard", "anchor": "the import pauses, names line 2 and quotes the sentence" },
+    { "test": "test:opsec-guard", "anchor": "the Soldier decides: Continue, or Go back and edit" },
+    { "test": "test:legal-package-guard" }
+   ]
+  },
+  {
+   "id": "LP-097",
+   "text": "synthetic Cyber/OPSEC scenarios",
+   "kind": "factual",
+   "verification": "partial",
+   "proof": [
+    { "test": "test:opsec-harmonization", "anchor": "canonical Train scenario bank contains all four required scenario ids" },
+    { "test": "test:opsec-guard", "anchor": "none of the app's own cards, scenarios, doctrine entries or dictionary terms is stopped as marked material" }
+   ],
+   "gap": "That the scenarios are synthetic is an editorial judgment. The tests prove the four scenarios load through the canonical bank and that no scenario carries marking syntax or an ID number."
+  },
+  {
+   "id": "LP-098",
+   "text": "The product is designed to avoid seeding operational details and to put some common sensitive-input patterns in front of the user before anything is read or saved",
+   "kind": "non-factual",
+   "reason": "Interpretation: the package's argument for what the safeguard in the neighbouring cell demonstrates. The facts it rests on are claimed, and tested, in the 'Repository safeguard' cell."
+  },
+  {
+   "id": "LP-099",
+   "text": "Automated detection cannot determine all critical information or aggregation risk.",
+   "kind": "non-factual",
+   "reason": "A disclaimer: what the package, the application or a check is NOT or does not do as an authority. It is a legal position, not a description of behaviour that a test could contradict."
+  },
+  {
+   "id": "LP-100",
+   "text": "Unit critical-information lists and local OPSEC guidance remain authoritative.",
+   "kind": "non-factual",
+   "reason": "A statement of the legal or regulatory position the package takes (what a rule requires, what a determination is, who decides). It is for legal counsel to confirm and describes no behaviour of the application."
+  },
+  {
+   "id": "LP-101",
+   "text": "DoDD 5205.02E — DoD OPSEC Program",
+   "kind": "factual",
+   "verification": "unverifiable",
+   "class": "external-citation",
+   "reason": "Names an external authority together with its official title, edition or statute cite. Whether that is the authority's real title or current edition is a check against the published regulation, which no offline repository test can perform; a reviewer or legal counsel confirms it."
+  },
+  {
+   "id": "LP-102",
+   "text": "OPSEC curriculum defines critical information, indicators, aggregation, and protective measures",
+   "kind": "factual",
+   "verification": "partial",
+   "proof": [
+    { "test": "test:legal-package-content" }
+   ],
+   "gap": "'Defines ... protective measures' is looser than the others: no card is devoted to protective measures. The curriculum defines critical information, indicators and aggregation on cards of their own and describes protective measures as part of the OPSEC-process card and the OPSEC dictionary entry."
+  },
+  {
+   "id": "LP-103",
+   "text": "scenarios use fictional facts",
+   "kind": "factual",
+   "verification": "partial",
+   "proof": [
+    { "test": "test:opsec-guard", "anchor": "none of the app's own cards, scenarios, doctrine entries or dictionary terms is stopped as marked material" },
+    { "test": "test:opsec-guard", "anchor": "none of the app's own content reads as a Social Security or DoD ID number" }
+   ],
+   "gap": "Whether the scenario facts are fictional is an editorial judgment. The sweep proves only that no scenario contains marking syntax or an SSN or DoD ID number."
+  },
+  {
+   "id": "LP-104",
+   "text": "Training reinforces the OPSEC process without reproducing an actual mission",
+   "kind": "non-factual",
+   "reason": "Interpretation: the package's argument for what the safeguard in the neighbouring cell demonstrates. The facts it rests on are claimed, and tested, in the 'Repository safeguard' cell."
+  },
+  {
+   "id": "LP-105",
+   "text": "Does not constitute an organizational OPSEC assessment or program review.",
+   "kind": "non-factual",
+   "reason": "A disclaimer: what the package, the application or a check is NOT or does not do as an authority. It is a legal position, not a description of behaviour that a test could contradict."
+  },
+  {
+   "id": "LP-106",
+   "text": "AR 25-2 — Army Cybersecurity",
+   "kind": "factual",
+   "verification": "unverifiable",
+   "class": "external-citation",
+   "reason": "Names an external authority together with its official title, edition or statute cite. Whether that is the authority's real title or current edition is a check against the published regulation, which no offline repository test can perform; a reviewer or legal counsel confirms it."
+  },
+  {
+   "id": "LP-107",
+   "text": "No new telemetry/cloud backend",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:standalone", "anchor": "zero external requests (no sibling files, no network)" },
+    { "test": "test:opsec-harmonization", "anchor": "OPSEC guard introduces no outbound network/telemetry primitive" },
+    { "test": "test:legal-package-content" }
+   ]
+  },
+  {
+   "id": "LP-108",
+   "text": "removable-media/social-engineering training",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:opsec-harmonization", "anchor": "canonical Train scenario bank contains all four required scenario ids" },
+    { "test": "test:opsec-curriculum", "anchor": "opens that scenario itself" },
+    { "test": "test:legal-package-content" }
+   ]
+  },
+  {
+   "id": "LP-109",
+   "text": "official-network warning on the in-app Study Rooms screen and on the host-served guest join page",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-rooms" },
+    { "test": "test:guest-page", "anchor": "BEFORE joining, the guest page states the network boundary" },
+    { "test": "test:guest-page", "anchor": "its footer says GUIDON is unofficial and not endorsed by DoD / the Army / any agency" },
+    { "test": "test:opsec-harmonization", "anchor": "Study Rooms permanently states the official-network authorization boundary" },
+    { "test": "test:opsec-harmonization", "anchor": "the host-served guest join page states the official-network boundary" }
+   ]
+  },
+  {
+   "id": "LP-110",
+   "text": "local sensitive-input check",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:opsec-harmonization", "anchor": "OPSEC guard introduces no outbound network/telemetry primitive" },
+    { "test": "test:opsec-guard", "anchor": "produce exactly their expected findings, and screen() returns every input character-for-character" }
+   ],
+   "note": "The check runs inside the page; its source contains no network primitive."
+  },
+  {
+   "id": "LP-111",
+   "text": "Demonstrates defensive design intent and user-facing cybersecurity boundaries",
+   "kind": "non-factual",
+   "reason": "Interpretation: the package's argument for what the safeguard in the neighbouring cell demonstrates. The facts it rests on are claimed, and tested, in the 'Repository safeguard' cell."
+  },
+  {
+   "id": "LP-112",
+   "text": "Does not create an ATO, approved software-list status, or connection approval for an Army/DoD system.",
+   "kind": "non-factual",
+   "reason": "A disclaimer: what the package, the application or a check is NOT or does not do as an authority. It is a legal position, not a description of behaviour that a test could contradict."
+  },
+  {
+   "id": "LP-113",
+   "text": "Local authorization remains required.",
+   "kind": "non-factual",
+   "reason": "A statement of the legal or regulatory position the package takes (what a rule requires, what a determination is, who decides). It is for legal counsel to confirm and describes no behaviour of the application."
+  },
+  {
+   "id": "LP-114",
+   "text": "DoDI 8510.01 — Risk Management Framework for DoD Systems",
+   "kind": "factual",
+   "verification": "unverifiable",
+   "class": "external-citation",
+   "reason": "Names an external authority together with its official title, edition or statute cite. Whether that is the authority's real title or current edition is a check against the published regulation, which no offline repository test can perform; a reviewer or legal counsel confirms it."
+  },
+  {
+   "id": "LP-115",
+   "text": "Training explains RMF/ATO",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-content" }
+   ]
+  },
+  {
+   "id": "LP-116",
+   "text": "the network warning (in the app and on the guest join page) explicitly says keeping data on the device is not an ATO or a network authorization",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-rooms" },
+    { "test": "test:guest-page", "anchor": "BEFORE joining, the guest page states the network boundary" }
+   ],
+   "note": "Wording differs slightly by screen: the Study Rooms screen says 'Offline-first design is not an ATO or network authorization'; the guest page says 'Keeping everything on the device is not an ATO or a network authorization'. Both say it."
+  },
+  {
+   "id": "LP-117",
+   "text": "Prevents the application from representing architecture choices as authorization decisions",
+   "kind": "non-factual",
+   "reason": "Interpretation: the package's argument for what the safeguard in the neighbouring cell demonstrates. The facts it rests on are claimed, and tested, in the 'Repository safeguard' cell."
+  },
+  {
+   "id": "LP-118",
+   "text": "The applicable AO/system owner determines authorization requirements for government-system use.",
+   "kind": "non-factual",
+   "reason": "A statement of the legal or regulatory position the package takes (what a rule requires, what a determination is, who decides). It is for legal counsel to confirm and describes no behaviour of the application."
+  },
+  {
+   "id": "LP-119",
+   "text": "DoDI 5200.48 — CUI Program",
+   "kind": "factual",
+   "verification": "unverifiable",
+   "class": "external-citation",
+   "reason": "Names an external authority together with its official title, edition or statute cite. Whether that is the authority's real title or current edition is a check against the published regulation, which no offline repository test can perform; a reviewer or legal counsel confirms it."
+  },
+  {
+   "id": "LP-120",
+   "text": "CUI definitions/training",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-content" }
+   ]
+  },
+  {
+   "id": "LP-121",
+   "text": "input carrying recognized CUI marking syntax (a CUI banner line, a CUI//… control string, a (CUI) portion mark at the start of a portion, a CUI Category: line, legacy FOUO banners and //FOUO strings) stops the MOI import unread",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-app" },
+    { "test": "test:legal-package-guard" },
+    { "test": "test:opsec-guard", "anchor": "(marked text) the import stops, and the notice names line 3 and shows the marking it saw" }
+   ]
+  },
+  {
+   "id": "LP-122",
+   "text": "incident scenario directs users to contain and follow organizational reporting procedures",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-content" }
+   ]
+  },
+  {
+   "id": "LP-123",
+   "text": "Discourages unauthorized placement/dissemination",
+   "kind": "non-factual",
+   "reason": "Interpretation: the package's argument for what the safeguard in the neighbouring cell demonstrates. The facts it rests on are claimed, and tested, in the 'Repository safeguard' cell."
+  },
+  {
+   "id": "LP-124",
+   "text": "the check never rewrites a document",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-guard" },
+    { "test": "test:opsec-guard", "anchor": "the text-rewriting API (sanitizeInput) is gone" }
+   ]
+  },
+  {
+   "id": "LP-125",
+   "text": "and never presents one as cleaned or releasable",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-app" }
+   ]
+  },
+  {
+   "id": "LP-126",
+   "text": "CUI designation/handling is authority-, category-, marking-, and context-dependent.",
+   "kind": "non-factual",
+   "reason": "A statement of the legal or regulatory position the package takes (what a rule requires, what a determination is, who decides). It is for legal counsel to confirm and describes no behaviour of the application."
+  },
+  {
+   "id": "LP-127",
+   "text": "The check recognizes only the marking shapes listed in paragraph 4a",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-guard" }
+   ]
+  },
+  {
+   "id": "LP-128",
+   "text": "unmarked, mixed-case, or unusually marked CUI is not detected,",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-guard" }
+   ]
+  },
+  {
+   "id": "LP-129",
+   "text": "and the check cannot make a CUI determination.",
+   "kind": "non-factual",
+   "reason": "A disclaimer: what the package, the application or a check is NOT or does not do as an authority. It is a legal position, not a description of behaviour that a test could contradict."
+  },
+  {
+   "id": "LP-130",
+   "text": "DoDI 5400.11 / Privacy Act framework",
+   "kind": "factual",
+   "verification": "unverifiable",
+   "class": "external-citation",
+   "reason": "Names an external authority together with its official title, edition or statute cite. Whether that is the authority's real title or current edition is a check against the published regulation, which no offline repository test can perform; a reviewer or legal counsel confirms it."
+  },
+  {
+   "id": "LP-131",
+   "text": "Squad roster minimizes fields,",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-app" }
+   ]
+  },
+  {
+   "id": "LP-132",
+   "text": "asks for initials/callsigns/roster numbers,",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-app" }
+   ]
+  },
+  {
+   "id": "LP-133",
+   "text": "does not save a name-field entry in which the check finds anything (SSN, labelled DoD ID or UIC, phone, email, marking),",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-app" },
+    { "test": "test:opsec-guard", "anchor": "(roster) and it is not saved" }
+   ],
+   "note": "The initials box; see the finding on LP-061 for the other text boxes."
+  },
+  {
+   "id": "LP-134",
+   "text": "excludes roster from normal backup",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:privacy", "anchor": "default export EXCLUDES the squad roster" },
+    { "test": "test:privacy", "anchor": "opt-in export CAN include the roster when explicitly requested" }
+   ]
+  },
+  {
+   "id": "LP-135",
+   "text": "Data minimization and local-storage design reduce collection/dissemination risk",
+   "kind": "non-factual",
+   "reason": "Interpretation: the package's argument for what the safeguard in the neighbouring cell demonstrates. The facts it rests on are claimed, and tested, in the 'Repository safeguard' cell."
+  },
+  {
+   "id": "LP-136",
+   "text": "Local storage does not automatically determine Privacy Act applicability or satisfy every privacy/records requirement.",
+   "kind": "non-factual",
+   "reason": "A statement of the legal or regulatory position the package takes (what a rule requires, what a determination is, who decides). It is for legal counsel to confirm and describes no behaviour of the application."
+  },
+  {
+   "id": "LP-137",
+   "text": "Do not use GUIDON as a system of record.",
+   "kind": "non-factual",
+   "reason": "A recommendation or request to the reader; it is not a statement of fact."
+  },
+  {
+   "id": "LP-138",
+   "text": "AR 360-1 — Public Affairs (current edition 15 April 2026)",
+   "kind": "factual",
+   "verification": "unverifiable",
+   "class": "external-citation",
+   "reason": "Names an external authority together with its official title, edition or statute cite. Whether that is the authority's real title or current edition is a check against the published regulation, which no offline repository test can perform; a reviewer or legal counsel confirms it."
+  },
+  {
+   "id": "LP-139",
+   "text": "Product labels itself unofficial/independent and disclaims DoD/Army endorsement - in the app's first-run statement",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-app" }
+   ]
+  },
+  {
+   "id": "LP-140",
+   "text": "and in the footer of the host-served guest join page",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:guest-page", "anchor": "its footer says GUIDON is unofficial and not endorsed by DoD / the Army / any agency" },
+    { "test": "test:opsec-harmonization", "anchor": "the guest page's always-drawn footer carries the boundary and the unofficial / not-endorsed statement" }
+   ]
+  },
+  {
+   "id": "LP-141",
+   "text": "Reduces risk that users mistake the app for an official Army product or official release",
+   "kind": "non-factual",
+   "reason": "Interpretation: the package's argument for what the safeguard in the neighbouring cell demonstrates. The facts it rests on are claimed, and tested, in the 'Repository safeguard' cell."
+  },
+  {
+   "id": "LP-142",
+   "text": "This is not a PA clearance.",
+   "kind": "non-factual",
+   "reason": "A disclaimer: what the package, the application or a check is NOT or does not do as an authority. It is a legal position, not a description of behaviour that a test could contradict."
+  },
+  {
+   "id": "LP-143",
+   "text": "Organization-specific public-release/branding review may still be required.",
+   "kind": "non-factual",
+   "reason": "A caution that further review may be required; not a statement of fact about the application."
+  },
+  {
+   "id": "LP-144",
+   "text": "Whether the app's own name may use the word \"Army\" in its branding is a separate question the Army Trademark Licensing Program (see AR 25-30) - not this regulation - governs",
+   "kind": "factual",
+   "verification": "unverifiable",
+   "class": "external-legal",
+   "reason": "States which body governs whether the app's name may use the word 'Army': the Army Trademark Licensing Program under AR 25-30. That is a legal and regulatory fact about an external program; no offline repository test can check it, and the package itself marks the question open."
+  },
+  {
+   "id": "LP-145",
+   "text": "that question is open and is not resolved by this package's disclaimer language.",
+   "kind": "non-factual",
+   "reason": "The package's own legal position: the question is open and its disclaimer language does not resolve it."
+  },
+  {
+   "id": "LP-146",
+   "text": "DoDI 5230.09 — Clearance of DoD Information for Public Release",
+   "kind": "factual",
+   "verification": "unverifiable",
+   "class": "external-citation",
+   "reason": "Names an external authority together with its official title, edition or statute cite. Whether that is the authority's real title or current edition is a check against the published regulation, which no offline repository test can perform; a reviewer or legal counsel confirms it."
+  },
+  {
+   "id": "LP-147",
+   "text": "Public-source-only project policy plus explicit warning that derivative aggregation can still require review",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-content" }
+   ]
+  },
+  {
+   "id": "LP-148",
+   "text": "Avoids the false rule that “public source = every new compilation automatically releasable”",
+   "kind": "non-factual",
+   "reason": "Interpretation: the package's argument for what the safeguard in the neighbouring cell demonstrates. The facts it rests on are claimed, and tested, in the 'Repository safeguard' cell."
+  },
+  {
+   "id": "LP-149",
+   "text": "Authorized officials determine whether particular DoD information proposed for release requires review/clearance.",
+   "kind": "non-factual",
+   "reason": "A statement of the legal or regulatory position the package takes (what a rule requires, what a determination is, who decides). It is for legal counsel to confirm and describes no behaviour of the application."
+  },
+  {
+   "id": "LP-150",
+   "text": "UCMJ Article 92 — 10 U.S.C. § 892",
+   "kind": "factual",
+   "verification": "partial",
+   "proof": [
+    { "test": "test:legal-package-content" }
+   ],
+   "gap": "The tests prove the audit matrix's cite (10 U.S.C. section 892) is the one the app's own Article 92 card cites, so the two documents agree. That section 892 is the right statute for Article 92 is an external legal fact for counsel to confirm."
+  },
+  {
+   "id": "LP-151",
+   "text": "Training describes Article 92 generally and expressly states that not every cybersecurity mistake automatically establishes an offense",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-content" }
+   ]
+  },
+  {
+   "id": "LP-152",
+   "text": "Avoids giving users a misleading criminal-liability conclusion",
+   "kind": "non-factual",
+   "reason": "Interpretation: the package's argument for what the safeguard in the neighbouring cell demonstrates. The facts it rests on are claimed, and tested, in the 'Repository safeguard' cell."
+  },
+  {
+   "id": "LP-153",
+   "text": "Case-specific elements, orders/duties, mental state, defenses, and disposition require qualified legal review.",
+   "kind": "non-factual",
+   "reason": "A statement of the legal or regulatory position the package takes (what a rule requires, what a determination is, who decides). It is for legal counsel to confirm and describes no behaviour of the application."
+  },
+  {
+   "id": "LP-154",
+   "text": "UCMJ Article 103a — 10 U.S.C. § 903a",
+   "kind": "factual",
+   "verification": "partial",
+   "proof": [
+    { "test": "test:legal-package-content" }
+   ],
+   "gap": "The tests prove the matrix's cite (10 U.S.C. section 903a) is the one the app's own Article 103a card cites. That section 903a is the right statute for Article 103a is an external legal fact for counsel to confirm."
+  },
+  {
+   "id": "LP-155",
+   "text": "Training identifies Article 103a as espionage only",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-content" }
+   ]
+  },
+  {
+   "id": "LP-156",
+   "text": "Prevents misuse of Article 103a as a generic “information mishandling” label",
+   "kind": "non-factual",
+   "reason": "Interpretation: the package's argument for what the safeguard in the neighbouring cell demonstrates. The facts it rests on are claimed, and tested, in the 'Repository safeguard' cell."
+  },
+  {
+   "id": "LP-157",
+   "text": "No case-specific criminal-law assessment is made.",
+   "kind": "non-factual",
+   "reason": "A disclaimer: what the package, the application or a check is NOT or does not do as an authority. It is a legal position, not a description of behaviour that a test could contradict."
+  },
+  {
+   "id": "LP-158",
+   "text": "UCMJ Article 134 — 10 U.S.C. § 934",
+   "kind": "factual",
+   "verification": "partial",
+   "proof": [
+    { "test": "test:legal-package-content" }
+   ],
+   "gap": "The tests prove the matrix's cite (10 U.S.C. section 934) is the one the app's own Article 134 card cites. That section 934 is the right statute for Article 134 is an external legal fact for counsel to confirm."
+  },
+  {
+   "id": "LP-159",
+   "text": "High-level General Article awareness card only",
+   "kind": "factual",
+   "verification": "partial",
+   "proof": [
+    { "test": "test:legal-package-content" }
+   ],
+   "gap": "Proved for the #/cyber-opsec module, which is what the audit matrix describes: one card, a high-level description of the General Article, no penalties or offenses, no self-check question. The wider board bank also carries other Article 134 cards from its UCMJ deck (for example 'What is UCMJ Article 134 and why is it known as the General Article?'); they are general in nature too, and one notes that the Manual for Courts-Martial lists specific enumerated offenses with maximum punishments. 'Only' is true of the training module, not of the whole app - a reviewer should read it that way."
+  },
+  {
+   "id": "LP-160",
+   "text": "Provides board-study awareness without predicting liability",
+   "kind": "non-factual",
+   "reason": "Interpretation: the package's argument for what the safeguard in the neighbouring cell demonstrates. The facts it rests on are claimed, and tested, in the 'Repository safeguard' cell."
+  },
+  {
+   "id": "LP-161",
+   "text": "Application of Article 134 is offense- and fact-specific and requires legal analysis.",
+   "kind": "non-factual",
+   "reason": "A statement of the legal or regulatory position the package takes (what a rule requires, what a determination is, who decides). It is for legal counsel to confirm and describes no behaviour of the application."
+  },
+  {
+   "id": "LP-162",
+   "text": "Verification Checklist for a Release Candidate",
+   "kind": "non-factual",
+   "reason": "A heading or label; it introduces text and asserts nothing about the application."
+  },
+  {
+   "id": "LP-163",
+   "text": "#/cyber-opsec appears in the declared route and Board Prep navigation.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:opsec-harmonization", "anchor": "#/cyber-opsec is a declared application route" },
+    { "test": "test:opsec-harmonization", "anchor": "Cyber/OPSEC route is present in declared navigation" },
+    { "test": "test:legal-package-content" }
+   ]
+  },
+  {
+   "id": "LP-164",
+   "text": "The Cyber/OPSEC bank contains at least 30 canonical board questions",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-content" },
+    { "test": "test:opsec-harmonization", "anchor": "canonical board bank contains exactly 34 Cybersecurity & OPSEC questions" }
+   ]
+  },
+  {
+   "id": "LP-165",
+   "text": "current design target is 34.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:opsec-harmonization", "anchor": "all 34 Cybersecurity & OPSEC board questions were pushed by the content pack" },
+    { "test": "test:opsec-harmonization", "anchor": "canonical board bank contains exactly 34 Cybersecurity & OPSEC questions" }
+   ]
+  },
+  {
+   "id": "LP-166",
+   "text": "Four synthetic Cyber/OPSEC scenarios load through the canonical scenario bank.",
+   "kind": "factual",
+   "verification": "partial",
+   "proof": [
+    { "test": "test:opsec-harmonization", "anchor": "canonical Train scenario bank contains all four required scenario ids" }
+   ],
+   "gap": "'Synthetic' is an editorial judgment. The test proves the four scenarios load through the canonical scenario bank."
+  },
+  {
+   "id": "LP-167",
+   "text": "Twenty required Cyber/OPSEC terms are present,",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:opsec-harmonization", "anchor": "all 20 required Cyber/OPSEC terms are represented after dedupe/update" }
+   ]
+  },
+  {
+   "id": "LP-168",
+   "text": "and every meaning and source tag the dictionary already had is unchanged (for example AO still lists \"area of operations\").",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:opsec-harmonization", "anchor": "every meaning the seed dictionary had survives the modules" },
+    { "test": "test:opsec-harmonization", "anchor": "no pre-existing dictionary entry has its source tag changed" },
+    { "test": "test:opsec-curriculum", "anchor": "finds AO again" },
+    { "test": "test:opsec-curriculum", "anchor": "AO shows every meaning it had" }
+   ]
+  },
+  {
+   "id": "LP-169",
+   "text": "No two board questions ask the identical prompt.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:opsec-harmonization", "anchor": "no two board questions ask the identical prompt" },
+    { "test": "test:opsec-curriculum", "anchor": "board cards ask the identical prompt" }
+   ]
+  },
+  {
+   "id": "LP-170",
+   "text": "The 10-question self-check renders locally and shows the correct answer and its source after each question.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:opsec-curriculum", "anchor": "the self-check opens on" },
+    { "test": "test:opsec-curriculum", "anchor": "a wrong answer says so and shows the correct choice" },
+    { "test": "test:opsec-curriculum", "anchor": "with the why and the source, taken from the board card that teaches it" },
+    { "test": "test:opsec-curriculum", "anchor": "the missed question is listed with its correct answer" },
+    { "test": "test:opsec-harmonization", "anchor": "10-question local Cyber/OPSEC knowledge audit exists" }
+   ]
+  },
+  {
+   "id": "LP-171",
+   "text": "Samples in recognized marking syntax (SECRET banner line, SECRET//NOFORN, (S//NF), (CUI) at the start of a portion, UNCLASSIFIED//FOUO) stop the MOI import unread,",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-app" },
+    { "test": "test:legal-package-guard" },
+    { "test": "test:opsec-guard", "anchor": "(marked text) the import stops, and the notice names line 3 and shows the marking it saw" }
+   ]
+  },
+  {
+   "id": "LP-172",
+   "text": "while study text about markings (\"Top Secret, Secret, and Confidential\"; \"CUI is unclassified information…\") imports normally.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-app" },
+    { "test": "test:opsec-guard", "anchor": "(study text about markings) imports normally" },
+    { "test": "test:opsec-harmonization", "anchor": "ordinary study text ABOUT markings produces no finding" }
+   ]
+  },
+  {
+   "id": "LP-173",
+   "text": "Labelled UIC/DoD-ID, SSN, and contact samples are reported by the check",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-guard" },
+    { "test": "test:legal-package-app" },
+    { "test": "test:opsec-guard", "anchor": "produce exactly their expected findings, and screen() returns every input character-for-character" }
+   ]
+  },
+  {
+   "id": "LP-174",
+   "text": "a flagged unit line or heading is left out of the saved MOI plan",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:opsec-guard", "anchor": "(POC line) the saved plan holds no phone number, address or name from the flagged line" },
+    { "test": "test:opsec-guard", "anchor": "(POC line) the clean heading is kept and the flagged one's topics fall under" },
+    { "test": "test:legal-package-app" }
+   ]
+  },
+  {
+   "id": "LP-175",
+   "text": "a flagged roster entry is not saved.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:opsec-guard", "anchor": "(roster) and it is not saved" },
+    { "test": "test:legal-package-app" }
+   ]
+  },
+  {
+   "id": "LP-176",
+   "text": "The check never edits the user's text,",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-guard" },
+    { "test": "test:opsec-guard", "anchor": "produce exactly their expected findings, and screen() returns every input character-for-character" }
+   ]
+  },
+  {
+   "id": "LP-177",
+   "text": "and a regulation followed by its year (AR 600-20 2020) is not reported.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:opsec-guard", "anchor": "(reg + year) all four assigned publications match" },
+    { "test": "test:opsec-harmonization", "anchor": "a regulation followed by its year is not an ID or phone number" },
+    { "test": "test:legal-package-guard" }
+   ]
+  },
+  {
+   "id": "LP-178",
+   "text": "A future date + place + unit-activity sample, written in ISO, Army DD MON YYYY, and date-time-group form with dates taken from the current clock, pauses the MOI import for a Continue / Go back decision rather than being certified “safe”",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-guard" },
+    { "test": "test:opsec-guard", "anchor": "the import pauses, names line 2 and quotes the sentence" },
+    { "test": "test:opsec-guard", "anchor": "produce exactly their expected findings, and screen() returns every input character-for-character" }
+   ]
+  },
+  {
+   "id": "LP-179",
+   "text": "the same sentence with a past date does not.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-guard" },
+    { "test": "test:opsec-harmonization", "anchor": "a movement that has already happened is not 'future'" }
+   ]
+  },
+  {
+   "id": "LP-180",
+   "text": "MOI import checks text before runMatching() and persistence,",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:opsec-harmonization", "anchor": "MOI import checks the text before matching, and the parser is given the ORIGINAL text - never a rewritten copy" },
+    { "test": "test:legal-package-app" }
+   ]
+  },
+  {
+   "id": "LP-181",
+   "text": "and passes runMatching() the original text.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:opsec-harmonization", "anchor": "MOI import checks the text before matching, and the parser is given the ORIGINAL text - never a rewritten copy" },
+    { "test": "test:opsec-guard", "anchor": "(reg + year) all four assigned publications match" }
+   ]
+  },
+  {
+   "id": "LP-182",
+   "text": "A squad roster name-field entry with any finding is not saved, and the explanation stays beneath the field.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-app" },
+    { "test": "test:opsec-guard", "anchor": "(roster) a plain message appears under the field" }
+   ]
+  },
+  {
+   "id": "LP-183",
+   "text": "Study Rooms shows the official-network authorization warning regardless of room state - in the app and on the host-served guest join page (boundary panel on the join screen, footer notice in every state).",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:legal-package-rooms" },
+    { "test": "test:legal-package-content" },
+    { "test": "test:guest-page", "anchor": "BEFORE joining, the guest page states the network boundary" },
+    { "test": "test:guest-page", "anchor": "its footer says GUIDON is unofficial and not endorsed by DoD / the Army / any agency" },
+    { "test": "test:guest-page", "anchor": "the notice is still there while waiting to be admitted" },
+    { "test": "test:guest-page", "anchor": "and during a round, without widening the page" },
+    { "test": "test:guest-page", "anchor": "and after the room ends - every room state carries it" },
+    { "test": "test:opsec-harmonization", "anchor": "Study Rooms permanently states the official-network authorization boundary" },
+    { "test": "test:opsec-harmonization", "anchor": "the host-served guest join page states the official-network boundary" }
+   ]
+  },
+  {
+   "id": "LP-184",
+   "text": "No helper/patch workflow remains in the final branch.",
+   "kind": "factual",
+   "verification": "partial",
+   "proof": [
+    { "test": "test:legal-package-content" }
+   ],
+   "gap": "'Helper/patch workflow' has no mechanical definition. The test proves only that no workflow file in .github/workflows is named or titled like a one-off helper or patch job; a leftover script elsewhere in the branch is a diff review."
+  },
+  {
+   "id": "LP-185",
+   "text": "Full CI, Desktop, and iOS gates are green on the exact merge head.",
+   "kind": "factual",
+   "verification": "unverifiable",
+   "class": "release-time",
+   "reason": "A statement about the state of GitHub's CI, Desktop and iOS checks on one specific commit at release time. The release cut enforces it (release-cut.yml asks tools/release-gate.mjs and refuses a red, missing or unreadable result), but it is not a repository fact a test can assert offline."
+  },
+  {
+   "id": "LP-186",
+   "text": "References for Reviewer Verification",
+   "kind": "non-factual",
+   "reason": "A heading or label; it introduces text and asserts nothing about the application."
+  },
+  {
+   "id": "LP-187",
+   "text": "Use the current official versions and local command supplements when reviewing.",
+   "kind": "non-factual",
+   "reason": "A recommendation or request to the reader; it is not a statement of fact."
+  },
+  {
+   "id": "LP-188",
+   "text": "Principal federal/DoD/Army baselines considered by this package include AR 530-1, AR 25-2, AR 360-1, AR 25-30, DoDI 5200.48, DoDI 8510.01, DoDI 5230.09, DoDD 5205.02E, DoDI 5400.11, DoDI 5535.12, and the current UCMJ/Manual for Courts-Martial.",
+   "kind": "factual",
+   "verification": "unverifiable",
+   "class": "process",
+   "reason": "Which authorities the author considered when writing the package is a statement about the author's process; no repository test can check it. (Most of the named authorities are cited in the audit matrix, where each has its own entry.)"
+  },
+  {
+   "id": "LP-189",
+   "text": "The presence of a citation in GUIDON does not convert this package into an official interpretation of that authority.",
+   "kind": "non-factual",
+   "reason": "A disclaimer: what the package, the application or a check is NOT or does not do as an authority. It is a legal position, not a description of behaviour that a test could contradict."
+  },
+  {
+   "id": "LP-190",
+   "text": "Open question this package does not resolve.",
+   "kind": "non-factual",
+   "reason": "A heading or label; it introduces text and asserts nothing about the application."
+  },
+  {
+   "id": "LP-191",
+   "text": "The Army Trademark Licensing Program's own public materials state that a non-endorsement disclaimer does not, by itself, resolve using \"Army\" in a product's own name or branding - stated even for an organization with an actual Army contract.",
+   "kind": "factual",
+   "verification": "unverifiable",
+   "class": "external-legal",
+   "reason": "Reports what the Army Trademark Licensing Program's own public materials state. That is a fact about an external program's publications; no offline repository test can read them, so a reviewer must check the source."
+  },
+  {
+   "id": "LP-192",
+   "text": "Whether a free, non-commercial personal study application's descriptive use of \"Army\" in its own title counts as the kind of use the ATLP governs, or is permissible descriptive/nominative use, has no public precedent either way and is not something this package or its author can determine.",
+   "kind": "factual",
+   "verification": "unverifiable",
+   "class": "external-legal",
+   "reason": "Asserts that there is no public precedent either way on descriptive use of 'Army' in a free, non-commercial study application's title, and that the question cannot be determined by this package. That is an external legal fact, not something a repository test can check."
+  },
+  {
+   "id": "LP-193",
+   "text": "AR 25-30 routes trademark questions through a legal counsel review, with a formal exception-to-policy channel to the Director, Army Publishing Directorate, if a reviewer wants a formal answer.",
+   "kind": "factual",
+   "verification": "unverifiable",
+   "class": "external-legal",
+   "reason": "States how AR 25-30 routes trademark questions and names its exception channel. That is the content of an external regulation; no offline repository test can check it."
+  }
+ ]
+}
