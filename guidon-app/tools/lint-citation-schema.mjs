@@ -16,39 +16,60 @@
  * Only collections actually migrated to the new schema are checked here.
  * ROADMAP.md item F ships in waves (Wave 1: doctrine/creeds/prt/scenario
  * doctrine refs; Wave 2: board questions; Wave 3: the remaining free-text
- * sections) - add a collection to MIGRATED below only once its own wave
- * has landed, so this lint never fails on content that hasn't been
- * migrated yet.
+ * sections - the WAVE3 list in tools/cite-schema.mjs) - add a collection
+ * only once its own wave has landed, so this lint never fails on content
+ * that hasn't been migrated yet. Board questions are NOT checked here.
  *
  * Checks per migrated collection (PASS/FAIL lines, exit 1 on any FAIL,
  * style of lint-patterns.mjs):
- *   (a) the field is a real array (not a string, not a bare object).
+ *   (a) the field is a real array (not a string, not a bare object) and,
+ *       when present, not empty ("no citation" is the ABSENCE of the key).
  *   (b) every array item has a non-empty string `pub`.
  *   (c) every array item's `quoteKind` is one of the 3 valid values.
  *   (d) `edition`/`para` are strings when present (empty string is valid -
  *       an intentionally blank edition/para is how the doctrine-view
  *       fabricated-date guard knows to omit that footer line, never guess).
+ *   (e) the two optional punctuation keys, `sepAfter` and `paraSep`
+ *       (tools/cite-schema.mjs explains them), are strings when present.
+ *   (f) Wave 3 only: the OLD free-text key (`cite`, `ref`, `reference`,
+ *       `citation`) is gone from every record of a migrated collection - a
+ *       content author who types the old key gets told what to write instead.
+ *
+ * EVERYTHING is checked against the ASSEMBLED bank (tools/assemble-bank.mjs:
+ * static seed + every "emit":"build" content pack), never the static seed
+ * alone. A content pack authors its own records at build time through
+ * G.contentPack.define, so a check of the static seed only cannot see a
+ * pack that injects an old-shape record. That is not hypothetical: Wave 1
+ * was checked on the static seed, and four scenarios in
+ * src/app-modules/06-opsec-cyber-curriculum-content.js (plus PRT's
+ * per-exercise cadenceOverride.source) shipped in the old {ref,para,asOf}
+ * shape - the AAR printed "undefined (...)" for them - until Wave 3 moved
+ * every check onto the assembled bank.
+ *
+ * DELIBERATELY NOT CHECKED (see the report that came with Wave 3):
+ *   - board.questions (Wave 2), and the board card `verbatim` field.
+ *   - forms.forms[].ref on the 8 forms that name their citation `ref`
+ *     instead of `reference`: no screen ever showed it, so migrating it would
+ *     CHANGE what a Soldier sees (a new reference tag, new search hits, and
+ *     new MOI Import coverage). That is a product decision, not a data
+ *     migration; it is listed in FORMS_MISNAMED_REF below so it cannot spread.
+ *   - section-level `asOf` banner strings ("2022-11 (DA 7906) / ADP 6-22 ..."):
+ *     a freshness caption, not a citation of one record.
  *
  * `--seed <path>` points it at a different copy so the verifier can be
- * verified. No dependencies beyond tools/seed-io.mjs.
- *
- * prt.drills is checked against the ASSEMBLED bank (tools/assemble-bank.mjs:
- * static seed + every "emit":"build" content pack), not just the static
- * seed - a content pack can add prt.drills records too (see
- * src/app-modules/12-prt-drills-expansion.js, the first one that does), and
- * this citation-shape gate must hold those the same as PD's own static-seed
- * record. doctrine/creeds/scenarios stay on the static seed only, matching
- * this lint's original scope, so this change does not also start enforcing
- * the schema on other packs' doctrine/scenario citations, which is a
- * separate, pre-existing gap outside this change.
+ * verified (tools/test-section-citations.mjs plants defects that way). No
+ * dependencies beyond tools/seed-io.mjs, tools/assemble-bank.mjs and
+ * tools/cite-schema.mjs.
  */
 import path from "node:path";
-import { readSeed } from "./seed-io.mjs";
 import { assembleBank } from "./assemble-bank.mjs";
+import { WAVE3, VALID_QUOTE_KIND } from "./cite-schema.mjs";
 
 const argOf = (flag) => { const i = process.argv.indexOf(flag); return i > 0 && process.argv[i + 1] ? process.argv[i + 1] : null; };
-const SEED_PATH = argOf("--seed") || "src/index.html";
-const VALID_QUOTE_KIND = ["verbatim", "paraphrase", "synthesis"];
+
+// The 8 forms whose citation sits under `ref` (see the header). A NINTH would
+// be a new instance of the same mistake, so the list is exact, not a pattern.
+export const FORMS_MISNAMED_REF = ["da3161", "da2062", "dd2873", "da5960", "dd2875", "dd200", "da1594", "da2166support"];
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -58,9 +79,11 @@ console.log("lint-citation-schema: every migrated citation is a real {pub,editio
 
 let data;
 try {
-  ({ data } = readSeed(SEED_PATH));
+  const bankOpts = {};
+  if (argOf("--seed")) bankOpts.seedPath = path.resolve(argOf("--seed"));
+  data = assembleBank(bankOpts).data;
 } catch (e) {
-  bad(`could not read/parse the seed at ${SEED_PATH}: ${e.message}`);
+  bad(`could not assemble the bank: ${e.message}`);
   console.log("\nLINT-CITATION-SCHEMA: " + fails + " FAILURE(S)");
   process.exit(1);
 }
@@ -71,27 +94,33 @@ function checkCitationArray(label, arr, ownerLabel) {
     return false;
   }
   if (arr.length === 0) {
-    bad(`${ownerLabel}'s ${label} is an empty array - every citation-bearing record needs at least one publication`);
+    bad(`${ownerLabel}'s ${label} is an empty array - every citation-bearing record needs at least one publication (or no ${label} key at all)`);
     return false;
   }
   let itemOk = true;
   arr.forEach((s, j) => {
     if (!s || typeof s !== "object") { bad(`${ownerLabel}'s ${label}[${j}] is not an object`); itemOk = false; return; }
-    if (typeof s.pub !== "string" || s.pub.trim() === "") { bad(`${ownerLabel}'s ${label}[${j}] has no non-empty "pub"`); itemOk = false; }
+    if (typeof s.pub !== "string" || s.pub.trim() === "") {
+      bad(`${ownerLabel}'s ${label}[${j}] has no non-empty "pub"${s.ref !== undefined ? ' (it still has the old {ref, para, asOf} shape: rename ref to pub, asOf to edition, and add a quoteKind)' : ""}`);
+      itemOk = false;
+    }
     if (!VALID_QUOTE_KIND.includes(s.quoteKind)) { bad(`${ownerLabel}'s ${label}[${j}].quoteKind is "${s.quoteKind}", must be one of: ${VALID_QUOTE_KIND.join(", ")}`); itemOk = false; }
     if (s.edition !== undefined && typeof s.edition !== "string") { bad(`${ownerLabel}'s ${label}[${j}].edition is not a string`); itemOk = false; }
     if (s.para !== undefined && typeof s.para !== "string") { bad(`${ownerLabel}'s ${label}[${j}].para is not a string`); itemOk = false; }
+    if (s.sepAfter !== undefined && typeof s.sepAfter !== "string") { bad(`${ownerLabel}'s ${label}[${j}].sepAfter is not a string`); itemOk = false; }
+    if (s.paraSep !== undefined && typeof s.paraSep !== "string") { bad(`${ownerLabel}'s ${label}[${j}].paraSep is not a string`); itemOk = false; }
   });
   return itemOk;
 }
 
-// --- doctrine.entries[].source ---
+// --- doctrine.entries[].source (+ no legacy top-level .ref) ---
 const docEntries = (data.doctrine && Array.isArray(data.doctrine.entries)) ? data.doctrine.entries : [];
 if (docEntries.length) {
   let bad0 = 0;
   docEntries.forEach((e, i) => {
-    const label = `doctrine.entries[${i}]${e && e.id ? ` ("${e.id}")` : ""}`;
+    const label = `doctrine.entries[${i}]${e && e.id ? ` ("${e.id}")` : ""}${e && e.__pack ? ` [from ${e.__pack}]` : ""}`;
     if (!checkCitationArray("source", e.source, label)) bad0++;
+    if (e.ref !== undefined) { bad(`${label} still has a top-level "ref" - a second citation belongs as a second source[] entry`); bad0++; }
   });
   if (!bad0) ok(`doctrine.entries: all ${docEntries.length} entries carry a valid structured source[]`);
 } else {
@@ -112,18 +141,8 @@ if (creeds.length) {
   ok("creeds: none present (seed section empty) - nothing to check");
 }
 
-// --- prt.drills[].repRule.source and .exercises[].source (ASSEMBLED bank -
-// see this file's own header for why prt.drills alone reads the merged
-// bank instead of the static seed `data` every other section above uses) ---
-let assembledData = data;
-try {
-  const bankOpts = {};
-  if (argOf("--seed")) bankOpts.seedPath = path.resolve(argOf("--seed"));
-  assembledData = assembleBank(bankOpts).data;
-} catch (e) {
-  bad(`could not assemble the bank for prt.drills: ${e.message}`);
-}
-const drills = (assembledData.prt && Array.isArray(assembledData.prt.drills)) ? assembledData.prt.drills : [];
+// --- prt.drills[].repRule.source and .exercises[].source ---
+const drills = (data.prt && Array.isArray(data.prt.drills)) ? data.prt.drills : [];
 if (drills.length) {
   let bad0 = 0;
   drills.forEach((d, i) => {
@@ -154,7 +173,7 @@ if (scenarios.length) {
     // structured-citation schema this lint enforces.
     if (sc.doctrine.every((x) => typeof x === "string")) return;
     withDoctrine++;
-    const label = `scenarios.scenarios[${i}]${sc.id ? ` ("${sc.id}")` : ""}`;
+    const label = `scenarios.scenarios[${i}]${sc.id ? ` ("${sc.id}")` : ""}${sc.__pack ? ` [from ${sc.__pack}]` : ""}`;
     if (!checkCitationArray("doctrine", sc.doctrine, label)) bad0++;
   });
   if (!bad0) ok(`scenarios: every present doctrine[] is valid (${withDoctrine} of ${scenarios.length} scenarios cite doctrine)`);
@@ -162,5 +181,37 @@ if (scenarios.length) {
   bad("GUIDON_SEED.scenarios.scenarios is missing, empty, or not an array");
 }
 
-console.log("\n" + (fails ? `LINT-CITATION-SCHEMA: ${fails} FAILURE(S)` : "LINT-CITATION-SCHEMA: all passed"));
+// --- Wave 3: every collection in WAVE3 (tools/cite-schema.mjs) ---
+let wave3Owners = 0, wave3WithSource = 0;
+for (const site of WAVE3) {
+  const owners = site.owners(data);
+  let bad0 = 0, withSource = 0;
+  owners.forEach(({ owner, path: p }) => {
+    if (!owner || typeof owner !== "object") return;
+    const label = `${site.id} ${p.join(".")}${owner.id ? ` ("${owner.id}")` : ""}`;
+    if (site.oldField !== site.field && owner[site.oldField] !== undefined) {
+      // (forms.forms[].ref is a DIFFERENT key from that collection's old `reference`, so it never lands here.)
+      bad(`${label} still has the free-text "${site.oldField}" - write it as ${site.field}: [{ pub, edition, para, quoteKind }] instead`);
+      bad0++;
+    }
+    if (owner[site.field] === undefined) return; // a record with no citation simply has no key
+    withSource++;
+    if (!checkCitationArray(site.field, owner[site.field], label)) bad0++;
+  });
+  wave3Owners += owners.length; wave3WithSource += withSource;
+  if (!owners.length) bad(`${site.id}: no records found - the collection is missing from the bank, or the walker in tools/cite-schema.mjs no longer matches its shape`);
+  else if (!bad0) ok(`${site.id}: ${withSource} of ${owners.length} record(s) carry a valid structured ${site.field}[]`);
+}
+
+// --- the misnamed forms `ref`, held to exactly the known 8 ---
+{
+  const forms = (data.forms && Array.isArray(data.forms.forms)) ? data.forms.forms : [];
+  const stray = forms.filter((f) => f && f.ref !== undefined && !FORMS_MISNAMED_REF.includes(f.id)).map((f) => f.id);
+  const missing = FORMS_MISNAMED_REF.filter((id) => !forms.some((f) => f && f.id === id && f.ref !== undefined));
+  if (stray.length) bad(`forms.forms: a form other than the 8 known ones now carries a top-level "ref" (${stray.join(", ")}) - the Forms screen shows its citation from "source", so "ref" never displays; use source: [{ pub, edition, para, quoteKind }]`);
+  else if (missing.length) bad(`forms.forms: ${missing.join(", ")} no longer carry the misnamed "ref" - remove them from FORMS_MISNAMED_REF in tools/lint-citation-schema.mjs`);
+  else ok(`forms.forms: the 8 known forms with a misnamed "ref" (never displayed, deliberately left) are exactly ${FORMS_MISNAMED_REF.length}; no new ones`);
+}
+
+console.log("\n" + (fails ? `LINT-CITATION-SCHEMA: ${fails} FAILURE(S)` : `LINT-CITATION-SCHEMA: all passed (${wave3WithSource} Wave 3 citations across ${WAVE3.length} collections, plus Wave 1)`));
 process.exit(fails ? 1 : 0);
