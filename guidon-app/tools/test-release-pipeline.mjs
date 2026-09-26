@@ -36,7 +36,7 @@
  * files as they were before this suite existed, sections 1-5 fail.
  */
 import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync, existsSync, chmodSync, readdirSync, copyFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { ALIASES, OPTIONAL_ALIASES, ESP32_LANES_AFTER, isNewerVersion, expectedAssets, verdict, renderDownloads, mergeBody, DOWNLOADS_START, DOWNLOADS_END } from "./release-manifest.mjs";
@@ -758,6 +758,65 @@ try {
       r = attempt("nomac", withoutMac);
       check(r.status === 0 && !/::warning/.test(r.stdout) && !/--latest/.test(r.ghCalls), "no Mac build at all: no warning either (the Mac lane is optional), and the page is still refreshed");
     }
+  }
+
+  /* ===================================================================
+     9. The firmware is compiled on every change to it (.github/workflows/firmware.yml),
+        and the lane-parser host test can no longer be silently skipped on CI
+     =================================================================== */
+  console.log("\n9. Firmware check: compiled when it changes, host test cannot be skipped on CI");
+  {
+    const fw = wf("firmware.yml");
+    const between = (text, from, to) => { const a = text.indexOf(from); const b = text.indexOf(to, a + from.length); return a === -1 ? "" : text.slice(a, b === -1 ? undefined : b); };
+    const onPr = between(fw, "  pull_request:", "  push:"), onPush = between(fw, "  push:", "\nconcurrency:");
+    check(/paths:/.test(onPr) && /"firmware\/\*\*"/.test(onPr) && /paths:/.test(onPush) && /"firmware\/\*\*"/.test(onPush) && /branches: \[main\]/.test(onPush),
+      "firmware.yml runs on pull requests AND on main, only when firmware/** (or its own suite) changes - it never slows an ordinary pull request", "firmware.yml is not path-filtered to firmware/**");
+    check(/"guidon-app\/tools\/test-esp32-lanes\.mjs"/.test(onPr) && /"\.github\/workflows\/firmware\.yml"/.test(onPr), "...and also when its host-test suite or the workflow itself changes");
+    check(/^permissions:\n  contents: read$/m.test(fw) && !/contents: write|id-token|actions: write|packages: write/.test(fw), "read-only token: nothing here can publish or write");
+    check(!/secrets\./.test(fw) && !/\$\{\{\s*secrets/.test(fw), "no secret is read (the repository has none)");
+    const fwUses = [...fw.matchAll(/^\s*(?:-\s*)?uses:\s*(\S+)/gm)].map((m) => m[1]);
+    check(fwUses.length >= 4 && fwUses.every((u) => /@[0-9a-f]{40}$/.test(u)), `every one of its ${fwUses.length} \`uses:\` steps (checkout, setup-node, setup-python, cache) is pinned to a full commit SHA`, "an action in firmware.yml is not SHA-pinned: " + fwUses.join(", "));
+    check(fwUses.some((u) => /^actions\/setup-python@/.test(u)) && /cache: pip/.test(fw) && fwUses.some((u) => /^actions\/cache@/.test(u)) && /path: ~\/\.platformio/.test(fw), "Python is set up by a pinned action with the pip cache, and PlatformIO's downloads (~/.platformio) are cached, so it is not slow");
+    const reqs = existsSync("../firmware/esp32-flashcard-os/requirements-ci.txt") ? readFileSync("../firmware/esp32-flashcard-os/requirements-ci.txt", "utf-8") : "";
+    check(/^platformio==\d+\.\d+\.\d+$/m.test(reqs) && /requirements-ci\.txt/.test(fw), "PlatformIO is installed from a requirements file that pins one exact version (a compile failure then means the firmware changed, not the tool)");
+    const fwSteps = stepsOf(jobBlock(fw, "compile"));
+    const compile = fwSteps.findIndex((s) => /platformio run -e flashcardos/.test(s.run || ""));
+    const hostTest = fwSteps.findIndex((s) => /node guidon-app\/tools\/test-esp32-lanes\.mjs/.test(s.run || ""));
+    check(compile !== -1 && /test -s \.pio\/build\/flashcardos\/firmware\.bin/.test(fwSteps[compile].run) && !/continue-on-error/.test(jobBlock(fw, "compile") || ""), "the job compiles env:flashcardos (the same `platformio run -e flashcardos` the release runs), insists on a real firmware.bin, and is never continue-on-error", "firmware.yml does not compile env:flashcardos");
+    check(hostTest > compile && compile !== -1, "the lane-parser host test runs AFTER the compile - the compile is what fetches the real ArduinoJson it builds against", "firmware.yml does not run test-esp32-lanes after the compile");
+    check(!/^\s*CI:/m.test(fw), "nothing overrides the CI environment variable (Actions sets it, and it is what turns a missing ArduinoJson from a SKIP into a failure)");
+    const lintPins = (dir) => spawnSync(process.execPath, ["tools/lint-workflow-pins.mjs", "--dir", dir], { encoding: "utf-8" });
+    const realPins = lintPins("../.github/workflows");
+    check(realPins.status === 0 && readdirSync(WF_DIR).includes("firmware.yml"), "lint-workflow-pins passes on the real workflows, firmware.yml included", "lint-workflow-pins failed: " + realPins.stdout);
+    const pinsCopy = path.join(scratch, "wf-copy-pins"); mkdirSync(pinsCopy, { recursive: true });
+    for (const f of readdirSync(WF_DIR)) writeFileSync(path.join(pinsCopy, f), f === "firmware.yml" ? wf(f).replace(/(actions\/setup-python)@[0-9a-f]{40}/, "$1@v7") : wf(f));
+    const plantedPins = lintPins(pinsCopy);
+    check(plantedPins.status === 1 && /firmware\.yml/.test(plantedPins.stdout) && /setup-python@v7/.test(plantedPins.stdout), "verify-the-verifier: an unpinned setup-python in firmware.yml fails lint-workflow-pins, naming the file", "planted @v7 was not caught: " + plantedPins.stdout);
+    const lintMatrixNow = spawnSync(process.execPath, ["tools/lint-ci-matrix.mjs"], { encoding: "utf-8" });
+    check(lintMatrixNow.status === 0, "lint-ci-matrix still passes with the new workflow and the regenerated chunk block", "lint-ci-matrix failed: " + lintMatrixNow.stdout);
+
+    // ci.yml: the chunk that runs the ESP32 suite gets the pinned ArduinoJson (and only that chunk)
+    const testJob = jobBlock(ci, "test") || "";
+    const fetchStep = stepNamed(stepsOf(testJob), "Fetch ArduinoJson (pinned) for the ESP32 lane-parser host test");
+    const fetchBlock = between(testJob, "      - name: Fetch ArduinoJson", "      - name: Run test chunk");
+    check(!!fetchStep && /if: \$\{\{ contains\(matrix\.chunk\.tests, 'test:esp32-lanes'\) \}\}/.test(fetchBlock) && /uses: actions\/checkout@[0-9a-f]{40}/.test(fetchBlock) && /repository: bblanchon\/ArduinoJson/.test(fetchBlock) && /ref: [0-9a-f]{40}\b/.test(fetchBlock) && /path: \.arduinojson/.test(fetchBlock),
+      "ci.yml fetches ArduinoJson at a pinned commit SHA, only in the chunk that runs test:esp32-lanes, so that suite's JSON-reading test runs on CI instead of skipping", "ci.yml has no pinned ArduinoJson fetch for the esp32-lanes chunk");
+    check(/ARDUINOJSON_DIR: \$\{\{ github\.workspace \}\}\/\.arduinojson\/src/.test(between(testJob, "      - name: Run test chunk", "\n\n") || testJob), "...and the chunk's run step points ARDUINOJSON_DIR at that checkout's src folder", "the run step does not set ARDUINOJSON_DIR");
+    const chunkTests = [...testJob.matchAll(/^\s+tests: "([^"]+)"/gm)].map((m) => m[1]);
+    check(chunkTests.filter((t) => /(^| )test:esp32-lanes( |$)/.test(t)).length === 1, "exactly one chunk runs test:esp32-lanes, so the fetch's condition matches a real chunk", "chunks running test:esp32-lanes: " + chunkTests.filter((t) => /test:esp32-lanes/.test(t)).length);
+    check(/--also desktop\.yml,ios\.yml,firmware\.yml/.test(cut), "release-cut.yml's green-CI gate also looks at the Firmware workflow (a path-filtered one: no run for the commit does not block, a red run does)", "release-cut.yml does not list firmware.yml in its --also gate");
+
+    // The suite itself: with the CI variable set, a missing ArduinoJson FAILS; on a developer machine it only SKIPs.
+    const runLanes = (ci) => new Promise((resolve) => {
+      const env = { ...process.env, ARDUINOJSON_DIR: "", GUIDON_ESP32_LIBDEPS: path.join(scratch, "no-arduinojson-here") };
+      if (ci) env.CI = "true"; else delete env.CI;
+      const child = spawn(process.execPath, ["tools/test-esp32-lanes.mjs"], { env });
+      let out = ""; child.stdout.on("data", (d) => { out += d; }); child.stderr.on("data", (d) => { out += d; });
+      child.on("close", (status) => resolve({ status, out }));
+    });
+    const [onCi, onDev] = await Promise.all([runLanes(true), runLanes(false)]);
+    check(onCi.status === 1 && /FAIL {2}on CI, so this must not be skipped: ArduinoJson is not on this machine/.test(onCi.out) && !/SKIP {2}ArduinoJson/.test(onCi.out), "test-esp32-lanes with CI set and no ArduinoJson FAILS loudly (it used to print SKIP and pass)", "with CI set and no ArduinoJson: exit " + onCi.status + "\n" + onCi.out.split("\n").filter((l) => /ArduinoJson|FAIL|SKIP/.test(l)).join("\n"));
+    check(onDev.status === 0 && /SKIP {2}ArduinoJson is not on this machine/.test(onDev.out) && !/FAIL {2}on CI/.test(onDev.out), "...while on a developer machine (no CI variable) the same gap is still only a SKIP, so a plain `node tools/test-esp32-lanes.mjs` keeps working without the library", "with no CI variable and no ArduinoJson: exit " + onDev.status + "\n" + onDev.out.split("\n").filter((l) => /ArduinoJson|FAIL|SKIP/.test(l)).join("\n"));
   }
 } catch (e) {
   bad("suite crashed: " + (e && e.stack ? e.stack : e));

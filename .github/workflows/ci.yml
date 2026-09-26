@@ -785,7 +785,32 @@ jobs:
       # shared state (see tools/run-parallel.mjs's own header comment), so
       # up to PER_CHUNK (4 as of 2026-09-07) of them can safely run
       # concurrently in this one job.
+      # tools/test-esp32-lanes.mjs compiles and runs the handheld's own JSON
+      # reader (firmware/esp32-flashcard-os/src/lanes_json.h) against the real
+      # ArduinoJson library. On a developer machine a missing library is a
+      # SKIP; where the CI environment variable is set (it always is here) it
+      # is a FAILURE, so the check can never be skipped without anyone
+      # noticing. This step supplies the library to the chunk that runs that
+      # suite (and only that chunk - `contains` on the chunk's own suite list,
+      # so it survives the chunk block being regenerated). Pinned to the
+      # immutable commit the v7.4.3 tag resolves to (`gh api
+      # repos/bblanchon/ArduinoJson/commits/v7.4.3`), for the same reason every
+      # action above is SHA-pinned; the header-only sources are read straight
+      # from the checkout (ARDUINOJSON_DIR below), nothing is installed. The
+      # firmware itself is compiled by .github/workflows/firmware.yml (on
+      # firmware/** changes) and by release-assets.yml (at a release cut).
+      - name: Fetch ArduinoJson (pinned) for the ESP32 lane-parser host test
+        if: ${{ contains(matrix.chunk.tests, 'test:esp32-lanes') }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: bblanchon/ArduinoJson
+          ref: 77771d3c07668e01d8f52acb03910c1110bb373f  # v7.4.3
+          path: .arduinojson
+          persist-credentials: false
+
       - name: Run test chunk (${{ matrix.chunk.name }})
+        env:
+          ARDUINOJSON_DIR: ${{ github.workspace }}/.arduinojson/src
         run: node tools/run-parallel.mjs ${{ matrix.chunk.tests }}
 
   # ---------------------------------------------------------------------

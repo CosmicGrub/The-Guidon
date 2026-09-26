@@ -119,6 +119,11 @@ KB of RAM (a table of up to 16 decks and a 2-byte deck mask per subject).
 id, label and count, so the subject lists inside it are dropped as they
 stream past. Cards are never held, as before.
 
+CI: `.github/workflows/firmware.yml` compiles `env:flashcardos` with a pinned
+PlatformIO whenever anything under `firmware/` changes (release builds also
+compile it), and then runs `guidon-app/tools/test-esp32-lanes.mjs` — including
+the ArduinoJson parser test — where a missing library is a failure, not a skip.
+
 Limits (held by `guidon-app/tools/test-esp32-lanes.mjs` against both the
 exporter and these sources): at most 16 decks, deck ids up to 11 characters,
 deck labels up to 40 characters (the exporter shortens a longer registry

@@ -1,0 +1,6 @@
+# The one Python package the firmware CI check installs (.github/workflows/
+# firmware.yml). Pinned so a compile failure means the FIRMWARE changed, not
+# the build tool: 6.2.0 is the PlatformIO Core this project's env:flashcardos
+# was last compiled with, by hand and (through the same `pip install`)
+# by the release workflow.
+platformio==6.2.0
