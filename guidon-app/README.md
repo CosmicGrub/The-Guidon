@@ -53,6 +53,18 @@ file's own `$doc` block explains every field.
   skipped classification-marking refusal. It also fails on an undeclared
   monkeypatch, route, storage key, hook or cross-module call.
 
+### Unit decks (a unit's own study cards)
+
+A unit leader can hand Soldiers a small data-only file of study cards about the
+unit (`guidon-unit-pack` v1); each Soldier adds it under Settings -> Study
+Preferences -> Unit decks. It is deliberately **not** a content pack: it never
+enters the bank, its fingerprint, the content manifest, the handheld export or a
+Study Room, and it is only ever read from a file the Soldier chose. The format,
+limits, schema and sensitive-text screening are one file,
+`src/app-modules/unit-decks-core.js`, which the app, the authoring command
+(`node tools/make-unit-pack.mjs cards.csv`) and the tests all load. Leaders read
+`docs/unit-packs.md`; a fictional example is in `tools/fixtures/`.
+
 ## Quick start
 
 ```bash

@@ -707,8 +707,10 @@ jobs:
             tests: "test:legal-package-content test:legal-package-verifier test:engine-collective test:room-handoff-core"
           - name: "62-roomhandoff-roomhandoffsafety-boardcitations-sectioncitations"
             tests: "test:room-handoff test:room-handoff-safety test:board-citations test:section-citations"
-          - name: "63-esp32lanes-scenariolegacydoctrine"
-            tests: "test:esp32-lanes test:scenario-legacy-doctrine"
+          - name: "63-esp32lanes-scenariolegacydoctrine-unitpackformat-unitpackcli"
+            tests: "test:esp32-lanes test:scenario-legacy-doctrine test:unit-pack-format test:unit-pack-cli"
+          - name: "64-unitdecksisolation-unitdecks-unitdecksstorage"
+            tests: "test:unit-decks-isolation test:unit-decks test:unit-decks-storage"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
