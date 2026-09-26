@@ -21,6 +21,11 @@
  *     real owner's deck already on it must be neither changed nor deleted, and after a
  *     reload the session's deck is gone. The same actions under a real profile DO reach
  *     the device, so that cannot pass because saving is broken.
+ *  1b. THE RESTORE AND THE START-UP ARE THE SAME GATE AS THE IMPORT. The screen that refuses a deck holding a Social Security number, a
+ *     marking, a roster or a hidden character runs again on every saved row - one that arrives in a backup and one already on the
+ *     device - and so does a size cap and a limit of 10 decks. A hand-built backup therefore cannot bring in what the import would have
+ *     refused, and an over-full device keeps its 10 oldest decks and says which it left out. Names like "constructor" are ordinary
+ *     deck ids (the 10-deck limit and the "replaces" notice do not mistake them for something already there).
  *  3. UPDATING: adding a newer version of a deck (same id) replaces it, keeps the
  *     Soldier's progress on the cards that remain, and leaves a deck they had switched
  *     off switched off. The device keeps at most 10 decks; the 11th is refused in plain
@@ -116,6 +121,70 @@ await waitForRoute(page, "#/home", { ready: "#route h1, #route h2" });
   check(logged.includes("unit-deck:damaged") && logged.includes("unit-deck:wrong-key"), "and both are logged for Diagnostics", () => JSON.stringify(logged));
   await page.evaluate(async () => { await G.db.del("kv", "unit-deck:damaged"); await G.db.del("kv", "unit-deck:wrong-key"); });
 }
+{ // the restore is a trust boundary: a row that never went past the import check gets the import's screen
+  const dirty = (id, mutate) => { const r = clone(ROW); r.id = id; r.name = "Deck " + id; mutate(r); return { k: "unit-deck:" + id, v: r }; };
+  const bigRow = dirty("too-big", (r) => { r.cards = Array.from({ length: 200 }, (_, i) => ({ id: "c" + i, category: "C", q: "Question number " + i + "?", a: "a".repeat(1200), keyPoints: Array.from({ length: 8 }, () => "k".repeat(200)) })); });
+  const bad = [
+    dirty("has-ssn", (r) => { r.cards[1].a = "Use 123-45-6789 to look it up."; }),
+    dirty("has-marking", (r) => { r.cards[0].q = "Is this SECRET//NOFORN?"; }),
+    dirty("has-roster", (r) => { r.cards[0].keyPoints = ["SGT Smith", "SSG Jones", "SPC Brown"]; }),
+    dirty("has-spread-roster", (r) => { r.cards = ["SGT Smith", "SSG Jones", "SPC Brown", "CPL Green", "PFC White", "PVT Black", "SFC Gray"].map((n, i) => ({ id: "n" + i, category: "C", q: "Who is number " + i + "?", a: n, keyPoints: [] })); }),
+    dirty("has-email", (r) => { r.unit = "Alpha a.b@example.com"; }),
+    dirty("has-fullwidth-ssn", (r) => { r.cards[1].a = "\uFF11\uFF12\uFF13-\uFF14\uFF15-\uFF16\uFF17\uFF18\uFF19"; }),
+    dirty("has-zwsp", (r) => { r.cards[0].q = "Formation\u200B time?"; }),
+    dirty("nine-sources", (r) => { r.cards[0].source = ["AR 1", "AR 2", "AR 3", "AR 4", "AR 5", "AR 6", "AR 7", "AR 8", "AR 9"].map((pub) => ({ pub, edition: "", para: "", quoteKind: "paraphrase" })); }),
+    bigRow,
+  ];
+  const good = clone(ROW); good.id = "clean-one"; good.name = "Clean deck";
+  const payload = { schema: (await page.evaluate(async () => (await G.backup.exportAll()).schema)), exportedAt: new Date().toISOString(), stores: { kv: [{ k: "unit-deck:clean-one", v: good }].concat(bad), userScenarios: [], attempts: [] } };
+  const res = await page.evaluate(async (p) => { const r = await G.backup.importAll(p); await G.unitDecks.load(); return r; }, payload);
+  check(res.skipped.kv === bad.length && JSON.stringify(res.skippedKeys.slice().sort()) === JSON.stringify(bad.map((r) => r.k).sort()), `a restore refuses every one of ${bad.length} rows the import check would have refused (a Social Security number, a marking, a roster in one card or spread over seven, an email address, fullwidth digits, a hidden character, nine sources, a row over the size limit) and names each`, () => JSON.stringify(res));
+  const ids = await deckIds();
+  check(ids.includes("clean-one") && !ids.some((i) => /^has-|^nine-|^too-big$/.test(i)), "while the clean row beside them is restored", () => JSON.stringify(ids));
+  check((await keys("unit-deck:")).every((k) => k === "unit-deck:clean-one" || k === "unit-deck:" + DECK), "and none of the refused rows reached the device");
+  check(!JSON.stringify(res).includes("123-45-6789"), "and what the restore reports never repeats a number");
+  await page.evaluate(async () => { await G.unitDecks.remove("clean-one"); });
+
+  // The same rows, already ON the device (put there underneath the app): the start-up leaves them out, and says why.
+  await putOnDevice(page, { stores: { kv: bad.concat([{ k: "unit-deck:clean-two", v: Object.assign(clone(good), { id: "clean-two" }) }]) } });
+  await page.evaluate(async () => { await G.unitDecks.load(); });
+  const onDev = await deckIds();
+  check(onDev.includes("clean-two") && !onDev.some((i) => /^has-|^nine-|^too-big$/.test(i)), "rows already on the device that fail the screen are left out at start-up (never studied), the clean one is kept", () => JSON.stringify(onDev));
+  // The start-up's log is written by a queue that finishes a moment after load() returns: wait for all of it instead of reading it early.
+  await untilAsync(page, async (n) => (await G.selfheal.recent(80)).filter((e) => e.kind === "kv-reject" && /^unit-deck:(has-|nine-|too-big)/.test(e.key || "") && /^a saved unit deck/.test(e.detail || "")).length >= n, bad.length);
+  const why = await page.evaluate(async () => (await G.selfheal.recent(80)).filter((e) => e.kind === "kv-reject" && /^unit-deck:(has-|nine-|too-big)/.test(e.key || "") && /^a saved unit deck/.test(e.detail || "")).map((e) => e.key + " -> " + e.detail));
+  check(bad.every((r) => why.some((w) => w.indexOf(r.k + " ->") === 0)), "and each is logged for Diagnostics", () => JSON.stringify(why));
+  check(why.some((w) => /has-ssn -> a saved unit deck holds text the sensitive-text check refuses/.test(w)) && why.some((w) => /too-big -> a saved unit deck is larger than a unit deck may be/.test(w)), "with the reason (the text the screen refuses, or the size)", () => JSON.stringify(why));
+  const cards = await page.evaluate(() => G.unitDecks.cards().map((c) => c.q).join("|"));
+  check(!/SECRET|Smith|123-45/.test(cards), "and nothing from a refused row is in the study pool");
+  await page.evaluate(async (ks) => { for (const k of ks) await G.db.del("kv", k); await G.unitDecks.load(); }, bad.map((r) => r.k).concat(["unit-deck:clean-two"]));
+}
+{ // a device keeps at most 10 decks, whatever was put on it
+  await page.evaluate(async () => { await G.unitDecks.remove("pinecone-ridge-demo"); });   // (the example deck comes back at the end of this block)
+  const mk = (n) => { const r = clone(ROW); r.id = "many-" + String(n).padStart(2, "0"); r.name = "Many " + n; r.importedAt = "2026-09-" + String(10 + n).padStart(2, "0") + "T00:00:00.000Z"; r.cards = r.cards.slice(0, 2); return { k: "unit-deck:" + r.id, v: r }; };
+  const thirteen = Array.from({ length: 13 }, (_, i) => mk(i + 1));
+  await putOnDevice(page, { stores: { kv: thirteen } });
+  await page.evaluate(async () => { await G.unitDecks.load(); });
+  const kept = (await deckIds()).filter((i) => /^many-/.test(i));
+  check(kept.length === 10 && kept[0] === "many-01" && kept[9] === "many-10", "13 sound decks on the device: the start-up keeps the 10 OLDEST and leaves the 3 newest out", () => JSON.stringify(kept));
+  await untilAsync(page, async () => (await G.selfheal.recent(80)).filter((e) => e.kind === "kv-reject" && /^unit-deck:many-1[123]$/.test(e.key || "")).length >= 3);
+  const why = await page.evaluate(async () => (await G.selfheal.recent(80)).filter((e) => e.kind === "kv-reject" && /^unit-deck:many-1[123]$/.test(e.key || "")).map((e) => e.key));
+  check(why.length === 3, "and logs the three it left out (past the limit of 10)", () => JSON.stringify(why));
+  await page.evaluate(async (ks) => { for (const k of ks) await G.db.del("kv", k); await G.unitDecks.load(); }, thirteen.map((r) => r.k));
+  // A restore onto an empty device: the first 10 come in, the rest are named as left out.
+  const twelve = Array.from({ length: 12 }, (_, i) => mk(i + 1));
+  const schema = await page.evaluate(async () => (await G.backup.exportAll()).schema);
+  const r1 = await page.evaluate(async (p) => { const r = await G.backup.importAll(p); await G.unitDecks.load(); return r; }, { schema, stores: { kv: twelve, userScenarios: [], attempts: [] } });
+  check(r1.restored.kv === 10 && r1.skipped.kv === 2 && JSON.stringify(r1.skippedKeys) === JSON.stringify(["unit-deck:many-11", "unit-deck:many-12"]), "a restore of 12 decks onto an empty device brings in 10 and names the other 2 as left out", () => JSON.stringify(r1));
+  // A full device: a deck it already has may be replaced by the backup's newer copy, a new one is left out.
+  const replacement = mk(3); replacement.v.name = "Many 3, newer";
+  const r2 = await page.evaluate(async (p) => { const r = await G.backup.importAll(p); await G.unitDecks.load(); return r; }, { schema, stores: { kv: [replacement, mk(20)], userScenarios: [], attempts: [] } });
+  const named = await page.evaluate(() => G.unitDecks.list().find((d) => d.id === "many-03").name);
+  check(r2.restored.kv === 1 && r2.skipped.kv === 1 && r2.skippedKeys[0] === "unit-deck:many-20" && named === "Many 3, newer", "on a full device a restore may replace a deck it has, but not add an 11th", () => JSON.stringify({ r2, named }));
+  await page.evaluate(async (ks) => { for (const k of ks) await G.db.del("kv", k); await G.unitDecks.load(); }, twelve.map((r) => r.k));
+  check((await keys("unit-deck:")).length === 0, "(and the device is clean again)");
+  await page.evaluate(async (p) => { await G.unitDecks.add(p); }, PACK);
+}
 
 /* ================================================================= 3. updating, and the limit */
 {
@@ -145,14 +214,32 @@ await waitForRoute(page, "#/home", { ready: "#route h1, #route h2" });
     const out = [];
     for (let i = 1; i <= 10; i++) out.push((await G.unitDecks.add(mk(i))).ok);
     const eleventh = await G.unitDecks.add(mk(11));
+    // "constructor" is an inherited name on an ordinary object, so a plain-object registry would think a deck with that id already exists.
+    const ctor = await G.unitDecks.add(Object.assign(mk(12), { id: "constructor" }));
     const replace = await G.unitDecks.add(Object.assign(mk(3), { packVersion: "2" }));
-    return { out, eleventh, replace, n: G.unitDecks.list().length };
+    return { out, eleventh, ctor: { ok: ctor.ok, stage: ctor.stage }, replace, n: G.unitDecks.list().length };
   });
   check(many.out.every(Boolean) && many.n === 10, "ten decks fit");
   check(many.eleventh.ok === false && many.eleventh.stage === "limit" && /already have 10 unit decks/.test(many.eleventh.messages[0]) && /Remove one first/.test(many.eleventh.messages[0]), "the eleventh is refused in plain words (remove one first)", () => JSON.stringify(many.eleventh));
+  check(many.ctor.ok === false && many.ctor.stage === "limit" && many.n === 10, "a deck whose id is \"constructor\" is a NEW deck like any other, so it does not get past the limit either", () => JSON.stringify(many.ctor));
   check(many.replace.ok === true && many.replace.replaced === true && many.n === 10, "but replacing one that is already there is allowed at the limit");
   await page.evaluate(async () => { for (let i = 1; i <= 10; i++) await G.unitDecks.remove("deck-" + i); });
   check((await keys("unit-deck:")).length === 0, "and removing them leaves no row behind");
+  // On an empty device "constructor" is an ordinary id: nothing is "replaced", and it can be added and removed.
+  const proto = await page.evaluate(async () => {
+    const pk = { format: "guidon-unit-pack", formatVersion: 1, id: "constructor", name: "Constructor deck", packVersion: "1", packDate: "2026-09-26", cards: [{ id: "tostring", category: "__proto__", q: "constructor", a: "hasOwnProperty" }] };
+    const insp = G.unitDecks.inspect(pk);
+    const before = { deck: G.unitDecks.deck("constructor"), listed: G.unitDecks.list().length, ids: G.unitDecks.list().map((d) => d.id) };
+    const added = await G.unitDecks.add(pk);
+    const listed = G.unitDecks.list().map((d) => d.id + ":" + d.cardCount + ":" + d.categoryCount);
+    const cards = G.unitDecks.cards().map((c) => c.id + "|" + c.category);
+    const again = await G.unitDecks.add(pk);
+    const removed = await G.unitDecks.remove("constructor", { deleteHistory: true });
+    return { replaces: insp.replaces, ok: insp.ok, before, added: { ok: added.ok, replaced: added.replaced }, listed, cards, again: { ok: again.ok, replaced: again.replaced }, removed: removed.ok, after: G.unitDecks.list().length };
+  });
+  check(proto.ok && proto.replaces === null && proto.before.deck === null && proto.before.listed === 0, "on an empty device the preview does not claim a deck called \"constructor\" replaces one named \"Object\"", () => JSON.stringify(proto));
+  check(proto.added.ok && proto.added.replaced === false && JSON.stringify(proto.listed) === JSON.stringify(["constructor:1:1"]) && JSON.stringify(proto.cards) === JSON.stringify(["unit:constructor:tostring|Unit: __proto__"]), "it is added as a new deck, with card id \"tostring\" and category \"__proto__\" as ordinary names", () => JSON.stringify(proto));
+  check(proto.again.ok && proto.again.replaced === true && proto.removed === true && proto.after === 0, "adding it again replaces it (correctly, this time), and it can be removed");
 }
 { // an owner's session really writes to the device (so the Guest checks below cannot pass because saving is broken)
   await page.evaluate(async (p) => { await G.unitDecks.add(p); }, PACK);

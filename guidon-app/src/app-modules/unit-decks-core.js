@@ -87,7 +87,7 @@
     sourceEntries: 8,                  // separate references a card's source may be split into (see validate())
     reciteTitles: 8, reciteTitle: 60,
     bytes: 262144,                     // 256 KiB of JSON text, measured in UTF-8 bytes
-    rowBytes: 393216                   // the SAVED row of a deck: a little larger than the file (each citation becomes a small object)
+    rowBytes: 458752                   // the SAVED row of a deck (448 KiB): larger than the file because each citation becomes a small object (at most about 1.45x the file)
   };
 
   var TOP_KEYS = ["format", "formatVersion", "id", "name", "unit", "packVersion", "packDate", "cards", "reciteTitles"];

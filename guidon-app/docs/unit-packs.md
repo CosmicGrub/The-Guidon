@@ -36,7 +36,7 @@ last section.
 | Personal data: Social Security numbers, DoD ID numbers, home addresses, personal phone numbers, personal email addresses | Nothing about individual Soldiers belongs in a study deck. |
 | A roster, a duty list, an alert roster, or any list of Soldiers' names | Same reason. GUIDON refuses a deck that looks like one. |
 | Real operational details: future movements, real grids, real locations of unit activities | OPSEC. |
-| The words of a unit song, creed or anything else somebody may own the copyright to | GUIDON ships no lyrics, and a deck cannot carry text to recite (see "Recitation titles" below). |
+| The words of a unit song, creed or anything else somebody may own the copyright to | GUIDON ships no lyrics. A deck has no place for words to recite (see "Recitation titles" below), and GUIDON cannot tell a song from a sentence, so do not put them in a card either. |
 | Anything that needs an approval you have not got: release approval, command approval, legal or public-affairs review | Get the approval first. GUIDON cannot know. |
 
 **You are responsible for what is in your deck.** GUIDON runs a check when a
@@ -133,15 +133,15 @@ cannot slip through.
 | `unit` | Optional unit label, up to 60 characters. |
 | `packVersion` | Your version label, up to 20 characters (letters, digits, dots, dashes): "2026.09". |
 | `packDate` | A real date, year-month-day: "2026-09-26". |
-| `cards` | 1 to 200 cards, and no more than 30 different categories. |
+| `cards` | 1 to 200 cards, and no more than 30 different categories (counted exactly as typed: "Local SOP" and "local sop" count as two). |
 | card `id` | 1 to 30 characters, lower-case letters, digits, dashes. Unique in the deck. |
 | card `category` | Up to 40 characters. |
 | card `q` | Question, up to 300 characters. No two cards may ask the same question. |
 | card `a` | Answer, up to 1,200 characters (may have line breaks). |
 | card `keyPoints` | Optional. Up to 8 points, up to 200 characters each. |
-| card `source` | Optional. Up to 200 characters, your unit's own words. |
+| card `source` | Optional. Up to 200 characters, your unit's own words, naming no more than 8 separate references (publications or documents split by "; " or " / "). |
 | `reciteTitles` | Optional. Up to 8 titles, up to 60 characters each. Titles only. |
-| Whole file | Up to 256 KB. |
+| Whole file | Up to 256 KB. GUIDON also refuses invisible characters (a zero-width space, a soft hyphen, a text-direction mark and the like) in any text, because they can hide a marking or a number from the check; retype the text if you pasted it from a PDF or a Word file. |
 
 **How `source` is shown.** GUIDON reads the source with the same careful parser
 it uses for its own cards. "AR 600-20, para 4-5" becomes a proper citation;
@@ -162,18 +162,33 @@ did not write, and never marks a unit card as a word-for-word quote.
    a banner line, a CUI block), Social Security and DoD ID numbers, unit
    identification codes with their label, telephone numbers, email addresses, a
    sentence with a future date and a place and a unit activity, and text that
-   looks like a list of people's names. The check reads the words as typed; it
-   never edits them.
+   looks like a list of people's names. Names are looked for in each answer, in
+   each card's key points read together, and across the whole deck's short
+   answers and key points (so a roster cannot be spread one name to a card). A
+   Social Security or phone number split between two fields of one card is
+   caught too. The check reads the words as typed and never edits them; to
+   find things that are written oddly it also reads a plain copy (fullwidth
+   digits and letters, en dashes and a few look-alike letters from other
+   alphabets turned into ordinary ones), and it throws that copy away.
 3. **Shows a preview** (name, unit, version, how many cards and categories,
    sample cards) and a notice that the deck comes from the unit, GUIDON has not
-   checked it for accuracy, it never leaves the device, and it is not for
+   checked it for accuracy, GUIDON does not send it anywhere (it stays on the
+   device and goes into any backup the Soldier exports), and it is not for
    classified or controlled information.
 4. **Adds it only when the Soldier taps "Add this deck".**
+
+Then, **every time GUIDON starts, and whenever a backup is restored**, each saved
+deck is checked again the same way (the same format rules, the same size limit
+and the same sensitive-text check). A deck that fails is left out, not shown,
+and noted for Diagnostics, so a backup file edited by hand cannot bring in
+something the import check would have refused. GUIDON keeps at most 10 decks.
 
 The check is a prevention aid. It looks for particular shapes. It cannot tell
 that something is sensitive because of what it is, or because of what several
 harmless facts add up to. It is a safety net for honest mistakes, not a defense
-against someone who is trying to slip something past it. If you are unsure
+against someone who is trying to slip something past it: it turns the most
+common look-alike letters into ordinary ones, but not every one, so a determined
+person can still write a marking that it does not recognise. If you are unsure
 whether something may go in a deck, it may not: ask your S2 or OPSEC officer.
 
 ---
@@ -182,10 +197,13 @@ whether something may go in a deck, it may not: ask your S2 or OPSEC officer.
 
 Most units have a song, a creed or a motto Soldiers are expected to know. GUIDON
 will not carry those words: they usually belong to somebody, and the app ships
-no copyrighted text. A deck can only **suggest titles**. Once the deck is on,
-each title shows in Recitation Drill under **My unit** as an empty "Add: Unit
-song" prompt, and the Soldier types in their own copy, which stays on their own
-device. Do not put the words in a deck, in a card or anywhere else.
+no copyrighted text. A deck has no place for them; it can only **suggest
+titles**. Once the deck is on, each title shows in Recitation Drill under **My
+unit** as an empty "Add: Unit song" prompt, and the Soldier types in their own
+copy, which stays on their own device. GUIDON cannot tell a song from an
+ordinary sentence, so a card's question, answer or key points could hold
+words to recite if someone typed them there. Do not: not in a card and not
+anywhere else in a deck.
 
 ---
 
@@ -219,21 +237,28 @@ are still in the deck is kept, and a deck they had switched off stays off.
    labeled **Unit deck: (name)**. **Readiness** has a separate **Unit Deck
    Readiness** row, and unit cards are not counted in your Board Readiness Score.
 6. Use the switch beside the deck to turn it off or on.
-7. **Remove deck** asks first. You choose whether to keep or delete your study
-   progress on its cards (keep it if you might add the deck again). **Reset
-   progress** clears your progress and keeps the deck.
+7. **Remove deck** asks first. You choose whether to keep or delete your
+   progress on its cards (keep it if you might add the deck again). Progress
+   means what Board Drill has scheduled for you, your Quiz best scores for the
+   deck's topics, and any Rapid Fire saved deck that lists those topics; the
+   question says so. **Reset progress** clears the schedule and the Quiz best
+   scores and keeps the deck.
 
 Good to know:
 
-- A deck stays on your device. It is not sent anywhere, and it is not shared into
-  Study Rooms. It is not on the handheld flashcard device.
-- Your decks are part of your own study data, so they are in a backup you export
-  and come back when you restore it.
+- A deck stays on your device. GUIDON does not send it anywhere, and it is not
+  shared into Study Rooms. It is not on the handheld flashcard device.
+- Your decks are part of your own study data, so **every backup you export
+  includes them** (there is no separate tick-box, unlike the squad roster), and they
+  come back when you restore it. Keep an exported backup as carefully as the deck.
 - In a Guest or Kiosk session you can add a deck, but nothing is saved. It is gone
-  when the session ends.
+  when the session ends. Decks already on the device are still there to study
+  in a Guest or Kiosk session, the same as the rest of the owner's study data, so
+  do not leave a deck on a device that other people borrow.
 - A deck that is switched on is always part of what you study. The narrowing that
   trims the built-in cards (your Focus tier setting, an MOS, an MOI plan set to "In Scope",
-  Rapid Fire's "Match my rank") never hides it. Switch the deck off to hide it.
+  the study level in Board Drill and Quiz, Rapid Fire's "Match my rank") never hides it.
+  Switch the deck off to hide it.
 - Cards from a unit deck are not counted in Home's due count or in the weak-area
   lists, which are about the built-in cards.
 - You can keep up to 10 unit decks.

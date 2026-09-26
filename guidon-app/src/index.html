@@ -13044,7 +13044,9 @@ window.G = window.G || {};
       const overallPct = bankAll.length ? Math.round(totalMastered / bankAll.length * 100) : 0;
       readinessPane.appendChild(el("div.stat", {}, [
         el("span.k", { text: "Overall" }),
-        el("span.v", { text: overallPct + "%" }),
+        // data-overall-*: the two numbers the percentage is made of, so a test can check the bank it is measured
+        // against (the shipped bank alone, never a unit deck) without having to infer it from a rounded figure.
+        el("span.v", { text: overallPct + "%", "data-overall-cards": String(bankAll.length), "data-overall-mastered": String(totalMastered) }),
       ]));
       readinessPane.appendChild(el("div.bar" + (overallPct >= 85 ? ".green" : ""), {},
         [el("span", { style: "transform:scaleX(" + (overallPct / 100) + ")" })]));
@@ -13277,6 +13279,15 @@ window.G = window.G || {};
     return out;
   }
 
+  // The four options for one Quiz question: its correct answer and three wrong ones drawn from the session's answer pool.
+  // The pool never offers the question's own answer, and never offers a unit deck's answer for a shipped question (a doctrine
+  // question with "0630 formation" among its choices would be silly and misleading); a unit question may draw on the shipped
+  // bank for extra options when its own deck is too small to supply three. Exposed as G.board.quizOptionsFor for tests.
+  function quizOptionsFor(q, sessionPool) {
+    const correctText = q.acceptableAnswer || q.a;
+    const candidates = sessionPool.filter((x) => x.id !== q.id && (!x.unit || !!q.unitDeck));
+    return shuffle([correctText].concat(buildDistractors(correctText, q.category, candidates, 3)));
+  }
   async function renderQuiz(mount) {
     util.clear(mount);
     // PC/desktop intuitivism pass, Tier 2(c): same device-aware Click/Tap
@@ -13393,9 +13404,7 @@ window.G = window.G || {};
       // distractorPool built once in buildSession() (see its own comment) — only the
       // current question's id needs excluding per draw, not the whole ~1,000-question
       // map rebuilt from scratch.
-      const distractorPool = sess.distractorPool.filter((x) => x.id !== q.id && (!x.unit || !!q.unitDeck));
-      const distractors = buildDistractors(correctText, q.category, distractorPool, 3);
-      const options = shuffle([correctText].concat(distractors));
+      const options = quizOptionsFor(q, sess.distractorPool);
       const correctIdx = options.indexOf(correctText);
 
       const card = el("div.panel.quiz-card");
@@ -16760,6 +16769,9 @@ window.G = window.G || {};
   G.pointsMath = { weaponPts, aftPts, WPN_TABLES, PPW };
   G.board = {
     _openReadiness: null,  // set by render to open Readiness tab directly
+    // The four options for one Quiz question (see quizOptionsFor above); exposed so a test can prove the answer pool's rules
+    // deterministically instead of by sampling random questions.
+    quizOptionsFor,
     // Same convention, for the Guided Tour's Highlights track (profile.js's
     // TOUR_HIGHLIGHTS): Rapid Fire and Mock Board are tabs inside this
     // route, not routes of their own, so a tour stop for either needs a
@@ -37872,7 +37884,7 @@ window.G = window.G || {};
         "Practice and progress data: quiz attempts, Mock Board results, streaks, and scenario progress, generated as you use the app.",
         "Squad roster (optional, leader-facing only): if you use the roster feature, it asks for initials, a callsign, or a roster number for each Soldier — not full legal names — plus a rank and counseling dates. This is the one place GUIDON stores information about people other than you, so it gets extra protection — see the next section.",
         "Risk Worksheet (optional, practice tool only): the DA Form 7278 practice tool asks for a resource, a location, and other worksheet fields. It is meant for a synthetic or hypothetical scenario, never a real facility, location, or vulnerability — but because the fields could be used to enter real information, GUIDON gives any saved worksheet the same extra protection as the roster (see the next section).",
-        "Unit decks (optional): if you add a study deck your own unit wrote (Settings → Study Preferences → Unit decks), GUIDON keeps that deck on your device, the same way it keeps your My unit texts. It comes from a file you choose or text you paste; GUIDON never fetches it from anywhere. Before it is added, GUIDON checks it for classification markings, Social Security and DoD ID numbers, contact details and lists of names, and refuses the whole deck if it finds any. It is meant for a unit's own study facts, not for information about individual Soldiers, and the check can miss things, so the person who wrote the deck is responsible for what is in it. A deck is your own study material, so it is included in a backup you export and comes back when you restore that backup. You can switch it off or remove it at any time.",
+        "Unit decks (optional): if you add a study deck your own unit wrote (Settings → Study Preferences → Unit decks), GUIDON keeps that deck on your device, the same way it keeps your My unit texts. It comes from a file you choose or text you paste; GUIDON never fetches it from anywhere. Before it is added, and again each time GUIDON starts and each time a backup is restored, GUIDON checks it for classification markings, Social Security and DoD ID numbers, contact details and lists of names, and refuses or leaves out the whole deck if it finds any. It is meant for a unit's own study facts, not for information about individual Soldiers, and the check can miss things, so the person who wrote the deck is responsible for what is in it. A deck is your own study material, so every backup you export includes it (there is no separate opt-in, unlike the squad roster) and it comes back when you restore that backup. A Guest or Kiosk session saves no deck, but a deck already on the device can still be studied in one. Quiz best scores and review progress on a deck's cards are kept under the deck's topic names until you delete them (Remove asks). You can switch a deck off or remove it at any time.",
         "None of the above ever leaves your device on its own. Nothing here is ever sent to a server. The one thing you can choose to send to other devices is described under “Sharing a plan or session to a study room” below.",
       ] },
       { h: "The squad roster and Risk Worksheet get extra protection", p: [

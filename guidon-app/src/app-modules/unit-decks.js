@@ -426,7 +426,7 @@
         ]));
       });
       if (s.reciteTitles.length) {
-        box.appendChild(el("p.hint", { text: "This deck suggests these titles for My unit in Recitation Drill: " + s.reciteTitles.join(", ") + ". It carries no words to recite. You add your own." }));
+        box.appendChild(el("p.hint", { text: "This deck suggests these titles for My unit in Recitation Drill: " + s.reciteTitles.join(", ") + ". A deck has no place for words to recite; you add your own." }));
       }
       box.appendChild(el("p", { "data-unit-deck-preview-notice": "1", text: NOTICE_PREVIEW }));
       var add1 = el("button.btn.primary.sm", { type: "button", text: "Add this deck", "data-unit-deck-confirm-add": "1" });

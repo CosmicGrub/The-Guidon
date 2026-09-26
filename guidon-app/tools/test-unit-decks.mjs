@@ -44,6 +44,17 @@
  *     refusals are announced as alerts, the tag is a real element; nothing scrolls
  *     sideways at 390px with the preview open, the drill card up, or Readiness.
  *
+ * 10. What Remove and Reset progress delete, and in what order: the review schedule, the Quiz best scores under the deck's OWN topic
+ *     names (never a topic another deck also has), the deck's card ids in today's-reps lists and - on Remove - its topics in Rapid Fire
+ *     saved decks; Keep leaves all of it; a failure while clearing leaves the deck listed (progress goes first, so nothing is
+ *     half-removed and the list is never stale). The Remove question is a real question (a fieldset with a legend) with labels sized for
+ *     a thumb, and the paste box is 16px so a phone does not zoom.
+ * 11. A study level never hides a unit deck (checked as a Soldier whose rank band is Beginner: Board Drill, Quiz and Rapid Fire's "Match
+ *     my rank"); the drill's Overall readiness is measured against the shipped bank alone (its two numbers are read straight off the
+ *     screen); "Reset drill schedule" leaves unit progress alone; a unit card's source becomes a regulation chip or a "Related doctrine"
+ *     link only when it opens with a real publication, never because it merely mentions one or shares words with a doctrine entry;
+ *     the Quiz's option rule is proved directly (deterministically), not by sampling random questions.
+ *
  * The deck used is tools/fixtures/unit-pack-example.pack.json (a made-up "Pinecone Ridge
  * Demo Squadron"); the stuffed one is built here.
  */
@@ -115,10 +126,10 @@ const refusal = () => page.evaluate(() => {
 });
 const focusInfo = () => page.evaluate(() => { const a = document.activeElement; return { tag: a ? a.tagName : "", text: a ? (a.textContent || "").trim().slice(0, 40) : "", attrs: a ? Array.from(a.attributes).map((x) => x.name).join(",") : "", id: a ? a.id : "" }; });
 const clone = (x) => JSON.parse(JSON.stringify(x));
-const openTab = async (label) => {
-  await clickWhenStable(page, page.locator(".segmented button", { hasText: new RegExp("^" + label + "$") }));
+const openTab = async (label, pg = page) => {
+  await clickWhenStable(pg, pg.locator(".segmented button", { hasText: new RegExp("^" + label + "$") }));
 };
-const openDrill = () => waitForRoute(page, "#/board", { fresh: true, ready: ".qz-card" });
+const openDrill = (pg = page) => waitForRoute(pg, "#/board", { fresh: true, ready: ".qz-card" });
 // The app's switches hide the real checkbox and draw a track; a person clicks the label.
 const setToggle = async (id, on) => {
   const box = page.locator('[data-unit-deck-toggle="' + id + '"]');
@@ -126,16 +137,16 @@ const setToggle = async (id, on) => {
   await until(page, (a) => document.querySelector('[data-unit-deck-toggle="' + a.id + '"]').checked === a.on && !document.querySelector('[data-unit-deck-toggle="' + a.id + '"]').disabled, { id, on });
 };
 // Rapid Fire shows its "How Rapid Fire works" explainer the first time a round starts.
-const startRound = async () => {
-  await clickWhenStable(page, page.locator("button", { hasText: /^Start Round$/ }));
-  await until(page, () => !!document.querySelector(".rf-explainer, .rf-question"));
-  if (await page.locator(".rf-explainer").count()) await clickWhenStable(page, page.locator(".rf-explainer button"));
+const startRound = async (pg = page) => {
+  await clickWhenStable(pg, pg.locator("button", { hasText: /^Start Round$/ }));
+  await until(pg, () => !!document.querySelector(".rf-explainer, .rf-question"));
+  if (await pg.locator(".rf-explainer").count()) await clickWhenStable(pg, pg.locator(".rf-explainer button"));
 };
-const pickCategoryRow = async (name) => {
-  await clickWhenStable(page, page.locator('[aria-label="Jump to category"] .list-detail-row', { has: page.locator(".ldr-name", { hasText: new RegExp("^" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$") }) }));
-  await until(page, (n) => { const l = document.querySelector(".qz-front .kc-label"); return !!l && l.textContent.indexOf(n) === 0; }, name);
+const pickCategoryRow = async (name, pg = page) => {
+  await clickWhenStable(pg, pg.locator('[aria-label="Jump to category"] .list-detail-row', { has: pg.locator(".ldr-name", { hasText: new RegExp("^" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$") }) }));
+  await until(pg, (n) => { const l = document.querySelector(".qz-front .kc-label"); return !!l && l.textContent.indexOf(n) === 0; }, name);
 };
-const front = () => page.evaluate(() => {
+const front = (pg = page) => pg.evaluate(() => {
   const f = document.querySelector(".qz-front");
   if (!f) return null;
   return { label: (f.querySelector(".kc-label") || {}).textContent || "", tag: (f.querySelector(".unit-deck-tag") || {}).textContent || null, prompt: (f.querySelector(".qz-prompt") || {}).textContent || "" };
@@ -205,8 +216,11 @@ await openSettingsPanel();
   });
   // hygiene-ok: these counts are the committed fictional example deck's own (a fixture file), never the bank's
   check(!!prev && prev.region === "region" && prev.label === "Deck preview" && prev.samples === 3 && /^8 cards in 3 categories: Local SOP \(3\), Unit history \(3\), Local promotion-board study \(2\)$/.test(prev.counts) && /Pinecone Ridge Demo Squadron \(fictional\)/.test(prev.text) && /version 2026\.09 \(2026-09-26\)/.test(prev.text) && !prev.replaces, "the preview shows the name, the unit, the version, the counts and three sample cards", () => JSON.stringify(prev));
-  check(/comes from your unit/.test(prev.notice) && /has not checked it for accuracy/.test(prev.notice) && /never leaves this device/.test(prev.notice) && /not for classified or controlled information/.test(prev.notice), "and the notice says all four things: the unit's, unchecked for accuracy, never leaves the device, not for classified or controlled information", () => prev.notice);
-  check(/Squadron song, Squadron motto/.test(prev.text) && /carries no words to recite/.test(prev.text), "the suggested titles are shown as titles only, with a note that the deck carries no words");
+  check(/comes from your unit/.test(prev.notice) && /has not checked it for accuracy/.test(prev.notice) && /does not send it anywhere/.test(prev.notice) && /stays on this device and goes into any backup you export/.test(prev.notice) && /not for classified or controlled information/.test(prev.notice), "and the notice says all four things: the unit's, unchecked for accuracy, not sent anywhere but kept on the device and in any backup the Soldier exports, not for classified or controlled information", () => prev.notice);
+  check(!/never leaves/i.test(prev.notice), "and it does NOT say the deck \"never leaves\" the device (every exported backup carries it)");
+  const addNotice = await page.evaluate(() => (document.querySelector("[data-unit-deck-notice]") || {}).textContent || "");
+  check(/stays on this device and is not sent anywhere/.test(addNotice) && /goes into a backup if you export one/.test(addNotice) && !/never leaves/i.test(addNotice), "the notice above the file box says the same, before anything is chosen", () => addNotice);
+  check(/Squadron song, Squadron motto/.test(prev.text) && /no place for words to recite/.test(prev.text), "the suggested titles are shown as titles only, with a note that a deck has no place for words to recite");
   const f = await focusInfo();
   check(f.tag === "BUTTON" && /^Add this deck$/i.test(f.text), "keyboard focus lands on \"Add this deck\", the next action", () => JSON.stringify(f));
   check((await kvKeys("unit-deck:")).length === 0 && (await page.evaluate(() => G.unitDecks.list().length)) === 0, "at this point (previewed, not confirmed) nothing has been kept");
@@ -285,20 +299,30 @@ let graded = null;
   const after = await kv(graded);
   check(after && after.lastGrade === 2 && srsAfter.length === srsBefore.length + 1 && graded === "srs:unit:" + DECK + ":" + card.id, "grading writes exactly one row, srs:unit:<deck>:<card>, and touches no shipped card's row", () => JSON.stringify({ after, graded, card: card.id, added: srsAfter.filter((k) => !srsBefore.includes(k)) }));
   check(srsAfter.filter((k) => /^srs:unit:/.test(k)).every((k) => /^srs:unit:[a-z0-9-]+:[a-z0-9-]+$/.test(k)), "every unit history key is namespaced srs:unit:<deck>:<card>");
-  // the drill's own Overall readiness is the shipped bank only
-  const overall = await page.evaluate(() => { const p = document.querySelector(".drill-readiness-pane"); return p ? p.innerText : ""; });
-  check(/Overall\s*0%/.test(overall), "the drill's Overall readiness (shipped bank only) did not move when a unit card was graded", () => overall.slice(0, 120));
+  // The drill's own Overall readiness is measured against the shipped bank alone. It is rebuilt when the drill opens, so open it again
+  // now that a unit card has been graded Know It, and read the two numbers the percentage is made of straight off the screen.
+  await openDrill();
+  const overall = await page.evaluate(async () => {
+    const v = document.querySelector(".drill-readiness-pane [data-overall-cards]");
+    const shippedIds = new Set(G.store.boardQuestions().map((q) => q.id));
+    const rows = (await G.db.all("kv")).filter((r) => typeof r.k === "string" && r.k.indexOf("srs:") === 0 && r.v && r.v.lastGrade >= 2);
+    return { cards: v ? v.getAttribute("data-overall-cards") : null, mastered: v ? v.getAttribute("data-overall-mastered") : null, shipped: G.store.boardQuestions().length,
+      shippedMastered: rows.filter((r) => shippedIds.has(r.k.slice(4))).length, unitMastered: rows.filter((r) => /^srs:unit:/.test(r.k)).length };
+  });
+  check(overall.unitMastered >= 1 && overall.cards === String(overall.shipped) && overall.mastered === String(overall.shippedMastered), `the drill's Overall readiness counts the shipped bank alone: ${overall.shipped} cards (never the deck's 8) and ${overall.shippedMastered} mastered, though ${overall.unitMastered} unit card is mastered too`, () => JSON.stringify(overall));
 }
 { // a real regulation next to the unit's own words: one chip, and only for the real one
   await page.evaluate(async () => {
     await G.unitDecks.add({ format: "guidon-unit-pack", formatVersion: 1, id: "reg-deck", name: "Regulation check deck", packVersion: "1", packDate: "2026-09-26",
-      cards: [{ id: "r1", category: "Reg check", q: "Which regulation does the SOP follow?", a: "The SOP follows the counseling regulation.", source: "AR 600-20, para 4-5; Battalion SOP 2026" }, { id: "r2", category: "Reg check", q: "Where is the local form kept?", a: "At the supply window.", source: "Battalion SOP 2026" }] });
+      cards: [{ id: "r1", category: "Reg check", q: "Which regulation does the SOP follow?", a: "The SOP follows the counseling regulation.", source: "AR 600-20, para 4-5; Battalion SOP 2026" }, { id: "r2", category: "Reg check", q: "Where is the local form kept?", a: "At the supply window.", source: "Battalion SOP 2026" },
+        // A unit's own document that merely MENTIONS a real regulation is still the unit's own document: no chip for AR 600-20 from it.
+        { id: "r3", category: "Reg check", q: "Which order does the SOP replace?", a: "The earlier battalion order.", source: "Battalion SOP 2026, supersedes AR 600-20" }] });
   });
   await openDrill();
   await pickCategoryRow("Unit: Reg check");
   await page.evaluate(() => { const d = document.querySelector(".qf-disclosure"); if (d) d.open = true; });
   const chips = await page.locator('[aria-label="Quick-filter by regulation"] button').allTextContents();
-  check(JSON.stringify(chips) === JSON.stringify(["All regulations", "AR 600-20 (1)"]), "a real regulation cited in a unit card makes its chip (AR 600-20), and \"Battalion SOP 2026\" makes none", () => JSON.stringify(chips));
+  check(JSON.stringify(chips) === JSON.stringify(["All regulations", "AR 600-20 (1)"]), "a real regulation cited in a unit card makes its chip (AR 600-20) - counted ONCE: \"Battalion SOP 2026\" makes none, and neither does \"Battalion SOP 2026, supersedes AR 600-20\", which only mentions the regulation inside the unit's own wording", () => JSON.stringify(chips));
   await clickWhenStable(page, page.locator('[aria-label="Quick-filter by regulation"] button', { hasText: /^AR 600-20/ }));
   await until(page, () => { const l = document.querySelector(".qz-front .kc-label"); return !!l && /^Unit: Reg check/.test(l.textContent); });
   const f = await front();
@@ -339,6 +363,28 @@ let graded = null;
     if (!(await page.locator(".quiz-card .quiz-opt").count())) break;
   }
   check(rounds >= 3 && leaked.length === 0, `Quiz on a shipped category (${shippedCat}) never offers a unit answer, over ${rounds} questions`, () => JSON.stringify(leaked));
+  // The same rule, proved directly and without luck: with ONE shipped answer and THREE unit answers in the pool, a shipped question can
+  // be offered only the shipped one (two options in all), while a unit question with too few unit answers of its own is topped up from
+  // the shipped bank (four options, all three candidates used).
+  const det = await page.evaluate(() => {
+    const pool = [{ id: "s2", a: "Shipped wrong answer", category: "Cat", unit: false }, { id: "u1", a: "Unit answer one", category: "Unit: Cat", unit: true }, { id: "u2", a: "Unit answer two", category: "Unit: Cat", unit: true }, { id: "u3", a: "Unit answer three", category: "Unit: Cat", unit: true }];
+    const shipped = { id: "s1", q: "Shipped?", a: "Shipped right answer", category: "Cat" };
+    const poolB = [{ id: "u1", a: "Unit answer one", category: "Unit: Cat", unit: true }, { id: "s2", a: "Shipped wrong answer", category: "Cat", unit: false }, { id: "s3", a: "Shipped other answer", category: "Cat", unit: false }];
+    const unit = { id: "unit:d:c1", q: "Unit?", a: "Unit right answer", category: "Unit: Cat", unitDeck: { id: "d", name: "D" } };
+    const seen = new Set(), sizes = new Set(), unitPicks = new Set();
+    let unitLeaks = 0, selfMiss = 0;
+    for (let i = 0; i < 300; i++) {
+      const a = G.board.quizOptionsFor(shipped, pool);
+      sizes.add(a.length);
+      a.forEach((o) => { seen.add(o); if (/^Unit answer/.test(o)) unitLeaks++; });
+      const b = G.board.quizOptionsFor(unit, poolB);
+      if (b.length !== 4 || b.filter((o) => o === "Unit right answer").length !== 1) selfMiss++;
+      b.forEach((o) => { if (o !== "Unit right answer") unitPicks.add(o); });
+    }
+    return { seen: Array.from(seen).sort(), sizes: Array.from(sizes), unitLeaks, selfMiss, unitPicks: Array.from(unitPicks).sort() };
+  });
+  check(JSON.stringify(det.seen) === JSON.stringify(["Shipped right answer", "Shipped wrong answer"]) && JSON.stringify(det.sizes) === "[2]" && det.unitLeaks === 0, "a SHIPPED question is offered a unit deck's answer never (not once in 300 tries, with three unit answers available and only one shipped to choose from)", () => JSON.stringify(det));
+  check(det.selfMiss === 0 && JSON.stringify(det.unitPicks) === JSON.stringify(["Shipped other answer", "Shipped wrong answer", "Unit answer one"]), "while a unit question always gets four options with its own answer once, drawing on its deck first and then on the shipped bank", () => JSON.stringify(det));
 }
 {
   await openDrill();
@@ -368,6 +414,57 @@ let graded = null;
   await page.fill("input[aria-label='Global search']", "unit deck");
   await until(page, () => Array.from(document.querySelectorAll(".search-hit")).some((h) => /Settings — Unit decks/.test(h.textContent)));
   check(true, "the Settings screen itself is findable (\"Settings — Unit decks\")");
+}
+
+/* ================================================================= 3b. a study level never hides a unit deck */
+// A unit deck's cards have no level (GUIDON does not grade them), and a level filter reads a missing level as Intermediate - so without a
+// rule of its own it would show the deck at "Intermediate" only and hide it at Beginner and Expert. Run as an E3 Soldier, whose Rapid Fire
+// rank band is Beginner: "Match my rank" is where the same mistake would hide the deck from exactly the people it is for.
+{
+  const s3 = await boot.openSession({ viewport: { width: 1200, height: 900 }, profile: Object.assign({}, OWNER_PROFILE, { tier: "E3", rank: "SPC", displayName: "SPC TESTFIRE", lastName: "TESTFIRE" }), noise });
+  const p3 = s3.page;
+  await waitForRoute(p3, "#/home", { ready: "#route h1, #route h2" });
+  const added3 = await p3.evaluate(async (p) => { const r = await G.unitDecks.add(p); return r.ok; }, PACK);
+  const tier3 = await p3.evaluate(() => G.rankUtils.tierOf(G.profile.cached(), G.store.settings()));
+  check(added3 === true && tier3 === "E3", "(a second Soldier, rank E3, has the example deck on)", () => JSON.stringify({ added3, tier3 }));
+  // Rapid Fire, "Match my rank" (the default): the band for E3 is Beginner, which no unit card has.
+  await openDrill(p3);
+  await openTab("Rapid Fire", p3);
+  await p3.waitForSelector(".rf-setup-grid");
+  const rankOn3 = await p3.evaluate(() => Array.from(document.querySelectorAll(".rf-setup-grid button.active, .rf-setup-grid button[aria-pressed='true']")).map((b) => b.textContent.trim()).includes("Match my rank"));
+  await p3.selectOption(".rf-setup-grid select[aria-label='Filter by category']", "Unit: Unit history");
+  const startBtn3 = p3.locator("button", { hasText: /^Start Round$/ });
+  const enabled3 = await until(p3, () => { const b = Array.from(document.querySelectorAll("button")).find((x) => /^Start Round$/.test(x.textContent.trim())); return !!b && !b.disabled; }, undefined, { timeout: 6000 });
+  check(rankOn3 && enabled3, "as an E3 Soldier with \"Match my rank\" on, Rapid Fire offers the deck's category (there ARE cards to play; Start is enabled)", () => JSON.stringify({ rankOn3, enabled3 }));
+  if (enabled3) {
+    await startRound(p3);
+    const shown = await until(p3, () => { const t = document.querySelector(".rf-root .unit-deck-tag"), q = document.querySelector(".rf-question"); if (!t || !q) return false; window.__rf = { tag: t.textContent, q: q.textContent }; return true; }, undefined, { timeout: 6000 });
+    const rf3 = shown ? await p3.evaluate(() => window.__rf) : null;
+    check(!!rf3 && rf3.tag === TAG && PACK.cards.some((c) => c.q === rf3.q && c.category === "Unit history"), "and plays one of the deck's cards, labeled", () => JSON.stringify(rf3));
+  }
+  // Board Drill and Quiz: every level.
+  await openDrill(p3);
+  await pickCategoryRow("Unit: Local SOP", p3);
+  for (const lvl of ["beginner", "expert", "intermediate"]) {
+    await p3.selectOption("select[aria-label='Filter by study level']", lvl);
+    const seen = await until(p3, () => { const f = document.querySelector(".qz-front"); return !!f && !!f.querySelector(".unit-deck-tag") && /^Unit: Local SOP/.test((f.querySelector(".kc-label") || {}).textContent || ""); }, undefined, { timeout: 5000 });
+    const f3 = await front(p3);
+    const empty = await p3.evaluate(() => (document.querySelector(".qz-wrap, .drill-layout") || document.body).innerText.match(/No questions match[^\n]*/) || null);
+    check(seen && !!f3 && f3.tag === TAG && PACK.cards.some((c) => c.q === f3.prompt && c.category === "Local SOP"), `Board Drill at the ${lvl} study level still shows the deck's cards`, () => JSON.stringify({ f3, empty }));
+  }
+  await openTab("Quiz", p3);
+  await p3.waitForSelector("select[aria-label='Filter by category']");
+  await p3.selectOption("select[aria-label='Filter by category']", "Unit: Local SOP");
+  for (const lvl of ["beginner", "expert"]) {
+    await p3.selectOption("select[aria-label='Filter by study level']", lvl);
+    const counted = await until(p3, (l) => Array.from(document.querySelectorAll("p.hint")).some((h) => new RegExp("Unit: Local SOP · " + l + "\\s+·\\s+3 questions$").test(h.textContent.trim())), lvl, { timeout: 5000 });
+    check(counted, `Quiz at the ${lvl} level counts all 3 of the deck's Local SOP questions`, async () => JSON.stringify(await p3.evaluate(() => Array.from(document.querySelectorAll("p.hint")).map((h) => h.textContent))));
+  }
+  await clickWhenStable(p3, p3.locator("button", { hasText: /^Start Quiz$/ }));
+  const qshown = await until(p3, () => !!document.querySelector(".quiz-card .prompt"), undefined, { timeout: 5000 });
+  const quiz3 = qshown ? await p3.evaluate(() => ({ tag: (document.querySelector(".quiz-card .unit-deck-tag") || {}).textContent || null, prompt: document.querySelector(".quiz-card .prompt").textContent })) : null;
+  check(!!quiz3 && quiz3.tag === TAG && PACK.cards.some((c) => c.q === quiz3.prompt && c.category === "Local SOP"), "and Start Quiz at the expert level asks one of them", () => JSON.stringify(quiz3));
+  await s3.context.close();
 }
 
 /* ================================================================= 4. Readiness */
@@ -440,20 +537,47 @@ let graded = null;
   await until(page, () => G.unitDecks.cards().length === 8);
   check((await bankFacts()).unitCards === 8, "back on, and the deck is still there after a reload");
 }
-{ // Remove: asks first; keep progress, then delete progress
+{ // Remove: asks first; keep progress, then delete progress - and what "progress" covers
   await openSettingsPanel();
-  const sentinel = await page.evaluate(async () => {
+  const repsKey = await page.evaluate(() => G.board.repsKey());
+  const seeded = await page.evaluate(async (repsKey) => {
     const shipped = G.store.boardQuestions()[0].id;
-    await G.db.put("kv", { k: "srs:" + shipped, v: { reps: 1, ease: 2.5, interval: 1, due: Date.now() + 1e9, misses: 0, lastGrade: 2 } });
+    const srs = { reps: 1, ease: 2.5, interval: 1, due: Date.now() + 1e9, misses: 0, lastGrade: 2 };
+    await G.db.put("kv", { k: "srs:" + shipped, v: srs });
     await G.unitDecks.add({ format: "guidon-unit-pack", formatVersion: 1, id: "other-deck", name: "Other deck", packVersion: "1", packDate: "2026-09-26", cards: [{ id: "o1", category: "Other", q: "Other question one?", a: "Other answer one." }] });
-    await G.db.put("kv", { k: "srs:unit:other-deck:o1", v: { reps: 1, ease: 2.5, interval: 1, due: Date.now() + 1e9, misses: 0, lastGrade: 2 } });
-    return "srs:" + shipped;
-  });
+    // A second deck that has a topic of the SAME NAME as the example deck's "Local SOP": a Quiz score belongs to a topic name, so removing
+    // the example deck must not take the score its neighbour still needs.
+    await G.unitDecks.add({ format: "guidon-unit-pack", formatVersion: 1, id: "shares-topic", name: "Shares a topic", packVersion: "1", packDate: "2026-09-26", cards: [{ id: "s1", category: "Local SOP", q: "A second deck's question about the SOP?", a: "A second deck's answer." }] });
+    await G.db.put("kv", { k: "srs:unit:other-deck:o1", v: srs });
+    // What studying leaves besides the review schedule.
+    for (const [k, v] of [["boardQuiz:best:Unit: Local SOP", 80], ["boardQuiz:best:Unit: Local SOP:expert", 60], ["boardQuiz:best:Unit: Unit history", 70], ["boardQuiz:best:Unit: Unit history:beginner", 65], ["boardQuiz:best:Unit: Other", 50], ["boardQuiz:best:All", 40]]) await G.db.put("kv", { k, v });
+    await G.db.put("kv", { k: repsKey, v: { sets: 1, cards: 12, recalled: 9, missed: ["unit:pinecone-ridge-demo:sop-001", "unit:other-deck:o1", shipped], ts: Date.now() } });
+    await G.db.setSetting("rapidFire:savedDecks", [{ name: "Mixed", categories: ["Unit: Local SOP", "Some shipped topic"] }, { name: "Only unit", categories: ["Unit: Unit history"] }, { name: "Elsewhere", categories: ["Unit: Other"] }]);
+    return { sentinel: "srs:" + shipped, shipped };
+  }, repsKey);
+  const sentinel = seeded.sentinel;
+  const traces = () => page.evaluate(async (repsKey) => {
+    const quiz = (await G.db.all("kv")).map((r) => r.k).filter((k) => typeof k === "string" && k.indexOf("boardQuiz:best:") === 0).sort();
+    const reps = (await G.db.get("kv", repsKey)) || {};
+    const saved = await G.db.getSetting("rapidFire:savedDecks", []);
+    return { quiz, missed: (reps.v && reps.v.missed) || [], saved: saved.map((d) => d.name + "=" + d.categories.join("|")) };
+  }, repsKey);
+  const ALL_QUIZ = ["boardQuiz:best:All", "boardQuiz:best:Unit: Local SOP", "boardQuiz:best:Unit: Local SOP:expert", "boardQuiz:best:Unit: Other", "boardQuiz:best:Unit: Unit history", "boardQuiz:best:Unit: Unit history:beginner"];
+  const ALL_SAVED = ["Mixed=Unit: Local SOP|Some shipped topic", "Only unit=Unit: Unit history", "Elsewhere=Unit: Other"];
   await openSettingsPanel();
   await clickWhenStable(page, page.locator('[data-unit-deck-remove="' + DECK + '"]'));
   await page.waitForSelector('[data-unit-deck-confirm="' + DECK + '"] [role="group"]');
-  const ask = await page.evaluate((id) => { const g = document.querySelector('[data-unit-deck-confirm="' + id + '"]'); return { text: g.textContent, keepChecked: g.querySelector('input[value="keep"]').checked, deleteChecked: g.querySelector('input[value="delete"]').checked, focus: document.activeElement && document.activeElement.value }; }, DECK);
-  check(/Remove .Pinecone Ridge Demo Squadron study deck. from this device\? Its 8 cards will leave your study tools\./.test(ask.text) && /what Board Drill has scheduled for you/.test(ask.text) && /Keep it, in case you add this deck again/.test(ask.text) && /Delete it too/.test(ask.text), "Remove asks first, says what leaves, and offers to keep or delete the review progress in plain words", () => ask.text);
+  const ask = await page.evaluate((id) => {
+    const g = document.querySelector('[data-unit-deck-confirm="' + id + '"]');
+    const fs = g.querySelector("fieldset"), lg = fs && fs.querySelector("legend");
+    const labels = Array.from(g.querySelectorAll("label.unit-deck-choice"));
+    const radios = Array.from(g.querySelectorAll('input[type="radio"]'));
+    return { text: g.textContent, keepChecked: g.querySelector('input[value="keep"]').checked, deleteChecked: g.querySelector('input[value="delete"]').checked, focus: document.activeElement && document.activeElement.value,
+      legend: lg ? lg.textContent : "", labelsWrapRadios: labels.length === 2 && labels.every((l) => !!l.querySelector('input[type="radio"]')), oneGroup: radios.length === 2 && radios[0].name === radios[1].name && !!radios[0].name, inFieldset: radios.every((r) => !!r.closest("fieldset")) };
+  }, DECK);
+  check(/Remove .Pinecone Ridge Demo Squadron study deck. from this device\? Its 8 cards will leave your study tools\./.test(ask.text) && /What about the progress you have made on those cards\?/.test(ask.text) && /what Board Drill has scheduled for you, your Quiz best scores for the deck's topics, and any Rapid Fire saved deck that lists them/.test(ask.text) && /Keep it, in case you add this deck again/.test(ask.text) && /Delete it too/.test(ask.text), "Remove asks first, says what leaves, and says what the progress it offers to keep or delete IS (the schedule, the Quiz best scores, Rapid Fire saved decks), in plain words", () => ask.text);
+  check(ask.legend === "What about the progress you have made on those cards?" && ask.labelsWrapRadios && ask.oneGroup && ask.inFieldset, "the two choices are one radio group inside a fieldset whose legend IS the question, each radio wrapped in its own label (so the question is read with them and the whole label is the target)", () => JSON.stringify(ask));
+  check(/it stays on this device and goes into any backup you export/.test(ask.text), "and \"keep it\" says plainly that kept progress stays on the device and in backups");
   check(ask.keepChecked && !ask.deleteChecked && ask.focus === "keep", "\"Keep it\" is the default and holds focus");
   check((await kv("unit-deck:" + DECK)) !== null, "nothing is removed just by asking");
   await clickWhenStable(page, page.locator('[data-unit-deck-confirm="' + DECK + '"] button', { hasText: /^Cancel$/ }));
@@ -464,34 +588,106 @@ let graded = null;
   await clickWhenStable(page, page.locator('[data-unit-deck-remove-go="' + DECK + '"]'));
   await until(page, (id) => !document.querySelector('[data-unit-deck="' + id + '"]'), DECK);
   check((await kv("unit-deck:" + DECK)) === null && (await kv(graded)) !== null, "Remove with \"Keep it\": the deck is gone and its review progress is still on the device", async () => JSON.stringify(await kvKeys("srs:unit:")));
-  await until(page, () => /was removed\. Your review progress on it was kept\./.test((document.getElementById("a11y-live") || {}).textContent || ""));
-  check(/was removed\. Your review progress on it was kept\./.test(await live()), "the removal is announced (and says the progress was kept)", "the live region never said the deck was removed");
+  const kept = await traces();
+  check(JSON.stringify(kept.quiz) === JSON.stringify(ALL_QUIZ) && kept.missed.includes("unit:pinecone-ridge-demo:sop-001") && JSON.stringify(kept.saved) === JSON.stringify(ALL_SAVED), "and so are its Quiz best scores, its card in today's reps list and the Rapid Fire saved decks that list its topics (Keep means keep ALL of the progress)", () => JSON.stringify(kept));
+  await until(page, () => /was removed\. Your progress on it was kept\./.test((document.getElementById("a11y-live") || {}).textContent || ""));
+  check(/was removed\. Your progress on it was kept\./.test(await live()), "the removal is announced (and says the progress was kept)", "the live region never said the deck was removed");
   check((await focusInfo()).attrs.includes("data-unit-deck-open"), "and focus lands on \"Add a unit deck\"", async () => JSON.stringify(await focusInfo()));
-  check((await bankFacts()).unitCards === 1, "only the other deck's card is left in the study pool");
+  check((await bankFacts()).unitCards === 2, "only the other two decks' cards are left in the study pool");
   // add it back: the progress is still attached to its cards
   await page.evaluate(async (p) => { await G.unitDecks.add(p); }, PACK);
-  check((await kv(graded)) !== null && (await bankFacts()).unitCards === 9, "adding the deck again brings its cards back with their progress");
-  // remove, DELETING progress - only this deck's
+  check((await kv(graded)) !== null && (await bankFacts()).unitCards === 10, "adding the deck again brings its cards back with their progress");
+  // remove, DELETING progress - only this deck's, and never a topic another deck still has
   await openSettingsPanel();
   await clickWhenStable(page, page.locator('[data-unit-deck-remove="' + DECK + '"]'));
   await page.locator('[data-unit-deck-confirm="' + DECK + '"] input[value="delete"]').check();
   await clickWhenStable(page, page.locator('[data-unit-deck-remove-go="' + DECK + '"]'));
   await until(page, (id) => !document.querySelector('[data-unit-deck="' + id + '"]'), DECK);
-  check((await kv(graded)) === null && (await kvKeys("srs:unit:" + DECK + ":")).length === 0, "Remove with \"Delete it too\": this deck's progress is deleted", async () => JSON.stringify(await kvKeys("srs:unit:")));
+  check((await kv(graded)) === null && (await kvKeys("srs:unit:" + DECK + ":")).length === 0, "Remove with \"Delete it too\": this deck's review schedule is deleted", async () => JSON.stringify(await kvKeys("srs:unit:")));
   check((await kv(sentinel)) !== null && (await kv("srs:unit:other-deck:o1")) !== null, "and no shipped card's progress, and no other deck's, was touched");
-  await page.evaluate(async () => { await G.unitDecks.remove("other-deck", { deleteHistory: true }); await G.db.del("kv", "srs:" + G.store.boardQuestions()[0].id); });
+  const gone1 = await traces();
+  check(!gone1.quiz.some((k) => /Unit: Unit history/.test(k)) && gone1.quiz.includes("boardQuiz:best:Unit: Local SOP") && gone1.quiz.includes("boardQuiz:best:Unit: Local SOP:expert") && gone1.quiz.includes("boardQuiz:best:Unit: Other") && gone1.quiz.includes("boardQuiz:best:All"),
+    "its Quiz best scores are deleted too (every level) - except for \"Local SOP\", a topic name the other deck still has, and except for the other deck's own and the All score", () => JSON.stringify(gone1.quiz));
+  check(JSON.stringify(gone1.missed.slice().sort()) === JSON.stringify(["unit:other-deck:o1", seeded.shipped].sort()), "its card is gone from today's reps list (the other deck's card and the shipped card stay)", () => JSON.stringify(gone1.missed));
+  check(JSON.stringify(gone1.saved) === JSON.stringify(["Mixed=Unit: Local SOP|Some shipped topic", "Elsewhere=Unit: Other"]), "and the Rapid Fire saved deck that listed only its topic is gone (a saved deck that mixed in other topics keeps them, and one belonging to another deck is untouched)", () => JSON.stringify(gone1.saved));
+  // the neighbour goes too: now nothing shares "Local SOP"
+  await page.evaluate(async () => { await G.unitDecks.remove("shares-topic", { deleteHistory: true }); });
+  const gone2 = await traces();
+  check(!gone2.quiz.some((k) => /Unit: Local SOP/.test(k)) && gone2.quiz.includes("boardQuiz:best:Unit: Other") && JSON.stringify(gone2.saved) === JSON.stringify(["Mixed=Some shipped topic", "Elsewhere=Unit: Other"]), "once no deck has \"Local SOP\" any more, its Quiz scores and its place in the mixed saved deck go as well", () => JSON.stringify(gone2));
+  await page.evaluate(async () => { await G.unitDecks.remove("other-deck", { deleteHistory: true }); await G.db.del("kv", "srs:" + G.store.boardQuestions()[0].id); await G.db.del("kv", "boardQuiz:best:All"); });
   // put the deck back for the remaining sections
   await page.evaluate(async (p) => { await G.unitDecks.add(p); }, PACK);
-  // Reset progress asks first
+  // If clearing the progress fails, the deck must still be there: progress goes first, so nothing is half-removed and the list is not stale.
   await openSettingsPanel();
-  await page.evaluate(async () => { await G.db.put("kv", { k: "srs:unit:pinecone-ridge-demo:sop-001", v: { reps: 1, ease: 2.5, interval: 1, due: Date.now() + 1e9, misses: 0, lastGrade: 2 } }); });
+  await page.evaluate(() => { window.__realDel = G.db.del; G.db.del = function (store, key) { return /^srs:unit:/.test(String(key)) ? Promise.reject(new Error("the disk is full")) : window.__realDel.apply(this, arguments); }; });
+  await clickWhenStable(page, page.locator('[data-unit-deck-remove="' + DECK + '"]'));
+  await page.locator('[data-unit-deck-confirm="' + DECK + '"] input[value="delete"]').check();
+  await clickWhenStable(page, page.locator('[data-unit-deck-remove-go="' + DECK + '"]'));
+  await until(page, () => /Couldn.t remove that deck/.test((document.getElementById("toast") || {}).textContent || ""));
+  const failed = await page.evaluate(() => ({ toast: (document.getElementById("toast") || {}).textContent || "", listed: !!document.querySelector('[data-unit-deck="pinecone-ridge-demo"]'), api: G.unitDecks.list().map((d) => d.id), cards: G.unitDecks.cards().length, goEnabled: !document.querySelector('[data-unit-deck-remove-go="pinecone-ridge-demo"]').disabled }));
+  check(/Couldn.t remove that deck\. It is still on your device\. Try again\./.test(failed.toast) && failed.listed && failed.api.includes(DECK) && failed.cards === 8 && failed.goEnabled && (await kv("unit-deck:" + DECK)) !== null, "when clearing the progress fails, the Soldier is told, the deck is still listed and still on the device with all 8 cards (nothing half-removed, no stale list), and the button works again", () => JSON.stringify(failed));
+  await page.evaluate(() => { G.db.del = window.__realDel; delete window.__realDel; });
+  await clickWhenStable(page, page.locator('[data-unit-deck-remove-go="' + DECK + '"]'));
+  await until(page, (id) => !document.querySelector('[data-unit-deck="' + id + '"]'), DECK);
+  check((await kv("unit-deck:" + DECK)) === null && (await kvKeys("srs:unit:" + DECK + ":")).length === 0, "and trying again, once it works, removes the deck and its progress");
+  await page.evaluate(async (p) => { await G.unitDecks.add(p); }, PACK);
+  // Reset progress asks first, says what it clears, and leaves the deck (and the Rapid Fire saved decks) alone
+  await openSettingsPanel();
+  await page.evaluate(async (repsKey) => {
+    await G.db.put("kv", { k: "srs:unit:pinecone-ridge-demo:sop-001", v: { reps: 1, ease: 2.5, interval: 1, due: Date.now() + 1e9, misses: 0, lastGrade: 2 } });
+    for (const [k, v] of [["boardQuiz:best:Unit: Local SOP", 90], ["boardQuiz:best:Unit: Unit history:expert", 55], ["boardQuiz:best:All", 40]]) await G.db.put("kv", { k, v });
+    await G.db.put("kv", { k: repsKey, v: { sets: 1, cards: 12, recalled: 9, missed: ["unit:pinecone-ridge-demo:sop-002", "some-shipped-id"], ts: Date.now() } });
+    await G.db.setSetting("rapidFire:savedDecks", [{ name: "Mixed", categories: ["Unit: Local SOP"] }]);
+  }, repsKey);
   await clickWhenStable(page, page.locator('[data-unit-deck-reset="' + DECK + '"]'));
   await page.waitForSelector(".gm-box");
   const dlg = await page.evaluate(() => document.querySelector(".gm-box").innerText);
-  check(/Reset your review progress on the 8 cards in .Pinecone Ridge Demo Squadron study deck.\? The deck stays\./.test(dlg), "Reset progress asks first and says the deck stays", () => dlg);
+  check(/Reset your review progress on the 8 cards in .Pinecone Ridge Demo Squadron study deck.\? The deck stays\. Your Quiz best scores for its topics are cleared too\./.test(dlg), "Reset progress asks first, says the deck stays and that the Quiz best scores for its topics are cleared too", () => dlg);
   await clickWhenStable(page, page.locator(".gm-box button", { hasText: /^Reset$/ }));
   await untilAsync(page, async () => !(await G.db.get("kv", "srs:unit:pinecone-ridge-demo:sop-001")));
-  check((await bankFacts()).unitCards === 8, "Reset progress clears the progress and keeps the deck");
+  const afterReset = await traces();
+  check((await bankFacts()).unitCards === 8 && !afterReset.quiz.some((k) => /Unit: /.test(k)) && afterReset.quiz.includes("boardQuiz:best:All") && JSON.stringify(afterReset.missed) === JSON.stringify(["some-shipped-id"]) && JSON.stringify(afterReset.saved) === JSON.stringify(["Mixed=Unit: Local SOP"]),
+    "Reset progress clears the schedule, the Quiz best scores under the deck's topics and its cards in today's reps list, and keeps the deck, the All score and the Rapid Fire saved deck (that is a setting, not progress)", () => JSON.stringify(afterReset));
+  await page.evaluate(async (repsKey) => { await G.db.del("kv", repsKey); await G.db.setSetting("rapidFire:savedDecks", []); await G.db.del("kv", "boardQuiz:best:All"); }, repsKey);
+}
+
+{ // "Reset drill schedule" is the shipped bank's: a unit deck's progress is reset from the deck's own Reset progress button
+  const shippedKey = await page.evaluate(async () => {
+    const shipped = G.store.boardQuestions()[1].id;
+    const row = { reps: 1, ease: 2.5, interval: 1, due: Date.now() + 1e9, misses: 0, lastGrade: 2 };
+    await G.db.put("kv", { k: "srs:" + shipped, v: row });
+    await G.db.put("kv", { k: "srs:unit:pinecone-ridge-demo:sop-002", v: row });
+    return "srs:" + shipped;
+  });
+  await openDrill();
+  await clickWhenStable(page, page.locator("button", { hasText: /^Reset drill schedule$/ }));
+  await page.waitForSelector(".gm-box");
+  await clickWhenStable(page, page.locator(".gm-box button", { hasText: /^OK$/ }));
+  await untilAsync(page, async (k) => !(await G.db.get("kv", k)), shippedKey);
+  const unitRow = await kv("srs:unit:pinecone-ridge-demo:sop-002");
+  check(!!unitRow && unitRow.lastGrade === 2, "\"Reset drill schedule\" cleared the shipped card's schedule and left the unit deck's progress alone", () => JSON.stringify(unitRow));
+  await page.evaluate(async () => { await G.db.del("kv", "srs:unit:pinecone-ridge-demo:sop-002"); });
+}
+
+{ // A unit card's answer face offers "Related doctrine" only for a real publication its source opens with
+  const hits = await page.evaluate(() => ({ ar: G.store.doctrine("AR 600-20").length, plain: G.store.doctrine("Training schedule").length }));
+  check(hits.ar > 0 && hits.plain > 0, "(both \"AR 600-20\" and the plain words \"Training schedule\" match shipped doctrine, so a link COULD be offered for either)", () => JSON.stringify(hits));
+  await page.evaluate(async () => {
+    await G.unitDecks.add({ format: "guidon-unit-pack", formatVersion: 1, id: "doc-link", name: "Doc link deck", packVersion: "1", packDate: "2026-09-26",
+      cards: [{ id: "d1", category: "Doc plain", q: "When is the training schedule posted?", a: "On Fridays.", source: "Training schedule" }, { id: "d2", category: "Doc real", q: "Which regulation governs counseling here?", a: "The counseling regulation.", source: "AR 600-20, para 4-5" }] });
+  });
+  const linksOn = async (cat) => {
+    await openDrill();
+    await pickCategoryRow(cat);
+    await clickWhenStable(page, page.locator(".qz-card"));
+    await until(page, () => document.querySelector(".qz-card").classList.contains("flipped"));
+    return page.evaluate(() => Array.from(document.querySelectorAll(".qz-back .btn-row button")).map((b) => b.textContent.trim()));
+  };
+  const plain = await linksOn("Unit: Doc plain");
+  check(!plain.some((t) => /^Related doctrine/.test(t)), "a unit card whose source is the unit's own words (\"Training schedule\") gets NO \"Related doctrine\" link, though those words appear in doctrine", () => JSON.stringify(plain));
+  const real = await linksOn("Unit: Doc real");
+  check(real.includes("Related doctrine (AR 600-20) →"), "while one whose source opens with a real publication (AR 600-20) still does", () => JSON.stringify(real));
+  await page.evaluate(async () => { await G.unitDecks.remove("doc-link", { deleteHistory: true }); });
 }
 
 /* ================================================================= 7. text stays text */
@@ -574,7 +770,22 @@ let graded = null;
   await fileAndCheck(FIXTURE);
   const w1 = await overflow();
   check(w1 <= 0, "Settings with the deck preview open: nothing scrolls sideways at 390px", () => w1 + "px too wide");
+  // The add form on a phone: 16px text in the paste box (smaller and iOS zooms the whole page on focus) and a 44px file picker.
+  const forms = await page.evaluate(() => { const t = document.querySelector("[data-unit-deck-text]"), f = document.querySelector("[data-unit-deck-file]"); return { paste: parseFloat(getComputedStyle(t).fontSize), fileFont: parseFloat(getComputedStyle(f).fontSize), fileH: f.getBoundingClientRect().height }; });
+  check(forms.paste >= 16 && forms.fileFont >= 16 && forms.fileH >= 44, "at 390px the paste box has 16px text (no zoom on focus) and the file picker is 44px tall", () => JSON.stringify(forms));
   await clickWhenStable(page, page.locator("[data-unit-deck-preview] button", { hasText: /^Cancel$/ }));
+  // The Remove question on a phone: each choice is a 44px-tall target that holds its radio, and tapping the WORDS picks it.
+  await clickWhenStable(page, page.locator('[data-unit-deck-remove="' + DECK + '"]'));
+  await page.waitForSelector('[data-unit-deck-confirm="' + DECK + '"] fieldset');
+  const hit = await page.evaluate((id) => {
+    const g = document.querySelector('[data-unit-deck-confirm="' + id + '"]');
+    return Array.from(g.querySelectorAll("label.unit-deck-choice")).map((l) => { const r = l.getBoundingClientRect(), i = l.querySelector("input").getBoundingClientRect(); return { h: Math.round(r.height), w: Math.round(r.width), radio: Math.round(i.width) }; });
+  }, DECK);
+  check(hit.length === 2 && hit.every((x) => x.h >= 44 && x.w >= 200 && x.radio >= 20), "at 390px each Remove choice is at least 44px tall and the width of the dialog, with a radio of 20px or more", () => JSON.stringify(hit));
+  await page.locator('[data-unit-deck-confirm="' + DECK + '"] label', { hasText: /Delete it too/ }).click();
+  check(await page.locator('[data-unit-deck-confirm="' + DECK + '"] input[value="delete"]').isChecked(), "and tapping the words \"Delete it too\" picks that radio");
+  check((await overflow()) <= 0, "with the Remove question open, nothing scrolls sideways at 390px");
+  await clickWhenStable(page, page.locator('[data-unit-deck-confirm="' + DECK + '"] button', { hasText: /^Cancel$/ }));
   await openDrill();
   await pickCategoryRow("Unit: Local SOP");
   const w2 = await overflow();

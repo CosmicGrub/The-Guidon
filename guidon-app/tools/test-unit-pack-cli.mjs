@@ -20,7 +20,9 @@
  *     written - both agree with the app's validator on a table of planted decks;
  *  4. the spreadsheet reader: quoted commas and doubled quotes, line breaks inside a
  *     quoted answer, Windows line endings, a byte-order mark, blank lines, "|" between
- *     key points, deck details from # lines with the command line overriding them;
+ *     key points, deck details from # lines with the command line overriding them -
+ *     and a row with MORE (or fewer) cells than the header is refused, naming the row,
+ *     instead of quietly dropping the words after an unquoted comma;
  *  5. a deck cannot carry words to recite: a lyrics or recite-text column or field is
  *     refused; only titles pass (# recite: / --recite);
  *  6. the command loads the app's own file for every rule (no limits of its own), and
@@ -149,6 +151,28 @@ try {
       const appVerdict = !v.ok ? 1 : !s.ok ? 2 : 0;
       check(r.code === appVerdict, `the command and the app give the same verdict (${appVerdict}): ${label}`, () => `cli ${r.code} vs app ${appVerdict}: ${r.both}`);
     }
+  }
+
+  /* -------------------------------------------------- 3b. a row must have as many cells as the header */
+  {
+    // "At 0630, every day" typed without quotes is two cells. The command used to keep the first and drop the rest without a word.
+    const f = write("comma.csv", csv(["c1,SOP,When is formation?,At 0630, every day"]));
+    const r = run([f, "--out", at("comma.out.json")]);
+    check(r.code === 1 && /spreadsheet row 2 \(the header is row 1\) has 5 cells but the header has 4/.test(r.err) && /c1,SOP,When is formation\?,At 0630, every day/.test(r.err) && /quotes around the whole cell, like "At 0630, every day"/.test(r.err) && /Nothing was written/.test(r.err) && !existsSync(at("comma.out.json")),
+      "exit 1, nothing written: a row with MORE cells than the header (an unquoted comma), naming the row and showing where it starts", () => `exit ${r.code}: ${r.both}`);
+    const q = run([write("comma-q.csv", csv(['c1,SOP,When is formation?,"At 0630, every day"'])), "--out", at("comma-q.out.json")]);
+    check(q.code === 0 && JSON.parse(readOut("comma-q.out.json")).cards[0].a === "At 0630, every day", "the same words with quotes around the cell are kept whole", () => q.both);
+    const few = run([write("few.csv", head + "id,category,question,answer,key points,source\nc1,SOP,When?,At 0630\n"), "--check"]);
+    check(few.code === 1 && /spreadsheet row 2 \(the header is row 1\) has 4 cells but the header has 6/.test(few.err) && /Add the missing commas at the end of the row \(an empty cell is fine\)/.test(few.err), "a row with FEWER cells is refused too, with what to do about it", () => `exit ${few.code}: ${few.both}`);
+    const third = run([write("third.csv", csv(["c1,A,Q1?,A1", "c2,B,Q2?,A2", "c3,C,Q3?,A3, and more"])), "--check"]);
+    check(third.code === 1 && /spreadsheet row 4 \(the header is row 1\) has 5 cells/.test(third.err) && /c3,C,Q3\?,A3, and more/.test(third.err), "it names the row that is wrong (the third card is row 4), not the first", () => third.both);
+    const blanks = run([write("blank-lines.csv", csv(["c1,A,Q1?,A1", "", "   ", "c2,B,Q2?,A2"])), "--check"]);
+    check(blanks.code === 0, "blank lines and lines of only spaces between cards are still fine", () => blanks.both);
+    const full = run([write("full-empty.csv", head + "id,category,question,answer,key points,source\nc1,SOP,When?,At 0630,,\n"), "--check"]);
+    check(full.code === 0, "a row that spells out its empty cells (the way a spreadsheet exports it) is fine", () => full.both);
+    // The rule is the command's own reading of the file; a deck that has already been read is judged by the app's validator as before.
+    const p = run([write("comma-nothing.csv", csv(["c1,SOP,When?,At 0630, every day"])), "--check"]);
+    check(p.code === 1 && !/wrote/.test(p.out), "and --check refuses it as well (it never writes anyway)", () => p.both);
   }
 
   /* -------------------------------------------------- 4. the spreadsheet reader */

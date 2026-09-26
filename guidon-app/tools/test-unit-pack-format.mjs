@@ -207,6 +207,86 @@ const strOf = (n, c = "x") => c.repeat(n);
   check(valid(e).ok, "ordinary Unicode (an emoji, accents, a CJK character) is fine");
 }
 
+// Real calendar dates only. The leap-year rule is checked at both edges: 2028-02-29 is a real day, 2027-02-29 and 2100-02-29 are not
+// (2100 is divisible by 100 but not by 400), while 2000-02-29 is (divisible by 400).
+{
+  const dateIs = (d, want) => { const p = clone(BASE); p.packDate = d; const r = valid(p); check(r.ok === want && (want || r.errors.some((e) => e.code === "bad-date")), `the deck date ${d} is ${want ? "accepted" : "refused (not a real date the format allows)"}`, () => JSON.stringify(r.errors.slice(0, 2))); };
+  for (const d of ["2028-02-29", "2024-02-29", "2000-02-29", "2026-02-28", "2026-12-31", "2100-12-31", "2026-04-30"]) dateIs(d, true);
+  for (const d of ["2027-02-29", "2100-02-29", "2026-02-29", "2026-02-30", "2026-04-31", "2026-06-31", "2026-00-10", "2026-13-01", "2026-01-00", "1999-12-31", "2101-01-01", "2026-9-26", "26-09-26", "2026-09-26T00:00:00Z"]) dateIs(d, false);
+}
+
+// Invisible characters are refused wherever text goes (they are how a marking or a number is hidden from a check), in a single-line
+// field and in a multi-line answer alike; ordinary Unicode still passes.
+{
+  const HIDDEN = [
+    ["a soft hyphen", "­"], ["a combining grapheme joiner", "͏"], ["an Arabic letter mark", "؜"], ["a Hangul filler", "ㅤ"], ["a Mongolian vowel separator", "᠎"],
+    ["a zero-width space", "​"], ["a zero-width non-joiner", "‌"], ["a zero-width joiner", "‍"], ["a left-to-right mark", "‎"], ["a right-to-left mark", "‏"],
+    ["a word joiner", "⁠"], ["an invisible times", "⁢"], ["a deprecated format character", "⁪"], ["a variation selector", "️"], ["an interlinear annotation mark", "￹"],
+    ["an object replacement character", "￼"], ["a Unicode tag letter", "\u{E0041}"], ["a Unicode tag cancel", "\u{E007F}"], ["a variation selector supplement", "\u{E0100}"],
+  ];
+  const fields = [
+    ["the deck name", (p, c) => { p.name = "Alpha" + c; }, "name"], ["the unit label", (p, c) => { p.unit = "Unit" + c; }, "unit"],
+    ["a category", (p, c) => { p.cards[0].category = "Local" + c + "SOP"; }, "cards[0].category"], ["a question", (p, c) => { p.cards[0].q = "When is" + c + " formation?"; }, "cards[0].q"],
+    ["an answer (multi-line field)", (p, c) => { p.cards[0].a = "Line one\nLine" + c + "two"; }, "cards[0].a"], ["a key point", (p, c) => { p.cards[0].keyPoints = ["fine", "Be" + c + "early"]; }, "cards[0].keyPoints[1]"],
+    ["a source", (p, c) => { p.cards[0].source = "Alpha" + c + "SOP"; }, "cards[0].source"], ["a suggested title", (p, c) => { p.reciteTitles = ["Song" + c]; }, "reciteTitles[0]"],
+  ];
+  let n = 0, missed = [];
+  for (const [what, ch] of HIDDEN) for (const [label, mutate, at] of fields) {
+    n++;
+    const p = clone(BASE); mutate(p, ch);
+    const r = valid(p);
+    if (!(!r.ok && r.errors.some((e) => e.code === "bad-characters" && e.path === at))) missed.push(what + " in " + label);
+  }
+  check(missed.length === 0, `every invisible character (${HIDDEN.length} kinds) is refused in every text field (${n} combinations), naming the field`, () => missed.slice(0, 4).join("; "));
+  const msg = errsOf(Object.assign(clone(BASE), { name: "Alpha​demo" }))[0].message;
+  check(/hidden or unusual character/.test(msg) && /zero-width/.test(msg) && /Retype it as plain text/.test(msg), "and the message says what is wrong in plain words", () => msg);
+  // The saved-row check refuses them too (a restored backup or a row already on the device).
+  const row = P.toDeck(BASE, { importedAt: "2026-09-26T12:00:00.000Z" });
+  for (const [what, ch] of [["a zero-width space", "​"], ["a soft hyphen", "­"], ["a tag character", "\u{E0041}"]]) {
+    const r = clone(row); r.cards[0].q = "When is" + ch + " formation?";
+    check(!P.validRow(r), `a saved row with ${what} in a question is refused`);
+    const r2 = clone(row); r2.cards[0].source[0].pub = "Alpha" + ch + "SOP";
+    check(!P.validRow(r2), `and so is one with ${what} in a citation`);
+  }
+  const fine = clone(BASE); fine.cards[0].a = "Thumbs \u{1F44D}, accents éè, CJK 字, and a Cyrillic word: Привет";
+  check(valid(fine).ok && P.screen(fine, { now: NOW }).ok, "an answer with an emoji, accents, a CJK character and an ordinary Cyrillic word is accepted and passes the screen");
+}
+
+// Names that are also names of built-in JavaScript things must behave like any other name: every table in the validator, the
+// preview and the device registry is keyed by text an author controls.
+{
+  const NAMES = ["constructor", "__proto__", "toString", "hasOwnProperty", "valueOf", "prototype", "__defineGetter__"];
+  for (const nm of NAMES) {
+    const id = nm.replace(/[^a-z]/g, "") || "name";
+    const p = clone(BASE); p.id = id; p.cards[0].id = id; p.cards[0].q = nm; p.cards[0].category = nm; p.reciteTitles = [nm];
+    p.cards[1].id = id + "-2"; p.cards[1].category = nm; p.cards[2].id = id + "-3"; p.cards[2].category = nm + "s";
+    const r = valid(p);
+    check(r.ok, `"${nm}" as a card id, question, category, suggested title and deck id is an ordinary name (no false duplicate)`, () => JSON.stringify(r.errors.slice(0, 2)));
+    const sum = P.summarize(p);
+    check(sum.categories.length === 2 && sum.categories[0].name === nm && sum.categories[0].count === 2 && sum.categories[1].name === nm + "s", `the preview counts the category "${nm}" (2 cards) and "${nm}s" (1 card)`, () => JSON.stringify(sum.categories));
+    check(P.validRow(P.toDeck(p)), `and the saved row for it passes the row check`);
+  }
+  // Duplicates are still found, whatever the word.
+  const dupId = clone(BASE); dupId.cards[1].id = "constructor"; dupId.cards[0].id = "constructor";
+  check(valid(dupId).errors.some((e) => e.code === "duplicate" && e.path === "cards[1].id"), "two cards that really share the id \"constructor\" are still refused");
+  const dupQ = clone(BASE); dupQ.cards[0].q = "__proto__"; dupQ.cards[1].q = "  __PROTO__ ";
+  check(valid(dupQ).errors.some((e) => e.code === "duplicate" && e.path === "cards[1].q"), "two cards that really ask \"__proto__\" are still refused");
+  const dupT = clone(BASE); dupT.reciteTitles = ["toString", "TOSTRING"];
+  check(valid(dupT).errors.some((e) => e.code === "duplicate" && e.path === "reciteTitles[1]"), "and so is a suggested title given twice");
+  check(Object.prototype.polluted === undefined && ({}).polluted === undefined && ({}).constructor === Object, "and nothing on Object.prototype changed");
+}
+
+// The category cap counts categories exactly as Board Drill lists them: "Local SOP" and "local sop" are two.
+{
+  const mk = (names) => { const p = clone(BASE); p.cards = names.map((c, i) => ({ id: "c" + i, category: c, q: "Question number " + i, a: "A" })); return p; };
+  check(valid(mk(Array.from({ length: 30 }, (_, i) => "Cat " + i))).ok, "30 different categories are accepted");
+  const variants = Array.from({ length: 31 }, (_, i) => "abcdefgh".split("").map((ch, k) => ((i >> (k % 5)) & 1) && k < 5 ? ch.toUpperCase() : ch).join(""));
+  const distinct = new Set(variants).size;
+  check(distinct === 31 && new Set(variants.map((v) => v.toLowerCase())).size < 31, "(the 31 case variants are distinct as typed but fewer once folded)");
+  check(valid(mk(variants)).errors.some((e) => e.code === "too-many-categories"), "31 categories that differ only in capitals are refused, because Board Drill would list all 31");
+  check(valid(mk(["Local SOP", "local sop", "LOCAL SOP"])).ok, "and three case variants are accepted (3 is far below the cap)");
+}
+
 // HTML is TEXT: accepted, never interpreted, and unchanged on the far side.
 {
   const html = "<img src=x onerror=alert(1)> <script>alert(2)<\/script> &amp; \"quoted\" 'single' <b>bold</b>";
@@ -349,6 +429,165 @@ const findsAt = (mutate, whereRe, looksRe) => {
   check(!/123-45-6789/.test(shown), "a Social Security number is never repeated in full in what the Soldier is shown", () => shown);
 }
 
+/* ------------------------------------------------------------------ 2b. what the screen reads: folded text, lists across fields, numbers cut in two */
+{
+  const refusedIn = (mutate, wantLooks) => { const p = clone(BASE); mutate(p); const v = valid(p); const s = P.screen(p, { now: NOW }); return { v, s, hit: v.ok && !s.ok && (!wantLooks || s.findings.some((f) => wantLooks.test(f.looksLike))) }; };
+  // Written oddly, but the same thing: a plain copy is what gets read (never stored).
+  const folded = [
+    ["fullwidth digits in a Social Security number", "１２３-４５-６７８９", /Social Security number/],
+    ["a fullwidth marking", "ＳＥＣＲＥＴ//ＮＯＦＯＲＮ", /classification or handling marking/],
+    ["a Cyrillic capital S in SECRET//NOFORN", "ЅECRET//NOFORN", /classification or handling marking/],
+    ["Cyrillic and Greek look-alikes in CUI//SP-PRVCY", "СUI//SP-PRVСY Ο", /classification or handling marking/],
+    ["en dashes in a Social Security number", "Use 123–45–6789 to look it up.", /Social Security number/],
+    ["a minus sign in a Social Security number", "Use 123−45−6789 to look it up.", /Social Security number/],
+    ["a combining mark laid on a letter of a marking", "ŚECRET//NOFORN", /classification or handling marking/],
+    ["a mathematical bold marking", "\u{1D412}\u{1D404}\u{1D402}\u{1D411}\u{1D404}\u{1D413}//NOFORN", /classification or handling marking/],
+    ["a circled-digit-free labelled SSN with fullwidth digits", "SSN: １２３４５６７８９", /Social Security number/],
+    ["a fullwidth phone number", "Call ５５５-１２３-４５６７", /phone number/],
+  ];
+  for (const [label, text, looks] of folded) {
+    const r = refusedIn((p) => { p.cards[0].a = text; }, looks);
+    check(r.hit, `refused even though it is written oddly: ${label}`, () => JSON.stringify([r.v.errors.slice(0, 1), r.s.findings.slice(0, 2)]));
+  }
+  // ...and what is stored is exactly what was typed.
+  const typed = "Use １２３ in Café Ѕ"; const p0 = clone(BASE); p0.cards[0].a = typed;
+  check(P.toDeck(p0).cards[0].a === typed && P.cardsOf(P.toDeck(p0))[0].a === typed, "the plain copy is only looked at: the saved card keeps the text exactly as typed (fullwidth digits, accent and Cyrillic letter included)");
+  const p1 = clone(BASE); p1.cards[0].a = "Café résumé naïve Ångström – a range 10–20 and “quotes”";
+  check(valid(p1).ok && P.screen(p1, { now: NOW }).ok, "accents, en dashes in a range and curly quotes are not refused");
+}
+
+// A list of names is a list wherever it sits: in one answer, in one card's key points, or spread one to a card.
+{
+  const NAMES = ["SGT Smith", "SSG Jones", "SPC Brown", "CPL Green", "PFC White", "PVT Black", "SFC Gray", "MSG Blue"];
+  const LASTFIRST = ["Smith, John", "Jones, Mary", "Brown, Sam", "Green, Ann", "White, Tom", "Black, Joe"];
+  const deck = (cards) => { const p = clone(BASE); p.cards = cards.map((c, i) => Object.assign({ id: "c" + i, category: "Cat", q: "Question number " + i + "?", a: "Answer " + i }, c)); return p; };
+  const verdict = (p) => { const v = valid(p), s = P.screen(p, { now: NOW }); return { ok: v.ok && s.ok, valid: v.ok, s }; };
+  const refuse = (label, p, whereRe) => { const r = verdict(p); check(r.valid && !r.s.ok && r.s.findings.some((f) => f.code === "roster-like" && (!whereRe || whereRe.test(f.where))), `refused as a roster: ${label}`, () => JSON.stringify(r.s.findings.slice(0, 3))); };
+  const accept = (label, p) => { const r = verdict(p); check(r.ok, `not refused: ${label}`, () => JSON.stringify(r.s.findings.slice(0, 3))); };
+  refuse("eight rank-and-name lines in ONE card's key points", deck([{ keyPoints: NAMES }]), /^Card 1 \(c0\), key points$/);
+  refuse("three rank-and-name lines in a card's key points", deck([{ keyPoints: NAMES.slice(0, 3) }]), /key points$/);
+  refuse("six \"Surname, Given\" lines in one card's key points", deck([{ keyPoints: LASTFIRST }]), /key points$/);
+  refuse("one name per card answer, over eight cards", deck(NAMES.map((n) => ({ a: n }))), /short answers and key points/);
+  refuse("one \"Surname, Given\" name per card answer, over six cards", deck(LASTFIRST.map((n) => ({ a: n }))), /short answers and key points/);
+  refuse("one name per card, half as an answer and half as a one-line key point", deck(NAMES.map((n, i) => (i % 2 ? { keyPoints: [n] } : { a: n }))), /short answers and key points/);
+  refuse("the old case, still: eight names in ONE answer", deck([{ a: NAMES.join("\n") }]), /answer$/);
+  accept("two rank-and-name lines in a card's key points", deck([{ keyPoints: NAMES.slice(0, 2) }]));
+  accept("five short answers that name a commander each (a unit history), below the deck-wide bar of six", deck(NAMES.slice(0, 5).map((n) => ({ a: n }))));
+  accept("ranks written as TITLES in eight key points", deck([{ keyPoints: ["PVT Private", "PFC Private First Class", "SPC Specialist", "CPL Corporal", "SGT Sergeant", "SSG Staff Sergeant", "SFC Sergeant First Class", "MSG Master Sergeant"] }]));
+  accept("eight cards whose LONG answers each name one person in a sentence (not short lines)", deck(NAMES.map((n) => ({ a: "The troop's first commander was " + n + ", who served from the activation until the reorganization of the squadron." }))));
+  accept("eight cards whose answers are short but are not names", deck(NAMES.map((n, i) => ({ a: "Room " + (100 + i) }))));
+  // The same verdicts arrive from the saved-row check (a restored backup, a row on the device).
+  const rowOf = (p) => P.toDeck(p, { importedAt: "2026-09-26T12:00:00.000Z" });
+  const spread = deck(NAMES.map((n) => ({ a: n })));
+  check(!P.validRow(rowOf(spread)) && P.validateRow(rowOf(spread)).errors[0].code === "sensitive-text", "a saved row that spreads a roster one name to a card is refused by the row check, with its own code");
+  check(!P.validRow(rowOf(deck([{ keyPoints: NAMES }]))), "so is one with the roster in a card's key points");
+}
+
+// A number cut in two: the end of one field and the start of the next (or of a later one) of the SAME card. Only what the join makes
+// appear counts, so numbers that merely sit next to each other are fine.
+{
+  const cut = (label, mutate, looks) => { const p = clone(BASE); mutate(p); const v = valid(p), s = P.screen(p, { now: NOW }); check(v.ok && !s.ok && s.findings.some((f) => looks.test(f.looksLike) && /where the .* runs into the/.test(f.where)), `refused, and says where the two halves meet: ${label}`, () => JSON.stringify([v.errors.slice(0, 1), s.findings.slice(0, 2)])); };
+  const clean = (label, mutate) => { const p = clone(BASE); mutate(p); const s = P.screen(p, { now: NOW }); check(valid(p).ok && s.ok, `not refused: ${label}`, () => JSON.stringify(s.findings.slice(0, 2))); };
+  cut("a Social Security number across a question and a key point", (p) => { p.cards[0].q = "What is the number ending 123-45"; p.cards[0].keyPoints = ["-6789 is it"]; }, /Social Security number/);
+  cut("a Social Security number across an answer and the next key point", (p) => { p.cards[0].a = "The number is 123-45"; p.cards[0].keyPoints = ["-6789"]; }, /Social Security number/);
+  cut("a labelled Social Security number cut after its label", (p) => { p.cards[0].q = "Give the SSN "; p.cards[0].a = "123456789"; }, /Social Security number/);
+  cut("a phone number across a question and an answer", (p) => { p.cards[0].q = "Call 555-1"; p.cards[0].a = "23-4567 after hours"; }, /phone number/);
+  cut("a DoD ID number cut after its label", (p) => { p.cards[0].a = "The DoD ID "; p.cards[0].keyPoints = ["1234567890 is listed"]; }, /DoD ID number/);
+  clean("digits that end one field and start the next but make nothing", (p) => { p.cards[0].q = "Formation is at 0630 in room 12"; p.cards[0].a = "3 minutes early"; });
+  clean("a year that ends one field and a number that starts the next", (p) => { p.cards[0].q = "Which squadron was activated in 2026"; p.cards[0].a = "1st Squadron, 5th Cavalry"; });
+  clean("a regulation number split across fields (a citation, not an identifier)", (p) => { p.cards[0].q = "Which regulation covers counseling, AR 600"; p.cards[0].a = "-20 2020 covers it"; });
+  clean("a number that already sits complete in a field, followed by a field that starts with a digit", (p) => { p.cards[0].q = "Formation is at 0630"; p.cards[0].a = "0645 for the first sergeant"; });
+}
+
+// A source that would split into more than 8 references is refused when it is checked - not saved and then lost at the next start.
+{
+  const NINE = "AR 600-8-19, AR 600-20, AR 670-1, AR 350-1, DA PAM 600-25, ADP 6-22, FM 6-22, TC 3-21.5, ATP 3-21.8";
+  const EIGHT = "AR 600-8-19, AR 600-20, AR 670-1, AR 350-1, DA PAM 600-25, ADP 6-22, FM 6-22, TC 3-21.5";
+  check(P.cite(NINE).length === 9 && P.cite(EIGHT).length === 8, "(the citation parser splits the two sources into 9 and 8 entries)");
+  const eight = clone(BASE); eight.cards[0].source = EIGHT;
+  const r8 = valid(eight);
+  check(r8.ok && P.validRow(P.toDeck(eight)), "a source naming 8 publications is accepted, and the row saved from it passes the row check", () => JSON.stringify(r8.errors.concat(P.validateRow(P.toDeck(eight)).errors)));
+  const nine = clone(BASE); nine.cards[0].source = NINE;
+  const r9 = valid(nine);
+  check(!r9.ok && r9.errors.some((e) => e.code === "too-many-sources" && e.path === "cards[0].source" && /Card 1 \(sop-001\): the source lists 9 separate references; the most GUIDON keeps on one card is 8/.test(e.message)), "a source naming 9 publications is REFUSED at the import check, in plain words, naming the card", () => JSON.stringify(r9.errors));
+  const long = clone(BASE); long.cards[0].source = Array.from({ length: 33 }, (_, i) => "AR " + (i + 1)).join("; ").slice(0, 200).replace(/; [^;]*$/, "");
+  check(P.cite(long.cards[0].source).length > 8 && !valid(long).ok, "a 200-character source that would split into more than 8 entries is refused too", () => P.cite(long.cards[0].source).length + " entries");
+  // One rule, two doors: 8 is the last number both accept, 9 the first both refuse.
+  const row = P.toDeck(eight, { importedAt: "2026-09-26T12:00:00.000Z" });
+  check(P.validRow(row) && row.cards[0].source.length === 8, "the row check accepts exactly 8 source entries...");
+  const row9 = clone(row); row9.cards[0].source = row9.cards[0].source.concat([{ pub: "ATP 3-21.8", edition: "", para: "", quoteKind: "paraphrase" }]);
+  check(!P.validRow(row9) && P.validateRow(row9).errors.some((e) => e.path === "cards[0].source"), "...and refuses a 9th");
+  // The whole idea: whatever validate() + screen() accept, validateRow() accepts. A generated table, 9-plus-source cases included.
+  let seed = 424242;
+  const rnd = () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const pick = (a) => a[Math.floor(rnd() * a.length)];
+  const PUBS = ["AR 600-20", "AR 670-1", "DA PAM 600-25", "ATP 6-22.1", "ADP 6-22", "FM 7-22", "TC 3-21.5", "DoDI 1300.17", "37 USC 403", "UCMJ Art. 86", "DA Form 4856"];
+  const RES = ["Battalion SOP 2026", "unit SOP", "Squadron training schedule", "Company policy letter 4", "myPay", "Brigade standing order 4"];
+  const WORDS = ["formation", "supply", "the troop", "guidon", "  padded  ", "café", "50-50", "Room 12", "0630", "AR 600-20 2020", "CPT", "Smith", "the first sergeant", "1st Squadron", "(fictional)"];
+  const text = (max) => { let s = ""; const n = 1 + Math.floor(rnd() * 8); for (let i = 0; i < n; i++) s += (i ? " " : "") + pick(WORDS); return s.trim().slice(0, max) || "x"; };
+  const source = () => { const n = 1 + Math.floor(rnd() * 11); const parts = []; for (let i = 0; i < n; i++) parts.push(rnd() < 0.7 ? pick(PUBS) + (rnd() < 0.3 ? ", para " + (1 + Math.floor(rnd() * 9)) + "-" + (1 + Math.floor(rnd() * 9)) : "") : pick(RES)); return parts.join(pick(["; ", ", ", " / ", "; "])).slice(0, 200); };
+  let accepted = 0, refusedBySource = 0, otherRefused = 0, broken = [];
+  for (let n = 0; n < 500; n++) {
+    const p = { format: "guidon-unit-pack", formatVersion: 1, id: "gen-" + n, name: text(60), packVersion: "1." + n, packDate: "2026-09-26", cards: [] };
+    const cards = 1 + Math.floor(rnd() * 12);
+    for (let i = 0; i < cards; i++) {
+      const c = { id: "c" + i, category: pick(["Cat one", "cat one", "History", "Local SOP", "constructor"]), q: "Question " + i + " " + text(100) + "?", a: (rnd() < 0.3 ? "  " : "") + text(300) + (rnd() < 0.3 ? "\r\n" + text(100) : "") + (rnd() < 0.3 ? "  " : "") };
+      if (rnd() < 0.7) c.keyPoints = Array.from({ length: Math.floor(rnd() * 9) }, () => text(60));
+      if (rnd() < 0.8) c.source = source();
+      p.cards.push(c);
+    }
+    const v = valid(p);
+    if (!v.ok) { if (v.errors.some((e) => e.code === "too-many-sources")) refusedBySource++; else otherRefused++; continue; }
+    const s = P.screen(p, { now: NOW });
+    if (!s.ok) { otherRefused++; continue; }
+    accepted++;
+    const rv = P.validateRow(P.toDeck(p, { importedAt: "2026-09-26T12:00:00.000Z" }));
+    if (!rv.ok) broken.push({ n, errors: rv.errors.slice(0, 2) });
+  }
+  check(broken.length === 0, `validate() + screen() and validateRow() agree: of ${accepted + refusedBySource + otherRefused} generated decks, all ${accepted} that the import check accepted make a row the app keeps`, () => JSON.stringify(broken.slice(0, 2)));
+  check(accepted > 100 && refusedBySource > 20, `(that table is meaningful: ${accepted} accepted, ${refusedBySource} refused for a source with too many references, ${otherRefused} refused for another reason)`, () => `${accepted}/${refusedBySource}/${otherRefused}`);
+}
+
+// A deck as large as the file may be, with the most source entries a card may have, is one the row check keeps.
+{
+  const src = "AR 1; AR 2; AR 3; AR 4; AR 5; AR 6; AR 7; AR 8";
+  const big = clone(BASE); big.id = "biggest-deck";
+  big.cards = Array.from({ length: L.cards }, (_, i) => ({ id: "c" + i, category: "Cat " + (i % 30), q: "Question number " + i + " " + strOf(20, "q"), a: strOf(1100, "a"), source: src }));
+  const v = valid(big);
+  const fileBytes = P.utf8Bytes(JSON.stringify(big)), row = P.toDeck(big, { importedAt: "2026-09-26T12:00:00.000Z" }), rowBytes = P.utf8Bytes(JSON.stringify(row));
+  check(v.ok && fileBytes <= L.bytes && fileBytes > L.bytes * 0.9, `a 200-card deck of ${Math.round(fileBytes / 1024)} KB (the file limit is ${L.bytes / 1024} KB) is accepted`, () => JSON.stringify(v.errors.slice(0, 2)) + " " + fileBytes);
+  check(rowBytes > L.bytes && rowBytes <= L.rowBytes && P.validRow(row), `its saved row is ${Math.round(rowBytes / 1024)} KB (each citation becomes a small object, so a row may be larger than the file: up to ${L.rowBytes / 1024} KB) and passes the row check`, () => JSON.stringify(P.validateRow(row).errors.slice(0, 2)) + " " + rowBytes);
+  const huge = clone(row); huge.cards.forEach((c) => { c.keyPoints = Array.from({ length: 8 }, () => strOf(200, "k")); });
+  const hv = P.validateRow(huge);
+  check(!hv.ok && hv.errors[0].code === "too-big" && new RegExp("the most GUIDON keeps is " + L.rowBytes / 1024 + " KB").test(hv.errors[0].message), "a saved row larger than the row limit is refused (the row check has its own size cap)", () => JSON.stringify(hv.errors.slice(0, 1)));
+}
+
+// The saved-row check repeats the sensitive-text screen: a row that came in with a restored backup never went past the import check.
+{
+  const row = P.toDeck(BASE, { importedAt: "2026-09-26T12:00:00.000Z" });
+  const dirty = (label, mutate) => { const r = clone(row); mutate(r); const v = P.validateRow(r); check(!v.ok && v.errors.some((e) => e.code === "sensitive-text"), `the row check refuses a saved deck with ${label}, as "sensitive-text"`, () => JSON.stringify(v.errors.slice(0, 2))); };
+  dirty("a Social Security number in an answer", (r) => { r.cards[1].a = "Use 123-45-6789 to look it up."; });
+  dirty("a classification marking in a question", (r) => { r.cards[0].q = "Is this SECRET//NOFORN?"; });
+  dirty("a marking in a citation", (r) => { r.cards[0].source[0].pub = "Annex CUI//SP-PRVCY"; });
+  dirty("an email address in the unit label", (r) => { r.unit = "Alpha a.b@example.com"; });
+  dirty("a phone number in a key point", (r) => { r.cards[0].keyPoints = ["fine", "Call 555-123-4567"]; });
+  dirty("a marking in a suggested title", (r) => { r.reciteTitles = ["CUI//SP-PRVCY"]; });
+  dirty("a fullwidth Social Security number", (r) => { r.cards[1].a = "１２３-４５-６７８９"; });
+  dirty("a roster in one card's key points", (r) => { r.cards[0].keyPoints = ["SGT Smith", "SSG Jones", "SPC Brown"]; });
+  const v = P.validateRow(row);
+  check(v.ok && P.screenRow(row).ok, "while a clean row passes both", () => JSON.stringify(v.errors));
+  const fixtureRow = P.toDeck(JSON.parse(readFileSync(path.join(HERE, "fixtures", "unit-pack-example.pack.json"), "utf8")), { importedAt: "2026-09-26T12:00:00.000Z" });
+  check(P.screenRow(fixtureRow, { now: NOW }).ok && P.validRow(fixtureRow), "the fictional example deck's row is clean");
+  // Fail closed here too.
+  const bare = loadUnitPackKit(); delete bare.opsecGuard;
+  const bv = bare.unitPack.validateRow(row);
+  check(!bv.ok && bv.errors.some((e) => e.code === "sensitive-text" && /not available/.test(e.message)), "with no sensitive-text check available a saved row is refused, never trusted");
+  // What the row check found is one plain sentence for Diagnostics, without repeating the identifier.
+  const r2 = clone(row); r2.cards[1].a = "Use 123-45-6789 to look it up.";
+  const m = P.validateRow(r2).errors[0].message;
+  check(/left out because its text looks like something that does not belong in a study deck/.test(m) && !/123-45-6789/.test(m), "and the message names the card and field without repeating the number", () => m);
+}
+
 /* ------------------------------------------------------------------ 3. the citation twin */
 {
   const bank = assembleBank().data;
@@ -489,19 +728,33 @@ const findsAt = (mutate, whereRe, looksRe) => {
     `up to ${L.packVersion} characters`, `up to ${L.category} characters`, `up to ${L.question} characters`, `up to ${n(L.answer)} characters`,
     `Up to ${L.keyPoints} points`, `up to ${L.keyPoint} characters each`, `Up to ${L.source} characters`, `Up to ${L.reciteTitles} titles`,
     `up to ${L.reciteTitle} characters each`, `Up to ${L.bytes / 1024} KB`, `up to ${L.decks} unit decks`, `${L.deckIdMin} to ${L.deckIdMax} characters`, `1 to ${L.cardIdMax} characters`,
+    `no more than ${L.sourceEntries} separate references`, `keeps at most ${L.decks} decks`,
     "guidon-unit-pack", "Unit deck: (name)", "Add this deck",
   ];
   const missing = want.filter((w) => !docs.includes(w));
   check(missing.length === 0, "docs/unit-packs.md states every limit the code enforces, with the same numbers", () => "missing: " + missing.join(" | "));
   const gone = ["classification", "CUI", "roster", "song", "lyrics", "copyright", "accuracy", "approval"].filter((w) => !new RegExp(w, "i").test(docs));
   check(gone.length === 0, "and says what may not go in (classified/CUI, rosters, copyrighted words, unapproved material) and who is responsible", () => "missing: " + gone.join(" | "));
+  // What the app really does with a deck is what the page says it does: the statements a leader and a Soldier rely on.
+  const claims = [
+    [/every backup you export\s+includes them/, "every exported backup includes the decks (no opt-in)"],
+    [/Decks already on the device are still there to study\s+in a Guest or Kiosk session/, "a Guest or Kiosk session can still study a deck already on the device"],
+    [/checked again the same way/, "a saved deck is checked again at every start and restore"],
+    [/has no place for words to recite/, "the format has no place for words to recite (and does not claim the schema prevents it)"],
+    [/Quiz best scores/, "Remove and Reset say Quiz best scores are part of the progress"],
+    [/the study level in Board Drill and Quiz/, "the study level never hides a unit deck"],
+    [/fullwidth\s+digits and letters/, "the plain copy the check reads is described"],
+  ];
+  const unsaid = claims.filter(([re]) => !re.test(docs)).map(([, what]) => what);
+  check(unsaid.length === 0, "and states what the app really does: backups, Guest and Kiosk, the re-check, no place for recitation words, what Remove deletes, the study level", () => "missing: " + unsaid.join(" | "));
+  check(!/never leaves (?:the|this) device/i.test(docs) && !/cannot carry text to recite/.test(docs), "and no longer says \"never leaves the device\" (a deck goes into every exported backup) or that a deck \"cannot carry text to recite\"");
 }
 {
   const { modules } = loadModules();
   const core = modules.find((m) => m.id === "unit-decks-core"), rt = modules.find((m) => m.id === "unit-decks");
   const idx = (id) => modules.findIndex((m) => m.id === id);
   check(!!core && core.kind === "feature" && core.headless === true && core.requires.includes("opsec-guard") && idx("opsec-guard") < idx("unit-decks-core"), "unit-decks-core is a headless feature that requires (and loads after) the sensitive-text check");
-  check(!!rt && rt.kind === "feature" && rt.emit === undefined && rt.requires.includes("unit-decks-core") && rt.storageKeys.includes("unit-deck:*") && rt.clearsKeys.includes("srs:*") && idx("unit-decks-core") < idx("unit-decks"), "unit-decks is a runtime feature that owns unit-deck:* and only clears srs:* (a deck's own history)");
+  check(!!rt && rt.kind === "feature" && rt.emit === undefined && rt.requires.includes("unit-decks-core") && rt.storageKeys.includes("unit-deck:*") && rt.clearsKeys.length === 2 && rt.clearsKeys.includes("srs:*") && rt.clearsKeys.includes("boardQuiz:best:*") && idx("unit-decks-core") < idx("unit-decks"), "unit-decks is a runtime feature that owns unit-deck:* and only clears srs:* and boardQuiz:best:* (a deck's own review schedule and Quiz scores)");
   check(!modules.some((m) => (m.kind === "content-pack" || m.kind === "finalize") && /unit-deck/.test(m.id)), "neither is a content pack: a unit deck is never merged into the bank");
   check(Object.keys(G.unitPack).length > 15 && core.provides.every((n) => { const parts = n.split("."); let o = G; for (const p of parts.slice(1)) { o = o && o[p]; } return o !== undefined; }), "every API name unit-decks-core lists under provides exists in the loaded file");
 }
