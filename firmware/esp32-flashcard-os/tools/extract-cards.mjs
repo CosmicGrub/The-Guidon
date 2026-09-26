@@ -98,10 +98,13 @@ function main() {
       "  If it did not, cards are being lost between the bank and this exporter - find out where before flashing a card."].join("\n"));
   }
 
+  // The text of all three files is made BEFORE any is written, so a lanes list
+  // the serializer refuses (no default lane) still leaves nothing on disk.
+  const lanesText = lanesJson(lanes);
   mkdirSync(OUT_DIR, { recursive: true });
   writeFileSync(`${OUT_DIR}/cards.ndjson`, ndjson, "utf8");
   writeFileSync(`${OUT_DIR}/categories.json`, JSON.stringify(categories), "utf8");
-  writeFileSync(`${OUT_DIR}/lanes.json`, lanesJson(lanes), "utf8");
+  writeFileSync(`${OUT_DIR}/lanes.json`, lanesText, "utf8");
 
   const ndjsonBytes = Buffer.byteLength(ndjson, "utf8");
   console.log(`extract-cards: ${all.length} cards across ${order.length} categories - matches the content manifest card for card (fingerprint ${manifest.fingerprint})`);

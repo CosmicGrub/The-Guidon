@@ -707,8 +707,8 @@ jobs:
             tests: "test:legal-package-content test:legal-package-verifier test:engine-collective test:room-handoff-core"
           - name: "62-roomhandoff-roomhandoffsafety-boardcitations-sectioncitations"
             tests: "test:room-handoff test:room-handoff-safety test:board-citations test:section-citations"
-          - name: "63-esp32lanes"
-            tests: "test:esp32-lanes"
+          - name: "63-esp32lanes-scenariolegacydoctrine"
+            tests: "test:esp32-lanes test:scenario-legacy-doctrine"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
@@ -787,8 +787,46 @@ jobs:
       # shared state (see tools/run-parallel.mjs's own header comment), so
       # up to PER_CHUNK (4 as of 2026-09-07) of them can safely run
       # concurrently in this one job.
+      # tools/test-esp32-lanes.mjs compiles and runs the handheld's own JSON
+      # reader (firmware/esp32-flashcard-os/src/lanes_json.h) against the real
+      # ArduinoJson library. On a developer machine a missing library is a
+      # SKIP; where the CI environment variable is set (it always is here) it
+      # is a FAILURE, so the check can never be skipped without anyone
+      # noticing. This step supplies the library to the chunk that runs that
+      # suite (and only that chunk - `contains` on the chunk's own suite list,
+      # so it survives the chunk block being regenerated). Pinned to the
+      # immutable commit the v7.4.3 tag resolves to (`gh api
+      # repos/bblanchon/ArduinoJson/commits/v7.4.3`), for the same reason every
+      # action above is SHA-pinned; the header-only sources are read straight
+      # from the checkout (ARDUINOJSON_DIR below), nothing is installed. The
+      # firmware itself is compiled by the `firmware` job below (the reusable
+      # .github/workflows/firmware.yml, on every run) and again by
+      # release-assets.yml (at a release cut).
+      - name: Fetch ArduinoJson (pinned) for the ESP32 lane-parser host test
+        if: ${{ contains(matrix.chunk.tests, 'test:esp32-lanes') }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: bblanchon/ArduinoJson
+          ref: 77771d3c07668e01d8f52acb03910c1110bb373f  # v7.4.3
+          path: .arduinojson
+          persist-credentials: false
+
       - name: Run test chunk (${{ matrix.chunk.name }})
+        env:
+          ARDUINOJSON_DIR: ${{ github.workspace }}/.arduinojson/src
         run: node tools/run-parallel.mjs ${{ matrix.chunk.tests }}
+
+  # ---------------------------------------------------------------------
+  # The ESP32 handheld firmware: a real `platformio run -e flashcardos` plus
+  # the deck-logic host tests (the whole story is in firmware.yml). Called as a
+  # reusable workflow so it runs on EVERY push and pull request - including the
+  # version-only release-prep commit - and so `CI green` below can wait for it:
+  # a firmware compile error blocks a merge, and the release gate reads it as
+  # part of this run's conclusion for the exact commit being released.
+  # ---------------------------------------------------------------------
+  firmware:
+    name: firmware (env:flashcardos)
+    uses: ./.github/workflows/firmware.yml
 
   # ---------------------------------------------------------------------
   # ONE always-reporting verdict for the whole run, named "CI green".
@@ -817,7 +855,7 @@ jobs:
   ci-green:
     name: CI green
     if: always()
-    needs: [lint-build-verify, cargo-check, test]
+    needs: [lint-build-verify, cargo-check, test, firmware]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -829,10 +867,11 @@ jobs:
           R_LINT: ${{ needs.lint-build-verify.result }}
           R_CARGO: ${{ needs.cargo-check.result }}
           R_TEST: ${{ needs.test.result }}
+          R_FIRMWARE: ${{ needs.firmware.result }}
         run: |
           set -euo pipefail
           bad=0
-          for pair in "lint + build + verify=$R_LINT" "cargo check=$R_CARGO" "test matrix=$R_TEST"; do
+          for pair in "lint + build + verify=$R_LINT" "cargo check=$R_CARGO" "test matrix=$R_TEST" "firmware compile=$R_FIRMWARE"; do
             name="${pair%%=*}"; result="${pair##*=}"
             if [ "$result" = "success" ]; then
               echo "ok: $name"

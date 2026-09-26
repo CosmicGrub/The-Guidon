@@ -25,9 +25,13 @@
  * by test-release-pipeline.mjs and test-release-state.mjs.
  *
  * Reading the two JSON files (src/lanes_json.h, ArduinoJson) is run for real too
- * - but only where ArduinoJson is on the machine (a PlatformIO build of
- * env:flashcardos fetches it); CI's test jobs do not build the firmware, so
- * there that part prints SKIP. Not covered anywhere off the device: drawing the
+ * - where ArduinoJson is on the machine (a PlatformIO build of env:flashcardos
+ * fetches it, or ARDUINOJSON_DIR points at it). On a developer machine without
+ * it that part prints SKIP; on CI (the CI environment variable is set) it FAILS
+ * instead, so it can never be skipped there without anyone noticing: the
+ * firmware workflow (.github/workflows/firmware.yml) builds env:flashcardos
+ * first, and this suite's own CI job fetches a pinned ArduinoJson for it.
+ * Not covered anywhere off the device: drawing the
  * deck button, touch, and the NVS-saved pick. The firmware itself is compiled
  * by the release workflow (env:flashcardos) and by hand
  * (python3 -m platformio run -e flashcardos); the rest needs flashing - see
@@ -201,6 +205,18 @@ try {
   expectProblem("subject names in lanes.json that differ from categories.json are caught", (t) => { t.lanes[2].categories = ["Shared"]; }, /subject names in lanes\.json/);
   expectProblem("an MOS lane with a card missing is caught against the bank's own tags", (t) => { t.categories[3].lanes = ["68W"]; }, /lane "92A"/);
   expectProblem("the default lane listed second is caught", (t) => { t.lanes.reverse(); }, /default lane first/);
+  // FAIL CLOSED: a lanes.json with only MOS lanes (no "default") is refused. The device treats such a file as unusable
+  // (nothing safe to start on or fall back to but an MOS deck), so the exporter must never write one.
+  expectProblem("a lanes.json with NO default lane (MOS decks only) is refused", (t) => { t.lanes = t.lanes.filter((l) => l.id !== DEFAULT_LANE_ID); }, /has no "default" lane/);
+  expectProblem("...and an empty lanes list is refused the same way", (t) => { t.lanes = []; }, /has no "default" lane/);
+  {
+    let refused = "", wrote = "";
+    try { lanesJson(built.lanes.filter((l) => l.id !== DEFAULT_LANE_ID)); wrote = "wrote it"; } catch (e) { refused = String(e.message || e); }
+    check(/refusing to write a lanes\.json with no "default" lane/.test(refused) && !wrote, "the serializer itself (the last step before the file is written) throws for a list with no default lane", "lanesJson: " + (refused || wrote));
+    let ok2 = false;
+    try { ok2 = JSON.parse(lanesJson(built.lanes)).lanes[0].id === DEFAULT_LANE_ID; } catch (e) { ok2 = false; }
+    check(ok2, "...and still writes a list that has one, default first (the real export does exactly that)");
+  }
   expectProblem("a manifest that disagrees about an MOS deck is caught", (t, man) => { man.board.byMos["92A"] += 1; }, /MOS deck 92A/);
   expectProblem("a manifest total that disagrees is caught", (t, man) => { man.totals.board += 1; }, /content manifest says/);
   const unknown = buildExport([C("z1", "Army Values"), C("z2", "Army Values", { mos: ["ZZZ"] })], registry);
@@ -308,13 +324,34 @@ try {
     const mismatched = replay("mismatch", lanesIn.filter((l) => l.id === DEFAULT_LANE_ID), categories);
     const mv = mismatched.views.find((v) => v[0] === DEFAULT_LANE_ID) || [];
     check(mismatched.active === "1" && mv[3] && mv[3].split("|").every((n) => !mosSubjectNames.has(n)), "a lanes.json that lacks an MOS deck its categories.json mentions hides that deck's subjects; it never shows them in the default deck");
+    // The opt-in invariant: a missing or unknown saved deck resolves to the DEFAULT deck, never to index 0 (which may be an MOS deck),
+    // and a lanes.json with no default deck at all is unusable - exactly like no lanes.json.
+    const mosLanesOnly = lanesIn.filter((l) => l.id !== DEFAULT_LANE_ID);
+    const mosOnly = replay("mos-only", mosLanesOnly, categories);
+    check(mosOnly.ran && mosOnly.active === "0" && mosOnly.start === "-" && mosOnly.views.length === 1 && Number(mosOnly.views[0][1]) === categories.length && mosOnly.views[0][3] === categories.map((c) => c.name).join("|"),
+      "a lanes.json with ONLY MOS decks (no default) is unusable: decks off, no starting deck, every subject listed - exactly what a missing lanes.json does, and no MOS deck is opened", "device: " + JSON.stringify({ active: mosOnly.active, start: mosOnly.start, views: mosOnly.views.map((v) => v.slice(0, 3)) }));
+    const mosOnlySaved = replay("mos-only-saved", mosLanesOnly, categories, decksWithCards[0].code);
+    check(mosOnlySaved.active === "0" && mosOnlySaved.start === "-", `...even when that table still has the deck the Soldier saved (${decksWithCards[0].code}): the whole table is unusable, so it does not start on it`, "device: " + JSON.stringify({ active: mosOnlySaved.active, start: mosOnlySaved.start }));
+    const defaultLast = lanesIn.slice().sort((a, b) => (a.id === DEFAULT_LANE_ID) - (b.id === DEFAULT_LANE_ID));
+    const goneDefaultLast = replay("gone-default-last", defaultLast, categories, "GONE");
+    check(defaultLast[0].id !== DEFAULT_LANE_ID && goneDefaultLast.active === "1" && goneDefaultLast.start === DEFAULT_LANE_ID,
+      "default + MOS decks with the default listed LAST and a saved deck the card no longer has: the device starts on the DEFAULT deck, not on the first (MOS) one", "device started on " + goneDefaultLast.start);
+    const nothingSavedDefaultLast = replay("nothing-default-last", defaultLast, categories);
+    check(nothingSavedDefaultLast.start === DEFAULT_LANE_ID, "...and with nothing saved at all");
 
     /* ---- the JSON reading, with the real ArduinoJson --------------------------- */
     // src/lanes_json.h is what main.cpp reads the two files with. It needs ArduinoJson, which a PlatformIO build
-    // fetches into .pio/libdeps; CI's test jobs do not build the firmware, so there this part says it was skipped.
+    // fetches into .pio/libdeps (or ARDUINOJSON_DIR points at). Without it this part is SKIPPED on a developer
+    // machine and FAILS when the CI environment variable is set, exactly like the C++ compiler check above.
     console.log("\n7. src/lanes_json.h (how the device reads the two files), against the real ArduinoJson");
-    const jsonLib = [process.env.ARDUINOJSON_DIR, path.join(FW, ".pio", "libdeps", "flashcardos", "ArduinoJson", "src")].filter(Boolean).find((d) => existsSync(path.join(d, "ArduinoJson.h")));
-    if (!jsonLib) console.log("  SKIP  ArduinoJson is not on this machine (a PlatformIO build of env:flashcardos fetches it into firmware/esp32-flashcard-os/.pio/libdeps, or set ARDUINOJSON_DIR), so the JSON reading was not run");
+    // (GUIDON_ESP32_LIBDEPS moves the second place it looks - tools/test-release-pipeline.mjs points it at nothing
+    // to prove that a missing library FAILS on CI and only SKIPs on a developer machine.)
+    const jsonLib = [process.env.ARDUINOJSON_DIR, process.env.GUIDON_ESP32_LIBDEPS || path.join(FW, ".pio", "libdeps", "flashcardos", "ArduinoJson", "src")].filter(Boolean).find((d) => existsSync(path.join(d, "ArduinoJson.h")));
+    if (!jsonLib) {
+      const why = "ArduinoJson is not on this machine (a PlatformIO build of env:flashcardos fetches it into firmware/esp32-flashcard-os/.pio/libdeps, or set ARDUINOJSON_DIR), so the JSON reading was not run";
+      if (process.env.CI) bad("on CI, so this must not be skipped: " + why);
+      else console.log("  SKIP  " + why);
+    }
     else {
       const jexe = path.join(cxxDir, process.platform === "win32" ? "lanes_json_test.exe" : "lanes_json_test");
       const jc = compileHost(path.join(FW, "host-test", "lanes_json_test.cpp"), jexe, cxxDir, [jsonLib]);

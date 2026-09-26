@@ -62,6 +62,13 @@
  *       ids the regulation rules find in the RENDERED citation. A
  *       hand-written entry that buries a publication inside `para` or
  *       `edition` would be invisible to the chips; this catches it.
+ *   (j) a card whose source is PENDING never claims to be a quotation: a card
+ *       with sourceStatus "pending-source", or whose own citation text carries
+ *       the "pending-source" note, must not have an entry whose quoteKind is
+ *       "verbatim". "Pending" means nobody has opened the primary text, so the
+ *       card back must say "Study-guide answer", not "By the Book (verbatim
+ *       doctrine)". A pack sets it with
+ *       ctx.cite(text, card.sourceStatus === "pending-source" ? "paraphrase" : "verbatim").
  *   Informational (never a failure): how many entries stayed WHOLE - the
  *   parser keeps a citation in one piece, `pub` = the untouched text, when it
  *   cannot split it and still render the exact same words back.
@@ -204,6 +211,13 @@ if (drills.length) {
   bad("GUIDON_SEED.prt.drills is missing, empty, or not an array");
 }
 
+/** True for a card whose source is still pending: it says so in a field
+ *  (sourceStatus "pending-source") or in its own citation text (the prose note
+ *  "- pending-source: ..." a card can carry inside `source`). */
+function isPendingSource(q, renderedText) {
+  return (q && q.sourceStatus === "pending-source") || /\bpending[- ]source\b/i.test(renderedText || "");
+}
+
 // --- board.questions[].source (Wave 2; the assembled bank: static seed + every
 // content pack - see this file's own header, "BOARD QUESTIONS") ---
 const boardQs = (data.board && Array.isArray(data.board.questions)) ? data.board.questions : [];
@@ -225,6 +239,9 @@ if (boardQs.length) {
     }
     const text = renderCitation(q.source);
     if (!text.trim()) bad(`${label}'s source renders to no text - every card cites something`);
+    if (isPendingSource(q, text) && q.source.some((e) => e.quoteKind === "verbatim")) {
+      bad(`${label} has a pending source (${q.sourceStatus === "pending-source" ? 'sourceStatus "pending-source"' : 'its citation says "pending-source"'}) but claims quoteKind "verbatim" - a source nobody has verified cannot promise a word-for-word quotation; cite it "paraphrase" (its card back then reads "Study-guide answer")`);
+    }
     const fromPubs = regulationsOfEntries(q.source), fromText = legacyRegulationsOf(text);
     if (JSON.stringify(fromPubs) !== JSON.stringify(fromText)) {
       bad(`${label}: the regulation chips read ${JSON.stringify(fromPubs)} from the entries' "pub" but the rendered citation ${JSON.stringify(text)} names ${JSON.stringify(fromText)} - a publication is buried in "edition"/"para"; give it its own entry`);

@@ -1,0 +1,103 @@
+name: Firmware
+
+# Compiles the ESP32 handheld firmware (env:flashcardos) and runs the deck
+# logic's host tests. It is a REUSABLE workflow: ci.yml calls it as its
+# `firmware` job on every push and pull request, and `CI green` waits for it,
+# so a firmware compile error blocks a merge and is part of the verdict
+# release-cut.yml reads for the exact release commit. (It used to run on its own,
+# path-filtered to firmware/**; that left two holes - a red run did not turn
+# `CI green` red, and the version-only release-prep commit had no run at all.)
+#
+# WHY THIS EXISTS. Before it, nothing on a pull request compiled the firmware.
+# ci.yml's test chunks run the exporter and the C++ deck logic on a desktop, but
+# src/main.cpp (the SD card, the screen, touch) only ever built at a release
+# cut (release-assets.yml), so a compile error in main.cpp or lanes_json.h could
+# sit on main for weeks and surface as a failed release. This job builds the
+# real firmware on every change. It is the same compile the release does:
+# `python -m platformio run -e flashcardos`.
+#
+# THE LANE-PARSER HOST TEST RUNS HERE FOR REAL. src/lanes_json.h (how the
+# device reads /lanes.json and /categories.json) needs the ArduinoJson library.
+# The PlatformIO build above fetches it into
+# firmware/esp32-flashcard-os/.pio/libdeps, which is exactly where
+# tools/test-esp32-lanes.mjs looks, so after the build the suite compiles
+# host-test/lanes_json_test.cpp against the real library and RUNS it. With the
+# CI environment variable set (Actions always sets it) that suite FAILS, rather
+# than printing SKIP, if the library is not found - so this check cannot be
+# skipped without anyone noticing.
+#
+# WHAT IT DOES NOT DO. It does not flash a device: drawing, touch and the
+# NVS-saved deck pick are only ever verified on the physical handheld (see
+# firmware/esp32-flashcard-os/README.md, "Trying decks on the physical device").
+#
+# NO SECRETS. Nothing here reads a secret; the repository has none, and this
+# workflow needs none. Read-only token, no publishing, no release step.
+#
+# SPEED. PlatformIO's downloaded toolchain and framework (~/.platformio) are
+# cached, keyed on platformio.ini, and pip's own cache is kept by setup-python,
+# so a warm run is a couple of minutes; a cold one downloads the ESP32 toolchain
+# once. It runs alongside the test chunks, which take far longer, so it does not
+# lengthen the run. Every `uses:` is pinned to a real commit SHA
+# (tools/lint-workflow-pins.mjs).
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "24"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  compile:
+    name: Compile env:flashcardos + deck-logic host tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Setup Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: firmware/esp32-flashcard-os/requirements-ci.txt
+
+      - name: Install PlatformIO (pinned in requirements-ci.txt)
+        run: python -m pip install -r firmware/esp32-flashcard-os/requirements-ci.txt
+
+      # PlatformIO's platform + toolchain + Arduino framework. Purely a speed
+      # optimisation: correctness never depends on the cache hitting, the
+      # compile below downloads whatever is missing.
+      - name: Cache PlatformIO packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.platformio
+          key: platformio-${{ runner.os }}-${{ hashFiles('firmware/esp32-flashcard-os/platformio.ini') }}
+          restore-keys: |
+            platformio-${{ runner.os }}-
+
+      - name: Compile env:flashcardos
+        working-directory: firmware/esp32-flashcard-os
+        run: |
+          set -euo pipefail
+          python -m platformio run -e flashcardos
+          test -s .pio/build/flashcardos/firmware.bin
+          test -s .pio/build/flashcardos/bootloader.bin
+          test -s .pio/build/flashcardos/partitions.bin
+
+      # Runs AFTER the compile on purpose: the compile is what puts the real
+      # ArduinoJson into .pio/libdeps for this suite to build the parser test
+      # against. The CI environment variable is already set by Actions, so a
+      # missing library is a failure here, never a SKIP.
+      - name: Exporter + deck logic + lane-parser host tests (test-esp32-lanes)
+        run: node guidon-app/tools/test-esp32-lanes.mjs
