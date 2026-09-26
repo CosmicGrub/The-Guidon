@@ -29,6 +29,22 @@
  *   - the Programs lesson and Counseling Trainer taught the rescinded monthly
  *     progress rule; the Board Prep packet checklist named the rescinded DA
  *     Form 5501; the reference library showed AR 600-9 with no currency note.
+ * A second review (2026-09-26) found three more statements that no cited
+ * source supports, and this suite pins their fixes too:
+ *   - doc-abcp-1 said "Entry is not punitive by itself". AD 2026-13, AR 600-9
+ *     (16 July 2019; the word "punitive" does not appear in it) and the Army's
+ *     ABCP FAQ do not say it, so it is gone (what they DO say - the Soldier is
+ *     flagged, enrolled, and stays enrolled until a measurement meets the
+ *     standard - stays, with the paragraphs). The FAQ source entries now name
+ *     the page and question they were read from.
+ *   - "the Army's 2025 continuation pay window was 8-12 years" was not in any
+ *     cited source (ALARACT 100/2025 is CY26/CY27). It is in the ASA(M&RA)
+ *     memorandum "BRS Continuation Pay - Calendar Years 2024/2025", para 4.a(2),
+ *     read as the copy hosted on kansastag.gov; that source is now cited
+ *     wherever the earlier window is stated.
+ *   - prom-2 / sc-care-5 said Flag code K "is now non-transferable"; para 5b(3)
+ *     says it "remains non-transferable" and rescinds the AR 600-8-2 ABCP
+ *     transfer provisions.
  *
  * Pure-node: it reads the ASSEMBLED bank (seed + every content pack, through
  * tools/assemble-bank.mjs, the same engine the build uses), not a browser, so
@@ -83,6 +99,17 @@ const srcOk = (e) => {
 };
 check(a1 && a2 && srcOk(a1) && srcOk(a2), "both cite Army Directive 2026-13 as 1 July 2026 and AR 600-9 as 16 July 2019 (as amended) - no invented \"2026\" edition", () => "sources: " + all([a1 && a1.source, a2 && a2.source]));
 
+// The unsourced "not punitive" claim. Neither AD 2026-13, AR 600-9 (2019) nor the Army's FAQ says it, so doc-abcp-1 must not.
+const PUNITIVE = /\b(not|isn't|non-?)\s*punitive\b/i;
+check(a1 && !PUNITIVE.test(a1.body) && !a1.keyPoints.some((k) => PUNITIVE.test(k)),
+  "doc-abcp-1 no longer says entry is 'not punitive' (no cited source says it - AD 2026-13, AR 600-9 and the ABCP FAQ do not)", () => "doc-abcp-1 still says it: " + (a1 && [a1.body, ...a1.keyPoints].filter((t) => PUNITIVE.test(t)).join(" | ")));
+check(a1 && /stays enrolled until a later measurement meets the standard/.test(a1.body) && a1.keyPoints.some((k) => /flagged and enrolled, and stays enrolled until a later measurement meets the standard \(AD 2026-13, paras 5a\(5\) and 5b\(6\)\)/.test(k)),
+  "...and what the sources DO say stays, with its paragraphs: flagged and enrolled (5a(5)), stays enrolled until a later measurement meets the standard, removed as soon as it is met (5b(6))", () => "doc-abcp-1: " + (a1 && all([a1.body, a1.keyPoints])));
+const faqOf = (e) => (e.source || []).find((x) => /ABCP FAQ/.test(x.pub));
+check(a1 && a2 && faqOf(a1) && faqOf(a2) && faqOf(a1).para.trim() && faqOf(a2).para.trim() && /satisfactory progress/.test(faqOf(a1).para) && /How is the Waist to Height Ratio \(WHtR\) measured/.test(faqOf(a2).para),
+  "the 'Army ABCP FAQ' source entries in doc-abcp-1/2 name the page and question they were read from (not a blank para)", () => "faq paras: " + all([a1 && faqOf(a1), a2 && faqOf(a2)]));
+check(PUNITIVE.test("Entry is not punitive by itself: the Soldier stays enrolled") && PUNITIVE.test("Entry itself is not punitive") && PUNITIVE.test("a non-punitive path") && !PUNITIVE.test("stays enrolled until a later measurement meets the standard"), "verifier check: the 'not punitive' pattern matches the old wording and lets the corrected wording through");
+
 const d3 = doc("doc-abcp-3");
 check(d3 && !d3.source.some((s) => s.pub === "AR 600-9" && s.edition === "2023") && !/correlates with higher (attrition|long-term)/.test(all(d3)), "doc-abcp-3 no longer cites a nonexistent 2023 AR 600-9 or claims a leadership style 'correlates with' attrition (board card abcp-8 says no such study was found)");
 
@@ -117,7 +144,14 @@ check(legacy.every((x) => x && /^CURRENCY NOTE \(July 2026\)/.test(x.purpose) &&
 
 // Flag code K.
 check(/non-transferable/.test(all(card("prom-2").keyPoints)) && /para 5b\(3\)/.test(all(card("prom-2"))) && !/ACFT failure \(code J\) and ABCP noncompliance \(code K\)/.test(all(card("prom-2"))), "prom-2 no longer calls an ABCP flag transferable (AD 2026-13 para 5b(3))");
-check(/ABCP flag \(code K\) is non-transferable/.test(all(card("sc-care-5").keyPoints)), "sc-care-5 no longer lists ABCP among transferable flags");
+check(/an ABCP flag \(code K\) remains non-transferable/.test(all(card("sc-care-5").keyPoints)), "sc-care-5 no longer lists ABCP among transferable flags");
+// The directive's own word is "remains" (para 5b(3): "Flag code K ... remains non-transferable"), never "is now".
+const NOW_NT = /\bnow non-?transferable\b|\bis non-transferable since\b/i;
+check(hits(NOW_NT).filter((p) => /ABCP|code K/i.test(strings.find((x) => x.p === p).s)).length === 0,
+  "no card says an ABCP flag 'is now' non-transferable (AD 2026-13 para 5b(3) says code K 'remains non-transferable')", () => "still says now: " + hits(NOW_NT).join(", "));
+check(/Flag code K remains non-transferable and rescinds all ABCP transfer provisions in AR 600-8-2/.test(card("prom-2").boardAnswer) && /Flag code K remains non-transferable and rescinds all ABCP transfer provisions in AR 600-8-2/.test(card("prom-2").a) && /code K remains non-transferable/.test(all(card("prom-2").keyPoints)),
+  "prom-2 (answer, board answer and key points) carries the directive's word: code K 'remains' non-transferable, and the AR 600-8-2 transfer provisions are rescinded");
+check(NOW_NT.test("so Flag code K is now non-transferable.") && !NOW_NT.test("says Flag code K remains non-transferable"), "verifier check: the 'is now non-transferable' pattern matches the old wording and lets 'remains' through");
 
 // DA Form 5501 is rescinded (para 5a(8)) - the packet checklist must not ask for it.
 const recordsSrc = readFileSync(path.join(APP, "src/app-modules/records.js"), "utf8");
@@ -160,6 +194,18 @@ check(!!cp1 && !!cp2 && !!cp3, "the three continuation pay board cards (brs-cp-1
 check(cp1 && /7 and no more than 12/.test(cp1.a) && /ALARACT 100\/2025/.test(cp1.source) && /37 USC 356/.test(cp1.source), "brs-cp-1 pins 7-12 years in 2026 and cites ALARACT 100/2025 + 37 USC 356");
 check(cp2 && /7 and no more than 10/.test(cp2.a) && /4\.A\.3/.test(cp2.source), "brs-cp-2 pins 7-10 years in 2027 (ALARACT para 4.A.3)");
 check(cp3 && /four years/.test(cp3.a) && /2\.5 times/.test(cp3.a) && /para 5/.test(all(cp3.keyPoints)) && /not less than 3 additional years/.test(all(cp3.keyPoints)), "brs-cp-3 pins the four-year Army obligation (federal floor is 3) and 2.5 times basic pay");
+
+// The Army's EARLIER window (8-12 in 2025) is not in ALARACT 100/2025 (CY26/CY27). It is in the ASA(M&RA) CY24/CY25 memorandum
+// (SAMR 637-1) para 4.a(2), so every place that states it cites that memorandum - and none claims it came from ALARACT 100/2025.
+const memoSrc = (brs.source || []).find((x) => /^ASA\(M&RA\) memorandum, Blended Retirement System Continuation Pay, Calendar Years 2024\/2025/.test(x.pub));
+check(!!memoSrc && /SAMR 637-1/.test(memoSrc.pub) && /paras 3 and 4a\(2\)/.test(memoSrc.para) && /expires 31 December 2025/.test(memoSrc.edition),
+  "the BRS doctrine entry cites the ASA(M&RA) CY24/CY25 continuation pay memorandum (SAMR 637-1, paras 3 and 4a(2), expires 31 December 2025) for the earlier 8-12 window", () => "doc-brs sources: " + all(brs && brs.source));
+check(!!memoSrc && !/ALARACT 029\/2025|S1Net|armyng/i.test(all(brs.source)), "...and cites nothing it did not read (no ALARACT 029/2025, no S1Net message, no armyng.com reproduction)", () => all(brs && brs.source));
+check(/ASA\(M&RA\) memorandum, BRS Continuation Pay CY24\/CY25 Implementation Guidance \(SAMR 637-1\), paras 3 and 4\.a\(2\)/.test(cp1.source) && /CY24\/CY25 continuation pay memorandum, para 4\.a\(2\)/.test(all(cp1.keyPoints)),
+  "brs-cp-1 cites the CY24/CY25 memorandum for the 2025 window in its source line and in the key point that states it", () => cp1.source + " | " + all(cp1.keyPoints));
+check(/ASA\(M&RA\) CY24\/CY25 continuation pay memorandum \(the earlier 8-12 window, para 4a\(2\)\)/.test(jsf.citation), "the Junior Soldier money lesson's citation names the CY24/CY25 memorandum for the earlier window", () => jsf.citation);
+check(/the Army's 2024\/2025 continuation pay memorandum for the earlier window/.test(idxSrc), "the Channels 'Changed in 2026' sources line names the Army's 2024/2025 continuation pay memorandum for the earlier window");
+check(/Army continuation pay windows from ALARACT 100\/2025 \(2026 and 2027\) and the Army's 2024\/2025 continuation pay memorandum \(the earlier 8–12 window\)/.test(data.finance.asOf), "the Money tab's 'current as of' line names both sources of the continuation pay windows", () => data.finance.asOf);
 
 /* ====================== verify the verifiers ====================== */
 // Each predicate above must actually FAIL on the defect it exists to catch.

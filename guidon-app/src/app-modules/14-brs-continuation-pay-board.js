@@ -23,6 +23,19 @@
  *     not more than 12 years of service"; "not less than 3 additional years
  *     of obligated service"; the 8-to-7 change is Pub. L. 118-31, sec. 611(a)
  *     (22 Dec 2023).
+ * The Army's EARLIER window (8 to 12 years, calendar year 2025) is not in
+ * ALARACT 100/2025 - that message covers CY26 and CY27 only. It was read on
+ * 2026-09-26 from the Army's previous guidance:
+ *   ASA(M&RA) memorandum, "Blended Retirement System (BRS) Continuation Pay
+ *     (CP) - Calendar Years 2024/2025 (CY24/CY25) Implementation Guidance",
+ *     SAMR (637-1), as hosted on kansastag.gov (DocumentCenter/View/2677; the
+ *     copy shows no date line):
+ *       para 3   effective immediately, expires 31 December 2025
+ *       para 4.a(2)  "no less than eight and not more than 12 years of
+ *                   service", computed from the PEBD
+ * NOT read: the 31 December 2024 S1Net special message (CY25-27) and
+ * ALARACT 029/2025 (the CY25 message) - the only copies found sit behind a
+ * bot check on a state National Guard site, so no fact here rests on them.
  * The answers are study-guide wording, not quotations, so each card is
  * marked verbatim:false.
  */
@@ -50,11 +63,11 @@
     concept:"Army BRS continuation pay window, calendar year 2026",
     keyPoints:[
       "ALARACT 100/2025 (7 Nov 2025) para 3: the guidance is effective 1 January 2026; para 4.A.2 sets the 2026 window at no less than 7 and no more than 12 years of service from the PEBD.",
-      "The Army's 2025 window was 8 to 12 years, so 1 January 2026 is when it opened a year earlier.",
+      "The Army's 2025 window was 8 to 12 years (the Army's CY24/CY25 continuation pay memorandum, para 4.a(2); that guidance expired 31 December 2025), so 1 January 2026 is when it opened a year earlier.",
       "The current text of 37 USC 356(a)(1) reads 'not less than 7 and not more than 12 years of service' (changed from 8 by Pub. L. 118-31, sec. 611(a), December 2023). The Army's guidance sets its own window each calendar year: 7 to 12 in 2026, 7 to 10 in 2027.",
       "Years of service are computed from the Soldier's Pay Entry Base Date (PEBD), per para 4.A.2."
     ],
-    source:"ALARACT 100/2025, paras 3 and 4.A.2; 37 USC 356(a)(1)",
+    source:"ALARACT 100/2025, paras 3 and 4.A.2; 37 USC 356(a)(1); ASA(M&RA) memorandum, BRS Continuation Pay CY24/CY25 Implementation Guidance (SAMR 637-1), paras 3 and 4.a(2) (the 2025 window)",
     difficulty:"intermediate",
     pillar:"Programs & Support",
     tier:["E4","E5","E6"],
