@@ -71,11 +71,16 @@ await page.evaluate(() => G.mosDecks && G.mosDecks.setOptedIn && G.mosDecks.setO
 await page.evaluate(() => { location.hash = "#/home"; });
 await page.waitForFunction(() => window.G && G.store && G.store.boardQuestions().length > 900, null, { timeout: 30000 });
 
-/* The assembled bank exactly as every consumer sees it. */
+/* The assembled bank exactly as every consumer sees it. `source` is the
+   citation as a Soldier reads it (G.board.sourceText - the one renderer; a
+   card's own source is a structured array since ROADMAP item F Wave 2) and
+   `kind` is the card's quoteKind (G.board.quoteKindOf), which replaced the
+   old card-level verbatim flag; every assertion below that greps the
+   citation text is unchanged. */
 const bank = await page.evaluate(() => G.store.boardQuestions().map((q) => ({
   id: q.id, category: q.category, q: q.q, a: q.a, acceptableAnswer: q.acceptableAnswer || "", boardAnswer: q.boardAnswer || "",
-  keyPoints: q.keyPoints || [], source: q.source || "", concept: q.concept || "", pillar: q.pillar || null,
-  verbatim: q.verbatim, mos: q.mos || null, sourceCards: q.sourceCards || [],
+  keyPoints: q.keyPoints || [], source: G.board.sourceText(q), concept: q.concept || "", pillar: q.pillar || null,
+  kind: G.board.quoteKindOf(q), mos: q.mos || null, sourceCards: q.sourceCards || [],
 })));
 const doctrine = await page.evaluate(() => (window.GUIDON_SEED.doctrine.entries || []).map((d) => ({ id: d.id, title: d.title, body: d.body, source: d.source, confidence: d.confidence, keyPoints: d.keyPoints || [] })));
 const textOf = (q) => [q.q, q.a, q.acceptableAnswer, q.boardAnswer, q.concept].concat(q.keyPoints).join(" \n ");
@@ -241,8 +246,8 @@ console.log("\nC17 - honest card-back headings and real citations");
   (typeof PARAPHRASE === "string" && /not a word-for-word quote/.test(PARAPHRASE)) ? ok(`study-guide cards get their own heading: "${PARAPHRASE}"`) : bad("G.board.PARAPHRASE_LABEL = " + PARAPHRASE);
   const packCards = bank.filter((q) => /^pb-(core72|deck40)/.test(q.id) || /^(prog-(aer|acs|sudcc)-|supply-(csdp|statement))/.test(q.id));
   packCards.length > 150 ? ok(`${packCards.length} cards come from the supplement and gap packs`) : bad("only " + packCards.length + " pack cards found");
-  const unflagged = packCards.filter((q) => q.verbatim !== false);
-  unflagged.length === 0 ? ok("every one of them declares that its text is study-guide wording (verbatim:false)") : bad(unflagged.length + " pack cards still claim verbatim text, e.g. " + unflagged.slice(0, 4).map((q) => q.id).join(", "));
+  const unflagged = packCards.filter((q) => q.kind !== "paraphrase");
+  unflagged.length === 0 ? ok('every one of them declares that its text is study-guide wording (quoteKind "paraphrase", which replaced verbatim:false)') : bad(unflagged.length + " pack cards still claim verbatim text, e.g. " + unflagged.slice(0, 4).map((q) => q.id).join(", "));
 
   /* (a) a supplement card whose one sentence used to be printed three times under two headings */
   const salute = bank.find((q) => q.q === "What is the salute?");

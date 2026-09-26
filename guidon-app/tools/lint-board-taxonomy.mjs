@@ -50,6 +50,7 @@ import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import { readSeed } from "./seed-io.mjs";
 import { PILLARS, TOPIC_PILLAR, pillarForBoard, pillarForDoctrine, pillarForScenario } from "./pillar-map.mjs";
+import { renderSource } from "./citation-parse.mjs";
 
 const SEED_PATH = fileURLToPath(new URL("../src/index.html", import.meta.url));
 const { data } = readSeed(SEED_PATH);
@@ -97,10 +98,14 @@ new Set([...D.map((e) => e.topic).filter(Boolean), ...Object.keys(TOPIC_PILLAR)]
 const nearDupT = Object.values(byNormT).filter((g) => g.length > 1);
 nearDupT.length === 0 ? ok(`(b) no two doctrine topics are near-duplicates of each other or of a mapped topic (${new Set(D.map((e) => e.topic)).size} distinct)`) : bad(`(b) near-duplicate doctrine topic groups: ${JSON.stringify(nearDupT)}`);
 
-// (c) source: a non-empty string. Deliberately NOT "names a publication" -
-//     see the header for the 32 legitimate non-publication citations.
-const noSrc = B.filter((q) => !(typeof q.source === "string" && q.source.trim()));
-noSrc.length === 0 ? ok("(c) every board card has a non-empty source string") : bad(`(c) ${noSrc.length} board card(s) with no source: ${show(noSrc.map((q) => q.id))}`);
+// (c) source: cites something - renders to non-empty text. Since ROADMAP
+//     item F Wave 2 a card's source is a structured array (tools/lint-citation-
+//     schema.mjs gates its exact shape); this rule stays what it always was, a
+//     "not blank" check on the citation a Soldier reads. Deliberately NOT
+//     "names a publication" - see the header for the 32 legitimate
+//     non-publication citations.
+const noSrc = B.filter((q) => !renderSource(q.source).trim());
+noSrc.length === 0 ? ok("(c) every board card has a non-empty source citation") : bad(`(c) ${noSrc.length} board card(s) with no source: ${show(noSrc.map((q) => q.id))}`);
 
 // (d) the answer surface every card must carry.
 for (const f of ["q", "a", "boardAnswer"]) {
