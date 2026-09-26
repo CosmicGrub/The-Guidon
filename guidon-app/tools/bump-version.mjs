@@ -25,8 +25,10 @@
  * What it deliberately does NOT write, because a person has to: the What's
  * New entry Soldiers see (one object in src/data/whats-new.json), the
  * CHANGELOG entry, and ROADMAP's "Current
- * version" line. It prints that list, and `npm run lint:patterns` fails
- * until they exist. It never commits, tags or pushes.
+ * version" line - plus, last of all, the Command/Legal package's verification
+ * stamp (`npm run legal:stamp`, after a fresh build), which the release cut
+ * refuses to proceed without. It prints that list, and `npm run lint:patterns`
+ * fails until the first three exist. It never commits, tags or pushes.
  *
  * Refuses: anything that is not x.y.z, a version lower than the current one,
  * and a version that is not higher than the newest version tag (a tagged
@@ -74,6 +76,11 @@ export function bump({ root, version, write = false, iosBuild }) {
       `    there is no script or manifest line to add, and the build refuses a missing or malformed file`,
       `  - a CHANGELOG entry headed "## <date> - v${version}: ..."; mark any skipped number "(prepared, not released)"`,
       `  - ROADMAP's "Current version" line`,
+      `  - the Command/Legal package's verification stamp - LAST, after the three above are in and after a`,
+      `    fresh \`npm run build\`, from guidon-app/: \`npm run legal:stamp\` (= node tools/verify-legal-package.mjs`,
+      `    --run --write-stamp; it runs every test the package's claims name, so allow several minutes), then`,
+      `    commit GUIDON_COMMAND_LEGAL_PACKAGE.md. The release cut refuses to tag (lint-release-state --cut and`,
+      `    release-cut.yml) while that stamp still names the previous version`,
       "Then: npm run lint:patterns. This tool never commits, tags or pushes.");
   }
   return { ok: true, lines, changes: plan.changes, wrote: write && plan.files.length > 0 };

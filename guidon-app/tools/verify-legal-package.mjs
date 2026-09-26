@@ -7,7 +7,7 @@
  * to a commander, a CJA and an S2. Every factual sentence in it is a promise
  * about the running app. Before this tool, nothing tied a sentence to a test,
  * and a wrong one shipped: the package said the roster's "one free-text field"
- * is screened while two more text boxes are not (see LP-058), and for a long
+ * is screened while two more text boxes are not (see LP-061), and for a long
  * time it described a redaction feature that the code no longer had. So now:
  *
  *   1. tools/legal-package-claims.json lists EVERY sentence, clause and table
@@ -197,6 +197,16 @@ export function summarize(map) {
 }
 
 const idList = (ids) => (ids.length ? ids.join(", ") : "none");
+
+/** The version a document's generated stamp names, or null when there is no readable stamp. This is the ONE reader of the
+ *  stamp's data line outside the full check: tools/lint-release-state.mjs --cut uses it so a release cannot be cut while the
+ *  Command/Legal package is still stamped for the previous version (the full rule, with every other check, is --release). */
+export function stampVersionOf(md) {
+  const block = STAMP_BLOCK_RE.exec(lf(md));
+  const dm = block ? STAMP_DATA_RE.exec(block[0]) : null;
+  if (!dm) return null;
+  try { const v = JSON.parse(dm[1]).version; return /^\d+\.\d+\.\d+$/.test(String(v)) ? String(v) : null; } catch (e) { return null; }
+}
 
 /** The stamp block, a pure function of its fields. */
 export function renderStamp(f) {

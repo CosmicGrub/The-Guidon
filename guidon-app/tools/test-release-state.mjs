@@ -22,7 +22,8 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { lintReleaseState } from "./lint-release-state.mjs";
+import { lintReleaseState, needsOf } from "./lint-release-state.mjs";
+import { renderStamp } from "./verify-legal-package.mjs";
 import { bump } from "./bump-version.mjs";
 import { ANCHORS, planBump, compareVersions, androidVersionCode } from "./release-version-files.mjs";
 
@@ -52,6 +53,12 @@ const indexHtml = (links = ["GUIDON-android.apk", "GUIDON-windows-setup.exe"]) =
 // The fixture's What's New data file, exactly the shape the real one has.
 const notesJson = (entries) => JSON.stringify({ $doc: { what: "fixture" }, entries: entries.map((e) => Object.assign({ version: e.v }, e.unreleased ? { released: false } : {}, { date: "x", title: "t", highlights: ["h"] })) }, null, 2) + "\n";
 
+// The fixture's Command/Legal package: a tiny document carrying a REAL generated stamp block (renderStamp is the verifier's own
+// writer) for the version given. lint (g) reads only the version out of it, at --cut.
+const LEGAL_DOC = "GUIDON_COMMAND_LEGAL_PACKAGE.md";
+const legalDoc = (version) => "# Command package\n\n" + renderStamp({ version, commit: "0".repeat(40), date: "2026-01-01", tree: "clean", docHash: "a".repeat(64), mapHash: "b".repeat(64), result: "PASS",
+  counts: { total: 1, nonFactual: 0, factual: 1, mechanical: 1, partial: 0, unverifiable: 0, contradicted: 0, suites: 1, proofs: 1, ids: { partial: [], unverifiable: [], contradicted: [] } } }) + "\n\n## Body\n\nText.\n";
+
 try {
   /* ------------------------------------------------------------------
      The fixture: real files, a real history. Commit 1 is "1.10.1" and is
@@ -74,6 +81,7 @@ try {
   put("GUIDON files/CHANGELOG.md", GOOD_LOG);
   put("GUIDON files/ROADMAP.md", "# Roadmap\n\n**Current version:** v1.12.0 (x)\n");
   put(NOTES, GOOD_NOTES);
+  put(LEGAL_DOC, legalDoc("1.12.0")); // stamped for the PREVIOUS release: this is the state right after a version bump nobody re-stamped
   git("add", "-A"); git("commit", "-q", "-m", "1.12.0");
 
   const lint = (opts = {}) => lintReleaseState({ root, ...opts });
@@ -188,6 +196,26 @@ try {
   check(!failsWith(r, /touches the Latest flag/), "a comment that mentions the flag is not a step that touches it");
   r = broken(".github/workflows/release-assets.yml", (t) => t.replace("needs: [resolve, android, windows, web_firmware]", "needs: [resolve, android, windows, web_firmware, macos]"));
   check(failsWith(r, /release-assets\.yml waits on an Apple job/), "a release-assets.yml job that waits on an Apple job fails - a slow Mac build could hold a release out of Latest");
+  // The same defect written the other legal YAML ways: check (f) used to read only the first token after `needs:`, so a block list
+  // (`needs:` then `- macos` on the next lines) walked straight past it.
+  const NEEDS_LINE = "needs: [resolve, android, windows, web_firmware]";
+  const NEEDS_PLANTS = [
+    ["a block list (dashes indented under needs:)", "needs:\n      - resolve\n      - android\n      - macos"],
+    ["a block list (dashes at the same indent as needs:)", "needs:\n    - resolve\n    - macos"],
+    ["a block list with a trailing comment on the item", "needs:\n      - resolve\n      - ios # the simulator lane"],
+    ["a plain scalar", "needs: macos"],
+    ["a flow list that wraps on a comment", "needs: [resolve, apple] # waits for the Mac lane"],
+  ];
+  for (const [what, plant] of NEEDS_PLANTS) {
+    r = broken(".github/workflows/release-assets.yml", (t) => t.replace(NEEDS_LINE, plant));
+    check(failsWith(r, /release-assets\.yml waits on an Apple job/), `check (f) catches an Apple job in ${what}`, `check (f) missed an Apple dependency written as ${what}: ` + r.failures.join(" | "));
+  }
+  r = broken(".github/workflows/release-assets.yml", (t) => t.replace(NEEDS_LINE, "needs:\n      - resolve\n      - android\n      - windows\n      - web_firmware"));
+  check(!failsWith(r, /waits on an Apple job/), "a block-style needs: list of the real, non-Apple jobs is fine (no false stop)", "a block list without an Apple job was refused: " + r.failures.join(" | "));
+  {
+    const found = needsOf("a:\n  needs: resolve\nb:\n  needs: [resolve, x] # c\nc:\n  needs:\n  - macos\n    # note\n  - resolve\nd:\n  steps:\n    - run: echo needs: not-a-dependency-list\n");
+    check(JSON.stringify(found) === JSON.stringify(["resolve", "[resolve, x]", "macos", "resolve"]), "needsOf() reads scalar, flow and block forms (and ignores a comment line and a run: line that merely says the word)", "needsOf returned " + JSON.stringify(found));
+  }
   {
     const { judgePublished } = await import("./lint-release-state.mjs");
     const { expectedAssets } = await import("./release-manifest.mjs");
@@ -206,8 +234,23 @@ try {
   console.log("\n5. --cut: the last check before a permanent tag");
   check(failsWith(lint({ cut: true }), /\.release-prep must contain v1\.12\.1/), "--cut without a .release-prep naming this version refuses");
   put("guidon-app/src/.release-prep", "v1.12.1\n");
+  // (g) the Command/Legal package is re-stamped for the version being cut. The fixture's document still carries the 1.12.0 stamp.
   r = lint({ cut: true });
-  check(r.failures.length === 0, "--cut passes when everything agrees and .release-prep names this version", "--cut fails on a clean fixture: " + r.failures.join(" | "));
+  check(failsWith(r, /\(g\) --cut: GUIDON_COMMAND_LEGAL_PACKAGE\.md's verification stamp was written for v1\.12\.0, but this release is v1\.12\.1 .*npm run legal:stamp/), "--cut refuses a version whose Command/Legal package is still stamped for the previous release, and names the command that re-stamps it", "a stale legal stamp did not stop --cut: " + r.failures.join(" | "));
+  check(!failsWith(lint(), /\(g\)/), "...but only at the cut: the everyday lint (lint:patterns, CI) does not fail on a stale stamp (the verifier notes it)");
+  r = broken(LEGAL_DOC, () => "# Command package\n\n## Body\n\nText with no stamp.\n", { cut: true });
+  check(failsWith(r, /\(g\) --cut: GUIDON_COMMAND_LEGAL_PACKAGE\.md has no readable verification stamp/), "--cut refuses a legal package with no readable stamp");
+  r = broken(LEGAL_DOC, (t) => t.replace(/<!-- legal-package-stamp-data \{.*\} -->/, "<!-- legal-package-stamp-data {not json} -->"), { cut: true });
+  check(failsWith(r, /\(g\) --cut: .* no readable verification stamp/), "--cut refuses a stamp whose data line is unreadable");
+  {
+    const keep = get(LEGAL_DOC);
+    unlinkSync(at(LEGAL_DOC));
+    try { r = lint({ cut: true }); } finally { put(LEGAL_DOC, keep); }
+    check(failsWith(r, /\(g\) --cut: GUIDON_COMMAND_LEGAL_PACKAGE\.md is missing/), "--cut refuses a release with no legal package at all");
+  }
+  put(LEGAL_DOC, legalDoc("1.12.1"));
+  r = lint({ cut: true });
+  check(r.failures.length === 0 && r.passes.some((p) => /\(g\) .*stamp names v1\.12\.1, the version being cut/.test(p)), "--cut passes when everything agrees, .release-prep names this version and the legal package is stamped for it", "--cut fails on a clean fixture: " + r.failures.join(" | "));
   r = broken(NOTES, () => notesJson([{ v: "1.10.1" }, { v: "1.11.0", unreleased: true }, { v: "1.12.0", unreleased: true }, { v: "1.12.1", unreleased: true }]), { cut: true });
   check(failsWith(r, /entry for 1\.12\.1 is marked released: false/), "--cut refuses a version whose own notes say it is not released");
   r = broken("GUIDON files/CHANGELOG.md", (t) => t.replace("v1.12.1: fix", "v1.12.1 (prepared, not released): fix"), { cut: true });
@@ -236,6 +279,8 @@ try {
   check(b.wrote && !failsWith(after, /^\(a\)|^\(b\)/), "--write leaves every version value agreeing (lint (a) and (b) pass)", "after --write: " + after.failures.join(" | "));
   check(failsWith(after, /CHANGELOG's newest versioned heading/) && failsWith(after, /ROADMAP says/) && failsWith(after, /What's New has no entry for the current version 1\.13\.0/), "...and the lint then insists on the hand-written CHANGELOG, ROADMAP and What's New entries");
   check(b.lines.some((l) => /src\/data\/whats-new\.json/.test(l)) && !b.lines.some((l) => /99-release|release-note/.test(l)), "bump-version's \"still to write by hand\" list points at src/data/whats-new.json, not at a per-release script", "bump-version's hand-written list: " + JSON.stringify(b.lines.filter((l) => /What's New|whats-new|99-release/.test(l))));
+  check(b.lines.some((l) => /npm run legal:stamp/.test(l)) && b.lines.some((l) => /GUIDON_COMMAND_LEGAL_PACKAGE\.md/.test(l)) && b.lines.some((l) => /fresh .*npm run build/.test(l)) && b.lines.some((l) => /release cut refuses/.test(l)),
+    "bump-version's \"still to write by hand\" list includes the legal package re-stamp (npm run legal:stamp, after a fresh build, and says the cut refuses without it)", "bump-version's hand-written list: " + JSON.stringify(b.lines.filter((l) => /legal|stamp/i.test(l))));
   check(/versionCode 11300\b/.test(get("guidon-app/android/app/build.gradle")) && (get(pbx).match(/CURRENT_PROJECT_VERSION = 6;/g) || []).length === 2 && (get(pbx).match(/MARKETING_VERSION = 1\.13\.0;/g) || []).length === 2,
     "Android versionCode follows the formula (11300) and the iOS project's four values moved together (build 5 -> 6: one step per version change)");
   const lockDiff = spawnSync("git", ["-C", root, "diff", "--numstat", "--", "guidon-app/package-lock.json"], { encoding: "utf-8" }).stdout.trim().split(/\s+/);

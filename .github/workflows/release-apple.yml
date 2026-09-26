@@ -348,6 +348,11 @@ jobs:
       - name: Prove the DMG launches
         id: launch
         continue-on-error: true
+        # A hung mount or a stuck open must not hold the job for the full 60
+        # minutes: the proof holds the app open for 20 seconds, so ten is far
+        # more than it ever needs. A timeout counts as a failed step, which
+        # continue-on-error already turns into "carry on".
+        timeout-minutes: 10
         env:
           LAUNCH_HOLD_SECONDS: '20'
           LAUNCH_START_TIMEOUT: '30'
@@ -446,7 +451,11 @@ jobs:
           test -s "$VERSIONED"
           cp "$VERSIONED" "$ALIAS"
           gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "$VERSIONED" "$ALIAS"
+      # if: always() - the record is most useful exactly when a step above
+      # failed, so it must still be uploaded then (the iOS evidence upload
+      # below does the same).
       - name: Upload macOS verification record
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: guidon-macos-release-verification

@@ -11,8 +11,8 @@ each rule is in the header comment of the workflow that enforces it.
 |---|---|---|
 | 1. Get main green | anyone | Every change lands through a PR whose **CI green** check passed. |
 | 2. Bump the version | anyone | `node tools/bump-version.mjs <x.y.z> --write` (one command, every file), plus the What's New entry (one object in `guidon-app/src/data/whats-new.json`, below) and the CHANGELOG entry. `npm run lint:patterns` proves the files agree. |
-| 2a. Legal package | anyone | After `npm run build`, run `node tools/verify-legal-package.mjs --run --write-stamp` (from `guidon-app/`): it runs every test the Command/Legal package's claims name and, only if all pass, stamps `GUIDON_COMMAND_LEGAL_PACKAGE.md` with this version and commit; commit the stamp with the bump. `npm run lint:patterns` already checks the package cannot drift; `node tools/verify-legal-package.mjs --release` fails if the stamp is not for the version being cut. |
-| 3. Cut | owner | Commit `guidon-app/src/.release-prep` containing `vX.Y.Z` to main. `release-cut.yml` waits for CI on that exact commit and only then creates the tag and an empty, **not-Latest** release. |
+| 2a. Legal package | anyone | **Last of the bump work, in this order: bump (step 2) -> `npm run build` -> stamp -> commit -> cut.** From `guidon-app/`, once the What's New, CHANGELOG and ROADMAP edits are in and a fresh `npm run build` has finished, run `npm run legal:stamp` (that is `node tools/verify-legal-package.mjs --run --write-stamp`). It runs every test the Command/Legal package's claims name - several minutes, and it refuses a build older than the source - and, only if all pass, stamps `GUIDON_COMMAND_LEGAL_PACKAGE.md` with this version and commit. Commit the stamp. `npm run lint:patterns` already checks the package cannot drift, but a stamp for the previous version is only a note there; **the cut refuses it** (see step 3). |
+| 3. Cut | owner | Commit `guidon-app/src/.release-prep` containing `vX.Y.Z` to main. `release-cut.yml` first checks the version files agree (`lint-release-state.mjs --cut`) and that the legal package's stamp names this exact version (`verify-legal-package.mjs --release`; a stamp left over from the previous release stops the cut here, before any tag exists), then waits for CI on that exact commit and only then creates the tag and an empty, **not-Latest** release. |
 | 4. Fan out | owner | Commit `guidon-app/src/.release-trigger` containing `vX.Y.Z`. `release-assets.yml` and `release-apple.yml` build from the tag and attach files. |
 | 5. Android | owner, locally | Build, sign and attach the three Android files (below), then run **Release assets** by hand with **finalize_only** ticked. |
 | 6. Latest | automation | The finalize job rewrites the Downloads section from what is really attached and marks the release Latest only when it is complete. |
@@ -57,8 +57,11 @@ at the end:
   (or one with no highlights) fails `lint:patterns` check (h) and
   `lint:release-state` check (d), and the failure names the file to add it to.
 - The file's own `$doc` block repeats the shape and the rules for whoever opens
-  it. Entries may sit in any order - the app matches them by version - but keep
-  them oldest first.
+  it. The order of the entries does not matter to the app or to any check:
+  the app finds an entry by its version and sorts what a Soldier missed
+  itself, so an entry added anywhere in the list appears in the right place.
+  Adding yours at the end (oldest first, newest last) just keeps the file
+  tidy; nothing enforces it.
 
 ## What "complete" means
 

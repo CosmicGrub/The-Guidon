@@ -41,6 +41,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { ALIASES, OPTIONAL_ALIASES, expectedAssets, verdict, renderDownloads, mergeBody, DOWNLOADS_START, DOWNLOADS_END } from "./release-manifest.mjs";
 import { decide, gate } from "./release-gate.mjs";
+import { needsOf } from "./lint-release-state.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -318,6 +319,20 @@ try {
   check(iGate !== -1 && /--sha "\$GITHUB_SHA"/.test(cutSteps[iGate].run) && /--workflow ci\.yml/.test(cutSteps[iGate].run) && /--wait-minutes (?!0\b)\d+/.test(cutSteps[iGate].run),
     "the gate checks THIS exact commit and waits for CI (the release push starts CI at the same moment)");
   check(iState !== -1 && iState < iCreate, "release-cut.yml checks that every version-bearing file agrees before it tags");
+  // The Command/Legal package's generated stamp names the version it was verified for; re-stamping it is a manual step of every
+  // release (npm run legal:stamp). Nothing else stops a cut with the previous version's stamp, so the cut must run the check itself.
+  const iLegal = cutSteps.findIndex((s) => /verify-legal-package\.mjs --release\b/.test(s.run || ""));
+  check(iLegal !== -1 && iLegal < iGate && iLegal < iCreate, "release-cut.yml runs verify-legal-package.mjs --release (the stamp names THIS version) before it waits for CI or creates the tag", "release-cut.yml never checks that the Command/Legal package was re-stamped for the version being cut");
+  check(iState !== -1 && /\(g\) --cut/.test(readFileSync("tools/lint-release-state.mjs", "utf-8")) && /legal:stamp/.test(readFileSync("tools/lint-release-state.mjs", "utf-8")), "lint-release-state.mjs --cut also refuses a stale legal stamp itself (check (g), pinned in test-release-state.mjs), so a local --cut run catches it too");
+  {
+    const runbookText = readFileSync("docs/release-runbook.md", "utf-8");
+    const row2a = (runbookText.match(/^\| 2a\. Legal package \|.*$/m) || [""])[0];
+    check(/npm run legal:stamp/.test(row2a) && /verify-legal-package\.mjs --run --write-stamp/.test(row2a) && /npm run build/.test(row2a) && /bump.*->.*build.*->.*stamp.*->.*commit.*->.*cut/.test(row2a) && /the cut refuses/.test(row2a),
+      "the runbook's step 2a gives the order (bump -> build -> stamp -> commit -> cut), the real command (npm run legal:stamp) and says the cut refuses a stale stamp", "docs/release-runbook.md step 2a: " + row2a.slice(0, 200));
+    const row3 = (runbookText.match(/^\| 3\. Cut \|.*$/m) || [""])[0];
+    check(/verify-legal-package\.mjs --release/.test(row3), "the runbook's step 3 says release-cut.yml runs verify-legal-package.mjs --release");
+    check(!/but keep\s+them oldest first/.test(runbookText) && /does not matter to the app or to any check/.test(runbookText), "the runbook does not present What's New entry order as a rule (nothing enforces it and the app sorts by version)");
+  }
   check(/^    if: github\.ref == 'refs\/heads\/main'$/m.test(cutJob || ""), "release-cut.yml refuses to cut from any branch but main (a manual run can be started anywhere)");
   // actions: write, not read (fan-out fix, 2026-09-23) - write is the
   // permission workflow_dispatch itself needs (see the dispatch check
@@ -529,9 +544,18 @@ try {
     check(r2.status !== 0 && !/release upload/.test(r2.ghCalls), "with no .dmg built the publish step fails and uploads nothing (no alias of nothing)");
   }
   check(!!publishMac && !publishMac.if, "Mac publish is not conditional on the launch proof (the proof is informational)");
+  {
+    // The verification record is most useful exactly when a step above it failed, so it must upload on failure too.
+    const rec = stepNamed(macSteps, "Upload macOS verification record");
+    check(!!rec && /^(\$\{\{\s*)?always\(\)(\s*\}\})?$/.test(rec.if || ""), "the macOS verification record is uploaded with if: always() (it survives a failed step above it)", "the 'Upload macOS verification record' step has no if: always(): " + JSON.stringify(rec && rec.if));
+    check(!!rec && /actions\/upload-artifact@[0-9a-f]{40}$/.test(rec.uses || ""), "...and it is still the SHA-pinned upload-artifact action");
+    const proofStep = stepNamed(macSteps, "Prove the DMG launches");
+    const tm = proofStep && /^ +timeout-minutes:\s*(\d+)\s*$/m.exec(proofStep.text);
+    check(!!tm && Number(tm[1]) >= 5 && Number(tm[1]) <= 15, "the launch proof has its own short timeout-minutes (a hung mount cannot hold the job for the whole 60 minutes)", "'Prove the DMG launches' has no sensible timeout-minutes: " + (tm ? tm[1] : "none"));
+  }
   check(!/--latest\b/.test(appleCode), "release-apple.yml never touches the Latest flag (the whole file, not just the refresh job)");
   {
-    const waits = [...assetsCode.matchAll(/^\s*needs:\s*(\[[^\]]*\]|\S+)/gm)].map((m) => m[1]);
+    const waits = needsOf(assetsCode); // scalar, [flow] and block-list forms - the same reader lint-release-state.mjs (f) uses
     check(waits.length >= 4 && !waits.some((w) => /macos|ios|apple/i.test(w)), `no release-assets.yml job waits on an Apple job (${waits.length} needs: lists checked)`, "a release-assets.yml job waits on an Apple job: " + waits.join(" ; "));
     check(!/release-apple/.test(assetsCode) && !/Mac|macOS|dmg/i.test((platformStep && platformStep.text) || ""), "the finalize job that marks Latest never mentions the Apple lane or a Mac file");
     check(/gh workflow run release-apple\.yml[^\n]*--ref main/.test(cut) && /gh workflow run release-assets\.yml[^\n]*--ref main[^\n]*-f tag="\$TAG"/.test(cut), "the release-cut fan-out to both lanes is untouched");

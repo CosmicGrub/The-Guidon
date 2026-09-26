@@ -46,8 +46,14 @@
  *       Apple job (see release-manifest.mjs's header for the decision).
  *   --cut (release-cut.yml, just before tagging): tags MUST be visible,
  *       .release-prep must name exactly this version, the version must be
- *       newer than every tag, its notes must not be marked unreleased, and
- *       the tag must not already exist on a different commit.
+ *       newer than every tag, its notes must not be marked unreleased, the
+ *       tag must not already exist on a different commit, and (g) the
+ *       Command/Legal package's generated verification stamp must name THIS
+ *       version - the stamp is written at the release cut by
+ *       `npm run legal:stamp` (node tools/verify-legal-package.mjs --run
+ *       --write-stamp), so a release cannot go out with the document still
+ *       stamped for the previous one. release-cut.yml also runs the full
+ *       `node tools/verify-legal-package.mjs --release` as its own step.
  *   --published <tag> --repo <owner/name>: everything above only checks
  *       facts already sitting in the checkout - it never noticed that
  *       v1.15.0/.3/.4 were published with ZERO assets attached (the
@@ -76,6 +82,7 @@ import path from "node:path";
 import { readAnchors, parseVersion, compareVersions, androidVersionCode } from "./release-version-files.mjs";
 import { ALIASES, OPTIONAL_ALIASES, expectedAssets, verdict } from "./release-manifest.mjs";
 import { readWhatsNewFile, checkCurrent, WHATS_NEW_REPO_PATH } from "./whats-new-rules.mjs";
+import { DOC_NAME as LEGAL_DOC, stampVersionOf } from "./verify-legal-package.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const NOT_RELEASED = /\b(prepared,?\s+(?:but\s+)?not\s+released|not\s+released|never\s+released|unreleased)\b/i;
@@ -89,6 +96,38 @@ const NOT_RELEASED = /\b(prepared,?\s+(?:but\s+)?not\s+released|not\s+released|n
  */
 const KNOWN_DEBT_WHILE_AT = "1.12.0";
 const KNOWN_DEBT = new Set(["changelog-unmarked:1.11.0", "changelog-missing-tag-entry:1.10.0"]);
+
+/**
+ * Every job dependency a workflow file names, as the text of each `needs:`:
+ *   needs: resolve                 -> "resolve"
+ *   needs: [resolve, android]      -> "[resolve, android]"
+ *   needs:                         -> "resolve" and "android", one entry each
+ *     - resolve
+ *     - android
+ * (YAML allows the block form's dashes at the same indent as `needs:` too.)
+ * The block form used to be invisible to check (f), which only read the first
+ * token after `needs:` - so `needs:` + newline + `- macos` slipped past the
+ * "no other job waits on an Apple job" rule. Comment lines are dropped by the
+ * caller; a trailing ` # comment` is dropped here. Exported so the tests use
+ * the very same reader.
+ */
+export function needsOf(code) {
+  const out = [];
+  const lines = String(code).split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^(\s*)needs:\s*(.*)$/.exec(lines[i]);
+    if (!m) continue;
+    const inline = m[2].replace(/\s+#.*$/, "").trim();
+    if (inline) { out.push(inline); continue; }
+    for (let j = i + 1; j < lines.length; j++) {
+      if (!lines[j].trim() || /^\s*#/.test(lines[j])) continue;
+      const item = /^\s*-\s+(.*)$/.exec(lines[j]);
+      if (!item) break;
+      out.push(item[1].replace(/\s+#.*$/, "").trim());
+    }
+  }
+  return out;
+}
 
 export function lintReleaseState({ root, cut = false }) {
   const passes = [], failures = [], notes = [];
@@ -244,7 +283,7 @@ export function lintReleaseState({ root, cut = false }) {
     if (appleFile) {
       if (/--latest\b/.test(codeOf(appleFile))) bad("(f) release-apple.yml touches the Latest flag - the Mac lane must never decide whether a release is Latest");
       for (const n of wfNames.filter((x) => x !== appleFile)) {
-        const waits = [...codeOf(n).matchAll(/^\s*needs:\s*(\[[^\]]*\]|\S+)/gm)].map((m) => m[1]).filter((x) => /\b(macos|ios|apple)\b/i.test(x));
+        const waits = needsOf(codeOf(n)).filter((x) => /\b(macos|ios|apple)\b/i.test(x));
         if (waits.length) bad(`(f) ${n} waits on an Apple job (${waits.join("; ")}) - a slow or failed Mac build could hold a release out of Latest`);
       }
     }
@@ -280,6 +319,18 @@ export function lintReleaseState({ root, cut = false }) {
       }
     }
     if (failures.length === before) ok(`(e) release marker files are consistent (${seen.join(", ") || "none present"})${cut ? "; ready to cut v" + V : ""}`);
+  }
+
+  /* ---- (g) --cut only: the legal package was re-stamped for this version --- */
+  if (cut) {
+    const doc = read(LEGAL_DOC);
+    if (doc == null) bad(`(g) --cut: ${LEGAL_DOC} is missing - the Command/Legal package ships with every release`);
+    else {
+      const stamped = stampVersionOf(doc);
+      if (!stamped) bad(`(g) --cut: ${LEGAL_DOC} has no readable verification stamp - after the build, run (from guidon-app/): npm run legal:stamp`);
+      else if (stamped !== V) bad(`(g) --cut: ${LEGAL_DOC}'s verification stamp was written for v${stamped}, but this release is v${V} - after the version bump and a fresh build, run (from guidon-app/): npm run legal:stamp (it runs every suite the package's claims name), commit the result, then cut`);
+      else ok(`(g) ${LEGAL_DOC}'s verification stamp names v${V}, the version being cut`);
+    }
   }
 
   return { passes, failures, notes, version: V, tags };
