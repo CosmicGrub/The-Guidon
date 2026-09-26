@@ -118,7 +118,7 @@ const expectedPacketSubstrings = [
   /APA/i,
   /ADP 6-22/i,
   /AFT scorecard/i,
-  /DA Form 5500\/5501/i,
+  /DA Form 5500 attached/i, // DA Form 5501 was rescinded by Army Directive 2026-13 (para 5a(8)); only the 5500 is named now
   /qualification score sheet/i,
   /NCOER/i,
 ];
@@ -128,7 +128,7 @@ packetGroup && packetGroup.length === 7
 const packetText = (packetGroup || []).join(" | ");
 const missingPacketTerms = expectedPacketSubstrings.filter((re) => !re.test(packetText));
 missingPacketTerms.length === 0
-  ? ok("Packet items cover biography, STP, ASU photo, ADP 6-22 essay in APA format, AFT/DA 5500-5501, weapons qual, and NCOERs")
+  ? ok("Packet items cover biography, STP, ASU photo, ADP 6-22 essay in APA format, AFT/DA 5500, weapons qual, and NCOERs")
   : bad("packet items missing terms: " + missingPacketTerms.map(String).join(", ") + " (text: " + packetText + ")");
 
 const packetFirstBox = page.locator('.panel:has(.eyebrow:has-text("The board packet")) input[type="checkbox"]').first();

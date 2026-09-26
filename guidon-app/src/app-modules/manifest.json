@@ -329,6 +329,19 @@
       "optionalApis": []
     },
     {
+      "file": "14-brs-continuation-pay-board.js",
+      "id": "brs-continuation-pay-board",
+      "kind": "content-pack",
+      "emit": "build",
+      "headless": true,
+      "note": "Adds 3 board-drill cards (brs-cp-1..3) behind the Army Blended Retirement System continuation pay window (7-12 years in 2026, 7-10 in 2027), obligation and amount, each read from ALARACT 100/2025 and 37 USC 356.",
+      "requires": [],
+      "provides": [],
+      "routes": [],
+      "storageKeys": [],
+      "optionalApis": []
+    },
+    {
       "file": "98-content-pack-finalize.js",
       "id": "content-pack-finalize",
       "kind": "finalize",
