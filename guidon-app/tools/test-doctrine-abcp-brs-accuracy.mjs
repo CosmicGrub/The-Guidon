@@ -55,6 +55,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assembleBank } from "./assemble-bank.mjs";
+import { renderSource } from "./citation-parse.mjs";
 import { check, finish } from "./testkit.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -65,6 +66,9 @@ const D = data.doctrine.entries, B = data.board.questions;
 const doc = (id) => D.find((e) => e.id === id);
 const card = (id) => B.find((q) => q.id === id);
 const all = (o) => JSON.stringify(o);
+// A board card's citation as a Soldier reads it: its source is a structured
+// array (ROADMAP item F Wave 2), rendered by the one renderer.
+const srcText = (q) => renderSource(q.source);
 
 // Every string in the assembled bank, with the path it lives at.
 const strings = [];
@@ -191,8 +195,8 @@ check(/7 years of service on 1 Jan 2026 \(ALARACT 100\/2025\)/.test(curSrc), "th
 
 const cp1 = card("brs-cp-1"), cp2 = card("brs-cp-2"), cp3 = card("brs-cp-3");
 check(!!cp1 && !!cp2 && !!cp3, "the three continuation pay board cards (brs-cp-1..3) ship with the facts (standing rule: sourced content ships with board cards)");
-check(cp1 && /7 and no more than 12/.test(cp1.a) && /ALARACT 100\/2025/.test(cp1.source) && /37 USC 356/.test(cp1.source), "brs-cp-1 pins 7-12 years in 2026 and cites ALARACT 100/2025 + 37 USC 356");
-check(cp2 && /7 and no more than 10/.test(cp2.a) && /4\.A\.3/.test(cp2.source), "brs-cp-2 pins 7-10 years in 2027 (ALARACT para 4.A.3)");
+check(cp1 && /7 and no more than 12/.test(cp1.a) && /ALARACT 100\/2025/.test(srcText(cp1)) && /37 USC 356/.test(srcText(cp1)), "brs-cp-1 pins 7-12 years in 2026 and cites ALARACT 100/2025 + 37 USC 356");
+check(cp2 && /7 and no more than 10/.test(cp2.a) && /4\.A\.3/.test(srcText(cp2)), "brs-cp-2 pins 7-10 years in 2027 (ALARACT para 4.A.3)");
 check(cp3 && /four years/.test(cp3.a) && /2\.5 times/.test(cp3.a) && /para 5/.test(all(cp3.keyPoints)) && /not less than 3 additional years/.test(all(cp3.keyPoints)), "brs-cp-3 pins the four-year Army obligation (federal floor is 3) and 2.5 times basic pay");
 
 // The Army's EARLIER window (8-12 in 2025) is not in ALARACT 100/2025 (CY26/CY27). It is in the ASA(M&RA) CY24/CY25 memorandum
@@ -201,8 +205,8 @@ const memoSrc = (brs.source || []).find((x) => /^ASA\(M&RA\) memorandum, Blended
 check(!!memoSrc && /SAMR 637-1/.test(memoSrc.pub) && /paras 3 and 4a\(2\)/.test(memoSrc.para) && /expires 31 December 2025/.test(memoSrc.edition),
   "the BRS doctrine entry cites the ASA(M&RA) CY24/CY25 continuation pay memorandum (SAMR 637-1, paras 3 and 4a(2), expires 31 December 2025) for the earlier 8-12 window", () => "doc-brs sources: " + all(brs && brs.source));
 check(!!memoSrc && !/ALARACT 029\/2025|S1Net|armyng/i.test(all(brs.source)), "...and cites nothing it did not read (no ALARACT 029/2025, no S1Net message, no armyng.com reproduction)", () => all(brs && brs.source));
-check(/ASA\(M&RA\) memorandum, BRS Continuation Pay CY24\/CY25 Implementation Guidance \(SAMR 637-1\), paras 3 and 4\.a\(2\)/.test(cp1.source) && /CY24\/CY25 continuation pay memorandum, para 4\.a\(2\)/.test(all(cp1.keyPoints)),
-  "brs-cp-1 cites the CY24/CY25 memorandum for the 2025 window in its source line and in the key point that states it", () => cp1.source + " | " + all(cp1.keyPoints));
+check(/ASA\(M&RA\) memorandum, BRS Continuation Pay CY24\/CY25 Implementation Guidance \(SAMR 637-1\), paras 3 and 4\.a\(2\)/.test(srcText(cp1)) && /CY24\/CY25 continuation pay memorandum, para 4\.a\(2\)/.test(all(cp1.keyPoints)),
+  "brs-cp-1 cites the CY24/CY25 memorandum for the 2025 window in its source line and in the key point that states it", () => srcText(cp1) + " | " + all(cp1.keyPoints));
 check(/ASA\(M&RA\) CY24\/CY25 continuation pay memorandum \(the earlier 8-12 window, para 4a\(2\)\)/.test(jsf.citation), "the Junior Soldier money lesson's citation names the CY24/CY25 memorandum for the earlier window", () => jsf.citation);
 check(/the Army's 2024\/2025 continuation pay memorandum for the earlier window/.test(idxSrc), "the Channels 'Changed in 2026' sources line names the Army's 2024/2025 continuation pay memorandum for the earlier window");
 check(/Army continuation pay windows from ALARACT 100\/2025 \(2026 and 2027\) and the Army's 2024\/2025 continuation pay memorandum \(the earlier 8–12 window\)/.test(data.finance.asOf), "the Money tab's 'current as of' line names both sources of the continuation pay windows", () => data.finance.asOf);

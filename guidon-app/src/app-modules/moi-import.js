@@ -446,7 +446,11 @@ window.G = window.G || {};
       // Same tokenizeCitations() switch as the doctrine loop just above,
       // and for the same real reason - board q.source combines two
       // citations via semicolon or slash too ("UCMJ Art. 138 / AR 27-10").
-      tokenizeCitations(q.source).forEach((tok) => record(tok, q.category, "board"));
+      // A board card's source is a structured array (ROADMAP item F Wave 2);
+      // G.board.sourceText renders it to the exact text the string used to
+      // hold, so the tokenizer sees what it always saw and every per-topic
+      // coverage tally is unchanged.
+      tokenizeCitations(G.board.sourceText(q)).forEach((tok) => record(tok, q.category, "board"));
       tokenizeCitations(q.category || "").forEach((tok) => record(tok, q.category, "board"));
     });
 

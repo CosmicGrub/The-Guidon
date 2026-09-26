@@ -85,7 +85,8 @@ const truth = await page.evaluate((probes) => {
     oldLineCards: bank.filter((q) => /^pb-spirit-cav-0[1-8]-/.test(q.id)).map((q) => q.id),
     withLines: mine.filter((q) => Array.isArray(q.lines) && q.lines.length).map((q) => q.id),
     helperObject: typeof window.G.spiritOfTheCav,
-    mine: mine.map((q) => ({ id: q.id, category: q.category, pillar: q.pillar, source: q.source, unit: q.unit })),
+    // source as a Soldier reads it: a board card's citation is a structured array (ROADMAP item F Wave 2)
+    mine: mine.map((q) => ({ id: q.id, category: q.category, pillar: q.pillar, source: window.G.board.sourceText(q), unit: q.unit })),
     // Card answers are only ever TESTED in here, never sent back out: if the
     // song text regresses, a failure message must not print it into a public
     // CI log. (Same reason the Creeds entry reports a length, not its text.)

@@ -13,20 +13,20 @@
  *   AR 930-4, Army Emergency Relief ............ 15 Apr 2026 (supersedes 29 Nov 2024)
  *   AR 608-1, Soldier and Family Readiness ..... 26 May 2026 (retitled from "Army Community Service")
  *   AR 600-85, The Army Substance Abuse Program . 4 Oct 2024 (supersedes 23 Jul 2020)
- * The answers are study-guide wording, not quotations, so each card is
- * marked verbatim:false and the card back says so instead of claiming
- * "verbatim doctrine".
+ * The answers are study-guide wording, not quotations, so each card's
+ * citation is cited as "paraphrase" (ctx.cite, below) and the card back says
+ * so instead of claiming "verbatim doctrine".
  */
 (function () {
   "use strict";
-  G.contentPack.define("army-program-board-gaps", function (bank) {
+  G.contentPack.define("army-program-board-gaps", function (bank, ctx) {
   var list = bank && bank.board && Array.isArray(bank.board.questions) ? bank.board.questions : null;
   if (!list) return;
 
   var have = new Set(list.map(function (q) { return q && q.id; }));
   function add(q) {
     if (!q || have.has(q.id)) return;
-    q.verbatim = false;
+    q.source = ctx.cite(q.source, "paraphrase");
     list.push(q);
     have.add(q.id);
   }

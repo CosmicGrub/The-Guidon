@@ -36,7 +36,7 @@
 (function () {
   "use strict";
 
-  G.contentPack.define("spirit-of-the-cav", function (bank) {
+  G.contentPack.define("spirit-of-the-cav", function (bank, ctx) {
   if (!bank || !bank.board || !Array.isArray(bank.board.questions)) return;
 
   // Every source below was opened and read on CHECKED, and each card says
@@ -63,7 +63,11 @@
       a: a,
       boardAnswer: a,
       acceptableAnswer: a,
-      source: source,
+      // "verbatim" keeps the card back exactly as it has always read (this
+      // pack never set verbatim:false). Whether these heritage answers are
+      // quotations of the pages cited is a content question, not one this
+      // structural change decides.
+      source: ctx.cite(source, "verbatim"),
       concept: "1st Cavalry Division heritage",
       keyPoints: keyPoints,
       difficulty: "basic",

@@ -66,7 +66,7 @@
    see the PR description for the exact diff). */
 (function () {
   "use strict";
-  G.contentPack.define("da2166-ncoer-content", function (bank) {
+  G.contentPack.define("da2166-ncoer-content", function (bank, ctx) {
   if (!bank || !bank.forms || !Array.isArray(bank.forms.forms)) return null;
   var f = bank.forms.forms.filter(function (x) { return x && x.id === "da4856ncoer"; })[0];
   if (!f || !Array.isArray(f.sections)) return null; // defensive: never crash the build if the seed's own shape ever moves
@@ -139,8 +139,10 @@
   bank.board.questions.forEach(function (q) { qIds[q.id] = true; });
   cards.forEach(function (x) {
     if (qIds[x[0]]) return;
+    // "verbatim" keeps these cards' backs exactly as they have always read
+    // (this pack never set verbatim:false).
     bank.board.questions.push({
-      id: x[0], category: CATEGORY, q: x[1], a: x[2], boardAnswer: x[2], source: x[3],
+      id: x[0], category: CATEGORY, q: x[1], a: x[2], boardAnswer: x[2], source: ctx.cite(x[3], "verbatim"),
       concept: x[4], keyPoints: [x[2]], difficulty: "intermediate", pillar: "Leadership & Counseling"
     });
     qIds[x[0]] = true;
