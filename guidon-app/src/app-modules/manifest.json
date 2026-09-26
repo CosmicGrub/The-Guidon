@@ -68,10 +68,10 @@
       "id": "roadmap-bootstrap",
       "kind": "feature",
       "headless": true,
-      "note": "Registers the #/board-sim, #/team and #/pt-plan routes on behalf of the three modules under \"uses\" (each of those lists its own route), adds the PT reminder kind, and carries the collective scenario runner.",
+      "note": "Registers the #/board-sim, #/team and #/pt-plan routes on behalf of the three modules under \"uses\" (each of those lists its own route), adds the PT reminder kind, and carries the collective scenario runner. It also owns G.roomHandoffAdapters, the empty kind -> adapter map PT Planner and Team Training fill in as they load and Study Rooms reads when a room offer arrives, so none of those three depends on the others' load order.",
       "requires": [],
       "uses": ["mock-board-simulator", "pt-planner", "team-training"],
-      "provides": ["G.engine.runCollective"],
+      "provides": ["G.engine.runCollective", "G.roomHandoffAdapters"],
       "routes": [],
       "storageKeys": [],
       "optionalApis": [],
@@ -641,8 +641,9 @@
       "id": "pt-planner",
       "kind": "feature",
       "headless": false,
-      "requires": ["roadmap-bootstrap", "date-grid"],
-      "provides": ["G.ptPlanner.render"],
+      "requires": ["roadmap-bootstrap", "date-grid", "opsec-guard"],
+      "uses": ["studygroup", "room-schema"],
+      "provides": ["G.ptPlanner.render", "G.ptPlanner.handoff"],
       "routes": ["#/pt-plan"],
       "storageKeys": ["prt:plan:v1", "pt:history:v1", "guidon:prt:customSessions:v1"],
       "optionalApis": []
@@ -693,7 +694,8 @@
         "G.roomSchema.MAX_NAME", "G.roomSchema.MAX_TEXT", "G.roomSchema.MAX_SEATS", "G.roomSchema.MAX_SCORE", "G.roomSchema.MAX_BUILD", "G.roomSchema.MAX_APP",
         "G.roomSchema.validate", "G.roomSchema.wireEncode", "G.roomSchema.wireDecode", "G.roomSchema.wsUrl", "G.roomSchema.joinUrl",
         "G.roomSchema.isSecureOrigin", "G.roomSchema.pinFromUrl", "G.roomSchema.isRoomCode", "G.roomSchema.roomCode", "G.roomSchema.isFingerprint",
-        "G.roomSchema.byteLength", "G.roomSchema.bankSig", "G.roomSchema.buildLabel", "G.roomSchema.skewText"
+        "G.roomSchema.byteLength", "G.roomSchema.bankSig", "G.roomSchema.buildLabel", "G.roomSchema.skewText",
+        "G.roomSchema.handoff"
       ],
       "routes": [],
       "storageKeys": [],
@@ -715,8 +717,8 @@
       "id": "studygroup",
       "kind": "feature",
       "headless": false,
-      "requires": ["qrcode", "room-schema"],
-      "provides": ["G.studyGroup.render", "G.studyGroup.attach", "G.studyGroup.join", "G.studyGroup.leave", "G.studyGroup.state", "G.studyGroup._redraw", "G.studyGroup.NEEDS_SHELL_TEXT"],
+      "requires": ["qrcode", "room-schema", "roadmap-bootstrap", "opsec-guard"],
+      "provides": ["G.studyGroup.render", "G.studyGroup.attach", "G.studyGroup.join", "G.studyGroup.leave", "G.studyGroup.state", "G.studyGroup._redraw", "G.studyGroup.NEEDS_SHELL_TEXT", "G.studyGroup.offer", "G.studyGroup.share", "G.studyGroup.shareControl"],
       "routes": ["#/group"],
       "storageKeys": [],
       "optionalApis": []
@@ -726,10 +728,10 @@
       "id": "team-training",
       "kind": "feature",
       "headless": false,
-      "requires": ["roadmap-bootstrap"],
-      "provides": ["G.teamTraining.render"],
+      "requires": ["roadmap-bootstrap", "studygroup", "opsec-guard"],
+      "provides": ["G.teamTraining.render", "G.teamTraining.handoff"],
       "routes": ["#/team"],
-      "storageKeys": ["team:training:v1"],
+      "storageKeys": ["team:training:v1", "team:sessions:v1"],
       "optionalApis": []
     }
   ]

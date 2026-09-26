@@ -52,6 +52,132 @@
 
   function say(msg) { try { if (G.util && G.util.announce) G.util.announce(msg); } catch (e) {} }
 
+  // ---- Team sessions (AUDIT-2026-09 6M / ROADMAP "Later": Study Rooms
+  // carrying Team Training sessions) -----------------------------------------
+  // A "session" here is an ordered list of catalog exercises a leader plans to
+  // run in one sitting - nothing but exercise ids in order and a short name
+  // the leader gave it. It is saved on this device ("team:sessions:v1"), run
+  // one exercise after another, and can be sent to a Study Room, where each
+  // Soldier previews it and chooses whether to add it to THEIR list. It never
+  // holds a name, a score, a note or a result: the completion counts stay in
+  // team:training:v1 exactly as before.
+  var SESSIONS_KEY = "team:sessions:v1";
+  var SESSION_MAX = 20;
+  var SESSION_TITLE_MAX = 40;
+  var SESSION_STEPS_MAX = 10;
+  function exerciseById(id) {
+    for (var i = 0; i < CATALOG.length; i++) if (CATALOG[i].id === id) return CATALOG[i];
+    return null;
+  }
+  function sessionMinutes(steps) {
+    return steps.reduce(function (n, id) { var ex = exerciseById(id); return n + (ex ? ex.minutes : 0); }, 0);
+  }
+  function cleanTitle(s) { return typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, SESSION_TITLE_MAX) : ""; }
+  // Every read, from storage or a backup, is rebuilt field by field: only ids
+  // this catalog really has survive, capped, and a row with nothing left is
+  // dropped rather than shown as an empty card.
+  function normalizeSessions(v) {
+    if (!Array.isArray(v)) return [];
+    var seen = {}, out = [];
+    v.forEach(function (s) {
+      if (!s || typeof s !== "object" || Array.isArray(s)) return;
+      if (typeof s.id !== "string" || !s.id || seen[s.id]) return;
+      var steps = Array.isArray(s.steps) ? s.steps.filter(function (x) { return typeof x === "string" && exerciseById(x); }).slice(0, SESSION_STEPS_MAX) : [];
+      if (!steps.length) return;
+      seen[s.id] = true;
+      out.push({ id:s.id, title:cleanTitle(s.title) || "Team session", steps:steps, createdAt:typeof s.createdAt === "number" && isFinite(s.createdAt) ? s.createdAt : Date.now() });
+    });
+    return out.slice(0, SESSION_MAX);
+  }
+  async function loadSessions() {
+    try { return normalizeSessions(await db.getSetting(SESSIONS_KEY, [])); }
+    catch (e) { return []; }
+  }
+  // Load -> change -> save on one queue (the same shape as markComplete):
+  // `change(list)` returns the new list, or null to leave things as they are.
+  var _sessionsQueue = Promise.resolve();
+  function updateSessions(change) {
+    var run = _sessionsQueue.then(async function () {
+      var cur = await loadSessions();
+      var next = change(cur.slice());
+      if (!next) return cur;
+      var list = normalizeSessions(next);
+      await db.setSetting(SESSIONS_KEY, list);
+      return list;
+    });
+    _sessionsQueue = run.catch(function () {});
+    return run;
+  }
+  var _sessionSeq = 0;
+  function nextSessionId() { return "ts-" + Date.now().toString(36) + "-" + (++_sessionSeq); }
+  function sameSteps(a, b) {
+    if (a.length !== b.length) return false;
+    for (var i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
+  function stepLines(steps) {
+    return steps.map(function (id, i) { var ex = exerciseById(id); return (i + 1) + ". " + (ex ? ex.title + " (" + ex.minutes + " min)" : "An exercise this version doesn't have"); });
+  }
+
+  // The session being run one exercise after another (set by "Start
+  // session"). Kept at module level so "Return to catalog" - which rebuilds
+  // the whole screen - does not lose its place. `_running` is the exercise
+  // whose panel is open right now, so a completion only moves the session on
+  // when it is the exercise the session was waiting for.
+  var _chain = null;
+  var _running = "";
+
+  // Study Rooms hand-off (src/app-modules/room-schema.js, "THE HAND-OFF
+  // MODEL", kind "team-session"): the wire carries exercise ids in order and
+  // a short name. Which ids exist is THIS device's catalog - an exercise a
+  // newer build has and this one does not is counted as "not on this device",
+  // never shown by id and never added.
+  function handoffPrepare(data, offer) {
+    var known = data.steps.filter(exerciseById), missing = data.steps.length - known.length;
+    if (!known.length) return { ok:false, message:"None of this session's exercises are on this device, so there is nothing to add. Update GUIDON on this device, then ask the host to share it again." };
+    var notes = ["About " + sessionMinutes(known) + " minutes in all.", "Adding this saves it in your list of team sessions on this device. It holds only the exercise names in order - no names and no scores."];
+    if (missing) notes.push(missing + (missing === 1 ? " exercise isn't" : " exercises aren't") + " on this device and will be left out.");
+    return { ok:true, title:cleanTitle(offer && offer.title) || "Team session", lines:stepLines(known), notes:notes };
+  }
+  async function handoffApply(data, offer) {
+    var known = data.steps.filter(exerciseById), missing = data.steps.length - known.length;
+    var title = cleanTitle(offer && offer.title) || "Team session";
+    var newId = nextSessionId(), duplicate = false, full = false;
+    try {
+      await updateSessions(function (cur) {
+        if (cur.some(function (s) { return s.title === title && sameSteps(s.steps, known); })) { duplicate = true; return null; }
+        if (cur.length >= SESSION_MAX) { full = true; return null; }
+        cur.push({ id:newId, title:title, steps:known, createdAt:Date.now() });
+        return cur;
+      });
+    } catch (e) { return { ok:false, message:"GUIDON couldn't save that session. Nothing was changed." }; }
+    if (full) return { ok:false, message:"You already have " + SESSION_MAX + " saved team sessions. Remove one, then try again." };
+    if (duplicate) return { ok:true, message:"You already have this session saved, so nothing new was added." };
+    return {
+      ok:true,
+      message:"Added to Team Training." + (missing ? " " + missing + (missing === 1 ? " exercise wasn't" : " exercises weren't") + " on this device and " + (missing === 1 ? "was" : "were") + " left out." : ""),
+      undo:async function () {
+        try { await updateSessions(function (cur) { return cur.filter(function (s) { return s.id !== newId; }); }); return { ok:true }; }
+        catch (e) { return { ok:false }; }
+      }
+    };
+  }
+  var ROOM_ADAPTER = { kind:"team-session", addText:"Add to Team Training", openHash:"#/team", openText:"Open Team Training", prepare:handoffPrepare, apply:handoffApply };
+  if (G.roomHandoffAdapters) G.roomHandoffAdapters["team-session"] = ROOM_ADAPTER;
+  // The host side: a title and an ordered list of ids -> the payload Study
+  // Rooms sends (and the lines its confirm box lists, word for word).
+  async function handoffBuild(title, steps) {
+    var ids = (Array.isArray(steps) ? steps : []).filter(exerciseById);
+    if (!ids.length) return { ok:false, message:"Add at least one exercise to the session first." };
+    if (ids.length > SESSION_STEPS_MAX) return { ok:false, message:"A session can hold up to " + SESSION_STEPS_MAX + " exercises." };
+    var name = cleanTitle(title) || "Team session";
+    var guard = G.opsecGuard;
+    if (!guard || typeof guard.screen !== "function") return { ok:false, message:"GUIDON couldn't check the session name, so nothing was sent." };
+    var found = guard.screen(name).findings;
+    if (found.length) return { ok:false, message:"The session name looks like it holds " + guard.listWhat(found) + ", so nothing was sent. Change the name and try again." };
+    return { ok:true, title:name, data:{ steps:ids.slice() }, lines:[name].concat(stepLines(ids), ["About " + sessionMinutes(ids) + " minutes in all."]) };
+  }
+
   async function loadStats() {
     try { var v = await db.getSetting(KEY, {}); return v && typeof v === "object" && !Array.isArray(v) ? v : {}; }
     catch (e) { return {}; }
@@ -279,10 +405,16 @@
 
     var top = el("div.panel");
     top.appendChild(el("div.eyebrow", { text:"Leader tie-in" }));
-    top.appendChild(el("p", { text:"The existing Squad Roster remains the single roster. Team Training stores only exercise-level completion counts—never another copy of Soldier names or individual scores." }));
+    top.appendChild(el("p", { text:"The existing Squad Roster remains the single roster. Team Training stores only exercise-level completion counts—never another copy of Soldier names or individual scores. A saved team session keeps only the exercise names in the order you set." }));
     var roster = el("button.btn.ghost", { type:"button", text:"Open Squad Roster" });
     roster.addEventListener("click", function () { location.hash = "#/leader"; });
     top.appendChild(roster); mount.appendChild(top);
+    // Team sessions: the saved list and the "Plan a session" builder, then the
+    // session-in-progress bar (both filled in below, once begin() exists).
+    var sessionsHost = el("div", { "data-team-sessions":"1", style:"margin-top:10px" });
+    mount.appendChild(sessionsHost);
+    var chainHost = el("div", { "data-team-chain":"1", style:"margin-top:10px" });
+    mount.appendChild(chainHost);
 
     var filters = el("div.segmented", { role:"group", "aria-label":"Team-building phase" });
     [[0,"All"],[1,"Phase 1"],[2,"Phase 2"],[3,"Phase 3"]].forEach(function (pair) {
@@ -305,10 +437,14 @@
       back:function (exerciseId) { render(document.getElementById("route") || mount, exerciseId); },
       // Refresh the "Local completions" line on the card. Focus is inside the
       // session panel at this point, so rebuilding the catalog cannot drop it.
-      recorded:function () { loadStats().then(function (s) { stats = s; if (catalogHost.isConnected) drawCatalog(); }); }
+      recorded:function () {
+        advanceChain();
+        loadStats().then(function (s) { stats = s; if (catalogHost.isConnected) drawCatalog(); });
+      }
     };
 
     function begin(ex) {
+      _running = ex.id;
       if (ex.lanes) {
         // The scenario engine focuses its own first control.
         launchSequence(sessionHost, ex, ui);
@@ -321,6 +457,201 @@
       }
       say(ex.title + " started.");
       try { if (sessionHost.scrollIntoView) sessionHost.scrollIntoView({ block:"start" }); } catch (e) {}
+    }
+
+    // ---- the session in progress: "N of M done, next: ..." ----
+    function drawChain() {
+      util.clear(chainHost);
+      if (!_chain) return;
+      var total = _chain.steps.length;
+      var panel = el("div.panel", { "data-team-chain-bar":"1", role:"group", "aria-label":"Team session in progress" });
+      panel.appendChild(el("div.eyebrow", { text:"Session in progress" }));
+      panel.appendChild(el("strong", { text:_chain.title }));
+      if (_chain.done >= total) {
+        panel.appendChild(el("p", { text:"Session complete: all " + total + (total === 1 ? " exercise is" : " exercises are") + " recorded. Run the AAR before you disperse." }));
+        var fin = el("button.btn.primary", { type:"button", text:"Finish session", "data-team-chain-finish":"1" });
+        fin.addEventListener("click", function () { _chain = null; _running = ""; drawChain(); say("Session finished."); });
+        panel.appendChild(fin);
+      } else {
+        var next = exerciseById(_chain.steps[_chain.done]);
+        panel.appendChild(el("p", { text:_chain.done + " of " + total + " done. Next: " + (next ? next.title + " (" + next.minutes + " min)" : "an exercise") + "." }));
+        var row = el("div.btn-row", { style:"gap:8px" });
+        var go = el("button.btn.primary", { type:"button", text:"Start " + (next ? next.title : "next exercise"), "data-team-chain-next":"1" });
+        go.addEventListener("click", function () { if (next) begin(next); });
+        var stop = el("button.btn.ghost", { type:"button", text:"End session", "data-team-chain-end":"1" });
+        stop.addEventListener("click", function () { _chain = null; _running = ""; drawChain(); say("Session ended. Exercises already recorded stay recorded."); });
+        row.appendChild(go); row.appendChild(stop);
+        panel.appendChild(row);
+      }
+      chainHost.appendChild(panel);
+    }
+    // Only an exercise the session was WAITING for moves it on; running some
+    // other exercise from the catalog mid-session leaves it where it was.
+    function advanceChain() {
+      if (!_chain || !_running || _chain.steps[_chain.done] !== _running) return;
+      _chain.done++; _running = "";
+      drawChain();
+      say(_chain.done >= _chain.steps.length ? "Session complete. Run the AAR before you disperse." : "Exercise " + _chain.done + " of " + _chain.steps.length + " recorded. The next one is ready.");
+    }
+
+    // ---- saved sessions + "Plan a session" ----
+    var draft = { title:"", steps:[], open:false };
+    var sessionsGen = 0, sessionsStatus = "", sessionsGate = null;
+    async function drawSessions(focusSel) {
+      var gen = ++sessionsGen;
+      var list = await loadSessions();
+      if (gen !== sessionsGen || !sessionsHost.isConnected) return;
+      util.clear(sessionsHost);
+      var panel = el("div.panel", { "data-team-session-panel":"1" });
+      panel.appendChild(el("div.eyebrow", { text:"Team sessions" }));
+      panel.appendChild(el("p.hint", { text:"A session is a few exercises in the order you will run them. Save the ones you use, or share one to your Study Room so your team can add it too. A saved session keeps only the exercise names and their order - no names, no scores." }));
+      var status = el("p.hint", { role:"status", "aria-live":"polite", "data-team-sessions-status":"1", text:sessionsStatus });
+      var statusGo = el("div");
+      function setStatus(text, gate) {
+        sessionsStatus = text; status.textContent = text;
+        util.clear(statusGo);
+        if (gate && gate.go) {
+          var open = el("button.btn.sm.ghost", { type:"button", text:gate.goText || "Open", "data-team-share-open":"1" });
+          open.addEventListener("click", function () { location.hash = gate.go; });
+          statusGo.appendChild(open);
+        }
+      }
+      // One shared Study Rooms call for every button here: Study Rooms builds
+      // the confirm box and does the send; this file only supplies the payload.
+      async function shareVia(build) {
+        if (!(G.studyGroup && typeof G.studyGroup.share === "function")) { setStatus("Study Rooms isn't available in this build."); return; }
+        var r = await G.studyGroup.share({ kind:"team-session", build:build });
+        setStatus(r.text, r.gate);
+      }
+
+      if (!list.length) panel.appendChild(el("p.hint", { text:"No saved sessions yet. Plan one below." }));
+      list.forEach(function (s) {
+        var card = el("div.card", { "data-team-session-card":s.id, style:"margin-top:8px" });
+        card.appendChild(el("strong", { text:s.title }));
+        card.appendChild(el("p.hint", { text:s.steps.length + (s.steps.length === 1 ? " exercise" : " exercises") + " - about " + sessionMinutes(s.steps) + " min" }));
+        var ol = el("ol", { style:"margin:4px 0 8px 1.2rem;padding:0" });
+        s.steps.forEach(function (id) { var ex = exerciseById(id); if (ex) ol.appendChild(el("li", { text:ex.title })); });
+        card.appendChild(ol);
+        var row = el("div.btn-row", { style:"gap:8px;flex-wrap:wrap" });
+        var startS = el("button.btn.primary.sm", { type:"button", text:"Start session", "aria-label":"Start session " + s.title, "data-team-session-start":s.id });
+        startS.addEventListener("click", function () {
+          var first = exerciseById(s.steps[0]);
+          if (!first) return;
+          _chain = { id:s.id, title:s.title, steps:s.steps.slice(), done:0 };
+          drawChain();
+          begin(first);
+        });
+        var shareS = el("button.btn.sm.ghost", { type:"button", text:"Share to my room", "aria-label":"Share " + s.title + " to my room", "data-team-session-share":s.id });
+        shareS.addEventListener("click", async function () {
+          if (spent(shareS)) return;
+          shareS.setAttribute("aria-disabled", "true");
+          try { await shareVia(function () { return handoffBuild(s.title, s.steps); }); }
+          finally { shareS.removeAttribute("aria-disabled"); }
+        });
+        var rm = el("button.btn.sm.ghost", { type:"button", text:"Remove", "aria-label":"Remove session " + s.title, "data-team-session-remove":s.id });
+        rm.addEventListener("click", async function () {
+          var yes = !(G.modal && G.modal.confirm) || await G.modal.confirm("Remove the session \"" + s.title + "\" from this device? The exercises themselves are not affected.", { title:"Remove session", okText:"Remove", danger:true });
+          if (!yes) return;
+          try { await updateSessions(function (cur) { return cur.filter(function (x) { return x.id !== s.id; }); }); sessionsStatus = "Session removed."; }
+          catch (e) { sessionsStatus = "GUIDON couldn't remove that session."; }
+          if (_chain && _chain.id === s.id) { _chain = null; _running = ""; drawChain(); }
+          say(sessionsStatus);
+          drawSessions("[data-team-plan-summary]");
+        });
+        row.appendChild(startS); row.appendChild(shareS); row.appendChild(rm);
+        card.appendChild(row);
+        panel.appendChild(card);
+      });
+      panel.appendChild(status); panel.appendChild(statusGo);
+
+      // ---- Plan a session ----
+      var det = el("details", { "data-team-builder":"1", style:"margin-top:10px" });
+      if (draft.open) det.open = true;
+      det.addEventListener("toggle", function () { draft.open = det.open; });
+      det.appendChild(el("summary", { text:"Plan a session", "data-team-plan-summary":"1" }));
+      var nameId = "team-session-name";
+      det.appendChild(el("label", { text:"Session name (optional)", for:nameId }));
+      var nameIn = el("input", { type:"text", id:nameId, maxlength:String(SESSION_TITLE_MAX), value:draft.title, "data-team-session-name":"1", style:"width:100%;margin-bottom:8px" });
+      nameIn.addEventListener("input", function () { draft.title = nameIn.value; });
+      det.appendChild(nameIn);
+      det.appendChild(el("p.hint", { text:"Add exercises in the order you will run them - up to " + SESSION_STEPS_MAX + "." }));
+      var pick = el("div", { style:"display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px" });
+      CATALOG.forEach(function (ex) {
+        var full = draft.steps.length >= SESSION_STEPS_MAX;
+        var add = el("button.btn.sm.ghost", { type:"button", text:ex.title, "aria-label":"Add " + ex.title + " to the session", "data-team-add":ex.id, style:"text-align:left;overflow-wrap:anywhere;max-width:100%" });
+        if (full) add.setAttribute("aria-disabled", "true");
+        add.addEventListener("click", function () {
+          if (add.getAttribute("aria-disabled") === "true") { say("The session already has " + SESSION_STEPS_MAX + " exercises."); return; }
+          draft.steps.push(ex.id); draft.open = true;
+          say(ex.title + " added. " + draft.steps.length + (draft.steps.length === 1 ? " exercise" : " exercises") + " in the session.");
+          drawSessions('[data-team-add="' + ex.id + '"]');
+        });
+        pick.appendChild(add);
+      });
+      det.appendChild(pick);
+      if (draft.steps.length) {
+        var ordered = el("ol", { "data-team-draft":"1", style:"margin:4px 0 8px 1.2rem;padding:0" });
+        draft.steps.forEach(function (id, i) {
+          var ex = exerciseById(id);
+          var li = el("li", { style:"margin:4px 0" });
+          li.appendChild(el("span", { text:(ex ? ex.title + " (" + ex.minutes + " min)" : id) + " " }));
+          var up = el("button.btn.sm.ghost", { type:"button", text:"Up", "aria-label":"Move " + ex.title + " up", "data-team-up":String(i) });
+          var down = el("button.btn.sm.ghost", { type:"button", text:"Down", "aria-label":"Move " + ex.title + " down", "data-team-down":String(i) });
+          var del = el("button.btn.sm.ghost", { type:"button", text:"Remove", "aria-label":"Remove " + ex.title + " from the session", "data-team-drop":String(i) });
+          if (i === 0) up.setAttribute("aria-disabled", "true");
+          if (i === draft.steps.length - 1) down.setAttribute("aria-disabled", "true");
+          up.addEventListener("click", function () {
+            if (i === 0) return;
+            var t = draft.steps[i - 1]; draft.steps[i - 1] = draft.steps[i]; draft.steps[i] = t;
+            say(ex.title + " moved to position " + i + ".");
+            drawSessions('[data-team-up="' + (i - 1) + '"]');
+          });
+          down.addEventListener("click", function () {
+            if (i >= draft.steps.length - 1) return;
+            var t = draft.steps[i + 1]; draft.steps[i + 1] = draft.steps[i]; draft.steps[i] = t;
+            say(ex.title + " moved to position " + (i + 2) + ".");
+            drawSessions('[data-team-down="' + (i + 1) + '"]');
+          });
+          del.addEventListener("click", function () {
+            draft.steps.splice(i, 1);
+            say(ex.title + " removed from the session.");
+            drawSessions(draft.steps.length ? '[data-team-drop="' + Math.min(i, draft.steps.length - 1) + '"]' : "[data-team-plan-summary]");
+          });
+          li.appendChild(up); li.appendChild(down); li.appendChild(del);
+          ordered.appendChild(li);
+        });
+        det.appendChild(ordered);
+      }
+      det.appendChild(el("p.hint", { "data-team-draft-total":"1", text:draft.steps.length ? draft.steps.length + (draft.steps.length === 1 ? " exercise" : " exercises") + " - about " + sessionMinutes(draft.steps) + " min." : "Nothing added yet." }));
+      var brow = el("div.btn-row", { style:"gap:8px;flex-wrap:wrap" });
+      var save = el("button.btn.primary.sm", { type:"button", text:"Save session", "data-team-session-save":"1" });
+      if (!draft.steps.length) save.setAttribute("aria-disabled", "true");
+      save.addEventListener("click", async function () {
+        if (save.getAttribute("aria-disabled") === "true") { say("Add at least one exercise first."); return; }
+        var title = cleanTitle(draft.title) || "Team session", full = false;
+        try {
+          await updateSessions(function (cur) {
+            if (cur.length >= SESSION_MAX) { full = true; return null; }
+            cur.push({ id:nextSessionId(), title:title, steps:draft.steps.slice(), createdAt:Date.now() });
+            return cur;
+          });
+          sessionsStatus = full ? "You already have " + SESSION_MAX + " saved sessions. Remove one first." : "Session saved: " + title + ".";
+          if (!full) { draft.title = ""; draft.steps = []; }
+        } catch (e) { sessionsStatus = "GUIDON couldn't save that session."; }
+        say(sessionsStatus);
+        drawSessions("[data-team-plan-summary]");
+      });
+      var clear = el("button.btn.sm.ghost", { type:"button", text:"Clear", "data-team-session-clear":"1" });
+      clear.addEventListener("click", function () { draft.title = ""; draft.steps = []; say("Session cleared."); drawSessions("[data-team-plan-summary]"); });
+      brow.appendChild(save); brow.appendChild(clear);
+      det.appendChild(brow);
+      // Share the session as planned, without saving it first.
+      if (G.studyGroup && typeof G.studyGroup.shareControl === "function") {
+        det.appendChild(G.studyGroup.shareControl({ kind:"team-session", buttonText:"Share to my room", build:function () { return handoffBuild(draft.title, draft.steps); } }));
+      }
+      panel.appendChild(det);
+      sessionsHost.appendChild(panel);
+      if (focusSel) { var n = null; try { n = sessionsHost.querySelector(focusSel); } catch (e) {} try { if (n) n.focus(); } catch (e) {} }
     }
 
     function drawCatalog() {
@@ -345,11 +676,17 @@
       catalogHost.appendChild(grid);
     }
     drawCatalog();
+    drawChain();
+    drawSessions();
     if (focusExercise) {
       var startBtn = catalogHost.querySelector('[data-team-start="' + focusExercise + '"]');
       try { if (startBtn) { startBtn.focus(); say("Back at the exercise list."); } } catch (e) {}
     }
   }
 
-  G.teamTraining = { render:render, CATALOG:CATALOG, KEY:KEY, _launchSequence:launchSequence, _findScenario:findScenario, _resolveLanes:resolveLanes, _teachBackPrompts:teachBackPrompts };
+  G.teamTraining = { render:render, CATALOG:CATALOG, KEY:KEY, SESSIONS_KEY:SESSIONS_KEY, _launchSequence:launchSequence, _findScenario:findScenario, _resolveLanes:resolveLanes, _teachBackPrompts:teachBackPrompts,
+    // Study Rooms hand-off (see "Team sessions" above): the adapter Study
+    // Rooms reads (also at G.roomHandoffAdapters["team-session"]) and the
+    // payload builder the "Share to my room" buttons use.
+    handoff:ROOM_ADAPTER, handoffBuild:handoffBuild, _normalizeSessions:normalizeSessions };
 })();
