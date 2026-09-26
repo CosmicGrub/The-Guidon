@@ -1293,6 +1293,15 @@ html[data-motion="cinematic"] { --qz-flip-dur: .95s; --qz-flip-ease: cubic-bezie
 .qz-diff-beginner { color: var(--green); border-color: color-mix(in srgb, var(--green) 45%, var(--line-2)); }
 .qz-diff-intermediate { color: color-mix(in srgb, var(--amber) 50%, var(--text)); border-color: color-mix(in srgb, var(--amber) 45%, var(--line-2)); }
 .qz-diff-expert { color: var(--ink-red); border-color: color-mix(in srgb, var(--red) 45%, var(--line-2)); }
+/* "Unit deck: <name>" - the label on every card that came from a unit's own deck
+   (src/app-modules/unit-decks.js), so it is never taken for Army doctrine. Body text
+   colour on a faint tint keeps it readable in every theme. */
+.unit-deck-tag {
+  display: inline-block; font-size: .72rem; font-family: var(--font-mono); color: var(--text);
+  padding: 2px 10px; border-radius: 999px; margin: 4px 0 2px; max-width: 100%; overflow-wrap: anywhere;
+  border: 1px solid color-mix(in srgb, var(--violet, #a78bfa) 55%, var(--line-2));
+  background: color-mix(in srgb, var(--violet, #a78bfa) 12%, transparent);
+}
 .qz-star-btn {
   position: absolute; top: 10px; right: 10px; z-index: 2;
   width: 36px; height: 36px; display: grid; place-items: center;
@@ -9004,6 +9013,11 @@ window.G = window.G || {};
       // in a real build; the typeof guard only covers a stand-in/corrupted
       // build, same as every other optional cross-module call in this file.
       try { if (G.moiImport && G.moiImport.currentFamilies) await G.moiImport.currentFamilies(); } catch (e) {}
+      // Unit decks (src/app-modules/unit-decks.js): read from the device once, here, so
+      // studyQuestions() below (which is synchronous, like every other accessor) has the
+      // Soldier's decks the moment a study tool draws. A row that fails its check is left
+      // out; nothing here can stop the app from starting.
+      try { if (G.unitDecks && typeof G.unitDecks.load === "function") await G.unitDecks.load(); } catch (e) {}
       state.ready = true;
       util.emit("store:ready");
     },
@@ -9389,6 +9403,33 @@ window.G = window.G || {};
       const moiFocus = moiScopeFocus();
       if (moiFocus) list = list.filter((q) => moiFocus.boardCategories.has(q.category));
       state._boardQuestionsCache = { key, list };
+      return list;
+    },
+    // Board questions PLUS the cards of the Soldier's own unit decks (Settings ->
+    // Study Preferences -> Unit decks; src/app-modules/unit-decks.js). This is the
+    // ONLY store accessor that returns a unit card, and it is called by exactly three
+    // study tools - Board Drill, Quiz and Rapid Fire. Global search and the Readiness
+    // screen's own "Unit Deck Readiness" row read G.unitDecks.cards() themselves.
+    // tools/test-unit-decks-isolation.mjs holds those call sites to exactly that list.
+    // boardQuestions() above is
+    // deliberately untouched: Study Rooms (which would put cards on the LAN),
+    // Mock Board, the Home dashboard, weak-area rankings and every count that
+    // means "the shipped bank" keep reading it, so a unit card cannot reach any
+    // of them by accident. With no unit deck switched on this returns the very
+    // same array boardQuestions() does, so nothing changes for a Soldier who has
+    // never added one. A unit card carries no tier, MOS or pillar, so the tier,
+    // MOS and MOI-scope narrowing above cannot touch it: a deck the Soldier has
+    // switched on is always in their pool, and switching it off is the one way
+    // to hide it. Memoized on the identity of the base list and the deck revision.
+    studyQuestions() {
+      const base = this.boardQuestions();
+      const unit = (G.unitDecks && typeof G.unitDecks.cards === "function") ? G.unitDecks.cards() : [];
+      if (!unit.length) return base;
+      const rev = G.unitDecks.rev();
+      const memo = state._studyQuestionsCache;
+      if (memo && memo.base === base && memo.rev === rev) return memo.list;
+      const list = base.concat(unit);
+      state._studyQuestionsCache = { base, rev, list };
       return list;
     },
     pointsRules() { return state.seed.points || { categories: [], totalMax: 800 }; },
@@ -11280,7 +11321,10 @@ window.G = window.G || {};
       catch (e) { return "Tap"; }
     };
     const clickVerbLower = () => clickVerb().toLowerCase();
-    const all = store.boardQuestions();
+    // studyQuestions(): the shipped board bank plus the cards of any unit deck the
+    // Soldier has switched on (each labeled "Unit deck: <name>" on its face). With no
+    // unit deck on, this is the same array boardQuestions() returns.
+    const all = store.studyQuestions();
     const categories = ["All", ...Array.from(new Set(all.map((q) => q.category)))];
     // Filter consolidation (board section reorganization): category used to
     // be a real <select> (catSel) because catList/catChipBar/catSel each grew
@@ -11432,7 +11476,7 @@ window.G = window.G || {};
       });
     }
 
-    let queue = [], idx = 0, seen = 0, recalled = 0, srsMap = {}, dueOnlyMode = false, leechOnlyMode = false, starOnlyMode = false, mosFilterCode = null;
+    let queue = [], idx = 0, seen = 0, recalled = 0, srsMap = {}, dueOnlyMode = false, leechOnlyMode = false, starOnlyMode = false, mosFilterCode = null, unitFilterId = null;
     let flipped = false;
     // "5-Minute Board Reps" (ROADMAP §3f Phase 1): a capped daily set - due
     // cards first, then leeches, then the Soldier's weakest categories -
@@ -11490,6 +11534,8 @@ window.G = window.G || {};
       // category within their MOS deck), but starts as the ONLY narrowing
       // filter active when arrived at fresh via the Readiness button.
       if (mosFilterCode) pool = pool.filter((q) => Array.isArray(q.mos) && q.mos.some((m) => ((G.mosDecks && G.mosDecks.normalize) ? G.mosDecks.normalize(m) : String(m).toUpperCase()) === mosFilterCode));
+      // The Readiness tab's "Study <unit deck>" deep link: exactly that deck's cards.
+      if (unitFilterId) pool = pool.filter((q) => q.unitDeck && q.unitDeck.id === unitFilterId);
       // One db.all("kv") cursor scan instead of N parallel db.get()s -
       // scoped to the FULL bank (all), not just the filtered pool, so the
       // single resulting srsMap also covers what refreshCatList()/
@@ -11730,11 +11776,16 @@ window.G = window.G || {};
       acceptBox.appendChild(el("p.bq-answer-text", { text: accText }));
 
       const bookBox = el("div.bq-answer-block.bq-bybook");
+      // A unit deck's card is never "By the Book" and never a "study-guide answer" GUIDON
+      // wrote: it is the unit's own wording, which GUIDON has not checked. Say exactly that.
       bookBox.appendChild(el("div.bq-answer-label", { gi: paraphrased ? "book-open" : "star", giSize: 13,
-        text: paraphrased ? G.board.PARAPHRASE_LABEL : "By the Book (verbatim doctrine)" }));
+        text: q.unitDeck ? "From your unit's deck (GUIDON has not checked it)" : paraphrased ? G.board.PARAPHRASE_LABEL : "By the Book (verbatim doctrine)" }));
       bookBox.appendChild(el("p.bq-answer-text", { text: bookText }));
-      if (sourceLine) bookBox.appendChild(el("span.src", { text: "Source: " + sourceLine }));
+      if (sourceLine) bookBox.appendChild(el("span.src", { text: (q.unitDeck ? "Source (as your unit wrote it): " : "Source: ") + sourceLine }));
 
+      // A unit deck's card says whose it is at the top of the answer, too.
+      const backUnitTag = G.board.unitTag(q);
+      if (backUnitTag) scroll.appendChild(backUnitTag);
       // Expert-tier cards lead with the verbatim standard — the whole point
       // of that tier is holding yourself to by-the-book recall, not the
       // easier paraphrase. Beginner/intermediate keep the friendlier
@@ -11822,6 +11873,7 @@ window.G = window.G || {};
         if (starOnlyMode) active.push("My Bookmarks");
         if (regFilter !== "All") active.push("regulation “" + regFilter + "”");
         if (pillarFilter !== "All") active.push("pillar “" + pillarFilter + "”");
+        if (unitFilterId) active.push("unit deck");
         const msg = active.length
           ? "No questions match " + active.join(" + ") + ". Clear one of these filters to see more."
           : "No questions for this filter.";
@@ -11852,6 +11904,9 @@ window.G = window.G || {};
 
       const front = el("div.qz-face.qz-front");
       front.appendChild(el("div.kc-label", { text: q.category + "  ·  " + srsLabel }));
+      // "Unit deck: <name>" on the face of every unit card, so nobody mistakes it for doctrine.
+      const frontUnitTag = G.board.unitTag(q);
+      if (frontUnitTag) front.appendChild(frontUnitTag);
       // Compact recall-strength indicator, computed entirely from srs state
       // the scheduler already trusts (no new persisted fields) — the
       // card's first glanceable "how am I doing" signal beyond plain text.
@@ -12475,6 +12530,14 @@ window.G = window.G || {};
       if (wantMos && all.some(hasMos)) mosFilterCode = wantMos;
       G.board._filterMos = null;
     }
+    // Same one-shot convention, for the Readiness tab's "Study <unit deck>" button: the
+    // deck's id is checked against the cards actually in this drill (a deck switched off
+    // since, or removed, must not leave an empty queue behind an invisible filter).
+    if (G.board._filterUnit) {
+      const wantUnit = String(G.board._filterUnit);
+      if (all.some((q) => q.unitDeck && q.unitDeck.id === wantUnit)) unitFilterId = wantUnit;
+      G.board._filterUnit = null;
+    }
     diffSel.addEventListener("change", build);
 
     // WCAG 2.4.1 Bypass Blocks: below .drill-layout's 1024px split
@@ -12876,7 +12939,10 @@ window.G = window.G || {};
     // Regulation search by citation number/format (any spelling MOI Import
     // already normalizes) is Phase 2, not this pass.
     const regIndex = new Map();
-    all.forEach((q) => regIndex.set(q.id, G.board.regulationsOf(q.source)));
+    // A unit card's chips come from the entries that open with a real publication
+    // (its `regs`, worked out when the deck was loaded), never from the unit's own
+    // words - "Battalion SOP 2026" must not read as a regulation.
+    all.forEach((q) => regIndex.set(q.id, q.unitDeck ? (q.regs || []) : G.board.regulationsOf(q.source)));
     function regScopePool() {
       let pool = pillarFilter === OTHER_PILLAR ? all.filter((q) => !q.pillar)
         : pillarFilter !== "All" ? all.filter((q) => q.pillar === pillarFilter) : all;
@@ -12952,14 +13018,17 @@ window.G = window.G || {};
       // ever called from build(), right after that assignment).
       util.clear(readinessPane);
       readinessPane.appendChild(el("div.eyebrow", { text: "Readiness" }));
+      // The shipped bank only: a unit deck has its own Readiness row on the full Readiness
+      // tab and must not move this "Overall" figure.
+      const bankAll = all.filter((q) => !q.unitDeck);
       const catStats = categories.filter((c) => c !== "All").map((c) => {
-        const pool = all.filter((q) => q.category === c);
+        const pool = bankAll.filter((q) => q.category === c);
         const mastered = pool.filter((q) => G.board.isMasteredSrs(srsMap[q.id])).length;
         return { cat: c, total: pool.length, mastered: mastered,
           pct: pool.length ? Math.round(mastered / pool.length * 100) : 0 };
       });
       const totalMastered = catStats.reduce((s, c) => s + c.mastered, 0);
-      const overallPct = all.length ? Math.round(totalMastered / all.length * 100) : 0;
+      const overallPct = bankAll.length ? Math.round(totalMastered / bankAll.length * 100) : 0;
       readinessPane.appendChild(el("div.stat", {}, [
         el("span.k", { text: "Overall" }),
         el("span.v", { text: overallPct + "%" }),
@@ -13021,6 +13090,18 @@ window.G = window.G || {};
       ]);
       drillDetail.appendChild(mosBanner);
     }
+    // Same visible feedback for the one-shot "Study <unit deck>" deep link: a narrower
+    // deck than usual needs a stated reason and a way back.
+    if (unitFilterId) {
+      const unitDeckName = ((all.find((q) => q.unitDeck && q.unitDeck.id === unitFilterId) || {}).unitDeck || {}).name || unitFilterId;
+      const unitBanner = el("div.panel", { "data-unit-deck-banner": unitFilterId, style: "margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap" }, [
+        el("span", { style: "flex:1 1 auto;min-width:0", text: "Studying: Unit deck: " + unitDeckName }),
+        el("button.btn.ghost.sm", { type: "button", text: "Study everything again", style: "flex:0 0 auto;white-space:nowrap",
+          "aria-label": "Clear the " + unitDeckName + " unit deck filter and study everything again",
+          onclick: () => { unitFilterId = null; unitBanner.remove(); build(); } }),
+      ]);
+      drillDetail.appendChild(unitBanner);
+    }
     // MOI Scope (ROADMAP 3g phase 2, MOI Import Phase 2): PERSISTENT
     // banner, unlike mosBanner just above (a one-shot deep-link flag reset
     // by build()) - shown every time this tab renders for as long as at
@@ -13055,7 +13136,9 @@ window.G = window.G || {};
         if (!(await G.modal.confirm("Reset spaced-repetition schedule for all board questions?"))) return;
         // One transaction for every graded question (900+ cards) instead
         // of one transaction per db.del() call (task #229).
-        await db.delMany("kv", all.map((q) => srsKey(q.id)));
+        // The shipped board questions only. A unit deck's own progress is reset (or
+        // kept when the deck is removed) from Settings -> Study Preferences -> Unit decks.
+        await db.delMany("kv", all.filter((q) => !q.unitDeck).map((q) => srsKey(q.id)));
         util.toast("Schedule reset.");
         build();
       } }),
@@ -13192,7 +13275,9 @@ window.G = window.G || {};
       try { return window.matchMedia("(hover: hover) and (pointer: fine)").matches ? "Click" : "Tap"; }
       catch (e) { return "Tap"; }
     };
-    const all = store.boardQuestions();
+    // Quiz works on the same pool as Board Drill: the shipped bank plus any unit deck the
+    // Soldier has switched on (see store.studyQuestions()).
+    const all = store.studyQuestions();
     const categories = ["All", ...Array.from(new Set(all.map((q) => q.category)))];
     const catSel = el("select", { "aria-label": "Filter by category" });
     categories.forEach((c) => catSel.appendChild(el("option", { value: c, text: c })));
@@ -13267,7 +13352,11 @@ window.G = window.G || {};
       // here per session instead; drawQuestion() below now just excludes the current
       // question id from this already-built pool, rather than re-mapping all ~1,000
       // questions into new objects on every draw.
-      const distractorPool = all.map((x) => ({ id: x.id, a: x.acceptableAnswer || x.a, category: x.category }));
+      // `unit` marks a unit deck's answer: a shipped question never gets one as a wrong option
+      // (a doctrine question with "0630 formation" among its choices would be silly and
+      // misleading), while a unit question may draw on the shipped bank for extra options
+      // when its own deck is too small to supply three.
+      const distractorPool = all.map((x) => ({ id: x.id, a: x.acceptableAnswer || x.a, category: x.category, unit: !!x.unitDeck }));
       sess = { cat, lvl: _lvl, idx: 0, correct: 0, total: pool.length, questions: shuffle(pool), answered: false, distractorPool };
       drawQuestion();
     }
@@ -13291,13 +13380,15 @@ window.G = window.G || {};
       // distractorPool built once in buildSession() (see its own comment) — only the
       // current question's id needs excluding per draw, not the whole ~1,000-question
       // map rebuilt from scratch.
-      const distractorPool = sess.distractorPool.filter((x) => x.id !== q.id);
+      const distractorPool = sess.distractorPool.filter((x) => x.id !== q.id && (!x.unit || !!q.unitDeck));
       const distractors = buildDistractors(correctText, q.category, distractorPool, 3);
       const options = shuffle([correctText].concat(distractors));
       const correctIdx = options.indexOf(correctText);
 
       const card = el("div.panel.quiz-card");
       card.appendChild(el("div.kc-label", { text: q.category + "  ·  Q " + (sess.idx + 1) + "/" + sess.total }));
+      const quizUnitTag = G.board.unitTag(q);
+      if (quizUnitTag) card.appendChild(quizUnitTag);
       card.appendChild(el("div.prompt", { text: q.q }));
 
       if (timedMode) {
@@ -15018,6 +15109,38 @@ window.G = window.G || {};
       }
     } catch (e) { /* MOS deck readiness non-fatal */ }
 
+    // ── Unit Deck Readiness (AUDIT-2026-09 item M) ─────────────────
+    // One row per unit deck the Soldier has switched on (Settings -> Study Preferences ->
+    // Unit decks) - their own unit's material, so it is its own panel and never part of
+    // the Board Readiness Score, the six pillars or the MOS rows above (`all` is the
+    // shipped bank; store.studyQuestions() is deliberately not used here). Same
+    // isMasteredSrs predicate as every other row. Renders NOTHING when no deck is on, so a
+    // Soldier who never adds one sees no new DOM.
+    try {
+      const unitRows = (G.unitDecks && typeof G.unitDecks.list === "function") ? G.unitDecks.list().filter((d) => d.enabled) : [];
+      const unitAllCards = (G.unitDecks && typeof G.unitDecks.cards === "function") ? G.unitDecks.cards() : [];
+      if (unitRows.length) {
+        const unitPanel = el("div.panel.readiness-unit-decks", { style: "margin-top:12px" });
+        unitPanel.appendChild(el("div.eyebrow", { text: "Unit Deck Readiness" }));
+        unitPanel.appendChild(el("p.hint", { text: "Decks your own unit wrote (Settings → Study Preferences → Unit decks). They are not Army doctrine, and they are not counted in the Board Readiness Score or the rows above." }));
+        unitRows.forEach((d) => {
+          const cs = unitAllCards.filter((q) => q.unitDeck.id === d.id);
+          const mastered = cs.filter((q) => G.board.isMasteredSrs(srsData[q.id])).length;
+          const pct = cs.length ? Math.round((mastered / cs.length) * 100) : 0;
+          const row = el("div.readiness-unit-deck-row", { style: "margin-bottom:10px", "data-unit-deck": d.id });
+          row.appendChild(el("div.stat", {}, [
+            el("span.k", { text: "Unit deck: " + d.name }),
+            el("span.v", { style: "color:" + (pct >= 85 ? "var(--green)" : pct >= 60 ? "var(--cyan)" : "var(--amber)"), text: pct + "%  (" + mastered + "/" + cs.length + " cards)" }),
+          ]));
+          if (cs.length) row.appendChild(el("div.bar" + (pct >= 85 ? ".green" : pct >= 60 ? ".cyan" : ""), {}, [el("span", { style: "transform:scaleX(" + (pct / 100) + ")" })]));
+          if (cs.length) row.appendChild(el("button.btn.ghost.sm", { type: "button", text: "Study " + d.name, "aria-label": "Study the unit deck " + d.name, style: "margin-top:4px",
+            onclick: () => { G.board._filterUnit = d.id; G.board.render(mount.parentElement || mount); } }));
+          unitPanel.appendChild(row);
+        });
+        mount.appendChild(unitPanel);
+      }
+    } catch (e) { /* unit deck readiness non-fatal */ }
+
     // ── All categories ─────────────────────────────────────────
     // Tier 4 roadmap: this used to be a single-column scrolling bar-list,
     // one row per category (93 real categories in the deck) with only one
@@ -15413,7 +15536,8 @@ window.G = window.G || {};
 
   async function renderRapidFire(mount, renderOpts) {
     util.clear(mount);
-    const all = store.boardQuestions();
+    // The shipped bank plus any unit deck the Soldier has switched on (store.studyQuestions()).
+    const all = store.studyQuestions();
     const categories = ["All", ...Array.from(new Set(all.map((q) => q.category)))];
     const byId = {};
     all.forEach((q) => { byId[q.id] = q; });
@@ -15502,7 +15626,9 @@ window.G = window.G || {};
       }
       if (cfg.diffMode === "rank") {
         const band = rankBand();
-        if (band) pool = pool.filter((q) => G.board.normDifficulty(q.difficulty) === band);
+        // A unit deck is not levelled by GUIDON (its cards have no difficulty), so the
+        // rank band must not silently hide it: a Soldier who switched a deck on wants it here.
+        if (band) pool = pool.filter((q) => q.unitDeck || G.board.normDifficulty(q.difficulty) === band);
       }
       return pool;
     }
@@ -16030,6 +16156,8 @@ window.G = window.G || {};
       // an explicit extra tap, used privately right before judging.
       function drawCardParty() {
         cardHost.appendChild(el("div.kc-label", { text: current.category }));
+        const rfPartyTag = G.board.unitTag(current);
+        if (rfPartyTag) cardHost.appendChild(rfPartyTag);
         // Full text, never truncated or altered — the question is
         // essentially never a length problem (spec's own measured data:
         // 0.3% of 1069 questions exceed 200 chars), and .rf-question's
@@ -16066,6 +16194,8 @@ window.G = window.G || {};
         const card = el("div.qz-card", { "aria-label": "Flashcard, showing question" });
         const front = el("div.qz-face.qz-front");
         front.appendChild(el("div.kc-label", { text: current.category }));
+        const rfSoloTag = G.board.unitTag(current);
+        if (rfSoloTag) front.appendChild(rfSoloTag);
         front.appendChild(el("div.rf-question", { text: current.q }));
         front.appendChild(el("div.qz-flip-hint", { "aria-hidden": "true" }, [document.createTextNode(clickVerb() + " card, or press Space, to flip")]));
         const back = el("div.qz-face.qz-back");
@@ -16649,6 +16779,16 @@ window.G = window.G || {};
     // cards tagged with that MOS code, independent of pillar/category -
     // real even where a MOS's cards all happen to share one pillar today.
     _filterMos: null,
+    // One-shot entry flag for a Soldier's own unit deck (Settings -> Study Preferences
+    // -> Unit decks): the Readiness tab's "Study <unit deck>" button sets it to a deck
+    // id, renderDrill consumes and clears it. Same convention as _filterMos above.
+    _filterUnit: null,
+    // "Unit deck: <name>" - the small label on the face of every unit card (Board Drill,
+    // Quiz, Rapid Fire, search), so a card from a unit's own deck can never be mistaken
+    // for Army doctrine. null for every shipped card. Drawn as a text node.
+    unitTag(q) {
+      return q && q.unitDeck ? el("div.unit-deck-tag", { "data-unit-deck-tag": q.unitDeck.id, text: "Unit deck: " + q.unitDeck.name }) : null;
+    },
     // Heading for a card-back answer that is study-guide wording rather than
     // a quotation (a card marked verbatim:false). "By the Book (verbatim
     // doctrine)" is reserved for text actually quoted from the publication.
@@ -30621,6 +30761,19 @@ window.G = window.G || {};
     // treats anything non-numeric as 0 via Math.max's own NaN behavior,
     // so this only turns that silent self-heal into a visible "skipped".
     { prefix: "boardQuiz:best:", test: function (v) { return typeof v === "number" && !isNaN(v); } },
+    // unit-deck:<deckId> - one unit deck the Soldier added from a file their unit gave them
+    // (Settings -> Study Preferences -> Unit decks, src/app-modules/unit-decks.js). It is their
+    // own study material, so it travels in a backup like their My unit texts do (it is
+    // deliberately NOT in PRIVATE_PREFIXES: it holds no information about other people, and the
+    // sensitive-text screen refused anything that looked like it did). Board Drill, Quiz, Rapid
+    // Fire and search read every card, key point and citation off it, so the WHOLE row is held
+    // to the same closed schema and the same caps an import is - one definition,
+    // G.unitPack.validRow - and the key must be exactly unit-deck:<its own id>. With that module
+    // absent the row is refused, never trusted. (The second argument is the row's key.)
+    { prefix: "unit-deck:", test: function (v, key) {
+      if (!G.unitPack || typeof G.unitPack.validRow !== "function") return false;
+      return G.unitPack.validRow(v) && (key == null || key === "unit-deck:" + v.id);
+    } },
   ];
   function prefixValidatorFor(key) {
     for (var pi = 0; pi < KV_PREFIX_VALIDATORS.length; pi++) {
@@ -30639,7 +30792,7 @@ window.G = window.G || {};
     if (!row || row.k == null) return true;
     var validator = KV_VALIDATORS[row.k] || prefixValidatorFor(row.k);
     if (!validator) return true;
-    return !!validator(row.k === "forms:saved" ? row : row.v);
+    return !!validator(row.k === "forms:saved" ? row : row.v, row.k);
   }
 
   // What a saved item IS, in the Soldier's words. A restore that leaves
@@ -30684,6 +30837,7 @@ window.G = window.G || {};
     { prefix: "recite:", label: "Recitation Drill progress" },
     { prefix: "curr:", label: "lesson progress" },
     { prefix: "boardQuiz:best:", label: "quiz best scores" },
+    { prefix: "unit-deck:", label: "your unit decks" },
     { prefix: "guidon:", label: "a checklist or study record" },
   ];
   function describeKey(k) {
@@ -36377,6 +36531,9 @@ window.G = window.G || {};
     // instead of a text.
     var adding = false;
     var addBtn = null;
+    // A title a unit deck suggested ("Unit song"): puts a name in the Name field of the add form.
+    // Never any words - a deck cannot carry text to recite.
+    var prefillTitle = "";
     // The CSS class (and every suite that looks for rows inside it) stays on
     // the COLUMN; the two listboxes sit inside it. A listbox may only hold
     // options, so the "My unit" heading, its note and its Add button cannot
@@ -36469,6 +36626,32 @@ window.G = window.G || {};
         own.forEach(function (q) { ownList.appendChild(buildRow(q)); });
         ownPane.appendChild(ownList);
       }
+      // Titles a unit deck suggests (a deck the Soldier added under Settings -> Study
+      // Preferences -> Unit decks and left switched on): empty "add yours" prompts, one per
+      // title not already among the Soldier's own texts. The deck supplies the NAME only;
+      // the words are always the Soldier's own (a unit song is usually somebody's copyright).
+      var suggested = (G.unitDecks && typeof G.unitDecks.suggestedTitles === "function") ? G.unitDecks.suggestedTitles() : [];
+      var haveTitles = own.map(function (x) { return String(x.concept || "").toLowerCase(); });
+      suggested = suggested.filter(function (s) { return haveTitles.indexOf(s.title.toLowerCase()) === -1; });
+      if (suggested.length) {
+        var suggestWrap = el("div", { "data-recite-suggested": "1", style: "margin-top:8px" });
+        suggestWrap.appendChild(el("p.hint", { text: "Your unit's deck suggests these. Type the words yourself - the deck does not include any." }));
+        suggested.forEach(function (s) {
+          var sb = el("button.btn.ghost.sm", { type: "button", text: "Add: " + s.title, "data-recite-suggest": s.title, style: "margin:0 6px 6px 0",
+            "aria-label": "Add your own text titled " + s.title + ", suggested by the unit deck " + s.deckName });
+          sb.addEventListener("click", function () {
+            prefillTitle = s.title;
+            adding = true;
+            Array.prototype.forEach.call(listCol.querySelectorAll(".list-detail-row"), function (r) {
+              r.classList.remove("active");
+              r.setAttribute("aria-selected", "false");
+            });
+            renderDetail();
+          });
+          suggestWrap.appendChild(sb);
+        });
+        ownPane.appendChild(suggestWrap);
+      }
       addBtn = el("button.btn.sm", { type: "button", text: "Add your own text", "data-recite-add": "1" });
       addBtn.addEventListener("click", function () {
         adding = true;
@@ -36493,6 +36676,9 @@ window.G = window.G || {};
         "Paste or type your unit song, creed or motto. It is saved only on this device, it is never shared or sent anywhere, and you can delete it whenever you like. It travels with you only if you export a backup yourself. Do not add anything sensitive or classified." }));
       card.appendChild(el("label", { "for": "recite-own-title", text: "Name" }));
       var titleIn = el("input", { type: "text", id: "recite-own-title", maxlength: String(ownApi.LIMITS.title), autocomplete: "off" });
+      // A unit deck's suggested title arrives already typed in; the Soldier adds the words.
+      var prefilled = !!prefillTitle;
+      if (prefilled) { titleIn.value = prefillTitle; prefillTitle = ""; }
       card.appendChild(titleIn);
       card.appendChild(el("label", { "for": "recite-own-text", text: "Text - one line for each line you want to learn" }));
       var textIn = el("textarea", { id: "recite-own-text", rows: "8", maxlength: String(ownApi.LIMITS.chars) });
@@ -36534,7 +36720,7 @@ window.G = window.G || {};
       });
       card.appendChild(el("div", { style: "display:flex;flex-wrap:wrap;gap:8px;margin-top:10px" }, [saveBtn, cancelBtn]));
       detailPane.appendChild(card);
-      titleIn.focus();
+      (prefilled ? textIn : titleIn).focus();
     }
 
     function renderDetail() {
@@ -37620,6 +37806,7 @@ window.G = window.G || {};
         "Practice and progress data: quiz attempts, Mock Board results, streaks, and scenario progress, generated as you use the app.",
         "Squad roster (optional, leader-facing only): if you use the roster feature, it asks for initials, a callsign, or a roster number for each Soldier — not full legal names — plus a rank and counseling dates. This is the one place GUIDON stores information about people other than you, so it gets extra protection — see the next section.",
         "Risk Worksheet (optional, practice tool only): the DA Form 7278 practice tool asks for a resource, a location, and other worksheet fields. It is meant for a synthetic or hypothetical scenario, never a real facility, location, or vulnerability — but because the fields could be used to enter real information, GUIDON gives any saved worksheet the same extra protection as the roster (see the next section).",
+        "Unit decks (optional): if you add a study deck your own unit wrote (Settings → Study Preferences → Unit decks), GUIDON keeps that deck on your device, the same way it keeps your My unit texts. It comes from a file you choose or text you paste; GUIDON never fetches it from anywhere. Before it is added, GUIDON checks it for classification markings, Social Security and DoD ID numbers, contact details and lists of names, and refuses the whole deck if it finds any. It is meant for a unit's own study facts, not for information about individual Soldiers, and the check can miss things, so the person who wrote the deck is responsible for what is in it. A deck is your own study material, so it is included in a backup you export and comes back when you restore that backup. You can switch it off or remove it at any time.",
         "None of the above ever leaves your device on its own. Nothing here is ever sent to a server. The one thing you can choose to send to other devices is described under “Sharing a plan or session to a study room” below.",
       ] },
       { h: "The squad roster and Risk Worksheet get extra protection", p: [
@@ -38475,6 +38662,12 @@ window.G = window.G || {};
       prefGrid.appendChild(moiPanel);
     }
 
+    // Unit decks (AUDIT-2026-09 item M; src/app-modules/unit-decks.js): a small deck a
+    // Soldier's own unit wrote, added from a file or pasted text, previewed and confirmed
+    // before anything is kept, switchable off and removable here. The panel is drawn by
+    // that module (every string as a text node); this screen only gives it a place.
+    if (G.unitDecks && typeof G.unitDecks.renderPanel === "function") prefGrid.appendChild(G.unitDecks.renderPanel());
+
     // Intuitivism pass: this standalone toggle was a literal functional
     // duplicate of Appearance -> Motion -> Minimal whenever G.theme is
     // present (both ultimately write the same "minimal"/"standard" motion
@@ -39087,6 +39280,7 @@ window.G = window.G || {};
       { hash: "#/settings", label: "Settings — Data & Backup", keywords: "backup export import restore data", settingsAnchor: "settings-databackup-panel" },
       { hash: "#/settings", label: "Settings — Accessibility", keywords: "accessibility screen reader high contrast text size", settingsAnchor: "settings-acc-panel" },
       { hash: "#/settings", label: "Settings — Forms Fill Mode", keywords: "forms fill mode PDF replica overlay", settingsAnchor: "settings-formsmode-panel" },
+      { hash: "#/settings", label: "Settings — Unit decks", keywords: "unit deck unit pack local SOP unit history import study deck", settingsAnchor: "settings-unitdecks-panel" },
     ];
 
     function runSearch(q) {
@@ -39126,6 +39320,9 @@ window.G = window.G || {};
       const ql = q.toLowerCase();
       const sc   = store.scenarios ? store.scenarios() : [];
       const bqs  = store.boardQuestions ? store.boardQuestions() : [];
+      // The cards of the Soldier's own unit decks that are switched on: searched with the
+      // board questions, and every hit says "Unit deck: <name>" so it is never taken for doctrine.
+      const unitCards = (G.unitDecks && typeof G.unitDecks.cards === "function") ? G.unitDecks.cards() : [];
       const doc  = store.doctrine ? store.doctrine("") : [];
       const crd  = store.creeds ? store.creeds("") : [];
       const prtx = store.prt ? store.prt("") : [];
@@ -39173,8 +39370,8 @@ window.G = window.G || {};
         });
       }
       if (activeFilter === "all" || activeFilter === "board") {
-        (bqs.questions || bqs || []).forEach((q2) => {
-          if (q2._hay === undefined) q2._hay = ((q2.q||"")+" "+(q2.a||"")+" "+(q2.category||"")).toLowerCase();
+        (bqs.questions || bqs || []).concat(unitCards).forEach((q2) => {
+          if (q2._hay === undefined) q2._hay = ((q2.q||"")+" "+(q2.a||"")+" "+(q2.category||"")+(q2.unitDeck ? " "+q2.unitDeck.name : "")).toLowerCase();
           if (q2._hay.includes(ql)) {
             // Enhancement backlog round 4, "Navigation, accessibility, and minor search/home
             // polish" bucket: the match check above already guards a missing/malformed
@@ -39187,7 +39384,10 @@ window.G = window.G || {};
             const qText = q2.q || "";
             allHits.board.push({ type:"board", id:q2.id,
               title: qText.length > 80 ? qText.slice(0,80)+"…" : qText,
-              sub:"Board: "+q2.category, meta:q2.category, body:q2.a||"", route:"#/board" });
+              sub: q2.unitDeck ? "Unit deck: "+q2.unitDeck.name+" · "+q2.unitCategory : "Board: "+q2.category,
+              meta: q2.unitDeck ? "Unit deck — from your unit, not Army doctrine" : q2.category,
+              ariaType: q2.unitDeck ? "unit deck" : undefined,
+              body:q2.a||"", route:"#/board" });
           }
         });
       }
@@ -39530,7 +39730,7 @@ window.G = window.G || {};
           const card = el("div.search-hit");
           card.tabIndex = 0;
           card.setAttribute("role", "button");
-          card.setAttribute("aria-label", (h.type || "result") + ": " + (h.title || ""));
+          card.setAttribute("aria-label", (h.ariaType || h.type || "result") + ": " + (h.title || ""));
           card.setAttribute("data-search-idx", String(myIdx));
           card.style.borderLeftColor = color;
           const badge = el("span.search-badge");
@@ -39610,7 +39810,7 @@ window.G = window.G || {};
           // content alone.
           const rowLabel = h.title && h.title.length > 60 ? h.title.slice(0, 60) + "…" : (h.title || "");
           const row = el("button.list-detail-row", { type: "button", role: "option", "aria-selected": "false",
-            "aria-label": (h.type || "result") + ": " + (h.title || "") }, [
+            "aria-label": (h.ariaType || h.type || "result") + ": " + (h.title || "") }, [
             el("span.ldr-name", { text: rowLabel }),
             el("span.ldr-badge", { text: TYPE_ICON[type] }),
           ]);

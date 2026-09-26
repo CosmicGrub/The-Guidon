@@ -200,7 +200,7 @@
     { "test": "test:legal-package-content" },
     { "test": "test:opsec-guard", "anchor": "none of the app's own cards, scenarios, doctrine entries or dictionary terms is stopped as marked material" }
    ],
-   "gap": "That every built-in source is a publicly released, unclassified government publication, and every example synthetic, is an editorial and legal judgment made whenever content is added; no test can establish it. The tests prove the policy is stated in the app, that the curriculum teaches the same rule for training data, and that no shipped card, scenario, doctrine entry or dictionary term carries marking syntax or an ID number."
+   "gap": "That every built-in source is a publicly released, unclassified government publication, and every example synthetic, is an editorial and legal judgment made whenever content is added; no test can establish it. The tests prove the policy is stated in the app, that the curriculum teaches the same rule for training data, and that no shipped card, scenario, doctrine entry or dictionary term carries marking syntax or an ID number. INCOMPLETE SINCE UNIT DECKS: a Soldier can now add a study deck that a unit wrote (Settings > Study Preferences > Unit decks; guidon-app/docs/unit-packs.md). That content is not repository-maintained, so this sentence stays literally true, but it is no longer the whole story of what the app can show: a unit deck is outside this policy, is not checked for accuracy or for public release, and is only screened (any classification marking, SSN or DoD ID, UIC, phone number, email address, future date-place-activity sentence or roster-like list refuses the whole deck) and labeled 'Unit deck' on every card. The owner should decide whether paragraph 3 says so."
   },
   {
    "id": "LP-019",
@@ -860,7 +860,7 @@
    "proof": [
     { "test": "test:legal-package-content" }
    ],
-   "gap": "The policy statement exists in the app and the curriculum teaches it; that every built-in source is public and every example synthetic is an editorial judgment no test can establish."
+   "gap": "The policy statement exists in the app and the curriculum teaches it; that every built-in source is public and every example synthetic is an editorial judgment no test can establish. INCOMPLETE SINCE UNIT DECKS: the policy governs the built-in bank only; a Soldier can also add a deck their own unit wrote (guidon-app/docs/unit-packs.md), which is outside it and only screened, not reviewed."
   },
   {
    "id": "LP-094",
@@ -1304,10 +1304,11 @@
    "id": "LP-147",
    "text": "Public-source-only project policy plus explicit warning that derivative aggregation can still require review",
    "kind": "factual",
-   "verification": "mechanical",
+   "verification": "partial",
    "proof": [
     { "test": "test:legal-package-content" }
-   ]
+   ],
+   "gap": "Proved for the built-in bank: the policy and the aggregation warning are stated in the app. NO LONGER THE WHOLE STORY: a Soldier can add a unit deck (guidon-app/docs/unit-packs.md) whose content is the unit's own, outside this policy and not checked for public release or accuracy. The app screens it for markings and personal identifiers, refuses the whole deck on any finding, labels every card 'Unit deck' and never puts it in the bank, the handheld export or a Study Room - but whether a unit's own facts are releasable is for the unit's S2 and PAO, and no test can say. The owner should decide whether this row says so."
   },
   {
    "id": "LP-148",

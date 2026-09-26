@@ -22,6 +22,9 @@
 *.properties text eol=lf
 *.xml    text eol=lf
 *.yml    text eol=lf
+# The unit-deck authoring example (tools/fixtures/unit-pack-example.csv): a test rebuilds the
+# committed pack from it byte for byte, so it must not pick up CRLF on a Windows checkout.
+*.csv    text eol=lf
 gradlew  text eol=lf
 
 # CI tooling that executes on the macOS runner. These were previously uncovered

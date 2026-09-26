@@ -589,6 +589,31 @@
       "routes": ["#/team"],
       "storageKeys": ["team:training:v1", "team:sessions:v1"],
       "optionalApis": []
+    },
+    {
+      "file": "unit-decks-core.js",
+      "id": "unit-decks-core",
+      "kind": "feature",
+      "headless": true,
+      "note": "Per-unit study decks (AUDIT-2026-09 item M), the pure half: the guidon-unit-pack v1 format, its hard limits, the closed schema, the sensitive-text screening (G.opsecGuard, refuses the whole deck on ANY finding), the citation parser twin and the device row. No DOM, no storage - tools/unit-pack-kit.mjs loads this same file in a node:vm sandbox for tools/make-unit-pack.mjs and the tests, so the authoring command and the app share one validator. It is deliberately NOT a content-pack: a unit deck never enters the bank, the bank fingerprint, the content manifest, the handheld export or a Study Room.",
+      "requires": ["opsec-guard"],
+      "provides": ["G.unitPack.validate", "G.unitPack.parse", "G.unitPack.screen", "G.unitPack.describeFinding", "G.unitPack.summarize", "G.unitPack.toDeck", "G.unitPack.cardsOf", "G.unitPack.validateRow", "G.unitPack.validRow", "G.unitPack.rowKey", "G.unitPack.unitCardId", "G.unitPack.isUnitId", "G.unitPack.cite", "G.unitPack.regulationsOfEntries", "G.unitPack.LIMITS"],
+      "routes": [],
+      "storageKeys": [],
+      "optionalApis": []
+    },
+    {
+      "file": "unit-decks.js",
+      "id": "unit-decks",
+      "kind": "feature",
+      "headless": false,
+      "note": "Per-unit study decks, the on-device half: one kv row per deck under unit-deck:<id> (the Soldier's own study material, so it travels in the backup they choose to export and is checked again on restore), the Settings -> Study Preferences -> Unit decks panel (file or paste, preview, explicit confirm, on/off, remove), and the cards the study tools add through store.studyQuestions(). clearsKeys lists srs:* because Remove and Reset progress delete the review schedule of THIS deck's cards (srs:unit:<deck>:<card>) when the Soldier asks. Guest and Kiosk sessions write through G.db, which keeps a session-only profile's writes in memory.",
+      "requires": ["unit-decks-core"],
+      "provides": ["G.unitDecks.load", "G.unitDecks.list", "G.unitDecks.deck", "G.unitDecks.cards", "G.unitDecks.rev", "G.unitDecks.suggestedTitles", "G.unitDecks.inspect", "G.unitDecks.add", "G.unitDecks.setEnabled", "G.unitDecks.remove", "G.unitDecks.resetHistory", "G.unitDecks.readFile", "G.unitDecks.renderPanel"],
+      "routes": [],
+      "storageKeys": ["unit-deck:*"],
+      "clearsKeys": ["srs:*"],
+      "optionalApis": []
     }
   ]
 }
