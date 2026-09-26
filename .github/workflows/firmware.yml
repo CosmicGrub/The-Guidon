@@ -1,15 +1,19 @@
 name: Firmware
 
 # Compiles the ESP32 handheld firmware (env:flashcardos) and runs the deck
-# logic's host tests - but ONLY when the firmware (or the suite that drives its
-# host tests) changes, so it never slows an ordinary pull request.
+# logic's host tests. It is a REUSABLE workflow: ci.yml calls it as its
+# `firmware` job on every push and pull request, and `CI green` waits for it,
+# so a firmware compile error blocks a merge and is part of the verdict
+# release-cut.yml reads for the exact release commit. (It used to run on its own,
+# path-filtered to firmware/**; that left two holes - a red run did not turn
+# `CI green` red, and the version-only release-prep commit had no run at all.)
 #
 # WHY THIS EXISTS. Before it, nothing on a pull request compiled the firmware.
 # ci.yml's test chunks run the exporter and the C++ deck logic on a desktop, but
 # src/main.cpp (the SD card, the screen, touch) only ever built at a release
 # cut (release-assets.yml), so a compile error in main.cpp or lanes_json.h could
 # sit on main for weeks and surface as a failed release. This job builds the
-# real firmware on every change to it. It is the same compile the release does:
+# real firmware on every change. It is the same compile the release does:
 # `python -m platformio run -e flashcardos`.
 #
 # THE LANE-PARSER HOST TEST RUNS HERE FOR REAL. src/lanes_json.h (how the
@@ -32,24 +36,13 @@ name: Firmware
 # SPEED. PlatformIO's downloaded toolchain and framework (~/.platformio) are
 # cached, keyed on platformio.ini, and pip's own cache is kept by setup-python,
 # so a warm run is a couple of minutes; a cold one downloads the ESP32 toolchain
-# once. Every `uses:` is pinned to a real commit SHA (tools/lint-workflow-pins.mjs).
+# once. It runs alongside the test chunks, which take far longer, so it does not
+# lengthen the run. Every `uses:` is pinned to a real commit SHA
+# (tools/lint-workflow-pins.mjs).
 
 on:
-  pull_request:
-    paths:
-      - "firmware/**"
-      - "guidon-app/tools/test-esp32-lanes.mjs"
-      - ".github/workflows/firmware.yml"
-  push:
-    branches: [main]
-    paths:
-      - "firmware/**"
-      - "guidon-app/tools/test-esp32-lanes.mjs"
-      - ".github/workflows/firmware.yml"
-
-concurrency:
-  group: firmware-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  workflow_call:
+  workflow_dispatch:
 
 permissions:
   contents: read

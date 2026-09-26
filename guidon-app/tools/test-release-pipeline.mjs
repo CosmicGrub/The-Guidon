@@ -481,12 +481,13 @@ try {
 
   const green = jobBlock(ci, "ci-green");
   const greenStep = stepsOf(green)[0];
-  check(!!green && /^    if: always\(\)$/m.test(green) && /needs: \[lint-build-verify, cargo-check, test\]/.test(green), "ci.yml has one always-reporting 'CI green' verdict over the gating jobs");
+  check(!!green && /^    if: always\(\)$/m.test(green) && /needs: \[lint-build-verify, cargo-check, test, firmware\]/.test(green), "ci.yml has one always-reporting 'CI green' verdict over the gating jobs");
   if (greenStep && greenStep.run && BASH) {
-    const env = (l, c, t) => ({ R_LINT: l, R_CARGO: c, R_TEST: t });
+    const env = (l, c, t, f = "success") => ({ R_LINT: l, R_CARGO: c, R_TEST: t, R_FIRMWARE: f });
     check(runStep(greenStep.run, { box: sandbox("green-ok"), env: env("success", "success", "success") }).status === 0, "'CI green' passes when every gating job succeeded");
     check(runStep(greenStep.run, { box: sandbox("green-skip"), env: env("failure", "skipped", "skipped") }).status !== 0, "'CI green' FAILS when the test matrix was skipped (a skipped check used to look like nothing was wrong)");
     check(runStep(greenStep.run, { box: sandbox("green-cancel"), env: env("success", "success", "cancelled") }).status !== 0, "'CI green' fails on a cancelled test matrix");
+    check(runStep(greenStep.run, { box: sandbox("green-firmware"), env: env("success", "success", "success", "failure") }).status !== 0, "'CI green' FAILS when only the firmware compile failed (a red firmware run can no longer sit beside a green verdict)");
   } else bad("ci.yml: no runnable 'CI green' step");
 
   /* ===================================================================
@@ -776,17 +777,22 @@ try {
   }
 
   /* ===================================================================
-     9. The firmware is compiled on every change to it (.github/workflows/firmware.yml),
+     9. The firmware is compiled on every run (firmware.yml, called by ci.yml and part of `CI green`),
         and the lane-parser host test can no longer be silently skipped on CI
      =================================================================== */
-  console.log("\n9. Firmware check: compiled when it changes, host test cannot be skipped on CI");
+  console.log("\n9. Firmware check: compiled on every run and gating, host test cannot be skipped on CI");
   {
     const fw = wf("firmware.yml");
     const between = (text, from, to) => { const a = text.indexOf(from); const b = text.indexOf(to, a + from.length); return a === -1 ? "" : text.slice(a, b === -1 ? undefined : b); };
-    const onPr = between(fw, "  pull_request:", "  push:"), onPush = between(fw, "  push:", "\nconcurrency:");
-    check(/paths:/.test(onPr) && /"firmware\/\*\*"/.test(onPr) && /paths:/.test(onPush) && /"firmware\/\*\*"/.test(onPush) && /branches: \[main\]/.test(onPush),
-      "firmware.yml runs on pull requests AND on main, only when firmware/** (or its own suite) changes - it never slows an ordinary pull request", "firmware.yml is not path-filtered to firmware/**");
-    check(/"guidon-app\/tools\/test-esp32-lanes\.mjs"/.test(onPr) && /"\.github\/workflows\/firmware\.yml"/.test(onPr), "...and also when its host-test suite or the workflow itself changes");
+    const fwOn = between(fw, "\non:\n", "\npermissions:");
+    check(/^  workflow_call:/m.test(fwOn) && !/^  (pull_request|push):/m.test(fwOn) && !/paths:/.test(fwOn),
+      "firmware.yml is a reusable workflow with NO path filter of its own (it only ever runs through ci.yml, so it can never be skipped for the one commit that matters)", "firmware.yml is not a plain workflow_call");
+    const fwJobCall = jobBlock(ci, "firmware") || "";
+    check(/uses: \.\/\.github\/workflows\/firmware\.yml/.test(fwJobCall) && !/^\s+(if|paths):/m.test(fwJobCall),
+      "ci.yml calls it as its `firmware` job on every run - no `if:` and no path filter - including the version-only release-prep commit", "ci.yml has no unconditional `firmware` job calling firmware.yml");
+    const greenBlock = jobBlock(ci, "ci-green") || "";
+    check(/needs: \[[^\]]*\bfirmware\b[^\]]*\]/.test(greenBlock) && /R_FIRMWARE: \$\{\{ needs\.firmware\.result \}\}/.test(greenBlock) && /firmware compile=\$R_FIRMWARE/.test(greenBlock),
+      "`CI green` waits for the firmware job and fails unless it SUCCEEDED, so a firmware compile error blocks a merge like any other red check", "`CI green` does not gate on the firmware job");
     check(/^permissions:\n  contents: read$/m.test(fw) && !/contents: write|id-token|actions: write|packages: write/.test(fw), "read-only token: nothing here can publish or write");
     check(!/secrets\./.test(fw) && !/\$\{\{\s*secrets/.test(fw), "no secret is read (the repository has none)");
     const fwUses = [...fw.matchAll(/^\s*(?:-\s*)?uses:\s*(\S+)/gm)].map((m) => m[1]);
@@ -819,7 +825,7 @@ try {
     check(/ARDUINOJSON_DIR: \$\{\{ github\.workspace \}\}\/\.arduinojson\/src/.test(between(testJob, "      - name: Run test chunk", "\n\n") || testJob), "...and the chunk's run step points ARDUINOJSON_DIR at that checkout's src folder", "the run step does not set ARDUINOJSON_DIR");
     const chunkTests = [...testJob.matchAll(/^\s+tests: "([^"]+)"/gm)].map((m) => m[1]);
     check(chunkTests.filter((t) => /(^| )test:esp32-lanes( |$)/.test(t)).length === 1, "exactly one chunk runs test:esp32-lanes, so the fetch's condition matches a real chunk", "chunks running test:esp32-lanes: " + chunkTests.filter((t) => /test:esp32-lanes/.test(t)).length);
-    check(/--also desktop\.yml,ios\.yml,firmware\.yml/.test(cut), "release-cut.yml's green-CI gate also looks at the Firmware workflow (a path-filtered one: no run for the commit does not block, a red run does)", "release-cut.yml does not list firmware.yml in its --also gate");
+    check(/--also desktop\.yml,ios\.yml\b/.test(cut) && !/firmware\.yml/.test(cut), "release-cut.yml needs no separate firmware gate: the firmware compile is a job of ci.yml, so its green-CI gate on the exact release commit already includes it", "release-cut.yml still gates on a standalone firmware.yml run");
 
     // The suite itself: with the CI variable set, a missing ArduinoJson FAILS; on a developer machine it only SKIPs.
     const runLanes = (ci) => new Promise((resolve) => {

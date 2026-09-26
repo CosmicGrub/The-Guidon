@@ -797,8 +797,9 @@ jobs:
       # repos/bblanchon/ArduinoJson/commits/v7.4.3`), for the same reason every
       # action above is SHA-pinned; the header-only sources are read straight
       # from the checkout (ARDUINOJSON_DIR below), nothing is installed. The
-      # firmware itself is compiled by .github/workflows/firmware.yml (on
-      # firmware/** changes) and by release-assets.yml (at a release cut).
+      # firmware itself is compiled by the `firmware` job below (the reusable
+      # .github/workflows/firmware.yml, on every run) and again by
+      # release-assets.yml (at a release cut).
       - name: Fetch ArduinoJson (pinned) for the ESP32 lane-parser host test
         if: ${{ contains(matrix.chunk.tests, 'test:esp32-lanes') }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -812,6 +813,18 @@ jobs:
         env:
           ARDUINOJSON_DIR: ${{ github.workspace }}/.arduinojson/src
         run: node tools/run-parallel.mjs ${{ matrix.chunk.tests }}
+
+  # ---------------------------------------------------------------------
+  # The ESP32 handheld firmware: a real `platformio run -e flashcardos` plus
+  # the deck-logic host tests (the whole story is in firmware.yml). Called as a
+  # reusable workflow so it runs on EVERY push and pull request - including the
+  # version-only release-prep commit - and so `CI green` below can wait for it:
+  # a firmware compile error blocks a merge, and the release gate reads it as
+  # part of this run's conclusion for the exact commit being released.
+  # ---------------------------------------------------------------------
+  firmware:
+    name: firmware (env:flashcardos)
+    uses: ./.github/workflows/firmware.yml
 
   # ---------------------------------------------------------------------
   # ONE always-reporting verdict for the whole run, named "CI green".
@@ -840,7 +853,7 @@ jobs:
   ci-green:
     name: CI green
     if: always()
-    needs: [lint-build-verify, cargo-check, test]
+    needs: [lint-build-verify, cargo-check, test, firmware]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -852,10 +865,11 @@ jobs:
           R_LINT: ${{ needs.lint-build-verify.result }}
           R_CARGO: ${{ needs.cargo-check.result }}
           R_TEST: ${{ needs.test.result }}
+          R_FIRMWARE: ${{ needs.firmware.result }}
         run: |
           set -euo pipefail
           bad=0
-          for pair in "lint + build + verify=$R_LINT" "cargo check=$R_CARGO" "test matrix=$R_TEST"; do
+          for pair in "lint + build + verify=$R_LINT" "cargo check=$R_CARGO" "test matrix=$R_TEST" "firmware compile=$R_FIRMWARE"; do
             name="${pair%%=*}"; result="${pair##*=}"
             if [ "$result" = "success" ]; then
               echo "ok: $name"

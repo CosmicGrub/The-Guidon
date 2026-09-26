@@ -26,7 +26,7 @@
  *
  * Usage:
  *   node tools/release-gate.mjs --repo owner/name --sha <40-hex> \
- *        [--workflow ci.yml] [--also desktop.yml,ios.yml,firmware.yml] \
+ *        [--workflow ci.yml] [--also desktop.yml,ios.yml] \
  *        [--wait-minutes 90] [--poll-seconds 30]
  * Needs the GitHub CLI (`gh`) with a token that can read Actions runs
  * (GH_TOKEN in a workflow, plus `permissions: actions: read`).

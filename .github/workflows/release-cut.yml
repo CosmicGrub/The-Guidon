@@ -93,7 +93,7 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --sha "$GITHUB_SHA" \
             --workflow ci.yml \
-            --also desktop.yml,ios.yml,firmware.yml \
+            --also desktop.yml,ios.yml \
             --wait-minutes 90
 
       - name: Create or verify release
