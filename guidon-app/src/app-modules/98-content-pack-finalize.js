@@ -1,5 +1,5 @@
 /* GUIDON - content-pack finalize pass. Runs AFTER every content pack
- * (manifest order; only the 99-release-* notes follow it) and, since ROADMAP
+ * (manifest order; only runtime feature modules follow it) and, since ROADMAP
  * 3g E, at BUILD TIME rather than in the browser - so everything downstream
  * sees one finished bank before the app ever ships.
  *

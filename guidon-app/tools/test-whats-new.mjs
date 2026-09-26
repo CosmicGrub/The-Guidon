@@ -26,9 +26,12 @@
  * own notes (the feature that shows them didn't exist yet on their old
  * build) - every update from here forward works exactly as intended.
  *
- * This file proves the actual boot-time TRIGGER logic, not the copy itself
- * (tools/lint-patterns.mjs check (h) already guards that the current
- * version has a real, non-empty entry):
+ * The entries themselves are DATA: src/data/whats-new.json, written into
+ * G.whatsNew.RELEASE_NOTES by tools/build.mjs (part 12 below proves both
+ * built outputs hold exactly what that file says). This file proves the
+ * actual boot-time TRIGGER logic, not the copy itself (tools/lint-patterns.mjs
+ * check (h) already guards that the current version has a real, non-empty
+ * entry and that every entry is in plain language):
  *   1) A profile with NO guidon:whatsnew:v1 record at all does NOT see the
  *      panel - it is seeded silently instead.
  *   2) That same profile, once seeded, still does not show it on a further
@@ -47,6 +50,9 @@ import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 import { putOnDevice, seedOwnerProfile } from "./device-storage.mjs";
 import { until } from "./testkit.mjs";
+import { readWhatsNewFile } from "./whats-new-rules.mjs";
+import { pathToFileURL } from "node:url";
+import path from "node:path";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -327,6 +333,35 @@ onDemand = await panelState();
   ? ok(`(11) #/share's "See what's new" button opens the same full-history panel (${onDemand.highlightCount} highlights)`)
   : bad("(11) #/share on-demand button: found=" + shareBtnFound + ", panel=" + JSON.stringify(onDemand));
 if (onDemand.present) { await page.keyboard.press("Escape"); await panelGone(); }
+
+// ============================================================
+// 12) The entries the app holds ARE the data file's entries. Every release
+//     entry lives in src/data/whats-new.json (tools/whats-new-rules.mjs is its
+//     one reader) and tools/build.mjs writes it into G.whatsNew.RELEASE_NOTES;
+//     nothing else adds one (there is no per-release script any more). Proven
+//     on BOTH built outputs, as JSON text so a reordered field or an edited
+//     word shows: the web/ page a phone or the desktop app loads, and the
+//     single file opened straight from disk. The `released: false` mark keeps
+//     its meaning too: an entry marked so is still shown to someone who
+//     skipped past it.
+// ============================================================
+const dataFile = readWhatsNewFile();
+dataFile.problems.length === 0 ? ok(`(12) src/data/whats-new.json is well formed (${dataFile.raw.length} entries)`) : bad("(12) the data file has problems: " + JSON.stringify(dataFile.problems));
+const wantJson = JSON.stringify(dataFile.raw);
+const heldNotes = (p) => p.evaluate(() => ({ json: JSON.stringify(window.G.whatsNew.RELEASE_NOTES), skipped: window.G.whatsNew.missedSince("1.10.1", "1.12.1").map((n) => n.version + (n.released === false ? " (never cut)" : "")) }));
+for (const [label, target] of [["web/", url], ["the single-file build (dist/guidon-standalone.html)", pathToFileURL(path.resolve("dist", "guidon-standalone.html")).href]]) {
+  const p12 = await (await browser.newContext()).newPage();
+  await p12.goto(target, { waitUntil: "load" });
+  await until(p12, () => !!(window.G && window.G.whatsNew && Array.isArray(window.G.whatsNew.RELEASE_NOTES)));
+  const held = await heldNotes(p12);
+  held.json === wantJson
+    ? ok(`(12) ${label} holds exactly the data file's ${dataFile.raw.length} entries - same fields, same order, same words`)
+    : bad(`(12) ${label} does not hold the data file's entries (page has ${JSON.stringify(JSON.parse(held.json).map((n) => n.version))}, file has ${JSON.stringify(dataFile.raw.map((n) => n.version))})`);
+  JSON.stringify(held.skipped) === JSON.stringify(["1.12.1", "1.12.0 (never cut)", "1.11.0 (never cut)"])
+    ? ok(`(12) ${label}: released: false entries are still shown to a Soldier who skipped them (1.10.1 -> 1.12.1 sees ${held.skipped.join(", ")})`)
+    : bad(`(12) ${label}: released: false semantics changed - 1.10.1 -> 1.12.1 sees ${JSON.stringify(held.skipped)}`);
+  await p12.context().close();
+}
 
 noise.length === 0 ? ok("no console errors/warnings across the whole run") : bad("console noise: " + JSON.stringify(noise));
 

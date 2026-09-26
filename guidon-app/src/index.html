@@ -40382,9 +40382,9 @@ window.G = window.G || {};
   // short, plain-language summary of what changed the next time they open
   // the app - never the technical changelog developers use (that stays in
   // this repo's own CHANGELOG.md), and never phrased like an engineering
-  // log. RELEASE_NOTES below is the ONE place that user-facing summary
+  // log. src/data/whats-new.json is the ONE place that user-facing summary
   // lives; tools/lint-patterns.mjs check (h) fails the build if a version
-  // bump ever ships without a matching entry here, so this can't silently
+  // bump ever ships without a matching entry there, so this can't silently
   // go stale the way a hand-maintained "remember to update this" comment
   // could.
   //
@@ -40396,98 +40396,22 @@ window.G = window.G || {};
   // now, not just asked for: check (h) runs tools/whats-new-rules.mjs over
   // every title and highlight and fails on builder's wording.
   //
-  // Newer entries live in src/app-modules/99-release-*.js (one small file
-  // each) so a release never has to touch this file. A Soldier who skipped
-  // versions is shown every entry they missed, newest first - see
-  // missedSince() and show() below.
+  // The entries are data, not code: EVERY release entry lives in
+  // src/data/whats-new.json (one object per release, shape and rules in that
+  // file's own "$doc"), and tools/build.mjs writes that file into the
+  // RELEASE_NOTES placeholder below - so a release never has to touch this
+  // file, and dist/guidon-standalone.html, web/ and every fork built from
+  // them carry the same list. Nothing here is edited by hand: the build
+  // refuses to run if the placeholder is missing, and check (h) refuses an
+  // entry typed into it. Unbuilt, RELEASE_NOTES is empty and the panel
+  // simply never has anything to show. A Soldier who skipped versions is
+  // shown every entry they missed, newest first - see missedSince() and
+  // show() below.
   G.whatsNew = {
-    RELEASE_NOTES: [
-      {
-        version: "1.6.0",
-        date: "September 2026",
-        title: "Study with a buddy",
-        highlights: [
-          "New: Study Rooms — create or join a private study session with other Soldiers nearby, right from the app.",
-          "Share a room instantly with a QR code or a simple link, no typing required.",
-          "Study Rooms are now noticeably safer and more reliable, with extra protections added behind the scenes.",
-          "Removing someone from a Study Room now asks you to confirm first, so an accidental tap can't remove a study partner.",
-          "Screen readers now announce Study Room updates out loud, like someone joining, being let in, or it becoming your turn.",
-        ],
-      },
-      {
-        version: "1.7.0",
-        date: "September 2026",
-        title: "Now on iPhone, and easier to share",
-        highlights: [
-          "GUIDON now works on iPhone and iPad — no app store needed. Open the link in Safari, tap Share, then Add to Home Screen.",
-          "Sharing GUIDON with someone else is now one QR code or link, on any device — it automatically offers the right download for their phone or computer.",
-          "Fixed a rare issue on a brand-new install where the app could open with no board questions loaded.",
-          "Study Rooms now clearly shows when it isn't available, like on an iPhone or in a plain browser, instead of failing silently.",
-        ],
-      },
-      {
-        version: "1.8.0",
-        date: "September 2026",
-        title: "Pin your favorites, and a couple of corrections",
-        highlights: [
-          "New: pin any section as a favorite from the menu — pinned sections jump to the top, and your phone's bottom bar now shows your own picks instead of a fixed set.",
-          "The bottom bar now looks and feels native to your phone, whether that's Android or iPhone.",
-          "A landscape phone now gets a proper compact side menu instead of the old cramped bar.",
-          "Corrected two board-question topics: the levels of Article 15 punishment, and the real difference between being AWOL and desertion.",
-          "Screen reader and keyboard navigation improvements across several study tools, including PRT, Recite, and search.",
-        ],
-      },
-      {
-        version: "1.8.1",
-        date: "September 2026",
-        title: "Menu clean-up",
-        highlights: [
-          "Fixed the star icon added last update sitting too close to a menu item's name on some screen sizes.",
-          "Every menu row is now the same, even height — a few rows used to sit slightly taller than the rest for no reason.",
-        ],
-      },
-      {
-        version: "1.8.2",
-        date: "September 2026",
-        title: "Menu fix, part two (foldable phones)",
-        highlights: [
-          "Fixed the pin star from the last two updates being invisible on some foldable phones, instead of just showing in the wrong place.",
-        ],
-      },
-      {
-        version: "1.9.0",
-        date: "September 2026",
-        title: "New: TCCC scenarios, a 9-line MEDEVAC builder, and grid plotting",
-        highlights: [
-          "Two new practice scenarios under Train: an IED-strike casualty call and a full 9-line MEDEVAC call-in, both built around real Army combat-medic doctrine (ATP 4-02.11 and ATP 4-02.2) with multiple endings depending on the choices you make.",
-          "Land Navigation practice now has a 4th mode: Grid plot. Click a spot on a real grid to plot a coordinate, or read one back — either way, no more just picking coordinate digits apart.",
-          "Fixed a couple of doctrine cards along the way: TCCC now covers the full MARCH-PAWS protocol (not just MARCH), and there's a brand-new doctrine card for the 9-line MEDEVAC request itself.",
-        ],
-      },
-      {
-        version: "1.10.0",
-        date: "September 2026",
-        title: "A five-minute daily board habit, and faster ways to find cards",
-        highlights: [
-          "New: 5-minute board reps. Home now offers a short daily set of board questions, starting with the ones you're due to review.",
-          "Board Drill has new quick filters: show only the cards from one regulation, or from one of the six board study areas, like Leadership & Counseling or Training Management.",
-          "Board Drill's Readiness view now shows how you're doing in each of those six study areas, so you can see where to spend your time.",
-          "New study material: the four-stage counseling process, the eight-step training model, Army Emergency Relief, Army Community Service, and three new scenarios that make you work a problem from more than one angle.",
-        ],
-      },
-      {
-        version: "1.10.1",
-        date: "September 2026",
-        title: "iPhone and iPad upkeep",
-        highlights: [
-          "Behind-the-scenes work to keep GUIDON working well on iPhone and iPad. Nothing new to learn in this one.",
-        ],
-      },
-    ],
+    RELEASE_NOTES: /*@@WHATS_NEW_ENTRIES@@*/ [],
     // Numeric x.y.z compare, so 1.12.10 is newer than 1.12.2. Entries are
-    // NEVER trusted to be in order: they come from the array above AND from
-    // small build-added files (src/app-modules/99-release-*.js) that load in
-    // file-name order, not version order.
+    // NEVER trusted to be in order: src/data/whats-new.json is hand-edited and
+    // may list them in any order, and "1.12.10" sorts before "1.12.2" as text.
     cmpVersion(a, b) {
       const pa = String(a || "").split(".").map((n) => parseInt(n, 10) || 0);
       const pb = String(b || "").split(".").map((n) => parseInt(n, 10) || 0);
