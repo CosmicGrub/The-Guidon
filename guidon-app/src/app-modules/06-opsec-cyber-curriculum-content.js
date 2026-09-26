@@ -142,7 +142,7 @@
         curriculum:["Cybersecurity & OPSEC Specialist"], nodes:nodes };
     }
     addScenario(common("sc-opsec-social-engineering","Targeted Social Engineering","A personal social-media account receives a friendly-looking message from someone claiming to know your unit. They ask when your section is moving and where it will stage.",
-      [{ref:"AR 530-1",para:"OPSEC process and protection of critical information",asOf:"2026-09"},{ref:"AR 25-2",para:"Cybersecurity user responsibilities",asOf:"2026-09"}],
+      [{pub:"AR 530-1",edition:"2026-09",para:"OPSEC process and protection of critical information",quoteKind:"paraphrase"},{pub:"AR 25-2",edition:"2026-09",para:"Cybersecurity user responsibilities",quoteKind:"paraphrase"}],
       [
         {text:"Do not disclose the requested information; verify any legitimate need through a known channel and report the suspicious contact under local OPSEC/cyber procedures.",goto:"end-good",score:{Character:3,Intellect:3,Leads:2},feedback:"Treat unsolicited requests for operational information as a verification and reporting problem, not a social-media conversation."},
         {text:"Give only the movement date but not the location, because partial information is harmless.",goto:"end-partial",score:{Character:0,Intellect:0,Leads:0},feedback:"Partial facts can still be critical indicators or combine with other data."},
@@ -153,7 +153,7 @@
         "end-channel":"The suspicious channel remains untrusted and the conversation reveals additional interest and context. Verification should move to a known, authorized path."
       }));
     addScenario(common("sc-cyber-removable-media","Unknown Removable Media","You find an unmarked USB drive near a government workstation. A teammate suggests plugging it in to identify the owner.",
-      [{ref:"AR 25-2",para:"Authorized devices/media and cybersecurity responsibilities",asOf:"2026-09"}],
+      [{pub:"AR 25-2",edition:"2026-09",para:"Authorized devices/media and cybersecurity responsibilities",quoteKind:"paraphrase"}],
       [
         {text:"Do not connect it. Handle/report it under local cybersecurity or security procedures and use only authorized media on government systems.",goto:"end-good",score:{Character:3,Intellect:3,Leads:2},feedback:"Unknown removable media is not a troubleshooting shortcut."},
         {text:"Plug it into an unclassified government computer first because the system is not classified.",goto:"end-plug",score:{Character:0,Intellect:0,Leads:0},feedback:"Unclassified does not mean unrestricted or safe for unknown media."},
@@ -164,7 +164,7 @@
         "end-home":"The risk was moved, not resolved, and the local reporting/handling process was bypassed."
       }));
     addScenario(common("sc-opsec-fitness-tracking","Fitness Tracker Location Exposure","During a field exercise, you notice your fitness app is recording a precise route and automatically sharing activities with a public group.",
-      [{ref:"AR 530-1",para:"OPSEC indicators and protective measures",asOf:"2026-09"}],
+      [{pub:"AR 530-1",edition:"2026-09",para:"OPSEC indicators and protective measures",quoteKind:"paraphrase"}],
       [
         {text:"Stop public location sharing/recording as required by unit policy, avoid publishing the route, and notify the appropriate leader if sensitive activity may already have been exposed.",goto:"end-good",score:{Character:3,Intellect:3,Leads:2},feedback:"Treat location traces as potential operational indicators."},
         {text:"Leave it running but rename the activity so outsiders will not know it was military training.",goto:"end-name",score:{Character:0,Intellect:0,Leads:0},feedback:"Changing a label does not remove the route, timestamps, or pattern."},
@@ -175,7 +175,7 @@
         "end-late":"The information may remain public throughout the sensitive period. A later deletion does not undo every prior view or copy."
       }));
     addScenario(common("sc-cui-spillage-reporting","Accidental CUI / PII Transmission","You realize a message you just sent through an unauthorized channel included information marked CUI and personal information.",
-      [{ref:"DoDI 5200.48",para:"CUI safeguarding and incident handling",asOf:"2026-09"},{ref:"AR 25-2",para:"Cybersecurity incident reporting",asOf:"2026-09"}],
+      [{pub:"DoDI 5200.48",edition:"2026-09",para:"CUI safeguarding and incident handling",quoteKind:"paraphrase"},{pub:"AR 25-2",edition:"2026-09",para:"Cybersecurity incident reporting",quoteKind:"paraphrase"}],
       [
         {text:"Stop further dissemination, do not forward it again, preserve the relevant facts, and promptly follow your organization's security/privacy/cyber incident-reporting procedures.",goto:"end-good",score:{Character:3,Intellect:3,Leads:2},feedback:"Contain first, then report through the organization's actual incident process."},
         {text:"Delete your copy and say nothing if the recipient promises to delete theirs.",goto:"end-hide",score:{Character:0,Intellect:0,Leads:0},feedback:"Private cleanup does not replace required incident reporting or assessment."},
