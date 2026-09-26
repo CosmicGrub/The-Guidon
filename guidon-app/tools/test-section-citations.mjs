@@ -273,7 +273,9 @@ try {
       if (line.length > 3000) return; // the 6 MB seed line and the vendored, minified libraries (pdf.js, ...)
       const t = line.trim();
       if (t.startsWith("//") || t.startsWith("*") || t.startsWith("/*")) return;
-      for (const rx of OLD_READERS) if (rx.test(line)) hits.push(`${path.relative(APP, f)}:${i + 1} ${rx}`);
+      // `e.ref` in pt-planner.js and room-schema.js is a PT-plan entry's session key (the Study Rooms hand-off), not a citation
+      const isPlanEntryRef = /(?:pt-planner|room-schema)\.js$/.test(f);
+      for (const rx of OLD_READERS) if (rx.test(line) && !(isPlanEntryRef && rx.source === "\\be\\.ref\\b")) hits.push(`${path.relative(APP, f)}:${i + 1} ${rx}`);
     });
   }
   check(hits.length === 0, "no code in src/ reads a Wave 3 citation from its old field name", () => hits.slice(0, 5).join(" | "));

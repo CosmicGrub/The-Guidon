@@ -4,7 +4,9 @@ Offline-first study and career tool for enlisted Soldiers, E1–E9. One codebase
 ships four ways: a single HTML file that runs from `file://` with zero setup, an
 installable PWA, a Windows desktop app (Tauri), and an Android app (Capacitor).
 No server, ever — no accounts, no analytics, no telemetry; every byte of study
-data stays on the device. The web version will be fetched from GitHub Pages, or whichever static host serves it today (only to
+data stays on the device (the one thing that can leave it is a PT plan or Team
+Training session that a study-room host chooses to send to the devices in their
+own room). The web version will be fetched from GitHub Pages, or whichever static host serves it today (only to
 get or update the app itself), future study groups (LAN rooms) will be opt-in
 and stay on your own Wi-Fi or hotspot, a future read-aloud feature may have the
 OS download a voice pack, and a future iOS build may be included in iCloud or

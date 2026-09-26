@@ -442,6 +442,95 @@ pub fn validate_snapshot(s: &Value) -> Option<String> {
     None
 }
 
+/// True when a container in the tree nests deeper than `limit` (the offer
+/// object itself is depth 1) - the JS tooDeep(). Bounding the depth first is
+/// what keeps the forbidden-key scan below from being dodged by burying a key.
+fn too_deep(v: &Value, limit: u32, d: u32) -> bool {
+    match v {
+        Value::Array(a) => d > limit || a.iter().any(|x| too_deep(x, limit, d + 1)),
+        Value::Object(m) => d > limit || m.values().any(|x| too_deep(x, limit, d + 1)),
+        _ => false,
+    }
+}
+/// The key with every character that is not an ASCII letter or digit dropped
+/// and the rest lower-cased - the JS foldKey(). "Name", "name " (a trailing
+/// space), "na me", "na_me" and "n-a-m-e" all fold to "name".
+fn fold_key(k: &str) -> String {
+    k.chars().filter(|c| c.is_ascii_alphanumeric()).map(|c| c.to_ascii_lowercase()).collect()
+}
+/// Is this object key one an offer may never carry - the JS keyIsForbidden()?
+/// Its folded form is on schema::OFFER_FORBIDDEN_KEYS, or it holds any
+/// non-ASCII character at all (a field name is a protocol identifier: a
+/// zero-width or direction character laced through "name", a full-width or
+/// math-alphabet "name", a look-alike letter from another script - every
+/// spelling a fold would have to guess at is refused outright).
+fn key_is_forbidden(k: &str) -> bool {
+    !k.is_ascii() || schema::OFFER_FORBIDDEN_KEYS.contains(&fold_key(k).as_str())
+}
+/// True when any object key anywhere in the tree is forbidden (key_is_forbidden)
+/// - the JS hasForbiddenKey().
+fn has_forbidden_key(v: &Value) -> bool {
+    match v {
+        Value::Array(a) => a.iter().any(has_forbidden_key),
+        Value::Object(m) => m.iter().any(|(k, x)| key_is_forbidden(k) || has_forbidden_key(x)),
+        _ => false,
+    }
+}
+/// JS OID_RE /^[A-Z2-7]{4,12}$/.
+fn is_offer_oid(s: &str) -> bool {
+    (4..=12).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_uppercase() || (b'2'..=b'7').contains(&b))
+}
+/// JS KIND_RE /^[a-z][a-z0-9-]{1,23}$/.
+fn is_offer_kind(s: &str) -> bool {
+    let b = s.as_bytes();
+    (2..=24).contains(&b.len()) && b[0].is_ascii_lowercase() && b[1..].iter().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'-')
+}
+/// The hand-off model's kind-blind wire rules, rule for rule with the JS
+/// validateOffer() (room-schema.js, THE HAND-OFF MODEL): a closed envelope,
+/// capped and shaped fields, a nesting cap, no personal key at any depth and a
+/// byte cap. What a KIND's data may hold is the receiving page's job - a relay
+/// must never be able to block a kind it has not heard of.
+fn validate_offer(o: &Value) -> Option<String> {
+    let m = match is_obj(o) {
+        Some(m) => m,
+        None => return Some("offer".into()),
+    };
+    if let Some(k) = only_keys(m, schema::OFFER_KEYS) {
+        return Some(format!("offer-key:{k}"));
+    }
+    for r in schema::OFFER_REQUIRED_KEYS {
+        if !m.contains_key(*r) {
+            return Some(format!("offer-missing:{r}"));
+        }
+    }
+    if !m["oid"].as_str().map(is_offer_oid).unwrap_or(false) {
+        return Some("offer-oid".into());
+    }
+    if !m["kind"].as_str().map(is_offer_kind).unwrap_or(false) {
+        return Some("offer-kind".into());
+    }
+    if !is_int(&m["ver"], 1.0, schema::MAX_OFFER_VER as f64) {
+        return Some("offer-ver".into());
+    }
+    if m.contains_key("title") && !is_str(&m["title"], schema::MAX_OFFER_TITLE) {
+        return Some("offer-title".into());
+    }
+    if is_obj(&m["data"]).is_none() {
+        return Some("offer-data".into());
+    }
+    if too_deep(o, schema::MAX_OFFER_DEPTH, 1) {
+        return Some("offer-depth".into());
+    }
+    if has_forbidden_key(o) {
+        return Some("offer-personal".into());
+    }
+    match serde_json::to_string(o) {
+        Ok(s) if s.len() <= schema::MAX_OFFER_BYTES => None,
+        Ok(_) => Some("offer-size".into()),
+        Err(_) => Some("offer-json".into()),
+    }
+}
+
 fn validate_body(t: &str, b: &Value) -> Option<String> {
     let m = match is_obj(b) {
         Some(m) => m,
@@ -548,6 +637,7 @@ fn validate_body(t: &str, b: &Value) -> Option<String> {
             }
             None
         }
+        "offer" => validate_offer(&m["offer"]),
         _ => Some("type".into()),
     }
 }
@@ -2075,7 +2165,11 @@ mod tests {
     #[test]
     fn generated_schema_carries_the_locked_allowlist() {
         assert_eq!(schema::PROTOCOL_VERSION, 1);
-        assert_eq!(schema::TYPES, &["hello", "admit", "welcome", "snapshot", "intent", "reject", "kick", "ping", "pong", "bye", "end"]);
+        // "offer" (the hand-off model) is the one type added after the lock;
+        // it is additive, so the protocol version is still 1.
+        assert_eq!(schema::TYPES, &["hello", "admit", "welcome", "snapshot", "intent", "reject", "kick", "ping", "pong", "bye", "end", "offer"]);
+        assert_eq!(schema::MAX_OFFER_BYTES, 3072);
+        assert!(schema::OFFER_FORBIDDEN_KEYS.contains(&"rank") && schema::OFFER_FORBIDDEN_KEYS.contains(&"notes"));
         assert!(!schema::INTENT_KINDS.contains(&"grade"), "no grade intent, ever (rule 8)");
         assert_eq!(schema::MAX_FRAME_BYTES, 4096);
         assert_eq!(schema::SEAT_CAP, 8);
@@ -2189,6 +2283,131 @@ mod tests {
         huge["body"]["snapshot"]["seats"] = Value::Array(seats);
         assert!(serde_json::to_string(&huge).unwrap().len() >= schema::MAX_FRAME_BYTES);
         assert_eq!(validate(&huge).reason, "size");
+    }
+
+    /* ---- the hand-off model's kind-blind offer rules ---- */
+
+    fn offer_frame(offer: Value) -> Value {
+        frame("NODEHOST", "offer", json!({ "offer": offer }))
+    }
+    fn good_offer() -> Value {
+        json!({ "oid": "ABCD2345", "kind": "team-session", "ver": 1, "title": "Squad night", "data": { "steps": ["contact-relay", "aar-huddle"] } })
+    }
+
+    #[test]
+    fn validate_accepts_an_offer_and_lets_an_unknown_kind_or_newer_version_through() {
+        assert!(validate(&offer_frame(good_offer())).ok);
+        // A relay must not be able to block a kind (or a newer ver) it has
+        // never heard of: those are the receiving page's plain-words refusal.
+        let mut future = good_offer();
+        future["kind"] = json!("quiz-pack");
+        future["ver"] = json!(7);
+        assert!(validate(&offer_frame(future)).ok);
+        let mut untitled = good_offer();
+        untitled.as_object_mut().unwrap().remove("title");
+        assert!(validate(&offer_frame(untitled)).ok);
+    }
+
+    #[test]
+    fn validate_rejects_offer_shape_faults() {
+        let with = |k: &str, v: Value| {
+            let mut o = good_offer();
+            o[k] = v;
+            validate(&offer_frame(o)).reason
+        };
+        assert_eq!(with("oid", json!("abcd2345")), "offer-oid");
+        assert_eq!(with("oid", json!("ABC")), "offer-oid");
+        assert_eq!(with("oid", json!("ABCD2345ABCD2")), "offer-oid");
+        assert_eq!(with("kind", json!("PT-plan")), "offer-kind");
+        assert_eq!(with("kind", json!("x")), "offer-kind");
+        assert_eq!(with("kind", json!("9plan")), "offer-kind");
+        assert_eq!(with("ver", json!(0)), "offer-ver");
+        assert_eq!(with("ver", json!(100)), "offer-ver");
+        assert_eq!(with("ver", json!(1.5)), "offer-ver");
+        assert_eq!(with("title", json!("T".repeat(41))), "offer-title");
+        assert_eq!(with("data", json!([1, 2])), "offer-data");
+        assert_eq!(with("extra", json!(1)), "offer-key:extra");
+        let mut missing = good_offer();
+        missing.as_object_mut().unwrap().remove("data");
+        assert_eq!(validate(&offer_frame(missing)).reason, "offer-missing:data");
+        assert_eq!(validate(&offer_frame(json!("nope"))).reason, "offer");
+        assert_eq!(validate(&frame("NODEHOST", "offer", json!({}))).reason, "body-missing:offer");
+        assert_eq!(validate(&frame("NODEHOST", "offer", json!({ "offer": good_offer(), "x": 1 }))).reason, "body-key:x");
+    }
+
+    #[test]
+    fn validate_rejects_a_personal_key_anywhere_in_an_offer_at_any_case() {
+        for key in ["rank", "Rank", "NAME", "mos", "profile", "progress", "attempts", "notes", "results", "displayName"] {
+            let mut o = good_offer();
+            o["data"][key] = json!("x");
+            assert_eq!(validate(&offer_frame(o)).reason, "offer-personal", "top of data: {key}");
+            let mut deep = good_offer();
+            deep["data"]["steps"] = json!([{ key: "x" }]);
+            assert_eq!(validate(&offer_frame(deep)).reason, "offer-personal", "nested: {key}");
+        }
+        // A key buried past the nesting cap cannot dodge the scan: it is refused for depth.
+        let mut buried = good_offer();
+        buried["data"] = json!({ "a": { "b": { "c": { "d": { "e": { "rank": 1 } } } } } });
+        assert_eq!(validate(&offer_frame(buried)).reason, "offer-depth");
+    }
+
+    #[test]
+    fn validate_rejects_folded_and_non_ascii_spellings_of_a_personal_key() {
+        // Spacing, punctuation and non-ASCII spellings of a forbidden key are
+        // refused too (the JS keyIsForbidden(), rule for rule).
+        let spellings = [
+            "name ", " name", "na me", "na_me", "n-a-m-e", "Name.", "display_name", "DISPLAY-NAME", "first name", "MOS ", "no\u{200b}tes", "ra\u{200d}nk",
+            "\u{ff4e}\u{ff41}\u{ff4d}\u{ff45}", "\u{1d5ef}\u{1d5ee}\u{1d5f4}", "n\u{430}me", "rank\u{202e}", "\u{feff}mos", "note\u{a0}", "n\u{e5}me", "K\u{212a}",
+        ];
+        for key in spellings {
+            let mut o = good_offer();
+            o["data"][key] = json!("x");
+            assert_eq!(validate(&offer_frame(o)).reason, "offer-personal", "top of data: {key:?}");
+            let mut deep = good_offer();
+            deep["data"]["steps"] = json!([{ key: "x" }]);
+            assert_eq!(validate(&offer_frame(deep)).reason, "offer-personal", "nested: {key:?}");
+        }
+        // The fold itself, and the keys a real payload uses are never caught.
+        assert_eq!(fold_key("Na-me_ 1\u{200b}"), "name1");
+        for key in ["oid", "kind", "ver", "title", "data", "tpl", "days", "sessions", "dates", "id", "label", "effort", "ref", "key", "type", "blocks", "date", "entry", "steps", "pad", "z", "q_abc"] {
+            assert!(!key_is_forbidden(key), "{key} is an ordinary field name");
+        }
+    }
+
+    #[test]
+    fn validate_caps_an_offer_by_bytes_and_keeps_the_whole_frame_under_the_frame_cap() {
+        let mut o = good_offer();
+        o["data"]["steps"] = json!(vec!["a".repeat(40); 80]);
+        assert_eq!(validate(&offer_frame(o)).reason, "offer-size");
+        // The largest legal offer still fits a whole frame.
+        let mut big = good_offer();
+        let n = schema::MAX_OFFER_BYTES - serde_json::to_string(&big).unwrap().len() - 12;
+        big["data"]["steps"] = json!(["a".repeat(n)]);
+        let v = validate(&offer_frame(big.clone()));
+        assert!(v.ok, "{}", v.reason);
+        assert!(serde_json::to_string(&offer_frame(big)).unwrap().len() < schema::MAX_FRAME_BYTES);
+    }
+
+    #[test]
+    fn relay_carries_a_host_offer_to_every_peer_and_drops_a_personal_one() {
+        let mut r = Relay::new(ROOM, 8);
+        let (a, mut arx) = pair(&mut r, "127.0.0.1:1", ROOM, false);
+        let (b, mut brx) = pair(&mut r, "127.0.0.1:2", ROOM, false);
+        r.on_text(a, &wire_encode(&frame("PEERAAAA", "hello", json!({ "name": "A", "bankSig": "b" })), None));
+        r.on_text(b, &wire_encode(&frame("PEERBBBB", "hello", json!({ "name": "B", "bankSig": "b" })), None));
+        let offer = offer_frame(good_offer());
+        assert_eq!(r.host_send(Some("*"), &offer), Ok(2));
+        assert_eq!(texts(&drain(&mut arx)), vec![wire_encode(&offer, Some("*"))]);
+        assert_eq!(texts(&drain(&mut brx)).len(), 1);
+        // A host that tried to send a personal key is stopped at the relay too.
+        let mut personal = good_offer();
+        personal["data"]["rank"] = json!("SGT");
+        assert_eq!(r.host_send(Some("*"), &offer_frame(personal)), Err("invalid"));
+        assert!(texts(&drain(&mut arx)).is_empty() && texts(&drain(&mut brx)).is_empty());
+        // And an offer coming FROM a peer is an ordinary valid frame the relay
+        // hands to the host page, which alone ignores it (only a host offers).
+        assert!(matches!(r.on_text(a, &wire_encode(&frame("PEERAAAA", "offer", json!({ "offer": good_offer() })), None)), Inbound::ToHost { .. }));
+        assert_eq!(r.on_text(a, &wire_encode(&frame("PEERAAAA", "offer", json!({ "offer": { "oid": "ABCD2345", "kind": "pt-plan", "ver": 1, "data": { "notes": "x" } } })), None)), Inbound::Dropped("invalid"));
     }
 
     #[test]

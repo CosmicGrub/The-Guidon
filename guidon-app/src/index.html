@@ -319,6 +319,11 @@ a:hover { text-decoration: underline; }
 .btn.primary:hover { box-shadow: var(--glow-amber); filter: brightness(1.05); color: var(--btn-ink, #1a1206); }
 .btn.ghost { background: transparent; }
 .btn.sm { font-size: .75rem; padding: 6px 10px; }
+/* Study Rooms hand-off (the share control, the offer card's Add / Not now /
+   Undo / Done, Send again) and Team Training's session builder (Up, Down,
+   Remove ...): short labels make .btn.sm narrower than a fingertip. Same 44px
+   floor the rest of the app's controls carry (the height already is). */
+.sg-offer .btn, .sg-shared .btn, .sg-share .btn, [data-team-session-panel] .btn { min-width: 44px; }
 .btn.block { display: block; width: 100%; text-align: center; }
 .btn:disabled, .btn[aria-disabled="true"] { opacity: .4; cursor: not-allowed; }
 .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -3090,6 +3095,15 @@ mark.dict-hi {
    them scrolls (36px = .gm-back's 18px padding, top and bottom). */
 .gm-box.whatsnew-box { display:flex; flex-direction:column; max-height:calc(100vh - 36px); max-height:calc(100dvh - 36px); }
 .whatsnew-body { overflow-y:auto; min-height:0; overflow-wrap:anywhere; }
+/* The themed confirm/prompt box (G.modal) gets the same treatment: a long
+   message - a shared PT plan listing every session and date, say - can be
+   taller than a laptop screen or a phone held sideways. The box never grows
+   past the screen; only the message scrolls, and the title and the buttons
+   (Send / Cancel, Remove / Cancel ...) stay put and reachable. */
+.gm-box.gm-dialog { display:flex; flex-direction:column; max-height:calc(100vh - 36px); max-height:calc(100dvh - 36px); }
+.gm-dialog-body { overflow-y:auto; min-height:0; overflow-wrap:anywhere; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
+.gm-dialog-body:focus-visible { outline:2px solid var(--amber); outline-offset:2px; }
+.gm-box.gm-dialog > .eyebrow, .gm-box.gm-dialog > .btn-row, .gm-box.gm-dialog > .ob-input { flex-shrink:0; }
 /* Narrow-screen table fallback. The Channels gate table has 5 columns; below
    ~420px (folded Z Fold, small phones) that cannot fit, so each row becomes a
    stacked block with its column name as a prefix. Data-label is set in JS. */
@@ -10114,7 +10128,9 @@ window.G = window.G || {};
 /* GUIDON — engine.js : unified scenario engine (global G.engine)
    One JSON schema, four render modes: text | course | cyoa | training.
    The branching/scoring core is identical; only presentation differs.
-   Training mode: linear vignettes, A/B/C/D choices, immediate correct/wrong reveal, % score. */
+   Training mode: linear vignettes, A/B/C/D choices, immediate correct/wrong reveal, % score.
+   Collective mode (a fifth, picked by run() rather than by the Soldier): a team discusses,
+   then commits one answer per decision - see the COLLECTIVE section near the end. */
 window.G = window.G || {};
 (function () {
   "use strict";
@@ -10296,6 +10312,9 @@ window.G = window.G || {};
 
   // ---------- main dispatch ----------
   function render(sess) {
+    // Collective mode walks the graph by its own rules (see the COLLECTIVE
+    // section below), so it is dispatched before the solo node handling.
+    if (sess.mode === "collective") return renderCollective(sess);
     let node = (sess.sc.nodes || {})[sess.nodeId];
     // A small batch of authored scenarios wrote a node's narration under
     // "body" instead of "prompt" - every render function below (and
@@ -10882,19 +10901,253 @@ window.G = window.G || {};
   // consumer that must not miss that case (mock-board-simulator.js's
   // reconcileScenarios/finishedRunSince) still needs its own attempt-log
   // fallback; this contract only replaces the GUESSING that fallback used to
-  // have to do for the two paths that DO call back. 00-roadmap-bootstrap.js's
-  // Collective-mode wrapper (runCollective/finish/header) already reports
-  // this exact shape and is the reference implementation this section was
-  // written to match, not the other way around.
+  // have to do for the two paths that DO call back. Collective mode (next
+  // section) reports through this same reportExit(), so there is one
+  // completion contract for every mode this engine runs.
+
+  // ---------- COLLECTIVE (multi-Soldier decision) MODE ----------
+  // ROADMAP 3g item H, the last open piece. Collective Decision used to be a
+  // wrapper in 00-roadmap-bootstrap.js that REPLACED G.engine.run when that
+  // file loaded, kept this engine as G.engine._soloRun, and ran its own
+  // separate screens. It is now a mode of THIS engine: run() picks it, the
+  // session carries mode "collective", render() dispatches it beside
+  // text/cyoa/training, and nothing outside this module replaces
+  // G.engine.run any more (tools/test-module-contract.mjs holds that, and
+  // tools/test-engine-collective.mjs holds the behaviour).
+  //
+  // A scenario runs collectively when the caller asks (options.collective,
+  // which G.engine.runCollective always sets) or when any of its nodes
+  // carries a `discuss` step. Everything a Soldier sees is what the wrapper
+  // drew: a decision node with two or more choices opens a timed discussion
+  // that locks the choices until the team is ready, then a "Commit team
+  // answer" step; a node with one choice is a plain Continue; the AAR is the
+  // "Collective AAR" panel; the attempt is logged with mode "collective".
+  //
+  // Not shared with the solo path on purpose, because the wrapper behaved
+  // differently and a refactor must not change what a Soldier gets: a
+  // collective score may carry any dimension a choice names (solo ignores
+  // keys outside DIMS), every choice bumps the count and the path, the
+  // total sums every key, and a choice whose target names no node ends the
+  // scenario with a plain message instead of the solo "missing node" screen.
+  // Only what was genuinely identical (condMet / visibleChoices / DIMS /
+  // reportExit) is reused.
+  //
+  // Two deliberate differences from the wrapper, neither visible on screen.
+  // (1) The exit result. The wrapper's header Exit always said cancelled -
+  // even on its own finished "Collective AAR" screen, where the header is
+  // still showing - and its two exit controls could each fire onExit, so a
+  // caller that did not tear the player down first heard two different
+  // answers. reportExit() derives completed/cancelled from sess.finished and
+  // fires once per session, the same fix the solo path got in v1.15.3.
+  // (2) Deciding the route no longer throws on a scenario carrying a null
+  // node (the wrapper read `.discuss` off it); that scenario just runs solo.
+  function scenarioHasDiscuss(sc) {
+    const nodes = (sc && sc.nodes) || {};
+    return Object.keys(nodes).some((k) => !!(nodes[k] && nodes[k].discuss));
+  }
+
+  function collectiveSum(score) {
+    return Object.keys(score).reduce((n, k) => n + (Number(score[k]) || 0), 0);
+  }
+
+  function newCollectiveSession(sc, container, onExit, options) {
+    const score = {}; DIMS.forEach((d) => (score[d] = 0));
+    return { sc, mode: "collective", container, onExit, options: options || {}, nodeId: sc.start || "n1", score, flags: {}, path: [sc.start || "n1"], choices: 0, finished: false };
+  }
+
+  function applyCollectiveChoice(sess, c) {
+    if (c.score) Object.keys(c.score).forEach((k) => { sess.score[k] = (sess.score[k] || 0) + (Number(c.score[k]) || 0); });
+    if (c.set) Object.keys(c.set).forEach((k) => { sess.flags[k] = c.set[k]; });
+    sess.path.push(sess.nodeId); sess.choices++;
+  }
+
+  function collectiveTarget(sess, c) {
+    return c.goto || (c.outcome && sess.sc.nodes && sess.sc.nodes[c.outcome] ? c.outcome : null);
+  }
+
+  function collectiveHeader(sess) {
+    const h = el("div.engine-head");
+    const title = el("div.title");
+    title.appendChild(el("div.eyebrow", { text: "Collective scenario" }));
+    title.appendChild(el("h2", { text: sess.sc.title }));
+    if (sess.sc.scene) title.appendChild(el("div.engine-scene-tag", { text: sess.sc.scene }));
+    h.appendChild(title);
+    const exit = el("button.btn.ghost.sm", { type: "button", text: "Exit" });
+    exit.addEventListener("click", () => reportExit(sess));
+    h.appendChild(exit);
+    return h;
+  }
+
+  function collectiveDialogue(host, dialogue) {
+    if (!Array.isArray(dialogue)) return;
+    dialogue.forEach((d) => {
+      if (!d || typeof d !== "object") return;
+      const line = el("div.card", { style: "margin-top:6px" });
+      line.appendChild(el("strong", { text: String(d.speaker || d.role || "Speaker") }));
+      line.appendChild(el("p", { text: String(d.line || "") }));
+      host.appendChild(line);
+    });
+  }
+
+  async function finishCollective(sess, node) {
+    if (sess.finished) return;
+    sess.finished = true;
+    try {
+      await store.recordAttempt({
+        scenarioId: sess.sc.id, title: sess.sc.title, mode: "collective",
+        score: Object.assign({}, sess.score), total: collectiveSum(sess.score), choices: sess.choices,
+        outcomeNode: sess.nodeId,
+      });
+    } catch (e) { /* the AAR still shows; the attempt just was not logged */ }
+    util.clear(sess.container);
+    sess.container.appendChild(collectiveHeader(sess));
+    const p = el("div.panel.collective-outcome");
+    p.appendChild(el("div.eyebrow", { text: "Collective AAR" }));
+    p.appendChild(el("h3", { text: "Scenario complete" }));
+    p.appendChild(el("p", { text: String(node.outcome || node.prompt || "Review the team's decisions and identify one sustain and one improve.") }));
+    p.appendChild(el("p.hint", { text: "Team score: " + collectiveSum(sess.score) + " · " + sess.choices + " decision" + (sess.choices === 1 ? "" : "s") + ". The score is a study signal, not an official evaluation." }));
+    const again = el("button.btn.ghost", { type: "button", text: "Replay collective lane" });
+    again.addEventListener("click", () => startCollective(sess.sc, sess.container, sess.onExit, sess.options));
+    const done = el("button.btn.primary", { type: "button", text: "Done" });
+    done.addEventListener("click", () => reportExit(sess));
+    p.appendChild(el("div.btn-row", {}, [again, done]));
+    sess.container.appendChild(p);
+  }
+
+  function continueCollective(sess, c) {
+    const target = collectiveTarget(sess, c);
+    if (!target) return finishCollective(sess, { outcome: "This authored path has no valid next node. Review the scenario graph." });
+    sess.nodeId = target;
+    render(sess);
+  }
+
+  function advanceCollective(sess, c) {
+    applyCollectiveChoice(sess, c);
+    continueCollective(sess, c);
+  }
+
+  function renderCollectiveSingle(sess, node, choices) {
+    util.clear(sess.container); sess.container.appendChild(collectiveHeader(sess));
+    const p = el("div.panel");
+    if (node.beat) p.appendChild(el("div.eyebrow", { text: node.beat }));
+    if (node.prompt || node.body) p.appendChild(el("p", { text: String(node.prompt || node.body) }));
+    collectiveDialogue(p, node.dialogue);
+    const c = choices[0] || { text: "Continue", goto: node.next };
+    const btn = el("button.btn.primary", { type: "button", text: c.text || "Continue" });
+    btn.addEventListener("click", () => {
+      btn.disabled = true;
+      applyCollectiveChoice(sess, c);
+      if (c.feedback || c.tradeoff) {
+        const fb = el("div", { style: "margin-top:10px" });
+        if (c.feedback) fb.appendChild(el("div.feedback", { role: "status", "aria-live": "polite", text: c.feedback }));
+        if (c.tradeoff) fb.appendChild(el("p.hint", { text: "Tradeoff: " + c.tradeoff }));
+        const next = el("button.btn.primary", { type: "button", text: "Continue" });
+        next.addEventListener("click", () => continueCollective(sess, c));
+        fb.appendChild(next); p.appendChild(fb); next.focus();
+        return;
+      }
+      continueCollective(sess, c);
+    });
+    p.appendChild(btn); sess.container.appendChild(p); btn.focus();
+  }
+
+  function renderCollectiveDecision(sess, node, choices) {
+    util.clear(sess.container); sess.container.appendChild(collectiveHeader(sess));
+    const root = el("div.panel.collective-decision", { role: "region", "aria-label": "Collective Decision" });
+    root.appendChild(el("div.eyebrow", { text: "Collective Decision" }));
+    if (node.beat) root.appendChild(el("div.engine-scene-tag", { text: node.beat }));
+    if (node.prompt || node.body) root.appendChild(el("h3", { text: String(node.prompt || node.body) }));
+    collectiveDialogue(root, node.dialogue);
+
+    const raw = Number(node.discussionSeconds || (node.discuss && node.discuss.seconds) || sess.options.discussionSeconds || 60);
+    let remaining = Number.isFinite(raw) ? Math.max(10, Math.min(300, Math.round(raw))) : 60;
+    let unlocked = false, chosen = null, committed = false, timerId = null;
+    const timer = el("div", { "data-collective-timer": "1", "aria-label": "Discussion time remaining", text: "Discussion: " + remaining + "s" });
+    const status = el("p.hint", { role: "status", "aria-live": "polite", text: "Discuss first. Lock the discussion early when the team is ready." });
+    root.appendChild(timer); root.appendChild(status);
+    const choiceHost = el("div", { role: "group", "aria-label": "Team decision choices" });
+    const buttons = [];
+    const commit = el("button.btn.primary", { type: "button", text: "Commit team answer" }); commit.disabled = true;
+
+    choices.forEach((c, i) => {
+      const b = el("button.btn.ghost.collective-choice", { type: "button", text: String.fromCharCode(65 + i) + ". " + (c.text || ""), "aria-pressed": "false" });
+      b.disabled = true;
+      b.addEventListener("click", () => {
+        if (!unlocked || committed) return;
+        chosen = c;
+        buttons.forEach((x) => { const on = x === b; x.classList.toggle("active", on); x.setAttribute("aria-pressed", String(on)); });
+        commit.disabled = false; status.textContent = "Team choice selected. Commit when everyone is ready.";
+      });
+      buttons.push(b); choiceHost.appendChild(b);
+    });
+    root.appendChild(choiceHost);
+
+    function stop() { if (timerId) { clearInterval(timerId); timerId = null; } }
+    function unlock(msg) {
+      if (unlocked || committed) return;
+      unlocked = true; buttons.forEach((b) => { b.disabled = false; });
+      status.textContent = msg || "Discussion complete. Select the team's answer.";
+      if (G.util.announce) G.util.announce(status.textContent);
+    }
+    const early = el("button.btn.ghost", { type: "button", text: "Lock decision early" });
+    early.addEventListener("click", () => { unlock("Discussion locked early. Select the team's answer."); });
+    root.appendChild(el("div.btn-row", {}, [early, commit]));
+
+    timerId = setInterval(() => {
+      if (!root.isConnected) { stop(); return; }
+      if (unlocked || committed) return;
+      remaining = Math.max(0, remaining - 1); timer.textContent = "Discussion: " + remaining + "s";
+      if (remaining === 0) { stop(); unlock("Discussion time complete. Select the team's answer."); }
+    }, 1000);
+
+    commit.addEventListener("click", () => {
+      if (!chosen || committed) return;
+      committed = true; stop(); buttons.forEach((b) => { b.disabled = true; }); early.disabled = true; commit.disabled = true; commit.textContent = "Team answer committed";
+      const fb = el("div", { style: "margin-top:10px" });
+      if (chosen.feedback) fb.appendChild(el("div.feedback", { role: "status", "aria-live": "polite", text: chosen.feedback }));
+      if (chosen.tradeoff) fb.appendChild(el("p.hint", { text: "Tradeoff: " + chosen.tradeoff }));
+      const next = el("button.btn.primary", { type: "button", text: "Continue" });
+      next.addEventListener("click", () => advanceCollective(sess, chosen));
+      fb.appendChild(next); root.appendChild(fb); next.focus();
+    });
+    sess.container.appendChild(root); early.focus();
+  }
+
+  function renderCollective(sess) {
+    const node = (sess.sc.nodes || {})[sess.nodeId];
+    if (!node) return finishCollective(sess, { outcome: "This path points to a missing node: " + sess.nodeId + "." });
+    if (node.end) return finishCollective(sess, node);
+    let choices = visibleChoices(node, sess.flags);
+    if ((!choices || !choices.length) && node.next) choices = [{ text: "Continue", goto: node.next }];
+    if (!choices || !choices.length) return finishCollective(sess, node);
+    if (choices.length === 1) return renderCollectiveSingle(sess, node, choices);
+    return renderCollectiveDecision(sess, node, choices);
+  }
+
+  function startCollective(sc, container, onExit, options) {
+    render(newCollectiveSession(sc, container, onExit, options));
+  }
+
   G.engine = {
     _pending: null,   // set by cross-links; consumed by views.train on next render
-    run(scenarioId, mode, container, onExit) {
+    run(scenarioId, mode, container, onExit, options) {
       const sc = store.scenario(scenarioId);
       if (!sc) { util.toast("Scenario not found."); return; }
+      const opts = options || {};
+      if (opts.collective || scenarioHasDiscuss(sc)) return startCollective(sc, container, onExit, opts);
       const chosen = mode || sc.defaultMode || store.settings().defaultMode || "course";
       const validMode = (sc.renderModes || ["text", "course", "cyoa"]).includes(chosen) ? chosen : (sc.renderModes || ["course"])[0];
       const sess = newSession(sc, validMode, container, onExit);
       render(sess);
+    },
+    // Accepts an authored scenario OBJECT as well as a stored id, so
+    // Authoring, previews, tests and Team Training (whose scenarios can sit
+    // outside the rank-filtered store) can run one without adding a
+    // temporary scenario to the memoized store.
+    runCollective(scenarioOrId, container, onExit, options) {
+      const sc = scenarioOrId && typeof scenarioOrId === "object" ? scenarioOrId : store.scenario(scenarioOrId);
+      if (!sc) { util.toast("Scenario not found."); return; }
+      return startCollective(sc, container, onExit, Object.assign({ collective: true }, options || {}));
     },
   };
 })();
@@ -28132,9 +28385,15 @@ window.G = window.G || {};
   function dialog(opts) {
     return new Promise((resolve) => {
       const back = el("div.gm-back", { role:"presentation" });
-      const box  = el("div.gm-box", { role:"dialog", "aria-modal":"true", "aria-label": opts.title || "Confirm" });
+      const box  = el("div.gm-box.gm-dialog", { role:"dialog", "aria-modal":"true", "aria-label": opts.title || "Confirm" });
       box.appendChild(el("div.eyebrow", { text: opts.title || "Confirm" }));
-      if (opts.message) box.appendChild(el("p", { text: opts.message, style:"white-space:pre-line;margin:6px 0 10px" }));
+      // The message sits in its own scroll region (see .gm-dialog above), so
+      // a message longer than the screen scrolls while the buttons stay on it.
+      let bodyEl = null;
+      if (opts.message) {
+        bodyEl = el("div.gm-dialog-body", {}, [ el("p", { text: opts.message, style:"white-space:pre-line;margin:6px 0 10px" }) ]);
+        box.appendChild(bodyEl);
+      }
       let input = null;
       if (opts.prompt) {
         input = el("input.ob-input", { type:"text", value: opts.value || "",
@@ -28175,7 +28434,16 @@ window.G = window.G || {};
       ok.addEventListener("click", accept);
       back.addEventListener("click", (e) => { if (e.target === back) closeWith(opts.prompt ? null : false); });
       document.body.appendChild(back);
-      requestAnimationFrame(() => requestAnimationFrame(() => back.classList.add("modaltrap-open")));
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        back.classList.add("modaltrap-open");
+        // Only a message that really overflows becomes a keyboard stop (so the
+        // arrow keys can scroll it); a short one adds no extra Tab stop.
+        if (bodyEl && bodyEl.scrollHeight > bodyEl.clientHeight + 1) {
+          bodyEl.tabIndex = 0;
+          bodyEl.setAttribute("role", "region");
+          bodyEl.setAttribute("aria-label", (opts.title || "Message") + " - scroll for the rest");
+        }
+      }));
       setTimeout(() => { (input || ok).focus(); }, 40);
     });
   }
@@ -30212,6 +30480,18 @@ window.G = window.G || {};
         return isPlainObject(s) && typeof s.count === "number" && isFinite(s.count) && s.count >= 0 && (s.last == null || typeof s.last === "number");
       });
     },
+    // Saved Team Training sessions (team-training.js "Team sessions"): one
+    // { id, title, steps } row per session, steps being the catalog exercise
+    // ids in the order they run. Every reader walks steps unconditionally
+    // (the card list, "Start session", the room hand-off), so each entry
+    // must really carry text ids in a non-empty array; its own
+    // normalizeSessions() then drops any id the catalog does not have.
+    "team:sessions:v1": function (v) {
+      return Array.isArray(v) && v.every(function (s) {
+        return isPlainObject(s) && typeof s.id === "string" && typeof s.title === "string" &&
+          Array.isArray(s.steps) && s.steps.length > 0 && s.steps.every(function (x) { return typeof x === "string"; });
+      });
+    },
     // Board Simulator (mock-board-simulator.js): three done-flags, the
     // Soldier's after-action notes and the "a step was opened" markers. Its
     // own load() rebuilds the notes and markers field by field, so the
@@ -30371,6 +30651,7 @@ window.G = window.G || {};
     "settings": "your settings",
     "board:sim:v1": "Board Simulator progress and notes",
     "team:training:v1": "Team Training completion counts",
+    "team:sessions:v1": "your saved Team Training sessions",
     "prt:plan:v1": "your PT plan",
     "pt:history:v1": "your completed PT sessions",
     "guidon:prt:customSessions:v1": "your custom PT sessions",
@@ -37318,7 +37599,7 @@ window.G = window.G || {};
   views.privacy = function (mount) {
     util.clear(mount);
     mount.appendChild(el("div.section-title", {}, [ el("h2", { text: "Privacy Policy" }), el("div.rule") ]));
-    mount.appendChild(el("p.hint", { text: "Last updated September 19, 2026. Applies to every version of GUIDON — standalone, PWA, desktop, and Android — since they all run from the same source." }));
+    mount.appendChild(el("p.hint", { text: "Last updated September 26, 2026. Applies to every version of GUIDON — standalone, PWA, desktop, and Android — since they all run from the same source." }));
     const SECTIONS = [
       // P1 of the "No server, ever" promise (desktop roadmap, locked decision
       // Q1): the second "short version" paragraph is THE unified sentence -
@@ -37328,7 +37609,7 @@ window.G = window.G || {};
       // is a verbatim copy of GUIDON files/PRIVACY.md and that the four
       // exceptions are named here, there and in the root README.
       { h: "The short version", p: [
-        "GUIDON does not collect, transmit, sell, or share any personal data, because GUIDON has no server to send it to. There is no server, ever: no account, no sign-in, no analytics, no advertising, and nothing about you is ever sent to anyone — including the developer. Everything GUIDON knows about you stays in storage on your own device, under your control, until you delete it.",
+        "GUIDON does not collect, transmit, sell, or share any personal data, because GUIDON has no server to send it to. There is no server, ever: no account, no sign-in, no analytics, no advertising, and nothing about you is ever sent to anyone — including the developer — except a PT plan or Team Training session that you, as the host of a study room, choose to send to the devices in your own room (see “Sharing a plan or session to a study room” below). Everything GUIDON knows about you stays in storage on your own device, under your control, until you delete it.",
         "The only ways any version of GUIDON can touch a network are these four, and none of them sends your study data to a server: study groups (LAN rooms), which are off by default behind a switch in Settings and, once they exist, connect only to other devices on the same Wi-Fi or hotspot — including when that connection is secured with a self-signed, device-generated certificate — and never to any server; GitHub Pages, the file server the web version will be delivered from (today, whichever static host serves it), which is contacted only to fetch or update the app itself (the service worker checks it for a newer copy when you open the app online); a future read-aloud feature, for which your operating system may download a voice pack the first time it is used; and, on a future iOS build, iCloud or device backups run by the operating system, which may include the app's data under the backup settings you control on your device.",
       ] },
       { h: "What GUIDON is", p: ["GUIDON is an offline-first, single-user reference and study tool for enlisted Soldiers preparing for promotion boards. It runs entirely client-side — there is no backend server, no cloud sync, and no remote database. Before every release the app is checked automatically by walking every screen and confirming it makes no network request outside a study session."] },
@@ -37339,7 +37620,7 @@ window.G = window.G || {};
         "Practice and progress data: quiz attempts, Mock Board results, streaks, and scenario progress, generated as you use the app.",
         "Squad roster (optional, leader-facing only): if you use the roster feature, it asks for initials, a callsign, or a roster number for each Soldier — not full legal names — plus a rank and counseling dates. This is the one place GUIDON stores information about people other than you, so it gets extra protection — see the next section.",
         "Risk Worksheet (optional, practice tool only): the DA Form 7278 practice tool asks for a resource, a location, and other worksheet fields. It is meant for a synthetic or hypothetical scenario, never a real facility, location, or vulnerability — but because the fields could be used to enter real information, GUIDON gives any saved worksheet the same extra protection as the roster (see the next section).",
-        "None of the above ever leaves your device on its own. Nothing here is ever sent to a server.",
+        "None of the above ever leaves your device on its own. Nothing here is ever sent to a server. The one thing you can choose to send to other devices is described under “Sharing a plan or session to a study room” below.",
       ] },
       { h: "The squad roster and Risk Worksheet get extra protection", p: [
         "The roster can hold data about someone other than the app's user, and the Risk Worksheet's fields could hold real facility or vulnerability information if its synthetic-only guidance isn't followed. Both are treated differently from everything else GUIDON stores:",
@@ -37348,6 +37629,12 @@ window.G = window.G || {};
         "This default-exclude / explicit-opt-in behavior is checked automatically before every release.",
       ] },
       { h: "Backups are yours, not ours", p: ["GUIDON can generate a backup file (JSON) of your data on request. This file is created locally in your browser and saved to your device, the same way any file download works. GUIDON does not upload it anywhere; the developer never sees it. What you do with that file afterward (keep it, delete it, email it to yourself, put it on a shared drive) is entirely your choice and outside GUIDON's control. If you choose to include the optional squad roster or Risk Worksheet data in a backup you share, you are sharing information about other people or a resource assessment, so consider that before doing so."] },
+      { h: "Sharing a plan or session to a study room", p: [
+        "Study groups are off by default. If you turn them on and host a room, GUIDON can send one thing to the other devices in that room, and only when you ask it to: a weekly PT plan from PT Planner, or a Team Training session you planned.",
+        "What goes: the structure of that plan or session — the kind of session on each day, any custom sessions and their drill blocks, up to a few changed dates, or the ordered list of exercises — together with the names you typed for it (a session name, a custom session's name, or a day's label), exactly as the confirmation box lists them, and the small internal codes GUIDON needs to rebuild it on the other device (the plan template and the drill or exercise codes).",
+        "What never goes: your profile, name, rank, MOS, progress, quiz or Mock Board attempts, notes, completed PT history, results, roster entries, or anything else stored on your device. Before anything is sent, GUIDON checks the names you typed, and each line as it will be read, for common sensitive patterns (a Social Security number, a phone number, an email address, a classification marking, or a future date and place for a unit activity) and refuses to send if it finds one. Please keep Soldiers' names out of the names you type.",
+        "It is sent only when you tap “Send to the room” in a confirmation box that lists what will go, and only to the devices seated in your room on the same Wi-Fi or hotspot — never to a server and never to the developer. A device holds what it receives in memory only, and nothing is added to it unless the person who owns that device taps Add on a preview of it. Once added, it is stored on that device like anything else that person creates in that tool (a Guest or Kiosk session keeps it only until GUIDON closes). A guest who joined from a web browser cannot open it at all. Saving a PT plan as a file sends nothing: GUIDON only makes the file on your own device, and how you pass it on is your choice.",
+      ] },
       { h: "No accounts, no analytics, no ads, no third parties", p: [
         "No sign-up, login, or account system of any kind — the “profile” in GUIDON is just a local save file, not an identity tied to you.",
         "No analytics or usage tracking of any kind.",
@@ -37438,7 +37725,7 @@ window.G = window.G || {};
       // P1 of the "No server, ever" promise: the short form of #/privacy's
       // unified sentence. tools/test-privacy.mjs reads this panel and fails
       // if it ever credits a Content Security Policy again (no build ships one).
-      pn.appendChild(el("p.hint", { text: "No server, ever \u00b7 No account, no analytics, all data stays on this device \u00b7 Future study groups (LAN rooms) will be opt-in and stay on your own Wi-Fi or hotspot." }));
+      pn.appendChild(el("p.hint", { text: "No server, ever \u00b7 No account, no analytics, all data stays on this device \u00b7 Future study groups (LAN rooms) will be opt-in and stay on your own Wi-Fi or hotspot. The one exception is a PT plan or Team Training session that a room host chooses to send to the devices in their own room." }));
       pn.appendChild(el("p.hint", { text: "Privacy Policy: GUIDON collects nothing and sends nothing to a server." }));
       // Was plain, non-interactive text pointing at a PRIVACY.md that was
       // never bundled into the shipped app - no real user could ever reach

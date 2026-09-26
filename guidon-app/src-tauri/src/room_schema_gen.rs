@@ -8,7 +8,7 @@
 /// The source this file was generated from, relative to guidon-app/.
 pub const SOURCE: &str = "src/app-modules/room-schema.js";
 pub const PROTOCOL_VERSION: u64 = 1;
-pub const TYPES: &[&str] = &["hello", "admit", "welcome", "snapshot", "intent", "reject", "kick", "ping", "pong", "bye", "end"];
+pub const TYPES: &[&str] = &["hello", "admit", "welcome", "snapshot", "intent", "reject", "kick", "ping", "pong", "bye", "end", "offer"];
 pub const INTENT_KINDS: &[&str] = &["ready", "buzz", "score", "answer", "advance-request"];
 pub const ENVELOPE_KEYS: &[&str] = &["v", "t", "room", "seq", "from", "body"];
 pub const BODY_KEYS: &[(&str, &[&str])] = &[
@@ -23,6 +23,7 @@ pub const BODY_KEYS: &[(&str, &[&str])] = &[
     ("pong", &["n"]),
     ("bye", &[]),
     ("end", &["reason"]),
+    ("offer", &["offer"]),
 ];
 pub const REQUIRED_BODY_KEYS: &[(&str, &[&str])] = &[
     ("hello", &["name", "bankSig"]),
@@ -36,6 +37,7 @@ pub const REQUIRED_BODY_KEYS: &[(&str, &[&str])] = &[
     ("pong", &["n"]),
     ("bye", &[]),
     ("end", &[]),
+    ("offer", &["offer"]),
 ];
 pub const SNAPSHOT_KEYS: &[&str] = &["phase", "mode", "seq", "room", "hostSeat", "cardId", "cardText", "turnSeat", "lock", "deadline", "round", "seats", "bankSig", "deck"];
 pub const SEAT_KEYS: &[&str] = &["seatNo", "name", "fp", "score", "online", "ready", "done"];
@@ -53,6 +55,13 @@ pub const MAX_TEXT: usize = 1500;
 pub const MAX_ID: usize = 40;
 pub const MAX_BUILD: usize = 40;
 pub const MAX_APP: usize = 24;
+pub const OFFER_KEYS: &[&str] = &["oid", "kind", "ver", "title", "data"];
+pub const OFFER_REQUIRED_KEYS: &[&str] = &["oid", "kind", "ver", "data"];
+pub const OFFER_FORBIDDEN_KEYS: &[&str] = &["profile", "name", "displayname", "firstname", "lastname", "callsign", "rank", "grade", "mos", "progress", "attempts", "attempt", "notes", "note", "results", "result", "score", "scores", "history", "streak", "roster", "email", "phone", "ssn", "dodid", "edipi", "uic", "token", "fp", "resume"];
+pub const MAX_OFFER_BYTES: usize = 3072;
+pub const MAX_OFFER_TITLE: usize = 40;
+pub const MAX_OFFER_DEPTH: u32 = 6;
+pub const MAX_OFFER_VER: u64 = 99;
 pub const ENDPOINT_WS: &str = "/ws";
 pub const ENDPOINT_JOIN: &str = "/j/";
 pub const ENDPOINT_GUEST: &str = "/";

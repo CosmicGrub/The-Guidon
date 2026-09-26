@@ -1,6 +1,6 @@
 # Privacy Policy — GUIDON
 
-**Last updated:** September 19, 2026
+**Last updated:** September 26, 2026
 
 This is the Privacy Policy for **GUIDON** (Army Leader Development Trainer), distributed as a standalone HTML app, an installable web app (PWA), a Windows desktop app, and an Android app (package `app.guidon.trainer`). It applies to every version of GUIDON, since they all run from the same source and behave identically with respect to data.
 
@@ -10,7 +10,7 @@ This is the Privacy Policy for **GUIDON** (Army Leader Development Trainer), dis
 
 ## The short version
 
-GUIDON does not collect, transmit, sell, or share any personal data, because GUIDON has no server to send it to. There is no server, ever: no account, no sign-in, no analytics, no advertising, and nothing about you is ever sent to anyone — including the developer. Everything GUIDON knows about you stays in storage on your own device, under your control, until you delete it.
+GUIDON does not collect, transmit, sell, or share any personal data, because GUIDON has no server to send it to. There is no server, ever: no account, no sign-in, no analytics, no advertising, and nothing about you is ever sent to anyone — including the developer — except a PT plan or Team Training session that you, as the host of a study room, choose to send to the devices in your own room (see “Sharing a plan or session to a study room” below). Everything GUIDON knows about you stays in storage on your own device, under your control, until you delete it.
 
 The only ways any version of GUIDON can touch a network are these four, and none of them sends your study data to a server: study groups (LAN rooms), which are off by default behind a switch in Settings and, once they exist, connect only to other devices on the same Wi-Fi or hotspot — including when that connection is secured with a self-signed, device-generated certificate — and never to any server; GitHub Pages, the file server the web version will be delivered from (today, whichever static host serves it), which is contacted only to fetch or update the app itself (the service worker checks it for a newer copy when you open the app online); a future read-aloud feature, for which your operating system may download a voice pack the first time it is used; and, on a future iOS build, iCloud or device backups run by the operating system, which may include the app's data under the backup settings you control on your device.
 
@@ -28,7 +28,7 @@ Everything below is stored **only on your device** — never on a server, becaus
 - **Squad roster (optional, leader-facing only):** if you use the roster feature, it asks for initials, a callsign, or a roster number for each Soldier — not full legal names — plus a rank and counseling dates. This is the one place GUIDON stores information about people other than you, so it gets extra protection — see the next section.
 - **Risk Worksheet (optional, practice tool only):** the DA Form 7278 practice tool asks for a resource, a location, and other worksheet fields. It is meant for a synthetic or hypothetical scenario, never a real facility, location, or vulnerability — but because the fields could be used to enter real information, GUIDON gives any saved worksheet the same extra protection as the roster (see the next section).
 
-None of the above ever leaves your device on its own. Nothing here is ever sent to a server.
+None of the above ever leaves your device on its own. Nothing here is ever sent to a server. The one thing you can choose to send to other devices is described under “Sharing a plan or session to a study room” below.
 
 ## The squad roster and Risk Worksheet get extra protection
 
@@ -41,6 +41,16 @@ The roster can hold data about someone other than the app's user, and the Risk W
 ## Backups are yours, not ours
 
 GUIDON can generate a backup file (JSON) of your data on request. This file is created locally in your browser and saved to your device, the same way any file download works. GUIDON does not upload it anywhere; the developer never sees it. What you do with that file afterward (keep it, delete it, email it to yourself, put it on a shared drive) is entirely your choice and outside GUIDON's control. If you choose to include the optional squad roster or Risk Worksheet data in a backup you share, you are sharing information about other people or a resource assessment, so consider that before doing so.
+
+## Sharing a plan or session to a study room
+
+Study groups are off by default. If you turn them on and host a room, GUIDON can send one thing to the other devices in that room, and only when you ask it to: a weekly PT plan from PT Planner, or a Team Training session you planned.
+
+What goes: the structure of that plan or session — the kind of session on each day, any custom sessions and their drill blocks, up to a few changed dates, or the ordered list of exercises — together with the names you typed for it (a session name, a custom session's name, or a day's label), exactly as the confirmation box lists them, and the small internal codes GUIDON needs to rebuild it on the other device (the plan template and the drill or exercise codes).
+
+What never goes: your profile, name, rank, MOS, progress, quiz or Mock Board attempts, notes, completed PT history, results, roster entries, or anything else stored on your device. Before anything is sent, GUIDON checks the names you typed, and each line as it will be read, for common sensitive patterns (a Social Security number, a phone number, an email address, a classification marking, or a future date and place for a unit activity) and refuses to send if it finds one. Please keep Soldiers' names out of the names you type.
+
+It is sent only when you tap “Send to the room” in a confirmation box that lists what will go, and only to the devices seated in your room on the same Wi-Fi or hotspot — never to a server and never to the developer. A device holds what it receives in memory only, and nothing is added to it unless the person who owns that device taps Add on a preview of it. Once added, it is stored on that device like anything else that person creates in that tool (a Guest or Kiosk session keeps it only until GUIDON closes). A guest who joined from a web browser cannot open it at all. Saving a PT plan as a file sends nothing: GUIDON only makes the file on your own device, and how you pass it on is your choice.
 
 ## No accounts, no analytics, no ads, no third parties
 

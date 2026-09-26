@@ -83,7 +83,10 @@ window.GUIDON_BUILD_DIRTY = @@BUILD_DIRTY@@;
   })();
   var app = document.getElementById("app");
   var rt = { ws: null, state: null, code: codeFromUrl(), name: "GUEST", msg: "", timers: [], count: 0, myScore: {}, selfScored: {}, renderTimer: null, lastRender: 0 };
-  var ctx = { now: function () { return Date.now(); }, token: function () { return C.randomToken(); } };
+  /* keepOffer:false - this page cannot open a PT plan or a Team Training
+     session, so the room core keeps only {oid, kind, ver} of what the host
+     shares and drops the title and the data (see reducePeer "offer"). */
+  var ctx = { now: function () { return Date.now(); }, token: function () { return C.randomToken(); }, keepOffer: false };
   window.__guestState = function () { return rt.state; };
 
   function codeFromUrl() {
@@ -275,6 +278,16 @@ window.GUIDON_BUILD_DIRTY = @@BUILD_DIRTY@@;
     if (st.phase === "lobby") head.appendChild(hint("Waiting for the host to start."));
     if (rt.msg) head.appendChild(el("p.feedback", { text: rt.msg }));
     root.appendChild(head);
+    /* A PT plan or Team Training session the host shared. This page has no
+       PT Planner and no Team Training, so it cannot add anything anywhere:
+       it says so and shows none of the payload. Only the app receives it. */
+    if (st.offerNote) root.appendChild(el("p.feedback.gp-offer-note", { text: st.offerNote }));
+    if (st.offer) {
+      var op = el("div.panel.gp-offer", { "data-offer": st.offer.unsupported ? "unsupported" : "held" });
+      op.appendChild(el("div.eyebrow", { text: "Shared by the host" }));
+      op.appendChild(hint("The host shared " + S.handoff.labelOf(st.offer.kind) + ". This page can't add it to anything - open the GUIDON app and join the room there to receive it. Nothing about it is kept on this page."));
+      root.appendChild(op);
+    }
     if (st.phase === "play") { if (st.mode === "relay") drawRelay(root, st); else drawBoard(root, st); }
     else if (st.phase === "recap") {
       var rp = el("div.panel.gp-recap");

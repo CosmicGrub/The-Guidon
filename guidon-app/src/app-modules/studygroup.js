@@ -37,6 +37,14 @@
             .noteExternalResult exactly as the solo Mock Board does - the
             only write a room ever causes, on the candidate's device only.
 
+   Hand-offs (Sep 2026): the host can also share a PT plan or a Team
+   Training session (the "offer" frame; the model is in room-schema.js).
+   Receipt still writes nothing: an offer is held in memory and previewed,
+   and only a person tapping "Add to ..." on their own device - through the
+   owning screen's adapter - ever saves anything there. Sending is just as
+   explicit (a confirm box lists exactly what goes), carries structure
+   only, and only the host sends.
+
    PRIVACY IS THE SPINE (rule 8): receipt never writes any store; nothing
    derived from another person is written; no `grade` intent exists and a
    frame carrying a grade key anywhere is rejected by the schema; nothing
@@ -133,7 +141,10 @@
       turnSeat: s.turnSeat == null ? null : s.turnSeat, lock: s.lock == null ? null : s.lock, deadline: s.deadline == null ? null : s.deadline,
       round: { idx: s.round ? s.round.idx : 0, total: s.round ? s.round.total : 0 },
       seats: s.seats.map(pubSeat), bankSig: s.bankSig,
-      deck: { category: s.deck && s.deck.category != null ? s.deck.category : null, timerSec: s.deck && s.deck.timerSec != null ? s.deck.timerSec : null },
+      /* The deck is the hand-off model's "deck" payload data (room-schema.js
+         THE HAND-OFF MODEL): the same two fields as ever, built by the model
+         so the snapshot and a deck payload can never differ. */
+      deck: schema().handoff.deckData(s.deck),
     };
   }
   /** Every online seated peer gets the full snapshot; nobody else gets anything. */
@@ -163,6 +174,10 @@
       round: { idx: 0, total: mode === "board" ? ids.length : 0 },
       seats: [], pending: [], admitted: [], scores: {}, nextSeat: 2,
       cfg: { pingMs: o.pingMs || DEFAULTS.pingMs, missLimit: o.missLimit || DEFAULTS.missLimit, holdMs: o.holdMs || DEFAULTS.holdMs, pendingMs: o.pendingMs || DEFAULTS.pendingMs },
+      /* The hand-off the host last put in front of the room, in wire form
+         ({ oid, kind, ver, title?, data }) or null - what a seat admitted
+         AFTER it was shared is sent as it is seated. In memory only. */
+      offer: null,
       terminal: null, createdAt: now,
     };
     st.seats.push({ seatNo: 1, name: st.self.name, fp: st.self.fp, score: 0, online: true, ready: true, done: false, token: st.self.token, bankSig: st.bankSig, rank: st.self.rank, lastSeen: now, offlineAt: null });
@@ -175,6 +190,15 @@
       bankSig: o.bankSig || "", joinState: "hello", hostFp: null, seq: 0, phase: "lobby", mode: null, hostSeat: 1,
       cardId: null, cardText: null, turnSeat: null, lock: null, deadline: null, round: { idx: 0, total: 0 }, seats: [], deck: { category: null, timerSec: null }, hostSig: null,
       cfg: { pingMs: o.pingMs || DEFAULTS.pingMs, missLimit: o.missLimit || DEFAULTS.missLimit },
+      /* offer: what the host shared, held here and never applied - the
+         wire form when this build can read it ({ oid, kind, ver, title?,
+         data }), or { oid, kind, ver, unsupported } when it cannot (the data
+         is dropped, never kept; "unsupported" is "unsupported-kind",
+         "newer-version", or "guest" on the browser guest page, which can
+         never use a payload and so keeps none - ctx.keepOffer === false).
+         offerNote: one fixed plain sentence when the host sent something that
+         broke a rule. Neither is ever stored. */
+      offer: null, offerNote: "",
       lastSeen: now, terminal: null, createdAt: now,
     };
   }
@@ -182,6 +206,16 @@
   /* ------------------------------------------------------- host helpers */
   function seatByFp(s, fp) { for (var i = 0; i < s.seats.length; i++) if (s.seats[i].fp === fp) return s.seats[i]; return null; }
   function seatByNo(s, n) { for (var i = 0; i < s.seats.length; i++) if (s.seats[i].seatNo === n) return s.seats[i]; return null; }
+  /* A fresh offer id: 8 base32 characters from the same token source as a
+     seat token, never equal to the offer it replaces (a resend must read as
+     a new offer to a device that dismissed the old one, even under a
+     seeded test PRNG that repeats itself). */
+  function newOid(s, ctx) {
+    var t = tokenOf(ctx).toUpperCase().replace(/[^A-Z2-7]/g, "").slice(0, 8);
+    while (t.length < 8) t += "A";
+    if (s.offer && s.offer.oid === t) t = (t.charAt(0) === "B" ? "C" : "B") + t.slice(1);
+    return t;
+  }
   function refreshCardText(s) {
     s.cardText = null;
     if (s.cardId == null) return;
@@ -220,7 +254,21 @@
     s.seq++;
     refreshCardText(s);
     effects.push({ to: seat.fp, frame: frameOf(s, "welcome", welcomeBody(s, seat)) });
+    /* A seat the host admits AFTER sharing gets the share too, right behind
+       its welcome: the host chose to share with the room, and admitting a
+       device is the host's own act. */
+    offerBehindWelcome(s, seat, effects);
     return seat;
+  }
+  /* The host's CURRENT share, sent to one seat right behind its welcome (the
+     one delivery path for a newly admitted seat and for a seat that comes
+     back). A seat that was offline when the host shared never got the share
+     (hostOffer only addresses seats that are online), so a resumed seat is
+     handed it here too; a device that already holds this share ignores the
+     repeat ("dup-offer"), so sending to a seat that has it costs a frame and
+     changes nothing. */
+  function offerBehindWelcome(s, seat, effects) {
+    if (s.offer) effects.push({ to: seat.fp, frame: frameOf(s, "offer", { offer: s.offer }) });
   }
   function seatAdmitted(s, ctx, effects) {
     var list = s.admitted; s.admitted = [];
@@ -290,6 +338,7 @@
             s.seq++;
             refreshCardText(s);
             effects.push({ to: seat.fp, frame: frameOf(s, "welcome", welcomeBody(s, seat)) });
+            offerBehindWelcome(s, seat, effects);
             return result(s, { accepted: true, changed: true, bump: true, reason: wasOffline ? "resumed" : "rehello", effects: effects });
           }
         }
@@ -453,6 +502,32 @@
         s.seq++;
         return result(s, { accepted: true, changed: true, bump: true, effects: effects });
       }
+      case "offer": {
+        /* The host puts ONE hand-off in front of every seated device (a PT
+           plan or a Team Training session; see room-schema.js THE HAND-OFF
+           MODEL). Only what the model's own rules accept can leave: the
+           offer is rebuilt from the four fields it may have, classified
+           exactly as a receiver will classify it, and refused here if a
+           receiver would have to refuse it. A second offer replaces the
+           first; a resend is a NEW offer with a new id, so a device that
+           dismissed the earlier one is asked again, on purpose. */
+        var cand = action.offer;
+        if (!cand || typeof cand !== "object" || Array.isArray(cand)) return ignored(state, "offer-shape");
+        var wire = { oid: newOid(state, ctx), kind: cand.kind, ver: cand.ver, data: cand.data };
+        if (cand.title != null && cand.title !== "") wire.title = cand.title;
+        var cls = S.handoff.classify(wire);
+        if (cls.status !== "ok") {
+          var why = cls.status === "invalid" ? cls.reason : cls.status;
+          return ignored(state, why.indexOf("offer") === 0 ? why : "offer-" + why);
+        }
+        s = clone(state);
+        s.offer = clone(wire);
+        for (i = 0; i < s.seats.length; i++) {
+          seat = s.seats[i];
+          if (seat.fp !== s.self.fp && seat.online) effects.push({ to: seat.fp, frame: frameOf(s, "offer", { offer: s.offer }) });
+        }
+        return result(s, { accepted: true, changed: true, effects: effects });
+      }
       case "kick": {
         seat = seatByNo(state, action.seatNo);
         if (!seat || seat.fp === state.self.fp) return ignored(state, "seat");
@@ -504,7 +579,17 @@
   function reducePeer(state, frame, ctx) {
     var S = schema();
     var v = S.validate(frame);
-    if (!v.ok) return ignored(state, v.reason);
+    if (!v.ok) {
+      /* A share from the host that broke a rule the wire enforces (too big,
+         a forged or personal key ...): dropped like any invalid frame, but a
+         seated device is told once, in one fixed sentence, that something
+         was ignored - never the sender's own words. */
+      if (frame && typeof frame === "object" && frame.t === "offer" && String(v.reason).indexOf("offer") === 0 && !state.terminal && state.joinState === "seated" && frame.room === state.room && frame.from === state.hostFp) {
+        var noted = clone(state); noted.offerNote = S.handoff.MESSAGES.refused;
+        return result(noted, { accepted: false, changed: true, reason: v.reason });
+      }
+      return ignored(state, v.reason);
+    }
     if (state.terminal) return ignored(state, "terminal");
     if (frame.t !== "reject" && frame.room !== state.room) return ignored(state, "room");
     if (state.hostFp && frame.from !== state.hostFp) return ignored(state, "not-host");
@@ -526,6 +611,31 @@
         if (b.snapshot.seq <= state.seq) return ignored(state, "stale");
         s = clone(state); applySnapshot(s, b.snapshot); s.lastSeen = now;
         return result(s, { accepted: true, changed: true });
+      case "offer": {
+        if (state.joinState !== "seated") return ignored(state, "unadmitted");
+        /* Held, never applied: nothing here touches a device. A repeat of an
+           offer this device already holds (a resend of the same id, a
+           replayed frame) changes nothing and asks nothing twice. */
+        if (state.offer && state.offer.oid === b.offer.oid) return ignored(state, "dup-offer");
+        var oc = S.handoff.classify(b.offer);
+        s = clone(state); s.lastSeen = now;
+        if (oc.status === "ok" && ctx && ctx.keepOffer === false) {
+          /* The browser guest page has no PT Planner and no Team Training, so
+             it can never use what the host shared - and it tells the person
+             nothing about it is kept. It holds only enough to say WHAT was
+             shared: the id, the kind and the version; the title and the data
+             are dropped, exactly like a kind it cannot open. */
+          s.offer = { oid: b.offer.oid, kind: b.offer.kind, ver: b.offer.ver, unsupported: "guest" }; s.offerNote = "";
+        }
+        else if (oc.status === "ok") { s.offer = clone(b.offer); s.offerNote = ""; }
+        else if (oc.status === "unsupported-kind" || oc.status === "newer-version") {
+          s.offer = { oid: b.offer.oid, kind: b.offer.kind, ver: b.offer.ver, unsupported: oc.status }; s.offerNote = "";
+        } else {
+          s.offerNote = S.handoff.MESSAGES.refused;
+          return result(s, { accepted: false, changed: true, reason: "offer-" + oc.reason });
+        }
+        return result(s, { accepted: true, changed: true });
+      }
       case "reject":
         if (state.joinState === "seated") return ignored(state, "seated");
         s = clone(state); s.terminal = { kind: "rejected", reason: b.reason }; s.joinState = "hello";
@@ -600,6 +710,12 @@
       hostName: null, hostLastSpin: "", joinName: null, joinLastSpin: "",
     },
     byId: null, clock: null, skew: null, wakeLock: null,
+    /* Hand-offs (see "hand-offs" below) - all in memory, all dropped with the
+       room: offerPrep is what this device made of the host's share (read,
+       screened, previewed), offerSeen maps an offer id to "dismissed" or
+       "added" so a redraw or a resend never asks twice, offerDone keeps what
+       to show after an add, offerInfo is the host's own note on its last send. */
+    offerPrep: null, offerSeen: {}, offerDone: {}, offerInfo: null,
   };
   var util = function () { return G.util; };
   var el = function (a, b, c) { return G.util.el(a, b, c); };
@@ -980,6 +1096,12 @@
       if (next.phase === "play" && next.self && next.turnSeat === next.self.seatNo && (!prev || prev.turnSeat !== next.turnSeat)) {
         util().announce("Your turn.");
       }
+      if (next.role === "peer") {
+        if (next.offer && (!prev || !prev.offer || prev.offer.oid !== next.offer.oid)) {
+          util().announce(next.offer.unsupported ? "The host shared something this version can't open." : "The host shared " + schema().handoff.labelOf(next.offer.kind) + ". Review it on this screen before adding anything.");
+        }
+        if (next.offerNote && (!prev || prev.offerNote !== next.offerNote)) util().announce(next.offerNote);
+      }
       if (next.seats && next.self) {
         var prevMap = {};
         (prev && prev.seats ? prev.seats : []).forEach(function (s) { prevMap[s.seatNo] = s; });
@@ -1267,6 +1389,7 @@
     transportOnEnded();
     releaseWakeLock();
     rt.state = null; rt.selfScored = {}; rt.myScores = {}; rt.peerInfo = {};
+    rt.offerPrep = null; rt.offerSeen = {}; rt.offerDone = {}; rt.offerInfo = null;
     scheduleRender();
     return { ok: true };
   }
@@ -1294,6 +1417,314 @@
     var st = rt.state;
     if (!st) return { role: null, status: rt.transport ? "idle" : "no-transport", room: null, fp: rt.identity ? rt.identity.fp : null, seatNo: null };
     return { role: st.role, status: st.terminal ? st.terminal.kind : (st.role === "host" ? "hosting" : st.joinState), room: st.room, fp: st.self.fp, seatNo: st.self.seatNo, phase: st.phase };
+  }
+
+  /* ================================================================ */
+  /*                            HAND-OFFS                              */
+  /* ================================================================ */
+  /* The room carries one more thing besides a deck: a PT plan or a Team
+     Training session the host CHOOSES to share (room-schema.js, THE HAND-OFF
+     MODEL, is the wire model; the pure core above holds and forwards it).
+     Everything that touches a device or a screen lives here, and every step
+     is the user's own:
+
+       host   PT Planner and Team Training each show a "Share to my room"
+              button (shareControl, below). Tapping it builds the payload from
+              that screen's own plan, lists exactly what would be sent in a
+              confirm box, and only "Send to the room" sends anything.
+       guest  the offer arrives and is HELD. The device reads it (the model's
+              receive(): rules, then every string through G.opsecGuard), asks
+              the owning screen's adapter for a plain-language preview, and
+              shows it with two buttons. Nothing is added, saved or changed
+              until the person taps "Add to ...". "Not now" drops it.
+
+     The two screens plug in through G.roomHandoffAdapters[kind] - a plain
+     map either module fills in as it loads, so no load order matters:
+       { addText, openHash, openText,
+         prepare(data, offer) -> { ok, title, lines[], notes[], message },
+         apply(data, offer)   -> Promise<{ ok, message, undo? }> }
+     Guest and Kiosk sessions save nothing at the storage layer, so an "Add"
+     there lands in memory only; the preview says so. */
+  function adapters() { return G.roomHandoffAdapters && typeof G.roomHandoffAdapters === "object" ? G.roomHandoffAdapters : {}; }
+  function adapterFor(kind) { var a = adapters(); return typeof kind === "string" && Object.prototype.hasOwnProperty.call(a, kind) ? a[kind] : null; }
+  function guardScreen() {
+    var g = G.opsecGuard;
+    return g && typeof g.screen === "function" ? function (t) { return g.screen(t); } : null;
+  }
+  function sessionOnlyNow() { try { return !!(G.db && G.db.session && typeof G.db.session.active === "function" && G.db.session.active()); } catch (e) { return false; } }
+
+  /** hostOffer(offer) -> { ok, oid, sent } | { ok:false, reason }. `offer` is
+      { kind, ver, title?, data } as the model's make() builds it. Host only. */
+  function hostOffer(offer) {
+    if (!available()) return { ok: false, reason: "off" };
+    var st = rt.state;
+    if (!st || st.role !== "host" || st.terminal || st.phase === "ended") return { ok: false, reason: "not-host" };
+    var before = rt.counters.sent;
+    var res = act(st, { type: "offer", offer: offer }, ctxNow());
+    apply(res);
+    if (!res.accepted) return { ok: false, reason: res.reason };
+    var o = rt.state.offer;
+    rt.offerInfo = { oid: o.oid, kind: o.kind, title: o.title || "", sent: rt.counters.sent - before, at: Date.now() };
+    scheduleRender();
+    return { ok: true, oid: o.oid, sent: rt.offerInfo.sent };
+  }
+
+  /* Why a Share button can or cannot send right now, in the words the
+     screen shows. Re-read on every tap: the room can start or end between
+     the screen drawing and the tap. */
+  function shareGate() {
+    if (!available()) return { ok: false, text: "Study Rooms is switched off in Settings, so nothing can be shared to a room.", go: "#/settings", goText: "Open Settings" };
+    if (!rt.transport) return { ok: false, text: "Sharing to a room needs the GUIDON app on Android or a PC - it can't run in a browser tab." };
+    var st = rt.state;
+    if (!st || st.terminal || st.phase === "ended") return { ok: false, text: "You aren't hosting a room right now. Open Study Rooms and host one, then come back here to share.", go: "#/group", goText: "Open Study Rooms" };
+    if (st.role !== "host") return { ok: false, text: "Only the host of a room can share. You joined this room as a guest." };
+    var n = st.seats.filter(function (x) { return x.fp !== st.self.fp && x.online; }).length;
+    return { ok: true, room: st.room, seated: n, text: "Room " + st.room + ": " + (n ? n + (n === 1 ? " device is" : " devices are") + " seated." : "no one is seated yet - it goes to each device as you admit it.") };
+  }
+  /* One sentence tail for every place that says what a share never carries. */
+  var NEVER_SENT = "never includes your profile, rank, MOS, progress, attempts, notes or results";
+  function sentText(sent, room) {
+    return sent
+      ? "Sent to " + sent + (sent === 1 ? " device" : " devices") + " in room " + room + ". Each one sees a preview and chooses whether to add it. A device on an older GUIDON, or a browser guest, can't open it."
+      : "Nobody is seated yet, so nothing has gone out. It is sent to each device as you admit it.";
+  }
+
+  /** shareRun({ kind, build }) -> Promise<{ ok, text, gate?, sent? }>: the
+      whole explicit share, start to finish, for a screen that draws its own
+      button (a list of saved sessions, say). build() -> Promise<{ ok, title?,
+      data, lines[] } | { ok:false, message }>: the screen's own structure
+      (lines is what the confirm box lists, word for word). `text` is what to
+      say on screen; `gate` (when the room isn't ready) carries a link to fix
+      it. Nothing is built until this is called, and nothing is sent until the
+      person taps "Send to the room" in the confirm box. */
+  async function shareRun(o) {
+    o = o || {};
+    var H = schema().handoff;
+    var g = shareGate();
+    if (!g.ok) return { ok: false, text: g.text, gate: g };
+    var built;
+    try { built = await o.build(); } catch (e) { built = null; }
+    if (!built || !built.ok) return { ok: false, text: (built && built.message) || H.MESSAGES.invalid };
+    var made = H.make(o.kind, built.title, built.data);
+    if (!made.ok) return { ok: false, text: made.message };
+    var again = shareGate();
+    if (!again.ok) return { ok: false, text: again.text, gate: again };
+    var lines = Array.isArray(built.lines) ? built.lines : [];
+    /* No confirm box, no send: the box IS the person's "yes". */
+    if (!(G.modal && typeof G.modal.confirm === "function")) return { ok: false, text: "GUIDON couldn't ask you to confirm, so nothing was sent." };
+    var yes = await G.modal.confirm(
+      "Send " + H.labelOf(o.kind) + " to everyone in room " + again.room + "?\n\n" + lines.join("\n") +
+      "\n\nThis list, plus the small codes GUIDON needs to rebuild it on the other device, is all that goes to the room. It includes any names you typed for it, so keep Soldiers' names out of them. It " + NEVER_SENT + ". Nothing is added on anyone's device unless that person chooses to add it.",
+      { title: "Share to my room", okText: "Send to the room", cancelText: "Not now" });
+    if (!yes) return { ok: false, text: "Nothing was sent.", cancelled: true };
+    var r = hostOffer(made.offer);
+    if (!r.ok) return { ok: false, text: r.reason === "not-host" ? "The room is no longer open, so nothing was sent." : "GUIDON couldn't send that, so nothing was sent." };
+    try { if (util().announce) util().announce("Shared to the room."); } catch (e) {}
+    return { ok: true, text: sentText(r.sent, again.room), sent: r.sent };
+  }
+  /** shareControl({ kind, buttonText?, build }) -> the "Share to my room"
+      control (a DOM node: the button and a status line) for a screen to
+      place. See shareRun() for build() and what "explicit" means here. */
+  function shareControl(o) {
+    o = o || {};
+    var wrap = el("div.sg-share", { "data-share-kind": String(o.kind || ""), style: "margin-top:10px" });
+    var status = el("p.hint.sg-share-status", { role: "status", "aria-live": "polite" });
+    var extra = el("div.sg-share-go");
+    var busy = false;
+    function setStatus(text, gate) {
+      status.textContent = text;
+      util().clear(extra);
+      if (gate && gate.go) extra.appendChild(btn("btn.sm.ghost.sg-share-open", gate.goText || "Open", function () { go(gate.go); }, { style: "margin-top:4px" }));
+    }
+    var b = el("button.btn.ghost.sg-share-btn", { type: "button", text: o.buttonText || "Share to my room" });
+    var first = shareGate();
+    setStatus(first.ok ? "Nothing is sent until you confirm. It sends the structure and any names you typed for it, and " + NEVER_SENT + ". " + first.text : first.text, first.ok ? null : first);
+    b.addEventListener("click", async function () {
+      if (busy) return;
+      busy = true; b.setAttribute("aria-disabled", "true");
+      try { var r = await shareRun(o); setStatus(r.text, r.gate); }
+      finally { busy = false; b.removeAttribute("aria-disabled"); }
+    });
+    wrap.appendChild(b); wrap.appendChild(status); wrap.appendChild(extra);
+    return wrap;
+  }
+
+  /* What this device makes of the host's offer: read and screened by the
+     model, then previewed by the screen that owns the kind. Started the
+     first time an offer is drawn, kept per offer id, and never re-run by a
+     redraw. Nothing here changes anything on the device. */
+  /* Every line a preview would show ({ title, lines[] }), screened one at a
+     time: { found: [findings] }, or { found: null } when there is no way to
+     screen (fail closed, like H.receive). */
+  function screenShown(view) {
+    var scr = guardScreen();
+    if (!scr) return { found: null };
+    var texts = [view.title].concat(Array.isArray(view.lines) ? view.lines : []), all = [];
+    for (var i = 0; i < texts.length; i++) {
+      if (texts[i] == null || texts[i] === "") continue;
+      var r = null;
+      try { r = scr(String(texts[i])); } catch (e) { return { found: null }; }
+      if (r && r.findings && r.findings.length) all = all.concat(r.findings);
+    }
+    return { found: all };
+  }
+  function offerPrepFor(st) {
+    var off = st.offer;
+    if (!off) return null;
+    if (rt.offerPrep && rt.offerPrep.oid === off.oid) return rt.offerPrep;
+    var H = schema().handoff;
+    var prep = { oid: off.oid, state: "working", message: "", busy: false, error: "" };
+    rt.offerPrep = prep;
+    if (off.unsupported) {
+      prep.state = "blocked"; prep.message = off.unsupported === "newer-version" ? H.MESSAGES.newerVersion : H.MESSAGES.unsupportedKind;
+      return prep;
+    }
+    var rec = H.receive(off, { screen: guardScreen() });
+    if (!rec.ok) {
+      prep.state = "blocked"; prep.message = rec.message;
+      if (rec.status === "refused" && rec.found && rec.found.length && G.opsecGuard && typeof G.opsecGuard.listWhat === "function") prep.message += " It looks like it holds " + G.opsecGuard.listWhat(rec.found) + ".";
+      return prep;
+    }
+    var a = adapterFor(rec.offer.kind);
+    if (!a || typeof a.prepare !== "function" || typeof a.apply !== "function") {
+      prep.state = "blocked"; prep.message = "This device can't take " + H.labelOf(rec.offer.kind) + ", so nothing was added.";
+      return prep;
+    }
+    prep.adapter = a; prep.offer = rec.offer;
+    Promise.resolve().then(function () { return a.prepare(rec.offer.data, rec.offer); }).then(function (v) {
+      if (rt.offerPrep !== prep) return;
+      if (v && v.ok) {
+        /* H.receive screened every string on its own (and each changed date
+           with its name). What the person is about to READ is the screen's own
+           preview - the title, then one line per day, date or exercise, worded
+           with this device's own drill and exercise names - so that is screened
+           line by line too, exactly as shown: a future date, a place and a unit
+           activity only add up on one line. Nothing is offered that was not. */
+        var shown = screenShown(v);
+        if (shown.found === null) { prep.state = "blocked"; prep.message = H.MESSAGES.noGuard; }
+        else if (shown.found.length) {
+          prep.state = "blocked"; prep.message = H.MESSAGES.refused;
+          if (G.opsecGuard && typeof G.opsecGuard.listWhat === "function") prep.message += " It looks like it holds " + G.opsecGuard.listWhat(shown.found) + ".";
+        } else { prep.view = v; prep.state = "ready"; }
+      }
+      else { prep.state = "blocked"; prep.message = (v && v.message) || H.MESSAGES.refused; }
+      scheduleRender();
+    }).catch(function () {
+      if (rt.offerPrep !== prep) return;
+      prep.state = "blocked"; prep.message = H.MESSAGES.refused;
+      scheduleRender();
+    });
+    return prep;
+  }
+  function dismissOffer(oid, said) {
+    rt.offerSeen[oid] = "dismissed";
+    try { if (said && util().announce) util().announce(said); } catch (e) {}
+    draw();
+  }
+  function drawOfferPeer(view, st) {
+    if (st.offerNote) view.appendChild(el("div.feedback.warn.sg-offer-note", { text: st.offerNote, style: "margin-bottom:10px" }));
+    var off = st.offer;
+    if (!off) return;
+    var seen = rt.offerSeen[off.oid];
+    if (seen === "dismissed") return;
+    var H = schema().handoff;
+    var p = el("div.panel.sg-offer", { role: "group", "aria-label": "Shared by the host", "data-offer-kind": off.unsupported ? "unsupported" : String(off.kind), "data-offer-oid": String(off.oid), style: "margin-bottom:10px;border-left:3px solid var(--amber)" });
+    p.appendChild(el("div.eyebrow", { text: "Shared by the host" }));
+    if (seen === "added") {
+      var done = rt.offerDone[off.oid] || {};
+      p.setAttribute("data-offer-status", "added");
+      p.appendChild(el("p.sg-offer-done", { text: done.message || "Added.", role: "status" }));
+      var drow = el("div.btn-row", { style: "margin-top:8px;gap:8px" });
+      /* Undo restores what was here BEFORE the add, so it is only ever
+         offered - and only ever performed - while what the add left behind is
+         still exactly what is saved (the adapter's canUndo()/undo() decide).
+         Once the person has changed it since, Undo would wipe their newer
+         work: the button goes and the card says so in plain words. */
+      if (typeof done.undo === "function") drow.appendChild(btn("btn.sm.ghost.sg-offer-undo", "Undo", async function () {
+        var r = null;
+        try { r = await done.undo(); } catch (e) { r = null; }
+        var ok = !!(r && r.ok !== false);
+        var next = { message: ok ? "Undone. Your earlier version is back." : ((r && r.message) || "Couldn't undo that. Nothing more was changed.") };
+        // A refused undo keeps the way to the thing the person is working on;
+        // a real undo has nothing left to open.
+        if (!ok && r && r.changed) { next.openHash = done.openHash; next.openText = done.openText; }
+        rt.offerDone[off.oid] = next;
+        try { if (util().announce) util().announce(next.message); } catch (e) {}
+        draw();
+      }));
+      if (typeof done.undo === "function" && typeof done.canUndo === "function" && !done.checking) {
+        done.checking = true;
+        Promise.resolve().then(function () { return done.canUndo(); }).then(function (still) {
+          if (still || rt.offerDone[off.oid] !== done) { done.checking = false; return; }
+          rt.offerDone[off.oid] = { message: done.message, note: done.undoGone || "Undo isn't possible any more, because it was changed after you added this.", openHash: done.openHash, openText: done.openText };
+          scheduleRender();
+        }).catch(function () { done.checking = false; });
+      }
+      if (done.note) p.appendChild(hint(done.note));
+      if (done.openHash) drow.appendChild(btn("btn.sm.sg-offer-open", done.openText || "Open", function () { go(done.openHash); }));
+      drow.appendChild(btn("btn.sm.ghost.sg-offer-done-btn", "Done", function () { dismissOffer(off.oid, ""); }));
+      p.appendChild(drow);
+      view.appendChild(p);
+      return;
+    }
+    var prep = offerPrepFor(st);
+    p.setAttribute("data-offer-status", prep ? prep.state : "working");
+    if (!prep || prep.state === "working") {
+      p.appendChild(el("p", { text: "Reading what the host shared..." }));
+    } else if (prep.state === "blocked") {
+      p.appendChild(el("p.sg-offer-blocked", { text: prep.message }));
+      p.appendChild(btn("btn.sm.ghost.sg-offer-dismiss", "Dismiss", function () { dismissOffer(off.oid, "Dismissed. Nothing was added."); }, { style: "margin-top:8px" }));
+    } else {
+      var v = prep.view;
+      p.appendChild(el("p", { text: "The host is sharing " + H.labelOf(off.kind) + ". Nothing is added until you say so." }));
+      p.appendChild(el("strong.sg-offer-title", { text: v.title || H.labelOf(off.kind) }));
+      var ul = el("ul.sg-offer-lines", { style: "margin:6px 0 6px 1.1rem;padding:0" });
+      (Array.isArray(v.lines) ? v.lines : []).forEach(function (t) { ul.appendChild(el("li", { text: String(t) })); });
+      p.appendChild(ul);
+      (Array.isArray(v.notes) ? v.notes : []).forEach(function (t) { p.appendChild(hint(String(t))); });
+      if (sessionOnlyNow()) p.appendChild(hint("You are in a Guest or Kiosk session, so anything you add stays only until you close GUIDON."));
+      if (prep.error) p.appendChild(el("div.feedback.warn.sg-offer-error", { text: prep.error }));
+      var row = el("div.btn-row", { style: "margin-top:8px;gap:8px" });
+      var add = btn("btn.sm.primary.sg-offer-add", prep.adapter.addText || "Add", async function () {
+        if (prep.busy) return;
+        prep.busy = true; prep.error = "";
+        add.setAttribute("aria-disabled", "true");
+        var r = null;
+        try { r = await prep.adapter.apply(prep.offer.data, prep.offer); } catch (e) { r = null; }
+        prep.busy = false;
+        if (r && r.ok) {
+          rt.offerSeen[off.oid] = "added";
+          rt.offerDone[off.oid] = { message: r.message || "Added.", undo: r.undo, canUndo: r.canUndo, undoGone: r.undoGone, openHash: prep.adapter.openHash, openText: prep.adapter.openText };
+          try { if (util().announce) util().announce(rt.offerDone[off.oid].message); } catch (e) {}
+        } else {
+          prep.error = (r && r.message) || "GUIDON couldn't add that. Nothing was changed.";
+        }
+        draw();
+      });
+      row.appendChild(add);
+      row.appendChild(btn("btn.sm.ghost.sg-offer-dismiss", "Not now", function () { dismissOffer(off.oid, "Dismissed. Nothing was added."); }));
+      p.appendChild(row);
+    }
+    view.appendChild(p);
+  }
+  /* The host's own note on what it last shared, with the one control the
+     host has here: send it again (as a NEW offer, so a device that said
+     "Not now" is asked again). The sharing itself starts on PT Planner and
+     Team Training. */
+  function drawShareHost(view, st) {
+    var off = st.offer;
+    if (!off) return;
+    var H = schema().handoff;
+    var p = el("div.panel.sg-shared", { role: "group", "aria-label": "Shared with the room", "data-offer-kind": String(off.kind), style: "margin-bottom:10px" });
+    p.appendChild(el("div.eyebrow", { text: "Shared with the room" }));
+    p.appendChild(el("p", { text: H.labelOf(off.kind).replace(/^a /, "A ") + (off.title ? ": " + off.title : "") + "." }));
+    var info = rt.offerInfo && rt.offerInfo.oid === off.oid ? rt.offerInfo : null;
+    p.appendChild(hint(info ? sentText(info.sent, st.room) : "It is sent to each device as you admit it."));
+    p.appendChild(btn("btn.sm.ghost.sg-share-again", "Send again", function () {
+      var r = hostOffer({ kind: off.kind, ver: off.ver, title: off.title, data: off.data });
+      if (!r.ok) { rt.msg = "GUIDON couldn't send that again."; draw(); }
+    }, { style: "margin-top:4px" }));
+    view.appendChild(p);
   }
 
   /* ================================================================ */
@@ -1585,7 +2016,7 @@
     view.appendChild(grid);
     var pv = el("div.panel", { style: "margin-top:10px" });
     pv.appendChild(el("div.eyebrow", { text: "What leaves this device" }));
-    pv.appendChild(hint("Only the room's own frames: your seat name, a per-session fingerprint, card ids and the scores of the round. No grade, no review schedule and nothing about anyone else is ever saved here. See the Privacy Policy."));
+    pv.appendChild(hint("Only the room's own frames: your seat name, a per-session fingerprint, card ids and the scores of the round. If you are the host and confirm Share to my room, also the PT plan or Team Training session you chose to share - its structure and the names you typed for it, never your profile, rank, MOS, progress, attempts or notes - to the devices in your room only, and it is only added on a device whose owner taps Add. No grade, no review schedule and nothing about anyone else is ever saved here. See the Privacy Policy."));
     view.appendChild(pv);
   }
 
@@ -1841,7 +2272,14 @@
     if (st.phase === "lobby") head.appendChild(hint(isHost ? "Read this code out. Each joiner enters it, then you admit them one at a time below." : "Waiting for the host to start."));
     if (rt.msg) head.appendChild(el("div.feedback.warn.sg-msg", { text: rt.msg }));
     if (isHost && st.phase === "lobby") drawHostLadder(head, st);
+    if (isHost && st.phase === "lobby" && !st.offer) head.appendChild(hint("Want to share a PT plan or a Team Training session with this room? Open PT Planner or Team Training and tap Share to my room."));
     view.appendChild(head);
+    /* Hand-offs: the host's own note on what it shared, and (on a seated
+       device) the offer itself - held for the person to read, never applied.
+       Not in the middle of a round: a share waits for the lobby or the recap. */
+    if (isHost) drawShareHost(view, st);
+    else if (st.phase !== "play") drawOfferPeer(view, st);
+    else if (st.offer && rt.offerSeen[st.offer.oid] == null) view.appendChild(hint("The host shared something with you. It will be here between rounds."));
 
     if (st.phase === "play") {
       if (st.mode === "relay") drawRelay(view, st); else drawBoard(view, st);
@@ -2037,6 +2475,12 @@
     DEFAULTS: DEFAULTS, NEEDS_SHELL_TEXT: NEEDS_SHELL_TEXT,
     initHost: initHost, initPeer: initPeer, reduce: reduce, act: act, snapshotOf: snapshotOf, snapshotFrames: snapshotFrames, frameOf: frameOf,
     available: available, attach: attach, host: host, join: join, leave: leave, reconnect: reconnect, sendIntent: sendIntent, hostAction: hostAction,
+    /* Hand-offs: offer(offer) puts one payload (as G.roomSchema.handoff
+       .make() builds it) in front of the room; shareControl({ kind, build })
+       is the explicit "Share to my room" control PT Planner and Team
+       Training place; _handoff() is harness-only introspection. */
+    offer: hostOffer, shareControl: shareControl, share: shareRun, shareGate: shareGate,
+    _handoff: function () { return { prep: rt.offerPrep ? { oid: rt.offerPrep.oid, state: rt.offerPrep.state, message: rt.offerPrep.message } : null, seen: Object.assign({}, rt.offerSeen), info: rt.offerInfo ? Object.assign({}, rt.offerInfo) : null }; },
     state: function () { return rt.state; }, session: session, counters: function () { return rt.counters; }, identity: function () { return rt.identity ? { fp: rt.identity.fp, kind: rt.identity.kind } : null; },
     render: render, _deliver: deliver, _flush: flushSnapshots, _redraw: scheduleRender, HOTSPOT_CAP: HOTSPOT_CAP,
     /* The deck-label codec, pure functions only (see "mixed decks" above):
