@@ -10,7 +10,7 @@ each rule is in the header comment of the workflow that enforces it.
 | Step | Who | What happens |
 |---|---|---|
 | 1. Get main green | anyone | Every change lands through a PR whose **CI green** check passed. |
-| 2. Bump the version | anyone | `node tools/bump-version.mjs <x.y.z> --write` (one command, every file), plus the What's New and CHANGELOG entries. `npm run lint:patterns` proves the files agree. |
+| 2. Bump the version | anyone | `node tools/bump-version.mjs <x.y.z> --write` (one command, every file), plus the What's New entry (one object in `guidon-app/src/data/whats-new.json`, below) and the CHANGELOG entry. `npm run lint:patterns` proves the files agree. |
 | 3. Cut | owner | Commit `guidon-app/src/.release-prep` containing `vX.Y.Z` to main. `release-cut.yml` waits for CI on that exact commit and only then creates the tag and an empty, **not-Latest** release. |
 | 4. Fan out | owner | Commit `guidon-app/src/.release-trigger` containing `vX.Y.Z`. `release-assets.yml` and `release-apple.yml` build from the tag and attach files. |
 | 5. Android | owner, locally | Build, sign and attach the three Android files (below), then run **Release assets** by hand with **finalize_only** ticked. |
@@ -19,6 +19,45 @@ each rule is in the header comment of the workflow that enforces it.
 
 Until step 6 succeeds the previous release stays Latest, so the download
 buttons inside the app (`#/share`) keep working the whole time.
+
+## The What's New entry (step 2)
+
+Every release entry the app can show is one object in the `entries` list of
+**`guidon-app/src/data/whats-new.json`** - the only place they live. Add yours
+at the end:
+
+```json
+{
+  "version": "1.17.0",
+  "date": "October 2026",
+  "title": "A short, plain title",
+  "highlights": [
+    "What a Soldier will notice, and where to find it."
+  ]
+}
+```
+
+- **No script and no manifest line.** Until the notes became data (after
+  v1.16.0), every release added its own `src/app-modules/99-release-vNNNN.js`
+  and listed it in `manifest.json` (kind `release-note`); that kind no longer
+  exists. `tools/build.mjs` reads the JSON
+  file and writes it into `G.whatsNew.RELEASE_NOTES` in both `dist/` and `web/`,
+  so every platform carries the same list and nothing is fetched at run time.
+  A file left over from the old way is refused with a message that says where
+  the entry goes.
+- **A number that was prepared on main but never cut** carries
+  `"released": false` (see the last section). Nothing else may be added to an
+  entry; the build refuses unknown fields.
+- **The plain-language rules are enforced on the file**, not asked for:
+  `npm run lint:patterns` (check (h), rules in `tools/whats-new-rules.mjs`)
+  fails on builder's wording, packaging claims, version numbers in the text, and
+  any highlight over 240 characters. Write for an enlisted Soldier.
+- **The current version must have an entry.** A bump with no matching entry
+  (or one with no highlights) fails `lint:patterns` check (h) and
+  `lint:release-state` check (d), and the failure names the file to add it to.
+- The file's own `$doc` block repeats the shape and the rules for whoever opens
+  it. Entries may sit in any order - the app matches them by version - but keep
+  them oldest first.
 
 ## What "complete" means
 

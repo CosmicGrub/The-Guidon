@@ -39,7 +39,12 @@ import { join } from "node:path";
 
 export const APP_MODULE_DIR = fileURLToPath(new URL("../src/app-modules/", import.meta.url));
 export const MANIFEST_NAME = "manifest.json";
-export const KINDS = ["content-pack", "feature", "finalize", "release-note"];
+export const KINDS = ["content-pack", "feature", "finalize"];
+/** "What's New" entries used to be a fourth kind, "release-note" (one small
+ *  99-release-vNNNN.js per release). They are DATA now - src/data/whats-new.json -
+ *  so the kind is gone, and a manifest or a folder that still has one is told
+ *  where the entry goes instead of getting a bare "unknown kind". */
+const RELEASE_NOTE_MOVED = "What's New entries are data now, not modules - put the entry in src/data/whats-new.json (see docs/release-runbook.md) and delete this file and its manifest entry";
 export const PATCH_WHEN = ["load", "call"];
 export const EMITS = ["build", "runtime"];
 /** The effective "emit" of a module entry: the field if present, else the
@@ -98,7 +103,8 @@ export function checkManifest(manifest, onDisk) {
     if (!m || typeof m !== "object") { problems.push(`${where}: entry is not an object`); return; }
     if (typeof m.file !== "string" || !/^[^\\/]+\.js$/.test(m.file)) problems.push(`${where}: "file" must be a plain *.js file name inside src/app-modules`);
     if (typeof m.id !== "string" || !ID.test(m.id)) problems.push(`${where}: "id" must be lower-case words joined by dashes (got ${JSON.stringify(m.id)})`);
-    if (!KINDS.includes(m.kind)) problems.push(`${where}: "kind" must be one of ${KINDS.join(" | ")} (got ${JSON.stringify(m.kind)})`);
+    if (m.kind === "release-note") problems.push(`${where}: kind "release-note" no longer exists - ${RELEASE_NOTE_MOVED}`);
+    else if (!KINDS.includes(m.kind)) problems.push(`${where}: "kind" must be one of ${KINDS.join(" | ")} (got ${JSON.stringify(m.kind)})`);
     if (typeof m.headless !== "boolean") problems.push(`${where}: "headless" must be true or false - true means tools/assemble-bank.mjs evaluates this file with no page`);
     if (m.kind === "content-pack" || m.kind === "finalize") {
       if (m.emit !== "build") problems.push(`${where}: a ${m.kind} must be "emit": "build" (got ${JSON.stringify(m.emit)}) - it calls G.contentPack.define() and is merged into the seed at build time, never spliced into the page as a <script>`);
@@ -120,7 +126,7 @@ export function checkManifest(manifest, onDisk) {
     if (typeof m.file === "string") { if (byFile.has(m.file)) problems.push(`${where}: this file is listed twice`); else byFile.set(m.file, m); }
   });
 
-  for (const f of onDisk) if (!byFile.has(f)) problems.push(`src/app-modules/${f}: not listed in manifest.json - add an entry where it should LOAD (order is the manifest's, not the file name's), or the build would silently leave it out`);
+  for (const f of onDisk) if (!byFile.has(f)) problems.push(/^99-release-/.test(f) ? `src/app-modules/${f}: ${RELEASE_NOTE_MOVED}` : `src/app-modules/${f}: not listed in manifest.json - add an entry where it should LOAD (order is the manifest's, not the file name's), or the build would silently leave it out`);
   for (const m of mods) if (m && typeof m.file === "string" && !onDisk.includes(m.file)) problems.push(`src/app-modules/${m.file}: listed in manifest.json (id "${m.id}") but there is no such file`);
 
   const position = new Map(mods.map((m, i) => [m && m.id, i]));

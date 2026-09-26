@@ -1,0 +1,238 @@
+{
+  "$doc": {
+    "what": "Every \"What's new\" entry the app can show, oldest first. tools/build.mjs reads this ONE file and writes it into G.whatsNew.RELEASE_NOTES in dist/guidon-standalone.html and web/ (so every fork carries the same list); the running app never fetches it. A release adds one object to \"entries\" - there is no per-release script and nothing to list in src/app-modules/manifest.json.",
+    "entry": "{ \"version\": \"x.y.z\", \"date\": \"Month YYYY\", \"title\": \"...\", \"highlights\": [\"...\", \"...\"] } - and, only for a number that was prepared on main but never cut as a tagged release, \"released\": false (the entry still shows its highlights to anyone who skipped past it; tools/lint-release-state.mjs requires the mark, and fails if the tag v<version> ever exists while it is still there). No other fields are allowed.",
+    "writingRule": "Read by Soldiers, not developers. Plain words: what a Soldier will notice and where to find it, never how it was built, tested or packaged, and never a feature that is not on a screen they can reach. No version numbers in the text. tools/whats-new-rules.mjs (run by tools/lint-patterns.mjs check (h)) rejects builder's wording (engine, module, PWA, bundle, packaged, tagged ...), version numbers, and any highlight longer than 240 characters - it reads titles and highlights only, never this $doc block.",
+    "order": "Entries may sit in any order - the app finds one by its version and sorts what a Soldier missed newest first - but keep them oldest first, new release last.",
+    "current": "package.json's version must have an entry with at least one highlight, or tools/lint-patterns.mjs check (h) and tools/lint-release-state.mjs check (d) fail.",
+    "unreleased": "1.11.0 and 1.12.0 were prepared on main and never cut; v1.12.1 superseded both (see docs/release-runbook.md), so their entries carry \"released\": false."
+  },
+  "entries": [
+    {
+      "version": "1.6.0",
+      "date": "September 2026",
+      "title": "Study with a buddy",
+      "highlights": [
+        "New: Study Rooms — create or join a private study session with other Soldiers nearby, right from the app.",
+        "Share a room instantly with a QR code or a simple link, no typing required.",
+        "Study Rooms are now noticeably safer and more reliable, with extra protections added behind the scenes.",
+        "Removing someone from a Study Room now asks you to confirm first, so an accidental tap can't remove a study partner.",
+        "Screen readers now announce Study Room updates out loud, like someone joining, being let in, or it becoming your turn."
+      ]
+    },
+    {
+      "version": "1.7.0",
+      "date": "September 2026",
+      "title": "Now on iPhone, and easier to share",
+      "highlights": [
+        "GUIDON now works on iPhone and iPad — no app store needed. Open the link in Safari, tap Share, then Add to Home Screen.",
+        "Sharing GUIDON with someone else is now one QR code or link, on any device — it automatically offers the right download for their phone or computer.",
+        "Fixed a rare issue on a brand-new install where the app could open with no board questions loaded.",
+        "Study Rooms now clearly shows when it isn't available, like on an iPhone or in a plain browser, instead of failing silently."
+      ]
+    },
+    {
+      "version": "1.8.0",
+      "date": "September 2026",
+      "title": "Pin your favorites, and a couple of corrections",
+      "highlights": [
+        "New: pin any section as a favorite from the menu — pinned sections jump to the top, and your phone's bottom bar now shows your own picks instead of a fixed set.",
+        "The bottom bar now looks and feels native to your phone, whether that's Android or iPhone.",
+        "A landscape phone now gets a proper compact side menu instead of the old cramped bar.",
+        "Corrected two board-question topics: the levels of Article 15 punishment, and the real difference between being AWOL and desertion.",
+        "Screen reader and keyboard navigation improvements across several study tools, including PRT, Recite, and search."
+      ]
+    },
+    {
+      "version": "1.8.1",
+      "date": "September 2026",
+      "title": "Menu clean-up",
+      "highlights": [
+        "Fixed the star icon added last update sitting too close to a menu item's name on some screen sizes.",
+        "Every menu row is now the same, even height — a few rows used to sit slightly taller than the rest for no reason."
+      ]
+    },
+    {
+      "version": "1.8.2",
+      "date": "September 2026",
+      "title": "Menu fix, part two (foldable phones)",
+      "highlights": [
+        "Fixed the pin star from the last two updates being invisible on some foldable phones, instead of just showing in the wrong place."
+      ]
+    },
+    {
+      "version": "1.9.0",
+      "date": "September 2026",
+      "title": "New: TCCC scenarios, a 9-line MEDEVAC builder, and grid plotting",
+      "highlights": [
+        "Two new practice scenarios under Train: an IED-strike casualty call and a full 9-line MEDEVAC call-in, both built around real Army combat-medic doctrine (ATP 4-02.11 and ATP 4-02.2) with multiple endings depending on the choices you make.",
+        "Land Navigation practice now has a 4th mode: Grid plot. Click a spot on a real grid to plot a coordinate, or read one back — either way, no more just picking coordinate digits apart.",
+        "Fixed a couple of doctrine cards along the way: TCCC now covers the full MARCH-PAWS protocol (not just MARCH), and there's a brand-new doctrine card for the 9-line MEDEVAC request itself."
+      ]
+    },
+    {
+      "version": "1.10.0",
+      "date": "September 2026",
+      "title": "A five-minute daily board habit, and faster ways to find cards",
+      "highlights": [
+        "New: 5-minute board reps. Home now offers a short daily set of board questions, starting with the ones you're due to review.",
+        "Board Drill has new quick filters: show only the cards from one regulation, or from one of the six board study areas, like Leadership & Counseling or Training Management.",
+        "Board Drill's Readiness view now shows how you're doing in each of those six study areas, so you can see where to spend your time.",
+        "New study material: the four-stage counseling process, the eight-step training model, Army Emergency Relief, Army Community Service, and three new scenarios that make you work a problem from more than one angle."
+      ]
+    },
+    {
+      "version": "1.10.1",
+      "date": "September 2026",
+      "title": "iPhone and iPad upkeep",
+      "highlights": [
+        "Behind-the-scenes work to keep GUIDON working well on iPhone and iPad. Nothing new to learn in this one."
+      ]
+    },
+    {
+      "version": "1.11.0",
+      "released": false,
+      "date": "September 2026",
+      "title": "More board questions, cybersecurity and OPSEC, and new ways to memorize",
+      "highlights": [
+        "Many more board questions across the subjects you already study, plus new supply question sets for 92A Soldiers. They show up in Board Drill, quizzes, and weak-area review.",
+        "New in the menu: Cybersecurity & OPSEC, with scenarios, board questions, key terms, and a short self-check on protecting sensitive information.",
+        "GUIDON now reminds you to keep sensitive information out of MOI imports and rosters. Everything you enter still stays on your device.",
+        "Recitation Drill has an optional Recall ladder that hides more of the words as you improve.",
+        "A new My unit section in Recitation Drill lets you add your own unit song, creed or motto. Your own text stays on this device. 1st Cavalry Division heritage questions join Army History in Board Drill."
+      ]
+    },
+    {
+      "version": "1.12.0",
+      "released": false,
+      "date": "September 2026",
+      "title": "Team training, a PT planner, and a full practice board",
+      "highlights": [
+        "New: Team Training. Short exercises for a squad or study group - talk a decision over together, then lock in one answer.",
+        "New: PT Planner. Lay out your PT by day, week, or month, set reminders, and get a heads-up when hard days start to outnumber recovery days.",
+        "New: Board Simulator. Practice reporting in, answer board questions, work a leadership problem, then write your own after-action notes.",
+        "More board questions on Army Emergency Relief, Army Community Service, and supply discipline."
+      ]
+    },
+    {
+      "version": "1.12.1",
+      "date": "September 2026",
+      "title": "A round of fixes for the newest tools",
+      "highlights": [
+        "PT Planner saves the day you actually picked, keeps changes you made to single dates, asks before replacing your week, and clears out old PT reminders instead of stacking them up on Home.",
+        "Board Simulator and Team Training now work for every rank, and a practice step only counts once you have really done it.",
+        "Study Rooms can mix up to 12 subjects in one room, and everyone in the room drills the same cards.",
+        "Board Drill answers were checked again against current regulations. Subjects that showed up twice under different names are now one subject, and study-guide answers are labeled as study-guide answers.",
+        "Pasting into MOI Import never changes or removes your text. GUIDON points out anything that looks sensitive and lets you decide what to do.",
+        "On a phone, the Board Drill filter rows each stay on one line you can swipe, so the flashcard sits closer to the top."
+      ]
+    },
+    {
+      "version": "1.13.0",
+      "date": "September 2026",
+      "title": "Cybersecurity Fundamentals, MOS decks, and a safer backup",
+      "highlights": [
+        "A new \"Cybersecurity Fundamentals\" section on the Cybersecurity & OPSEC screen: ransomware, insider threats, AI scams and deepfakes, telework security, smart devices, secure spaces, and safe use of military AI tools.",
+        "MOS-specific board content (92A first, more to come) now has its own \"MOS Decks\" toggle in Settings and its own Readiness row - off by default, so it only shows up for the job it's actually for, or once you turn it on.",
+        "Exporting a backup now lets you choose to include your leader roster and any saved Risk Worksheets - left out by default, included only if you check the box (moving to a new device, for example).",
+        "The Risk Worksheet's synthetic-data reminder now comes before the quick-start templates, not after, so you see it before you start typing.",
+        "The PT session builder's exercise names now match PT Planner's own wording exactly, and any drill without a fully sourced exercise list says so plainly instead of showing content that hasn't been verified yet."
+      ]
+    },
+    {
+      "version": "1.14.0",
+      "date": "September 2026",
+      "title": "Build-your-own PT sessions, flexible screen layouts, and a smarter MOI Import",
+      "highlights": [
+        "PT Planner: build your own PT session from the drills GUIDON has — add them, put them in the order you want, save it, and it works everywhere a regular session does.",
+        "PT Planner and Career Calendar can each be shown a different way now — open Settings → Screen Layouts to try \"Tasking Board\" or \"The Zero Board\" alongside the screen you already know.",
+        "Six new themes, all chosen to be easy on the eyes for long study sessions — see them in Settings → Theme.",
+        "MOI Import can now hold more than one imported MOI at a time, and shows you exactly what changed — topics added, removed, or updated — when you re-import a revised one.",
+        "An imported MOI can show its own board-date countdown and remind you before the board, right on the MOI screen.",
+        "MOI Import now shows how sure it is about each matched citation, and can optionally narrow Board Drill and Doctrine down to just what your MOI actually assigns — off unless you turn it on.",
+        "MOI Import now recognizes UCMJ Article citations, not just regulation and manual numbers.",
+        "Leaders can attach a shared MOI to their roster and see which Soldiers have been briefed on it — dates only, never anyone's own study details."
+      ]
+    },
+    {
+      "version": "1.14.1",
+      "date": "September 2026",
+      "title": "A fix for finding MOI Import",
+      "highlights": [
+        "Searching for \"MOI Import\" used to come up empty. It now shows up the same honest way Forms, Money, and a few other screens already did - as a direct link when Search can't find it by name."
+      ]
+    },
+    {
+      "version": "1.14.2",
+      "date": "September 2026",
+      "title": "Search finds a lot more of the app now",
+      "highlights": [
+        "Search now finds screens by what they do, not just their name - try \"PCS\", \"TSP\", or \"dark mode\" - and can take you straight to a specific Settings option, not just the Settings page."
+      ]
+    },
+    {
+      "version": "1.15.0",
+      "date": "September 2026",
+      "title": "Cleaner citations under the hood",
+      "highlights": [
+        "Doctrine, Creeds, PRT, and Scenario Training citations are now tracked more precisely behind the scenes - you may notice a few source lines read a little differently, but nothing you study has changed."
+      ]
+    },
+    {
+      "version": "1.15.3",
+      "date": "September 2026",
+      "title": "A small internal cleanup",
+      "highlights": [
+        "No visible changes this update - Board Simulator's scenario steps now get a clean, direct signal when you finish one, instead of a workaround."
+      ]
+    },
+    {
+      "version": "1.15.4",
+      "date": "September 2026",
+      "title": "A small internal cleanup",
+      "highlights": [
+        "No visible changes this update - some behind-the-scenes tidying so the Leadership Drills PRT builder can never quietly drift out of sync with the rest of the app."
+      ]
+    },
+    {
+      "version": "1.15.5",
+      "date": "September 2026",
+      "title": "A small display fix",
+      "highlights": [
+        "Fixed a rare spot on Creeds & Branch Identities where the source line could show a stray word instead of just staying blank."
+      ]
+    },
+    {
+      "version": "1.15.6",
+      "date": "September 2026",
+      "title": "Your sidebar can now spotlight what matters to you",
+      "highlights": [
+        "Turn on Nav Spotlight (offered right after setup, or any time in Settings) and your sidebar pins the routes that match what you're focused on to the top - nothing else moves or goes away, and it's one tap to turn back off.",
+        "MOI Import now recognizes Army Directive citations, however your MOI writes them (abbreviated or spelled out) - including the one behind the current body composition and fitness test rules."
+      ]
+    },
+    {
+      "version": "1.15.7",
+      "date": "September 2026",
+      "title": "Board Drill's filters are easier to browse, and fullscreen study feels smoother",
+      "highlights": [
+        "Board Drill's category and regulation filters now follow your pillar pick - pick a pillar and only its own categories show up, pick a category and only its own regulations do. Every category is still one tap away in \"Jump to category.\"",
+        "Fullscreen study now grows into place instead of snapping - fold your phone into a tighter screen or tap the fullscreen button and the card smoothly fills the space."
+      ]
+    },
+    {
+      "version": "1.16.0",
+      "date": "September 2026",
+      "title": "A bigger search, a real AFT calculator, and new study content for medics, senior NCOs, and NCOER writers",
+      "highlights": [
+        "Search now covers the Army Dictionary, Forms, Counsel, IDP goals, and Health & Resilience too - and results are ranked by how well they match, not just by where they happen to sit in the app.",
+        "The Fitness screen can now score your Army Fitness Test for you - enter your deadlift, push-ups, sprint-drag-carry, plank, and run, and it scores every event and adds them up, straight from the real official tables.",
+        "68W Combat Medics get their own study deck - real board cards and two judgment-call scenarios on casualty collection, medical logistics, and scope of practice.",
+        "Senior NCOs (E7/E8) get a new Master Leader Course prep screen and 41 board cards - the first study material this app has ever had above E6.",
+        "PRT Drill now covers all five standard drills, not just the Preparation Drill - Conditioning Drill 1 & 2, Climbing Drill 1 & 2, and the Guerilla Drill, each with every exercise spelled out.",
+        "The NCOER (DA Form 2166-9-2) worksheet is filled out - the Senior Rater section is there for the first time, and the rater performance rating no longer uses the wrong scale.",
+        "You can now pin your favorite Board Drill categories for one-tap access, and those pins travel with you in a backup and restore."
+      ]
+    }
+  ]
+}

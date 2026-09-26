@@ -43,10 +43,14 @@ const git = (...a) => spawnSync("git", ["-C", root, ...a], { encoding: "utf-8" }
 const applyPlan = (version, iosBuild) => { for (const f of planBump(root, version, { iosBuild }).files) writeFileSync(at(f.file), f.after); };
 
 const changelog = (heads) => "# Changelog\n\n" + heads.map((h) => `## 2026-01-01 - ${h}\n\nText.\n`).join("\n");
-const notesHtml = (entries, links = ["GUIDON-android.apk", "GUIDON-windows-setup.exe"]) =>
-  "<script>\n" + links.map((n) => `  x(dl("${n}"));`).join("\n") + "\n  G.whatsNew = {\n    RELEASE_NOTES: [\n" +
-  entries.map((e) => `      { version: "${e.v}",${e.unreleased ? " released: false," : ""} date: "x", title: "t", highlights: ["h"] },`).join("\n") +
-  "\n    ],\n    async checkOnBoot() {},\n  };\n</script>\n";
+// The fixture's src/index.html: the #/share download links lint (f) reads, and
+// the ONE placeholder the build fills (its own entries live in the data file).
+const INDEX = "guidon-app/src/index.html";
+const NOTES = "guidon-app/src/data/whats-new.json";
+const indexHtml = (links = ["GUIDON-android.apk", "GUIDON-windows-setup.exe"]) =>
+  "<script>\n" + links.map((n) => `  x(dl("${n}"));`).join("\n") + "\n  G.whatsNew = {\n    RELEASE_NOTES: /*@@WHATS_NEW_ENTRIES@@*/ [],\n    async checkOnBoot() {},\n  };\n</script>\n";
+// The fixture's What's New data file, exactly the shape the real one has.
+const notesJson = (entries) => JSON.stringify({ $doc: { what: "fixture" }, entries: entries.map((e) => Object.assign({ version: e.v }, e.unreleased ? { released: false } : {}, { date: "x", title: "t", highlights: ["h"] })) }, null, 2) + "\n";
 
 try {
   /* ------------------------------------------------------------------
@@ -61,14 +65,15 @@ try {
   applyPlan("1.10.1", 2);
   put("GUIDON files/CHANGELOG.md", changelog(["v1.10.1: first"]));
   put("GUIDON files/ROADMAP.md", "# Roadmap\n\n**Current version:** v1.10.1 (x)\n");
-  put("guidon-app/src/index.html", notesHtml([{ v: "1.10.1" }]));
+  put(INDEX, indexHtml());
+  put(NOTES, notesJson([{ v: "1.10.1" }]));
   git("add", "-A"); git("commit", "-q", "-m", "1.10.1"); git("tag", "v1.10.1");
   applyPlan("1.12.0", 4);
   const GOOD_LOG = changelog(["v1.12.0: now", "v1.11.0 (prepared, not released): skipped", "v1.10.1: first"]);
-  const GOOD_HTML = notesHtml([{ v: "1.10.1" }, { v: "1.11.0", unreleased: true }, { v: "1.12.0" }]);
+  const GOOD_NOTES = notesJson([{ v: "1.10.1" }, { v: "1.11.0", unreleased: true }, { v: "1.12.0" }]);
   put("GUIDON files/CHANGELOG.md", GOOD_LOG);
   put("GUIDON files/ROADMAP.md", "# Roadmap\n\n**Current version:** v1.12.0 (x)\n");
-  put("guidon-app/src/index.html", GOOD_HTML);
+  put(NOTES, GOOD_NOTES);
   git("add", "-A"); git("commit", "-q", "-m", "1.12.0");
 
   const lint = (opts = {}) => lintReleaseState({ root, ...opts });
@@ -118,7 +123,7 @@ try {
   applyPlan("1.12.1");
   const LOG_1121 = (extra) => changelog(["v1.12.1: fix", ...extra, "v1.10.1: first"]);
   put("GUIDON files/ROADMAP.md", "# Roadmap\n\n**Current version:** v1.12.1 (x)\n");
-  put("guidon-app/src/index.html", notesHtml([{ v: "1.10.1" }, { v: "1.11.0", unreleased: true }, { v: "1.12.0", unreleased: true }, { v: "1.12.1" }]));
+  put(NOTES, notesJson([{ v: "1.10.1" }, { v: "1.11.0", unreleased: true }, { v: "1.12.0", unreleased: true }, { v: "1.12.1" }]));
   put("GUIDON files/CHANGELOG.md", LOG_1121(["v1.12.0 (prepared, not released): a", "v1.11.0 (prepared, not released): b"]));
   r = lint();
   check(r.failures.length === 0, "at 1.12.1 with 1.11.0 and 1.12.0 marked \"prepared, not released\" everything passes", "1.12.1 fixture fails: " + r.failures.join(" | "));
@@ -134,13 +139,21 @@ try {
   check(failsWith(r, /newest versioned heading is v1\.12\.0 .* but package\.json is 1\.12\.1/), "a version bump with no CHANGELOG entry of its own fails");
   r = broken("GUIDON files/ROADMAP.md", (t) => t.replace("v1.12.1", "v1.12.0"));
   check(failsWith(r, /ROADMAP says the current version is v1\.12\.0/), "ROADMAP's \"Current version\" line has to move with the version");
-  r = broken("guidon-app/src/index.html", () => notesHtml([{ v: "1.10.1" }, { v: "1.11.0" }, { v: "1.12.0", unreleased: true }, { v: "1.12.1" }]));
+  r = broken(NOTES, () => notesJson([{ v: "1.10.1" }, { v: "1.11.0" }, { v: "1.12.0", unreleased: true }, { v: "1.12.1" }]));
   check(failsWith(r, /What's New has an entry for 1\.11\.0, which was never tagged/), "a What's New entry for a never-tagged version must carry released: false");
-  r = broken("guidon-app/src/index.html", () => notesHtml([{ v: "1.10.1", unreleased: true }, { v: "1.11.0", unreleased: true }, { v: "1.12.0", unreleased: true }, { v: "1.12.1" }]));
+  r = broken(NOTES, () => notesJson([{ v: "1.10.1", unreleased: true }, { v: "1.11.0", unreleased: true }, { v: "1.12.0", unreleased: true }, { v: "1.12.1" }]));
   check(failsWith(r, /What's New entry 1\.10\.1 is marked released: false, but the tag v1\.10\.1 exists/), "released: false on a version that was tagged is stale, and fails");
-  put("guidon-app/src/app-modules/99-release-v1130.js", 'G.whatsNew.RELEASE_NOTES.push({ version: "1.13.0", date: "x", title: "t", highlights: ["h"] });\n');
-  r = lint(); unlinkSync(at("guidon-app/src/app-modules/99-release-v1130.js"));
-  check(failsWith(r, /entry for 1\.13\.0, which was never tagged/), "entries that arrive through src/app-modules/99-release-*.js are read too");
+  r = broken(NOTES, () => notesJson([{ v: "1.10.1" }, { v: "1.11.0", unreleased: true }, { v: "1.12.0", unreleased: true }, { v: "1.12.1" }, { v: "1.13.0" }]));
+  check(failsWith(r, /entry for 1\.13\.0, which was never tagged/), "an entry for a later, never-tagged number is read out of the data file too");
+  // The current version has to have its own entry - the check lint-patterns (h) alone used to make.
+  r = broken(NOTES, () => notesJson([{ v: "1.10.1" }, { v: "1.11.0", unreleased: true }, { v: "1.12.0", unreleased: true }]));
+  check(failsWith(r, /^\(d\) What's New has no entry for the current version 1\.12\.1 \(package\.json\) - add one to guidon-app\/src\/data\/whats-new\.json/), "a version with no What's New entry of its own fails, and the message names the file to add it to");
+  r = broken(NOTES, (t) => t.replace(/"highlights": \[[^\]]*\]/g, '"highlights": []'));
+  check(failsWith(r, /^\(d\) guidon-app\/src\/data\/whats-new\.json entry \d+ \(1\.12\.1\): "highlights" must be a list with at least one line/), "an entry whose highlights are empty fails (a stub written to satisfy the check)");
+  r = broken(NOTES, (t) => t.slice(0, -25));
+  check(failsWith(r, /^\(d\) guidon-app\/src\/data\/whats-new\.json is not valid JSON/), "a data file that does not parse fails, naming it");
+  { const keep = get(NOTES); unlinkSync(at(NOTES)); r = lint(); put(NOTES, keep); }
+  check(failsWith(r, /^\(d\) guidon-app\/src\/data\/whats-new\.json is missing/), "a missing data file fails, naming it");
 
   console.log("\n4. The app never links to a download no release job uploads");
   r = broken("guidon-app/src/index.html", (t) => t.replace('x(dl("GUIDON-android.apk"));', 'x(dl("GUIDON-android.apk"));\n  x(dl("GUIDON-macos.dmg"));'));
@@ -155,7 +168,7 @@ try {
   put("guidon-app/src/.release-prep", "v1.12.1\n");
   r = lint({ cut: true });
   check(r.failures.length === 0, "--cut passes when everything agrees and .release-prep names this version", "--cut fails on a clean fixture: " + r.failures.join(" | "));
-  r = broken("guidon-app/src/index.html", () => notesHtml([{ v: "1.10.1" }, { v: "1.11.0", unreleased: true }, { v: "1.12.0", unreleased: true }, { v: "1.12.1", unreleased: true }]), { cut: true });
+  r = broken(NOTES, () => notesJson([{ v: "1.10.1" }, { v: "1.11.0", unreleased: true }, { v: "1.12.0", unreleased: true }, { v: "1.12.1", unreleased: true }]), { cut: true });
   check(failsWith(r, /entry for 1\.12\.1 is marked released: false/), "--cut refuses a version whose own notes say it is not released");
   r = broken("GUIDON files/CHANGELOG.md", (t) => t.replace("v1.12.1: fix", "v1.12.1 (prepared, not released): fix"), { cut: true });
   check(failsWith(r, /marks v1\.12\.1 as not released - a version being cut/), "--cut refuses a version whose own CHANGELOG entry says it is not released");
@@ -181,7 +194,8 @@ try {
   b = bump({ root, version: "1.13.0", write: true });
   const after = lint();
   check(b.wrote && !failsWith(after, /^\(a\)|^\(b\)/), "--write leaves every version value agreeing (lint (a) and (b) pass)", "after --write: " + after.failures.join(" | "));
-  check(failsWith(after, /CHANGELOG's newest versioned heading/) && failsWith(after, /ROADMAP says/), "...and the lint then insists on the hand-written CHANGELOG and ROADMAP entries");
+  check(failsWith(after, /CHANGELOG's newest versioned heading/) && failsWith(after, /ROADMAP says/) && failsWith(after, /What's New has no entry for the current version 1\.13\.0/), "...and the lint then insists on the hand-written CHANGELOG, ROADMAP and What's New entries");
+  check(b.lines.some((l) => /src\/data\/whats-new\.json/.test(l)) && !b.lines.some((l) => /99-release|release-note/.test(l)), "bump-version's \"still to write by hand\" list points at src/data/whats-new.json, not at a per-release script", "bump-version's hand-written list: " + JSON.stringify(b.lines.filter((l) => /What's New|whats-new|99-release/.test(l))));
   check(/versionCode 11300\b/.test(get("guidon-app/android/app/build.gradle")) && (get(pbx).match(/CURRENT_PROJECT_VERSION = 6;/g) || []).length === 2 && (get(pbx).match(/MARKETING_VERSION = 1\.13\.0;/g) || []).length === 2,
     "Android versionCode follows the formula (11300) and the iOS project's four values moved together (build 5 -> 6: one step per version change)");
   const lockDiff = spawnSync("git", ["-C", root, "diff", "--numstat", "--", "guidon-app/package-lock.json"], { encoding: "utf-8" }).stdout.trim().split(/\s+/);
@@ -202,35 +216,141 @@ try {
   const chk = spawnSync(process.execPath, ["tools/bump-version.mjs", "--check"], { encoding: "utf-8" });
   check(chk.status === 0 && /every value agrees/.test(chk.stdout), "bump-version --check agrees with the lint on the real tree");
 
-  console.log("\n7. What's New copy rules (tools/whats-new-rules.mjs, run by lint-patterns check (h))");
+  console.log("\n7. The What's New data file: shape, copy rules, the current-version rule and the build's inlining (tools/whats-new-rules.mjs - the one reader for the build, lint-patterns (h) and lint-release-state (d))");
   {
-    const { parseReleaseNotes, checkCopy, MAX_HIGHLIGHT_CHARS } = await import("./whats-new-rules.mjs");
-    // The entries exactly as they shipped to Soldiers before the rewrite.
-    const SHIPPED = `
-      { version: "1.10.1", title: "Apple parity and release reliability", highlights: [
+    const { parseWhatsNewText, toEntries, checkCopy, checkCurrent, newestVersion, lintWhatsNew, whatsNewLiteral, readWhatsNewFile, BANNED, MAX_HIGHLIGHT_CHARS, WHATS_NEW_ANCHOR } = await import("./whats-new-rules.mjs");
+    const entry = (v, over = {}) => Object.assign({ version: v, date: "September 2026", title: "A plain title", highlights: ["Something a Soldier will notice."] }, over);
+    // A data file as text. Its own $doc may say anything - it is never read as copy.
+    const fileOf = (entries, extra = {}) => JSON.stringify(Object.assign({ $doc: { what: "a note may say engine, module and CI as often as it likes - and packaged from one tagged source" } }, extra, { entries }));
+    const shape = (entries, extra) => parseWhatsNewText(fileOf(entries, extra), "F").problems;
+    const copyOf = (entries) => checkCopy(toEntries(parseWhatsNewText(fileOf(entries)).raw));
+    const throwsWith = (fn, re) => { try { fn(); return false; } catch (e) { return re.test(String(e && e.message)); } };
+
+    // 7a. The entries exactly as they shipped to Soldiers before the rewrite, as planted data.
+    const SHIPPED = [
+      entry("1.10.1", { title: "Apple parity and release reliability", highlights: [
         "GUIDON now maintains a first-class iOS project that stays synced to the same app bundle and study experience as the web, Android, Windows, and macOS versions.",
         "macOS releases now include a universal Apple Silicon + Intel package built from the same tagged source as the other platforms.",
         "Apple-device verification now covers compact iPhone, standard iPhone, large iPhone, and iPad layouts with preserved render evidence and safer handling of transient Simulator failures.",
-      ] },
-      /* a comment may say engine, module and CI as often as it likes */
-      // so may this one: packaged from one tagged source
-      { version: "1.11.0", released: false, title: "Board depth, OPSEC safeguards, and adaptive memorization", highlights: [
+      ] }),
+      entry("1.11.0", { released: false, title: "Board depth, OPSEC safeguards, and adaptive memorization", highlights: [
         "This release is packaged from one tagged source across web/PWA and standalone, Android, Windows, macOS, iOS parity verification, and the ESP32 flashcard fork.",
-      ] },
-      { version: "1.12.0", title: "Leader readiness, team training, and PT planning", highlights: [
+      ] }),
+      entry("1.12.0", { title: "Leader readiness, team training, and PT planning", highlights: [
         "Team Training now includes a complete 10-exercise catalog and a shared Collective Decision mode that turns existing scenarios into discuss-then-commit group lanes without creating a second scenario engine.",
-      ] },`;
-    const shipped = parseReleaseNotes(SHIPPED);
-    check(shipped.length === 3 && shipped[0].highlights.length === 3 && shipped[1].unreleased === true && shipped[2].title === "Leader readiness, team training, and PT planning", "entries, titles, highlights and the released: false mark are read out of source text");
+      ] }),
+    ];
+    const parsed = parseWhatsNewText(fileOf(SHIPPED));
+    const shipped = toEntries(parsed.raw);
+    check(parsed.problems.length === 0 && shipped.length === 3 && shipped[0].highlights.length === 3 && shipped[1].unreleased === true && shipped[2].unreleased === false && shipped[2].title === "Leader readiness, team training, and PT planning", "entries, titles, highlights and the released: false mark are read out of the data file", "shipped entries were not read back: " + JSON.stringify(parsed.problems));
     const problems = checkCopy(shipped);
     const hit = (v, word) => problems.some((p) => p.includes(`What's New ${v} `) && p.includes(`"${word}"`));
     check(hit("1.10.1", "parity") && hit("1.10.1", "first-class") && hit("1.10.1", "bundle") && hit("1.10.1", "tagged") && hit("1.10.1", "render evidence"), "the 1.10.1 entry as shipped fails: parity, first-class, bundle, tagged, render evidence", "1.10.1 as shipped was not rejected: " + problems.join(" | "));
     check(hit("1.11.0", "packaged") && hit("1.11.0", "PWA") && hit("1.11.0", "fork") && hit("1.11.0", "ESP32"), "the 1.11.0 \"packaged from one tagged source ... fork\" bullet fails");
     check(hit("1.12.0", "engine"), "the 1.12.0 \"second scenario engine\" bullet fails");
-    check(!problems.some((p) => /a comment may|so may this one/.test(p)) && problems.every((p) => !/"module"|"CI"/.test(p)), "comments are never read as copy (an entry may explain itself)");
-    check(checkCopy(parseReleaseNotes('{ version: "2.0.0", title: "New: Board Simulator", highlights: ["New: Board Simulator. Practice reporting in, then answer board questions."] }')).length === 0, "\"Board Simulator\" is a feature name and passes; plain wording passes");
-    check(checkCopy(parseReleaseNotes(`{ version: "2.0.0", title: "t", highlights: ["${"word ".repeat(60).trim()}"] }`)).some((p) => p.includes(`max ${MAX_HIGHLIGHT_CHARS}`)), "a highlight that runs on past the length cap fails");
-    check(checkCopy(parseReleaseNotes('{ version: "2.0.0", title: "a", highlights: ["x"] }, { version: "2.0.0", title: "b", highlights: ["y"] }')).some((p) => /two entries for 2\.0\.0/.test(p)), "two entries for one version fail");
+    check(!problems.some((p) => /a note may/.test(p)) && problems.every((p) => !/"module"|"CI"/.test(p)), "the file's own $doc is never read as copy (it may explain itself)");
+    check(copyOf([entry("2.0.0", { title: "New: Board Simulator", highlights: ["New: Board Simulator. Practice reporting in, then answer board questions."] })]).length === 0, "\"Board Simulator\" is a feature name and passes; plain wording passes");
+
+    // 7b. Every banned word has a planted defect, in a title AND in a highlight. A new rule without a sample here fails the suite.
+    const SAMPLES = ["engine", "taxonomy", "canonical", "persistent", "deterministic", "unauthored", "parity", "fork", "regression", "module", "shim", "SRS", "re-render", "PR 123", "#123", "codebase", "refactor", "API", "CI", "workflow", "pipeline", "schema", "bundle", "binary", "render evidence", "first-class", "iOS Simulator", "Simulator failures", "MOI-aware", "offline progression", "Capacitor", "Tauri", "WebView", "IndexedDB", "PWA", "standalone", "ESP32", "packaged", "tagged", "across all", "release lane", "verification"];
+    check(SAMPLES.length === BANNED.length, `every one of the ${BANNED.length} banned patterns has a planted-defect sample`, `BANNED has ${BANNED.length} patterns but the suite plants ${SAMPLES.length} - add a sample for each new rule (in the same order)`);
+    const escaped = [];
+    BANNED.forEach(([re], i) => {
+      const s = SAMPLES[i];
+      const m = s && re.exec(s);
+      if (!m) { escaped.push(`#${i} ${re} does not even match its own sample ${JSON.stringify(s)}`); return; }
+      const inHighlight = copyOf([entry("2.0.0", { highlights: [`You can now use the ${s} here.`] })]);
+      const inTitle = copyOf([entry("2.0.0", { title: `The ${s} update` })]);
+      if (!inHighlight.some((p) => /highlight 1/.test(p) && p.includes(`says "${m[0]}"`))) escaped.push(`${re} planted in a highlight`);
+      if (!inTitle.some((p) => /title/.test(p) && p.includes(`says "${m[0]}"`))) escaped.push(`${re} planted in a title`);
+    });
+    check(escaped.length === 0, "every banned word or phrase planted in a title and in a highlight is caught", "not caught: " + escaped.join("; "));
+
+    // 7c. Length cap, duplicates, version numbers.
+    check(copyOf([entry("2.0.0", { highlights: ["word ".repeat(60).trim()] })]).some((p) => p.includes(`max ${MAX_HIGHLIGHT_CHARS}`)), "a highlight that runs on past the length cap fails");
+    check(copyOf([entry("2.0.0", { highlights: ["x".repeat(MAX_HIGHLIGHT_CHARS)] })]).length === 0, "a highlight exactly at the cap passes");
+    check(copyOf([entry("1.9.0", { highlights: ["word ".repeat(60).trim()] })]).length === 0, "entries older than the cap's start were already shown and are left as written");
+    check(copyOf([entry("2.0.0", { title: "a" }), entry("2.0.0", { title: "b" })]).some((p) => /two entries for 2\.0\.0/.test(p)), "two entries for one version fail");
+    const vn = copyOf([entry("2.0.0", { title: "Version 1.2.3 is here", highlights: ["Fixed in v1.16.0: the timer.", "See ATP 4-02.11, DA Form 2166-9-2 and AR 600-8-22 for the rules."] })]);
+    check(vn.length === 2 && vn.some((p) => /title names a version number \("1\.2\.3"\)/.test(p)) && vn.some((p) => /highlight 1 names a version number \("v1\.16\.0"\)/.test(p)), "a version number in a title or highlight fails (the panel says what changed, never which release); document numbers do not", "version-number rule: " + JSON.stringify(vn));
+
+    // 7d. Shape: every way the file can be malformed is refused, naming the entry.
+    check(shape([entry("1.0.0")]).length === 0, "a well-formed file has no shape problems");
+    const SHAPE = [
+      ["not JSON", () => parseWhatsNewText("{ entries: [", "F").problems, /F is not valid JSON/],
+      ["a bare list", () => parseWhatsNewText("[]", "F").problems, /F must be an object/],
+      ["no entries list", () => parseWhatsNewText('{"$doc":{}}', "F").problems, /F needs an "entries" list/],
+      ["an empty entries list", () => shape([]), /F has no entries/],
+      ["an unknown top-level key", () => shape([entry("1.0.0")], { notes: 1 }), /unknown top-level key "notes"/],
+      ["an unknown entry field", () => shape([entry("1.0.0", { note: "x" })]), /entry 1 \(1\.0\.0\) has an unknown field "note"/],
+      ["a version without a patch", () => shape([entry("1.16")]), /"version" must be x\.y\.z/],
+      ["a v-prefixed version", () => shape([entry("v1.16.0")]), /"version" must be x\.y\.z/],
+      ["a numeric version", () => shape([entry(1.16)]), /"version" must be x\.y\.z/],
+      ["a missing date", () => shape([entry("1.0.0", { date: undefined })]), /"date" must be text/],
+      ["a blank title", () => shape([entry("1.0.0", { title: "  " })]), /"title" must be text/],
+      ["released: true", () => shape([entry("1.0.0", { released: true })]), /"released" may only be false/],
+      ["released: \"false\" (text)", () => shape([entry("1.0.0", { released: "false" })]), /"released" may only be false/],
+      ["no highlights", () => shape([entry("1.0.0", { highlights: [] })]), /"highlights" must be a list with at least one line/],
+      ["highlights that are not a list", () => shape([entry("1.0.0", { highlights: "one line" })]), /"highlights" must be a list/],
+      ["a blank highlight", () => shape([entry("1.0.0", { highlights: ["ok", " "] })]), /highlight 2 must be non-empty text/],
+      ["a highlight that is not text", () => shape([entry("1.0.0", { highlights: [5] })]), /highlight 1 must be non-empty text/],
+      ["an entry that is not an object", () => shape(["1.0.0"]), /entry 1 must be an object/],
+    ];
+    for (const [label, run, re] of SHAPE) { const got = run(); check(got.some((p) => re.test(p)), `planted defect "${label}" is refused`, `planted defect "${label}" was not reported as ${re}: ${JSON.stringify(got)}`); }
+    check(shape([entry("1.0.0", { released: false })]).length === 0, "released: false is the one allowed mark");
+
+    // 7e. "The current version must have an entry" - by VERSION, wherever the entry sits.
+    const es = toEntries([entry("1.16.0"), entry("1.15.0")]);
+    check(checkCurrent(es, "1.16.0").length === 0 && checkCurrent(es, "1.15.0").length === 0, "the current version's entry is found by version, not by position");
+    const miss = checkCurrent(es, "1.17.0");
+    check(miss.length === 1 && /no entry for the current version 1\.17\.0 \(package\.json\) - add one to guidon-app\/src\/data\/whats-new\.json/.test(miss[0]) && /newest entry there is 1\.16\.0/.test(miss[0]), "a missing current-version entry fails clearly: names the version, the file to add it to and the newest entry there", "missing-entry message: " + JSON.stringify(miss));
+    check(checkCurrent(toEntries([{ version: "1.17.0", highlights: [] }]), "1.17.0").some((p) => /has no highlights/.test(p)), "a current-version entry with no highlights fails");
+    check(newestVersion(toEntries([entry("1.12.2"), entry("1.12.10"), entry("1.9.0")])) === "1.12.10", "\"newest\" compares numbers, not text (1.12.10 beats 1.12.2)");
+
+    // 7f. lint-patterns check (h) itself (the same function it calls), with one defect planted in each input.
+    const HTML = indexHtml();
+    const DATA = fileOf([entry("1.16.0")]);
+    const lw = (over) => lintWhatsNew(Object.assign({ html: HTML, dataText: DATA, version: "1.16.0" }, over));
+    check(lw().problems.length === 0 && lw().passes.length === 2, "(h) passes a well-formed setup: placeholder in index.html, a data file, an entry for the current version", "(h) on a clean setup: " + JSON.stringify(lw()));
+    check(lw({ html: HTML.replace(WHATS_NEW_ANCHOR, 'RELEASE_NOTES: [ { version: "1.16.0", date: "x", title: "t", highlights: ["h"] } ],') }).problems.some((p) => /is not the placeholder/.test(p)), "(h) fails when an entry is typed into src/index.html instead of the data file");
+    check(lw({ html: HTML + HTML }).problems.some((p) => /is not the placeholder/.test(p)), "(h) fails when the placeholder appears twice");
+    check(lw({ html: "<script>G.other = {};</script>" }).problems.some((p) => /could not locate G\.whatsNew\.RELEASE_NOTES/.test(p)), "(h) fails when G.whatsNew.RELEASE_NOTES cannot be found");
+    check(lw({ dataText: null }).problems.some((p) => /whats-new\.json is missing/.test(p)), "(h) fails when the data file is missing");
+    check(lw({ dataText: "{" }).problems.some((p) => /is not valid JSON/.test(p)), "(h) fails when the data file is not valid JSON");
+    check(lw({ dataText: fileOf([entry("1.16.0", { note: "x" })]) }).problems.some((p) => /unknown field "note"/.test(p)), "(h) fails on a malformed entry");
+    check(lw({ dataText: fileOf([entry("1.16.0", { highlights: ["The new engine is here."] })]) }).problems.some((p) => /1\.16\.0 highlight 1 says "engine"/.test(p)), "(h) fails on builder's wording in the data file");
+    check(lw({ dataText: fileOf([entry("1.16.0", { highlights: ["word ".repeat(60).trim()] })]) }).problems.some((p) => p.includes(`max ${MAX_HIGHLIGHT_CHARS}`)), "(h) fails on a highlight over the length cap");
+    check(lw({ dataText: fileOf([entry("1.16.0", { title: "Version 1.16.0" })]) }).problems.some((p) => /names a version number/.test(p)), "(h) fails on a version number in the copy");
+    check(lw({ version: "1.17.0" }).problems.some((p) => /no entry for the current version 1\.17\.0/.test(p)), "(h) fails when package.json's version has no entry");
+    check(lw({ dataText: fileOf([entry("1.16.0"), entry("1.16.0")]) }).problems.some((p) => /two entries for 1\.16\.0/.test(p)), "(h) fails on two entries for one version");
+
+    // 7g. What the build pastes into the page.
+    const nasty = [entry("1.0.0", { highlights: ["</script><!-- x --> and a line separator: " + String.fromCharCode(0x2028) + " and " + String.fromCharCode(0x2029) + " end", "a \" quote, a \\ backslash, an 'apostrophe' and an em dash " + String.fromCharCode(0x2014)] })];
+    const lit = whatsNewLiteral(nasty);
+    check(!lit.includes("</") && !lit.includes("<!--") && !lit.includes(String.fromCharCode(0x2028)) && !lit.includes(String.fromCharCode(0x2029)), "the literal the build pastes into the page can never close the page's own <script> or break a script line");
+    check(JSON.stringify(new Function("return " + lit)()) === JSON.stringify(nasty), "...and read back as script it gives exactly the entries (same fields, same order, same text)");
+    const { injectWhatsNew } = await import("./build.mjs");
+    const goodFile = path.join(scratch, "wn-good.json"), badFile = path.join(scratch, "wn-bad.json");
+    writeFileSync(goodFile, fileOf([entry("1.16.0"), entry("1.11.0", { released: false })]));
+    writeFileSync(badFile, fileOf([entry("1.16.0", { bogus: 1 })]));
+    const inj = injectWhatsNew(HTML, goodFile);
+    check(inj.count === 2 && !inj.html.includes(WHATS_NEW_ANCHOR) && inj.html.includes("RELEASE_NOTES: " + whatsNewLiteral([entry("1.16.0"), entry("1.11.0", { released: false })]) + ","), "the build's injectWhatsNew() replaces the placeholder with exactly the file's entries");
+    check(throwsWith(() => injectWhatsNew(HTML.replace(WHATS_NEW_ANCHOR, "RELEASE_NOTES: [],"), goodFile), /matched 0 times/), "the build refuses when the placeholder is missing from src/index.html (never a silent empty list)");
+    check(throwsWith(() => injectWhatsNew(HTML + HTML, goodFile), /matched 2 times/), "the build refuses when the placeholder appears twice");
+    check(throwsWith(() => injectWhatsNew(HTML, badFile), /wn-bad\.json has 1 problem\(s\)[\s\S]*unknown field "bogus"/), "the build refuses a malformed data file, naming the file and the problem");
+    check(throwsWith(() => injectWhatsNew(HTML, path.join(scratch, "nope.json")), /nope\.json is missing/), "the build refuses a missing data file");
+    const outStamp = (p) => (existsSync(p) ? readFileSync(p, "utf8").length : -1);
+    const outsBefore = [outStamp("web/index.html"), outStamp("dist/guidon-standalone.html")];
+    const badBuild = spawnSync(process.execPath, ["tools/build.mjs"], { encoding: "utf8", env: { ...process.env, GUIDON_WHATS_NEW_FILE: badFile } });
+    check(badBuild.status === 1 && /unknown field "bogus"/.test(badBuild.stderr + badBuild.stdout) && !/build ok/.test(badBuild.stdout), "the REAL build fails, naming the problem, on a malformed What's New file", `real build with a malformed What's New file: exit ${badBuild.status}, output ${JSON.stringify((badBuild.stderr + badBuild.stdout).slice(0, 300))}`);
+    const goodBuild = spawnSync(process.execPath, ["tools/build.mjs"], { encoding: "utf8", env: { ...process.env, GUIDON_WHATS_NEW_FILE: goodFile } });
+    check(goodBuild.status === 0 && /NOTHING WAS BUILT/.test(goodBuild.stdout) && !/build ok/.test(goodBuild.stdout) && JSON.stringify(outsBefore) === JSON.stringify([outStamp("web/index.html"), outStamp("dist/guidon-standalone.html")]), "pointed at a valid stand-in file the real build only checks it, says nothing was built and touches neither web/ nor dist/ - GUIDON_WHATS_NEW_FILE cannot change what ships", `real build with a valid stand-in: exit ${goodBuild.status}, output ${JSON.stringify((goodBuild.stderr + goodBuild.stdout).slice(0, 300))}`);
+
+    // 7h. The real file, and the real lint.
+    const real = readWhatsNewFile();
+    check(real.problems.length === 0 && real.entries.length >= 22, `the real data file is well formed (${real.entries.length} entries)`, "the real data file: " + JSON.stringify(real.problems));
+    check(["1.11.0", "1.12.0"].every((v) => real.entries.some((e) => e.version === v && e.unreleased)), "the real file keeps released: false on 1.11.0 and 1.12.0 (prepared, never cut)");
+    check(checkCopy(real.entries).length === 0, "every real entry passes the copy rules", "real entries fail: " + checkCopy(real.entries).join(" | "));
     const lintH = spawnSync(process.execPath, ["tools/lint-patterns.mjs"], { encoding: "utf-8" });
     check(/PASS {2}\(h\) all \d+ What's New entries are in plain language/.test(lintH.stdout), "the real What's New entries pass the same rules through lint-patterns check (h)", "lint-patterns (h) does not report the plain-language scan:\n" + (lintH.stdout.match(/.*\(h\).*/g) || []).join("\n"));
   }

@@ -26,10 +26,14 @@
  *       other versioned heading has a tag, or says in the heading (or the
  *       first line under it) that it was "prepared, not released"; every tag
  *       has a heading.
- *   (d) What's New (G.whatsNew.RELEASE_NOTES + src/app-modules/99-release-*):
- *       every entry other than the current version has a tag or carries
- *       `released: false`; a `released: false` entry whose tag DOES exist is
- *       stale and fails too.
+ *   (d) What's New (guidon-app/src/data/whats-new.json - one object per
+ *       release, read as JSON by tools/whats-new-rules.mjs, the same reader
+ *       the build and lint-patterns check (h) use): the file exists and is
+ *       well formed; the CURRENT version has an entry with at least one
+ *       highlight (a missing one fails naming the file to add it to - it used
+ *       to be enforced only by lint-patterns, and never here); every other
+ *       entry has a tag or carries `released: false`; a `released: false`
+ *       entry whose tag DOES exist is stale and fails too.
  *   (e) .release-prep / .release-trigger, when present, name a real version
  *       no newer than package.json.
  *   (f) every file name the app's #/share page links to is declared in
@@ -65,7 +69,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { readAnchors, parseVersion, compareVersions, androidVersionCode } from "./release-version-files.mjs";
 import { ALIASES, expectedAssets, verdict } from "./release-manifest.mjs";
-import { parseReleaseNotes, extractNotesArray } from "./whats-new-rules.mjs";
+import { readWhatsNewFile, checkCurrent, WHATS_NEW_REPO_PATH } from "./whats-new-rules.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const NOT_RELEASED = /\b(prepared,?\s+(?:but\s+)?not\s+released|not\s+released|never\s+released|unreleased)\b/i;
@@ -179,19 +183,17 @@ export function lintReleaseState({ root, cut = false }) {
   }
 
   /* ---- (d) What's New ------------------------------------------------- */
-  const html = read("guidon-app/src/index.html");
-  const modDir = path.join(root, "guidon-app/src/app-modules");
-  const modNames = existsSync(modDir) ? readdirSync(modDir).filter((n) => /^99-release-.*\.js$/.test(n)).sort() : [];
-  if (html == null) bad("(d) guidon-app/src/index.html is missing");
-  else {
-    // Same reader lint-patterns check (h) uses: the array's own [ ] only, with
-    // comments dropped - so a comment that MENTIONS `released: false` (the
-    // app's own code has one) can never be mistaken for the mark itself.
-    const notesText = (extractNotesArray(html) || "") + "\n" + modNames.map((n) => read("guidon-app/src/app-modules/" + n) || "").join("\n");
-    const entries = parseReleaseNotes(notesText);
-    if (!entries.length) bad("(d) could not find any What's New entries (G.whatsNew.RELEASE_NOTES)");
+  {
+    // The same reader the build and lint-patterns check (h) use: the file is
+    // parsed as JSON, never scraped out of source text, so a word in a note
+    // that MENTIONS `released: false` can never be mistaken for the mark.
+    const wn = readWhatsNewFile(path.join(root, WHATS_NEW_REPO_PATH), WHATS_NEW_REPO_PATH);
+    if (wn.problems.length) for (const p of wn.problems) bad(`(d) ${p}`);
     else {
+      const entries = wn.entries;
       const before = failures.length;
+      // The current version has to have its own entry, with something to say.
+      for (const p of checkCurrent(entries, V, WHATS_NEW_REPO_PATH)) bad(`(d) ${p}`);
       const mine = entries.find((e) => e.version === V);
       if (cut && mine && mine.unreleased) bad(`(d) --cut: the What's New entry for ${V} is marked released: false - a version being cut cannot be marked unreleased`);
       if (tags.length) {
@@ -200,9 +202,12 @@ export function lintReleaseState({ root, cut = false }) {
           if (!tagged.has(e.version) && !e.unreleased && e.version !== V) bad(`(d) What's New has an entry for ${e.version}, which was never tagged - mark it \`released: false\` (it still shows its highlights to anyone who skipped past it)`);
         }
       }
-      if (failures.length === before) ok(`(d) What's New: ${entries.length} entries; ${entries.filter((e) => e.unreleased).length} marked released: false${tags.length ? ", every other one has a tag or is the current version" : " (tags not visible - NOT checked against tags)"}`);
+      if (failures.length === before) ok(`(d) What's New: ${entries.length} entries, and one for the current version ${V}; ${entries.filter((e) => e.unreleased).length} marked released: false${tags.length ? ", every other one has a tag or is the current version" : " (tags not visible - NOT checked against tags)"}`);
     }
-
+  }
+  const html = read("guidon-app/src/index.html");
+  if (html == null) bad("(f) guidon-app/src/index.html is missing - it carries the #/share download links");
+  else {
     /* ---- (f) in-app download names ------------------------------------ */
     const linked = [...new Set([...html.matchAll(/\bdl\("([^"]+)"\)/g)].map((m) => m[1]))];
     const declared = new Set(Object.values(ALIASES));

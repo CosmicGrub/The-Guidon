@@ -23,7 +23,8 @@
  * updated too, if there is one.
  *
  * What it deliberately does NOT write, because a person has to: the What's
- * New entry Soldiers see, the CHANGELOG entry, and ROADMAP's "Current
+ * New entry Soldiers see (one object in src/data/whats-new.json), the
+ * CHANGELOG entry, and ROADMAP's "Current
  * version" line. It prints that list, and `npm run lint:patterns` fails
  * until they exist. It never commits, tags or pushes.
  *
@@ -68,8 +69,9 @@ export function bump({ root, version, write = false, iosBuild }) {
   else if (plan.changes.length) lines.push("", "Dry run - nothing was written. Add --write to apply.");
   if (plan.changes.length || write) {
     lines.push("", `Still to write by hand for ${version} (lint:patterns fails until they exist):`,
-      `  - a What's New entry (src/app-modules/99-release-*.js) - plain language, what a Soldier will notice;`,
-      `    list the new file in src/app-modules/manifest.json (kind "release-note") or the build refuses it`,
+      `  - a What's New entry: add one object to "entries" in src/data/whats-new.json`,
+      `    ({ "version", "date", "title", "highlights": [...] }) - plain language, what a Soldier will notice;`,
+      `    there is no script or manifest line to add, and the build refuses a missing or malformed file`,
       `  - a CHANGELOG entry headed "## <date> - v${version}: ..."; mark any skipped number "(prepared, not released)"`,
       `  - ROADMAP's "Current version" line`,
       "Then: npm run lint:patterns. This tool never commits, tags or pushes.");
