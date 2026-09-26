@@ -16,6 +16,51 @@ name: Apple release assets
 # buttons pointing at nothing. When this lane finishes it only refreshes the
 # Downloads section of the release page, so a Mac row appears once a .dmg is
 # really attached and never before.
+#
+# THREE THINGS THE macOS JOB ADDS (2026-09-25, AUDIT-2026-09 item 17 / roadmap
+# item L). None of them can change the paragraph above: every one is either
+# non-gating by construction or only ever makes THIS workflow red, and
+# tools/lint-release-state.mjs (f) fails if this file ever touches the Latest
+# flag or another release job starts waiting on an Apple job.
+#
+# 1. A FIXED-NAME MAC FILE. The same .dmg bytes are uploaded a second time as
+#    GUIDON-macos-universal.dmg, next to the versioned name, in the same
+#    command - the way release-assets.yml does GUIDON-android.apk and
+#    GUIDON-windows-setup.exe. Unlike those two it is OPTIONAL in
+#    tools/release-manifest.mjs, because this lane must never hold a release
+#    out of Latest, and GitHub's releases/latest/download/<name> link cannot
+#    fall back when a file is missing. So the in-app Mac button stays on the
+#    releases list (MAC_DIRECT_LINK = false in src/index.html) until the owner
+#    has seen a Latest release carry the file and switches it on. Decision and
+#    switch-on steps: guidon-app/docs/release-runbook.md.
+#
+# 2. A LAUNCH PROOF. After the bundle checks, the built .dmg is mounted, the
+#    app is copied out and opened the way a person would open it, and it has
+#    to stay running for a short while with no crash report. The step never
+#    fails the job (continue-on-error, and it always exits 0): it reports
+#    passed / failed / never-started / inconclusive in the run summary, as a
+#    notice or warning, and in the verification record. It gates nothing - the
+#    .dmg is published whatever it says - until a few real runs show it is
+#    trustworthy on a hosted Mac.
+#
+# 3. NOTARIZATION READINESS, the same three outcomes as the Android job in
+#    release-assets.yml. This repository has no Actions secrets on purpose and
+#    a workflow must never be what creates them.
+#      all six Apple secrets present -> the app is signed with a Developer ID
+#                        certificate, notarized by Apple and stapled, the .dmg
+#                        likewise, and the result is verified.
+#      none present   -> the job goes on and builds the ad-hoc-signed .dmg it
+#                        always has, green, with a notice saying what is
+#                        missing and that Mac users get the first-open
+#                        warning (guidon-app/docs/mac-first-launch.md).
+#      some, not all  -> hard failure: a half-configured certificate is a
+#                        mistake to fix, never something to build past.
+#    The check only tests for presence; it never prints or writes a value.
+#    Which secrets, and how the owner would add them:
+#    guidon-app/docs/release-runbook.md, "macOS signing and notarization".
+#    Written without a macOS runner or Apple credentials to try it on: the
+#    scripts are exercised against stand-in tools by tools/test-release-pipeline.mjs,
+#    but the first real run is the real test.
 
 on:
   push:
@@ -88,6 +133,65 @@ jobs:
         with:
           ref: ${{ needs.resolve.outputs.tag }}
           fetch-depth: 0
+      # Runs FIRST, before any install or build, so a half-configured
+      # certificate costs seconds, not a 30-minute Mac build. Three outcomes,
+      # the same three release-assets.yml's Android check has:
+      #   all six present -> signing=present: the build below is signed with
+      #                      the Developer ID certificate and notarized.
+      #   none present    -> signing=absent: the job carries on and builds the
+      #                      ad-hoc-signed .dmg it always has, green, with a
+      #                      notice. This is the normal state of this
+      #                      repository (it has no Actions secrets).
+      #   some, not all   -> hard failure naming what is missing.
+      # This step only tests for presence; it never prints, writes or
+      # otherwise touches a secret's value.
+      - name: Check for Apple signing secrets
+        id: apple_sign
+        env:
+          CERT_B64: ${{ secrets.APPLE_CERTIFICATE_BASE64 || secrets.GUIDON_APPLE_CERTIFICATE_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD || secrets.GUIDON_APPLE_CERTIFICATE_PASSWORD }}
+          SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || secrets.GUIDON_APPLE_SIGNING_IDENTITY }}
+          NOTARY_APPLE_ID: ${{ secrets.APPLE_ID || secrets.GUIDON_APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD || secrets.GUIDON_APPLE_APP_SPECIFIC_PASSWORD }}
+          NOTARY_TEAM_ID: ${{ secrets.APPLE_TEAM_ID || secrets.GUIDON_APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          have=0
+          missing=""
+          for pair in CERT_B64=APPLE_CERTIFICATE_BASE64 CERT_PASSWORD=APPLE_CERTIFICATE_PASSWORD SIGNING_IDENTITY=APPLE_SIGNING_IDENTITY NOTARY_APPLE_ID=APPLE_ID NOTARY_PASSWORD=APPLE_APP_SPECIFIC_PASSWORD NOTARY_TEAM_ID=APPLE_TEAM_ID; do
+            name="${pair%%=*}"
+            if [ -n "${!name:-}" ]; then have=$((have + 1)); else missing="$missing ${pair##*=}"; fi
+          done
+          if [ "$have" -eq 6 ]; then
+            echo "signing=present" >> "$GITHUB_OUTPUT"
+            echo "Apple signing secrets are configured; signing and notarizing the Mac app here."
+            exit 0
+          fi
+          if [ "$have" -eq 0 ]; then
+            echo "signing=absent" >> "$GITHUB_OUTPUT"
+            echo "::notice title=The Mac app is not sent to Apple::No Apple signing secrets are configured, so the Mac app is built with an ad-hoc signature only: it is not signed with a Developer ID and not notarized. Mac users will see the first-open warning and use Open Anyway (guidon-app/docs/mac-first-launch.md). To remove the warning the owner adds six secrets - APPLE_CERTIFICATE_BASE64, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID - and runs this workflow again. Steps: guidon-app/docs/release-runbook.md"
+            {
+              echo "### macOS: built without Apple signing"
+              echo ""
+              echo "No Apple signing secrets are configured for this repository, so the Mac app was built with an ad-hoc signature and was **not** notarized. That is expected."
+              echo ""
+              echo "Mac users will see the first-open warning and get past it with **Open Anyway** (guidon-app/docs/mac-first-launch.md)."
+              echo ""
+              echo "To remove the warning the owner adds all six secrets and runs **Apple release assets** again:"
+              echo ""
+              echo "- APPLE_CERTIFICATE_BASE64 (the Developer ID Application certificate, exported as .p12 and base64-encoded)"
+              echo "- APPLE_CERTIFICATE_PASSWORD"
+              echo "- APPLE_SIGNING_IDENTITY"
+              echo "- APPLE_ID"
+              echo "- APPLE_APP_SPECIFIC_PASSWORD"
+              echo "- APPLE_TEAM_ID"
+              echo ""
+              echo "Step by step: guidon-app/docs/release-runbook.md"
+            } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+            exit 0
+          fi
+          echo "::error::Apple signing is half-configured (missing:$missing). Set all six Apple signing secrets or none of them."
+          exit 1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -104,9 +208,85 @@ jobs:
       - name: Install universal Rust targets
         working-directory: guidon-app/src-tauri
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      # Only when all six Apple secrets are present (see the check at the top
+      # of this job). The certificate goes into a throwaway keychain that is
+      # deleted again by the last step; nothing here prints a secret.
+      - name: Import the Developer ID certificate into a temporary keychain
+        if: steps.apple_sign.outputs.signing == 'present'
+        env:
+          CERT_B64: ${{ secrets.APPLE_CERTIFICATE_BASE64 || secrets.GUIDON_APPLE_CERTIFICATE_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD || secrets.GUIDON_APPLE_CERTIFICATE_PASSWORD }}
+          SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || secrets.GUIDON_APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/guidon-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          printf '%s' "$CERT_B64" | base64 --decode > "$RUNNER_TEMP/guidon-developer-id.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/guidon-developer-id.p12" -P "$CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          rm -f "$RUNNER_TEMP/guidon-developer-id.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          # Put the new keychain first on the search list without dropping the others.
+          EXISTING="$(security list-keychains -d user | tr -d '"' | tr '\n' ' ')"
+          security list-keychains -d user -s "$KEYCHAIN" $EXISTING
+          echo "GUIDON_SIGN_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          # The named identity must really be in the certificate that was imported.
+          IDENTITIES="$(security find-identity -v -p codesigning "$KEYCHAIN")"
+          case "$IDENTITIES" in
+            *"$SIGNING_IDENTITY"*) echo "The Developer ID identity is in the temporary keychain." ;;
+            *) echo "::error::APPLE_SIGNING_IDENTITY does not match any identity in the imported certificate. Check that the secret holds the identity's full name and that the .p12 has its private key."; exit 1 ;;
+          esac
       - name: Build universal macOS bundle
+        if: steps.apple_sign.outputs.signing != 'present'
         run: npx tauri build --target universal-apple-darwin --ci
+      # Signed and notarized build. tauri.macos.conf.json signs ad hoc ("-"),
+      # so the real identity is laid over it from a file (never a command
+      # line); Tauri signs the app with it, submits the app to Apple with the
+      # three APPLE_* notarization values and staples the ticket.
+      - name: Build, sign and notarize universal macOS bundle
+        if: steps.apple_sign.outputs.signing == 'present'
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || secrets.GUIDON_APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID || secrets.GUIDON_APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD || secrets.GUIDON_APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID || secrets.GUIDON_APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({ bundle: { macOS: { signingIdentity: process.env.APPLE_SIGNING_IDENTITY } } }))' "$RUNNER_TEMP/guidon-tauri-signing.json"
+          npx tauri build --target universal-apple-darwin --ci --config "$RUNNER_TEMP/guidon-tauri-signing.json"
+          rm -f "$RUNNER_TEMP/guidon-tauri-signing.json"
+      # The disk image is signed, notarized and stapled too, so the ticket is
+      # on the file people actually download. It runs BEFORE the verification
+      # step below, which is what copies the image into release-out.
+      - name: Sign, notarize and staple the disk image
+        if: steps.apple_sign.outputs.signing == 'present'
+        env:
+          SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || secrets.GUIDON_APPLE_SIGNING_IDENTITY }}
+          NOTARY_APPLE_ID: ${{ secrets.APPLE_ID || secrets.GUIDON_APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD || secrets.GUIDON_APPLE_APP_SPECIFIC_PASSWORD }}
+          NOTARY_TEAM_ID: ${{ secrets.APPLE_TEAM_ID || secrets.GUIDON_APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          DMG="$(find src-tauri/target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' | head -1)"
+          test -n "$DMG"
+          codesign --force --sign "$SIGNING_IDENTITY" --timestamp "$DMG"
+          RESULT="$RUNNER_TEMP/guidon-notary-dmg.json"
+          xcrun notarytool submit "$DMG" --apple-id "$NOTARY_APPLE_ID" --password "$NOTARY_PASSWORD" --team-id "$NOTARY_TEAM_ID" --wait --timeout 30m --output-format json > "$RESULT" || true
+          STATUS="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).status' "$RESULT" 2>/dev/null || echo unknown)"
+          if [ "$STATUS" != "Accepted" ]; then
+            SUBMISSION="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).id' "$RESULT" 2>/dev/null || true)"
+            if [ -n "$SUBMISSION" ]; then
+              xcrun notarytool log "$SUBMISSION" --apple-id "$NOTARY_APPLE_ID" --password "$NOTARY_PASSWORD" --team-id "$NOTARY_TEAM_ID" || true
+            fi
+            echo "::error::Apple did not accept the disk image (status: $STATUS), so no Mac file is attached to this release."
+            exit 1
+          fi
+          xcrun stapler staple "$DMG"
       - name: Verify universal bundle
+        env:
+          SIGNING: ${{ steps.apple_sign.outputs.signing }}
         run: |
           set -euo pipefail
           BUNDLE=src-tauri/target/universal-apple-darwin/release/bundle
@@ -128,16 +308,155 @@ jobs:
             echo "tag=$TAG"
             echo "arches=$ARCHS"
             echo "minimum_macos=$MIN"
+            if [ "${SIGNING:-absent}" = "present" ]; then
+              echo "signing=Developer ID (notarization is checked by the next step)"
+            else
+              echo "signing=ad hoc, not notarized (no Apple signing secrets)"
+            fi
             codesign -dv "$APP" 2>&1 || true
           } > artifacts/apple-release/macos-record.txt
+      # Only when the Apple secrets are present: the app must carry the
+      # Developer ID signature, Apple's notarization ticket must be stapled to
+      # both the app and the disk image, and macOS itself must accept both.
+      # A signed run that yields anything less is a fault, not a warning.
+      - name: Verify Developer ID signature and notarization
+        if: steps.apple_sign.outputs.signing == 'present'
+        run: |
+          set -euo pipefail
+          BUNDLE=src-tauri/target/universal-apple-darwin/release/bundle
+          APP="$(find "$BUNDLE/macos" -maxdepth 1 -name '*.app' | head -1)"
+          DMG="release-out/GUIDON-${VERSION}-macos-universal.dmg"
+          test -n "$APP" && test -s "$DMG"
+          INFO="$(codesign -dvv "$APP" 2>&1)"
+          case "$INFO" in
+            *"Authority=Developer ID Application"*) ;;
+            *) echo "::error::the Mac app is not signed with a Developer ID Application certificate"; exit 1 ;;
+          esac
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          spctl --assess --type execute --verbose=4 "$APP"
+          xcrun stapler validate "$APP"
+          xcrun stapler validate "$DMG"
+          spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG"
+          echo "notarization=accepted and stapled on the app and the disk image" >> artifacts/apple-release/macos-record.txt
+      # NON-GATING launch proof. Mounts the built disk image, copies the app
+      # out, opens it the way a person would, and requires it to stay running
+      # for a short while with no crash report. It reports passed, failed,
+      # never-started or inconclusive (the proof itself could not run) and
+      # ALWAYS exits 0, so nothing below - the upload, the release page, the
+      # Latest flag - depends on it. Tighten that only after a few real runs
+      # show it is trustworthy on a hosted Mac.
+      - name: Prove the DMG launches
+        id: launch
+        continue-on-error: true
+        env:
+          LAUNCH_HOLD_SECONDS: '20'
+          LAUNCH_START_TIMEOUT: '30'
+        run: |
+          set -uo pipefail
+          DMG="release-out/GUIDON-${VERSION}-macos-universal.dmg"
+          OUT="artifacts/apple-release"
+          LOG="$OUT/macos-launch-proof.txt"
+          mkdir -p "$OUT"
+          WORK="$(mktemp -d "${RUNNER_TEMP:-/tmp}/guidon-launch.XXXXXX")"
+          MNT="$WORK/mnt"
+          APP_COPY="$WORK/GUIDON.app"
+          MOUNTED=0
+          mkdir -p "$MNT"
+          cleanup() {
+            pkill -f "$APP_COPY/Contents/MacOS/" >/dev/null 2>&1 || true
+            if [ "$MOUNTED" = 1 ]; then hdiutil detach "$MNT" -force >/dev/null 2>&1 || true; fi
+          }
+          trap cleanup EXIT
+          finish() {
+            RESULT="$1"; DETAIL="$2"
+            { echo "result=$RESULT"; echo "disk_image=$DMG"; echo "detail=$DETAIL"; } > "$LOG"
+            if [ -s "$WORK/app.err" ]; then
+              { echo "--- last lines the app wrote to its error output ---"; tail -n 20 "$WORK/app.err"; } >> "$LOG"
+            fi
+            echo "result=$RESULT" >> "$GITHUB_OUTPUT"
+            case "$RESULT" in
+              passed)
+                echo "::notice title=macOS launch proof passed::$DETAIL"
+                ;;
+              inconclusive)
+                echo "::warning title=macOS launch proof could not run::$DETAIL. This says nothing about the app either way - open the disk image on a real Mac before pointing anyone at it."
+                ;;
+              *)
+                echo "::warning title=macOS launch proof did not pass ($RESULT)::$DETAIL. Nothing waits on this proof, so the disk image is still published - open it on a real Mac before pointing anyone at it, and do not switch the direct Mac download link on."
+                ;;
+            esac
+            {
+              echo "### macOS launch proof: $RESULT"
+              echo ""
+              echo "$DETAIL"
+              echo ""
+              echo "This proof is informational: it never stops the disk image being published and never affects whether the release is Latest."
+            } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+            exit 0
+          }
+          [ -s "$DMG" ] || finish inconclusive "the disk image $DMG was not found, so there was nothing to open"
+          if ! hdiutil attach "$DMG" -nobrowse -readonly -noautoopen -mountpoint "$MNT" > "$WORK/attach.log" 2>&1; then
+            finish inconclusive "the disk image would not mount on the runner"
+          fi
+          MOUNTED=1
+          APP_SRC="$(find "$MNT" -maxdepth 1 -name '*.app' | head -1)"
+          [ -n "$APP_SRC" ] || finish failed "the disk image mounted but contains no app"
+          if ! ditto "$APP_SRC" "$APP_COPY"; then
+            finish inconclusive "the app could not be copied out of the disk image"
+          fi
+          if hdiutil detach "$MNT" >/dev/null 2>&1; then MOUNTED=0; fi
+          : > "$WORK/app.out"
+          : > "$WORK/app.err"
+          touch "$WORK/start-mark"
+          if ! open -n --stdout "$WORK/app.out" --stderr "$WORK/app.err" "$APP_COPY"; then
+            finish failed "macOS would not open the app (the open command reported an error)"
+          fi
+          PIDS=""
+          waited=0
+          while [ "$waited" -lt "$LAUNCH_START_TIMEOUT" ]; do
+            PIDS="$(pgrep -f "$APP_COPY/Contents/MacOS/" 2>/dev/null | tr '\n' ' ')"
+            [ -n "$PIDS" ] && break
+            sleep 1
+            waited=$((waited + 1))
+          done
+          [ -n "$PIDS" ] || finish never-started "no GUIDON process appeared within $LAUNCH_START_TIMEOUT seconds of opening the app"
+          held=0
+          while [ "$held" -lt "$LAUNCH_HOLD_SECONDS" ]; do
+            sleep 1
+            held=$((held + 1))
+            if ! pgrep -f "$APP_COPY/Contents/MacOS/" >/dev/null 2>&1; then
+              finish failed "the app started and then exited on its own after about $held second(s)"
+            fi
+          done
+          REPORT="$(find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 1 -type f -newer "$WORK/start-mark" -iname 'guidon*' 2>/dev/null | head -1)"
+          if [ -n "$REPORT" ]; then
+            finish failed "macOS wrote a crash report for GUIDON while it was running ($(basename "$REPORT"))"
+          fi
+          finish passed "GUIDON stayed running for $LAUNCH_HOLD_SECONDS seconds after it was opened, and macOS wrote no crash report"
+      # GUIDON-macos-universal.dmg is the SAME file under the never-changing
+      # name, uploaded in the same command as the versioned one - the way
+      # release-assets.yml does GUIDON-android.apk and GUIDON-windows-setup.exe.
+      # It is OPTIONAL for a release (tools/release-manifest.mjs), so a run that
+      # stops before this step can never keep a release out of Latest.
       - name: Publish macOS DMG
-        run: gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "release-out/GUIDON-${VERSION}-macos-universal.dmg"
+        run: |
+          set -euo pipefail
+          VERSIONED="release-out/GUIDON-${VERSION}-macos-universal.dmg"
+          ALIAS="release-out/GUIDON-macos-universal.dmg"
+          test -s "$VERSIONED"
+          cp "$VERSIONED" "$ALIAS"
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "$VERSIONED" "$ALIAS"
       - name: Upload macOS verification record
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: guidon-macos-release-verification
           path: guidon-app/artifacts/apple-release/
           retention-days: 30
+      - name: Remove the temporary keychain
+        if: ${{ always() && steps.apple_sign.outputs.signing == 'present' }}
+        run: |
+          security delete-keychain "${GUIDON_SIGN_KEYCHAIN:-/nonexistent}" >/dev/null 2>&1 || true
+          rm -f "$RUNNER_TEMP/guidon-developer-id.p12" "$RUNNER_TEMP/guidon-tauri-signing.json" "$RUNNER_TEMP/guidon-notary-dmg.json"
 
   ios:
     name: iOS tagged Simulator parity
@@ -253,8 +572,16 @@ jobs:
           node guidon-app/tools/release-manifest.mjs finalize \
             --version "$VERSION" --tag "$TAG" --repo "$GITHUB_REPOSITORY" \
             --release-json "$RUNNER_TEMP/release.json" \
-            --notes-out "$RUNNER_TEMP/notes.md" || code=$?
+            --notes-out "$RUNNER_TEMP/notes.md" > "$RUNNER_TEMP/verdict.txt" || code=$?
+          cat "$RUNNER_TEMP/verdict.txt"
           # 0 = complete, 3 = incomplete: both are a readable release whose
           # page should be refreshed. Anything else is a real failure.
           case "$code" in 0|3) ;; *) exit 1 ;; esac
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/notes.md"
+          # Said aloud, never a failure: a Mac build that is attached under its
+          # versioned name but not the never-changing one means a direct Mac
+          # link (MAC_DIRECT_LINK in the app) would be dead. Re-running this
+          # workflow attaches it.
+          if grep -q 'the Mac build is attached as' "$RUNNER_TEMP/verdict.txt"; then
+            echo "::warning title=The fixed-name Mac file is missing::${TAG} has its Mac build under the versioned name only, so GUIDON-macos-universal.dmg does not exist on it. Re-run this workflow to attach it. This does not affect whether ${TAG} is Latest."
+          fi

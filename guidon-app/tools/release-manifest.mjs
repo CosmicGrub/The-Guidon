@@ -22,6 +22,20 @@
  * tools/lint-release-state.mjs, so a new download button in the app with no
  * matching upload fails lint instead of failing a Soldier.
  *
+ * THE MAC FIXED-NAME FILE IS DIFFERENT ON PURPOSE (decision recorded
+ * 2026-09-25, AUDIT-2026-09 item 17 / roadmap item L). release-apple.yml
+ * uploads the same .dmg bytes a second time as GUIDON-macos-universal.dmg, but
+ * that name is an OPTIONAL alias (OPTIONAL_ALIASES): it is never required, so
+ * the Apple lane - which runs on its own clock on flaky hosted macOS runners -
+ * can never hold a release out of Latest. The price is that GitHub's
+ * /releases/latest/download/<name> permalink cannot fall back to anything when
+ * the file is missing, so a bare in-app direct link to it could be a dead link
+ * for any Latest release whose Mac build failed. The app therefore keeps its
+ * Mac button on the releases list until the owner deliberately switches the
+ * direct link on (MAC_DIRECT_LINK in src/index.html, documented in
+ * docs/release-runbook.md); lint-release-state.mjs check (f) keeps the two
+ * sides honest and proves the Mac lane still cannot decide Latest.
+ *
  * Usage (from anywhere; no dependencies, no network):
  *   node tools/release-manifest.mjs names --version 1.12.1
  *       print every expected asset name, one per line
@@ -44,6 +58,16 @@ import path from "node:path";
 export const ALIASES = {
   android: "GUIDON-android.apk",
   windows: "GUIDON-windows-setup.exe",
+};
+
+/**
+ * Version-less names a release MAY carry but is never held back for. The Mac
+ * disk image is built by release-apple.yml, a separate lane that must never be
+ * able to keep a release from becoming Latest, so its fixed name is optional
+ * here where ALIASES' names are required. See the header note.
+ */
+export const OPTIONAL_ALIASES = {
+  macos: "GUIDON-macos-universal.dmg",
 };
 
 /**
@@ -72,18 +96,27 @@ export function expectedAssets(version) {
     { name: `GUIDON-${v}-esp32-cards.ndjson`, group: "esp32", required: true },
     { name: `GUIDON-${v}-esp32-categories.json`, group: "esp32", required: true },
     { name: `GUIDON-${v}-macos-universal.dmg`, group: "macos", required: false },
+    { name: OPTIONAL_ALIASES.macos, group: "macos", alias: true, required: false },
     { name: `GUIDON-${v}-ios-simulator.zip`, group: "ios-simulator", required: false },
   ];
 }
 
 /** complete === every required name (aliases included) is attached. */
 export function verdict(version, presentNames) {
+  const v = String(version || "").trim();
   const present = new Set(presentNames || []);
   const expected = expectedAssets(version);
   const missingRequired = expected.filter((a) => a.required && !present.has(a.name)).map((a) => a.name);
   const missingOptional = expected.filter((a) => !a.required && !present.has(a.name)).map((a) => a.name);
-  const missingAliases = expected.filter((a) => a.alias && !present.has(a.name)).map((a) => a.name);
-  return { complete: missingRequired.length === 0, missingRequired, missingOptional, missingAliases };
+  // Only the aliases a release cannot be Latest without. The optional Mac
+  // name is reported separately (macAliasGap) so it can never look like a
+  // reason to hold a release back.
+  const missingAliases = expected.filter((a) => a.alias && a.required && !present.has(a.name)).map((a) => a.name);
+  // The Mac build is attached under its versioned name but not under the
+  // fixed name: the Apple lane stopped part-way, and a direct link to the
+  // fixed name would be dead. Never affects `complete`.
+  const macAliasGap = present.has(`GUIDON-${v}-macos-universal.dmg`) && !present.has(OPTIONAL_ALIASES.macos);
+  return { complete: missingRequired.length === 0, missingRequired, missingOptional, missingAliases, macAliasGap };
 }
 
 export const DOWNLOADS_START = "<!-- guidon-downloads:start -->";
@@ -181,6 +214,7 @@ if (isMain) {
       await writeFile(notesOut, mergeBody(rel.body, renderDownloads({ version, tag, repo, present })), "utf-8");
       console.log(`release-manifest: ${tag} has ${present.length} attached file(s)`);
       if (v.missingOptional.length) console.log("  not attached (does not block): " + v.missingOptional.join(", "));
+      if (v.macAliasGap) console.log(`  NOTE - the Mac build is attached as GUIDON-${version}-macos-universal.dmg but not as ${OPTIONAL_ALIASES.macos}; an in-app direct Mac link would be dead until the Apple lane is re-run (does not block Latest)`);
       if (v.complete) { console.log("  COMPLETE - every required file and both in-app download names are attached"); process.exit(0); }
       console.log("  INCOMPLETE - missing: " + v.missingRequired.join(", "));
       process.exit(3);

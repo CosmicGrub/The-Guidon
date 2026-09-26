@@ -9,9 +9,17 @@
  *
  * Driven through the real page with real user agents:
  *   - a Mac is recognised and is never offered the Windows .exe
- *   - the Mac link goes to the releases LIST - there is no version-less Mac
- *     file for a /releases/latest/download/ permalink to point at, and not
- *     every release has a Mac version, so the copy must not promise one
+ *   - by default the Mac link goes to the releases LIST, and no
+ *     /releases/latest/download/ Mac permalink is on the page. The release
+ *     workflow does now upload a never-changing Mac name
+ *     (GUIDON-macos-universal.dmg), but it is OPTIONAL for a release - the
+ *     Mac build must never hold a release out of Latest - and GitHub's
+ *     "latest" download link has no fallback, so a direct link would be dead
+ *     for any Latest release whose Mac build failed. The direct link exists
+ *     behind one literal switch (MAC_DIRECT_LINK, default false); this suite
+ *     drives the page in BOTH settings, and proves that switched on it is a
+ *     Mac-only button with an always-alive fallback beside it
+ *   - not every release has a Mac version, so the copy must not promise one
  *   - the "Mac" steps are on the page, open by default on a computer, and are
  *     Apple's own route (Privacy & Security > Open Anyway) - never "turn off
  *     security" or a Terminal command
@@ -41,6 +49,9 @@ const MAC_CHROME_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebK
 const WIN_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36";
 const IOS_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1";
 const RELEASES = "https://github.com/CosmicGrub/The-Guidon/releases";
+const MAC_DIRECT = "https://github.com/CosmicGrub/The-Guidon/releases/latest/download/GUIDON-macos-universal.dmg";
+const SWITCH_OFF = "const MAC_DIRECT_LINK = false;";
+const SWITCH_ON = "const MAC_DIRECT_LINK = true;";
 // Words a Soldier should never have to decode, and things we must never tell them to do.
 const JARGON = /notari[sz]|gatekeeper|ad-?hoc|code ?sign|codesign|quarantine|unsigned|developer id|certificate/i;
 const UNSAFE = /xattr|spctl|sudo |disable (gatekeeper|security)|--master-disable|allow apps from anywhere/i;
@@ -49,9 +60,24 @@ const { server, url } = await serve("web");
 const browser = await chromium.launch();
 const noise = [];
 
-async function sharePage(opts, init) {
+// The page as served, with one text substitution applied to the document - how
+// the direct-download setting is driven without editing the shipped file.
+// `rewrites` counts how many times the substitution really matched, so a
+// change to the source line cannot turn the direct-mode checks into a
+// silent re-run of the default ones.
+let rewrites = 0;
+async function sharePage(opts, init, rewrite) {
   const ctx = await browser.newContext(opts);
   if (init) await ctx.addInitScript(init);
+  if (rewrite) {
+    await ctx.route(url, async (route) => {
+      const response = await route.fetch();
+      const before = await response.text();
+      const after = before.replace(rewrite[0], rewrite[1]);
+      if (after !== before) rewrites++;
+      await route.fulfill({ response, body: after });
+    });
+  }
   const page = await ctx.newPage();
   page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") noise.push(m.type() + ": " + m.text()); });
   page.on("pageerror", (e) => noise.push("pageerror: " + e.message));
@@ -71,6 +97,7 @@ const state = (page) => page.evaluate(() => {
   return {
     recText: rec?.textContent || "",
     recLinks: rec ? [...rec.querySelectorAll("a")].map((a) => a.getAttribute("href")) : [],
+    recAnchors: rec ? [...rec.querySelectorAll("a")].map((a) => ({ href: a.getAttribute("href"), target: a.getAttribute("target"), rel: a.getAttribute("rel"), text: a.textContent })) : [],
     macText: mac?.textContent || "",
     macSteps: mac ? [...mac.querySelectorAll("ol > li")].map((li) => li.textContent) : [],
     macStepsVisible: mac ? [...mac.querySelectorAll("ol > li")].some((li) => li.offsetParent !== null) : false,
@@ -88,7 +115,7 @@ const state = (page) => page.evaluate(() => {
   check(/You're on a Mac/.test(s.recText) && !/You're on a computer/.test(s.recText), "Mac: the page says so (it used to say “You're on a computer”)", "Mac: rec panel = " + s.recText);
   check(!s.recLinks.some((h) => /\.exe|\.msi|windows/i.test(h)), "Mac: is NOT offered the Windows installer (it used to be the one button on the panel)", "Mac: rec links = " + JSON.stringify(s.recLinks));
   check(s.recLinks.length === 1 && s.recLinks[0] === RELEASES, "Mac: the one link is the releases list", "Mac: rec links = " + JSON.stringify(s.recLinks));
-  check(!s.allLinks.some((h) => /releases\/latest\/download\/[^/]*(mac|dmg)/i.test(h)), "Mac: no /latest/download/ permalink to a Mac file (none exists to point at)", "Mac: links = " + JSON.stringify(s.allLinks.filter((h) => /mac|dmg/i.test(h))));
+  check(!s.allLinks.some((h) => /releases\/latest\/download\/[^/]*(mac|dmg)/i.test(h)), "Mac: no /latest/download/ permalink to a Mac file while the direct-download switch is off (the default)", "Mac: links = " + JSON.stringify(s.allLinks.filter((h) => /mac|dmg/i.test(h))));
   check(/nothing you have to download/i.test(s.recText) && /Some GUIDON releases include a Mac version.{0,40}and some don't/.test(s.recText), "Mac: says this page is already the full app, and that only SOME releases carry a Mac version", "Mac: rec panel = " + s.recText);
   check(/refuse to open it the first time/.test(s.recText) && /expected/.test(s.recText), "Mac: warns up front that the Mac will refuse the first open, and that this is expected", "Mac: rec panel = " + s.recText);
 
@@ -114,6 +141,46 @@ const state = (page) => page.evaluate(() => {
   const s = await state(page);
   check(/You're on a Mac/.test(s.recText) && !s.recLinks.some((h) => /\.exe/i.test(h)), "Mac (Chrome): recognised, no Windows installer", s.recText + JSON.stringify(s.recLinks));
   await page.context().close();
+}
+
+/* 2b - the direct-download switch: the shipped source, then the page with it ON.
+   The pipeline side (optional name, Mac lane cannot decide Latest, the switch
+   being a literal the lint reads) is proven by tools/lint-release-state.mjs
+   (f) and tools/test-release-pipeline.mjs; this is what a visitor gets. */
+{
+  const src = await readFile(path.join(HERE, "..", "src", "index.html"), "utf8");
+  check(src.includes(SWITCH_OFF) && !src.includes(SWITCH_ON), "switch: shipped OFF (`const MAC_DIRECT_LINK = false;`, one literal line the release lint reads)", "switch: the shipped source does not carry exactly `" + SWITCH_OFF + "` - a Latest release with no Mac build would leave a dead direct link");
+  check((src.match(/dl\("GUIDON-macos-universal\.dmg"\)/g) || []).length === 1, "switch: the Mac fixed-name file is linked from exactly one place", "switch: the Mac fixed-name file is linked from " + (src.match(/dl\("GUIDON-macos-universal\.dmg"\)/g) || []).length + " places");
+
+  const before = rewrites;
+  const page = await sharePage({ userAgent: MAC_UA, viewport: { width: 1280, height: 900 } }, null, [SWITCH_OFF, SWITCH_ON]);
+  const s = await state(page);
+  check(rewrites === before + 1, "switch ON: the page under test really has the switch on", "switch ON: the substitution did not match, so this section proved nothing about the direct button");
+  check(/You're on a Mac/.test(s.recText) && !s.recLinks.some((h) => /\.exe|\.msi|windows/i.test(h)), "switch ON, Mac: still recognised, still never offered the Windows installer", s.recText + JSON.stringify(s.recLinks));
+  check(s.recAnchors.length === 2 && s.recAnchors[0].href === MAC_DIRECT, "switch ON, Mac: the first button is the direct download of the never-changing name from the Latest release", "switch ON, Mac: rec links = " + JSON.stringify(s.recAnchors));
+  check(s.recAnchors[0] && /Download the Mac app/.test(s.recAnchors[0].text) && s.recAnchors[0].target === "_blank" && /noopener/.test(s.recAnchors[0].rel || ""), "switch ON, Mac: it says what it is and opens in a new tab safely", JSON.stringify(s.recAnchors[0]));
+  check(s.recAnchors[1] && s.recAnchors[1].href === RELEASES && s.recAnchors[1].target === "_blank" && /noopener/.test(s.recAnchors[1].rel || ""), "switch ON, Mac: an always-alive releases-list link sits beside it, for the release whose Mac build is missing", JSON.stringify(s.recAnchors[1]));
+  check(/not found/.test(s.recText) && /use this page in your browser/.test(s.recText), "switch ON, Mac: says in plain words what a “not found” page means and what to do instead", s.recText);
+  check(/refuse to open it the first time/.test(s.recText) && /expected/.test(s.recText) && /nothing you have to download/i.test(s.recText), "switch ON, Mac: still says the page is the full app and the first open will be refused, and that is expected", s.recText);
+  check(!JARGON.test(s.macText + s.recText) && !UNSAFE.test(s.macText + s.recText), "switch ON, Mac: plain language, no command or setting to change", (s.macText + s.recText).match(new RegExp(JARGON.source + "|" + UNSAFE.source, "i"))?.[0]);
+  check(s.macToggle === null && s.macStepsVisible && s.macSteps.length >= 5, "switch ON, Mac: the “Mac” steps are still there and open", JSON.stringify(s.macToggle));
+  await page.context().close();
+
+  // A phone-width Mac window: the two buttons wrap, they do not scroll sideways.
+  const narrow = await sharePage({ userAgent: MAC_UA, viewport: { width: 390, height: 844 } }, null, [SWITCH_OFF, SWITCH_ON]);
+  const sn = await state(narrow);
+  check(sn.overflow <= 1, "switch ON, 390 px wide: the two buttons cause no sideways scrolling", "overflow " + sn.overflow + "px");
+  await narrow.context().close();
+
+  // Nobody but a Mac is ever sent to the Mac file.
+  const win = await sharePage({ userAgent: WIN_UA, viewport: { width: 1280, height: 900 } }, null, [SWITCH_OFF, SWITCH_ON]);
+  const sw = await state(win);
+  check(sw.recLinks.length === 1 && /GUIDON-windows-setup\.exe$/.test(sw.recLinks[0]) && !sw.allLinks.some((h) => /macos|\.dmg/i.test(h)), "switch ON, Windows: still only the Windows installer, and no link to the Mac file anywhere on the page", JSON.stringify(sw.recLinks) + JSON.stringify(sw.allLinks.filter((h) => /macos|\.dmg/i.test(h))));
+  await win.context().close();
+  const phone = await sharePage({ userAgent: IOS_UA, viewport: { width: 390, height: 844 } }, null, [SWITCH_OFF, SWITCH_ON]);
+  const sp = await state(phone);
+  check(!sp.allLinks.some((h) => /macos|\.dmg/i.test(h)), "switch ON, iPhone: no link to the Mac file anywhere on the page", JSON.stringify(sp.allLinks.filter((h) => /macos|\.dmg/i.test(h))));
+  await phone.context().close();
 }
 
 /* 3 - an iPad asking for the desktop site says "Macintosh". Still an iPad. */
@@ -164,12 +231,22 @@ const state = (page) => page.evaluate(() => {
   check(/Privacy & Security/.test(doc) && /Open Anyway/.test(doc) && /about an hour/.test(doc) && /Move to Trash/.test(doc), "doc: same route as the app (Privacy & Security, Open Anyway, about an hour, not Move to Trash)", "doc lost a step the app gives");
   check(/Not every GUIDON release includes one/.test(doc) && !/releases\/latest\/download/.test(doc), "doc: does not promise a Mac download in every release, and links the releases list", "doc promises a download");
   check(/support\.apple\.com\/guide\/mac-help\/open-a-mac-app-from-an-unknown-developer/.test(doc), "doc: points at Apple's own page for the same steps", "doc has no Apple source");
+  // The maintainers' half of the page and the runbook say which secrets turn
+  // the warning off and why the Mac button is not a direct link yet; the
+  // workflow's own secret names are checked against these in
+  // tools/test-release-pipeline.mjs.
+  const runbook = await readFile(path.join(HERE, "..", "docs", "release-runbook.md"), "utf8").catch(() => "");
+  const APPLE_SECRETS = ["APPLE_CERTIFICATE_BASE64", "APPLE_CERTIFICATE_PASSWORD", "APPLE_SIGNING_IDENTITY", "APPLE_ID", "APPLE_APP_SPECIFIC_PASSWORD", "APPLE_TEAM_ID"];
+  check(APPLE_SECRETS.every((n) => doc.includes(n) && runbook.includes(n)), "doc + runbook: both name all six Apple secrets the owner would add", "a document is missing one of: " + APPLE_SECRETS.filter((n) => !doc.includes(n) || !runbook.includes(n)).join(", "));
+  const flat = (t) => t.replace(/\s+/g, " ");
+  check(/GUIDON-macos-universal\.dmg/.test(doc) && /optional for a release/.test(flat(doc)) && /MAC_DIRECT_LINK/.test(runbook) && /Turning on the direct Mac download/.test(runbook), "doc + runbook: explain the optional fixed-name file and how the direct Mac download is switched on", "the fixed-name file / switch is not explained");
+  check(/first-open warning/.test(flat(runbook)) && /ad-hoc/.test(runbook) && /some, not all/.test(runbook), "runbook: says what happens with no secrets (warning stays), with all of them, and with only some (hard failure)", "the runbook's Apple signing outcomes are incomplete");
   const userPart = doc.split(/\n---\n/)[0];
   check(!UNSAFE.test(userPart) && /\*\*never\*\* paste commands into Terminal/i.test(userPart.replace(/\s+/g, " ")), "doc: never tells the reader to run a command or switch security off - and says never to", "doc contains an unsafe instruction or lost the warning");
 }
 
 const relevantNoise = noise.filter((n) => !/favicon/.test(n));
-check(relevantNoise.length === 0, "no console errors or warnings in any of the 5 visits", "console noise: " + relevantNoise.slice(0, 8).join(" | "));
+check(relevantNoise.length === 0, "no console errors or warnings in any visit", "console noise: " + relevantNoise.slice(0, 8).join(" | "));
 
 await browser.close();
 await server.close();

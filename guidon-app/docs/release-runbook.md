@@ -38,7 +38,11 @@ carries all of these (X.Y.Z = the version):
 
 The Mac `.dmg` and the iOS Simulator package are attached when the Apple lane
 produces them, and are listed on the release page only then. They never decide
-whether a release is Latest.
+whether a release is Latest. The Apple lane also attaches the same `.dmg` a
+second time as `GUIDON-macos-universal.dmg`, a fixed name like the two above
+but **optional** - see "Mac: the fixed-name file, the launch proof, and Apple
+signing" below for why it is not required and what that means for the in-app
+Mac button.
 
 ## Android: signed on the owner's machine, attached by hand
 
@@ -87,6 +91,115 @@ The hand-off, after step 4 above:
    **finalize_only** (leave the tag empty to use main's version, or name the
    tag). Nothing is rebuilt; the job refreshes the Downloads section and marks
    the release Latest once everything is attached and really downloads.
+
+## Mac: the fixed-name file, the launch proof, and Apple signing
+
+Written 2026-09-25 (audit item 17 and roadmap item L). This describes the
+`macos` job in `release-apple.yml`. **None of it can decide whether a release
+is Latest**: `tools/lint-release-state.mjs` check (f) fails the build if
+`release-apple.yml` ever touches the Latest flag, or if any other release job
+starts waiting on an Apple job. It was also written without a macOS runner or
+Apple credentials to try it on. The scripts are exercised against stand-in
+tools by `tools/test-release-pipeline.mjs`; the first real run is the real test.
+
+### The fixed-name file, and why the in-app Mac button is not a direct link (yet)
+
+The Apple lane uploads the same `.dmg` twice, in one command:
+`GUIDON-X.Y.Z-macos-universal.dmg` and `GUIDON-macos-universal.dmg` (a copy of
+the same bytes) - the way the Android and Windows jobs do it.
+
+The decision, and what it costs:
+
+- The Android and Windows fixed names are **required**: a release without them
+  is never Latest, so `.../releases/latest/download/<name>` always resolves.
+- A **required** Mac name would let the Apple lane - a separate workflow on
+  hosted Macs that fail now and then - hold a release out of Latest. That is
+  ruled out, so `GUIDON-macos-universal.dmg` is **optional** in
+  `tools/release-manifest.mjs` (`OPTIONAL_ALIASES`).
+- GitHub's `latest/download` link has **no fallback**. If the Latest release
+  has no such file, the link is a 404. The app cannot check first: it makes no
+  network requests, and that must stay true.
+- So the #/share Mac button stays on the releases list - the one link that can
+  never be dead - until the owner deliberately switches the direct link on:
+  `const MAC_DIRECT_LINK = false;` in `src/index.html`. The code, the lint
+  and the tests for the direct button are in place and proven in both
+  settings; only the switch is off.
+- Carrying an older release's Mac file forward under the new release, so the
+  name always resolves, was considered and rejected: a Mac copy that is silently
+  a version behind is worse than a visible "not there yet", because the web
+  page is always current.
+
+**Turning on the direct Mac download** (owner, once the Apple lane has proved
+itself on a real run):
+
+1. Wait for a release that is **Latest** and whose Apple run finished green.
+2. `node tools/lint-release-state.mjs --published vX.Y.Z --repo CosmicGrub/The-Guidon`
+   must say that release carries `GUIDON-macos-universal.dmg`.
+3. On that run, open "Prove the DMG launches" in the summary - it should say
+   *passed* - and then download `GUIDON-macos-universal.dmg` from the release
+   and open it on a real Mac once.
+4. Change `const MAC_DIRECT_LINK = false;` to `true` in `src/index.html`, then
+   run `node tools/test-share-mac-first-open.mjs` and
+   `node tools/lint-release-state.mjs` (it prints a note that the direct link
+   is on).
+5. From then on, a release whose Apple lane fails leaves the Mac button dead
+   until **Apple release assets** is run again. The run says so in a warning
+   ("The fixed-name Mac file is missing"), and `--published` reports it. If
+   that keeps happening, set the switch back to `false`.
+
+### The launch proof
+
+After the bundle checks, the job mounts the built `.dmg`, copies the app out,
+opens it as a person would, and requires the app to stay running for 20 seconds
+with no crash report. It reports one of four results in the run summary, as a
+notice or warning, and in `macos-launch-proof.txt` in the verification record:
+
+| Result | Meaning |
+|---|---|
+| passed | The app started and stayed up. |
+| failed | It started and quit on its own, macOS wrote a crash report, macOS refused to open it, or the image had no app in it. |
+| never-started | No GUIDON process appeared within 30 seconds. |
+| inconclusive | The proof itself could not run (the image would not mount, the copy failed). Says nothing about the app. |
+
+It is **informational**: the step never fails the job, and the `.dmg` is
+published whatever it says. Once a few real runs show it is trustworthy on a
+hosted Mac, make "Publish macOS DMG" depend on it. Do not switch the direct Mac
+download on after any result but *passed*.
+
+### macOS signing and notarization (owner adds the secrets; nobody else does)
+
+This repository has **no Actions secrets, on purpose**, and a workflow or an
+assistant must never be what creates them. The `macos` job follows the same
+three outcomes as the Android job:
+
+| Secrets | What the job does |
+|---|---|
+| none of the six | Builds the ad-hoc-signed `.dmg` it always has and ends **green**, with a notice saying what is missing and that Mac users get the first-open warning (`docs/mac-first-launch.md`). This is the normal state. |
+| all six | Signs with the Developer ID certificate, notarizes the app and the `.dmg` with Apple, staples both tickets, and checks the result with `codesign`, `spctl` and `stapler`. Any failure turns this workflow red; the release's Latest status is untouched. |
+| some, not all | **Hard failure** naming what is missing, before anything is built. |
+
+The check only tests that each secret exists; it never prints or writes a
+value. The six (each also accepted with a `GUIDON_` prefix, like the Android
+ones):
+
+| Secret | What it holds |
+|---|---|
+| `APPLE_CERTIFICATE_BASE64` | The **Developer ID Application** certificate with its private key, exported from Keychain Access as a `.p12` and base64-encoded (`base64 -i DeveloperID.p12 \| pbcopy` on a Mac). Needs a paid Apple Developer Program membership. |
+| `APPLE_CERTIFICATE_PASSWORD` | The password chosen when the `.p12` was exported. |
+| `APPLE_SIGNING_IDENTITY` | The certificate's full name, exactly as `security find-identity -v -p codesigning` prints it, for example `Developer ID Application: Your Name (TEAMID)`. |
+| `APPLE_ID` | The Apple ID (email) that belongs to the developer account. |
+| `APPLE_APP_SPECIFIC_PASSWORD` | An app-specific password made for that Apple ID at appleid.apple.com (Sign-In and Security). **Not** the Apple ID password. |
+| `APPLE_TEAM_ID` | The ten-character Team ID shown under Membership details in the Apple Developer account. |
+
+Add them in GitHub under Settings, Secrets and variables, Actions, "New
+repository secret" (or `gh secret set NAME`), then run **Apple release assets**
+by hand. Never paste a value into a chat, an issue, a commit or a log.
+
+**When it starts working**, the first-open warning goes away for the people who
+download the notarized `.dmg`, and `docs/mac-first-launch.md` and the **Mac**
+panel on #/share (`src/index.html`) stop being true as written. Rewrite the two
+together, and `tools/test-share-mac-first-open.mjs` in the same change - it is
+what holds them in step.
 
 ## Rules the automation now enforces
 

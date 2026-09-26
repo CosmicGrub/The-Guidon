@@ -29508,10 +29508,27 @@ window.G = window.G || {};
     // iPad asking for the desktop site also says "Macintosh", but isIOS()
     // has already claimed it (touch points), so it never reaches this test.
     const onMac = onDesktop && /Macintosh|Mac OS X/.test(navigator.userAgent || "");
-    // The releases LIST, not /releases/latest/download/<name>: there is no
-    // version-less Mac file to point a permalink at, and not every release
-    // carries a Mac version at all (the newest one may not).
+    // The releases LIST, not /releases/latest/download/<name>: not every
+    // release carries a Mac version at all (the newest one may not), and the
+    // list is the one link that can never be dead.
     const RELEASES_ALL = "https://github.com/CosmicGrub/The-Guidon/releases";
+    // The Mac download button is a direct link ONLY when this is true.
+    //
+    // release-apple.yml now uploads the Mac disk image a second time under a
+    // never-changing name (GUIDON-macos-universal.dmg), the way the Android and
+    // Windows files have one. But that name is OPTIONAL for a release
+    // (tools/release-manifest.mjs OPTIONAL_ALIASES): the Mac lane runs on its
+    // own clock on flaky hosted Macs and must never be able to keep a release
+    // from becoming Latest. GitHub's /releases/latest/download/<name> link has
+    // no fallback - if the newest release has no such file it is a 404 - so a
+    // direct link is only safe once the owner has seen the newest release carry
+    // the file. Until then (false) the button stays on the releases list.
+    //
+    // To switch it on: docs/release-runbook.md, "Turning on the direct Mac
+    // download". Keep this a literal `true`/`false` on one line -
+    // tools/lint-release-state.mjs (f) reads it, and tools/test-share-mac-first-open.mjs
+    // drives the page in both settings.
+    const MAC_DIRECT_LINK = false;
 
     // ── "Get the app for this device" ──────────────────────────────────────
     // Added for the QR-code distribution path (2026-09-08): a Soldier who
@@ -29558,12 +29575,25 @@ window.G = window.G || {};
         // download button without the "Mac" steps panel further down.
         rec.appendChild(el("p", { text:
           "You're on a Mac. This page is the full GUIDON app — it works in Safari or any other browser here, and keeps working with no signal once it has loaded. There's nothing you have to download." }));
-        rec.appendChild(el("a.btn", {
-          href: RELEASES_ALL, target: "_blank", rel: "noopener",
-          text: "See if a Mac version is posted (releases page)", style: "text-decoration:none;display:inline-block",
-        }));
-        rec.appendChild(el("p.hint", { style: "margin-top:8px", text:
-          "Some GUIDON releases include a Mac version — a file ending in .dmg — and some don't. If you download one, your Mac will refuse to open it the first time. That's expected; the “Mac” steps below show the safe way through." }));
+        if (MAC_DIRECT_LINK) {
+          rec.appendChild(el("a.btn.primary", {
+            href: dl("GUIDON-macos-universal.dmg"), target: "_blank", rel: "noopener",
+            text: "⭳ Download the Mac app (.dmg)", style: "text-decoration:none;display:inline-block",
+          }));
+          rec.appendChild(el("a.btn.sm.ghost", {
+            href: RELEASES_ALL, target: "_blank", rel: "noopener",
+            text: "Not working? See all releases", style: "text-decoration:none;display:inline-block;margin-left:8px",
+          }));
+          rec.appendChild(el("p.hint", { style: "margin-top:8px", text:
+            "If the download page says the file was not found, the newest release does not have a Mac version yet — use this page in your browser, or look through the releases page. If you do download it, your Mac will refuse to open it the first time. That's expected; the “Mac” steps below show the safe way through." }));
+        } else {
+          rec.appendChild(el("a.btn", {
+            href: RELEASES_ALL, target: "_blank", rel: "noopener",
+            text: "See if a Mac version is posted (releases page)", style: "text-decoration:none;display:inline-block",
+          }));
+          rec.appendChild(el("p.hint", { style: "margin-top:8px", text:
+            "Some GUIDON releases include a Mac version — a file ending in .dmg — and some don't. If you download one, your Mac will refuse to open it the first time. That's expected; the “Mac” steps below show the safe way through." }));
+        }
       } else {
         rec.appendChild(el("p", { text: "You're on a computer. The full Windows desktop app is a direct download:" }));
         rec.appendChild(el("a.btn.primary", {

@@ -33,7 +33,13 @@
  *   (e) .release-prep / .release-trigger, when present, name a real version
  *       no newer than package.json.
  *   (f) every file name the app's #/share page links to is declared in
- *       tools/release-manifest.mjs and uploaded by a release workflow.
+ *       tools/release-manifest.mjs and uploaded by a release workflow. The
+ *       Mac fixed-name file is an OPTIONAL alias: the app may link to it only
+ *       behind the literal MAC_DIRECT_LINK switch (default false: the button
+ *       stays on the releases list, which can never be a dead link), and the
+ *       Mac lane must provably be unable to decide Latest - release-apple.yml
+ *       never touches the Latest flag and no other release job waits on an
+ *       Apple job (see release-manifest.mjs's header for the decision).
  *   --cut (release-cut.yml, just before tagging): tags MUST be visible,
  *       .release-prep must name exactly this version, the version must be
  *       newer than every tag, its notes must not be marked unreleased, and
@@ -64,7 +70,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { readAnchors, parseVersion, compareVersions, androidVersionCode } from "./release-version-files.mjs";
-import { ALIASES, expectedAssets, verdict } from "./release-manifest.mjs";
+import { ALIASES, OPTIONAL_ALIASES, expectedAssets, verdict } from "./release-manifest.mjs";
 import { parseReleaseNotes, extractNotesArray } from "./whats-new-rules.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -206,18 +212,44 @@ export function lintReleaseState({ root, cut = false }) {
     /* ---- (f) in-app download names ------------------------------------ */
     const linked = [...new Set([...html.matchAll(/\bdl\("([^"]+)"\)/g)].map((m) => m[1]))];
     const declared = new Set(Object.values(ALIASES));
+    const optional = new Set(Object.values(OPTIONAL_ALIASES));
     const wfDir = path.join(root, ".github/workflows");
-    const wfText = existsSync(wfDir) ? readdirSync(wfDir).filter((n) => /^release-.*\.ya?ml$/.test(n)).map((n) => readFileSync(path.join(wfDir, n), "utf-8")).join("\n") : "";
-    // Only lines that are not comments count as "uploads it".
-    const wfCode = wfText.split(/\r?\n/).filter((l) => !/^\s*#/.test(l)).join("\n");
+    const wfNames = existsSync(wfDir) ? readdirSync(wfDir).filter((n) => /^release-.*\.ya?ml$/.test(n)).sort() : [];
+    // Only lines that are not comments count as "uploads it" (or "waits on it").
+    const codeOf = (n) => readFileSync(path.join(wfDir, n), "utf-8").split(/\r?\n/).filter((l) => !/^\s*#/.test(l)).join("\n");
+    const wfCode = wfNames.map(codeOf).join("\n");
     const before = failures.length;
     if (!linked.length) bad('(f) could not find the dl("...") download links in the #/share view');
     for (const name of linked) {
-      if (!declared.has(name)) bad(`(f) the app links to "${name}" but tools/release-manifest.mjs does not declare it - a release could be marked Latest without it`);
+      if (!declared.has(name) && !optional.has(name)) bad(`(f) the app links to "${name}" but tools/release-manifest.mjs does not declare it - a release could be marked Latest without it`);
       if (!wfCode.includes("release-out/" + name)) bad(`(f) the app links to releases/latest/download/${name}, but no release workflow uploads a file with that name - that button would be a dead link`);
     }
     for (const name of declared) if (!linked.includes(name)) bad(`(f) tools/release-manifest.mjs requires "${name}" but the app no longer links to it - remove it from ALIASES or restore the link`);
-    if (failures.length === before) ok(`(f) every download name the app links to (${linked.join(", ")}) is required by release-manifest.mjs and uploaded by a release workflow`);
+    if (failures.length === before) ok(`(f) every download name the app links to (${linked.join(", ")}) is declared by release-manifest.mjs and uploaded by a release workflow`);
+
+    // The optional (Mac) fixed-name file. A direct link to it is only honest
+    // behind the MAC_DIRECT_LINK switch, and the lane that builds it must not
+    // be able to decide whether a release becomes Latest.
+    const macLinked = linked.filter((n) => optional.has(n));
+    const beforeMac = failures.length;
+    for (const a of expectedAssets("0.0.1").filter((x) => optional.has(x.name))) {
+      if (a.required) bad(`(f) ${a.name} is declared optional (OPTIONAL_ALIASES) but expectedAssets() requires it - the Apple lane could hold a release out of Latest`);
+    }
+    const appleFile = wfNames.find((n) => /^release-apple\.ya?ml$/.test(n));
+    if (appleFile) {
+      if (/--latest\b/.test(codeOf(appleFile))) bad("(f) release-apple.yml touches the Latest flag - the Mac lane must never decide whether a release is Latest");
+      for (const n of wfNames.filter((x) => x !== appleFile)) {
+        const waits = [...codeOf(n).matchAll(/^\s*needs:\s*(\[[^\]]*\]|\S+)/gm)].map((m) => m[1]).filter((x) => /\b(macos|ios|apple)\b/i.test(x));
+        if (waits.length) bad(`(f) ${n} waits on an Apple job (${waits.join("; ")}) - a slow or failed Mac build could hold a release out of Latest`);
+      }
+    }
+    if (macLinked.length) {
+      const sw = /\bconst\s+MAC_DIRECT_LINK\s*=\s*(true|false)\s*;/.exec(html);
+      if (!sw) bad("(f) the app links to the Mac fixed-name file but has no literal `const MAC_DIRECT_LINK = true|false;` switch - a Latest release whose Mac build failed would leave a dead direct link with no way to turn it off");
+      else if (sw[1] === "true") note(`(f) MAC_DIRECT_LINK is ON: the #/share Mac button downloads ${macLinked.join(", ")} straight from the Latest release, so it is a dead link for any Latest release whose Apple lane did not finish. Check a release with: node tools/lint-release-state.mjs --published <tag> --repo <owner/name>`);
+      else note("(f) MAC_DIRECT_LINK is off (the default): the Mac button stays on the releases list, which can never be a dead link, until the owner switches the direct link on - see docs/release-runbook.md");
+    }
+    if (failures.length === beforeMac) ok("(f) the Mac lane cannot decide Latest: its fixed-name file is optional in the manifest, release-apple.yml never touches the Latest flag, and no other release job waits on an Apple job");
   }
 
   /* ---- (e) release marker files ---------------------------------------- */
@@ -269,10 +301,26 @@ export function lintPublishedAssets({ tag, repo }) {
   let present;
   try { present = JSON.parse(res.stdout).assets.map((a) => a.name); }
   catch (e) { bad(`(published) could not parse gh release view ${tag}'s JSON output: ${e.message}`); return { passes, failures, notes }; }
+  return judgePublished({ tag, version, present });
+}
+
+/**
+ * The pure half of lintPublishedAssets(): given the file names a published
+ * release really carries, what is wrong and what is only worth knowing. Split
+ * out so tools/test-release-state.mjs can drive every Mac state without gh.
+ */
+export function judgePublished({ tag, version, present }) {
+  const passes = [], failures = [], notes = [];
+  const ok = (m) => passes.push(m), bad = (m) => failures.push(m), note = (m) => notes.push(m);
   const v = verdict(version, present);
   if (!v.complete) bad(`(published) ${tag} is published with ${present.length} asset(s) attached but is missing required: ${v.missingRequired.join(", ")}`);
   else ok(`(published) ${tag} carries all ${expectedAssets(version).filter((a) => a.required).length} required assets (${present.length} attached total)`);
   if (v.missingOptional.length) note(`(published) ${tag} is also missing optional assets: ${v.missingOptional.join(", ")}`);
+  // Optional, so never a failure - but this is exactly the state in which the
+  // in-app Mac button would be a dead link if MAC_DIRECT_LINK were switched on.
+  if (present.includes(OPTIONAL_ALIASES.macos)) note(`(published) ${tag} carries ${OPTIONAL_ALIASES.macos}: a direct Mac link resolves while this is the Latest release`);
+  else if (v.macAliasGap) note(`(published) ${tag} has its Mac build under the versioned name only - ${OPTIONAL_ALIASES.macos} is missing, so a direct Mac link would be dead until the Apple lane is re-run`);
+  else note(`(published) ${tag} has no Mac build at all: ${OPTIONAL_ALIASES.macos} does not exist on it, so a direct Mac link would be dead while it is the Latest release`);
   return { passes, failures, notes };
 }
 
