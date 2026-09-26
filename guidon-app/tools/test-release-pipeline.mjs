@@ -35,11 +35,11 @@
  * assertions at another copy of the .github/workflows folder. Pointed at the
  * files as they were before this suite existed, sections 1-5 fail.
  */
-import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync, existsSync, chmodSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync, existsSync, chmodSync, readdirSync, copyFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { ALIASES, OPTIONAL_ALIASES, expectedAssets, verdict, renderDownloads, mergeBody, DOWNLOADS_START, DOWNLOADS_END } from "./release-manifest.mjs";
+import { ALIASES, OPTIONAL_ALIASES, ESP32_LANES_AFTER, isNewerVersion, expectedAssets, verdict, renderDownloads, mergeBody, DOWNLOADS_START, DOWNLOADS_END } from "./release-manifest.mjs";
 import { decide, gate } from "./release-gate.mjs";
 import { needsOf } from "./lint-release-state.mjs";
 
@@ -202,6 +202,51 @@ try {
     "Windows publish step does not upload the version-less GUIDON-windows-setup.exe");
   check(!!publishWindows && /\$LASTEXITCODE -ne 0/.test(publishWindows.run || ""), "Windows publish step fails the job when the upload fails (pwsh does not stop on a native command's exit code by itself)");
 
+  // The handheld's deck list (GUIDON-X.Y.Z-esp32-lanes.json): the workflow
+  // steps that produce and package it, run for real against a stand-in folder.
+  // It is expected only from the release after v1.16.0, so an older tag that
+  // is built again (from its own older exporter) must not be refused for it.
+  const firmwareSteps = stepsOf(jobBlock(assets, "web_firmware"));
+  const exportStep = stepNamed(firmwareSteps, "Export ESP32 cards and build Flashcard OS");
+  const packageStep = stepNamed(firmwareSteps, "Package full-fork assets");
+  if (!exportStep || !exportStep.run || !packageStep || !packageStep.run || !BASH) bad("release-assets.yml: the ESP32 export/package steps were not found");
+  else {
+    const gateAt = exportStep.run.indexOf('names="$(node');
+    check(gateAt !== -1 && /esp32-lanes\.json/.test(exportStep.run.slice(gateAt)) && /test -s sdcard\/lanes\.json/.test(exportStep.run.slice(gateAt)),
+      "the ESP32 export step asks release-manifest.mjs whether this version carries the deck list, and insists on the file when it does", "the ESP32 export step does not gate the deck list on release-manifest.mjs");
+    const lay = (label) => {
+      const box = sandbox(label);
+      mkdirSync(path.join(box.dir, "firmware/esp32-flashcard-os/sdcard"), { recursive: true });
+      mkdirSync(path.join(box.dir, "guidon-app/tools"), { recursive: true });
+      mkdirSync(path.join(box.dir, "release-out"), { recursive: true });
+      copyFileSync("tools/release-manifest.mjs", path.join(box.dir, "guidon-app/tools/release-manifest.mjs"));
+      return box;
+    };
+    const gateScript = "set -euo pipefail\n" + exportStep.run.slice(gateAt);
+    const runGate = (box, version) => runStep(gateScript, { box, env: { VERSION: version }, cwd: path.join(box.dir, "firmware/esp32-flashcard-os") });
+    let box = lay("lanes-gate-old");
+    check(runGate(box, "1.16.0").status === 0, "an older release (v1.16.0, built from its own older exporter, so no lanes.json) still builds - the deck list is not asked of it");
+    box = lay("lanes-gate-new-missing");
+    let r = runGate(box, "9.9.9");
+    check(r.status !== 0, "the next release with no lanes.json written by the exporter FAILS the job, so it cannot go out without its decks", "a new release with no deck list did not stop the export step: " + r.stdout + r.stderr);
+    writeFileSync(path.join(box.dir, "firmware/esp32-flashcard-os/sdcard/lanes.json"), "");
+    check(runGate(box, "9.9.9").status !== 0, "...and an EMPTY lanes.json fails it too (test -s, not test -f)");
+    writeFileSync(path.join(box.dir, "firmware/esp32-flashcard-os/sdcard/lanes.json"), '{"schema":1,"lanes":[]}');
+    r = runGate(box, "9.9.9");
+    check(r.status === 0, "the next release with a lanes.json passes the gate", "a new release with its deck list was refused: " + r.stdout + r.stderr);
+
+    const pkgCut = packageStep.run.indexOf("# Only when the exporter of this tag wrote one");
+    check(pkgCut !== -1 && /GUIDON-\$\{VERSION\}-esp32-lanes\.json/.test(packageStep.run.slice(pkgCut)), "the ESP32 package step copies the deck list to GUIDON-X.Y.Z-esp32-lanes.json", "the ESP32 package step does not name the deck list file");
+    const pkgScript = "set -euo pipefail\n" + packageStep.run.slice(pkgCut);
+    box = lay("lanes-package");
+    r = runStep(pkgScript, { box, env: { VERSION: "9.9.9" } });
+    check(r.status === 0 && !existsSync(path.join(box.dir, "release-out/GUIDON-9.9.9-esp32-lanes.json")), "no lanes.json (an older tag's export): nothing is packaged and the step still succeeds");
+    writeFileSync(path.join(box.dir, "firmware/esp32-flashcard-os/sdcard/lanes.json"), '{"schema":1,"lanes":[{"id":"default"}]}');
+    r = runStep(pkgScript, { box, env: { VERSION: "9.9.9" } });
+    const packed = path.join(box.dir, "release-out/GUIDON-9.9.9-esp32-lanes.json");
+    check(r.status === 0 && existsSync(packed) && readFileSync(packed, "utf-8") === '{"schema":1,"lanes":[{"id":"default"}]}', "with a lanes.json, it is packaged byte for byte as GUIDON-9.9.9-esp32-lanes.json (uploaded by the existing release-out/* step)", "the deck list was not packaged: " + r.stderr);
+  }
+
   // What v1.10.0 really carried when it became Latest.
   const V1100 = ["GUIDON-1.10.0-windows-setup.exe", "GUIDON-1.10.0-windows.msi"];
   const v1100 = verdict("1.10.0", V1100);
@@ -219,6 +264,38 @@ try {
   check(verdict("9.9.9", FULL).complete, "a release with every expected file is judged COMPLETE");
   check(!verdict("9.9.9", FULL.filter((n) => n !== ALIASES.android)).complete, "every versioned file but no GUIDON-android.apk is still INCOMPLETE");
   check(verdict("9.9.9", FULL.filter((n) => !/macos|ios-simulator/.test(n))).complete, "a slow or failed Apple lane cannot hold the Android and Windows buttons hostage (Apple files are optional)");
+
+  // The handheld's deck list is required from the release AFTER v1.16.0 only.
+  const LANES = (v) => `GUIDON-${v}-esp32-lanes.json`;
+  // v1.16.0 exactly as GitHub lists it (gh release view v1.16.0 --json assets): no deck list.
+  const PUBLISHED_1160 = ["GUIDON-1.16.0-android.aab", "GUIDON-1.16.0-android.apk", "GUIDON-1.16.0-esp32-bootloader.bin", "GUIDON-1.16.0-esp32-cards.ndjson", "GUIDON-1.16.0-esp32-categories.json",
+    "GUIDON-1.16.0-esp32-flashcardos.bin", "GUIDON-1.16.0-esp32-partitions.bin", "GUIDON-1.16.0-ios-simulator.zip", "GUIDON-1.16.0-macos-universal.dmg", "GUIDON-1.16.0-standalone.html",
+    "GUIDON-1.16.0-web-pwa.zip", "GUIDON-1.16.0-windows-setup.exe", "GUIDON-1.16.0-windows.msi", "GUIDON-android.apk", "GUIDON-windows-setup.exe"];
+  check(ESP32_LANES_AFTER === "1.16.0", "the deck list is required only after v1.16.0, the last release that shipped without it");
+  const laneEntry = expectedAssets("9.9.9").find((a) => a.name === LANES("9.9.9"));
+  check(!!laneEntry && laneEntry.required === true && laneEntry.group === "esp32" && !laneEntry.alias, "from the next release on, GUIDON-X.Y.Z-esp32-lanes.json is a REQUIRED file in the esp32 group");
+  const noLanes = verdict("9.9.9", FULL.filter((n) => n !== LANES("9.9.9")));
+  check(!noLanes.complete && JSON.stringify(noLanes.missingRequired) === JSON.stringify([LANES("9.9.9")]) && noLanes.missingAliases.length === 0,
+    "a new release with every file but the deck list is INCOMPLETE and the deck list is the only thing named missing", "a new release without its deck list was judged " + JSON.stringify(noLanes));
+  const next = expectedAssets("1.16.1").map((a) => a.name).filter((n) => !/macos|ios-simulator/.test(n));
+  check(next.includes(LANES("1.16.1")) && !verdict("1.16.1", next.filter((n) => n !== LANES("1.16.1"))).complete && verdict("1.16.1", next).complete, "the very next patch release (1.16.1) is held out of Latest until the deck list is attached");
+  for (const v of ["1.16.0", "1.15.7", "1.12.1", "1.10.0", "1.9.0", "0.9.9"]) {
+    check(!expectedAssets(v).some((a) => /esp32-lanes/.test(a.name)), `v${v} (already out) is not expected to carry a deck list`);
+  }
+  const done = verdict("1.16.0", PUBLISHED_1160);
+  check(done.complete && done.missingRequired.length === 0 && done.missingAliases.length === 0, "v1.16.0 exactly as published (no deck list) is still judged COMPLETE, so re-running finalize on it can still mark it Latest", "v1.16.0 as published was judged " + JSON.stringify(done));
+  check(expectedAssets("1.16.0").filter((a) => a.required).length === 13 && expectedAssets("9.9.9").filter((a) => a.required).length === 14, "the required set is 13 files up to v1.16.0 and 14 after it (the deck list is the one addition)");
+  check(isNewerVersion("1.16.1", "1.16.0") && isNewerVersion("1.17.0", "1.16.0") && isNewerVersion("2.0.0", "1.99.99") && isNewerVersion("1.16.10", "1.16.9") && isNewerVersion("1.100.0", "1.16.0"),
+    "version comparison is number by number (1.16.10 is newer than 1.16.9, 1.100.0 than 1.16.0)");
+  check(!isNewerVersion("1.16.0", "1.16.0") && !isNewerVersion("1.9.0", "1.16.0") && !isNewerVersion("1.15.99", "1.16.0"), "...and an older or equal version is never 'newer' (1.9.0 is not newer than 1.16.0 the way a text comparison would say)");
+  const page1160 = renderDownloads({ version: "1.16.0", tag: "v1.16.0", repo: "CosmicGrub/The-Guidon", present: PUBLISHED_1160 });
+  check(/GUIDON flashcard handheld/.test(page1160) && !/lanes|deck list/.test(page1160), "v1.16.0's release page still shows its handheld row, and never links a deck list it does not carry");
+  const page999 = renderDownloads({ version: "9.9.9", tag: "v9.9.9", repo: "o/r", present: FULL });
+  check(page999.includes(`releases/download/v9.9.9/${LANES("9.9.9")}`) && /the card files, including the deck list, go on its memory card/.test(page999), "a new release's page links the deck list in the handheld row and says where it goes");
+  const page999NoLanes = renderDownloads({ version: "9.9.9", tag: "v9.9.9", repo: "o/r", present: FULL.filter((n) => n !== LANES("9.9.9")) });
+  check(!/GUIDON flashcard handheld/.test(page999NoLanes), "...and with the deck list missing it offers no handheld row (a card set with no decks is not a working download)");
+  const proseDecks = page999.replace(/\]\([^)]*\)/g, "]").replace(/\[[^\]]*\]/g, "");
+  check(!/\b(artifact|asset|alias|workflow|CI|pipeline|tag(ged)?|SHA|binary|binaries|PWA|NSIS|sideload|regression|module|lane|lanes|NDJSON)\b/.test(proseDecks), "the page's own words about the deck list stay plain (a Soldier reads 'deck', never 'lane')");
   const generated = "## What's Changed\n* a change by @someone in #1\n";
   const once = mergeBody(generated, renderDownloads({ version: "9.9.9", tag: "v9.9.9", repo: "o/r", present: FULL }));
   const twice = mergeBody(once, renderDownloads({ version: "9.9.9", tag: "v9.9.9", repo: "o/r", present: FULL }));
@@ -238,6 +315,13 @@ try {
     check(runCli(FULL).status === 0, "release-manifest finalize: complete release exits 0");
     const mism = spawnSync(process.execPath, ["tools/release-manifest.mjs", "finalize", "--version", "9.9.9", "--tag", "v1.0.0", "--repo", "o/r", "--release-json", rel, "--notes-out", notes], { encoding: "utf-8" });
     check(mism.status === 1, "release-manifest finalize: a tag that does not match the version is refused (exit 1)");
+    // Re-finalising a release that is already out must keep working: v1.16.0 has no deck list.
+    writeFileSync(rel, JSON.stringify({ body: generated, assets: PUBLISHED_1160.map((name) => ({ name })) }));
+    const old = spawnSync(process.execPath, ["tools/release-manifest.mjs", "finalize", "--version", "1.16.0", "--tag", "v1.16.0", "--repo", "o/r", "--release-json", rel, "--notes-out", notes], { encoding: "utf-8" });
+    check(old.status === 0 && /COMPLETE/.test(old.stdout), "release-manifest finalize on v1.16.0 exactly as published still exits 0 (the deck list is not asked of a release that predates it)", "finalize v1.16.0: exit " + old.status + "\n" + old.stdout + old.stderr);
+    const namesOld = spawnSync(process.execPath, ["tools/release-manifest.mjs", "names", "--version", "1.16.0"], { encoding: "utf-8" }).stdout;
+    const namesNew = spawnSync(process.execPath, ["tools/release-manifest.mjs", "names", "--version", "1.16.1"], { encoding: "utf-8" }).stdout;
+    check(!/esp32-lanes/.test(namesOld) && /^GUIDON-1\.16\.1-esp32-lanes\.json$/m.test(namesNew), "release-manifest names: the deck list is listed for 1.16.1 and not for 1.16.0 (the workflow asks this)");
   }
 
   /* ===================================================================

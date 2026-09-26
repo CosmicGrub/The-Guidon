@@ -432,6 +432,16 @@ jobs:
           test -s .pio/build/flashcardos/partitions.bin
           test -s sdcard/cards.ndjson
           test -s sdcard/categories.json
+          # The handheld's deck list (MOS decks) is part of a release's file
+          # set only from the release after v1.16.0. Ask the same list the
+          # finalize job judges by (release-manifest.mjs) whether THIS version
+          # carries it: an older tag, built from its own older exporter, has
+          # no such file and must still build; a newer one must not go out
+          # without it.
+          names="$(node ../../guidon-app/tools/release-manifest.mjs names --version "$VERSION")"
+          if grep -qx "GUIDON-${VERSION}-esp32-lanes.json" <<< "$names"; then
+            test -s sdcard/lanes.json
+          fi
       - name: Package full-fork assets
         run: |
           set -euo pipefail
@@ -443,6 +453,10 @@ jobs:
           cp firmware/esp32-flashcard-os/.pio/build/flashcardos/partitions.bin "release-out/GUIDON-${VERSION}-esp32-partitions.bin"
           cp firmware/esp32-flashcard-os/sdcard/cards.ndjson "release-out/GUIDON-${VERSION}-esp32-cards.ndjson"
           cp firmware/esp32-flashcard-os/sdcard/categories.json "release-out/GUIDON-${VERSION}-esp32-categories.json"
+          # Only when the exporter of this tag wrote one (see the export step).
+          if [ -s firmware/esp32-flashcard-os/sdcard/lanes.json ]; then
+            cp firmware/esp32-flashcard-os/sdcard/lanes.json "release-out/GUIDON-${VERSION}-esp32-lanes.json"
+          fi
       - name: Publish web/standalone/ESP32 assets
         run: gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber release-out/*
 

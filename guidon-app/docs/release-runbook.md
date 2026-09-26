@@ -77,7 +77,19 @@ carries all of these (X.Y.Z = the version):
 - `GUIDON-X.Y.Z-android.apk`, `GUIDON-X.Y.Z-android.aab`
 - `GUIDON-X.Y.Z-windows-setup.exe`, `GUIDON-X.Y.Z-windows.msi`
 - `GUIDON-X.Y.Z-web-pwa.zip`, `GUIDON-X.Y.Z-standalone.html`
-- the five `GUIDON-X.Y.Z-esp32-*` files
+- the `GUIDON-X.Y.Z-esp32-*` files: five up to v1.16.0
+  (`-flashcardos.bin`, `-bootloader.bin`, `-partitions.bin`, `-cards.ndjson`,
+  `-categories.json`), and **six from the release after v1.16.0** - the sixth is
+  `GUIDON-X.Y.Z-esp32-lanes.json`, the handheld's deck list (the MOS decks; see
+  `firmware/esp32-flashcard-os/README.md`, "Decks"). The rule is version-gated in
+  `tools/release-manifest.mjs` (`ESP32_LANES_AFTER`): v1.16.0 and every earlier
+  release were published without it and stay complete without it, so
+  `lint-release-state.mjs --published` and a re-run of the finalize job still
+  pass for them; the next release cannot be marked Latest without it. The export
+  step in `release-assets.yml` asks the same list whether the version being built
+  carries it, so an older tag can still be rebuilt. (This is the pattern for the
+  next file added to the set: gate it by version, never require it of a release
+  that is already out.)
 
 The Mac `.dmg` and the iOS Simulator package are attached when the Apple lane
 produces them, and are listed on the release page only then. They never decide
