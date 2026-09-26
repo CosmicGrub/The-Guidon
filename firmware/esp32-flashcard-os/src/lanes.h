@@ -74,16 +74,28 @@ static inline bool laneAdd(LaneTable *t, const char *id, const char *label, uint
   return true;
 }
 
+// A deck list is USABLE only when it lists the default ("Standard") deck.
+// Without it there is nothing safe to start on or fall back to - the only
+// decks left are MOS ones, and an MOS deck must be opened by the Soldier
+// choosing it, never by a fallback. A deck list without a default deck (a
+// lanes.json that is cut down, mismatched or partly copied) is therefore
+// treated exactly like NO lanes.json: decks off, the device behaves as it did
+// before decks existed. lanesReadTable() (lanes_json.h) refuses such a file,
+// laneActive() below refuses such a table, and laneResolve() never picks a
+// deck from one.
+static inline bool laneUsable(const LaneTable *t) {
+  return t->n > 0 && laneFind(t, LANE_DEFAULT_ID) >= 0;
+}
+
 // Which deck to start on: the one saved in NVS if the card still has it,
-// otherwise the default deck, otherwise the first. -1 only when there are none.
-// A saved MOS deck that is no longer on the card falls back to the default
-// deck - never the other way round.
+// otherwise the default deck. -1 when the table is not usable (see
+// laneUsable). A saved MOS deck that is no longer on the card falls back to
+// the default deck - never to another MOS deck, and never "the first one in
+// the file", which may well be an MOS deck.
 static inline int laneResolve(const LaneTable *t, const char *savedId) {
-  if (t->n <= 0) return -1;
+  if (!laneUsable(t)) return -1;
   int i = laneFind(t, savedId);
-  if (i >= 0) return i;
-  i = laneFind(t, LANE_DEFAULT_ID);
-  return i >= 0 ? i : 0;
+  return i >= 0 ? i : laneFind(t, LANE_DEFAULT_ID);
 }
 
 // The next deck after `cur`, wrapping round (what a tap on the deck button does).
@@ -100,13 +112,14 @@ static inline uint16_t laneMaskAdd(const LaneTable *t, uint16_t mask, const char
   return i >= 0 ? (uint16_t)(mask | (1u << i)) : mask;
 }
 
-// Decks are switched on only when there is a lanes.json with at least one
-// deck AND categories.json actually says which deck each subject is in.
-// Anything else (no lanes.json, or lanes.json copied onto a card whose
-// categories.json is from before decks existed) behaves exactly as the device
-// always did: every subject, one list.
+// Decks are switched on only when there is a usable lanes.json (one that lists
+// the default deck - see laneUsable) AND categories.json actually says which
+// deck each subject is in. Anything else (no lanes.json, a lanes.json with no
+// default deck, or a lanes.json copied onto a card whose categories.json is
+// from before decks existed) behaves exactly as the device always did: every
+// subject, one list.
 static inline bool laneActive(const LaneTable *t, bool anyCategoryTagged) {
-  return t->n > 0 && anyCategoryTagged;
+  return laneUsable(t) && anyCategoryTagged;
 }
 
 // Fill out[] with the indexes of the subjects to list, in order, and return

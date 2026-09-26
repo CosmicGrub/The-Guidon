@@ -75,7 +75,22 @@ static void unitChecks() {
   laneTableClear(&noDefault);
   laneAdd(&noDefault, "92A", "92A", 1);
   laneAdd(&noDefault, "68W", "68W", 1);
-  check(laneResolve(&noDefault, "GONE") == 0, "with no default deck listed, falls back to the first");
+  // A table with no default ("Standard") deck is UNUSABLE: it is only MOS decks, and
+  // an MOS deck is opened by the Soldier choosing it, never by a fallback.
+  check(!laneUsable(&noDefault) && laneUsable(&t) && !laneUsable(&none), "a table is usable only when it lists the default deck (MOS decks alone are not)");
+  check(laneResolve(&noDefault, "GONE") == -1 && laneResolve(&noDefault, "") == -1 && laneResolve(&noDefault, NULL) == -1, "with no default deck listed, a saved deck that is gone resolves to NOTHING - never to the first (MOS) deck");
+  check(laneResolve(&noDefault, "92A") == -1, "...and even a saved deck the table has is not started on: the whole table is unusable");
+  check(!laneActive(&noDefault, true), "a deck list of MOS decks only never switches decks on, however well tagged categories.json is (same as no lanes.json)");
+  {
+    // default listed LAST, MOS decks first: the saved deck is gone -> the DEFAULT deck, not index 0
+    LaneTable mosFirst;
+    laneTableClear(&mosFirst);
+    laneAdd(&mosFirst, "68W", "68W", 1);
+    laneAdd(&mosFirst, "92A", "92A", 1);
+    laneAdd(&mosFirst, "default", "Standard deck", 1);
+    check(laneResolve(&mosFirst, "GONE") == 2 && laneResolve(&mosFirst, "") == 2 && laneResolve(&mosFirst, NULL) == 2, "default + MOS decks, saved deck no longer on the card: starts on the DEFAULT deck wherever it sits in the list, never on index 0");
+    check(laneResolve(&mosFirst, "92A") == 1, "...and a saved MOS deck that IS on the card is still honoured (the Soldier chose it)");
+  }
   check(laneNext(&t, 0) == 1 && laneNext(&t, t.n - 1) == 0, "the deck button cycles to the next deck and wraps round");
   int seen = 0, at = 0;
   for (int i = 0; i < t.n; i++) { seen |= 1 << at; at = laneNext(&t, at); }

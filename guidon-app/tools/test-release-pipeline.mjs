@@ -36,7 +36,7 @@
  * files as they were before this suite existed, sections 1-5 fail.
  */
 import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync, existsSync, chmodSync, readdirSync, copyFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { ALIASES, OPTIONAL_ALIASES, ESP32_LANES_AFTER, isNewerVersion, expectedAssets, verdict, renderDownloads, mergeBody, DOWNLOADS_START, DOWNLOADS_END } from "./release-manifest.mjs";
@@ -211,23 +211,38 @@ try {
   const packageStep = stepNamed(firmwareSteps, "Package full-fork assets");
   if (!exportStep || !exportStep.run || !packageStep || !packageStep.run || !BASH) bad("release-assets.yml: the ESP32 export/package steps were not found");
   else {
-    const gateAt = exportStep.run.indexOf('names="$(node');
-    check(gateAt !== -1 && /esp32-lanes\.json/.test(exportStep.run.slice(gateAt)) && /test -s sdcard\/lanes\.json/.test(exportStep.run.slice(gateAt)),
+    const gateAt = exportStep.run.indexOf("manifest=../../guidon-app/tools/release-manifest.mjs");
+    check(gateAt !== -1 && /names --version "\$VERSION"/.test(exportStep.run.slice(gateAt)) && /esp32-lanes\.json/.test(exportStep.run.slice(gateAt)) && /test -s sdcard\/lanes\.json/.test(exportStep.run.slice(gateAt)),
       "the ESP32 export step asks release-manifest.mjs whether this version carries the deck list, and insists on the file when it does", "the ESP32 export step does not gate the deck list on release-manifest.mjs");
-    const lay = (label) => {
+    // withTool: true = the tag has release-manifest.mjs (v1.12.1 and later); false = it has none (v1.10.0);
+    // a string = a stand-in tool with that source (one that is there but fails).
+    const lay = (label, withTool = true) => {
       const box = sandbox(label);
       mkdirSync(path.join(box.dir, "firmware/esp32-flashcard-os/sdcard"), { recursive: true });
       mkdirSync(path.join(box.dir, "guidon-app/tools"), { recursive: true });
       mkdirSync(path.join(box.dir, "release-out"), { recursive: true });
-      copyFileSync("tools/release-manifest.mjs", path.join(box.dir, "guidon-app/tools/release-manifest.mjs"));
+      if (withTool === true) copyFileSync("tools/release-manifest.mjs", path.join(box.dir, "guidon-app/tools/release-manifest.mjs"));
+      else if (typeof withTool === "string") writeFileSync(path.join(box.dir, "guidon-app/tools/release-manifest.mjs"), withTool);
       return box;
     };
     const gateScript = "set -euo pipefail\n" + exportStep.run.slice(gateAt);
-    const runGate = (box, version) => runStep(gateScript, { box, env: { VERSION: version }, cwd: path.join(box.dir, "firmware/esp32-flashcard-os") });
+    const runGate = (box, version) => runStep(gateScript, { box, env: { VERSION: version, TAG: "v" + version }, cwd: path.join(box.dir, "firmware/esp32-flashcard-os") });
     let box = lay("lanes-gate-old");
     check(runGate(box, "1.16.0").status === 0, "an older release (v1.16.0, built from its own older exporter, so no lanes.json) still builds - the deck list is not asked of it");
+    // A tag older than v1.12.1 has no release-manifest.mjs at all (v1.10.0 does not): re-running the release
+    // for one must not die asking a tool that is not there. It predates the deck list, so it gets the
+    // historical five-file ESP32 list and builds exactly as it always did.
+    box = lay("lanes-gate-no-tool", false);
+    let r = runGate(box, "1.10.0");
+    check(r.status === 0 && /historical five-file ESP32 list/.test(r.stdout + r.stderr), "an OLD tag with no release-manifest.mjs (v1.10.0) still builds: the step falls back to the historical five-file list and asks nothing of the missing tool", "the export step died for a tag with no release-manifest.mjs: " + r.stdout + r.stderr);
+    box = lay("lanes-gate-no-tool-newer", false);
+    r = runGate(box, "9.9.9");
+    check(r.status === 0, "...and it never demands a deck list from a tag that cannot have one (no tool = predates it), even under a higher version number", "a tag with no tool was refused for its deck list: " + r.stdout + r.stderr);
+    box = lay("lanes-gate-tool-fails", 'process.stderr.write("boom\\n"); process.exit(2);\n');
+    r = runGate(box, "9.9.9");
+    check(r.status !== 0, "a release-manifest.mjs that IS there but fails is not mistaken for an old tag: the step stops (only a missing tool takes the fallback)", "a failing release-manifest.mjs was swallowed by the fallback: " + r.stdout + r.stderr);
     box = lay("lanes-gate-new-missing");
-    let r = runGate(box, "9.9.9");
+    r = runGate(box, "9.9.9");
     check(r.status !== 0, "the next release with no lanes.json written by the exporter FAILS the job, so it cannot go out without its decks", "a new release with no deck list did not stop the export step: " + r.stdout + r.stderr);
     writeFileSync(path.join(box.dir, "firmware/esp32-flashcard-os/sdcard/lanes.json"), "");
     check(runGate(box, "9.9.9").status !== 0, "...and an EMPTY lanes.json fails it too (test -s, not test -f)");
@@ -466,12 +481,13 @@ try {
 
   const green = jobBlock(ci, "ci-green");
   const greenStep = stepsOf(green)[0];
-  check(!!green && /^    if: always\(\)$/m.test(green) && /needs: \[lint-build-verify, cargo-check, test\]/.test(green), "ci.yml has one always-reporting 'CI green' verdict over the gating jobs");
+  check(!!green && /^    if: always\(\)$/m.test(green) && /needs: \[lint-build-verify, cargo-check, test, firmware\]/.test(green), "ci.yml has one always-reporting 'CI green' verdict over the gating jobs");
   if (greenStep && greenStep.run && BASH) {
-    const env = (l, c, t) => ({ R_LINT: l, R_CARGO: c, R_TEST: t });
+    const env = (l, c, t, f = "success") => ({ R_LINT: l, R_CARGO: c, R_TEST: t, R_FIRMWARE: f });
     check(runStep(greenStep.run, { box: sandbox("green-ok"), env: env("success", "success", "success") }).status === 0, "'CI green' passes when every gating job succeeded");
     check(runStep(greenStep.run, { box: sandbox("green-skip"), env: env("failure", "skipped", "skipped") }).status !== 0, "'CI green' FAILS when the test matrix was skipped (a skipped check used to look like nothing was wrong)");
     check(runStep(greenStep.run, { box: sandbox("green-cancel"), env: env("success", "success", "cancelled") }).status !== 0, "'CI green' fails on a cancelled test matrix");
+    check(runStep(greenStep.run, { box: sandbox("green-firmware"), env: env("success", "success", "success", "failure") }).status !== 0, "'CI green' FAILS when only the firmware compile failed (a red firmware run can no longer sit beside a green verdict)");
   } else bad("ci.yml: no runnable 'CI green' step");
 
   /* ===================================================================
@@ -758,6 +774,70 @@ try {
       r = attempt("nomac", withoutMac);
       check(r.status === 0 && !/::warning/.test(r.stdout) && !/--latest/.test(r.ghCalls), "no Mac build at all: no warning either (the Mac lane is optional), and the page is still refreshed");
     }
+  }
+
+  /* ===================================================================
+     9. The firmware is compiled on every run (firmware.yml, called by ci.yml and part of `CI green`),
+        and the lane-parser host test can no longer be silently skipped on CI
+     =================================================================== */
+  console.log("\n9. Firmware check: compiled on every run and gating, host test cannot be skipped on CI");
+  {
+    const fw = wf("firmware.yml");
+    const between = (text, from, to) => { const a = text.indexOf(from); const b = text.indexOf(to, a + from.length); return a === -1 ? "" : text.slice(a, b === -1 ? undefined : b); };
+    const fwOn = between(fw, "\non:\n", "\npermissions:");
+    check(/^  workflow_call:/m.test(fwOn) && !/^  (pull_request|push):/m.test(fwOn) && !/paths:/.test(fwOn),
+      "firmware.yml is a reusable workflow with NO path filter of its own (it only ever runs through ci.yml, so it can never be skipped for the one commit that matters)", "firmware.yml is not a plain workflow_call");
+    const fwJobCall = jobBlock(ci, "firmware") || "";
+    check(/uses: \.\/\.github\/workflows\/firmware\.yml/.test(fwJobCall) && !/^\s+(if|paths):/m.test(fwJobCall),
+      "ci.yml calls it as its `firmware` job on every run - no `if:` and no path filter - including the version-only release-prep commit", "ci.yml has no unconditional `firmware` job calling firmware.yml");
+    const greenBlock = jobBlock(ci, "ci-green") || "";
+    check(/needs: \[[^\]]*\bfirmware\b[^\]]*\]/.test(greenBlock) && /R_FIRMWARE: \$\{\{ needs\.firmware\.result \}\}/.test(greenBlock) && /firmware compile=\$R_FIRMWARE/.test(greenBlock),
+      "`CI green` waits for the firmware job and fails unless it SUCCEEDED, so a firmware compile error blocks a merge like any other red check", "`CI green` does not gate on the firmware job");
+    check(/^permissions:\n  contents: read$/m.test(fw) && !/contents: write|id-token|actions: write|packages: write/.test(fw), "read-only token: nothing here can publish or write");
+    check(!/secrets\./.test(fw) && !/\$\{\{\s*secrets/.test(fw), "no secret is read (the repository has none)");
+    const fwUses = [...fw.matchAll(/^\s*(?:-\s*)?uses:\s*(\S+)/gm)].map((m) => m[1]);
+    check(fwUses.length >= 4 && fwUses.every((u) => /@[0-9a-f]{40}$/.test(u)), `every one of its ${fwUses.length} \`uses:\` steps (checkout, setup-node, setup-python, cache) is pinned to a full commit SHA`, "an action in firmware.yml is not SHA-pinned: " + fwUses.join(", "));
+    check(fwUses.some((u) => /^actions\/setup-python@/.test(u)) && /cache: pip/.test(fw) && fwUses.some((u) => /^actions\/cache@/.test(u)) && /path: ~\/\.platformio/.test(fw), "Python is set up by a pinned action with the pip cache, and PlatformIO's downloads (~/.platformio) are cached, so it is not slow");
+    const reqs = existsSync("../firmware/esp32-flashcard-os/requirements-ci.txt") ? readFileSync("../firmware/esp32-flashcard-os/requirements-ci.txt", "utf-8") : "";
+    check(/^platformio==\d+\.\d+\.\d+$/m.test(reqs) && /requirements-ci\.txt/.test(fw), "PlatformIO is installed from a requirements file that pins one exact version (a compile failure then means the firmware changed, not the tool)");
+    const fwSteps = stepsOf(jobBlock(fw, "compile"));
+    const compile = fwSteps.findIndex((s) => /platformio run -e flashcardos/.test(s.run || ""));
+    const hostTest = fwSteps.findIndex((s) => /node guidon-app\/tools\/test-esp32-lanes\.mjs/.test(s.run || ""));
+    check(compile !== -1 && /test -s \.pio\/build\/flashcardos\/firmware\.bin/.test(fwSteps[compile].run) && !/continue-on-error/.test(jobBlock(fw, "compile") || ""), "the job compiles env:flashcardos (the same `platformio run -e flashcardos` the release runs), insists on a real firmware.bin, and is never continue-on-error", "firmware.yml does not compile env:flashcardos");
+    check(hostTest > compile && compile !== -1, "the lane-parser host test runs AFTER the compile - the compile is what fetches the real ArduinoJson it builds against", "firmware.yml does not run test-esp32-lanes after the compile");
+    check(!/^\s*CI:/m.test(fw), "nothing overrides the CI environment variable (Actions sets it, and it is what turns a missing ArduinoJson from a SKIP into a failure)");
+    const lintPins = (dir) => spawnSync(process.execPath, ["tools/lint-workflow-pins.mjs", "--dir", dir], { encoding: "utf-8" });
+    const realPins = lintPins("../.github/workflows");
+    check(realPins.status === 0 && readdirSync(WF_DIR).includes("firmware.yml"), "lint-workflow-pins passes on the real workflows, firmware.yml included", "lint-workflow-pins failed: " + realPins.stdout);
+    const pinsCopy = path.join(scratch, "wf-copy-pins"); mkdirSync(pinsCopy, { recursive: true });
+    for (const f of readdirSync(WF_DIR)) writeFileSync(path.join(pinsCopy, f), f === "firmware.yml" ? wf(f).replace(/(actions\/setup-python)@[0-9a-f]{40}/, "$1@v7") : wf(f));
+    const plantedPins = lintPins(pinsCopy);
+    check(plantedPins.status === 1 && /firmware\.yml/.test(plantedPins.stdout) && /setup-python@v7/.test(plantedPins.stdout), "verify-the-verifier: an unpinned setup-python in firmware.yml fails lint-workflow-pins, naming the file", "planted @v7 was not caught: " + plantedPins.stdout);
+    const lintMatrixNow = spawnSync(process.execPath, ["tools/lint-ci-matrix.mjs"], { encoding: "utf-8" });
+    check(lintMatrixNow.status === 0, "lint-ci-matrix still passes with the new workflow and the regenerated chunk block", "lint-ci-matrix failed: " + lintMatrixNow.stdout);
+
+    // ci.yml: the chunk that runs the ESP32 suite gets the pinned ArduinoJson (and only that chunk)
+    const testJob = jobBlock(ci, "test") || "";
+    const fetchStep = stepNamed(stepsOf(testJob), "Fetch ArduinoJson (pinned) for the ESP32 lane-parser host test");
+    const fetchBlock = between(testJob, "      - name: Fetch ArduinoJson", "      - name: Run test chunk");
+    check(!!fetchStep && /if: \$\{\{ contains\(matrix\.chunk\.tests, 'test:esp32-lanes'\) \}\}/.test(fetchBlock) && /uses: actions\/checkout@[0-9a-f]{40}/.test(fetchBlock) && /repository: bblanchon\/ArduinoJson/.test(fetchBlock) && /ref: [0-9a-f]{40}\b/.test(fetchBlock) && /path: \.arduinojson/.test(fetchBlock),
+      "ci.yml fetches ArduinoJson at a pinned commit SHA, only in the chunk that runs test:esp32-lanes, so that suite's JSON-reading test runs on CI instead of skipping", "ci.yml has no pinned ArduinoJson fetch for the esp32-lanes chunk");
+    check(/ARDUINOJSON_DIR: \$\{\{ github\.workspace \}\}\/\.arduinojson\/src/.test(between(testJob, "      - name: Run test chunk", "\n\n") || testJob), "...and the chunk's run step points ARDUINOJSON_DIR at that checkout's src folder", "the run step does not set ARDUINOJSON_DIR");
+    const chunkTests = [...testJob.matchAll(/^\s+tests: "([^"]+)"/gm)].map((m) => m[1]);
+    check(chunkTests.filter((t) => /(^| )test:esp32-lanes( |$)/.test(t)).length === 1, "exactly one chunk runs test:esp32-lanes, so the fetch's condition matches a real chunk", "chunks running test:esp32-lanes: " + chunkTests.filter((t) => /test:esp32-lanes/.test(t)).length);
+    check(/--also desktop\.yml,ios\.yml\b/.test(cut) && !/firmware\.yml/.test(cut), "release-cut.yml needs no separate firmware gate: the firmware compile is a job of ci.yml, so its green-CI gate on the exact release commit already includes it", "release-cut.yml still gates on a standalone firmware.yml run");
+
+    // The suite itself: with the CI variable set, a missing ArduinoJson FAILS; on a developer machine it only SKIPs.
+    const runLanes = (ci) => new Promise((resolve) => {
+      const env = { ...process.env, ARDUINOJSON_DIR: "", GUIDON_ESP32_LIBDEPS: path.join(scratch, "no-arduinojson-here") };
+      if (ci) env.CI = "true"; else delete env.CI;
+      const child = spawn(process.execPath, ["tools/test-esp32-lanes.mjs"], { env });
+      let out = ""; child.stdout.on("data", (d) => { out += d; }); child.stderr.on("data", (d) => { out += d; });
+      child.on("close", (status) => resolve({ status, out }));
+    });
+    const [onCi, onDev] = await Promise.all([runLanes(true), runLanes(false)]);
+    check(onCi.status === 1 && /FAIL {2}on CI, so this must not be skipped: ArduinoJson is not on this machine/.test(onCi.out) && !/SKIP {2}ArduinoJson/.test(onCi.out), "test-esp32-lanes with CI set and no ArduinoJson FAILS loudly (it used to print SKIP and pass)", "with CI set and no ArduinoJson: exit " + onCi.status + "\n" + onCi.out.split("\n").filter((l) => /ArduinoJson|FAIL|SKIP/.test(l)).join("\n"));
+    check(onDev.status === 0 && /SKIP {2}ArduinoJson is not on this machine/.test(onDev.out) && !/FAIL {2}on CI/.test(onDev.out), "...while on a developer machine (no CI variable) the same gap is still only a SKIP, so a plain `node tools/test-esp32-lanes.mjs` keeps working without the library", "with no CI variable and no ArduinoJson: exit " + onDev.status + "\n" + onDev.out.split("\n").filter((l) => /ArduinoJson|FAIL|SKIP/.test(l)).join("\n"));
   }
 } catch (e) {
   bad("suite crashed: " + (e && e.stack ? e.stack : e));

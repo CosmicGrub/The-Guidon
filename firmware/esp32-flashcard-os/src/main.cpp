@@ -255,8 +255,8 @@ static int wordWrap(const char *text, int maxWidthPx, char outLines[][80], int m
 // ---------------------------------------------------------------------------
 // Reads /lanes.json (optional) into laneTable - the parsing itself is
 // lanesReadTable() in lanes_json.h. Returns false (laneTable empty) when there
-// is no such file or it cannot be read: the device then behaves exactly as it
-// did before decks existed.
+// is no such file, it cannot be read, or it lists no default deck: the device
+// then behaves exactly as it did before decks existed.
 static bool loadLanes() {
   laneTableClear(&laneTable);
   File f = SD.open("/lanes.json", FILE_READ);
@@ -773,7 +773,15 @@ void setup() {
     char saved[LANE_ID_LEN] = "";
     prefs.getString("lane", saved, sizeof(saved));
     activeLane = laneResolve(&laneTable, saved);
-    Serial.printf("Decks: %d on the card, showing \"%s\".\n", laneTable.n, laneTable.lane[activeLane].id);
+    if (activeLane < 0) {
+      // Cannot happen (laneActive() needs the default deck, and so does
+      // laneResolve()), but if it ever did: decks off, never "the first deck".
+      lanesActive = false;
+      activeLane = 0;
+      Serial.println("Decks: no default deck on the card - showing every subject.");
+    } else {
+      Serial.printf("Decks: %d on the card, showing \"%s\".\n", laneTable.n, laneTable.lane[activeLane].id);
+    }
   } else {
     Serial.println("Decks: none (no usable lanes.json) - showing every subject.");
   }

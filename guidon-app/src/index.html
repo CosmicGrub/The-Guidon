@@ -7159,7 +7159,13 @@ window.G = window.G || {};
       if (!e || typeof e !== "object") continue;
       const pub = e.pub == null ? "" : String(e.pub);
       const edition = e.edition ? " (" + e.edition + ")" : "";
-      const para = e.para ? (typeof e.paraSep === "string" ? e.paraSep : ", ") + e.para : "";
+      // A bare paragraph number ("3-3", "1-34a" - how Wave 1's doctrine, PRT and
+      // scenario citations write `para`) has no locator word of its own, so it
+      // is worded here: "ATP 7-22.02, para 3-3", never "ATP 7-22.02, 3-3".
+      // Waves 2 and 3 store the worded locator ("para 1-49", "Ch 6"), which
+      // starts with a letter and is left alone, and a record that sets its own
+      // paraSep is left alone too, so every existing record reads as before.
+      const para = e.para ? (typeof e.paraSep === "string" ? e.paraSep + e.para : ", " + (/^\d/.test(String(e.para)) ? "para " : "") + e.para) : "";
       out += e.editionFirst === true ? pub + edition + para : pub + para + edition;
       if (i < source.length - 1) out += (typeof e.sepAfter === "string" ? e.sepAfter : "; ");
     }
@@ -8896,8 +8902,43 @@ window.G = window.G || {};
     return G.moiImport.activeFocusSet(families, optedIn);
   }
 
+  // ---- authored scenarios saved in an OLDER shape ---------------------------
+  // The Scenario Builder's blank template used to give a scenario one doctrine
+  // reference written {ref, para, asOf}; today's shape is {pub, edition, para,
+  // quoteKind} (ROADMAP item F). A scenario a Soldier authored and saved back
+  // then is still stored the old way in IndexedDB - and every reader of
+  // `doctrine` (the After-Action Review line, the printed AAR, the builder's
+  // Publication box) looks at `pub`, so it printed "undefined" and showed a
+  // blank box. This puts a legacy reference into today's shape IN MEMORY, when
+  // the scenarios are read: the stored row is never rewritten by a read (it
+  // is only saved again if the Soldier saves it themselves).
+  //   ref  -> pub          (the publication)
+  //   para -> para         (kept as typed)
+  //   asOf -> edition      ONLY when it plainly is a date ("2019-07", "2019",
+  //                        "Jul 2019", "15 Jul 2019"); any other wording is dropped
+  //   quoteKind            "paraphrase" (a Soldier's own reference never claims to be a quotation)
+  // Anything already in today's shape (a string `pub`), and the plain topic
+  // tags some scenarios keep in `doctrine` (strings), come back untouched.
+  const LEGACY_DATE_RX = /^(?:\d{4}(?:-\d{2}(?:-\d{2})?)?|(?:\d{1,2} )?(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]* \d{4})$/;
+  function readableDoctrineRef(d) {
+    if (!d || typeof d !== "object" || Array.isArray(d) || typeof d.pub === "string") return d;
+    const asOf = typeof d.asOf === "string" ? d.asOf.trim() : "";
+    const edition = typeof d.edition === "string" && d.edition ? d.edition : (LEGACY_DATE_RX.test(asOf) ? asOf : "");
+    const kind = d.quoteKind === "verbatim" || d.quoteKind === "synthesis" ? d.quoteKind : "paraphrase";
+    return { pub: d.ref != null ? String(d.ref) : (d.pub != null ? String(d.pub) : ""), edition: edition, para: d.para == null ? "" : String(d.para), quoteKind: kind };
+  }
+  function readableScenario(sc) {
+    if (!sc || typeof sc !== "object" || !Array.isArray(sc.doctrine)) return sc;
+    const fixed = sc.doctrine.map(readableDoctrineRef);
+    if (fixed.every((d, i) => d === sc.doctrine[i])) return sc;
+    return Object.assign({}, sc, { doctrine: fixed });
+  }
+  function readableScenarios(rows) { return (rows || []).map((sc) => readableScenario(sc)); }
+
   const store = {
     DIMS, COMPS, ATTEMPTS_CAP,
+    // exposed so the tests can hand it a legacy row directly (see readableScenario above)
+    readableScenario: readableScenario,
 
     async init() {
       try { await db.ready(); } catch (e) { db.installMemoryFallback(); }
@@ -8929,7 +8970,7 @@ window.G = window.G || {};
       }
       await migrateLegacyLocalStorage();
       await loadContent();
-      state.userScenarios = (await db.allUserScenarios()) || [];
+      state.userScenarios = readableScenarios(await db.allUserScenarios());
       // MOI Scope (ROADMAP 3g phase 2): warms G.moiImport's own family
       // cache here, mirroring loadContent()'s role just above for
       // state.seed - boardQuestions()/doctrine() read
@@ -9387,7 +9428,7 @@ window.G = window.G || {};
     // ANOTHER page saved or deleted: rescan the store, bump the rev that
     // keys the tier/list caches, tell the Train/Author screens.
     async reloadUserScenarios() {
-      state.userScenarios = (await db.allUserScenarios()) || [];
+      state.userScenarios = readableScenarios(await db.allUserScenarios());
       state._scenarioRev++;
       util.emit("scenarios:change");
     },

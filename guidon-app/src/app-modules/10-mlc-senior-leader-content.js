@@ -241,12 +241,16 @@
   cards.forEach(function (x) {
     var id = x[0], category = x[1], q = x[2], a = x[3], source = x[4], concept = x[5], tier = x[6], extra = x[7] || {};
     if (qIds.has(id)) return;
-    // "verbatim" keeps these cards' backs exactly as they have always read
-    // (this pack never set verbatim:false); whether the answers are quotations
-    // of the cited publications is a content question this structural change
-    // does not decide.
+    // "verbatim" keeps the cards whose citation is a real, checked reference
+    // reading exactly as they have always read (this pack never set
+    // verbatim:false). A card marked sourceStatus:"pending-source" (the two
+    // built on secondary public reporting) is the opposite case, so it is
+    // cited "paraphrase" and its card back says "Study-guide answer", never
+    // "By the Book". A pending source must never claim to be a quotation
+    // (tools/lint-citation-schema.mjs fails it).
     var rec = {
-      id: id, category: category, q: q, a: a, boardAnswer: a, source: ctx.cite(source, "verbatim"),
+      id: id, category: category, q: q, a: a, boardAnswer: a,
+      source: ctx.cite(source, extra.sourceStatus === "pending-source" ? "paraphrase" : "verbatim"),
       concept: concept, keyPoints: [a], difficulty: "expert", tier: tier,
       curriculum: CURRICULUM
     };

@@ -97,6 +97,12 @@ does the same with **decks**:
   every subject in one list, and the Settings screen unchanged. Older
   firmware (flashed before decks) reading the new card files ignores the
   extra information and shows everything as it always did.
+- A `lanes.json` that does not list the Standard (`default`) deck — one that
+  was cut down or only partly copied to the card, so it holds MOS decks alone
+  — is treated exactly like no `lanes.json`: decks stay off. The device never
+  starts on, or falls back to, "the first deck in the file", because that could
+  be an MOS deck the Soldier never chose. (The exporter refuses to write such a
+  file in the first place.)
 
 How the exporter works it out, and how it is checked, is in
 [`tools/lanes.mjs`](tools/lanes.mjs): the MOS decks are read from the same
@@ -112,6 +118,11 @@ KB of RAM (a table of up to 16 decks and a 2-byte deck mask per subject).
 `lanes.json` is read through an ArduinoJson filter that keeps only each deck's
 id, label and count, so the subject lists inside it are dropped as they
 stream past. Cards are never held, as before.
+
+CI: `.github/workflows/firmware.yml` (called by `ci.yml` on every run, and part
+of `CI green`) compiles `env:flashcardos` with a pinned PlatformIO (release
+builds compile it too), and then runs `guidon-app/tools/test-esp32-lanes.mjs` —
+including the ArduinoJson parser test — where a missing library is a failure, not a skip.
 
 Limits (held by `guidon-app/tools/test-esp32-lanes.mjs` against both the
 exporter and these sources): at most 16 decks, deck ids up to 11 characters,

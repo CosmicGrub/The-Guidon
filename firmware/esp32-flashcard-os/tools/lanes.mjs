@@ -159,7 +159,19 @@ export function buildExport(cards, registry) {
   return { ndjson, categories, lanes, problems };
 }
 
-export const lanesJson = (lanes) => JSON.stringify({ schema: LANES_SCHEMA, lanes });
+/** The text of lanes.json. FAIL CLOSED, at the very last step: a list with no
+ *  default lane is never turned into a file. The device treats a lanes.json
+ *  with no default deck as unusable (src/lanes.h, laneUsable) - an MOS deck
+ *  must only ever be opened by the Soldier choosing it, and a file of MOS decks
+ *  alone would leave the device nothing safe to start on - so writing one would
+ *  only ever be a mistake. laneMismatches() names the problem first; this is
+ *  the backstop should anything ever call the serializer without it. */
+export const lanesJson = (lanes) => {
+  if (!Array.isArray(lanes) || !lanes.some((l) => l && l.id === DEFAULT_LANE_ID)) {
+    throw new Error(`lanes: refusing to write a lanes.json with no "${DEFAULT_LANE_ID}" lane - the handheld cannot start on, or fall back to, a deck it was not told is the Standard one`);
+  }
+  return JSON.stringify({ schema: LANES_SCHEMA, lanes });
+};
 
 /** The check extract-cards.mjs has always made, against the content manifest:
  *  count the export back from the very text about to be written. Returns the
@@ -236,7 +248,8 @@ export function laneMismatches({ ndjson, categories, lanes }, cards, registry, m
   }
 
   // 4. lanes.json describes those same subjects.
-  if (!lanes.length || lanes[0].id !== DEFAULT_LANE_ID) problems.push("lanes.json must list the default lane first");
+  if (!lanes.some((l) => l && l.id === DEFAULT_LANE_ID)) problems.push(`lanes.json has no "${DEFAULT_LANE_ID}" lane - the handheld treats a lanes.json with no default deck as unusable (there would be nothing safe to start on or fall back to but an MOS deck), so nothing is written`);
+  else if (lanes[0].id !== DEFAULT_LANE_ID) problems.push("lanes.json must list the default lane first");
   if (new Set(lanes.map((l) => l.id)).size !== lanes.length) problems.push("lanes.json lists the same lane twice");
   for (const l of lanes) {
     const mine = categories.filter((c) => c.lanes.includes(l.id));

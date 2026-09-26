@@ -179,13 +179,18 @@
   bank.board = bank.board || { questions: [] };
   bank.board.questions = Array.isArray(bank.board.questions) ? bank.board.questions : [];
   var qIds = new Set(bank.board.questions.map(function (q) { return q.id; }));
-  // "verbatim" keeps these cards' backs exactly as they have always read (this
-  // pack never set verbatim:false); whether the answers are quotations of the
-  // cited publications is a content question this structural change does not decide.
+  // "verbatim" keeps the cards whose citation is a real, checked reference
+  // reading exactly as they have always read (this pack never set
+  // verbatim:false). A card marked sourceStatus:"pending-source" is the
+  // opposite case - its own citation text says the wording is paraphrased or
+  // not re-verified - so it is cited "paraphrase" and its card back says
+  // "Study-guide answer", never "By the Book". A pending source must never
+  // claim to be a quotation (tools/lint-citation-schema.mjs fails it).
   cards.forEach(function (c) {
     if (qIds.has(c.id)) return;
     var rec = {
-      id: c.id, category: c.category, q: c.q, a: c.a, boardAnswer: c.a, source: ctx.cite(c.source, "verbatim"),
+      id: c.id, category: c.category, q: c.q, a: c.a, boardAnswer: c.a,
+      source: ctx.cite(c.source, c.sourceStatus === "pending-source" ? "paraphrase" : "verbatim"),
       concept: c.concept, keyPoints: [c.a], difficulty: c.difficulty,
       mos: ["68W"], curriculum: CURRICULUM,
     };
