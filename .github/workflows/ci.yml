@@ -703,8 +703,10 @@ jobs:
             tests: "test:search-screens test:modal-inert-close-race test:aft-event-scoring test:search-content-coverage"
           - name: "60-doctrineabcpbrsaccuracy-legalpackageguard-legalpackageapp-legalpackagerooms"
             tests: "test:doctrine-abcp-brs-accuracy test:legal-package-guard test:legal-package-app test:legal-package-rooms"
-          - name: "61-legalpackagecontent-legalpackageverifier"
-            tests: "test:legal-package-content test:legal-package-verifier"
+          - name: "61-legalpackagecontent-legalpackageverifier-enginecollective-roomhandoffcore"
+            tests: "test:legal-package-content test:legal-package-verifier test:engine-collective test:room-handoff-core"
+          - name: "62-roomhandoff"
+            tests: "test:room-handoff"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
