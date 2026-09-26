@@ -493,6 +493,9 @@ const findsAt = (mutate, whereRe, looksRe) => {
   cut("a Social Security number across an answer and the next key point", (p) => { p.cards[0].a = "The number is 123-45"; p.cards[0].keyPoints = ["-6789"]; }, /Social Security number/);
   cut("a labelled Social Security number cut after its label", (p) => { p.cards[0].q = "Give the SSN "; p.cards[0].a = "123456789"; }, /Social Security number/);
   cut("a phone number across a question and an answer", (p) => { p.cards[0].q = "Call 555-1"; p.cards[0].a = "23-4567 after hours"; }, /phone number/);
+  // The saved row is trimmed (that is what toDeck keeps), so the file check must read the trimmed words too - or a deck with stray spaces at the
+  // joins would pass the import and then fail its own row check at the next start.
+  cut("a Social Security number cut in two with stray spaces at the joins (the row keeps it trimmed)", (p) => { p.cards[0].q = "What is the number ending 123-45   "; p.cards[0].a = "The number"; p.cards[0].keyPoints = ["  -6789 is it  "]; }, /Social Security number/);
   cut("a DoD ID number cut after its label", (p) => { p.cards[0].a = "The DoD ID "; p.cards[0].keyPoints = ["1234567890 is listed"]; }, /DoD ID number/);
   clean("digits that end one field and start the next but make nothing", (p) => { p.cards[0].q = "Formation is at 0630 in room 12"; p.cards[0].a = "3 minutes early"; });
   clean("a year that ends one field and a number that starts the next", (p) => { p.cards[0].q = "Which squadron was activated in 2026"; p.cards[0].a = "1st Squadron, 5th Cavalry"; });
