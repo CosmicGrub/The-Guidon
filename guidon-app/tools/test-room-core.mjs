@@ -66,7 +66,11 @@ const bytes = (o) => Buffer.byteLength(JSON.stringify(o), "utf8");
 
 /* ------------------------------------------------------------ (a) schema */
 {
-  const expectTypes = ["hello", "admit", "welcome", "snapshot", "intent", "reject", "kick", "ping", "pong", "bye", "end"];
+  /* "offer" (the hand-off model: room-schema.js THE HAND-OFF MODEL) is the one
+     type added after the lock. It is additive - PROTOCOL_VERSION is still 1,
+     and an older build ignores the unknown type - and it is pinned here like
+     every other. tools/test-room-handoff-core.mjs holds its own rules. */
+  const expectTypes = ["hello", "admit", "welcome", "snapshot", "intent", "reject", "kick", "ping", "pong", "bye", "end", "offer"];
   const t = schema.TYPES.slice().sort().join(",") === expectTypes.slice().sort().join(",");
   t ? ok("(a) TYPES is exactly the locked allowlist: " + expectTypes.join(" ")) : bad("(a) TYPES = " + JSON.stringify(schema.TYPES));
   schema.TYPES.indexOf("grade") === -1 && schema.INTENT_KINDS.indexOf("grade") === -1 ? ok("(a) no grade type and no grade intent kind exist") : bad("(a) a grade type/kind exists");
@@ -91,6 +95,7 @@ const bytes = (o) => Buffer.byteLength(JSON.stringify(o), "utf8");
     pong: ["n"],
     bye: [],
     end: ["reason"],
+    offer: ["offer"],
   };
   const EXPECT_SNAPSHOT_KEYS = ["phase", "mode", "seq", "room", "hostSeat", "cardId", "cardText", "turnSeat", "lock", "deadline", "round", "seats", "bankSig", "deck"];
   const EXPECT_SEAT_KEYS = ["seatNo", "name", "fp", "score", "online", "ready", "done"];
@@ -149,8 +154,9 @@ const bytes = (o) => Buffer.byteLength(JSON.stringify(o), "utf8");
     reject: { reason: "nope" },
     kick: { seatNo: 2 },
     ping: { n: 1 }, pong: { n: 1 }, bye: {}, end: { reason: "done" },
+    offer: { offer: { oid: "ABCD2345", kind: "team-session", ver: 1, data: { steps: ["aar-huddle"] } } },
   };
-  const mk = (t, body, extra) => Object.assign({ v: V, t, room: ROOM, seq: 0, from: "ABCDEFGH", body }, extra || {});
+  const mk =(t, body, extra) => Object.assign({ v: V, t, room: ROOM, seq: 0, from: "ABCDEFGH", body }, extra || {});
   let allOk = true;
   for (const t of schema.TYPES) { const r = schema.validate(mk(t, bodies[t])); if (!r.ok) { allOk = false; bad(`(a) minimal valid ${t} frame rejected: ${r.reason}`); } }
   if (allOk) ok("(a) a minimal valid frame of every allowed type validates");

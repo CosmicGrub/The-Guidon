@@ -18,9 +18,18 @@
      { v: 1, t: "<type>", room: "<ALPHA-BRAVO-42>", seq: <int>, from: "<8 base32>", body: { ... } }
 
    TYPES (the allowlist, Q-locked): hello, admit, welcome, snapshot, intent,
-   reject, kick, ping, pong, bye, end. Unknown t -> ignored by every
+   reject, kick, ping, pong, bye, end, offer. Unknown t -> ignored by every
    receiver. A v mismatch on a hello -> reject "update GUIDON on one
    device" (VERSION_MISMATCH_TEXT below is the sentence every fork shows).
+
+   "offer" is the one type added after the lock (hand-off model, Sep 2026):
+   the host puts ONE hand-off payload in front of every seated device - a PT
+   plan or a Team Training session. It is ADDITIVE, so PROTOCOL_VERSION
+   stays 1: a build that predates it meets an unknown t, ignores and counts
+   the frame exactly as the rule above says, and every other frame it
+   exchanges with a newer build is unchanged. Only a host sends one; a peer
+   that sends one is ignored. See "THE HAND-OFF MODEL" below.
+
    INTENT_KINDS: ready, buzz (reserved, not built in P3), score, answer,
    advance-request. There is NO grade intent and no `grade` key is ever
    accepted anywhere in a frame - validate() walks the whole frame for one
@@ -61,7 +70,7 @@
   root.G = root.G || {};
 
   var PROTOCOL_VERSION = 1;
-  var TYPES = ["hello", "admit", "welcome", "snapshot", "intent", "reject", "kick", "ping", "pong", "bye", "end"];
+  var TYPES = ["hello", "admit", "welcome", "snapshot", "intent", "reject", "kick", "ping", "pong", "bye", "end", "offer"];
   var INTENT_KINDS = ["ready", "buzz", "score", "answer", "advance-request"];
   var ENVELOPE_KEYS = ["v", "t", "room", "seq", "from", "body"];
   /* Closed key sets per body. hello.resume is the seat-hold token handed
@@ -78,10 +87,11 @@
     pong: ["n"],
     bye: [],
     end: ["reason"],
+    offer: ["offer"],
   };
   var REQUIRED_BODY_KEYS = {
     hello: ["name", "bankSig"], admit: ["pending"], welcome: ["seatNo", "token", "snapshot"], snapshot: ["snapshot"],
-    intent: ["kind"], reject: ["reason"], kick: ["seatNo"], ping: ["n"], pong: ["n"], bye: [], end: [],
+    intent: ["kind"], reject: ["reason"], kick: ["seatNo"], ping: ["n"], pong: ["n"], bye: [], end: [], offer: ["offer"],
   };
   /* The public snapshot (host-authoritative full state). seats[] entries
      carry SEAT_KEYS only - never a token, never anything a device stores. */
@@ -106,6 +116,26 @@
   var MAX_BUILD = 40;
   var MAX_APP = 24;
   var MAX_WIRE_BYTES = MAX_FRAME_BYTES + 64;
+  /* The hand-off payload's own closed envelope and its caps (see "THE
+     HAND-OFF MODEL"). MAX_OFFER_BYTES leaves the rest of the frame - the
+     envelope, the body key, the fingerprints - well inside MAX_FRAME_BYTES
+     (measured, not assumed: tools/test-room-handoff-core.mjs builds the
+     largest legal offer and validates the whole frame). */
+  var OFFER_KEYS = ["oid", "kind", "ver", "title", "data"];
+  var OFFER_REQUIRED_KEYS = ["oid", "kind", "ver", "data"];
+  var MAX_OFFER_BYTES = 3072;
+  var MAX_OFFER_TITLE = 40;
+  var MAX_OFFER_DEPTH = 6;
+  var MAX_OFFER_VER = 99;
+  /* Key NAMES that can never appear anywhere inside an offer (compared
+     ASCII-lower-case, at any depth): the personal things a payload must
+     never carry - who someone is, what they scored, what they wrote. No
+     payload kind uses any of them as a field name, so a hit is never a
+     false positive; it is a forged or careless sender, and the whole offer
+     is refused. The Rust host reads this exact list (generated). */
+  var OFFER_FORBIDDEN_KEYS = ["profile", "name", "displayname", "firstname", "lastname", "callsign", "rank", "grade", "mos", "progress",
+    "attempts", "attempt", "notes", "note", "results", "result", "score", "scores", "history", "streak", "roster",
+    "email", "phone", "ssn", "dodid", "edipi", "uic", "token", "fp", "resume"];
   var ENDPOINTS = { ws: "/ws", join: "/j/", guest: "/" };
   var VERSION_MISMATCH_TEXT = "update GUIDON on one device";
   var NATO = ["ALPHA", "BRAVO", "CHARLIE", "DELTA", "ECHO", "FOXTROT", "GOLF", "HOTEL", "INDIA", "JULIET", "KILO", "LIMA", "MIKE",
@@ -142,6 +172,331 @@
     for (var k in obj) if (allowed.indexOf(k) === -1) return k;
     return null;
   }
+
+  /* ================================================================ */
+  /*                      THE HAND-OFF MODEL                           */
+  /* ================================================================ */
+  /* ONE generic, versioned payload for everything a room can put in front
+     of a device, instead of one bespoke shape per feature:
+
+       { oid, kind, ver, title?, data }
+
+     oid    a per-offer id the host mints (A-Z 2-7, 4-12 chars); a device
+            that has already met an oid never asks about it twice.
+     kind   what it is. Three kinds are known to this build (HANDOFF below):
+              deck          a study deck - the room's own deck, carried in the
+                            snapshot's deck field as it always has been
+                            (carrier "snapshot"); it is the model's "deck"
+                            payload data, validated by the SAME rule, so a deck
+                            behaves exactly as before and nothing about it is
+                            an offer
+              pt-plan       a weekly PT plan (the shape behind PT Planner's
+                            prt:plan:v1, minus everything that is a person's)
+              team-session an ordered Team Training session
+            Any other kind, or a newer ver of a known kind, is NOT an error on
+            the wire (a relay of an older build must not be able to block a
+            newer one): it reaches the receiver, which says so in plain words
+            and applies nothing (classify(), MESSAGES).
+     ver    the payload's own version, an integer. A build understands every
+            ver up to the one in HANDOFF and refuses a higher one by name.
+     title  an optional short label, plain text.
+     data   the kind's own STRUCTURE - closed key sets, every string capped.
+
+     What a payload can NEVER carry: anything about a person. The model
+     enforces it three ways. (1) validateOffer() refuses, at every hop (the
+     page, the Node server, the Rust host), an offer that nests a key named
+     for a personal thing (OFFER_FORBIDDEN_KEYS: profile, rank, name, mos,
+     progress, attempts, notes, results ...) at any depth. (2) each kind's
+     data has a CLOSED key set, so a stray key is refused even when it is not
+     on that list. (3) the builders on the sending side copy fields out by
+     name; they never pass a stored record through. Size is capped
+     (MAX_OFFER_BYTES for the payload, so the whole frame stays under
+     MAX_FRAME_BYTES) and so is nesting (MAX_OFFER_DEPTH).
+
+     sanitize() is the receiving side's other half: every string in the
+     payload is stripped of control and direction-changing characters,
+     whitespace-collapsed and length-checked, then passed through the
+     caller's screen function (the app hands it G.opsecGuard.screen) - one
+     finding of any kind and the whole offer is refused. A payload nobody
+     could screen is refused too: with no screen function, sanitize() fails
+     closed. Nothing here touches a device: this file has no storage and no
+     DOM, so it is also what the guest page carries. */
+  function lowerAscii(s) { return String(s).replace(/[A-Z]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) + 32); }); }
+  function tooDeep(v, limit, d) {
+    if (!v || typeof v !== "object") return false;
+    if (d > limit) return true;
+    if (Array.isArray(v)) { for (var i = 0; i < v.length; i++) if (tooDeep(v[i], limit, d + 1)) return true; return false; }
+    for (var k in v) if (tooDeep(v[k], limit, d + 1)) return true;
+    return false;
+  }
+  function hasForbiddenKey(v) {
+    if (!v || typeof v !== "object") return false;
+    if (Array.isArray(v)) { for (var i = 0; i < v.length; i++) if (hasForbiddenKey(v[i])) return true; return false; }
+    for (var k in v) { if (OFFER_FORBIDDEN_KEYS.indexOf(lowerAscii(k)) !== -1) return true; if (hasForbiddenKey(v[k])) return true; }
+    return false;
+  }
+  var OID_RE = /^[A-Z2-7]{4,12}$/;
+  var KIND_RE = /^[a-z][a-z0-9-]{1,23}$/;
+  /** The kind-blind rules every hop applies (the JS validate() and the Rust
+      host's validate() agree on these rule for rule): a reason string, or null. */
+  function validateOffer(o) {
+    if (!isObj(o)) return "offer";
+    var extra = onlyKeys(o, OFFER_KEYS);
+    if (extra) return "offer-key:" + extra;
+    for (var i = 0; i < OFFER_REQUIRED_KEYS.length; i++) if (!(OFFER_REQUIRED_KEYS[i] in o)) return "offer-missing:" + OFFER_REQUIRED_KEYS[i];
+    if (typeof o.oid !== "string" || !OID_RE.test(o.oid)) return "offer-oid";
+    if (typeof o.kind !== "string" || !KIND_RE.test(o.kind)) return "offer-kind";
+    if (!isInt(o.ver, 1, MAX_OFFER_VER)) return "offer-ver";
+    if ("title" in o && !isStr(o.title, MAX_OFFER_TITLE)) return "offer-title";
+    if (!isObj(o.data)) return "offer-data";
+    if (tooDeep(o, MAX_OFFER_DEPTH, 1)) return "offer-depth";
+    if (hasForbiddenKey(o)) return "offer-personal";
+    var json;
+    try { json = JSON.stringify(o); } catch (e) { return "offer-json"; }
+    if (typeof json !== "string" || byteLength(json) > MAX_OFFER_BYTES) return "offer-size";
+    return null;
+  }
+
+  /* ---- each kind's own data rules: a reason suffix, or null ---- */
+  var EFFORTS = ["recovery", "moderate", "hard"];
+  var PT_SESSION_TYPES = ["drill", "session"];
+  var PT_MAX_SESSIONS = 6, PT_MAX_BLOCKS = 12, PT_MAX_DATES = 8, PT_LABEL = 80, TEAM_MAX_STEPS = 10;
+  var PT_ENTRY_RE = /^[a-z][a-z0-9-]{0,23}$/;
+  var PT_REF_RE = /^[a-z0-9]{1,6}$/;
+  var PT_BLOCK_RE = /^[A-Za-z0-9._-]{1,40}$/;
+  var PT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+  var TEAM_EXERCISE_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
+
+  /* deck: what the snapshot's deck field has always been. The snapshot
+     validator below calls this, so the room's deck and a deck payload can
+     never disagree about what a legal deck is. */
+  function deckProblem(d) {
+    if (!isObj(d)) return "obj";
+    var dk = onlyKeys(d, ["category", "timerSec"]);
+    if (dk) return "key:" + dk;
+    if (d.category != null && !isStr(d.category, 80)) return "cat";
+    if (d.timerSec != null && !isInt(d.timerSec, 1, 3600)) return "timer";
+    return null;
+  }
+  /** The model's deck data from any object carrying a category and a timer. */
+  function deckData(x) {
+    return { category: x && x.category != null ? x.category : null, timerSec: x && x.timerSec != null ? x.timerSec : null };
+  }
+
+  /* pt-plan: seven day entries (Sunday first), the custom sessions those
+     days point at, and up to PT_MAX_DATES one-date changes. An entry is a
+     built-in session type by id ({id:"strength"}), an ad hoc named day
+     ({id:"custom", label, effort}) or one of the payload's own sessions
+     ({id:"session", ref}). Session ids are LOCAL to the payload: the
+     receiver mints its own, it never adopts one from the wire. */
+  function ptEntryProblem(e, refs) {
+    if (!isObj(e)) return "entry";
+    var extra = onlyKeys(e, ["id", "label", "effort", "ref"]);
+    if (extra) return "entry-key:" + extra;
+    if (typeof e.id !== "string" || !PT_ENTRY_RE.test(e.id)) return "entry-id";
+    if (e.id === "custom") {
+      if (!isStr(e.label, PT_LABEL) || !e.label.length) return "entry-label";
+      if (EFFORTS.indexOf(e.effort) === -1) return "entry-effort";
+      if ("ref" in e) return "entry-key:ref";
+    } else if (e.id === "session") {
+      if (typeof e.ref !== "string" || refs.indexOf(e.ref) === -1) return "entry-ref";
+      if ("label" in e) return "entry-key:label";
+      if ("effort" in e) return "entry-key:effort";
+    } else if ("label" in e || "effort" in e || "ref" in e) {
+      return "entry-key:" + ("label" in e ? "label" : "effort" in e ? "effort" : "ref");
+    }
+    return null;
+  }
+  function ptPlanProblem(d) {
+    if (!isObj(d)) return "data";
+    var extra = onlyKeys(d, ["tpl", "days", "sessions", "dates"]);
+    if (extra) return "key:" + extra;
+    if ("tpl" in d && !isStr(d.tpl, 24)) return "tpl";
+    if (!Array.isArray(d.days) || d.days.length !== 7) return "days";
+    var refs = [], i, p;
+    if ("sessions" in d) {
+      if (!Array.isArray(d.sessions) || d.sessions.length > PT_MAX_SESSIONS) return "sessions";
+      for (i = 0; i < d.sessions.length; i++) {
+        var s = d.sessions[i];
+        if (!isObj(s)) return "session";
+        var sk = onlyKeys(s, ["key", "label", "effort", "type", "blocks"]);
+        if (sk) return "session-key:" + sk;
+        if (typeof s.key !== "string" || !PT_REF_RE.test(s.key) || refs.indexOf(s.key) !== -1) return "session-key";
+        if (!isStr(s.label, PT_LABEL) || !s.label.length) return "session-label";
+        if (EFFORTS.indexOf(s.effort) === -1) return "session-effort";
+        if (PT_SESSION_TYPES.indexOf(s.type) === -1) return "session-type";
+        if (!Array.isArray(s.blocks) || !s.blocks.length || s.blocks.length > PT_MAX_BLOCKS) return "session-blocks";
+        for (var b = 0; b < s.blocks.length; b++) if (typeof s.blocks[b] !== "string" || !PT_BLOCK_RE.test(s.blocks[b])) return "session-block";
+        refs.push(s.key);
+      }
+    }
+    for (i = 0; i < d.days.length; i++) { p = ptEntryProblem(d.days[i], refs); if (p) return "day-" + p; }
+    if ("dates" in d) {
+      if (!Array.isArray(d.dates) || d.dates.length > PT_MAX_DATES) return "dates";
+      for (i = 0; i < d.dates.length; i++) {
+        var x = d.dates[i];
+        if (!isObj(x)) return "date";
+        var xk = onlyKeys(x, ["date", "entry"]);
+        if (xk) return "date-key:" + xk;
+        if (typeof x.date !== "string" || !PT_DATE_RE.test(x.date)) return "date-day";
+        p = ptEntryProblem(x.entry, refs);
+        if (p) return "date-" + p;
+      }
+    }
+    return null;
+  }
+
+  /* team-session: an ordered list of Team Training exercise ids. Which ids
+     exist is the RECEIVER's catalog, never this file's: an id this build
+     has not heard of is only "not on this device" to the receiver. */
+  function teamSessionProblem(d) {
+    if (!isObj(d)) return "data";
+    var extra = onlyKeys(d, ["steps"]);
+    if (extra) return "key:" + extra;
+    if (!Array.isArray(d.steps) || !d.steps.length || d.steps.length > TEAM_MAX_STEPS) return "steps";
+    for (var i = 0; i < d.steps.length; i++) if (typeof d.steps[i] !== "string" || !TEAM_EXERCISE_RE.test(d.steps[i])) return "step";
+    return null;
+  }
+
+  /* The kinds this build understands. carrier: where the payload travels -
+     "offer" (an offer frame, and the receiving device must confirm before
+     anything is added) or "snapshot" (the room's own deck, applied to the
+     room and nothing else, never saved). */
+  var HANDOFF = {
+    "deck": { ver: 1, carrier: "snapshot", label: "a study deck", problem: deckProblem },
+    "pt-plan": { ver: 1, carrier: "offer", label: "a PT plan", problem: ptPlanProblem },
+    "team-session": { ver: 1, carrier: "offer", label: "a Team Training session", problem: teamSessionProblem },
+  };
+  function kindOf(name) { return typeof name === "string" && Object.prototype.hasOwnProperty.call(HANDOFF, name) ? HANDOFF[name] : null; }
+  function kindsInfo() {
+    var out = {};
+    for (var k in HANDOFF) out[k] = { ver: HANDOFF[k].ver, carrier: HANDOFF[k].carrier, label: HANDOFF[k].label };
+    return out;
+  }
+  /** What a device says about a kind it may not know - a fixed phrase, never
+      the sender's own words. */
+  function labelOf(name) {
+    var K = kindOf(name);
+    return K && K.carrier === "offer" ? K.label : "something this version of GUIDON can't open";
+  }
+  /* Plain words, one place: every screen that has to say "no" says it with
+     these (the guest page and the app both). None of them names a field, an
+     id or a code. */
+  var HANDOFF_MESSAGES = {
+    unsupportedKind: "The host shared something this version of GUIDON doesn't know how to open, so nothing was added. Update GUIDON on this device, then ask the host to share it again.",
+    newerVersion: "The host shared this from a newer GUIDON than the one on this device, so nothing was added. Update GUIDON on this device, then ask the host to share it again.",
+    refused: "The host shared something GUIDON couldn't accept, so it was ignored and nothing was added.",
+    noGuard: "GUIDON couldn't check what the host shared, so nothing was added.",
+    tooBig: "That is too big to send through a room. Nothing was sent.",
+    personal: "That contained a personal detail, which a room never carries. Nothing was sent.",
+    cannotShare: "GUIDON can't share that kind of item through a room. Nothing was sent.",
+    invalid: "GUIDON couldn't put that together to send, so nothing was sent.",
+    guardOut: "One of the names looks like it holds something sensitive, so nothing was sent. Change it and try again.",
+  };
+
+  /** classify(offer) -> { status, reason }. status: "ok" (this build can
+      read it), "unsupported-kind", "newer-version" (both: safe to hold as a
+      note, never applied) or "invalid" (fails a rule - dropped). */
+  function classify(offer) {
+    var g = validateOffer(offer);
+    if (g) return { status: "invalid", reason: g };
+    var K = kindOf(offer.kind);
+    if (!K || K.carrier !== "offer") return { status: "unsupported-kind", reason: "kind" };
+    if (offer.ver > K.ver) return { status: "newer-version", reason: "ver" };
+    var p = K.problem(offer.data);
+    if (p) return { status: "invalid", reason: offer.kind + "-" + p };
+    return { status: "ok", reason: "" };
+  }
+
+  /* Control, zero-width, line-separator and direction-override characters
+     become spaces; runs of whitespace collapse; the ends are trimmed. */
+  var CLEAN_RE = (function () {
+    /* code point ranges, written as numbers so no unusual character ever
+       sits in this file's source: C0/C1 controls, soft hyphen, zero-width and
+       direction marks, line/paragraph separators, direction overrides and
+       isolates, the invisible-operator block, BOM, interlinear annotation */
+    var ranges = [[0, 31], [127, 159], [173, 173], [8203, 8207], [8232, 8233], [8234, 8238], [8288, 8303], [65279, 65279], [65529, 65531]];
+    var body = "";
+    for (var i = 0; i < ranges.length; i++) body += String.fromCharCode(ranges[i][0]) + (ranges[i][1] > ranges[i][0] ? "-" + String.fromCharCode(ranges[i][1]) : "");
+    return new RegExp("[" + body + "]", "g");
+  })();
+  function cleanText(s) {
+    return String(s).replace(CLEAN_RE, " ").replace(/\s+/g, " ").trim();
+  }
+  function cleanDeep(v) {
+    if (typeof v === "string") return cleanText(v);
+    if (Array.isArray(v)) return v.map(cleanDeep);
+    if (isObj(v)) { var o = {}; for (var k in v) o[k] = cleanDeep(v[k]); return o; }
+    return v;
+  }
+  function stringsOf(v, out) {
+    if (typeof v === "string") { if (v.length) out.push(v); }
+    else if (Array.isArray(v)) { for (var i = 0; i < v.length; i++) stringsOf(v[i], out); }
+    else if (isObj(v)) { for (var k in v) stringsOf(v[k], out); }
+    return out;
+  }
+
+  /** make(kind, title, data) -> { ok, offer } | { ok:false, reason, message }.
+      The sending side's one door: builds the offer object (no oid - the host
+      mints that when it sends), refuses a kind that does not travel as an
+      offer, and runs every rule the receiving side will run, so a host can
+      never send what a device would have to refuse. */
+  function make(kind, title, data) {
+    var K = kindOf(kind);
+    if (!K || K.carrier !== "offer") return { ok: false, reason: "kind", message: HANDOFF_MESSAGES.cannotShare };
+    var offer = { oid: "AAAAAAAA", kind: kind, ver: K.ver, data: data };
+    if (title != null && String(title) !== "") {
+      var t = cleanText(title).slice(0, MAX_OFFER_TITLE);
+      if (t) offer.title = t;
+    }
+    var g = validateOffer(offer);
+    if (g) return { ok: false, reason: g, message: g === "offer-size" ? HANDOFF_MESSAGES.tooBig : g === "offer-personal" ? HANDOFF_MESSAGES.personal : HANDOFF_MESSAGES.invalid };
+    var p = K.problem(data);
+    if (p) return { ok: false, reason: kind + "-" + p, message: HANDOFF_MESSAGES.invalid };
+    delete offer.oid;
+    return { ok: true, offer: offer };
+  }
+
+  /** sanitize(offer, { screen }) -> { ok, offer } | { ok:false, reason,
+      message, found }. `screen(text)` returns { findings: [...] } (the app
+      passes G.opsecGuard.screen); any finding on any string refuses the
+      whole offer, and no screen function at all refuses it too. */
+  function sanitize(offer, opts) {
+    opts = opts || {};
+    if (typeof opts.screen !== "function") return { ok: false, reason: "no-guard", message: HANDOFF_MESSAGES.noGuard, found: [] };
+    var out = cleanDeep(offer);
+    var again = classify(out);
+    if (again.status !== "ok") return { ok: false, reason: "clean:" + again.reason, message: HANDOFF_MESSAGES.refused, found: [] };
+    var all = stringsOf(out, []);
+    for (var i = 0; i < all.length; i++) {
+      var r = null;
+      try { r = opts.screen(all[i]); } catch (e) { return { ok: false, reason: "no-guard", message: HANDOFF_MESSAGES.noGuard, found: [] }; }
+      if (r && r.findings && r.findings.length) return { ok: false, reason: "guard", message: HANDOFF_MESSAGES.refused, found: r.findings };
+    }
+    return { ok: true, offer: out };
+  }
+
+  /** receive(offer, { screen }) -> { status, ok, offer?, message } - what a
+      device does with an offer before it shows anyone a word of it. Only
+      status "ok" ever carries data on. */
+  function receive(offer, opts) {
+    var c = classify(offer);
+    if (c.status === "unsupported-kind") return { status: c.status, ok: false, message: HANDOFF_MESSAGES.unsupportedKind };
+    if (c.status === "newer-version") return { status: c.status, ok: false, message: HANDOFF_MESSAGES.newerVersion };
+    if (c.status !== "ok") return { status: "invalid", ok: false, message: HANDOFF_MESSAGES.refused };
+    var s = sanitize(offer, opts);
+    if (!s.ok) return { status: s.reason === "no-guard" ? "no-guard" : "refused", ok: false, message: s.message, found: s.found };
+    return { status: "ok", ok: true, offer: s.offer, message: "" };
+  }
+
+  var handoff = {
+    KINDS: kindsInfo(), MESSAGES: HANDOFF_MESSAGES,
+    MAX_BYTES: MAX_OFFER_BYTES, MAX_TITLE: MAX_OFFER_TITLE, MAX_DEPTH: MAX_OFFER_DEPTH, MAX_VER: MAX_OFFER_VER, FORBIDDEN_KEYS: OFFER_FORBIDDEN_KEYS,
+    LIMITS: { ptSessions: PT_MAX_SESSIONS, ptBlocks: PT_MAX_BLOCKS, ptDates: PT_MAX_DATES, ptLabel: PT_LABEL, teamSteps: TEAM_MAX_STEPS },
+    kindOf: function (name) { var K = kindOf(name); return K ? { ver: K.ver, carrier: K.carrier, label: K.label } : null; },
+    labelOf: labelOf, validateOffer: validateOffer, classify: classify, make: make, sanitize: sanitize, receive: receive,
+    cleanText: cleanText, deckData: deckData, deckProblem: deckProblem, hasForbiddenKey: hasForbiddenKey,
+  };
 
   function validateSeat(s) {
     if (!isObj(s)) return "seat";
@@ -203,11 +558,10 @@
       if (!isInt(s.round.idx, 0, 9999) || !isInt(s.round.total, 0, 9999)) return "snapshot-round-n";
     }
     if (s.deck != null) {
-      if (!isObj(s.deck)) return "snapshot-deck";
-      var dk = onlyKeys(s.deck, ["category", "timerSec"]);
-      if (dk) return "snapshot-deck-key:" + dk;
-      if (s.deck.category != null && !isStr(s.deck.category, 80)) return "snapshot-deck-cat";
-      if (s.deck.timerSec != null && !isInt(s.deck.timerSec, 1, 3600)) return "snapshot-deck-timer";
+      /* The deck is the hand-off model's "deck" payload data: one rule
+         (deckProblem, above), the reasons this field has always given. */
+      var dp = deckProblem(s.deck);
+      if (dp) return dp === "obj" ? "snapshot-deck" : "snapshot-deck-" + dp;
     }
     if (!Array.isArray(s.seats) || s.seats.length > MAX_SEATS) return "snapshot-seats";
     for (var j = 0; j < s.seats.length; j++) { var e = validateSeat(s.seats[j]); if (e) return e; }
@@ -260,6 +614,11 @@
       case "end":
         if ("reason" in b && !isStr(b.reason, MAX_REASON)) return "reason";
         return null;
+      case "offer":
+        /* Kind-blind on purpose: a relay must not be able to block a kind it
+           has not heard of. What each kind's data may hold is classify()'s
+           job, at the receiver. */
+        return validateOffer(b.offer);
     }
     return "type";
   }
@@ -415,6 +774,11 @@
     wireEncode: wireEncode, wireDecode: wireDecode, wsUrl: wsUrl, joinUrl: joinUrl, isSecureOrigin: isSecureOrigin, isSpkiPin: isSpkiPin, pinFromUrl: pinFromUrl, buildLabel: buildLabel, skewText: skewText,
     validate: validate, validateSnapshot: validateSnapshot, bankSig: bankSig, roomCode: roomCode,
     isRoomCode: isRoomCode, isFingerprint: isFingerprint, byteLength: byteLength, hasKeyDeep: hasKeyDeep,
+    /* The hand-off model (see THE HAND-OFF MODEL above). The constants are
+       also exported flat for tools/gen-room-schema-rs.mjs. */
+    handoff: handoff,
+    OFFER_KEYS: OFFER_KEYS, OFFER_REQUIRED_KEYS: OFFER_REQUIRED_KEYS, MAX_OFFER_BYTES: MAX_OFFER_BYTES, MAX_OFFER_TITLE: MAX_OFFER_TITLE,
+    MAX_OFFER_DEPTH: MAX_OFFER_DEPTH, MAX_OFFER_VER: MAX_OFFER_VER, OFFER_FORBIDDEN_KEYS: OFFER_FORBIDDEN_KEYS,
   };
   root.G.roomSchema = schema;
   if (typeof module === "object" && module && module.exports) module.exports = schema;
