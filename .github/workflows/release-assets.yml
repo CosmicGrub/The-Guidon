@@ -18,7 +18,10 @@ name: Release assets
 #    the versioned ones. The Android and Windows jobs upload both; the names
 #    live in guidon-app/tools/release-manifest.mjs and
 #    tools/lint-release-state.mjs fails if the app links to a name no job
-#    uploads.
+#    uploads. (The Mac disk image also has a never-changing name,
+#    GUIDON-macos-universal.dmg, but it is OPTIONAL and belongs to
+#    release-apple.yml: nothing in this workflow may wait on it - see
+#    guidon-app/docs/release-runbook.md, "Mac: the fixed-name file".)
 #
 # 2. A release is only marked Latest once it is complete. release-cut.yml
 #    creates it with --latest=false; the finalize job at the bottom rewrites

@@ -150,6 +150,46 @@ try {
   r = broken(".github/workflows/release-assets.yml", (t) => t.split("\n").map((l) => (/release-out\/GUIDON-windows-setup\.exe/.test(l) ? "          # " + l.trim() : l)).join("\n"));
   check(failsWith(r, /GUIDON-windows-setup\.exe, but no release workflow uploads/), "a name that only appears in a comment does not count as uploaded");
 
+  console.log("\n4b. The Mac fixed-name file: an optional alias the app may link only behind a switch, and the Mac lane can never decide Latest");
+  const android = 'x(dl("GUIDON-android.apk"));';
+  const withMacLink = (extra) => (t) => t.replace(android, android + '\n  x(dl("GUIDON-macos-universal.dmg"));' + (extra ? "\n  " + extra : ""));
+  r = broken("guidon-app/src/index.html", withMacLink(""));
+  check(failsWith(r, /links to the Mac fixed-name file but has no literal `const MAC_DIRECT_LINK = true\|false;` switch/) && !failsWith(r, /does not declare it/) && !failsWith(r, /no release workflow uploads/),
+    "the app may link the Mac fixed name (declared optional, uploaded by release-apple.yml) - but only with a literal MAC_DIRECT_LINK switch beside it", "a Mac link without the switch: " + r.failures.join(" | "));
+  r = broken("guidon-app/src/index.html", withMacLink("const MAC_DIRECT_LINK = false;"));
+  check(r.failures.length === 0 && r.notes.some((n) => /MAC_DIRECT_LINK is off/.test(n)) && r.passes.some((p) => /Mac lane cannot decide Latest/.test(p)), "switch off (the shipped default): passes, and says the button stays on the releases list", "switch off: " + r.failures.join(" | "));
+  r = broken("guidon-app/src/index.html", withMacLink("const MAC_DIRECT_LINK = true;"));
+  check(r.failures.length === 0 && r.notes.some((n) => /MAC_DIRECT_LINK is ON.*dead link for any Latest release whose Apple lane did not finish/.test(n)), "switch on: passes, but the lint says out loud that it is a dead link for a Latest release with no Mac build", "switch on: " + r.failures.join(" | ") + " / " + r.notes.join(" | "));
+  r = broken("guidon-app/src/index.html", withMacLink("const MAC_DIRECT_LINK = someFlag;"));
+  check(failsWith(r, /no literal `const MAC_DIRECT_LINK = true\|false;` switch/), "a switch that is not a plain true/false literal is refused (the lint could not read it)");
+  {
+    const before = get("guidon-app/src/index.html");
+    put("guidon-app/src/index.html", withMacLink("const MAC_DIRECT_LINK = false;")(before));
+    r = broken(".github/workflows/release-apple.yml", (t) => t.split("release-out/GUIDON-macos-universal.dmg").join("release-out/GUIDON-mac.dmg"));
+    check(failsWith(r, /GUIDON-macos-universal\.dmg, but no release workflow uploads/), "once the app links the Mac name, removing its upload from release-apple.yml fails (the dead-link defect, again)");
+    put("guidon-app/src/index.html", before);
+  }
+  r = broken(".github/workflows/release-apple.yml", (t) => t + "\n      - name: Mark Latest from the Mac lane\n        run: gh release edit \"$TAG\" --latest\n");
+  check(failsWith(r, /release-apple\.yml touches the Latest flag/), "a Mac-lane step that touches the Latest flag fails - the Mac lane must never decide Latest");
+  r = broken(".github/workflows/release-apple.yml", (t) => t + "\n# gh release edit \"$TAG\" --latest  (a comment about it is fine)\n");
+  check(!failsWith(r, /touches the Latest flag/), "a comment that mentions the flag is not a step that touches it");
+  r = broken(".github/workflows/release-assets.yml", (t) => t.replace("needs: [resolve, android, windows, web_firmware]", "needs: [resolve, android, windows, web_firmware, macos]"));
+  check(failsWith(r, /release-assets\.yml waits on an Apple job/), "a release-assets.yml job that waits on an Apple job fails - a slow Mac build could hold a release out of Latest");
+  {
+    const { judgePublished } = await import("./lint-release-state.mjs");
+    const { expectedAssets } = await import("./release-manifest.mjs");
+    const all = expectedAssets("9.9.9").map((a) => a.name);
+    const noMac = all.filter((n) => !/macos/.test(n));
+    let j = judgePublished({ tag: "v9.9.9", version: "9.9.9", present: all });
+    check(j.failures.length === 0 && j.notes.some((n) => /carries GUIDON-macos-universal\.dmg: a direct Mac link resolves/.test(n)), "--published: a release with the fixed Mac name says a direct Mac link resolves");
+    j = judgePublished({ tag: "v9.9.9", version: "9.9.9", present: [...noMac, "GUIDON-9.9.9-macos-universal.dmg"] });
+    check(j.failures.length === 0 && j.notes.some((n) => /versioned name only .* would be dead until the Apple lane is re-run/.test(n)), "--published: a Mac build without its fixed name is a note (never a failure) saying the direct link would be dead");
+    j = judgePublished({ tag: "v9.9.9", version: "9.9.9", present: noMac });
+    check(j.failures.length === 0 && j.passes.length === 1 && j.notes.some((n) => /no Mac build at all/.test(n)), "--published: a release with no Mac build at all still passes (the Mac lane is optional), with a note");
+    j = judgePublished({ tag: "v9.9.9", version: "9.9.9", present: noMac.filter((n) => n !== "GUIDON-android.apk") });
+    check(j.failures.length === 1 && /missing required: GUIDON-android\.apk/.test(j.failures[0]), "--published: a missing REQUIRED file is still the only kind of failure");
+  }
+
   console.log("\n5. --cut: the last check before a permanent tag");
   check(failsWith(lint({ cut: true }), /\.release-prep must contain v1\.12\.1/), "--cut without a .release-prep naming this version refuses");
   put("guidon-app/src/.release-prep", "v1.12.1\n");
