@@ -184,6 +184,11 @@
     return prompts.slice(0, 6);
   }
   function sourceText(q) {
+    // A board card's citation is a structured array (ROADMAP item F); the one
+    // renderer for it is G.board.sourceText, so this screen prints exactly
+    // what Board Drill prints. The {ref, para} object branch is a shape that
+    // predates it - kept for any hand-built card that still carries it.
+    if (q && Array.isArray(q.source)) return G.board.sourceText(q);
     var s = q && q.source;
     if (!s) return "";
     if (typeof s === "string") return s;

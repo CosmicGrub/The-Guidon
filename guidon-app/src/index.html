@@ -11390,7 +11390,11 @@ window.G = window.G || {};
       // the Soldier the regulation says those exact words. They get an
       // honest heading instead, and when the study-guide text IS the whole
       // answer it is shown once, not repeated in two boxes.
-      const paraphrased = q.verbatim === false;
+      // (The quote/paraphrase call lives on the citation itself - quoteKind,
+      // ROADMAP item F Wave 2 - read through G.board.quoteKindOf(), which
+      // replaced the card-level `verbatim` flag with the same behaviour.)
+      const paraphrased = G.board.quoteKindOf(q) !== "verbatim";
+      const sourceLine = G.board.sourceText(q);
       const acceptBox = el("div.bq-answer-block.bq-acceptable");
       acceptBox.appendChild(el("div.bq-answer-label", { gi: "check", giSize: 13, text: "Acceptable Answer (board passes)" }));
       acceptBox.appendChild(el("p.bq-answer-text", { text: accText }));
@@ -11399,7 +11403,7 @@ window.G = window.G || {};
       bookBox.appendChild(el("div.bq-answer-label", { gi: paraphrased ? "book-open" : "star", giSize: 13,
         text: paraphrased ? G.board.PARAPHRASE_LABEL : "By the Book (verbatim doctrine)" }));
       bookBox.appendChild(el("p.bq-answer-text", { text: bookText }));
-      if (q.source) bookBox.appendChild(el("span.src", { text: "Source: " + q.source }));
+      if (sourceLine) bookBox.appendChild(el("span.src", { text: "Source: " + sourceLine }));
 
       // Expert-tier cards lead with the verbatim standard — the whole point
       // of that tier is holding yourself to by-the-book recall, not the
@@ -11430,7 +11434,7 @@ window.G = window.G || {};
       // entry, so the cross-link silently never appeared. Split on every
       // separator actually seen in this data and try each resulting
       // candidate in order until one has a real match.
-      const pubRef = (q.source || "").split(/[,/;(]/).map((s) => s.trim()).filter(Boolean).find((c) => store.doctrine(c).length) || "";
+      const pubRef = sourceLine.split(/[,/;(]/).map((s) => s.trim()).filter(Boolean).find((c) => store.doctrine(c).length) || "";
       if (pubRef && store.doctrine(pubRef).length) {
         crossLinks.push(el("button.btn.ghost.sm", { gi: "book", giSize: 13, text: "Related doctrine (" + pubRef + ") →",
           onclick: (e) => { e.stopPropagation(); if (G.views) G.views._doctrineSeed = pubRef; location.hash = "#/doctrine"; } }));
@@ -14055,7 +14059,8 @@ window.G = window.G || {};
       const answerWrap = el("div.mb-answer", { hidden: "hidden" });
       answerWrap.appendChild(el("div.mb-a-label", { text: "Doctrinal answer" }));
       answerWrap.appendChild(el("div.mb-a", { text: q.a }));
-      if (q.source) answerWrap.appendChild(el("div.mb-a-src", { gi: "book-open", giSize: 12, text: q.source }));
+      const mbSource = G.board.sourceText(q);
+      if (mbSource) answerWrap.appendChild(el("div.mb-a-src", { gi: "book-open", giSize: 12, text: mbSource }));
       panel.appendChild(answerWrap);
 
       const scoreRow = el("div.mb-score-row", { hidden: "hidden" });
@@ -14854,9 +14859,9 @@ window.G = window.G || {};
             acceptable: q.acceptableAnswer || q.a,
             byBook: q.boardAnswer || q.a,
             // study-guide wording, not a quotation (see buildBackContent) - labelled as such below
-            paraphrased: q.verbatim === false,
+            paraphrased: G.board.quoteKindOf(q) !== "verbatim",
             keyPoints: q.keyPoints || [],
-            source: q.source || "",
+            source: G.board.sourceText(q),
             id: q.id,
           });
         });
@@ -16346,32 +16351,57 @@ window.G = window.G || {};
     // reason: route() needs to remove this listener on every navigation.
     // See renderDrill()'s own comment where this is set, below.
     _autoTheaterResizeHandler: null,
-    // ROADMAP §3f Phase 1-2, "a structured `regulation` field decomposed from
-    // board questions' free-text `source`": decided as RUNTIME derivation,
-    // not a persisted field. A 997-card seed migration would have to be
-    // re-run on every future card (the standing every-sourced-fact-gets-
-    // board-cards rule adds them constantly) and would go stale the moment
-    // someone edited a `source` by hand; deriving from `source` at read time
-    // can't drift, touches no seed data, and costs one regex pass per card.
-    // Calibrated against the real bank (2026-09-15 dry run over all 997
-    // sources): 887 parse fully, 67 carry a publication plus a named
-    // non-publication residue (DFAS, VA.gov, "unit SOP", a curriculum name),
-    // 43 cite no publication at all (statutes are covered below; creeds,
-    // institutions and websites deliberately yield nothing - `category`
-    // already sorts those). `source` stays the human-readable citation;
-    // this is the machine-readable axis beside `category`.
+    // A board card's `source` is a structured citation (ROADMAP item F,
+    // Wave 2): [{ pub, edition, para, quoteKind, sep? }], one entry per
+    // publication cited - the SAME shape doctrine, creeds and PRT have carried
+    // since Wave 1. Three functions below read it, and they are the ONLY
+    // places that do (every screen calls them; none of them reads the array
+    // itself): sourceText() is the human-readable line a Soldier sees,
+    // quoteKindOf() is which heading the card back prints, regulationsOf()
+    // is the machine-readable axis beside `category` (the regulation chips).
+    // tools/test-board-citations.mjs proves all three, over every card in the
+    // bank, against the free-text strings the cards carried before.
     //
-    // Returns the distinct regulation ids in order of first appearance,
-    // normalized so case drift ("DODI 6495.02" vs "DoDI 6495.02", "DA Pam"
-    // vs "DA PAM") and statute forms ("37 USC § 403" vs "37 U.S.C. 403",
-    // "Title 10") collapse to one chip each. A bare "DoD NNNN.NN" is NOT
-    // guessed into a DoDI/DoDD (the number alone can't tell them apart) -
-    // it yields nothing and stays in the human-readable `source`; the one
-    // such citation in the bank is a content fix, not a grammar one.
-    // Prefix canonicalization first, then every rule runs over the same
-    // canonical string and results are merged by position.
+    // HISTORY OF THIS DECISION. ROADMAP §3f Phase 1-2 first decided the
+    // regulation axis as RUNTIME derivation from the free-text string, NOT a
+    // persisted field, for a stated reason: a 997-card migration would go
+    // stale the moment a card was added or a `source` hand-edited, while
+    // deriving at read time cannot drift. Wave 2 reverses that on purpose -
+    // "verbatim" headings, the superseded-publication check and the rights
+    // gate all need the publication as DATA, and a regex re-guessing it on
+    // every render is exactly what item F exists to remove - and answers the
+    // staleness worry differently: the structured array is the ONE source of
+    // truth, and nobody hand-writes it. A content pack writes the readable
+    // string and calls ctx.cite(text, quoteKind) (tools/content-pack-engine.mjs,
+    // parser in tools/citation-parse.mjs, which proves each split renders back
+    // to the exact text before it trusts it); tools/lint-citation-schema.mjs
+    // gates the ASSEMBLED bank, so a pack that ships a bare string, an entry
+    // with no `pub`, a bad quoteKind, or a `para` that hides a regulation the
+    // chips would miss fails CI.
+    //
+    // Calibrated against the real bank (2026-09-15 dry run over all 997
+    // sources, then re-proved over all 1,347 cards at the migration): 887
+    // parse fully, 67 carry a publication plus a named non-publication
+    // residue (DFAS, VA.gov, "unit SOP", a curriculum name), 43 cite no
+    // publication at all (statutes are covered below; creeds, institutions and
+    // websites deliberately yield nothing - `category` already sorts those).
+    //
+    // regulationsOf(source): `source` is the structured array (a card's own
+    // `q.source`) or, for a Soldier's own recite note / a test fixture / the
+    // grammar cases, a plain string. Returns the distinct regulation ids in
+    // order of first appearance, normalized so case drift ("DODI 6495.02" vs
+    // "DoDI 6495.02", "DA Pam" vs "DA PAM") and statute forms ("37 USC § 403"
+    // vs "37 U.S.C. 403", "Title 10") collapse to one chip each. A bare "DoD
+    // NNNN.NN" is NOT guessed into a DoDI/DoDD (the number alone can't tell
+    // them apart) - it yields nothing and stays in the human-readable
+    // `source`; the one such citation in the bank is a content fix, not a
+    // grammar one. From an array the rules run over each entry's `pub` and
+    // the results merge in entry order; within one piece of text, prefix
+    // canonicalization first, then every rule runs over the same canonical
+    // string and results are merged by position.
     regulationsOf(source) {
-      const src = String(source || "");
+      const idsIn = (text) => {
+      const src = String(text || "");
       if (!src.trim()) return [];
       const canon = src
         .replace(/\bDA\s*Pam\b/gi, "DA PAM")
@@ -16414,6 +16444,45 @@ window.G = window.G || {};
       const out = [];
       for (const h of hits) if (h.id && !out.includes(h.id)) out.push(h.id);
       return out;
+      };
+      if (!Array.isArray(source)) return idsIn(source);
+      const merged = [];
+      source.forEach((e) => idsIn(e && e.pub).forEach((id) => { if (!merged.includes(id)) merged.push(id); }));
+      return merged;
+    },
+    // The human-readable citation ("AR 600-9, para 3-9c; DA PAM 600-25") - the
+    // ONE renderer every screen, print, search line, Mock Board answer, Rapid
+    // Fire card and study-room card uses, so what a Soldier reads cannot
+    // drift from screen to screen. Accepts a card, or a card's `source` value.
+    // An entry reads `pub`, then " (edition)" when it has one, then ", para";
+    // entries join with the entry's own `sep` ("; " unless the citation was
+    // written "A / B" or "A, B"). A plain string (a Soldier's own recite note)
+    // passes through untouched. Same rule as renderEntry()/renderSource() in
+    // tools/citation-parse.mjs; the suite runs both over every card.
+    sourceText(qOrSource) {
+      const s = qOrSource && typeof qOrSource === "object" && !Array.isArray(qOrSource) ? qOrSource.source : qOrSource;
+      if (typeof s === "string") return s;
+      if (!Array.isArray(s)) return "";
+      return s.map((e, i) => (i ? (e.sep || "; ") : "") + e.pub + (e.edition ? " (" + e.edition + ")" : "") + (e.para ? ", " + e.para : "")).join("");
+    },
+    // Which heading the card back prints over the By-the-Book text: "verbatim"
+    // -> "By the Book (verbatim doctrine)"; anything else -> PARAPHRASE_LABEL.
+    // Folds the old card-level `verbatim` flag into the citation's own
+    // quoteKind (ROADMAP item F Wave 2) with today's behaviour exactly:
+    // a card whose flag was absent or true reads "verbatim"; verbatim:false
+    // reads "paraphrase". A card is "verbatim" when ANY of its entries is (an
+    // entry for something that is not a publication - "unit SOP" - beside a
+    // real one is cited as "paraphrase", but must not flip the whole card).
+    // A card that still carries a plain-string `source` (a fixture, a Soldier's
+    // own note) falls back to the old flag, so nothing that predates the
+    // structured shape changes.
+    quoteKindOf(q) {
+      const s = q && Array.isArray(q) ? q : (q && q.source);
+      if (Array.isArray(s) && s.length) {
+        if (s.some((e) => e && e.quoteKind === "verbatim")) return "verbatim";
+        return (s[0] && s[0].quoteKind) || "paraphrase";
+      }
+      return q && !Array.isArray(q) && q.verbatim === false ? "paraphrase" : "verbatim";
     },
     // Shared "is this card due for review" predicate. Home's aggregate
     // due-count banner and Progress's per-category due tally used to answer
@@ -36117,7 +36186,7 @@ window.G = window.G || {};
       card.appendChild(el("h3", { text: titleFor(q) }));
       // A Soldier's own text has no publication behind it - say whose it is
       // and where it is kept instead of inventing a "Source:".
-      card.appendChild(el("p.hint", { text: q.own ? q.source : "Source: " + q.source }));
+      card.appendChild(el("p.hint", { text: q.own ? q.source : "Source: " + G.board.sourceText(q) }));
 
       // `timer` is hoisted up here (sibling to `mode`) rather than declared
       // fresh inside renderTimed() each time it runs, so the mode-bar click
