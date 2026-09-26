@@ -32,6 +32,7 @@ import { finish } from "./testkit.mjs";
 import { check, tag, list } from "./legal-package-kit.mjs";
 import { readSeed } from "./seed-io.mjs";
 import { mergeContentPacks } from "./content-pack-engine.mjs";
+import { renderCitation } from "./cite-schema.mjs";
 import { startRoomServer } from "./room-server.mjs";
 
 const APP = fileURLToPath(new URL("../", import.meta.url));
@@ -47,6 +48,8 @@ check(broken.length === 0, "the content packs merge cleanly (the bank this suite
 const cards = data.board.questions;
 const CAT = "Cybersecurity & OPSEC";
 const cyber = cards.filter((q) => q.category === CAT);
+// A board card's citation is a structured array since ROADMAP item F Wave 2; this suite reasons about the text a Soldier reads.
+const srcText = (q) => renderCitation(q.source);
 const card = (id) => cards.find((q) => q.id === id) || { id, q: "", a: "", source: "" };
 const scenario = (id) => (data.scenarios.scenarios || []).find((s) => s.id === id);
 const term = (a) => (data.acronyms.terms || []).find((t) => String(t.a).toUpperCase() === a) || { a, d: "" };
@@ -115,8 +118,8 @@ const DISCLAIMER = String(G.opsecGuard.DISCLAIMER);
 {
   // UCMJ: Article 92, 103a and 134 in the module, and nothing in it that presents an ordinary mistake as automatically criminal.
   const c29 = card("opsec-cyber-29"), c30 = card("opsec-cyber-30"), c31 = card("opsec-cyber-31"), c32 = card("opsec-cyber-32");
-  const cyberText = cyber.map((q) => [q.q, q.a, q.source, q.concept].join(" ")).concat(["sc-opsec-social-engineering", "sc-cyber-removable-media", "sc-opsec-fitness-tracking", "sc-cui-spillage-reporting"].map((id) => scenarioText(scenario(id)))).join("\n");
-  const article92 = cyber.filter((q) => /Article 92|Art\. 92|§ 892/.test([q.q, q.a, q.source].join(" ")));
+  const cyberText = cyber.map((q) => [q.q, q.a, srcText(q), q.concept].join(" ")).concat(["sc-opsec-social-engineering", "sc-cyber-removable-media", "sc-opsec-fitness-tracking", "sc-cui-spillage-reporting"].map((id) => scenarioText(scenario(id)))).join("\n");
+  const article92 = cyber.filter((q) => /Article 92|Art\. 92|§ 892/.test([q.q, q.a, srcText(q)].join(" ")));
   check(/general order or regulation/.test(c29.a) && /dereliction of duty/.test(c29.a) && /subject to the elements and facts/.test(c29.a) && article92.length >= 2,
     tag("LP-151") + " the curriculum describes Article 92 generally (failure to obey a lawful order or regulation, dereliction of duty, 'subject to the elements and facts of the case')",
     () => "card 29: " + c29.a);
@@ -126,24 +129,24 @@ const DISCLAIMER = String(G.opsecGuard.DISCLAIMER);
   const all103 = []; // every string anywhere in the shipped bank that names Article 103a
   const walk = (v, where) => { if (typeof v === "string") { if (/103a|903a/.test(v)) all103.push({ where, v }); } else if (Array.isArray(v)) v.forEach((x, i) => walk(x, where + "[" + i + "]")); else if (v && typeof v === "object") for (const k of Object.keys(v)) walk(v[k], where + "." + k); };
   walk(data, "seed");
-  const outside = all103.filter((h) => !/opsec-cyber-31|espionage/i.test(JSON.stringify(cards.find((q) => h.v === q.q || h.v === q.a || h.v === q.source || h.v === q.concept) || h.v)));
+  const outside = all103.filter((h) => !/opsec-cyber-31|espionage/i.test(JSON.stringify(cards.find((q) => h.v === q.q || h.v === q.a || h.v === srcText(q) || (Array.isArray(q.source) && q.source.some((e) => e.pub === h.v)) || h.v === q.concept) || h.v)));
   const curriculumSrc = read("src/app-modules/06-opsec-cyber-curriculum.js");
   const selfCheck103 = (curriculumSrc.match(/q:"[^"]*103a[^"]*"[^}]*}/g) || []);
   check(/^Espionage\./.test(c31.a) && /should not be used as a generic label/.test(c31.a) && all103.length >= 1 && outside.length === 0 && selfCheck103.every((s) => /choices:\["Espionage"/.test(s)),
     tag("LP-155", "LP-073") + " Article 103a is identified as espionage and nothing else: every place the shipped bank names it (" + all103.length + ") is the espionage card or says 'espionage', and its self-check question's right answer is 'Espionage'",
     () => "outside the espionage card: " + list(outside.map((o) => o.where)) + " | card 31: " + c31.a);
-  const art134 = cyber.filter((q) => /Article 134|Art\. 134|§ 934/.test([q.q, q.a, q.source].join(" ")));
+  const art134 = cyber.filter((q) => /Article 134|Art\. 134|§ 934/.test([q.q, q.a, srcText(q)].join(" ")));
   check(art134.length === 1 && art134[0].id === "opsec-cyber-32" && /^The General Article addresses/.test(c32.a) && /subject to applicable elements and law/.test(c32.a) && !/punish|confinement|sentence|discharge|maximum/i.test(c32.a) && !/134/.test(curriculumSrc),
     tag("LP-159", "LP-073") + " inside the Cybersecurity & OPSEC module Article 134 has exactly one card, a high-level General Article description with no penalties or offenses listed, and no self-check question",
     () => "cards naming Article 134: " + art134.map((q) => q.id).join(",") + " | " + c32.a);
   const predicts = /court[- ]martial|will be prosecuted|automatically (?:a |an )?(?:criminal|crime|offense)|punitive/i.exec(cyberText.replace(/Is every cybersecurity mistake automatically an Article 92 offense\?/, ""));
   check(!predicts, tag("LP-073") + " nothing else in the module - its 34 cards and 4 scenarios - predicts a court-martial, a prosecution or an automatic offense" .replace("34 cards and 4 scenarios", "cards and scenarios"), () => "found: " + (predicts && predicts[0]));
   // The audit matrix's own cite strings agree with the app's.
-  const agrees = (cite, c) => c.source.includes(cite) && LEGAL.includes(cite);
+  const agrees = (cite, c) => srcText(c).includes(cite) && LEGAL.includes(cite);
   const because = (cite) => " the section number in the audit matrix (" + cite + ") is the one the app's own card cites - the two agree (whether it is the right section is a legal check, see the claim's gap)";
-  check(agrees("10 U.S.C. § 892", c29), tag("LP-150") + because("10 U.S.C. § 892"), () => "card source: " + c29.source);
-  check(agrees("10 U.S.C. § 903a", c31), tag("LP-154") + because("10 U.S.C. § 903a"), () => "card source: " + c31.source);
-  check(agrees("10 U.S.C. § 934", c32), tag("LP-158") + because("10 U.S.C. § 934"), () => "card source: " + c32.source);
+  check(agrees("10 U.S.C. § 892", c29), tag("LP-150") + because("10 U.S.C. § 892"), () => "card source: " + srcText(c29));
+  check(agrees("10 U.S.C. § 903a", c31), tag("LP-154") + because("10 U.S.C. § 903a"), () => "card source: " + srcText(c31));
+  check(agrees("10 U.S.C. § 934", c32), tag("LP-158") + because("10 U.S.C. § 934"), () => "card source: " + srcText(c32));
 }
 {
   const floor = 30; // the package's own number: "at least 30 canonical board questions"

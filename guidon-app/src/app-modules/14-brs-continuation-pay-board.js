@@ -36,19 +36,19 @@
  * NOT read: the 31 December 2024 S1Net special message (CY25-27) and
  * ALARACT 029/2025 (the CY25 message) - the only copies found sit behind a
  * bot check on a state National Guard site, so no fact here rests on them.
- * The answers are study-guide wording, not quotations, so each card is
- * marked verbatim:false.
+ * The answers are study-guide wording, not quotations, so each card's
+ * citation is cited as "paraphrase" (it used to be flagged verbatim:false).
  */
 (function () {
   "use strict";
-  G.contentPack.define("brs-continuation-pay-board", function (bank) {
+  G.contentPack.define("brs-continuation-pay-board", function (bank, ctx) {
   var list = bank && bank.board && Array.isArray(bank.board.questions) ? bank.board.questions : null;
   if (!list) return;
 
   var have = new Set(list.map(function (q) { return q && q.id; }));
   function add(q) {
     if (!q || have.has(q.id)) return;
-    q.verbatim = false;
+    q.source = ctx.cite(q.source, "paraphrase");
     list.push(q);
     have.add(q.id);
   }

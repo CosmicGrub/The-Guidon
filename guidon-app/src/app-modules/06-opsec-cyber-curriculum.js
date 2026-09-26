@@ -144,7 +144,8 @@
           fb.appendChild(el("p",{style:"margin:0 0 4px",text:"The answer is: "+item.choices[item.answer]}));
           var why=item.why||(card&&card.a)||"";
           if(why) fb.appendChild(el("p.hint",{style:"margin:0 0 4px",text:why}));
-          if(card) fb.appendChild(el("p.hint",{style:"margin:0",text:"Source: "+card.source}));
+          /* A board card's citation is a structured array (ROADMAP item F Wave 2); G.board.sourceText is the one renderer, so this prints what Board Drill prints. */
+          if(card) fb.appendChild(el("p.hint",{style:"margin:0",text:"Source: "+G.board.sourceText(card)}));
           fbBox.appendChild(fb);
           var last=idx===selfCheck.length-1;
           var next=el("button.btn.sm",{type:"button",text:last?"See your score":"Next question",style:"margin-top:8px"});

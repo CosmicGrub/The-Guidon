@@ -229,6 +229,18 @@ try {
     check(j.failures.length === 0 && j.passes.length === 1 && j.notes.some((n) => /no Mac build at all/.test(n)), "--published: a release with no Mac build at all still passes (the Mac lane is optional), with a note");
     j = judgePublished({ tag: "v9.9.9", version: "9.9.9", present: noMac.filter((n) => n !== "GUIDON-android.apk") });
     check(j.failures.length === 1 && /missing required: GUIDON-android\.apk/.test(j.failures[0]), "--published: a missing REQUIRED file is still the only kind of failure");
+    // The handheld's deck list (esp32-lanes.json) is required only after v1.16.0: an already-published release
+    // that lacks it must keep passing, and the next one must not.
+    const published1160 = ["GUIDON-1.16.0-android.aab", "GUIDON-1.16.0-android.apk", "GUIDON-1.16.0-esp32-bootloader.bin", "GUIDON-1.16.0-esp32-cards.ndjson", "GUIDON-1.16.0-esp32-categories.json",
+      "GUIDON-1.16.0-esp32-flashcardos.bin", "GUIDON-1.16.0-esp32-partitions.bin", "GUIDON-1.16.0-ios-simulator.zip", "GUIDON-1.16.0-macos-universal.dmg", "GUIDON-1.16.0-standalone.html",
+      "GUIDON-1.16.0-web-pwa.zip", "GUIDON-1.16.0-windows-setup.exe", "GUIDON-1.16.0-windows.msi", "GUIDON-android.apk", "GUIDON-windows-setup.exe"];
+    j = judgePublished({ tag: "v1.16.0", version: "1.16.0", present: published1160 });
+    check(j.failures.length === 0 && j.passes.length === 1 && !j.notes.some((n) => /lanes/.test(n)), "--published: v1.16.0 exactly as GitHub lists it (no deck list) still passes, and is not even nagged about the file it never had", "v1.16.0 as published: " + JSON.stringify(j));
+    const next = expectedAssets("1.16.1").map((a) => a.name);
+    j = judgePublished({ tag: "v1.16.1", version: "1.16.1", present: next.filter((n) => n !== "GUIDON-1.16.1-esp32-lanes.json") });
+    check(j.failures.length === 1 && /missing required: GUIDON-1\.16\.1-esp32-lanes\.json/.test(j.failures[0]), "--published: the release after v1.16.0 published without its deck list FAILS, naming GUIDON-1.16.1-esp32-lanes.json");
+    j = judgePublished({ tag: "v1.16.1", version: "1.16.1", present: next });
+    check(j.failures.length === 0, "--published: ...and passes once the deck list is attached");
   }
 
   console.log("\n5. --cut: the last check before a permanent tag");

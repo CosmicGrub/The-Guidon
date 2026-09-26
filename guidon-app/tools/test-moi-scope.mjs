@@ -95,7 +95,7 @@ const fixtures = await page.evaluate(() => {
   // comment on why that field, not generatedDrillCategories).
   const seen = new Map();
   for (const q of board) {
-    for (const raw of M.tokenizeCitations(q.source || "")) {
+    for (const raw of M.tokenizeCitations(window.G.board.sourceText(q))) {
       const m = M.matchCitation(raw);
       if (m.tier === "unmatched") continue;
       if (!m.counts || !(m.counts.doctrineCards > 0) || !(m.counts.selfCheckQuestions > 0)) continue;

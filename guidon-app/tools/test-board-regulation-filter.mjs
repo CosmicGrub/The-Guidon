@@ -1,10 +1,12 @@
 /**
  * Board Drill "Quick-filter by regulation" - ROADMAP.md §3f Phase 1-2's
  * "structured `regulation` field decomposed from board questions' free-
- * text `source`", shipped as RUNTIME derivation (G.board.regulationsOf)
- * rather than a persisted 997-card seed field - see that function's own
- * comment for the reasoning (re-run cost on every new card, staleness on
- * any hand edit, zero seed churn).
+ * text `source`", shipped as RUNTIME derivation (G.board.regulationsOf).
+ * (ROADMAP item F Wave 2 later made a card's `source` a structured array
+ * and regulationsOf now reads the entries' `pub`; it still accepts a plain
+ * string, which is what the grammar cases below feed it, and the rules are
+ * unchanged - tools/test-board-citations.mjs proves the chips are identical
+ * card for card. See G.board.regulationsOf's own comment for the history.)
  *
  * Three layers, each asserted against the REAL bank, not fixtures:
  *  1. The grammar itself: every spelling-drift case the 2026-09-15 dry

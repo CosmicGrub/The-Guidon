@@ -71,16 +71,41 @@ export const OPTIONAL_ALIASES = {
 };
 
 /**
+ * The last release that shipped WITHOUT the handheld's deck list
+ * (GUIDON-X.Y.Z-esp32-lanes.json, ROADMAP "Later": MOS decks on the ESP32
+ * handheld). v1.16.0 and every release before it are published, permanent and
+ * lack that file; a rule that demanded it of them would fail
+ * `lint-release-state.mjs --published`, and would refuse to mark Latest any of
+ * them that is ever re-finalised. So the file is part of a release's expected
+ * set only for versions NEWER than this one - required from the next release
+ * onward, not mentioned for the ones already out. (A release that predates a
+ * file simply is not expected to carry it; this is the same trick to use for
+ * the next file that joins the set.)
+ */
+export const ESP32_LANES_AFTER = "1.16.0";
+
+/** True when x.y.z `v` is strictly newer than `base`, compared number by
+ *  number (so 1.16.10 is newer than 1.16.9, and 1.9.0 is older than 1.16.0). */
+export function isNewerVersion(v, base) {
+  const a = String(v).split(".").map(Number), b = String(base).split(".").map(Number);
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i];
+  return false;
+}
+
+/**
  * Every asset a release is expected to carry.
  *   required: true  -> the release is not complete (never Latest) without it.
  *   required: false -> listed when attached, called out plainly when not.
  * Apple files are built by a separate workflow on its own clock and have
  * never yet been produced by a real run, so they must not be able to hold
  * the working Android and Windows download buttons hostage.
+ * The handheld's deck list is required only from the release after
+ * ESP32_LANES_AFTER (see there).
  */
 export function expectedAssets(version) {
   const v = String(version || "").trim();
   if (!/^\d+\.\d+\.\d+$/.test(v)) throw new Error(`release-manifest: "${version}" is not an x.y.z version`);
+  const lanes = isNewerVersion(v, ESP32_LANES_AFTER) ? [{ name: `GUIDON-${v}-esp32-lanes.json`, group: "esp32", required: true }] : [];
   return [
     { name: ALIASES.android, group: "android", alias: true, required: true },
     { name: `GUIDON-${v}-android.apk`, group: "android", required: true },
@@ -95,6 +120,7 @@ export function expectedAssets(version) {
     { name: `GUIDON-${v}-esp32-partitions.bin`, group: "esp32", required: true },
     { name: `GUIDON-${v}-esp32-cards.ndjson`, group: "esp32", required: true },
     { name: `GUIDON-${v}-esp32-categories.json`, group: "esp32", required: true },
+    ...lanes,
     { name: `GUIDON-${v}-macos-universal.dmg`, group: "macos", required: false },
     { name: OPTIONAL_ALIASES.macos, group: "macos", alias: true, required: false },
     { name: `GUIDON-${v}-ios-simulator.zip`, group: "ios-simulator", required: false },
@@ -167,7 +193,8 @@ export function renderDownloads({ version, tag, repo, present }) {
   }
   const espNames = expectedAssets(v).filter((a) => a.group === "esp32").map((a) => a.name);
   if (espNames.every((n) => have.has(n))) {
-    rows.push(["GUIDON flashcard handheld", espNames.map(link).join("<br>"), "For the small flashcard device only. The three .bin files go on the device; the card files go on its memory card."]);
+    const hasDecks = espNames.some((n) => /-esp32-lanes\.json$/.test(n));
+    rows.push(["GUIDON flashcard handheld", espNames.map(link).join("<br>"), "For the small flashcard device only. The three .bin files go on the device; " + (hasDecks ? "the card files, including the deck list, go on its memory card." : "the card files go on its memory card.")]);
   }
   if (have.has(`GUIDON-${v}-android.aab`)) {
     rows.push(["App store upload (not for phones)", link(`GUIDON-${v}-android.aab`), "Store upload package. It will not install on a phone - use the Android file at the top instead."]);

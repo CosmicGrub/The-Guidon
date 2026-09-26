@@ -7,7 +7,12 @@ the device's microSD card over the same USB-serial link used for flashing
 
 Usage (from firmware/esp32-flashcard-os/, after env:sdloader is flashed):
     python tools/push-to-sd.py COM12
-    python tools/push-to-sd.py COM12 --files sdcard/cards.ndjson sdcard/categories.json
+    python tools/push-to-sd.py COM12 --files sdcard/cards.ndjson sdcard/categories.json sdcard/lanes.json
+
+With no --files it sends cards.ndjson and categories.json, plus lanes.json (the
+deck list that lets the device offer MOS decks) when tools/extract-cards.mjs
+wrote one. Older content without a lanes.json still works: the device then
+shows every subject in one list.
 """
 import argparse
 import sys
@@ -75,11 +80,18 @@ def push_file(ser, path: Path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("port", help="Serial port, e.g. COM12")
-    ap.add_argument("--files", nargs="+", default=["sdcard/cards.ndjson", "sdcard/categories.json"])
+    ap.add_argument("--files", nargs="+", default=None)
     ap.add_argument("--baud", type=int, default=115200)
     args = ap.parse_args()
 
-    paths = [Path(p) for p in args.files]
+    files = args.files
+    if files is None:
+        files = ["sdcard/cards.ndjson", "sdcard/categories.json"]
+        # The deck list is optional on the device, so it is sent only when the
+        # exporter wrote one (a missing cards file still fails loudly below).
+        if Path("sdcard/lanes.json").exists():
+            files.append("sdcard/lanes.json")
+    paths = [Path(p) for p in files]
     missing = [p for p in paths if not p.exists()]
     if missing:
         sys.exit(f"missing file(s): {missing} - run tools/extract-cards.mjs first")
