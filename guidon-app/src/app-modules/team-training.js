@@ -78,7 +78,9 @@
   // dropped rather than shown as an empty card.
   function normalizeSessions(v) {
     if (!Array.isArray(v)) return [];
-    var seen = {}, out = [];
+    // No prototype: an id read from storage or a backup can be any text, and
+    // on a plain {} "constructor" or "toString" would already look "seen".
+    var seen = Object.create(null), out = [];
     v.forEach(function (s) {
       if (!s || typeof s !== "object" || Array.isArray(s)) return;
       if (typeof s.id !== "string" || !s.id || seen[s.id]) return;
@@ -126,6 +128,11 @@
   // when it is the exercise the session was waiting for.
   var _chain = null;
   var _running = "";
+  // The "Plan a session" draft: a name and an ordered list of exercise ids,
+  // held here (in memory, never stored - so a Guest or Kiosk session saves
+  // nothing either) so it survives render() being run again when the person
+  // leaves the screen and comes back. Mutated in place; never replaced.
+  var _draft = { title:"", steps:[], open:false };
 
   // Study Rooms hand-off (src/app-modules/room-schema.js, "THE HAND-OFF
   // MODEL", kind "team-session"): the wire carries exercise ids in order and
@@ -135,7 +142,7 @@
   function handoffPrepare(data, offer) {
     var known = data.steps.filter(exerciseById), missing = data.steps.length - known.length;
     if (!known.length) return { ok:false, message:"None of this session's exercises are on this device, so there is nothing to add. Update GUIDON on this device, then ask the host to share it again." };
-    var notes = ["About " + sessionMinutes(known) + " minutes in all.", "Adding this saves it in your list of team sessions on this device. It holds only the exercise names in order - no names and no scores."];
+    var notes = ["About " + sessionMinutes(known) + " minutes in all.", "Adding this saves it in your list of team sessions on this device. It holds only the exercise names in order and the session title - no Soldiers' names and no scores."];
     if (missing) notes.push(missing + (missing === 1 ? " exercise isn't" : " exercises aren't") + " on this device and will be left out.");
     return { ok:true, title:cleanTitle(offer && offer.title) || "Team session", lines:stepLines(known), notes:notes };
   }
@@ -175,7 +182,13 @@
     if (!guard || typeof guard.screen !== "function") return { ok:false, message:"GUIDON couldn't check the session name, so nothing was sent." };
     var found = guard.screen(name).findings;
     if (found.length) return { ok:false, message:"The session name looks like it holds " + guard.listWhat(found) + ", so nothing was sent. Change the name and try again." };
-    return { ok:true, title:name, data:{ steps:ids.slice() }, lines:[name].concat(stepLines(ids), ["About " + sessionMinutes(ids) + " minutes in all."]) };
+    var lines = [name].concat(stepLines(ids), ["About " + sessionMinutes(ids) + " minutes in all."]);
+    // The name is checked alone above; the lines are checked as the person
+    // will read them (the confirm box, and every receiver's preview, show the
+    // name beside the exercise list) so nothing that only adds up together gets by.
+    var whole = guard.screen(lines.join("\n")).findings;
+    if (whole.length) return { ok:false, message:"The session name and exercise list look like they hold " + guard.listWhat(whole) + ", so nothing was sent. Change the name and try again." };
+    return { ok:true, title:name, data:{ steps:ids.slice() }, lines:lines };
   }
 
   async function loadStats() {
@@ -495,7 +508,11 @@
     }
 
     // ---- saved sessions + "Plan a session" ----
-    var draft = { title:"", steps:[], open:false };
+    // The session being planned lives at module level, in memory only (never
+    // written anywhere), so leaving this screen - to open Study Rooms and host
+    // a room before sharing, say - and coming back finds it as it was left.
+    // Saving, "Clear" or closing GUIDON is what empties it.
+    var draft = _draft;
     var sessionsGen = 0, sessionsStatus = "", sessionsGate = null;
     async function drawSessions(focusSel) {
       var gen = ++sessionsGen;
@@ -504,7 +521,7 @@
       util.clear(sessionsHost);
       var panel = el("div.panel", { "data-team-session-panel":"1" });
       panel.appendChild(el("div.eyebrow", { text:"Team sessions" }));
-      panel.appendChild(el("p.hint", { text:"A session is a few exercises in the order you will run them. Save the ones you use, or share one to your Study Room so your team can add it too. A saved session keeps only the exercise names and their order - no names, no scores." }));
+      panel.appendChild(el("p.hint", { text:"A session is a few exercises in the order you will run them. Save the ones you use, or share one to your Study Room (nothing goes until you confirm, and it goes only to the devices in your room) so your team can add it too. A saved session keeps only the exercise names, their order and the title you give it - no Soldiers' names, no scores. Keep Soldiers' names out of the title: it is sent along when you share." }));
       var status = el("p.hint", { role:"status", "aria-live":"polite", "data-team-sessions-status":"1", text:sessionsStatus });
       var statusGo = el("div");
       function setStatus(text, gate) {
@@ -571,7 +588,11 @@
       det.appendChild(el("summary", { text:"Plan a session", "data-team-plan-summary":"1" }));
       var nameId = "team-session-name";
       det.appendChild(el("label", { text:"Session name (optional)", for:nameId }));
-      var nameIn = el("input", { type:"text", id:nameId, maxlength:String(SESSION_TITLE_MAX), value:draft.title, "data-team-session-name":"1", style:"width:100%;margin-bottom:8px" });
+      // 16px at least, as .ob-input and input[type=date] do (max(), because the
+      // root font size follows the text-size setting): below 16px iOS Safari
+      // zooms the whole page in when the box gets focus. A class would lose to
+      // the global input[type="text"] rule, so it is set on the box itself.
+      var nameIn = el("input", { type:"text", id:nameId, maxlength:String(SESSION_TITLE_MAX), value:draft.title, "data-team-session-name":"1", style:"width:100%;margin-bottom:8px;font-size:max(1rem,16px)" });
       nameIn.addEventListener("input", function () { draft.title = nameIn.value; });
       det.appendChild(nameIn);
       det.appendChild(el("p.hint", { text:"Add exercises in the order you will run them - up to " + SESSION_STEPS_MAX + "." }));
