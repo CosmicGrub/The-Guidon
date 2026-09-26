@@ -233,6 +233,21 @@
         "The NCOER (DA Form 2166-9-2) worksheet is filled out - the Senior Rater section is there for the first time, and the rater performance rating no longer uses the wrong scale.",
         "You can now pin your favorite Board Drill categories for one-tap access, and those pins travel with you in a backup and restore."
       ]
+    },
+    {
+      "version": "1.17.0",
+      "date": "September 2026",
+      "title": "Unit study decks, PT plans and Team Training sessions in Study Rooms, and up-to-date body-composition and promotion facts",
+      "highlights": [
+        "Study Rooms can now share a PT plan or a Team Training session, not just a deck. The room host sends it, you see a preview, and nothing is added to your device until you tap Add - and you can undo it.",
+        "Your unit can give you its own study deck. A leader builds it from a simple file, you add it under Settings, Study Preferences, Unit decks, and it shows up in Board Drill, Quiz, Rapid Fire and Search.",
+        "Before a unit deck is added you see a preview, and anything that looks sensitive - a marking, an ID or phone number, an email, or a list of names - is refused. The deck stays on your device and in your backups.",
+        "Team Training now keeps your sessions - build one once, save it to a list, and start it again whenever the team meets.",
+        "Body composition follows the latest Army rule: waist-to-height under 0.55 is the only standard, and the old monthly-progress steps are gone. Three new Board Drill cards cover Blended Retirement continuation pay.",
+        "Fixed the leader course needed for Master Sergeant: it is the Senior Leader Course. The Master Leader Course counts toward Sergeants Major Academy selection instead.",
+        "Every source line in Board Drill and the study screens now reads the same way. Four cards that put a regulation in our own words now say \"Study-guide answer\" instead of \"By the Book.\"",
+        "Four cyber and OPSEC scenarios and the Scenario Builder blank now show their doctrine source instead of the word \"undefined.\""
+      ]
     }
   ]
 }
