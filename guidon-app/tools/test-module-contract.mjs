@@ -186,6 +186,8 @@ if (!STAND_IN) {
     '  G.db.put("kv", { k: "pt:" + Date.now(), v: 1 });',
     '  G.db.put("kv", { k: somethingOnlyKnownLater(), v: 1 });',
     "  G.board.render = function () {};",
+    // The old Collective Decision wrapper, put back: a module that captures the public engine entry point and replaces it.
+    "  var soloRun = G.engine.run; G.engine.run = function () { return soloRun.apply(this, arguments); };",
     '  G.ext.on("bord:rendered", function () {});',
     "  if (G.assignments) G.assignments.render(document.body);",
     "})();", ""].join("\n"));
@@ -581,6 +583,7 @@ if (STAND_IN) {
   expectBreach(B, "storage", /pt-planner\.js:\d+ writes the storage key "pt:\*"/, "an undeclared key prefix write");
   expectBreach(B, "storage", /pt-planner\.js:\d+ writes a storage key this scan cannot read \(somethingOnlyKnownLater\(\)\)/, "a key the static scan cannot read is a failure, not a blind spot");
   expectBreach(B, "patches", /pt-planner\.js:\d+ assigns G\.board\.render, a function that already exists/, "a module that replaces G.board.render without declaring it");
+  expectBreach(B, "patches", /pt-planner\.js:\d+ assigns G\.engine\.run, a function that already exists/, "a module that replaces G.engine.run without declaring it (what 00-roadmap-bootstrap.js's Collective Decision wrapper did until it became a real engine mode)");
   expectBreach(B, "hooks", /pt-planner\.js:\d+ subscribes to the extension point "bord:rendered", which core does not declare/, "a subscription to a misspelt extension point");
   expectBreach(B, "requires", /pt-planner\.js uses G\.assignments[.\w]*, which src\/app-modules\/assignments\.js provides, but declares "assignments" under neither/, "a call into another module that the manifest does not declare");
   {
@@ -599,7 +602,9 @@ if (STAND_IN) {
   // Manifest-side defects: the source is the real tree, the claims are wrong.
   const clone = () => JSON.parse(JSON.stringify(realManifest));
   const tweak = (fn) => { const m = clone(); fn(m, (id) => m.modules.find((x) => x.id === id)); return judge(real, m); };
-  expectBreach(tweak((m, mod) => { mod("roadmap-bootstrap").patches = []; }), "patches", /00-roadmap-bootstrap\.js REPLACES G\.engine\.run as it loads/, "the G.engine.run replacement with its manifest declaration removed (an undeclared monkeypatch)");
+  // ROADMAP 3g H: Collective Decision is a mode of the core engine, so no module replaces G.engine.run any more and the manifest holds no such patch.
+  check(!realManifest.modules.some((m) => (m.patches || []).some((p) => p.name === "G.engine.run")), "(c) no manifest entry declares a patch of G.engine.run (Collective Decision is a real engine mode now, not a wrapper)", "(c) a manifest entry still declares a patch of G.engine.run - Collective Decision moved into the core engine (ROADMAP 3g H); remove the entry or explain what replaces it now");
+  check(!realManifest.modules.some((m) => m.provides.includes("G.engine.runCollective")), "(c) no module claims to provide G.engine.runCollective (core defines it)", "(c) a module still lists G.engine.runCollective under provides, but core defines it now");
   expectBreach(tweak((m, mod) => { mod("pt-planner").patches = [{ name: "G.engine.run", when: "load", why: "planted: it does not" }]; }), "patches", /pt-planner\.js declares a load-time patch of G\.engine\.run, but that function was not replaced/, "a declared patch that does not happen");
   expectBreach(tweak((m, mod) => { mod("mock-board-simulator").patches = []; }), "patches", /mock-board-simulator\.js:\d+ assigns G\.store\.scenario \(through the alias store\)/, "the simulator's call-time swap of G.store.scenario with its declaration removed");
   expectBreach(tweak((m, mod) => { mod("roadmap-bootstrap").hooks = ["board:rendered"]; }), "hooks", /00-roadmap-bootstrap\.js subscribes to "drills:rendered" but its manifest entry does not list it/, "a subscription missing from \"hooks\"");
