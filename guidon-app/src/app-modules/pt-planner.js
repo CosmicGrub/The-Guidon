@@ -1095,7 +1095,7 @@
       stage.appendChild(el("div.btn-row", {}, [rebalance, shuffle, schedule]));
       stage.appendChild(el("div.panel", { "data-pt-share":"1" }, [
         el("div.eyebrow", { text:"Share this plan" }),
-        el("p.hint", { text:"Save the plan as a file and send it however your unit shares files. Anyone with GUIDON opens it here with \"Open a shared plan file\". Nothing is sent by GUIDON itself." }),
+        el("p.hint", { text:"Save the plan as a file and send it however your unit shares files. Anyone with GUIDON opens it here with \"Open a shared plan file\". Saving a file sends nothing: GUIDON only makes the file on this device, and you choose how to pass it on." }),
         el("div.btn-row", {}, [exp, imp, sheet]), fileIn, impStatus
       ]));
       var roomPanel = roomSharePanel();
@@ -1422,8 +1422,14 @@
     var g = G.opsecGuard;
     return g && typeof g.screen === "function" ? g : null;
   }
+  // A set with NO prototype: a drill id is text from the wire, and on a plain
+  // {} the ids "constructor", "toString" and "valueOf" would read as real
+  // drills on this device (they are inherited members, not entries). Every
+  // lookup that takes a key from the wire - the drill ids, the payload's own
+  // session keys - goes through a table built here.
+  function bareTable() { return Object.create(null); }
   function handoffDrillIds() {
-    var ids = {};
+    var ids = bareTable();
     try { ((store.prtMeta().drills) || []).forEach(function (d) { if (d && d.id) ids[d.id] = true; }); } catch (e) {}
     return ids;
   }
@@ -1432,7 +1438,7 @@
   // this device does not have are counted, never named (an id is not a word
   // a Soldier reads).
   function handoffDescribe(data) {
-    var byKey = {}, known = handoffDrillIds(), missing = 0, unknownTypes = 0;
+    var byKey = bareTable(), known = handoffDrillIds(), missing = 0, unknownTypes = 0;
     (data.sessions || []).forEach(function (s) {
       byKey[s.key] = s;
       s.blocks.forEach(function (id) { if (!known[id]) missing++; });
@@ -1460,7 +1466,7 @@
     if (!guard) return { ok:false, message:"GUIDON couldn't check the names in this plan, so nothing was sent." };
     var custom = await loadCustomSessions();
     var plan = await loadPlan(custom);
-    var L = H.LIMITS, sessions = [], keyOf = {}, texts = [], refuse = "";
+    var L = H.LIMITS, sessions = [], keyOf = bareTable(), texts = [], refuse = "";
     function entryOut(e) {
       if (e.id !== "custom" && Object.prototype.hasOwnProperty.call(PRESETS, e.id)) return { id:e.id };
       var cs = findCustomSession(custom, e.id);
@@ -1496,6 +1502,15 @@
     if (sessions.length) data.sessions = sessions;
     if (dates.length) data.dates = dates;
     var d = handoffDescribe(data);
+    // ...and so does every LINE, as a person will read it. A changed date is
+    // one string and its name is another; a future date, a place and a unit
+    // activity only add up to something to stop once they sit on one line
+    // ("2026-10-01: Live-fire at Range 4"), and that is the line the confirm
+    // box shows and every receiver's preview draws.
+    for (var j = 0; j < d.lines.length; j++) {
+      var onLine = guard.screen(d.lines[j]).findings;
+      if (onLine.length) return { ok:false, message:H.MESSAGES.guardOut + " (It looks like " + guard.listWhat(onLine) + ", on the line for " + String(d.lines[j]).split(":")[0] + ".)" };
+    }
     var lines = d.lines.slice();
     if (cut) lines.push("(Only the next " + L.ptDates + " changed dates are included.)");
     return { ok:true, title:"Weekly PT plan", data:data, lines:lines };
@@ -1503,7 +1518,7 @@
   // Receiving side, step 1: what the person is being offered, in plain words.
   function handoffPrepare(data, offer) {
     var d = handoffDescribe(data);
-    var notes = ["Adding this replaces your current weekly PT plan. Your completed PT history is not touched, and you can undo it straight afterwards."];
+    var notes = ["Adding this replaces your current weekly PT plan. Your completed PT history is not touched, and you can undo it straight afterwards (until you change your plan or leave the room)."];
     if (d.sessions) notes.push(d.sessions === 1 ? "One custom session comes with it and is added to your list." : d.sessions + " custom sessions come with it and are added to your list.");
     if (d.missing) notes.push(d.missing + (d.missing === 1 ? " drill block isn't" : " drill blocks aren't") + " on this device and will be left out.");
     if (d.unknownTypes) notes.push(d.unknownTypes + (d.unknownTypes === 1 ? " day uses a session type" : " days use a session type") + " this version doesn't know, so " + (d.unknownTypes === 1 ? "it shows" : "they show") + " as Custom PT.");
@@ -1516,10 +1531,19 @@
   }
   // Step 2, only on the person's own tap: save it. Returns { ok, message,
   // undo } - undo puts back exactly what was here before (this session only).
+  // What is saved right now - the weekly plan and the custom sessions, read
+  // back through the same rebuild every screen uses - as one comparable text.
+  // Undo asks whether this is still exactly what Add left behind.
+  async function handoffStored() {
+    var sessions = await loadCustomSessions();
+    var plan = await loadPlan(sessions);
+    return JSON.stringify([plan, sessions]);
+  }
+  var UNDO_GONE = "Undo isn't possible any more, because your PT plan or your custom sessions were changed after you added this. Nothing was changed, so your changes are safe.";
   async function handoffApply(data) {
     var cur = await loadCustomSessions();
     var prevPlan = await loadPlan(cur);
-    var known = handoffDrillIds(), list = cur.slice(), keyMap = {}, byKey = {}, left = 0, added = 0;
+    var known = handoffDrillIds(), list = cur.slice(), keyMap = bareTable(), byKey = bareTable(), left = 0, added = 0;
     (data.sessions || []).forEach(function (s) {
       byKey[s.key] = s;
       var blocks = s.blocks.filter(function (id) { return known[id]; }).map(function (id) { return { drillId:id }; });
@@ -1553,12 +1577,26 @@
       if (added) await saveCustomSessions(cur);
       return { ok:false, message:"GUIDON couldn't save the plan. Nothing was changed." };
     }
+    // Remember exactly what Add left saved. Undo puts the earlier plan back
+    // ONLY while storage still equals this: once the Soldier has changed the
+    // plan or a custom session since, restoring the earlier copy would wipe
+    // their newer work, so it refuses instead and says why.
+    var wrote = await handoffStored();
+    async function stillAsWritten() {
+      try { return (await handoffStored()) === wrote; } catch (e) { return false; }
+    }
     return {
       ok:true,
       message:"Added. This is now your PT plan." + (left ? " " + left + (left === 1 ? " drill block wasn't" : " drill blocks weren't") + " on this device and " + (left === 1 ? "was" : "were") + " left out." : ""),
+      canUndo:stillAsWritten,
+      undoGone:UNDO_GONE,
       undo:async function () {
-        await saveCustomSessions(cur);
-        return { ok:await savePlan(prevPlan, cur) };
+        if (!(await stillAsWritten())) return { ok:false, changed:true, message:UNDO_GONE };
+        // The plan first: if that save fails nothing at all has changed. The
+        // sessions Add brought in only matter to a plan that points at them.
+        if (!(await savePlan(prevPlan, cur))) return { ok:false, message:"GUIDON couldn't undo that. Nothing was changed." };
+        if (!(await saveCustomSessions(cur))) return { ok:false, message:"Your earlier plan is back, but GUIDON couldn't take out the custom sessions that came with the shared one." };
+        return { ok:true };
       }
     };
   }
@@ -1576,7 +1614,7 @@
     if (!c) return null;
     return el("div.panel", { "data-pt-room-share":"1" }, [
       el("div.eyebrow", { text:"Share to a Study Room" }),
-      el("p.hint", { text:"If you are hosting a Study Room, send this weekly plan straight to everyone in it. Only the plan's structure goes - no names, ranks, history or notes - and each Soldier previews it and chooses whether to add it." }),
+      el("p.hint", { text:"If you are hosting a Study Room, send this weekly plan straight to everyone in it. Only the plan's structure goes, and any session names you typed for it - never your profile, rank, MOS, history or notes, and keep Soldiers' names out of the names. Nothing leaves this device until you confirm, it goes only to the devices in your room, and each Soldier previews it and chooses whether to add it." }),
       c
     ]);
   }

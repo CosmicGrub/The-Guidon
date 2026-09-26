@@ -319,6 +319,11 @@ a:hover { text-decoration: underline; }
 .btn.primary:hover { box-shadow: var(--glow-amber); filter: brightness(1.05); color: var(--btn-ink, #1a1206); }
 .btn.ghost { background: transparent; }
 .btn.sm { font-size: .75rem; padding: 6px 10px; }
+/* Study Rooms hand-off (the share control, the offer card's Add / Not now /
+   Undo / Done, Send again) and Team Training's session builder (Up, Down,
+   Remove ...): short labels make .btn.sm narrower than a fingertip. Same 44px
+   floor the rest of the app's controls carry (the height already is). */
+.sg-offer .btn, .sg-shared .btn, .sg-share .btn, [data-team-session-panel] .btn { min-width: 44px; }
 .btn.block { display: block; width: 100%; text-align: center; }
 .btn:disabled, .btn[aria-disabled="true"] { opacity: .4; cursor: not-allowed; }
 .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -3090,6 +3095,15 @@ mark.dict-hi {
    them scrolls (36px = .gm-back's 18px padding, top and bottom). */
 .gm-box.whatsnew-box { display:flex; flex-direction:column; max-height:calc(100vh - 36px); max-height:calc(100dvh - 36px); }
 .whatsnew-body { overflow-y:auto; min-height:0; overflow-wrap:anywhere; }
+/* The themed confirm/prompt box (G.modal) gets the same treatment: a long
+   message - a shared PT plan listing every session and date, say - can be
+   taller than a laptop screen or a phone held sideways. The box never grows
+   past the screen; only the message scrolls, and the title and the buttons
+   (Send / Cancel, Remove / Cancel ...) stay put and reachable. */
+.gm-box.gm-dialog { display:flex; flex-direction:column; max-height:calc(100vh - 36px); max-height:calc(100dvh - 36px); }
+.gm-dialog-body { overflow-y:auto; min-height:0; overflow-wrap:anywhere; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
+.gm-dialog-body:focus-visible { outline:2px solid var(--amber); outline-offset:2px; }
+.gm-box.gm-dialog > .eyebrow, .gm-box.gm-dialog > .btn-row, .gm-box.gm-dialog > .ob-input { flex-shrink:0; }
 /* Narrow-screen table fallback. The Channels gate table has 5 columns; below
    ~420px (folded Z Fold, small phones) that cannot fit, so each row becomes a
    stacked block with its column name as a prefix. Data-label is set in JS. */
@@ -28219,9 +28233,15 @@ window.G = window.G || {};
   function dialog(opts) {
     return new Promise((resolve) => {
       const back = el("div.gm-back", { role:"presentation" });
-      const box  = el("div.gm-box", { role:"dialog", "aria-modal":"true", "aria-label": opts.title || "Confirm" });
+      const box  = el("div.gm-box.gm-dialog", { role:"dialog", "aria-modal":"true", "aria-label": opts.title || "Confirm" });
       box.appendChild(el("div.eyebrow", { text: opts.title || "Confirm" }));
-      if (opts.message) box.appendChild(el("p", { text: opts.message, style:"white-space:pre-line;margin:6px 0 10px" }));
+      // The message sits in its own scroll region (see .gm-dialog above), so
+      // a message longer than the screen scrolls while the buttons stay on it.
+      let bodyEl = null;
+      if (opts.message) {
+        bodyEl = el("div.gm-dialog-body", {}, [ el("p", { text: opts.message, style:"white-space:pre-line;margin:6px 0 10px" }) ]);
+        box.appendChild(bodyEl);
+      }
       let input = null;
       if (opts.prompt) {
         input = el("input.ob-input", { type:"text", value: opts.value || "",
@@ -28262,7 +28282,16 @@ window.G = window.G || {};
       ok.addEventListener("click", accept);
       back.addEventListener("click", (e) => { if (e.target === back) closeWith(opts.prompt ? null : false); });
       document.body.appendChild(back);
-      requestAnimationFrame(() => requestAnimationFrame(() => back.classList.add("modaltrap-open")));
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        back.classList.add("modaltrap-open");
+        // Only a message that really overflows becomes a keyboard stop (so the
+        // arrow keys can scroll it); a short one adds no extra Tab stop.
+        if (bodyEl && bodyEl.scrollHeight > bodyEl.clientHeight + 1) {
+          bodyEl.tabIndex = 0;
+          bodyEl.setAttribute("role", "region");
+          bodyEl.setAttribute("aria-label", (opts.title || "Message") + " - scroll for the rest");
+        }
+      }));
       setTimeout(() => { (input || ok).focus(); }, 40);
     });
   }

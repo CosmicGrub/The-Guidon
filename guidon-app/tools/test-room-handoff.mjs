@@ -172,7 +172,7 @@ await section("2. PT plan: share, preview, confirm", async () => {
   await clickWhenStable(H, '[data-pt-view="week"]');
   check(await until(H, () => !!document.querySelector("[data-pt-room-share] .sg-share-btn")), "the Week view of PT Planner has a \"Share to my room\" button");
   const idle = await text(H, "[data-pt-room-share] .sg-share-status");
-  check(idle.indexOf(ROOM) !== -1 && /3 devices are seated/.test(idle) && /no names, ranks, progress or notes/.test(idle), "before anything is tapped it says which room and how many devices, and what never goes: \"" + idle + "\"", () => idle);
+  check(idle.indexOf(ROOM) !== -1 && /3 devices are seated/.test(idle) && /Nothing is sent until you confirm/.test(idle) && /never includes your profile, rank, MOS, progress, attempts, notes or results/.test(idle) && /names you typed/.test(idle), "before anything is tapped it says which room and how many devices, that nothing goes until confirmed, that the names typed go and what never goes: \"" + idle + "\"", () => idle);
   check((await Promise.all(PEERS.map((p) => st(p)))).every((s) => s.offer === null), "no device holds an offer yet");
 
   await clickWhenStable(H, "[data-pt-room-share] .sg-share-btn");
@@ -184,7 +184,7 @@ await section("2. PT plan: share, preview, confirm", async () => {
   check(/Monday: Circuit night \(Hard\)/.test(box) && box.indexOf(ARROW) !== -1, "...including the custom session by name and its drill blocks in order");
   check(box.indexOf(DATE_CHANGE + ": " + PRESET_TITLES.recovery) !== -1, "...and the one changed date (" + DATE_CHANGE + ")");
   check(PLANTED_ALL.every((s) => box.indexOf(s) === -1) && !/\bcd[12]\b/.test(box), "nothing planted and no internal drill id is on it", () => box);
-  check(/no names, ranks, progress or notes/.test(box) && /unless that person chooses/.test(box), "it says only this is sent and nothing is added unless each person chooses");
+  check(/never includes your profile, rank, MOS, progress, attempts, notes or results/.test(box) && /includes any names you typed for it/.test(box) && /small codes GUIDON needs/.test(box) && /unless that person chooses/.test(box), "it says what is sent (this list, the names typed, and the small codes), what never goes, and that nothing is added unless each person chooses", () => box);
   await clickButtonByText(H, "Send to the room", ".gm-box");
   check(await until(H, () => /Sent to 3 devices/.test((document.querySelector("[data-pt-room-share] .sg-share-status") || {}).textContent || "")), "the status line says it went to 3 devices");
   const hostState = await st(H);
@@ -254,7 +254,7 @@ await section("2b. PT plan: add, undo, and a Guest who adds", async () => {
 await section("3. Team Training session: plan, reorder, share, add, run", async () => {
   await waitForRoute(H, "#/team", { ready: "details[data-team-builder]" });
   const noSessions = await text(H, "[data-team-session-panel]");
-  check(/No saved sessions yet/.test(noSessions) && /no names, no scores/.test(noSessions), "the Team Training screen has a \"Team sessions\" panel and says a saved session holds only exercise names and order");
+  check(/No saved sessions yet/.test(noSessions) && /no Soldiers' names, no scores/.test(noSessions), "the Team Training screen has a \"Team sessions\" panel and says a saved session holds only exercise names and order");
   await clickWhenStable(H, "[data-team-plan-summary]");
   await clickWhenStable(H, '[data-team-add="aar-huddle"]');
   await clickWhenStable(H, '[data-team-add="pace-trust"]');
@@ -281,7 +281,7 @@ await section("3. Team Training session: plan, reorder, share, add, run", async 
   const lines = await texts(P1, ".sg-offer-lines li");
   check(JSON.stringify(lines) === JSON.stringify(["1. AAR Huddle (8 min)", "2. Blind Relay (10 min)", "3. Land Nav Pace-Trust (15 min)"]) && await text(P1, ".sg-offer-title") === "Squad night 1", "P1 sees the named session and the three exercises in order", () => JSON.stringify(lines));
   const pv = await text(P1, ".sg-offer");
-  check(/About 33 minutes/.test(pv) && /no names and no scores/.test(pv) && /Add to Team Training/.test(pv), "with the minutes, what saving holds, and \"Add to Team Training\"");
+  check(/About 33 minutes/.test(pv) && /no Soldiers' names and no scores/.test(pv) && /Add to Team Training/.test(pv), "with the minutes, what saving holds, and \"Add to Team Training\"");
   check((await kv(P1, "team:sessions:v1")) === null, "nothing is saved until it is added");
   await clickWhenStable(P1, ".sg-offer-add");
   check(await until(P1, () => !!document.querySelector('.sg-offer[data-offer-status="added"]')), "P1 added it");
@@ -510,6 +510,10 @@ await section("7. the guest page (dist/guest.html) joins a real relay and shows 
     check(/a PT plan/.test(t) && /can't add it to anything/.test(t) && /open the GUIDON app/.test(t) && /Nothing about it is kept on this page/.test(t), "it says the host shared a PT plan, that this page cannot add it, to open the app, and that nothing is kept: \"" + t + "\"", () => t);
     const body = await g.evaluate(() => document.body.innerText);
     check(body.indexOf("Ruck 6 miles") === -1 && body.indexOf("Weekly PT plan") === -1, "none of the plan's content is drawn on the page");
+    const heldOffer = await g.evaluate(() => window.__guestState().offer);
+    const heldText = JSON.stringify(heldOffer);
+    check(heldOffer && Object.keys(heldOffer).sort().join() === "kind,oid,unsupported,ver" && heldOffer.kind === "pt-plan", "and the page's own memory holds only {oid, kind, ver} of it - not even hidden", () => heldText);
+    check(heldText.indexOf("Ruck") === -1 && heldText.indexOf("Weekly PT plan") === -1 && heldText.indexOf("strength") === -1, "no title, no day name and no session id is anywhere in what the page kept");
     check(!(await has(g, ".gp-offer button")), "and there is no button to add it");
     const stores = await g.evaluate(async () => ({ ls: localStorage.length, ss: sessionStorage.length, cookie: document.cookie, dbs: typeof indexedDB.databases === "function" ? (await indexedDB.databases()).length : 0 }));
     check(stores.ls === 0 && stores.ss === 0 && stores.cookie === "" && stores.dbs === 0, "the guest page stores nothing: no localStorage, sessionStorage, cookie or database", () => JSON.stringify(stores));

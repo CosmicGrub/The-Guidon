@@ -83,7 +83,10 @@ window.GUIDON_BUILD_DIRTY = @@BUILD_DIRTY@@;
   })();
   var app = document.getElementById("app");
   var rt = { ws: null, state: null, code: codeFromUrl(), name: "GUEST", msg: "", timers: [], count: 0, myScore: {}, selfScored: {}, renderTimer: null, lastRender: 0 };
-  var ctx = { now: function () { return Date.now(); }, token: function () { return C.randomToken(); } };
+  /* keepOffer:false - this page cannot open a PT plan or a Team Training
+     session, so the room core keeps only {oid, kind, ver} of what the host
+     shares and drops the title and the data (see reducePeer "offer"). */
+  var ctx = { now: function () { return Date.now(); }, token: function () { return C.randomToken(); }, keepOffer: false };
   window.__guestState = function () { return rt.state; };
 
   function codeFromUrl() {
