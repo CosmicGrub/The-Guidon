@@ -77,6 +77,7 @@
  */
 import { writeFileSync } from "node:fs";
 import { readSeed } from "./seed-io.mjs";
+import { renderCitation } from "./cite-schema.mjs";
 
 // ── CLI args ────────────────────────────────────────────────────────────
 function parseArgs(argv) {
@@ -101,8 +102,11 @@ const OPTS = parseArgs(process.argv.slice(2));
 // this file's header) — same regex, same trim, same drop-empty filter — so
 // "which sources does this card cite" means the same thing here as it does
 // to the app's own "Related doctrine" cross-linking.
-function splitSources(sourceStr) {
-  return (sourceStr || "").split(/[,/;(]/).map((s) => s.trim()).filter(Boolean);
+function splitSources(source) {
+  // A card's source is a structured array since ROADMAP item F Wave 2;
+  // renderCitation() gives back the exact text it always was, so the split (and
+  // every result below) is unchanged.
+  return renderCitation(source).split(/[,/;(]/).map((s) => s.trim()).filter(Boolean);
 }
 
 function groupByCategory(questions) {

@@ -36,7 +36,7 @@
    spaced-repetition board cards, plus a genuinely MLC-scope scenario set. */
 (function () {
   "use strict";
-  G.contentPack.define("mlc-senior-leader-content", function (bank) {
+  G.contentPack.define("mlc-senior-leader-content", function (bank, ctx) {
   if (!bank) return;
 
   var CAT_MLC = "Master Leader Course (MLC)";
@@ -241,8 +241,12 @@
   cards.forEach(function (x) {
     var id = x[0], category = x[1], q = x[2], a = x[3], source = x[4], concept = x[5], tier = x[6], extra = x[7] || {};
     if (qIds.has(id)) return;
+    // "verbatim" keeps these cards' backs exactly as they have always read
+    // (this pack never set verbatim:false); whether the answers are quotations
+    // of the cited publications is a content question this structural change
+    // does not decide.
     var rec = {
-      id: id, category: category, q: q, a: a, boardAnswer: a, source: source,
+      id: id, category: category, q: q, a: a, boardAnswer: a, source: ctx.cite(source, "verbatim"),
       concept: concept, keyPoints: [a], difficulty: "expert", tier: tier,
       curriculum: CURRICULUM
     };

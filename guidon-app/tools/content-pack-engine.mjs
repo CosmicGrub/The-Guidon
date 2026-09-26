@@ -38,6 +38,9 @@
  * "requires" means "loads earlier"; this makes it also mean "the only ids you
  * may read").
  *
+ * ctx.cite(text, quoteKind): the ONE way a pack writes a board card's
+ * `source` (ROADMAP item F Wave 2) - see the method's own comment below.
+ *
  * ctx.pillarFor(category): tools/pillar-map.mjs's REAL category -> pillar
  * table (by way of window.GUIDON_PILLAR_MAP, the same object the build
  * already injects for the running app - see tools/build.mjs and
@@ -50,6 +53,7 @@ import { join } from "node:path";
 import vm from "node:vm";
 import { loadModules, APP_MODULE_DIR } from "./module-manifest.mjs";
 import { runtimePillarMap } from "./pillar-map.mjs";
+import { cite } from "./citation-parse.mjs";
 
 const counts = (d) => ({
   board: ((d.board && d.board.questions) || []).length,
@@ -121,6 +125,21 @@ export function mergeContentPacks(seedObject, moduleDir = APP_MODULE_DIR) {
       const owner = current.file;
       const ctx = {
         pillarFor(category) { return (pillarMap.category || {})[category] || null; },
+        // ROADMAP item F Wave 2: a board card's `source` is a structured
+        // array, never a bare string. A pack keeps writing the readable
+        // citation ("AR 600-9, para 3-9c; DA PAM 600-25") and calls
+        // ctx.cite(text, quoteKind); the array it returns is what goes into
+        // the bank. quoteKind is REQUIRED - "verbatim" only when the card's
+        // By-the-Book text is a quotation from the cited publication,
+        // "paraphrase" for study-guide wording, "synthesis" for text drawn
+        // from several sources. It uses tools/citation-parse.mjs, the same
+        // conservative parser the seed migration used, and
+        // tools/lint-citation-schema.mjs fails CI on any card that reaches
+        // the assembled bank with a string instead.
+        cite(text, quoteKind) {
+          try { return cite(text, quoteKind); }
+          catch (e) { throw new Error(`${owner}: ctx.cite(${JSON.stringify(text)}, ${JSON.stringify(quoteKind)}) - ${e.message}`); }
+        },
         pack(depId) {
           if (!requires.includes(depId)) throw new Error(`${owner}: ctx.pack("${depId}") is not declared under this module's "requires" in manifest.json`);
           if (!registry.has(depId)) throw new Error(`${owner}: ctx.pack("${depId}") has no result yet - "${depId}" must load earlier and must itself call G.contentPack.define()`);

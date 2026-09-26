@@ -148,10 +148,32 @@ async function focusedId(page) {
 
   {
     const hashBefore = await page.evaluate(() => location.hash);
+    // Diagnostic + a deterministic half of the promise. This step failed twice in CI (a 31s wait: two full
+    // attempts, no tab) while the middle-click right after it opened its tab in under a second, and it never
+    // reproduces locally - so a failure has to say WHY. The page records every click it sees on a sidebar link
+    // (was the Control key down, was it a trusted event, and did the app cancel it after its own handlers ran).
+    // "The app never cancels a modified click" is the actual Tier 2(a) promise and does not depend on Chromium
+    // creating a tab, so it is asserted on its own below.
+    await page.evaluate(() => {
+      window.__navClicks = [];
+      document.addEventListener("click", (e) => {
+        const a = e.target && e.target.closest ? e.target.closest(".nav a[data-hash]") : null;
+        if (a) window.__navClicks.push({ href: a.getAttribute("href"), ctrl: e.ctrlKey, trusted: e.isTrusted, prevented: false });
+      }, true);
+      document.addEventListener("click", (e) => {
+        const last = window.__navClicks[window.__navClicks.length - 1];
+        if (last && !last.settled) { last.prevented = e.defaultPrevented; last.settled = true; }
+      }, false);
+    });
     const newPage = await clickAndFindNativeTab(
       page.locator('.nav a[data-hash="#/doctrine"]'),
       { modifiers: ["Control"] }
     );
+    const ctrlClicks = await page.evaluate(() => window.__navClicks.slice()).catch(() => []);
+    const seen = ctrlClicks.filter((c) => c.href === "#/doctrine" && c.ctrl);
+    seen.length && seen.every((c) => c.trusted && !c.prevented)
+      ? ok("the app leaves a Ctrl+click on a sidebar link alone: the page saw " + seen.length + " trusted Control-held click(s) and none was cancelled (opening the tab is then the browser's own job)")
+      : bad("Ctrl+click on a sidebar link: expected at least one trusted, Control-held, un-cancelled click event on #/doctrine, page saw " + JSON.stringify(ctrlClicks));
     if (newPage) {
       // Not waitForLoadState("load"): a popup page starts at about:blank,
       // which itself satisfies "load" instantly - calling this too soon
@@ -168,7 +190,7 @@ async function focusedId(page) {
       await newPage.close();
       await page.waitForTimeout(300);
     } else {
-      bad("Ctrl+click on a sidebar item did not open a new tab");
+      bad("Ctrl+click on a sidebar item did not open a new tab (diagnostics: page saw " + JSON.stringify(ctrlClicks) + "; open pages: " + JSON.stringify(context.pages().map((p) => p.url())) + ")");
     }
   }
 

@@ -21,7 +21,7 @@
 window.G = window.G || {};
 (function () {
   "use strict";
-  G.contentPack.define("aft-event-scoring-content", function (bank) {
+  G.contentPack.define("aft-event-scoring-content", function (bank, ctx) {
     if (!bank) return;
 
     // Reuses the seed's own existing category exactly (not a new one) -
@@ -67,8 +67,10 @@ window.G = window.G || {};
     var qIds = new Set(bank.board.questions.map(function (q) { return q.id; }));
     cards.forEach(function (x) {
       if (qIds.has(x[0])) return;
+      // "verbatim" keeps these cards' backs exactly as they have always read
+      // (this pack never set verbatim:false).
       bank.board.questions.push({
-        id: x[0], category: CATEGORY, q: x[1], a: x[2], boardAnswer: x[2], source: x[3],
+        id: x[0], category: CATEGORY, q: x[1], a: x[2], boardAnswer: x[2], source: ctx.cite(x[3], "verbatim"),
         concept: x[4], keyPoints: [x[2]], difficulty: "basic"
       });
       qIds.add(x[0]);

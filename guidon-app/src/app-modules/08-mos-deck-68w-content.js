@@ -39,7 +39,7 @@
    in the "source" string itself, which every card already renders. */
 (function () {
   "use strict";
-  G.contentPack.define("mos-deck-68w-content", function (bank) {
+  G.contentPack.define("mos-deck-68w-content", function (bank, ctx) {
   if (!bank) return;
 
   bank.mosDecks = Array.isArray(bank.mosDecks) ? bank.mosDecks : [];
@@ -179,10 +179,13 @@
   bank.board = bank.board || { questions: [] };
   bank.board.questions = Array.isArray(bank.board.questions) ? bank.board.questions : [];
   var qIds = new Set(bank.board.questions.map(function (q) { return q.id; }));
+  // "verbatim" keeps these cards' backs exactly as they have always read (this
+  // pack never set verbatim:false); whether the answers are quotations of the
+  // cited publications is a content question this structural change does not decide.
   cards.forEach(function (c) {
     if (qIds.has(c.id)) return;
     var rec = {
-      id: c.id, category: c.category, q: c.q, a: c.a, boardAnswer: c.a, source: c.source,
+      id: c.id, category: c.category, q: c.q, a: c.a, boardAnswer: c.a, source: ctx.cite(c.source, "verbatim"),
       concept: c.concept, keyPoints: [c.a], difficulty: c.difficulty,
       mos: ["68W"], curriculum: CURRICULUM,
     };

@@ -81,7 +81,7 @@
   var EDITION = "2020-10-01 (incl. C1)";
   function src(para) { return [{ pub: "ATP 7-22.02", edition: EDITION, para: para, quoteKind: "paraphrase" }]; }
 
-  G.contentPack.define("prt-drills-expansion", function (bank) {
+  G.contentPack.define("prt-drills-expansion", function (bank, ctx) {
   if (!bank) return null;
   bank.prt = bank.prt && typeof bank.prt === "object" ? bank.prt : {};
   bank.prt.drills = Array.isArray(bank.prt.drills) ? bank.prt.drills : [];
@@ -97,7 +97,10 @@
     };
   }
   function moderate(note) {
-    return { cadence: "moderate", note: note, source: { ref: "ATP 7-22.02", para: null, asOf: null } };
+    // Same {pub, edition, para, quoteKind}[] shape as every other citation
+    // (ROADMAP item F). Edition and para stay "" on purpose: the per-exercise
+    // note names the paragraph in prose, and this record never claimed one.
+    return { cadence: "moderate", note: note, source: [{ pub: "ATP 7-22.02", edition: "", para: "", quoteKind: "paraphrase" }] };
   }
 
   function addDrill(d) {
@@ -282,7 +285,9 @@
   bank.board = bank.board || { questions: [] };
   bank.board.questions = Array.isArray(bank.board.questions) ? bank.board.questions : [];
   var have = new Set(bank.board.questions.map(function (q) { return q && q.id; }));
-  function addCard(q) { if (q && !have.has(q.id)) { bank.board.questions.push(q); have.add(q.id); } }
+  // "verbatim" keeps these cards' backs exactly as they have always read (this
+  // pack never set verbatim:false).
+  function addCard(q) { if (q && !have.has(q.id)) { q.source = ctx.cite(q.source, "verbatim"); bank.board.questions.push(q); have.add(q.id); } }
   var TIER = ["E1", "E2", "E3", "E4", "E5", "E6"];
 
   addCard({

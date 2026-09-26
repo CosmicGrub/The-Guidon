@@ -2116,8 +2116,17 @@
     // bank), not the default.
     if (st.cardText) return { q: st.cardText.q, a: st.cardText.a, category: st.cardText.category || "", source: "" };
     var q = cardIndex()[st.cardId];
-    if (q) return { q: q.q, a: q.a, category: q.category, source: q.source || "" };
+    if (q) return { q: q.q, a: q.a, category: q.category, source: citationText(q) };
     return null;
+  }
+  /* A board card's source is a structured citation (ROADMAP item F); the ONE
+     renderer for it is G.board.sourceText, so a study room prints exactly
+     what Board Drill prints. cardIndex() only ever holds cards on a device
+     that has the bank, and G.board is there whenever the bank is - the
+     string fallback covers a build with neither. */
+  function citationText(q) {
+    try { if (G.board && typeof G.board.sourceText === "function") return G.board.sourceText(q); } catch (e) {}
+    return typeof q.source === "string" ? q.source : "";
   }
   function mySeatNo(st) { return st.role === "host" ? st.self.seatNo : st.self.seatNo; }
 

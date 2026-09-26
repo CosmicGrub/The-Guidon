@@ -10,7 +10,15 @@
  * just: all the flashcards, and the ability to sort and navigate between
  * topics/subjects." No board drills, no grading, no SRS scheduling, no
  * settings sprawl. Three screens: subject list -> card view -> settings
- * (backlight + the install QR). That's the whole app.
+ * (backlight + the deck picker + the install QR). That's the whole app.
+ *
+ * The deck picker is the ONE control that scope decision allowed to be added:
+ * GUIDON hides MOS-specific cards (92A, 68W, ...) until a Soldier opts in, and
+ * the handheld now does the same. The Standard deck (no MOS cards at all) is
+ * what it shows until the Soldier taps the deck button in Settings to pick
+ * another. It only appears when the SD card carries /lanes.json; with no such
+ * file the device behaves exactly as it did before decks existed. The deck
+ * logic itself lives in lanes.h (plain C++, run on a desktop by the host test).
  *
  * Display: ST7796S, 320x480, driven via TFT_eSPI (driver/pins/geometry are
  * all build_flags in platformio.ini, NOT hardcoded here - see HARDWARE.md
@@ -18,12 +26,12 @@
  * displacing this project's own initial ILI9341/240x320 assumption).
  * Touch: XPT2046, shares the display's SPI bus, also via TFT_eSPI.
  *
- * Content: streamed from a microSD card (/cards.ndjson + /categories.json,
- * produced by tools/extract-cards.mjs from GUIDON's own board-question
- * bank) one card at a time. This chip has NO PSRAM and 520KB of SRAM total
- * - the full card bank is 2.56MB of JSON in the source app, so loading it
- * into RAM at once was never on the table. See extract-cards.mjs's own
- * header for the on-SD format this reads.
+ * Content: streamed from a microSD card (/cards.ndjson + /categories.json
+ * + the optional /lanes.json, produced by tools/extract-cards.mjs from
+ * GUIDON's own board-question bank) one card at a time. This chip has NO
+ * PSRAM and 520KB of SRAM total - the full card bank is 2.56MB of JSON in
+ * the source app, so loading it into RAM at once was never on the table.
+ * See extract-cards.mjs's own header for the on-SD format this reads.
  */
 
 #include <Arduino.h>
@@ -34,6 +42,8 @@
 #include <Preferences.h>
 
 #include "qr_install.h"
+#include "lanes.h"
+#include "lanes_json.h"
 
 // Defense-in-depth on top of drawCard()'s qLines/aLines fix below: the
 // ESP32 Arduino core's default loop-task stack is 8192 bytes
@@ -123,6 +133,20 @@ struct Category {
 static const int MAX_CATEGORIES = 128;
 static Category categories[MAX_CATEGORIES];
 static int categoryCount = 0;
+
+// ---- Decks (lanes) ---------------------------------------------------------
+// /lanes.json lists the decks; each subject in /categories.json says which
+// decks it is in. laneTable is empty (and lanesActive false) when the card has
+// no lanes.json, and then none of this is used - see lanes.h's laneActive().
+static LaneTable laneTable;
+static uint16_t categoryLaneMask[MAX_CATEGORIES]; // bit i set = subject is in deck i
+static bool categoriesTagged = false;              // categories.json carried "lanes" at all
+static bool lanesActive = false;
+static int activeLane = 0;                         // index into laneTable
+// The subjects the list shows: indexes into categories[], in order. With decks
+// off this is simply 0..categoryCount-1.
+static int16_t visibleCat[MAX_CATEGORIES];
+static int visibleCount = 0;
 
 // ---- App state ------------------------------------------------------------
 enum AppState { STATE_SUBJECTS, STATE_CARD, STATE_SETTINGS };
@@ -229,6 +253,23 @@ static int wordWrap(const char *text, int maxWidthPx, char outLines[][80], int m
 // ---------------------------------------------------------------------------
 // SD content access
 // ---------------------------------------------------------------------------
+// Reads /lanes.json (optional) into laneTable - the parsing itself is
+// lanesReadTable() in lanes_json.h. Returns false (laneTable empty) when there
+// is no such file or it cannot be read: the device then behaves exactly as it
+// did before decks existed.
+static bool loadLanes() {
+  laneTableClear(&laneTable);
+  File f = SD.open("/lanes.json", FILE_READ);
+  if (!f) return false;
+  const char *why = "";
+  bool ok = lanesReadTable(f, &laneTable, &why);
+  f.close();
+  if (!ok && why[0]) Serial.printf("lanes.json parse error: %s\n", why);
+  return ok;
+}
+
+// loadLanes() must run first: each subject's "lanes" list is turned into a
+// bit mask against laneTable as it is read.
 static bool loadCategories() {
   File f = SD.open("/categories.json", FILE_READ);
   if (!f) return false;
@@ -242,15 +283,32 @@ static bool loadCategories() {
   }
 
   categoryCount = 0;
+  categoriesTagged = false;
   for (JsonObject c : doc.as<JsonArray>()) {
     if (categoryCount >= MAX_CATEGORIES) break;
     strncpy(categories[categoryCount].name, c["name"] | "?", 43);
     categories[categoryCount].name[43] = 0;
     categories[categoryCount].count = c["count"] | 0;
     categories[categoryCount].offset = c["offset"] | 0;
+    categoryLaneMask[categoryCount] = lanesReadMask(c, &laneTable, &categoriesTagged);
     categoryCount++;
   }
   return categoryCount > 0;
+}
+
+// Recompute which subjects the list shows for the current deck, back to page 1.
+static void rebuildVisible() {
+  visibleCount = laneVisible(categoryLaneMask, categoryCount, lanesActive, activeLane, visibleCat, MAX_CATEGORIES);
+  subjectPage = 0;
+}
+
+// Switch deck and remember it (NVS) for the next boot.
+static void setLane(int idx) {
+  if (!lanesActive || idx < 0 || idx >= laneTable.n) return;
+  activeLane = idx;
+  prefs.putString("lane", laneTable.lane[idx].id);
+  rebuildVisible();
+  Serial.printf("Deck: %s (%d subjects)\n", laneTable.lane[idx].id, visibleCount);
 }
 
 // Seeks to `category`'s first line, skips forward `index` more lines, and
@@ -326,24 +384,38 @@ static bool hit(int x, int y, int bx, int by, int bw, int bh) {
 // ---------------------------------------------------------------------------
 // Screen: subject list
 // ---------------------------------------------------------------------------
-static int totalPages() { return (categoryCount + ROWS_PER_PAGE - 1) / ROWS_PER_PAGE; }
+static int totalPages() { return max(1, (visibleCount + ROWS_PER_PAGE - 1) / ROWS_PER_PAGE); }
 
 static void drawSubjects() {
   tft.fillScreen(COL_BG);
-  drawHeader("GUIDON Flashcard OS", false);
+  // The Standard deck keeps the device's own name in the header. Any other
+  // deck says which one it is ("92A deck") - the header is the only place a
+  // Soldier would otherwise not be able to tell they are looking at an MOS deck.
+  char title[LANE_ID_LEN + 8];
+  if (lanesActive && strcmp(laneTable.lane[activeLane].id, LANE_DEFAULT_ID) != 0) snprintf(title, sizeof(title), "%s deck", laneTable.lane[activeLane].id);
+  else snprintf(title, sizeof(title), "GUIDON Flashcard OS");
+  drawHeader(title, false);
 
   int start = subjectPage * ROWS_PER_PAGE;
   int y = HEADER_H + 6;
-  for (int i = start; i < start + ROWS_PER_PAGE && i < categoryCount; i++) {
+  if (visibleCount == 0) {
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextFont(2);
+    tft.setTextColor(COL_DIM, COL_BG);
+    tft.drawString("No subjects in this deck.", SCREEN_W / 2, SCREEN_H / 2 - 12);
+    tft.drawString("Tap cfg to pick another deck.", SCREEN_W / 2, SCREEN_H / 2 + 12);
+  }
+  for (int i = start; i < start + ROWS_PER_PAGE && i < visibleCount; i++) {
+    const Category &cat = categories[visibleCat[i]];
     tft.fillRoundRect(6, y, SCREEN_W - 12, ROW_H - 6, 5, COL_BTN);
     tft.setTextDatum(ML_DATUM);
     tft.setTextFont(2);
     tft.setTextColor(COL_TEXT, COL_BTN);
-    tft.drawString(categories[i].name, 14, y + (ROW_H - 6) / 2);
+    tft.drawString(cat.name, 14, y + (ROW_H - 6) / 2);
     tft.setTextDatum(MR_DATUM);
     tft.setTextColor(COL_DIM, COL_BTN);
     char buf[16];
-    snprintf(buf, sizeof(buf), "%d cards", categories[i].count);
+    snprintf(buf, sizeof(buf), "%d cards", cat.count);
     tft.drawString(buf, SCREEN_W - 18, y + (ROW_H - 6) / 2);
     y += ROW_H;
   }
@@ -365,9 +437,9 @@ static void handleSubjectsTouch(int x, int y) {
 
   int start = subjectPage * ROWS_PER_PAGE;
   int rowY = HEADER_H + 6;
-  for (int i = start; i < start + ROWS_PER_PAGE && i < categoryCount; i++) {
+  for (int i = start; i < start + ROWS_PER_PAGE && i < visibleCount; i++) {
     if (hit(x, y, 6, rowY, SCREEN_W - 12, ROW_H - 6)) {
-      currentCategory = i;
+      currentCategory = visibleCat[i];
       currentCardIndex = 0;
       answerRevealed = false;
       scrollLine = 0;
@@ -516,16 +588,63 @@ static void drawInstallQr(int originX, int originY, int moduleScale) {
   }
 }
 
+// The deck button needs 44px of a screen the install QR already nearly fills,
+// so with decks on the rows above the QR are packed a little tighter (the QR
+// itself keeps its verified size). With decks off every number below is the
+// one this screen always had. settingsTopY()/settingsRowY() are shared by the
+// drawing and the touch handling so the two can never disagree.
+static const int DECK_BTN_H = 44;
+static int settingsTopY() { return lanesActive ? HEADER_H + 4 : HEADER_H + 16; }   // "Backlight" title
+static int settingsRowY() { return settingsTopY() + (lanesActive ? 22 : 26); }     // the - / + row
+static int deckBtnY() { return settingsRowY() + 44; }                                // 36px row + 8px gap
+
+// Shortens a deck label (in place; the buffer is LANE_LABEL_LEN + 4 bytes) to
+// end in "..." if it is wider than maxPx in the current font.
+static void trimToWidth(char *s, int maxPx) {
+  if (tft.textWidth(s) <= maxPx) return;
+  size_t n = strlen(s);
+  if (n >= LANE_LABEL_LEN) n = LANE_LABEL_LEN - 1;
+  while (n > 3) {
+    n--;
+    char t[LANE_LABEL_LEN + 4];
+    memcpy(t, s, n);
+    memcpy(t + n, "...", 4); // and the end mark
+    if (tft.textWidth(t) <= maxPx) { memcpy(s, t, n + 4); return; }
+  }
+}
+
+// The deck picker: one wide button, two lines. Tap = next deck (wraps round).
+static void drawDeckButton(int x, int y, int w, int h) {
+  const LaneInfo &lane = laneTable.lane[activeLane];
+  tft.fillRoundRect(x, y, w, h, 6, COL_BTN);
+  tft.drawRoundRect(x, y, w, h, 6, COL_DIM);
+  tft.setTextFont(2);
+  tft.setTextDatum(TL_DATUM);
+  tft.setTextColor(COL_ACCENT, COL_BTN);
+  tft.drawString("Deck - tap to change", x + 10, y + 5);
+  char cards[16];
+  snprintf(cards, sizeof(cards), "%d cards", lane.count);
+  tft.setTextDatum(TR_DATUM);
+  tft.setTextColor(COL_DIM, COL_BTN);
+  tft.drawString(cards, x + w - 10, y + 5);
+  char label[LANE_LABEL_LEN + 4];
+  laneCopy(label, sizeof(label), lane.label);
+  trimToWidth(label, w - 20);
+  tft.setTextDatum(TL_DATUM);
+  tft.setTextColor(COL_TEXT, COL_BTN);
+  tft.drawString(label, x + 10, y + 23);
+}
+
 static void drawSettings() {
   tft.fillScreen(COL_BG);
   drawHeader("Settings", true);
 
-  int y = HEADER_H + 16;
+  int y = settingsTopY();
   tft.setTextDatum(TL_DATUM);
   tft.setTextFont(2);
   tft.setTextColor(COL_ACCENT, COL_BG);
   tft.drawString("Backlight", 12, y);
-  y += 26;
+  y = settingsRowY();
   char pct[8];
   snprintf(pct, sizeof(pct), "%d%%", backlightPct);
   drawButton(12, y, 50, 36, "-");
@@ -533,37 +652,43 @@ static void drawSettings() {
   tft.setTextColor(COL_TEXT, COL_BG);
   tft.drawString(pct, SCREEN_W / 2, y + 18);
   drawButton(SCREEN_W - 62, y, 50, 36, "+");
-  y += 56;
+  y += lanesActive ? 44 : 56;
+
+  if (lanesActive) {
+    drawDeckButton(12, y, SCREEN_W - 24, DECK_BTN_H);
+    y += DECK_BTN_H + 8;
+  }
 
   tft.drawFastHLine(12, y, SCREEN_W - 24, COL_DIM);
-  y += 16;
+  y += lanesActive ? 6 : 16;
 
   tft.setTextDatum(TL_DATUM);
   tft.setTextColor(COL_ACCENT, COL_BG);
   tft.drawString("Get GUIDON on your phone", 12, y);
-  y += 24;
+  y += lanesActive ? 22 : 24;
 
   int qrScale = 6; // 41 * 6 = 246px, fits centered in 320 width with margin
   int qrPx = INSTALL_QR_SIZE * qrScale;
   int qrX = (SCREEN_W - qrPx) / 2;
   tft.fillRect(qrX - 6, y - 6, qrPx + 12, qrPx + 12, TFT_WHITE); // quiet-zone margin
   drawInstallQr(qrX, y, qrScale);
-  y += qrPx + 16;
+  y += qrPx + (lanesActive ? 8 : 16);
 
   tft.setTextDatum(TC_DATUM);
   tft.setTextColor(COL_DIM, COL_BG);
   tft.setTextFont(1);
   tft.drawString(INSTALL_QR_URL, SCREEN_W / 2, y);
-  y += 18;
+  y += lanesActive ? 12 : 18;
   tft.setTextColor(COL_TEXT, COL_BG);
   tft.drawString("Scan for the full GUIDON app (iOS/Android/PC)", SCREEN_W / 2, y);
 }
 
 static void handleSettingsTouch(int x, int y) {
   if (headerBackHit(x, y)) { state = STATE_SUBJECTS; return; }
-  int rowY = HEADER_H + 16 + 26;
+  int rowY = settingsRowY();
   if (hit(x, y, 12, rowY, 50, 36)) { setBacklightPct(backlightPct - 10); return; }
   if (hit(x, y, SCREEN_W - 62, rowY, 50, 36)) { setBacklightPct(backlightPct + 10); return; }
+  if (lanesActive && hit(x, y, 12, deckBtnY(), SCREEN_W - 24, DECK_BTN_H)) { setLane(laneNext(&laneTable, activeLane)); return; }
 }
 
 // ---------------------------------------------------------------------------
@@ -631,6 +756,7 @@ void setup() {
   }
   Serial.printf("SD: card found on CS=%d.\n", sdCsUsed);
 
+  loadLanes(); // optional: no /lanes.json = no decks, the device behaves as it always did
   if (!loadCategories()) {
     Serial.println("SD: categories.json missing or invalid.");
     tft.fillScreen(TFT_RED);
@@ -639,6 +765,19 @@ void setup() {
     while (true) delay(1000);
   }
   Serial.printf("Loaded %d categories.\n", categoryCount);
+
+  // Decks: start on the one the Soldier last picked (NVS), else the Standard
+  // deck. An MOS deck is only ever entered by the Soldier picking it.
+  lanesActive = laneActive(&laneTable, categoriesTagged);
+  if (lanesActive) {
+    char saved[LANE_ID_LEN] = "";
+    prefs.getString("lane", saved, sizeof(saved));
+    activeLane = laneResolve(&laneTable, saved);
+    Serial.printf("Decks: %d on the card, showing \"%s\".\n", laneTable.n, laneTable.lane[activeLane].id);
+  } else {
+    Serial.println("Decks: none (no usable lanes.json) - showing every subject.");
+  }
+  rebuildVisible();
 
   state = STATE_SUBJECTS;
   drawSubjects();

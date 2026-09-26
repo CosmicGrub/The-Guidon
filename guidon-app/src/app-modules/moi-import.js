@@ -446,7 +446,11 @@ window.G = window.G || {};
       // Same tokenizeCitations() switch as the doctrine loop just above,
       // and for the same real reason - board q.source combines two
       // citations via semicolon or slash too ("UCMJ Art. 138 / AR 27-10").
-      tokenizeCitations(q.source).forEach((tok) => record(tok, q.category, "board"));
+      // A board card's source is a structured array (ROADMAP item F Wave 2);
+      // G.board.sourceText renders it to the exact text the string used to
+      // hold, so the tokenizer sees what it always saw and every per-topic
+      // coverage tally is unchanged.
+      tokenizeCitations(G.board.sourceText(q)).forEach((tok) => record(tok, q.category, "board"));
       tokenizeCitations(q.category || "").forEach((tok) => record(tok, q.category, "board"));
     });
 
@@ -467,16 +471,21 @@ window.G = window.G || {};
       (sc.doctrine || []).forEach((d) => { if (d && typeof d === "object") record(d.pub, null, "doctrine"); });
     });
 
-    // Forms Trainer entries carry a "reference" field (e.g. "ATP 6-22.1,
+    // Forms Trainer entries carry a `source` citation (e.g. "ATP 6-22.1,
     // The Counseling Process"). Same reasoning as scenarios just above -
-    // recorded with no topic, doctrineCards only. Counsel's skills/drills
-    // data was checked too (grepped for "supersed" and any citation-shaped
-    // field) and carries no comparable structured field - only free-prose
-    // mentions like "per ATP 6-22.1 and ADP 6-22" - so it's excluded here
-    // rather than guessed at.
+    // recorded with no topic, doctrineCards only. Counsel's skills, the Learn
+    // curriculum, IDP templates and Health skills gained structured `source`
+    // arrays in ROADMAP item F Wave 3 too, but they are deliberately NOT fed
+    // in here: adding them would change which citations count as covered (and
+    // the Strong/Partial/Gap badges a Soldier sees on #/moi), and Wave 3 is
+    // required to change nothing a Soldier can see. Doing that is a product
+    // decision for a later change, not a side effect of a data migration.
     const forms = (seed.forms && seed.forms.forms) || [];
     forms.forEach((f) => {
-      tokenizeCitations(f.reference || "").forEach((tok) => record(tok, null, "doctrine"));
+      // f.source is a {pub, edition, para, quoteKind}[] array (ROADMAP.md item
+      // F, Wave 3); util.citeText() gives back the exact line this tokenized
+      // when it was the free-text `reference` string, so coverage is unchanged.
+      tokenizeCitations(util.citeText(f.source)).forEach((tok) => record(tok, null, "doctrine"));
     });
 
     _registryCache = registry;

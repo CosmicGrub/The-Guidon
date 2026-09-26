@@ -32,6 +32,7 @@
  */
 import path from "node:path";
 import { assembleBank } from "./assemble-bank.mjs";
+import { renderCitation } from "./cite-schema.mjs";
 import { PILLARS, PACK_CATEGORIES, pillarForBoard, pillarForDoctrine, pillarForScenario } from "./pillar-map.mjs";
 
 const DIFFICULTIES = ["beginner", "intermediate", "expert", "advanced", "basic"];
@@ -91,15 +92,20 @@ Object.keys(nearDup).length === 0 ? ok("(p4) no pack category is a near-duplicat
 Object.keys(undeclared).length === 0 ? ok(`(p4) every other pack category is a seed category or declared in PACK_CATEGORIES (${Object.keys(PACK_CATEGORIES).length} declared)`) : bad(`(p4) pack categories that are neither a seed category nor declared in tools/pillar-map.mjs PACK_CATEGORIES - if one of these is really an existing subject, use the seed's name for it: ${JSON.stringify(Object.fromEntries(Object.entries(undeclared).map(([k, v]) => [k, v.length + " card(s)"])))}`);
 
 // (p5) the answer surface and closed vocabularies, for pack cards.
+// A card's `source` is a structured array since ROADMAP item F Wave 2 (its
+// exact shape is tools/lint-citation-schema.mjs's job); "has a source" and
+// "is not a placeholder" are about the citation text a Soldier reads, so both
+// rules below read it through the one renderer.
+const textOf = (q, f) => (f === "source" ? renderCitation(q.source) : q[f]);
 for (const f of ["q", "a", "boardAnswer", "source"]) {
-  const miss = packB.filter((q) => !(typeof q[f] === "string" && q[f].trim()));
+  const miss = packB.filter((q) => !(typeof textOf(q, f) === "string" && textOf(q, f).trim()));
   miss.length === 0 ? ok(`(p5) every pack card has a non-empty ${f}`) : bad(`(p5) ${miss.length} pack card(s) missing ${f}: ${show(miss.map(from))}`);
 }
 const noKp = packB.filter((q) => !(Array.isArray(q.keyPoints) && q.keyPoints.length));
 noKp.length === 0 ? ok("(p5) every pack card has keyPoints") : bad(`(p5) ${noKp.length} pack card(s) without keyPoints: ${show(noKp.map(from))}`);
 const badDiff = packB.filter((q) => !DIFFICULTIES.includes(q.difficulty));
 badDiff.length === 0 ? ok("(p5) every pack card's difficulty is in the closed set") : bad(`(p5) pack card(s) with an unknown difficulty: ${show(badDiff.map((q) => from(q) + "=" + q.difficulty))}`);
-const fakeSrc = packB.filter((q) => /user[- ]supplied|chatgpt|todo|tbd/i.test(String(q.source)));
+const fakeSrc = packB.filter((q) => /user[- ]supplied|chatgpt|todo|tbd/i.test(renderCitation(q.source)));
 fakeSrc.length === 0 ? ok("(p5) no pack card cites a placeholder instead of a source") : bad(`(p5) ${fakeSrc.length} pack card(s) cite a placeholder ("user-supplied", "TBD" ...) - a Soldier sees this string on the card; cite the real publication: ${show(fakeSrc.map(from))}`);
 
 // (p6) pillar: exactly what the map says, both directions, for pack records.

@@ -29,6 +29,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { readSeed, writeSeed } from "./seed-io.mjs";
 import { loadManifest } from "./content-manifest.mjs";
+import { renderCitation } from "./cite-schema.mjs";   // a card's source is a structured array since ROADMAP item F Wave 2
 
 const REAL_PATH = "src/index.html";
 
@@ -50,7 +51,7 @@ real.data && typeof real.data === "object"
 const bq1 = real.data.board && Array.isArray(real.data.board.questions)
   ? real.data.board.questions.find((q) => q.id === "bq1")
   : null;
-bq1 && bq1.q === "What are the seven Army Values?" && bq1.source === "ADP 6-22"
+bq1 && bq1.q === "What are the seven Army Values?" && renderCitation(bq1.source) === "ADP 6-22"
   ? ok('known card "bq1" (Army Values, ADP 6-22) survived parsing intact')
   : bad("known card bq1 missing or changed: " + JSON.stringify(bq1));
 

@@ -20,8 +20,9 @@ between topics/subjects."*
 
 What this firmware **is**: a touchscreen flashcard browser. Three
 screens — subject list, card view (question, tap to reveal answer,
-prev/next), and a settings screen (backlight brightness + an install QR
-for the full GUIDON app). The current canonical GUIDON board-question bank, including release-time supplements,
+prev/next), and a settings screen (backlight brightness, the deck picker
+described below, and an install QR for the full GUIDON app). The current
+canonical GUIDON board-question bank, including release-time supplements,
 browsable offline by subject from a microSD card.
 
 What this firmware **deliberately is not**: GUIDON itself. No board
@@ -29,6 +30,12 @@ drills, no grading, no SRS scheduling, no settings sprawl, no Study
 Rooms, no library, no calendar. If a future change wants any of that,
 that's a real scope decision to make explicitly — not something to grow
 in by accretion.
+
+The one control that scope decision has since allowed onto the settings
+screen is the **deck picker**, and it is there for a rule, not for
+convenience: the full GUIDON app hides every MOS-specific card (92A, 68W,
+...) until a Soldier opts in, and the handheld must not be the place that
+rule quietly stops holding. See [Decks](#decks-mos-lanes).
 
 ## Getting content onto the device
 
@@ -39,7 +46,7 @@ firmware never embeds that JSON directly (2.56MB of it, on a chip with
 
 ```bash
 cd firmware/esp32-flashcard-os
-node tools/extract-cards.mjs      # -> ./sdcard/cards.ndjson + categories.json
+node tools/extract-cards.mjs      # -> ./sdcard/cards.ndjson + categories.json + lanes.json
 ```
 
 See [`tools/extract-cards.mjs`](tools/extract-cards.mjs)'s own header for
@@ -60,13 +67,94 @@ link used for flashing:
 
 ```bash
 pio run -e sdloader -t upload --upload-port COM12   # flash the one-time loader
-python tools/push-to-sd.py COM12                     # pushes both files
+python tools/push-to-sd.py COM12                     # pushes the card files (all three)
 pio run -e flashcardos -t upload --upload-port COM12 # reflash the real app
 ```
 
-(If you *do* have a card reader handy, just copying `sdcard/cards.ndjson`
-and `sdcard/categories.json` onto the card's root the normal way works
-identically — the loader exists for when you don't.)
+(If you *do* have a card reader handy, just copying `sdcard/cards.ndjson`,
+`sdcard/categories.json` and `sdcard/lanes.json` onto the card's root the
+normal way works identically — the loader exists for when you don't.)
+
+## Decks (MOS lanes)
+
+The full GUIDON app shows a Soldier only the cards that are for everyone,
+and shows an MOS deck (92A, 68W, ...) only once they opt in. The handheld
+does the same with **decks**:
+
+- The **Standard deck** holds every card that carries no MOS tag — and not
+  one that does. This is what the device shows when it starts.
+- Each MOS deck the app registers is a deck of its own, holding exactly the
+  cards tagged for that MOS.
+- The Soldier picks the deck in **cfg** (Settings): one button, "Deck - tap
+  to change", shows the current deck and its card count; each tap moves to
+  the next deck and back round to the Standard deck. The subject list then
+  shows only that deck's subjects (its header reads "92A deck", so an MOS
+  deck is never mistaken for the standard one). The pick is remembered
+  across restarts (NVS key `lane`); a remembered deck that is no longer on
+  the card falls back to the Standard deck, never to an MOS one.
+- The deck button appears only when the card carries a `lanes.json`. With no
+  `lanes.json` the device behaves exactly as it did before decks existed:
+  every subject in one list, and the Settings screen unchanged. Older
+  firmware (flashed before decks) reading the new card files ignores the
+  extra information and shows everything as it always did.
+
+How the exporter works it out, and how it is checked, is in
+[`tools/lanes.mjs`](tools/lanes.mjs): the MOS decks are read from the same
+registry the app uses (`00-mos-decks-core.js`, not a second list), and before
+any file is written every deck is counted back from the very text about to be
+written and compared with the content manifest — the Standard deck must hold
+no MOS card, each MOS deck must hold exactly the cards its code tags, and the
+figures must add up to the manifest (`byMos`, per category, total). Any
+mismatch stops the export and writes nothing, the same way a short deck does.
+
+Memory: the deck logic is [`src/lanes.h`](src/lanes.h) — plain C++, about 1.5
+KB of RAM (a table of up to 16 decks and a 2-byte deck mask per subject).
+`lanes.json` is read through an ArduinoJson filter that keeps only each deck's
+id, label and count, so the subject lists inside it are dropped as they
+stream past. Cards are never held, as before.
+
+Limits (held by `guidon-app/tools/test-esp32-lanes.mjs` against both the
+exporter and these sources): at most 16 decks, deck ids up to 11 characters,
+deck labels up to 40 characters (the exporter shortens a longer registry
+label, e.g. drops a trailing "(...)"), at most 128 subjects (the same
+`MAX_CATEGORIES` as before, now enforced by the exporter instead of silently
+cutting the list).
+
+### Trying decks on the physical device (not yet done)
+
+Everything below has been built and tested off the device — the firmware
+compiles, the deck logic runs on a desktop against the real export — but
+**nothing has been flashed or run on the handheld itself.** To try it:
+
+1. `node tools/extract-cards.mjs` (from this folder). It prints the decks, e.g.
+   `lanes.json  3 decks: default ..., 68W ..., 92A ...`.
+2. Put the three files on the card exactly as in [Getting content onto the
+   device](#getting-content-onto-the-device) — the sdloader steps, or a card
+   reader. `push-to-sd.py` sends `lanes.json` on its own when it exists.
+3. `pio run -e flashcardos -t upload --upload-port COMxx` (reflash the app).
+   First boot after this needs no new touch calibration.
+4. Check, in order:
+   - The subject list opens on the **Standard deck** with the normal title and
+     none of the "68W —" / "92A —" subjects in it.
+   - **cfg**: the deck button sits under the backlight row; the QR, its URL and
+     the "Scan for the full GUIDON app" line are all still fully on screen (the
+     rows above them were packed tighter to make room — this is the thing most
+     worth a look), and the QR still scans.
+   - Tap the deck button: it moves to an MOS deck (name and card count change).
+     **Back**: the header now reads "68W deck" (or whichever) and only that
+     deck's subjects are listed. Open a card and page through it.
+   - Restart the device (or power it off and on): it should come back on the MOS
+     deck you left it on. Tap through to the Standard deck and restart again:
+     it should come back on the Standard deck.
+   - Remove `lanes.json` from the card and restart: every subject in one list,
+     no deck button, Settings as it looked before.
+   - The serial log (115200) prints `Decks: N on the card, showing "..."` at boot
+     and `Deck: <id> (<n> subjects)` on every tap, which settles anything the
+     screen does not make obvious.
+   Not checked anywhere else: how the MOS subject names' long dash (for example
+   `92A — MOS Fundamentals`) draws in the device's built-in font. It was
+   already in the subject list before decks, so it is not new, but an MOS deck
+   is now where a Soldier will see it.
 
 ## Building and flashing
 
@@ -137,6 +225,13 @@ Full end-to-end bring-up against the physical device, in order:
   clean via the same GRAM round-trip test, not assumed safe. See
   HARDWARE.md's "Display SPI clock" section.
 
+- **Decks (added later, off-device only):** `flashcardos` still compiles clean
+  with the deck picker in (RAM 13.1%, flash 30.9%, up from 12.6% / 30.3%), and
+  the deck logic in `src/lanes.h` is compiled and run on a desktop against the
+  real export. That work was done with no device attached, so the picker, the
+  saved deck and the tighter settings layout have **not** been seen on the
+  handheld yet — see [Trying decks on the physical device](#trying-decks-on-the-physical-device-not-yet-done).
+
 **Not directly observed by this session** (no camera on the physical
 device): the actual on-screen visual layout — subject list rows, card
 view text wrapping, the settings/QR screen — hasn't been visually
@@ -157,9 +252,13 @@ firmware/esp32-flashcard-os/
 │   ├── bringup_main.cpp    # ST7796/320x480 GRAM round-trip test (bring-up only)
 │   ├── sdloader_main.cpp   # one-time serial->SD content loader (utility)
 │   ├── main.cpp            # the real firmware
+│   ├── lanes.h             # deck (MOS lane) logic - plain C++, also run on a desktop by host-test/
 │   └── qr_install.h        # generated - see tools/gen-install-qr.py
+├── host-test/
+│   └── lanes_test.cpp      # compiles + runs src/lanes.h off-device (guidon-app/tools/test-esp32-lanes.mjs)
 ├── tools/
-│   ├── extract-cards.mjs   # GUIDON_SEED.board.questions -> lean NDJSON
+│   ├── extract-cards.mjs   # GUIDON_SEED.board.questions -> lean NDJSON + decks
+│   ├── lanes.mjs           # which deck each card is in, and the checks on it
 │   ├── gen-install-qr.py   # verified QR generation (never at runtime)
 │   └── push-to-sd.py       # host side of sdloader_main.cpp's protocol
 ├── sdcard/                 # extract-cards.mjs output (gitignored - device content)

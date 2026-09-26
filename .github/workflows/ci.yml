@@ -705,8 +705,10 @@ jobs:
             tests: "test:doctrine-abcp-brs-accuracy test:legal-package-guard test:legal-package-app test:legal-package-rooms"
           - name: "61-legalpackagecontent-legalpackageverifier-enginecollective-roomhandoffcore"
             tests: "test:legal-package-content test:legal-package-verifier test:engine-collective test:room-handoff-core"
-          - name: "62-roomhandoff-roomhandoffsafety"
-            tests: "test:room-handoff test:room-handoff-safety"
+          - name: "62-roomhandoff-roomhandoffsafety-boardcitations-sectioncitations"
+            tests: "test:room-handoff test:room-handoff-safety test:board-citations test:section-citations"
+          - name: "63-esp32lanes"
+            tests: "test:esp32-lanes"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
