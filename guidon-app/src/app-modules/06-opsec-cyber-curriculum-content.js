@@ -16,7 +16,7 @@
 */
 (function () {
   "use strict";
-  G.contentPack.define("opsec-cyber-curriculum-content", function (bank) {
+  G.contentPack.define("opsec-cyber-curriculum-content", function (bank, ctx) {
   if (!bank) return;
 
   var CATEGORY = "Cybersecurity & OPSEC";
@@ -65,10 +65,13 @@
   bank.board = bank.board || { questions: [] };
   bank.board.questions = Array.isArray(bank.board.questions) ? bank.board.questions : [];
   var qIds = new Set(bank.board.questions.map(function (q) { return q.id; }));
+  // "verbatim" keeps these cards' backs exactly as they have always read (this
+  // pack never set verbatim:false); whether the answers are quotations of the
+  // cited publications is a content question this structural change does not decide.
   cards.forEach(function (x) {
     if (qIds.has(x[0])) return;
     bank.board.questions.push({
-      id: x[0], category: CATEGORY, q: x[1], a: x[2], boardAnswer: x[2], source: x[3],
+      id: x[0], category: CATEGORY, q: x[1], a: x[2], boardAnswer: x[2], source: ctx.cite(x[3], "verbatim"),
       concept: x[4], keyPoints: [x[2]], difficulty: /29|30|31|32/.test(x[0]) ? "intermediate" : "basic",
       curriculum: ["Cybersecurity & OPSEC Specialist"]
     });

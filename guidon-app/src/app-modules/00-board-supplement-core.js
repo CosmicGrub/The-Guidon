@@ -78,11 +78,14 @@
         var id = "pb-" + deck.id + "-" + String(card.n).padStart(2, "0") + "-" + (i + 1);
         while (ids.has(id)) id += "x";
         /* These decks are a study guide's own wording, not quotations from
-           the cited publication. verbatim:false makes the card back say so
-           ("Study-guide answer (not a word-for-word quote)") instead of
-           presenting the text under "By the Book (verbatim doctrine)".
-           boardAnswer is still filled because every consumer of the bank
-           (search, Mock Board, the handheld export) expects the field. */
+           the cited publication. quoteKind "paraphrase" on the citation makes
+           the card back say so ("Study-guide answer (not a word-for-word
+           quote)") instead of presenting the text under "By the Book
+           (verbatim doctrine)" - it replaces the old verbatim:false flag
+           (ROADMAP item F Wave 2). The deck keeps writing the readable
+           string; ctx.cite() turns it into the structured array the bank
+           holds. boardAnswer is still filled because every consumer of the
+           bank (search, Mock Board, the handheld export) expects the field. */
         var rec = {
           id: id,
           category: card.category,
@@ -90,8 +93,7 @@
           a: ans,
           acceptableAnswer: ans,
           boardAnswer: ans,
-          verbatim: false,
-          source: card.source,
+          source: ctx.cite(card.source, "paraphrase"),
           concept: card.title,
           keyPoints: [ans],
           difficulty: card.difficulty || "basic",

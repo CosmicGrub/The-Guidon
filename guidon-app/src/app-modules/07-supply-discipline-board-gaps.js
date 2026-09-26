@@ -10,15 +10,16 @@
  * A pack that corrects a fact must not leave the old fact in the bank: the
  * seed records these cards used to contradict (prop-8's "DD Form 362", and
  * doctrine entry doc-maint-3's "CSDP (AR 710-2)") were corrected in the same
- * change. Answers are study-guide wording, so cards are verbatim:false.
+ * change. Answers are study-guide wording, so each card's citation is cited
+ * as "paraphrase" (it used to be flagged verbatim:false).
  */
 (function () {
   "use strict";
-  G.contentPack.define("supply-discipline-board-gaps", function (bank) {
+  G.contentPack.define("supply-discipline-board-gaps", function (bank, ctx) {
   var list = bank && bank.board && Array.isArray(bank.board.questions) ? bank.board.questions : null;
   if (!list) return;
   var have = new Set(list.map(function (q) { return q && q.id; }));
-  function add(q) { if (q && !have.has(q.id)) { q.verbatim = false; list.push(q); have.add(q.id); } }
+  function add(q) { if (q && !have.has(q.id)) { q.source = ctx.cite(q.source, "paraphrase"); list.push(q); have.add(q.id); } }
 
   add({
     id:"supply-csdp-current-1",
