@@ -406,9 +406,9 @@ const heading = await page.evaluate(() => (document.querySelector(".section-titl
 heading === "Privacy Policy" ? ok('#/privacy renders the "Privacy Policy" heading') : bad(`#/privacy heading was "${heading}"`);
 
 const sectionHeadings = await page.evaluate(() => [...document.querySelectorAll(".panel h3")].map((h) => h.textContent));
-sectionHeadings.length === 12
-  ? ok(`#/privacy renders all 12 real policy sections (none silently dropped)`)
-  : bad(`#/privacy rendered ${sectionHeadings.length} section headings, expected 12: ${JSON.stringify(sectionHeadings)}`);
+sectionHeadings.length === 13
+  ? ok(`#/privacy renders all 13 real policy sections (none silently dropped)`)
+  : bad(`#/privacy rendered ${sectionHeadings.length} section headings, expected 13: ${JSON.stringify(sectionHeadings)}`);
 
 const rosterSection = await page.evaluate(() => {
   const h3 = [...document.querySelectorAll(".panel h3")].find((h) => /squad roster and risk worksheet get extra protection/i.test(h.textContent || ""));
