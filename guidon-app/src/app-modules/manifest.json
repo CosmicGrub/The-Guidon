@@ -68,16 +68,13 @@
       "id": "roadmap-bootstrap",
       "kind": "feature",
       "headless": true,
-      "note": "Registers the #/board-sim, #/team and #/pt-plan routes on behalf of the three modules under \"uses\" (each of those lists its own route), adds the PT reminder kind, and carries the collective scenario runner.",
+      "note": "Registers the #/board-sim, #/team and #/pt-plan routes on behalf of the three modules under \"uses\" (each of those lists its own route) and adds the PT reminder kind. Collective Decision mode used to live here as a replacement of G.engine.run; it is now a real mode of the core engine (G.engine.run / G.engine.runCollective, src/index.html), so this module patches nothing and provides no API.",
       "requires": [],
       "uses": ["mock-board-simulator", "pt-planner", "team-training"],
-      "provides": ["G.engine.runCollective"],
+      "provides": [],
       "routes": [],
       "storageKeys": [],
       "optionalApis": [],
-      "patches": [
-        { "name": "G.engine.run", "when": "load", "why": "Collective Decision mode: run() is replaced with a version that takes a fifth options argument and sends scenarios with a discussion step to the collective runner; every other scenario goes to the original, kept as G.engine._soloRun. To be replaced by a real engine mode (ROADMAP 3g H)." }
-      ],
       "hooks": ["board:rendered", "drills:rendered", "prt:rendered"]
     },
     {

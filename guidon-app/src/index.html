@@ -10037,7 +10037,9 @@ window.G = window.G || {};
 /* GUIDON — engine.js : unified scenario engine (global G.engine)
    One JSON schema, four render modes: text | course | cyoa | training.
    The branching/scoring core is identical; only presentation differs.
-   Training mode: linear vignettes, A/B/C/D choices, immediate correct/wrong reveal, % score. */
+   Training mode: linear vignettes, A/B/C/D choices, immediate correct/wrong reveal, % score.
+   Collective mode (a fifth, picked by run() rather than by the Soldier): a team discusses,
+   then commits one answer per decision - see the COLLECTIVE section near the end. */
 window.G = window.G || {};
 (function () {
   "use strict";
@@ -10219,6 +10221,9 @@ window.G = window.G || {};
 
   // ---------- main dispatch ----------
   function render(sess) {
+    // Collective mode walks the graph by its own rules (see the COLLECTIVE
+    // section below), so it is dispatched before the solo node handling.
+    if (sess.mode === "collective") return renderCollective(sess);
     let node = (sess.sc.nodes || {})[sess.nodeId];
     // A small batch of authored scenarios wrote a node's narration under
     // "body" instead of "prompt" - every render function below (and
@@ -10805,19 +10810,253 @@ window.G = window.G || {};
   // consumer that must not miss that case (mock-board-simulator.js's
   // reconcileScenarios/finishedRunSince) still needs its own attempt-log
   // fallback; this contract only replaces the GUESSING that fallback used to
-  // have to do for the two paths that DO call back. 00-roadmap-bootstrap.js's
-  // Collective-mode wrapper (runCollective/finish/header) already reports
-  // this exact shape and is the reference implementation this section was
-  // written to match, not the other way around.
+  // have to do for the two paths that DO call back. Collective mode (next
+  // section) reports through this same reportExit(), so there is one
+  // completion contract for every mode this engine runs.
+
+  // ---------- COLLECTIVE (multi-Soldier decision) MODE ----------
+  // ROADMAP 3g item H, the last open piece. Collective Decision used to be a
+  // wrapper in 00-roadmap-bootstrap.js that REPLACED G.engine.run when that
+  // file loaded, kept this engine as G.engine._soloRun, and ran its own
+  // separate screens. It is now a mode of THIS engine: run() picks it, the
+  // session carries mode "collective", render() dispatches it beside
+  // text/cyoa/training, and nothing outside this module replaces
+  // G.engine.run any more (tools/test-module-contract.mjs holds that, and
+  // tools/test-engine-collective.mjs holds the behaviour).
+  //
+  // A scenario runs collectively when the caller asks (options.collective,
+  // which G.engine.runCollective always sets) or when any of its nodes
+  // carries a `discuss` step. Everything a Soldier sees is what the wrapper
+  // drew: a decision node with two or more choices opens a timed discussion
+  // that locks the choices until the team is ready, then a "Commit team
+  // answer" step; a node with one choice is a plain Continue; the AAR is the
+  // "Collective AAR" panel; the attempt is logged with mode "collective".
+  //
+  // Not shared with the solo path on purpose, because the wrapper behaved
+  // differently and a refactor must not change what a Soldier gets: a
+  // collective score may carry any dimension a choice names (solo ignores
+  // keys outside DIMS), every choice bumps the count and the path, the
+  // total sums every key, and a choice whose target names no node ends the
+  // scenario with a plain message instead of the solo "missing node" screen.
+  // Only what was genuinely identical (condMet / visibleChoices / DIMS /
+  // reportExit) is reused.
+  //
+  // Two deliberate differences from the wrapper, neither visible on screen.
+  // (1) The exit result. The wrapper's header Exit always said cancelled -
+  // even on its own finished "Collective AAR" screen, where the header is
+  // still showing - and its two exit controls could each fire onExit, so a
+  // caller that did not tear the player down first heard two different
+  // answers. reportExit() derives completed/cancelled from sess.finished and
+  // fires once per session, the same fix the solo path got in v1.15.3.
+  // (2) Deciding the route no longer throws on a scenario carrying a null
+  // node (the wrapper read `.discuss` off it); that scenario just runs solo.
+  function scenarioHasDiscuss(sc) {
+    const nodes = (sc && sc.nodes) || {};
+    return Object.keys(nodes).some((k) => !!(nodes[k] && nodes[k].discuss));
+  }
+
+  function collectiveSum(score) {
+    return Object.keys(score).reduce((n, k) => n + (Number(score[k]) || 0), 0);
+  }
+
+  function newCollectiveSession(sc, container, onExit, options) {
+    const score = {}; DIMS.forEach((d) => (score[d] = 0));
+    return { sc, mode: "collective", container, onExit, options: options || {}, nodeId: sc.start || "n1", score, flags: {}, path: [sc.start || "n1"], choices: 0, finished: false };
+  }
+
+  function applyCollectiveChoice(sess, c) {
+    if (c.score) Object.keys(c.score).forEach((k) => { sess.score[k] = (sess.score[k] || 0) + (Number(c.score[k]) || 0); });
+    if (c.set) Object.keys(c.set).forEach((k) => { sess.flags[k] = c.set[k]; });
+    sess.path.push(sess.nodeId); sess.choices++;
+  }
+
+  function collectiveTarget(sess, c) {
+    return c.goto || (c.outcome && sess.sc.nodes && sess.sc.nodes[c.outcome] ? c.outcome : null);
+  }
+
+  function collectiveHeader(sess) {
+    const h = el("div.engine-head");
+    const title = el("div.title");
+    title.appendChild(el("div.eyebrow", { text: "Collective scenario" }));
+    title.appendChild(el("h2", { text: sess.sc.title }));
+    if (sess.sc.scene) title.appendChild(el("div.engine-scene-tag", { text: sess.sc.scene }));
+    h.appendChild(title);
+    const exit = el("button.btn.ghost.sm", { type: "button", text: "Exit" });
+    exit.addEventListener("click", () => reportExit(sess));
+    h.appendChild(exit);
+    return h;
+  }
+
+  function collectiveDialogue(host, dialogue) {
+    if (!Array.isArray(dialogue)) return;
+    dialogue.forEach((d) => {
+      if (!d || typeof d !== "object") return;
+      const line = el("div.card", { style: "margin-top:6px" });
+      line.appendChild(el("strong", { text: String(d.speaker || d.role || "Speaker") }));
+      line.appendChild(el("p", { text: String(d.line || "") }));
+      host.appendChild(line);
+    });
+  }
+
+  async function finishCollective(sess, node) {
+    if (sess.finished) return;
+    sess.finished = true;
+    try {
+      await store.recordAttempt({
+        scenarioId: sess.sc.id, title: sess.sc.title, mode: "collective",
+        score: Object.assign({}, sess.score), total: collectiveSum(sess.score), choices: sess.choices,
+        outcomeNode: sess.nodeId,
+      });
+    } catch (e) { /* the AAR still shows; the attempt just was not logged */ }
+    util.clear(sess.container);
+    sess.container.appendChild(collectiveHeader(sess));
+    const p = el("div.panel.collective-outcome");
+    p.appendChild(el("div.eyebrow", { text: "Collective AAR" }));
+    p.appendChild(el("h3", { text: "Scenario complete" }));
+    p.appendChild(el("p", { text: String(node.outcome || node.prompt || "Review the team's decisions and identify one sustain and one improve.") }));
+    p.appendChild(el("p.hint", { text: "Team score: " + collectiveSum(sess.score) + " · " + sess.choices + " decision" + (sess.choices === 1 ? "" : "s") + ". The score is a study signal, not an official evaluation." }));
+    const again = el("button.btn.ghost", { type: "button", text: "Replay collective lane" });
+    again.addEventListener("click", () => startCollective(sess.sc, sess.container, sess.onExit, sess.options));
+    const done = el("button.btn.primary", { type: "button", text: "Done" });
+    done.addEventListener("click", () => reportExit(sess));
+    p.appendChild(el("div.btn-row", {}, [again, done]));
+    sess.container.appendChild(p);
+  }
+
+  function continueCollective(sess, c) {
+    const target = collectiveTarget(sess, c);
+    if (!target) return finishCollective(sess, { outcome: "This authored path has no valid next node. Review the scenario graph." });
+    sess.nodeId = target;
+    render(sess);
+  }
+
+  function advanceCollective(sess, c) {
+    applyCollectiveChoice(sess, c);
+    continueCollective(sess, c);
+  }
+
+  function renderCollectiveSingle(sess, node, choices) {
+    util.clear(sess.container); sess.container.appendChild(collectiveHeader(sess));
+    const p = el("div.panel");
+    if (node.beat) p.appendChild(el("div.eyebrow", { text: node.beat }));
+    if (node.prompt || node.body) p.appendChild(el("p", { text: String(node.prompt || node.body) }));
+    collectiveDialogue(p, node.dialogue);
+    const c = choices[0] || { text: "Continue", goto: node.next };
+    const btn = el("button.btn.primary", { type: "button", text: c.text || "Continue" });
+    btn.addEventListener("click", () => {
+      btn.disabled = true;
+      applyCollectiveChoice(sess, c);
+      if (c.feedback || c.tradeoff) {
+        const fb = el("div", { style: "margin-top:10px" });
+        if (c.feedback) fb.appendChild(el("div.feedback", { role: "status", "aria-live": "polite", text: c.feedback }));
+        if (c.tradeoff) fb.appendChild(el("p.hint", { text: "Tradeoff: " + c.tradeoff }));
+        const next = el("button.btn.primary", { type: "button", text: "Continue" });
+        next.addEventListener("click", () => continueCollective(sess, c));
+        fb.appendChild(next); p.appendChild(fb); next.focus();
+        return;
+      }
+      continueCollective(sess, c);
+    });
+    p.appendChild(btn); sess.container.appendChild(p); btn.focus();
+  }
+
+  function renderCollectiveDecision(sess, node, choices) {
+    util.clear(sess.container); sess.container.appendChild(collectiveHeader(sess));
+    const root = el("div.panel.collective-decision", { role: "region", "aria-label": "Collective Decision" });
+    root.appendChild(el("div.eyebrow", { text: "Collective Decision" }));
+    if (node.beat) root.appendChild(el("div.engine-scene-tag", { text: node.beat }));
+    if (node.prompt || node.body) root.appendChild(el("h3", { text: String(node.prompt || node.body) }));
+    collectiveDialogue(root, node.dialogue);
+
+    const raw = Number(node.discussionSeconds || (node.discuss && node.discuss.seconds) || sess.options.discussionSeconds || 60);
+    let remaining = Number.isFinite(raw) ? Math.max(10, Math.min(300, Math.round(raw))) : 60;
+    let unlocked = false, chosen = null, committed = false, timerId = null;
+    const timer = el("div", { "data-collective-timer": "1", "aria-label": "Discussion time remaining", text: "Discussion: " + remaining + "s" });
+    const status = el("p.hint", { role: "status", "aria-live": "polite", text: "Discuss first. Lock the discussion early when the team is ready." });
+    root.appendChild(timer); root.appendChild(status);
+    const choiceHost = el("div", { role: "group", "aria-label": "Team decision choices" });
+    const buttons = [];
+    const commit = el("button.btn.primary", { type: "button", text: "Commit team answer" }); commit.disabled = true;
+
+    choices.forEach((c, i) => {
+      const b = el("button.btn.ghost.collective-choice", { type: "button", text: String.fromCharCode(65 + i) + ". " + (c.text || ""), "aria-pressed": "false" });
+      b.disabled = true;
+      b.addEventListener("click", () => {
+        if (!unlocked || committed) return;
+        chosen = c;
+        buttons.forEach((x) => { const on = x === b; x.classList.toggle("active", on); x.setAttribute("aria-pressed", String(on)); });
+        commit.disabled = false; status.textContent = "Team choice selected. Commit when everyone is ready.";
+      });
+      buttons.push(b); choiceHost.appendChild(b);
+    });
+    root.appendChild(choiceHost);
+
+    function stop() { if (timerId) { clearInterval(timerId); timerId = null; } }
+    function unlock(msg) {
+      if (unlocked || committed) return;
+      unlocked = true; buttons.forEach((b) => { b.disabled = false; });
+      status.textContent = msg || "Discussion complete. Select the team's answer.";
+      if (G.util.announce) G.util.announce(status.textContent);
+    }
+    const early = el("button.btn.ghost", { type: "button", text: "Lock decision early" });
+    early.addEventListener("click", () => { unlock("Discussion locked early. Select the team's answer."); });
+    root.appendChild(el("div.btn-row", {}, [early, commit]));
+
+    timerId = setInterval(() => {
+      if (!root.isConnected) { stop(); return; }
+      if (unlocked || committed) return;
+      remaining = Math.max(0, remaining - 1); timer.textContent = "Discussion: " + remaining + "s";
+      if (remaining === 0) { stop(); unlock("Discussion time complete. Select the team's answer."); }
+    }, 1000);
+
+    commit.addEventListener("click", () => {
+      if (!chosen || committed) return;
+      committed = true; stop(); buttons.forEach((b) => { b.disabled = true; }); early.disabled = true; commit.disabled = true; commit.textContent = "Team answer committed";
+      const fb = el("div", { style: "margin-top:10px" });
+      if (chosen.feedback) fb.appendChild(el("div.feedback", { role: "status", "aria-live": "polite", text: chosen.feedback }));
+      if (chosen.tradeoff) fb.appendChild(el("p.hint", { text: "Tradeoff: " + chosen.tradeoff }));
+      const next = el("button.btn.primary", { type: "button", text: "Continue" });
+      next.addEventListener("click", () => advanceCollective(sess, chosen));
+      fb.appendChild(next); root.appendChild(fb); next.focus();
+    });
+    sess.container.appendChild(root); early.focus();
+  }
+
+  function renderCollective(sess) {
+    const node = (sess.sc.nodes || {})[sess.nodeId];
+    if (!node) return finishCollective(sess, { outcome: "This path points to a missing node: " + sess.nodeId + "." });
+    if (node.end) return finishCollective(sess, node);
+    let choices = visibleChoices(node, sess.flags);
+    if ((!choices || !choices.length) && node.next) choices = [{ text: "Continue", goto: node.next }];
+    if (!choices || !choices.length) return finishCollective(sess, node);
+    if (choices.length === 1) return renderCollectiveSingle(sess, node, choices);
+    return renderCollectiveDecision(sess, node, choices);
+  }
+
+  function startCollective(sc, container, onExit, options) {
+    render(newCollectiveSession(sc, container, onExit, options));
+  }
+
   G.engine = {
     _pending: null,   // set by cross-links; consumed by views.train on next render
-    run(scenarioId, mode, container, onExit) {
+    run(scenarioId, mode, container, onExit, options) {
       const sc = store.scenario(scenarioId);
       if (!sc) { util.toast("Scenario not found."); return; }
+      const opts = options || {};
+      if (opts.collective || scenarioHasDiscuss(sc)) return startCollective(sc, container, onExit, opts);
       const chosen = mode || sc.defaultMode || store.settings().defaultMode || "course";
       const validMode = (sc.renderModes || ["text", "course", "cyoa"]).includes(chosen) ? chosen : (sc.renderModes || ["course"])[0];
       const sess = newSession(sc, validMode, container, onExit);
       render(sess);
+    },
+    // Accepts an authored scenario OBJECT as well as a stored id, so
+    // Authoring, previews, tests and Team Training (whose scenarios can sit
+    // outside the rank-filtered store) can run one without adding a
+    // temporary scenario to the memoized store.
+    runCollective(scenarioOrId, container, onExit, options) {
+      const sc = scenarioOrId && typeof scenarioOrId === "object" ? scenarioOrId : store.scenario(scenarioOrId);
+      if (!sc) { util.toast("Scenario not found."); return; }
+      return startCollective(sc, container, onExit, Object.assign({ collective: true }, options || {}));
     },
   };
 })();
