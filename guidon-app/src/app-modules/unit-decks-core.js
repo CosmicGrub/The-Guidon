@@ -105,10 +105,10 @@
   // zero-width space / joiners / direction marks (U+200B-U+200F), word joiner and the invisible operators
   // (U+2060-U+2064, U+206A-U+206F), Hangul fillers, variation selectors, interlinear annotation marks, the
   // object replacement character, and Unicode "tag" characters (U+E0000-U+E01EF, as surrogate pairs).
-  var INVISIBLE_CLASS = "\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180B-\u180E\u200B-\u200F\u2060-\u2064\u206A-\u206F\u3164\uFE00-\uFE0F\uFFA0\uFFF9-\uFFFC";
-  var INVISIBLE_PAIR = "\uDB40[\uDC00-\uDDEF]";
-  var BAD_SINGLE = new RegExp("[\u0000-\u001F\u007F\u2028\u2029\u202A-\u202E\u2066-\u2069\uFEFF\uFFFE\uFFFF" + INVISIBLE_CLASS + "]|" + INVISIBLE_PAIR);
-  var BAD_MULTI = new RegExp("[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u2028\u2029\u202A-\u202E\u2066-\u2069\uFEFF\uFFFE\uFFFF" + INVISIBLE_CLASS + "]|" + INVISIBLE_PAIR);
+  var INVISIBLE_CLASS = "\\u00AD\\u034F\\u061C\\u115F\\u1160\\u17B4\\u17B5\\u180B-\\u180E\\u200B-\\u200F\\u2060-\\u2064\\u206A-\\u206F\\u3164\\uFE00-\\uFE0F\\uFFA0\\uFFF9-\\uFFFC";
+  var INVISIBLE_PAIR = "\\uDB40[\\uDC00-\\uDDEF]";
+  var BAD_SINGLE = new RegExp("[\\u0000-\\u001F\\u007F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069\\uFEFF\\uFFFE\\uFFFF" + INVISIBLE_CLASS + "]|" + INVISIBLE_PAIR);
+  var BAD_MULTI = new RegExp("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F\\u2028\\u2029\\u202A-\\u202E\\u2066-\\u2069\\uFEFF\\uFFFE\\uFFFF" + INVISIBLE_CLASS + "]|" + INVISIBLE_PAIR);
 
   function isObj(v) { return v !== null && typeof v === "object" && !Array.isArray(v); }
   function hasOwn(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }

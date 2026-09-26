@@ -458,7 +458,8 @@ let graded = null;
   for (const lvl of ["beginner", "expert"]) {
     await p3.selectOption("select[aria-label='Filter by study level']", lvl);
     const counted = await until(p3, (l) => Array.from(document.querySelectorAll("p.hint")).some((h) => new RegExp("Unit: Local SOP · " + l + "\\s+·\\s+3 questions$").test(h.textContent.trim())), lvl, { timeout: 5000 });
-    check(counted, `Quiz at the ${lvl} level counts all 3 of the deck's Local SOP questions`, async () => JSON.stringify(await p3.evaluate(() => Array.from(document.querySelectorAll("p.hint")).map((h) => h.textContent))));
+    const hints = counted ? "" : JSON.stringify(await p3.evaluate(() => Array.from(document.querySelectorAll("p.hint")).map((h) => h.textContent)));
+    check(counted, `Quiz at the ${lvl} level counts all 3 of the deck's Local SOP questions`, () => hints);
   }
   await clickWhenStable(p3, p3.locator("button", { hasText: /^Start Quiz$/ }));
   const qshown = await until(p3, () => !!document.querySelector(".quiz-card .prompt"), undefined, { timeout: 5000 });

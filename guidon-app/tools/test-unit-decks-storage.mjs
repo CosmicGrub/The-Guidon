@@ -241,6 +241,16 @@ await waitForRoute(page, "#/home", { ready: "#route h1, #route h2" });
   check(proto.added.ok && proto.added.replaced === false && JSON.stringify(proto.listed) === JSON.stringify(["constructor:1:1"]) && JSON.stringify(proto.cards) === JSON.stringify(["unit:constructor:tostring|Unit: __proto__"]), "it is added as a new deck, with card id \"tostring\" and category \"__proto__\" as ordinary names", () => JSON.stringify(proto));
   check(proto.again.ok && proto.again.replaced === true && proto.removed === true && proto.after === 0, "adding it again replaces it (correctly, this time), and it can be removed");
 }
+{ // A source that would split into more than 8 references is refused when the deck is ADDED - not accepted and then lost at the next start.
+  const NINE = "AR 600-8-19, AR 600-20, AR 670-1, AR 350-1, DA PAM 600-25, ADP 6-22, FM 6-22, TC 3-21.5, ATP 3-21.8";
+  const EIGHT = "AR 600-8-19, AR 600-20, AR 670-1, AR 350-1, DA PAM 600-25, ADP 6-22, FM 6-22, TC 3-21.5";
+  const mk = (source) => ({ format: "guidon-unit-pack", formatVersion: 1, id: "many-pubs", name: "Many publications", packVersion: "1", packDate: "2026-09-26", cards: [{ id: "c1", category: "C", q: "Which publications?", a: "These.", source }] });
+  const r9 = await page.evaluate(async (p) => { const r = await G.unitDecks.add(p); return { ok: r.ok, stage: r.stage, messages: r.messages, listed: G.unitDecks.list().length }; }, mk(NINE));
+  check(r9.ok === false && r9.stage === "format" && /Card 1 \(c1\): the source lists 9 separate references; the most GUIDON keeps on one card is 8/.test(r9.messages.join(" ")) && r9.listed === 0 && (await keys("unit-deck:many-pubs")).length === 0, "a source naming 9 publications is refused when the deck is added (in plain words, naming the card) and nothing is saved", () => JSON.stringify(r9));
+  const r8 = await page.evaluate(async (p) => { const r = await G.unitDecks.add(p); await G.unitDecks.load(); return { ok: r.ok, ids: G.unitDecks.list().map((d) => d.id), cards: G.unitDecks.cards().length }; }, mk(EIGHT));
+  check(r8.ok === true && r8.ids.includes("many-pubs") && r8.cards === 1, "one naming 8 is added, and is STILL listed after the start-up read of the device (the same row check that used to drop a 9-source deck)", () => JSON.stringify(r8));
+  await page.evaluate(async () => { await G.unitDecks.remove("many-pubs"); });
+}
 { // an owner's session really writes to the device (so the Guest checks below cannot pass because saving is broken)
   await page.evaluate(async (p) => { await G.unitDecks.add(p); }, PACK);
   const onDevice = await deviceKvGet(page, "unit-deck:" + DECK);
