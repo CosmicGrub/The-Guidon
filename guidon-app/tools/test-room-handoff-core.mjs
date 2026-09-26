@@ -24,22 +24,28 @@
  *       differential fuzz hold the other side): closed envelope, shaped
  *       fields, nesting cap, byte cap that leaves the whole frame under the
  *       frame cap - exactly at the boundary
- *  (4)  personal keys: every forbidden name, at any depth, in any case
+ *  (4)  personal keys: every forbidden name, at any depth, in any case - and
+ *       in other spellings (spacing, punctuation, zero-width, full-width,
+ *       look-alike letters), which the wire rules also refuse
  *  (5)  classify(): unknown kind and newer version are held as notes (never
  *       applied, data dropped); invalid kind-specific data is refused
- *  (6)  sanitize()/receive(): control and direction characters cleaned,
- *       every string screened, no screen = refused (fail closed)
+ *  (6)  sanitize()/receive(): control, direction, Arabic-letter-mark and tag
+ *       characters cleaned, every string - and every changed date together with
+ *       its name - screened, no screen = refused (fail closed)
  *  (7)  the deck, migrated onto the model with UNCHANGED behaviour: snapshots
  *       and welcome frames are byte-identical to what the pre-model build
  *       produced (golden strings captured from that build), and the deck field
  *       gives the same rejection reasons it always gave
  *  (8)  the room core: host offers, seated peers hold, a late seat gets the
- *       share behind its welcome, a resend is a new offer, a peer cannot
- *       offer, a forged frame is noted and applies nothing
+ *       share behind its welcome, a seat that was offline when the host shared
+ *       gets it (once) when it resumes, a resend is a new offer, a peer cannot
+ *       offer, a forged frame is noted and applies nothing, the browser guest
+ *       page keeps only {oid, kind, ver}
  *  (9)  the real relay (Node server + Node host and peers over WebSockets):
  *       the offer reaches every seated peer byte for byte, nothing personal
  *       is on the wire, hostile frames are dropped at the relay and counted,
- *       an unknown kind passes through a relay that has never heard of it
+ *       an unknown kind passes through a relay that has never heard of it, an
+ *       offline seat that reconnects with its resume token is sent the offer
  *
  * Every wait is a bounded poll on a real condition. Usage:
  *   node tools/test-room-handoff-core.mjs   (exit code = FAIL count)
@@ -240,6 +246,41 @@ console.log("\n(4) personal keys, everywhere");
   const buried = offerOf("team-session", { steps: ["aar-huddle"], a: { b: { c: { d: { e: { rank: "SSG" } } } } } });
   check(reasonOf(buried) === "offer-depth", "a personal key buried past the nesting cap cannot dodge the scan: refused for depth", () => reasonOf(buried));
   check(S.validate(frameOf(offerOf("team-session", { steps: ["aar-huddle"], grade: 2 }))).reason === "grade", "a grade key is refused inside an offer too, by rule 8's whole-frame check");
+
+  /* Other SPELLINGS of a forbidden key: the deny-list folds spacing and
+     punctuation away and refuses any key with a non-ASCII character, so a
+     trailing space, a zero-width character, a full-width or math-alphabet
+     spelling (what NFKC would fold to ASCII) or a look-alike letter cannot slip
+     a personal key past it. (Rust agrees: room.rs key_is_forbidden, its own
+     test and the differential fuzz.) */
+  const ZWJ = String.fromCharCode(8205), NBSP = String.fromCharCode(160), BOM = String.fromCharCode(65279), ALM2 = String.fromCharCode(1564);
+  const fullWidth = (k) => k.replace(/[a-z]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0xfee0));
+  const mathBold = (k) => k.replace(/[a-z]/g, (c) => String.fromCodePoint(c.charCodeAt(0) - 97 + 0x1d5ee));
+  const spellings = {
+    "a trailing space": (k) => k + " ", "a leading space": (k) => " " + k, "a space inside": (k) => k.slice(0, 1) + " " + k.slice(1),
+    "an underscore inside": (k) => k.slice(0, 1) + "_" + k.slice(1), "a hyphen inside and a dot after": (k) => k.slice(0, 1) + "-" + k.slice(1) + ".",
+    "a zero-width space inside": (k) => k.slice(0, 1) + ZWSP + k.slice(1), "a zero-width joiner inside": (k) => k.slice(0, 1) + ZWJ + k.slice(1),
+    "a right-to-left override after": (k) => k + RLO, "a byte-order mark before": (k) => BOM + k, "an Arabic letter mark after": (k) => k + ALM2,
+    "a no-break space after": (k) => k + NBSP, "full-width letters": fullWidth, "math sans-serif bold letters": mathBold,
+    "Cyrillic look-alikes for a and o": (k) => k.replace(/a/g, String.fromCharCode(1072)).replace(/o/g, String.fromCharCode(1086)),
+    "an accented letter": (k) => k.slice(0, 1) + E_ACUTE + k.slice(1),
+  };
+  let spellChecked = 0; const spellMissed = [];
+  for (const key of H.FORBIDDEN_KEYS) {
+    for (const [how, fn] of Object.entries(spellings)) {
+      const spelled = fn(key);
+      if (spelled === key) continue;
+      for (const [where, build] of [["the top of data", (o) => { o.data[spelled] = "x"; return o; }], ["inside an array of objects", (o) => { o.data.steps = [{ [spelled]: "x" }]; return o; }], ["one level down", (o) => { o.data.z = { [spelled]: 1 }; return o; }]]) {
+        spellChecked++;
+        const r = reasonOf(build(offerOf("team-session", teamData())));
+        if (r !== "offer-personal") spellMissed.push(key + " with " + how + " @" + where + "=" + r);
+      }
+    }
+  }
+  check(spellChecked > 1000 && spellMissed.length === 0, "every forbidden name in " + Object.keys(spellings).length + " other spellings, at three positions, is refused as personal (" + spellChecked + " forged offers)", () => spellMissed.slice(0, 5).join(" | "));
+  const ordinary = ["oid", "kind", "ver", "title", "data", "tpl", "days", "sessions", "dates", "id", "label", "effort", "ref", "key", "type", "blocks", "date", "entry", "steps", "pad", "z", "q_abc"];
+  check(ordinary.every((k) => reasonOf(offerOf("quiz-pack", { [k]: 1 })) !== "offer-personal"), "the field names a payload really uses are never caught by the fold (no false alarm)", () => ordinary.filter((k) => reasonOf(offerOf("quiz-pack", { [k]: 1 })) === "offer-personal").join());
+  check(!H.hasForbiddenKey({ a: [{ b: { label: "a name in a VALUE, not a key", steps: ["rank"] } }] }), "a personal word as a VALUE is not a key and is not caught here (values are screened by the receiving side)");
 }
 
 /* ================================================================== (5) */
@@ -295,6 +336,43 @@ console.log("\n(6) sanitize()/receive(): cleaned, screened, fail closed");
     check(!x.ok && x.status === "refused" && x.found && x.found.length > 0 && !("offer" in x), "refused whole: " + what, () => JSON.stringify(x));
   }
   check(H.cleanText("a" + RLO + "b") === "a b" && H.cleanText(" \t ") === "" && H.cleanText(5) === "5", "cleanText is total: direction override -> space, blank -> empty, a number -> its text");
+
+  /* The Arabic letter mark (U+061C) and the Unicode "tag" characters
+     (U+E0000-U+E007F, invisible, used to hide text inside text) are cleaned
+     too - by the one cleanText() that make() (the sending side) and sanitize()
+     (the receiving side) both use. */
+  const ALM = String.fromCharCode(1564);
+  const tagged = (s) => Array.from(s).map((c) => String.fromCodePoint(0xe0000 + c.charCodeAt(0))).join("");
+  check(H.cleanText("Week" + ALM + "plan") === "Week plan", "the Arabic letter mark is cleaned to a space");
+  check(H.cleanText("Circuit" + tagged("hidden text") + " night") === "Circuit night", "invisible tag characters spelling out a hidden message leave nothing behind: \"" + H.cleanText("Circuit" + tagged("hidden text") + " night") + "\"");
+  const TAG_FIRST = String.fromCodePoint(0xe0000), TAG_LAST = String.fromCodePoint(0xe007f), JUST_BEFORE = String.fromCodePoint(0xdffff), JUST_AFTER = String.fromCodePoint(0xe0080);
+  check(H.cleanText("a" + TAG_FIRST + "b") === "a b" && H.cleanText("a" + TAG_LAST + "b") === "a b", "both ends of the tag block (U+E0000 and U+E007F) are cleaned");
+  check(H.cleanText("a" + JUST_BEFORE + "b") === "a" + JUST_BEFORE + "b" && H.cleanText("a" + JUST_AFTER + "b") === "a" + JUST_AFTER + "b", "the code points just outside the block (U+DFFFF and U+E0080) are left alone");
+  check(H.cleanText("Caf" + E_ACUTE) === "Caf" + E_ACUTE && H.cleanText(String.fromCodePoint(0x1f600) + " go") === String.fromCodePoint(0x1f600) + " go", "ordinary accented letters and an emoji (an astral character) are untouched");
+  const madeTagged = H.make("team-session", "Squad" + ALM + tagged("x") + " night", teamData());
+  check(madeTagged.ok && madeTagged.offer.title === "Squad night", "sending side: make() cleans a title carrying them: \"" + (madeTagged.offer && madeTagged.offer.title) + "\"");
+  const rx = offerOf("pt-plan", ptData(), "Week" + ALM + tagged("y") + "ly");
+  rx.data.sessions[0].label = "Circuit" + tagged("z") + ALM + " night";
+  const rxr = H.receive(rx, { screen: fakeScreen });
+  check(rxr.ok && rxr.offer.title === "Week ly" && rxr.offer.data.sessions[0].label === "Circuit night", "receiving side: receive() cleans a title and a session label carrying them", () => JSON.stringify(rxr));
+
+  /* Two harmless strings can add up to something that is not. A changed date
+     is one string and its name is another; the sensitive-text check only sees
+     "a future date + a place" on ONE line. So the receiving side screens each
+     changed date as the line the preview shows for it ("<date>: <name>"). The
+     stand-in screen below flags exactly that shape and nothing on either
+     string alone. */
+  const comboScreen = (text) => ({ findings: /20\d\d-\d\d-\d\d.*\bRange\b/.test(text) ? [{ code: "future-operation-location", looksLike: "a future date and place for a unit activity" }] : [] });
+  const dated = (entry) => { const o = offerOf("pt-plan", ptData(), "Weekly PT plan"); o.data.dates = [{ date: "2026-10-02", entry }]; return o; };
+  check(!comboScreen("2026-10-02").findings.length && !comboScreen("Live-fire at Range 4").findings.length && comboScreen("2026-10-02: Live-fire at Range 4").findings.length === 1, "(the stand-in screen passes each string alone and flags them together)");
+  const liveFire = H.receive(dated({ id: "custom", label: "Live-fire at Range 4", effort: "hard" }), { screen: comboScreen });
+  check(!liveFire.ok && liveFire.status === "refused" && liveFire.found.length === 1 && !("offer" in liveFire), "a changed date whose name adds up to a date + place line is refused whole, though every string passes alone", () => JSON.stringify(liveFire));
+  const sess = offerOf("pt-plan", ptData(), "Weekly PT plan"); sess.data.sessions[0].label = "Live-fire at Range 4"; sess.data.dates = [{ date: "2026-10-02", entry: { id: "session", ref: "s1" } }];
+  const viaSession = H.receive(sess, { screen: comboScreen });
+  check(!viaSession.ok && viaSession.status === "refused", "the same holds when the name comes from one of the payload's own custom sessions", () => JSON.stringify(viaSession));
+  const weekday = offerOf("pt-plan", ptData(), "Weekly PT plan"); weekday.data.days[5] = { id: "custom", label: "Live-fire at Range 4", effort: "hard" };
+  check(H.receive(weekday, { screen: comboScreen }).ok, "a weekday entry with that name is not a dated line, so it is not combined (no false alarm)");
+  check(JSON.stringify(H.combinedLines("pt-plan", sess.data)) === JSON.stringify(["2026-10-02: Live-fire at Range 4"]) && H.combinedLines("team-session", teamData()).length === 0 && H.combinedLines("pt-plan", { days: [] }).length === 0 && H.combinedLines("pt-plan", null).length === 0, "combinedLines() is the dated line per changed date, and nothing for another kind, no dates or no data");
 }
 
 /* ================================================================== (7) */
@@ -397,6 +475,42 @@ console.log("\n(8) the room core: host offers, peers hold");
   check(lateGot.accepted && lateGot.state.offer.oid === host.offer.oid, "...and holds it");
   host = late.host;
 
+  // A seat that is OFFLINE when the host shares never gets it then (the host addresses only seats that are online) -
+  // and gets the host's CURRENT share right behind its welcome the moment it resumes, exactly once, by the same path a
+  // newly admitted seat uses.
+  {
+    const byeOf = (fp) => ({ v: 1, t: "bye", room: ROOM, seq: 0, from: fp, body: {} });
+    const resumeHello = (h, fp, name) => ({ v: 1, t: "hello", room: ROOM, seq: 0, from: fp, body: { name, bankSig: "bank:10:x", resume: h.seats.find((x) => x.fp === fp).token } });
+    const dropped = sg.reduce(host, byeOf("PEERBBBB"), ctx);
+    check(dropped.accepted && dropped.state.seats.find((x) => x.fp === "PEERBBBB").online === false, "a seat drops offline (its bye)");
+    const shared = sg.act(dropped.state, { type: "offer", offer: made.offer }, ctx);
+    const sharedTo = shared.effects.map((e) => e.to).sort().join();
+    check(shared.accepted && !sharedTo.includes("PEERBBBB") && sharedTo === "PEERAAAA,PEERCCCC", "the host shares while it is offline: the offer goes to the seats that are online and NOT to the offline one", () => sharedTo);
+    const back = sg.reduce(shared.state, resumeHello(shared.state, "PEERBBBB", "TWO"), ctx);
+    const backTypes = back.effects.map((e) => e.frame.t).join();
+    check(back.accepted && back.reason === "resumed" && backTypes === "welcome,offer" && back.effects.every((e) => e.to === "PEERBBBB"), "the seat resumes: it is sent its welcome and then the host's current offer (" + backTypes + ")", () => back.reason + " " + backTypes);
+    const backOffer = back.effects.find((e) => e.frame.t === "offer").frame;
+    check(backOffer.body.offer.oid === shared.state.offer.oid && JSON.stringify(backOffer.body.offer) === JSON.stringify(shared.state.offer) && S.validate(backOffer).ok, "...the very offer the host shared (same id, same bytes), and a valid frame");
+    check(back.effects.filter((e) => e.frame.t === "offer").length === 1, "exactly one offer frame goes to the resumed seat");
+    let gotWelcome = sg.reduce(peerB, back.effects[0].frame, ctx);
+    check(gotWelcome.accepted && gotWelcome.state.offer === peerB.offer, "the peer takes the welcome (its held offer is as it was)");
+    const gotOffer = sg.reduce(gotWelcome.state, back.effects[1].frame, ctx);
+    check(gotOffer.accepted && gotOffer.state.offer && gotOffer.state.offer.oid === shared.state.offer.oid, "...and then HOLDS the offer it had missed", () => gotOffer.reason);
+    // A seat that already holds it (a re-hello while still online) is sent it again and simply ignores the repeat.
+    const rehello = sg.reduce(back.state, resumeHello(back.state, "PEERBBBB", "TWO"), ctx);
+    const repeat = sg.reduce(gotOffer.state, rehello.effects.find((e) => e.frame.t === "offer").frame, ctx);
+    check(rehello.reason === "rehello" && !repeat.accepted && repeat.reason === "dup-offer" && repeat.state === gotOffer.state, "a re-hello from a seat that already holds it resends the offer; the device ignores the repeat (\"dup-offer\") and asks nothing twice", () => rehello.reason + " " + repeat.reason);
+    // With nothing shared a resume sends the welcome and only the welcome, as it always did.
+    const quietPending = sg.reduce(host0, hello("PEERQQQQ", "Q"), ctx);
+    const quietSeated = sg.act(quietPending.state, { type: "admit", fp: "PEERQQQQ" }, ctx);
+    const quietBack = sg.reduce(sg.reduce(quietSeated.state, byeOf("PEERQQQQ"), ctx).state, resumeHello(quietSeated.state, "PEERQQQQ", "Q"), ctx);
+    check(quietBack.reason === "resumed" && quietBack.effects.length === 1 && quietBack.effects[0].frame.t === "welcome", "with nothing shared, a resume still sends the welcome and nothing else", () => quietBack.effects.map((e) => e.frame.t).join());
+    // A seat that resumes AFTER the host has replaced the offer gets the newest one, not the old one.
+    const second = sg.act(shared.state, { type: "offer", offer: { kind: "team-session", ver: 1, title: "Second", data: teamData() } }, ctx);
+    const late2 = sg.reduce(second.state, resumeHello(second.state, "PEERBBBB", "TWO"), ctx);
+    check(late2.effects[1].frame.body.offer.oid === second.state.offer.oid && second.state.offer.oid !== shared.state.offer.oid, "a seat resuming after the host shared again is sent the NEWEST offer");
+  }
+
   // A resend is a NEW offer (new id) - a device that said "not now" is asked again on purpose.
   const again = sg.act(host, { type: "offer", offer: { kind: wireOffer.kind, ver: wireOffer.ver, title: wireOffer.title, data: wireOffer.data } }, ctx);
   check(again.accepted && again.state.offer.oid !== wireOffer.oid, "sending the same payload again mints a new offer id (" + wireOffer.oid + " -> " + again.state.offer.oid + ")", () => JSON.stringify(again.reason));
@@ -447,6 +561,25 @@ console.log("\n(8) the room core: host offers, peers hold");
   check(!stranger.accepted && stranger.state.offerNote === "" && stranger.state.offer === peerB.offer, "an invalid-looking offer from someone who is NOT the host gets no note and no effect", () => stranger.reason);
   const wrongRoom = sg.reduce(peerB, frameOf(offerOf("team-session", Object.assign(teamData(), { rank: "x" }), null, { oid: "WRONGRM2" }), { from: "HOSTHOST", room: "ZULU-ZULU-99" }), ctx);
   check(!wrongRoom.accepted && wrongRoom.state.offerNote === "", "...nor one for another room");
+
+  // The browser guest page can never use a payload (no PT Planner, no Team Training) and tells the person
+  // nothing about it is kept - so it keeps none: only {oid, kind, ver}, as it does for a kind it cannot open.
+  const gctx = { now: () => 5000, token: tok, keepOffer: false };
+  const guestFrame = (offer) => frameOf(offer, { from: "HOSTHOST", seq: 9 });
+  const guestOk = sg.reduce(peerB, guestFrame(offerOf("pt-plan", ptData(), "Weekly PT plan", { oid: "GUESTOK2" })), gctx);
+  const stub = guestOk.state.offer;
+  check(guestOk.accepted && stub && Object.keys(stub).sort().join() === "kind,oid,unsupported,ver" && stub.oid === "GUESTOK2" && stub.kind === "pt-plan" && stub.ver === 1 && stub.unsupported === "guest",
+    "the guest page keeps only {oid, kind, ver} of a PT plan it cannot open", () => JSON.stringify(stub));
+  check(JSON.stringify(guestOk.state).indexOf("Circuit night") === -1 && JSON.stringify(guestOk.state).indexOf("Weekly PT plan") === -1 && JSON.stringify(guestOk.state).indexOf("Ruck") === -1, "...nothing of the plan's title, names or drill ids is anywhere in that page's state");
+  const guestTeam = sg.reduce(peerB, guestFrame(offerOf("team-session", teamData(), "Squad night", { oid: "GUESTTM2" })), gctx);
+  check(guestTeam.accepted && Object.keys(guestTeam.state.offer).sort().join() === "kind,oid,unsupported,ver" && JSON.stringify(guestTeam.state).indexOf("aar-huddle") === -1 && JSON.stringify(guestTeam.state).indexOf("Squad night") === -1, "...and the same for a Team Training session (no exercise ids, no title)");
+  const guestDup = sg.reduce(guestOk.state, guestFrame(offerOf("pt-plan", ptData(), "Weekly PT plan", { oid: "GUESTOK2" })), gctx);
+  check(!guestDup.accepted && guestDup.reason === "dup-offer", "a repeat of the same offer id is still ignored on the guest page");
+  const guestBad = sg.reduce(peerB, guestFrame(offerOf("pt-plan", Object.assign(ptData(), { extra: 1 }), null, { oid: "GUESTBD2" })), gctx);
+  const guestUnk = sg.reduce(peerB, guestFrame(offerOf("quiz-pack", { anything: 1 }, "Secret sauce", { oid: "GUESTUK2" })), gctx);
+  check(!guestBad.accepted && guestBad.state.offerNote === H.MESSAGES.refused && guestUnk.state.offer.unsupported === "unsupported-kind" && !("data" in guestUnk.state.offer), "a forged offer is still refused and noted, and an unknown kind is still a bare \"can't open this\", on the guest page");
+  const appGot = sg.reduce(peerB, guestFrame(offerOf("pt-plan", ptData(), "Weekly PT plan", { oid: "APPKEEP2" })), ctx);
+  check(appGot.accepted && appGot.state.offer.data && appGot.state.offer.title === "Weekly PT plan" && !("unsupported" in appGot.state.offer), "the app itself (no keepOffer:false) still keeps the whole offer, as it must to preview it");
 }
 
 /* ================================================================== (9) */
@@ -516,6 +649,42 @@ try {
   host.ws.send(S.wireEncode(future, "*"));
   const futureSeen = await pollUntil(() => peers.every((p) => p.state().offer && p.state().offer.oid === "FUTURE22"));
   check(okFrame.ok && futureSeen.hit && peers.every((p) => p.state().offer.unsupported === "unsupported-kind" && !("data" in p.state().offer)), "an offer of a kind and version no build has heard of crosses the relay and is held by each peer as a bare \"can't open this\" note", () => JSON.stringify(peers.map((p) => p.state().offer)));
+
+  // A seat that is offline when the host shares gets the share when it resumes - through the real relay, over real sockets.
+  const room2 = "TANGO-WHISKEY-31";
+  const host2 = nodeHost({ room: room2, wsBase, fp: "NODEHOST", name: "HOST-KILO", token: tokenStream(41), bankSig: "bank:10:x", pingMs: 300, missLimit: 3, holdMs: 30000 });
+  const late2 = [];
+  try {
+    await host2.ready;
+    const first = nodePeer({ room: room2, wsBase, fp: "PEERCCCC", name: "THREE", bankSig: "bank:10:x", pingMs: 300, missLimit: 3 });
+    late2.push(first);
+    await first.ready;
+    first.hello();
+    check((await pollUntil(() => host2.pending().length === 1)).hit, "a peer says hello to a second room through the relay");
+    host2.act({ type: "admit", fp: "PEERCCCC" });
+    check((await pollUntil(() => first.state().joinState === "seated")).hit, "...and is seated");
+    const resumeToken = first.state().self.token;
+    first.close();
+    check((await pollUntil(() => host2.seats().find((s) => s.fp === "PEERCCCC" && !s.online))).hit, "its connection drops and the host marks the seat offline");
+    const made2 = H.make("team-session", "Squad night", teamData());
+    const shared2 = host2.act({ type: "offer", offer: made2.offer });
+    const toOffline = host2.log.filter((e) => e.dir === "out" && e.frame && e.frame.t === "offer" && e.to === "PEERCCCC").length;
+    check(shared2.accepted && toOffline === 0, "the host shares while the seat is offline: no offer frame is addressed to it (" + toOffline + ")", () => shared2.reason);
+    const again2 = nodePeer({ room: room2, wsBase, fp: "PEERCCCC", name: "THREE", bankSig: "bank:10:x", pingMs: 300, missLimit: 3 });
+    late2.push(again2);
+    await again2.ready;
+    again2.hello(resumeToken);
+    const gotBack = await pollUntil(() => again2.state().offer && again2.state().offer.oid === host2.state().offer.oid);
+    check(gotBack.hit, "the same seat reconnects with its resume token and HOLDS the host's current offer (" + gotBack.ms + " ms)", () => JSON.stringify(again2.state().offer));
+    const inbound2 = again2.log.filter((e) => e.dir === "in" && e.frame).map((e) => e.frame.t).filter((t) => t === "welcome" || t === "offer");
+    check(inbound2.join() === "welcome,offer", "it arrived right behind the welcome, in that order, exactly once (" + inbound2.join() + ")");
+    check(again2.state().joinState === "seated" && host2.seats().find((s) => s.fp === "PEERCCCC").online, "and the seat is back: seated on the peer, online on the host");
+  } catch (e) {
+    bad("resume block: " + (e && e.stack ? e.stack.split("\n").slice(0, 3).join(" ") : e));
+  } finally {
+    for (const p of late2) p.close();
+    host2.close();
+  }
 } catch (e) {
   bad("real relay block: " + (e && e.stack ? e.stack.split("\n").slice(0, 3).join(" ") : e));
 } finally {

@@ -128,11 +128,13 @@
   var MAX_OFFER_DEPTH = 6;
   var MAX_OFFER_VER = 99;
   /* Key NAMES that can never appear anywhere inside an offer (compared
-     ASCII-lower-case, at any depth): the personal things a payload must
-     never carry - who someone is, what they scored, what they wrote. No
-     payload kind uses any of them as a field name, so a hit is never a
-     false positive; it is a forged or careless sender, and the whole offer
-     is refused. The Rust host reads this exact list (generated). */
+     after folding case, spacing and punctuation away, at any depth - see
+     keyIsForbidden(); a key with a non-ASCII character is refused outright):
+     the personal things a payload must never carry - who someone is, what
+     they scored, what they wrote. No payload kind uses any of them as a
+     field name, so a hit is never a false positive; it is a forged or
+     careless sender, and the whole offer is refused. The Rust host reads
+     this exact list (generated). */
   var OFFER_FORBIDDEN_KEYS = ["profile", "name", "displayname", "firstname", "lastname", "callsign", "rank", "grade", "mos", "progress",
     "attempts", "attempt", "notes", "note", "results", "result", "score", "scores", "history", "streak", "roster",
     "email", "phone", "ssn", "dodid", "edipi", "uic", "token", "fp", "resume"];
@@ -206,7 +208,9 @@
      enforces it three ways. (1) validateOffer() refuses, at every hop (the
      page, the Node server, the Rust host), an offer that nests a key named
      for a personal thing (OFFER_FORBIDDEN_KEYS: profile, rank, name, mos,
-     progress, attempts, notes, results ...) at any depth. (2) each kind's
+     progress, attempts, notes, results ... - whatever the case, spacing or
+     punctuation, and any non-ASCII spelling) at any depth. It is the
+     secondary net: the load-bearing rule is (2). (2) each kind's
      data has a CLOSED key set, so a stray key is refused even when it is not
      on that list. (3) the builders on the sending side copy fields out by
      name; they never pass a stored record through. Size is capped
@@ -229,10 +233,26 @@
     for (var k in v) if (tooDeep(v[k], limit, d + 1)) return true;
     return false;
   }
+  /* Is this object KEY one a payload may never carry? Two rules, both simple
+     enough to be identical in the Rust host (room.rs key_is_forbidden):
+       1. the key, folded - every character that is not an ASCII letter or
+          digit dropped, the rest lower-cased - is on OFFER_FORBIDDEN_KEYS. So
+          "Name", "name " (a trailing space), "na me", "na_me" and "n-a-m-e"
+          all read as "name";
+       2. the key holds any non-ASCII character at all. A field name is a
+          protocol identifier, never a word in a person's language, so this
+          refuses at once the spellings a fold would have to guess at: a
+          zero-width or direction character laced through "name", a
+          full-width or math-alphabet "name" (what NFKC would fold to ASCII),
+          a look-alike letter from another script.
+     No payload kind names a field with either shape, so a hit is a forged or
+     careless sender and is never a false alarm. */
+  function foldKey(k) { return lowerAscii(String(k).replace(/[^A-Za-z0-9]/g, "")); }
+  function keyIsForbidden(k) { return /[^\x00-\x7f]/.test(k) || OFFER_FORBIDDEN_KEYS.indexOf(foldKey(k)) !== -1; }
   function hasForbiddenKey(v) {
     if (!v || typeof v !== "object") return false;
     if (Array.isArray(v)) { for (var i = 0; i < v.length; i++) if (hasForbiddenKey(v[i])) return true; return false; }
-    for (var k in v) { if (OFFER_FORBIDDEN_KEYS.indexOf(lowerAscii(k)) !== -1) return true; if (hasForbiddenKey(v[k])) return true; }
+    for (var k in v) { if (keyIsForbidden(k)) return true; if (hasForbiddenKey(v[k])) return true; }
     return false;
   }
   var OID_RE = /^[A-Z2-7]{4,12}$/;
@@ -409,16 +429,24 @@
   }
 
   /* Control, zero-width, line-separator and direction-override characters
-     become spaces; runs of whitespace collapse; the ends are trimmed. */
+     become spaces; runs of whitespace collapse; the ends are trimmed. This one
+     function cleans on BOTH sides: make() cleans the title a host sends and
+     sanitize() cleans everything a device receives. */
   var CLEAN_RE = (function () {
     /* code point ranges, written as numbers so no unusual character ever
-       sits in this file's source: C0/C1 controls, soft hyphen, zero-width and
-       direction marks, line/paragraph separators, direction overrides and
-       isolates, the invisible-operator block, BOM, interlinear annotation */
-    var ranges = [[0, 31], [127, 159], [173, 173], [8203, 8207], [8232, 8233], [8234, 8238], [8288, 8303], [65279, 65279], [65529, 65531]];
+       sits in this file's source: C0/C1 controls, soft hyphen, the Arabic
+       letter mark (U+061C, a direction mark like the ones next to it),
+       zero-width and direction marks, line/paragraph separators, direction
+       overrides and isolates, the invisible-operator block, BOM, interlinear
+       annotation */
+    var ranges = [[0, 31], [127, 159], [173, 173], [1564, 1564], [8203, 8207], [8232, 8233], [8234, 8238], [8288, 8303], [65279, 65279], [65529, 65531]];
     var body = "";
     for (var i = 0; i < ranges.length; i++) body += String.fromCharCode(ranges[i][0]) + (ranges[i][1] > ranges[i][0] ? "-" + String.fromCharCode(ranges[i][1]) : "");
-    return new RegExp("[" + body + "]", "g");
+    /* Unicode "tag" characters, U+E0000-U+E007F: invisible, and used to hide
+       text inside text. They sit outside the 16-bit range, so they are matched
+       as the surrogate pair every one of them is (high U+DB40, then a low
+       surrogate U+DC00-U+DC7F) - written as escapes, for the same reason. */
+    return new RegExp("[" + body + "]|\\udb40[\\udc00-\\udc7f]", "g");
   })();
   function cleanText(s) {
     return String(s).replace(CLEAN_RE, " ").replace(/\s+/g, " ").trim();
@@ -433,6 +461,32 @@
     if (typeof v === "string") { if (v.length) out.push(v); }
     else if (Array.isArray(v)) { for (var i = 0; i < v.length; i++) stringsOf(v[i], out); }
     else if (isObj(v)) { for (var k in v) stringsOf(v[k], out); }
+    return out;
+  }
+  /** combinedLines(kind, data) -> the lines a screen reads as ONE line, where
+      two strings that are harmless on their own can add up to something that
+      is not. Screening each string separately (stringsOf) cannot see that:
+      a PT plan's changed date is one string ("2026-10-01") and its name is
+      another ("Live-fire at Range 4"), and it is the pair - a future date, a
+      place and a unit activity in one line - that the sensitive-text check
+      exists to stop. So every changed date is also checked as the line the
+      preview shows for it: "<date>: <name>". Other kinds have no such line
+      (a Team Training session is a title and exercise ids the receiver's own
+      catalog names); the receiving screen also checks whatever its own
+      preview draws, line by line. */
+  function combinedLines(kind, data) {
+    var out = [];
+    if (kind !== "pt-plan" || !isObj(data) || !Array.isArray(data.dates)) return out;
+    var byKey = Object.create(null), i;
+    if (Array.isArray(data.sessions)) for (i = 0; i < data.sessions.length; i++) { var s = data.sessions[i]; if (isObj(s) && typeof s.key === "string") byKey[s.key] = s; }
+    for (i = 0; i < data.dates.length; i++) {
+      var x = data.dates[i];
+      if (!isObj(x) || typeof x.date !== "string" || !isObj(x.entry)) continue;
+      var e = x.entry, name = "";
+      if (e.id === "custom" && typeof e.label === "string") name = e.label;
+      else if (e.id === "session" && typeof e.ref === "string" && byKey[e.ref] && typeof byKey[e.ref].label === "string") name = byKey[e.ref].label;
+      if (name) out.push(x.date + ": " + name);
+    }
     return out;
   }
 
@@ -467,7 +521,7 @@
     var out = cleanDeep(offer);
     var again = classify(out);
     if (again.status !== "ok") return { ok: false, reason: "clean:" + again.reason, message: HANDOFF_MESSAGES.refused, found: [] };
-    var all = stringsOf(out, []);
+    var all = stringsOf(out, []).concat(combinedLines(out.kind, out.data));
     for (var i = 0; i < all.length; i++) {
       var r = null;
       try { r = opts.screen(all[i]); } catch (e) { return { ok: false, reason: "no-guard", message: HANDOFF_MESSAGES.noGuard, found: [] }; }
@@ -495,7 +549,7 @@
     LIMITS: { ptSessions: PT_MAX_SESSIONS, ptBlocks: PT_MAX_BLOCKS, ptDates: PT_MAX_DATES, ptLabel: PT_LABEL, teamSteps: TEAM_MAX_STEPS },
     kindOf: function (name) { var K = kindOf(name); return K ? { ver: K.ver, carrier: K.carrier, label: K.label } : null; },
     labelOf: labelOf, validateOffer: validateOffer, classify: classify, make: make, sanitize: sanitize, receive: receive,
-    cleanText: cleanText, deckData: deckData, deckProblem: deckProblem, hasForbiddenKey: hasForbiddenKey,
+    cleanText: cleanText, deckData: deckData, deckProblem: deckProblem, hasForbiddenKey: hasForbiddenKey, combinedLines: combinedLines,
   };
 
   function validateSeat(s) {

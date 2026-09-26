@@ -156,7 +156,7 @@ const bytes = (o) => Buffer.byteLength(JSON.stringify(o), "utf8");
     ping: { n: 1 }, pong: { n: 1 }, bye: {}, end: { reason: "done" },
     offer: { offer: { oid: "ABCD2345", kind: "team-session", ver: 1, data: { steps: ["aar-huddle"] } } },
   };
-  const mk =(t, body, extra) => Object.assign({ v: V, t, room: ROOM, seq: 0, from: "ABCDEFGH", body }, extra || {});
+  const mk = (t, body, extra) => Object.assign({ v: V, t, room: ROOM, seq: 0, from: "ABCDEFGH", body }, extra || {});
   let allOk = true;
   for (const t of schema.TYPES) { const r = schema.validate(mk(t, bodies[t])); if (!r.ok) { allOk = false; bad(`(a) minimal valid ${t} frame rejected: ${r.reason}`); } }
   if (allOk) ok("(a) a minimal valid frame of every allowed type validates");

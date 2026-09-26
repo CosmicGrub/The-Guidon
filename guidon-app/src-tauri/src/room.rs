@@ -452,12 +452,27 @@ fn too_deep(v: &Value, limit: u32, d: u32) -> bool {
         _ => false,
     }
 }
-/// True when any object key anywhere in the tree is one of
-/// schema::OFFER_FORBIDDEN_KEYS (ASCII-lower-case compare) - the JS hasForbiddenKey().
+/// The key with every character that is not an ASCII letter or digit dropped
+/// and the rest lower-cased - the JS foldKey(). "Name", "name " (a trailing
+/// space), "na me", "na_me" and "n-a-m-e" all fold to "name".
+fn fold_key(k: &str) -> String {
+    k.chars().filter(|c| c.is_ascii_alphanumeric()).map(|c| c.to_ascii_lowercase()).collect()
+}
+/// Is this object key one an offer may never carry - the JS keyIsForbidden()?
+/// Its folded form is on schema::OFFER_FORBIDDEN_KEYS, or it holds any
+/// non-ASCII character at all (a field name is a protocol identifier: a
+/// zero-width or direction character laced through "name", a full-width or
+/// math-alphabet "name", a look-alike letter from another script - every
+/// spelling a fold would have to guess at is refused outright).
+fn key_is_forbidden(k: &str) -> bool {
+    !k.is_ascii() || schema::OFFER_FORBIDDEN_KEYS.contains(&fold_key(k).as_str())
+}
+/// True when any object key anywhere in the tree is forbidden (key_is_forbidden)
+/// - the JS hasForbiddenKey().
 fn has_forbidden_key(v: &Value) -> bool {
     match v {
         Value::Array(a) => a.iter().any(has_forbidden_key),
-        Value::Object(m) => m.iter().any(|(k, x)| schema::OFFER_FORBIDDEN_KEYS.contains(&k.to_ascii_lowercase().as_str()) || has_forbidden_key(x)),
+        Value::Object(m) => m.iter().any(|(k, x)| key_is_forbidden(k) || has_forbidden_key(x)),
         _ => false,
     }
 }
@@ -2334,6 +2349,29 @@ mod tests {
         let mut buried = good_offer();
         buried["data"] = json!({ "a": { "b": { "c": { "d": { "e": { "rank": 1 } } } } } });
         assert_eq!(validate(&offer_frame(buried)).reason, "offer-depth");
+    }
+
+    #[test]
+    fn validate_rejects_folded_and_non_ascii_spellings_of_a_personal_key() {
+        // Spacing, punctuation and non-ASCII spellings of a forbidden key are
+        // refused too (the JS keyIsForbidden(), rule for rule).
+        let spellings = [
+            "name ", " name", "na me", "na_me", "n-a-m-e", "Name.", "display_name", "DISPLAY-NAME", "first name", "MOS ", "no\u{200b}tes", "ra\u{200d}nk",
+            "\u{ff4e}\u{ff41}\u{ff4d}\u{ff45}", "\u{1d5ef}\u{1d5ee}\u{1d5f4}", "n\u{430}me", "rank\u{202e}", "\u{feff}mos", "note\u{a0}", "n\u{e5}me", "K\u{212a}",
+        ];
+        for key in spellings {
+            let mut o = good_offer();
+            o["data"][key] = json!("x");
+            assert_eq!(validate(&offer_frame(o)).reason, "offer-personal", "top of data: {key:?}");
+            let mut deep = good_offer();
+            deep["data"]["steps"] = json!([{ key: "x" }]);
+            assert_eq!(validate(&offer_frame(deep)).reason, "offer-personal", "nested: {key:?}");
+        }
+        // The fold itself, and the keys a real payload uses are never caught.
+        assert_eq!(fold_key("Na-me_ 1\u{200b}"), "name1");
+        for key in ["oid", "kind", "ver", "title", "data", "tpl", "days", "sessions", "dates", "id", "label", "effort", "ref", "key", "type", "blocks", "date", "entry", "steps", "pad", "z", "q_abc"] {
+            assert!(!key_is_forbidden(key), "{key} is an ordinary field name");
+        }
     }
 
     #[test]

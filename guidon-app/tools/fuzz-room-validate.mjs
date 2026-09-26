@@ -228,22 +228,34 @@ const MAX_FIELD_BY_TYPE = {
    a bad oid/kind/ver/title/data, a personal key at some depth (any case), a key
    buried past the nesting cap, an oversize payload, an unknown extra key. Also
    drives the dedicated "offer" strategy in generateCase(). */
+/* Other ways to spell a forbidden key (room-schema.js keyIsForbidden(): a key
+   is folded - every non-ASCII-alphanumeric character dropped, lower-cased -
+   and any key with a non-ASCII character is refused outright). Both sides must
+   refuse every one, so the generator draws them like any other personal key. */
+const SPELLINGS = [
+  (k) => k + " ", (k) => " " + k, (k) => k.slice(0, 1) + " " + k.slice(1), (k) => k.slice(0, 1) + "_" + k.slice(1),
+  (k) => k.slice(0, 1) + "-" + k.slice(1) + ".", (k) => k.slice(0, 1) + "\u200b" + k.slice(1), (k) => k + "\u202e", (k) => "\ufeff" + k,
+  (k) => k.replace(/[a-z]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0xfee0)),      // full-width letters (what NFKC folds to ASCII)
+  (k) => k.replace(/[a-z]/g, (c) => String.fromCodePoint(c.charCodeAt(0) - 97 + 0x1d5ee)), // math sans-serif bold
+  (k) => k.replace(/a/g, "\u0430").replace(/o/g, "\u043e"),                             // Cyrillic look-alikes
+];
 const OFFER_MUTATION = (f, rng) => {
   const o = f.body && f.body.offer;
   if (!o || typeof o !== "object") return f;
   const banned = S.OFFER_FORBIDDEN_KEYS.concat(S.OFFER_FORBIDDEN_KEYS.map((k) => k.toUpperCase()), ["displayName", "Rank", "Notes"]);
+  const spell = () => { const k = pick(rng, banned); return rng() < 0.5 ? k : pick(rng, SPELLINGS)(k); };
   switch (int(rng, 0, 8)) {
     case 0: o.oid = pick(rng, ["abcd2345", "ABC", "ABCD2345ABCD2", "ABCD2341", 7, null]); break;
     case 1: o.kind = pick(rng, ["PT-plan", "x", "9plan", "quiz-pack", "a".repeat(25), null, 3]); break;
     case 2: o.ver = pick(rng, [0, 100, 1.5, "1", null, 99]); break;
     case 3: o.title = pick(rng, ["T".repeat(41), null, 5, ""]); break;
     case 4: o.data = pick(rng, [[], "x", null, 1]); break;
-    case 5: (rng() < 0.5 ? o.data : o)[pick(rng, banned)] = "x"; break;
+    case 5: (rng() < 0.5 ? o.data : o)[spell()] = "x"; break;
     case 6: {
       let d = o.data;
       const depth = int(rng, 1, 8);
       for (let i = 0; i < depth; i++) { d.z = {}; d = d.z; }
-      if (rng() < 0.5) d[pick(rng, banned)] = 1;
+      if (rng() < 0.5) d[spell()] = 1;
       break;
     }
     case 7: o.data.pad = "P".repeat(int(rng, 2900, 3300)); break;
