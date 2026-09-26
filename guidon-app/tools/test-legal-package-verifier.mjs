@@ -28,7 +28,7 @@
  * and against the REAL package and map: the shipped pair passes, and a sentence
  * added to (or a word changed in) a copy of the real document fails.
  */
-import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync, existsSync, copyFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync, existsSync, copyFileSync, utimesSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -279,6 +279,37 @@ try {
     const nb = verify(noBuild);
     out = await runProofs({ root: noBuild, map: nb.map, pkg: nb.pkg });
     check(out.failures.some((f) => /need a build/.test(f)), "a suite that needs a build says so up front when web/index.html is missing", () => JSON.stringify(out.failures));
+    // A build that exists but is OLDER than the source it is made from would let the suites test yesterday's app and then
+    // stamp the document as verified for today's: it must be refused, and a current build must be accepted.
+    const put = (root, rel, text) => { mkdirSync(path.dirname(path.join(root, rel)), { recursive: true }); write(root, rel, text); };
+    const staleRoot = makeRepo({ stamp: false });
+    editMap(staleRoot, (m) => { m.suites["test:alpha"].needs = ["build"]; });
+    put(staleRoot, "guidon-app/web/index.html", "<html></html>");
+    put(staleRoot, "guidon-app/dist/guidon-standalone.html", "<html></html>");
+    put(staleRoot, "guidon-app/src/index.html", "<html>newer source</html>");
+    const past = new Date(Date.now() - 3600 * 1000), now = new Date();
+    for (const f of ["guidon-app/web/index.html", "guidon-app/dist/guidon-standalone.html"]) utimesSync(path.join(staleRoot, f), past, past);
+    utimesSync(path.join(staleRoot, "guidon-app/src/index.html"), now, now);
+    const sr = verify(staleRoot);
+    out = await runProofs({ root: staleRoot, map: sr.map, pkg: sr.pkg });
+    check(out.failures.length === 1 && /older than src\/index\.html/.test(out.failures[0]) && !out.suites["test:alpha"], "a build older than a source file is refused before any suite runs (the stamp must not name a version the suites never saw)", () => JSON.stringify(out.failures));
+    for (const f of ["guidon-app/web/index.html", "guidon-app/dist/guidon-standalone.html"]) utimesSync(path.join(staleRoot, f), now, now);
+    utimesSync(path.join(staleRoot, "guidon-app/src/index.html"), past, past);
+    out = await runProofs({ root: staleRoot, map: sr.map, pkg: sr.pkg });
+    check(out.failures.length === 0 && out.suites["test:alpha"] && out.suites["test:alpha"].status === "pass", "...and the same tree with a build newer than every source file runs normally", () => JSON.stringify(out.failures));
+    // --only: an unknown or misspelt suite key is an error, never "ran nothing, all passed".
+    const onlyRepo = makeRepo({ stamp: false });
+    const orr = verify(onlyRepo);
+    out = await runProofs({ root: onlyRepo, map: orr.map, pkg: orr.pkg, only: ["test:alhpa"] });
+    check(out.failures.some((f) => /--only names a suite the claims map does not use: test:alhpa/.test(f)) && Object.keys(out.suites).length === 0, "--only with a misspelt suite key fails and runs nothing", () => JSON.stringify(out.failures));
+    out = await runProofs({ root: onlyRepo, map: orr.map, pkg: orr.pkg, only: ["test:alpha", "test:gone"] });
+    check(out.failures.some((f) => /test:gone/.test(f)) && Object.keys(out.suites).length === 0, "--only with one valid and one unknown key fails as a whole (the valid half is not quietly run alone)", () => JSON.stringify(out.failures));
+    out = await runProofs({ root: onlyRepo, map: orr.map, pkg: orr.pkg, only: [] });
+    check(out.failures.some((f) => /selected no suite/.test(f)), "--only with an empty selection fails", () => JSON.stringify(out.failures));
+    out = await runProofs({ root: onlyRepo, map: orr.map, pkg: orr.pkg, only: ["test:alpha"] });
+    check(out.failures.length === 0 && out.suites["test:alpha"].status === "pass" && !out.suites["test:beta"], "--only with a real key runs just that suite", () => JSON.stringify(out.failures));
+    const cliBad = cli(onlyRepo, ["--run", "--only", "test:nope"]);
+    check(cliBad.status === 1 && /VERIFY-LEGAL-PACKAGE: \d+ FAILURE/.test(cliBad.stdout) && !/all passed/.test(cliBad.stdout), "on the command line a bad --only exits 1 and never prints 'all passed'", () => cliBad.stdout.slice(-400));
   }
 
   console.log("\n7. --write-stamp");

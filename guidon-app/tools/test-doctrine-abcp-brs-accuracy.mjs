@@ -89,6 +89,10 @@ check(d3 && !d3.source.some((s) => s.pub === "AR 600-9" && s.edition === "2023")
 // The dates. AD 2026-13 is dated 1 Jul 2026 ("Effective immediately"); the Army's ABCP FAQ and army.mil release give 7 Jul 2026.
 check(hits(/2026-13[^.]{0,60}effective 1 Jul(y)? 2026|effective 1 Jul(y)? 2026[^.]{0,40}2026-13|\(effective 1 July 2026\)/i).length === 0,
   "no card says Army Directive 2026-13 was 'effective 1 Jul 2026' (it was dated 1 Jul; the Army lists 7 Jul as the effective date)", () => "still says effective 1 Jul: " + hits(/2026-13[^.]{0,60}effective 1 Jul(y)? 2026|effective 1 Jul(y)? 2026[^.]{0,40}2026-13|\(effective 1 July 2026\)/i).join(", "));
+// The directive text establishes a date (1 Jul 2026), not a signature date or a named signer: no card may say it was "signed".
+const SIGNED_AD = /2026-13[^.;]{0,40}\bsigned\b|\bsigned\b[^.;]{0,60}(1 Jul(y)? 2026|Directive 2026-13)|Driscoll/i;
+check(hits(SIGNED_AD).length === 0,
+  "no card says Army Directive 2026-13 was 'signed' on a date or names a signer (the text establishes it as dated 1 Jul 2026, nothing more)", () => "still says signed: " + hits(SIGNED_AD).join(", "));
 check(hits(/early January 2027|running from the directive's effective date/).length === 0,
   "no card invents a start or end date for the 180-day assessment (the directive gives none)", () => hits(/early January 2027|running from the directive's effective date/).join(", "));
 
@@ -164,6 +168,7 @@ check(a1 && !abcpBodyOk(planted(a1, "Soldiers must show progress with monthly we
 check(a2 && !abcpBodyOk({ ...a2, body: a2.body.replace(".549 passes and .550 fails", ".550 passes") }, NEEDS_2, BANS), "verifier check: doc-abcp-2 without the '.550 fails' rule is rejected");
 check(!srcOk({ source: [{ pub: "AR 600-9", edition: "2026" }, { pub: "Army Directive 2026-13", edition: "2026" }] }), "verifier check: the old edition \"2026\" citation is rejected");
 check(!cpOk("Continuation pay opens at 7-12 years of service as of 1 Jan 2026."), "verifier check: a continuation pay line that drops 'the old 8-12' is rejected");
+check(SIGNED_AD.test("Army Directive 2026-13 (signed by the Secretary of the Army on 1 Jul 2026)") && SIGNED_AD.test("ordered by Army Directive 2026-13 (signed by SECARMY Dan Driscoll, 1 Jul 2026)") && !SIGNED_AD.test("Army Directive 2026-13 (issued by the Secretary of the Army, dated 1 Jul 2026)"), "verifier check: the 'signed' pattern matches both old phrasings and lets the corrected 'dated' wording through");
 check(/≤ ?0\.55/.test("Within Standard? (WHtR ≤ 0.550)") && /2026-13[^.]{0,60}effective 1 Jul(y)? 2026/i.test("Army Directive 2026-13 (1 Jul 2026), effective 1 Jul 2026"), "verifier check: the '<= 0.550' and 'effective 1 Jul' patterns do match the old wording");
 
 await finish("DOCTRINE ABCP + BRS ACCURACY");

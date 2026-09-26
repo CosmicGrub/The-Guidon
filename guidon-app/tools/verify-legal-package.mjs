@@ -57,7 +57,7 @@
  *   options: --jobs N (suites at once, default 2)  --date YYYY-MM-DD  --root <repo root>
  *            --only <suite key>[,<key>]  (--run for a few suites; cannot be combined with --write-stamp)
  */
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
@@ -438,19 +438,48 @@ function runOne({ root, cmd, timeoutMs }) {
   });
 }
 
+/** The browser suites run against the BUILT app (guidon-app/web and dist), so a proof run is only worth stamping if that build
+ *  is newer than every input it is made from. Returns a problem message, or null when the build is current. A build older than
+ *  a source file (the normal state right after a version bump or a merge) would let the suites test yesterday's app and then
+ *  stamp the document as verified for today's. mtime-based on purpose: cheap, offline, and it errs toward "rebuild". */
+export function staleBuild(APP) {
+  const outputs = ["web/index.html", "dist/guidon-standalone.html"].map((f) => path.join(APP, f));
+  const missing = outputs.filter((f) => !existsSync(f));
+  if (missing.length) return `the named suites need a build (${missing.map((f) => path.relative(APP, f).split(path.sep).join("/")).join(", ")} missing) - run: npm run build`;
+  const builtAt = Math.min(...outputs.map((f) => statSync(f).mtimeMs));
+  let newest = { t: 0, f: "" };
+  const consider = (f) => { const t = statSync(f).mtimeMs; if (t > newest.t) newest = { t, f }; };
+  const walk = (dir) => { for (const e of readdirSync(dir, { withFileTypes: true })) { const f = path.join(dir, e.name); if (e.isDirectory()) walk(f); else consider(f); } };
+  if (existsSync(path.join(APP, "src"))) walk(path.join(APP, "src"));
+  for (const f of ["package.json", "tools/build.mjs", "tools/assemble-bank.mjs", "tools/content-pack-engine.mjs", "tools/pillar-map.mjs"]) if (existsSync(path.join(APP, f))) consider(path.join(APP, f));
+  if (newest.t > builtAt) return `the built app is older than ${path.relative(APP, newest.f).split(path.sep).join("/")} - the suites would test a stale build and the stamp would name a version they never saw. Run: npm run build`;
+  return null;
+}
+
 /** Runs each distinct suite the claims name, then checks each proof.
  *  Returns { suites: {key: {status, ms, out}}, failures: [...] }. */
 export async function runProofs({ root = DEFAULT_ROOT, map, pkg, jobs = 2, only = null, timeoutMs = 10 * 60 * 1000, log = () => {} }) {
   const failures = [];
   const keys = [];
   for (const c of map.claims) for (const p of c.proof || []) { const k = p.test || p.lint; if (!keys.includes(k)) keys.push(k); }
+  // --only names suites by their key in the claims map. A typo or an obsolete key must FAIL: silently running zero suites
+  // (or only the valid half of the list) and then printing "all passed" is a verification that did not happen.
+  if (only) {
+    const unknown = only.filter((k) => !keys.includes(k));
+    if (unknown.length) failures.push(`--only names ${unknown.length === 1 ? "a suite" : "suites"} the claims map does not use: ${unknown.join(", ")} (known: ${keys.join(", ")})`);
+    if (!only.length || !keys.some((k) => only.includes(k))) failures.push("--only selected no suite to run");
+    if (failures.length) return { suites: {}, failures };
+  }
   const wanted = only ? keys.filter((k) => only.includes(k)) : keys;
   const results = {};
   const APP = path.join(root, "guidon-app");
   const needsBuild = wanted.some((k) => map.suites[k] && (map.suites[k].needs || []).includes("build"));
-  if (needsBuild && !existsSync(path.join(APP, "web", "index.html"))) {
-    failures.push("the named suites need a build (guidon-app/web/index.html is missing) - run: npm run build");
-    return { suites: results, failures };
+  if (needsBuild) {
+    const stale = staleBuild(APP);
+    if (stale) {
+      failures.push(stale);
+      return { suites: results, failures };
+    }
   }
   const queue = wanted.slice();
   async function worker() {
