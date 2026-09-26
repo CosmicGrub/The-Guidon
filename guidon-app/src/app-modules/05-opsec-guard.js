@@ -69,8 +69,23 @@ window.G = window.G || {};
   const PORTION_LINE_RE = new RegExp("(^|\\n)([ \\t]*(?:(?:\\d{1,2}|[A-Za-z])[.)][ \\t]+|\\(\\d{1,2}\\)[ \\t]+|[-*\\u2022][ \\t]+)?)(" + PORTION_MARK + ")" + NOT_A_YEAR + "(?=[ \\t]+\\S)", "g");
   const PORTION_SENTENCE_RE = new RegExp("([.:;!?][ \\t]+(?:(?:\\d{1,2}|[a-z])[.)][ \\t]+)?)(" + PORTION_MARK + ")" + NOT_A_YEAR + "(?=[ \\t]+[A-Z0-9])", "g");
   // A lettered list or mnemonic ("(M) Massive hemorrhage / (A) Airway / ... (C) Circulation", SALUTE's
-  // "(S) Size") uses letters no portion mark ever does. When one is present, a bare "(S)" / "(C)" is a list label.
+  // "(S) Size") uses letters no portion mark ever does. A bare "(S)" / "(C)" is only ever read as one of ITS
+  // labels - and not merely because such a list sits somewhere in the same text (that let a real marked document
+  // pass on its (S) and (C) marks as soon as it also had "(A)" / "(B)" subparagraphs). It has to BE one, all of:
+  //   - the mark sits in a run of three or more consecutive lettered items (one per line, or on one line);
+  //   - at least two items of the run use a letter no portion mark uses (anything but S, C and U);
+  //   - every item of the run is label-shaped: six words or fewer with no closing sentence punctuation, or a short
+  //     defined term then its explanation ("Circulation: check for shock");
+  //   - the mark's own letter appears once in the run (a marked list repeats its marks; a mnemonic does not).
+  // "(S) The unit departs the area." is a sentence, so it is a portion mark wherever it stands. LETTER_LIST_RE
+  // is only the cheap first test: no lettered item anywhere in the text means the run test is never needed.
   const LETTER_LIST_RE = /(?:^|\n|[.:;,][ \t]+)[ \t]*\([ABD-RTV-Z]\)[ \t]+\S/;
+  const LABEL_ITEM_RE = /(^|\n|[ \t])\(([A-Z])\)[ \t]+(?=\S)/g;
+  // Between two items of ONE list: nothing (same line), or a line break - one blank line at most - and the next
+  // line's own bullet or number.
+  const LIST_GAP_RE = /^[ \t]*$|^(?:[ \t]*\r?\n){1,2}[ \t]*(?:(?:\d{1,2}|[A-Za-z])[.)][ \t]+|\(\d{1,2}\)[ \t]+|[-*•][ \t]+)?$/;
+  const LABEL_PREFIX_RE = /^[A-Za-z][A-Za-z'’\/&-]*(?:[ \t]+[A-Za-z'’\/&-]+){0,2}[ \t]*(?::|[ \t][-–—])[ \t]+\S/;
+  const NON_MARK_LETTER_RE = /^[ABD-RTV-Z]$/;
   // "This annex is classified SECRET." - a sentence, not marking syntax, so it is a check, never a stop.
   const STATEMENT_RE = new RegExp("\\b(?:is|are|was|were|remains|marked|classified|classified as)[ \\t]+(?:" + LEVEL + ")(?=[ \\t]*(?:[.;!?)]|$))", "gm");
 
@@ -123,6 +138,40 @@ window.G = window.G || {};
     "phone": "a phone number",
     "future-operation-location": "a future date and place for a unit activity",
   };
+
+  // Every single-letter "(X) label" item in the text, in order, with the label that follows it (to the end of its
+  // line, or to the next item on the same line).
+  function labelItems(text) {
+    const items = [];
+    LABEL_ITEM_RE.lastIndex = 0;
+    let m;
+    while ((m = LABEL_ITEM_RE.exec(text))) items.push({ letter: m[2], start: m.index + m[1].length, textStart: m.index + m[0].length, end: 0, label: "" });
+    items.forEach(function (it, i) {
+      const nl = text.indexOf("\n", it.textStart), lineEnd = nl === -1 ? text.length : nl;
+      it.end = i + 1 < items.length && items[i + 1].start < lineEnd ? items[i + 1].start : lineEnd;
+      it.label = text.slice(it.textStart, it.end).replace(/\r/g, "").replace(/[ \t,;]+$/, "");
+    });
+    return items;
+  }
+  function isLabelText(label) {
+    if (!label) return false;
+    if (LABEL_PREFIX_RE.test(label)) return true;
+    return label.split(/\s+/).length <= 6 && !/[.!?]["')\]]*$/.test(label);
+  }
+  // Is the bare (S) / (C) that starts at offset `at` one label of a genuine lettered list or mnemonic?
+  function isListLabel(text, items, at) {
+    const k = items.findIndex(function (it) { return it.start === at; });
+    if (k === -1) return false;
+    const linked = function (a, b) { return LIST_GAP_RE.test(text.slice(a.end, b.start)); };
+    let lo = k, hi = k;
+    while (lo > 0 && linked(items[lo - 1], items[lo])) lo--;
+    while (hi + 1 < items.length && linked(items[hi], items[hi + 1])) hi++;
+    const run = items.slice(lo, hi + 1);
+    return run.length >= 3
+      && run.every(function (it) { return isLabelText(it.label); })
+      && run.filter(function (it) { return NON_MARK_LETTER_RE.test(it.letter); }).length >= 2
+      && run.filter(function (it) { return it.letter === items[k].letter; }).length === 1;
+  }
 
   function scan(re, text, fn) {
     re.lastIndex = 0;
@@ -215,9 +264,13 @@ window.G = window.G || {};
     scan(LABEL_RE, text, (m) => add("classification-label", STOP, m.index, m.index + m[0].length));
     scan(CUI_BLOCK_RE, text, (m) => add("cui-designation", STOP, m.index, m.index + m[0].length));
     const letteredList = LETTER_LIST_RE.test(text);
+    let items = null;
     function portion(m) {
       const mark = m[m.length - 1], at = m.index + m[0].length - mark.length;
-      if (letteredList && /^\([SC]\)$/.test(mark)) return;
+      if (letteredList && /^\([SC]\)$/.test(mark)) {
+        if (!items) items = labelItems(text);
+        if (isListLabel(text, items, at)) return;
+      }
       add("portion-marking", STOP, at, at + mark.length);
     }
     scan(PORTION_LINE_RE, text, portion);

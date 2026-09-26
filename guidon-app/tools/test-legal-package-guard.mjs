@@ -123,17 +123,52 @@ const BANNER_WORDS = ["TOP SECRET", "SECRET", "CONFIDENTIAL", "CUI", "FOUO", "FO
   const lettered = "(A) Alpha item\n(B) Bravo item\n";
   const slashMisses = withSlashes.concat(withSlashes.map((s) => lettered + s)).filter((s) => !stops(s).length);
   check(slashMisses.length === 0, tag("LP-194") + " any portion mark containing // - (S//NF), (U//FOUO), (CUI//SP-PRVCY), (TS//SCI) - is a stop finding anywhere in a line, alone or in a text that also holds lettered list items", () => "not stopped: " + list(slashMisses));
-  // LP-032 - the package lists (S) and (C) among the portion marks that stop the import at the start of a line. They do not when the text ALSO
-  // carries lettered list items: the check reads a bare (S) / (C) as a list label then (so that SALUTE's "(S) Size" and MARCH's "(C) Circulation"
-  // are not stopped as marked material). A real document with (A)/(B) subparagraphs and (S)/(C) marks passes on those two marks.
+  // LP-032 - (S) and (C) are the two portion marks that are ALSO the first letters of common lettered mnemonics (SALUTE's "(S) Size", MARCH's
+  // "(C) Circulation"), so a bare one is read as a list label - but only when it really is one label of a lettered list (the rule is in
+  // src/app-modules/05-opsec-guard.js: a run of three or more consecutive lettered items, at least two with letters no portion mark uses, every item
+  // label-shaped, and the mark's own letter once). It used to be enough for the text to hold "(A) ..." anywhere, so a real marked document with
+  // lettered subparagraphs passed on its (S) and (C) marks.
   const marks = ["(S) The unit departs the area.", "(C) The unit departs the area."];
   const alone = marks.filter((s) => !stops(s).length);
-  const withList = marks.map((s) => lettered + s);
-  const passesWithList = withList.filter((s) => !stops(s).length);
+  const passesWithList = marks.map((s) => lettered + s).filter((s) => !stops(s).length);
   const stillStopped = ["(TS) The unit departs the area.", "(CUI) The roster is attached.", "(SECRET) annex", "(TOP SECRET) annex"].map((s) => lettered + s).filter((s) => !stops(s).length);
-  check(alone.length === 0 && passesWithList.length === marks.length && stillStopped.length === 0,
-    tag("LP-032") + " FINDING CONFIRMED: a bare (S) or (C) portion mark at the start of a line stops the import on its own, but NOT when the text also contains lettered list items such as '(A) ...' / '(B) ...' (it is read as a list label); (TS), (CUI) and spelled-out levels still stop it in the same text",
-    () => "the finding no longer reproduces (alone unstopped: " + list(alone) + "; with a lettered list, still passing: " + list(passesWithList) + "; others unstopped: " + list(stillStopped) + ") - the check or the package changed: update claim LP-032 in tools/legal-package-claims.json");
+  const realDoc = "(A) Purpose\n(B) Scope\n(S) The battalion occupies the assembly area.\n(C) The company moves at first light.\n(S) Enemy activity is expected.";
+  const docStops = stops(realDoc).length;
+  check(alone.length === 0 && passesWithList.length === 0 && stillStopped.length === 0 && docStops === 3,
+    tag("LP-032") + " a bare (S) or (C) portion mark at the start of a line stops the import on its own AND when the text also contains lettered list items such as '(A) ...' / '(B) ...'; (TS), (CUI) and spelled-out levels still stop it in the same text; a marked document with lettered subparagraphs is stopped on each of its three (S)/(C) marks",
+    () => "unstopped alone: " + list(alone) + "; unstopped after a lettered list: " + list(passesWithList) + "; others unstopped: " + list(stillStopped) + "; marks stopped in the sample document: " + docStops + " of 3");
+  // The two mnemonics the exemption exists for - and the other forms real study text writes them in - are still not stopped.
+  const mnemonics = {
+    "SALUTE, one item per line": "(S) Size\n(A) Activity\n(L) Location\n(U) Unit\n(T) Time\n(E) Equipment",
+    "MARCH, one item per line": "(M) Massive hemorrhage\n(A) Airway\n(R) Respiration\n(C) Circulation\n(H) Hypothermia",
+    "SALUTE on one line": "SALUTE: (S) Size, (A) Activity, (L) Location, (U) Unit, (T) Time, (E) Equipment",
+    "SALUTE, numbered": "1. (S) Size\n2. (A) Activity\n3. (L) Location\n4. (U) Unit\n5. (T) Time\n6. (E) Equipment",
+    "SALUTE, Windows line ends": "(S) Size\r\n(A) Activity\r\n(L) Location\r\n(U) Unit\r\n(T) Time\r\n(E) Equipment",
+    "SALUTE, a blank line between items": "(S) Size\n\n(A) Activity\n\n(L) Location\n\n(U) Unit\n\n(T) Time\n\n(E) Equipment",
+    "MARCH with an intro and a closing line": "Use the mnemonic below.\n(M) Massive hemorrhage\n(A) Airway\n(R) Respiration\n(C) Circulation\n(H) Hypothermia\nThen reassess.",
+    "MARCH, an explanation on each line": "(M) Massive hemorrhage: control it\n(A) Airway: open the airway\n(R) Respiration: decompress the chest\n(C) Circulation: check for shock.\n(H) Hypothermia: prevent heat loss.",
+    "SMEAC": "(S) Situation\n(M) Mission\n(E) Execution\n(A) Administration and logistics\n(C) Command and signal",
+    "OCOKA": "(O) Observation and fields of fire\n(C) Cover and concealment\n(O) Obstacles\n(K) Key terrain\n(A) Avenues of approach",
+    "BAMCIS": "(B) Begin planning\n(A) Arrange reconnaissance\n(M) Make reconnaissance\n(C) Complete the plan\n(I) Issue the order\n(S) Supervise",
+  };
+  const wronglyStopped = Object.keys(mnemonics).filter((k) => stops(mnemonics[k]).length);
+  check(wronglyStopped.length === 0, tag("LP-032") + " the mnemonics that use (S) and (C) as list labels - SALUTE, MARCH, SMEAC, OCOKA, BAMCIS, in " + Object.keys(mnemonics).length + " layouts (one per line, on one line, numbered, Windows line ends, blank lines between, with an explanation on each line) - are not read as portion marks", () => "wrongly stopped: " + list(wronglyStopped));
+  // Not a list label: a run too short, a repeated mark, a sentence in the run, or a list with a marked sentence after it.
+  const notLists = {
+    "two items only": "(A) Alpha\n(S) Size",
+    "the mark repeated": "(A) Alpha\n(B) Bravo\n(S) Charlie\n(S) Delta",
+    "a sentence among the items": "(A) Alpha item\n(B) Bravo item\n(C) Circulation and hemorrhage control checks are made by the medic",
+    "a list, then a marked sentence": mnemonics["SALUTE, one item per line"] + "\n\n(S) The enemy element departs at dawn.",
+    "a lettered run far from the mark": "(S) Size\n(A) Activity\n\n\nOther text\n\n(L) Location",
+  };
+  const notStopped = Object.keys(notLists).filter((k) => !stops(notLists[k]).length);
+  check(notStopped.length === 0, tag("LP-032") + " a bare (S) or (C) is NOT taken for a list label when the run is too short, the mark repeats, an item is a sentence, or a marked sentence follows a real list", () => "not stopped: " + list(notStopped));
+  // What the rule still does not catch, said out loud so the claim's gap stays true: a marked line that is itself label-shaped (six words or fewer,
+  // no closing punctuation) inside a run of three or more lettered items with two non-mark letters. Real marked text rarely looks like that;
+  // if this starts failing the rule got stricter - update the gap in claim LP-032.
+  const gap = ["(A) Alpha\n(B) Bravo\n(S) Charlie", "(A) Alpha\n(B) Bravo\n(C) Situation: The unit departs."];
+  const nowStopped = gap.filter((s) => stops(s).length);
+  check(nowStopped.length === 0, tag("LP-032") + " the documented remaining gap is real: a label-shaped bare (S)/(C) inside a run of three lettered items (two of them non-mark letters) is still read as a list label", () => "now stopped (update claim LP-032's gap): " + list(nowStopped));
 }
 {
   const labels = ["CLASSIFICATION: SECRET", "CLASSIFICATION: TOP SECRET", "Classification: CONFIDENTIAL", "Overall classification: TOP SECRET", "OVERALL CLASSIFICATION: SECRET"];

@@ -151,7 +151,8 @@ expect(/hashes:\s*\[[^\]]*"#\/cyber-opsec"/.test(index), "Cyber/OPSEC route is p
 expect(index.includes('"#/cyber-opsec": { d:'), "Guided Tour metadata covers the new route");
 expect(moi.includes("G.opsecGuard.screen(combined)") && moi.indexOf("G.opsecGuard.screen(combined)") < moi.indexOf("runMatching(combined,") && !/screened\.text|sanitizeInput/.test(moi), "MOI import checks the text before matching, and the parser is given the ORIGINAL text - never a rewritten copy");
 expect(!moi.includes("Soldier handed a real MOI"), "MOI copy no longer encourages real operational MOIs");
-expect(leader.includes("G.opsecGuard.screen(") && !/sanitizeInput|decisionMessage/.test(leader) && leader.includes("Use initials, a callsign, or a roster number"), "Squad Roster checks the one free-text field and states the minimized-data rule in its own words");
+expect(leader.includes("G.opsecGuard.screen(") && !/sanitizeInput|decisionMessage/.test(leader) && leader.includes("Use initials, a callsign, or a roster number"), "Squad Roster checks its free-text field and states the minimized-data rule in its own words");
+expect(/guardedField\(rankIn,/.test(leader) && /guardedField\(mosIn,/.test(leader) && /guardedField\(nameIn,/.test(leader), "Squad Roster runs ALL THREE free-text boxes (Rank, MOS and Initials) through the check - not just Initials");
 expect(group.includes("Personal / explicitly authorized networks only") && group.includes("Offline-first design is not an ATO or network authorization"), "Study Rooms permanently states the official-network authorization boundary");
 /* The guest join page is a second Study Rooms screen - the only one a
    participant without the app ever sees - and it carried neither the network

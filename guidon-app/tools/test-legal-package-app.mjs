@@ -21,10 +21,12 @@
  *     entries, and that an entry the check finds anything in is not saved (each
  *     kind of finding the package names: SSN, labelled DoD ID or UIC, phone,
  *     email, marking);
- *   - LP-061: the roster's "one free-text field". It is NOT the only one: Rank
- *     and MOS are text boxes too and are not checked. That is a finding, pinned
- *     below: it prints "FINDING CONFIRMED" while it is true and FAILS the day it
- *     stops being true, so whoever fixes it must also update the claim.
+ *   - LP-061: the package calls the initials box the roster's "one free-text
+ *     field". The card has THREE (Rank, MOS and Initials). Rank and MOS used to be
+ *     saved unchecked (an SSN typed into Rank was saved as typed); all three now go
+ *     through the same findings-only check, with the same refusal (not saved, text
+ *     left as typed, a plain message that stays and is tied to the box). The claim is
+ *     "partial": the app is fixed, the sentence's "one" is the owner's to reword.
  *
  * Assertions carry the id of the claim they stand behind ([LP-121] is claim
  * LP-121 in tools/legal-package-claims.json); tools/verify-legal-package.mjs
@@ -315,16 +317,65 @@ const fill = async (sel, text) => { await page.fill(sel, text); await page.press
   check(cleared, tag("LP-062") + " correcting the entry to plain initials clears the message and saves", "the message did not clear");
 }
 {
-  // LP-061 - the package says the roster's ONE free-text field is the initials box. Rank and MOS are text boxes too, and nothing checks them.
+  // LP-061 - Rank and MOS are free-text boxes too. Both are now checked exactly like Initials.
   const texts = await page.evaluate(() => [...document.querySelector('[data-roster-idx="0"]').querySelectorAll("input")].filter((i) => i.type === "text").map((i) => i.getAttribute("aria-label")));
-  await fill(RANK, "123-45-6789");
-  await untilAsync(page, async (k) => { const r = await window.G.db.get("kv", k); const e = r && r.v && r.v[0]; return !!(e && /123-45-6789/.test(e.rank || "")); }, ROSTER_KEY);
-  const row = await rosterRow();
-  const stillUnscreened = texts.length > 1 && !!row && row.rank === "123-45-6789";
-  check(stillUnscreened,
-    tag("LP-061") + " FINDING CONFIRMED: the roster card has " + texts.length + " free-text boxes (" + texts.join("; ") + "), not one; typing a Social Security number into Rank is saved as typed (\"" + (row && row.rank) + "\") because only the initials box is checked",
-    () => "the finding no longer reproduces (text boxes: " + texts.length + ", rank saved: " + JSON.stringify(row && row.rank) + ") - the app or the package changed: update claim LP-061 in tools/legal-package-claims.json");
+  const BOXES = [
+    { name: "Rank", sel: RANK, attr: "data-roster-rank-msg", key: "rank", keep: "SPC", good: "SGT", tail: /Type a rank such as SGT or SFC instead\./,
+      cases: [["an SSN", "123-45-6789", /a Social Security number/], ["a phone number", "270-555-0101", /a phone number/], ["an email address", "jane.doe@army.mil", /an email address/], ["a classification marking", "SECRET//NOFORN", /a classification or handling marking/],
+        ["a marking typed in lower case (the box saves upper case)", "secret//noforn", /a classification or handling marking/]] },
+    { name: "MOS", sel: MOS, attr: "data-roster-mos-msg", key: "mos", keep: "92A", good: "68W", tail: /Type an MOS code such as 11B instead\./,
+      cases: [["an email address", "a@b.co", /an email address/], ["a control marking", "TS//SI", /a classification or handling marking/], ["a marking typed in lower case", "ts//si", /a classification or handling marking/]] },
+  ];
+  const boxMsg = (b) => page.evaluate((o) => {
+    const input = document.querySelector(o.sel), msg = document.querySelector("[" + o.attr + '="0"]');
+    return { value: input && input.value, invalid: input && input.getAttribute("aria-invalid"), described: input && input.getAttribute("aria-describedby"), msgId: msg && msg.id, shown: !!msg && msg.style.display !== "none" && msg.getBoundingClientRect().height > 0, msg: msg ? msg.textContent : "" };
+  }, { sel: b.sel, attr: b.attr });
+  const problems = [];
+  for (const b of BOXES) {
+    for (const [name, typed, want] of b.cases) {
+      await fill(b.sel, b.keep);
+      await untilAsync(page, async (a) => { const r = await window.G.db.get("kv", a.k); const e = r && r.v && r.v[0]; return !!(e && e[a.f] === a.v); }, { k: ROSTER_KEY, f: b.key, v: b.keep });
+      await fill(b.sel, typed);
+      await until(page, (a) => { const m = document.querySelector("[" + a + '="0"]'); return !!m && m.style.display !== "none" && m.textContent.length > 0; }, b.attr);
+      const m = await boxMsg(b);
+      const row = await rosterRow();
+      seenTexts.push(m.msg);
+      // the box may cut what was typed to its own length limit (MOS holds six characters); what matters is that the text stays as the box holds it
+      const good = m.shown && want.test(m.msg) && /^Not saved — that looks like /.test(m.msg) && b.tail.test(m.msg) && m.value.length > 0 && typed.startsWith(m.value.slice(0, 3)) && m.invalid === "true" && m.described === m.msgId && !!row && row[b.key] === b.keep;
+      if (!good) problems.push(b.name + " / " + name + " -> " + JSON.stringify(m) + " saved=" + (row && row[b.key]));
+    }
+    await fill(b.sel, b.good);
+    await untilAsync(page, async (a) => { const r = await window.G.db.get("kv", a.k); const e = r && r.v && r.v[0]; return !!(e && e[a.f] === a.v); }, { k: ROSTER_KEY, f: b.key, v: b.good });
+    const cleared = await until(page, (a) => { const m = document.querySelector("[" + a + '="0"]'); return !m || m.style.display === "none"; }, b.attr);
+    if (!cleared) problems.push(b.name + ": the message did not clear when the entry was corrected");
+  }
+  check(texts.length === 3 && problems.length === 0,
+    tag("LP-061") + " the roster card has " + texts.length + " free-text boxes (" + texts.join("; ") + ") and Rank and MOS are checked like Initials: a Social Security number, phone number, email address or marking in Rank (or an email or marking in MOS) - even typed in lower case, since both boxes save upper case - is not saved (the earlier value stays), stays as typed, and a plain 'Not saved - that looks like ...' message stays beneath the box, tied to it for screen readers; a corrected entry clears the message and saves",
+    () => "text boxes: " + texts.length + "; " + problems.join(" || "));
+  // No false stops: every rank and MOS code the two boxes themselves offer passes the check, in the form it is saved (upper case).
+  const offered = await page.evaluate(() => {
+    const vals = (id) => [...document.querySelectorAll("#" + id + " option")].map((o) => o.value);
+    const bad = (v) => window.G.opsecGuard.screen(v).findings.length + window.G.opsecGuard.screen(v.toUpperCase()).findings.length;
+    const ranks = vals("roster-ranks-list"), mos = vals("roster-mos-list");
+    return { ranks: ranks.length, mos: mos.length, refused: ranks.concat(mos).filter(bad) };
+  });
+  check(offered.ranks > 10 && offered.mos > 10 && offered.refused.length === 0,
+    tag("LP-061") + " no false stop: all " + offered.ranks + " ranks and " + offered.mos + " MOS codes the two boxes offer pass the check", () => "offered " + offered.ranks + " ranks, " + offered.mos + " MOS codes; refused: " + list(offered.refused));
+  // A row saved before the check existed still draws, exactly as saved - the check runs on a change, never when the card is drawn.
+  const OLD = [{ rank: "123-45-6789", mos: "68W", name: "JD", counseled: "2026-01-15", aft: "2026-01-15", wpn: "2026-01-15", ncoer: "2026-01-15" }];
+  await page.evaluate(async (o) => { await window.G.db.put("kv", { k: o.k, v: o.v }); }, { k: ROSTER_KEY, v: OLD });
+  await waitForRoute(page, "#/leader", { fresh: true, ready: "button" });
+  await until(page, () => !!document.querySelector('input[aria-label="Rank for roster entry 1"]'));
+  const drawn = await page.evaluate(() => {
+    const q = (l) => document.querySelector('input[aria-label="' + l + '"]');
+    const msgs = [...document.querySelectorAll("[data-roster-rank-msg],[data-roster-mos-msg],[data-roster-name-msg]")].filter((m) => m.style.display !== "none");
+    return { rank: q("Rank for roster entry 1") && q("Rank for roster entry 1").value, mos: q("MOS for roster entry 1") && q("MOS for roster entry 1").value, name: q("Initials or roster number for entry 1") && q("Initials or roster number for entry 1").value, msgs: msgs.length };
+  });
+  const after = await rosterRow();
+  check(drawn.rank === "123-45-6789" && drawn.mos === "68W" && drawn.name === "JD" && drawn.msgs === 0 && !!after && after.rank === "123-45-6789",
+    tag("LP-061") + " a roster row saved before the check existed still draws exactly as saved (nothing is re-checked, edited or dropped when the card is drawn)", () => "drawn " + JSON.stringify(drawn) + "; stored rank " + JSON.stringify(after && after.rank));
   await fill(RANK, "SPC");
+  await untilAsync(page, async (k) => { const r = await window.G.db.get("kv", k); const e = r && r.v && r.v[0]; return !!(e && e.rank === "SPC"); }, ROSTER_KEY);
 }
 
 expectNoConsoleNoise(noise);

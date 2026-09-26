@@ -37,7 +37,7 @@
   "test:legal-package-app": {
    "tagged": true,
    "needs": ["build"],
-   "about": "The first-run statement, MOI Import (every marking shape, uploaded files, the saved plan) and the Squad Roster (fields, wording, every kind of finding, the Rank/MOS finding) through the real page."
+   "about": "The first-run statement, MOI Import (every marking shape, uploaded files, the saved plan) and the Squad Roster (fields, wording, every kind of finding, and the Rank and MOS boxes screened like Initials) through the real page."
   },
   "test:legal-package-rooms": {
    "tagged": true,
@@ -326,11 +326,11 @@
    "id": "LP-032",
    "text": "a parenthesized portion mark — (TS), (S), (C), (CUI), or a spelled-out level — at the start of a line, list item, or sentence,",
    "kind": "factual",
-   "verification": "contradicted",
+   "verification": "partial",
    "proof": [
     { "test": "test:legal-package-guard" }
    ],
-   "finding": "A bare (S) or (C) portion mark at the start of a line is NOT stopped when the pasted text also contains a lettered list item such as '(A) ...' or '(B) ...'. The check then reads (S) and (C) as list labels - a deliberate rule so that mnemonics like SALUTE's '(S) Size' and MARCH's '(C) Circulation' do not stop an import - so '(A) Alpha' followed by '(S) The unit departs.' passes with no finding. (TS), (CUI), spelled-out levels and any mark containing // are still stopped in the same text, and a lone '(S)' line stops as the package says. A real marked document that also uses lettered subparagraphs can therefore pass the check on its (S) and (C) marks; the sentence overstates.",
+   "gap": "A bare (S) or (C) that is a short label - six words or fewer with no closing punctuation, or a short term then a colon or dash and its explanation - inside a run of three or more consecutive lettered items (at least two using letters no portion mark uses, and the mark's own letter once) is read as one label of a mnemonic list and is NOT stopped, so that SALUTE's '(S) Size' and MARCH's '(C) Circulation' do not stop an import; for example '(A) Alpha' / '(B) Bravo' / '(S) Charlie' passes. Every (S) or (C) followed by a sentence, every (TS), (CUI) and spelled-out level, and any mark containing // is stopped in the same text. A mark that does not start a line, list item or sentence is outside what the sentence claims.",
    "note": "The other half of the sentence (any portion mark containing //) is LP-194 and holds."
   },
   {
@@ -607,11 +607,11 @@
    "id": "LP-061",
    "text": "The roster's one free-text field (the initials/roster-number field) is run through the same findings-only check:",
    "kind": "factual",
-   "verification": "contradicted",
+   "verification": "partial",
    "proof": [
     { "test": "test:legal-package-app" }
    ],
-   "finding": "The roster card has THREE free-text boxes - Rank, MOS and Initials - not one. Only the Initials box is run through the sensitive-text check (leader.js screens nameIn only). Rank has a datalist but accepts any text of any length; MOS is limited to six characters. Typing '123-45-6789' into Rank is saved as typed, with no check and no message. The source comment in leader.js repeats the same belief ('the roster's one free-text field'). The package's sentence is not true of the app as it runs; either Rank and MOS should be checked (or made selection-only) or the sentence corrected."
+   "gap": "The document counts one free-text field (the initials/roster-number box); the roster card has three - Rank, MOS and Initials - and all three are now run through the same findings-only check (Rank and MOS are saved in upper case, so their upper-case form is checked too). The sentence in the document is the owner's to reword; it was not changed here."
   },
   {
    "id": "LP-062",
