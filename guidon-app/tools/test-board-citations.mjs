@@ -48,8 +48,14 @@
  *      one passes; each of a bare string, a missing pub, a bad quoteKind, an
  *      empty array, a leftover verbatim flag, a bad or misplaced sepAfter, the
  *      retired `sep` key, a stray editionFirst, a `para`
- *      that hides a regulation, and a PACK card with a string source fails,
- *      naming the card (and the pack).
+ *      that hides a regulation, a PACK card with a string source, and a card
+ *      whose source is PENDING (sourceStatus "pending-source", or the same
+ *      words in its own citation) that still claims quoteKind "verbatim" fails,
+ *      naming the card (and the pack). A pending source must never promise a
+ *      word-for-word quotation; the four such cards (68w-fund-05, 68w-medlog-02,
+ *      mlc-course-06, mlc-course-07) are cited "paraphrase" and were
+ *      re-baselined for exactly that reason (their card back now says
+ *      "Study-guide answer", not "By the Book").
  *      Also here (4b): tools/migrate-board-citations.mjs on a stand-in seed
  *      that has every case the real seed never did - a verbatim flag first,
  *      middle and last, true and false, a card already structured, another
@@ -139,6 +145,17 @@ console.log("1. baseline - every card reads exactly as it did before the migrati
   check(kindDiff.length === 0, `the card-back heading (By the Book vs study-guide answer) is unchanged for all ${inBaseline.length} baseline cards`, () => `${kindDiff.length} differ: ${show(kindDiff, 3)}${hint}`);
   const distinctKinds = new Set(bank.flatMap((q) => q.source.map((e) => e.quoteKind)));
   check([...distinctKinds].every((k) => VALID_QUOTE_KIND.includes(k)), "every quoteKind in the bank is one of verbatim / paraphrase / synthesis", () => show([...distinctKinds]));
+
+  // A pending source never claims to be a quotation. These four cards carried sourceStatus "pending-source"
+  // (their own citation says the wording is paraphrased, unverified or from public reporting) yet were cited
+  // "verbatim" when the flag was folded into quoteKind. Their heading intentionally moved to the study-guide
+  // label; the baseline was re-baselined for exactly these four rows.
+  const PENDING_FOUR = ["68w-fund-05", "68w-medlog-02", "mlc-course-06", "mlc-course-07"];
+  const byIdBank = new Map(bank.map((q) => [q.id, q]));
+  check(PENDING_FOUR.every((id) => byIdBank.has(id) && byIdBank.get(id).sourceStatus === "pending-source"), "the four known pending-source cards (68w-fund-05, 68w-medlog-02, mlc-course-06, mlc-course-07) are in the bank and still marked pending-source", () => PENDING_FOUR.map((id) => id + "=" + (byIdBank.has(id) ? byIdBank.get(id).sourceStatus : "missing")).join(" "));
+  const pendingVerbatim = bank.filter((q) => q.sourceStatus === "pending-source" && q.source.some((e) => e.quoteKind === "verbatim")).map((q) => q.id);
+  check(pendingVerbatim.length === 0, "no card with sourceStatus pending-source claims quoteKind verbatim (its back reads 'Study-guide answer', not 'By the Book')", () => `${pendingVerbatim.length} card(s): ${show(pendingVerbatim)}`);
+  check(PENDING_FOUR.every((id) => baseById.has(id) && baseById.get(id).paraphrased === true && quoteKindOf(byIdBank.get(id).source) === "paraphrase"), "...and the re-baselined fixture records exactly those four as study-guide (paraphrase) cards", () => PENDING_FOUR.map((id) => id + "=" + JSON.stringify(baseById.get(id) && baseById.get(id).paraphrased)).join(" "));
 }
 
 /* =====================================================================
@@ -254,7 +271,7 @@ try {
   };
   const failsOn = (name, r, ...needles) => check(r.status === 1 && needles.every((n) => (typeof n === "string" ? r.out.includes(n) : n.test(r.out))), `the lint FAILS on ${name}, naming what is wrong`, () => `exit ${r.status}\n${r.out}`);
 
-  const clean = lint([card("ok-1", [Object.assign(c1("AR 600-9"), { sepAfter: " / " }), c1("DA PAM 600-25")])], '    bank.board.questions.push({ id: "pack-ok", category: "Army Values", q: "Q?", a: "A", boardAnswer: "A", keyPoints: ["A"], difficulty: "basic", source: ctx.cite("ADP 6-22, Ch 2", "verbatim") });');
+  const clean = lint([card("ok-1", [Object.assign(c1("AR 600-9"), { sepAfter: " / " }), c1("DA PAM 600-25")]), card("ok-pending", [c1("DA PAM 611-21 - pending-source: paraphrased, not re-verified", "paraphrase")], { sourceStatus: "pending-source" })], '    bank.board.questions.push({ id: "pack-ok", category: "Army Values", q: "Q?", a: "A", boardAnswer: "A", keyPoints: ["A"], difficulty: "basic", source: ctx.cite("ADP 6-22, Ch 2", "verbatim") });');
   check(clean.status === 0 && /board\.questions: all \d+ cards/.test(clean.out), "control: a clean stand-in bank (a static card with a sepAfter, a pack card through ctx.cite) passes", () => `exit ${clean.status}\n${clean.out}`);
 
   failsOn("a static card whose source is still a bare string", lint([card("bare-1", "ADP 6-22")]), 'board.questions[0] ("bare-1")', "is not an array (found string)");
@@ -269,6 +286,16 @@ try {
   failsOn("a para that buries a publication the regulation chips would miss", lint([card("hide-1", [{ pub: "ADP 6-22", edition: "", para: "see also AR 25-50", quoteKind: "paraphrase" }])]), '("hide-1")', /regulation chips read \["ADP 6-22"\]/, "AR 25-50");
   failsOn("a content-pack card that ships a bare string", lint([card("static-ok", [c1("ADP 6-22")])], '    bank.board.questions.push({ id: "pack-bare", category: "Army Values", q: "Q?", a: "A", boardAnswer: "A", keyPoints: ["A"], difficulty: "basic", source: "AR 600-9, para 3-9c" });'), '("pack-bare")', "[pack 01-stand-in-pack.js]", "is not an array (found string)");
   failsOn("a content-pack card that keeps verbatim:false beside ctx.cite", lint([card("static-ok2", [c1("ADP 6-22")])], '    bank.board.questions.push({ id: "pack-verb", category: "Army Values", q: "Q?", a: "A", boardAnswer: "A", keyPoints: ["A"], difficulty: "basic", verbatim: false, source: ctx.cite("ADP 6-22", "paraphrase") });'), '("pack-verb")', 'still carries a "verbatim" field');
+
+  // (j) a pending source never claims to be a quotation - by the field, by the prose note in the citation itself, or from a pack
+  failsOn("a card marked sourceStatus pending-source that claims verbatim", lint([card("pend-1", [c1("DA PAM 611-21", "verbatim")], { sourceStatus: "pending-source" })]), '("pend-1")', 'sourceStatus "pending-source"', 'claims quoteKind "verbatim"');
+  failsOn("a card whose citation text carries the pending-source note but claims verbatim", lint([card("pend-2", [c1("AR 40-61 - pending-source: current wording was not re-verified against the primary text", "verbatim")])]), '("pend-2")', 'its citation says "pending-source"', 'claims quoteKind "verbatim"');
+  failsOn("a content-pack card that is pending-source yet cites verbatim through ctx.cite", lint([card("static-ok3", [c1("ADP 6-22")])], '    bank.board.questions.push({ id: "pack-pend", category: "Army Values", q: "Q?", a: "A", boardAnswer: "A", keyPoints: ["A"], difficulty: "basic", sourceStatus: "pending-source", source: ctx.cite("DA PAM 611-21 - pending-source: not re-verified", "verbatim") });'), '("pack-pend")', "[pack 01-stand-in-pack.js]", 'claims quoteKind "verbatim"');
+  {
+    // ...and when only ONE entry of a mixed citation says verbatim, that is still a claim
+    const mixed = lint([card("pend-3", [c1("AR 600-20", "paraphrase"), c1("DA PAM 611-21", "verbatim")], { sourceStatus: "pending-source" })]);
+    failsOn("a pending-source card with a verbatim entry beside a paraphrase one", mixed, '("pend-3")', 'claims quoteKind "verbatim"');
+  }
 
   /* the real bank passes the real gate, end to end */
   const real = spawnSync(process.execPath, [LINT], { cwd: APP, encoding: "utf8" });
@@ -372,7 +399,9 @@ await waitForRoute(page, "#/home");
   const kDiff = live.filter((r, i) => r.kind !== quoteKindOf(bank[i].source)).map((r) => r.id);
   check(kDiff.length === 0, "G.board.quoteKindOf (browser) agrees with the Node quoteKindOf, for every card", () => `${kDiff.length} differ: ${show(kDiff)}`);
   const bDiff = live.filter((r) => baseById.has(r.id) && (r.text !== baseById.get(r.id).text || !same(r.regs, baseById.get(r.id).regs) || (r.kind !== "verbatim") !== baseById.get(r.id).paraphrased)).map((r) => r.id);
-  check(bDiff.length === 0, "...and the browser's answers equal the pre-migration baseline (text, chips, heading) - the app itself, not just the Node port, reads the cards as before", () => `${bDiff.length} differ: ${show(bDiff)}`);
+  check(bDiff.length === 0, "...and the browser's answers equal the baseline (text, chips, heading) - the app itself, not just the Node port, reads the cards as recorded (the four pending-source cards are recorded as study-guide answers)", () => `${bDiff.length} differ: ${show(bDiff)}`);
+  const pendingKinds = live.filter((r) => ["68w-fund-05", "68w-medlog-02", "mlc-course-06", "mlc-course-07"].includes(r.id));
+  check(pendingKinds.length === 4 && pendingKinds.every((r) => r.kind === "paraphrase"), "in the running app, the four pending-source cards (68w-fund-05, 68w-medlog-02, mlc-course-06, mlc-course-07) answer quoteKindOf = paraphrase, so their card back prints the study-guide heading", () => JSON.stringify(pendingKinds.map((r) => [r.id, r.kind])));
 
   // The free-text path of regulationsOf (a Soldier's own note, a fixture, the grammar cases) is untouched.
   const strings = [...new Set([...baseById.values()].map((b) => b.text))];
