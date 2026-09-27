@@ -9,14 +9,14 @@
  *
  * Driven through the real page with real user agents:
  *   - a Mac is recognised and is never offered the Windows .exe
- *   - by default the Mac link goes to the releases LIST, and no
+ *   - with the switch off the Mac link goes to the releases LIST, and no
  *     /releases/latest/download/ Mac permalink is on the page. The release
  *     workflow does now upload a never-changing Mac name
  *     (GUIDON-macos-universal.dmg), but it is OPTIONAL for a release - the
  *     Mac build must never hold a release out of Latest - and GitHub's
  *     "latest" download link has no fallback, so a direct link would be dead
  *     for any Latest release whose Mac build failed. The direct link exists
- *     behind one literal switch (MAC_DIRECT_LINK, default false); this suite
+ *     behind one literal switch (MAC_DIRECT_LINK; shipped off until 2026-09-26, on since); this suite
  *     drives the page in BOTH settings, and proves that switched on it is a
  *     Mac-only button with an always-alive fallback beside it
  *   - not every release has a Mac version, so the copy must not promise one
@@ -59,6 +59,18 @@ const UNSAFE = /xattr|spctl|sudo |disable (gatekeeper|security)|--master-disable
 const { server, url } = await serve("web");
 const browser = await chromium.launch();
 const noise = [];
+
+// Which way the source is shipped. The suite drives the page in BOTH settings
+// whichever way that is: it rewrites the served page to the OTHER setting for
+// the half that is not the shipped one, and does not touch the page for the
+// half that is. (Until 2026-09-26 the shipped setting was off; the owner then
+// switched the direct download on, once v1.17.0's first real Apple run had
+// passed the launch proof - see docs/release-runbook.md.)
+const SRC = await readFile(path.join(HERE, "..", "src", "index.html"), "utf8");
+const SHIPPED_ON = SRC.includes(SWITCH_ON) && !SRC.includes(SWITCH_OFF);
+const SHIPPED_OFF = SRC.includes(SWITCH_OFF) && !SRC.includes(SWITCH_ON);
+const FORCE_OFF = SHIPPED_ON ? [SWITCH_ON, SWITCH_OFF] : null;
+const FORCE_ON = SHIPPED_OFF ? [SWITCH_OFF, SWITCH_ON] : null;
 
 // The page as served, with one text substitution applied to the document - how
 // the direct-download setting is driven without editing the shipped file.
@@ -108,14 +120,14 @@ const state = (page) => page.evaluate(() => {
   };
 });
 
-/* 1 - Safari on a Mac */
+/* 1 - Safari on a Mac (the switch-OFF page: the releases list) */
 {
-  const page = await sharePage({ userAgent: MAC_UA, viewport: { width: 1280, height: 900 } });
+  const page = await sharePage({ userAgent: MAC_UA, viewport: { width: 1280, height: 900 } }, null, FORCE_OFF);
   const s = await state(page);
   check(/You're on a Mac/.test(s.recText) && !/You're on a computer/.test(s.recText), "Mac: the page says so (it used to say “You're on a computer”)", "Mac: rec panel = " + s.recText);
   check(!s.recLinks.some((h) => /\.exe|\.msi|windows/i.test(h)), "Mac: is NOT offered the Windows installer (it used to be the one button on the panel)", "Mac: rec links = " + JSON.stringify(s.recLinks));
   check(s.recLinks.length === 1 && s.recLinks[0] === RELEASES, "Mac: the one link is the releases list", "Mac: rec links = " + JSON.stringify(s.recLinks));
-  check(!s.allLinks.some((h) => /releases\/latest\/download\/[^/]*(mac|dmg)/i.test(h)), "Mac: no /latest/download/ permalink to a Mac file while the direct-download switch is off (the default)", "Mac: links = " + JSON.stringify(s.allLinks.filter((h) => /mac|dmg/i.test(h))));
+  check(!s.allLinks.some((h) => /releases\/latest\/download\/[^/]*(mac|dmg)/i.test(h)), "Mac: no /latest/download/ permalink to a Mac file while the direct-download switch is off", "Mac: links = " + JSON.stringify(s.allLinks.filter((h) => /mac|dmg/i.test(h))));
   check(/nothing you have to download/i.test(s.recText) && /Some GUIDON releases include a Mac version.{0,40}and some don't/.test(s.recText), "Mac: says this page is already the full app, and that only SOME releases carry a Mac version", "Mac: rec panel = " + s.recText);
   check(/refuse to open it the first time/.test(s.recText) && /expected/.test(s.recText), "Mac: warns up front that the Mac will refuse the first open, and that this is expected", "Mac: rec panel = " + s.recText);
 
@@ -137,7 +149,7 @@ const state = (page) => page.evaluate(() => {
 
 /* 2 - Chrome on a Mac is a Mac too */
 {
-  const page = await sharePage({ userAgent: MAC_CHROME_UA, viewport: { width: 1280, height: 900 } });
+  const page = await sharePage({ userAgent: MAC_CHROME_UA, viewport: { width: 1280, height: 900 } }, null, FORCE_OFF);
   const s = await state(page);
   check(/You're on a Mac/.test(s.recText) && !s.recLinks.some((h) => /\.exe/i.test(h)), "Mac (Chrome): recognised, no Windows installer", s.recText + JSON.stringify(s.recLinks));
   await page.context().close();
@@ -148,14 +160,14 @@ const state = (page) => page.evaluate(() => {
    being a literal the lint reads) is proven by tools/lint-release-state.mjs
    (f) and tools/test-release-pipeline.mjs; this is what a visitor gets. */
 {
-  const src = await readFile(path.join(HERE, "..", "src", "index.html"), "utf8");
-  check(src.includes(SWITCH_OFF) && !src.includes(SWITCH_ON), "switch: shipped OFF (`const MAC_DIRECT_LINK = false;`, one literal line the release lint reads)", "switch: the shipped source does not carry exactly `" + SWITCH_OFF + "` - a Latest release with no Mac build would leave a dead direct link");
+  const src = SRC;
+  check(SHIPPED_ON || SHIPPED_OFF, "switch: the shipped source carries exactly one literal switch line (" + (SHIPPED_ON ? SWITCH_ON : SWITCH_OFF) + "), the one the release lint reads", "switch: the shipped source does not carry exactly one of `" + SWITCH_OFF + "` / `" + SWITCH_ON + "` - the release lint could not read it");
   check((src.match(/dl\("GUIDON-macos-universal\.dmg"\)/g) || []).length === 1, "switch: the Mac fixed-name file is linked from exactly one place", "switch: the Mac fixed-name file is linked from " + (src.match(/dl\("GUIDON-macos-universal\.dmg"\)/g) || []).length + " places");
 
   const before = rewrites;
-  const page = await sharePage({ userAgent: MAC_UA, viewport: { width: 1280, height: 900 } }, null, [SWITCH_OFF, SWITCH_ON]);
+  const page = await sharePage({ userAgent: MAC_UA, viewport: { width: 1280, height: 900 } }, null, FORCE_ON);
   const s = await state(page);
-  check(rewrites === before + 1, "switch ON: the page under test really has the switch on", "switch ON: the substitution did not match, so this section proved nothing about the direct button");
+  check(FORCE_ON ? rewrites === before + 1 : SHIPPED_ON, "switch ON: the page under test really has the switch on" + (FORCE_ON ? "" : " (it is the shipped setting)"), "switch ON: the substitution did not match, so this section proved nothing about the direct button");
   check(/You're on a Mac/.test(s.recText) && !s.recLinks.some((h) => /\.exe|\.msi|windows/i.test(h)), "switch ON, Mac: still recognised, still never offered the Windows installer", s.recText + JSON.stringify(s.recLinks));
   check(s.recAnchors.length === 2 && s.recAnchors[0].href === MAC_DIRECT, "switch ON, Mac: the first button is the direct download of the never-changing name from the Latest release", "switch ON, Mac: rec links = " + JSON.stringify(s.recAnchors));
   check(s.recAnchors[0] && /Download the Mac app/.test(s.recAnchors[0].text) && s.recAnchors[0].target === "_blank" && /noopener/.test(s.recAnchors[0].rel || ""), "switch ON, Mac: it says what it is and opens in a new tab safely", JSON.stringify(s.recAnchors[0]));
@@ -167,17 +179,17 @@ const state = (page) => page.evaluate(() => {
   await page.context().close();
 
   // A phone-width Mac window: the two buttons wrap, they do not scroll sideways.
-  const narrow = await sharePage({ userAgent: MAC_UA, viewport: { width: 390, height: 844 } }, null, [SWITCH_OFF, SWITCH_ON]);
+  const narrow = await sharePage({ userAgent: MAC_UA, viewport: { width: 390, height: 844 } }, null, FORCE_ON);
   const sn = await state(narrow);
   check(sn.overflow <= 1, "switch ON, 390 px wide: the two buttons cause no sideways scrolling", "overflow " + sn.overflow + "px");
   await narrow.context().close();
 
   // Nobody but a Mac is ever sent to the Mac file.
-  const win = await sharePage({ userAgent: WIN_UA, viewport: { width: 1280, height: 900 } }, null, [SWITCH_OFF, SWITCH_ON]);
+  const win = await sharePage({ userAgent: WIN_UA, viewport: { width: 1280, height: 900 } }, null, FORCE_ON);
   const sw = await state(win);
   check(sw.recLinks.length === 1 && /GUIDON-windows-setup\.exe$/.test(sw.recLinks[0]) && !sw.allLinks.some((h) => /macos|\.dmg/i.test(h)), "switch ON, Windows: still only the Windows installer, and no link to the Mac file anywhere on the page", JSON.stringify(sw.recLinks) + JSON.stringify(sw.allLinks.filter((h) => /macos|\.dmg/i.test(h))));
   await win.context().close();
-  const phone = await sharePage({ userAgent: IOS_UA, viewport: { width: 390, height: 844 } }, null, [SWITCH_OFF, SWITCH_ON]);
+  const phone = await sharePage({ userAgent: IOS_UA, viewport: { width: 390, height: 844 } }, null, FORCE_ON);
   const sp = await state(phone);
   check(!sp.allLinks.some((h) => /macos|\.dmg/i.test(h)), "switch ON, iPhone: no link to the Mac file anywhere on the page", JSON.stringify(sp.allLinks.filter((h) => /macos|\.dmg/i.test(h))));
   await phone.context().close();

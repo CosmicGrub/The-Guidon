@@ -99,9 +99,11 @@ and how to add it: `docs/release-runbook.md`, "macOS signing and notarization".
 
 The Mac build is also attached to a release under a never-changing name,
 `GUIDON-macos-universal.dmg`, next to the versioned one. That name is optional
-for a release, so the Share & Install button stays on the releases list until
-the owner switches the direct download on (same runbook, "Mac: the fixed-name
-file"). This page says "not every release includes one" for that reason.
+for a release, so the Share & Install button downloads it straight from the Latest
+release only because the owner switched the direct download on (2026-09-26; same
+runbook, "Mac: the fixed-name file"), with a releases-list link beside it for the
+day a release has no Mac file. This page says "not every release includes one"
+for that reason.
 
 The day the first notarized `.dmg` ships, the steps above stop being necessary
 and this page and the **Mac** panel on Share & Install (`src/index.html`, the
