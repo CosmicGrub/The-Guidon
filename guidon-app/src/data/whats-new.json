@@ -248,6 +248,15 @@
         "Every source line in Board Drill and the study screens now reads the same way. Four cards that put a regulation in our own words now say \"Study-guide answer\" instead of \"By the Book.\"",
         "Four cyber and OPSEC scenarios and the Scenario Builder blank now show their doctrine source instead of the word \"undefined.\""
       ]
+    },
+    {
+      "version": "1.17.1",
+      "date": "September 2026",
+      "title": "Mac users can now download GUIDON straight from Share & Install",
+      "highlights": [
+        "On a Mac, Share & Install now offers a direct download button for the Mac app instead of sending you to the releases page first.",
+        "The first time you open it, your Mac will ask you to confirm — the steps for that are right there on the same screen."
+      ]
     }
   ]
 }

@@ -2,6 +2,10 @@
 
 All notable changes to GUIDON will be documented in this file. Format loosely follows [Keep a Changelog](http://keepachangelog.com/). This is the technical record for developers - the app itself shows a short, plain-language summary of each release to Soldiers directly (G.whatsNew, src/index.html), not this file.
 
+## 2026-09-27 - v1.17.1: the Mac direct download, turned on
+
+Released 2026-09-27. One change: PR #256 switched `#/share`'s Mac button from a link to the releases page over to a direct download of `GUIDON-macos-universal.dmg` from the Latest release (`const MAC_DIRECT_LINK = true;` in `src/index.html`), now that v1.17.0's Apple run has proved itself (green, launch proof passed on a hosted Mac, the fixed-name file attached to Latest). An always-alive "Not working? See all releases" link sits beside the button for the day a release's Mac build fails. `docs/release-runbook.md`'s "Turning on the direct Mac download" section and `docs/mac-first-launch.md` are updated to match, and record that the by-hand open on a real Mac (runbook step 3) is still to be done. PR #257 hardened a keyboard-focus timing check in `test:ext-points` that flaked twice in CI on #256's build (test-only, no app behavior changed).
+
 ## 2026-09-26 - v1.17.0: Per-unit study decks, Study Rooms hand-off (PT plans, Team Training), Collective Decision as a native engine mode, structured citations for the whole bank, ESP32 MOS decks, and the ABCP/BRS and NCOPDS accuracy fixes
 
 Released 2026-09-26. Built as two parallel waves of isolated worktrees, integrated in three branches (#248, #250, #251 and #253, with review-fix follow-ups #249 and #252 and the NCOPDS fix #247), and reviewed by Codex and by independent skeptic reviewers before each merge. ROADMAP 3g items F (Waves 2 and 3) and H (the Collective half), and the "Later" lines for Study Rooms hand-off, data-driven What's New, the verified legal package, the macOS lane, ESP32 lanes and per-unit content packs, are closed by it.
