@@ -120,12 +120,22 @@ for (const P of PANELS) {
     // read of document.activeElement still showed the route's own heading) -
     // widening costs nothing on a normal run since waitForFunction resolves
     // the instant its condition is true.
+    // Two more CI failures (#/prt, then #/drills, on consecutive attempts of the
+    // same job) showed the route's own heading focused at the moment of the
+    // Enter: the button had taken focus and then lost it, or was replaced by a
+    // late re-render between the poll and the keypress. So the button must
+    // keep focus, and be the same element, for 12 animation frames in a row
+    // before this counts as focused.
     await page.waitForFunction(([t, l]) => {
       const b = Array.from(document.querySelectorAll("#route [data-roadmap-launch='" + t + "'] .btn-row button")).filter((x) => x.textContent === l)[0];
-      if (!b) return false;
+      const st = window.__extFocus || (window.__extFocus = { el: null, frames: 0 });
+      if (!b) { st.el = null; st.frames = 0; return false; }
+      if (st.el !== b) { st.el = b; st.frames = 0; }
       b.focus();
-      return document.activeElement === b;
+      if (document.activeElement === b) st.frames++; else st.frames = 0;
+      return st.frames >= 12;
     }, [P.title, label], { timeout: 30000 }).catch(() => {});
+    await page.evaluate(() => { window.__extFocus = null; });
     const focused = await page.evaluate(() => ((document.activeElement && document.activeElement.textContent) || "").trim().slice(0, 60));
     await page.keyboard.press("Enter");
     const arrived = await page.waitForFunction(([h, t]) => { const hd = document.querySelector("#route h2"); return location.hash === h && !!hd && hd.textContent.trim() === t; }, [target, targetHeading], { timeout: 30000 }).then(() => true, () => false);
