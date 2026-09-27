@@ -157,7 +157,7 @@ starts waiting on an Apple job. It was also written without a macOS runner or
 Apple credentials to try it on. The scripts are exercised against stand-in
 tools by `tools/test-release-pipeline.mjs`; the first real run is the real test.
 
-### The fixed-name file, and why the in-app Mac button is not a direct link (yet)
+### The fixed-name file, and the in-app Mac button (a direct link since 2026-09-26)
 
 The Apple lane uploads the same `.dmg` twice, in one command:
 `GUIDON-X.Y.Z-macos-universal.dmg` and `GUIDON-macos-universal.dmg` (a copy of
@@ -174,11 +174,12 @@ The decision, and what it costs:
 - GitHub's `latest/download` link has **no fallback**. If the Latest release
   has no such file, the link is a 404. The app cannot check first: it makes no
   network requests, and that must stay true.
-- So the #/share Mac button stays on the releases list - the one link that can
-  never be dead - until the owner deliberately switches the direct link on:
-  `const MAC_DIRECT_LINK = false;` in `src/index.html`. The code, the lint
-  and the tests for the direct button are in place and proven in both
-  settings; only the switch is off.
+- So the #/share Mac button stayed on the releases list - the one link that can
+  never be dead - until the owner deliberately switched the direct link on,
+  which they did on 2026-09-26 (`const MAC_DIRECT_LINK = true;` in
+  `src/index.html`). It is one literal switch, and the code, the lint and the
+  tests for the direct button are proven in both settings, so going back is a
+  one-word change (step 5 below).
 - Carrying an older release's Mac file forward under the new release, so the
   name always resolves, was considered and rejected: a Mac copy that is silently
   a version behind is worse than a visible "not there yet", because the web
@@ -203,8 +204,13 @@ itself on a real run):
    that keeps happening, set the switch back to `false`.
 
    *Status: switched on 2026-09-26, after v1.17.0 (Latest, Apple run green, launch
-   proof passed on a hosted Mac). The disk image is ad-hoc signed only, so a Mac
-   shows the first-open warning until the six Apple secrets are added (see below).*
+   proof passed on a hosted Mac). Step 3's manual open on a real Mac had not been
+   done when the switch went on - do it with the next release's disk image and
+   record the result here. The disk image is ad-hoc signed only, so a Mac shows the
+   first-open warning until the six Apple secrets are added (see below).
+   Rollback: set `MAC_DIRECT_LINK` back to `false` in `src/index.html` (the page
+   returns to the releases list; nothing else changes), and run
+   `node tools/test-share-mac-first-open.mjs` and `node tools/lint-release-state.mjs`.*
 
 ### The launch proof
 

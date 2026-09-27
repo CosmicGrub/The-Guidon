@@ -105,6 +105,8 @@ await waitForRoute(page, "#/home", { ready: "#route h1, #route h2" });
   const ids = await deckIds();
   check(ids.includes("good-one") && ids.includes("html-text") && ids.includes(DECK) && ids.length === 3, "the good rows around them came back (and the row with markup in its text is fine - it is only text)", () => JSON.stringify(ids));
   check((await keys("unit-deck:")).every((k) => !/extra-key|key-mismatch|claims-quote|not-object|too-many|card-key|old-schema/.test(k)), "none of the refused rows reached the device");
+  // The diagnostics log is written a beat after each refusal (one CI run saw 4 of the 7 so far), so wait for the state, then read it.
+  await untilAsync(page, async (want) => { const got = (await G.selfheal.recent(60)).filter((e) => e.kind === "kv-reject").map((e) => e.key); return want.every((k) => got.includes(k)); }, badRows.map((r) => r.k));
   const logged = await page.evaluate(async () => (await G.selfheal.recent(60)).filter((e) => e.kind === "kv-reject").map((e) => e.key));
   check(badRows.every((r) => logged.includes(r.k)), "every refusal is logged for Diagnostics (kv-reject)", () => JSON.stringify(logged));
   await page.evaluate(async () => { await G.unitDecks.remove("good-one"); await G.unitDecks.remove("html-text"); });
