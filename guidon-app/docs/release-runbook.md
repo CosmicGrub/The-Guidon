@@ -202,6 +202,10 @@ itself on a real run):
    ("The fixed-name Mac file is missing"), and `--published` reports it. If
    that keeps happening, set the switch back to `false`.
 
+   *Status: switched on 2026-09-26, after v1.17.0 (Latest, Apple run green, launch
+   proof passed on a hosted Mac). The disk image is ad-hoc signed only, so a Mac
+   shows the first-open warning until the six Apple secrets are added (see below).*
+
 ### The launch proof
 
 After the bundle checks, the job mounts the built `.dmg`, copies the app out,
