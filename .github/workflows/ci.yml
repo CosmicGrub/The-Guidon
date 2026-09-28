@@ -709,8 +709,8 @@ jobs:
             tests: "test:room-handoff test:room-handoff-safety test:board-citations test:section-citations"
           - name: "63-esp32lanes-scenariolegacydoctrine-unitpackformat-unitpackcli"
             tests: "test:esp32-lanes test:scenario-legacy-doctrine test:unit-pack-format test:unit-pack-cli"
-          - name: "64-unitdecksisolation-unitdecks-unitdecksstorage"
-            tests: "test:unit-decks-isolation test:unit-decks test:unit-decks-storage"
+          - name: "64-unitdecksisolation-unitdecks-unitdecksstorage-readinesscurrency"
+            tests: "test:unit-decks-isolation test:unit-decks test:unit-decks-storage test:readiness-currency"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same

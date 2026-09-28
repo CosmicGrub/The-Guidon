@@ -14989,6 +14989,15 @@ window.G = window.G || {};
     // their weakest, the exact scenario the shared helper exists to
     // prevent.
     const weakest = await G.board.weakestCategoriesByMastery(3, all, srsData);
+    // "Not opened yet" is its own line, never a rank: a category with no
+    // graded card is not weak, it has not been started. Only shown once
+    // something HAS been opened (a brand-new profile is all unopened, and the
+    // All Categories map below already says so).
+    const catsWithCards = catScores.filter((c) => c.total > 0);
+    const unopenedCount = catsWithCards.filter((c) => c.seen === 0).length;
+    const unopenedLine = (unopenedCount && unopenedCount < catsWithCards.length)
+      ? el("p.hint.readiness-unopened", { text: "Not opened yet: " + unopenedCount + " of " + catsWithCards.length + " categories (see All Categories below)." })
+      : null;
     if (weakest.length) {
       const weak = el("div.panel", { style: "margin-top:12px" });
       weak.appendChild(el("div.eyebrow", { text: "Needs Work" }));
@@ -15009,7 +15018,10 @@ window.G = window.G || {};
           onclick: () => { G.board._filterCat = c.cat; G.board.render(mount.parentElement || mount); } }));
         weak.appendChild(row);
       });
+      if (unopenedLine) weak.appendChild(unopenedLine);
       mount.appendChild(weak);
+    } else if (unopenedLine) {
+      mount.appendChild(el("div.panel", { style: "margin-top:12px" }, [unopenedLine]));
     }
 
     // ── Readiness by pillar (ROADMAP §3f Phase 1 rollup) ──────────
@@ -15757,7 +15769,7 @@ window.G = window.G || {};
       pickRow.appendChild(catSel); pickRow.appendChild(needsWorkChip);
       catRow.appendChild(pickRow);
       const needsWorkNote = el("p.hint.rf-needs-work-note", { style: "display:none",
-        text: "No attempt history yet, so there's nothing weak to surface — showing All categories instead." });
+        text: "Nothing looks weak yet, so there's nothing to surface — showing All categories instead." });
       catRow.appendChild(needsWorkNote);
 
       // ── Custom mix: multi-select checkboxes + save/load named decks ──
@@ -16462,7 +16474,7 @@ window.G = window.G || {};
         try {
           const scores = await G.board.categoryMasteryScores();
           const inRound = scores.filter((s) => roundCategories.has(s.cat));
-          if (inRound.length) target = inRound.sort((a, b) => a.pct - b.pct)[0].cat;
+          if (inRound.length) target = inRound.sort(G.board.compareWeakness)[0].cat;
         } catch (e) {}
         if (!target) return;
         linkHost.appendChild(el("p.hint", { text: "Keep working " + target + ":" }));
@@ -17096,21 +17108,56 @@ window.G = window.G || {};
         const seen = qs.filter((q) => srsData[q.id].lastGrade != null);
         const mastered = qs.filter((q) => G.board.isMasteredSrs(srsData[q.id]));
         const pct = qs.length ? Math.round(mastered.length / qs.length * 100) : 0;
-        return { cat, total: qs.length, seen: seen.length, mastered: mastered.length, pct };
+        // misses: the running total of how often the Soldier's own grades
+        // said "Needs Help" (a half for "Somewhat"), decayed by good recall -
+        // the only tie-break signal that separates two categories at the
+        // same percent (see compareWeakness).
+        const misses = qs.reduce((n, q) => n + ((srsData[q.id] && srsData[q.id].misses) || 0), 0);
+        return { cat, total: qs.length, seen: seen.length, mastered: mastered.length, pct, misses };
       });
     },
-    // Weakest-N categories by mastery pct — the Readiness tab's own
-    // weakest-3 ranking (categories with zero cards excluded). Returns []
-    // when there's no attempt history at all yet: every category sits at a
-    // fresh, untouched 0%, so "weakest 3" would be meaningless noise rather
-    // than a real signal — callers (Rapid Fire's Setup "Needs Work" option)
-    // fall back to "All categories" on an empty result instead of
-    // surfacing it.
+    // The ONE ordering of "which category is weaker" - Readiness's Needs Work,
+    // the 5-minute reps set, Rapid Fire's Needs Work chip and its cross-link
+    // all sort with this, so no screen can rank differently from another.
+    // It used to be pct alone over an alphabetical list, so every category
+    // the Soldier had never opened (0%) tied with the one they had just
+    // failed and the alphabet won the tie. Order of the keys:
+    //   1. tried before untried (a category with no graded card is not
+    //      "weak", it is unopened) and, among tried ones, real evidence
+    //      before thin evidence - a category with one graded card of 24 has
+    //      not shown anything yet (evidence = min(3, a quarter of the
+    //      category, at least 1) graded cards);
+    //   2. lower percent mastered first;
+    //   3. more misses first;
+    //   4. more cards tried first;
+    //   5. name, so the answer never depends on the order the bank arrives in.
+    compareWeakness(a, b) {
+      const tier = (c) => {
+        if (!(c.seen > 0)) return 2;
+        const need = Math.min(3, Math.max(1, Math.ceil((c.total || 0) * 0.25)));
+        return c.seen < need ? 1 : 0;
+      };
+      return (tier(a) - tier(b))
+        || (a.pct - b.pct)
+        || ((b.misses || 0) - (a.misses || 0))
+        || ((b.seen || 0) - (a.seen || 0))
+        || (a.cat < b.cat ? -1 : a.cat > b.cat ? 1 : 0);
+    },
+    // Weakest-N categories - the Readiness tab's "Needs Work" list. Only a
+    // category the Soldier has actually TRIED and not yet mastered can be
+    // weak; one that has never been opened is "not started" (the Readiness
+    // tab says so on its own line), and a category of one or two cards is
+    // left out whenever a real-sized category is struggling, so a single
+    // failed card can never outrank a 24-card category with twelve of them.
+    // Returns [] when there is nothing to rank - no attempt history at all,
+    // or everything tried is already mastered - and callers (Rapid Fire's
+    // Setup "Needs Work" option, the reps set) fall back to "All
+    // categories" on an empty result instead of surfacing noise.
     async weakestCategoriesByMastery(n, all, srsData) {
       const scored = (await this.categoryMasteryScores(all, srsData)).filter((c) => c.total > 0);
-      const anySeen = scored.some((c) => c.seen > 0);
-      if (!anySeen) return [];
-      return scored.sort((a, b) => a.pct - b.pct).slice(0, n || 3);
+      let pool = scored.filter((c) => c.seen > 0 && c.pct < 100);
+      if (pool.some((c) => c.total >= 3)) pool = pool.filter((c) => c.total >= 3);
+      return pool.sort(G.board.compareWeakness).slice(0, n || 3);
     },
     loadAllSrs,
     // Audit finding (new-features): Board Drill's own SRS/leech data - the
