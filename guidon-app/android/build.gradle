@@ -57,7 +57,7 @@ buildscript {
         // pre-bump number; tools/lint-kotlin-version.mjs, wired into `npm
         // test`, is the mechanical backstop against a repeat - see its own
         // header for why).
-        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.20'
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.21'
 
         // NOTE: Do not place your application dependencies here; they belong
         // in the individual module build.gradle files
