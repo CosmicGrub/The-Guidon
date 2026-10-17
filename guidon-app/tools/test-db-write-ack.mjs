@@ -29,8 +29,8 @@ const { page, noise } = boot;
 /* ---------------------------------------------------------------------
    In-page instruments (re-installed after every reload)
    --------------------------------------------------------------------- */
-async function installInstruments() {
-  await page.evaluate(() => {
+async function installInstruments(target = page) {
+  await target.evaluate(() => {
     if (window.__fault) return;
     const F = window.__fault = {
       abortPrefix: null,      // a put/delete whose key starts with this has its transaction cancelled
@@ -55,7 +55,7 @@ async function installInstruments() {
     const trackCommit = (req) => { F.lastTxCompleted = false; req.transaction.addEventListener("complete", () => { F.lastTxCompleted = true; }); };
     const realPut = IDBObjectStore.prototype.put;
     IDBObjectStore.prototype.put = function (...a) {
-      const k = a[0] && a[0].k;
+      const k = a[0] && (a[0].k !== undefined ? a[0].k : a[0].id);   // kv rows are keyed by k, every other store by id
       if (F.badKey && k === F.badKey) throw new DOMException("injected: the store refuses this row", "DataError");
       const req = realPut.apply(this, a);
       trackCommit(req);
@@ -231,7 +231,9 @@ await page.evaluate(() => { window.__fault.badKey = null; });
    2) The ordinary path: still fast in spirit, resolves AFTER commit, quiet
    ===================================================================== */
 console.log("\n-- the ordinary save is unchanged: committed, resolved, quiet --");
-await resetScenario();
+// The notice is throttled, so a wrongful announcement right after the last scenario's real one would be
+// swallowed and these "stays quiet" checks could pass for the wrong reason: open the throttle first.
+await resetScenario({ advanceClockMs: 10 * 60 * 1000 });
 const beforeEntries = (await storageLogEntries()).length;
 const happy = await page.evaluate(async () => {
   const F = window.__fault;
@@ -406,7 +408,23 @@ const limited = await boot.openSession({
         if (s && window.__toastLog[window.__toastLog.length - 1] !== s) window.__toastLog.push(s);
       }).observe(document, { subtree: true, childList: true, characterData: true });
       // IndexedDB blocked outright (as in some private/locked-down browsers): opening it throws.
-      Object.defineProperty(window, "indexedDB", { configurable: true, get() { return { open() { throw new Error("IndexedDB is blocked in this browser"); } }; } });
+      // The first time the app tries to open it, a save is ATTEMPTED at that very moment - while the app
+      // is still on the database it is about to find unusable - so what a save does when the database
+      // cannot even be opened is observed directly, not assumed from the app's quiet start.
+      let probed = false;
+      Object.defineProperty(window, "indexedDB", { configurable: true, get() { return { open() {
+        if (!probed && window.G && G.db && typeof G.db.put === "function") {
+          probed = true;
+          window.__openFailProbe = "pending";
+          // Every toast CALL from here on (a mutation observer on the toast box only sees what is on screen
+          // when it looks, and the next notice can overwrite this one before it does).
+          window.__toastCalls = [];
+          const realToast = G.util.toast;
+          G.util.toast = function (m) { window.__toastCalls.push(String(m)); return realToast.apply(this, arguments); };
+          G.db.put("kv", { k: "__ack:open-fail", v: 1 }).then(() => { window.__openFailProbe = "resolved"; }, () => { window.__openFailProbe = "rejected"; });
+        }
+        throw new Error("IndexedDB is blocked in this browser");
+      } }; } });
     });
   },
 });
@@ -416,8 +434,34 @@ const limitedNotice = await until(limited.page, () => window.__toastLog.some((t)
 const limitedLog = await limited.page.evaluate(() => window.__toastLog);
 check(limitedNotice, "a plain-language notice about limited saving is shown at start (it used to be silent for this backend)", "toasts seen at start: " + JSON.stringify(limitedLog));
 check(!limitedLog.some((t) => /localstorage|indexeddb|quota/i.test(t)), "and it uses no storage vocabulary", "toasts: " + JSON.stringify(limitedLog));
-check(!limitedLog.some((t) => /wasn.t saved/i.test(t)), "a database that would not open is not announced as \"that change wasn't saved\" (the app already switched to its small-space fallback and said so)", "toasts: " + JSON.stringify(limitedLog));
+const openProbe = await until(limited.page, () => window.__openFailProbe === "rejected" || window.__openFailProbe === "resolved");
+check(openProbe && (await limited.page.evaluate(() => window.__openFailProbe)) === "rejected", "a save attempted while the database cannot be opened is refused (it is not quietly called saved)", "probe: " + (await limited.page.evaluate(() => window.__openFailProbe)));
+const limitedCalls = await limited.page.evaluate(() => window.__toastCalls || []);
+check(limitedCalls.some((t) => /limited|small|browser|space/i.test(t)) && !limitedCalls.some((t) => /wasn.t saved/i.test(t)),
+  "...but it is not announced as \"that change wasn't saved\" - the app switches to its small-space fallback and says that instead", "every notice raised from the first open attempt on: " + JSON.stringify(limitedCalls));
 await limited.context.close();
+
+/* =====================================================================
+   6) The single-file build has no cross-window bus: the database layer alone
+      must keep a save nobody waited on from raising an unhandled error
+   ===================================================================== */
+console.log("\n-- the standalone single-file build behaves the same --");
+const solo = await boot.openSession({ dir: "dist", profile: { ...PERSONAL_PROFILE }, noise });
+await installInstruments(solo.page);
+const soloBus = await solo.page.evaluate(() => (window.G.xwin ? window.G.xwin.isActive() : false));
+check(soloBus === false, "the single-file build really runs without the cross-window bus (so nothing above the database layer can be hiding a bug)", "xwin active: " + soloBus);
+await solo.page.evaluate(() => { window.__fault.abortPrefix = "__ack:"; });
+const soloOwn = await solo.page.evaluate(async () => ({ outcome: await window.__settle(G.db.put("kv", { k: "__ack:solo1", v: 1 })), onDisk: await window.__raw("kv", "__ack:solo1") }));
+check(soloOwn.outcome.startsWith("rejected") && soloOwn.onDisk === undefined, "single-file build: a cancelled commit is reported as failed and the row is not on the device (" + soloOwn.outcome + ")", "result: " + JSON.stringify(soloOwn));
+await solo.page.evaluate(() => { window.__fault.abortPrefix = "__ack:"; window.__unhandled = 0; Date.now = (() => { const r = Date.now.bind(Date); return () => r() + 20 * 60 * 1000; })(); G.db.put("kv", { k: "__ack:solo-forgotten", v: 1 }); G.db.put("attempts", { id: "__ack:att-forgotten", scenarioId: "x", ts: 1 }); });
+await until(solo.page, () => window.__toasts.some((t) => /wasn.t saved|out of space/i.test(t)));
+await solo.page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+const soloUnhandled = await solo.page.evaluate(() => window.__unhandled);
+check(soloUnhandled === 0, "single-file build: saves nobody waited on (a settings row, a scenario result) that fail raise no unhandled error", "unhandledrejection events: " + soloUnhandled);
+await solo.page.evaluate(() => { window.__fault.abortPrefix = null; });
+const soloOrdinary = await solo.page.evaluate(async () => { await G.db.put("kv", { k: "__ack:solo-fine", v: "ok" }); return (await window.__raw("kv", "__ack:solo-fine")) || null; });
+check(soloOrdinary && soloOrdinary.v === "ok", "single-file build: an ordinary save still lands", "on disk: " + JSON.stringify(soloOrdinary));
+await solo.context.close();
 
 expectNoConsoleNoise(noise);
 await finish("DB WRITE ACK");
