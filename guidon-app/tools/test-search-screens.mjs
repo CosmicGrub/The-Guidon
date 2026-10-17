@@ -122,7 +122,6 @@ const SEARCH_EXEMPT = {
   "#/board": "always in the nav",
   "#/doctrine": "in the nav; the doctrine records themselves are searched",
   "#/search": "this screen",
-  "#/profile": "opened from the header, not a content screen",
   "#/kiosk": "the shared-tablet mode, entered from Settings",
   "#/privacy": "opened from Settings and the welcome screen",
 };

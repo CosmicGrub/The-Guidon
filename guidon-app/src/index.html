@@ -31773,11 +31773,92 @@ window.G = window.G || {};
     return days;
   }
 
+  // ── Calendar file (.ics) ──────────────────────────────────────────────────
+  // Only the Android app can raise an alert for a reminder (notify.js); on the
+  // iPhone, in a browser, on the Windows app and in a saved file GUIDON cannot
+  // speak while it is closed. A calendar file lets the phone's or computer's
+  // OWN calendar do the alerting. It is made on this device, on a tap, and
+  // goes nowhere until the Soldier opens it in a calendar app.
+  //
+  // PRIVACY, by construction: an event is named from the reminder's KIND
+  // alone ("GUIDON: Promotion board"). The label and note are never written -
+  // they are free text, and the roster's quick-adds put a Soldier's rank and
+  // name in the label ("Counsel SSG Smith"). Nothing else about the Soldier,
+  // the unit or the profile goes in either. A calendar app may copy the file's
+  // entries to the person's own online account, which is why the button says so.
+  var ICS_TITLES = Object.assign(Object.create(null), {
+    counseling: "Counseling follow-up due", acft: "Fitness test due (ACFT / AFT)", board: "Promotion board",
+    promopoints: "Recheck promotion points", weapons: "Weapons qualification due",
+    usajobs: "USAJOBS application closes", negotiation: "Salary negotiation follow-up",
+    pt: "PT session", ets: "ETS date", other: "Date to remember",
+  });
+  function icsTitle(kind) { return "GUIDON: " + (ICS_TITLES[kind] || ICS_TITLES.other); }
+  // Text values: backslash, semicolon, comma and line breaks are escaped (RFC 5545 3.3.11).
+  function icsEscape(s) {
+    return String(s).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r\n|\r|\n/g, "\\n");
+  }
+  // A content line is at most 75 OCTETS (RFC 5545 3.1): longer ones continue on
+  // the next line after a single space, and never split a multi-byte character.
+  function icsFold(line) {
+    var out = [], cur = "", bytes = 0;
+    for (var ch of line) {
+      var cp = ch.codePointAt(0), n = cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+      if (bytes + n > 75) { out.push(cur); cur = " "; bytes = 1; }
+      cur += ch; bytes += n;
+    }
+    out.push(cur);
+    return out.join("\r\n");
+  }
+  // The same reminder gives the same UID every time, so opening a newer file
+  // updates its entry in the calendar instead of adding a second one. Hashed,
+  // so the reminder's own id (which carries its creation time) is not in the file.
+  function icsUid(r) {
+    var s = String(r.id || (r.kind + ":" + r.date)), a = 0x811c9dc5, b = 0x01000193 ^ 0x5bd1e995;
+    for (var i = 0; i < s.length; i++) {
+      a = Math.imul(a ^ s.charCodeAt(i), 0x01000193) >>> 0;
+      b = Math.imul(b ^ s.charCodeAt(i), 0x85ebca6b) >>> 0;
+    }
+    return "guidon-" + ("0000000" + a.toString(16)).slice(-8) + ("0000000" + b.toString(16)).slice(-8) + "@guidon.invalid";
+  }
+  // The file for the reminders that are today or later, or { events: 0 }.
+  // An all-day event ends the day AFTER it starts: DTEND is exclusive, and an
+  // end on the same day is a zero-length event some calendars drop.
+  function buildIcs(list, now) {
+    now = now || new Date();
+    var stamp = now.toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
+    var lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//GUIDON//Key dates//EN", "CALSCALE:GREGORIAN"];
+    var events = 0;
+    (Array.isArray(list) ? list : []).forEach(function (r) {
+      if (!r || typeof r !== "object" || isExpired(r)) return;
+      var start = parseDate(r.date), days = daysUntil(r.date);
+      if (!start || days === null || days < 0) return;
+      var next = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
+      var title = icsEscape(icsTitle(r.kind));
+      lines.push("BEGIN:VEVENT", "UID:" + icsUid(r), "DTSTAMP:" + stamp,
+        "DTSTART;VALUE=DATE:" + isoDate(start).replace(/-/g, ""),
+        "DTEND;VALUE=DATE:" + isoDate(next).replace(/-/g, ""),
+        "SUMMARY:" + title, "TRANSP:TRANSPARENT",
+        // The calendar's own alert at 9 in the morning on the day, the hour the
+        // Android app's notification uses.
+        "BEGIN:VALARM", "ACTION:DISPLAY", "DESCRIPTION:" + title, "TRIGGER:PT9H", "END:VALARM",
+        "END:VEVENT");
+      events++;
+    });
+    lines.push("END:VCALENDAR");
+    return { events: events, text: lines.map(icsFold).join("\r\n") + "\r\n" };
+  }
+
   // Full editor — lives in the Profile view.
   async function renderEditor(host) {
     util.clear(host);
     host.appendChild(el("h3.rem-h", { text: "Reminders" }));
-    host.appendChild(el("p.hint", { text: "Set key dates and GUIDON will surface anything due on your home screen. Stored offline on this device only. Turn on Notifications in Settings if you'd like a local reminder on the day, too." }));
+    // Only the Android app has a Notifications switch (and only it can alert
+    // while GUIDON is closed). Everywhere else, say so and point at the
+    // calendar button below instead of at a switch that is not there.
+    var canAlert = !!(G.notify && G.notify.supported());
+    host.appendChild(el("p.hint", { text: "Set key dates and GUIDON will surface anything due on your home screen. Stored offline on this device only. " +
+      (canAlert ? "Turn on Notifications in Settings if you'd like a local reminder on the day, too."
+        : "GUIDON can't send an alert while it's closed on this device. To be reminded on the day, add your dates to your calendar with the “Add to my calendar” button below.") }));
 
     var timelineMount = el("div.rem-timeline-mount");
     host.appendChild(timelineMount);
@@ -31913,6 +31994,27 @@ window.G = window.G || {};
     form.appendChild(addBtn);
     host.appendChild(form);
 
+    // Calendar file: the way a reminder reaches the phone's or computer's own
+    // calendar, which CAN alert while GUIDON is closed.
+    var calBox = el("div.rem-calendar", { style: "margin-top:14px" });
+    calBox.appendChild(el("div.eyebrow", { text: "Put these dates on your calendar" }));
+    calBox.appendChild(el("p.hint", { text:
+      "Makes a calendar file of your upcoming reminders to open in your phone or computer's calendar app, so it can remind you even when GUIDON is closed. " +
+      "Each date is listed by type only, like “Promotion board” — never the label or note you typed, and never a name. " +
+      "It is made on this device and goes nowhere until you open it in a calendar. Some calendar apps copy new entries to your own online account." }));
+    var calBtn = el("button.btn.sm", { type: "button", gi: "download", giSize: 14, text: "Add to my calendar (.ics)" });
+    calBtn.addEventListener("click", async function () {
+      var file = buildIcs(await load());
+      if (!file.events) { try { util.toast && util.toast("No upcoming reminders to add yet. Add a reminder with a date first."); } catch (e) {} return; }
+      var saved = await util.download("guidon-dates.ics", file.text, "text/calendar");
+      try {
+        util.toast && util.toast(saved === false ? "Couldn't make the calendar file. Try again."
+          : file.events + (file.events === 1 ? " date" : " dates") + " ready — open the file in your calendar app.");
+      } catch (e) {}
+    });
+    calBox.appendChild(calBtn);
+    host.appendChild(calBox);
+
     redraw();
   }
 
@@ -31922,6 +32024,8 @@ window.G = window.G || {};
     load: load, add: add, remove: remove, bucket: bucket,
     addManaged: addManaged, clearManagedFor: clearManagedFor,
     renderStrip: renderStrip, renderEditor: renderEditor,
+    buildIcs: buildIcs,
+    _icsFold: icsFold, _icsEscape: icsEscape, // exported for tests
     _daysUntil: daysUntil, // exported for tests
     _buildTimeline: buildTimeline, // exported for tests (90-day density strip)
   };
@@ -39457,7 +39561,12 @@ window.G = window.G || {};
       { hash: "#/board-sim", keywords: "mock board rehearse a board practice board appearance timed questions" },
       { hash: "#/settings", label: "Settings — Theme", keywords: "theme dark mode appearance", settingsAnchor: "settings-theme-panel" },
       { hash: "#/settings", label: "Settings — Screen Layouts", keywords: "screen layouts tasking board zero board", settingsAnchor: "settings-layout-panel" },
-      { hash: "#/settings", label: "Settings — Notifications", keywords: "notifications reminders alerts", settingsAnchor: "settings-notif-panel" },
+      // The Notifications switch exists only in the Android app (the only build that can
+      // alert while GUIDON is closed). Off Android it is not offered, so a Soldier is not
+      // sent to a Settings screen with nothing there; the Reminders row below is everywhere.
+      { hash: "#/settings", label: "Settings — Notifications", keywords: "notifications reminders alerts", settingsAnchor: "settings-notif-panel",
+        needs: function () { return !!(G.notify && G.notify.supported()); } },
+      { hash: "#/profile", label: "Profile — Reminders & calendar file", keywords: "reminders notifications alerts key dates calendar file ics add to my calendar phone calendar remind me" },
       { hash: "#/settings", label: "Settings — Biometric Lock", keywords: "biometric lock fingerprint face unlock PIN", settingsAnchor: "settings-bio-panel" },
       { hash: "#/settings", label: "Settings — Data & Backup", keywords: "backup export import restore data", settingsAnchor: "settings-databackup-panel" },
       { hash: "#/settings", label: "Settings — Accessibility", keywords: "accessibility screen reader high contrast text size", settingsAnchor: "settings-acc-panel" },
@@ -39805,6 +39914,7 @@ window.G = window.G || {};
 
       if (activeFilter === "all" || activeFilter === "screen") {
         SCREEN_ENTRIES.forEach((entry, i) => {
+          if (entry.needs && !entry.needs()) return; // a control this build does not have is not offered
           const r = (G.routes || []).find((x) => x.hash === entry.hash);
           if (!r) return; // route renamed/removed since this list was written — fail soft
           if (entry._hay === undefined) entry._hay = ((entry.label || r.label) + " " + (entry.keywords || "")).toLowerCase();
