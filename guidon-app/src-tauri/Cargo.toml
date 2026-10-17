@@ -117,24 +117,27 @@ x509-parser = "0.18"
 # ships a Windows build today (see the cargo-audit notes below).
 [target.'cfg(windows)'.dependencies]
 # R3: ICoreWebView2Controller::add_AcceleratorKeyPressed. Pinned to the
-# SAME 0.38.x line that tauri-runtime-wry/wry themselves depend on (see
-# `cargo tree -d` below), not just "whatever resolves" - a second,
-# newer webview2-com (0.39.x previously) resolves to its OWN windows-core,
-# so the ICoreWebView2Controller wry hands back through
+# SAME 0.39.x line that tauri-runtime-wry/wry themselves depend on (see
+# `cargo tree -d`), not just "whatever resolves" - a
+# second webview2-com (a different minor from wry's) resolves to its OWN
+# windows-core, so the ICoreWebView2Controller wry hands back through
 # `webview.controller()` and the ICoreWebView2AcceleratorKeyPressedEventHandler
 # built here are two DIFFERENT, incompatible `windows_core::Interface` impls
 # even though both crates print the same Rust type name - `add_
 # AcceleratorKeyPressed`'s `Param<...>` bound then fails with E0277 ("there
 # are multiple different versions of crate `windows_core` in the dependency
 # graph"), the exact CI failure this comment now documents. Matching wry's
-# own version is what makes it ONE crate, not two.
-webview2-com = "=0.38.2"
+# own version is what makes it ONE crate, not two. This pin moves ONLY in
+# lockstep with wry: 0.38.2 while wry was 0.55.x, 0.39.1 since wry 0.57.0
+# (tauri 2.12.x, the 2026-10-16 dependency refresh) - after any tauri/wry
+# bump, `cargo tree -d` must show one webview2-com and one windows-core.
+webview2-com = "=0.39.1"
 # The plain `windows::core::Result`/`BOOL` webview2-com's own closures need
 # - NOT the full `windows` crate (which webview2-com does not re-export):
 # `windows::core` is itself a re-export of `windows-core`. Pinned to the
-# same 0.61.x line webview2-com 0.38.2 itself resolves to, for the same
+# same 0.62.x line webview2-com 0.39.1 itself resolves to, for the same
 # single-version reason as above.
-windows-core = "0.61"
+windows-core = "0.62"
 # R-ROOM: GetAdaptersAddresses (iphlpapi), the same API `ipconfig` is built
 # on - real interface enumeration for the non-loopback IPv4 listing.
 # windows-sys 0.60 was already resolved in Cargo.lock (tao's own Win32
