@@ -1,6 +1,6 @@
 # Privacy Policy — GUIDON
 
-**Last updated:** September 26, 2026
+**Last updated:** October 17, 2026
 
 This is the Privacy Policy for **GUIDON** (Army Leader Development Trainer), distributed as a standalone HTML app, an installable web app (PWA), a Windows desktop app, and an Android app (package `app.guidon.trainer`). It applies to every version of GUIDON, since they all run from the same source and behave identically with respect to data.
 
@@ -12,7 +12,7 @@ This is the Privacy Policy for **GUIDON** (Army Leader Development Trainer), dis
 
 GUIDON does not collect, transmit, sell, or share any personal data, because GUIDON has no server to send it to. There is no server, ever: no account, no sign-in, no analytics, no advertising, and nothing about you is ever sent to anyone — including the developer — except a PT plan or Team Training session that you, as the host of a study room, choose to send to the devices in your own room (see “Sharing a plan or session to a study room” below). Everything GUIDON knows about you stays in storage on your own device, under your control, until you delete it.
 
-The only ways any version of GUIDON can touch a network are these four, and none of them sends your study data to a server: study groups (LAN rooms), which are off by default behind a switch in Settings and, once they exist, connect only to other devices on the same Wi-Fi or hotspot — including when that connection is secured with a self-signed, device-generated certificate — and never to any server; GitHub Pages, the file server the web version will be delivered from (today, whichever static host serves it), which is contacted only to fetch or update the app itself (the service worker checks it for a newer copy when you open the app online); a future read-aloud feature, for which your operating system may download a voice pack the first time it is used; and, on a future iOS build, iCloud or device backups run by the operating system, which may include the app's data under the backup settings you control on your device.
+The only ways any version of GUIDON can touch a network are these four, and none of them sends your study data to a server: study groups (LAN rooms), which are off by default behind a switch in Settings and, when you switch them on, connect only to other devices on the same Wi-Fi or hotspot — including when that connection is secured with a self-signed, device-generated certificate — and never to any server; GitHub Pages, the file server the web version is delivered from (or whichever static host serves it), which is contacted only to fetch or update the app itself (the service worker checks it for a newer copy when you open the app online); a future read-aloud feature, for which your operating system may download a voice pack the first time it is used; and, on a future iOS build, iCloud or device backups run by the operating system, which may include the app's data under the backup settings you control on your device.
 
 ## What GUIDON is
 
@@ -25,7 +25,7 @@ Everything below is stored **only on your device** — never on a server, becaus
 - **Storage locations:** an on-device database (IndexedDB, database name `guidon`) holding your profile, saved answers, quiz/board-drill history, and progress; plus a small amount of on-device browser storage (localStorage) for interface preferences like your selected theme.
 - **Profile information you enter:** things like your name, rank, MOS, ETS date, target board date, study weak points, and readiness answers, which you type in to personalize your action plan and drills.
 - **Practice and progress data:** quiz attempts, Mock Board results, streaks, and scenario progress, generated as you use the app.
-- **Squad roster (optional, leader-facing only):** if you use the roster feature, it asks for initials, a callsign, or a roster number for each Soldier — not full legal names — plus a rank and counseling dates. This is the one place GUIDON stores information about people other than you, so it gets extra protection — see the next section.
+- **Squad roster (optional, leader-facing only):** if you use the roster feature, it asks for initials, a callsign, or a roster number for each Soldier — not full legal names — plus a rank and counseling dates. It is the only part of GUIDON built to hold information about people other than you, so it gets extra protection — see the next section. GUIDON cannot check what you type into its other tools, such as the free-text fields on a form, so keep other people's real names, addresses, and ID numbers out of them.
 - **Risk Worksheet (optional, practice tool only):** the DA Form 7278 practice tool asks for a resource, a location, and other worksheet fields. It is meant for a synthetic or hypothetical scenario, never a real facility, location, or vulnerability — but because the fields could be used to enter real information, GUIDON gives any saved worksheet the same extra protection as the roster (see the next section).
 - **Unit decks (optional):** if you add a study deck your own unit wrote (Settings → Study Preferences → Unit decks), GUIDON keeps that deck on your device, the same way it keeps your My unit texts. It comes from a file you choose or text you paste; GUIDON never fetches it from anywhere. Before it is added, and again each time GUIDON starts and each time a backup is restored, GUIDON checks it for classification markings, Social Security and DoD ID numbers, contact details and lists of names. It refuses the whole deck if it finds any when you add it; a saved deck that fails the check later is left out of your study tools, but it stays on your device (and in any backup you export) until you remove it, and Settings lists it with a Remove button. It is meant for a unit's own study facts, not for information about individual Soldiers, and the check can miss things, so the person who wrote the deck is responsible for what is in it. A deck is your own study material, so every backup you export includes it (there is no separate opt-in, unlike the squad roster) and it comes back when you restore that backup. A Guest or Kiosk session saves no deck, but a deck already on the device can still be studied in one. Quiz best scores and review progress on a deck's cards are kept under the deck's topic names until you delete them (Remove asks; a topic that another deck also uses keeps its Quiz score until that deck goes too). You can switch a deck off or remove it at any time.
 
@@ -37,6 +37,7 @@ The roster can hold data about someone other than the app's user, and the Risk W
 
 - If you ever export a backup of your GUIDON data (a JSON file you create yourself, entirely on-device, for your own safekeeping), **the squad roster and any saved Risk Worksheets are excluded by default.** Your own profile, progress, and drill history are included; roster entries and risk worksheets are not.
 - Including them in a backup requires a separate, explicit "include" opt-in, checked off (unchecked by default) right next to the Export backup button — never bundled in by accident.
+- Everything else you type into GUIDON — your profile, IDP goals, counseling plans, reminders, and the drafts you save in the Forms Trainer — **is** in a default backup. GUIDON does not check those for other people's names or numbers, so a practice form should use made-up ones.
 - This default-exclude / explicit-opt-in behavior is checked automatically before every release.
 
 ## Backups are yours, not ours
@@ -64,7 +65,7 @@ It is sent only when you tap “Send to the room” in a confirmation box that l
 
 ## Why the Android app lists an "Internet" permission
 
-The Android build declares the standard `INTERNET` permission because its embedded WebView component (Capacitor) needs it to serve the app's own interface to itself over your device's internal loopback connection — the same mechanism every WebView-based app uses to render its screens. Once study groups (LAN rooms) exist, the same permission is what lets the app talk to other devices on the same Wi-Fi or hotspot, and only while that switch is on. It is never used to send your data to any server: if you inspect network activity while using GUIDON outside a study session, you will see no outbound traffic.
+The Android build declares the standard `INTERNET` permission because its embedded WebView component (Capacitor) needs it to serve the app's own interface to itself over your device's internal loopback connection — the same mechanism every WebView-based app uses to render its screens. When study groups (LAN rooms) are switched on, the same permission is what lets the app talk to other devices on the same Wi-Fi or hotspot, and only while that switch is on. It is never used to send your data to any server: if you inspect network activity while using GUIDON outside a study session, you will see no outbound traffic.
 
 ## Deleting your data
 
@@ -81,7 +82,7 @@ GUIDON is a professional reference tool built for enlisted U.S. Army Soldiers an
 
 ## Changes to this policy
 
-If GUIDON's data handling ever changes (for example, when study groups actually ship, or if a future version adds any other optional network feature), this policy will be updated first, and the "Last updated" date above will change accordingly. As of that date, GUIDON collects nothing and sends nothing to a server.
+If GUIDON's data handling ever changes (for example, if a future version adds an optional network feature beyond study groups), this policy will be updated first, and the "Last updated" date above will change accordingly. As of that date, GUIDON collects nothing and sends nothing to a server.
 
 ## Contact
 

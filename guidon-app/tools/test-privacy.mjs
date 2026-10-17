@@ -1,7 +1,8 @@
 /**
- * The squad roster is the only data in GUIDON about people other than the user.
- * Backup files get emailed. This asserts the roster does not ride along by
- * default, and that including it is possible but deliberate.
+ * The squad roster is the only part of GUIDON built to hold information about
+ * people other than the user (GUIDON cannot check what is typed into its other
+ * tools, and says so). Backup files get emailed. This asserts the roster does
+ * not ride along by default, and that including it is possible but deliberate.
  *
  * P1 of the "No server, ever" promise (desktop roadmap, locked decision Q1)
  * adds five more cases, all against the same one browser:
@@ -191,6 +192,47 @@ const aboutText = await page.evaluate(() => {
     const hit = BANNED.map((re) => (text.match(re) || [])[0]).filter(Boolean);
     if (!text) { bad(`(3) ${where}: no text found to check`); continue; }
     hit.length === 0 ? ok(`(3) ${where} credits no CSP`) : bad(`(3) ${where} mentions ${hit.join(", ")} - no shipped build carries a CSP`);
+  }
+}
+
+// ---- (3b) the words are true: no absolute "only place" claim, and nothing that
+// has shipped is still described as future (audit 2026-09, forms-privacy) ----
+{
+  // Claims the code contradicted: the roster is NOT the only place a Soldier can
+  // type another person's name (a DA 4856 counselee, DA 5960 dependents), and
+  // study groups shipped. Each pattern is one stale shape; SAMPLES proves it hits
+  // the stale wording and leaves honest wording (and genuinely-future things,
+  // like read-aloud) alone, so the check can neither miss nor cry wolf.
+  const STALE = [
+    ["an absolute 'one place' claim about other people", /\bthe one place GUIDON stores information about people\b|\bthe only data in GUIDON about people\b/i],
+    ["study groups called future", /\bfuture study groups?\b/i],
+    ["study groups 'once they exist'", /\bstudy groups?\b[^;.]{0,200}?\bonce (?:they|it|these)\b[^;.]{0,30}\bexist|\bonce study groups?\b[^;.]{0,40}\bexist/i],
+    ["study groups 'when they actually ship'", /\bstudy groups?\b[^;.,]{0,40}\bactually ship/i],
+    ["study groups 'will be'", /\b(?:study groups?|LAN rooms?)\)?\s+(?:\([^)]*\)\s+)?will be\b/i],
+    ["the web version 'will be' delivered", /\bweb version will be\b/i],
+  ];
+  const SAMPLES = [
+    [true, "This is the one place GUIDON stores information about people other than you."],
+    [true, "Future study groups (LAN rooms) will be opt-in and stay on your own Wi-Fi."],
+    [true, "study groups (LAN rooms), which are off by default and, once they exist, connect only to other devices"],
+    [true, "Once study groups (LAN rooms) exist, the same permission is what lets the app talk"],
+    [true, "if you ever change it (for example, when study groups actually ship, or later)"],
+    [true, "The web version will be fetched from GitHub Pages"],
+    [false, "Study groups (LAN rooms) are off until you switch them on, and stay on your own Wi-Fi or hotspot."],
+    [false, "if a future version adds an optional network feature beyond study groups), this policy will be updated first"],
+    [false, "a future read-aloud feature, for which your operating system may download a voice pack"],
+    [false, "on a future iOS build, iCloud or device backups run by the operating system"],
+    [false, "It is the only part of GUIDON built to hold information about people other than you."],
+  ];
+  const sampleBad = SAMPLES.filter(([want, s]) => STALE.some(([, re]) => re.test(s)) !== want);
+  sampleBad.length === 0
+    ? ok(`(3b) the stale-wording patterns hit all ${SAMPLES.filter((s) => s[0]).length} stale samples and none of the ${SAMPLES.filter((s) => !s[0]).length} honest ones`)
+    : bad(`(3b) pattern self-check wrong on: ${sampleBad.map(([w, s]) => (w ? "MISSED " : "FALSE HIT ") + s).join(" | ")}`);
+  for (const [where, text] of [["#/privacy", appText], ["PRIVACY.md", md], ["README.md", readme], ["Settings About", aboutText]]) {
+    if (!text) { bad(`(3b) ${where}: no text found to check`); continue; }
+    const flat = text.replace(/\s+/g, " ");
+    const hits = STALE.filter(([, re]) => re.test(flat)).map(([name]) => name);
+    hits.length === 0 ? ok(`(3b) ${where}: no absolute "only place" claim, nothing shipped is described as future`) : bad(`(3b) ${where}: ${hits.join("; ")}`);
   }
 }
 
