@@ -89,7 +89,8 @@ check(hits("ATP 4-02.11, which superseded TC 4-02.1 in March 2026.") === 0, "hon
 check(hits("The older, superseded FM 3-22.9 said trigger squeeze.", "FM 3-22.9") === 0 && hits("TC 4-02.1 was replaced by ATP 4-02.11.") === 0 && hits("Formerly TC 4-02.1.") === 0 && hits("TC 4-02.1 (rescinded)") === 0, "honest: formerly / replaced / rescinded / older in the same sentence all mark the change");
 check(hits("It was superseded. Per TC 4-02.1, apply it.") === 1, "...but a marker in the NEXT sentence does not excuse a teaching sentence");
 check(hits("Source: TCCC / TC 4-02.1\nsuperseded notes live here") === 1, "...nor does a marker on the next line");
-check(designatorRegex("TC 4-02.1").test("see TC 4-02.1") && !designatorRegex("TC 4-02.1").test("ATP 4-02.1"), "the designator regex needs the pub type as a whole word");
+check(hits("CTC 4-02.1 and xTC 4-02.1") === 0 && hits("see TC 4-02.1") === 1, "honest: the pub type is a whole word (CTC 4-02.1 is not TC 4-02.1), while a plain 'see TC 4-02.1' still counts");
+check(designatorRegex("TC 4-02.1").test("see TC 4-02.1") && !designatorRegex("TC 4-02.1").test("ATP 4-02.1"), "designatorRegex('TC 4-02.1') matches the designator and not ATP 4-02.1");
 
 /* =====================================================================
    3. The real bank passes, and the relabel holds
