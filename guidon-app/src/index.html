@@ -30262,6 +30262,9 @@ window.G = window.G || {};
     if (isFile) {
       mount.appendChild(el("div.feedback.warn", { text:
         "This copy is open from a local file, so there is no link to share yet. Put the .html file on any static host \u2014 GitHub Pages, Netlify, Cloudflare Pages, or a unit web server \u2014 then open it from that address and the link will appear here." }));
+      // A saved file never updates itself: say so when this one has aged.
+      const copyAgeNote = G.currency.buildAgeNote();
+      if (copyAgeNote) mount.appendChild(copyAgeNote);
     } else {
       const lp = el("div.panel", { style:"margin-bottom:10px" });
       lp.appendChild(el("div.eyebrow", { text:"This app's address" }));
@@ -30424,6 +30427,9 @@ window.G = window.G || {};
       : "Copy the same installer (.exe) you ran here and run it on the other Windows machine." }));
     install.appendChild(el("p.hint", { style:"margin-top:6px", text:
       "There's no in-app updater — a newer version means installing a newer build the same way you installed this one. Your data isn't touched by reinstalling; only Export/Import backup moves it between separate installations." }));
+    // How old this installed copy is, once it is old enough to matter.
+    const copyAgeNote = G.currency.buildAgeNote();
+    if (copyAgeNote) install.appendChild(copyAgeNote);
     mount.appendChild(install);
 
     // Everything above this point is "moving THIS SAME build to another
@@ -37970,6 +37976,10 @@ window.G = window.G || {};
       const pn = el("div.panel", { style: "margin-bottom:14px" });
       pn.appendChild(el("div.fin-h", { text: "About GUIDON" }));
       pn.appendChild(el("p.hint", { text: "Version " + (window.GUIDON_APP_VERSION || "unknown") + " \u00b7 Built " + (window.GUIDON_BUILD_DATE || "unknown") }));
+      // An installed or saved-file copy never updates itself, so say plainly when
+      // this one has aged (nothing at all on the hosted app, or on a young copy).
+      const copyAgeNote = G.currency.buildAgeNote();
+      if (copyAgeNote) pn.appendChild(copyAgeNote);
       // Standing rule: What's New auto-shows once on the first launch after
       // a real update (G.whatsNew.checkOnBoot(), below), but there was no
       // way to pull it back up on demand afterward - checked live, zero

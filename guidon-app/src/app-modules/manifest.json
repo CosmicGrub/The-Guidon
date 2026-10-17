@@ -401,9 +401,9 @@
       "id": "currency",
       "kind": "feature",
       "headless": false,
-      "requires": ["assignments"],
+      "requires": ["assignments", "caps"],
       "uses": ["fitness", "library"],
-      "provides": ["G.currency.render"],
+      "provides": ["G.currency.render", "G.currency.buildAgeNote"],
       "routes": ["#/currency"],
       "storageKeys": [],
       "optionalApis": []
