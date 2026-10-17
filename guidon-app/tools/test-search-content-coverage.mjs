@@ -143,6 +143,41 @@ armySnap.count === 40
   ? ok(`the "+N more" overflow message renders past the cap ("${armySnap.moreText}")`)
   : bad(`no "+N more" overflow message rendered for a query well past the cap: "${armySnap.moreText}"`);
 
+/* ============ 3b. Ranking is cheap, and short acronyms still rank ============ */
+// The sort used to call hitScore() from inside its comparator, and each call
+// builds regular expressions - so a broad query ("le" matches about two
+// thousand records) did on the order of a hundred thousand of them and froze
+// typing on a budget phone. Each hit is now scored ONCE. Asserted on the work
+// done, not on wall-clock time (a timing check flakes on a busy runner):
+// counting the regular expressions the page builds while it runs a broad
+// query. Scoring builds at most three per hit, so anything over that means a
+// hit was scored more than once.
+await openSearch();
+await page.evaluate(() => {
+  window.__reBuilt = 0;
+  const Real = window.RegExp;
+  window.__realRegExp = Real;
+  window.RegExp = new Proxy(Real, { construct(target, args) { window.__reBuilt++; return new target(...args); } });
+});
+const broad = await searchAndFilter("le", "All");
+const broadHits = await page.evaluate(() => Number(((document.querySelector(".search-count") || {}).textContent || "").replace(/[^0-9]/g, "")));
+const built = await page.evaluate(() => window.__reBuilt);
+await page.evaluate(() => { window.RegExp = window.__realRegExp; });
+broadHits > 1000
+  ? ok(`the broad query "le" is broad enough to matter (${broadHits} results, ${broad.count} cards shown)`)
+  : bad(`expected the broad query "le" to match well over a thousand records, got ${broadHits}`);
+built <= 3 * broadHits
+  ? ok(`ranking a broad query scores each hit at most once (${built} regular expressions built for ${broadHits} hits)`)
+  : bad(`ranking a broad query built ${built} regular expressions for ${broadHits} hits - a hit is being scored more than once`);
+// A 2-letter acronym must still be ranked: the exact acronym first, whole words
+// before substrings. (A "skip ranking under 3 characters" shortcut would put
+// "PT" among hundreds of records that merely contain the letters.)
+await openSearch();
+const ptSnap = await searchAndFilter("pt", "Dictionary");
+ptSnap.titles[0] === "PT"
+  ? ok('a 2-letter acronym is still ranked: "PT" comes first among its ' + ptSnap.count + " Dictionary cards")
+  : bad('expected "PT" first for the 2-letter query "pt", got ' + JSON.stringify(ptSnap.titles.slice(0, 5)));
+
 /* ============ 4. Forms hit type + deep link to the specific form ============ */
 // "4856" (against the real seed) matches exactly one of the 34 forms: DA
 // Form 4856 (Developmental Counseling Form). It ALSO matches Dictionary's

@@ -39199,14 +39199,26 @@ window.G = window.G || {};
     // on title/sub alone, same as before this pass for every pre-existing
     // type that had no natural third field.
     function escSearchRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+    // The whole-word pattern is built ONCE per query, not once per field per
+    // hit: a broad two-letter query scores about two thousand hits, and
+    // building three patterns for each of them (and again inside the sort's
+    // comparator) is what froze typing on a budget phone.
+    let scoreReQuery = null, scoreRe = null;
+    function wholeWordRe(ql) {
+      if (scoreReQuery !== ql) {
+        scoreReQuery = ql;
+        try { scoreRe = new RegExp("(^|[^a-z0-9])" + escSearchRe(ql) + "($|[^a-z0-9])"); }
+        catch (e) { scoreRe = null; /* ql can't form a bad pattern here - escSearchRe neutralizes every regex metachar - but never let a scoring helper throw and blank the results pane */ }
+      }
+      return scoreRe;
+    }
     function hitScore(ql, h) {
+      const re = wholeWordRe(ql);
       function fieldScore(text, weight) {
         if (!text) return 0;
         const t = String(text).toLowerCase();
         if (t === ql) return weight;
-        try {
-          if (new RegExp("(^|[^a-z0-9])" + escSearchRe(ql) + "($|[^a-z0-9])").test(t)) return weight * 0.7;
-        } catch (e) { /* ql can't form a bad pattern here - escSearchRe neutralizes every regex metachar - but never let a scoring helper throw and blank the results pane */ }
+        if (re && re.test(t)) return weight * 0.7;
         return t.includes(ql) ? weight * 0.4 : 0;
       }
       return fieldScore(h.title, 100) + fieldScore(h.sub, 30) + fieldScore(h.body, 10);
@@ -39351,6 +39363,12 @@ window.G = window.G || {};
       { hash: "#/author", keywords: "write your own scenario custom content" },
       { hash: "#/selftest", keywords: "self test troubleshoot app health check" },
       { hash: "#/storage", keywords: "storage usage clear data database" },
+      // The three screens that register at runtime (00-roadmap-bootstrap.js) and
+      // open from a panel on another screen, not the sidebar. Search is the one
+      // place a Soldier who types what they do can reach them. Plain words only.
+      { hash: "#/pt-plan", keywords: "PT plan workout plan weekly PT schedule physical training week" },
+      { hash: "#/team", keywords: "team exercises squad training relay huddle after action review" },
+      { hash: "#/board-sim", keywords: "mock board rehearse a board practice board appearance timed questions" },
       { hash: "#/settings", label: "Settings — Theme", keywords: "theme dark mode appearance", settingsAnchor: "settings-theme-panel" },
       { hash: "#/settings", label: "Settings — Screen Layouts", keywords: "screen layouts tasking board zero board", settingsAnchor: "settings-layout-panel" },
       { hash: "#/settings", label: "Settings — Notifications", keywords: "notifications reminders alerts", settingsAnchor: "settings-notif-panel" },
@@ -39795,7 +39813,12 @@ window.G = window.G || {};
         // Never changes which records matched, never removes the cap -
         // exactly the same slice(0, MAX_PER) call as before, just fed a
         // ranked array instead of the raw one.
-        group.sort((a, b) => hitScore(ql, b) - hitScore(ql, a));
+        // Each hit is scored ONCE, then sorted on the saved score (ties keep
+        // the store's own order, exactly what the old comparator's stable sort
+        // did): scoring inside the comparator scored a hit once per comparison.
+        const scored = group.map((h, i) => ({ h: h, s: hitScore(ql, h), i: i }));
+        scored.sort((a, b) => (b.s - a.s) || (a.i - b.i));
+        scored.forEach((x, i) => { group[i] = x.h; });
         const section = el("div.search-section");
         if (activeFilter === "all") {
           section.appendChild(el("div.search-section-head", {

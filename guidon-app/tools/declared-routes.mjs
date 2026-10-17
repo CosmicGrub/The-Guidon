@@ -29,6 +29,23 @@ export async function declaredRoutes(file = "web/index.html") {
 }
 
 /**
+ * The routes Global Search can take a Soldier to by name: every distinct hash
+ * in the SCREEN_ENTRIES list (views.search, src/index.html). A route that is
+ * in none of this list, the sidebar or the short exempt list in
+ * tools/test-search-screens.mjs is a screen a Soldier typing its name gets
+ * "No results" for.
+ */
+export async function screenEntryRoutes(file = "web/index.html") {
+  const html = await readFile(file, "utf8");
+  const start = html.indexOf("const SCREEN_ENTRIES = [");
+  if (start < 0) throw new Error("screenEntryRoutes: SCREEN_ENTRIES array not found in " + file);
+  const end = html.indexOf("\n    ];", start);
+  const block = html.slice(start, end < 0 ? start + 8000 : end);
+  const hashes = [...new Set([...block.matchAll(/hash:\s*"(#\/[a-z0-9-]+)"/g)].map((m) => m[1]))];
+  return { count: hashes.length, hashes };
+}
+
+/**
  * The routes the grouped sidebar / "More" drawer actually render, read from
  * the same built HTML: every hash in a NAV_GROUPS entry's `hashes:` array
  * (other keys such as subdivideAfter/demoted repeat hashes and are not
