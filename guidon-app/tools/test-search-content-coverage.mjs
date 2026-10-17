@@ -144,31 +144,42 @@ armySnap.count === 40
   : bad(`no "+N more" overflow message rendered for a query well past the cap: "${armySnap.moreText}"`);
 
 /* ============ 3b. Ranking is cheap, and short acronyms still rank ============ */
-// The sort used to call hitScore() from inside its comparator, and each call
-// builds regular expressions - so a broad query ("le" matches about two
-// thousand records) did on the order of a hundred thousand of them and froze
-// typing on a budget phone. Each hit is now scored ONCE. Asserted on the work
-// done, not on wall-clock time (a timing check flakes on a busy runner):
-// counting the regular expressions the page builds while it runs a broad
-// query. Scoring builds at most three per hit, so anything over that means a
-// hit was scored more than once.
+// The sort used to call hitScore() from inside its comparator, so a hit was
+// scored once per COMPARISON (and each score builds a pattern per field), not
+// once: a broad query ("le" matches about two thousand records) did about a
+// hundred thousand pattern builds and froze typing on a budget phone. Each hit
+// is now scored ONCE and the sort reads the saved score.
+//
+// Asserted on the WORK done, not on wall-clock time (a timing check flakes on a
+// busy runner): the page's pattern tests are counted across one synchronous
+// search. A hit is tested at most three times (title, sub line, body), so the
+// total cannot pass three per hit unless a hit is being scored more than once.
+// The count, the search and the restore all happen inside one evaluate, so the
+// 120 ms typing delay's own later run can never land inside the window.
 await openSearch();
-await page.evaluate(() => {
-  window.__reBuilt = 0;
-  const Real = window.RegExp;
-  window.__realRegExp = Real;
-  window.RegExp = new Proxy(Real, { construct(target, args) { window.__reBuilt++; return new target(...args); } });
+const work = await page.evaluate(() => {
+  const RealRe = window.RegExp, realTest = RegExp.prototype.test;
+  let built = 0, tested = 0;
+  window.RegExp = new Proxy(RealRe, { construct(target, args) { built++; return new target(...args); } });
+  RegExp.prototype.test = function (s) { tested++; return realTest.call(this, s); };
+  try {
+    const inp = document.querySelector('input[type="search"]');
+    inp.focus();
+    inp.value = "le";
+    inp.dispatchEvent(new Event("input", { bubbles: true }));
+    [...document.querySelectorAll(".search-chip")].find((b) => b.textContent.includes("All")).click();
+  } finally { window.RegExp = RealRe; RegExp.prototype.test = realTest; }
+  return { built, tested, hits: Number(((document.querySelector(".search-count") || {}).textContent || "").replace(/[^0-9]/g, "")) };
 });
-const broad = await searchAndFilter("le", "All");
-const broadHits = await page.evaluate(() => Number(((document.querySelector(".search-count") || {}).textContent || "").replace(/[^0-9]/g, "")));
-const built = await page.evaluate(() => window.__reBuilt);
-await page.evaluate(() => { window.RegExp = window.__realRegExp; });
-broadHits > 1000
-  ? ok(`the broad query "le" is broad enough to matter (${broadHits} results, ${broad.count} cards shown)`)
-  : bad(`expected the broad query "le" to match well over a thousand records, got ${broadHits}`);
-built <= 3 * broadHits
-  ? ok(`ranking a broad query scores each hit at most once (${built} regular expressions built for ${broadHits} hits)`)
-  : bad(`ranking a broad query built ${built} regular expressions for ${broadHits} hits - a hit is being scored more than once`);
+work.hits > 1000
+  ? ok(`the broad query "le" is broad enough to matter (${work.hits} results)`)
+  : bad(`expected the broad query "le" to match well over a thousand records, got ${work.hits}`);
+work.tested <= 3 * work.hits + 100
+  ? ok(`ranking a broad query scores each hit once (${work.tested} pattern tests for ${work.hits} hits, at most three per hit)`)
+  : bad(`ranking a broad query ran ${work.tested} pattern tests for ${work.hits} hits - a hit is being scored more than once`);
+work.built <= 50
+  ? ok(`the ranking pattern is built once per search, not once per hit (${work.built} patterns built for ${work.hits} hits)`)
+  : bad(`ranking a broad query built ${work.built} patterns for ${work.hits} hits - a pattern is being rebuilt per hit`);
 // A 2-letter acronym must still be ranked: the exact acronym first, whole words
 // before substrings. (A "skip ranking under 3 characters" shortcut would put
 // "PT" among hundreds of records that merely contain the letters.)
