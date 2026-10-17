@@ -15077,7 +15077,7 @@ window.G = window.G || {};
       if (pillarRows.length) {
         const pil = el("div.panel.readiness-pillars", { style: "margin-top:12px" });
         pil.appendChild(el("div.eyebrow", { text: "Readiness by pillar" }));
-        pil.appendChild(el("p.hint", { text: "The six SGT-board study pillars — cards you've mastered and scenarios you've completed in each. Subjects outside them (weapons, land nav, medical, fitness…) count toward the score above but not here." }));
+        pil.appendChild(el("p.hint", { text: "The six SGT-board study pillars — cards you've mastered and scenarios you've completed in each. Mastered means you last rated the card Know It or Down Cold, even if it is due for review again now. Subjects outside them (weapons, land nav, medical, fitness…) count toward the score above but not here." }));
         pillarRows.forEach((r) => {
           const row = el("div.readiness-pillar-row", { style: "margin-bottom:10px", "data-pillar": r.p });
           row.appendChild(el("div.stat", {}, [
@@ -17154,7 +17154,11 @@ window.G = window.G || {};
     //      "weak", it is unopened) and, among tried ones, real evidence
     //      before thin evidence - a category with one graded card of 24 has
     //      not shown anything yet (evidence = min(3, a quarter of the
-    //      category, at least 1) graded cards);
+    //      category, at least 1) graded cards), and a category of one or two
+    //      cards is thin by size alone, so neither can outrank a real one on
+    //      a single failed card (this holds for any caller that sorts with
+    //      this directly, e.g. Rapid Fire's cross-link, not just the list
+    //      weakestCategoriesByMastery builds);
     //   2. lower percent mastered first;
     //   3. more misses first;
     //   4. more cards tried first;
@@ -17162,6 +17166,7 @@ window.G = window.G || {};
     compareWeakness(a, b) {
       const tier = (c) => {
         if (!(c.seen > 0)) return 2;
+        if ((c.total || 0) < 3) return 1;
         const need = Math.min(3, Math.max(1, Math.ceil((c.total || 0) * 0.25)));
         return c.seen < need ? 1 : 0;
       };
@@ -18062,7 +18067,18 @@ window.G = window.G || {};
           if (relSc.length) priorities.push(`Practice — try "${relSc[0].title}" (${weakest.name} at ${weakest.pct}%, your lowest competency)`);
         }
       }
-      if (p.competencyReadiness !== undefined && p.competencyReadiness < 70) priorities.push(`Board Prep — run Board Drill (${p.competencyReadiness || 0}% ready)`);
+      // Same wording as the live "Do these next" row: the card counts, never the
+      // scenario score printed as "N% ready" (a counselor reads this page).
+      if (p.competencyReadiness !== undefined && p.competencyReadiness < 70) {
+        let prepDetail = "";
+        if (bqCatStats && bqCatStats.catStats) {
+          const cs = Object.values(bqCatStats.catStats);
+          if (cs.reduce((n, c) => n + c.reviewed, 0) > 0) {
+            prepDetail = ` (${cs.reduce((n, c) => n + (c.current || 0), 0)} of ${cs.reduce((n, c) => n + c.total, 0)} cards current)`;
+          }
+        }
+        priorities.push(`Board Prep — run Board Drill${prepDetail}`);
+      }
       if (priorities.length) priorityHtml = `<h3>Do these next</h3><ul>${priorities.map((x) => `<li>${util.esc(x)}</li>`).join("")}</ul>`;
     } catch (e) {}
 
@@ -18083,9 +18099,10 @@ window.G = window.G || {};
           const srsAll = await G.board.loadAllSrs(bqs.map((q) => q.id));
           for (const q of bqs) {
             const srs = srsAll[q.id];
-            if (!catStats[q.category]) catStats[q.category] = { total: 0, mastered: 0 };
+            if (!catStats[q.category]) catStats[q.category] = { total: 0, mastered: 0, current: 0 };
             catStats[q.category].total++;
             if (G.board.isMasteredSrs(srs)) catStats[q.category].mastered++;
+            if (G.board.isCurrentSrs(srs)) catStats[q.category].current++;
           }
         }
       }
@@ -18094,11 +18111,17 @@ window.G = window.G || {};
         if (anyMastery) {
           const catRows = Object.keys(catStats).sort().map((c) => {
             const s = catStats[c]; const cp = Math.round((s.mastered / (s.total || 1)) * 100);
-            return `<tr><td>${util.esc(c)}</td><td>${s.mastered}/${s.total}</td><td>${cp}%</td></tr>`;
+            return `<tr><td>${util.esc(c)}</td><td>${s.mastered}/${s.total}</td><td>${s.current || 0}/${s.total}</td><td>${cp}%</td></tr>`;
           }).join("");
+          const sumCur = Object.values(catStats).reduce((n, c) => n + (c.current || 0), 0);
+          const sumTot = Object.values(catStats).reduce((n, c) => n + c.total, 0);
+          // Mastered = last rated Know It or Down Cold, however long ago. Current
+          // = mastered AND not yet due for review. The page says both, in words,
+          // so a deck that has gone stale is not printed as if it were ready.
           masteryHtml = `<h3>Board Q Mastery by Category</h3>
+            <p><strong>Board cards:</strong> ${sumCur} of ${sumTot} current (mastered and not due for review).</p>
             <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
-              <thead><tr style="background:#eee"><th style="text-align:left;padding:4px 8px">Category</th><th>Mastered</th><th>%</th></tr></thead>
+              <thead><tr style="background:#eee"><th style="text-align:left;padding:4px 8px">Category</th><th>Mastered</th><th>Current</th><th>% mastered</th></tr></thead>
               <tbody>${catRows}</tbody>
             </table>`;
         }
@@ -18108,8 +18131,8 @@ window.G = window.G || {};
     const html = `
       <h2 style="margin:0 0 4px">GUIDON Readiness Report</h2>
       <p style="color:#555;margin:0 0 16px;font-size:12px">Generated ${new Date().toLocaleString()} · Study aid only — not an official Army record.</p>
-      <h3>Overall: ${p.readinessLabel} (${p.competencyReadiness}%)</h3>
-      <p>Scenarios: ${p.completedCount} / ${p.totalScenarios} completed · ${p.totalAttempts} total attempts</p>
+      <h3>Promotable Readiness (LRM): ${util.esc(p.readinessLabel)} (${p.competencyReadiness}%)</h3>
+      <p>Scored from the scenarios played, not from flashcards: ${p.completedCount} / ${p.totalScenarios} completed · ${p.totalAttempts} total attempts</p>
       ${streakHtml}${weakestHtml}
       <h3>Leadership Requirements Model</h3>
       <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
@@ -18297,7 +18320,7 @@ window.G = window.G || {};
             const srsAll = await G.board.loadAllSrs(bqs.map((q) => q.id));
             for (const q of bqs) {
               const srs = srsAll[q.id];
-              if (!catStats[q.category]) catStats[q.category] = { total: 0, reviewed: 0, mastered: 0, due: 0 };
+              if (!catStats[q.category]) catStats[q.category] = { total: 0, reviewed: 0, mastered: 0, due: 0, current: 0 };
               catStats[q.category].total++;
               // lastGrade, not reps - see G.board.isDueSrs's own comment
               // (roadmap-week audit, 2nd pass): reps resets to 0 on a
@@ -18309,6 +18332,9 @@ window.G = window.G || {};
                 catStats[q.category].reviewed++;
                 if (G.board.isMasteredSrs(srs)) catStats[q.category].mastered++;
                 if (G.board.isDueSrs(srs)) catStats[q.category].due++;
+                // "Current" = mastered and not due (G.board.isCurrentSrs) - the
+                // one figure Board Drill's Readiness tab and Home also headline.
+                if (G.board.isCurrentSrs(srs)) catStats[q.category].current++;
               }
               const tier = G.board.normDifficulty(q.difficulty);
               tierStats[tier].total++;
@@ -18363,7 +18389,11 @@ window.G = window.G || {};
       {
         const glanceTiles = [];
         const readyTone = p.readinessLabel === "Board Ready" ? "green" : p.readinessLabel === "Strong" ? "cyan" : p.readinessLabel === "On Track" ? "amber" : "red";
-        glanceTiles.push({ tone: readyTone, value: p.competencyReadiness + "%", label: "Overall readiness", sub: p.readinessLabel });
+        // "Scenario readiness", not "Overall readiness": this tile is built from
+        // the scenarios played (the LRM headline above), never from flashcards,
+        // and "Overall" read as if it covered both. The flashcard figures are
+        // the "Cards due" tile and the Board Drill panels below.
+        glanceTiles.push({ tone: readyTone, value: p.competencyReadiness + "%", label: "Scenario readiness", sub: p.readinessLabel });
         glanceTiles.push({ tone: weakestPct < 40 ? "amber" : "cyan", value: weakestPct + "%", label: weakestDim, sub: "Weakest dimension" });
         // Matches renderTrainingPanel's own early return: no training
         // scenarios means no Mandatory Training panel to compare against,
@@ -18597,10 +18627,26 @@ window.G = window.G || {};
         // distinct from the competency-average this page already shows
         // elsewhere).
         if (p.competencyReadiness !== undefined && p.competencyReadiness < 70) {
+          // The action used to read "Run Board Drill - N% ready" with N being the
+          // SCENARIO score (0% for a Soldier who only ever drilled flashcards,
+          // right beside a thousand graded cards). It now says what the cards say
+          // - the same current/due counts Board Drill's Readiness tab prints -
+          // and keeps the old line only when no card has been graded yet.
+          let boardPrepDetail = "Practice flashcards to build recall before your board";
+          if (bqCatStats) {
+            const cs = Object.values(bqCatStats.catStats);
+            const gradedN = cs.reduce((s, c) => s + c.reviewed, 0);
+            if (gradedN > 0) {
+              const curN = cs.reduce((s, c) => s + (c.current || 0), 0);
+              const dueN = cs.reduce((s, c) => s + c.due, 0);
+              const totN = cs.reduce((s, c) => s + c.total, 0);
+              boardPrepDetail = curN + " of " + totN + " cards current" + (dueN ? ", " + dueN + " due for review" : "");
+            }
+          }
           priorities.push({
             icon: "★", label: "Board Prep",
-            action: "Run Board Drill — " + (p.competencyReadiness||0) + "% ready",
-            detail: "Practice flashcards to build recall before your board",
+            action: "Run Board Drill",
+            detail: boardPrepDetail,
             onclick: () => { location.hash = "#/board"; setTimeout(() => G.board && G.board._openReadiness && G.board._openReadiness(), 100); }
           });
         }
@@ -18666,9 +18712,15 @@ window.G = window.G || {};
             const totalGraded = allTiers.reduce((s, t) => s + t.downCold + t.knowIt + t.needsWork, 0);
             const totalCards = allTiers.reduce((s, t) => s + t.total, 0);
             const masteredCount = allTiers.reduce((s, t) => s + t.downCold + t.knowIt, 0);
+            // Headline = CURRENT cards (mastered and not due), the same figure
+            // Board Drill's Readiness tab and Home print. It used to be
+            // "mastered / graded" as a percent, which has no expiry: a deck last
+            // graded Know It two months ago read "100% mastered" with every
+            // card overdue.
+            const currentCount = Object.values(catStats).reduce((s, c) => s + (c.current || 0), 0);
             const tierPanel = el("div.panel", { style: "margin-top:10px" });
             tierPanel.appendChild(el("div.eyebrow", { text: "Board Drill Mastery" }));
-            tierPanel.appendChild(el("h3", { text: totalGraded ? Math.round((masteredCount / totalGraded) * 100) + "% mastered" : "Not started" }));
+            tierPanel.appendChild(el("h3", { text: totalGraded ? currentCount + " of " + totalCards + " cards current" : "Not started" }));
             // masteredCount here sums the Board Drill flip card's own 4-level
             // self-grade (lastGrade 3/2 = downCold/knowIt, see the comment
             // above tierStats) directly from tierStats, rather than going
@@ -18683,7 +18735,7 @@ window.G = window.G || {};
             // that - they're computed via two separate loops over the same
             // srsAll data and are not cross-checked by
             // tools/test-consistency-extended.mjs.
-            tierPanel.appendChild(el("p.hint", { text: masteredCount + " mastered, " + totalGraded + " / " + totalCards + " cards graded overall." }));
+            tierPanel.appendChild(el("p.hint", { text: "Current means rated Know It or Down Cold and not due for review yet. " + masteredCount + " mastered, " + totalGraded + " / " + totalCards + " cards graded overall." }));
             const goBtn2 = el("button.btn.ghost.sm", { text: "Open Board → Readiness", type: "button", style: "margin-top:10px" });
             goBtn2.addEventListener("click", () => { location.hash = "#/board"; setTimeout(() => G.board && G.board._openReadiness && G.board._openReadiness(), 100); });
             tierPanel.appendChild(goBtn2);
@@ -35405,11 +35457,53 @@ window.G = window.G || {};
       el("p", { text: "Work through real leadership situations, drill for your board, and study doctrine — all offline. Your choices build a readiness picture mapped to the Army Leadership Requirements Model." }),
     ]);
 
-    hero.appendChild(el("div.stat", { style: "margin-top:12px" }, [
-      el("span.k", { text: "Promotable Readiness" }),
-      el("span.v", { text: p.readinessLabel }),
-    ]));
-    hero.appendChild(el("div.bar", {}, [el("span", { style: "transform:scaleX(" + (p.competencyReadiness / 100) + ")" })]));
+    // Two different things used to share one unlabelled "Promotable Readiness"
+    // line here: the SCENARIO score (what Progress calls "Promotable Readiness
+    // (LRM)") and, for a Soldier who only ever drilled cards, a bare "Not
+    // Started" printed right beside a thousand graded flashcards. Now the
+    // scenario score always carries its LRM name and says how many scenarios
+    // it is built from, and a Soldier with graded cards but no scenario played
+    // yet sees their CARD number (current = mastered and not due, the one
+    // predicate Board Drill's Readiness tab and Progress use) instead of
+    // "Not Started". Card and scenario figures are never blended.
+    const homeNow = Date.now();
+    let homeCardsTotal = 0, homeCardsGraded = 0, homeCardsCurrent = 0;
+    try {
+      const bankQs = (G.store && G.store.boardQuestions && G.store.boardQuestions()) || [];
+      homeCardsTotal = bankQs.length;
+      if (srsAllFromBatch) {
+        for (const q of bankQs) {
+          const s = srsAllFromBatch[q.id];
+          if (s && s.lastGrade != null) homeCardsGraded++;
+          if (G.board.isCurrentSrs(s, homeNow)) homeCardsCurrent++;
+        }
+      }
+    } catch (e) { /* card line is optional */ }
+    const homeCurrentPct = homeCardsTotal ? Math.round(homeCardsCurrent / homeCardsTotal * 100) : 0;
+    const cardOnly = !p.totalAttempts && homeCardsGraded > 0;
+    if (cardOnly) {
+      hero.appendChild(el("div.stat.home-cards-current", { style: "margin-top:12px" }, [
+        el("span.k", { text: "Board cards current" }),
+        el("span.v", { text: homeCardsCurrent + " of " + homeCardsTotal }),
+      ]));
+      hero.appendChild(el("div.bar", {}, [el("span", { style: "transform:scaleX(" + (homeCurrentPct / 100) + ")" })]));
+      hero.appendChild(el("p.hint", { text: "Cards you last rated Know It or Down Cold that are not due for review yet. Scenario readiness starts once you play a scenario." }));
+    } else {
+      hero.appendChild(el("div.stat", { style: "margin-top:12px" }, [
+        el("span.k", { text: "Promotable Readiness (LRM)" }),
+        el("span.v", { text: p.readinessLabel }),
+      ]));
+      hero.appendChild(el("div.bar", {}, [el("span", { style: "transform:scaleX(" + (p.competencyReadiness / 100) + ")" })]));
+      if (p.totalAttempts) {
+        hero.appendChild(el("p.hint", { text: "Scored from the " + p.completedCount + " of " + p.totalScenarios + " scenarios you have played. Flashcards are counted separately." }));
+      }
+      if (homeCardsGraded > 0) {
+        hero.appendChild(el("div.stat.home-cards-current", { style: "margin-top:8px" }, [
+          el("span.k", { text: "Board cards current" }),
+          el("span.v", { text: homeCardsCurrent + " of " + homeCardsTotal }),
+        ]));
+      }
+    }
     hero.appendChild(el("div.stat", { style: "margin-top:8px" }, [
       el("span.k", { text: "Scenarios completed" }),
       el("span.v", { text: p.completedCount + " / " + p.totalScenarios }),

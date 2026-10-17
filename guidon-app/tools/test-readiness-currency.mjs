@@ -84,6 +84,18 @@ const mastered = (n) => Array.from({ length: n }, () => ({ lastGrade: 3, misses:
   const tieB = await rank({ reverse: true, cats: { "Zulu": { total: 10, rows: failed(5) }, "Alpha": { total: 10, rows: failed(5) }, "Mike": { total: 10, rows: failed(5) } } });
   is(names(tieA).join() === "Alpha,Mike,Zulu" && names(tieB).join() === names(tieA).join(), "a full tie is broken by name, identically for either input order", () => JSON.stringify([tieA, tieB]));
 
+  // The comparator on its own (Rapid Fire's cross-link sorts the categories a round touched with it, without going through the
+  // list builder above): a tried one-card category at 0/1 must not outrank a real category at 50%, and an unopened one is last.
+  const cmp = await page.evaluate(() => {
+    const rows = [
+      { cat: "Unopened", total: 10, seen: 0, mastered: 0, pct: 0, misses: 0 },
+      { cat: "OneCard", total: 1, seen: 1, mastered: 0, pct: 0, misses: 1 },
+      { cat: "Real", total: 24, seen: 24, mastered: 12, pct: 50, misses: 12 },
+    ];
+    return { fwd: rows.slice().sort(G.board.compareWeakness).map((r) => r.cat), rev: rows.slice().reverse().sort(G.board.compareWeakness).map((r) => r.cat) };
+  });
+  is(cmp.fwd.join() === "Real,OneCard,Unopened" && cmp.rev.join() === cmp.fwd.join(), "the shared comparator ranks a real category before a tried one-card category before an unopened one, whichever order they arrive in", () => JSON.stringify(cmp));
+
   // Honest path unchanged: three ordinary categories at 40 / 60 / 80 percent.
   const ord = await rank({ n: 3, cats: {
     "C80": { total: 10, rows: [...mastered(8), ...failed(2)] },
@@ -246,6 +258,80 @@ const reload = async () => { await page.evaluate(() => { location.hash = "#/home
   is(!!hp && new RegExp("10 of " + K10 + " cards current").test(hp.text), "and the full Readiness tab reads the same 10 of " + K10, () => JSON.stringify(hp && hp.text.slice(0, 200)));
   await clearSrs();
   await page.setViewportSize({ width: 1280, height: 900 });
+}
+
+/* ---------------------------------------------------------------------
+   C. Home and Progress read the same card figure and keep the scenario score
+   labelled as the scenario score
+   --------------------------------------------------------------------- */
+const openScreen = (hash, ready) => waitForRoute(page, hash, { fresh: true, ready });
+const routeText = () => page.evaluate(() => document.getElementById("route").innerText.replace(/\s+/g, " "));
+const resetScenarios = () => page.evaluate(async () => { await G.store.resetProgress(); });
+const recordOneScenario = () => page.evaluate(async () => {
+  await G.store.recordAttempt({ scenarioId: "qa-readiness-currency", title: "QA readiness currency", mode: "text", score: { Leads: 5, Develops: 0, Achieves: 0, Character: 0, Presence: 0, Intellect: 0 }, total: 5 });
+  return (await G.store.getProgress()).totalScenarios;
+});
+
+{
+  await clearSrs();
+  await resetScenarios();
+  // Fixture A again: every card last graded Down Cold, every one overdue by 60 days, no scenario ever played.
+  await seedAll((i, now) => ({ reps: 1, ease: 2.5, interval: 3, due: now - 60 * 86400000, misses: 0, lastGrade: 3 }));
+  await openScreen("#/home", "#route .stat");
+  await statIs("Board cards current", "0 of " + N, "Home, card-only Soldier with every card overdue: reads 0 of " + N + " cards current");
+  let t = await routeText();
+  is(!/Not Started/.test(t) && !/Promotable Readiness/.test(t), "and never says Not Started beside a thousand graded cards (the scenario score is not shown when no scenario was played)", () => t.slice(0, 300));
+  is(!/% ready/.test(t), "and prints no 'N% ready' on Home", () => "found");
+
+  await openScreen("#/progress", "#route .panel");
+  t = await routeText();
+  const mastery = await panelByEyebrow("Board Drill Mastery");
+  is(!!mastery && new RegExp("0 of " + N + " cards current", "i").test(mastery) && !/100% mastered/i.test(mastery), "Progress's Board Drill Mastery panel reads the same 0 of " + N + " (not '100% mastered')", () => JSON.stringify(mastery));
+  const prio = await page.evaluate(() => { const r = [...document.querySelectorAll(".prog-pri-row")].find((x) => /Board Prep/.test(x.textContent)); return r ? r.innerText.replace(/\s+/g, " ").trim() : null; });
+  is(!!prio && /Run Board Drill/.test(prio) && !/% ready/.test(prio) && new RegExp("0 of " + N + " cards current, " + N + " due for review").test(prio), "the Board Prep priority names the cards (0 of " + N + " current, " + N + " due), never 'N% ready'", () => JSON.stringify(prio));
+  const bq = await panelByEyebrow("Board Q Readiness");
+  is(!!bq && new RegExp(N + " mastered", "i").test(bq) && new RegExp(N + " due for review", "i").test(bq), "Board Q Readiness still reports mastered and due counts for the same cards (cross-screen contract kept)", () => JSON.stringify(bq));
+  const tile = await page.evaluate(() => { const t = [...document.querySelectorAll('.readiness-dash[aria-label="Progress at a glance"] .readiness-tile')].map((x) => (x.querySelector(".readiness-label") || {}).textContent); return t; });
+  is(tile.includes("Scenario readiness") && !tile.includes("Overall readiness"), "the scenario tile is called Scenario readiness, not Overall readiness", () => JSON.stringify(tile));
+
+  // The printed report (what gets handed to a counselor): no scenario score printed as cards, and the card line is current/due.
+  await page.evaluate(() => { window.__printed = null; G.util.printHTML = (title, html) => { window.__printed = html; }; });
+  await clickWhenStable(page, page.locator("button", { hasText: /Print Report/ }));
+  const printedOk = await until(page, () => !!window.__printed, null);
+  const printed = printedOk ? await page.evaluate(() => window.__printed.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ")) : "";
+  is(printedOk && /Promotable Readiness \(LRM\)/.test(printed) && !/Overall:/.test(printed) && !/% ready/.test(printed), "the printed report names the scenario score as Promotable Readiness (LRM) and never prints 'N% ready'", () => printed.slice(0, 300));
+  is(printedOk && new RegExp("Board cards: 0 of " + N + " current").test(printed) && /Board Prep . run Board Drill \(0 of /.test(printed), "and says how many board cards are current (0 of " + N + ") with the priority line in card terms", () => printed.slice(0, 600));
+
+  // Fixture B: due tomorrow -> every card current.
+  await clearSrs();
+  await seedAll((i, now) => ({ reps: 1, ease: 2.5, interval: 3, due: now + 86400000, misses: 0, lastGrade: 3 }));
+  await openScreen("#/home", "#route .stat");
+  await statIs("Board cards current", N + " of " + N, "Home, same grades due tomorrow: " + N + " of " + N + " current");
+  await openScreen("#/progress", "#route .panel");
+  const mastery2 = await panelByEyebrow("Board Drill Mastery");
+  is(!!mastery2 && new RegExp(N + " of " + N + " cards current", "i").test(mastery2), "Progress agrees: " + N + " of " + N + " current", () => JSON.stringify(mastery2));
+  const prio2 = await page.evaluate(() => { const r = [...document.querySelectorAll(".prog-pri-row")].find((x) => /Board Prep/.test(x.textContent)); return r ? r.innerText.replace(/\s+/g, " ").trim() : null; });
+  is(!!prio2 && new RegExp(N + " of " + N + " cards current").test(prio2) && !/due for review/.test(prio2), "and the priority row says nothing is due when nothing is", () => JSON.stringify(prio2));
+
+  // Honest path unchanged: a brand-new profile (no cards, no scenarios) still shows the scenario line as Not Started.
+  await clearSrs();
+  await openScreen("#/home", "#route .stat");
+  await statIs("Promotable Readiness (LRM)", "Not Started", "a brand-new profile still reads Promotable Readiness (LRM): Not Started on Home");
+  is((await statOf("Board cards current")) === null, "and shows no card line when no card was ever graded", () => "present");
+
+  // Scenario played, no cards: the scenario score is named and says what it is built from.
+  const totalScenarios = await recordOneScenario();
+  await openScreen("#/home", "#route .stat");
+  t = await routeText();
+  is((await statOf("Promotable Readiness (LRM)")) !== "Not Started" && new RegExp("Scored from the 1 of " + totalScenarios + " scenarios you have played").test(t), "after one scenario Home names the scenario score (LRM) and says it is scored from 1 of " + totalScenarios + " scenarios", () => t.slice(0, 300));
+  is((await statOf("Board cards current")) === null, "and with no card graded there is still no card line", () => "present");
+
+  // Both: the scenario score AND the card figure, never blended.
+  await seedAll((i, now) => ({ reps: 1, ease: 2.5, interval: 3, due: now + 86400000, misses: 0, lastGrade: 3 }));
+  await openScreen("#/home", "#route .stat");
+  is((await statOf("Promotable Readiness (LRM)")) !== null && (await statOf("Board cards current")) === N + " of " + N, "a Soldier with both sees the scenario score and the card figure as two separate lines", () => "missing");
+  await clearSrs();
+  await resetScenarios();
 }
 
 expectNoConsoleNoise(noise);
