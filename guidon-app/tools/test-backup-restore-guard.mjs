@@ -58,7 +58,20 @@ async function confirmText() {
   return page.evaluate(() => document.querySelector(".gm-box .gm-dialog-body").textContent);
 }
 const dialogGone = () => until(page, () => !document.querySelector(".gm-box"));
-const focusIsOn = (label) => until(page, (l) => { const a = document.activeElement; return !!(a && a.closest && a.closest(".gm-box") && a.textContent.trim() === l); }, label);
+// True once focus has sat on the named dialog button for 15 frames running. A bare "is it on Cancel right
+// now" can catch the moment the dialog first lands focus on its first button, before its own 40 ms timer
+// moves focus to the default one - 15 frames (~250 ms) outlasts that timer.
+const focusIsOn = (label) => page.evaluate((l) => new Promise((resolve) => {
+  let steady = 0, total = 0;
+  const step = () => {
+    const a = document.activeElement;
+    steady = (a && a.closest && a.closest(".gm-box") && a.textContent.trim() === l) ? steady + 1 : 0;
+    if (steady >= 15) return resolve(true);
+    if (++total > 900) return resolve(false);
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}), label);
 // The page reloads itself ~1.2 s after a restore; resolve once it has and the app is up again.
 async function andWaitForReload(action) {
   const reloaded = page.waitForEvent("load", { timeout: 20000 });
