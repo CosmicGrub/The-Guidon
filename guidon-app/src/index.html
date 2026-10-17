@@ -1631,25 +1631,38 @@ html.qz-theater[data-motion="minimal"] .qz-back { max-height: none; }
 
 /* Guided blocks */
 .blk { border-left: 2px solid var(--line-2); padding: 8px 0 8px 12px; margin: 8px 0; }
-.blk-label { font-weight: 700; color: var(--fg, #e8f0f6); }
+/* Colour tokens in this block are the app's real theme tokens (--text,
+   --text-dim, --ink-cyan). They used to read var(--fg, #e8f0f6) and
+   var(--muted, #8ba0ad) - names no theme has ever defined - so every light
+   theme (the default, Field Manual, is one) fell back to fixed PALE colours:
+   the Article 31(b) rights text on DA 2823/3881 and the DA 4856 counseling
+   opener bullets measured 1.04-1.08:1 on cream, effectively invisible.
+   tools/lint-patterns.mjs (check "custom properties") now refuses any
+   var(--x) that names no defined token, and tools/test-contrast-forms.mjs
+   opens every form in three themes and fails on a contrast miss. The small
+   grey labels use --text-dim (>=4.5:1 on --panel in all 30 themes) rather
+   than --text-mute, the same per-selector choice .qz-back .src made (see
+   its note above); --text-mute itself is an app-wide token and is not
+   retuned here. */
+.blk-label { font-weight: 700; color: var(--text); }
 .example-chip { display:inline-block; margin-top:6px; background:transparent; border:1px solid var(--line-2);
-  color: var(--cyan); border-radius: 999px; padding: 3px 12px; font-size: .75rem; cursor:pointer; font-family: var(--font-mono, monospace); }
+  color: var(--ink-cyan); border-radius: 999px; padding: 3px 12px; font-size: .75rem; cursor:pointer; font-family: var(--font-mono, monospace); }
 .example-chip:hover { border-color: var(--cyan); }
 .ex { margin-top: 8px; padding: 8px 10px; background: var(--panel-2); border:1px solid var(--line);
-  border-radius: 6px; color: var(--fg, #cfe0ea); font-size: .81rem; }
+  border-radius: 6px; color: var(--text); font-size: .81rem; }
 .ex-list { margin: 0; padding-left: 4px; list-style: none; }
 .ex-list li { margin: 3px 0; }
 
 /* Fill fields */
 .field { margin: 10px 0; }
 .field-label { display:block; font-weight:700; margin-bottom:4px; font-size: .81rem; }
-.in { width:100%; background: var(--panel-2); color: var(--fg, #e8f0f6); border:1px solid var(--line-2);
+.in { width:100%; background: var(--panel-2); color: var(--text); border:1px solid var(--line-2);
   border-radius:6px; padding:8px 10px; font-family: inherit; font-size: .875rem; box-sizing: border-box; }
 textarea.in { resize: vertical; min-height: 64px; font-family: var(--font-mono, monospace); font-size: .81rem; }
 select.in { appearance:none; }
-.cnt { font-size: .69rem; color: var(--muted, #8ba0ad); margin-top:3px; font-family: var(--font-mono, monospace); }
+.cnt { font-size: .69rem; color: var(--text-dim); margin-top:3px; font-family: var(--font-mono, monospace); }
 .cnt.over { color: var(--ink-red); }
-.static-note { background: var(--panel-2); border:1px dashed var(--line-2); border-radius:6px; padding:8px 10px; font-size: 0.929rem; color: var(--fg,#cfe0ea); }
+.static-note { background: var(--panel-2); border:1px dashed var(--line-2); border-radius:6px; padding:8px 10px; font-size: 0.929rem; color: var(--text); }
 .fault-expl { margin-top:4px; color: var(--cyan); }
 .fill-bar { margin-bottom: 10px; flex-wrap: wrap; }
 .dyn-note { margin: 6px 0 4px; }
@@ -1658,8 +1671,8 @@ select.in { appearance:none; }
 .lib-bullet { border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin:8px 0; background: var(--panel); }
 .lib-top { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:4px; }
 .lib-label { font-weight:700; color: var(--amber); font-size: .81rem; }
-.lib-text { font-size: .81rem; color: var(--fg,#dbe7ef); line-height:1.45; }
-.copybtn { background:transparent; border:1px solid var(--line-2); color:var(--cyan); border-radius:6px;
+.lib-text { font-size: .81rem; color: var(--text); line-height:1.45; }
+.copybtn { background:transparent; border:1px solid var(--line-2); color:var(--ink-cyan); border-radius:6px;
   padding:2px 10px; font-size: 0.857rem; cursor:pointer; flex:0 0 auto; }
 .copybtn:hover { border-color: var(--cyan); }
 
@@ -1697,7 +1710,7 @@ select.in { appearance:none; }
 }
 .replica-block.w1{ grid-column:span 1; } .replica-block.w2{ grid-column:span 2; }
 .replica-block.w3{ grid-column:span 3; } .replica-block.w4{ grid-column:span 4; }
-.replica-block .rb-label{ font-family:var(--font-mono); font-size:10.5px; color:var(--text-mute); text-transform:uppercase; letter-spacing:.03em; margin-bottom:5px; line-height:1.3; }
+.replica-block .rb-label{ font-family:var(--font-mono); font-size:10.5px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.03em; margin-bottom:5px; line-height:1.3; }
 .replica-block .rb-label .rb-n{ color:var(--amber); font-weight:700; }
 .replica-block .rb-input{ width:100%; }
 .replica-block .cnt{ margin-top:4px; }
@@ -1712,7 +1725,7 @@ select.in { appearance:none; }
 .usecases{ border:1px solid var(--line-2); border-radius:var(--radius); background:var(--panel); margin:6px 0 14px; overflow:hidden; }
 .uc-head{ display:flex; align-items:center; justify-content:space-between; padding:9px 12px; background:linear-gradient(180deg,var(--panel-2),transparent); border-bottom:1px solid var(--line); }
 .uc-title{ font-family:var(--font-head); text-transform:uppercase; letter-spacing:.05em; color:var(--cyan); font-size: 0.929rem; }
-.uc-count{ font-family:var(--font-mono); font-size:10.5px; color:var(--text-mute); }
+.uc-count{ font-family:var(--font-mono); font-size:10.5px; color:var(--text-dim); }
 .uc-item{ padding:9px 12px; border-bottom:1px solid var(--line); }
 .uc-item:last-child{ border-bottom:none; }
 .uc-item-top{ display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap; }
@@ -1723,8 +1736,8 @@ select.in { appearance:none; }
 .uc-title-sm{ font-family:var(--font-head); font-size: 0.929rem; color:var(--text); letter-spacing:.02em; }
 .uc-sit{ color:var(--text-dim); font-size:12.5px; line-height:1.5; }
 .uc-act{ color:var(--text-dim); font-size: 0.857rem; line-height:1.5; margin-top:3px; }
-.uc-act-k{ color:var(--text-mute); font-family:var(--font-mono); font-size:10.5px; text-transform:uppercase; letter-spacing:.03em; }
-.uc-ref{ color:var(--text-mute); font-family:var(--font-mono); font-size: 0.714rem; margin-top:4px; }
+.uc-act-k{ color:var(--text-dim); font-family:var(--font-mono); font-size:10.5px; text-transform:uppercase; letter-spacing:.03em; }
+.uc-ref{ color:var(--text-dim); font-family:var(--font-mono); font-size: 0.714rem; margin-top:4px; }
 
 /* ===================== Engine — dialogue & storyline ===================== */
 .dialogue{ margin:10px 0 4px; display:flex; flex-direction:column; gap:8px; }
@@ -5763,7 +5776,7 @@ html.focus-mode .status-chip { opacity:.5; }
 .idp-intro .sub{color:var(--text-mute);font-size:.86rem;margin:0 0 8px}
 .idp-var-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:8px 0 4px}
 .idp-var{padding:12px 14px}
-.idp-var.mandatory{border-left:3px solid var(--accent,#b8860b)}
+.idp-var.mandatory{border-left:3px solid var(--amber)}
 .idp-var-name{display:flex;justify-content:space-between;align-items:center;gap:8px;font-family:"Oswald",system-ui;font-size:.95rem;margin-bottom:5px}
 .idp-var-desc{font-size:.85rem;line-height:1.45;margin:0 0 6px}
 .chip.req{background:var(--red);color:var(--btn-ink, #fff)}.chip.opt{background:var(--green);color:var(--btn-ink, #fff)}
@@ -5773,20 +5786,20 @@ html.focus-mode .status-chip { opacity:.5; }
 .idp-planner-help{font-size:.85rem;line-height:1.4;color:var(--text-mute)}
 .idp-smart{display:flex;flex-direction:column;gap:6px;margin:6px 0}
 .idp-smart-item{display:flex;gap:10px;align-items:flex-start}
-.idp-smart-k{flex:0 0 28px;height:28px;line-height:28px;text-align:center;border-radius:6px;background:var(--accent,#b8860b);color:var(--btn-ink, #fff);font-family:"Oswald",system-ui;font-weight:600}
+.idp-smart-k{flex:0 0 28px;height:28px;line-height:28px;text-align:center;border-radius:6px;background:var(--amber);color:var(--btn-ink, #fff);font-family:"Oswald",system-ui;font-weight:600}
 .idp-smart-body{font-size:.87rem;line-height:1.5}
-.idp-smart-ex{margin:8px 0;padding:10px 12px;border-left:3px solid var(--accent,#b8860b);background:rgba(184,134,11,.08);border-radius:0 6px 6px 0;font-size:.85rem}
+.idp-smart-ex{margin:8px 0;padding:10px 12px;border-left:3px solid var(--amber);background:rgba(184,134,11,.08);border-radius:0 6px 6px 0;font-size:.85rem}
 .idp-reflect{margin:6px 0;padding-left:20px}.idp-reflect li{margin:4px 0;font-size:.87rem;line-height:1.45}
 .cite{font-size:.72rem;color:var(--text-mute);font-style:italic;margin-top:3px}
 @media (prefers-reduced-motion: reduce){.idp-var,.idp-planner-row{transition:none}}
 
 /* ── IDP rank-aware suggestions + SMART builder (v0.48) ── */
 .idp-suggest{margin:10px 0}
-.idp-suggest-head{font-family:"Oswald",system-ui;font-size:.82rem;color:var(--accent,#b8860b);letter-spacing:.03em;margin-bottom:6px}
+.idp-suggest-head{font-family:"Oswald",system-ui;font-size:.82rem;color:var(--ink-amber);letter-spacing:.03em;margin-bottom:6px}
 .idp-suggest-strip{display:flex;flex-wrap:wrap;gap:8px}
 .idp-suggest-chip{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:8px 11px;border:1px solid var(--line,#c9bd9e);border-radius:8px;background:var(--panel,#f4eeda);cursor:pointer;text-align:left;min-height:44px;transition:transform .12s ease,border-color .12s ease}
-.idp-suggest-chip:hover{border-color:var(--accent,#b8860b);transform:translateY(-1px)}
-.idp-suggest-chip:focus-visible{outline:2px solid var(--accent,#b8860b);outline-offset:2px}
+.idp-suggest-chip:hover{border-color:var(--amber);transform:translateY(-1px)}
+.idp-suggest-chip:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
 .idp-suggest-title{font-size:.85rem;font-weight:600}
 .idp-suggest-meta{font-size:.7rem;color:var(--text-mute,#5b5344)}
 .idp-smart-build{margin:10px 0;border:1px solid var(--line,#c9bd9e);border-radius:8px;background:var(--panel,#f4eeda);padding:6px 12px}
@@ -5794,23 +5807,23 @@ html.focus-mode .status-chip { opacity:.5; }
 .idp-smart-build summary:hover{color:var(--amber)}
 .idp-smart-build-body{padding:6px 0 10px}
 .idp-smart-prompt{font-weight:400;color:var(--text-mute,#5b5344);font-size:.8rem}
-.idp-smart-preview{margin:8px 0;padding:10px 12px;border-left:3px solid var(--accent,#b8860b);background:rgba(184,134,11,.08);border-radius:0 6px 6px 0;font-size:.86rem;min-height:20px}
+.idp-smart-preview{margin:8px 0;padding:10px 12px;border-left:3px solid var(--amber);background:rgba(184,134,11,.08);border-radius:0 6px 6px 0;font-size:.86rem;min-height:20px}
 .idp-smart-actions{display:flex;gap:8px;flex-wrap:wrap}
 @media (prefers-reduced-motion: reduce){.idp-suggest-chip{transition:none}}
 
 /* ── IDP progress dashboard (v0.48) ── */
 .idp-dash{margin:12px 0;padding:14px;border:1px solid var(--line,#c9bd9e);border-radius:8px;background:var(--panel,#f4eeda)}
 .idp-dash-head{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}
-.idp-dash-pct{font-family:"Oswald",system-ui;font-size:1.8rem;font-weight:700;color:var(--accent,#b8860b)}
+.idp-dash-pct{font-family:"Oswald",system-ui;font-size:1.8rem;font-weight:700;color:var(--ink-amber)}
 .idp-dash-label{font-size:.84rem;color:var(--text-mute,#5b5344)}
 .idp-dash-bar{height:10px;border-radius:99px;background:rgba(0,0,0,.08);overflow:hidden;margin-bottom:12px}
-.idp-dash-fill{height:100%;width:100%;background:var(--accent,#b8860b);border-radius:99px;transform-origin:left;transition:transform .4s ease}
+.idp-dash-fill{height:100%;width:100%;background:var(--amber);border-radius:99px;transform-origin:left;transition:transform .4s ease}
 .idp-dash-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
 .idp-dash-group-title{font-family:"Oswald",system-ui;font-size:.76rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-mute,#5b5344);margin-bottom:5px}
 .idp-dash-row{display:flex;align-items:center;gap:8px;margin:4px 0}
 .idp-dash-row-label{flex:0 0 34%;font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .idp-dash-mini{flex:1;height:7px;border-radius:99px;background:rgba(0,0,0,.08);overflow:hidden}
-.idp-dash-mini-fill{height:100%;width:100%;background:var(--olive,#4b5320);border-radius:99px;transform-origin:left;transition:transform .4s ease}
+.idp-dash-mini-fill{height:100%;width:100%;background:var(--green);border-radius:99px;transform-origin:left;transition:transform .4s ease}
 .idp-dash-row-count{flex:0 0 auto;font-size:.74rem;color:var(--text-mute,#5b5344);font-variant-numeric:tabular-nums}
 @media (prefers-reduced-motion: reduce){.idp-dash-fill,.idp-dash-mini-fill{transition:none}}
 
@@ -5831,10 +5844,10 @@ html.focus-mode .status-chip { opacity:.5; }
 
 /* ── Promotion-points calculator (v0.49 Wave 2) ── */
 .promo-calc .promo-total{font-size:1.6rem;font-weight:700;font-variant-numeric:tabular-nums;margin:6px 0 2px}
-.promo-total-num{color:var(--accent,#4b5320)}
+.promo-total-num{color:var(--ink-green)}
 .promo-total-max{font-size:1rem;font-weight:400;color:var(--text-mute,#5b5344)}
 .promo-bar{height:10px;border-radius:6px;background:var(--line,#c9bd9e);overflow:hidden;margin:2px 0 10px}
-.promo-bar-fill{height:100%;background:var(--accent,#4b5320);width:100%;transform:scaleX(0);transform-origin:left;transition:transform .18s ease}
+.promo-bar-fill{height:100%;background:var(--green);width:100%;transform:scaleX(0);transform-origin:left;transition:transform .18s ease}
 .promo-cat{margin:10px 0}
 .promo-cat-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 .promo-cat-label{font-weight:600;font-size:.9rem}
@@ -5844,9 +5857,9 @@ html.focus-mode .status-chip { opacity:.5; }
 .promo-goal-row{display:flex;align-items:center;gap:10px;margin:8px 0 4px;flex-wrap:wrap}
 .promo-goal-row input{width:120px}
 .promo-gap{font-size:.85rem;font-weight:600;min-height:1.1em;margin:2px 0}
-.promo-gap.under{color:var(--warn,#8c2f2f)}
-.promo-gap.over{color:var(--accent,#3a6b3a)}
-.promo-coach{font-size:.86rem;margin:8px 0;padding:8px 10px;border-left:3px solid var(--accent,#4b5320);background:var(--panel-2,rgba(75,83,32,.06));border-radius:0 6px 6px 0}
+.promo-gap.under{color:var(--ink-red)}
+.promo-gap.over{color:var(--ink-green)}
+.promo-coach{font-size:.86rem;margin:8px 0;padding:8px 10px;border-left:3px solid var(--green);background:var(--panel-2,rgba(75,83,32,.06));border-radius:0 6px 6px 0}
 .promo-coaching{margin:8px 0;font-size:.85rem}
 .promo-coaching summary{cursor:pointer;font-weight:600;transition:color .15s}
 .promo-coaching summary:hover{color:var(--amber)}
@@ -5857,8 +5870,8 @@ html.focus-mode .status-chip { opacity:.5; }
 /* ── Backup & restore (v0.49 Wave 2) ── */
 .backup-actions{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 4px}
 .backup-status{min-height:1.1em;margin-top:6px;font-size:.83rem}
-.backup-status.ok{color:var(--accent,#3a6b3a);font-weight:600}
-.backup-status.err{color:var(--warn,#8c2f2f);font-weight:600}
+.backup-status.ok{color:var(--ink-green);font-weight:600}
+.backup-status.err{color:var(--ink-red);font-weight:600}
 /* Upgrade-roadmap first wave, item 5: deliberately a DIFFERENT class from
    .backup-status above, not a second element sharing it - both Backup
    panels already had test/automation code doing
@@ -5866,21 +5879,21 @@ html.focus-mode .status-chip { opacity:.5; }
    specifically, and a same-named sibling would silently steal that match
    since querySelector returns the first one found. */
 .last-backup-status{min-height:1.1em;margin-top:6px;font-size:.83rem}
-.last-backup-status.stale{color:var(--warn,#8c2f2f);font-weight:600}
+.last-backup-status.stale{color:var(--ink-red);font-weight:600}
 
 /* Settings' Notifications panel: live OS permission + scheduled-count status,
    same visual language as .last-backup-status.stale above (a local flag
    disagreeing with the real, external truth). See views.settings' Notifications
    panel and notify.js's checkPermission()/getPendingCount(). */
 .notify-live-status{min-height:1.1em;margin-top:6px;font-size:.83rem}
-.notify-live-status.warn{color:var(--warn,#8c2f2f);font-weight:600}
+.notify-live-status.warn{color:var(--ink-red);font-weight:600}
 
 /* ── Topbar spotlight search button (v0.49 Wave 2) ── */
 .topbar-search-btn{background:transparent;border:1px solid var(--line,#c9bd9e);border-radius:8px;
   width:38px;height:38px;font-size:1.15rem;cursor:pointer;color:var(--text,#2c2a22);
   display:inline-flex;align-items:center;justify-content:center;margin-right:6px;line-height:1;
   transition:background .12s ease,border-color .12s ease}
-.topbar-search-btn:hover,.topbar-search-btn:focus-visible{background:var(--panel-2,rgba(75,83,32,.08));border-color:var(--accent,#4b5320)}
+.topbar-search-btn:hover,.topbar-search-btn:focus-visible{background:var(--panel-2,rgba(75,83,32,.08));border-color:var(--amber)}
 @media (max-width:640px){ .topbar-search-btn{min-height:44px;min-width:44px;width:44px;height:44px} }
 
 /* ── "My Readiness" home dashboard strip (v0.49 Wave 2, item 7) ── */
@@ -6368,7 +6381,7 @@ a.res-url:hover{text-decoration:underline}
 @keyframes quizWrongShake{10%,90%{transform:translateX(-1px)}20%,80%{transform:translateX(2px)}30%,50%,70%{transform:translateX(-4px)}40%,60%{transform:translateX(4px)}}
 .quiz-options{display:flex;flex-direction:column;gap:8px;margin:12px 0}
 .quiz-opt{display:flex;align-items:flex-start;gap:10px;text-align:left;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text);font-size:.92rem;line-height:1.4;cursor:pointer;transition:border-color var(--quiz-dur,.32s) var(--quiz-ease,ease),background-color var(--quiz-dur,.32s) var(--quiz-ease,ease),opacity var(--quiz-dur,.32s) var(--quiz-ease,ease)}
-.quiz-opt:hover:not(:disabled){border-color:var(--accent,var(--amber))}
+.quiz-opt:hover:not(:disabled){border-color:var(--amber)}
 .quiz-opt:disabled{cursor:default}
 .quiz-opt:disabled:not(.quiz-correct):not(.quiz-wrong){opacity:.55}
 .quiz-opt.quiz-correct{border-color:var(--green);background:color-mix(in srgb, var(--green) 15%, var(--panel));animation:quizCorrectPulse var(--quiz-dur,.32s) ease;}
@@ -39078,10 +39091,11 @@ window.G = window.G || {};
     // red/cyan/violet - see :root's own definitions) every existing type
     // already shares two-plus ways; there's no unique color left to mint
     // for a 6th/7th/8th/9th/10th type and this codebase has never tried
-    // to (career's own "var(--ink-blue)" above is dead: no --ink-blue
-    // custom property is defined anywhere in this file, a pre-existing
-    // gap outside this pass's scope - left as-is, not compounded further).
-    const TYPE_COLOR = { scenario:"var(--ink-amber)", board:"var(--ink-cyan)", doctrine:"var(--ink-violet)", creed:"var(--ink-green)", prt:"var(--ink-red)", lesson:"var(--ink-green)", resource:"var(--ink-red)", career:"var(--ink-blue)", dictionary:"var(--ink-violet)", forms:"var(--ink-amber)", counsel:"var(--ink-green)", develop:"var(--ink-cyan)", health:"var(--ink-red)", screen:"var(--ink-cyan)", all:"var(--text-dim)" };
+    // to (career used to point at "var(--ink-blue)", a token no theme ever
+    // defined, so its chip inherited a stray colour and its bar segment had
+    // no fill at all - it now shares --ink-violet, and tools/lint-patterns.mjs
+    // refuses any var(--x) that names no defined token).
+    const TYPE_COLOR = { scenario:"var(--ink-amber)", board:"var(--ink-cyan)", doctrine:"var(--ink-violet)", creed:"var(--ink-green)", prt:"var(--ink-red)", lesson:"var(--ink-green)", resource:"var(--ink-red)", career:"var(--ink-violet)", dictionary:"var(--ink-violet)", forms:"var(--ink-amber)", counsel:"var(--ink-green)", develop:"var(--ink-cyan)", health:"var(--ink-red)", screen:"var(--ink-cyan)", all:"var(--text-dim)" };
     const TYPE_LABEL = { all:"All", scenario:"Scenarios", board:"Board Q", doctrine:"Doctrine", creed:"Creeds & Identities", prt:"Physical Readiness", lesson:"Lessons", resource:"Resources", career:"MOS/Career", dictionary:"Dictionary", forms:"Forms", counsel:"Counseling", develop:"IDP / Development", health:"Health & Resilience", screen:"Screens & Settings" };
 
     let activeFilter = "all";
