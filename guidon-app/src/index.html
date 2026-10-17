@@ -30624,6 +30624,17 @@ window.G = window.G || {};
      G.backup.importAll(obj)          -> Promise<{restored, skipped, failedStores}>
      G.backup.renderControls(host)   -> injects export/import UI into host
 
+   What a restore does (and the confirm says so, see confirmAndImportFile):
+   every item in the file is written over this device's copy of the SAME item
+   (per-card srs rows, whole-row settings/reminders/goals/history rows) -
+   nothing is deleted, and an item the file does not hold stays as it is.
+   attempts are added by id, so none is lost. There is no per-item "newest
+   wins": a merge across the ~47 row families needs a rule and a dedupe key for
+   each, and a union cannot honour a deletion (no tombstones). Until that
+   exists the confirm names the file's date and warns when this device has
+   been used since. "Last backed up" is this device's own export time and is
+   never taken from a file.
+
    Data model note: user data lives in the `kv` store (profile, idp:goals,
    counsel:poa, srs:* cards, settings-ish flags) plus the `userScenarios` and
    `attempts` object stores. The `meta` store holds cached SEED content only and
