@@ -205,6 +205,9 @@ function mulberry32(seed) {
   is(api.isEarlyReview({ reps: 0, ease: 2.3, interval: 0, due: 0, misses: 0 }, 3, clock) === false, "a card never graded is never early");
   is(api.isEarlyReview({ reps: 2, ease: 2.3, interval: 5, due: clock + DAY, misses: 0 }, 3, clock) === false, "an older row with no last grade has nothing to compare against, so it is allowed");
   is(api.isEarlyReview({ reps: 2, ease: 2.3, interval: "x", due: NaN, misses: 0, lastGrade: 2 }, 2, clock) === false && api.isEarlyReview(null, 2, clock) === false, "a damaged or missing row is allowed (never throws, never blocks)");
+  // a usable interval beside an unusable due date (hand-edited or restored from a damaged backup) must not hold the card back either
+  const goodInterval = (due) => ({ reps: 2, ease: 2.3, interval: 5, due, misses: 0, lastGrade: 2 });
+  is(api.isEarlyReview(goodInterval(NaN), 3, clock) === false && api.isEarlyReview(goodInterval(0), 3, clock) === false && api.isEarlyReview(goodInterval("soon"), 3, clock) === false && api.isEarlyReview(goodInterval(Infinity), 3, clock) === false, "a row with an interval but no usable due date is allowed (NaN, 0, text, infinity)");
 }
 
 {
