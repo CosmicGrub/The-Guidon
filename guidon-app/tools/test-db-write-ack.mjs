@@ -339,6 +339,8 @@ const invalidated = await page.evaluate(async () => {
 check(invalidated.sawIt && invalidated.goneAfter, "a write is visible to the very next read, and so is a delete (no timer, no lag)", "cache after write/delete: " + JSON.stringify(invalidated));
 
 // The real thing: fresh boots. The app's view of kv must equal what is on disk once it is up.
+// (A guard, not the proof: on the old rule this stays green here because the next write after boot - the
+// settings save, a streak tick - clears a stale cache within a second. The 40-round race above is what fails.)
 let bootsMatching = 0; const BOOTS = 3;
 for (let i = 0; i < BOOTS; i++) {
   await page.reload({ waitUntil: "load" });
