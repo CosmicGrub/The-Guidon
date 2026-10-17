@@ -16,7 +16,7 @@
 # rustup reads this file automatically from the project directory and
 # auto-installs the named toolchain if it's missing, so no CI step change
 # is needed - windows-latest already has rustup. Cargo.toml's rust-version
-# (MSRV) is 1.77; 1.96.0 is well above it.
+# (MSRV) is 1.90 (tauri 2.12's own floor); 1.96.0 is above it.
 #
 # When bumping: change the channel here, run `cargo check --locked` locally
 # to confirm Cargo.lock still resolves cleanly under the new version (or

@@ -4,7 +4,13 @@ version = "1.17.1"
 description = "GUIDON - Army Leader Development Trainer"
 authors = ["GUIDON"]
 edition = "2021"
-rust-version = "1.77"
+# 1.90 = what tauri 2.12 / tauri-plugin-window-state 2.5 themselves declare
+# (they were 1.77.2 on tauri 2.11, the 1.77 this field used to carry). A
+# compiler older than this fails inside one of those crates; this field makes
+# it fail here, with the real reason. Windows 7/8 were already below the app's
+# own WebView2/Chromium 111 engine floor; wry 0.57 (webview2-com 0.39) drops
+# them from the shell too.
+rust-version = "1.90"
 # src/bin/fuzz_validate.rs (the differential fuzzer, room-tls-and-discovery-
 # pitch.md section 3) is a second [[bin]] target in this package now.
 # Without this, `cargo run` picks ambiguously and - measured this session -
@@ -167,6 +173,12 @@ tauri = { version = "2", features = ["test"] }
 # resolve into the dependency tree via gtk - withdrawal of the advisory
 # doesn't remove the crates, just the warning), but only glib and
 # proc-macro-error still actually warn as of this count.)
+# Re-run 2026-10-16, dependency refresh: urlpattern 0.6.0 (pulled in by
+# tauri-utils 2.10.1) no longer depends on the unic-* crates, so group 2
+# below is RESOLVED - none of the five is in Cargo.lock any more - and
+# `cargo audit` now reports 2 allowed warnings (glib + proc-macro-error,
+# group 1) and 0 vulnerabilities. rustls 0.23.45 carried four advisories
+# published 2026-10-14 (RUSTSEC-2026-0346 .. -0349); 0.23.46 fixes them.
 #
 # `cargo audit` now runs non-blocking in CI (.github/workflows/ci.yml,
 # "cargo audit (src-tauri)" job) so newly-published advisories surface on
@@ -211,7 +223,8 @@ tauri = { version = "2", features = ["test"] }
 #    itself, conditionally per target, not something GUIDON depends on
 #    directly.
 #
-# 2) unic-* crates — RUSTSEC-2025-0081 (unic-char-property), RUSTSEC-2025-0075
+# 2) [RESOLVED 2026-10-16, kept for history - see the re-run note above]
+#    unic-* crates — RUSTSEC-2025-0081 (unic-char-property), RUSTSEC-2025-0075
 #    (unic-char-range), RUSTSEC-2025-0080 (unic-common), RUSTSEC-2025-0100
 #    (unic-ucd-ident), RUSTSEC-2025-0098 (unic-ucd-version) — each is its own
 #    advisory ID, not interchangeable; a prior version of this comment cited
