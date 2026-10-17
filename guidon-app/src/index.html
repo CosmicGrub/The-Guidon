@@ -8165,6 +8165,117 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
     });
   }
 
+  // ── Writes settle on COMMIT, and a save that never landed is said out loud ─
+  // An IndexedDB request succeeds when the browser has ACCEPTED the change,
+  // not when it is on the device: the transaction can still be cancelled at
+  // commit (a full device is the ordinary cause). put()/del()/clear() used to
+  // resolve on the request, and putMany()/delMany() only listened for a
+  // commit or a request error - so a cancelled commit made a save look done
+  // (or, for the batch calls, never answered at all, which left a restore
+  // sitting on "Restoring..." forever). All ~40 "Couldn't save" paths in the
+  // app react to a REJECTED promise, so none of them could ever fire.
+  // Every write below now resolves when the transaction has committed and
+  // rejects when it is cancelled.
+  //
+  // The failure is also announced ONCE, here, underneath every caller: a
+  // plain-language notice and a self-heal entry, throttled so a device that is
+  // still full does not repeat itself on every keystroke. That is what covers
+  // the saves nobody waits on (the debounced settings save is one) without
+  // touching a single call site.
+  const WRITE_FAIL_QUIET_MS = 30000;
+  const WRITE_FAIL_NOTICE = "That change wasn't saved. This device may be out of space — free some up, then try again.";
+  let lastWriteFailNoticeAt = null;
+  function errorName(e) { return (e && (e.name || e.constructor && e.constructor.name)) || "Error"; }
+  function isQuotaError(e) {
+    if (!e) return false;
+    return e.name === "QuotaExceededError" || e.name === "NS_ERROR_DOM_QUOTA_REACHED" || e.code === 22 || e.code === 1014;
+  }
+  // The transaction's own error if it has one; a plain AbortError when the
+  // commit was cancelled without a reason (tx.abort(), or the browser).
+  function commitError(t, req) {
+    let e = null;
+    try { e = t && t.error; } catch (x) { e = null; }
+    if (!e && req) { try { e = req.error; } catch (x) { e = null; } }
+    if (e) return e;
+    const msg = "The change was cancelled before it reached this device's storage.";
+    return typeof DOMException === "function" ? new DOMException(msg, "AbortError") : Object.assign(new Error(msg), { name: "AbortError" });
+  }
+  // Called for every write that did not land. Never throws, never recurses:
+  // the self-heal log is itself a write, so its own row is not announced.
+  function writeFailed(store, key, err) {
+    if (key === "guidon:selfheal:v1") return;
+    const now = Date.now();
+    if (lastWriteFailNoticeAt !== null && now - lastWriteFailNoticeAt < WRITE_FAIL_QUIET_MS) return;
+    lastWriteFailNoticeAt = now;
+    try { if (G.util && typeof G.util.emit === "function") G.util.emit("storage:write-failed", { store: store, key: key == null ? null : key, name: errorName(err) }); } catch (e) {}
+  }
+  // The one listener: what the Soldier is told, and what Diagnostics keeps.
+  try {
+    if (G.util && typeof G.util.on === "function") {
+      G.util.on("storage:write-failed", function (info) {
+        if (typeof G.util.toast === "function") G.util.toast(WRITE_FAIL_NOTICE, 7000);
+        if (G.selfheal) {
+          G.selfheal.log("storage-write-fail", info.store + (info.key != null ? ":" + info.key : ""),
+            "A change did not reach this device's storage, so it was not saved (store: " + info.store + ", cause: " + info.name + ").");
+        }
+      });
+    }
+  } catch (e) { /* the notice is a courtesy; a save must never fail because of it */ }
+  // Attaches the failure report to a write's promise WITHOUT changing what
+  // the caller sees: an awaiting caller still gets the rejection, and a
+  // caller that never looks (fire-and-forget) does not raise an unhandled
+  // rejection on top of the notice it has already been given.
+  function reported(store, key, p) {
+    p.then(null, function (err) { writeFailed(store, key, err); });
+    return p;
+  }
+  // The row's key, however the store spells it (kv: k, everything else: id).
+  function keyOfRow(v) { return v && v.k != null ? v.k : v && v.id; }
+  // A rejected promise that nobody is obliged to handle (see reported()).
+  function rejected(err) { const p = Promise.reject(err); p.then(null, function () {}); return p; }
+
+  // ONE write, settled when its transaction has committed.
+  function writeOne(store, run) {
+    return open().then((idb) => new Promise((resolve, reject) => {
+      const t = idb.transaction(store, "readwrite");
+      const req = run(t.objectStore(store));
+      let result;
+      req.onsuccess = () => { result = req.result; };
+      req.onerror = () => reject(commitError(t, req));
+      t.oncomplete = () => resolve(result);
+      t.onabort = () => reject(commitError(t, req));
+    }));
+  }
+  // MANY writes in ONE transaction (see putMany()/delMany() below): resolves
+  // { written, skipped } when the transaction has committed and rejects when
+  // it is cancelled. A row the store refuses is skipped and counted - one bad
+  // row must not take the batch down - and a refusal that comes back from
+  // the device (rather than from the row itself) is announced like any other
+  // failed save.
+  function writeMany(store, items, run) {
+    if (!items || !items.length) return Promise.resolve({ written: 0, skipped: 0 });
+    return open().then((idb) => new Promise((resolve, reject) => {
+      const t = idb.transaction(store, "readwrite");
+      const s = t.objectStore(store);
+      let skipped = 0, refusedByDevice = null;
+      for (let i = 0; i < items.length; i++) {
+        try {
+          const req = run(s, items[i]);
+          req.onerror = (e) => {
+            e.preventDefault(); e.stopPropagation();
+            skipped++;
+            if (!refusedByDevice) { let err = null; try { err = req.error; } catch (x) { err = null; } refusedByDevice = err || { name: "Error" }; }
+          };
+        } catch (e) { skipped++; /* malformed row, refused synchronously - skip it */ }
+      }
+      t.oncomplete = () => {
+        if (refusedByDevice) writeFailed(store, null, refusedByDevice);
+        resolve({ written: items.length - skipped, skipped: skipped });
+      };
+      t.onabort = () => reject(commitError(t));
+    }));
+  }
+
   // ── Session-only storage: Guest and Kiosk sessions really save nothing ────
   // Owner decision, 2026-09-19 (audit decision 15). The screen says "Guest
   // session - nothing is saved after you close the app", and until now that
@@ -8257,13 +8368,14 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
     // putMany()/delMany() make.
     db.putMany = function (s, rows) {
       if (!sessionOnly()) return raw.putMany.call(db, s, rows);
-      (rows || []).forEach((row) => { try { write(s, row); } catch (e) { /* skipped, like a row IndexedDB refuses */ } });
-      return Promise.resolve();
+      let skipped = 0;
+      (rows || []).forEach((row) => { try { write(s, row); } catch (e) { skipped++; /* skipped, like a row IndexedDB refuses */ } });
+      return Promise.resolve({ written: (rows || []).length - skipped, skipped: skipped });
     };
     db.delMany = function (s, keys) {
       if (!sessionOnly()) return raw.delMany.call(db, s, keys);
       (keys || []).forEach((k) => erase(s, k));
-      return Promise.resolve();
+      return Promise.resolve({ written: (keys || []).length, skipped: 0 });
     };
     db.all = function (s) {
       if (!sessionOnly()) return raw.all.call(db, s);
@@ -8302,25 +8414,46 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
     const rawAll = db.all, rawPut = db.put, rawDel = db.del,
       rawPutMany = db.putMany, rawDelMany = db.delMany, rawClear = db.clear;
     let cache = null;
+    // A generation counter closes a race the plain "drop the cache on write"
+    // rule left open: a read that STARTED before a write finishes AFTER the
+    // write dropped the cache, and used to store its pre-write snapshot as
+    // the new cache - which then stayed wrong (and so did every Backup export
+    // and Diagnostics scan built on it) until some later write happened to
+    // clear it. Every invalidation bumps `gen`; a read only keeps its result
+    // if `gen` is the same as when it began. A write invalidates when it is
+    // CALLED and again when it SETTLES (a read that began in between must not
+    // be kept either). A read that overlaps a write is simply not cached.
+    let gen = 0;
+    const invalidate = () => { gen++; cache = null; };
     db.all = function (store) {
       if (store !== "kv") return rawAll.call(db, store);
       if (cache) return Promise.resolve(cache.slice());
-      return rawAll.call(db, store).then((rows) => { cache = rows; return rows.slice(); });
+      const startedAt = gen;
+      return rawAll.call(db, store).then((rows) => { if (gen === startedAt) cache = rows; return rows.slice(); });
     };
-    db.put = function (store, value) { if (store === "kv") cache = null; return rawPut.call(db, store, value); };
-    db.del = function (store, key) { if (store === "kv") cache = null; return rawDel.call(db, store, key); };
-    db.putMany = function (store, values) { if (store === "kv") cache = null; return rawPutMany.call(db, store, values); };
-    db.delMany = function (store, keys) { if (store === "kv") cache = null; return rawDelMany.call(db, store, keys); };
-    db.clear = function (store) { if (store === "kv") cache = null; return rawClear.call(db, store); };
-    db._invalidateKvCache = function () { cache = null; };
+    const writing = (raw) => function (store, arg) {
+      if (store !== "kv") return raw.call(db, store, arg);
+      invalidate();
+      const p = raw.call(db, store, arg);
+      if (p && typeof p.then === "function") p.then(invalidate, invalidate);
+      return p;
+    };
+    db.put = writing(rawPut);
+    db.del = writing(rawDel);
+    db.putMany = writing(rawPutMany);
+    db.delMany = writing(rawDelMany);
+    db.clear = writing(rawClear);
+    db._invalidateKvCache = invalidate;
   }
 
   const db = {
     ready: open,
 
     get(store, key) { return tx(store, "readonly").then((s) => done(s.get(key))); },
-    put(store, value) { return tx(store, "readwrite").then((s) => done(s.put(value))); },
-    del(store, key) { return tx(store, "readwrite").then((s) => done(s.delete(key))); },
+    // put/del/clear settle on COMMIT and are reported when they do not land -
+    // see "Writes settle on COMMIT" above open().
+    put(store, value) { return reported(store, keyOfRow(value), writeOne(store, (s) => s.put(value))); },
+    del(store, key) { return reported(store, key, writeOne(store, (s) => s.delete(key))); },
     // Bulk siblings of put()/del(): every row/key goes through ONE
     // IndexedDB transaction instead of one transaction per row. Board
     // Drill's "Reset drill schedule" (every graded question, 900+ cards)
@@ -8331,37 +8464,11 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
     // (task #229). A per-item request error is swallowed (preventDefault
     // stops it from aborting the whole transaction) so one malformed row
     // still can't take the rest of the batch down with it, matching the
-    // try/catch-per-item behavior the sequential loops had.
-    putMany(store, values) {
-      if (!values || !values.length) return Promise.resolve();
-      return open().then((idb) => new Promise((resolve, reject) => {
-        const t = idb.transaction(store, "readwrite");
-        const s = t.objectStore(store);
-        for (let i = 0; i < values.length; i++) {
-          try {
-            const req = s.put(values[i]);
-            req.onerror = (e) => { e.preventDefault(); e.stopPropagation(); };
-          } catch (e) { /* malformed row rejected synchronously by objectStore.put() - skip it */ }
-        }
-        t.oncomplete = () => resolve();
-        t.onerror = () => reject(t.error);
-      }));
-    },
-    delMany(store, keys) {
-      if (!keys || !keys.length) return Promise.resolve();
-      return open().then((idb) => new Promise((resolve, reject) => {
-        const t = idb.transaction(store, "readwrite");
-        const s = t.objectStore(store);
-        for (let i = 0; i < keys.length; i++) {
-          try {
-            const req = s.delete(keys[i]);
-            req.onerror = (e) => { e.preventDefault(); e.stopPropagation(); };
-          } catch (e) {}
-        }
-        t.oncomplete = () => resolve();
-        t.onerror = () => reject(t.error);
-      }));
-    },
+    // try/catch-per-item behavior the sequential loops had. It is COUNTED,
+    // though: both resolve { written, skipped }, so a caller (Backup's
+    // restore) can tell "all 1,200 landed" from "1,180 did".
+    putMany(store, values) { return reported(store, null, writeMany(store, values, (s, v) => s.put(v))); },
+    delMany(store, keys) { return reported(store, null, writeMany(store, keys, (s, k) => s.delete(k))); },
     all(store) {
       return tx(store, "readonly").then(
         (s) => new Promise((resolve, reject) => {
@@ -8372,7 +8479,7 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
         })
       );
     },
-    clear(store) { return tx(store, "readwrite").then((s) => done(s.clear())); },
+    clear(store) { return reported(store, null, writeOne(store, (s) => s.clear())); },
 
     // --- settings convenience ---
     getSetting(k, fallback) { return this.get("kv", k).then((r) => (r ? r.v : fallback)); },
@@ -8430,16 +8537,35 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
         const P = (s, k) => "guidon:" + s + ":" + k;
         const keyOf = (v) => (v && v.k != null ? v.k : v && v.id);
         db.get = (s, k) => { try { const raw = ls.getItem(P(s, k)); return Promise.resolve(raw ? JSON.parse(raw) : undefined); } catch (e) { return Promise.resolve(undefined); } };
-        db.put = (s, v) => { try { ls.setItem(P(s, keyOf(v)), JSON.stringify(v)); } catch (e) {} return Promise.resolve(); };
+        // A full localStorage (its quota is a few MB) throws on setItem. That
+        // used to be swallowed, so a save that did not fit was reported as
+        // saved; it now rejects and is announced like any failed IndexedDB
+        // write. Only the quota error is surfaced - anything else that
+        // setItem throws keeps its old quiet behavior.
+        db.put = (s, v) => {
+          try { ls.setItem(P(s, keyOf(v)), JSON.stringify(v)); }
+          catch (e) { if (isQuotaError(e)) { writeFailed(s, keyOfRow(v), e); return rejected(e); } }
+          return Promise.resolve();
+        };
         db.del = (s, k) => { try { ls.removeItem(P(s, k)); } catch (e) {} return Promise.resolve(); };
         // No real transaction to batch on this backend - localStorage
-        // writes are already synchronous, so putMany()/delMany() just loop
-        // the single-item versions above. Kept as real methods (not left
-        // to fall through to the IndexedDB implementation, which would
-        // call open() and reject) so callers don't need an if/backend
-        // branch of their own.
-        db.putMany = (s, values) => { (values || []).forEach((v) => db.put(s, v)); return Promise.resolve(); };
-        db.delMany = (s, keys) => { (keys || []).forEach((k) => db.del(s, k)); return Promise.resolve(); };
+        // writes are already synchronous, so putMany()/delMany() just loop.
+        // Kept as real methods (not left to fall through to the IndexedDB
+        // implementation, which would call open() and reject) so callers
+        // don't need an if/backend branch of their own. Same
+        // { written, skipped } answer as the IndexedDB batch calls: a row
+        // that did not fit is counted, never claimed.
+        db.putMany = (s, values) => {
+          const list = values || [];
+          let skipped = 0, full = null;
+          list.forEach((v) => {
+            try { ls.setItem(P(s, keyOf(v)), JSON.stringify(v)); }
+            catch (e) { if (isQuotaError(e)) { skipped++; full = full || e; } }
+          });
+          if (full) writeFailed(s, null, full);
+          return Promise.resolve({ written: list.length - skipped, skipped: skipped });
+        };
+        db.delMany = (s, keys) => { (keys || []).forEach((k) => { try { ls.removeItem(P(s, k)); } catch (e) {} }); return Promise.resolve({ written: (keys || []).length, skipped: 0 }); };
         db.all = (s) => {
           const out = [], pre = "guidon:" + s + ":";
           try { for (let i = 0; i < ls.length; i++) { const key = ls.key(i); if (key && key.indexOf(pre) === 0) { try { out.push(JSON.parse(ls.getItem(key))); } catch (e) {} } } } catch (e) {}
@@ -8463,8 +8589,8 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
       db.get = (s, k) => Promise.resolve(map(s)[k]);
       db.put = (s, v) => { map(s)[v.k || v.id] = v; return Promise.resolve(); };
       db.del = (s, k) => { delete map(s)[k]; return Promise.resolve(); };
-      db.putMany = (s, values) => { (values || []).forEach((v) => db.put(s, v)); return Promise.resolve(); };
-      db.delMany = (s, keys) => { (keys || []).forEach((k) => db.del(s, k)); return Promise.resolve(); };
+      db.putMany = (s, values) => { (values || []).forEach((v) => { map(s)[v.k || v.id] = v; }); return Promise.resolve({ written: (values || []).length, skipped: 0 }); };
+      db.delMany = (s, keys) => { (keys || []).forEach((k) => { delete map(s)[k]; }); return Promise.resolve({ written: (keys || []).length, skipped: 0 }); };
       db.all = (s) => Promise.resolve(Object.values(map(s)));
       db.clear = (s) => { mem[s] = {}; return Promise.resolve(); };
       db.ready = () => Promise.resolve();
@@ -8975,6 +9101,10 @@ window.G = window.G || {};
     async init() {
       try { await db.ready(); } catch (e) { db.installMemoryFallback(); }
       if (db._backend === "memory") util.toast("Storage limited — progress won't persist this session.");
+      // The small-space fallback (browser storage that can fill up) used to
+      // start with no word at all; a save that does not fit is announced
+      // when it happens (db.js), but say so up front too.
+      else if (db._backend === "localStorage") util.toast("Storage is limited in this browser, so your progress may stop saving. Export a backup from Profile to keep a copy.", 7000);
       const savedSettings = await db.getSetting("settings", null);
       if (savedSettings) {
         // Self-healing log (Diagnostics self-repair item 1): this merge
@@ -10675,7 +10805,7 @@ window.G = window.G || {};
       scenarioId: sess.sc.id, title: sess.sc.title, mode: sess.mode,
       score: Object.assign({}, sess.score), total: sess.tr.correct, choices: sess.tr.total,
       outcomeNode: sess.nodeId,
-    });
+    }).catch(() => { /* a save that did not land is already announced once, by the storage layer (db.js) */ });
     if (store.recordTrainingComplete) store.recordTrainingComplete(sess.sc.id, pct);
 
     util.clear(sess.container);
@@ -10843,7 +10973,7 @@ window.G = window.G || {};
       total,
       choices: sess.choices,
       outcomeNode: sess.nodeId,
-    });
+    }).catch(() => { /* a save that did not land is already announced once, by the storage layer (db.js) */ });
 
     util.clear(sess.container);
     sess.container.appendChild(renderHeader(sess));
@@ -31077,10 +31207,41 @@ window.G = window.G || {};
     if (G.selfheal) G.selfheal.log("backup-import-fail", store, "importAll() could not write to the " + store + " store: " + (e && e.message ? e.message : String(e)));
   }
 
-  async function importAll(obj) {
-    if (!obj || obj.schema !== SCHEMA || !obj.stores) {
-      throw new Error("This file isn't a GUIDON backup (unexpected format).");
+  // Writes one store's rows and says truthfully how many actually landed.
+  // db.putMany() settles when the transaction has COMMITTED and answers
+  // { written, skipped }; a cancelled commit rejects. Either way the store is
+  // named in failedStores and the shortfall is logged, instead of the restore
+  // counting every row it merely ATTEMPTED as restored (or, before the
+  // storage layer settled on commit, never finishing at all).
+  async function restoreRows(store, rows, restored, failedStores) {
+    try {
+      var res = await G.db.putMany(store, rows);
+      var wrote = res && typeof res.written === "number" ? res.written : rows.length;
+      restored[store] += wrote;
+      if (wrote < rows.length) {
+        failedStores.push(store);
+        logImportFail(store, new Error("only " + wrote + " of " + rows.length + " rows could be written"));
+      }
+    } catch (e) { failedStores.push(store); logImportFail(store, e); }
+  }
+
+  // The current backup file format is "guidon.backup/v1". A file from a
+  // NEWER GUIDON ("guidon.backup/v2"...) is a real GUIDON backup this build
+  // simply cannot read yet, and telling the Soldier "this isn't a GUIDON
+  // backup" sends them looking for a different file instead of updating.
+  var SCHEMA_MAJOR = 1;
+  function schemaProblem(obj) {
+    var m = obj && typeof obj.schema === "string" ? /^guidon\.backup\/v(\d+)$/.exec(obj.schema) : null;
+    if (m && parseInt(m[1], 10) > SCHEMA_MAJOR) {
+      return "This backup was made by a newer version of GUIDON than this one, so this version can't read it. Update GUIDON, then import it again.";
     }
+    if (!obj || obj.schema !== SCHEMA || !obj.stores) return "This file isn't a GUIDON backup (unexpected format).";
+    return null;
+  }
+
+  async function importAll(obj) {
+    var problem = schemaProblem(obj);
+    if (problem) throw new Error(problem);
     var restored = { kv: 0, userScenarios: 0, attempts: 0, local: 0 };
     var skipped = { kv: 0, userScenarios: 0, local: 0 };
     // Which kv rows were left out, by key - so the restore screens can say
@@ -31114,6 +31275,11 @@ window.G = window.G || {};
       for (var i = 0; i < obj.stores.kv.length; i++) {
         var row = obj.stores.kv[i];
         if (!row || row.k == null) continue;
+        // "When was this device last backed up" describes THIS device's own
+        // exports. Taking the file's copy made a device that exported today
+        // and then restored an older file read "Last backed up 270 days ago".
+        // It is stamped once, after the restore, instead (below).
+        if (row.k === "backup:lastExportAt") continue;
         // guidon:profile:v1 gates the app's entire "does this user need
         // onboarding" check (needsOnboarding() reads !p.onboardingComplete).
         // Previously any row shape was accepted here - a malformed entry
@@ -31148,7 +31314,7 @@ window.G = window.G || {};
         // validation, since that key never had a .v field to begin with.
         kvRows.push(row);
       }
-      if (kvRows.length) { try { await G.db.putMany("kv", kvRows); restored.kv += kvRows.length; } catch (e) { failedStores.push("kv"); logImportFail("kv", e); } }
+      if (kvRows.length) await restoreRows("kv", kvRows, restored, failedStores);
     }
     if (Array.isArray(obj.stores.userScenarios)) {
       var scRows = [];
@@ -31165,7 +31331,7 @@ window.G = window.G || {};
         if (!v.ok) { skipped.userScenarios++; continue; }
         scRows.push(sc);
       }
-      if (scRows.length) { try { await G.db.putMany("userScenarios", scRows); restored.userScenarios += scRows.length; } catch (e) { failedStores.push("userScenarios"); logImportFail("userScenarios", e); } }
+      if (scRows.length) await restoreRows("userScenarios", scRows, restored, failedStores);
     }
     if (Array.isArray(obj.stores.attempts)) {
       var atRows = [];
@@ -31173,7 +31339,7 @@ window.G = window.G || {};
         var at = obj.stores.attempts[k];
         if (at && at.id != null) atRows.push(at);
       }
-      if (atRows.length) { try { await G.db.putMany("attempts", atRows); restored.attempts += atRows.length; } catch (e) { failedStores.push("attempts"); logImportFail("attempts", e); } }
+      if (atRows.length) await restoreRows("attempts", atRows, restored, failedStores);
     }
     // Nav personalization (LOCAL_KEYS, above, written by exportAll()) -
     // localStorage, not IndexedDB, so this is a plain per-key
