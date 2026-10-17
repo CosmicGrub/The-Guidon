@@ -28780,8 +28780,13 @@ window.G = window.G || {};
       const trap = util.modalTrap(back, box, () => resolve(resolveVal));
       function closeWith(val) { resolveVal = val; trap.close(); }
       function accept() { closeWith(opts.prompt ? (input ? input.value : "") : true); }
+      // opts.focusCancel: for a confirm that overwrites something (restoring a
+      // backup is one), the dialog opens on Cancel, so an Enter pressed out of
+      // habit backs out instead of going through. Enter on the focused Cancel
+      // button then does what the button says (the browser clicks it) instead
+      // of being taken as "accept" by this box-level listener.
       box.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && (!input || document.activeElement === input)) { e.preventDefault(); accept(); }
+        if (e.key === "Enter" && (!input || document.activeElement === input) && !(opts.focusCancel && document.activeElement === cancel)) { e.preventDefault(); accept(); }
       });
       cancel.addEventListener("click", () => closeWith(opts.prompt ? null : false));
       ok.addEventListener("click", accept);
@@ -28797,7 +28802,7 @@ window.G = window.G || {};
           bodyEl.setAttribute("aria-label", (opts.title || "Message") + " - scroll for the rest");
         }
       }));
-      setTimeout(() => { (input || ok).focus(); }, 40);
+      setTimeout(() => { (input || (opts.focusCancel ? cancel : ok)).focus(); }, 40);
     });
   }
   G.modal = {
@@ -31257,14 +31262,101 @@ window.G = window.G || {};
   // NEWER GUIDON ("guidon.backup/v2"...) is a real GUIDON backup this build
   // simply cannot read yet, and telling the Soldier "this isn't a GUIDON
   // backup" sends them looking for a different file instead of updating.
+  // Checked BEFORE the confirm is shown (confirmAndImportFile) as well as by
+  // importAll(), so a file this GUIDON cannot read never gets as far as asking
+  // "Import this backup?".
   var SCHEMA_MAJOR = 1;
   function schemaProblem(obj) {
     var m = obj && typeof obj.schema === "string" ? /^guidon\.backup\/v(\d+)$/.exec(obj.schema) : null;
     if (m && parseInt(m[1], 10) > SCHEMA_MAJOR) {
-      return "This backup was made by a newer version of GUIDON than this one, so this version can't read it. Update GUIDON, then import it again.";
+      return "This backup was made by a newer GUIDON than this one, so it can't be read here. Update GUIDON, then import it again.";
     }
     if (!obj || obj.schema !== SCHEMA || !obj.stores) return "This file isn't a GUIDON backup (unexpected format).";
     return null;
+  }
+
+  // ── Saying, before a restore, what it is about to do ───────────────────
+  // A restore puts the file's copy of every item it holds over this device's
+  // copy of the same item (nothing is deleted, and an item the file does not
+  // hold stays as it is). That is the right thing on a new phone and the wrong
+  // thing on a device that has moved on since the file was made - so the
+  // confirm says when the file was made and whether this device has been used
+  // since, instead of leaving the Soldier to guess.
+  var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  // "12 Mar 2026 (3 days ago)" - the day a backup file was made, the way the
+  // Army writes a date. "" when the file does not say (or says nonsense).
+  function describeBackupDate(iso) {
+    var d = iso ? new Date(iso) : null;
+    if (!d || isNaN(d.getTime())) return "";
+    var days = Math.floor((Date.now() - d.getTime()) / 86400000);
+    var ago = days <= 0 ? "today" : days === 1 ? "1 day ago" : days + " days ago";
+    return d.getDate() + " " + MONTHS[d.getMonth()] + " " + d.getFullYear() + " (" + ago + ")";
+  }
+  function localDay(ms) {
+    var d = new Date(ms);
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+  // What this device has done since `sinceMs`, worked out from what is already
+  // stored (nothing is written, no new field exists). `sinceMs` null means the
+  // file does not say when it was made, so any study history at all counts.
+  //   a flashcard's last review = when it is due minus its interval
+  //     (board.js schedule() sets due = now + interval days; a miss sets both
+  //     to "now"), and a card never graded has due 0;
+  //   a scenario or quiz result carries the time it was finished;
+  //   the study streak carries the last day studied.
+  // Never throws: a read that fails just leaves that signal out.
+  async function deviceActivitySince(sinceMs) {
+    var DAY = 86400000, since = typeof sinceMs === "number" && isFinite(sinceMs) ? sinceMs : null;
+    var out = { newer: false, cards: 0, results: 0, streak: false };
+    try {
+      var kv = await G.db.all("kv");
+      for (var i = 0; i < kv.length; i++) {
+        var row = kv[i];
+        if (!row || typeof row.k !== "string") continue;
+        if (row.k.lastIndexOf("srs:", 0) === 0) {
+          var v = row.v;
+          if (!v || typeof v !== "object") continue;
+          var last = Number(v.due) - (Number(v.interval) || 0) * DAY;
+          if (isFinite(last) && last > 0 && (since === null || last > since)) out.cards++;
+        } else if (row.k === "streak:v1") {
+          var day = row.v && typeof row.v.lastActive === "string" ? row.v.lastActive : "";
+          if (day && (since === null || day > localDay(since))) out.streak = true;
+        }
+      }
+    } catch (e) { /* the kv signals are left out */ }
+    try {
+      var attempts = await G.db.all("attempts");
+      for (var j = 0; j < attempts.length; j++) {
+        var ts = attempts[j] && Number(attempts[j].ts);
+        if (isFinite(ts) && ts > 0 && (since === null || ts > since)) out.results++;
+      }
+    } catch (e) { /* the result signal is left out */ }
+    out.newer = out.cards > 0 || out.results > 0 || out.streak;
+    return out;
+  }
+  // The restore confirm's words about WHEN the file was made and whether this
+  // device has been used since. Pure: the activity is passed in.
+  function restoreDateLines(exportedAt, activity) {
+    var when = describeBackupDate(exportedAt);
+    var made = when ? "This backup was made on " + when + "." : "This backup file doesn't say when it was made.";
+    var warning = "";
+    if (activity && activity.newer) {
+      warning = (when
+        ? "You have used GUIDON on this device since then, so some of what is here may be newer than this backup."
+        : "This device already has study progress on it, and without a date there is no telling which is newer.") +
+        " To keep a copy of it first, choose Cancel, use Export backup, then import again.";
+    }
+    return { made: made, warning: warning };
+  }
+  // What the restore did NOT manage to save, in the Soldier's words.
+  var STORE_WORDS = { kv: "your settings and progress", userScenarios: "your own scenarios", attempts: "your scenario and quiz results", local: "your menu layout" };
+  function failedWords(stores) {
+    var seen = [], out = [];
+    (stores || []).forEach(function (s) {
+      var w = STORE_WORDS[s] || "some of your data";
+      if (seen.indexOf(w) === -1) { seen.push(w); out.push(w); }
+    });
+    return out.join(" and ");
   }
 
   async function importAll(obj) {
@@ -31304,9 +31396,9 @@ window.G = window.G || {};
         var row = obj.stores.kv[i];
         if (!row || row.k == null) continue;
         // "When was this device last backed up" describes THIS device's own
-        // exports. Taking the file's copy made a device that exported today
-        // and then restored an older file read "Last backed up 270 days ago".
-        // It is stamped once, after the restore, instead (below).
+        // exports, and a restore is not one. Taking the file's copy made a
+        // device that exported today and then restored an older file read
+        // "Last backed up 270 days ago". The device keeps its own value.
         if (row.k === "backup:lastExportAt") continue;
         // guidon:profile:v1 gates the app's entire "does this user need
         // onboarding" check (needsOnboarding() reads !p.onboardingComplete).
@@ -31426,6 +31518,20 @@ window.G = window.G || {};
         var obj;
         try { obj = JSON.parse(reader.result); }
         catch (e) { resolve({ status: "error", message: "That file couldn't be read as JSON." }); return; }
+        // A file this GUIDON cannot read (not a backup at all, or made by a
+        // NEWER GUIDON) is refused here, in so many words, instead of asking
+        // "Import this backup?" and failing after the Soldier said yes.
+        var problem = schemaProblem(obj);
+        if (problem) { resolve({ status: "error", message: problem }); return; }
+        var madeAt = obj.exportedAt ? new Date(obj.exportedAt).getTime() : NaN;
+        deviceActivitySince(isNaN(madeAt) ? null : madeAt).then(function (activity) {
+          try { review(obj, activity); }
+          catch (e) { resolve({ status: "error", message: "That backup couldn't be checked: " + (e && e.message ? e.message : "unknown error") }); }
+        });
+      };
+      // The confirm: what is in the file, when it was made, whether this
+      // device has been used since, and what the restore will do about it.
+      function review(obj, activity) {
         var sum = obj && obj.summary ? obj.summary : null;
         var hasProfileRow = !!(obj && obj.stores && Array.isArray(obj.stores.kv) &&
           obj.stores.kv.some(function (row) { return row && row.k === "guidon:profile:v1"; }));
@@ -31457,11 +31563,18 @@ window.G = window.G || {};
             if (isPrivateKey(row.k) && privateKeyHasContent(row.v)) privateKeysPresent.push(row.k);
           });
         }
-        var msg = "Import this backup?" + (sum ? "\n\nIt contains: " + (sum.kv || 0) + " saved items, " + (sum.userScenarios || 0) + " authored scenarios, " + (sum.attempts || 0) + " quiz attempts." : "") + "\n\nYour existing data will be kept; matching items will be overwritten by the backup." + (hasProfileRow ? " This includes your name, rank, and board date." : "") +
+        var dates = restoreDateLines(obj.exportedAt, activity);
+        var msg = "Import this backup?\n\n" + dates.made + (sum ? " It contains: " + (sum.kv || 0) + " saved items, " + (sum.userScenarios || 0) + " authored scenarios, " + (sum.attempts || 0) + " quiz attempts." : "") +
+          (dates.warning ? "\n\n" + dates.warning : "") +
+          // What a restore really does: an item that is in both places takes the
+          // backup's version; nothing is deleted. (This used to say "Your
+          // existing data will be kept", which read as a promise it did not make.)
+          "\n\nItems that are in both places will be replaced by the backup's version; everything else on this device stays." + (hasProfileRow ? " This includes your name, rank, and board date." : "") +
           (privateKeysPresent.length ? " This file also carries " + describeKeys(privateKeysPresent) + " - other people's information or a resource assessment, not your own study data - which will be written to this device too." : "") +
           // Named in the Soldier's words (describeKeys), never by storage key.
           (kvRejected.length ? "\n\n" + (kvRejected.length === 1 ? "1 item in this file is damaged and will be left out: " : kvRejected.length + " items in this file are damaged and will be left out: ") + describeKeys(kvRejected) + ". Everything else will be restored." : "");
-        G.modal.confirm(msg, { title: "Import backup" }).then(function (ok) {
+        // Opens on Cancel: restoring overwrites things, so an Enter pressed out of habit backs out.
+        G.modal.confirm(msg, { title: "Import backup", focusCancel: true }).then(function (ok) {
           if (!ok) { resolve({ status: "cancelled" }); return; }
           importAll(obj).then(function (res) {
             var r = res.restored, sk = res.skipped, fs = res.failedStores || [];
@@ -31478,7 +31591,7 @@ window.G = window.G || {};
             resolve({ status: "error", message: e && e.message ? e.message : "unknown error" });
           });
         });
-      };
+      }
       reader.readAsText(file);
     });
   }
@@ -31566,7 +31679,7 @@ window.G = window.G || {};
         // attempts." styled identically to a real success - looking
         // exactly like a no-op restore instead of a failure worth retrying.
         if (fs.length) {
-          status.textContent = "Restore failed to write to this device (" + fs.join(", ") + ") — try again. Reloading…";
+          status.textContent = "The restore did not finish: " + failedWords(fs) + " could not be saved to this device. Free up some space and try again. Reloading…";
           status.className = "backup-status hint err";
           return;
         }
@@ -31605,7 +31718,7 @@ window.G = window.G || {};
     return "Backup downloaded";
   }
 
-  G.backup = { exportAll: exportAll, downloadAll: downloadAll, importAll: importAll, renderControls: renderControls, confirmAndImportFile: confirmAndImportFile, validateKvRow: validateKvRow, describeKey: describeKey, skippedSummary: skippedSummary, exportDoneMessage: exportDoneMessage, getLastExportAt: getLastExportAt, formatLastExport: formatLastExport };
+  G.backup = { exportAll: exportAll, downloadAll: downloadAll, importAll: importAll, renderControls: renderControls, confirmAndImportFile: confirmAndImportFile, validateKvRow: validateKvRow, describeKey: describeKey, skippedSummary: skippedSummary, exportDoneMessage: exportDoneMessage, getLastExportAt: getLastExportAt, formatLastExport: formatLastExport, describeBackupDate: describeBackupDate, deviceActivitySince: deviceActivitySince, failedWords: failedWords };
 })();
 // END backup.js
 
@@ -39062,7 +39175,7 @@ window.G = window.G || {};
         // Deep-gap follow-up ("Profile Data-Loss & Persistence Bugs"
         // bucket): see confirmAndImportFile()'s own comment - a genuine
         // write failure previously looked identical to a clean restore.
-        if (fs.length) { util.toast("Restore failed to write to this device (" + fs.join(", ") + ") — try again. Reloading…"); return; }
+        if (fs.length) { util.toast("The restore did not finish: " + G.backup.failedWords(fs) + " could not be saved to this device. Free up some space and try again. Reloading…"); return; }
         util.toast("Restored " + r.kv + " item(s), " + r.userScenarios + " scenario(s), " + r.attempts + " attempt(s)." +
           (sk && sk.kv ? " " + G.backup.skippedSummary(result.skippedKeys) : "") + " Reloading…");
       });
