@@ -711,6 +711,8 @@ jobs:
             tests: "test:esp32-lanes test:scenario-legacy-doctrine test:unit-pack-format test:unit-pack-cli"
           - name: "64-unitdecksisolation-unitdecks-unitdecksstorage-readinesscurrency"
             tests: "test:unit-decks-isolation test:unit-decks test:unit-decks-storage test:readiness-currency"
+          - name: "65-srsearlyreview"
+            tests: "test:srs-early-review"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same

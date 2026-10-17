@@ -11265,6 +11265,54 @@ window.G = window.G || {};
   // grade: 0 = "Needs Help" · 1 = "Somewhat" · 2 = "Know It" · 3 = "Down Cold"
   // Accepts a legacy boolean too (true -> 2, false -> 0) so nothing else
   // that might call schedule() breaks.
+  // Early-review guard. Re-grading a card well BEFORE it is due used to lengthen
+  // its interval exactly like an on-time review: four "Down Cold" taps on the same
+  // card in one sitting took it from 3 to 165 days, and the default deck does this
+  // without any wrap-around at all (it interleaves not-yet-due cards among the new
+  // ones, so a Soldier who drills every day inflates every card they meet a day or
+  // two early). Spacing is the point of the scheduler, so a Know It / Down Cold
+  // that arrives before most of the interval has passed is treated as extra
+  // practice: the card keeps its interval, due date, repetitions, ease and misses.
+  //
+  // Only grades 2 and 3 are ever held back. A miss (0 Needs Help, 1 Somewhat) always
+  // applies, at any time - a Soldier who just forgot a card must see it again soon
+  // however recently they last saw it.
+  //
+  // The last review time is not stored: every branch below sets due = now +
+  // interval * DAY (a miss sets due = now with interval 0), and schedule() is the
+  // only writer of `due`, so it is exactly due - interval * DAY for any row that
+  // has one. A row with no usable interval or due date, or that was never graded
+  // (a fresh card, or an older row), is allowed - nothing to compare against.
+  // "Early" means fewer than 4 of the interval's 5 fifths (80%) have passed, so a
+  // card reviewed more than a fifth of its interval ahead of time is held back: a
+  // Soldier who studies at about the same time each day is never held back from a
+  // card that came due that day. Whole-number arithmetic (elapsed * 5 against
+  // interval * 4), not a 0.8 factor, so the 80% line is exact to the millisecond
+  // (0.8 * 3 * DAY is 207360000.00000003 in floating point).
+  const EARLY_REVIEW_FIFTHS = 4;
+  function isEarlyReview(s, grade, now) {
+    if (grade !== 2 && grade !== 3) return false;
+    if (!s || s.lastGrade == null) return false;
+    const interval = +s.interval, due = +s.due;
+    if (!(interval > 0) || !(due > 0) || !isFinite(interval) || !isFinite(due)) return false;
+    const lastReviewed = due - interval * DAY;
+    return ((now || Date.now()) - lastReviewed) * 5 < interval * DAY * EARLY_REVIEW_FIFTHS;
+  }
+  // The one plain sentence shown when a grade did not move a card's date, so an
+  // unchanged "next in 2d" does not look like a bug. Names the day, not a count.
+  function earlyReviewCue(s) {
+    const now = new Date();
+    const dueDate = new Date(s.due);
+    const startOf = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const days = Math.round((startOf(dueDate) - startOf(now)) / DAY);
+    let when;
+    if (days <= 0) when = "later today";
+    else if (days === 1) when = "tomorrow";
+    else if (days < 7) { try { when = "on " + dueDate.toLocaleDateString(undefined, { weekday: "long" }); } catch (e) { when = "in " + days + " days"; } }
+    else when = "in " + days + " days";
+    return "Too soon to change this card's date — it still comes back " + when + ".";
+  }
+
   function schedule(s, grade) {
     if (grade === true) grade = 2;
     if (grade === false) grade = 0;
@@ -11272,6 +11320,10 @@ window.G = window.G || {};
     s.reps = s.reps || 0;
     s.ease = s.ease || 2.3;
     s.interval = s.interval || 0;
+    if (isEarlyReview(s, grade, now)) { // extra practice: the schedule stands
+      s.lastGrade = grade;
+      return s;
+    }
     if (grade === 0) { // Needs Help
       s.reps = 0;
       s.ease = Math.max(1.3, s.ease - 0.3);
@@ -12352,8 +12404,13 @@ window.G = window.G || {};
       // Belt-and-braces for the reps completion panel (see draw()'s own
       // guard): no grading path may run once the set's grade count is in.
       if (repsMode && repsSize && seen >= repsSize) return;
+      // Asked BEFORE schedule() runs (it mutates the row): did this grade land
+      // too early to move the card's date? The Soldier is told in a sentence, so
+      // an unchanged "next in 2d" badge on the next visit does not read as a bug.
+      const tooEarly = isEarlyReview(srsMap[q.id], gradeLevel, Date.now());
       const s = schedule(srsMap[q.id], gradeLevel);
       srsMap[q.id] = s;
+      if (tooEarly) { try { util.toast(earlyReviewCue(s), 4200); } catch (e) {} }
       // Code-review finding (post-merge audit): this is Board Drill's
       // PRIMARY grading path (the on-card buttons, the swipe gesture, and
       // the 1-4 keyboard shortcuts below all call grade() directly), unlike
