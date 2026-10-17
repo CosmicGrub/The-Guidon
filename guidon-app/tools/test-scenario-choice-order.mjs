@@ -142,6 +142,14 @@ const FIXTURES = await page.evaluate(() => {
       end: { end: true, outcome: "Done." },
     }),
     one: mini("qa-order-one", { n1: { prompt: "One step.", choices: [{ text: "Go on", goto: "end" }] }, end: { end: true, outcome: "Done." } }),
+    // A one-question training module (Alpha is the correct answer) for the Retake button.
+    trainFour: mini("qa-order-train-four", {
+      n1: { prompt: "Decide.", choices: [
+        { text: "Alpha", goto: "end", correct: true, feedback: "Alpha feedback." }, { text: "Bravo", goto: "end", feedback: "Bravo feedback." },
+        { text: "Charlie", goto: "end", feedback: "Charlie feedback." }, { text: "Delta", goto: "end", feedback: "Delta feedback." },
+      ] },
+      end: { end: true, outcome: "Done." },
+    }, { defaultMode: "training", renderModes: ["training"] }),
     // Echo is hidden until Alpha is picked (it sets a story flag); when n1 comes round again Echo is
     // visible, and Alpha/Bravo/Charlie must keep the relative order they had the first time.
     flagged: mini("qa-order-flagged", {
@@ -259,6 +267,36 @@ for (const [mode, label] of [["course", "Course"], ["cyoa", "Adventure"], ["text
     return [...orders];
   }, FIXTURES);
   check(r.length === 1 && r[0] === "A. Alpha | B. Bravo | C. Charlie | D. Delta", "the collective (team discussion) screen keeps the authored order (30 runs, one order)", () => "collective orders: " + J(r));
+}
+
+/* 3b. Replay (course) and Retake module (training) start a NEW run, which must keep the opt-out
+   the first run was started with - and, without it, must draw a new order each time. */
+{
+  const replayOrders = async (mode, fixture, options, rounds) => {
+    const orders = [];
+    await inPage(({ fx, mode, fixture, options }) => window.__co.run(fx[fixture], mode, options), { fx: FIXTURES, mode, fixture, options });
+    for (let i = 0; i < rounds; i++) {
+      orders.push(await inPage(({ mode }) => window.__co.shown(mode), { mode }));
+      if (mode === "training") {
+        await clickWhenStable(page, page.locator(hostSel("button.tr-choice")).first());
+        await clickWhenStable(page, page.locator(hostSel("button.tr-next")));
+        await clickWhenStable(page, page.locator(hostSel("button.btn.primary"), { hasText: /Retake module/ }));
+        await until(page, () => !!document.querySelector("#co-host .mode-training .tr-choice"));
+      } else {
+        await clickWhenStable(page, page.locator(hostSel(".mode-course button.choice")).first());
+        await clickWhenStable(page, page.locator(hostSel(".course-continue-btn")));
+        await clickWhenStable(page, page.locator(hostSel("button.btn.primary"), { hasText: /^\s*Replay\s*$/ }));
+        await until(page, () => !!document.querySelector("#co-host .mode-course button.choice"));
+      }
+    }
+    return orders;
+  };
+  for (const [mode, fixture, label, button] of [["course", "four", "Course", "Replay"], ["training", "trainFour", "Training", "Retake module"]]) {
+    const kept = await replayOrders(mode, fixture, { fixedOrder: true }, 6);
+    check(kept.every((o) => o.join() === AUTHORED.join()), `${label} screen: run()'s { fixedOrder: true } survives "${button}" (6 new runs, authored order every time)`, () => `${label} after ${button}: ${J(kept)}`);
+    const mixed = await replayOrders(mode, fixture, undefined, 6);
+    check(new Set(mixed.map((o) => o.join())).size > 1, `${label} screen control: without the option, "${button}" draws a new order (6 new runs, ${new Set(mixed.map((o) => o.join())).size} different orders)`, () => `${label} after ${button} (no option): ${J(mixed)}`);
+  }
 }
 
 /* =====================================================================
