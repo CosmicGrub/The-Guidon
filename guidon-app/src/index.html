@@ -13029,11 +13029,19 @@ window.G = window.G || {};
       // srsMap is the shared bank-wide map build() just loaded - see
       // refreshCatList()'s own comment above for why this is safe (only
       // ever called from build(), right after that assignment).
-      util.clear(readinessPane);
-      readinessPane.appendChild(el("div.eyebrow", { text: "Readiness" }));
       // The shipped bank only: a unit deck has its own Readiness row on the full Readiness
       // tab and must not move this "Overall" figure.
       const bankAll = all.filter((q) => !q.unitDeck);
+      // Weakest 3 only - this pane is a glance, not a replacement for the
+      // full Readiness tab's complete per-category breakdown. The shared
+      // ranking (G.board.weakestCategoriesByMastery): only categories the
+      // Soldier has tried, never an unopened one that merely sorts first.
+      // Awaited BEFORE the pane is cleared, so two overlapping refreshes can
+      // never each append their rows to the same node.
+      let weakestHere = [];
+      try { weakestHere = await G.board.weakestCategoriesByMastery(3, bankAll, srsMap); } catch (e) { weakestHere = []; }
+      util.clear(readinessPane);
+      readinessPane.appendChild(el("div.eyebrow", { text: "Readiness" }));
       const catStats = categories.filter((c) => c !== "All").map((c) => {
         const pool = bankAll.filter((q) => q.category === c);
         const mastered = pool.filter((q) => G.board.isMasteredSrs(srsMap[q.id])).length;
@@ -13041,18 +13049,21 @@ window.G = window.G || {};
           pct: pool.length ? Math.round(mastered / pool.length * 100) : 0 };
       });
       const totalMastered = catStats.reduce((s, c) => s + c.mastered, 0);
-      const overallPct = bankAll.length ? Math.round(totalMastered / bankAll.length * 100) : 0;
+      // Same headline the full Readiness tab prints: cards that are CURRENT
+      // (mastered and not due), one predicate (G.board.isCurrentSrs), so this
+      // glance can never read a different number than the tab it links to.
+      const nowTs = Date.now();
+      const totalCurrent = bankAll.filter((q) => G.board.isCurrentSrs(srsMap[q.id], nowTs)).length;
+      const currentPct = bankAll.length ? Math.round(totalCurrent / bankAll.length * 100) : 0;
       readinessPane.appendChild(el("div.stat", {}, [
-        el("span.k", { text: "Overall" }),
-        // data-overall-*: the two numbers the percentage is made of, so a test can check the bank it is measured
+        el("span.k", { text: "Cards current" }),
+        // data-overall-*: the numbers the headline is made of, so a test can check the bank it is measured
         // against (the shipped bank alone, never a unit deck) without having to infer it from a rounded figure.
-        el("span.v", { text: overallPct + "%", "data-overall-cards": String(bankAll.length), "data-overall-mastered": String(totalMastered) }),
+        el("span.v", { text: totalCurrent + " of " + bankAll.length, "data-overall-cards": String(bankAll.length), "data-overall-mastered": String(totalMastered), "data-overall-current": String(totalCurrent) }),
       ]));
-      readinessPane.appendChild(el("div.bar" + (overallPct >= 85 ? ".green" : ""), {},
-        [el("span", { style: "transform:scaleX(" + (overallPct / 100) + ")" })]));
-      // Weakest 3 only - this pane is a glance, not a replacement for the
-      // full Readiness tab's complete per-category breakdown.
-      catStats.filter((c) => c.total > 0).sort((a, b) => a.pct - b.pct).slice(0, 3).forEach((c) => {
+      readinessPane.appendChild(el("div.bar" + (currentPct >= 85 ? ".green" : ""), {},
+        [el("span", { style: "transform:scaleX(" + (currentPct / 100) + ")" })]));
+      weakestHere.forEach((c) => {
         const row = el("div", { style: "margin-top:10px" });
         row.appendChild(el("div.stat", {}, [
           el("span.k", { text: c.cat, style: "font-size:0.82rem" }),
@@ -14896,15 +14907,18 @@ window.G = window.G || {};
 
     const totalQ = all.length;
     const totalMastered = catScores.reduce((s, c) => s + c.mastered, 0);
-    const overallPct = totalQ ? Math.round(totalMastered / totalQ * 100) : 0;
-    // "On Track" used to also be Progress's own word for a DIFFERENT score
-    // band on a different metric (compAvg 30-59%, not this tab's
-    // overallPct 60-84%) - same word, non-overlapping ranges, meaning a
-    // Soldier could see "On Track" on both screens and have it mean two
-    // different things. Renamed this tab's 60-84% band so no word here
-    // collides with Progress's readinessLabel() scale at all.
-    const readLabel = overallPct >= 85 ? "Board Ready ✓" : overallPct >= 60 ? "Solid Progress" : overallPct >= 30 ? "Building" : "Getting Started";
-    const readColor = overallPct >= 85 ? "var(--green)" : overallPct >= 60 ? "var(--cyan)" : overallPct >= 30 ? "var(--amber)" : "var(--red)";
+    const totalTried = catScores.reduce((s, c) => s + c.seen, 0);
+    // The headline counts CURRENT cards - mastered AND not yet due
+    // (G.board.isCurrentSrs) - not cards that were ever mastered. It used to
+    // be mastered/total, and "mastered" has no expiry: 1,000 cards last
+    // graded Know It two months ago and never seen since read "88% Board
+    // Ready ✓" with the overdue count on the very next line. The band words
+    // and the check mark went with it: an uncited 85/60/30 cut-off is not
+    // something to hand a Soldier as a verdict on their board, so the
+    // headline is a plain count and the colour only echoes the share.
+    const totalCurrent = all.filter((q) => G.board.isCurrentSrs(srsData[q.id], now)).length;
+    const currentPct = totalQ ? Math.round(totalCurrent / totalQ * 100) : 0;
+    const readColor = currentPct >= 85 ? "var(--green)" : currentPct >= 60 ? "var(--cyan)" : currentPct >= 30 ? "var(--amber)" : "var(--red)";
 
     // ── Due now count ──────────────────────────────────────────
     // Same predicate Home/Progress use (G.board.isDueSrs) - a card with no
@@ -14935,20 +14949,22 @@ window.G = window.G || {};
     const header = el("div.panel");
     header.appendChild(el("div.stat", {}, [
       el("span.k", { text: "Board Readiness Score" }),
-      el("span.v", { style: "color:" + readColor + ";font-weight:700", text: overallPct + "%  " + readLabel }),
+      el("span.v", { style: "color:" + readColor + ";font-weight:700", text: totalCurrent + " of " + totalQ + " cards current" }),
     ]));
     // Enhancement backlog round 3, "Board Readiness Display Accuracy"
-    // bucket: this dead ternary's >=60 branch and final else both
-    // evaluated to the same empty string, so the bar was only ever
-    // ".green" or the base (amber-tinted) style - never amber or red for
-    // the 0-59% bands readColor/readLabel just above explicitly flag as
-    // "Building"/"Getting Started", visually contradicting the text right
-    // next to it. Mapped onto the same bands readColor uses (added a
-    // real .bar.red variant above; .amber isn't needed since the base
-    // .bar style is already amber-tinted).
-    header.appendChild(el("div.bar" + (overallPct >= 85 ? ".green" : overallPct >= 60 ? ".cyan" : overallPct >= 30 ? "" : ".red"), {},
-      [el("span", { style: "transform:scaleX(" + (overallPct / 100) + ")" })]));
+    // bucket: this bar used to be a dead ternary that was only ever ".green"
+    // or the base (amber-tinted) style, visually contradicting the text
+    // next to it. It follows the same bands readColor uses (a real .bar.red
+    // variant exists for the low band; the base .bar style is already
+    // amber-tinted).
+    header.appendChild(el("div.bar" + (currentPct >= 85 ? ".green" : currentPct >= 60 ? ".cyan" : currentPct >= 30 ? "" : ".red"), {},
+      [el("span", { style: "transform:scaleX(" + (currentPct / 100) + ")" })]));
+    header.appendChild(el("p.hint", { text: "Current means you last rated the card Know It or Down Cold and it is not due for review yet." }));
     header.appendChild(el("div.stat", { style: "margin-top:10px" }, [
+      el("span.k", { text: "Cards tried at least once" }),
+      el("span.v", { text: totalTried + " / " + totalQ }),
+    ]));
+    header.appendChild(el("div.stat", {}, [
       // Enhancement backlog round 3, "Board Readiness Display Accuracy"
       // bucket: this label described the OLD interval-based mastery
       // signal - totalMastered (via categoryMasteryScores() ->
@@ -17062,6 +17078,18 @@ window.G = window.G || {};
     // `lastGrade >= 2`); this predicate is the one shared home for it.
     isMasteredSrs(srs) {
       return !!(srs && srs.lastGrade != null && srs.lastGrade >= 2);
+    },
+    // "Current": mastered AND not yet due - the one predicate every readiness
+    // HEADLINE (Board Drill's Readiness score, Home, Progress) counts, so a
+    // card last graded Know It two months ago and never seen since does not
+    // read as ready. isMasteredSrs above deliberately has no time term (the
+    // card badge, category heat map, pillar rows and unit/MOS decks all key
+    // off it, and a time term would flip them and revive the drift the
+    // round-3 unification fixed) - this composes it with isDueSrs instead, so
+    // "current" and "due for review now" can never disagree about a card:
+    // every mastered card is exactly one of the two.
+    isCurrentSrs(srs, now) {
+      return G.board.isMasteredSrs(srs) && !G.board.isDueSrs(srs, now);
     },
     // Shared "is this card a leech" predicate — the misses>=4 threshold was
     // duplicated as a literal at 3 separate call sites (count tally, the

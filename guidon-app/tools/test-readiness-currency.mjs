@@ -143,5 +143,110 @@ const clearSrs = () => page.evaluate(async () => {
   await clearSrs();
 }
 
+
+/* ---------------------------------------------------------------------
+   B. the Readiness headline counts CURRENT cards (mastered and not due)
+   and never says "Board Ready"
+   --------------------------------------------------------------------- */
+const N = await liveCount(page, { kind: "board" });
+const statOf = (label) => page.evaluate((label) => {
+  for (const s of document.querySelectorAll("#route .stat")) {
+    const k = s.querySelector(".k"), v = s.querySelector(".v");
+    if (k && v && k.textContent.includes(label)) return v.textContent.replace(/\s+/g, " ").trim();
+  }
+  return null;
+}, label);
+const statIs = async (label, expected, claim) => { const v = await statOf(label); return is(v === expected, claim, () => JSON.stringify(v)); };
+const headerPanel = () => page.evaluate(() => {
+  const p = [...document.querySelectorAll("#route .panel")].find((x) => /Board Readiness Score/.test(x.textContent) && x.querySelector(".stat"));
+  return p ? { text: p.innerText.replace(/\s+/g, " ").trim(), greenBar: !!p.querySelector(".bar.green"), buttons: [...p.querySelectorAll("button")].map((b) => b.textContent.trim()) } : null;
+});
+// every visible card gets the same row; `cur` says how many of them are still inside their interval
+const seedAll = (mkRow) => page.evaluate(async (src) => {
+  const mk = new Function("return (" + src + ")")();
+  const qs = G.store.boardQuestions();
+  const now = Date.now();
+  for (let i = 0; i < qs.length; i++) await G.db.put("kv", { k: "srs:" + qs[i].id, v: mk(i, now, qs.length) });
+  return qs.length;
+}, mkRow.toString());
+const reload = async () => { await page.evaluate(() => { location.hash = "#/home"; }); await openReadiness(); };
+
+{
+  // Fixture A: every card last graded Down Cold, every one overdue by 60 days.
+  await clearSrs();
+  await seedAll((i, now) => ({ reps: 1, ease: 2.5, interval: 3, due: now - 60 * 86400000, misses: 0, lastGrade: 3 }));
+  await reload();
+  const h = await headerPanel();
+  is(!!h && new RegExp("0 of " + N + " cards current").test(h.text), "all-overdue deck: the headline reads 0 of " + N + " cards current", () => JSON.stringify(h && h.text.slice(0, 260)));
+  is(!!h && !/Board Ready|✓|Solid Progress|Getting Started/.test(h.text), "and never says Board Ready (no check mark, no band words)", () => JSON.stringify(h && h.text.slice(0, 260)));
+  is(!!h && !h.greenBar, "and the bar is not green", () => "green bar present");
+  await statIs("Due for review now", N + " questions", "the due line agrees: every card is due");
+  await statIs("Questions mastered", N + " / " + N, "mastered is untouched by the time term (still last-graded Know It or Down Cold)");
+  const routeText = await page.evaluate(() => document.getElementById("route").innerText);
+  is(!/Board Ready/.test(routeText), "the phrase Board Ready appears nowhere on the Readiness screen", () => "found");
+
+  // Fixture B: the same grades, due tomorrow -> all current.
+  await clearSrs();
+  await seedAll((i, now) => ({ reps: 1, ease: 2.5, interval: 3, due: now + 86400000, misses: 0, lastGrade: 3 }));
+  await reload();
+  const hb = await headerPanel();
+  is(!!hb && new RegExp(N + " of " + N + " cards current").test(hb.text), "same grades due tomorrow: the headline reads " + N + " of " + N + " cards current", () => JSON.stringify(hb && hb.text.slice(0, 260)));
+  await statIs("Due for review now", "None — you're current", "and nothing is due");
+  is(!!hb && !hb.buttons.some((b) => /Due Now/.test(b)), "and there is no Drill Due Now button", () => JSON.stringify(hb && hb.buttons));
+  is(!!hb && !/Board Ready/.test(hb.text), "even fully current, the wording is a count, not a verdict", () => JSON.stringify(hb && hb.text.slice(0, 260)));
+
+  // Fixture C: a mix - first 30% current, the rest overdue, and a few graded Somewhat (never mastered).
+  await clearSrs();
+  const K = Math.floor(N * 0.3);
+  await seedAll((i, now, n) => i < Math.floor(n * 0.3)
+    ? { reps: 2, ease: 2.5, interval: 5, due: now + 3 * 86400000, misses: 0, lastGrade: 2 }
+    : { reps: 2, ease: 2.5, interval: 5, due: now - 86400000, misses: 0, lastGrade: 2 });
+  await reload();
+  const hc = await headerPanel();
+  is(!!hc && new RegExp(K + " of " + N + " cards current").test(hc.text), "a mix: " + K + " of " + N + " current", () => JSON.stringify(hc && hc.text.slice(0, 260)));
+  await statIs("Due for review now", (N - K) + " questions", "and the other " + (N - K) + " are exactly the ones due");
+  await statIs("Questions mastered", N + " / " + N, "mastered (no time term) still counts all of them");
+
+  // Honest path: a card graded Somewhat is due tomorrow but NOT current (it was never mastered).
+  await clearSrs();
+  await seedAll((i, now) => ({ reps: 1, ease: 2.2, interval: 1, due: now + 86400000, misses: 0.5, lastGrade: 1 }));
+  await reload();
+  const hd = await headerPanel();
+  is(!!hd && new RegExp("0 of " + N + " cards current").test(hd.text), "cards graded Somewhat are not current even though they are not due", () => JSON.stringify(hd && hd.text.slice(0, 260)));
+  await statIs("Cards tried", N + " / " + N, "and are counted as tried at least once");
+
+  // Never-studied deck: 0 current, 0 tried, nothing due, no invented verdict.
+  await clearSrs();
+  await reload();
+  const he = await headerPanel();
+  is(!!he && new RegExp("0 of " + N + " cards current").test(he.text) && !/Board Ready/.test(he.text), "a brand-new deck reads 0 of " + N + " current, no verdict", () => JSON.stringify(he && he.text.slice(0, 260)));
+  await clearSrs();
+}
+
+/* The Board Drill screen's own side pane (only at 1360px and wider) prints the
+   same headline, from the same predicate, and ranks its weakest three with the
+   shared ordering - it used to say "Overall 88%" over an alphabetical list. */
+{
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await clearSrs();
+  const K10 = await seedAll((i, now) => (i < 10
+    ? { reps: 1, ease: 2.5, interval: 3, due: now + 3 * 86400000, misses: 0, lastGrade: 3 }
+    : { reps: 1, ease: 2.5, interval: 3, due: now - 60 * 86400000, misses: 0, lastGrade: 3 }));
+  await page.evaluate(() => { location.hash = "#/home"; });
+  await waitForRoute(page, "#/board", { ready: ".drill-readiness-pane [data-overall-current]" });
+  const pane = await page.evaluate(() => {
+    const v = document.querySelector(".drill-readiness-pane [data-overall-current]");
+    const pn = document.querySelector(".drill-readiness-pane");
+    return { text: v.textContent, current: v.getAttribute("data-overall-current"), cards: v.getAttribute("data-overall-cards"), mastered: v.getAttribute("data-overall-mastered"), paneText: pn.innerText.replace(/\s+/g, " ") };
+  });
+  is(pane.current === "10" && pane.text === "10 of " + K10 && pane.mastered === String(K10), "the drill side pane counts 10 current of " + K10 + " (mastered, without the time term, is still " + K10 + ")", () => JSON.stringify(pane));
+  is(!/Overall|Board Ready/.test(pane.paneText), "and no longer says Overall or Board Ready", () => JSON.stringify(pane.paneText.slice(0, 200)));
+  await openReadiness();
+  const hp = await headerPanel();
+  is(!!hp && new RegExp("10 of " + K10 + " cards current").test(hp.text), "and the full Readiness tab reads the same 10 of " + K10, () => JSON.stringify(hp && hp.text.slice(0, 200)));
+  await clearSrs();
+  await page.setViewportSize({ width: 1280, height: 900 });
+}
+
 expectNoConsoleNoise(noise);
 await finish("READINESS CURRENCY");
