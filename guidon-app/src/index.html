@@ -30550,6 +30550,40 @@ window.G = window.G || {};
     return false;
   }
 
+  // Reminders the squad roster made. Its "Remind me" buttons write a label
+  // that NAMES the Soldier ("Counsel SGT JDX", "Brief SGT JDX on the MOI"),
+  // so that row is the roster's data under another key: left in, the
+  // initials rode every default backup - and were counted as excluded zero
+  // times - while the roster itself stayed out. Each is stamped with a
+  // `source` starting "leader" (leader.js), and that stamp is what is
+  // checked. Rows written before the stamp existed carry only the label, so
+  // for those the exact label the button wrote is recognised too: one of its
+  // four fixed leads, then "<rank> <name>" exactly as a roster entry reads.
+  // (Once a roster has been cleared, an old unstamped reminder can no longer
+  // be told from one the Soldier typed, and stays.)
+  var LEADER_REMINDER_LEADS = ["Counsel ", "Schedule AFT for ", "Schedule weapons qual for ", "Update NCOER thru-date for "];
+  function rosterLabels(kvRows) {
+    var out = [];
+    (kvRows || []).forEach(function (row) {
+      if (!row || row.k !== "guidon:leader:roster:v1" || !Array.isArray(row.v)) return;
+      row.v.forEach(function (s, i) {
+        if (!s || typeof s !== "object") return;
+        out.push((s.rank ? s.rank + " " : "") + (s.name || "Soldier " + (i + 1)));
+      });
+    });
+    return out;
+  }
+  function isLeaderReminder(r, rosterWho) {
+    if (!r || typeof r !== "object") return false;
+    if (typeof r.source === "string" && r.source.indexOf("leader") === 0) return true;
+    var label = String(r.label || "");
+    for (var i = 0; i < LEADER_REMINDER_LEADS.length; i++) {
+      var lead = LEADER_REMINDER_LEADS[i];
+      if (label.indexOf(lead) === 0 && rosterWho.indexOf(label.slice(lead.length)) !== -1) return true;
+    }
+    return false;
+  }
+
   // Content-checks for other known kv keys beyond the profile row (added
   // alongside it) - previously only guidon:profile:v1 was validated at
   // all; every other kv row, however malformed, was written straight to
@@ -30992,8 +31026,24 @@ window.G = window.G || {};
       var kv = await G.db.all("kv");
       var excluded = 0;
       if (!opts.includePrivate) {
-        kv = kv.filter(function (row) {
-          if (!row || !isPrivateKey(row.k)) return true;
+        var rosterWho = rosterLabels(kv);
+        var kept = [];
+        kv.forEach(function (row) {
+          if (!row || !isPrivateKey(row.k)) {
+            // The one row that is not private itself but can carry a roster
+            // name inside it: reminders the squad roster's "Remind me" made
+            // ("Counsel SGT JDX"). Those leave with the roster; every other
+            // reminder, the Soldier's own, stays in the backup.
+            if (row && row.k === "reminders:v1" && Array.isArray(row.v)) {
+              var own = row.v.filter(function (r) { return !isLeaderReminder(r, rosterWho); });
+              if (own.length !== row.v.length) {
+                excluded++;
+                row = Object.assign({}, row, { v: own });
+              }
+            }
+            kept.push(row);
+            return;
+          }
           // Codex review on PR #193: private rows are wiped to an empty
           // value once the last thing in them is deleted/cleared -
           // counting that as "excluded" told a Soldier with an empty
@@ -31001,8 +31051,8 @@ window.G = window.G || {};
           // otherwise-complete backup. Only a row that actually holds
           // something is real omitted data (privateKeyHasContent() above).
           if (privateKeyHasContent(row.v)) excluded++;
-          return false;
         });
+        kv = kept;
       }
       payload.stores.kv = kv;
       payload.excludedPrivateEntries = excluded;
@@ -31341,7 +31391,7 @@ window.G = window.G || {};
     var includePrivateCb = el("input", { type: "checkbox", id: "backup-include-private" });
     var includePrivateRow = el("label.mini-row", { for: "backup-include-private", style: "gap:6px;align-items:flex-start;margin:4px 0 8px" }, [
       includePrivateCb,
-      el("span.hint", { text: "Also include the leader roster and any saved Risk Worksheets. Off by default because these can hold other people's names or a real facility/vulnerability if you didn't follow the synthetic-data guidance - only include them if you specifically need to carry that data to another device." }),
+      el("span.hint", { text: "Also include the leader roster (and the reminders made from it) and any saved Risk Worksheets. Off by default because these can hold other people's names or a real facility/vulnerability if you didn't follow the synthetic-data guidance - only include them if you specifically need to carry that data to another device." }),
     ]);
     panel.appendChild(includePrivateRow);
 
@@ -31431,7 +31481,7 @@ window.G = window.G || {};
     // indistinguishable from a complete one. Name what was left out (the
     // "include" checkbox above is how a Soldier gets it into the next one).
     if (payload && payload.excludedPrivateEntries && !payload.includesOtherPeoplesData) {
-      return "Backup downloaded (the leader roster and/or risk worksheets were left out — check \"include\" above if you need them on the new device).";
+      return "Backup downloaded (the leader roster, its reminders and/or risk worksheets were left out — check \"include\" above if you need them on the new device).";
     }
     return "Backup downloaded";
   }
@@ -37916,7 +37966,8 @@ window.G = window.G || {};
         "The roster can hold data about someone other than the app's user, and the Risk Worksheet's fields could hold real facility or vulnerability information if its synthetic-only guidance isn't followed. Both are treated differently from everything else GUIDON stores:",
         "If you ever export a backup of your GUIDON data (a JSON file you create yourself, entirely on-device, for your own safekeeping), the squad roster and any saved Risk Worksheets are excluded by default. Your own profile, progress, and drill history are included; roster entries and risk worksheets are not.",
         "Including them in a backup requires a separate, explicit “include” opt-in, checked off (unchecked by default) right next to the Export backup button — never bundled in by accident.",
-        "Everything else you type into GUIDON — your profile, IDP goals, counseling plans, reminders, and the drafts you save in the Forms Trainer — is in a default backup. GUIDON does not check those for other people's names or numbers, so a practice form should use made-up ones.",
+        "The reminders you set from the roster's “Remind me” buttons follow the roster out of a default backup, because each one names the Soldier it is about; the same “include” box brings them along.",
+        "Everything else you type into GUIDON — your profile, IDP goals, counseling plans, your own reminders, and the drafts you save in the Forms Trainer — is in a default backup. GUIDON does not check those for other people's names or numbers, so a practice form should use made-up ones.",
         "This default-exclude / explicit-opt-in behavior is checked automatically before every release.",
       ] },
       { h: "Backups are yours, not ours", p: ["GUIDON can generate a backup file (JSON) of your data on request. This file is created locally in your browser and saved to your device, the same way any file download works. GUIDON does not upload it anywhere; the developer never sees it. What you do with that file afterward (keep it, delete it, email it to yourself, put it on a shared drive) is entirely your choice and outside GUIDON's control. If you choose to include the optional squad roster or Risk Worksheet data in a backup you share, you are sharing information about other people or a resource assessment, so consider that before doing so."] },
@@ -38940,7 +38991,7 @@ window.G = window.G || {};
     });
     dataPanel.appendChild(el("label.mini-row", { for: "settings-backup-include-private", style: "gap:6px;align-items:flex-start;margin-top:8px" }, [
       includePrivateCb,
-      el("span.hint", { text: "Also include the leader roster and any saved Risk Worksheets (off by default)." }),
+      el("span.hint", { text: "Also include the leader roster, its reminders and any saved Risk Worksheets (off by default)." }),
     ]));
     dataPanel.appendChild(el("div.btn-row", { style: "margin-top:8px" }, [
       exportBtn,

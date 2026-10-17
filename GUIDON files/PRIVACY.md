@@ -37,7 +37,8 @@ The roster can hold data about someone other than the app's user, and the Risk W
 
 - If you ever export a backup of your GUIDON data (a JSON file you create yourself, entirely on-device, for your own safekeeping), **the squad roster and any saved Risk Worksheets are excluded by default.** Your own profile, progress, and drill history are included; roster entries and risk worksheets are not.
 - Including them in a backup requires a separate, explicit "include" opt-in, checked off (unchecked by default) right next to the Export backup button — never bundled in by accident.
-- Everything else you type into GUIDON — your profile, IDP goals, counseling plans, reminders, and the drafts you save in the Forms Trainer — **is** in a default backup. GUIDON does not check those for other people's names or numbers, so a practice form should use made-up ones.
+- The reminders you set from the roster's “Remind me” buttons follow the roster out of a default backup, because each one names the Soldier it is about; the same "include" box brings them along.
+- Everything else you type into GUIDON — your profile, IDP goals, counseling plans, your own reminders, and the drafts you save in the Forms Trainer — **is** in a default backup. GUIDON does not check those for other people's names or numbers, so a practice form should use made-up ones.
 - This default-exclude / explicit-opt-in behavior is checked automatically before every release.
 
 ## Backups are yours, not ours
