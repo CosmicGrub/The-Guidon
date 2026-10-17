@@ -411,16 +411,16 @@ sectionHeadings.length === 13
   : bad(`#/privacy rendered ${sectionHeadings.length} section headings, expected 13: ${JSON.stringify(sectionHeadings)}`);
 
 const rosterSection = await page.evaluate(() => {
-  const h3 = [...document.querySelectorAll(".panel h3")].find((h) => /squad roster and risk worksheet get extra protection/i.test(h.textContent || ""));
+  const h3 = [...document.querySelectorAll(".panel h3")].find((h) => /squad roster, risk worksheet and form drafts get extra protection/i.test(h.textContent || ""));
   if (!h3) return null;
   const panel = h3.closest(".panel");
   return [...panel.querySelectorAll("p")].map((p) => p.textContent).join(" ");
 });
 rosterSection
-  ? (/excluded by default/i.test(rosterSection) && /explicit.*opt-in/i.test(rosterSection)
-      ? ok('#/privacy: "The squad roster and Risk Worksheet get extra protection" section states the real backup-exclusion behavior (excluded by default, explicit opt-in to include)')
+  ? (/excluded by default/i.test(rosterSection) && /explicit.*opt-in/i.test(rosterSection) && /form drafts/i.test(rosterSection)
+      ? ok('#/privacy: "The squad roster, Risk Worksheet and form drafts get extra protection" section states the real backup-exclusion behavior (roster, worksheets and form drafts excluded by default, explicit opt-in to include)')
       : bad(`#/privacy: squad roster section text did not match expected claims: "${rosterSection}"`))
-  : bad('#/privacy: "The squad roster and Risk Worksheet get extra protection" section not found');
+  : bad('#/privacy: "The squad roster, Risk Worksheet and form drafts get extra protection" section not found');
 
 const contactSection = await page.evaluate(() => {
   const h3 = [...document.querySelectorAll(".panel h3")].find((h) => /^Contact$/i.test((h.textContent || "").trim()));

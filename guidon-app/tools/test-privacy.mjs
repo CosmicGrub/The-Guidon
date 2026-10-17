@@ -1,8 +1,11 @@
 /**
  * The squad roster is the only part of GUIDON built to hold information about
- * people other than the user (GUIDON cannot check what is typed into its other
- * tools, and says so). Backup files get emailed. This asserts the roster does
- * not ride along by default, and that including it is possible but deliberate.
+ * people other than the user (GUIDON does not check what is typed into a form's
+ * free-text fields, and says so). Backup files get emailed. This asserts the
+ * roster does not ride along by default, and that including it is possible but
+ * deliberate - and (3c) that the two other things the policy says stay out of a
+ * default backup (form drafts, risk worksheets) really do, while the Soldier's
+ * own data still goes in.
  *
  * P1 of the "No server, ever" promise (desktop roadmap, locked decision Q1)
  * adds five more cases, all against the same one browser:
@@ -234,6 +237,55 @@ const aboutText = await page.evaluate(() => {
     const hits = STALE.filter(([, re]) => re.test(flat)).map(([name]) => name);
     hits.length === 0 ? ok(`(3b) ${where}: no absolute "only place" claim, nothing shipped is described as future`) : bad(`(3b) ${where}: ${hits.join("; ")}`);
   }
+}
+
+// ---- (3c) what a default backup holds is what the policy says it holds ----
+// The policy (#/privacy and PRIVACY.md) says: roster, Risk Worksheets and form
+// drafts are left out by default and come with the "include" box; everything
+// else the Soldier typed is in. Drafts use their own row shape ({k, value}, not
+// {k, v}), which is why this goes through the real exportAll/importAll.
+{
+  const DOE = "DOE, JANE Q. SSG";
+  const r = await page.evaluate(async (doe) => {
+    const G = window.G;
+    await G.db.put("kv", { k: "forms:saved", value: [{ sid: "s-priv", formId: "da4856", title: "DA 4856", ts: "2026-10-01T00:00:00.000Z", values: { name: doe } }] });
+    await G.db.put("kv", { k: "risk:all", v: [{ id: "w1", resource: "Practice range" }] });
+    const keys = (p) => (p.stores.kv || []).map((x) => x.k);
+    const dflt = await G.backup.exportAll();
+    const optIn = await G.backup.exportAll({ includePrivate: true });
+    const optRow = (optIn.stores.kv || []).find((x) => x.k === "forms:saved");
+    // a draft list the Soldier emptied is not "a draft left out"
+    await G.db.put("kv", { k: "forms:saved", value: [] });
+    const emptied = await G.backup.exportAll();
+    // restoring an opt-in backup puts the drafts back, array and all
+    await G.backup.importAll(optIn);
+    const back = await G.db.get("kv", "forms:saved");
+    return {
+      dKeys: keys(dflt), dRaw: JSON.stringify(dflt), dExcluded: dflt.excludedPrivateEntries,
+      oKeys: keys(optIn), oValue: optRow && optRow.value, oFlag: optIn.includesOtherPeoplesData,
+      eKeys: keys(emptied), eExcluded: emptied.excludedPrivateEntries,
+      backValue: back && back.value,
+    };
+  }, DOE);
+  const OUT = ["forms:saved", "risk:all", "guidon:leader:roster:v1"];
+  OUT.every((k) => !r.dKeys.includes(k)) && !r.dRaw.includes(DOE)
+    ? ok("(3c) a default backup leaves out form drafts, risk worksheets and the roster, and none of the typed text appears")
+    : bad("(3c) default backup carried a private row: " + JSON.stringify(OUT.filter((k) => r.dKeys.includes(k))) + (r.dRaw.includes(DOE) ? " and the typed text" : ""));
+  r.dKeys.includes("guidon:probe:mine")
+    ? ok("(3c) ...while the Soldier's own data still goes into a default backup")
+    : bad("(3c) the Soldier's own data was dropped from a default backup");
+  r.dExcluded === 3 ? ok("(3c) the backup counts the three it left out (roster, worksheets, drafts)") : bad("(3c) excludedPrivateEntries = " + r.dExcluded + ", expected 3");
+  OUT.every((k) => r.oKeys.includes(k)) && r.oFlag === true && r.oValue && r.oValue[0] && r.oValue[0].values.name === DOE
+    ? ok("(3c) ticking 'include' brings all three along, the draft's array intact under .value")
+    : bad("(3c) opt-in backup: " + JSON.stringify({ keys: r.oKeys.filter((k) => OUT.includes(k)), flag: r.oFlag, value: r.oValue }));
+  !r.eKeys.includes("forms:saved") && r.eExcluded === 2
+    ? ok("(3c) an emptied draft list is not counted as a draft left out (2: roster, worksheets)")
+    : bad("(3c) emptied drafts: in default export " + r.eKeys.includes("forms:saved") + ", excluded " + r.eExcluded);
+  r.backValue && r.backValue[0] && r.backValue[0].values.name === DOE
+    ? ok("(3c) restoring that opt-in backup puts the draft back with its typed text")
+    : bad("(3c) restored drafts: " + JSON.stringify(r.backValue));
+  // leave the page as the later checks expect it: roster only, no drafts or worksheets
+  await page.evaluate(async () => { await G.db.put("kv", { k: "forms:saved", value: [] }); await G.db.put("kv", { k: "risk:all", v: [] }); });
 }
 
 // ---- (4) kill switch default off + a real Settings toggle ----

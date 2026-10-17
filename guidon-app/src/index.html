@@ -21131,7 +21131,7 @@ window.G = window.G || {};
   // header already say "practice"; neither is on the screen with the cursor.)
   // test:forms asserts it is on both tabs; the backup sentence is the same
   // fact the Privacy Policy states and test:privacy keeps true.
-  var PRACTICE_NOTE = "Practice only. Use made-up names and numbers. GUIDON does not check what you type. Drafts stay on this device and are included when you back up.";
+  var PRACTICE_NOTE = "Practice only. Use made-up names and numbers. GUIDON does not check what you type. Drafts stay on this device and are left out of a normal backup.";
   function practiceNote() { return U.el("p", { class: "hint forms-practice-note" }, [PRACTICE_NOTE]); }
 
   function drawFill(f, host, mount) {
@@ -30526,7 +30526,18 @@ window.G = window.G || {};
   // hold a facility name, a location and a vulnerability rating - the same
   // reasoning as the roster, even though its own disclaimer now asks for a
   // synthetic resource rather than a real one.
-  var PRIVATE_PREFIXES = ["guidon:leader:roster", "risk:all"];
+  //
+  // "forms:saved" (Forms Trainer drafts) joined the list in 2026-10 (audit,
+  // forms-privacy). It is the Soldier's own practice work, but its free-text
+  // fields are the one place another person's real identifiers can be typed in
+  // with nothing to check them: a DA 4856 counselee, DA 5960 dependents, a
+  // leave address. A draft autosaves as you type, so it reached a default
+  // backup the Soldier never chose to put it in; the roster's own precedent
+  // (no opt-in, no export) is the safe default, and the same "include" box is
+  // how a Soldier who wants drafts on a new device brings them. The cost is
+  // honest and stated in the Privacy Policy and on the Forms tabs: a normal
+  // backup does not carry form drafts, so a restore does not bring them back.
+  var PRIVATE_PREFIXES = ["guidon:leader:roster", "risk:all", "forms:saved"];
   function isPrivateKey(k) {
     k = String(k || "");
     for (var i = 0; i < PRIVATE_PREFIXES.length; i++) {
@@ -30534,6 +30545,9 @@ window.G = window.G || {};
     }
     return false;
   }
+  // Where a kv row keeps its payload: every row uses `.v`, except forms:saved,
+  // which has always stored its array under `.value` (see its validator below).
+  function privateValue(row) { return row && row.k === "forms:saved" ? row.value : row && row.v; }
   // Both call sites below (the export-time excluded-count and the
   // import-time warning) used to test Array.isArray(v) && v.length only -
   // true for every private key that existed when that check was written
@@ -31019,9 +31033,10 @@ window.G = window.G || {};
     // caller instead of only to whichever dev tools happened to be open,
     // and logExportFail() above additionally makes it durable.
     var failedStores = [];
-    // kv holds profile/goals/drafts/srs — all the user's own. It ALSO holds the
-    // squad roster, which is other people's data, so that is excluded unless
-    // explicitly asked for.
+    // kv holds profile/goals/srs — all the user's own. It ALSO holds the squad
+    // roster (other people's data), the Risk Worksheet, the roster's own
+    // reminders and the Forms Trainer's saved drafts (free text that can name
+    // another person) - all excluded unless explicitly asked for.
     try {
       var kv = await G.db.all("kv");
       var excluded = 0;
@@ -31050,7 +31065,7 @@ window.G = window.G || {};
           // roster their (nonexistent) roster was left out of an
           // otherwise-complete backup. Only a row that actually holds
           // something is real omitted data (privateKeyHasContent() above).
-          if (privateKeyHasContent(row.v)) excluded++;
+          if (privateKeyHasContent(privateValue(row))) excluded++;
         });
         kv = kept;
       }
@@ -31335,11 +31350,11 @@ window.G = window.G || {};
             } else if (unitOverPreview(row.k)) {
               kvRejected.push(row.k);
             }
-            if (isPrivateKey(row.k) && privateKeyHasContent(row.v)) privateKeysPresent.push(row.k);
+            if (isPrivateKey(row.k) && privateKeyHasContent(privateValue(row))) privateKeysPresent.push(row.k);
           });
         }
         var msg = "Import this backup?" + (sum ? "\n\nIt contains: " + (sum.kv || 0) + " saved items, " + (sum.userScenarios || 0) + " authored scenarios, " + (sum.attempts || 0) + " quiz attempts." : "") + "\n\nYour existing data will be kept; matching items will be overwritten by the backup." + (hasProfileRow ? " This includes your name, rank, and board date." : "") +
-          (privateKeysPresent.length ? " This file also carries " + describeKeys(privateKeysPresent) + " - other people's information or a resource assessment, not your own study data - which will be written to this device too." : "") +
+          (privateKeysPresent.length ? " This file also carries " + describeKeys(privateKeysPresent) + " - items a normal backup leaves out, because they can hold other people's information or a resource assessment rather than your own study data - and they will be written to this device too." : "") +
           // Named in the Soldier's words (describeKeys), never by storage key.
           (kvRejected.length ? "\n\n" + (kvRejected.length === 1 ? "1 item in this file is damaged and will be left out: " : kvRejected.length + " items in this file are damaged and will be left out: ") + describeKeys(kvRejected) + ". Everything else will be restored." : "");
         G.modal.confirm(msg, { title: "Import backup" }).then(function (ok) {
@@ -31367,7 +31382,7 @@ window.G = window.G || {};
   function renderControls(host) {
     var panel = el("div.backup-panel");
     panel.appendChild(el("div.eyebrow", { text: "Backup & restore" }));
-    panel.appendChild(el("p.hint", { text: "GUIDON stores everything on this device only. Export a backup file to move your profile, IDP goals, counseling drafts, promotion-point estimates, and study progress to another device — or to keep them safe across reinstalls." }));
+    panel.appendChild(el("p.hint", { text: "GUIDON stores everything on this device only. Export a backup file to move your profile, IDP goals, counseling plans, promotion-point estimates, and study progress to another device — or to keep them safe across reinstalls. Saved form drafts and the leader roster stay out unless you tick the “include” box." }));
 
     // Upgrade-roadmap first wave, item 5: populated asynchronously right
     // below (a fast IndexedDB read, not worth blocking the rest of the
@@ -31391,7 +31406,7 @@ window.G = window.G || {};
     var includePrivateCb = el("input", { type: "checkbox", id: "backup-include-private" });
     var includePrivateRow = el("label.mini-row", { for: "backup-include-private", style: "gap:6px;align-items:flex-start;margin:4px 0 8px" }, [
       includePrivateCb,
-      el("span.hint", { text: "Also include the leader roster (and the reminders made from it) and any saved Risk Worksheets. Off by default because these can hold other people's names or a real facility/vulnerability if you didn't follow the synthetic-data guidance - only include them if you specifically need to carry that data to another device." }),
+      el("span.hint", { text: "Also include the leader roster (and the reminders made from it), any saved Risk Worksheets and your saved form drafts. Off by default because these can hold other people's names or a real facility/vulnerability if you didn't follow the synthetic-data guidance - only include them if you specifically need to carry that data to another device." }),
     ]);
     panel.appendChild(includePrivateRow);
 
@@ -31481,7 +31496,7 @@ window.G = window.G || {};
     // indistinguishable from a complete one. Name what was left out (the
     // "include" checkbox above is how a Soldier gets it into the next one).
     if (payload && payload.excludedPrivateEntries && !payload.includesOtherPeoplesData) {
-      return "Backup downloaded (the leader roster, its reminders and/or risk worksheets were left out — check \"include\" above if you need them on the new device).";
+      return "Backup downloaded (the leader roster, its reminders, risk worksheets and/or saved form drafts were left out — check \"include\" above if you need them on the new device).";
     }
     return "Backup downloaded";
   }
@@ -37957,20 +37972,21 @@ window.G = window.G || {};
         "Storage locations: an on-device database (IndexedDB, database name guidon) holding your profile, saved answers, quiz/board-drill history, and progress; plus a small amount of on-device browser storage (localStorage) for interface preferences like your selected theme.",
         "Profile information you enter: things like your name, rank, MOS, ETS date, target board date, study weak points, and readiness answers, which you type in to personalize your action plan and drills.",
         "Practice and progress data: quiz attempts, Mock Board results, streaks, and scenario progress, generated as you use the app.",
-        "Squad roster (optional, leader-facing only): if you use the roster feature, it asks for initials, a callsign, or a roster number for each Soldier — not full legal names — plus a rank and counseling dates. It is the only part of GUIDON built to hold information about people other than you, so it gets extra protection — see the next section. GUIDON cannot check what you type into its other tools, such as the free-text fields on a form, so keep other people's real names, addresses, and ID numbers out of them.",
+        "Squad roster (optional, leader-facing only): if you use the roster feature, it asks for initials, a callsign, or a roster number for each Soldier — not full legal names — plus a rank and counseling dates. It is the only part of GUIDON built to hold information about people other than you, so it gets extra protection — see the next section. GUIDON does not check what you type into the free-text fields on a form, and it cannot tell a real name or address from a made-up one, so keep other people's real names, addresses, and ID numbers out of them.",
         "Risk Worksheet (optional, practice tool only): the DA Form 7278 practice tool asks for a resource, a location, and other worksheet fields. It is meant for a synthetic or hypothetical scenario, never a real facility, location, or vulnerability — but because the fields could be used to enter real information, GUIDON gives any saved worksheet the same extra protection as the roster (see the next section).",
+        "Form drafts (optional, practice tool only): the Forms Trainer saves what you type into a practice form as a draft on your device, as you type, so you can come back to it. It is meant for made-up names and numbers, never a real person's name, address, or ID number, and GUIDON does not check what is typed. Form drafts are kept out of a normal backup, the same way the roster is (see the next section).",
         "Unit decks (optional): if you add a study deck your own unit wrote (Settings → Study Preferences → Unit decks), GUIDON keeps that deck on your device, the same way it keeps your My unit texts. It comes from a file you choose or text you paste; GUIDON never fetches it from anywhere. Before it is added, and again each time GUIDON starts and each time a backup is restored, GUIDON checks it for classification markings, Social Security and DoD ID numbers, contact details and lists of names. It refuses the whole deck if it finds any when you add it; a saved deck that fails the check later is left out of your study tools, but it stays on your device (and in any backup you export) until you remove it, and Settings lists it with a Remove button. It is meant for a unit's own study facts, not for information about individual Soldiers, and the check can miss things, so the person who wrote the deck is responsible for what is in it. A deck is your own study material, so every backup you export includes it (there is no separate opt-in, unlike the squad roster) and it comes back when you restore that backup. A Guest or Kiosk session saves no deck, but a deck already on the device can still be studied in one. Quiz best scores and review progress on a deck's cards are kept under the deck's topic names until you delete them (Remove asks; a topic that another deck also uses keeps its Quiz score until that deck goes too). You can switch a deck off or remove it at any time.",
         "None of the above ever leaves your device on its own. Nothing here is ever sent to a server. The one thing you can choose to send to other devices is described under “Sharing a plan or session to a study room” below.",
       ] },
-      { h: "The squad roster and Risk Worksheet get extra protection", p: [
-        "The roster can hold data about someone other than the app's user, and the Risk Worksheet's fields could hold real facility or vulnerability information if its synthetic-only guidance isn't followed. Both are treated differently from everything else GUIDON stores:",
-        "If you ever export a backup of your GUIDON data (a JSON file you create yourself, entirely on-device, for your own safekeeping), the squad roster and any saved Risk Worksheets are excluded by default. Your own profile, progress, and drill history are included; roster entries and risk worksheets are not.",
-        "Including them in a backup requires a separate, explicit “include” opt-in, checked off (unchecked by default) right next to the Export backup button — never bundled in by accident.",
+      { h: "The squad roster, Risk Worksheet and form drafts get extra protection", p: [
+        "The roster can hold data about someone other than the app's user, the Risk Worksheet's fields could hold real facility or vulnerability information if its synthetic-only guidance isn't followed, and the free-text fields in a form draft could be used to type another person's real name, address, or ID number. These are treated differently from everything else GUIDON stores:",
+        "If you ever export a backup of your GUIDON data (a JSON file you create yourself, entirely on-device, for your own safekeeping), the squad roster, any saved Risk Worksheets, and your saved form drafts are excluded by default. Your own profile, progress, and drill history are included; roster entries, risk worksheets, and form drafts are not.",
+        "Including them in a backup requires a separate, explicit “include” opt-in, checked off (unchecked by default) right next to the Export backup button — never bundled in by accident. A backup made without it does not bring your form drafts back when you restore it.",
         "The reminders you set from the roster's “Remind me” buttons follow the roster out of a default backup, because each one names the Soldier it is about; the same “include” box brings them along.",
-        "Everything else you type into GUIDON — your profile, IDP goals, counseling plans, your own reminders, and the drafts you save in the Forms Trainer — is in a default backup. GUIDON does not check those for other people's names or numbers, so a practice form should use made-up ones.",
+        "Everything else you type into GUIDON — your profile, IDP goals, counseling plans, your own reminders, and your study and practice progress — is in a default backup. A backup file is yours to keep safe, so keep other people's real names and numbers out of every tool.",
         "This default-exclude / explicit-opt-in behavior is checked automatically before every release.",
       ] },
-      { h: "Backups are yours, not ours", p: ["GUIDON can generate a backup file (JSON) of your data on request. This file is created locally in your browser and saved to your device, the same way any file download works. GUIDON does not upload it anywhere; the developer never sees it. What you do with that file afterward (keep it, delete it, email it to yourself, put it on a shared drive) is entirely your choice and outside GUIDON's control. If you choose to include the optional squad roster or Risk Worksheet data in a backup you share, you are sharing information about other people or a resource assessment, so consider that before doing so."] },
+      { h: "Backups are yours, not ours", p: ["GUIDON can generate a backup file (JSON) of your data on request. This file is created locally in your browser and saved to your device, the same way any file download works. GUIDON does not upload it anywhere; the developer never sees it. What you do with that file afterward (keep it, delete it, email it to yourself, put it on a shared drive) is entirely your choice and outside GUIDON's control. If you choose to include the optional squad roster (and its reminders), Risk Worksheet data, or form drafts in a backup you share, you may be sharing information about other people or a resource assessment, so consider that before doing so."] },
       { h: "Sharing a plan or session to a study room", p: [
         "Study groups are off by default. If you turn them on and host a room, GUIDON can send one thing to the other devices in that room, and only when you ask it to: a weekly PT plan from PT Planner, or a Team Training session you planned.",
         "What goes: the structure of that plan or session — the kind of session on each day, any custom sessions and their drill blocks, up to a few changed dates, or the ordered list of exercises — together with the names you typed for it (a session name, a custom session's name, or a day's label), exactly as the confirmation box lists them, and the small internal codes GUIDON needs to rebuild it on the other device (the plan template and the drill or exercise codes).",
@@ -38991,7 +39007,7 @@ window.G = window.G || {};
     });
     dataPanel.appendChild(el("label.mini-row", { for: "settings-backup-include-private", style: "gap:6px;align-items:flex-start;margin-top:8px" }, [
       includePrivateCb,
-      el("span.hint", { text: "Also include the leader roster, its reminders and any saved Risk Worksheets (off by default)." }),
+      el("span.hint", { text: "Also include the leader roster, its reminders, any saved Risk Worksheets and your saved form drafts (off by default)." }),
     ]));
     dataPanel.appendChild(el("div.btn-row", { style: "margin-top:8px" }, [
       exportBtn,
@@ -39003,7 +39019,7 @@ window.G = window.G || {};
     ]));
     dataPanel.appendChild(importInput);
     dataPanel.appendChild(lastBackupHint);
-    dataPanel.appendChild(el("p.hint", { text: "Export a full JSON backup — profile, IDP goals, counseling drafts, promotion-point estimates, SRS scheduling, authored scenarios, and recorded attempts — or restore one on another device." }));
+    dataPanel.appendChild(el("p.hint", { text: "Export a full JSON backup — profile, IDP goals, counseling plans, promotion-point estimates, SRS scheduling, authored scenarios, and recorded attempts — or restore one on another device. Saved form drafts and the leader roster stay out unless you tick the “include” box." }));
     // Signposts to the full Data & Storage dashboard (usage estimate,
     // per-store row counts) rather than duplicating any of it here — same
     // "point there, don't copy it" convention the Privacy/Account links

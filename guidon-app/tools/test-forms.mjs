@@ -113,6 +113,9 @@ const practiceLinesOn = () => page.evaluate(() => Array.from(document.querySelec
   lines.length === 1 && lines[0].startsWith(PRACTICE_LEAD) && /Drafts stay on this device/.test(lines[0])
     ? ok("the Form tab carries the one-line practice note (made-up names, GUIDON does not check, where drafts go)")
     : bad("Form tab practice note: " + JSON.stringify(lines));
+  lines.length === 1 && /left out of a normal backup\.$/.test(lines[0])
+    ? ok("the note says plainly that drafts are left out of a normal backup")
+    : bad("practice note does not say where drafts go in a backup: " + JSON.stringify(lines));
 }
 
 // ---- switch to Fill, fill a real text field + a real select field ----
@@ -160,6 +163,35 @@ savedEntry && savedEntry.formId === "da31" && savedEntry.values?.name === MARKER
 typeof savedEntry?.sid === "string" && savedEntry.sid.length > 0
   ? ok("the persisted draft carries a real sid for later deletion")
   : bad("persisted draft sid: " + JSON.stringify(savedEntry?.sid));
+
+// ---- a saved draft is NOT in a default backup, and IS in one that opts in ----
+// (audit 2026-09: a draft with a counselee's name or a leave address autosaved
+// into kv "forms:saved" and rode every default backup; the Privacy Policy and
+// the note on this very tab now say it is left out, and this is the proof.)
+{
+  const exp = await page.evaluate(async () => {
+    const dflt = await window.G.backup.exportAll();
+    const optIn = await window.G.backup.exportAll({ includePrivate: true });
+    const row = (p) => (p.stores.kv || []).find((r) => r.k === "forms:saved");
+    return {
+      dfltHas: !!row(dflt), dfltRaw: JSON.stringify(dflt), dfltExcluded: dflt.excludedPrivateEntries, dfltFlag: dflt.includesOtherPeoplesData,
+      optHas: !!row(optIn), optValue: row(optIn) && row(optIn).value, optFlag: optIn.includesOtherPeoplesData,
+      done: window.G.backup.exportDoneMessage(dflt),
+    };
+  });
+  !exp.dfltHas && !exp.dfltRaw.includes(MARKER_NAME)
+    ? ok("a default backup holds no 'forms:saved' row and none of the typed text")
+    : bad("default backup carried the draft: has row " + exp.dfltHas + ", text present " + exp.dfltRaw.includes(MARKER_NAME));
+  exp.dfltExcluded >= 1 && exp.dfltFlag === false
+    ? ok("the default backup counts the draft among what it left out (" + exp.dfltExcluded + ") and still says it holds no other people's data")
+    : bad("excludedPrivateEntries " + exp.dfltExcluded + ", includesOtherPeoplesData " + exp.dfltFlag);
+  /saved form drafts/.test(exp.done)
+    ? ok("the 'Backup downloaded' message names saved form drafts among what was left out")
+    : bad("export message: " + exp.done);
+  exp.optHas && Array.isArray(exp.optValue) && exp.optValue[0] && exp.optValue[0].values && exp.optValue[0].values.name === MARKER_NAME && exp.optFlag === true
+    ? ok("a backup with the 'include' box ticked carries the draft intact (its array under .value, with the typed text)")
+    : bad("opt-in backup: " + JSON.stringify({ has: exp.optHas, value: exp.optValue, flag: exp.optFlag }));
+}
 
 // ---- saved-drafts card appears in the catalog list ----
 await page.locator("button", { hasText: /All forms/ }).click();
