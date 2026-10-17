@@ -189,6 +189,144 @@ ptSnap.titles[0] === "PT"
   ? ok('a 2-letter acronym is still ranked: "PT" comes first among its ' + ptSnap.count + " Dictionary cards")
   : bad('expected "PT" first for the 2-letter query "pt", got ' + JSON.stringify(ptSnap.titles.slice(0, 5)));
 
+/* ============ 3c. Several-word queries ============ */
+// Search used to treat "request leave" as ONE phrase, so any query whose words
+// were not side by side in a record got "No results" - which reads as "GUIDON
+// does not have this". Now a record matches when it holds the whole phrase OR
+// every word of it (a word of 4 letters or fewer must start a word, so "da" is
+// "data" but not "update"). A one-word query is untouched, and a record that
+// held the phrase still holds it. Every claim below is checked on the live
+// bank, in the direction that finds MORE and the directions that must not.
+async function snapshot(query, chipLabel) {
+  return page.evaluate(({ query, chipLabel }) => {
+    const inp = document.querySelector('input[type="search"]');
+    inp.focus();
+    inp.value = query;
+    inp.dispatchEvent(new Event("input", { bubbles: true }));
+    [...document.querySelectorAll(".search-chip")].find((b) => b.textContent.includes(chipLabel)).click();
+    const empty = document.querySelector(".search-empty");
+    return {
+      total: Number(((document.querySelector(".search-count") || {}).textContent || "0").replace(/[^0-9]/g, "")),
+      empty: !!empty,
+      cards: [...document.querySelectorAll(".search-hit")].map((c) => ({
+        title: (c.querySelector(".search-hit-title") || {}).textContent || "",
+        marks: [...c.querySelectorAll(".search-hit-title mark")].map((m) => m.textContent.toLowerCase()),
+      })),
+    };
+  }, { query, chipLabel });
+}
+
+// (a) Real bank: "request leave" finds DA Form 31 (Request and Authority for
+// Leave), which the phrase never matched, and both words are marked.
+await openSearch();
+const reqLeave = await snapshot("request leave", "Forms");
+const form31 = reqLeave.cards.find((c) => /^DA Form 31 —/.test(c.title));
+form31
+  ? ok('"request leave" finds DA Form 31 - "' + form31.title + '" - though the words are not side by side')
+  : bad('"request leave" did not find DA Form 31, got ' + JSON.stringify(reqLeave.cards.map((c) => c.title)));
+form31 && form31.marks.includes("request") && form31.marks.includes("leave")
+  ? ok("each word of a several-word query is marked in the hit's title: " + JSON.stringify(form31.marks))
+  : bad("the words of the query were not both marked: " + JSON.stringify(form31 && form31.marks));
+const reqLeaveAll = await snapshot("request leave", "All");
+reqLeaveAll.total >= 1 && !reqLeaveAll.empty
+  ? ok('"request leave" is no longer "No results" (' + reqLeaveAll.total + " results across every type)")
+  : bad('"request leave" still returned no results');
+
+// (b) The count is derived from the loaded bank by an INDEPENDENT reading of the
+// rule (a pattern per word, written here, not the page's own matcher):
+// "evacuation medical" is not a phrase in any Dictionary term, but every word of
+// it is in several. The page must show exactly those terms.
+const derived = await page.evaluate(() => {
+  const q = "evacuation medical", words = q.split(" ");
+  const terms = G.store.acronyms().terms;
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  let phrase = 0, every = 0;
+  terms.forEach((t) => {
+    const hay = (t.a + " " + t.d).toLowerCase();
+    const p = hay.includes(q);
+    const all = words.every((w) => w.length > 4 ? hay.includes(w) : new RegExp("(^|[^a-z0-9])" + esc(w)).test(hay));
+    if (p) phrase++;
+    if (p || all) every++;
+  });
+  return { phrase, every };
+});
+const evacSnap = await snapshot("evacuation medical", "Dictionary");
+derived.every > derived.phrase && derived.every > 0
+  ? ok(`the bank has ${derived.every} Dictionary terms with both words and ${derived.phrase} with them side by side - the case is real`)
+  : bad("the live bank no longer separates the phrase from the words for this query: " + JSON.stringify(derived));
+evacSnap.total === derived.every && evacSnap.cards.length === Math.min(derived.every, 40)
+  ? ok(`the Dictionary shows exactly the ${derived.every} terms the bank holds both words of (${evacSnap.cards.length} cards)`)
+  : bad(`expected ${derived.every} Dictionary terms for "evacuation medical", the page showed ${evacSnap.total} (${evacSnap.cards.length} cards)`);
+
+// (c) Short words start a word: "da 31" finds DA Form 31 first among Forms and
+// stays a small list instead of every record that contains the letters "da".
+await openSearch();
+const da31 = await snapshot("da 31", "Forms");
+/^DA Form 31 —/.test((da31.cards[0] || {}).title || "")
+  ? ok('"da 31" puts DA Form 31 first among Forms: "' + da31.cards[0].title + '"')
+  : bad('"da 31" did not put DA Form 31 first among Forms: ' + JSON.stringify(da31.cards.slice(0, 3).map((c) => c.title)));
+const da31All = await snapshot("da 31", "All");
+da31All.total >= 1 && da31All.total <= 60
+  ? ok('"da 31" stays a small list (' + da31All.total + " results, not every record that contains the letters)")
+  : bad('"da 31" returned ' + da31All.total + " results - the short-word rule is not holding it down");
+// A phrase still behaves exactly as it did: "DA Form 31" is a phrase in its own title.
+const phraseForm = await snapshot("DA Form 31", "Forms");
+/^DA Form 31 —/.test((phraseForm.cards[0] || {}).title || "")
+  ? ok('a whole phrase still ranks as before: "DA Form 31" puts DA Form 31 first')
+  : bad('"DA Form 31" no longer puts DA Form 31 first: ' + JSON.stringify(phraseForm.cards.slice(0, 3).map((c) => c.title)));
+
+// (d) Controlled records: the rules, one at a time, on board questions whose
+// text the test sets (in memory only, undone after - nothing is saved). Nonsense
+// words so no real record can interfere.
+const controlled = await page.evaluate(() => {
+  const bank = G.store.boardQuestions();
+  const arr = bank.questions || bank;
+  const saved = arr.slice(0, 7).map((r) => ({ r, q: r.q, a: r.a, category: r.category }));
+  const set = (i, q) => { arr[i].q = q; arr[i].a = "zz"; arr[i].category = "zz"; delete arr[i]._hay; };
+  // Seed order puts the SCATTERED record before the one with the phrase, so a
+  // phrase-first result cannot be the seed order showing through.
+  set(0, "zzbeta then something else entirely zzalpha");     // both words, apart
+  set(1, "zzalpha zzbeta together as a phrase");             // the phrase
+  set(2, "zzcc update the zzdd");                            // "da" only INSIDE a word
+  set(3, "zzcc data the zzdd");                              // "da" starts a word
+  set(4, "zzee only the first word");                        // one of two words
+  set(5, "zzee zzff zzgg");                                  // every word of the query, with another word between
+  set(6, "zzhh somethingwordy");                             // a LONG word may sit inside a word
+  function run(query) {
+    const inp = document.querySelector('input[type="search"]');
+    inp.focus();
+    inp.value = query;
+    inp.dispatchEvent(new Event("input", { bubbles: true }));
+    [...document.querySelectorAll(".search-chip")].find((b) => b.textContent.includes("Board")).click();
+    return [...document.querySelectorAll(".search-hit-title")].map((t) => t.textContent);
+  }
+  const out = {
+    phraseAndWords: run("zzalpha zzbeta"),
+    shortWord: run("zzdd da"),
+    missingWord: run("zzee zzqq"),
+    allWords: run("zzee zzgg"),
+    longWord: run("zzhh ngword"),
+  };
+  saved.forEach((s) => { s.r.q = s.q; s.r.a = s.a; s.r.category = s.category; delete s.r._hay; });
+  return out;
+});
+controlled.phraseAndWords.length === 2 && controlled.phraseAndWords[0].startsWith("zzalpha zzbeta together")
+  ? ok("the record holding the whole phrase ranks ahead of the one with the words apart, though it comes later in the bank")
+  : bad("expected the phrase record first of two, got " + JSON.stringify(controlled.phraseAndWords));
+controlled.shortWord.length === 1 && controlled.shortWord[0].startsWith("zzcc data")
+  ? ok('a short word starts a word: "da" matches "data" and not the middle of "update"')
+  : bad('expected only the "data" record for "zzdd da", got ' + JSON.stringify(controlled.shortWord));
+controlled.missingWord.length === 0
+  ? ok("every word is required: a record with only one of the two words is not a hit")
+  : bad("a record with only one of the words was returned: " + JSON.stringify(controlled.missingWord));
+controlled.allWords.length === 1 && controlled.allWords[0].startsWith("zzee zzff")
+  ? ok("a record holding every word is found when the words are apart")
+  : bad("expected the record holding both words, got " + JSON.stringify(controlled.allWords));
+controlled.longWord.length === 1 && controlled.longWord[0].startsWith("zzhh somethingwordy")
+  ? ok("a word of five letters or more may sit inside a word (the rule a single word always had)")
+  : bad('expected the "somethingwordy" record for "zzhh ngword", got ' + JSON.stringify(controlled.longWord));
+await openSearch();
+
 /* ============ 4. Forms hit type + deep link to the specific form ============ */
 // "4856" (against the real seed) matches exactly one of the 34 forms: DA
 // Form 4856 (Developmental Counseling Form). It ALSO matches Dictionary's
