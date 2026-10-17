@@ -81,7 +81,11 @@ const now = new Date();
 const Y = now.getFullYear() + 1;
 const leap = (() => { let y = Y; while (!(y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0))) y++; return y; })();
 const day = (y, m, d) => y + "-" + String(m).padStart(2, "0") + "-" + String(d).padStart(2, "0");
-const yesterday = (() => { const d = new Date(now); d.setDate(d.getDate() - 1); return iso(d); })();
+// The first Sunday of November (US clocks go back that night): in Los Angeles that day is 25 hours
+// long, so a calendar that finds "the next day" by adding 24 hours lands on the same date.
+const fallBackSunday = (() => { const d = new Date(Date.UTC(Y, 10, 1)); while (d.getUTCDay() !== 0) d.setUTCDate(d.getUTCDate() + 1); return day(Y, 11, d.getUTCDate()); })();
+// Three days back, not one: in a clock set to the far side of the date line "yesterday" can still be today.
+const past = (() => { const d = new Date(now); d.setDate(d.getDate() - 3); return iso(d); })();
 const SECRETS = ["Doe", "Smith", "John", "555", "1-2 INF", "4856", "TESTKIT", "rSECRET1", "rSECRET2"];
 const FIXTURE = [
   { id: "rSECRET1", kind: "board", label: "Promo board with SSG Doe, A. (1-2 INF)", note: "Call 555-0100; bring DA 4856", date: day(Y, 10, 31) },
@@ -91,7 +95,8 @@ const FIXTURE = [
   { id: "rd", kind: "pt", label: "PT: Strength session", date: day(Y, 4, 30) },
   { id: "re", kind: "banana", label: "Unknown kind", date: day(Y, 6, 15) },
   { id: "rf", kind: "__proto__", label: "Prototype kind", date: day(Y, 7, 1) },
-  { id: "rg", kind: "board", label: "Yesterday", date: yesterday },            // past: not exported
+  { id: "rj", kind: "other", label: "Clocks go back", date: fallBackSunday },    // the day a US clock repeats an hour
+  { id: "rg", kind: "board", label: "Three days ago", date: past },            // past: not exported
   { id: "rh", kind: "other", label: "Not a date", date: "2031-13-45" },        // not a date: not exported
   { id: "ri", kind: "ets", label: "No date", date: "" },                       // no date: not exported
 ];
@@ -99,7 +104,9 @@ const EXPECTED = { // the events that must come out, by date, with the generic t
   [day(Y, 10, 31)]: "GUIDON: Promotion board", [day(Y, 12, 31)]: "GUIDON: Counseling follow-up due",
   [day(leap, 2, 28)]: "GUIDON: Weapons qualification due", [day(leap, 2, 29)]: "GUIDON: Fitness test due (ACFT / AFT)",
   [day(Y, 4, 30)]: "GUIDON: PT session", [day(Y, 6, 15)]: "GUIDON: Date to remember", [day(Y, 7, 1)]: "GUIDON: Date to remember",
+  [fallBackSunday]: "GUIDON: Date to remember",
 };
+const N = Object.keys(EXPECTED).length; // how many events must come out
 
 /* ------------------------------------------------------------------ the file */
 const built = await page.evaluate((list) => {
@@ -114,8 +121,8 @@ catch (e) { check(false, "", "the file does not parse: " + e.message); cal = { p
 check(cal.name === "VCALENDAR" && prop(cal, "VERSION") && prop(cal, "VERSION").value === "2.0" && !!prop(cal, "PRODID"),
   "it is a VCALENDAR, version 2.0, with a PRODID", () => JSON.stringify(cal.props));
 const events = cal.children.filter((c) => c.name === "VEVENT");
-check(built.a.events === 7 && events.length === 7,
-  "exactly the 7 upcoming dated reminders became events (past, not-a-date and no-date ones left out)", () => "events: " + built.a.events + " / parsed " + events.length);
+check(built.a.events === N && events.length === N,
+  "exactly the " + N + " upcoming dated reminders became events (past, not-a-date and no-date ones left out)", () => "events: " + built.a.events + " / parsed " + events.length);
 check(longest <= 75, "no line is longer than 75 octets", () => "longest line is " + longest + " octets");
 
 const byStart = {};
@@ -149,12 +156,27 @@ check(leaked.length === 0, "nothing the Soldier typed, no roster name, no profil
 // Stable and unique UIDs.
 const uidsA = [...built.a.text.matchAll(/^UID:(.+)$/gm)].map((m) => m[1]);
 const uidsB = [...built.b.text.matchAll(/^UID:(.+)$/gm)].map((m) => m[1]);
-check(JSON.stringify(uidsA) === JSON.stringify(uidsB) && uidsA.length === 7,
+check(JSON.stringify(uidsA) === JSON.stringify(uidsB) && uidsA.length === N,
   "the same reminders give the same UIDs on a second export (opening a newer file updates the calendar, it does not add a copy)", () => JSON.stringify([uidsA, uidsB]));
-check(new Set(uidsA).size === 7 && uidsA.every((u) => /^guidon-[0-9a-f]{16}@guidon\.invalid$/.test(u)),
+check(new Set(uidsA).size === N && uidsA.every((u) => /^guidon-[0-9a-f]{16}@guidon\.invalid$/.test(u)),
   "the UIDs are all different, and are not the reminder ids", () => JSON.stringify(uidsA));
-check(JSON.stringify(parseIcs(built.b.text).root.children[0].children.map((c) => prop(c, "DTSTAMP").value)) === JSON.stringify(new Array(7).fill("20310609T070809Z")),
+check(JSON.stringify(parseIcs(built.b.text).root.children[0].children.map((c) => prop(c, "DTSTAMP").value)) === JSON.stringify(new Array(N).fill("20310609T070809Z")),
   "only DTSTAMP changes between two exports");
+
+// The same dates in any time zone: a date typed as 2028-02-29 is that whole day whether the
+// clock is set to the far west (UTC-12), the far east (UTC+14) or in between. (Date maths done
+// in UTC, or by adding 24 hours, slips a day in some of these.)
+const wantPairs = Object.keys(EXPECTED).map((d) => compact(d) + ">" + nextDay(compact(d))).sort();
+for (const tz of ["Etc/GMT+12", "Pacific/Kiritimati", "America/Los_Angeles"]) {
+  const s = await boot.openSession({ viewport: { width: 412, height: 915 }, noise, contextOptions: { timezoneId: tz },
+    beforeLoad: async ({ page: p }) => { p.on("request", (r) => requests.push(r.url())); } });
+  origins.add(new URL(s.url).origin);
+  const text = await s.page.evaluate((list) => window.G.reminders.buildIcs(list, new Date(Date.UTC(2031, 0, 2, 3, 4, 5))).text, FIXTURE);
+  const pairs = parseIcs(text).root.children[0].children.filter((c) => c.name === "VEVENT")
+    .map((e) => prop(e, "DTSTART").value + ">" + prop(e, "DTEND").value).sort();
+  check(JSON.stringify(pairs) === JSON.stringify(wantPairs), "in a clock set to " + tz + " every date is the same whole day, ending the next",
+    () => JSON.stringify({ got: pairs, want: wantPairs }));
+}
 
 // Folding and escaping, on their own, with text that would break a careless one.
 const edge = await page.evaluate(() => {
@@ -188,10 +210,10 @@ const onDisk = readFileSync(await dl.path(), "utf8");
 let shown;
 try { shown = parseIcs(onDisk); } catch (e) { shown = null; check(false, "", "the saved file does not parse: " + e.message); }
 const shownEvents = shown ? shown.root.children[0].children.filter((c) => c.name === "VEVENT") : [];
-check(shownEvents.length === 7 && shown.longest <= 75, "the saved file parses and holds the 7 upcoming dates", () => "events: " + shownEvents.length);
+check(shownEvents.length === N && shown.longest <= 75, "the saved file parses and holds the " + N + " upcoming dates", () => "events: " + shownEvents.length);
 const leakedUi = SECRETS.concat(["Promo board", "Range day", "third squad", "Unknown kind", "Prototype kind", "Strength session"]).filter((s) => onDisk.includes(s));
 check(leakedUi.length === 0, "the file saved from the screen carries none of the typed wording, names or ids either", () => "found: " + JSON.stringify(leakedUi));
-const toast = await until(page, () => /7 dates ready/.test((document.getElementById("toast") || {}).textContent || ""));
+const toast = await until(page, (n) => new RegExp(n + " dates ready").test((document.getElementById("toast") || {}).textContent || ""), N);
 check(toast, "the screen says how many dates are ready and what to do with the file");
 
 // Nothing to export: no file, and a plain sentence.

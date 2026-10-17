@@ -39358,8 +39358,9 @@ window.G = window.G || {};
     // that meant the MAX_PER=8 cap could easily keep 8 records that only
     // mention the query deep in a long definition while the ONE record
     // whose acronym IS the query sat uncapped-but-unseen past position 8.
-    // hitScore() runs on hits that already passed their own _hay.includes()
-    // substring filter above (this never changes WHICH records match,
+    // hitScore() runs on hits that already passed their own match() filter
+    // (the plain substring test for one word, makeMatcher() above for several;
+    // this never changes WHICH records match,
     // only the ORDER a type's group is in before the existing MAX_PER
     // slice), and ranks title match > sub match > body match, with an
     // exact whole-field or whole-word match outscoring a bare substring
