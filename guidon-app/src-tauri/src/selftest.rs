@@ -17,12 +17,14 @@
 //!   (the JSON then carries `"reason"` and no page keys).
 //!
 //! The process ends through `std::process::exit`, not `AppHandle::exit`:
-//! tauri-runtime-wry 2.11.4 maps `Message::RequestExit(code)` to
-//! `ControlFlow::Exit` and drops the code (src/lib.rs, the
-//! `Message::RequestExit` arm), so a requested non-zero code would come out
-//! as 0. Exiting directly also skips the window-state plugin's save, which is
-//! what a throwaway self-test run should do - it must not overwrite the
-//! operator's remembered window geometry.
+//! tauri-runtime-wry up to 2.11.4 mapped `Message::RequestExit(code)` to
+//! `ControlFlow::Exit` and dropped the code (src/lib.rs, the
+//! `Message::RequestExit` arm), so a requested non-zero code came out as 0.
+//! 2.12.1 (the 2026-10-16 refresh) now maps it to
+//! `ControlFlow::ExitWithCode(code)`, so that reason no longer holds, but
+//! exiting directly stays right: it also skips the window-state plugin's
+//! save, which is what a throwaway self-test run should do - it must not
+//! overwrite the operator's remembered window geometry.
 //!
 //! Everything that decides is a plain function over values (`merge`,
 //! `decide`, `write_outcome`) so `cargo test` covers it on the MockRuntime;
