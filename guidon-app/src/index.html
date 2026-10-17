@@ -8182,13 +8182,26 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
   // still full does not repeat itself on every keystroke. That is what covers
   // the saves nobody waits on (the debounced settings save is one) without
   // touching a single call site.
+  //
+  // What is announced: a change the device took in and then did not keep (the
+  // request or the commit failed). What is NOT: a database that would not open
+  // (the app already switches to its small-space fallback and says so), and a
+  // row the store refuses outright before it is even sent - those reject as
+  // they always did, and their own callers already say what went wrong.
   const WRITE_FAIL_QUIET_MS = 30000;
-  const WRITE_FAIL_NOTICE = "That change wasn't saved. This device may be out of space — free some up, then try again.";
+  const WRITE_FAIL_FULL = "That change wasn't saved because this device is out of space. Free some up, then try again.";
+  const WRITE_FAIL_OTHER = "That change wasn't saved. Try again, and if it keeps happening, free up some space on this device.";
+  const STORE_WORDS = { kv: "saved settings and progress", attempts: "scenario results", userScenarios: "your own scenarios", meta: "app data" };
   let lastWriteFailNoticeAt = null;
-  function errorName(e) { return (e && (e.name || e.constructor && e.constructor.name)) || "Error"; }
   function isQuotaError(e) {
     if (!e) return false;
     return e.name === "QuotaExceededError" || e.name === "NS_ERROR_DOM_QUOTA_REACHED" || e.code === 22 || e.code === 1014;
+  }
+  // The cause, in words, for the Diagnostics trail.
+  function causeWords(e) {
+    if (isQuotaError(e)) return "the device is out of space";
+    if (e && e.name === "AbortError") return "the save was cancelled before it finished";
+    return "the device did not keep it";
   }
   // The transaction's own error if it has one; a plain AbortError when the
   // commit was cancelled without a reason (tx.abort(), or the browser).
@@ -8207,44 +8220,54 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
     const now = Date.now();
     if (lastWriteFailNoticeAt !== null && now - lastWriteFailNoticeAt < WRITE_FAIL_QUIET_MS) return;
     lastWriteFailNoticeAt = now;
-    try { if (G.util && typeof G.util.emit === "function") G.util.emit("storage:write-failed", { store: store, key: key == null ? null : key, name: errorName(err) }); } catch (e) {}
+    try {
+      if (G.util && typeof G.util.emit === "function") {
+        G.util.emit("storage:write-failed", { store: store, key: key == null ? null : key, full: isQuotaError(err), cause: causeWords(err) });
+      }
+    } catch (e) {}
   }
   // The one listener: what the Soldier is told, and what Diagnostics keeps.
   try {
     if (G.util && typeof G.util.on === "function") {
       G.util.on("storage:write-failed", function (info) {
-        if (typeof G.util.toast === "function") G.util.toast(WRITE_FAIL_NOTICE, 7000);
+        if (typeof G.util.toast === "function") G.util.toast(info.full ? WRITE_FAIL_FULL : WRITE_FAIL_OTHER, 7000);
         if (G.selfheal) {
-          G.selfheal.log("storage-write-fail", info.store + (info.key != null ? ":" + info.key : ""),
-            "A change did not reach this device's storage, so it was not saved (store: " + info.store + ", cause: " + info.name + ").");
+          G.selfheal.log("storage-write-fail", info.key != null ? info.key : info.store,
+            "A change to your " + (STORE_WORDS[info.store] || "saved data") + " was not saved: " + info.cause + ".");
         }
       });
     }
   } catch (e) { /* the notice is a courtesy; a save must never fail because of it */ }
-  // Attaches the failure report to a write's promise WITHOUT changing what
-  // the caller sees: an awaiting caller still gets the rejection, and a
-  // caller that never looks (fire-and-forget) does not raise an unhandled
-  // rejection on top of the notice it has already been given.
-  function reported(store, key, p) {
-    p.then(null, function (err) { writeFailed(store, key, err); });
-    return p;
-  }
   // The row's key, however the store spells it (kv: k, everything else: id).
   function keyOfRow(v) { return v && v.k != null ? v.k : v && v.id; }
-  // A rejected promise that nobody is obliged to handle (see reported()).
-  function rejected(err) { const p = Promise.reject(err); p.then(null, function () {}); return p; }
+  function noop() {}
+  // A rejected promise that nobody is obliged to handle: the failure has
+  // already been announced, so a caller that never looks (fire-and-forget)
+  // must not raise an unhandled rejection on top of it.
+  function rejected(err) { const p = Promise.reject(err); p.then(null, noop); return p; }
 
-  // ONE write, settled when its transaction has committed.
-  function writeOne(store, run) {
-    return open().then((idb) => new Promise((resolve, reject) => {
+  // ONE write, settled when its transaction has committed. An awaiting caller
+  // still gets the rejection; a caller that never looks does not raise a
+  // second, unhandled one for a failure that has been announced.
+  function writeOne(store, key, run) {
+    let p = null;
+    p = open().then((idb) => new Promise((resolve, reject) => {
       const t = idb.transaction(store, "readwrite");
-      const req = run(t.objectStore(store));
-      let result;
+      const req = run(t.objectStore(store));   // a row refused right here rejects as it always did
+      let result, finished = false;
+      const fail = (e) => {
+        if (finished) return;
+        finished = true;
+        writeFailed(store, key, e);
+        p.then(null, noop);
+        reject(e);
+      };
       req.onsuccess = () => { result = req.result; };
-      req.onerror = () => reject(commitError(t, req));
-      t.oncomplete = () => resolve(result);
-      t.onabort = () => reject(commitError(t, req));
+      req.onerror = () => fail(commitError(t, req));
+      t.oncomplete = () => { finished = true; resolve(result); };
+      t.onabort = () => fail(commitError(t, req));
     }));
+    return p;
   }
   // MANY writes in ONE transaction (see putMany()/delMany() below): resolves
   // { written, skipped } when the transaction has committed and rejects when
@@ -8254,7 +8277,8 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
   // failed save.
   function writeMany(store, items, run) {
     if (!items || !items.length) return Promise.resolve({ written: 0, skipped: 0 });
-    return open().then((idb) => new Promise((resolve, reject) => {
+    let p = null;
+    p = open().then((idb) => new Promise((resolve, reject) => {
       const t = idb.transaction(store, "readwrite");
       const s = t.objectStore(store);
       let skipped = 0, refusedByDevice = null;
@@ -8272,8 +8296,14 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
         if (refusedByDevice) writeFailed(store, null, refusedByDevice);
         resolve({ written: items.length - skipped, skipped: skipped });
       };
-      t.onabort = () => reject(commitError(t));
+      t.onabort = () => {
+        const e = commitError(t);
+        writeFailed(store, null, e);
+        p.then(null, noop);
+        reject(e);
+      };
     }));
+    return p;
   }
 
   // ── Session-only storage: Guest and Kiosk sessions really save nothing ────
@@ -8452,8 +8482,8 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
     get(store, key) { return tx(store, "readonly").then((s) => done(s.get(key))); },
     // put/del/clear settle on COMMIT and are reported when they do not land -
     // see "Writes settle on COMMIT" above open().
-    put(store, value) { return reported(store, keyOfRow(value), writeOne(store, (s) => s.put(value))); },
-    del(store, key) { return reported(store, key, writeOne(store, (s) => s.delete(key))); },
+    put(store, value) { return writeOne(store, keyOfRow(value), (s) => s.put(value)); },
+    del(store, key) { return writeOne(store, key, (s) => s.delete(key)); },
     // Bulk siblings of put()/del(): every row/key goes through ONE
     // IndexedDB transaction instead of one transaction per row. Board
     // Drill's "Reset drill schedule" (every graded question, 900+ cards)
@@ -8467,8 +8497,8 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
     // try/catch-per-item behavior the sequential loops had. It is COUNTED,
     // though: both resolve { written, skipped }, so a caller (Backup's
     // restore) can tell "all 1,200 landed" from "1,180 did".
-    putMany(store, values) { return reported(store, null, writeMany(store, values, (s, v) => s.put(v))); },
-    delMany(store, keys) { return reported(store, null, writeMany(store, keys, (s, k) => s.delete(k))); },
+    putMany(store, values) { return writeMany(store, values, (s, v) => s.put(v)); },
+    delMany(store, keys) { return writeMany(store, keys, (s, k) => s.delete(k)); },
     all(store) {
       return tx(store, "readonly").then(
         (s) => new Promise((resolve, reject) => {
@@ -8479,7 +8509,7 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
         })
       );
     },
-    clear(store) { return reported(store, null, writeOne(store, (s) => s.clear())); },
+    clear(store) { return writeOne(store, null, (s) => s.clear()); },
 
     // --- settings convenience ---
     getSetting(k, fallback) { return this.get("kv", k).then((r) => (r ? r.v : fallback)); },

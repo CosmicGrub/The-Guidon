@@ -36,9 +36,22 @@ async function installInstruments() {
       abortPrefix: null,      // a put/delete whose key starts with this has its transaction cancelled
       abortClear: null,       // a clear() of this store has its transaction cancelled
       badKey: null,           // a put of exactly this key throws synchronously (a row the store refuses)
+      txError: null,          // when set, a cancelled transaction reports this DOMException name as its error (a full device says "QuotaExceededError")
       lastTxCompleted: false, // did the most recent write's transaction actually commit?
     };
-    const cancelAfterSuccess = (req) => req.addEventListener("success", () => { try { req.transaction.abort(); } catch (e) { /* already finished */ } });
+    // What a browser reports when the commit fails for lack of space: the aborted transaction's own
+    // .error is a QuotaExceededError. tx.abort() alone leaves .error null, so the page-level getter is
+    // swapped for one that answers like the real thing for transactions THIS suite cancelled.
+    const realTxError = Object.getOwnPropertyDescriptor(IDBTransaction.prototype, "error");
+    Object.defineProperty(IDBTransaction.prototype, "error", {
+      configurable: true,
+      get() {
+        const real = realTxError.get.call(this);
+        if (!real && F.txError && this.__cancelledBySuite) return new DOMException("injected: " + F.txError, F.txError);
+        return real;
+      },
+    });
+    const cancelAfterSuccess = (req) => req.addEventListener("success", () => { try { req.transaction.__cancelledBySuite = true; req.transaction.abort(); } catch (e) { /* already finished */ } });
     const trackCommit = (req) => { F.lastTxCompleted = false; req.transaction.addEventListener("complete", () => { F.lastTxCompleted = true; }); };
     const realPut = IDBObjectStore.prototype.put;
     IDBObjectStore.prototype.put = function (...a) {
@@ -107,7 +120,7 @@ const storageLogEntries = () => page.evaluate(async () => (await G.selfheal.rece
 async function resetScenario({ advanceClockMs = 0 } = {}) {
   await page.evaluate(({ advanceClockMs }) => {
     window.__toasts.length = 0;
-    window.__fault.abortPrefix = null; window.__fault.abortClear = null; window.__fault.badKey = null;
+    window.__fault.abortPrefix = null; window.__fault.abortClear = null; window.__fault.badKey = null; window.__fault.txError = null;
     // The notice is throttled by wall-clock time; move the clock instead of waiting it out.
     if (advanceClockMs) { window.__skew = (window.__skew || 0) + advanceClockMs; const real = window.__realNow || (window.__realNow = Date.now.bind(Date)); Date.now = () => real() + window.__skew; }
   }, { advanceClockMs });
@@ -130,8 +143,11 @@ check(shown.length === 1 && !/quota|abort|indexeddb|transaction|exception|error/
   "the notice is plain words about the device (no storage vocabulary): \"" + (shown[0] || "") + "\"", "notice text: " + JSON.stringify(shown));
 const logged = await untilAsync(page, async () => (await G.selfheal.recent(200)).some((e) => e.kind === "storage-write-fail"));
 const entries = await storageLogEntries();
-check(logged && entries.length === 1 && /kv/.test(entries[0].key || ""), "the self-heal trail (Diagnostics) keeps a matching entry that names the store", "self-heal entries: " + JSON.stringify(entries));
-check(entries.length === 1 && !/QuotaExceeded|DOMException/.test(entries[0].detail || ""), "the trail entry is worded for a person, not a stack trace: \"" + ((entries[0] || {}).detail || "") + "\"", "trail detail: " + JSON.stringify(entries[0]));
+check(logged && entries.length === 1 && entries[0].key === "__ack:put1", "the self-heal trail (Diagnostics) keeps a matching entry that names the row that did not save", "self-heal entries: " + JSON.stringify(entries));
+check(entries.length === 1 && /was not saved/.test(entries[0].detail || "") && !/QuotaExceeded|AbortError|DOMException|\bkv\b|store:/.test(entries[0].detail || ""),
+  "the trail entry is worded for a person, not a stack trace or a storage key: \"" + ((entries[0] || {}).detail || "") + "\"", "trail detail: " + JSON.stringify(entries[0]));
+check(entries.length === 1 && /cancelled/.test(entries[0].detail || ""), "...and says why in words (the save was cancelled)", "trail detail: " + JSON.stringify(entries[0]));
+check(shown.length === 1 && !/out of space/.test(shown[0]), "a cancelled save with no stated reason does not claim to know the device is full (\"" + (shown[0] || "") + "\")", "notice text: " + JSON.stringify(shown));
 
 // A burst of failures must not machine-gun the Soldier: one notice, one entry.
 const burst = await page.evaluate(async () => {
@@ -151,6 +167,22 @@ await page.evaluate(() => { window.__fault.abortPrefix = "__ack:"; });
 await page.evaluate(() => window.__settle(G.db.put("kv", { k: "__ack:later", v: 1 })));
 const again = await until(page, () => window.__toasts.some((t) => /wasn.t saved|out of space/i.test(t)));
 check(again, "after the throttle window a new failure is announced again (the warning is not one-shot forever)", "no second notice after the window");
+
+// A commit the browser cancelled because the device is full says so (the aborted transaction's own
+// error is a QuotaExceededError): the Soldier is told THAT, in plain words, and so is the trail.
+await resetScenario({ advanceClockMs: 10 * 60 * 1000 });
+await page.evaluate(() => { window.__fault.abortPrefix = "__ack:"; window.__fault.txError = "QuotaExceededError"; });
+const fullPut = await page.evaluate(async () => await window.__settle(G.db.put("kv", { k: "__ack:full1", v: 1 })));
+check(fullPut === "rejected:QuotaExceededError", "put(): a commit refused for lack of space rejects with the device's own reason (" + fullPut + ")", "put() said: " + fullPut);
+const fullNoticed = await until(page, () => window.__toasts.some((t) => /out of space/i.test(t)));
+const fullShown = await storageNotices();
+check(fullNoticed && fullShown.length === 1 && /because this device is out of space/.test(fullShown[0]) && !/quota|indexeddb|transaction|exception|error/i.test(fullShown[0]),
+  "...and the Soldier is told, in plain words, that the device is out of space: \"" + (fullShown[0] || "") + "\"", "notices: " + JSON.stringify(fullShown));
+const fullLogged = await untilAsync(page, async () => (await G.selfheal.recent(200)).some((e) => e.kind === "storage-write-fail" && e.key === "__ack:full1"));
+const fullEntry = (await storageLogEntries()).find((e) => e.key === "__ack:full1");
+check(fullLogged && fullEntry && /out of space/.test(fullEntry.detail) && !/QuotaExceeded|DOMException|\bkv\b/.test(fullEntry.detail),
+  "...and the trail says the device ran out of space, without the browser's error name: \"" + ((fullEntry || {}).detail || "") + "\"", "trail entry: " + JSON.stringify(fullEntry));
+await page.evaluate(() => { window.__fault.txError = null; });
 
 /* ---------- the other write paths ---------- */
 console.log("\n-- del / putMany / delMany / clear settle too --");
@@ -230,6 +262,10 @@ const tolerant = await page.evaluate(async () => {
   return { r, t1: await window.__raw("kv", "__ack:t1"), t3: await window.__raw("kv", "__ack:t3") };
 });
 check(tolerant.r && tolerant.r.written === 2 && tolerant.r.skipped === 1 && tolerant.t1 && tolerant.t3, "putMany() still tolerates one bad row and now says so: {written: 2, skipped: 1}", "result: " + JSON.stringify(tolerant));
+// ...and a single row the store refuses before it is even sent still rejects, as it always did - the caller
+// decides what to say about its own bad row; it is not mistaken for a full device (checked just below).
+const refusedPut = await page.evaluate(async () => await window.__settle(G.db.put("kv", { k: "__ack:refused", v: 1 })));
+check(refusedPut === "rejected:DataError", "put() of a row the store refuses outright still rejects with its own reason (" + refusedPut + ")", "put() said: " + refusedPut);
 await page.evaluate(() => { window.__fault.badKey = null; });
 
 const quietNotices = await storageNotices();
@@ -344,6 +380,7 @@ check(quota.results.some((r) => r.indexOf("rejected") === 0), "a put that does n
 check(!lied.some(Boolean), "no put claimed success without storing the row (" + quota.results.filter((r) => r === "resolved").length + " resolved, " + quota.stored.filter(Boolean).length + " stored)", "resolved-but-missing: " + JSON.stringify(lied));
 const fbNotice = await until(fb.page, () => window.__toasts.some((t) => /wasn.t saved|out of space/i.test(t)));
 check(fbNotice, "the Soldier is told, in plain words, that the change did not save", "toasts: " + JSON.stringify(await fb.page.evaluate(() => window.__toasts)));
+check(await fb.page.evaluate(() => window.__toasts.some((t) => /because this device is out of space/.test(t))), "...and, because the browser reported a real full-storage error, that the device is out of space", "toasts: " + JSON.stringify(await fb.page.evaluate(() => window.__toasts)));
 await fb.page.evaluate(() => { Object.keys(localStorage).filter((k) => k.indexOf("guidon:kv:__ack:") === 0).forEach((k) => localStorage.removeItem(k)); });
 const fbOrdinary = await fb.page.evaluate(async () => {
   await G.db.put("kv", { k: "__ack:fine", v: "ok" });
@@ -379,6 +416,7 @@ const limitedNotice = await until(limited.page, () => window.__toastLog.some((t)
 const limitedLog = await limited.page.evaluate(() => window.__toastLog);
 check(limitedNotice, "a plain-language notice about limited saving is shown at start (it used to be silent for this backend)", "toasts seen at start: " + JSON.stringify(limitedLog));
 check(!limitedLog.some((t) => /localstorage|indexeddb|quota/i.test(t)), "and it uses no storage vocabulary", "toasts: " + JSON.stringify(limitedLog));
+check(!limitedLog.some((t) => /wasn.t saved/i.test(t)), "a database that would not open is not announced as \"that change wasn't saved\" (the app already switched to its small-space fallback and said so)", "toasts: " + JSON.stringify(limitedLog));
 await limited.context.close();
 
 expectNoConsoleNoise(noise);
