@@ -21124,6 +21124,16 @@ window.G = window.G || {};
   }
 
   /* ---------- Fill (interactive practice) ---------- */
+  // The one plain line above every free-text surface in a form (the Form and
+  // Fill tabs). Both autosave as you type, and GUIDON cannot tell a made-up
+  // name from a real one - so it says so, in the place the Soldier is typing,
+  // and says where the draft goes. (The catalog's disclaimer and the print
+  // header already say "practice"; neither is on the screen with the cursor.)
+  // test:forms asserts it is on both tabs; the backup sentence is the same
+  // fact the Privacy Policy states and test:privacy keeps true.
+  var PRACTICE_NOTE = "Practice only. Use made-up names and numbers. GUIDON does not check what you type. Drafts stay on this device and are included when you back up.";
+  function practiceNote() { return U.el("p", { class: "hint forms-practice-note" }, [PRACTICE_NOTE]); }
+
   function drawFill(f, host, mount) {
     // Enhancement backlog round 1, "Redundant re-renders" bucket: this
     // used to rely entirely on drawBody()'s own U.clear(host) before
@@ -21151,6 +21161,7 @@ window.G = window.G || {};
     var clearBtn = U.el("button", { class: "btn ghost" }, ["Clear"]);
     bar.appendChild(exBtn); bar.appendChild(saveBtn); bar.appendChild(printBtn); bar.appendChild(clearBtn);
     host.appendChild(bar);
+    host.appendChild(practiceNote());
 
     var noteHost = U.el("div", { class: "dyn-note" });
     host.appendChild(noteHost);
@@ -21562,6 +21573,7 @@ window.G = window.G || {};
       "STUDY / PRACTICE REPLICA — not the official DA form. Field layout re-creates " +
       (f.form || "the form") + " for training. Get the real, signable form from armypubs.army.mil."
     ]));
+    host.appendChild(practiceNote());
 
     // ---- optional PDF hook (mode 2 only; mode 3 "pdf-overlay" retired - see formsMode()) ----
     var pdfLayer = null;

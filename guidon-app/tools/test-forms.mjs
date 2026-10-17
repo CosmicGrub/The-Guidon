@@ -102,9 +102,28 @@ JSON.stringify(detail.tabs) === JSON.stringify(["Guided", "Form", "Fill", "Check
   ? ok("tab bar shows Guided/Form/Fill/Check for a form with no bullet libraries but with checks")
   : bad("tabs: " + JSON.stringify(detail.tabs));
 
+// ---- the plain "practice only" line is on the Form tab, where typing starts ----
+// Both tabs autosave as you type and GUIDON cannot tell a made-up name from a
+// real one, so the screen with the cursor says so (the catalog disclaimer and
+// the print header already do, but neither is on this screen).
+const PRACTICE_LEAD = "Practice only. Use made-up names and numbers. GUIDON does not check what you type.";
+const practiceLinesOn = () => page.evaluate(() => Array.from(document.querySelectorAll(".forms-view .form-body .forms-practice-note")).map((n) => n.textContent));
+{
+  const lines = await practiceLinesOn();
+  lines.length === 1 && lines[0].startsWith(PRACTICE_LEAD) && /Drafts stay on this device/.test(lines[0])
+    ? ok("the Form tab carries the one-line practice note (made-up names, GUIDON does not check, where drafts go)")
+    : bad("Form tab practice note: " + JSON.stringify(lines));
+}
+
 // ---- switch to Fill, fill a real text field + a real select field ----
 await page.locator(".segmented button", { hasText: /^Fill$/ }).click();
 await page.waitForTimeout(200);
+{
+  const lines = await practiceLinesOn();
+  lines.length === 1 && lines[0].startsWith(PRACTICE_LEAD) && /Drafts stay on this device/.test(lines[0])
+    ? ok("the Fill tab carries the same one-line practice note, exactly once")
+    : bad("Fill tab practice note: " + JSON.stringify(lines));
+}
 
 const fillFields = await page.evaluate(() => Array.from(document.querySelectorAll(".field")).map((f) => f.getAttribute("data-fid")));
 JSON.stringify(fillFields) === JSON.stringify(["name", "type", "leaveaddr", "days", "dates"])
