@@ -62,6 +62,13 @@ async function bootTo(hash) {
   await page.goto(url, { waitUntil: "load" });
   await page.waitForTimeout(800);
   await dismissOnboarding(page);
+  // Audit 2026-09 item 7: scenario choices now come up in a random order, fixed
+  // once per run. THIS suite checks that a letter key picks "the choice under
+  // that letter" using the known authored g1/g2 content (A = "Keep it light"),
+  // so it pins the authored order. The shuffle - including that the letters are
+  // handed out AFTER it - is proven in test-scenario-choice-order.mjs.
+  await page.waitForFunction(() => !!(window.G && window.G.engine && window.G.engine.pinChoiceOrder));
+  await page.evaluate(() => window.G.engine.pinChoiceOrder(true));
   await page.waitForTimeout(300);
   if (hash) { await page.evaluate((h) => { location.hash = h; }, hash); await page.waitForTimeout(600); }
   return { page, noise };
