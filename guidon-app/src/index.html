@@ -8444,23 +8444,21 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
     const rawAll = db.all, rawPut = db.put, rawDel = db.del,
       rawPutMany = db.putMany, rawDelMany = db.delMany, rawClear = db.clear;
     let cache = null;
-    // A generation counter closes a race the plain "drop the cache on write"
-    // rule left open: a read that STARTED before a write finishes AFTER the
-    // write dropped the cache, and used to store its pre-write snapshot as
-    // the new cache - which then stayed wrong (and so did every Backup export
-    // and Diagnostics scan built on it) until some later write happened to
-    // clear it. Every invalidation bumps `gen`; a read only keeps its result
-    // if `gen` is the same as when it began. A write invalidates when it is
-    // CALLED and again when it SETTLES (a read that began in between must not
-    // be kept either). A read that overlaps a write is simply not cached.
-    let gen = 0;
-    const invalidate = () => { gen++; cache = null; };
+    const invalidate = () => { cache = null; };
     db.all = function (store) {
       if (store !== "kv") return rawAll.call(db, store);
       if (cache) return Promise.resolve(cache.slice());
-      const startedAt = gen;
-      return rawAll.call(db, store).then((rows) => { if (gen === startedAt) cache = rows; return rows.slice(); });
+      return rawAll.call(db, store).then((rows) => { cache = rows; return rows.slice(); });
     };
+    // A write drops the cache when it is CALLED, and again when it SETTLES.
+    // Dropping it only at the call left a race open: a read that was already
+    // running when the write was called finishes afterwards, with a snapshot
+    // from before the write, and stored THAT as the new cache - which then
+    // stayed wrong (and so did every Backup export and Diagnostics scan built
+    // on it) until some later write happened to clear it. The read cannot
+    // finish after the write settles (the database runs the write only once
+    // the earlier read is done), so the second drop always lands after the
+    // stale store and removes it.
     const writing = (raw) => function (store, arg) {
       if (store !== "kv") return raw.call(db, store, arg);
       invalidate();
