@@ -57,7 +57,10 @@ const THEMES = [
    judge only its first screenful. MEASURE reports where the Forms view ends,
    and the suite fails if any state ran past the bottom of the window. */
 const VIEWPORT_H = 12000;
-const boot = await bootApp({ viewport: { width: 1280, height: VIEWPORT_H } });
+// GUIDON_WEB_DIR: optional override (the same one test-privacy.mjs has) so the
+// gate itself can be proven against a scratch copy of web/ with a planted
+// violation, without touching the real build.
+const boot = await bootApp({ dir: process.env.GUIDON_WEB_DIR || "web", viewport: { width: 1280, height: VIEWPORT_H } });
 const page = boot.page;
 // Colours must be steady-state, not mid-fade (the app crossfades on theme change).
 await page.addStyleTag({ content: "*, *::before, *::after { transition: none !important; animation: none !important; }" });
@@ -155,15 +158,26 @@ await waitForRoute(page, "#/forms", { ready: ".form-card" });
     b.id = "canary-page";
     b.textContent = "canary text straight on the page";
     b.style.cssText = "color:#e8f0f6";
-    host.appendChild(a); host.appendChild(b);
+    // The honest sibling: the app's own text colour on the app's own panel,
+    // exactly what a correctly written form style does. It must pass everywhere.
+    const c = document.createElement("p");
+    c.id = "canary-honest";
+    c.textContent = "canary text in the theme's own colours";
+    c.style.cssText = "color:var(--text);background:var(--panel-2);padding:4px";
+    host.appendChild(a); host.appendChild(b); host.appendChild(c);
   });
   const seen = await measureAllThemes();
   const fm = seen["field-manual"].misses;
   check(fm.some((m) => m.sel.includes("canary-solid")), "canary 1: text on its own solid background (pale on cream) is caught in field-manual", () => "not caught: " + JSON.stringify(fm.slice(0, 3)));
   check(fm.some((m) => m.sel.includes("canary-page")), "canary 2: pale text straight on the textured Field Manual page is caught (the case axe files as 'incomplete')", () => "not caught: " + JSON.stringify(fm.slice(0, 3)));
   const nv = seen["night-vision"].misses;
-  check(!nv.some((m) => m.sel.includes("canary")), "the same pale canaries are NOT flagged on the dark theme (the harness does not cry wolf)", () => JSON.stringify(nv.filter((m) => m.sel.includes("canary"))));
-  await page.evaluate(() => { document.getElementById("canary-solid").remove(); document.getElementById("canary-page").remove(); });
+  check(!nv.some((m) => m.sel.includes("canary-page")), "pale text straight on the DARK page is fine and is NOT flagged (the harness does not cry wolf)", () => JSON.stringify(nv.filter((m) => m.sel.includes("canary-page"))));
+  check(nv.some((m) => m.sel.includes("canary-solid")), "canary 1 is caught on the dark theme too (its own cream background does not change with the theme)", () => "not caught: " + JSON.stringify(nv.slice(0, 3)));
+  for (const t of THEMES) {
+    const wrong = seen[t.id].misses.filter((m) => m.sel.includes("canary-honest"));
+    check(wrong.length === 0, `[${t.id}] text in the theme's own --text on --panel-2 passes (an honest control is never flagged)`, () => JSON.stringify(wrong));
+  }
+  await page.evaluate(() => { for (const id of ["canary-solid", "canary-page", "canary-honest"]) document.getElementById(id).remove(); });
 }
 
 /* ---- 2) the sweep ---- */
