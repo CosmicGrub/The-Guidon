@@ -34,11 +34,14 @@
  * the letter-key checks fail; with the training reveal matching the authored
  * list, the training check fails.
  *
- * Randomness: the 300-run checks use the real Math.random on purpose - the
- * bounds are wide enough (each slot 20-47% of 300 for three choices, i.e. about
- * five standard deviations) that a correct shuffle essentially never trips
- * them, and a broken one is off by 50 points or more. Everything else pins the
- * order with G.engine.seedChoiceOrder so it is repeatable.
+ * Randomness: the 300-run distribution checks seed the draw
+ * (G.engine.seedChoiceOrder), so the same 300 orders come up on every run and
+ * no once-in-a-million fluke can fail CI; the bounds (each slot 20-47% of 300
+ * for three choices, about five standard deviations wide) are loose enough that
+ * any fair shuffle passes and tight enough that a broken one - which is off by
+ * 50 points or more - cannot. The REAL Math.random path (nothing seeded, nothing
+ * pinned) is covered by the control check in section 3: an ordinary decision
+ * must come out in many different orders across 40 unseeded runs.
  */
 import { bootApp, check, finish, until, clickWhenStable, waitForRoute, expectNoConsoleNoise } from "./testkit.mjs";
 
@@ -81,15 +84,21 @@ await page.evaluate(() => {
       return choices.slice().sort((a, b) => sum(b) - sum(a))[0].text;
     },
     // 300 fresh runs of one node's screen: how often does the best answer land in each slot?
-    distribution(id, nodeId, mode, runs) {
+    // The draw is seeded so the same 300 orders come up on every run of this suite (no
+    // chance of a once-in-a-million fluke failing CI); the unseeded, real-Math.random path is
+    // proven separately by the "control" check in section 3.
+    distribution(id, nodeId, mode, runs, seed) {
       const choices = G.store.scenario(id).nodes[nodeId].choices;
       const best = co.bestText(choices), counts = choices.map(() => 0);
       let missing = 0;
-      for (let i = 0; i < runs; i++) {
-        co.run(id, mode);
-        const at = co.shown(mode).indexOf(best);
-        if (at < 0) missing++; else counts[at]++;
-      }
+      G.engine.seedChoiceOrder(seed);
+      try {
+        for (let i = 0; i < runs; i++) {
+          co.run(id, mode);
+          const at = co.shown(mode).indexOf(best);
+          if (at < 0) missing++; else counts[at]++;
+        }
+      } finally { G.engine.seedChoiceOrder(); }
       co.fresh().remove(); co.host = null;
       return { counts, missing, runs, slots: choices.length };
     },
@@ -133,6 +142,16 @@ const FIXTURES = await page.evaluate(() => {
       end: { end: true, outcome: "Done." },
     }),
     one: mini("qa-order-one", { n1: { prompt: "One step.", choices: [{ text: "Go on", goto: "end" }] }, end: { end: true, outcome: "Done." } }),
+    // Echo is hidden until Alpha is picked (it sets a story flag); when n1 comes round again Echo is
+    // visible, and Alpha/Bravo/Charlie must keep the relative order they had the first time.
+    flagged: mini("qa-order-flagged", {
+      n1: { prompt: "Decide.", choices: [
+        { text: "Alpha", goto: "n2", set: { sawEcho: true } }, { text: "Bravo", goto: "n2" }, { text: "Charlie", goto: "n2" },
+        { text: "Echo", goto: "end", showIf: "sawEcho" },
+      ] },
+      n2: { prompt: "Regroup.", choices: [{ text: "Go back", goto: "n1" }] },
+      end: { end: true, outcome: "Done." },
+    }),
   };
 });
 
@@ -143,14 +162,14 @@ const sortedJ = (a) => J(a.slice().sort());
    1. The regression: the best answer lands in every slot, on every screen
    ===================================================================== */
 for (const [mode, label] of [["course", "Course"], ["cyoa", "Adventure"], ["text", "Text"]]) {
-  const d = await inPage(({ mode }) => window.__co.distribution("sc-ncoer", "n1", mode, 300), { mode });
+  const d = await inPage(({ mode }) => window.__co.distribution("sc-ncoer", "n1", mode, 300, 7001), { mode });
   const shares = d.counts.map((n) => Math.round((n / d.runs) * 100));
   check(d.missing === 0 && d.counts.length === 3 && d.counts.every((n) => n / d.runs >= 0.20 && n / d.runs <= 0.47),
     `${label} screen, 300 runs of sc-ncoer's first decision: the best answer lands in slot A/B/C ${shares.join("% / ")}% of the time (each between 20% and 47%)`,
     () => `${label} screen: best-answer slots over ${d.runs} runs: ${J(d)}`);
 }
 {
-  const d = await inPage(() => window.__co.distribution("sc-train-opsec", "q1", "training", 300));
+  const d = await inPage(() => window.__co.distribution("sc-train-opsec", "q1", "training", 300, 7002));
   const shares = d.counts.map((n) => Math.round((n / d.runs) * 100));
   check(d.missing === 0 && d.counts.length === 4 && d.counts.every((n) => n / d.runs >= 0.14 && n / d.runs <= 0.38),
     `Training screen, 300 runs of sc-train-opsec's first question: the correct answer lands in slots A-D ${shares.join("% / ")}% of the time (each between 14% and 38%)`,
@@ -302,6 +321,30 @@ for (const mode of ["course", "cyoa", "text"]) {
   check(sameEveryTime && seenFirst.size > 1, `${mode === "cyoa" ? "Adventure" : mode[0].toUpperCase() + mode.slice(1)} screen: when a decision comes round again in the same run its choices are in the same order as the first time (8 runs, ${seenFirst.size} different first orders)`, () => "loop: " + detail);
 }
 
+/* 5b. A story flag that reveals one more choice on the way back to a decision must not
+   reshuffle the choices the Soldier already saw: their relative order stays put. */
+for (const mode of ["course", "cyoa"]) {
+  let stable = true, detail = "", sawEchoLater = 0, firstOrders = new Set();
+  const cont = hostSel(mode === "cyoa" ? "button.btn.primary" : ".course-continue-btn");
+  const pick = (re) => page.locator(hostSel(mode === "cyoa" ? "button.hotspot" : ".mode-course button.choice"), { hasText: re });
+  for (let run = 0; run < 8; run++) {
+    await inPage(({ fx, mode }) => window.__co.run(fx.flagged, mode), { fx: FIXTURES, mode });
+    const first = await inPage(({ mode }) => window.__co.shown(mode), { mode });
+    firstOrders.add(first.join());
+    await clickWhenStable(page, pick(/Alpha/));
+    await clickWhenStable(page, page.locator(cont));
+    await until(page, () => /Regroup\./.test((document.getElementById("co-host") || {}).textContent || ""));
+    await clickWhenStable(page, pick(/Go back/));
+    await clickWhenStable(page, page.locator(cont).last());
+    await until(page, () => /Decide\./.test((document.getElementById("co-host") || {}).textContent || "") && !/Regroup\./.test(document.getElementById("co-host").textContent));
+    const again = await inPage(({ mode }) => window.__co.shown(mode), { mode });
+    if (again.includes("Echo")) sawEchoLater++;
+    const sameSeen = again.filter((t) => t !== "Echo").join() === first.join();
+    if (!sameSeen || again.length !== 4) { stable = false; detail = J({ mode, first, again }); }
+  }
+  check(stable && sawEchoLater === 8 && firstOrders.size > 1, `${mode === "cyoa" ? "Adventure" : "Course"} screen: when a story flag adds a fourth choice on the way back, the three already seen keep their order (8 runs, ${firstOrders.size} different first orders)`, () => "flag-revealed choice: " + detail);
+}
+
 /* =====================================================================
    6. Fixing the order does not change what a run scores or how training reveals
    ===================================================================== */
@@ -374,7 +417,8 @@ for (const mode of ["course", "cyoa", "text"]) {
   check(/^Right\./.test(c.honest) && /^Wrong\./.test(c.inflate) && /^Wrong\./.test(c.downplay), "...the honest answer is marked right and the two counterproductive ones wrong", () => "sc-ncoer n1 verdicts: " + J(c));
   check(/top mark/i.test(c.inflate) && /earned/i.test(c.inflate), "...the 'give him top marks' feedback is about giving top marks he has not earned", () => "inflate feedback: " + c.inflate);
   check(/marking him down/i.test(c.downplay) && /tough/i.test(c.downplay), "...the 'downplay' feedback is about marking him down to look tough", () => "downplay feedback: " + c.downplay);
-  check(/AR 623-3, para 1-9/.test(c.honest) && /AR 623-3, para 1-4b/.test(c.honest), "...and it cites only AR 623-3 paragraphs read from the bundled Library edition (1-9 and 1-4b), not the unverified 'para 3-12'", () => "honest feedback: " + c.honest);
+  check(/AR 623-3, para 1-9\)/.test(c.honest) && /AR 623-3, para 1-4b\(9\)\)/.test(c.honest), "...and it cites only AR 623-3 paragraphs read from the bundled Library edition (1-9 and 1-4b(9), 'candid assessments'), not the unverified 'Ch 2' / 'para 3-12'", () => "honest feedback: " + c.honest);
+  check(!/Ch 2|para 3-12/.test(c.honest + c.inflate + c.downplay), "...and none of the three carries the old, unverified 'Ch 2' or 'para 3-12' citation", () => "old citations still present: " + (c.honest + c.inflate + c.downplay));
   const refs = await inPage(() => {
     const get = (id) => G.store.scenario(id).nodes.n1.choices.map((x) => x.feedback || "").join(" ");
     return { appearance: get("sc-pres-appearance"), peer: get("sc-dev-peer"), crisis: get("sc-pres-crisis") };
@@ -382,6 +426,48 @@ for (const mode of ["course", "cyoa", "text"]) {
   const lettered = /\boption [A-H]\b|\b(first|second|third|last) option\b/i;
   check(!lettered.test(refs.appearance) && !lettered.test(refs.peer) && !lettered.test(refs.crisis),
     "sc-pres-appearance, sc-dev-peer and sc-pres-crisis no longer point at 'option A' / 'the first option' - a position that no longer means anything", () => "letter references left: " + J(refs));
+}
+{
+  // The same two shuffle-safety rules, over EVERY scenario in the bank (so a future scenario that
+  // says "option A" or leads a choice with "First," is caught here, not by a confused Soldier):
+  //   (1) no text names a slot ("option B", "the first choice");
+  //   (2) in a shuffled decision no choice is order-led ("1)", "Step 2", "Then,", "all of the above").
+  // The scan function is also run on planted scenarios, so the rule is shown to be able to FAIL,
+  // and a fixedOrder node/scenario is shown to be exempt from rule (2).
+  const r = await inPage(() => {
+    const NAMES_A_SLOT = /\b(option|choice|answer|response)\s+\(?[A-H]\)?(?![A-Za-z0-9])|\b(first|second|third|fourth|last)\s+(option|choice)\b|\b(options|choices)\s+[A-H]\b/i;
+    const ORDER_LED = /^\s*(\(?\d+[).:]|step\s*\d|first[,:]|second[,:]|third[,:]|finally[,:]|lastly[,:]|then[,:]|next[,:])|\b(none|all|both|neither) of the (above|these|previous)\b/i;
+    const strings = (x, out) => { if (typeof x === "string") out.push(x); else if (Array.isArray(x)) x.forEach((v) => strings(v, out)); else if (x && typeof x === "object") Object.keys(x).forEach((k) => strings(x[k], out)); return out; };
+    const scan = (scs) => {
+      const named = [], led = []; let multi = 0;
+      scs.forEach((sc) => {
+        const nodes = sc.nodes || {};
+        const collective = Object.keys(nodes).some((k) => nodes[k] && nodes[k].discuss);
+        Object.keys(nodes).forEach((k) => {
+          const n = nodes[k]; if (!n) return;
+          strings(n, []).forEach((s) => { if (NAMES_A_SLOT.test(s)) named.push(sc.id + ":" + k + " " + s.slice(0, 60)); });
+          const ch = Array.isArray(n.choices) ? n.choices : [];
+          if (ch.length < 2) return;
+          multi++;
+          if (collective || sc.fixedOrder || n.fixedOrder) return;
+          ch.forEach((c) => { if (ORDER_LED.test(String(c.text || c.say || ""))) led.push(sc.id + ":" + k + " " + String(c.text || c.say).slice(0, 60)); });
+        });
+      });
+      return { named, led, multi };
+    };
+    const planted = [
+      { id: "p-named", nodes: { n1: { prompt: "x", choices: [{ text: "Yes", feedback: "Better than option B." }, { text: "No" }] } } },
+      { id: "p-led", nodes: { n1: { prompt: "x", choices: [{ text: "Step 1: call it in" }, { text: "Then, move out" }] } } },
+      { id: "p-led-fixed-node", nodes: { n1: { prompt: "x", fixedOrder: true, choices: [{ text: "Step 1: call it in" }, { text: "Step 2: move out" }] } } },
+      { id: "p-led-fixed-scenario", fixedOrder: true, nodes: { n1: { prompt: "x", choices: [{ text: "First, call it in" }, { text: "Second, move out" }] } } },
+    ];
+    return { bank: scan(G.store.seed().scenarios.scenarios), planted: scan(planted), plantedOne: planted.map((p) => scan([p])) };
+  });
+  check(r.bank.named.length === 0, "no scenario text in the bank names a slot ('option B', 'the first choice') - " + r.bank.multi + " decisions scanned", () => "slot-naming text: " + J(r.bank.named));
+  check(r.bank.led.length === 0, "no shuffled decision in the bank has an order-led choice ('Step 2', 'Then,', 'all of the above')", () => "order-led choices: " + J(r.bank.led));
+  check(r.bank.multi > 300, "sanity: the scan really walked the bank (" + r.bank.multi + " multi-choice decisions)", () => "scanned " + r.bank.multi);
+  check(r.plantedOne[0].named.length === 1 && r.plantedOne[1].led.length === 2 && r.plantedOne[2].led.length === 0 && r.plantedOne[3].led.length === 0,
+    "the rules can fail: a planted 'option B' and a planted 'Step 1' / 'Then,' decision are caught, while fixedOrder on the node or the scenario exempts an ordered list", () => "planted: " + J(r.plantedOne));
 }
 
 expectNoConsoleNoise(noise);
