@@ -9593,7 +9593,12 @@ window.G = window.G || {};
       const compAvg = Math.round(COMPS.reduce((s, c) => s + dims[c].pct, 0) / COMPS.length);
       let label = "Not Started";
       if (attempts.length) {
-        label = compAvg >= 85 ? "Board Ready" : compAvg >= 60 ? "Strong" : compAvg >= 30 ? "On Track" : "Developing";
+        // The top band is "Very Strong", not "Board Ready": this is a score of the
+        // scenarios played (best-path play on a handful of them reaches 85+ - it is
+        // not evidence a Soldier is ready for a real board), and nothing in the
+        // Army defines what "board ready" is. The app does not claim it. The
+        // 85/60/30 cut-offs themselves are the app's own uncited bands.
+        label = compAvg >= 85 ? "Very Strong" : compAvg >= 60 ? "Strong" : compAvg >= 30 ? "On Track" : "Developing";
       }
       const result = {
         totalAttempts: attempts.length,
@@ -18494,7 +18499,7 @@ window.G = window.G || {};
           el("span", { text: "Developing < 30" }),
           el("span", { text: "On Track 30–60" }),
           el("span", { text: "Strong 60–85" }),
-          el("span", { text: "Board Ready 85+" }),
+          el("span", { text: "Very Strong 85+" }),
         ]),
         el("div.stat", { style: "margin-top:12px" }, [
           el("span.k", { text: "Scenarios completed" }),
@@ -18517,7 +18522,7 @@ window.G = window.G || {};
       // rather than inventing a second compact-stat-card pattern.
       {
         const glanceTiles = [];
-        const readyTone = p.readinessLabel === "Board Ready" ? "green" : p.readinessLabel === "Strong" ? "cyan" : p.readinessLabel === "On Track" ? "amber" : "red";
+        const readyTone = p.readinessLabel === "Very Strong" ? "green" : p.readinessLabel === "Strong" ? "cyan" : p.readinessLabel === "On Track" ? "amber" : "red";
         // "Scenario readiness", not "Overall readiness": this tile is built from
         // the scenarios played (the LRM headline above), never from flashcards,
         // and "Overall" read as if it covered both. The flashcard figures are

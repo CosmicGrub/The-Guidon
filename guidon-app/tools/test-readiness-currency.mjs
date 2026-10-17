@@ -21,6 +21,11 @@
  *      Drill priority said "Run Board Drill - 0% ready" (the scenario metric
  *      again, printed as if it were the cards).
  *
+ *   D. The scenario score's top band said "Board Ready" after a handful of
+ *      scenarios (and in the printed report a counselor reads). Nothing defines
+ *      "board ready", so the top band is now "Very Strong" everywhere it prints.
+ *      (Mock Board's own band is a separate owner decision, left as it was.)
+ *
  * Both directions are asserted: the fix does what it should AND the ordinary
  * path (a Soldier who is genuinely current; three ordinary categories at 40 /
  * 60 / 80 percent) reads exactly as it did.
@@ -332,6 +337,37 @@ const recordOneScenario = () => page.evaluate(async () => {
   is((await statOf("Promotable Readiness (LRM)")) !== null && (await statOf("Board cards current")) === N + " of " + N, "a Soldier with both sees the scenario score and the card figure as two separate lines", () => "missing");
   await clearSrs();
   await resetScenarios();
+}
+
+/* ---------------------------------------------------------------------
+   D. the scenario score does not claim a Soldier is "Board Ready"
+   --------------------------------------------------------------------- */
+{
+  // one scenario scored well on all six dimensions is 100% of its own scale: the top band, which used to read "Board Ready"
+  await clearSrs();
+  await resetScenarios();
+  const top = await page.evaluate(async () => {
+    await G.store.recordAttempt({ scenarioId: "qa-readiness-top-band", title: "QA top band", mode: "text", score: { Leads: 5, Develops: 5, Achieves: 5, Character: 5, Presence: 5, Intellect: 5 }, total: 30 });
+    const p = await G.store.getProgress();
+    return { label: p.readinessLabel, pct: p.competencyReadiness };
+  });
+  is(top.pct >= 85 && top.label === "Very Strong", "a scenario score of " + top.pct + "% is labelled Very Strong (the top band no longer says Board Ready)", JSON.stringify(top));
+  await openScreen("#/home", "#route .stat");
+  let t = await routeText();
+  is(/Very Strong/.test(t) && !/Board Ready/.test(t), "Home names the top band Very Strong and never says Board Ready", () => t.slice(0, 300));
+  await openScreen("#/progress", "#route .panel");
+  t = await routeText();
+  is(/Very Strong 85\+/.test(t) && !/Board Ready/.test(t), "Progress's legend reads Very Strong 85+ and nowhere says Board Ready", () => t.slice(0, 400));
+  const toneTile = await page.evaluate(() => { const tiles = [...document.querySelectorAll('.readiness-dash[aria-label="Progress at a glance"] .readiness-tile')]; const x = tiles.find((n) => /Scenario readiness/.test(n.textContent)); return x ? { tone: x.getAttribute("data-tone"), sub: (x.querySelector(".readiness-sub") || {}).textContent } : null; });
+  is(!!toneTile && toneTile.tone === "green" && toneTile.sub === "Very Strong", "and the glance tile keeps its green tone for the top band (sub-label Very Strong)", () => JSON.stringify(toneTile));
+  await page.evaluate(() => { window.__printed = null; G.util.printHTML = (title, html) => { window.__printed = html; }; });
+  await clickWhenStable(page, page.locator("button", { hasText: /Print Report/ }));
+  const printedTop = (await until(page, () => !!window.__printed, null)) ? await page.evaluate(() => window.__printed.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ")) : "";
+  is(/Promotable Readiness \(LRM\): Very Strong/.test(printedTop) && !/Board Ready/.test(printedTop), "the printed report says Very Strong and never Board Ready", () => printedTop.slice(0, 300));
+  // honest path: the middle bands are untouched (test:progress-glance-strip pins 83% = Strong); a fresh profile is still Not Started
+  await resetScenarios();
+  const fresh = await page.evaluate(async () => (await G.store.getProgress()).readinessLabel);
+  is(fresh === "Not Started", "after a reset the scenario line is Not Started again", fresh);
 }
 
 expectNoConsoleNoise(noise);
