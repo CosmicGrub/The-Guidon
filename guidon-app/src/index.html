@@ -31203,7 +31203,9 @@ window.G = window.G || {};
   }
   function isLeaderReminder(r, rosterWho) {
     if (!r || typeof r !== "object") return false;
-    if (typeof r.source === "string" && r.source.indexOf("leader") === 0) return true;
+    // The two stamps the roster really writes: "leader" (its quick-add buttons) and "leader-moi:<n>" (the MOI briefing for roster entry n).
+    // Exactly those - a source that merely STARTS with "leader" (a future "leaderboard", say) is another feature's reminder.
+    if (typeof r.source === "string" && (r.source === "leader" || /^leader-moi:\d+$/.test(r.source))) return true;
     // An unstamped row: only the exact row the roster's button writes (see above).
     if (r.source) return false;
     if (r.note) return false;

@@ -662,6 +662,12 @@ const dup = await page.evaluate(async (file) => {
 }, dupFile);
 check(dup.failed.length === 0 && JSON.stringify(dup.ids) === JSON.stringify(["dev8", "old9", "own1"]), "a roster reminder this device made again under another id is not doubled by a file that holds the same one (same kind, label, date); the other one is still kept", "reminder ids after: " + JSON.stringify(dup));
 
+// Which stamps mean "made from the roster": exactly the two the roster writes ("leader" and "leader-moi:<n>"). A source that merely
+// STARTS with "leader" is another feature's reminder (a future "leaderboard") and must be backed up, restored and exported like any other.
+const stamps = ["leader", "leader-moi:0", "leader-moi:12", "leaderboard", "leader-extra", "leader-moi:", "leader-moi:x", "Leader", ""];
+const taken = await page.evaluate((list) => list.map((source) => G.backup.isLeaderReminder({ kind: "other", label: "x", date: "2031-01-01", source }, [])), stamps);
+check(JSON.stringify(taken) === JSON.stringify([true, true, true, false, false, false, false, false, false]), "only the two stamps the roster really writes count as roster reminders (\"leader\", \"leader-moi:<n>\"); \"leaderboard\" and the like do not", "stamp -> taken: " + JSON.stringify(Object.fromEntries(stamps.map((s, i) => [s, taken[i]]))));
+
 /* =====================================================================
    8) The same promise for every other dialog: Enter on Cancel cancels
    ===================================================================== */
