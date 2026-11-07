@@ -187,6 +187,34 @@ check(fullLogged && fullEntry && /out of space/.test(fullEntry.detail) && !/Quot
   "...and the trail says the device ran out of space, without the browser's error name: \"" + ((fullEntry || {}).detail || "") + "\"", "trail entry: " + JSON.stringify(fullEntry));
 await page.evaluate(() => { window.__fault.txError = null; });
 
+/* ---------- a flood of failed writes cannot push other records out of the trail ---------- */
+// The trail logs every failed write, and a device that refuses writes refuses hundreds at once. With a cap of 200 that
+// used to evict everything before it - a restore record, a repair record - leaving nothing but "a change was not saved".
+console.log("\n-- a burst of failed saves folds into one entry per item, and gives way before restore and repair records --");
+await resetScenario({ advanceClockMs: 10 * 60 * 1000 });
+await page.evaluate(async () => {
+  await G.db.del("kv", "guidon:selfheal:v1");
+  await G.selfheal.log("backup-import", null, "restored 12 kv/0 scenarios/0 attempts, skipped 0 kv row(s)");
+  await G.selfheal.log("profile-backfill", "guidon:profile:v1", "a profile row from an older version was filled in");
+  window.__fault.abortPrefix = "__ack:";
+});
+const sameKey = await page.evaluate(async () => (await Promise.all(Array.from({ length: 40 }, () => window.__settle(G.db.put("kv", { k: "__ack:same", v: 1 }), 15000)))).every((o) => o.startsWith("rejected")));
+check(sameKey, "fixture: forty cancelled saves of the same item all report failure", "not every save reported failure");
+const folded = await untilAsync(page, async () => ((await G.selfheal.recent(200)).find((e) => e.key === "__ack:same") || {}).count === 40)
+  .then(async (okNow) => ({ okNow, entries: (await storageLogEntries()).filter((e) => e.key === "__ack:same") }));
+check(folded.okNow && folded.entries.length === 1 && folded.entries[0].count === 40 && /40 times in a row/.test(folded.entries[0].detail),
+  "forty failed saves of ONE item are one trail entry with the count (not forty entries): \"" + ((folded.entries[0] || {}).detail || "") + "\"", "entries for that item: " + JSON.stringify(folded.entries));
+const flood = await page.evaluate(async () => (await Promise.all(Array.from({ length: 300 }, (_, i) => window.__settle(G.db.put("kv", { k: "__ack:flood" + i, v: i }), 15000)))).filter((o) => o.startsWith("rejected")).length);
+check(flood === 300, "fixture: three hundred cancelled saves of different items in a burst all report failure", "only " + flood + " of 300 reported failure");
+const last = await untilAsync(page, async () => (await G.selfheal.recent(200)).some((e) => e.key === "__ack:flood299"));
+const trail = await page.evaluate(async () => (await G.selfheal.recent(1000)).map((e) => ({ kind: e.kind, key: e.key })));
+check(last && trail.length <= 200, "the trail still holds no more than its 200 entries after the burst", "entries: " + trail.length + ", newest burst entry present: " + last);
+check(trail.some((e) => e.kind === "backup-import") && trail.some((e) => e.kind === "profile-backfill" && e.key === "guidon:profile:v1"),
+  "...and the restore record and the repair record from before the burst are both still there", "kinds in the trail: " + JSON.stringify([...new Set(trail.map((e) => e.kind))]));
+check(trail.filter((e) => e.kind === "storage-write-fail").length === trail.length - 2, "...everything else in the trail is the burst's own entries (the two older records, nothing evicted but failed-save entries)", "kinds: " + JSON.stringify([...new Set(trail.map((e) => e.kind))]));
+await page.evaluate(() => { window.__fault.abortPrefix = null; });
+await resetScenario();
+
 /* ---------- the other write paths ---------- */
 console.log("\n-- del / putMany / delMany / clear settle too --");
 await resetScenario({ advanceClockMs: 10 * 60 * 1000 });

@@ -29240,13 +29240,50 @@ window.G = window.G || {};
     return result;
   }
 
+  // The one kind that can arrive in hundreds at once: a device that refuses
+  // writes refuses every one of them, and each used to add its own entry - 300
+  // aborted saves in under a tenth of a second pushed out every record before
+  // them, including the restore and repair entries the trail exists to keep.
+  // Two things stop that, and neither changes the cap of CAP entries:
+  //  - the same item failing again within NOISY_WINDOW_MS is folded into its
+  //    existing entry (a count and the time of the latest), not logged again;
+  //  - when the trail is full, a burst of these gives way first: the oldest
+  //    entries of this kind are dropped before any other kind is touched.
+  var NOISY_KIND = "storage-write-fail";
+  var NOISY_WINDOW_MS = 60 * 1000;
+  function _foldIntoLast(list, kind, key, detail, now) {
+    if (kind !== NOISY_KIND) return false;
+    for (var i = list.length - 1; i >= 0; i--) {
+      var e = list[i];
+      if (!e || e.kind !== kind || (e.key || null) !== (key || null)) continue;
+      var since = now - Date.parse(e.last || e.at);
+      if (!(since >= -1000 && since <= NOISY_WINDOW_MS)) return false;   // too long ago (or a clock that moved back): a new entry
+      e.count = (e.count || 1) + 1;
+      e.last = new Date(now).toISOString();
+      e.detail = (detail || "") + " (" + e.count + " times in a row; the latest at " + new Date(now).toLocaleTimeString() + ")";
+      return true;
+    }
+    return false;
+  }
+  function _trim(list) {
+    var over = list.length - CAP;
+    if (over <= 0) return list;
+    var kept = [];
+    for (var i = 0; i < list.length; i++) {
+      if (over > 0 && list[i] && list[i].kind === NOISY_KIND) { over--; continue; }
+      kept.push(list[i]);
+    }
+    return over > 0 ? kept.slice(over) : kept;
+  }
+
   function log(kind, key, detail) {
     return _serialize(async function () {
       try {
         var r = await G.db.get("kv", KEY);
         var list = (r && Array.isArray(r.v)) ? r.v.slice() : [];
-        list.push({ at: new Date().toISOString(), kind: kind, key: key || null, detail: detail || "" });
-        if (list.length > CAP) list = list.slice(list.length - CAP);
+        var stamp = new Date(), now = stamp.getTime();
+        if (!_foldIntoLast(list, kind, key, detail, now)) list.push({ at: stamp.toISOString(), kind: kind, key: key || null, detail: detail || "" });
+        list = _trim(list);
         await G.db.put("kv", { k: KEY, v: list });
       } catch (e) { /* logging must never block the repair it describes */ }
     });
