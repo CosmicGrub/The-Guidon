@@ -31,10 +31,27 @@
  * seed + every "emit":"build" content pack; every top-level section, not just
  * board / doctrine / scenarios - the curriculum course was the one the first
  * audit missed), no string may name an enforced old designator unless the
- * sentence it sits in marks the change: formerly / supersede(s|d) / replaced /
- * renamed / rescinded / retired / no longer / older / previous / prior ("ATP
- * 4-02.11, which superseded TC 4-02.1 in March 2026" is fine; "Per TC 4-02.1:
- * ..." and a source entry whose `pub` is "TC 4-02.1" are not). That one rule
+ * sentence it sits in shows a status change OF THE PUBLICATION ("ATP 4-02.11,
+ * which superseded TC 4-02.1 in March 2026" is fine; "Per TC 4-02.1: ..." and a
+ * source entry whose `pub` is "TC 4-02.1" are not). Four shapes count, each
+ * within MARKER_REACH characters of the designator and in the same sentence:
+ *   1. a strict publication-status word - formerly, superseded / supersedes /
+ *      superseding, supersession, rescinded, "(retired)";
+ *   2. the designator is the subject of a status predicate right after it
+ *      ("TC 4-02.1 has been replaced", "TC 4-02.1 is no longer used", "TC 4-02.1
+ *      is outdated", "TC 4-02.1, retired in 2026,"), or a status verb or adjective
+ *      sits right before it ("replacing TC 4-02.1", "the old TC 4-02.1");
+ *   3. a naming phrase ("the older name", "the former designation", "previous
+ *      edition");
+ *   4. a change word (replaced / replaces / replacing / replacement / renamed /
+ *      retired / outdated / obsolete / used to be / no longer current) together
+ *      with ANOTHER publication designator (ATP / TC / FM / AR / DA PAM ...) in
+ *      that sentence.
+ * A bare everyday word never excuses a mention, however close: "prior to",
+ * "previous severe bleeding", "replace the dressing", "an older casualty", "a
+ * second tourniquet replaces the first", "a wet dressing is replaced with a dry
+ * one" and "the strap used to be tightened" are medical prose, and a sentence
+ * that teaches from TC 4-02.1 while saying one of them is still a teaching. That one rule
  * covers the structured citation (source[].pub, scenario doctrine[].pub) and the
  * prose cite at the end of an answer alike, and it is what "a card teaches a
  * superseded publication as verbatim" means: a board card with no quoteKind
@@ -68,16 +85,31 @@ export const LIBRARY_PATH = path.join(APP, "src", "app-modules", "library.js");
  *  or 2 of every document; the first 6 leave room for a long front-matter run). */
 export const COVER_PAGES = 6;
 
-/** Words that mark a mention as a statement ABOUT the change, not a teaching of
- *  the old publication as current. Only words that talk about a publication
- *  changing: everyday medical and card prose uses "prior to", "previous",
- *  "older", "replace the dressing" and "no longer" constantly, and any one of
- *  those beside a cite used to excuse it ("Per TC 4-02.1: apply the tourniquet
- *  prior to moving the casualty" passed). A marker only counts when it sits
- *  within MARKER_REACH characters of the designator, in the same sentence. */
-export const MARKED_CHANGE = /(?:\b(?:formerly|supersed(?:e|es|ed|ing)|supersession|replaced (?:by|with)|replaces|renamed|rescind(?:ed|s)?|obsolete|used to be|(?:was|been|is|now) retired|no longer (?:current|in effect|valid|authoritative))\b|\(retired\))/gi;
+/** Strict publication-status words: they are only ever said ABOUT a publication, so one
+ *  excuses a mention anywhere within MARKER_REACH characters of it in the same sentence.
+ *  Everyday medical and card prose uses "prior to", "previous", "older", "replace the
+ *  dressing", "replaces", "replaced with", "renamed", "used to be", "obsolete" and "no
+ *  longer" constantly, and any one of those beside a cite used to excuse it ("Per TC
+ *  4-02.1 a wet dressing is replaced with a dry one" passed) - none of them is here; the
+ *  status shapes below need the word to sit on the publication itself. */
+export const MARKED_CHANGE = /(?:\b(?:formerly|supersed(?:e|es|ed|ing)|supersession|rescind(?:ed|s)?)\b|\(retired\))/gi;
 /** How far (in characters) a marker may sit from the designator and still be about it. */
 export const MARKER_REACH = 60;
+
+/** Status words that describe a publication when they follow its designator directly. */
+const STATUS_WORDS = "replaced|retired|outdated|obsolete|withdrawn|renamed|out of date|no longer (?:used|current|in effect|valid|authoritative|the source)";
+/** "TC 4-02.1 has been replaced." / "TC 4-02.1 is no longer used;" / "TC 4-02.1, retired in 2026,": the status word
+ *  must end the thought ("replaced by", "retired in 2026,") - "replaced items" and "obsolete dressings" do not count. */
+const STATUS_AFTER = new RegExp(
+  "^[\\s,()\\u2013\\u2014-]*(?:(?:is|was|were|has|have|had|been|being|now|later|since|also|officially|already)\\s+)*(?:" + STATUS_WORDS + ")"
+  + "(?=\\s*(?:$|[.,;:)\\u2013\\u2014-]|(?:by|with|in|on|as|since|from|after|before|and|to|ATP|TC|FM|AR|ADP|DA)\\b))", "i");
+/** A status verb or adjective directly before the designator: "replacing TC 4-02.1", "the old TC 4-02.1". */
+const STATUS_BEFORE = /(?:\b(?:replac(?:es|ed|ing)|retir(?:ed|es|ing)|supersed\w*|rescind\w*|withdr[ae]w\w*)\s+(?:the\s+|its\s+)?|\b(?:old|older|former|previous|prior|earlier|outdated|obsolete|retired|rescinded|superseded|withdrawn)\s+(?:[A-Za-z]+\s+)?)$/i;
+/** Naming phrases about a publication: "the older name", "the former designation", "previous edition". */
+const NAMING_PHRASE = /\b(?:old|older|former|previous|prior|earlier|original|superseded|retired|outdated)\s+(?:name|designation|designator|title|number|edition|version|manual|publication)\b/gi;
+/** Change words that only count when ANOTHER publication designator sits in the same sentence. */
+const CHANGE_WORDS = /\b(?:replac(?:es|ed|ing|ement)|renamed|retired|outdated|obsolete|used to be|no longer (?:used|current|in effect|valid|authoritative))\b/gi;
+const PUB_DESIGNATOR = /(?<![A-Za-z0-9])(?:ATP|ATTP|TC|FM|AR|DA\s+PAM|ADP|ADRP|TM|STP|JP|DODI|AFI|GTA)\s*\d[\d.‐-―−-]*\d/gi;
 
 /* ---------------------------------------------------------------------
    The table (read from moi-import.js) and the proof (read from library.js)
@@ -163,18 +195,27 @@ export function sentenceAround(text, index, length) {
   const { from, to } = sentenceBounds(text, index, length);
   return text.slice(from, to);
 }
-/** Is this mention (at [index, index+length)) marked as being about the change:
- *  a change-marking word in the SAME sentence and within MARKER_REACH characters
- *  of the designator, on either side? */
+/** Is this mention (at [index, index+length)) shown to be about the publication's status
+ *  change? Same sentence, within MARKER_REACH characters of the designator, in one of the
+ *  four shapes the header lists (strict word; status predicate / status word on the
+ *  designator; naming phrase; change word beside ANOTHER publication designator). */
 export function isMarked(text, index, length) {
   const { from, to } = sentenceBounds(text, index, length);
   const sentence = text.slice(from, to);
   const ds = index - from, de = ds + length;
-  for (const mm of sentence.matchAll(new RegExp(MARKED_CHANGE.source, "gi"))) {
-    const ms = mm.index, me = ms + mm[0].length;
-    const gap = ms >= de ? ms - de : ds >= me ? ds - me : 0;
-    if (gap <= MARKER_REACH) return true;
-  }
+  const near = (start, end) => (start >= de ? start - de : ds >= end ? ds - end : 0) <= MARKER_REACH;
+  // 1. strict publication-status words
+  for (const mm of sentence.matchAll(new RegExp(MARKED_CHANGE.source, "gi"))) if (near(mm.index, mm.index + mm[0].length)) return true;
+  // 2. the designator is the subject of a status predicate, or a status verb / adjective sits right before it
+  if (STATUS_AFTER.test(sentence.slice(de, de + 90))) return true;
+  if (STATUS_BEFORE.test(sentence.slice(Math.max(0, ds - 40), ds))) return true;
+  // 3. naming phrases
+  for (const mm of sentence.matchAll(new RegExp(NAMING_PHRASE.source, "gi"))) if (near(mm.index, mm.index + mm[0].length)) return true;
+  // 4. a change word together with ANOTHER publication designator nearby
+  const others = [...sentence.matchAll(new RegExp(PUB_DESIGNATOR.source, "gi"))]
+    .filter((o) => o.index + o[0].length <= ds || o.index >= de)
+    .filter((o) => near(o.index, o.index + o[0].length));
+  if (others.length) for (const mm of sentence.matchAll(new RegExp(CHANGE_WORDS.source, "gi"))) if (near(mm.index, mm.index + mm[0].length)) return true;
   return false;
 }
 

@@ -94,8 +94,20 @@ check(hits("CTC 4-02.1 and xTC 4-02.1") === 0 && hits("see TC 4-02.1") === 1, "h
 // publication changing: a teaching sentence that happens to contain one is still a teaching.
 check(hits("Per TC 4-02.1: apply the tourniquet prior to moving the casualty.") === 1 && hits("Per TC 4-02.1, replace the saturated dressing.") === 1 && hits("Per TC 4-02.1, treat the previous severe bleeding first.") === 1 && hits("Per TC 4-02.1, an older casualty may no longer be able to self-aid.") === 1,
   "a teaching sentence is not excused by everyday words (prior to, replace the dressing, previous bleeding, older, no longer): each is 1 unmarked mention");
-check(hits("Per TC 4-02.1 stop the bleeding, tighten the windlass until it stops, secure the strap, note the time, and move the casualty; this was formerly done another way") === 1,
-  "...and a change word that is far from the designator (more than 60 characters away) does not excuse it either");
+// A comma, not a semicolon: "; " ends a sentence, so a semicolon would put the marker in another sentence at ANY reach and the
+// distance rule (MARKER_REACH) would never be exercised. With commas the marker and the designator share one sentence.
+const farText = "Per TC 4-02.1 stop the bleeding, tighten the windlass until it stops, secure the strap, note the time, move the casualty, and this was formerly done another way";
+check(farText.indexOf("formerly") - "Per TC 4-02.1".length > 60 && !/[.;!?]\s/.test(farText) && hits(farText) === 1,
+  "...and a change word in the SAME sentence but more than 60 characters from the designator does not excuse it either (the distance rule, not the sentence splitter)", () => "hits=" + hits(farText) + " gap=" + (farText.indexOf("formerly") - "Per TC 4-02.1".length));
+check(hits("Per TC 4-02.1 stop the bleeding, formerly done another way") === 0, "...while the same marker within 60 characters does (the upper bound is tested from both sides)");
+// The change words that ordinary medical prose also uses never excuse a teaching sentence, however close they sit; only a status
+// change OF THE PUBLICATION does (strict word, status predicate on the designator, naming phrase, or a change word beside ANOTHER designator).
+check(hits("Per TC 4-02.1 a wet dressing is replaced with a dry one.") === 1 && hits("Per TC 4-02.1, a second tourniquet replaces the first only after two hours.") === 1 && hits("Per TC 4-02.1 the strap used to be tightened by twisting the rod.") === 1 && hits("Per TC 4-02.1 the form was renamed on the card.") === 1 && hits("Per TC 4-02.1, replaced items must be documented.") === 1 && hits("Per TC 4-02.1, obsolete dressings are discarded.") === 1 && hits("TC 4-02.1 is not outdated, so apply it.") === 1 && hits("Per TC 4-02.1, the card is replaced with DD Form 1380 at handoff.") === 1,
+  "a teaching is not excused by 'replaced with', 'replaces', 'used to be', 'renamed', 'replaced items', 'obsolete dressings', a negated 'not outdated', or a swap of forms: each is 1 unmarked mention");
+check(hits("The older name was TC 4-02.1.") === 0 && hits("Study guides may still say TC 4-02.1 (the older name), which is the old manual.") === 0 && hits("TC 4-02.1 is no longer used; use ATP 4-02.11.") === 0 && hits("TC 4-02.1 has been replaced.") === 0 && hits("ATP 4-02.11, replacing TC 4-02.1, covers casualty response.") === 0 && hits("TC 4-02.1 is outdated.") === 0 && hits("The old TC 4-02.1 First Aid manual is gone.") === 0 && hits("TC 4-02.1, retired in 2026, is not the source anymore.") === 0 && hits("TC 4-02.1 is out of date.") === 0 && hits("TC 4-02.1 was renamed ATP 4-02.11.") === 0 && hits("ATP 4-02.11 is the replacement for TC 4-02.1.") === 0,
+  "honest history phrased the ordinary way is not refused: the older name, is no longer used, has been replaced, replacing, is outdated, the old, retired in 2026, out of date, renamed ATP 4-02.11, the replacement for");
+check(hits("Per ATP 4-02.1, Class VIII was replaced by the supply system.") === 0 && hits("Per TC 4-02.2, field sanitation applies.") === 0 && hits("Per FM 4-02.1 the old doctrine applied.") === 0 && hits("Per TC 4-02.11, prior to moving the casualty, check the airway.") === 0 && hits("Per TC 4-02.1-2, prior to moving the casualty, check the airway.") === 0,
+  "similarly numbered manuals (ATP 4-02.1, TC 4-02.2, FM 4-02.1, TC 4-02.11, TC 4-02.1-2) are not TC 4-02.1, whatever words surround them");
 check(hits("ATP 4-02.11, which replaces TC 4-02.1, covers casualty response.") === 0 && hits("TC 4-02.1 is no longer current.") === 0 && hits("TC 4-02.1 was rescinded.") === 0 && hits("TC 4-02.1 (retired)") === 0 && hits("The supersession of TC 4-02.1 is in the cover.") === 0 && hits("TC 4-02.1 has been replaced with ATP 4-02.11.") === 0,
   "honest: a change word right beside the designator (replaces, no longer current, rescinded, (retired), supersession, replaced with) still marks it");
 check(designatorRegex("TC 4-02.1").test("see TC 4-02.1") && !designatorRegex("TC 4-02.1").test("ATP 4-02.1"), "designatorRegex('TC 4-02.1') matches the designator and not ATP 4-02.1");
@@ -142,6 +154,180 @@ check(/fifth intercostal space on the anterior axillary line/.test(p004.boardAns
 check(!/chest tube|SpO2|hypotension|breath sounds|ATP 4-02\.84|14-gauge, 3\.25/i.test(allText(p004)), "...and no longer claims what the bundled text does not say (a chest tube, SpO2, hypotension, breath sounds, a gauge and length, or ATP 4-02.84 TCCC guidance)", () => J(allText(p004).match(/chest tube|SpO2|hypotension|breath sounds|ATP 4-02\.84|14-gauge, 3\.25/i)));
 check(inAtp(/should not be used to describe the tactical evacuation care phase/) && !/TACEVAC|Role 2|standing orders/.test(allText(p006)) && /Tactical Evacuation Care/.test(p006.boardAnswer), "tccc-006 does not call the third phase TACEVAC (ATP 4-02.11 para 3-57 says not to), name Role 2 or cite standing orders", () => J(allText(p006).match(/TACEVAC|Role 2|standing orders/g)));
 check(inAtp(/Airway and other issues are not treated until the TFC phase/) && !/1 May 2026|burning vehicles or buildings/.test(allText(p10)) && /Airway and other problems are not treated until the Tactical Field Care phase/.test(p10.boardAnswer), "tccc-10 no longer attributes an edition date the bundle cannot confirm, and says airway waits for Tactical Field Care in the manual's terms", () => J(allText(p10).match(/1 May 2026|burning vehicles or buildings/)));
+
+/* ---- Round 2: the rest of what the relabelled records teach. The six cards above were not the only records relabelled without a re-read:
+   the 19 First Aid cards, the First Aid course, doc-tccc and three more doctrine entries were too, and a second review found them teaching
+   what the bundled text does not say (a tourniquet rule with no phase, 'tracheal deviation' as the first sign, 'TACEVAC' as the phase name).
+   Every fact pinned below is first PROVEN to be in the Library's own ATP 4-02.11, then required in the field that teaches it - field by field
+   (a, acceptableAnswer, keyPoints, boardAnswer, tiers, check, explanation) - so restoring one wrong sentence anywhere fails a named check. ---- */
+const PROOF = {
+  "hasty tourniquet is high and tight in Care Under Fire (4-39)": /A hasty TQ is implemented as .high and tight. on the wounded extremity or when the bleeding source is ambiguous during the CUF phase/,
+  "deliberate tourniquet is 2-3 inches on the skin in Tactical Field Care (4-39)": /during TFC, all TQs should be deliberate, placed two to three inches above the wound directly on the skin, not over clothing/,
+  "no tourniquet time in Care Under Fire (4-41)": /Do not document the TQ application time until the TFC phase/,
+  "time on the tourniquet and DD Form 1380 in Tactical Field Care (4-63)": /Documenting the time of TQ placement on both the TQ itself and the DD Form 1380 during TFC, rather than CUF/,
+  "tourniquet THEN cover (4-9)": /a hasty TQ is applied .high and tight. on the injured extremity and then cover should be acquired/,
+  "the order in Care Under Fire is mission-variable (3-38)": /The order of actions during CUF is mission-variable dependent/,
+  "airway waits for Tactical Field Care (4-7)": /Airway and other issues are not treated until the TFC phase/,
+  "a tourniquet is the only medical intervention in Care Under Fire (4-7)": /During CUF a TQ is the only medical intervention available to stop life-threatening bleeding from an extremity injury/,
+  "after the hasty tourniquet, priority shifts to cover (2-12)": /Once a casualty has been treated with a hasty TQ, if the tactical situation allows, priority shifts to getting them to cover/,
+  "immediate movement for a burning vehicle (2-10)": /Immediate movement may be necessary in certain safety-critical situations, such as a burning vehicle or enemy fire/,
+  "a second tourniquet goes beside the first, higher (4-62)": /apply a second deliberate TQ adjacent to the original, positioned higher on the limb/,
+  "under two hours, limb loss after six (4-40)": /optimal safe duration being less than two hours.{1,200}limb loss after six hours/,
+  "M is the top priority (3-95)": /Massive Bleeding or hemorrhaging \(the top priority\)/,
+  "go back to M (4-3)": /if at any time massive bleeding is not controlled, go back to M/,
+  "tension pneumothorax late signs (6-31)": /Late signs, which may appear as the condition worsens, include: . Swollen neck veins\. . Tracheal deviation/,
+  "tension pneumothorax early signs (6-31)": /Early signs include: . Increasing difficulty breathing over time\. . Shortness of breath\. . Confusion, lightheadedness, or agitation from low oxygen\. . Bluish discoloration around the mouth and lips\. . Rapid pulse/,
+  "NDC sites (6-36)": /Second, intercostal space in the mid-clavicular line\. . If the needle is used at the second intercostal space, ensure the site selection is outside the nipple line\. . Anterior axillary line in the fifth intercostal space/,
+  "never an NDC through a chest seal (6-35)": /DO NOT put an NDC through a chest seal! Use an alternate site instead/,
+  "try the alternate NDC site (6-35)": /a second NDC should be attempted at the alternate recommended site/,
+  "vented chest seal preferred (6-42)": /A CoTCCC vented commercial chest seal is the preferred type of chest seal/,
+  "the phase is named Tactical Evacuation Care (3-56)": /Tactical evacuation care is the third phase of care in tactical combat casualty care\. Care provided during transportation from the battlefield to a medical treatment facility/,
+  "TACEVAC is not the phase name (3-57)": /the term .TACEVAC. should not be used to describe the tactical evacuation care phase of TCCC/,
+  "only medical priority in Care Under Fire is massive extremity bleeding (3-37)": /the only medical priority is addressing massive extremity bleeding due to the ongoing threat/,
+  "a casualty can bleed to death in as little as three minutes (4-2)": /can result in death in as little as three minutes if bleeding is allowed to continue/,
+  "bleeding stops within one minute, secured within three (4-62)": /Bleeding cessation is expected within one minute, with full TQ securing achieved within three minutes/,
+  "junctional hemostatic dressing waits for Tactical Field Care (4-2)": /treatment with a hemostatic dressing is not performed until the casualty transitions to TFC/,
+  "every Service member should be trained in tourniquet use (3-50)": /all Service members with access to a first aid kit should be trained in TQ use/,
+  "IV or IO access is a combat medic procedure (1-74)": /EMT procedures performed by combat medics encompass critical interventions such as airway management, establishing intravenous or intraosseous access/,
+  "a CLS can perform needle chest decompression (3-67)": /the CLS can provide immediate lifesaving care, such as controlling severe bleeding and performing needle chest decompressions for tension pneumothorax/,
+  "a CLS treats the most common causes of death (1-11)": /treats the most common causes of death on the battlefield, which are massive hemorrhage, airway and\/or respiratory problems/,
+  "at least one CLS per squad, crew or team (1-11)": /A minimum of one individual per squad, crew, team, or equivalent-sized unit should be trained/,
+  "CLS skills are recertified every 12 months (3-20)": /CLS skills are perishable and must be recertified every 12 months/,
+  "cold stops blood clotting properly (8-5)": /cold temperatures can prevent blood from clotting properly/,
+  "eight signs of shock (7-6)": /The signs and symptoms of shock include: . Mental confusion\. . Weak or absent radial pulse\. . Rapid breathing\. . Nausea\. . Sweaty, cool, or clammy skin\. . Excessive thirst\. . Pale or gray skin\. . Previous severe bleeding/,
+  "not ALERT: no weapons or communications equipment (15-5)": /If the casualty is not ALERT, indicating decreased mental status, the casualty should not have weapons or communications equipment/,
+  "recovery position is on the side (6-28)": /in the recovery position \(on the casualty.s side\)/,
+  "lines 1-5 within 25 seconds (3-62)": /Line numbers 1 through 5 must be transmitted within 25 seconds during the initial/,
+  "the completed DD Form 1380 is the '10th line' MIST report (9-2)": /Often referred to as the 10th line in the 9-line MEDEVAC request, the completed DD Form 1380 serves as the MIST report/,
+  "the CWMP holds pain medicine and an antibiotic (9-5)": /The CWMP contains drugs for mild to moderate pain \(Meloxicam and Acetaminophen\) and an antibiotic specific for penetrating wounds \(Moxifloxacin\)/,
+  "the cold injuries it names (17-38)": /Nonfreezing cold injuries are chilblain and snow blindness\. Trench foot occurs when tissues are exposed to temperatures from 32/,
+};
+const proofMiss = Object.entries(PROOF).filter(([, re]) => !re.test(atpText)).map(([k]) => k);
+check(proofMiss.length === 0, `fixture: the bundled ATP 4-02.11 carries every sentence the field-by-field pins rest on (${Object.keys(PROOF).length})`, () => "not in the Library text any more - re-read the records against the new edition:\n  " + proofMiss.join("\n  "));
+const NOT_IN_BUNDLE = ["SOFTT", "Hextend", "Blizzard", "Cushing", "Hyfin", "QuikClot", "HemCon", "NREMT", "standing orders", "golden hour", "frostnip", "flutter valve", "coagulopathy", "Glasgow", "absent breath sounds", "hypotension", "surgical cricothyrotomy"];
+const inBundle = NOT_IN_BUNDLE.filter((w) => new RegExp(w, "i").test(atpText));
+check(inBundle.length === 0, "fixture: none of the terms the second review found taught as ATP 4-02.11 content is in the bundled text (so none belongs in a record that cites it)", () => "now in the Library text: " + inBundle.join(", "));
+
+const fieldOf = (rec, f) => { const m = /^keyPoints\[(\d+)\]$/.exec(f); return String(m ? (rec.keyPoints || [])[Number(m[1])] : rec[f] ?? ""); };
+const pin = (label, rec, list) => {
+  const miss = [];
+  for (const [f, re, mustNot] of list) { const t = fieldOf(rec, f); if (mustNot ? re.test(t) : !re.test(t)) miss.push((mustNot ? "must NOT match " : "must match ") + f + "  " + re + "\n      field: " + t.slice(0, 220)); }
+  check(miss.length === 0, `${label}: ${list.length} fields pinned to the bundled text`, () => miss.join("\n    "));
+};
+const lesson = (cid, lid) => bank.curriculum.courses.find((c) => c.id === cid).lessons.find((l) => l.id === lid);
+const lt = (l) => ({ ...l.tiers, "check.q": l.check.q, "check.a": l.check.a, explanation: (l.knowledgeCheck || {}).explanation, options: ((l.knowledgeCheck || {}).options || []).join(" | ") });
+
+pin("bq-tccc-02 (MARCH)", m02, [
+  ["keyPoints[0]", /hasty tourniquet "high and tight" in Care Under Fire, a deliberate one 2-3 inches above the wound in Tactical Field Care/],
+  ["keyPoints[1]", /recovery position for an unconscious casualty/], ["keyPoints[2]", /needle decompression for tension pneumothorax/],
+  ["a", /Massive bleeding always comes first/], ["acceptableAnswer", /then PAWS \(pain, wounds, antibiotics, splinting\)/],
+  ["boardAnswer", /Massive bleeding \(the top priority\)/], ["boardAnswer", /you go back to M/], ["boardAnswer", /followed by PAWS: pain, wounds, antibiotics and splinting/],
+]);
+pin("bq-tccc-03 (when to apply a tourniquet)", m03, [
+  ["acceptableAnswer", /In Care Under Fire put it on high and tight over the uniform; in Tactical Field Care place it 2-3 inches above the wound on bare skin and write the time on the tourniquet and DD Form 1380/],
+  ["acceptableAnswer", /even under fire/i, true],
+  ["boardAnswer", /In Care Under Fire, put a hasty tourniquet on "high and tight" over the uniform, tighten until the bleeding stops, and move to cover; do not stop to record the time yet/],
+  ["boardAnswer", /In Tactical Field Care, place a deliberate tourniquet two to three inches above the wound directly on the skin, and write the time on the tourniquet and on DD Form 1380/],
+  ["keyPoints[1]", /Care Under Fire: a hasty tourniquet HIGH and TIGHT over the uniform — no time-marking yet/], ["keyPoints[2]", /Tactical Field Care: a deliberate tourniquet 2-3 inches above the wound, directly on the skin/],
+  ["keyPoints[4]", /Write the time on the tourniquet and on DD Form 1380 in Tactical Field Care/], ["keyPoints[5]", /Only medical personnel at a higher role of care remove it/],
+]);
+pin("tccc-004 (tension pneumothorax)", p004, [
+  ["a", /second intercostal space in the mid-clavicular line, or at the fifth intercostal space on the anterior axillary line/],
+  ["acceptableAnswer", /Early signs: worsening difficulty breathing, rapid pulse, bluish lips; late signs: swollen neck veins and tracheal deviation/], ["acceptableAnswer", /2nd intercostal space \(mid-clavicular line\) or the 5th \(anterior axillary line\)/],
+  ["boardAnswer", /Early signs: increasing difficulty breathing, shortness of breath, confusion or agitation, bluish color around the mouth and lips, and a rapid pulse\. Late signs: swollen neck veins and tracheal deviation/],
+  ["boardAnswer", /second intercostal space in the mid-clavicular line \(outside the nipple line\) or at the fifth intercostal space on the anterior axillary line — never through a chest seal/],
+  ["boardAnswer", /If the first NDC does not help, try the other site/], ["boardAnswer", /A vented chest seal is the preferred seal/],
+  ["keyPoints[2]", /Never put the needle through a chest seal; if the first try fails, use the other site/], ["keyPoints[3]", /Tracheal deviation and swollen neck veins are late signs/],
+]);
+pin("tccc-005 (tourniquet)", p005, [
+  ["a", /In Care Under Fire, put a hasty tourniquet on "high and tight" over the uniform, tighten until the bleeding stops, and move to cover — don't stop to record the time yet\. In Tactical Field Care, reassess it and place a deliberate tourniquet two to three inches above the wound directly on the skin, and write the time on the tourniquet and on DD Form 1380/],
+  ["acceptableAnswer", /Care Under Fire: a hasty tourniquet high and tight over the clothing, tighten until the bleeding stops, move to cover, no time-marking yet\. Tactical Field Care: a deliberate tourniquet 2-3 inches above the wound on bare skin, with the time written on the tourniquet and DD Form 1380/],
+  ["boardAnswer", /add a second tourniquet next to the first, higher on the limb/], ["boardAnswer", /under two hours.{1,80}limb loss is possible after six hours/],
+  ["keyPoints[1]", /Do not record the time in Care Under Fire — wait for Tactical Field Care/], ["keyPoints[4]", /never over a joint or a bulky pocket/],
+]);
+pin("tccc-006 (three phases)", { ...p006, cufA: (p006.a.match(/\(1\)(.*?)\(2\)/s) || [])[1] || "", cufB: (p006.boardAnswer.match(/\(1\)(.*?)\(2\)/s) || [])[1] || "" }, [
+  ["cufA", /airway/i, true], ["cufB", /airway/i, true], ["cufA", /only medical priority/], ["cufB", /only medical priority/],
+  ["a", /\(1\) Care Under Fire — very limited care while the threat is active: return fire, move to cover, and stop massive limb bleeding with a tourniquet \(the only medical priority\)/],
+  ["a", /\(3\) Tactical Evacuation Care — care during the move to a higher level of care/], ["acceptableAnswer", /Care Under Fire \(return fire, tourniquet only\)/],
+  ["boardAnswer", /\(1\) Care Under Fire \(CUF\) — the threat is still active, so care is very limited: suppress the enemy and gain fire superiority, move the casualty to cover, and treat massive extremity bleeding with a hasty tourniquet, the only medical priority\. \(2\)/],
+  ["boardAnswer", /\(3\) Tactical Evacuation Care — care during the move from the battlefield to a medical treatment facility/],
+  ["keyPoints[1]", /Care Under Fire: fire superiority, move to cover, tourniquet only/], ["keyPoints[3]", /Tactical Evacuation Care: keep monitoring and treating/],
+  ["boardAnswer", /TACEVAC/, true], ["keyPoints[0]", /TACEVAC/, true],
+]);
+pin("tccc-10 (Care Under Fire)", p10, [
+  ["a", /summarised from paras 2-10, 2-12, 3-37 to 3-40, 3-72 to 3-75 and 4-7 to 4-9 \(the manual does not give these as one numbered list, and para 3-38 says the order of actions depends on the mission and the tactical situation\)/],
+  ["boardAnswer", /put on a hasty tourniquet "high and tight" and then get to cover; if the threat is suppressed, massive bleeding is addressed before the casualty is moved/],
+  ["boardAnswer", /Airway and other problems are not treated until the Tactical Field Care phase/], ["boardAnswer", /such as a burning vehicle \(para 2-10\)/],
+  ["boardAnswer", /before starting any treatment|Move or drag the casualty to cover/i, true],
+  ["acceptableAnswer", /and then getting to cover; the order of those steps depends on the mission and the situation/], ["acceptableAnswer", /before starting any treatment/, true],
+  ["keyPoints[2]", /hasty tourniquet "high and tight" and then cover is acquired \(para 4-9\)/], ["keyPoints[2]", /mission-variable \(para 3-38\)/],
+  ["keyPoints[2]", /before starting any treatment/, true], ["keyPoints[3]", /only medical intervention in this phase is the tourniquet/], ["keyPoints[4]", /wait for the Tactical Field Care phase/],
+]);
+
+/* the other First Aid cards: one corrected fact each */
+const fa = (n) => byId.get("tc4021-" + n);
+pin("tc4021-3 (AVPU)", fa(3), [["keyPoints[1]", /should not have weapons or communications equipment \(para 15-5, note\)/], ["keyPoints[2]", /monitor unstable casualties' level of consciousness using the AVPU indicators \(para 11-34\)/], ["keyPoints[3]", /Document any AVPU assessment/], ["keyPoints[2]", /Glasgow/i, true]]);
+pin("tc4021-4 (shock)", fa(4), [["acceptableAnswer", /lists eight signs and symptoms of shock/], ["acceptableAnswer", /nine|2016|superseded/i, true], ["keyPoints[0]", /The list has 8 items/]]);
+pin("tc4021-7 (CPR)", fa(7), [["acceptableAnswer", /30:2\) when you are working alone\. With two rescuers the ratio can be 30:2, or continuous compressions/], ["keyPoints[1]", /with two rescuers it can be 30:2 or continuous compressions/]]);
+pin("tc4021-9 (9-line)", fa(9), [["keyPoints[0]", /sent as grid coordinates by secure communication.{1,120}ATP 4-02\.2, Table C-1/], ["keyPoints[1]", /L for litter, A for ambulatory.{1,200}ATP 4-02\.2, Table C-1/], ["keyPoints[3]", /It is not officially part of the NATO and U\.S\. standard request/]]);
+pin("tc4021-11 (airway)", fa(11), [["keyPoints[1]", /safest first approach when a neck injury is suspected.{1,120}paras 5-18, 5-20/], ["keyPoints[3]", /roll them onto their back \(para 5-17\); an unconscious casualty who is breathing is placed in the recovery position \(para 5-23\)/], ["keyPoints[3]", /roll onto the back into the recovery position/, true]]);
+pin("tc4021-15 (rescue breathing)", fa(15), [["keyPoints[1]", /injured, obstructed or inaccessible/], ["keyPoints[1]", /clenched/, true], ["keyPoints[4]", /lists four main methods \(para 6-50\)/]]);
+pin("tc4021-16 (Tactical Field Care)", fa(16), [["keyPoints[0]", /Tactical Evacuation Care \(para 3-36, p\. 31\)\. Para 3-57 asks that the abbreviation 'TACEVAC' not be used as the name of that phase/], ["keyPoints[0]", /Tactical Evacuation Care \(TACEVAC\)/, true]]);
+pin("tc4021-19 (MEDEVAC vs CASEVAC)", fa(19), [["keyPoints[4]", /report M030, IAW FM 6-99/], ["keyPoints[4]", /DD Form\/report M030/, true]]);
+
+/* the First Aid course: Care Under Fire apart from Tactical Field Care in every tier, and the CLS role as the manual gives it */
+const tq = lt(lesson("c-firstaid", "l-tourniquet"));
+pin("c-firstaid l-tourniquet", tq, [
+  ["layman", /Under fire you put it on fast, high up on the limb/],
+  ["beginner", /Under fire \(Care Under Fire\), put a hasty tourniquet on "high and tight" over the uniform, tighten until the bleeding stops, and move to cover — don't stop to record the time yet\. Once you're safer \(Tactical Field Care\), reassess it and use a deliberate tourniquet 2 to 3 inches above the wound, directly on the skin and never over a joint, and write the time on the tourniquet and on DD Form 1380/],
+  ["intermediate", /high and tight, over the uniform if you have to, and tighten until the bleeding stops \(the manual's goal is under one minute\)/], ["intermediate", /a deliberate one goes 2 to 3 inches above the wound on bare skin/], ["intermediate", /add a second one next to the first, higher on the limb/],
+  ["professional", /the application time is not documented until Tactical Field Care/], ["professional", /two to three inches above the wound directly on the skin, not over clothing/], ["professional", /under two hours.{1,120}six hours/],
+  ["check.q", /Where does a tourniquet go in Care Under Fire, and where in Tactical Field Care\?/], ["check.a", /Care Under Fire: a hasty tourniquet high and tight over the uniform, with no time written yet\. Tactical Field Care: a deliberate one 2 to 3 inches above the wound on bare skin, with the time on the tourniquet and on DD Form 1380/],
+  ["explanation", /next to the first, higher on the limb/],
+  ["beginner", /high and tight — 2 to 3 inches above the wound/, true], ["professional", /2 to 3 inches above the wound, never over a joint, tightening the windlass/, true], ["check.a", /^2 to 3 inches above the wound; never directly over a joint\.$/, true],
+]);
+pin("c-firstaid l-cls-role", lt(lesson("c-firstaid", "l-cls-role")), [
+  ["intermediate", /Every Soldier gets basic self-aid and buddy aid training, including stopping life-threatening bleeding and using a tourniquet/], ["intermediate", /performing needle chest decompression for a tension pneumothorax/],
+  ["intermediate", /IV or IO access is listed among the combat medic's procedures, not the CLS's/], ["intermediate", /CLS adds skills like tourniquet use|IV\/IO access under a medical officer/, true],
+]);
+pin("c-firstaid l-march-overview", lt(lesson("c-firstaid", "l-march-overview")), [["professional", /extremity hemorrhage is the most frequent cause of preventable battlefield death.{1,120}go back to M \(paras 4-1, 4-3\)/], ["options", /most frequent cause of preventable battlefield death/], ["professional", /kills faster/, true], ["options", /kills faster/, true], ["explanation", /kills faster/, true]]);
+pin("c-firstaid l-airway-resp and l-circ-hypo", { ...Object.fromEntries(Object.entries(lt(lesson("c-firstaid", "l-airway-resp"))).map(([k, v]) => ["ar." + k, v])), ...Object.fromEntries(Object.entries(lt(lesson("c-firstaid", "l-circ-hypo"))).map(([k, v]) => ["ch." + k, v])) }, [["ar.professional", /vented is preferred/], ["ar.intermediate", /suspect a tension pneumothorax/], ["ch.professional", /cold can stop blood clotting properly/], ["ch.professional", /coagulopathy|traumatic brain injury/, true], ["ch.beginner", /weak, rapid pulse/, true]]);
+pin("c-firstaid l-9line-medevac", { ...lt(lesson("c-firstaid", "l-9line-medevac")), src: lesson("c-firstaid", "l-9line-medevac").source.map((s) => s.pub).join("|") }, [["professional", /laid out in ATP 4-02\.2, Table C-1/], ["professional", /Lines 1 through 5 are transmitted within 25 seconds of initial contact/], ["intermediate", /within 25 seconds of first contact/], ["check.a", /Lines 1 through 5, within 25 seconds/], ["src", /^ATP 4-02\.11\|ATP 4-02\.2$/]]);
+pin("c-warfight l-firstaid", lt(lesson("c-warfight", "l-firstaid")), [["professional", /a hasty tourniquet "high and tight" in Care Under Fire, a deliberate one 2 to 3 inches above the wound in Tactical Field Care/], ["check.a", /most frequent cause of preventable battlefield death/], ["check.a", /kills fastest/, true]]);
+
+/* doc-tccc and the other relabelled doctrine entries */
+const dOf = (id) => bank.doctrine.entries.find((e) => e.id === id);
+const dt = dOf("doc-tccc");
+const dtText = [dt.body, dt.boardAnswer, ...dt.keyPoints].join("\n");
+pin("doc-tccc", { ...dt, all: dtText }, [
+  ["body", /3\. Tactical Evacuation Care: Care during the move from the battlefield to a medical treatment facility/], ["body", /asks that the word "TACEVAC" not be used as the name of this phase, para 3-57/],
+  ["body", /bleed to death in as little as three minutes.{1,80}stop the bleeding in about a minute/], ["body", /packed with a hemostatic dressing in TFC, not in CUF/],
+  ["body", /early signs are increasing difficulty breathing, shortness of breath, confusion or agitation, bluish lips and a rapid pulse; swollen neck veins and tracheal deviation are late signs/],
+  ["body", /second intercostal space in the mid-clavicular line \(outside the nipple line\) or at the fifth intercostal space on the anterior axillary line — never through a chest seal\. If the first needle does not help, try the other site/],
+  ["body", /Combat Wound Medication Pack \(CWMP\) for mild to moderate pain/], ["body", /a vented chest seal is preferred/i],
+  ["keyPoints[3]", /records what was done in Care Under Fire and Tactical Field Care/],
+  ["all", /SOFTT|Hextend|Blizzard|Cushing|Hyfin|QuikClot|HemCon|within 2 minutes|absent breath sounds|hypotension|cricothyrotomy|Start IVs|Tactical Evacuation Care \(TACEVAC\)|completed during TACEVAC/i, true],
+]);
+const am3 = dOf("doc-armymed-3"), mf4 = dOf("doc-medfa-4"), mf3 = dOf("doc-medfa-3");
+pin("doc-armymed-3, doc-medfa-3 and doc-medfa-4", { am: am3.body + " | " + am3.keyPoints.join(" | "), mf3: mf3.body, mf4: mf4.body + " | " + mf4.keyPoints.join(" | ") }, [["am", /recertified every 12 months/], ["am", /IV access|golden hour|typically maintain/i, true], ["mf3", /basic combat lifesaver skills/, true], ["mf4", /chilblains, trench foot/], ["mf4", /frostnip/i, true]]);
+
+/* across every record that cites ATP 4-02.11: no term the second review found unsupported, and 'TACEVAC' only where the text says the manual asks us not to use it */
+const atpRecords = [];
+for (const section of Object.keys(bank)) {
+  const walk = (v, owner) => {
+    if (Array.isArray(v)) { v.forEach((x) => walk(x, owner)); return; }
+    if (v && typeof v === "object") { const own = !owner && typeof v.id === "string" ? v : owner; for (const k of Object.keys(v)) walk(v[k], own); return; }
+    if (typeof v === "string" && owner) atpRecords.push([section + ":" + owner.id, v]);
+  };
+  walk(bank[section], null);
+}
+const citing = new Set(atpRecords.filter(([, v]) => /ATP 4-02\.11/.test(v)).map(([k]) => k));
+const bannedHits = atpRecords.filter(([k, v]) => citing.has(k) && new RegExp(NOT_IN_BUNDLE.join("|"), "i").test(v)).map(([k, v]) => k + ": " + (v.match(new RegExp(NOT_IN_BUNDLE.join("|"), "i")) || [""])[0]);
+check(citing.size >= 30 && bannedHits.length === 0, `none of the ${citing.size} records that cite ATP 4-02.11 teaches a term the bundled text does not contain (${NOT_IN_BUNDLE.slice(0, 6).join(", ")} ...)`, () => bannedHits.slice(0, 8).join("\n"));
+const tacevacHits = atpRecords.filter(([, v]) => /TACEVAC/.test(v)).filter(([, v]) => !/(?:asks? that|not be used)/.test(v)).map(([k, v]) => k + ": " + v.slice(Math.max(0, v.search(/TACEVAC/) - 40), v.search(/TACEVAC/) + 40));
+check(tacevacHits.length === 0, "'TACEVAC' is used nowhere in the bank except in a sentence that says ATP 4-02.11 (para 3-57) asks us not to use it as the phase name", () => tacevacHits.join("\n"));
+const htmlNoSeed = readFileSync(path.join(APP, "src", "index.html"), "utf8").replace(readSeed(path.join(APP, "src", "index.html")).raw, "");
+check(!/TACEVAC/.test(htmlNoSeed), "...nor in the app's own code (the First Aid route hint no longer names the phase 'TACEVAC')", () => htmlNoSeed.match(/.{0,60}TACEVAC.{0,40}/)[0]);
 
 check(!/FLAG FOR REVIEWER/.test(JSON.stringify(bank)), "no 'FLAG FOR REVIEWER' note is left anywhere in the bank (tc4021-8 carried one as its first key point, where a Soldier reads it)");
 const ace = byId.get("tc4021-8");
