@@ -31889,8 +31889,9 @@ window.G = window.G || {};
     });
     return out.join(" and ");
   }
-  // What both restore screens say when a restore did not finish. It stays up:
-  // nothing reloads the page behind it (see confirmAndImportFile).
+  // What both restore screens say when a restore did not finish. When NOTHING
+  // was saved it stays up with no reload behind it; when only SOME of it was
+  // saved the page reloads (see confirmAndImportFile) and says it again after.
   function restoreFailedText(stores) {
     return "The restore did not finish: " + failedWords(stores) + " could not be saved to this device. Free up some space and try again.";
   }
@@ -31900,6 +31901,45 @@ window.G = window.G || {};
     b.addEventListener("click", function () { location.reload(); });
     return b;
   }
+  // The button goes after a plain space, so the line reads "...try again. Reload GUIDON" and not "...try again.Reload GUIDON".
+  function appendReloadButton(host) {
+    host.appendChild(document.createTextNode(" "));
+    host.appendChild(reloadButton());
+  }
+
+  // A restore that saved SOME of the file but not all of it reloads the page, so
+  // the profile and settings this page already holds in memory are read again
+  // from what was really saved. Left alone, the next edit (Rename, say) would
+  // write the old in-memory copy back over the rows the restore did land. The
+  // reload would also erase the message that says part of it failed, so that
+  // message is handed to the next page load through sessionStorage - it dies
+  // with the tab, is read once and then removed, and no long-lived key is added.
+  var RESTORE_NOTICE_KEY = "guidon-restore-failed";
+  var RESTORE_NOTICE_MAX_AGE_MS = 10 * 60 * 1000;
+  function rememberRestoreFailure(stores) {
+    try { sessionStorage.setItem(RESTORE_NOTICE_KEY, JSON.stringify({ stores: stores, at: Date.now() })); } catch (e) { /* the notice is a courtesy; the restore itself already finished */ }
+  }
+  function takeRestoreFailure() {
+    var raw = null;
+    try { raw = sessionStorage.getItem(RESTORE_NOTICE_KEY); sessionStorage.removeItem(RESTORE_NOTICE_KEY); } catch (e) { return null; }
+    if (!raw) return null;
+    try {
+      var o = JSON.parse(raw);
+      var stores = o && Array.isArray(o.stores) ? o.stores.filter(function (s) { return typeof s === "string"; }) : [];
+      // Old enough that it is not about what the Soldier just did: drop it rather than say it out of the blue.
+      if (!stores.length || !(Date.now() - o.at < RESTORE_NOTICE_MAX_AGE_MS)) return null;
+      return stores;
+    } catch (e) { return null; }
+  }
+  // What this page load should still say about the restore before it: read from the hand-off once,
+  // kept in memory so a screen that draws itself twice shows it twice, and dropped when the Soldier
+  // starts another restore. Returns "" when there is nothing to say.
+  var carriedRestoreFailure;
+  function carriedRestoreText() {
+    if (carriedRestoreFailure === undefined) carriedRestoreFailure = takeRestoreFailure();
+    return carriedRestoreFailure ? restoreFailedText(carriedRestoreFailure) : "";
+  }
+  function forgetCarriedRestoreText() { carriedRestoreFailure = null; }
 
   async function importAll(obj) {
     var problem = schemaProblem(obj);
@@ -32133,18 +32173,25 @@ window.G = window.G || {};
           importAll(obj).then(function (res) {
             var r = res.restored, sk = res.skipped, fs = res.failedStores || [];
             if (G.selfheal) G.selfheal.log("backup-import", null, "restored " + r.kv + " kv/" + r.userScenarios + " scenarios/" + r.attempts + " attempts, skipped " + (sk.kv || 0) + " kv row(s)" + (fs.length ? ", FAILED to write: " + fs.join(", ") : ""));
-            // A restore that did not finish is left on screen: reloading after
-            // 1.2 s wiped the very message that says so, and left a partly
-            // restored app with no explanation. The Soldier reloads when ready
-            // (both screens show a plain Reload button under the message).
-            if (!fs.length) setTimeout(function () { location.reload(); }, 1200);
+            // Three outcomes:
+            //  - everything saved: reload after 1.2 s so every screen reads what was saved;
+            //  - SOME of it saved (a store landed, another did not): reload anyway - this page's
+            //    in-memory profile and settings are now older than the saved rows, and the next
+            //    edit would write them back over what DID land - and say what failed once the
+            //    page is back (the reload would otherwise erase the message);
+            //  - NOTHING saved: nothing changed and the in-memory copies are still right, so no
+            //    reload; the message stays on screen with a plain Reload button under it.
+            var landed = (r.kv || 0) + (r.userScenarios || 0) + (r.attempts || 0) + (r.local || 0) > 0;
+            var reloading = !fs.length || landed;
+            if (fs.length && landed) rememberRestoreFailure(fs);
+            if (reloading) setTimeout(function () { location.reload(); }, 1200);
             // Deep-gap follow-up ("Profile Data-Loss & Persistence Bugs"
             // bucket): failedStores is surfaced here so both callers can
             // tell a genuine write failure apart from a clean restore -
             // previously "Restored 0 items, 0 scenarios, 0 attempts."
             // rendered with the same "ok" styling as a real success,
             // looking exactly like a no-op restore rather than a failure.
-            resolve({ status: "success", restored: r, skipped: sk, skippedKeys: res.skippedKeys || [], failedStores: fs });
+            resolve({ status: "success", restored: r, skipped: sk, skippedKeys: res.skippedKeys || [], failedStores: fs, reloading: reloading });
           }).catch(function (e) {
             resolve({ status: "error", message: e && e.message ? e.message : "unknown error" });
           });
@@ -32222,6 +32269,11 @@ window.G = window.G || {};
     fileIn.addEventListener("change", function () {
       var f = fileIn.files && fileIn.files[0];
       if (!f) return;
+      // A new attempt: what the last one said (a restore that failed) no longer applies.
+      forgetCarriedRestoreText();
+      status.textContent = "";
+      status.className = "backup-status hint";
+      status.removeAttribute("role");
       confirmAndImportFile(f).then(function (result) {
         fileIn.value = "";
         if (result.status === "cancelled") return;
@@ -32240,7 +32292,9 @@ window.G = window.G || {};
           status.textContent = restoreFailedText(fs);
           status.className = "backup-status hint err";
           status.setAttribute("role", "alert");
-          status.appendChild(reloadButton());
+          // Part of it was saved: the page reloads in a moment and says this again when it is back.
+          // None of it was saved: nothing reloads, so the Soldier gets a Reload button for when ready.
+          if (result.reloading) status.appendChild(document.createTextNode(" Reloading…")); else appendReloadButton(status);
           return;
         }
         status.textContent = "Restored " + r.kv + " items, " + r.userScenarios + " scenarios, " + r.attempts + " attempts." +
@@ -32255,6 +32309,9 @@ window.G = window.G || {};
     row.appendChild(importBtn);
     panel.appendChild(row);
     panel.appendChild(fileIn);
+    // A restore that only partly finished reloaded the page; say so now the page is back.
+    var carried = carriedRestoreText();
+    if (carried) { status.textContent = carried; status.className = "backup-status hint err"; status.setAttribute("role", "alert"); }
     panel.appendChild(status);
     host.appendChild(panel);
   }
@@ -32278,7 +32335,7 @@ window.G = window.G || {};
     return "Backup downloaded";
   }
 
-  G.backup = { exportAll: exportAll, downloadAll: downloadAll, importAll: importAll, renderControls: renderControls, confirmAndImportFile: confirmAndImportFile, validateKvRow: validateKvRow, describeKey: describeKey, skippedSummary: skippedSummary, exportDoneMessage: exportDoneMessage, getLastExportAt: getLastExportAt, formatLastExport: formatLastExport, describeBackupDate: describeBackupDate, deviceActivitySince: deviceActivitySince, failedWords: failedWords, restoreFailedText: restoreFailedText, reloadButton: reloadButton, isLeaderReminder: isLeaderReminder, rosterLabels: rosterLabels };
+  G.backup = { exportAll: exportAll, downloadAll: downloadAll, importAll: importAll, renderControls: renderControls, confirmAndImportFile: confirmAndImportFile, validateKvRow: validateKvRow, describeKey: describeKey, skippedSummary: skippedSummary, exportDoneMessage: exportDoneMessage, getLastExportAt: getLastExportAt, formatLastExport: formatLastExport, describeBackupDate: describeBackupDate, deviceActivitySince: deviceActivitySince, failedWords: failedWords, restoreFailedText: restoreFailedText, reloadButton: reloadButton, appendReloadButton: appendReloadButton, carriedRestoreText: carriedRestoreText, forgetCarriedRestoreText: forgetCarriedRestoreText, isLeaderReminder: isLeaderReminder, rosterLabels: rosterLabels };
 })();
 // END backup.js
 
@@ -39933,6 +39990,9 @@ window.G = window.G || {};
     // Where a restore that did not finish says so, and stays saying so (see the change handler below).
     const restoreNote = el("p.backup-status.hint.err", { role: "alert" });
     restoreNote.hidden = true;
+    // A restore that only partly finished reloaded the page; say so now the page is back.
+    const carriedRestore = G.backup.carriedRestoreText();
+    if (carriedRestore) { restoreNote.textContent = carriedRestore; restoreNote.hidden = false; }
     // Enhancement backlog round 1, "Settings Import Backup" bucket: this
     // used to parse and apply the selected file immediately on change,
     // with no confirmation, no item-count preview, and no reload after
@@ -39945,6 +40005,10 @@ window.G = window.G || {};
     // that may have overwritten the profile.
     importInput.addEventListener("change", () => {
       const f = importInput.files[0]; if (!f) return;
+      // A new attempt: what the last one said (a restore that failed) no longer applies.
+      G.backup.forgetCarriedRestoreText();
+      restoreNote.hidden = true;
+      restoreNote.textContent = "";
       G.backup.confirmAndImportFile(f).then((result) => {
         // Enhancement backlog round 3, "File-picker inputs aren't reset"
         // bucket: this never reset importInput.value on any path - after
@@ -39961,10 +40025,12 @@ window.G = window.G || {};
         // bucket): see confirmAndImportFile()'s own comment - a genuine
         // write failure previously looked identical to a clean restore.
         if (fs.length) {
-          // Left on the page (not just a toast): nothing reloads after a restore that did not finish.
+          // Left on the page (not just a toast). When none of it was saved nothing reloads, so the
+          // Soldier gets a Reload button for when ready; when part of it was saved the page reloads
+          // in a moment and the note is shown again once it is back.
           restoreNote.textContent = G.backup.restoreFailedText(fs);
           restoreNote.hidden = false;
-          restoreNote.appendChild(G.backup.reloadButton());
+          if (result.reloading) restoreNote.appendChild(document.createTextNode(" Reloading…")); else G.backup.appendReloadButton(restoreNote);
           util.toast(G.backup.restoreFailedText(fs), 7000);
           return;
         }
