@@ -191,11 +191,13 @@ headlineIdx !== -1 && dashIdx !== -1 && dashIdx === headlineIdx + 1
 // ── 2/3. Each tile's value is correct AND matches the panel it summarizes. ─
 const [tOverall, tWeakest, tTraining, tStreak, tDue] = data.tiles;
 
-// Tile 1: Overall readiness - 83%, "Strong", cyan (matches the headline
-// panel's own "Promotable Readiness (LRM)" stat, hand-computed above).
-tOverall && tOverall.val === "83%" && tOverall.sub === "Strong" && tOverall.tone === "cyan"
-  ? ok(`Overall readiness tile reads "${tOverall.val} / ${tOverall.sub}" (cyan)`)
-  : bad("Overall readiness tile: " + JSON.stringify(tOverall));
+// Tile 1: Scenario readiness - 83%, "Strong", cyan (matches the headline
+// panel's own "Promotable Readiness (LRM)" stat, hand-computed above). It is
+// labelled "Scenario readiness", not "Overall": it is built from the scenarios
+// played and never from flashcards (the "Cards due" tile is the flashcard one).
+tOverall && tOverall.val === "83%" && tOverall.sub === "Strong" && tOverall.tone === "cyan" && tOverall.label === "Scenario readiness"
+  ? ok(`Scenario readiness tile reads "${tOverall.val} / ${tOverall.sub}" (cyan)`)
+  : bad("Scenario readiness tile: " + JSON.stringify(tOverall));
 data.headlineReadiness === "Strong"
   ? ok('headline panel\'s own "Promotable Readiness (LRM)" stat also reads "Strong" (no drift)')
   : bad('headline panel "Promotable Readiness (LRM)": expected "Strong", got ' + JSON.stringify(data.headlineReadiness));

@@ -192,8 +192,8 @@ async function attemptsFor(page) {
   const recoveryChoice = await clickChoice(page, "Apply the tourniquet now"); recoveryChoice ? ok("recovery choice (apply tourniquet now) found on the detour node") : bad("recovery choice missing");
   await clickAdvance(page);
   const afterRecovery = await hostText(page);
-  /The tourniquet cinches down two fingers above the wound/i.test(afterRecovery)
-    ? ok("after the M detour, play correctly rejoins the main sequence at n3 (tourniquet applied)")
+  /The tourniquet goes on high and tight and cinches down/i.test(afterRecovery) && !/two fingers/i.test(afterRecovery)
+    ? ok("after the M detour, play correctly rejoins the main sequence at n3 (tourniquet applied; the sentence no longer invents \"two fingers above the wound\")")
     : bad("did not rejoin the main sequence after the M detour: " + afterRecovery.slice(-300));
 
   noise.length === 0 ? ok("no console noise across the go-back-to-M detour") : bad("console noise: " + noise.join(" | "));

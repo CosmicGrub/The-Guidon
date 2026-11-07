@@ -8,6 +8,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { loadManifest } from "./content-manifest.mjs";
+import { untilAsync } from "./testkit.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -128,6 +129,13 @@ afterClick.btnDisabled === true ? ok("button confirms success in place (disabled
 (afterClick.entry && /SPC J\.R\./.test(afterClick.entry.label))
   ? ok("a real 'counseling' reminder was created, naming the Soldier (" + afterClick.entry.label + ", due " + afterClick.entry.date + ")")
   : bad("no counseling reminder found, or it didn't name the Soldier: " + JSON.stringify(afterClick.entry));
+// The stamp is the durable half of keeping a roster reminder out of a default backup: it
+// has to be on the row itself (the label stops matching the moment a rank, a name or the
+// roster changes). The checks further down all pass without it while the roster is
+// unchanged, so it is asserted here, on the stored row.
+afterClick.entry && afterClick.entry.source === "leader"
+  ? ok("the stored 'Remind me' row is stamped source \"leader\" (the exclusion from a default backup does not depend on the label)")
+  : bad("the 'Remind me' row has no \"leader\" stamp: " + JSON.stringify(afterClick.entry));
 
 // Roadmap audit round 4, "Test coverage gaps for previously-fixed bug
 // classes" bucket: enhancement backlog round 4 extended "Remind me" from the
@@ -145,6 +153,7 @@ async function remindAndCheckKind(fieldLabel, expectedKind) {
   await page.waitForTimeout(500);
   const list = await page.evaluate(async () => (await window.G.reminders.load()) || []);
   const entry = list.find((r) => r.kind === expectedKind && /SPC J\.R\./.test(r.label));
+  entry && entry.source !== "leader" ? bad(fieldLabel + " field's reminder is not stamped \"leader\": " + JSON.stringify(entry)) : null;
   entry
     ? ok(fieldLabel + " field's 'Remind me' created a real '" + expectedKind + "' reminder (" + entry.label + ")")
     : bad(fieldLabel + " field: no '" + expectedKind + "' reminder found after clicking; reminder kinds now: " + JSON.stringify(list.map((r) => r.kind)));
@@ -167,6 +176,174 @@ const countAfterRevisit = await page.evaluate(async () => ((await window.G.remin
 countAfterRevisit === countAfterFirst
   ? ok("revisiting the page and clicking 'Remind me' again does not create a duplicate reminder (" + countAfterFirst + " -> " + countAfterRevisit + ")")
   : bad("reminder count grew from a revisit+re-click: " + countAfterFirst + " -> " + countAfterRevisit);
+
+// --- a "Remind me" label names the Soldier, so those reminders leave a default
+// backup WITH the roster (audit 2026-09: the initials rode every backup and were
+// counted as excluded zero times, while the roster itself stayed out). ---
+{
+  const FUTURE = daysAgo(-40);
+  const probe = await page.evaluate(async (due) => {
+    const own = [
+      { kind: "board", label: "Promotion board day", date: due },
+      { kind: "counseling", label: "Counsel my mentor about the packet", date: due },
+    ];
+    for (const r of own) await window.G.reminders.add(r);
+    // The MOI briefing reminder stamps its own source ("leader-moi:<n>").
+    await window.G.reminders.addManaged({ kind: "other", label: "Brief SPC J.R. on the MOI", date: due, source: "leader-moi:0" });
+    const labelsOf = (p) => (((p.stores.kv.find((r) => r.k === "reminders:v1") || {}).v) || []).map((r) => r.label);
+    const dflt = await window.G.backup.exportAll();
+    const optIn = await window.G.backup.exportAll({ includePrivate: true });
+    // Reminders written before the "source" stamp existed: same labels, no stamp.
+    // (The MOI briefing reminder always had its own stamp, so it keeps it.)
+    const rows = (await window.G.reminders.load()).map((r) => { const c = Object.assign({}, r); if (c.source === "leader") delete c.source; return c; });
+    await window.G.db.put("kv", { k: "reminders:v1", v: rows });
+    const legacy = await window.G.backup.exportAll();
+    const stamped = (await window.G.reminders.load()).length;
+    return { dflt: labelsOf(dflt), excluded: dflt.excludedPrivateEntries, optIn: labelsOf(optIn), legacy: labelsOf(legacy), legacyExcluded: legacy.excludedPrivateEntries, total: stamped };
+  }, FUTURE);
+  const named = (labels) => labels.filter((l) => /J\.R\./.test(l));
+  probe.total >= 7 && probe.dflt.length > 0 ? ok("fixture: the device holds the Soldier's roster reminders plus their own (" + probe.total + " in all)") : bad("fixture: " + JSON.stringify(probe));
+  named(probe.dflt).length === 0
+    ? ok("a default backup carries no reminder that names a roster Soldier (none of the 4 'Remind me' buttons, nor the MOI briefing one)")
+    : bad("roster name in a default backup's reminders: " + JSON.stringify(named(probe.dflt)));
+  probe.dflt.includes("Promotion board day") && probe.dflt.includes("Counsel my mentor about the packet")
+    ? ok("the Soldier's own reminders stay in the default backup, even one that starts with 'Counsel '")
+    : bad("own reminders went missing from the default backup: " + JSON.stringify(probe.dflt));
+  probe.excluded === 2
+    ? ok("the backup counts what it left out: the roster and the roster's reminders (2)")
+    : bad("excludedPrivateEntries was " + probe.excluded + ", expected 2 (roster + roster reminders)");
+  named(probe.optIn).length === 5
+    ? ok("with 'include the roster' ticked, all 5 roster reminders go along with it")
+    : bad("opt-in backup carried " + named(probe.optIn).length + " roster reminders, expected 5: " + JSON.stringify(probe.optIn));
+  named(probe.legacy).length === 0 && probe.legacy.includes("Counsel my mentor about the packet")
+    ? ok("reminders made before the source stamp existed are recognised by their exact label too, and a typed 'Counsel ...' one stays")
+    : bad("unstamped roster reminders in a default backup: " + JSON.stringify(probe.legacy));
+}
+
+// --- the exclusion must not depend on the roster staying as it was ---
+// A reminder made before the stamp existed carries only its label, "<lead> <rank> <name>". A rank
+// edit, a rename or removing the Soldier used to stop that label matching, which put the initials
+// back into every default backup. The leader screen now stamps those reminders when it opens
+// (while the roster still matches), so the exclusion holds through every kind of roster change.
+// (The block above left the device's reminders UNSTAMPED, exactly as an older install has them.)
+{
+  const before = await page.evaluate(async () => {
+    const list = (await window.G.reminders.load()) || [];
+    return { mine: list.filter((r) => /J\.R\./.test(r.label) && !/MOI/.test(r.label)).map((r) => ({ label: r.label, source: r.source || "" })), plain: list.filter((r) => !/J\.R\./.test(r.label) && r.source !== "leader-moi:0").length };
+  });
+  before.mine.length >= 4 && before.mine.every((r) => !r.source)
+    ? ok("fixture: " + before.mine.length + " roster reminders on the device have no stamp (an install from before the stamp existed)")
+    : bad("fixture: " + JSON.stringify(before));
+  // An export taken BEFORE the leader screen has stamped them still excludes them by label (roster unchanged) ...
+  await page.reload({ waitUntil: "load" });
+  await go();
+  const stampedNow = await untilAsync(page, async () => { const l = (await window.G.reminders.load()) || []; return l.filter((r) => /J\.R\./.test(r.label) && !/MOI/.test(r.label)).every((r) => r.source === "leader"); });
+  const after = await page.evaluate(async () => {
+    const list = (await window.G.reminders.load()) || [];
+    return { mine: list.filter((r) => /J\.R\./.test(r.label) && !/MOI/.test(r.label)).map((r) => r.source || ""), typed: (list.find((r) => r.label === "Counsel my mentor about the packet") || {}).source || "", own: (list.find((r) => r.label === "Promotion board day") || {}).source || "" };
+  });
+  stampedNow && after.mine.length >= 4 && after.mine.every((s) => s === "leader")
+    ? ok("opening the leader screen stamps the old roster reminders \"leader\" (" + after.mine.length + " of them)")
+    : bad("old roster reminders were not stamped on opening the leader screen: " + JSON.stringify(after));
+  after.typed === "" && after.own === ""
+    ? ok("...and leaves the Soldier's own reminders alone, even one worded 'Counsel ...' (no stamp)")
+    : bad("a reminder the Soldier typed was stamped: " + JSON.stringify(after));
+  // A pass with nothing to stamp must not even REWRITE the row (a rewrite of identical content would pass a
+  // before/after comparison of the stored JSON, so the writes themselves are counted).
+  const again = await page.evaluate(async () => {
+    const G = window.G;
+    const rowBefore = JSON.stringify(await G.db.get("kv", "reminders:v1"));
+    let puts = 0;
+    const realPut = G.db.put;
+    G.db.put = function (store, row) { if (store === "kv" && row && row.k === "reminders:v1") puts++; return realPut.apply(this, arguments); };
+    let n;
+    try { n = await G.reminders.stampLeaderLegacy(); } finally { G.db.put = realPut; }
+    return { n, puts, same: rowBefore === JSON.stringify(await G.db.get("kv", "reminders:v1")) };
+  });
+  again.n === 0 && again.same ? ok("stamping again changes nothing (it is idempotent)") : bad("a second pass wrote or stamped again: " + JSON.stringify(again));
+  again.puts === 0 ? ok("...and a pass with nothing to stamp writes nothing at all (0 writes to the reminders row)") : bad("a pass with nothing to stamp still wrote the reminders row " + again.puts + " time(s)");
+
+  // A reminder the Soldier typed by hand can have a roster entry's exact words in its label ("Counsel SPC J.R.").
+  // The stamp - and the backup and the calendar file, which use the same test - take a row for the roster's only
+  // when it looks exactly like the one the roster's button writes: that lead's kind, no note, no other module's source.
+  const collide = await page.evaluate(async (due) => {
+    const G = window.G;
+    const lookalikes = [
+      { id: "lk-kind", kind: "board", label: "Counsel SPC J.R.", date: due, note: "", source: "" },                // right words, wrong kind
+      { id: "lk-note", kind: "counseling", label: "Counsel SPC J.R.", date: due, note: "bring the packet", source: "" },  // right kind, but a note
+      { id: "lk-aft", kind: "other", label: "Schedule AFT for SPC J.R.", date: due, note: "", source: "" },        // another lead, wrong kind
+      { id: "lk-src", kind: "acft", label: "Schedule AFT for SPC J.R.", date: due, note: "", source: "pt-planner" },    // another module's row
+    ];
+    const genuine = { id: "lk-real", kind: "counseling", label: "Counsel SPC J.R.", date: due, note: "", source: "" };   // exactly what the button writes, from before the stamp
+    const list = (await G.reminders.load()) || [];
+    await G.db.put("kv", { k: "reminders:v1", v: list.concat(lookalikes, [genuine]) });
+    const stamped = await G.reminders.stampLeaderLegacy();
+    const after = (await G.reminders.load()) || [];
+    const sourceOf = (id) => (after.find((r) => r.id === id) || {}).source;
+    const exported = ((await G.backup.exportAll()).stores.kv.find((r) => r.k === "reminders:v1") || {}).v || [];
+    const out = {
+      stamped, lookalikeSources: lookalikes.map((l) => sourceOf(l.id)), genuineSource: sourceOf(genuine.id),
+      inBackup: exported.filter((r) => /^lk-/.test(r.id)).map((r) => r.id).sort(),
+    };
+    await G.db.put("kv", { k: "reminders:v1", v: after.filter((r) => !/^lk-/.test(r.id)) });   // leave the device as it was
+    return out;
+  }, daysAgo(-45));
+  collide.stamped === 1 && collide.genuineSource === "leader"
+    ? ok("a row exactly as the roster's button writes it (before the stamp existed) is still stamped, and only that one")
+    : bad("the stamp pass stamped " + collide.stamped + "; the genuine row's source is " + JSON.stringify(collide.genuineSource));
+  collide.lookalikeSources.join("|") === "|||pt-planner"
+    ? ok("typed look-alikes (a different kind, a note, another lead's kind, another module's row) are NOT stamped")
+    : bad("a look-alike was stamped: " + JSON.stringify(collide.lookalikeSources));
+  collide.inBackup.join(",") === "lk-aft,lk-kind,lk-note,lk-src"
+    ? ok("...so all four stay in the Soldier's own default backup, and the one the button made is left out")
+    : bad("default backup carried: " + JSON.stringify(collide.inBackup));
+
+  // Now change the roster every way it can change: the stamped reminders still stay out of a default backup.
+  const probe = await page.evaluate(async () => {
+    const G = window.G;
+    const kvLabels = (p) => (((p.stores.kv.find((r) => r.k === "reminders:v1") || {}).v) || []).map((r) => r.label);
+    const rosterRow = await G.db.get("kv", "guidon:leader:roster:v1");
+    const original = JSON.parse(JSON.stringify(rosterRow.v));
+    const setRoster = (v) => G.db.put("kv", { k: "guidon:leader:roster:v1", v });
+    const leaked = async () => { const p = await G.backup.exportAll(); return { names: kvLabels(p).filter((l) => /J\.R\./.test(l)).length, own: kvLabels(p).filter((l) => l === "Promotion board day").length, excluded: p.excludedPrivateEntries }; };
+    const out = {};
+    const promoted = JSON.parse(JSON.stringify(original)); promoted[0].rank = "SSG";
+    await setRoster(promoted); out.promoted = await leaked();
+    const renamed = JSON.parse(JSON.stringify(original)); renamed[0].name = "K.L.";
+    await setRoster(renamed); out.renamed = await leaked();
+    await setRoster([]); out.removed = await leaked();
+    await G.db.del("kv", "guidon:leader:roster:v1"); out.deleted = await leaked();
+    await setRoster(original);
+    out.restored = await leaked();
+    return out;
+  });
+  for (const k of ["promoted", "renamed", "removed", "deleted"]) {
+    probe[k].names === 0 && probe[k].own === 1
+      ? ok("roster " + k + ": the stamped reminders still stay out of a default backup, and the Soldier's own stays in")
+      : bad("roster " + k + " put roster reminders back in a default backup: " + JSON.stringify(probe[k]));
+  }
+  probe.removed.excluded >= 1 ? ok("...and the backup still counts them as left out (" + probe.removed.excluded + ")") : bad("excluded count after removal: " + JSON.stringify(probe.removed));
+
+  // A Guest or Kiosk session saves nothing, so the stamp pass must not run there: a device row it would
+  // have stamped is left exactly as it was.
+  const guest = await page.evaluate(async () => {
+    const G = window.G;
+    const rows = (await G.reminders.load()).map((r) => { const c = Object.assign({}, r); if (c.source === "leader") delete c.source; return c; });
+    await G.db.put("kv", { k: "reminders:v1", v: rows });
+    const raw = await new Promise((res, rej) => { const o = indexedDB.open("guidon"); o.onsuccess = () => { const d = o.result; const r = d.transaction("kv").objectStore("kv").get("reminders:v1"); r.onsuccess = () => { d.close(); res(r.result); }; r.onerror = () => rej(r.error); }; o.onerror = () => rej(o.error); });
+    const rawBefore = JSON.stringify(raw);
+    G.db.session.begin("guest");
+    const n = await G.reminders.stampLeaderLegacy();
+    G.db.session.end();
+    const rawAfter = await new Promise((res, rej) => { const o = indexedDB.open("guidon"); o.onsuccess = () => { const d = o.result; const r = d.transaction("kv").objectStore("kv").get("reminders:v1"); r.onsuccess = () => { d.close(); res(r.result); }; r.onerror = () => rej(r.error); }; o.onerror = () => rej(o.error); });
+    return { n, same: rawBefore === JSON.stringify(rawAfter), unstamped: (rawAfter.v || []).filter((r) => /J\.R\./.test(r.label) && !/MOI/.test(r.label) && !r.source).length };
+  });
+  guest.n === 0 && guest.same && guest.unstamped >= 4
+    ? ok("a Guest or Kiosk session does not stamp (nothing reaches the device)")
+    : bad("the stamp pass ran in a session that saves nothing: " + JSON.stringify(guest));
+  // leave the device the way the rest of the suite expects: stamped
+  await page.evaluate(() => window.G.reminders.stampLeaderLegacy());
+}
 
 // --- persistence ---
 await page.reload({ waitUntil: "load" });

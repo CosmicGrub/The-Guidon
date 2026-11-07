@@ -33,6 +33,15 @@ const CACHE = "guidon-" + VERSION;
  */
 const PRECACHE = JSON.parse("__GUIDON_PRECACHE_JSON__");
 
+/* The app's own page: the folder the worker controls, and index.html in it.
+ * Worked out from the worker's own address so it is right wherever the app is
+ * hosted (the site root, or a sub-folder such as a Pages project). */
+const SCOPE_PATH = new URL("./", self.location).pathname;
+const OWN_DOCUMENT_PATHS = [SCOPE_PATH, new URL("./index.html", self.location).pathname];
+function isOwnDocument(url) {
+  return OWN_DOCUMENT_PATHS.includes(url.pathname);
+}
+
 // The one entry the fetch handler's navigation path depends on cache-first
 // (see "req.mode === navigate" below) - if this specifically didn't cache,
 // the install must not be accepted as successful.
@@ -103,9 +112,16 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return; // app makes no cross-origin requests
 
-  // Navigations always resolve to the cached shell first. This is what makes
-  // the app open instantly and work with no signal.
-  if (req.mode === "navigate") {
+  // Navigations to the APP'S OWN page always resolve to the cached shell
+  // first. This is what makes the app open instantly and work with no signal.
+  //
+  // Only the app's own page, though. This used to answer EVERY navigation with
+  // index.html, and a PDF opened in a frame or a tab is a navigation too: the
+  // Library's "Original PDF" view (and its "Open in a new tab" link) showed
+  // GUIDON itself, a second copy of the app inside the first, where the
+  // regulation should have been. Any other same-origin navigation goes to the
+  // generic handler below, which serves it from the saved copy or the network.
+  if (req.mode === "navigate" && isOwnDocument(url)) {
     event.respondWith(
       (async () => {
         const cached = await caches.match("./index.html", { ignoreSearch: true });
@@ -129,12 +145,27 @@ self.addEventListener("fetch", (event) => {
       if (cached) return cached;
       try {
         const res = await fetch(req);
-        if (res && res.ok && res.type === "basic") {
+        // Only a whole, plain 200 is saved: a partial (206) answer to a ranged
+        // request cannot be stored, and a half file must never stand in for
+        // the real one when the signal is gone.
+        if (res && res.status === 200 && res.type === "basic") {
           const cache = await caches.open(CACHE);
-          cache.put(req, res.clone());
+          cache.put(req, res.clone()).catch(() => { /* storage full: the network answer still goes through */ });
         }
         return res;
       } catch (e) {
+        // A document the Soldier tapped that was never opened while online:
+        // say so in plain words instead of a blank page.
+        if (req.mode === "navigate") {
+          return new Response(
+            "<!doctype html><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" +
+            "<title>Not saved yet</title><body style=\"font:16px/1.5 system-ui,sans-serif;margin:24px\">" +
+            "<h1 style=\"font-size:20px\">Not saved on this device yet</h1>" +
+            "<p>This document is not saved on this device yet. Connect to the internet once to open it, and it will open without a signal until GUIDON next updates.</p>" +
+            "<p>Then go back to GUIDON to keep working.</p></body>",
+            { status: 503, headers: { "content-type": "text/html; charset=utf-8" } }
+          );
+        }
         return new Response("", { status: 504 });
       }
     })()

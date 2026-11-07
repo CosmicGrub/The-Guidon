@@ -134,10 +134,17 @@ window.G = window.G || {};
         const args = arguments;
         // orig is called first, un-caught: a synchronous throw propagates
         // exactly as it did before this wrap existed.
-        return Promise.resolve(orig.apply(db, args)).then((r) => {
+        const settled = Promise.resolve(orig.apply(db, args)).then((r) => {
           post(store, keysOf(name, arg), name === "clear");
           return r;
         });
+        // A write that did not land is already reported once, underneath
+        // every caller (db.js: one notice + a self-heal entry). A caller that
+        // never looks at this promise - the debounced settings save is one -
+        // must not raise an unhandled rejection on top of that. A caller that
+        // awaits it still gets the rejection, unchanged.
+        settled.then(null, () => {});
+        return settled;
       };
       wrapped._xwinWrapped = true;
       db[name] = wrapped;

@@ -94,19 +94,19 @@
     { id: "68w-scope-01", category: C.SCOPE, difficulty: "basic",
       q: "What are the four TCCC provider tiers, from least to most advanced?",
       a: "Tier 1 - All Service Member (ASM): the hemorrhage-control basics every Soldier learns. Tier 2 - Combat Lifesaver (CLS): a non-medical Soldier given additional command-directed training. Tier 3 - Combat Medic/Corpsman: the MOS-qualified medic (68W in the Army), trained and certified as a full TCCC provider. Tier 4 - Combat Paramedic/Provider: the most advanced DoD pre-hospital trauma care, for credentialed paramedics, physician assistants, and physicians.",
-      source: "Committee on TCCC (CoTCCC) / Joint Trauma System TCCC Guidelines; ATP 4-02.11", concept: "TCCC provider tiers" },
+      source: "Committee on TCCC (CoTCCC) / Joint Trauma System TCCC Guidelines; ATP 4-02.11", concept: "TCCC provider tiers", quote: "paraphrase" },
     { id: "68w-scope-02", category: C.SCOPE, difficulty: "intermediate",
       q: "How does a Combat Medic's (68W) scope of practice differ from a Combat Lifesaver's?",
-      a: "A Combat Lifesaver (TCCC Tier 2) is a non-medical MOS Soldier who receives additional command-directed training in select lifesaving interventions - hemorrhage control and basic airway adjuncts - to bridge the gap between self/buddy aid and medic response. A 68W Combat Medic (Tier 3) is a credentialed, NREMT-certified TCCC provider, trained and authorized under Army training standards and medical standing orders for the full range of point-of-injury trauma assessment and treatment - not limited to the CLS task list.",
-      source: "ATP 4-02.11; TC 4-02.1 / ATP 4-02.84 (Combat Lifesaver Program)", concept: "68W vs. CLS scope of practice" },
+      a: "A Combat Lifesaver (TCCC Tier 2) is a non-medical Soldier who gets additional training beyond self-aid and buddy aid, so they can treat the most common causes of death on the battlefield (massive bleeding, airway and breathing problems) and bridge the gap until a medic arrives; the CLS role is an additional duty, not an MOS. A 68W Combat Medic (Tier 3) is a trained TCCC provider whose point-of-injury work covers the full range of casualty assessment and treatment - airway management, IV or IO access, hemorrhage control, shock prevention or treatment, splinting, hypothermia management, and medication for pain or infection - not limited to the CLS task list (ATP 4-02.11 paras 1-3, 1-11, 1-74).",
+      source: "ATP 4-02.11; ATP 4-02.84 (Combat Lifesaver Program)", concept: "68W vs. CLS scope of practice", quote: "paraphrase" },
     { id: "68w-scope-03", category: C.SCOPE, difficulty: "basic",
       q: "Who clinically supervises a 68W's outpatient and inpatient care duties?",
       a: "A physician, physician assistant, nurse, or health care NCO, per the skill-level duty descriptions in DA PAM 611-21 - a 68W does not provide unsupervised outpatient or inpatient care independent of that clinical chain.",
-      source: "DA PAM 611-21, MOS 68W", concept: "68W clinical supervision" },
+      source: "DA PAM 611-21, MOS 68W", concept: "68W clinical supervision", quote: "paraphrase" },
     { id: "68w-scope-04", category: C.SCOPE, difficulty: "intermediate",
       q: "What must a 68W complete during the Tactical Evacuation Care phase, beyond continued treatment?",
       a: "Documentation and handoff: completing the DD Form 1380 (TCCC Card), which doubles as the MIST report, and coordinating with the evacuation platform crew so the next role of care receives an accurate record of mechanism of injury, injuries found, signs/symptoms, and treatment already given.",
-      source: "ATP 4-02.11", concept: "TACEVAC documentation/handoff" },
+      source: "ATP 4-02.11", concept: "Tactical Evacuation Care documentation/handoff", quote: "paraphrase" },
 
     { id: "68w-evac-01", category: C.EVAC, difficulty: "intermediate",
       q: "What is a Casualty Collection Point (CCP)?",
@@ -185,12 +185,17 @@
   // opposite case - its own citation text says the wording is paraphrased or
   // not re-verified - so it is cited "paraphrase" and its card back says
   // "Study-guide answer", never "By the Book". A pending source must never
-  // claim to be a quotation (tools/lint-citation-schema.mjs fails it).
+  // claim to be a quotation (tools/lint-citation-schema.mjs fails it). A card that
+  // says quote: "paraphrase" is the same for a different reason: its answer is
+  // study-guide wording composed from the sources it names (the four scope cards),
+  // not text found in them, so it must not be printed under "By the Book (verbatim
+  // doctrine)" either (tools/test-pub-supersession.mjs checks the ones that cite
+  // ATP 4-02.11 against the bundled text, in both directions).
   cards.forEach(function (c) {
     if (qIds.has(c.id)) return;
     var rec = {
       id: c.id, category: c.category, q: c.q, a: c.a, boardAnswer: c.a,
-      source: ctx.cite(c.source, c.sourceStatus === "pending-source" ? "paraphrase" : "verbatim"),
+      source: ctx.cite(c.source, c.sourceStatus === "pending-source" || c.quote === "paraphrase" ? "paraphrase" : "verbatim"),
       concept: c.concept, keyPoints: [c.a], difficulty: c.difficulty,
       mos: ["68W"], curriculum: CURRICULUM,
     };
@@ -214,7 +219,7 @@
     ["CMB", "Combat Medical Badge - awarded to qualifying medical personnel who personally performed medical duties while engaged by the enemy in active ground combat (AR 600-8-22)."],
     ["MHS GENESIS", "The Military Health System's current DoD-wide electronic health record, replacing the legacy AHLTA and CHCS systems."],
     ["AHLTA", "Armed Forces Health Longitudinal Technology Application - the legacy DoD electronic health record MHS GENESIS is replacing."],
-    ["TACEVAC", "Tactical Evacuation Care - the third phase of TCCC, covering casualty care during MEDEVAC/CASEVAC transport."],
+    ["TACEVAC", "A common short name for Tactical Evacuation Care, the third phase of TCCC: care during the move from the battlefield to a medical treatment facility. ATP 4-02.11 (para 3-57) asks that \"TACEVAC\" not be used as the name of that phase."],
     ["CUF", "Care Under Fire - the first phase of TCCC, treating a casualty while still under effective hostile fire."],
     ["TFC", "Tactical Field Care - the second phase of TCCC, once no longer under effective fire."],
     ["CLS", "Combat Lifesaver - a non-medical Soldier given command-directed training in select lifesaving interventions beyond self-aid/buddy aid."],

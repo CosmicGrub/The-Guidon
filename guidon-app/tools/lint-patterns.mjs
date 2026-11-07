@@ -71,7 +71,11 @@ console.log("lint-patterns: static regression guard for repeat bug shapes and re
     const css = html.slice(styleStart, styleEnd);
     const RAW_COLOR = /(?<![\w-])color\s*:\s*var\(--(cyan|violet|red|green|amber)\)/g;
     const hits = [...css.matchAll(RAW_COLOR)];
-    const BASELINE = 120; // audited count as of 2026-09-12 (nav overhaul
+    // 2026-10 (forms-invisible-text): lowered 120 -> 117 to lock in the
+    // cleanup - main had drifted to 119 and the Forms fix moved .example-chip
+    // and .copybtn from var(--cyan) to var(--ink-cyan), so the ratchet now
+    // sits exactly on the audited count.
+    const BASELINE = 117; // audited count as of 2026-09-12 (nav overhaul
     // Milestone 2: added .nav-pin-btn.pinned and .nav-pinned-label, both
     // color:var(--amber) - the pin-toggle star's "pinned" tint and the
     // "Pinned" section's own small uppercase label, matching the same
@@ -326,11 +330,18 @@ console.log("lint-patterns: static regression guard for repeat bug shapes and re
    the portrait-only bottom dock. Not a new stray value - 600px itself was
    already canonical and had no "just under it" companion until this.
 
+   1023 added (audit 2026-10, Board Drill entry): the same adjacent-pair
+   convention as 599/600 and 799/800 - the Board Drill chip rows are one
+   scrolling line each below the 1024px split grid (a Z Fold5 unfolded at
+   673px used to wrap them into 340px of chips and start the card 455px
+   below the fold), so their ceiling is "just under 1024". 1024 itself was
+   already canonical; this is its missing max-width companion.
+
    `prefers-*`, `hover`, `pointer`, and `print` are feature queries, not
    layout breakpoints, and are intentionally out of scope.
    ====================================================================== */
 {
-  const CANONICAL = new Set([420, 480, 599, 600, 640, 768, 799, 800, 1024, 1200, 1360, 1500]);
+  const CANONICAL = new Set([420, 480, 599, 600, 640, 768, 799, 800, 1023, 1024, 1200, 1360, 1500]);
   // Not anchored to a literal "@media" prefix: compound conditions like
   // "@media (min-width: 600px) and (max-width: 859px)" put the second
   // clause after "and (", not "@media (", so anchoring would silently
@@ -789,6 +800,26 @@ console.log("lint-patterns: static regression guard for repeat bug shapes and re
       }
     }
   }
+}
+
+/* ======================================================================
+   (t) Every var(--x) names a custom property something defines. A token
+   typo never errors: the browser quietly uses the var()'s fallback (or the
+   inherited value), so var(--fg, #e8f0f6) rendered pale-on-cream and left
+   the Article 31(b) rights text on DA 2823/3881 at 1.04:1 in all 10 light
+   themes, Field Manual (the default) among them. The judging is
+   tools/css-token-rules.mjs (comments removed, embedded data and vendored
+   code skipped, guest.html judged against its own tokens);
+   tools/test-css-token-lint.mjs plants each defect shape and an honest
+   sibling for each. --src-dir <path> points this one check at a stand-in
+   copy of src/ (the same way --tools-dir does for (e)).
+   ====================================================================== */
+{
+  const { lintCssTokens, SRC_DIR } = await import("./css-token-rules.mjs");
+  const srcDir = argVal("src-dir") ? (await import("node:path")).resolve(argVal("src-dir")) : SRC_DIR;
+  const res = lintCssTokens({ srcDir });
+  for (const p of res.problems) bad("(t) " + p);
+  if (!res.problems.length) ok("(t) every var(--x) names a defined custom property (" + res.results.map((r) => r.used + " uses in " + r.label).join("; ") + ")");
 }
 
 /* ======================================================================

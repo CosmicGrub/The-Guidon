@@ -329,6 +329,81 @@ window.G = window.G || {};
     return { c: "var(--green)", word: "recent" };
   }
 
+  /* ---------------------------------------------------------------------
+     How old is THIS COPY of the app.
+
+     An installed copy (the Android app, the Windows installer) and a saved
+     .html file have no updater, and the app never goes online by itself, so
+     nothing ever tells a Soldier that the copy in their pocket has aged while
+     newer ones were published. The hosted web app tells them with its own
+     "new version ready" notice, so it is left alone here.
+
+     This is one quiet line, worked out from the build date and the device's
+     own clock. It saves nothing, asks nothing and makes no request: the link
+     in it only does anything when the Soldier taps it.
+
+     Said carefully, because the app cannot know what is out there:
+       - "about" N days (the build date is a calendar date, not a moment),
+       - "may be out", never "is out" (a rebuilt or re-issued file can look
+         newer than it is, and a build is not a release),
+       - nothing at all when the date or the clock cannot be trusted. Phones
+         and tablets in the field are often set wrong, and a copy that claims
+         to be a decade old, or built in the future, would be a false alarm. */
+  const RELEASES_LATEST = "https://github.com/CosmicGrub/The-Guidon/releases/latest";
+  const COPY_OLD_AFTER_DAYS = 60;      // the line appears once the copy is this old
+  const COPY_CLOCK_DOUBT_DAYS = 1100;  // about three years: past this the clock is the likelier mistake
+
+  // Forks whose copy never updates itself: the saved file, the Windows app and
+  // the Android (or other Capacitor) app. Not the hosted web app or its
+  // installed icon, which update through the browser.
+  function copyHasNoUpdater() {
+    const f = G.caps.fork();
+    return location.protocol === "file:" || f === "standalone" || f === "tauri" || f === "android" || f === "ios" || f === "capacitor";
+  }
+
+  // Whole days from the build date to today by the device's own calendar, or
+  // null when the answer cannot be trusted (no usable date, a date in the
+  // future, or an age no real copy has).
+  function copyAgeDays() {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(window.GUIDON_BUILD_DATE || ""));
+    if (!m) return null;
+    const now = new Date();
+    const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    const days = Math.round((today - Date.UTC(+m[1], +m[2] - 1, +m[3])) / 86400000);
+    return days >= 0 && days <= COPY_CLOCK_DOUBT_DAYS ? days : null;
+  }
+
+  function copyAgeWords(days) {
+    if (days < 90) return "about " + days + " days ago";
+    if (days < 700) return "about " + Math.round(days / 30.44) + " months ago";
+    return "about " + Math.round(days / 365.25) + " years ago";
+  }
+
+  // The note, or null when there is nothing to say (the hosted app, a young
+  // copy, or a date or clock that cannot be trusted).
+  function buildAgeNote() {
+    if (!copyHasNoUpdater()) return null;
+    const days = copyAgeDays();
+    if (days === null || days < COPY_OLD_AFTER_DAYS) return null;
+    const box = el("div.build-age-note", { role: "note", "data-days": String(days),
+      style: "margin-top:10px;padding:8px 12px;border-left:3px solid var(--amber);border-radius:4px" });
+    box.appendChild(el("p", { style: "margin:0",
+      text: "This copy of GUIDON was built " + copyAgeWords(days) + ". A newer version may be out. Check the GUIDON releases page." }));
+    // A tap on a link is proven on the Android app and works in a saved file.
+    // The Windows app has no proof yet, so it gets the address to copy instead
+    // of a link that might do nothing.
+    const f = G.caps.fork();
+    if (f === "android" || f === "standalone" || location.protocol === "file:") {
+      box.appendChild(el("a.btn.sm", { href: RELEASES_LATEST, target: "_blank", rel: "noopener",
+        text: "Open the GUIDON releases page", style: "text-decoration:none;display:inline-block;margin-top:8px" }));
+    } else {
+      box.appendChild(el("p.hint", { style: "margin:6px 0 0", text: "Address to type into a browser:" }));
+      box.appendChild(el("p", { text: RELEASES_LATEST,
+        style: "margin:2px 0 0;font-family:var(--font-mono);word-break:break-all;user-select:all;-webkit-user-select:all" }));
+    }
+    return box;
+  }
+
   async function render(mount) {
     util.clear(mount);
     mount.appendChild(el("div.section-title", {}, [
@@ -336,6 +411,10 @@ window.G = window.G || {};
 
     mount.appendChild(el("p.hint", { text:
       "GUIDON is offline by design, which means it cannot tell you when something changed - only when it was last checked. This page shows that, per policy area, and who to ask. Age is computed from the stamp each time you open it, so it gets more honest, not less, as this build gets older." }));
+
+    // How old this copy of the app is, when it is old enough to matter.
+    const ageNote = buildAgeNote();
+    if (ageNote) { ageNote.style.marginBottom = "12px"; mount.appendChild(ageNote); }
 
     const sorted = DOMAINS.slice().sort(function (a, b) {
       const A = ageOf(a.asOf), B = ageOf(b.asOf);
@@ -390,6 +469,6 @@ window.G = window.G || {};
     mount.appendChild(foot);
   }
 
-  G.currency = { render: render, DOMAINS: DOMAINS, ageOf: ageOf, band: band };
+  G.currency = { render: render, DOMAINS: DOMAINS, ageOf: ageOf, band: band, buildAgeNote: buildAgeNote };
 })();
 // END currency.js

@@ -206,6 +206,24 @@ aliasTableHasIt
   ? ok("MOI_CITATION_ALIASES exposes the FM 3-22.9 -> TC 3-22.9 entry directly")
   : bad("MOI_CITATION_ALIASES is missing the required FM 3-22.9 -> TC 3-22.9 entry");
 
+// ---- TC 4-02.1 -> ATP 4-02.11 alias (audit 2026-10, item 10): the bundled ATP 4-02.11's own
+// cover says it supersedes TC 4-02.1, so every First Aid card now cites ATP 4-02.11 and an MOI
+// that still names the old manual must find them through the alias table, not report a gap ----
+const firstAidAlias = await page.evaluate(() => window.G.moiImport.matchCitation("TC 4-02.1"));
+const firstAidCards = await page.evaluate(() => window.G.store.seed().board.questions.filter((q) => q.category === "ATP 4-02.11").length);
+(firstAidAlias.tier === "alias" && firstAidAlias.normalized === "ATP 4-02.11" && firstAidAlias.boardCategories.includes("ATP 4-02.11") &&
+  firstAidCards > 0 && firstAidAlias.counts && firstAidAlias.counts.selfCheckQuestions >= firstAidCards)
+  ? ok("an MOI line naming TC 4-02.1 resolves to tier 'alias', normalized 'ATP 4-02.11', and reaches all " + firstAidCards + " cards in the 'ATP 4-02.11' category")
+  : bad("matchCitation('TC 4-02.1') -> " + JSON.stringify(firstAidAlias) + " (cards in the ATP 4-02.11 category: " + firstAidCards + ")");
+const firstAidDirect = await page.evaluate(() => window.G.moiImport.matchCitation("ATP 4-02.11"));
+(firstAidDirect.tier !== "alias" && firstAidDirect.tier !== "unmatched" && firstAidDirect.normalized === "ATP 4-02.11" && firstAidDirect.boardCategories.includes("ATP 4-02.11"))
+  ? ok("and an MOI line naming ATP 4-02.11 itself matches directly (no alias hop), to the same category")
+  : bad("matchCitation('ATP 4-02.11') -> " + JSON.stringify(firstAidDirect));
+const medlogNotAliased = await page.evaluate(() => window.G.moiImport.matchCitation("ATP 4-02.1"));
+(medlogNotAliased.tier !== "alias")
+  ? ok("honest path: ATP 4-02.1 (Army Medical Logistics, a different manual) is NOT sent to ATP 4-02.11 by the new row")
+  : bad("matchCitation('ATP 4-02.1') -> " + JSON.stringify(medlogNotAliased));
+
 // ---- genuinely unmatched fabricated citation ----
 const unmatchedResult = await page.evaluate(() => window.G.moiImport.matchCitation("AR 999-99"));
 unmatchedResult.tier === "unmatched" && (!unmatchedResult.topics || unmatchedResult.topics.length === 0) && unmatchedResult.topicCounts === null

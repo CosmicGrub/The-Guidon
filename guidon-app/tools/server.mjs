@@ -33,8 +33,25 @@ export function serve(root, port = 0) {
         return res.end("404");
       }
       const body = await readFile(file);
+      const type = MIME[extname(file).toLowerCase()] || "application/octet-stream";
+      // A request that asks for one byte range gets a 206 for exactly that range - the way a real
+      // host answers a video or PDF viewer. (Accept-Ranges is NOT advertised, so nothing that does not
+      // already ask for a range - pdf.js included - starts to.) test-sw-pdf-navigation uses this to
+      // prove the service worker never saves a partial answer as if it were the whole file.
+      const asked = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || "").trim());
+      if (asked && (asked[1] !== "" || asked[2] !== "")) {
+        let start = asked[1] === "" ? Math.max(0, body.length - Number(asked[2])) : Number(asked[1]);
+        let end = asked[1] === "" || asked[2] === "" ? body.length - 1 : Math.min(Number(asked[2]), body.length - 1);
+        if (start <= end && start < body.length) {
+          const part = body.subarray(start, end + 1);
+          res.writeHead(206, { "content-type": type, "content-length": part.length, "content-range": "bytes " + start + "-" + end + "/" + body.length, "cache-control": "public, max-age=0" });
+          return res.end(part);
+        }
+        res.writeHead(416, { "content-range": "bytes */" + body.length });
+        return res.end();
+      }
       res.writeHead(200, {
-        "content-type": MIME[extname(file).toLowerCase()] || "application/octet-stream",
+        "content-type": type,
         "content-length": body.length,
         // Service workers require no-cache on the SW script itself to update reliably.
         "cache-control": file.endsWith("sw.js") ? "no-cache" : "public, max-age=0",

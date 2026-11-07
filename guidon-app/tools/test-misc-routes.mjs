@@ -331,11 +331,18 @@ const segTitles2 = await page.evaluate(() => [...document.querySelectorAll(".sea
 // "PT test" among the real-world words that route's short nav label never
 // uses - see views.search's SCREEN_ENTRIES) - a real, intentional new hit,
 // not a regression in the pre-existing scenario/board/lesson three.
-countText2 === "4 results"
-  ? ok('Search "PT test": exactly 4 results across scenario/board/lesson/screen content')
-  : bad(`Search "PT test": count text was "${countText2}", expected "4 results"`);
-(segTitles2.some((t) => t.startsWith("1 Scenarios")) && segTitles2.some((t) => t.startsWith("1 Board Q")) && segTitles2.some((t) => t.startsWith("1 Lessons")) && segTitles2.some((t) => t.startsWith("1 Screens & Settings")))
-  ? ok(`Search "PT test": distribution bar correctly attributes 1 hit to each of scenario/board/lesson/screen (${JSON.stringify(segTitles2)})`)
+// A several-word query ALSO finds records that hold both words without the
+// phrase side by side (that is the point of the multi-word match), so this is
+// "at least the four phrase hits, in each of those four types" - the old exact
+// "4 results" was the phrase-only match talking. The phrase hits themselves are
+// still the ones a Soldier sees first (checked in test-search-content-coverage).
+const countN2 = Number((countText2.match(/^(\d+) results?$/) || [])[1] || 0);
+countN2 >= 4
+  ? ok(`Search "PT test": at least the 4 phrase results across scenario/board/lesson/screen content (${countText2})`)
+  : bad(`Search "PT test": count text was "${countText2}", expected at least 4 results`);
+const segHas = (type) => segTitles2.some((t) => new RegExp("^[1-9]\\d* " + type).test(t));
+(segHas("Scenarios") && segHas("Board Q") && segHas("Lessons") && segHas("Screens & Settings"))
+  ? ok(`Search "PT test": distribution bar attributes hits to each of scenario/board/lesson/screen (${JSON.stringify(segTitles2)})`)
   : bad(`Search "PT test": distribution bar segment titles were ${JSON.stringify(segTitles2)}`);
 
 // A bare MOS-code query now intentionally crosses both the Career Center and
@@ -411,16 +418,16 @@ sectionHeadings.length === 13
   : bad(`#/privacy rendered ${sectionHeadings.length} section headings, expected 13: ${JSON.stringify(sectionHeadings)}`);
 
 const rosterSection = await page.evaluate(() => {
-  const h3 = [...document.querySelectorAll(".panel h3")].find((h) => /squad roster and risk worksheet get extra protection/i.test(h.textContent || ""));
+  const h3 = [...document.querySelectorAll(".panel h3")].find((h) => /squad roster, risk worksheet and form drafts get extra protection/i.test(h.textContent || ""));
   if (!h3) return null;
   const panel = h3.closest(".panel");
   return [...panel.querySelectorAll("p")].map((p) => p.textContent).join(" ");
 });
 rosterSection
-  ? (/excluded by default/i.test(rosterSection) && /explicit.*opt-in/i.test(rosterSection)
-      ? ok('#/privacy: "The squad roster and Risk Worksheet get extra protection" section states the real backup-exclusion behavior (excluded by default, explicit opt-in to include)')
+  ? (/excluded by default/i.test(rosterSection) && /explicit.*opt-in/i.test(rosterSection) && /form drafts/i.test(rosterSection)
+      ? ok('#/privacy: "The squad roster, Risk Worksheet and form drafts get extra protection" section states the real backup-exclusion behavior (roster, worksheets and form drafts excluded by default, explicit opt-in to include)')
       : bad(`#/privacy: squad roster section text did not match expected claims: "${rosterSection}"`))
-  : bad('#/privacy: "The squad roster and Risk Worksheet get extra protection" section not found');
+  : bad('#/privacy: "The squad roster, Risk Worksheet and form drafts get extra protection" section not found');
 
 const contactSection = await page.evaluate(() => {
   const h3 = [...document.querySelectorAll(".panel h3")].find((h) => /^Contact$/i.test((h.textContent || "").trim()));

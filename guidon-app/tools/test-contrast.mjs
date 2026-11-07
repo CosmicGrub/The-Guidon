@@ -49,6 +49,8 @@ await page.evaluate(() => {
     // The forms view restyles primary buttons (amber text) — probe the rule
     // without having to open a real form.
     '<div class="forms-view"><button class="btn primary">Fill this form</button></div>' +
+    // Career's "YOU ARE HERE" tag: in the light themes a more specific rule once painted it the page color under pale ink.
+    '<div><span class="tag you-are-here">YOU ARE HERE</span></div>' +
     // Flat swatches approximating the banner's gradient layers, so the label
     // can be checked against both the base wash and the amber stripe.
     '<div class="probe-banner-base" style="background: color-mix(in srgb, var(--cyan) 14%, var(--panel))"></div>' +
@@ -72,6 +74,7 @@ const SAMPLES = [
   [".nav :is(button, a), nav :is(button, a)", 4.5, "nav label"],
   [".btn.primary", 4.5, "primary button"],
   [".probe-contrast .forms-view .btn.primary", 4.5, "forms primary button"],
+  [".probe-contrast .tag.you-are-here", 4.5, "Career YOU ARE HERE tag"],
   [".topbar-search-btn", 3.0, "topbar icon control"],
 ];
 // Board view adds these:

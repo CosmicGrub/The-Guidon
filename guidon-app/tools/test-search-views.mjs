@@ -198,8 +198,13 @@ const prtFiltered = await page.evaluate(() => ({
   sections: document.querySelectorAll(".search-section").length,
   title: (document.querySelector(".search-hit-title") || {}).textContent || "",
 }));
-(prtFiltered.hits === 1 && prtFiltered.sections === 1)
-  ? ok("Physical Readiness chip filters results down to the prt hit only (1 result)")
+// A several-word query now also finds records that hold every word without the
+// whole phrase ("Squat Bender", "Windmill" for "Bend and Reach"), so the chip is
+// checked for what it is for - one type only - and the exact record for what
+// ranking is for - first. (This used to assert exactly 1 hit, which was the
+// phrase-only match talking.)
+(prtFiltered.hits >= 1 && prtFiltered.sections === 1)
+  ? ok("Physical Readiness chip filters results down to the prt type only (" + prtFiltered.hits + " result(s) in 1 section)")
   : bad("after Physical Readiness filter: " + prtFiltered.hits + " hit(s) in " + prtFiltered.sections + " section(s)");
 /Bend and Reach/i.test(prtFiltered.title)
   ? ok('a prt-typed result renders for "Bend and Reach" (title: "' + prtFiltered.title + '")')
