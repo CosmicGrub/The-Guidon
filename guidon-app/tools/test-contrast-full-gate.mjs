@@ -8,11 +8,17 @@
  * real gate, as a child process, three ways, on a deliberately narrow slice
  * (2 themes x 2 screens, no interaction states - a few seconds each):
  *
- *   1. PLANTED: a scratch copy of the built app with ONE theme's secondary text
- *      colour made nearly invisible. The gate must exit 1, must name that
- *      theme, must NOT blame the untouched theme, and must have caught the
- *      miss both ways it can see text (axe's own verdict, and the resolver for
- *      text over a gradient, which axe cannot decide).
+ *   1. PLANTED: a scratch copy of the built app with THREE defects in ONE
+ *      theme: its secondary text colour made nearly invisible, a real label
+ *      given the same colour as its own background (axe files that as
+ *      "incomplete / equalRatio", and an earlier gate waved it through as
+ *      deliberately hidden), and a real heading set in 30px #777 over a
+ *      black-to-white gradient (fine at both ends, unreadable in the middle,
+ *      which only sampling BETWEEN a gradient's stops can see). The gate must
+ *      exit 1, must name that theme, must NOT blame the untouched theme, and
+ *      must have caught the miss every way it can see text: axe's own verdict,
+ *      the resolver for text over a gradient, the equal-colour label and the
+ *      mid-gradient grey.
  *   2. HONEST: the same slice of the real, unmodified app. The gate must exit 0
  *      - a gate that cries wolf is as useless as one that never speaks.
  *   3. CI GUARD: narrowing the sweep with the GUIDON_CONTRAST_* variables is for
@@ -59,9 +65,16 @@ try {
   const html = fs.readFileSync(indexPath, "utf8");
   const close = html.indexOf("</style>");
   check(close > 0, "fixture: found the main stylesheet in the built app to plant a defect in", "no </style> in web/index.html");
-  // Sepia Study's secondary text colour becomes a pale tan on its cream panels (about 1.5:1). Appended as a LATER rule so
-  // it does not depend on the theme block's current values.
-  const planted = html.slice(0, close) + "\nhtml[data-theme=\"sepia-study\"]{--text-dim:#cbbd9f !important;--text-2:#cbbd9f !important}\n" + html.slice(close);
+  // Appended as LATER rules so they do not depend on the theme block's current values.
+  //  - Sepia Study's secondary text colour becomes a pale tan on its cream panels (about 1.5:1).
+  //  - the "backed up" line gets the colour of its own background: text you cannot see at all.
+  //  - every section eyebrow becomes 30px #777 over black-to-white: 4.7:1 on black, 4.5:1 on white, 1:1 in the middle.
+  const css = [
+    "html[data-theme=\"sepia-study\"]{--text-dim:#cbbd9f !important;--text-2:#cbbd9f !important}",
+    "html[data-theme=\"sepia-study\"] .last-backup-status{color:#f7f1e6 !important;background:#f7f1e6 !important}",
+    "html[data-theme=\"sepia-study\"] .eyebrow{color:#777 !important;font-size:30px !important;font-weight:400 !important;background-image:linear-gradient(90deg,#000,#fff) !important}",
+  ].join("\n");
+  const planted = html.slice(0, close) + "\n" + css + "\n" + html.slice(close);
   fs.writeFileSync(indexPath, planted);
 
   /* ---- 1) planted ---- */
@@ -71,6 +84,8 @@ try {
   check(!/FAIL\s+\[night-vision\]/.test(bad1.out) && /PASS\s+\[night-vision\] no colour-contrast miss/.test(bad1.out), "PLANTED: it does not blame the untouched theme (night-vision stays clean)", () => "night-vision was blamed or not judged:\n" + bad1.out.slice(-1200));
   check(/x\d+\s+axe\s+"/.test(bad1.out), "PLANTED: it caught text axe decides itself (a verdict straight from axe)", () => "no axe-decided miss in:\n" + bad1.out.slice(-1200));
   check(/x\d+\s+resolved:bg(?:Gradient|Image)/.test(bad1.out), "PLANTED: it caught text axe cannot decide (over a gradient or image, resolved by the sweep)", () => "no resolved miss in:\n" + bad1.out.slice(-1200));
+  check(/last-backup-status[^\n]*\b1:1 \(needs 4\.5\)[^\n]*resolved:equalRatio/.test(bad1.out), "PLANTED: a label with the same colour as its background is reported as a 1:1 miss (not waved through as 'deliberately hidden')", () => "no 1:1 equalRatio miss for .last-backup-status in:\n" + bad1.out.slice(-1800));
+  check(/eyebrow[^\n]*\(needs 3\)[^\n]*resolved:bgGradient/.test(bad1.out), "PLANTED: 30px #777 over a black-to-white gradient is reported (the grey in the middle, not just the two ends)", () => "no mid-gradient miss for .eyebrow in:\n" + bad1.out.slice(-1800));
   check(/the planted canaries were reported/.test(bad1.out) && !/FAIL\s+.*misjudged its own canaries/.test(bad1.out), "PLANTED: the gate's own canaries were reported on every measurement", () => "canary line missing or failing:\n" + bad1.out.slice(-1200));
 
   /* ---- 2) honest ---- */

@@ -58,12 +58,22 @@
  *     backup line too; the audit's belief that they were guest-hidden was wrong,
  *     they were missed for the gradient reason below, not the guest reason.
  *
- * RESOLVER (for what axe files as incomplete: bgGradient / bgImage / fgAlpha)
- *   Walks up from the text to the nearest opaque colour, composites every
- *   translucent layer in between, and for a gradient layer takes EVERY colour
- *   stop (the text could sit on any of them), so the verdict is the worst
- *   case. The text colour is composited at its own alpha times its ancestors'
- *   opacity. Large text (24px, or 18.66px bold) needs 3:1, the rest 4.5:1.
+ * RESOLVER (for what axe files as incomplete: bgGradient / bgImage / fgAlpha /
+ *   equalRatio / overlap kinds)
+ *   Walks up from the text to the nearest opaque colour and composites every
+ *   layer in between, each layer over every candidate beneath it (so a stack of
+ *   translucent layers is exact and an opaque top layer hides what is under it).
+ *   A gradient is sampled DENSELY along every segment between two stops (32
+ *   steps, premultiplied alpha, as CSS interpolates): checking only the stops
+ *   passed 30px #777 over black-to-white, which is 4.7:1 and 4.5:1 at the ends
+ *   and 1:1 in the middle. Radial, conic and repeating gradients paint the same
+ *   colour set and are sampled the same way; a hard stop (two stops at one
+ *   position) is not interpolated; a colour hint adds no colour. The verdict is
+ *   the worst candidate. The text colour is composited at its own alpha times
+ *   its ancestors' opacity. Large text (24px, or 18.66px bold) needs 3:1, the
+ *   rest 4.5:1. Text the same colour as its backdrop (axe's equalRatio, which
+ *   it files as incomplete) is 1:1, a miss: intent is never inferred from a
+ *   ratio of 1, only the ALLOWLIST can excuse it.
  *   A background IMAGE (the paper-noise texture) cannot be sampled from the
  *   DOM; it is judged against the solid colour under it, which is what the
  *   forms gate does too. That is an approximation and is stated as one.
@@ -74,8 +84,13 @@
  *   - CANARIES are injected into the page for EVERY measurement: a row at the
  *     top and a row at the very bottom of the screen (so a window that is too
  *     short is caught), covering the paths axe decides, the gradient path, the
- *     image path and the large-text rule both ways, plus honest controls that
- *     must NOT be flagged. Every expected canary must be reported every time.
+ *     image path, the large-text rule both ways, an equal-colour label, 30px
+ *     #777 over black-to-white (linear, radial, conic, repeating, transparent
+ *     over a base colour, and under a see-through layer: all must be caught),
+ *     plus honest controls that must NOT be flagged (text just outside a
+ *     gradient's luminance range, a hard black/white edge, an opaque upper
+ *     layer hiding a pale one). Every expected canary must be reported, and
+ *     every control must stay clean, on every single measurement.
  *   - FLOORS: each pass must have evaluated at least FLOORS.<pass> pieces of
  *     text in total, every theme at least FLOORS.profilePerTheme, and every
  *     screen at least FLOORS.perScreenMin in every theme.
@@ -116,7 +131,7 @@ import { bootApp, waitForRoute, until, check, ok, bad, finish, PERSONAL_PROFILE 
 const ALLOWLIST = [];
 
 /* ---------------------------------------------------------------------
-   Floors, from a measured run on 2026-11-07 (commit b82049f, 30 themes, 48
+   Floors, from measured runs on 2026-11-07 (commit b82049f plus this branch, 30 themes, 48
    screens). Each is roughly half of what the app gave then, so ordinary
    content growth or a tidy-up never trips one, while a blinded sweep (a 900px
    window, 5 of the 48 screens, violations only) lands far below them.
@@ -125,20 +140,20 @@ const ALLOWLIST = [];
 const FLOORS = {
   themes: 30,              // the registry holds 30; fewer means the list was cut
   routes: 40,              // G.routes holds 48
-  profileTotal: 110000,    // measured 204347 over 48 screens x 30 themes
-  profilePerTheme: 3600,   // measured 6806..6813 for each single theme
+  profileTotal: 110000,    // measured 205907 over 48 screens x 30 themes
+  profilePerTheme: 3600,   // measured 6858..6865 for each single theme
   stateTotal: 10000,       // measured  19830 over 6 states x 30 themes
-  guestTotal: 3000,        // measured   6990 over 2 screens x 30 themes (only #/progress and #/selftest draw differently)
+  guestTotal: 3000,        // measured   6990 (2 screens) to 11610 (3 screens) x 30 themes: #/progress, #/selftest, and #/board when its random card differs
   welcomeTotal: 600,       // measured   1350 over 2 first-run screens x 30 themes
   perScreenMin: { profile: 15, state: 4, guest: 40, welcome: 8 }, // thinnest single screen in any theme: 31, 8, 89, welcome (see PR)
 };
 
 /* Kinds of axe `incomplete` result, and what this sweep does with each. Every
    kind that is not "resolved" is only COUNTED (and printed), never judged. */
-const RESOLVABLE = ["bgImage", "bgGradient", "fgAlpha", "bgOverlap", "elmPartiallyObscured", "elmPartiallyObscuring"];
+const RESOLVABLE = ["bgImage", "bgGradient", "fgAlpha", "equalRatio", "bgOverlap", "elmPartiallyObscured", "elmPartiallyObscuring"];
 const KIND_POLICY = {
   bgImage: "resolved",
-  bgGradient: "resolved",
+  bgGradient: "resolved (every point of every gradient: dense samples between the stops)",
   fgAlpha: "resolved",
   shortTextContent: "axe skips text of fewer than 2 characters by design (icon glyphs, bullets, close marks)",
   nonBmp: "axe skips astral-plane characters by design (emoji), which draw in their own colours",
@@ -148,7 +163,7 @@ const KIND_POLICY = {
   elmPartiallyObscuring: "resolved, best effort: same - judged against the text's own ancestors' backdrop",
   pseudoContent: "text from ::before / ::after, which axe cannot read",
   nonBgContent: "the text sits on a replaced element (canvas, video), not on a colour",
-  equalRatio: "text the same colour as its background, i.e. deliberately hidden",
+  equalRatio: "resolved: text the same colour as its backdrop is ratio 1:1, a MISS. It is never read as deliberately hidden; genuinely intentional hidden text goes through the ALLOWLIST (theme + selector + reason)",
   outsideViewport: "NOT acceptable: the window did not cover this node (treated as a coverage failure)",
   noText: "an element axe flagged that holds no text of its own (a form control's value, a bare box)",
   unknown: "an incomplete result with no reason attached",
@@ -161,7 +176,7 @@ const MAX_UNMEASURED_SHARE = 0.10;
 const BASE_W = 1280;
 const BASE_H = 900;
 const MAX_H = 60000;          // tallest window we will ask Chromium for
-const CANARY_ROOM = 520;      // px of window reserved for the injected canary rows
+const CANARY_ROOM = 900;      // px of window reserved for the injected canary rows (the 30px rows are tall)
 const WATCHDOG_MS = (+process.env.GUIDON_CONTRAST_WATCHDOG_MIN || 45) * 60 * 1000;
 
 const csv = (v) => (v ? v.split(",").map((s) => s.trim()).filter(Boolean) : null);
@@ -235,6 +250,7 @@ const MEASURE = async ({ id, withCanary, RESOLVABLE, host }) => {
   /* ---- canaries: colours are fixed, so they must be caught in EVERY theme ---- */
   const SVG = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6'%3E%3Crect width='6' height='6' fill='%23d8d8d8' fill-opacity='.55'/%3E%3C/svg%3E\")";
   const GRAD_PALE = "background-image:linear-gradient(90deg,#fff,#fdfdfd)";
+  const BW = "background-image:linear-gradient(90deg,#000,#fff)";
   const rows = (where, full) => {
     const p = (name, style, text) => `<p id="cg-canary-${where}-${name}" style="margin:0;padding:2px 6px;font:14px/1.35 sans-serif;${style}">${text}</p>`;
     let h = p("solid", "color:#8f8f8f;background:#9a9a9a", "Canary: low-contrast text on a solid colour (axe decides this one)") +
@@ -245,7 +261,21 @@ const MEASURE = async ({ id, withCanary, RESOLVABLE, host }) => {
            p("large-bad", "font-size:30px;line-height:1.2;color:#a8a8a8;" + GRAD_PALE, "Canary: 2.4:1 large text (needs 3, must be caught)") +
            p("large-ok", "font-size:30px;line-height:1.2;color:#7a7a7a;" + GRAD_PALE, "Canary: 4.3:1 large text (needs only 3, must pass)") +
            p("honest", "color:var(--text);background:var(--panel-2)", "Canary: the theme's own text colour on its own panel (must pass)") +
-           p("honest-gradient", "color:var(--text);background-image:linear-gradient(90deg,var(--panel),var(--panel-2))", "Canary: the theme's own text colour over a panel gradient (must pass)");
+           p("honest-gradient", "color:var(--text);background-image:linear-gradient(90deg,var(--panel),var(--panel-2))", "Canary: the theme's own text colour over a panel gradient (must pass)") +
+           /* text the same colour as its background: axe files it as 'incomplete / equalRatio'; it is 1:1, a miss */
+           p("equal", "color:#8a8a8a;background:#8a8a8a", "Canary: text the same colour as its background (an invisible label)") +
+           /* #777 is 4.7:1 on black and 4.5:1 on white, so both ends of a black-to-white gradient clear the 3:1 large-text bar,
+              yet it is 1:1 where the gradient passes through #777. Only sampling BETWEEN the stops sees it. */
+           p("gradient-mid", "font-size:30px;line-height:1.1;color:#777;" + BW, "Canary: 30px #777 over black-to-white (fine at both ends, unreadable in the middle)") +
+           p("radial-mid", "font-size:30px;line-height:1.1;color:#777;background-image:radial-gradient(circle,#000,#fff)", "Canary: the same over a radial gradient") +
+           p("conic-mid", "font-size:30px;line-height:1.1;color:#777;background-image:conic-gradient(#000,#fff)", "Canary: the same over a conic gradient") +
+           p("repeating-mid", "font-size:30px;line-height:1.1;color:#777;background-image:repeating-linear-gradient(90deg,#000 0,#fff 40px)", "Canary: the same over a repeating gradient") +
+           p("alpha-mid", "font-size:30px;line-height:1.1;color:#777;background-color:#000;background-image:linear-gradient(90deg,transparent,#fff)", "Canary: the same over a transparent-to-white gradient on a black base") +
+           p("layers-mid", "font-size:30px;line-height:1.1;color:#777;background-image:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,0)),linear-gradient(90deg,#000,#fff)", "Canary: the same under a see-through top layer") +
+           /* the clean counterparts: the sweep must not cry wolf */
+           p("gradient-outside", "font-size:30px;line-height:1.1;color:#999;background-image:linear-gradient(90deg,#000,#444)", "Canary: 30px #999 just outside the gradient's luminance range (3.4:1 at worst, must pass)") +
+           p("hard-ok", "font-size:30px;line-height:1.1;color:#777;background-image:linear-gradient(90deg,#000 0 50%,#fff 50% 100%)", "Canary: a hard black/white edge paints no grey, so #777 clears both halves (must pass)") +
+           p("layers-ok", "font-size:30px;line-height:1.1;color:#999;background-image:linear-gradient(90deg,#000,#444),linear-gradient(90deg,#000,#fff)", "Canary: an opaque top layer hides the white one beneath it (must pass)");
     }
     return h;
   };
@@ -280,38 +310,117 @@ const MEASURE = async ({ id, withCanary, RESOLVABLE, host }) => {
   const ratioOf = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
   const opacityOf = (el) => { let o = 1; for (let n = el; n; n = n.parentElement) o *= parseFloat(getComputedStyle(n).opacity); return o; };
   const rgbStr = (c) => "rgb(" + c.slice(0, 3).map(Math.round).join(",") + ")";
-  const STOP = /(?:rgba?|color|oklab|oklch|lab|lch|hsla?)\([^()]*\)/g;
-
-  /* Every backdrop the text could sit on: start from white (the canvas), lay
-     each layer from the outermost opaque one down to the element itself; a
-     gradient multiplies the candidates by its colour stops. */
-  const backdrops = (el) => {
-    const chain = [];
-    for (let n = el; n; n = n.parentElement) {
-      const cs = getComputedStyle(n);
-      const col = rgba(cs.backgroundColor);
-      chain.push({ col, img: cs.backgroundImage });
-      if (col[3] >= 1) break;
+  /* ---- backdrops: every colour the text could sit on ----
+     A background is a stack: the element's own colour, then its image layers
+     (background-image lists them TOP first, so the last one is painted first).
+     Each ancestor is the same, down to the nearest opaque colour (or white).
+     A gradient is not a handful of stops: the colour at every point BETWEEN two
+     stops is on screen too, and text can match one of those (30px #777 over
+     black->white clears both ends at 4.7:1 / 4.5:1 and is unreadable in the
+     grey middle). So each segment between two stops is sampled densely, in
+     premultiplied alpha as CSS interpolates it. Radial, conic and repeating
+     gradients paint the same colour set along a different path, so they are
+     sampled identically; a HARD stop (two stops at one position) paints no
+     colour between them and is not interpolated; a colour hint only moves the
+     midpoint, so it adds no colour. Each layer is composited over every
+     candidate beneath it, so translucent layers and layer stacks are exact,
+     and an opaque upper layer rightly hides the ones below it. */
+  const GRAD_STEPS = 32;       // samples inside each segment between two stops
+  const MAX_CANDIDATES = 96;   // kept, spread evenly by luminance, whatever the stack multiplies out to
+  const splitTop = (str, sep) => {
+    const out = [];
+    let depth = 0, quote = null, cur = "";
+    for (const ch of str) {
+      if (quote) { cur += ch; if (ch === quote) quote = null; continue; }
+      if (ch === "\"" || ch === "'") { quote = ch; cur += ch; continue; }
+      if (ch === "(") depth++;
+      else if (ch === ")") depth--;
+      if (depth === 0 && (sep === " " ? /\s/.test(ch) : ch === sep)) { out.push(cur); cur = ""; continue; }
+      cur += ch;
     }
-    chain.reverse();
-    let cands = [[255, 255, 255, 1]];
-    let texture = false, unparsed = false;
-    for (const L of chain) {
-      if (L.col[3] > 0) cands = cands.map((c) => over(L.col, c));
-      if (!L.img || L.img === "none") continue;
-      if (L.img.indexOf("gradient(") === -1) { texture = true; continue; }
-      const stops = (L.img.match(STOP) || []).map(rgba);
-      if (!stops.length) { unparsed = true; continue; }
-      const next = new Map();
-      for (const c of cands) for (const s of stops) { const m = over(s, c); next.set(m.slice(0, 3).map(Math.round).join(","), m); }
-      cands = [...next.values()];
-      if (cands.length > 24) {
-        cands.sort((a, b) => lum(a) - lum(b));
-        cands = cands.slice(0, 12).concat(cands.slice(-12));
+    out.push(cur);
+    return out.map((x) => x.trim()).filter(Boolean);
+  };
+  const colorOf = (tok) => {   // null when `tok` is not a colour (canvas keeps the previous value for an invalid one)
+    cx.fillStyle = "#010203"; cx.fillStyle = tok; const a = cx.fillStyle;
+    cx.fillStyle = "#040506"; cx.fillStyle = tok; const b = cx.fillStyle;
+    return a === b ? rgba(tok) : null;
+  };
+  const mix = (a, b, t) => {   // premultiplied-alpha interpolation, as CSS gradients do
+    const al = a[3] + (b[3] - a[3]) * t;
+    if (al <= 0) return [0, 0, 0, 0];
+    return [0, 1, 2].map((i) => (a[i] * a[3] + (b[i] * b[3] - a[i] * a[3]) * t) / al).concat([al]);
+  };
+  const isHard = (p, q) => {   // two stops at one place (or the second one before the first, which clamps to it)
+    const pm = p && /^(-?[\d.]+)([a-z%]*)$/.exec(p), qm = q && /^(-?[\d.]+)([a-z%]*)$/.exec(q);
+    return !!(pm && qm && pm[2] === qm[2] && parseFloat(qm[1]) <= parseFloat(pm[1]));
+  };
+  const layerCache = (window.__cgLayerCache = window.__cgLayerCache || new Map());
+  const parseLayer = (text) => {
+    if (layerCache.has(text)) return layerCache.get(text);
+    let out;
+    const m = /^(?:repeating-)?(?:linear|radial|conic)-gradient\(([\s\S]*)\)$/.exec(text);
+    if (!m) out = { kind: "image" };      // url(...), image-set(...), element(...): pixels, not colours
+    else {
+      const stops = [];
+      let bad = false;
+      splitTop(m[1], ",").forEach((item, i) => {
+        const toks = splitTop(item, " ");
+        const c = colorOf(toks[0]);
+        if (c) {
+          const pos = toks.slice(1);
+          if (!pos.length) stops.push({ c, pos: null });
+          else pos.forEach((p) => stops.push({ c, pos: p }));
+        } else if (i === 0 && !stops.length) { /* the direction / shape / "in oklab" / "from 45deg at ..." prelude: paints nothing */ }
+        else if (toks.length === 1 && /^(?:[-+]?[\d.]+[a-z%]*|calc\(.*\))$/.test(toks[0])) { /* a colour hint: moves a midpoint, adds no colour */ }
+        else bad = true;
+      });
+      if (bad || !stops.length) out = { kind: "bad" };
+      else {
+        const samples = [];
+        stops.forEach((st, i) => {
+          samples.push(st.c);
+          const nx = stops[i + 1];
+          if (nx && !isHard(st.pos, nx.pos)) for (let k = 1; k < GRAD_STEPS; k++) samples.push(mix(st.c, nx.c, k / GRAD_STEPS));
+        });
+        out = { kind: "gradient", samples };
       }
     }
-    return { cands, texture, unparsed };
+    layerCache.set(text, out);
+    return out;
   };
+  const prune = (list) => {
+    const seen = new Map();
+    for (const c of list) seen.set(Math.round(c[0]) + "," + Math.round(c[1]) + "," + Math.round(c[2]), c);
+    let out = [...seen.values()];
+    if (out.length > MAX_CANDIDATES) {
+      out.sort((x, y) => lum(x) - lum(y));
+      out = Array.from({ length: MAX_CANDIDATES }, (_, i) => out[Math.round(i * (out.length - 1) / (MAX_CANDIDATES - 1))]);
+    }
+    return out;
+  };
+  const memo = new Map();   // element -> backdrop state; one theme's computed styles only, so it lives for one measurement
+  const backdropOf = (n) => {
+    if (memo.has(n)) return memo.get(n);
+    const cs = getComputedStyle(n);
+    const col = rgba(cs.backgroundColor);
+    const under = (col[3] >= 1 || !n.parentElement) ? { cands: [[255, 255, 255, 1]], texture: false, unparsed: false } : backdropOf(n.parentElement);
+    let cands = under.cands, texture = under.texture, unparsed = under.unparsed;
+    if (col[3] > 0) cands = cands.map((c) => over(col, c));
+    const layers = cs.backgroundImage && cs.backgroundImage !== "none" ? splitTop(cs.backgroundImage, ",") : [];
+    for (let i = layers.length - 1; i >= 0; i--) {
+      const L = parseLayer(layers[i]);
+      if (L.kind === "image") { texture = true; continue; }
+      if (L.kind === "bad") { unparsed = true; continue; }
+      const next = [];
+      for (const c of cands) for (const smp of L.samples) next.push(over(smp, c));
+      cands = prune(next);
+    }
+    const st = { cands, texture, unparsed };
+    memo.set(n, st);
+    return st;
+  };
+  const backdrops = (el) => backdropOf(el);
 
   const misses = [];
   const kinds = {};
@@ -342,7 +451,8 @@ const MEASURE = async ({ id, withCanary, RESOLVABLE, host }) => {
     const cs = getComputedStyle(el);
     let fg = rgba(cs.color);
     fg[3] = fg[3] * opacityOf(el);
-    if (fg[3] === 0) { unmeasure("noText", n); continue; }
+    // Fully transparent text and text the same colour as its backdrop are ratio 1:1, a miss: a 1:1 ratio is never read as
+    // "meant to be hidden". Text that really is meant to be invisible goes through the ALLOWLIST, by theme + selector + reason.
     const bd = backdrops(el);
     if (bd.unparsed) { unmeasure(key, n); continue; }
     let worst = null;
@@ -367,8 +477,9 @@ const MEASURE = async ({ id, withCanary, RESOLVABLE, host }) => {
 };
 
 const CANARY_EXPECT = {
-  caught: ["cg-canary-top-solid", "cg-canary-top-gradient", "cg-canary-top-image", "cg-canary-top-small-bad", "cg-canary-top-large-bad", "cg-canary-bottom-solid", "cg-canary-bottom-gradient"],
-  clean: ["cg-canary-top-large-ok", "cg-canary-top-honest", "cg-canary-top-honest-gradient"],
+  caught: ["cg-canary-top-solid", "cg-canary-top-gradient", "cg-canary-top-image", "cg-canary-top-small-bad", "cg-canary-top-large-bad", "cg-canary-bottom-solid", "cg-canary-bottom-gradient",
+    "cg-canary-top-equal", "cg-canary-top-gradient-mid", "cg-canary-top-radial-mid", "cg-canary-top-conic-mid", "cg-canary-top-repeating-mid", "cg-canary-top-alpha-mid", "cg-canary-top-layers-mid"],
+  clean: ["cg-canary-top-large-ok", "cg-canary-top-honest", "cg-canary-top-honest-gradient", "cg-canary-top-gradient-outside", "cg-canary-top-hard-ok", "cg-canary-top-layers-ok"],
 };
 
 /* =====================================================================
