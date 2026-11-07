@@ -23,9 +23,15 @@
  *   - the PDF is saved on the first open, so it opens again with no signal;
  *   - the app's own address still opens instantly and offline, including the
  *     "?source=pwa" form an installed icon uses (the honest path must not break);
- *   - any OTHER page that is not saved gets a plain sentence, not a nested app.
+ *   - any OTHER page that is not saved gets a plain sentence, not a nested app;
+ *   - a ranged request (a PDF viewer or a video asking for a slice) is answered 206 with just
+ *     the slice, and that slice is NOT saved as if it were the whole file;
+ *   - the worker's save rule, run directly against stand-in answers: only a whole, plain 200
+ *     is kept (a browser's own cache refuses a 206 anyway, so the real-worker case above cannot
+ *     tell the rule is there - an answer such as 203 or 204, which a browser WOULD keep, can).
  */
-import { mkdtempSync, cpSync, writeFileSync, mkdirSync, rmSync, readdirSync } from "node:fs";
+import { mkdtempSync, cpSync, writeFileSync, mkdirSync, rmSync, readdirSync, readFileSync } from "node:fs";
+import vm from "node:vm";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -45,6 +51,9 @@ const PDF_PATH = "docs/ADP_6-0_Mission_Command.pdf"; // DOCS[0], the file the Li
 const MINI_PDF = "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n" +
   "3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n";
 writeFileSync(path.join(overlay, PDF_PATH), MINI_PDF);
+// A larger file nobody opens, only asked for in slices (500 bytes: slice 0-99 is a real partial answer).
+const RANGE_PATH = "docs/RANGE_TEST.pdf";
+writeFileSync(path.join(overlay, RANGE_PATH), MINI_PDF + "%" + "x".repeat(500 - MINI_PDF.length - 1));
 
 try {
   const boot = await bootApp({ dir: overlay, viewport: { width: 390, height: 844 } });
@@ -102,6 +111,48 @@ try {
     return !!r && r.headers.get("content-type") === "application/pdf";
   });
   check(saved, "the PDF itself (application/pdf) was saved on the first open", "the PDF was not saved for offline use");
+
+  // ---- 3b. a slice is not the file: a ranged request is answered 206 and is never saved ----
+  const ranged = await page.evaluate(async (u) => {
+    const r = await fetch(u, { headers: { Range: "bytes=0-99" } });
+    const b = await r.arrayBuffer();
+    return { status: r.status, len: b.byteLength, range: r.headers.get("content-range") };
+  }, RANGE_PATH);
+  check(ranged.status === 206 && ranged.len === 100 && /^bytes 0-99\/500$/.test(ranged.range || ""), "a ranged request through the worker is answered 206 with exactly the 100 bytes asked for", () => JSON.stringify(ranged));
+  const rangedSaved = await page.evaluate(async (u) => !!(await caches.match(u, { ignoreSearch: true })), RANGE_PATH);
+  check(!rangedSaved, "...and that partial answer was NOT saved (a half file must never stand in for the real one offline)", "the 206 slice was saved in the worker's cache");
+  const whole = await page.evaluate(async (u) => { const r = await fetch(u); const b = await r.arrayBuffer(); return { status: r.status, len: b.byteLength }; }, RANGE_PATH);
+  const wholeSaved = await untilAsync(page, async (u) => !!(await caches.match(u, { ignoreSearch: true })), RANGE_PATH);
+  check(whole.status === 200 && whole.len === 500 && wholeSaved, "honest path: the same file fetched whole is answered 200 and IS saved", () => JSON.stringify({ whole, wholeSaved }));
+
+  // ---- 3c. the save rule itself, run directly. The browser's own cache refuses a 206 whatever the worker does, so
+  // the case above holds with the rule removed; a success that is not a whole 200 (203, 204) or an answer that is
+  // not from this origin (type "cors"/"opaque") is the case only the rule stops. ----
+  {
+    const kept = new Map(), handlers = {};
+    let next = null;
+    const sandbox = {
+      self: { addEventListener: (t, f) => { handlers[t] = f; }, location: new URL("http://app.test/sw.js"), clients: { claim: async () => {} }, skipWaiting() {} },
+      caches: { match: async (r) => kept.get(typeof r === "string" ? r : r.url), open: async () => ({ put: async (r, res) => { kept.set(r.url, res); }, addAll: async () => {} }), keys: async () => [], delete: async () => true },
+      fetch: async () => next, URL, JSON, Request, Response, Promise, console,
+    };
+    vm.runInNewContext(readFileSync(path.join(overlay, "sw.js"), "utf8"), sandbox, { filename: "sw.js" });
+    const answer = (status, type = "basic") => ({ status, type, ok: status >= 200 && status < 300, clone() { return answer(status, type); } });
+    const ask = async (label, res) => {
+      kept.clear(); next = res;
+      const req = new Request("http://app.test/docs/" + label + ".pdf");
+      let given = null;
+      handlers.fetch({ request: req, respondWith: (p) => { given = p; } });
+      const out = await given;
+      return { passedThrough: out === res, saved: kept.has(req.url) };
+    };
+    const whole = await ask("whole", answer(200));
+    check(whole.passedThrough && whole.saved, "the worker's rule: a whole, plain 200 is handed on and saved", () => JSON.stringify(whole));
+    for (const [label, res] of [["a 206 slice", answer(206)], ["a 203", answer(203)], ["a 204 with no content", answer(204)], ["a 200 from another origin (cors)", answer(200, "cors")], ["an opaque answer", answer(0, "opaque")]]) {
+      const r = await ask(label.replace(/\W+/g, "-"), res);
+      check(r.passedThrough && !r.saved, "the worker's rule: " + label + " is handed on to the page but NOT saved", () => JSON.stringify(r));
+    }
+  }
 
   // ---- 4. the honest path: the app's own address still opens, offline, in every form ----
   await context.setOffline(true);

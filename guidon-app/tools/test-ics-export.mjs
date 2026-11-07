@@ -19,6 +19,11 @@
  * ends, stable UIDs, and the alarm. The privacy promise is checked on the bytes:
  * nothing the Soldier typed (label, note), no roster name, no profile name, and
  * no reminder id is anywhere in the file - only the kind of date and the date.
+ *
+ * Reminders made from the leader roster are NOT in the file (the same test the default
+ * backup uses: the "leader" stamp, or for older unstamped ones the exact label a roster
+ * button wrote), and the copy says so. On Android a backed-out share sheet leaves the
+ * file written but not shared, and the screen says that instead of "ready".
  */
 import { readFileSync } from "node:fs";
 import { bootApp, check, finish, waitForRoute, clickWhenStable, until, expectNoConsoleNoise, PERSONAL_PROFILE } from "./testkit.mjs";
@@ -195,7 +200,17 @@ check(unescapeText(edge.esc) === "a,b;c\\d\ne" && !/(^|[^\\])[,;]/.test(edge.esc
 await page.evaluate(async (list) => {
   for (const r of list) await window.G.reminders.add({ kind: r.kind, label: r.label, date: r.date, note: r.note || "" });
 }, FIXTURE.filter((r) => /^\d{4}-\d{2}-\d{2}$/.test(r.date)));
+// Reminders the leader roster made: one stamped, one older and unstamped whose label still matches a roster entry.
+// Neither may reach the file, so the "exactly N events" check on the saved file below proves they were left out.
+const ROSTER_DAYS = [day(Y, 3, 3), day(Y, 3, 4)];
+await page.evaluate(async (days) => {
+  await window.G.db.put("kv", { k: "guidon:leader:roster:v1", v: [{ rank: "SGT", name: "XROSTER" }] });
+  await window.G.reminders.add({ kind: "counseling", label: "Counsel SGT XROSTER", date: days[0], source: "leader" });
+  await window.G.reminders.add({ kind: "acft", label: "Schedule AFT for SGT XROSTER", date: days[1] });   // no stamp: an older reminder
+}, ROSTER_DAYS);
 await waitForRoute(page, "#/profile", { ready: ".rem-calendar button" });
+const calCopy = await page.evaluate(() => (document.querySelector(".rem-calendar p.hint") || {}).textContent || "");
+check(/Reminders you made from the leader roster are not included\./.test(calCopy), "the calendar section says reminders made from the leader roster are not included", () => calCopy);
 const hint = await page.evaluate(() => (document.querySelector(".rem-h").nextElementSibling || {}).textContent || "");
 check(/Add to my calendar/.test(hint) && !/Notifications in Settings/.test(hint),
   "on a browser the Reminders hint names the calendar button and does not point at a Notifications switch", () => hint);
@@ -211,10 +226,22 @@ let shown;
 try { shown = parseIcs(onDisk); } catch (e) { shown = null; check(false, "", "the saved file does not parse: " + e.message); }
 const shownEvents = shown ? shown.root.children[0].children.filter((c) => c.name === "VEVENT") : [];
 check(shownEvents.length === N && shown.longest <= 75, "the saved file parses and holds the " + N + " upcoming dates", () => "events: " + shownEvents.length);
-const leakedUi = SECRETS.concat(["Promo board", "Range day", "third squad", "Unknown kind", "Prototype kind", "Strength session"]).filter((s) => onDisk.includes(s));
+const leakedUi = SECRETS.concat(["Promo board", "Range day", "third squad", "Unknown kind", "Prototype kind", "Strength session", "XROSTER"]).filter((s) => onDisk.includes(s));
+const rosterDatesIn = ROSTER_DAYS.filter((d) => onDisk.includes("DTSTART;VALUE=DATE:" + compact(d)));
+check(rosterDatesIn.length === 0, "neither roster reminder (the stamped one, nor the older one recognised by its label) is in the saved file", () => "roster dates found: " + JSON.stringify(rosterDatesIn));
 check(leakedUi.length === 0, "the file saved from the screen carries none of the typed wording, names or ids either", () => "found: " + JSON.stringify(leakedUi));
 const toast = await until(page, (n) => new RegExp(n + " dates ready").test((document.getElementById("toast") || {}).textContent || ""), N);
 check(toast, "the screen says how many dates are ready and what to do with the file");
+check(await until(page, () => /2 reminders made from the roster were left out\./.test((document.getElementById("toast") || {}).textContent || "")), "...and says that the 2 reminders made from the roster were left out", () => (document.getElementById("toast") || {}).textContent);
+
+// Only roster reminders left: nothing of the Soldier's own to add, and it says why.
+await page.evaluate(async () => { for (const r of await window.G.reminders.load()) if (r.source !== "leader" && !/XROSTER/.test(r.label)) await window.G.reminders.remove(r.id); });
+await waitForRoute(page, "#/profile", { fresh: true, ready: ".rem-calendar button" });
+let gotRosterOnly = false;
+page.once("download", () => { gotRosterOnly = true; });
+await clickWhenStable(page, page.locator(".rem-calendar button").first());
+const rosterOnly = await until(page, () => /the ones made from the roster are not included/.test((document.getElementById("toast") || {}).textContent || ""));
+check(rosterOnly && !gotRosterOnly, "with only roster reminders left there is no file, and the sentence says the roster's are not included");
 
 // Nothing to export: no file, and a plain sentence.
 await page.evaluate(async () => { for (const r of await window.G.reminders.load()) await window.G.reminders.remove(r.id); });
@@ -224,6 +251,37 @@ page.once("download", () => { got = true; });
 await clickWhenStable(page, page.locator(".rem-calendar button").first());
 const none = await until(page, () => /No upcoming reminders to add yet/.test((document.getElementById("toast") || {}).textContent || ""));
 check(none && !got, "with no upcoming reminders there is no file, only a plain sentence");
+
+/* ------------------------------------------------------------------ the Android share sheet */
+// A Soldier who backs out of the share sheet has a file in the app's private cache and nothing they can open:
+// the screen must not say "ready". The two plugins are stubbed (this proves the app's handling, not a device).
+const NATIVE_SHARE = (outcome) => {
+  window.__written = [];
+  window.__shared = 0;
+  const ok = async () => ({ display: "granted", notifications: [] });
+  window.Capacitor = { isNativePlatform: () => true, getPlatform: () => "android", Plugins: {
+    LocalNotifications: { checkPermissions: ok, requestPermissions: ok, getPending: ok, schedule: ok, cancel: ok },
+    Filesystem: { writeFile: async (o) => { window.__written.push({ path: o.path, directory: o.directory }); return { uri: "file:///cache/" + o.path }; } },
+    Share: { share: async () => { window.__shared++; if (outcome === "cancel") throw new Error("Share canceled"); return {}; } },
+  } };
+};
+for (const [label, outcome, want, refuse] of [
+  ["the Soldier backs out of the share sheet", "cancel", /Calendar file made, but not shared\. Tap the button again to choose where it goes\./, /ready — open the file/],
+  ["the Soldier picks where it goes", "ok", /1 date ready — open the file in your calendar app\./, /not shared/],
+]) {
+  const s = await boot.openSession({ viewport: { width: 412, height: 915 }, noise,
+    beforeLoad: async ({ page: p }) => { p.on("request", (r) => requests.push(r.url())); await p.addInitScript(NATIVE_SHARE, outcome); } });
+  origins.add(new URL(s.url).origin);
+  await waitForRoute(s.page, "#/profile", { ready: ".rem-calendar button" });
+  await s.page.evaluate(async (d) => { await window.G.reminders.add({ kind: "board", label: "Board day", date: d }); }, day(Y, 9, 9));
+  await clickWhenStable(s.page, s.page.locator(".rem-calendar button").first());
+  const said = await until(s.page, () => /calendar file made|date ready|Couldn.t make/i.test((document.getElementById("toast") || {}).textContent || ""));
+  const text = await s.page.evaluate(() => (document.getElementById("toast") || {}).textContent || "");
+  const st = await s.page.evaluate(() => ({ written: window.__written, shared: window.__shared }));
+  check(said && want.test(text) && !refuse.test(text), "on Android, when " + label + ", the screen says: \"" + text + "\"", () => "toast: " + JSON.stringify(text));
+  check(st.written.length === 1 && st.written[0].path === "guidon-dates.ics" && st.written[0].directory === "CACHE" && st.shared === 1, "...after the file was written to the app's cache and handed to the share sheet once", () => JSON.stringify(st));
+  await s.context.close();
+}
 
 /* ------------------------------------------------------------------ the copy, on every kind of device */
 const IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1";
@@ -272,5 +330,6 @@ for (const [label, opts] of [["a desktop browser", { }], ["an iPhone", { context
 /* ------------------------------------------------------------------ nothing leaves the device */
 const away = requests.filter((u) => !([...origins].some((o) => u.startsWith(o + "/")) || /^(data|blob|about):/.test(u)));
 check(away.length === 0, "making and saving the file sent nothing off this device", () => away.slice(0, 5).join(" | "));
-expectNoConsoleNoise(noise, { ignore: [/Failed to load resource/] });
+// (the backed-out share sheet is logged on purpose by util._nativeSave; the stub above makes it happen)
+expectNoConsoleNoise(noise, { ignore: [/Failed to load resource/, /native share failed\/cancelled \(file was already saved\): Share canceled/] });
 await finish("ICS EXPORT");

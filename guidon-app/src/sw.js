@@ -161,7 +161,7 @@ self.addEventListener("fetch", (event) => {
             "<!doctype html><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" +
             "<title>Not saved yet</title><body style=\"font:16px/1.5 system-ui,sans-serif;margin:24px\">" +
             "<h1 style=\"font-size:20px\">Not saved on this device yet</h1>" +
-            "<p>This document is not saved on this device yet. Connect to the internet once to open it, and it will open without a signal after that.</p>" +
+            "<p>This document is not saved on this device yet. Connect to the internet once to open it, and it will open without a signal until GUIDON next updates.</p>" +
             "<p>Then go back to GUIDON to keep working.</p></body>",
             { status: 503, headers: { "content-type": "text/html; charset=utf-8" } }
           );

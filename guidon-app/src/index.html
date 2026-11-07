@@ -138,6 +138,10 @@ r.classList.toggle("large-targets",!!a.largeTargets);
   --green:     #4ade80;
   --red:       #ff5d5d;
   --violet:    #a78bfa;
+  /* The "YOU ARE HERE" tag on Career: a solid accent block with its own ink. --green with --btn-ink (the pair
+     the solid chips already use) is at least 5.27:1 in all 30 themes, which tools/test-contrast.mjs now measures. */
+  --here-tag-bg:  var(--green);
+  --here-tag-ink: var(--btn-ink);
 
   --text:      #e6edf3;
   --text-dim:  #9fb0bd;
@@ -300,7 +304,10 @@ a:hover { text-decoration: underline; }
   border: 1px solid var(--line-2); color: var(--text-dim);
   border-radius: 999px; padding: 2px 8px; margin: 2px 4px 2px 0; }
 .tag.tier { border-color: var(--cyan); color: color-mix(in srgb, var(--cyan) 40%, var(--text)); }
-.tag.you-are-here { background: var(--green); color: var(--btn-ink, #1a1206); border-color: var(--green); font-weight: 700; }
+/* html.light .tag (further down) is more specific than .tag.you-are-here, so in every light theme it replaced the
+   solid block with the page color and left the pale ink on it: white on cream, 1.32:1 in the default theme.
+   The second selector is more specific than that rule, so the block holds in light and dark alike. */
+.tag.you-are-here, html.light .tag.you-are-here { background: var(--here-tag-bg); color: var(--here-tag-ink); border-color: var(--here-tag-bg); font-weight: 700; }
 .tag.leads { border-color: var(--amber); color: var(--ink-amber); }
 .tag.develops { border-color: var(--green); color: var(--green); }
 .tag.achieves { border-color: var(--violet); color: var(--violet); }
@@ -32711,15 +32718,18 @@ window.G = window.G || {};
   // The file for the reminders that are today or later, or { events: 0 }.
   // An all-day event ends the day AFTER it starts: DTEND is exclusive, and an
   // end on the same day is a zero-length event some calendars drop.
-  function buildIcs(list, now) {
+  // `skip(r)` leaves a reminder out (the button leaves out the ones made from the
+  // leader roster, see below); `skipped` counts the upcoming ones it left out.
+  function buildIcs(list, now, skip) {
     now = now || new Date();
     var stamp = now.toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
     var lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//GUIDON//Key dates//EN", "CALSCALE:GREGORIAN"];
-    var events = 0;
+    var events = 0, skipped = 0;
     (Array.isArray(list) ? list : []).forEach(function (r) {
       if (!r || typeof r !== "object" || isExpired(r)) return;
       var start = parseDate(r.date), days = daysUntil(r.date);
       if (!start || days === null || days < 0) return;
+      if (typeof skip === "function" && skip(r)) { skipped++; return; }
       var next = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
       var title = icsEscape(icsTitle(r.kind));
       lines.push("BEGIN:VEVENT", "UID:" + icsUid(r), "DTSTAMP:" + stamp,
@@ -32733,7 +32743,18 @@ window.G = window.G || {};
       events++;
     });
     lines.push("END:VCALENDAR");
-    return { events: events, text: lines.map(icsFold).join("\r\n") + "\r\n" };
+    return { events: events, skipped: skipped, text: lines.map(icsFold).join("\r\n") + "\r\n" };
+  }
+  // The reminders the squad roster made ("Counsel SSG Smith") are about other people.
+  // Their titles here would be generic, but the dates themselves are the roster's data
+  // under another key, and a default backup already leaves them out - so the calendar
+  // file does too. Same test the backup uses (the "leader" stamp, or for older
+  // unstamped ones the exact label a roster button wrote), so the two can never disagree.
+  async function rosterReminderTest() {
+    var row = null;
+    try { row = await db.get("kv", "guidon:leader:roster:v1"); } catch (e) { row = null; }
+    var who = G.backup && G.backup.rosterLabels ? G.backup.rosterLabels(row ? [row] : []) : [];
+    return function (r) { return !!(G.backup && G.backup.isLeaderReminder && G.backup.isLeaderReminder(r, who)); };
   }
 
   // Full editor — lives in the Profile view.
@@ -32889,15 +32910,27 @@ window.G = window.G || {};
     calBox.appendChild(el("p.hint", { text:
       "Makes a calendar file of your upcoming reminders to open in your phone or computer's calendar app, so it can remind you even when GUIDON is closed. " +
       "Each date is listed by type only, like “Promotion board” — never the label or note you typed, and never a name. " +
+      "Reminders you made from the leader roster are not included. " +
       "It is made on this device and goes nowhere until you open it in a calendar. Some calendar apps copy new entries to your own online account." }));
     var calBtn = el("button.btn.sm", { type: "button", gi: "download", giSize: 14, text: "Add to my calendar (.ics)" });
     calBtn.addEventListener("click", async function () {
-      var file = buildIcs(await load());
-      if (!file.events) { try { util.toast && util.toast("No upcoming reminders to add yet. Add a reminder with a date first."); } catch (e) {} return; }
+      var file = buildIcs(await load(), null, await rosterReminderTest());
+      var leftOut = file.skipped
+        ? " " + file.skipped + (file.skipped === 1 ? " reminder" : " reminders") + " made from the roster " + (file.skipped === 1 ? "was" : "were") + " left out."
+        : "";
+      if (!file.events) {
+        try { util.toast && util.toast(file.skipped
+          ? "No upcoming reminders to add: the ones made from the roster are not included. Add a reminder of your own with a date first."
+          : "No upcoming reminders to add yet. Add a reminder with a date first."); } catch (e) {}
+        return;
+      }
       var saved = await util.download("guidon-dates.ics", file.text, "text/calendar");
       try {
+        // "cancelled" (Android): the file was written but the share sheet was backed out of, so
+        // there is no file the Soldier can reach yet - it is not "ready".
         util.toast && util.toast(saved === false ? "Couldn't make the calendar file. Try again."
-          : file.events + (file.events === 1 ? " date" : " dates") + " ready — open the file in your calendar app.");
+          : saved === "cancelled" ? "Calendar file made, but not shared. Tap the button again to choose where it goes."
+          : file.events + (file.events === 1 ? " date" : " dates") + " ready — open the file in your calendar app." + leftOut, saved === false ? undefined : 5000);
       } catch (e) {}
     });
     calBox.appendChild(calBtn);

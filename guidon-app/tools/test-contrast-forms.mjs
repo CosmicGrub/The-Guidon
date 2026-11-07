@@ -187,6 +187,10 @@ check(catalog.length > 1, `fixture: the catalog lists ${catalog.length} forms`, 
 const missesByTheme = Object.fromEntries(THEMES.map((t) => [t.id, new Map()]));
 const evaluated = Object.fromEntries(THEMES.map((t) => [t.id, 0]));
 let states = 0;
+// The fewest pieces of text any ONE state gave any ONE theme. A floor on the total (one per state) let a sweep that
+// only saw each state's first screenful pass: judged per state, a window that is too short fails at once.
+const MIN_TEXTS_PER_STATE = 10;
+const thinnest = Object.fromEntries(THEMES.map((t) => [t.id, { n: Infinity, at: "" }]));
 let tallest = 0;
 let formsOpened = 0;
 const tabsSeen = new Set();
@@ -206,6 +210,7 @@ async function measureState(f, label) {
   for (const t of THEMES) {
     tallest = Math.max(tallest, seen[t.id].bottom);
     evaluated[t.id] += seen[t.id].evaluated;
+    if (seen[t.id].evaluated < thinnest[t.id].n) thinnest[t.id] = { n: seen[t.id].evaluated, at: f.id + " / " + label };
     for (const m of seen[t.id].misses) {
       const norm = m.sel.replace(/:nth-child\(\d+\)/g, "").replace(/\[data-fid="[^"]*"\]/g, "[data-fid]");
       const key = norm + " | " + m.via;
@@ -250,6 +255,9 @@ check(tallest > 0 && tallest <= VIEWPORT_H, `every state fits inside the ${VIEWP
 check(states >= catalog.length * 4, `measured ${states} form-and-tab states (at least 4 per form)`, `only ${states} states measured for ${catalog.length} forms`);
 for (const t of THEMES) {
   check(evaluated[t.id] >= states, `[${t.id}] evaluated ${evaluated[t.id]} pieces of text across ${states} states (every state had text to judge)`, `[${t.id}] only ${evaluated[t.id]} pieces of text evaluated over ${states} states - the sweep is not looking at anything`);
+}
+for (const t of THEMES) {
+  check(thinnest[t.id].n >= MIN_TEXTS_PER_STATE, `[${t.id}] every state gave at least ${MIN_TEXTS_PER_STATE} pieces of text to judge (the thinnest: ${thinnest[t.id].n}, at ${thinnest[t.id].at})`, `[${t.id}] a state gave only ${thinnest[t.id].n} pieces of text (${thinnest[t.id].at}) - the sweep is not looking at the whole state`);
 }
 for (const t of THEMES) {
   const rows = [...missesByTheme[t.id]].sort((a, b) => b[1].n - a[1].n);
