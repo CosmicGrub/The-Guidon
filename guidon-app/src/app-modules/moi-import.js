@@ -340,11 +340,21 @@ window.G = window.G || {};
   // suicide-prevention PORTION of AR 600-63, which still stands for
   // everything else) are deliberately excluded too, for the same
   // never-guess reason matchCitation itself refuses fuzzy matching.
+  //
+  // THIS IS THE ONE TABLE of "that publication was replaced by this one":
+  // tools/lint-pub-supersession.mjs reads it straight out of this file (there
+  // is no second list) and, for every row whose replacement is in the bundled
+  // Library AND whose own cover page says it supersedes the old designator,
+  // fails the build if any card, doctrine entry, scenario or course still
+  // teaches the old designator as current. A row the Library cannot prove is
+  // still honoured here (MOI Import's "Superseded citation" badge) but is not
+  // enforced there - see that file's header for why.
   const MOI_CITATION_ALIASES = {
     "FM 3-22.9": "TC 3-22.9",     // Rifle and Carbine marksmanship
     "FM 3-23.35": "TC 3-23.35",   // Pistol marksmanship
     "AR 600-8-1": "AR 638-8",     // Casualty Program - AR 600-8-1 fully rescinded, superseded 2019
     "FM 6-22": "ADP 6-22",        // Developing Leaders -> Army Leadership and the Profession (2019 merge)
+    "TC 4-02.1": "ATP 4-02.11",   // First Aid -> Casualty Response, TCCC and First Aid (23 Mar 2026; its cover: "supersedes TC 4-02.1, dated 21 January 2016")
   };
 
   // 3. buildCitationRegistry(): scans the FULL unfiltered seed via

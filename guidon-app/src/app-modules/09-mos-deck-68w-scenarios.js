@@ -65,7 +65,7 @@
     difficulty: "Intermediate",
     doctrine: [
       { pub: "ATP 4-02.11", para: "Tactical Field Care - provider-tier scope of practice", edition: "2026-03", quoteKind: "paraphrase" },
-      { pub: "TC 4-02.1", para: "Combat Lifesaver Program", edition: "2020", quoteKind: "paraphrase" },
+      { pub: "ATP 4-02.11", para: "Combat Lifesaver role and training (paras 1-11, 3-14 to 3-18)", edition: "2026-03", quoteKind: "paraphrase" },
     ],
     defaultMode: "cyoa",
     renderModes: ["text", "course", "cyoa"],

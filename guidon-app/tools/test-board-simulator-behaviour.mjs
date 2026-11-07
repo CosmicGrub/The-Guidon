@@ -48,6 +48,12 @@ async function boot() {
   p.on("request", (r) => { const u = r.url(); if (!u.startsWith(url) && !/^(data|blob|about):/.test(u)) offsite.push(u); });
   await p.goto(url, { waitUntil: "load" });
   await dismissOnboarding(p);
+  // Audit 2026-09 item 7: scenario choices now come up in a random order, fixed
+  // once per run. THIS suite answers "the first choice each time" (playToOutcome)
+  // and reads the result copy that path earns, so it pins the authored order.
+  // The shuffle itself is proven in test-scenario-choice-order.mjs.
+  await p.waitForFunction(() => !!(window.G && window.G.engine && window.G.engine.pinChoiceOrder));
+  await p.evaluate(() => window.G.engine.pinChoiceOrder(true));
   // Record every toast the app really shows (no stubbing: watch the DOM node
   // util.toast writes into).
   await p.evaluate(() => {

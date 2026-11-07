@@ -98,7 +98,7 @@
     { id: "68w-scope-02", category: C.SCOPE, difficulty: "intermediate",
       q: "How does a Combat Medic's (68W) scope of practice differ from a Combat Lifesaver's?",
       a: "A Combat Lifesaver (TCCC Tier 2) is a non-medical MOS Soldier who receives additional command-directed training in select lifesaving interventions - hemorrhage control and basic airway adjuncts - to bridge the gap between self/buddy aid and medic response. A 68W Combat Medic (Tier 3) is a credentialed, NREMT-certified TCCC provider, trained and authorized under Army training standards and medical standing orders for the full range of point-of-injury trauma assessment and treatment - not limited to the CLS task list.",
-      source: "ATP 4-02.11; TC 4-02.1 / ATP 4-02.84 (Combat Lifesaver Program)", concept: "68W vs. CLS scope of practice" },
+      source: "ATP 4-02.11; ATP 4-02.84 (Combat Lifesaver Program)", concept: "68W vs. CLS scope of practice" },
     { id: "68w-scope-03", category: C.SCOPE, difficulty: "basic",
       q: "Who clinically supervises a 68W's outpatient and inpatient care duties?",
       a: "A physician, physician assistant, nurse, or health care NCO, per the skill-level duty descriptions in DA PAM 611-21 - a 68W does not provide unsupervised outpatient or inpatient care independent of that clinical chain.",
