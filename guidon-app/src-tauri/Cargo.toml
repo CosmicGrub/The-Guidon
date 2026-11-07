@@ -4,7 +4,13 @@ version = "1.17.1"
 description = "GUIDON - Army Leader Development Trainer"
 authors = ["GUIDON"]
 edition = "2021"
-rust-version = "1.77"
+# 1.90 = what tauri 2.12 / tauri-plugin-window-state 2.5 themselves declare
+# (they were 1.77.2 on tauri 2.11, the 1.77 this field used to carry). A
+# compiler older than this fails inside one of those crates; this field makes
+# it fail here, with the real reason. Windows 7/8 were already below the app's
+# own WebView2/Chromium 111 engine floor; wry 0.57 (webview2-com 0.39) drops
+# them from the shell too.
+rust-version = "1.90"
 # src/bin/fuzz_validate.rs (the differential fuzzer, room-tls-and-discovery-
 # pitch.md section 3) is a second [[bin]] target in this package now.
 # Without this, `cargo run` picks ambiguously and - measured this session -
@@ -117,24 +123,27 @@ x509-parser = "0.18"
 # ships a Windows build today (see the cargo-audit notes below).
 [target.'cfg(windows)'.dependencies]
 # R3: ICoreWebView2Controller::add_AcceleratorKeyPressed. Pinned to the
-# SAME 0.38.x line that tauri-runtime-wry/wry themselves depend on (see
-# `cargo tree -d` below), not just "whatever resolves" - a second,
-# newer webview2-com (0.39.x previously) resolves to its OWN windows-core,
-# so the ICoreWebView2Controller wry hands back through
+# SAME 0.39.x line that tauri-runtime-wry/wry themselves depend on (see
+# `cargo tree -d`), not just "whatever resolves" - a
+# second webview2-com (a different minor from wry's) resolves to its OWN
+# windows-core, so the ICoreWebView2Controller wry hands back through
 # `webview.controller()` and the ICoreWebView2AcceleratorKeyPressedEventHandler
 # built here are two DIFFERENT, incompatible `windows_core::Interface` impls
 # even though both crates print the same Rust type name - `add_
 # AcceleratorKeyPressed`'s `Param<...>` bound then fails with E0277 ("there
 # are multiple different versions of crate `windows_core` in the dependency
 # graph"), the exact CI failure this comment now documents. Matching wry's
-# own version is what makes it ONE crate, not two.
-webview2-com = "=0.38.2"
+# own version is what makes it ONE crate, not two. This pin moves ONLY in
+# lockstep with wry: 0.38.2 while wry was 0.55.x, 0.39.1 since wry 0.57.0
+# (tauri 2.12.x, the 2026-10-16 dependency refresh) - after any tauri/wry
+# bump, `cargo tree -d` must show one webview2-com and one windows-core.
+webview2-com = "=0.39.1"
 # The plain `windows::core::Result`/`BOOL` webview2-com's own closures need
 # - NOT the full `windows` crate (which webview2-com does not re-export):
 # `windows::core` is itself a re-export of `windows-core`. Pinned to the
-# same 0.61.x line webview2-com 0.38.2 itself resolves to, for the same
+# same 0.62.x line webview2-com 0.39.1 itself resolves to, for the same
 # single-version reason as above.
-windows-core = "0.61"
+windows-core = "0.62"
 # R-ROOM: GetAdaptersAddresses (iphlpapi), the same API `ipconfig` is built
 # on - real interface enumeration for the non-loopback IPv4 listing.
 # windows-sys 0.60 was already resolved in Cargo.lock (tao's own Win32
@@ -164,6 +173,12 @@ tauri = { version = "2", features = ["test"] }
 # resolve into the dependency tree via gtk - withdrawal of the advisory
 # doesn't remove the crates, just the warning), but only glib and
 # proc-macro-error still actually warn as of this count.)
+# Re-run 2026-10-16, dependency refresh: urlpattern 0.6.0 (pulled in by
+# tauri-utils 2.10.1) no longer depends on the unic-* crates, so group 2
+# below is RESOLVED - none of the five is in Cargo.lock any more - and
+# `cargo audit` now reports 2 allowed warnings (glib + proc-macro-error,
+# group 1) and 0 vulnerabilities. rustls 0.23.45 carried four advisories
+# published 2026-10-14 (RUSTSEC-2026-0346 .. -0349); 0.23.46 fixes them.
 #
 # `cargo audit` now runs non-blocking in CI (.github/workflows/ci.yml,
 # "cargo audit (src-tauri)" job) so newly-published advisories surface on
@@ -208,7 +223,8 @@ tauri = { version = "2", features = ["test"] }
 #    itself, conditionally per target, not something GUIDON depends on
 #    directly.
 #
-# 2) unic-* crates — RUSTSEC-2025-0081 (unic-char-property), RUSTSEC-2025-0075
+# 2) [RESOLVED 2026-10-16, kept for history - see the re-run note above]
+#    unic-* crates — RUSTSEC-2025-0081 (unic-char-property), RUSTSEC-2025-0075
 #    (unic-char-range), RUSTSEC-2025-0080 (unic-common), RUSTSEC-2025-0100
 #    (unic-ucd-ident), RUSTSEC-2025-0098 (unic-ucd-version) — each is its own
 #    advisory ID, not interchangeable; a prior version of this comment cited
