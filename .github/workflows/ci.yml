@@ -226,7 +226,9 @@ jobs:
           key: playwright-chromium-${{ runner.os }}-${{ hashFiles('guidon-app/package-lock.json') }}
 
       - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+        # Chromium system libraries + browser, with a patient, bounded apt (tools/ci-browser-setup.sh):
+        # a slow package mirror cost one chunk its whole 15-minute budget on 2026-11-02.
+        run: bash tools/ci-browser-setup.sh browser
 
       # tools/lint-release-state.mjs (part of lint:patterns) compares the
       # version files, the CHANGELOG and the in-app What's New notes with the
@@ -756,7 +758,7 @@ jobs:
       # over a rendering nicety - the suites above stay the real gate; this
       # only removes a false positive specific to this runner's font set.
       - name: Install JetBrains Mono (matches --font-mono's first choice)
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-jetbrains-mono || echo "::warning::fonts-jetbrains-mono unavailable on this runner image - mono-font-width CI/local mismatches may persist"
+        run: bash tools/ci-browser-setup.sh fonts
 
       - name: Cache Playwright browsers
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
@@ -768,7 +770,9 @@ jobs:
           key: playwright-chromium-${{ runner.os }}-${{ hashFiles('guidon-app/package-lock.json') }}
 
       - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+        # Chromium system libraries + browser, with a patient, bounded apt (tools/ci-browser-setup.sh):
+        # a slow package mirror cost one chunk its whole 15-minute budget on 2026-11-02.
+        run: bash tools/ci-browser-setup.sh browser
 
       # The same web/+dist/ the lint-build-verify job already built and
       # verified - see the top-of-file note. Almost every test:* suite

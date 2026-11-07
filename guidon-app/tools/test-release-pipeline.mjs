@@ -813,6 +813,49 @@ try {
     for (const f of readdirSync(WF_DIR)) writeFileSync(path.join(pinsCopy, f), f === "firmware.yml" ? wf(f).replace(/(actions\/setup-python)@[0-9a-f]{40}/, "$1@v7") : wf(f));
     const plantedPins = lintPins(pinsCopy);
     check(plantedPins.status === 1 && /firmware\.yml/.test(plantedPins.stdout) && /setup-python@v7/.test(plantedPins.stdout), "verify-the-verifier: an unpinned setup-python in firmware.yml fails lint-workflow-pins, naming the file", "planted @v7 was not caught: " + plantedPins.stdout);
+    // The PlatformIO platform and every library are pinned EXACTLY. On 2026-11-02 a CI run with a cold PlatformIO cache
+    // resolved the unpinned `platform = espressif32` to a newer platform whose Arduino core (3.x) has no ledcSetup() /
+    // ledcAttachPin(), and src/main.cpp stopped compiling although nothing in firmware/ had changed - the cache had been
+    // hiding it, and the firmware compile gates `CI green` and the release. A floating pin would do it again.
+    const iniPinProblems = (text) => {
+      const problems = []; const lines = text.split(/\r?\n/);
+      const platforms = lines.filter((l) => /^platform\s*=/.test(l)).map((l) => l.replace(/^platform\s*=\s*/, "").trim());
+      if (!platforms.length) problems.push("no platform line at all");
+      for (const pl of platforms) if (!/^espressif32\s*@\s*\d+\.\d+\.\d+$/.test(pl)) problems.push("platform is not pinned to one exact version: \"" + pl + "\"");
+      let libs = 0, inLibs = false;
+      for (const l of lines) {
+        const m = /^lib_deps\s*=\s*(.*)$/.exec(l);
+        let entry = null;
+        if (m) { inLibs = true; entry = m[1].trim(); }
+        else if (inLibs && /^\s+\S/.test(l) && !/^\s*;/.test(l)) entry = l.trim();
+        else if (!/^\s*;/.test(l) && !/^\s+\S/.test(l)) inLibs = false;
+        if (entry) { libs++; if (!/^[\w.-]+\/[\w.-]+\s*@\s*\d+\.\d+\.\d+$/.test(entry)) problems.push("library is not pinned to one exact version: \"" + entry + "\""); }
+      }
+      return { problems, platforms: platforms.length, libs };
+    };
+    const ini = readFileSync("../firmware/esp32-flashcard-os/platformio.ini", "utf-8");
+    const iniPins = iniPinProblems(ini);
+    check(iniPins.problems.length === 0 && iniPins.platforms >= 1 && iniPins.libs >= 3, `platformio.ini pins the platform and all ${iniPins.libs} library entries to exact versions (nothing floats on a cold PlatformIO cache)`, "platformio.ini has a floating pin: " + iniPins.problems.join("; "));
+    const plantedUnpinned = iniPinProblems(ini.replace(/^platform = espressif32 @ [\d.]+$/m, "platform = espressif32"));
+    check(plantedUnpinned.problems.some((x) => /platform is not pinned/.test(x)), "verify-the-verifier: an unpinned `platform = espressif32` is caught", "an unpinned platform line was NOT caught: " + JSON.stringify(plantedUnpinned.problems));
+    const plantedCaret = iniPinProblems(ini.replace("bblanchon/ArduinoJson @ 7.4.3", "bblanchon/ArduinoJson @ ^7.2.1"));
+    check(plantedCaret.problems.some((x) => /ArduinoJson/.test(x)), "verify-the-verifier: a caret range on a library (`@ ^7.2.1`) is caught", "a caret library range was NOT caught: " + JSON.stringify(plantedCaret.problems));
+    const plantedBare = iniPinProblems(ini.split("bodmer/TFT_eSPI @ 2.5.43").join("bodmer/TFT_eSPI"));
+    check(plantedBare.problems.some((x) => /TFT_eSPI/.test(x)), "verify-the-verifier: a library with no version at all is caught", "a bare library name was NOT caught: " + JSON.stringify(plantedBare.problems));
+    // The apt-backed browser setup in ci.yml is patient and bounded. One test chunk once spent 13 minutes in an unbounded
+    // `playwright install --with-deps` because the runner's package mirror was crawling, ran out of its 15 minutes and
+    // turned a whole pull request red for no code reason. Every such step goes through tools/ci-browser-setup.sh.
+    const setupScript = existsSync("tools/ci-browser-setup.sh") ? readFileSync("tools/ci-browser-setup.sh", "utf-8") : "";
+    const ciCode = ci.split(/\r?\n/).filter((l) => !/^\s*#/.test(l)).join("\n"); // comments may still mention the old command
+    const setupCalls = [...ci.matchAll(/run:\s*bash tools\/ci-browser-setup\.sh (browser|fonts)\b/g)].map((m) => m[1]);
+    check(!/playwright install --with-deps/.test(ciCode) && !/apt-get install/.test(ciCode) && setupCalls.filter((c) => c === "browser").length === 2 && setupCalls.filter((c) => c === "fonts").length === 1,
+      "ci.yml runs no bare `playwright install --with-deps` or `apt-get install`: both browser-install steps and the font step go through tools/ci-browser-setup.sh", "ci.yml still has an unbounded apt step or does not call tools/ci-browser-setup.sh (calls: " + JSON.stringify(setupCalls) + ")");
+    check(setupScript.length > 0 && /\bfor attempt in 1 2 3\b/.test(setupScript) && (setupScript.match(/\btimeout --kill-after=\d+ \d+\b/g) || []).length >= 3 && /Acquire::http::Timeout/.test(setupScript) && /DPkg::Lock::Timeout/.test(setupScript) && /exit 1/.test(setupScript),
+      "the setup script bounds every apt call with `timeout`, retries the browser libraries three times, tells apt to drop a stalled connection and to wait for its lock, and fails with a message when all attempts fail", "tools/ci-browser-setup.sh lost its retry/timeout structure");
+    const setupSyntax = spawnSync("bash", ["-n", "tools/ci-browser-setup.sh"], { encoding: "utf-8" });
+    check(setupSyntax.status === 0 || setupSyntax.error, "the setup script parses as bash" + (setupSyntax.error ? " (bash is not available here, so not checked)" : ""), "bash -n tools/ci-browser-setup.sh failed: " + setupSyntax.stderr);
+    const setupUsage = spawnSync("bash", ["tools/ci-browser-setup.sh", "nonsense"], { encoding: "utf-8" });
+    check(setupUsage.error || (setupUsage.status === 2 && /usage:/.test(setupUsage.stderr)), "the setup script refuses an unknown mode with exit 2 and a usage line (it never runs apt on a typo)", "unknown mode exit " + setupUsage.status + ": " + setupUsage.stderr);
     const lintMatrixNow = spawnSync(process.execPath, ["tools/lint-ci-matrix.mjs"], { encoding: "utf-8" });
     check(lintMatrixNow.status === 0, "lint-ci-matrix still passes with the new workflow and the regenerated chunk block", "lint-ci-matrix failed: " + lintMatrixNow.stdout);
 
