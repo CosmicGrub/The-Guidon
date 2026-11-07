@@ -29178,6 +29178,12 @@ window.G = window.G || {};
           if (document.activeElement === ok) { e.preventDefault(); accept(); }
           return;
         }
+        // Every other dialog (a delete confirm, say) opens on OK and takes Enter from anywhere
+        // except one place: a keyboard user who Tabbed to Cancel and pressed Enter. That Enter is
+        // the browser's own click on the button they are on - it cancels - and must never be read
+        // as "accept". (It used to confirm the deletion.) Enter from OK, from a prompt's input and
+        // from the message is taken exactly as before.
+        if (document.activeElement === cancel) return;
         if (!input || document.activeElement === input) { e.preventDefault(); accept(); }
       });
       cancel.addEventListener("click", () => closeWith(opts.prompt ? null : false));
@@ -31224,9 +31230,12 @@ window.G = window.G || {};
       if (!devList.length) return [];
       var roster = await G.db.get("kv", "guidon:leader:roster:v1");
       var who = rosterLabels(roster ? [roster] : []);
-      var inFile = {};
-      fileRem.v.forEach(function (r) { if (r && r.id != null) inFile[r.id] = true; });
-      var keep = devList.filter(function (r) { return r && typeof r === "object" && r.id != null && !inFile[r.id] && isLeaderReminder(r, who); });
+      var inFile = {}, inFileSame = {};
+      // (A file from before roster reminders were left out can hold the same reminder this device made again
+      // under a new id: same kind, label and date counts as the same reminder, so it is not added twice.)
+      var sig = function (r) { return JSON.stringify([r.kind, r.label, r.date]); };
+      fileRem.v.forEach(function (r) { if (r && r.id != null) inFile[r.id] = true; if (r && typeof r === "object") inFileSame[sig(r)] = true; });
+      var keep = devList.filter(function (r) { return r && typeof r === "object" && r.id != null && !inFile[r.id] && !inFileSame[sig(r)] && isLeaderReminder(r, who); });
       var max = G.reminders && typeof G.reminders.MAX === "number" ? G.reminders.MAX : 0;
       if (max) keep = keep.slice(0, Math.max(0, max - fileRem.v.length));
       return keep;
@@ -31857,10 +31866,14 @@ window.G = window.G || {};
   // GUIDON here since then" warning off exactly when it was needed. A few
   // minutes of difference between two devices' clocks is normal and is allowed.
   var CLOCK_SKEW_MS = 10 * 60 * 1000;
+  // A date from before this: no GUIDON backup was made then. A 0, a negative number or 1970 is
+  // an empty or broken field, and stating it as fact ("31 Dec 1969 (20764 days ago)") would be
+  // wrong in the other direction, so it is treated like a date that is not there at all.
+  var EARLIEST_BACKUP_MS = Date.UTC(2020, 0, 1);
   // { state: "ok" | "missing" | "future", ms } - ms only when the date can be trusted.
   function backupDateState(iso) {
     var d = iso ? new Date(iso) : null;
-    if (!d || isNaN(d.getTime())) return { state: "missing", ms: null };
+    if (!d || isNaN(d.getTime()) || d.getTime() < EARLIEST_BACKUP_MS) return { state: "missing", ms: null };
     if (d.getTime() > Date.now() + CLOCK_SKEW_MS) return { state: "future", ms: null };
     return { state: "ok", ms: d.getTime() };
   }
@@ -31919,7 +31932,7 @@ window.G = window.G || {};
     var when = describeBackupDate(exportedAt);
     var wrong = !when && backupDateState(exportedAt).state === "future";
     var made = when ? "This backup was made on " + when + "."
-      : wrong ? "The date in this backup file looks wrong (it is later than today's date on this device), so there is no telling when it was made."
+      : wrong ? "The date in this backup file looks wrong (it is later than the time on this device), so there is no telling when it was made."
       : "This backup file doesn't say when it was made.";
     var warning = "";
     if (activity && activity.newer) {

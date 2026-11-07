@@ -220,6 +220,20 @@ const textSkew = await confirmText();
 check(/\(today\)/.test(textSkew) && !/looks wrong/.test(textSkew), "a file dated a few seconds ahead (two clocks that differ a little) is still just \"today\"", "confirm text: " + JSON.stringify(textSkew));
 await page.locator(".gm-box button", { hasText: /^Cancel$/ }).click();
 await dialogGone();
+// A file only an hour ahead (usually the same calendar day) is wrong about the TIME, not about the date: it must not be called "later than today's date".
+await chooseOnProfile(backup(Date.now() + 60 * 60000, [card("rg-A", 4, 10, T - 5 * DAY)]));
+const textHour = await confirmText();
+check(/looks wrong/.test(textHour) && /later than the time on this device/.test(textHour) && !/today's date/.test(textHour) && !/\(today\)/.test(textHour), "a file dated an hour ahead says it is later than the time on this device (not \"today's date\", which it may be)", "confirm text: " + JSON.stringify(textHour));
+await page.locator(".gm-box button", { hasText: /^Cancel$/ }).click();
+await dialogGone();
+// A date from before GUIDON could have made a backup (an empty field, 0, 1970) is not stated as fact.
+for (const [label, ms] of [["1 January 1970 (an empty date field)", 0], ["a negative number", -5000], ["the year 2019", Date.UTC(2019, 5, 1)]]) {
+  await chooseOnProfile(backup(ms, [card("rg-A", 4, 10, T - 5 * DAY)]));
+  const t = await confirmText();
+  check(/This backup file doesn't say when it was made\./.test(t) && !/This backup was made on|days ago|1969|1970|2019|looks wrong/.test(t), "a file dated " + label + " is treated like a file with no date (it does not state a date as fact)", "confirm text: " + JSON.stringify(t));
+  await page.locator(".gm-box button", { hasText: /^Cancel$/ }).click();
+  await dialogGone();
+}
 const dateUnit = await page.evaluate(() => ({
   future: G.backup.describeBackupDate(new Date(Date.now() + 400 * 86400000).toISOString()),
   far: G.backup.describeBackupDate("2999-12-31T12:00:00.000Z"),
@@ -292,7 +306,7 @@ const stillThere = await status();
 check(!reloadedOnFail, "...and the page does NOT reload behind it (it used to, 1.2 s later)", "the page reloaded after a failed restore");
 check(/The restore did not finish/.test(stillThere) && !/Reloading/.test(stillThere), "...and the message is still on screen 3.5 s later, with no \"Reloading...\" in it", "status after 3.5 s: " + JSON.stringify(stillThere));
 check((await page.locator(".backup-panel .backup-status button", { hasText: /^Reload GUIDON$/ }).count()) === 1, "...with a plain Reload button under it, for the Soldier to press when ready", "no Reload button in the status");
-check(/try again. Reload GUIDON$/.test(await status()), "...set apart from the sentence by a space (\"try again. Reload GUIDON\", not \"try again.Reload GUIDON\")", "status: " + JSON.stringify(await status()));
+check(/try again\. Reload GUIDON$/.test(await status()), "...set apart from the sentence by a space (\"try again. Reload GUIDON\", not \"try again.Reload GUIDON\")", "status: " + JSON.stringify(await status()));
 check(await page.evaluate((k) => sessionStorage.getItem(k) === null, "guidon-restore-failed"), "...and nothing is handed to a later page load (a restore that saved nothing has no reload to hand anything to)", "the one-time hand-off was written");
 
 console.log("\n-- the same failure from Settings stays up as well --");
@@ -307,7 +321,7 @@ const reloadedOnFailS = await page.waitForEvent("load", { timeout: 3500 }).then(
 check(!reloadedOnFailS, "...and the page does not reload behind it", "the page reloaded after a failed restore from Settings");
 const settingsText = await page.evaluate((sel) => { const n = document.querySelector(sel); return n && !n.hidden ? n.textContent : ""; }, settingsNote);
 check(/The restore did not finish: your settings and progress could not be saved to this device\. Free up some space and try again\./.test(settingsText) && !/Reloading/.test(settingsText), "...in the same plain words, still on screen 3.5 s later", "note: " + JSON.stringify(settingsText));
-check(/try again. Reload GUIDON$/.test(settingsText), "...also set apart from the sentence by a space", "note: " + JSON.stringify(settingsText));
+check(/try again\. Reload GUIDON$/.test(settingsText), "...also set apart from the sentence by a space", "note: " + JSON.stringify(settingsText));
 const reloadedByButton = page.waitForEvent("load", { timeout: 20000 });
 await page.locator(settingsNote + " button", { hasText: /^Reload GUIDON$/ }).click();
 await reloadedByButton;
@@ -422,6 +436,114 @@ const included = await page.evaluate(() => G.backup.exportAll({ includePrivate: 
 await page.evaluate(async () => { const l = (await G.db.get("kv", "reminders:v1")).v; l.push({ id: "ldr3", kind: "counseling", label: "Counsel SGT J.D.X", date: "2032-01-01", note: "", source: "leader" }); await G.db.put("kv", { k: "reminders:v1", v: l }); });
 const viaInclude = await page.evaluate(async (file) => { await G.backup.importAll(file); return (await G.db.get("kv", "reminders:v1")).v.map((r) => r.id).sort(); }, included);
 check(!viaInclude.includes("ldr3") && viaInclude.includes("ldr1") && viaInclude.includes("ldr2"), "a backup that includes the roster restores the roster's reminders exactly as the file has them (nothing from this device is mixed in)", "reminder ids: " + JSON.stringify(viaInclude));
+
+// A file from before roster reminders were left out can hold the very reminder this device made again under another id
+// (same kind, label and date): it is kept once, as the file's, not twice.
+const dupFile = { schema: "guidon.backup/v1", exportedAt: new Date().toISOString(), stores: { kv: [{ k: "reminders:v1", v: [
+  { id: "own1", kind: "board", label: "My board", date: "2030-01-01", note: "", source: "" },
+  { id: "old9", kind: "counseling", label: "Counsel SGT J.D.X", date: "2030-02-02", note: "" },
+] }], userScenarios: [], attempts: [] } };
+const dup = await page.evaluate(async (file) => {
+  await G.db.put("kv", { k: "guidon:leader:roster:v1", v: [{ rank: "SGT", name: "J.D.X", mos: "" }] });
+  await G.db.put("kv", { k: "reminders:v1", v: [
+    { id: "own1", kind: "board", label: "My board", date: "2030-01-01", note: "", source: "" },
+    { id: "dev9", kind: "counseling", label: "Counsel SGT J.D.X", date: "2030-02-02", note: "", source: "leader" },
+    { id: "dev8", kind: "acft", label: "Schedule AFT for SGT J.D.X", date: "2030-02-03", note: "", source: "leader" },
+  ] });
+  const r = await G.backup.importAll(file);
+  return { failed: r.failedStores, ids: (await G.db.get("kv", "reminders:v1")).v.map((x) => x.id).sort() };
+}, dupFile);
+check(dup.failed.length === 0 && JSON.stringify(dup.ids) === JSON.stringify(["dev8", "old9", "own1"]), "a roster reminder this device made again under another id is not doubled by a file that holds the same one (same kind, label, date); the other one is still kept", "reminder ids after: " + JSON.stringify(dup));
+
+/* =====================================================================
+   8) The same promise for every other dialog: Enter on Cancel cancels
+   ===================================================================== */
+// Only the restore confirm opened on Cancel. Every other confirm (each delete, each "are you sure") opens on OK and used to
+// take Enter from ANY focus - so a keyboard user who Tabbed to Cancel and pressed Enter CONFIRMED the deletion.
+console.log("\n-- a delete confirm and a plain confirm: Tab to Cancel, Enter -> it cancels --");
+const openDialog = (kind, opts) => page.evaluate(([kind, opts]) => {
+  window.__dlg = { pending: true };
+  const p = kind === "prompt" ? G.modal.prompt("New name?", "abc", opts) : G.modal.confirm("Delete this item? This cannot be undone.", opts);
+  p.then((v) => { window.__dlg = { pending: false, v }; });
+}, [kind, opts]);
+const dialogAnswer = async () => (await until(page, () => !window.__dlg.pending)) ? page.evaluate(() => window.__dlg.v) : "still waiting";
+for (const [label, kind, opts, okLabel] of [
+  ["a delete confirm (danger)", "confirm", { title: "Delete", danger: true, okText: "Delete" }, "Delete"],
+  ["a plain confirm", "confirm", { title: "Confirm" }, "OK"],
+]) {
+  await openDialog(kind, opts);
+  await page.locator(".gm-box").waitFor({ state: "visible" });
+  check(await focusIsOn(okLabel), label + ": opens with focus on " + okLabel + " (as it always did)", "focus was on: " + JSON.stringify(await page.evaluate(() => document.activeElement && document.activeElement.textContent)));
+  await page.keyboard.press("Tab");
+  check(await focusIsOn("Cancel"), "...Tab moves focus to Cancel", "focus was on: " + JSON.stringify(await page.evaluate(() => document.activeElement && document.activeElement.textContent)));
+  await page.keyboard.press("Enter");
+  check((await dialogAnswer()) === false && await dialogGone(), "...and Enter there answers NO (it used to confirm)", "the dialog answered " + JSON.stringify(await dialogAnswer()));
+
+  // The ordinary ways through are untouched.
+  await openDialog(kind, opts);
+  await page.locator(".gm-box").waitFor({ state: "visible" });
+  await focusIsOn(okLabel);
+  await page.keyboard.press("Enter");
+  check((await dialogAnswer()) === true, label + ": Enter on " + okLabel + " still says yes", "the dialog answered " + JSON.stringify(await dialogAnswer()));
+  await dialogGone();
+  await openDialog(kind, opts);
+  await page.locator(".gm-box").waitFor({ state: "visible" });
+  await focusIsOn(okLabel);
+  await page.keyboard.press("Escape");
+  check((await dialogAnswer()) === false, label + ": Escape still says no", "the dialog answered " + JSON.stringify(await dialogAnswer()));
+  await dialogGone();
+  await openDialog(kind, opts);
+  await page.locator(".gm-box").waitFor({ state: "visible" });
+  await focusIsOn(okLabel);
+  await page.keyboard.press("Tab");
+  await focusIsOn("Cancel");
+  await page.keyboard.press("Space");
+  check((await dialogAnswer()) === false, label + ": Space on Cancel still says no", "the dialog answered " + JSON.stringify(await dialogAnswer()));
+  await dialogGone();
+}
+// True once focus has sat in the prompt's box for 15 frames running (the dialog's own 40 ms timer has placed it, and the focus trap is up).
+const inputIsFocused = () => page.evaluate(() => new Promise((resolve) => {
+  let steady = 0, total = 0;
+  const step = () => {
+    const a = document.activeElement;
+    steady = (a && a.tagName === "INPUT" && a.closest && a.closest(".gm-box")) ? steady + 1 : 0;
+    if (steady >= 15) return resolve(true);
+    if (++total > 900) return resolve(false);
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}));
+console.log("\n-- a prompt: Enter in the box still saves, Enter on Cancel cancels --");
+await openDialog("prompt", { title: "Rename" });
+await page.locator(".gm-box input").waitFor({ state: "visible" });
+await inputIsFocused();
+await page.keyboard.press("Enter");
+check((await dialogAnswer()) === "abc", "Enter in a prompt's box still saves what is typed", "the prompt answered " + JSON.stringify(await dialogAnswer()));
+await dialogGone();
+await openDialog("prompt", { title: "Rename" });
+await page.locator(".gm-box input").waitFor({ state: "visible" });
+await inputIsFocused();
+await page.keyboard.press("Tab");
+check(await focusIsOn("Cancel"), "a prompt: Tab from the box moves focus to Cancel", "focus was on: " + JSON.stringify(await page.evaluate(() => document.activeElement && (document.activeElement.tagName + ":" + document.activeElement.textContent))));
+await page.keyboard.press("Enter");
+check((await dialogAnswer()) === null, "Enter on a prompt's Cancel gives nothing (cancelled)", "the prompt answered " + JSON.stringify(await dialogAnswer()));
+await dialogGone();
+console.log("\n-- on a short window the message is a Tab stop; an Enter there is taken as before --");
+await page.setViewportSize({ width: 360, height: 330 });
+await page.evaluate(() => {
+  window.__dlg = { pending: true };
+  G.modal.confirm("Delete this item? This cannot be undone. ".repeat(14), { title: "Delete", danger: true, okText: "Delete" }).then((v) => { window.__dlg = { pending: false, v }; });
+});
+await page.locator(".gm-box .gm-dialog-body").waitFor({ state: "visible" });
+check(await until(page, () => { const b = document.querySelector(".gm-box .gm-dialog-body"); return !!b && b.tabIndex === 0; }), "fixture: the long message is a keyboard stop at 360x330", "the message never became a tab stop");
+await focusIsOn("Delete");
+await page.keyboard.press("Shift+Tab");
+await page.keyboard.press("Shift+Tab");
+check(await page.evaluate(() => document.activeElement === document.querySelector(".gm-box .gm-dialog-body")), "...Shift+Tab twice from Delete lands on the message", "focus is on: " + JSON.stringify(await page.evaluate(() => document.activeElement && (document.activeElement.className || document.activeElement.tagName))));
+await page.keyboard.press("Enter");
+check((await dialogAnswer()) === true, "...and Enter there is taken exactly as it was before this change (yes)", "the dialog answered " + JSON.stringify(await dialogAnswer()));
+await dialogGone();
+await page.setViewportSize(roomy);
 
 expectNoConsoleNoise(noise);
 await finish("BACKUP RESTORE GUARD");
