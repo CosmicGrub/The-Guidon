@@ -30762,6 +30762,9 @@ window.G = window.G || {};
     if (isFile) {
       mount.appendChild(el("div.feedback.warn", { text:
         "This copy is open from a local file, so there is no link to share yet. Put the .html file on any static host \u2014 GitHub Pages, Netlify, Cloudflare Pages, or a unit web server \u2014 then open it from that address and the link will appear here." }));
+      // A saved file never updates itself: say so when this one has aged.
+      const copyAgeNote = G.currency.buildAgeNote();
+      if (copyAgeNote) mount.appendChild(copyAgeNote);
     } else {
       const lp = el("div.panel", { style:"margin-bottom:10px" });
       lp.appendChild(el("div.eyebrow", { text:"This app's address" }));
@@ -30924,6 +30927,9 @@ window.G = window.G || {};
       : "Copy the same installer (.exe) you ran here and run it on the other Windows machine." }));
     install.appendChild(el("p.hint", { style:"margin-top:6px", text:
       "There's no in-app updater — a newer version means installing a newer build the same way you installed this one. Your data isn't touched by reinstalling; only Export/Import backup moves it between separate installations." }));
+    // How old this installed copy is, once it is old enough to matter.
+    const copyAgeNote = G.currency.buildAgeNote();
+    if (copyAgeNote) install.appendChild(copyAgeNote);
     mount.appendChild(install);
 
     // Everything above this point is "moving THIS SAME build to another
@@ -32487,11 +32493,92 @@ window.G = window.G || {};
     return days;
   }
 
+  // ── Calendar file (.ics) ──────────────────────────────────────────────────
+  // Only the Android app can raise an alert for a reminder (notify.js); on the
+  // iPhone, in a browser, on the Windows app and in a saved file GUIDON cannot
+  // speak while it is closed. A calendar file lets the phone's or computer's
+  // OWN calendar do the alerting. It is made on this device, on a tap, and
+  // goes nowhere until the Soldier opens it in a calendar app.
+  //
+  // PRIVACY, by construction: an event is named from the reminder's KIND
+  // alone ("GUIDON: Promotion board"). The label and note are never written -
+  // they are free text, and the roster's quick-adds put a Soldier's rank and
+  // name in the label ("Counsel SSG Smith"). Nothing else about the Soldier,
+  // the unit or the profile goes in either. A calendar app may copy the file's
+  // entries to the person's own online account, which is why the button says so.
+  var ICS_TITLES = Object.assign(Object.create(null), {
+    counseling: "Counseling follow-up due", acft: "Fitness test due (ACFT / AFT)", board: "Promotion board",
+    promopoints: "Recheck promotion points", weapons: "Weapons qualification due",
+    usajobs: "USAJOBS application closes", negotiation: "Salary negotiation follow-up",
+    pt: "PT session", ets: "ETS date", other: "Date to remember",
+  });
+  function icsTitle(kind) { return "GUIDON: " + (ICS_TITLES[kind] || ICS_TITLES.other); }
+  // Text values: backslash, semicolon, comma and line breaks are escaped (RFC 5545 3.3.11).
+  function icsEscape(s) {
+    return String(s).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r\n|\r|\n/g, "\\n");
+  }
+  // A content line is at most 75 OCTETS (RFC 5545 3.1): longer ones continue on
+  // the next line after a single space, and never split a multi-byte character.
+  function icsFold(line) {
+    var out = [], cur = "", bytes = 0;
+    for (var ch of line) {
+      var cp = ch.codePointAt(0), n = cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+      if (bytes + n > 75) { out.push(cur); cur = " "; bytes = 1; }
+      cur += ch; bytes += n;
+    }
+    out.push(cur);
+    return out.join("\r\n");
+  }
+  // The same reminder gives the same UID every time, so opening a newer file
+  // updates its entry in the calendar instead of adding a second one. Hashed,
+  // so the reminder's own id (which carries its creation time) is not in the file.
+  function icsUid(r) {
+    var s = String(r.id || (r.kind + ":" + r.date)), a = 0x811c9dc5, b = 0x01000193 ^ 0x5bd1e995;
+    for (var i = 0; i < s.length; i++) {
+      a = Math.imul(a ^ s.charCodeAt(i), 0x01000193) >>> 0;
+      b = Math.imul(b ^ s.charCodeAt(i), 0x85ebca6b) >>> 0;
+    }
+    return "guidon-" + ("0000000" + a.toString(16)).slice(-8) + ("0000000" + b.toString(16)).slice(-8) + "@guidon.invalid";
+  }
+  // The file for the reminders that are today or later, or { events: 0 }.
+  // An all-day event ends the day AFTER it starts: DTEND is exclusive, and an
+  // end on the same day is a zero-length event some calendars drop.
+  function buildIcs(list, now) {
+    now = now || new Date();
+    var stamp = now.toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
+    var lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//GUIDON//Key dates//EN", "CALSCALE:GREGORIAN"];
+    var events = 0;
+    (Array.isArray(list) ? list : []).forEach(function (r) {
+      if (!r || typeof r !== "object" || isExpired(r)) return;
+      var start = parseDate(r.date), days = daysUntil(r.date);
+      if (!start || days === null || days < 0) return;
+      var next = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
+      var title = icsEscape(icsTitle(r.kind));
+      lines.push("BEGIN:VEVENT", "UID:" + icsUid(r), "DTSTAMP:" + stamp,
+        "DTSTART;VALUE=DATE:" + isoDate(start).replace(/-/g, ""),
+        "DTEND;VALUE=DATE:" + isoDate(next).replace(/-/g, ""),
+        "SUMMARY:" + title, "TRANSP:TRANSPARENT",
+        // The calendar's own alert at 9 in the morning on the day, the hour the
+        // Android app's notification uses.
+        "BEGIN:VALARM", "ACTION:DISPLAY", "DESCRIPTION:" + title, "TRIGGER:PT9H", "END:VALARM",
+        "END:VEVENT");
+      events++;
+    });
+    lines.push("END:VCALENDAR");
+    return { events: events, text: lines.map(icsFold).join("\r\n") + "\r\n" };
+  }
+
   // Full editor — lives in the Profile view.
   async function renderEditor(host) {
     util.clear(host);
     host.appendChild(el("h3.rem-h", { text: "Reminders" }));
-    host.appendChild(el("p.hint", { text: "Set key dates and GUIDON will surface anything due on your home screen. Stored offline on this device only. Turn on Notifications in Settings if you'd like a local reminder on the day, too." }));
+    // Only the Android app has a Notifications switch (and only it can alert
+    // while GUIDON is closed). Everywhere else, say so and point at the
+    // calendar button below instead of at a switch that is not there.
+    var canAlert = !!(G.notify && G.notify.supported());
+    host.appendChild(el("p.hint", { text: "Set key dates and GUIDON will surface anything due on your home screen. Stored offline on this device only. " +
+      (canAlert ? "Turn on Notifications in Settings if you'd like a local reminder on the day, too."
+        : "GUIDON can't send an alert while it's closed on this device. To be reminded on the day, add your dates to your calendar with the “Add to my calendar” button below.") }));
 
     var timelineMount = el("div.rem-timeline-mount");
     host.appendChild(timelineMount);
@@ -32627,6 +32714,27 @@ window.G = window.G || {};
     form.appendChild(addBtn);
     host.appendChild(form);
 
+    // Calendar file: the way a reminder reaches the phone's or computer's own
+    // calendar, which CAN alert while GUIDON is closed.
+    var calBox = el("div.rem-calendar", { style: "margin-top:14px" });
+    calBox.appendChild(el("div.eyebrow", { text: "Put these dates on your calendar" }));
+    calBox.appendChild(el("p.hint", { text:
+      "Makes a calendar file of your upcoming reminders to open in your phone or computer's calendar app, so it can remind you even when GUIDON is closed. " +
+      "Each date is listed by type only, like “Promotion board” — never the label or note you typed, and never a name. " +
+      "It is made on this device and goes nowhere until you open it in a calendar. Some calendar apps copy new entries to your own online account." }));
+    var calBtn = el("button.btn.sm", { type: "button", gi: "download", giSize: 14, text: "Add to my calendar (.ics)" });
+    calBtn.addEventListener("click", async function () {
+      var file = buildIcs(await load());
+      if (!file.events) { try { util.toast && util.toast("No upcoming reminders to add yet. Add a reminder with a date first."); } catch (e) {} return; }
+      var saved = await util.download("guidon-dates.ics", file.text, "text/calendar");
+      try {
+        util.toast && util.toast(saved === false ? "Couldn't make the calendar file. Try again."
+          : file.events + (file.events === 1 ? " date" : " dates") + " ready — open the file in your calendar app.");
+      } catch (e) {}
+    });
+    calBox.appendChild(calBtn);
+    host.appendChild(calBox);
+
     redraw();
   }
 
@@ -32636,6 +32744,8 @@ window.G = window.G || {};
     load: load, add: add, remove: remove, bucket: bucket,
     addManaged: addManaged, clearManagedFor: clearManagedFor,
     renderStrip: renderStrip, renderEditor: renderEditor,
+    buildIcs: buildIcs,
+    _icsFold: icsFold, _icsEscape: icsEscape, // exported for tests
     _daysUntil: daysUntil, // exported for tests
     _buildTimeline: buildTimeline, // exported for tests (90-day density strip)
   };
@@ -38744,6 +38854,10 @@ window.G = window.G || {};
       const pn = el("div.panel", { style: "margin-bottom:14px" });
       pn.appendChild(el("div.fin-h", { text: "About GUIDON" }));
       pn.appendChild(el("p.hint", { text: "Version " + (window.GUIDON_APP_VERSION || "unknown") + " \u00b7 Built " + (window.GUIDON_BUILD_DATE || "unknown") }));
+      // An installed or saved-file copy never updates itself, so say plainly when
+      // this one has aged (nothing at all on the hosted app, or on a young copy).
+      const copyAgeNote = G.currency.buildAgeNote();
+      if (copyAgeNote) pn.appendChild(copyAgeNote);
       // Standing rule: What's New auto-shows once on the first launch after
       // a real update (G.whatsNew.checkOnBoot(), below), but there was no
       // way to pull it back up on demand afterward - checked live, zero
@@ -39939,10 +40053,70 @@ window.G = window.G || {};
     }
     inp.addEventListener("blur", () => addRecentSearch(inp.value.trim()));
 
+    // Several-word queries ("request leave", "da 31"). A record matches when it
+    // holds the whole phrase (exactly what matched before, so nothing that used
+    // to be found stops being found) OR holds every word of it somewhere. A
+    // short word (4 letters or fewer) must START a word in the record: "da" is
+    // the start of "data" but not the middle of "update", and "31" starts "31
+    // days" but not "2031". A longer word may sit anywhere in a word, the same
+    // rule a single word has always had. A one-word query is not touched by
+    // any of this: it is still the plain "contains this text" match.
+    const SHORT_WORD = 4;
+    // A letter, a digit, or any non-ASCII character (an accented letter is part of
+    // its word). The haystacks are lower-case.
+    function isWordChar(c) { return (c >= 48 && c <= 57) || (c >= 97 && c <= 122) || c > 127; }
+    // The words of a query: split on spaces, and a stray "-" or "&" on its own is
+    // not a word to look for.
+    function queryWords(ql) {
+      return ql.split(/\s+/).filter((w) => {
+        for (let k = 0; k < w.length; k++) if (isWordChar(w.charCodeAt(k))) return true;
+        return false;
+      });
+    }
+    // Where `word` first sits in `hay` by the rule above, or -1.
+    function wordAt(hay, word) {
+      let i = hay.indexOf(word);
+      if (word.length > SHORT_WORD) return i;
+      while (i > 0 && isWordChar(hay.charCodeAt(i - 1))) i = hay.indexOf(word, i + 1);
+      return i;
+    }
+    function makeMatcher(ql) {
+      const words = queryWords(ql);
+      if (words.length < 2) return (hay) => hay.includes(ql);
+      return (hay) => {
+        if (hay.includes(ql)) return true;
+        for (let k = 0; k < words.length; k++) if (wordAt(hay, words[k]) < 0) return false;
+        return true;
+      };
+    }
+
     function highlight(text, q) {
       const tl = text.toLowerCase(), ql = q.toLowerCase();
       const ti = tl.indexOf(ql);
-      if (ti < 0) return document.createTextNode(text);
+      if (ti < 0) {
+        // The whole phrase is not here: mark each word of it that is.
+        const words = queryWords(ql);
+        if (words.length < 2) return document.createTextNode(text);
+        const spans = [];
+        words.forEach((w) => { const at = wordAt(tl, w); if (at >= 0) spans.push([at, at + w.length]); });
+        if (!spans.length) return document.createTextNode(text);
+        spans.sort((a, b) => a[0] - b[0]);
+        const merged = [spans[0].slice()];
+        for (let k = 1; k < spans.length; k++) {
+          const last = merged[merged.length - 1];
+          if (spans[k][0] <= last[1]) last[1] = Math.max(last[1], spans[k][1]); else merged.push(spans[k].slice());
+        }
+        const wrap = el("span");
+        let from = 0;
+        merged.forEach((m) => {
+          if (m[0] > from) wrap.appendChild(document.createTextNode(text.slice(from, m[0])));
+          const mk = el("mark"); mk.className = "dict-hi"; mk.textContent = text.slice(m[0], m[1]);
+          wrap.appendChild(mk);
+          from = m[1];
+        });
+        if (from < text.length) wrap.appendChild(document.createTextNode(text.slice(from)));
+        return wrap;
+      }
       const span = el("span");
       span.appendChild(document.createTextNode(text.slice(0,ti)));
       const mark = el("mark"); mark.className = "dict-hi"; mark.textContent = text.slice(ti, ti+q.length);
@@ -39959,8 +40133,9 @@ window.G = window.G || {};
     // that meant the MAX_PER=8 cap could easily keep 8 records that only
     // mention the query deep in a long definition while the ONE record
     // whose acronym IS the query sat uncapped-but-unseen past position 8.
-    // hitScore() runs on hits that already passed their own _hay.includes()
-    // substring filter above (this never changes WHICH records match,
+    // hitScore() runs on hits that already passed their own match() filter
+    // (the plain substring test for one word, makeMatcher() above for several;
+    // this never changes WHICH records match,
     // only the ORDER a type's group is in before the existing MAX_PER
     // slice), and ranks title match > sub match > body match, with an
     // exact whole-field or whole-word match outscoring a bare substring
@@ -39974,17 +40149,45 @@ window.G = window.G || {};
     // on title/sub alone, same as before this pass for every pre-existing
     // type that had no natural third field.
     function escSearchRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
-    function hitScore(ql, h) {
+    // The whole-word pattern is built ONCE per query, not once per field per
+    // hit: a broad two-letter query scores about two thousand hits, and
+    // building three patterns for each of them (and again inside the sort's
+    // comparator) is what froze typing on a budget phone.
+    let scoreReQuery = null, scoreRe = null, scoreWords = null;
+    function wholeWordPattern(text) {
+      try { return new RegExp("(^|[^a-z0-9])" + escSearchRe(text) + "($|[^a-z0-9])"); }
+      catch (e) { return null; /* text can't form a bad pattern here - escSearchRe neutralizes every regex metachar - but never let a scoring helper throw and blank the results pane */ }
+    }
+    function prepareScoring(ql) {
+      if (scoreReQuery === ql) return;
+      scoreReQuery = ql;
+      scoreRe = wholeWordPattern(ql);
+      // A several-word query is also scored word by word (each word's pattern
+      // is built once here, never per hit).
+      const words = queryWords(ql);
+      scoreWords = words.length > 1 ? words.map((w) => ({ w: w, re: wholeWordPattern(w) })) : null;
+    }
+    // title > sub line > body; the whole text, a whole word, then a bare
+    // substring, within each (the original ranking, unchanged).
+    function scoreText(ql, re, h) {
       function fieldScore(text, weight) {
         if (!text) return 0;
         const t = String(text).toLowerCase();
         if (t === ql) return weight;
-        try {
-          if (new RegExp("(^|[^a-z0-9])" + escSearchRe(ql) + "($|[^a-z0-9])").test(t)) return weight * 0.7;
-        } catch (e) { /* ql can't form a bad pattern here - escSearchRe neutralizes every regex metachar - but never let a scoring helper throw and blank the results pane */ }
+        if (re && re.test(t)) return weight * 0.7;
         return t.includes(ql) ? weight * 0.4 : 0;
       }
       return fieldScore(h.title, 100) + fieldScore(h.sub, 30) + fieldScore(h.body, 10);
+    }
+    function hitScore(ql, h) {
+      prepareScoring(ql);
+      const phrase = scoreText(ql, scoreRe, h);
+      if (!scoreWords) return phrase;
+      // Several words: a record holding the whole phrase counts double, on top
+      // of the average of how well each word does on its own.
+      let sum = 0;
+      for (let k = 0; k < scoreWords.length; k++) sum += scoreText(scoreWords[k].w, scoreWords[k].re, h);
+      return phrase * 2 + sum / scoreWords.length;
     }
 
     // Adapted from Doctrine's jumpToDocEntry: scroll to and pulse the
@@ -40126,9 +40329,20 @@ window.G = window.G || {};
       { hash: "#/author", keywords: "write your own scenario custom content" },
       { hash: "#/selftest", keywords: "self test troubleshoot app health check" },
       { hash: "#/storage", keywords: "storage usage clear data database" },
+      // The three screens that register at runtime (00-roadmap-bootstrap.js) and
+      // open from a panel on another screen, not the sidebar. Search is the one
+      // place a Soldier who types what they do can reach them. Plain words only.
+      { hash: "#/pt-plan", keywords: "PT plan workout plan weekly PT schedule physical training week" },
+      { hash: "#/team", keywords: "team exercises squad training relay huddle after action review" },
+      { hash: "#/board-sim", keywords: "mock board rehearse a board practice board appearance timed questions" },
       { hash: "#/settings", label: "Settings — Theme", keywords: "theme dark mode appearance", settingsAnchor: "settings-theme-panel" },
       { hash: "#/settings", label: "Settings — Screen Layouts", keywords: "screen layouts tasking board zero board", settingsAnchor: "settings-layout-panel" },
-      { hash: "#/settings", label: "Settings — Notifications", keywords: "notifications reminders alerts", settingsAnchor: "settings-notif-panel" },
+      // The Notifications switch exists only in the Android app (the only build that can
+      // alert while GUIDON is closed). Off Android it is not offered, so a Soldier is not
+      // sent to a Settings screen with nothing there; the Reminders row below is everywhere.
+      { hash: "#/settings", label: "Settings — Notifications", keywords: "notifications reminders alerts", settingsAnchor: "settings-notif-panel",
+        needs: function () { return !!(G.notify && G.notify.supported()); } },
+      { hash: "#/profile", label: "Profile — Reminders & calendar file", keywords: "reminders notifications alerts key dates calendar file ics add to my calendar phone calendar remind me" },
       { hash: "#/settings", label: "Settings — Biometric Lock", keywords: "biometric lock fingerprint face unlock PIN", settingsAnchor: "settings-bio-panel" },
       { hash: "#/settings", label: "Settings — Data & Backup", keywords: "backup export import restore data", settingsAnchor: "settings-databackup-panel" },
       { hash: "#/settings", label: "Settings — Accessibility", keywords: "accessibility screen reader high contrast text size", settingsAnchor: "settings-acc-panel" },
@@ -40171,6 +40385,7 @@ window.G = window.G || {};
         return;
       }
       const ql = q.toLowerCase();
+      const match = makeMatcher(ql);
       const sc   = store.scenarios ? store.scenarios() : [];
       const bqs  = store.boardQuestions ? store.boardQuestions() : [];
       // The cards of the Soldier's own unit decks that are switched on: searched with the
@@ -40215,7 +40430,7 @@ window.G = window.G || {};
             s._hay = ((s.title||"")+" "+(s.summary||"")+" "+(s.learningObjective||"")+" "+
               (s.competency||[]).join(" ")+" "+(s.tier||[]).join(" ")).toLowerCase();
           }
-          if (s._hay.includes(ql)) {
+          if (match(s._hay)) {
             allHits.scenario.push({ type:"scenario", id:s.id, title:s.title,
               sub:(s.competency||[]).join(" · ")+" · "+s.difficulty,
               meta: (s.tier||[]).join("/"), body:s.summary||"", route:"#/train", scId:s.id });
@@ -40225,7 +40440,7 @@ window.G = window.G || {};
       if (activeFilter === "all" || activeFilter === "board") {
         (bqs.questions || bqs || []).concat(unitCards).forEach((q2) => {
           if (q2._hay === undefined) q2._hay = ((q2.q||"")+" "+(q2.a||"")+" "+(q2.category||"")+(q2.unitDeck ? " "+q2.unitDeck.name : "")).toLowerCase();
-          if (q2._hay.includes(ql)) {
+          if (match(q2._hay)) {
             // Enhancement backlog round 4, "Navigation, accessibility, and minor search/home
             // polish" bucket: the match check above already guards a missing/malformed
             // q2.q with (q2.q||"") before building _hay (see the "Performance" bucket's own
@@ -40247,7 +40462,7 @@ window.G = window.G || {};
       if (activeFilter === "all" || activeFilter === "doctrine") {
         (Array.isArray(doc) ? doc : []).forEach((e) => {
           if (e._hay === undefined) e._hay = ((e.title||"")+" "+(e.body||"")+" "+(e.topic||"")).toLowerCase();
-          if (e._hay.includes(ql)) {
+          if (match(e._hay)) {
             // e.source is a {pub, edition, para, quoteKind}[] array (ROADMAP.md
             // item F), never a plain string - same shape store.doctrine()'s own
             // query filter and views.doctrine's draw() unwrap. Assigning the raw
@@ -40277,7 +40492,7 @@ window.G = window.G || {};
               (Array.isArray(c.tier)?c.tier.join(" "):(c.tier||""))+" "+
               ((c.source||[]).map((s)=>s.pub).join(" "))+" "+(c.tags||[]).join(" ")).toLowerCase();
           }
-          if (c._hay.includes(ql)) {
+          if (match(c._hay)) {
             allHits.creed.push({ type:"creed", id:c.id, title:c.officialTitle||c.id,
               sub:"Creeds & Identities: "+(c.branch||c.group||""), meta:(c.source||[]).map((s)=>s.pub).join(", "), body:c.fullText||c.history||"", route:"#/creeds" });
           }
@@ -40289,7 +40504,7 @@ window.G = window.G || {};
             p._hay = ((p.name||"")+" "+(p.movementDescription||"")+" "+
               ((p.source||[]).map((s)=>s.pub).join(" "))).toLowerCase();
           }
-          if (p._hay.includes(ql)) {
+          if (match(p._hay)) {
             allHits.prt.push({ type:"prt", id:p.id, title:p.name||p.id,
               sub:"Physical Readiness: "+(p.drillId||"").toUpperCase(), meta:(p.source||[]).map((s)=>s.pub).join(", "), body:p.movementDescription||"", route:"#/prt" });
           }
@@ -40306,7 +40521,7 @@ window.G = window.G || {};
               l._bodyText = l.body || (l.tiers ? Object.values(l.tiers).join(" ") : "");
               l._hay = ((l.title||"")+" "+l._bodyText).toLowerCase();
             }
-            if (l._hay.includes(ql)) {
+            if (match(l._hay)) {
               allHits.lesson.push({ type:"lesson", id:l.id, title:l.title,
                 sub:"Learn: "+c.title, meta:"", body:l._bodyText||"", route:"#/learn" });
             }
@@ -40318,7 +40533,7 @@ window.G = window.G || {};
         (res.categories || []).forEach((c2) => {
           (c2.items || []).forEach((it) => {
             if (it._hay === undefined) it._hay = ((it.name||"")+" "+(it.d||"")+" "+(c2.name||"")).toLowerCase();
-            if (it._hay.includes(ql)) {
+            if (match(it._hay)) {
               allHits.resource.push({ type:"resource", id:it.name, title:it.name,
                 sub:c2.name+" — "+it.d, meta:c2.name, body:it.d||"", route:"#/resources", resSeed:it.name });
             }
@@ -40342,7 +40557,7 @@ window.G = window.G || {};
             m._cmfName = cmfObj ? cmfObj.name : "";
             m._hay = ((m.code||"")+" "+(m.title||"")+" "+m._cmfName+" "+(m.notes||"")).toLowerCase();
           }
-          if (m._hay.includes(ql)) {
+          if (match(m._hay)) {
             allHits.career.push({ type:"career", id:m.code, title:m.code+" — "+m.title,
               sub:m._cmfName, meta:m.status && m.status !== "normal" ? m.status : "", body:m.notes||"", route:"#/career", mosSeed:m.code });
           }
@@ -40368,7 +40583,7 @@ window.G = window.G || {};
       if (activeFilter === "all" || activeFilter === "dictionary") {
         (dict.terms || []).forEach((t) => {
           if (t._hay === undefined) t._hay = (t.a + " " + t.d).toLowerCase();
-          if (t._hay.includes(ql)) {
+          if (match(t._hay)) {
             allHits.dictionary.push({ type:"dictionary", id:t.a, title:t.a, sub:t.d,
               meta: t.src === "army" ? "ARMY" : t.src === "both" ? "ARMY+JOINT" : "JOINT",
               body:t.d, route:"#/dictionary" });
@@ -40391,7 +40606,7 @@ window.G = window.G || {};
           if (f._hay === undefined) {
             f._hay = ((f.form||"")+" "+(f.title||"")+" "+(f.purpose||"")+" "+util.citeText(f.source)+" "+(f.category||"")).toLowerCase();
           }
-          if (f._hay.includes(ql)) {
+          if (match(f._hay)) {
             allHits.forms.push({ type:"forms", id:f.id, title:(f.form||"")+(f.title ? " — "+f.title : ""),
               sub:"Forms: "+(f.category||""), meta:util.citeText(f.source), body:f.purpose||"",
               route:"#/forms", formSeed:f.id });
@@ -40414,7 +40629,7 @@ window.G = window.G || {};
           if (sk._hay === undefined) {
             sk._hay = ((sk.name||"")+" "+(sk.body||"")+" "+(sk.points||[]).join(" ")).toLowerCase();
           }
-          if (sk._hay.includes(ql)) {
+          if (match(sk._hay)) {
             allHits.counsel.push({ type:"counsel", id:sk.name, title:sk.name,
               sub:"Counseling: "+util.citeText(sk.source), meta:"", body:sk.body||"", route:"#/counsel" });
           }
@@ -40432,7 +40647,7 @@ window.G = window.G || {};
           if (gt._hay === undefined) {
             gt._hay = ((gt.title||"")+" "+(gt.domainLabel||"")+" "+util.citeText(gt.source)+" "+(gt.measure||"")).toLowerCase();
           }
-          if (gt._hay.includes(ql)) {
+          if (match(gt._hay)) {
             allHits.develop.push({ type:"develop", id:gt.id, title:gt.title,
               sub:"IDP: "+(gt.domainLabel||""), meta:util.citeText(gt.source), body:gt.measure||"", route:"#/develop" });
           }
@@ -40457,7 +40672,7 @@ window.G = window.G || {};
           if (sk._hay === undefined) {
             sk._hay = ((sk.name||"")+" "+(sk.body||"")+" "+(sk.points||[]).join(" ")+" "+(sk.domain||"")).toLowerCase();
           }
-          if (sk._hay.includes(ql)) {
+          if (match(sk._hay)) {
             allHits.health.push({ type:"health", id:sk.name, title:sk.name,
               sub:"Health: "+(sk.domain||""), meta:util.citeText(sk.source), body:sk.body||"", route:"#/health" });
           }
@@ -40466,7 +40681,7 @@ window.G = window.G || {};
           if (r._hay === undefined) {
             r._hay = ((r.name||"")+" "+(r.desc||"")+" "+(r.contact||"")+" "+(r.type||"")).toLowerCase();
           }
-          if (r._hay.includes(ql)) {
+          if (match(r._hay)) {
             allHits.health.push({ type:"health", id:r.name, title:r.name,
               sub:"Health: "+(r.type||""), meta:r.contact||"", body:r.desc||"", route:"#/health" });
           }
@@ -40475,10 +40690,11 @@ window.G = window.G || {};
 
       if (activeFilter === "all" || activeFilter === "screen") {
         SCREEN_ENTRIES.forEach((entry, i) => {
+          if (entry.needs && !entry.needs()) return; // a control this build does not have is not offered
           const r = (G.routes || []).find((x) => x.hash === entry.hash);
           if (!r) return; // route renamed/removed since this list was written — fail soft
           if (entry._hay === undefined) entry._hay = ((entry.label || r.label) + " " + (entry.keywords || "")).toLowerCase();
-          if (entry._hay.includes(ql)) {
+          if (match(entry._hay)) {
             const note = G.demoNotes && G.demoNotes[entry.hash];
             allHits.screen.push({ type:"screen", id:entry.hash + ":" + i, title: entry.label || r.label,
               sub: entry.settingsAnchor ? "Settings" : "Screen", meta: note ? note.d : "",
@@ -40570,7 +40786,12 @@ window.G = window.G || {};
         // Never changes which records matched, never removes the cap -
         // exactly the same slice(0, MAX_PER) call as before, just fed a
         // ranked array instead of the raw one.
-        group.sort((a, b) => hitScore(ql, b) - hitScore(ql, a));
+        // Each hit is scored ONCE, then sorted on the saved score (ties keep
+        // the store's own order, exactly what the old comparator's stable sort
+        // did): scoring inside the comparator scored a hit once per comparison.
+        const scored = group.map((h, i) => ({ h: h, s: hitScore(ql, h), i: i }));
+        scored.sort((a, b) => (b.s - a.s) || (a.i - b.i));
+        scored.forEach((x, i) => { group[i] = x.h; });
         const section = el("div.search-section");
         if (activeFilter === "all") {
           section.appendChild(el("div.search-section-head", {

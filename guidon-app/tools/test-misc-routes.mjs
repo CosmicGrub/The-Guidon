@@ -331,11 +331,18 @@ const segTitles2 = await page.evaluate(() => [...document.querySelectorAll(".sea
 // "PT test" among the real-world words that route's short nav label never
 // uses - see views.search's SCREEN_ENTRIES) - a real, intentional new hit,
 // not a regression in the pre-existing scenario/board/lesson three.
-countText2 === "4 results"
-  ? ok('Search "PT test": exactly 4 results across scenario/board/lesson/screen content')
-  : bad(`Search "PT test": count text was "${countText2}", expected "4 results"`);
-(segTitles2.some((t) => t.startsWith("1 Scenarios")) && segTitles2.some((t) => t.startsWith("1 Board Q")) && segTitles2.some((t) => t.startsWith("1 Lessons")) && segTitles2.some((t) => t.startsWith("1 Screens & Settings")))
-  ? ok(`Search "PT test": distribution bar correctly attributes 1 hit to each of scenario/board/lesson/screen (${JSON.stringify(segTitles2)})`)
+// A several-word query ALSO finds records that hold both words without the
+// phrase side by side (that is the point of the multi-word match), so this is
+// "at least the four phrase hits, in each of those four types" - the old exact
+// "4 results" was the phrase-only match talking. The phrase hits themselves are
+// still the ones a Soldier sees first (checked in test-search-content-coverage).
+const countN2 = Number((countText2.match(/^(\d+) results?$/) || [])[1] || 0);
+countN2 >= 4
+  ? ok(`Search "PT test": at least the 4 phrase results across scenario/board/lesson/screen content (${countText2})`)
+  : bad(`Search "PT test": count text was "${countText2}", expected at least 4 results`);
+const segHas = (type) => segTitles2.some((t) => new RegExp("^[1-9]\\d* " + type).test(t));
+(segHas("Scenarios") && segHas("Board Q") && segHas("Lessons") && segHas("Screens & Settings"))
+  ? ok(`Search "PT test": distribution bar attributes hits to each of scenario/board/lesson/screen (${JSON.stringify(segTitles2)})`)
   : bad(`Search "PT test": distribution bar segment titles were ${JSON.stringify(segTitles2)}`);
 
 // A bare MOS-code query now intentionally crosses both the Career Center and

@@ -35,6 +35,7 @@ import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
 import { until, waitForRoute } from "./testkit.mjs";
+import { declaredRoutes, declaredNavRoutes, screenEntryRoutes } from "./declared-routes.mjs";
 
 let fails = 0;
 const ok = (m) => console.log("  PASS  " + m);
@@ -100,14 +101,40 @@ async function backToSearch() {
 
 // ---- every SCREEN_ENTRIES hash still resolves to a real route ----
 const entryHashes = await page.evaluate(() => ((window.G && G.routes) || []).map((r) => r.hash));
-const KNOWN_SCREEN_HASHES = ["#/forms","#/counsel","#/develop","#/write","#/money","#/health","#/transition","#/moi",
-  "#/group","#/records","#/calendar","#/cyber-opsec","#/creeds","#/prt","#/recite","#/dictionary","#/library","#/learn",
-  "#/blc","#/alc","#/slc","#/drills","#/leader","#/risk","#/career","#/assignments","#/channels","#/fitness","#/resources",
-  "#/progress","#/currency","#/share","#/author","#/selftest","#/storage","#/settings"];
-const missing = KNOWN_SCREEN_HASHES.filter((h) => !entryHashes.includes(h));
+// Read from the built page itself, not hand-copied here: a hard-coded list
+// goes stale the day a screen is added (three screens were missing from Search
+// for exactly that reason), and then guards nothing.
+const { hashes: screenHashes } = await screenEntryRoutes("web/index.html");
+const missing = screenHashes.filter((h) => !entryHashes.includes(h));
 missing.length === 0
-  ? ok("every screen-entry route hash still resolves to a real G.routes entry (" + KNOWN_SCREEN_HASHES.length + " checked)")
+  ? ok("every screen-entry route hash still resolves to a real G.routes entry (" + screenHashes.length + " checked)")
   : bad("route(s) renamed/removed since the screen entries were written: " + JSON.stringify(missing));
+
+// ---- route coverage: every screen a Soldier can open is findable by name ----
+// A route that is neither in Search's screen list nor deliberately exempt is a
+// screen that typing its own name answers with "No results". The exempt ones
+// are the screens that are always one glance away or are not something a
+// Soldier searches for; each must really be in the nav (or the hidden set), so
+// this list cannot quietly become a place to hide a gap.
+const SEARCH_EXEMPT = {
+  "#/home": "the first screen, always in the nav",
+  "#/train": "always in the nav",
+  "#/board": "always in the nav",
+  "#/doctrine": "in the nav; the doctrine records themselves are searched",
+  "#/search": "this screen",
+  "#/kiosk": "the shared-tablet mode, entered from Settings",
+  "#/privacy": "opened from Settings and the welcome screen",
+};
+const declared = await declaredRoutes("web/index.html");
+const nav = await declaredNavRoutes("web/index.html");
+const unfindable = declared.hashes.filter((h) => !screenHashes.includes(h) && !(h in SEARCH_EXEMPT));
+unfindable.length === 0
+  ? ok("every one of the " + declared.count + " declared routes is findable in Search (a screen entry) or deliberately exempt")
+  : bad("declared route(s) Search cannot find by name (add a SCREEN_ENTRIES row with plain keywords, or exempt with a reason): " + JSON.stringify(unfindable));
+const badExempt = Object.keys(SEARCH_EXEMPT).filter((h) => !declared.hashes.includes(h) || !(nav.hashes.includes(h) || nav.hidden.includes(h)));
+badExempt.length === 0
+  ? ok("every exempt route is a real route that is in the nav or the hidden set")
+  : bad("exempt route(s) that are gone or not in the nav: " + JSON.stringify(badExempt));
 
 // ---- keyword-only match (not the screen's own label) ----
 await search("TSP");
@@ -173,6 +200,37 @@ if (fmCard) {
     : bad("the Forms Fill Mode panel is still hidden after the Advanced section supposedly opened");
 } else {
   bad('query "PDF replica overlay" did not surface the "Settings — Forms Fill Mode" screen entry');
+}
+
+// ---- the three screens that only opened from a panel on another screen ----
+// PT Planner, Team Training and Board Simulator register at runtime and are not
+// in the sidebar, so Search is the one place a Soldier who types their names
+// (or a plain word for what they do) can reach them. The click must really land.
+const screenHit = (title) => page.evaluateHandle((t) => [...document.querySelectorAll(".search-hit")].find((c) =>
+  (c.querySelector(".search-hit-title") || {}).textContent === t && (c.querySelector(".search-hit-sub") || {}).textContent === "Screen") || null, title);
+for (const [typed, title, route] of [
+  ["PT Planner", "PT Planner", "#/pt-plan"],
+  ["workout plan", "PT Planner", "#/pt-plan"],
+  ["Team Training", "Team Training", "#/team"],
+  ["team exercise", "Team Training", "#/team"],
+  ["Board Simulator", "Board Simulator", "#/board-sim"],
+  ["rehearse a board", "Board Simulator", "#/board-sim"],
+]) {
+  await backToSearch();
+  await search(typed);
+  const shown = await until(page, (t) => [...document.querySelectorAll(".search-hit")].some((c) =>
+    (c.querySelector(".search-hit-title") || {}).textContent === t && (c.querySelector(".search-hit-sub") || {}).textContent === "Screen"), title, { timeout: 4000 });
+  shown
+    ? ok('typing "' + typed + '" gives a Screen hit titled "' + title + '"')
+    : bad('typing "' + typed + '" gave no Screen hit titled "' + title + '"');
+  if (shown && typed.toLowerCase() === title.toLowerCase()) {
+    const card = await screenHit(title);
+    await card.evaluate((c) => c.click());
+    const landed = await until(page, (r) => location.hash === r, route, { timeout: 3000 });
+    landed
+      ? ok('clicking the "' + title + '" Screen hit opens ' + route)
+      : bad('clicking the "' + title + '" Screen hit did not land on ' + route + " (got " + (await page.evaluate(() => location.hash)) + ")");
+  }
 }
 
 // ---- the "screen" filter chip filters to screen-only hits ----
