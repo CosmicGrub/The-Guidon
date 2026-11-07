@@ -117,7 +117,7 @@ Verified layout floor: **no horizontal overflow at 360 px** across every section
 Any visual change should clear this before shipping:
 
 - `node --check` on all inline scripts; CSS brace balance on all 3 blocks
-- **axe-core across 24 themes × 35 routes (840 combinations) — target 0 WCAG 2 A/AA violations.** This runs as `tools/test-contrast-full.mjs`, wired into the default `npm test` battery (`npm run test:contrast-full`) — not a script that has to be remembered and run separately.
+- **axe-core across every registered theme × every screen in `G.routes`, plus interaction states and the first-run welcome screens — 0 colour-contrast misses, or the run fails (exit 1).** This runs as `tools/test-contrast-full.mjs`, wired into the default `npm test` battery (`npm run test:contrast-full`) — not a script that has to be remembered and run separately. It switches themes through `G.theme.applyTheme` (the real path, which also moves the `light` class), runs with a finished profile (plus a guest pass on the screens that draw differently), opens every closed `<details>`, resolves the text axe files as `incomplete` (over a gradient or a background image) itself, injects canaries on every measurement so a blinded harness fails loudly, and writes its report to the OS temp folder. `tools/test-contrast-full-gate.mjs` proves the gate can fail. Its allowlist is empty and needs the owner's sign-off to add to.
 - Console clean at **both `error` and `warning`** levels
 - No horizontal overflow at 360 px and 1280 px
 
