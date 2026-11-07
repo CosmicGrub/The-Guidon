@@ -395,6 +395,11 @@ input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; border: none;
 .toggle .track::before { content:""; position:absolute; width:16px; height:16px; left:3px; top:3px; background: var(--text-mute); border-radius:50%; transition:.2s; }
 .toggle input:checked + .track { border-color: var(--amber); }
 .toggle input:checked + .track::before { transform: translateX(22px); background: var(--amber); box-shadow:0 0 8px var(--amber); }
+/* The OFF knob was --text-mute. Now that --text-mute is dark enough for body copy it is, in the light themes, as dark as the ON knob
+   (--amber): 1.01:1 to 1.2:1 apart in five of them, so ON and OFF differed only by where the knob sat. A little of the track colour mixed
+   in lifts the OFF knob away from the ON knob again (1.39:1 or more in all 30 themes; it was 1.35:1 to 3.8:1 before the retune) while it
+   stays at 3.05:1 or more against the track. */
+.toggle input:not(:checked) + .track::before { background: color-mix(in srgb, var(--text-mute) 76%, var(--bg)); }
 
 /* ---------- Segmented control (mode switch) ---------- */
 .segmented { display:inline-flex; border:1px solid var(--line-2); border-radius: var(--radius-sm);
@@ -4355,7 +4360,7 @@ html[data-theme="field-manual"] {
   --bg:#e8dfc9; --bg-2:#ddd0af; --panel:#f4eeda; --panel-2:#ece1c6;
   --line:#c2b28b; --line-2:#a8977a; --border:#c2b28b;
   --amber:#4b5320; --btn-ink:#ffffff; --amber-dim:#6b7a2e; --cyan:#3d6b6b; --green:#4b5320; --red:#8c2f2f; --violet:#6b5a3d;
-  --text:#2b2620; --text-1:#2b2620; --text-dim:#5c5340; --text-2:#5c5340; --text-mute:#615846;
+  --text:#2b2620; --text-1:#2b2620; --text-dim:#474031; --text-2:#474031; --text-mute:#615846;
   --radius:2px; --radius-sm:1px;
   --shadow:0 2px 0 rgba(43,38,32,.15), 0 1px 3px rgba(43,38,32,.2);
   --glow-amber:none;
@@ -4367,7 +4372,7 @@ html[data-theme="topographic"] {
   --bg:#16281f; --bg-2:#122019; --panel:#1e3527; --panel-2:#24402f;
   --line:#35513d; --line-2:#46654d; --border:#35513d;
   --amber:#7bbf6a; --btn-ink:#000000; --amber-dim:#5a9749; --cyan:#74aadb; --green:#83c373; --red:#c1683f; --violet:#c9b280;
-  --text:#e8f0e4; --text-1:#e8f0e4; --text-dim:#a9c2a2; --text-2:#a9c2a2; --text-mute:#9baf97;
+  --text:#e8f0e4; --text-1:#e8f0e4; --text-dim:#b1c8aa; --text-2:#b1c8aa; --text-mute:#9baf97;
   --radius:4px; --radius-sm:2px;
   --shadow:0 6px 20px rgba(0,0,0,.35);
   --glow-amber:0 0 0 1px rgba(123,191,106,.3), 0 0 16px rgba(123,191,106,.1);
@@ -4379,7 +4384,7 @@ html[data-theme="parade-rest"] {
   --bg:#f4f6f8; --bg-2:#ffffff; --panel:#ffffff; --panel-2:#eef1f4;
   --line:#d7dde3; --line-2:#c3ccd4; --border:#d7dde3;
   --amber:#1c3d5a; --btn-ink:#ffffff; --amber-dim:#2f5478; --cyan:#2f6b8a; --green:#2f6b3f; --red:#b3261e; --violet:#5a4a8a;
-  --text:#16232e; --text-1:#16232e; --text-dim:#57697a; --text-2:#57697a; --text-mute:#616e7b;
+  --text:#16232e; --text-1:#16232e; --text-dim:#465563; --text-2:#465563; --text-mute:#616e7b;
   --radius:6px; --radius-sm:4px;
   --shadow:0 2px 8px rgba(22,35,46,.08);
   --glow-amber:0 0 0 1px rgba(184,134,11,.4);
@@ -5424,7 +5429,7 @@ html[data-theme="sepia-study"]{
   --bg:#efe6d6;--bg-2:#e7dcc8;--panel:#f7f1e6;--panel-2:#efe6d4;
   --line:#d8c9ae;--line-2:#c2b090;--border:#d8c9ae;
   --amber:#5a4632; --btn-ink:#ffffff;--amber-dim:#7a5c3a;--cyan:#4a6b63;--green:#5a6b3a;--red:#9a4a3a;--violet:#6b5a4a;
-  --text:#33291c;--text-1:#33291c;--text-dim:#655640;--text-2:#655640;--text-mute:#6c5f4e;
+  --text:#33291c;--text-1:#33291c;--text-dim:#544735;--text-2:#544735;--text-mute:#6c5f4e;
   --radius:4px;--radius-sm:2px;--shadow:0 2px 6px rgba(51,41,28,.12);--glow-amber:none;
 }
 /* ---- Signal Amber (HC dark, AAA) ---- */
@@ -6527,7 +6532,7 @@ html[data-theme="parchment-read"] {
   --panel: #fbf7f0; --panel-2: #f0ece5;
   --line: #d9d4cc; --line-2: #cbc6be; --border: #bebab2;
   --text: #26221d; --text-1: #3b3631; --text-2: #4b4741;
-  --text-dim: #5c5751; --text-mute: #67635e;
+  --text-dim:#4f4b46; --text-mute: #67635e;
   --amber: #7d5f33; --amber-dim: #a18a69; --brass: #67502e;
   --green: #5f6b52; --cyan: #7e8a7a; --red: #c05a52; --violet: #8c727a;
   --btn-ink: #f5f7f8;
@@ -6538,7 +6543,7 @@ html[data-theme="bone-neutral"] {
   --panel: #fafaf8; --panel-2: #efefee;
   --line: #d7d7d6; --line-2: #c8c9c8; --border: #bcbcbb;
   --text: #222426; --text-1: #37393a; --text-2: #47494a;
-  --text-dim: #585a5b; --text-mute: #646565;
+  --text-dim:#4b4d4e; --text-mute: #646565;
   --amber: #4a6b8a; --amber-dim: #7c94a9; --brass: #405971;
   --green: #5c6b58; --cyan: #6291aa; --red: #c05a52; --violet: #7278a5;
   --btn-ink: #f5f7f8;
@@ -6549,7 +6554,7 @@ html[data-theme="overcast-glare"] {
   --panel: #f7f9fb; --panel-2: #eceef0;
   --line: #d1d5d8; --line-2: #c3c6ca; --border: #b6babe;
   --text: #1e2429; --text-1: #33383d; --text-2: #43494d;
-  --text-dim: #54595d; --text-mute: #606366;
+  --text-dim:#474b4f; --text-mute: #606366;
   --amber: #3f6484; --amber-dim: #738ea5; --brass: #37546d;
   --green: #54685c; --cyan: #5c8da6; --red: #c05a52; --violet: #6c75a2;
   --btn-ink: #f5f7f8;
@@ -6560,7 +6565,7 @@ html[data-theme="sandstone-sun"] {
   --panel: #f9f4ea; --panel-2: #eee9e0;
   --line: #d5cfc3; --line-2: #c7c1b6; --border: #bbb4aa;
   --text: #241f18; --text-1: #38332c; --text-2: #49433b;
-  --text-dim: #59544b; --text-mute: #645f58;
+  --text-dim:#4c4740; --text-mute: #645f58;
   --amber: #8a5f2e; --amber-dim: #a98862; --brass: #704f28;
   --green: #5a6349; --cyan: #858a77; --red: #c05a52; --violet: #927277;
   --btn-ink: #f5f7f8;
@@ -6602,7 +6607,7 @@ html[data-theme="ash-quiet"] {
   --panel: #262624; --panel-2: #2d2d2a;
   --line: #3a3a35; --line-2: #48483f; --border: #57574c;
   --text: #e7e5de; --text-1: #d3d1ca; --text-2: #c3c1ba;
-  --text-dim: #aeaca4; --text-mute:#9e9c95;
+  --text-dim:#b5b3ab; --text-mute:#9e9c95;
   --amber: #a7ae9c; --amber-dim: #818871; --brass: #b9c0ad;
   --green: #a7ae9c; --cyan: #93a7a6; --red: #af7a71; --violet: #a79bab;
   --btn-ink: #131311;
@@ -6620,7 +6625,7 @@ html[data-theme="warm-paper"] {
   --panel: #f9f2e2; --panel-2: #efe6d2;
   --line: #ddcfae; --line-2: #cbba91; --border: #b9a67c;
   --text: #1e1c18; --text-1: #332f27; --text-2: #453f34;
-  --text-dim: #5a5346; --text-mute: #635d50;
+  --text-dim:#4b453a; --text-mute: #635d50;
   --amber: #6b4a26; --amber-dim: #8f6a3e; --brass: #5c3f22;
   --green: #4f5c3f; --cyan: #4a6560; --red: #9a4636; --violet: #6a5468;
   --btn-ink: #f7f1e4;
