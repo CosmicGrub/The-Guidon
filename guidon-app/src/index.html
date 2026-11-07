@@ -585,6 +585,10 @@ html.high-contrast nav.nav[data-scroll-y] { -webkit-mask-image: none; mask-image
      768px   min-width   tablet / large-fold enablement
      799px   max-width   foldable/small-tablet tier ceiling (see 600px)
      800px   min-width   desktop persistent side-rail
+     1023px  max-width   the stacked Board Drill screen's ceiling - the
+                          adjacent-pair companion of 1024px, same shape as
+                          599/600 and 799/800 (the chip rows stay one scrolling
+                          line each right up to where the split grid begins)
      1024px  min-width   main-content max-width cap
      1200px  min-width   wide-desktop rail widen
      1360px  min-width   Board Drill's 3rd (readiness) column enablement -
@@ -3929,8 +3933,18 @@ html.light .feedback.error { background: rgba(220,53,69,0.1); }
    focused chip into view. The ::after spacer is the END of the scroll
    range: engines disagree on whether a scroller's inline-end padding is
    scrollable, so a real (empty) flex item guarantees the last chip's ring
-   room everywhere instead of depending on that. */
-@media (max-width: 640px) {
+   room everywhere instead of depending on that.
+
+   Scroller range: every width BELOW the Board Drill split (max-width 1023px,
+   the adjacent-pair companion of the 1024px .drill-layout split - see the
+   canonical scale), not only phones (it used to stop at 640px). From 641 to
+   1023px the screen is still the single stacked column, so the rows wrapped
+   into 4-6 lines there (a Z Fold5 unfolded at 673px: 122 + 218px of chips) and
+   the card started 455px below the fold with nothing scrolling it into view;
+   as one scrolling line per row the card begins about 224px higher at 673px.
+   At 1024px and wider the split grid gives the card its own column and the
+   rows wrap as before. */
+@media (max-width: 1023px) {
   .qf-row { flex-wrap: nowrap; overflow-x: auto; max-width: calc(100% + 12px); padding: 6px 6px 4px; margin: 4px -6px 0; scroll-padding-inline: 6px; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
   .qf-row .search-chip { flex: 0 0 auto; white-space: nowrap; }
   .qf-row::after { content: ""; flex: 0 0 2px; }
@@ -9750,7 +9764,12 @@ window.G = window.G || {};
       const compAvg = Math.round(COMPS.reduce((s, c) => s + dims[c].pct, 0) / COMPS.length);
       let label = "Not Started";
       if (attempts.length) {
-        label = compAvg >= 85 ? "Board Ready" : compAvg >= 60 ? "Strong" : compAvg >= 30 ? "On Track" : "Developing";
+        // The top band is "Very Strong", not "Board Ready": this is a score of the
+        // scenarios played (best-path play on a handful of them reaches 85+ - it is
+        // not evidence a Soldier is ready for a real board), and nothing in the
+        // Army defines what "board ready" is. The app does not claim it. The
+        // 85/60/30 cut-offs themselves are the app's own uncited bands.
+        label = compAvg >= 85 ? "Very Strong" : compAvg >= 60 ? "Strong" : compAvg >= 30 ? "On Track" : "Developing";
       }
       const result = {
         totalAttempts: attempts.length,
@@ -11436,6 +11455,54 @@ window.G = window.G || {};
   // grade: 0 = "Needs Help" · 1 = "Somewhat" · 2 = "Know It" · 3 = "Down Cold"
   // Accepts a legacy boolean too (true -> 2, false -> 0) so nothing else
   // that might call schedule() breaks.
+  // Early-review guard. Re-grading a card well BEFORE it is due used to lengthen
+  // its interval exactly like an on-time review: four "Down Cold" taps on the same
+  // card in one sitting took it from 3 to 165 days, and the default deck does this
+  // without any wrap-around at all (it interleaves not-yet-due cards among the new
+  // ones, so a Soldier who drills every day inflates every card they meet a day or
+  // two early). Spacing is the point of the scheduler, so a Know It / Down Cold
+  // that arrives before most of the interval has passed is treated as extra
+  // practice: the card keeps its interval, due date, repetitions, ease and misses.
+  //
+  // Only grades 2 and 3 are ever held back. A miss (0 Needs Help, 1 Somewhat) always
+  // applies, at any time - a Soldier who just forgot a card must see it again soon
+  // however recently they last saw it.
+  //
+  // The last review time is not stored: every branch below sets due = now +
+  // interval * DAY (a miss sets due = now with interval 0), and schedule() is the
+  // only writer of `due`, so it is exactly due - interval * DAY for any row that
+  // has one. A row with no usable interval or due date, or that was never graded
+  // (a fresh card, or an older row), is allowed - nothing to compare against.
+  // "Early" means fewer than 4 of the interval's 5 fifths (80%) have passed, so a
+  // card reviewed more than a fifth of its interval ahead of time is held back: a
+  // Soldier who studies at about the same time each day is never held back from a
+  // card that came due that day. Whole-number arithmetic (elapsed * 5 against
+  // interval * 4), not a 0.8 factor, so the 80% line is exact to the millisecond
+  // (0.8 * 3 * DAY is 207360000.00000003 in floating point).
+  const EARLY_REVIEW_FIFTHS = 4;
+  function isEarlyReview(s, grade, now) {
+    if (grade !== 2 && grade !== 3) return false;
+    if (!s || s.lastGrade == null) return false;
+    const interval = +s.interval, due = +s.due;
+    if (!(interval > 0) || !(due > 0) || !isFinite(interval) || !isFinite(due)) return false;
+    const lastReviewed = due - interval * DAY;
+    return ((now || Date.now()) - lastReviewed) * 5 < interval * DAY * EARLY_REVIEW_FIFTHS;
+  }
+  // The one plain sentence shown when a grade did not move a card's date, so an
+  // unchanged "next in 2d" does not look like a bug. Names the day, not a count.
+  function earlyReviewCue(s) {
+    const now = new Date();
+    const dueDate = new Date(s.due);
+    const startOf = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const days = Math.round((startOf(dueDate) - startOf(now)) / DAY);
+    let when;
+    if (days <= 0) when = "later today";
+    else if (days === 1) when = "tomorrow";
+    else if (days < 7) { try { when = "on " + dueDate.toLocaleDateString(undefined, { weekday: "long" }); } catch (e) { when = "in " + days + " days"; } }
+    else when = "in " + days + " days";
+    return "Too soon to change this card's date — it still comes back " + when + ".";
+  }
+
   function schedule(s, grade) {
     if (grade === true) grade = 2;
     if (grade === false) grade = 0;
@@ -11443,6 +11510,10 @@ window.G = window.G || {};
     s.reps = s.reps || 0;
     s.ease = s.ease || 2.3;
     s.interval = s.interval || 0;
+    if (isEarlyReview(s, grade, now)) { // extra practice: the schedule stands
+      s.lastGrade = grade;
+      return s;
+    }
     if (grade === 0) { // Needs Help
       s.reps = 0;
       s.ease = Math.max(1.3, s.ease - 0.3);
@@ -11831,6 +11902,7 @@ window.G = window.G || {};
       refreshPillarChips();
       refreshReadinessPane();
       draw();
+
     }
 
     // Composes the reps set from build()'s already-ordered queue: every
@@ -12523,8 +12595,13 @@ window.G = window.G || {};
       // Belt-and-braces for the reps completion panel (see draw()'s own
       // guard): no grading path may run once the set's grade count is in.
       if (repsMode && repsSize && seen >= repsSize) return;
+      // Asked BEFORE schedule() runs (it mutates the row): did this grade land
+      // too early to move the card's date? The Soldier is told in a sentence, so
+      // an unchanged "next in 2d" badge on the next visit does not read as a bug.
+      const tooEarly = isEarlyReview(srsMap[q.id], gradeLevel, Date.now());
       const s = schedule(srsMap[q.id], gradeLevel);
       srsMap[q.id] = s;
+      if (tooEarly) { try { util.toast(earlyReviewCue(s), 4200); } catch (e) {} }
       // Code-review finding (post-merge audit): this is Board Drill's
       // PRIMARY grading path (the on-card buttons, the swipe gesture, and
       // the 1-4 keyboard shortcuts below all call grade() directly), unlike
@@ -12696,6 +12773,57 @@ window.G = window.G || {};
     if (G.board._filterReps) {
       repsMode = true;
       G.board._filterReps = null;
+    }
+    // Arrival from Home's "Drill ->" / "5-minute board reps -> Start": the same
+    // one-shot convention again, with a timestamp so a flag that was set but never
+    // consumed (the navigation did not happen) cannot fire on some later,
+    // unrelated visit. Only these two taps say "take me to my cards"; the nav
+    // item, the tab strip, the category list and every deep link set nothing and
+    // land exactly as before. build() fires arriveAtCard() once, after the first draw.
+    let arrivePending = false;
+    if (G.board._arrive) {
+      arrivePending = (Date.now() - G.board._arrive) < 5000;
+      G.board._arrive = null;
+    }
+    // Brings the first card into view and puts keyboard focus on it, so Space flips
+    // and 1-4 grade without a click first (the screen hint promised that; with
+    // focus left on the page heading, Space only scrolled the page).
+    //
+    // Order matters, and it is the screen-reader contract: route() has already
+    // moved focus to the "Board Drill" heading (that is the announcement of the
+    // new screen) before this first draw can land, because the draw waits on an
+    // IndexedDB scan. This step runs after that, never before it, and says in one
+    // sentence where focus went. It only moves focus when it is still on the page
+    // or that heading - never away from a control the Soldier already reached.
+    //
+    // Scrolls just far enough that the card block (counter, card, buttons) ends
+    // inside the visible area, but never so far that the counter leaves the top of
+    // it: not scrollIntoView(start), which would also push the Board Date panel and
+    // the tab strip off the top. When the card already fits, nothing scrolls.
+    function arriveAtCard() {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (!cardWrap.isConnected || !queue.length || theaterOn()) return;
+        const active = document.activeElement;
+        const routeEl = document.getElementById("route");
+        const heading = routeEl && routeEl.querySelector("h1, h2");
+        if (active && active !== document.body && active !== heading && active !== cardWrap) return;
+        const main = cardWrap.closest("main");
+        if (main && main.scrollHeight > main.clientHeight + 1) {
+          const view = main.getBoundingClientRect();
+          const wrapBox = cardWrap.getBoundingClientRect();
+          const tallyBox = tally.getBoundingClientRect();
+          const need = wrapBox.bottom - (view.bottom - 12);
+          const room = tallyBox.top - (view.top + 8);
+          const by = Math.min(need, room);
+          if (by > 1) main.scrollBy({ top: by, behavior: "auto" });
+        } else {
+          cardWrap.scrollIntoView({ block: "nearest" });
+        }
+        try { cardWrap.focus({ preventScroll: true }); } catch (e) {}
+        try {
+          if (util.announce) util.announce((repsMode && repsSize ? "5-minute board reps, card 1 of " + repsSize : "Board Drill, card " + ((idx % queue.length) + 1) + " of " + queue.length) + ". Press Space to flip, then 1 to 4 to grade.");
+        } catch (e) {}
+      }));
     }
     // ROADMAP 3g item G / AUDIT-2026-09.md's own requirement ("a lane has
     // its own picker entry"): the Readiness tab's "Study <MOS>" button sets
@@ -13200,11 +13328,19 @@ window.G = window.G || {};
       // srsMap is the shared bank-wide map build() just loaded - see
       // refreshCatList()'s own comment above for why this is safe (only
       // ever called from build(), right after that assignment).
-      util.clear(readinessPane);
-      readinessPane.appendChild(el("div.eyebrow", { text: "Readiness" }));
       // The shipped bank only: a unit deck has its own Readiness row on the full Readiness
       // tab and must not move this "Overall" figure.
       const bankAll = all.filter((q) => !q.unitDeck);
+      // Weakest 3 only - this pane is a glance, not a replacement for the
+      // full Readiness tab's complete per-category breakdown. The shared
+      // ranking (G.board.weakestCategoriesByMastery): only categories the
+      // Soldier has tried, never an unopened one that merely sorts first.
+      // Awaited BEFORE the pane is cleared, so two overlapping refreshes can
+      // never each append their rows to the same node.
+      let weakestHere = [];
+      try { weakestHere = await G.board.weakestCategoriesByMastery(3, bankAll, srsMap); } catch (e) { weakestHere = []; }
+      util.clear(readinessPane);
+      readinessPane.appendChild(el("div.eyebrow", { text: "Readiness" }));
       const catStats = categories.filter((c) => c !== "All").map((c) => {
         const pool = bankAll.filter((q) => q.category === c);
         const mastered = pool.filter((q) => G.board.isMasteredSrs(srsMap[q.id])).length;
@@ -13212,18 +13348,21 @@ window.G = window.G || {};
           pct: pool.length ? Math.round(mastered / pool.length * 100) : 0 };
       });
       const totalMastered = catStats.reduce((s, c) => s + c.mastered, 0);
-      const overallPct = bankAll.length ? Math.round(totalMastered / bankAll.length * 100) : 0;
+      // Same headline the full Readiness tab prints: cards that are CURRENT
+      // (mastered and not due), one predicate (G.board.isCurrentSrs), so this
+      // glance can never read a different number than the tab it links to.
+      const nowTs = Date.now();
+      const totalCurrent = bankAll.filter((q) => G.board.isCurrentSrs(srsMap[q.id], nowTs)).length;
+      const currentPct = bankAll.length ? Math.round(totalCurrent / bankAll.length * 100) : 0;
       readinessPane.appendChild(el("div.stat", {}, [
-        el("span.k", { text: "Overall" }),
-        // data-overall-*: the two numbers the percentage is made of, so a test can check the bank it is measured
+        el("span.k", { text: "Cards current" }),
+        // data-overall-*: the numbers the headline is made of, so a test can check the bank it is measured
         // against (the shipped bank alone, never a unit deck) without having to infer it from a rounded figure.
-        el("span.v", { text: overallPct + "%", "data-overall-cards": String(bankAll.length), "data-overall-mastered": String(totalMastered) }),
+        el("span.v", { text: totalCurrent + " of " + bankAll.length, "data-overall-cards": String(bankAll.length), "data-overall-mastered": String(totalMastered), "data-overall-current": String(totalCurrent) }),
       ]));
-      readinessPane.appendChild(el("div.bar" + (overallPct >= 85 ? ".green" : ""), {},
-        [el("span", { style: "transform:scaleX(" + (overallPct / 100) + ")" })]));
-      // Weakest 3 only - this pane is a glance, not a replacement for the
-      // full Readiness tab's complete per-category breakdown.
-      catStats.filter((c) => c.total > 0).sort((a, b) => a.pct - b.pct).slice(0, 3).forEach((c) => {
+      readinessPane.appendChild(el("div.bar" + (currentPct >= 85 ? ".green" : ""), {},
+        [el("span", { style: "transform:scaleX(" + (currentPct / 100) + ")" })]));
+      weakestHere.forEach((c) => {
         const row = el("div", { style: "margin-top:10px" });
         row.appendChild(el("div.stat", {}, [
           el("span.k", { text: c.cat, style: "font-size:0.82rem" }),
@@ -13249,8 +13388,14 @@ window.G = window.G || {};
       // entirely on repeat visits (kept only in the longer first-run copy
       // below) - restored, briefly, since it's the one line a returning
       // desktop keyboard user actually sees every time.
-      ? clickVerb() + " a card (or press Space) to flip it, then grade yourself 1-4."
-      : clickVerb() + " a card (or press Space) to flip it. Grade yourself 1-4 — Needs Help, Somewhat, Know It, or Down Cold — and spaced repetition schedules your next review accordingly. Filter by study level: Beginner, Intermediate, or Expert (by-the-book verbatim). Star a card to add it to your personal bookmark deck." }));
+      // Space and 1-4 only work once the card itself has keyboard focus (they are
+      // deliberately scoped to the card, never global, so they cannot fight with
+      // typing in the Board Date or Level controls). The line used to say "or
+      // press Space" as if it worked from anywhere; it now names the one step a
+      // keyboard needs first. Arriving from Home's Drill / Start taps already
+      // lands with the card focused.
+      ? clickVerb() + " a card to flip it, then grade yourself 1-4. On a keyboard, choose Skip to flashcard first; then Space flips the card and 1-4 grade it."
+      : clickVerb() + " a card to flip it. Grade yourself 1-4 — Needs Help, Somewhat, Know It, or Down Cold — and spaced repetition schedules your next review accordingly. On a keyboard, choose Skip to flashcard first; then Space flips the card and 1-4 grade it. Filter by study level: Beginner, Intermediate, or Expert (by-the-book verbatim). Star a card to add it to your personal bookmark deck." }));
     if (!boardHintSeen) G.db.local.set(BOARD_HINT_KEY, "1");
     const drillDetail = el("div");
     // Visible feedback for the one-shot MOS deep link consumed above: unlike
@@ -15067,15 +15212,18 @@ window.G = window.G || {};
 
     const totalQ = all.length;
     const totalMastered = catScores.reduce((s, c) => s + c.mastered, 0);
-    const overallPct = totalQ ? Math.round(totalMastered / totalQ * 100) : 0;
-    // "On Track" used to also be Progress's own word for a DIFFERENT score
-    // band on a different metric (compAvg 30-59%, not this tab's
-    // overallPct 60-84%) - same word, non-overlapping ranges, meaning a
-    // Soldier could see "On Track" on both screens and have it mean two
-    // different things. Renamed this tab's 60-84% band so no word here
-    // collides with Progress's readinessLabel() scale at all.
-    const readLabel = overallPct >= 85 ? "Board Ready ✓" : overallPct >= 60 ? "Solid Progress" : overallPct >= 30 ? "Building" : "Getting Started";
-    const readColor = overallPct >= 85 ? "var(--green)" : overallPct >= 60 ? "var(--cyan)" : overallPct >= 30 ? "var(--amber)" : "var(--red)";
+    const totalTried = catScores.reduce((s, c) => s + c.seen, 0);
+    // The headline counts CURRENT cards - mastered AND not yet due
+    // (G.board.isCurrentSrs) - not cards that were ever mastered. It used to
+    // be mastered/total, and "mastered" has no expiry: 1,000 cards last
+    // graded Know It two months ago and never seen since read "88% Board
+    // Ready ✓" with the overdue count on the very next line. The band words
+    // and the check mark went with it: an uncited 85/60/30 cut-off is not
+    // something to hand a Soldier as a verdict on their board, so the
+    // headline is a plain count and the colour only echoes the share.
+    const totalCurrent = all.filter((q) => G.board.isCurrentSrs(srsData[q.id], now)).length;
+    const currentPct = totalQ ? Math.round(totalCurrent / totalQ * 100) : 0;
+    const readColor = currentPct >= 85 ? "var(--green)" : currentPct >= 60 ? "var(--cyan)" : currentPct >= 30 ? "var(--amber)" : "var(--red)";
 
     // ── Due now count ──────────────────────────────────────────
     // Same predicate Home/Progress use (G.board.isDueSrs) - a card with no
@@ -15106,20 +15254,22 @@ window.G = window.G || {};
     const header = el("div.panel");
     header.appendChild(el("div.stat", {}, [
       el("span.k", { text: "Board Readiness Score" }),
-      el("span.v", { style: "color:" + readColor + ";font-weight:700", text: overallPct + "%  " + readLabel }),
+      el("span.v", { style: "color:" + readColor + ";font-weight:700", text: totalCurrent + " of " + totalQ + " cards current" }),
     ]));
     // Enhancement backlog round 3, "Board Readiness Display Accuracy"
-    // bucket: this dead ternary's >=60 branch and final else both
-    // evaluated to the same empty string, so the bar was only ever
-    // ".green" or the base (amber-tinted) style - never amber or red for
-    // the 0-59% bands readColor/readLabel just above explicitly flag as
-    // "Building"/"Getting Started", visually contradicting the text right
-    // next to it. Mapped onto the same bands readColor uses (added a
-    // real .bar.red variant above; .amber isn't needed since the base
-    // .bar style is already amber-tinted).
-    header.appendChild(el("div.bar" + (overallPct >= 85 ? ".green" : overallPct >= 60 ? ".cyan" : overallPct >= 30 ? "" : ".red"), {},
-      [el("span", { style: "transform:scaleX(" + (overallPct / 100) + ")" })]));
+    // bucket: this bar used to be a dead ternary that was only ever ".green"
+    // or the base (amber-tinted) style, visually contradicting the text
+    // next to it. It follows the same bands readColor uses (a real .bar.red
+    // variant exists for the low band; the base .bar style is already
+    // amber-tinted).
+    header.appendChild(el("div.bar" + (currentPct >= 85 ? ".green" : currentPct >= 60 ? ".cyan" : currentPct >= 30 ? "" : ".red"), {},
+      [el("span", { style: "transform:scaleX(" + (currentPct / 100) + ")" })]));
+    header.appendChild(el("p.hint", { text: "Current means you last rated the card Know It or Down Cold and it is not due for review yet." }));
     header.appendChild(el("div.stat", { style: "margin-top:10px" }, [
+      el("span.k", { text: "Cards tried at least once" }),
+      el("span.v", { text: totalTried + " / " + totalQ }),
+    ]));
+    header.appendChild(el("div.stat", {}, [
       // Enhancement backlog round 3, "Board Readiness Display Accuracy"
       // bucket: this label described the OLD interval-based mastery
       // signal - totalMastered (via categoryMasteryScores() ->
@@ -15160,6 +15310,15 @@ window.G = window.G || {};
     // their weakest, the exact scenario the shared helper exists to
     // prevent.
     const weakest = await G.board.weakestCategoriesByMastery(3, all, srsData);
+    // "Not opened yet" is its own line, never a rank: a category with no
+    // graded card is not weak, it has not been started. Only shown once
+    // something HAS been opened (a brand-new profile is all unopened, and the
+    // All Categories map below already says so).
+    const catsWithCards = catScores.filter((c) => c.total > 0);
+    const unopenedCount = catsWithCards.filter((c) => c.seen === 0).length;
+    const unopenedLine = (unopenedCount && unopenedCount < catsWithCards.length)
+      ? el("p.hint.readiness-unopened", { text: "Not opened yet: " + unopenedCount + " of " + catsWithCards.length + " categories (see All Categories below)." })
+      : null;
     if (weakest.length) {
       const weak = el("div.panel", { style: "margin-top:12px" });
       weak.appendChild(el("div.eyebrow", { text: "Needs Work" }));
@@ -15180,7 +15339,10 @@ window.G = window.G || {};
           onclick: () => { G.board._filterCat = c.cat; G.board.render(mount.parentElement || mount); } }));
         weak.appendChild(row);
       });
+      if (unopenedLine) weak.appendChild(unopenedLine);
       mount.appendChild(weak);
+    } else if (unopenedLine) {
+      mount.appendChild(el("div.panel", { style: "margin-top:12px" }, [unopenedLine]));
     }
 
     // ── Readiness by pillar (ROADMAP §3f Phase 1 rollup) ──────────
@@ -15220,7 +15382,7 @@ window.G = window.G || {};
       if (pillarRows.length) {
         const pil = el("div.panel.readiness-pillars", { style: "margin-top:12px" });
         pil.appendChild(el("div.eyebrow", { text: "Readiness by pillar" }));
-        pil.appendChild(el("p.hint", { text: "The six SGT-board study pillars — cards you've mastered and scenarios you've completed in each. Subjects outside them (weapons, land nav, medical, fitness…) count toward the score above but not here." }));
+        pil.appendChild(el("p.hint", { text: "The six SGT-board study pillars — cards you've mastered and scenarios you've completed in each. Mastered means you last rated the card Know It or Down Cold, even if it is due for review again now. Subjects outside them (weapons, land nav, medical, fitness…) count toward the score above but not here." }));
         pillarRows.forEach((r) => {
           const row = el("div.readiness-pillar-row", { style: "margin-bottom:10px", "data-pillar": r.p });
           row.appendChild(el("div.stat", {}, [
@@ -15928,7 +16090,7 @@ window.G = window.G || {};
       pickRow.appendChild(catSel); pickRow.appendChild(needsWorkChip);
       catRow.appendChild(pickRow);
       const needsWorkNote = el("p.hint.rf-needs-work-note", { style: "display:none",
-        text: "No attempt history yet, so there's nothing weak to surface — showing All categories instead." });
+        text: "Nothing looks weak yet, so there's nothing to surface — showing All categories instead." });
       catRow.appendChild(needsWorkNote);
 
       // ── Custom mix: multi-select checkboxes + save/load named decks ──
@@ -16633,7 +16795,7 @@ window.G = window.G || {};
         try {
           const scores = await G.board.categoryMasteryScores();
           const inRound = scores.filter((s) => roundCategories.has(s.cat));
-          if (inRound.length) target = inRound.sort((a, b) => a.pct - b.pct)[0].cat;
+          if (inRound.length) target = inRound.sort(G.board.compareWeakness)[0].cat;
         } catch (e) {}
         if (!target) return;
         linkHost.appendChild(el("p.hint", { text: "Keep working " + target + ":" }));
@@ -17222,6 +17384,18 @@ window.G = window.G || {};
     isMasteredSrs(srs) {
       return !!(srs && srs.lastGrade != null && srs.lastGrade >= 2);
     },
+    // "Current": mastered AND not yet due - the one predicate every readiness
+    // HEADLINE (Board Drill's Readiness score, Home, Progress) counts, so a
+    // card last graded Know It two months ago and never seen since does not
+    // read as ready. isMasteredSrs above deliberately has no time term (the
+    // card badge, category heat map, pillar rows and unit/MOS decks all key
+    // off it, and a time term would flip them and revive the drift the
+    // round-3 unification fixed) - this composes it with isDueSrs instead, so
+    // "current" and "due for review now" can never disagree about a card:
+    // every mastered card is exactly one of the two.
+    isCurrentSrs(srs, now) {
+      return G.board.isMasteredSrs(srs) && !G.board.isDueSrs(srs, now);
+    },
     // Shared "is this card a leech" predicate — the misses>=4 threshold was
     // duplicated as a literal at 3 separate call sites (count tally, the
     // Leeches-only filter, the on-card badge) with no single source of
@@ -17267,21 +17441,61 @@ window.G = window.G || {};
         const seen = qs.filter((q) => srsData[q.id].lastGrade != null);
         const mastered = qs.filter((q) => G.board.isMasteredSrs(srsData[q.id]));
         const pct = qs.length ? Math.round(mastered.length / qs.length * 100) : 0;
-        return { cat, total: qs.length, seen: seen.length, mastered: mastered.length, pct };
+        // misses: the running total of how often the Soldier's own grades
+        // said "Needs Help" (a half for "Somewhat"), decayed by good recall -
+        // the only tie-break signal that separates two categories at the
+        // same percent (see compareWeakness).
+        const misses = qs.reduce((n, q) => n + ((srsData[q.id] && srsData[q.id].misses) || 0), 0);
+        return { cat, total: qs.length, seen: seen.length, mastered: mastered.length, pct, misses };
       });
     },
-    // Weakest-N categories by mastery pct — the Readiness tab's own
-    // weakest-3 ranking (categories with zero cards excluded). Returns []
-    // when there's no attempt history at all yet: every category sits at a
-    // fresh, untouched 0%, so "weakest 3" would be meaningless noise rather
-    // than a real signal — callers (Rapid Fire's Setup "Needs Work" option)
-    // fall back to "All categories" on an empty result instead of
-    // surfacing it.
+    // The ONE ordering of "which category is weaker" - Readiness's Needs Work,
+    // the 5-minute reps set, Rapid Fire's Needs Work chip and its cross-link
+    // all sort with this, so no screen can rank differently from another.
+    // It used to be pct alone over an alphabetical list, so every category
+    // the Soldier had never opened (0%) tied with the one they had just
+    // failed and the alphabet won the tie. Order of the keys:
+    //   1. tried before untried (a category with no graded card is not
+    //      "weak", it is unopened) and, among tried ones, real evidence
+    //      before thin evidence - a category with one graded card of 24 has
+    //      not shown anything yet (evidence = min(3, a quarter of the
+    //      category, at least 1) graded cards), and a category of one or two
+    //      cards is thin by size alone, so neither can outrank a real one on
+    //      a single failed card (this holds for any caller that sorts with
+    //      this directly, e.g. Rapid Fire's cross-link, not just the list
+    //      weakestCategoriesByMastery builds);
+    //   2. lower percent mastered first;
+    //   3. more misses first;
+    //   4. more cards tried first;
+    //   5. name, so the answer never depends on the order the bank arrives in.
+    compareWeakness(a, b) {
+      const tier = (c) => {
+        if (!(c.seen > 0)) return 2;
+        if ((c.total || 0) < 3) return 1;
+        const need = Math.min(3, Math.max(1, Math.ceil((c.total || 0) * 0.25)));
+        return c.seen < need ? 1 : 0;
+      };
+      return (tier(a) - tier(b))
+        || (a.pct - b.pct)
+        || ((b.misses || 0) - (a.misses || 0))
+        || ((b.seen || 0) - (a.seen || 0))
+        || (a.cat < b.cat ? -1 : a.cat > b.cat ? 1 : 0);
+    },
+    // Weakest-N categories - the Readiness tab's "Needs Work" list. Only a
+    // category the Soldier has actually TRIED and not yet mastered can be
+    // weak; one that has never been opened is "not started" (the Readiness
+    // tab says so on its own line), and a category of one or two cards is
+    // left out whenever a real-sized category is struggling, so a single
+    // failed card can never outrank a 24-card category with twelve of them.
+    // Returns [] when there is nothing to rank - no attempt history at all,
+    // or everything tried is already mastered - and callers (Rapid Fire's
+    // Setup "Needs Work" option, the reps set) fall back to "All
+    // categories" on an empty result instead of surfacing noise.
     async weakestCategoriesByMastery(n, all, srsData) {
       const scored = (await this.categoryMasteryScores(all, srsData)).filter((c) => c.total > 0);
-      const anySeen = scored.some((c) => c.seen > 0);
-      if (!anySeen) return [];
-      return scored.sort((a, b) => a.pct - b.pct).slice(0, n || 3);
+      let pool = scored.filter((c) => c.seen > 0 && c.pct < 100);
+      if (pool.some((c) => c.total >= 3)) pool = pool.filter((c) => c.total >= 3);
+      return pool.sort(G.board.compareWeakness).slice(0, n || 3);
     },
     loadAllSrs,
     // Audit finding (new-features): Board Drill's own SRS/leech data - the
@@ -18158,7 +18372,18 @@ window.G = window.G || {};
           if (relSc.length) priorities.push(`Practice — try "${relSc[0].title}" (${weakest.name} at ${weakest.pct}%, your lowest competency)`);
         }
       }
-      if (p.competencyReadiness !== undefined && p.competencyReadiness < 70) priorities.push(`Board Prep — run Board Drill (${p.competencyReadiness || 0}% ready)`);
+      // Same wording as the live "Do these next" row: the card counts, never the
+      // scenario score printed as "N% ready" (a counselor reads this page).
+      if (p.competencyReadiness !== undefined && p.competencyReadiness < 70) {
+        let prepDetail = "";
+        if (bqCatStats && bqCatStats.catStats) {
+          const cs = Object.values(bqCatStats.catStats);
+          if (cs.reduce((n, c) => n + c.reviewed, 0) > 0) {
+            prepDetail = ` (${cs.reduce((n, c) => n + (c.current || 0), 0)} of ${cs.reduce((n, c) => n + c.total, 0)} cards current)`;
+          }
+        }
+        priorities.push(`Board Prep — run Board Drill${prepDetail}`);
+      }
       if (priorities.length) priorityHtml = `<h3>Do these next</h3><ul>${priorities.map((x) => `<li>${util.esc(x)}</li>`).join("")}</ul>`;
     } catch (e) {}
 
@@ -18179,9 +18404,10 @@ window.G = window.G || {};
           const srsAll = await G.board.loadAllSrs(bqs.map((q) => q.id));
           for (const q of bqs) {
             const srs = srsAll[q.id];
-            if (!catStats[q.category]) catStats[q.category] = { total: 0, mastered: 0 };
+            if (!catStats[q.category]) catStats[q.category] = { total: 0, mastered: 0, current: 0 };
             catStats[q.category].total++;
             if (G.board.isMasteredSrs(srs)) catStats[q.category].mastered++;
+            if (G.board.isCurrentSrs(srs)) catStats[q.category].current++;
           }
         }
       }
@@ -18190,11 +18416,17 @@ window.G = window.G || {};
         if (anyMastery) {
           const catRows = Object.keys(catStats).sort().map((c) => {
             const s = catStats[c]; const cp = Math.round((s.mastered / (s.total || 1)) * 100);
-            return `<tr><td>${util.esc(c)}</td><td>${s.mastered}/${s.total}</td><td>${cp}%</td></tr>`;
+            return `<tr><td>${util.esc(c)}</td><td>${s.mastered}/${s.total}</td><td>${s.current || 0}/${s.total}</td><td>${cp}%</td></tr>`;
           }).join("");
+          const sumCur = Object.values(catStats).reduce((n, c) => n + (c.current || 0), 0);
+          const sumTot = Object.values(catStats).reduce((n, c) => n + c.total, 0);
+          // Mastered = last rated Know It or Down Cold, however long ago. Current
+          // = mastered AND not yet due for review. The page says both, in words,
+          // so a deck that has gone stale is not printed as if it were ready.
           masteryHtml = `<h3>Board Q Mastery by Category</h3>
+            <p><strong>Board cards:</strong> ${sumCur} of ${sumTot} current (mastered and not due for review).</p>
             <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
-              <thead><tr style="background:#eee"><th style="text-align:left;padding:4px 8px">Category</th><th>Mastered</th><th>%</th></tr></thead>
+              <thead><tr style="background:#eee"><th style="text-align:left;padding:4px 8px">Category</th><th>Mastered</th><th>Current</th><th>% mastered</th></tr></thead>
               <tbody>${catRows}</tbody>
             </table>`;
         }
@@ -18204,8 +18436,8 @@ window.G = window.G || {};
     const html = `
       <h2 style="margin:0 0 4px">GUIDON Readiness Report</h2>
       <p style="color:#555;margin:0 0 16px;font-size:12px">Generated ${new Date().toLocaleString()} · Study aid only — not an official Army record.</p>
-      <h3>Overall: ${p.readinessLabel} (${p.competencyReadiness}%)</h3>
-      <p>Scenarios: ${p.completedCount} / ${p.totalScenarios} completed · ${p.totalAttempts} total attempts</p>
+      <h3>Promotable Readiness (LRM): ${util.esc(p.readinessLabel)} (${p.competencyReadiness}%)</h3>
+      <p>Scored from the scenarios played, not from flashcards: ${p.completedCount} / ${p.totalScenarios} completed · ${p.totalAttempts} total attempts</p>
       ${streakHtml}${weakestHtml}
       <h3>Leadership Requirements Model</h3>
       <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
@@ -18393,7 +18625,7 @@ window.G = window.G || {};
             const srsAll = await G.board.loadAllSrs(bqs.map((q) => q.id));
             for (const q of bqs) {
               const srs = srsAll[q.id];
-              if (!catStats[q.category]) catStats[q.category] = { total: 0, reviewed: 0, mastered: 0, due: 0 };
+              if (!catStats[q.category]) catStats[q.category] = { total: 0, reviewed: 0, mastered: 0, due: 0, current: 0 };
               catStats[q.category].total++;
               // lastGrade, not reps - see G.board.isDueSrs's own comment
               // (roadmap-week audit, 2nd pass): reps resets to 0 on a
@@ -18405,6 +18637,9 @@ window.G = window.G || {};
                 catStats[q.category].reviewed++;
                 if (G.board.isMasteredSrs(srs)) catStats[q.category].mastered++;
                 if (G.board.isDueSrs(srs)) catStats[q.category].due++;
+                // "Current" = mastered and not due (G.board.isCurrentSrs) - the
+                // one figure Board Drill's Readiness tab and Home also headline.
+                if (G.board.isCurrentSrs(srs)) catStats[q.category].current++;
               }
               const tier = G.board.normDifficulty(q.difficulty);
               tierStats[tier].total++;
@@ -18435,7 +18670,7 @@ window.G = window.G || {};
           el("span", { text: "Developing < 30" }),
           el("span", { text: "On Track 30–60" }),
           el("span", { text: "Strong 60–85" }),
-          el("span", { text: "Board Ready 85+" }),
+          el("span", { text: "Very Strong 85+" }),
         ]),
         el("div.stat", { style: "margin-top:12px" }, [
           el("span.k", { text: "Scenarios completed" }),
@@ -18458,8 +18693,12 @@ window.G = window.G || {};
       // rather than inventing a second compact-stat-card pattern.
       {
         const glanceTiles = [];
-        const readyTone = p.readinessLabel === "Board Ready" ? "green" : p.readinessLabel === "Strong" ? "cyan" : p.readinessLabel === "On Track" ? "amber" : "red";
-        glanceTiles.push({ tone: readyTone, value: p.competencyReadiness + "%", label: "Overall readiness", sub: p.readinessLabel });
+        const readyTone = p.readinessLabel === "Very Strong" ? "green" : p.readinessLabel === "Strong" ? "cyan" : p.readinessLabel === "On Track" ? "amber" : "red";
+        // "Scenario readiness", not "Overall readiness": this tile is built from
+        // the scenarios played (the LRM headline above), never from flashcards,
+        // and "Overall" read as if it covered both. The flashcard figures are
+        // the "Cards due" tile and the Board Drill panels below.
+        glanceTiles.push({ tone: readyTone, value: p.competencyReadiness + "%", label: "Scenario readiness", sub: p.readinessLabel });
         glanceTiles.push({ tone: weakestPct < 40 ? "amber" : "cyan", value: weakestPct + "%", label: weakestDim, sub: "Weakest dimension" });
         // Matches renderTrainingPanel's own early return: no training
         // scenarios means no Mandatory Training panel to compare against,
@@ -18693,10 +18932,26 @@ window.G = window.G || {};
         // distinct from the competency-average this page already shows
         // elsewhere).
         if (p.competencyReadiness !== undefined && p.competencyReadiness < 70) {
+          // The action used to read "Run Board Drill - N% ready" with N being the
+          // SCENARIO score (0% for a Soldier who only ever drilled flashcards,
+          // right beside a thousand graded cards). It now says what the cards say
+          // - the same current/due counts Board Drill's Readiness tab prints -
+          // and keeps the old line only when no card has been graded yet.
+          let boardPrepDetail = "Practice flashcards to build recall before your board";
+          if (bqCatStats) {
+            const cs = Object.values(bqCatStats.catStats);
+            const gradedN = cs.reduce((s, c) => s + c.reviewed, 0);
+            if (gradedN > 0) {
+              const curN = cs.reduce((s, c) => s + (c.current || 0), 0);
+              const dueN = cs.reduce((s, c) => s + c.due, 0);
+              const totN = cs.reduce((s, c) => s + c.total, 0);
+              boardPrepDetail = curN + " of " + totN + " cards current" + (dueN ? ", " + dueN + " due for review" : "");
+            }
+          }
           priorities.push({
             icon: "★", label: "Board Prep",
-            action: "Run Board Drill — " + (p.competencyReadiness||0) + "% ready",
-            detail: "Practice flashcards to build recall before your board",
+            action: "Run Board Drill",
+            detail: boardPrepDetail,
             onclick: () => { location.hash = "#/board"; setTimeout(() => G.board && G.board._openReadiness && G.board._openReadiness(), 100); }
           });
         }
@@ -18762,9 +19017,15 @@ window.G = window.G || {};
             const totalGraded = allTiers.reduce((s, t) => s + t.downCold + t.knowIt + t.needsWork, 0);
             const totalCards = allTiers.reduce((s, t) => s + t.total, 0);
             const masteredCount = allTiers.reduce((s, t) => s + t.downCold + t.knowIt, 0);
+            // Headline = CURRENT cards (mastered and not due), the same figure
+            // Board Drill's Readiness tab and Home print. It used to be
+            // "mastered / graded" as a percent, which has no expiry: a deck last
+            // graded Know It two months ago read "100% mastered" with every
+            // card overdue.
+            const currentCount = Object.values(catStats).reduce((s, c) => s + (c.current || 0), 0);
             const tierPanel = el("div.panel", { style: "margin-top:10px" });
             tierPanel.appendChild(el("div.eyebrow", { text: "Board Drill Mastery" }));
-            tierPanel.appendChild(el("h3", { text: totalGraded ? Math.round((masteredCount / totalGraded) * 100) + "% mastered" : "Not started" }));
+            tierPanel.appendChild(el("h3", { text: totalGraded ? currentCount + " of " + totalCards + " cards current" : "Not started" }));
             // masteredCount here sums the Board Drill flip card's own 4-level
             // self-grade (lastGrade 3/2 = downCold/knowIt, see the comment
             // above tierStats) directly from tierStats, rather than going
@@ -18779,7 +19040,7 @@ window.G = window.G || {};
             // that - they're computed via two separate loops over the same
             // srsAll data and are not cross-checked by
             // tools/test-consistency-extended.mjs.
-            tierPanel.appendChild(el("p.hint", { text: masteredCount + " mastered, " + totalGraded + " / " + totalCards + " cards graded overall." }));
+            tierPanel.appendChild(el("p.hint", { text: "Current means rated Know It or Down Cold and not due for review yet. " + masteredCount + " mastered, " + totalGraded + " / " + totalCards + " cards graded overall." }));
             const goBtn2 = el("button.btn.ghost.sm", { text: "Open Board → Readiness", type: "button", style: "margin-top:10px" });
             goBtn2.addEventListener("click", () => { location.hash = "#/board"; setTimeout(() => G.board && G.board._openReadiness && G.board._openReadiness(), 100); });
             tierPanel.appendChild(goBtn2);
@@ -35738,11 +35999,53 @@ window.G = window.G || {};
       el("p", { text: "Work through real leadership situations, drill for your board, and study doctrine — all offline. Your choices build a readiness picture mapped to the Army Leadership Requirements Model." }),
     ]);
 
-    hero.appendChild(el("div.stat", { style: "margin-top:12px" }, [
-      el("span.k", { text: "Promotable Readiness" }),
-      el("span.v", { text: p.readinessLabel }),
-    ]));
-    hero.appendChild(el("div.bar", {}, [el("span", { style: "transform:scaleX(" + (p.competencyReadiness / 100) + ")" })]));
+    // Two different things used to share one unlabelled "Promotable Readiness"
+    // line here: the SCENARIO score (what Progress calls "Promotable Readiness
+    // (LRM)") and, for a Soldier who only ever drilled cards, a bare "Not
+    // Started" printed right beside a thousand graded flashcards. Now the
+    // scenario score always carries its LRM name and says how many scenarios
+    // it is built from, and a Soldier with graded cards but no scenario played
+    // yet sees their CARD number (current = mastered and not due, the one
+    // predicate Board Drill's Readiness tab and Progress use) instead of
+    // "Not Started". Card and scenario figures are never blended.
+    const homeNow = Date.now();
+    let homeCardsTotal = 0, homeCardsGraded = 0, homeCardsCurrent = 0;
+    try {
+      const bankQs = (G.store && G.store.boardQuestions && G.store.boardQuestions()) || [];
+      homeCardsTotal = bankQs.length;
+      if (srsAllFromBatch) {
+        for (const q of bankQs) {
+          const s = srsAllFromBatch[q.id];
+          if (s && s.lastGrade != null) homeCardsGraded++;
+          if (G.board.isCurrentSrs(s, homeNow)) homeCardsCurrent++;
+        }
+      }
+    } catch (e) { /* card line is optional */ }
+    const homeCurrentPct = homeCardsTotal ? Math.round(homeCardsCurrent / homeCardsTotal * 100) : 0;
+    const cardOnly = !p.totalAttempts && homeCardsGraded > 0;
+    if (cardOnly) {
+      hero.appendChild(el("div.stat.home-cards-current", { style: "margin-top:12px" }, [
+        el("span.k", { text: "Board cards current" }),
+        el("span.v", { text: homeCardsCurrent + " of " + homeCardsTotal }),
+      ]));
+      hero.appendChild(el("div.bar", {}, [el("span", { style: "transform:scaleX(" + (homeCurrentPct / 100) + ")" })]));
+      hero.appendChild(el("p.hint", { text: "Cards you last rated Know It or Down Cold that are not due for review yet. Scenario readiness starts once you play a scenario." }));
+    } else {
+      hero.appendChild(el("div.stat", { style: "margin-top:12px" }, [
+        el("span.k", { text: "Promotable Readiness (LRM)" }),
+        el("span.v", { text: p.readinessLabel }),
+      ]));
+      hero.appendChild(el("div.bar", {}, [el("span", { style: "transform:scaleX(" + (p.competencyReadiness / 100) + ")" })]));
+      if (p.totalAttempts) {
+        hero.appendChild(el("p.hint", { text: "Scored from the " + p.completedCount + " of " + p.totalScenarios + " scenarios you have played. Flashcards are counted separately." }));
+      }
+      if (homeCardsGraded > 0) {
+        hero.appendChild(el("div.stat.home-cards-current", { style: "margin-top:8px" }, [
+          el("span.k", { text: "Board cards current" }),
+          el("span.v", { text: homeCardsCurrent + " of " + homeCardsTotal }),
+        ]));
+      }
+    }
     hero.appendChild(el("div.stat", { style: "margin-top:8px" }, [
       el("span.k", { text: "Scenarios completed" }),
       el("span.v", { text: p.completedCount + " / " + p.totalScenarios }),
@@ -35785,7 +36088,10 @@ window.G = window.G || {};
           // Due Now" button used to make before it learned to set
           // _filterDue. Same one-shot flag here, only for the real
           // due-count case (an untouched deck has nothing to filter to).
-          const goDrill = () => { if (!fresh && G.board) G.board._filterDue = true; location.hash = "#/board"; };
+          // _arrive: this is a "take me to my cards" tap, so Board Drill scrolls
+          // the card into view and puts keyboard focus on it (see renderDrill's
+          // arrival step). Nav and tab entries never set it and land as before.
+          const goDrill = () => { if (G.board) { if (!fresh) G.board._filterDue = true; G.board._arrive = Date.now(); } location.hash = "#/board"; };
           hero.appendChild(el("div.card.click", {
             style: "margin-top:12px; display:flex; align-items:center; justify-content:space-between; gap:10px",
             role: "button", tabindex: "0",
@@ -35815,7 +36121,7 @@ window.G = window.G || {};
       if (bank.length >= size && G.board) {
         const rec = (repsToday && typeof repsToday === "object" && repsToday.sets > 0) ? repsToday : null;
         if (rec) hasAnyProgress = true;
-        const startReps = () => { G.board._filterReps = true; location.hash = "#/board"; };
+        const startReps = () => { G.board._filterReps = true; G.board._arrive = Date.now(); location.hash = "#/board"; };
         const title = rec ? "Today's reps done ✓" : "5-minute board reps";
         const sub = rec
           ? rec.recalled + "/" + rec.cards + " recalled · " + rec.sets + " set" + (rec.sets === 1 ? "" : "s") + " today"

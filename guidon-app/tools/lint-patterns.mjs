@@ -330,11 +330,18 @@ console.log("lint-patterns: static regression guard for repeat bug shapes and re
    the portrait-only bottom dock. Not a new stray value - 600px itself was
    already canonical and had no "just under it" companion until this.
 
+   1023 added (audit 2026-10, Board Drill entry): the same adjacent-pair
+   convention as 599/600 and 799/800 - the Board Drill chip rows are one
+   scrolling line each below the 1024px split grid (a Z Fold5 unfolded at
+   673px used to wrap them into 340px of chips and start the card 455px
+   below the fold), so their ceiling is "just under 1024". 1024 itself was
+   already canonical; this is its missing max-width companion.
+
    `prefers-*`, `hover`, `pointer`, and `print` are feature queries, not
    layout breakpoints, and are intentionally out of scope.
    ====================================================================== */
 {
-  const CANONICAL = new Set([420, 480, 599, 600, 640, 768, 799, 800, 1024, 1200, 1360, 1500]);
+  const CANONICAL = new Set([420, 480, 599, 600, 640, 768, 799, 800, 1023, 1024, 1200, 1360, 1500]);
   // Not anchored to a literal "@media" prefix: compound conditions like
   // "@media (min-width: 600px) and (max-width: 859px)" put the second
   // clause after "and (", not "@media (", so anchoring would silently
