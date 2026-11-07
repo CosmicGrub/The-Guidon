@@ -212,6 +212,30 @@ check(last && trail.length <= 200, "the trail still holds no more than its 200 e
 check(trail.some((e) => e.kind === "backup-import") && trail.some((e) => e.kind === "profile-backfill" && e.key === "guidon:profile:v1"),
   "...and the restore record and the repair record from before the burst are both still there", "kinds in the trail: " + JSON.stringify([...new Set(trail.map((e) => e.kind))]));
 check(trail.filter((e) => e.kind === "storage-write-fail").length === trail.length - 2, "...everything else in the trail is the burst's own entries (the two older records, nothing evicted but failed-save entries)", "kinds: " + JSON.stringify([...new Set(trail.map((e) => e.kind))]));
+// The edge a burst cannot reach: the trail is already FULL of other records, and the newest entry is itself a failed save.
+// It used to be the first thing dropped - the very record the trail exists to keep - because the trim took "the oldest failed
+// save" and that was the one just written. Now the oldest OTHER record makes room, and a later failed save pushes out the
+// older failed save before it touches any restore or repair record.
+console.log("\n-- a failed save is kept when the trail is already full of other records --");
+const fullTrail = await page.evaluate(async () => {
+  await G.db.del("kv", "guidon:selfheal:v1");
+  const seed = Array.from({ length: 200 }, (_, i) => ({ at: new Date(Date.now() - (200 - i) * 1000).toISOString(), kind: i < 3 ? "backup-import" : "kv-reject", key: "k" + i, detail: "seeded record " + i }));
+  await G.db.put("kv", { k: "guidon:selfheal:v1", v: seed });
+  await G.selfheal.log("storage-write-fail", "__ack:full-1", "A change to your saved settings and progress was not saved");
+  const afterOne = (await G.selfheal.recent(1000)).map((e) => ({ kind: e.kind, key: e.key }));
+  await G.selfheal.log("storage-write-fail", "__ack:full-2", "A change to your saved settings and progress was not saved");
+  const afterTwo = (await G.selfheal.recent(1000)).map((e) => ({ kind: e.kind, key: e.key }));
+  return { afterOne, afterTwo };
+});
+check(fullTrail.afterOne.length === 200 && fullTrail.afterOne.some((e) => e.kind === "storage-write-fail" && e.key === "__ack:full-1"),
+  "a failed save written into a trail of 200 other records is kept (it used to be dropped on the spot)", "trail of " + fullTrail.afterOne.length + ", failed save present: " + fullTrail.afterOne.some((e) => e.key === "__ack:full-1"));
+check(!fullTrail.afterOne.some((e) => e.key === "k0") && fullTrail.afterOne.some((e) => e.key === "k1") && fullTrail.afterOne.some((e) => e.key === "k199"),
+  "...and it is the OLDEST other record that made room, still at the cap of 200", "k0 present: " + fullTrail.afterOne.some((e) => e.key === "k0"));
+const wf = fullTrail.afterTwo.filter((e) => e.kind === "storage-write-fail");
+check(fullTrail.afterTwo.length === 200 && wf.length === 1 && wf[0].key === "__ack:full-2" && fullTrail.afterTwo.filter((e) => e.kind === "backup-import").length === 2,
+  "a second failed save pushes out the first failed save, before any restore or repair record", "failed saves in the trail: " + JSON.stringify(wf) + ", restore records: " + fullTrail.afterTwo.filter((e) => e.kind === "backup-import").length);
+// (a full trail would push out the failed-save entries the later sections look for, so leave it empty)
+await page.evaluate(async () => { await G.db.del("kv", "guidon:selfheal:v1"); });
 await page.evaluate(() => { window.__fault.abortPrefix = null; });
 await resetScenario();
 

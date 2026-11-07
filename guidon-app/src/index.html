@@ -19327,6 +19327,10 @@ window.G = window.G || {};
     let endCount = 0;
     for (const id in sc.nodes) {
       const node = sc.nodes[id];
+      // A node that is not an object at all (null, a number, a string - a damaged
+      // file) used to make the next line throw, and a thrown error is not an
+      // answer: callers (the Studio's file import, a backup restore) need "no".
+      if (!node || typeof node !== "object") { errors.push("Node '" + id + "' is not a node."); continue; }
       if (node.end) { endCount++; continue; }
       // Roadmap audit round 5, "Correctness & Data-Integrity Bugs" bucket:
       // engine.js's render() normalizes node.body into node.prompt at
@@ -19352,6 +19356,7 @@ window.G = window.G || {};
         continue;
       }
       node.choices.forEach((c, i) => {
+        if (!c || typeof c !== "object") { errors.push("Node '" + id + "' choice " + (i + 1) + " is not a choice."); return; }
         if (!c.text) errors.push("Node '" + id + "' choice " + (i + 1) + " missing 'text'.");
         // The engine (advance(), engine.js) accepts a choice's target node id
         // via either 'goto' (the documented field) or, as a fallback, an
@@ -29274,9 +29279,12 @@ window.G = window.G || {};
   function _trim(list) {
     var over = list.length - CAP;
     if (over <= 0) return list;
+    var newest = list.length - 1;
     var kept = [];
     for (var i = 0; i < list.length; i++) {
-      if (over > 0 && list[i] && list[i].kind === NOISY_KIND) { over--; continue; }
+      // The newest entry is the one being written right now; a burst gives way by dropping OLDER entries of its kind.
+      // (With nothing older of that kind, the oldest entries of any kind go below - never the one just recorded.)
+      if (over > 0 && i < newest && list[i] && list[i].kind === NOISY_KIND) { over--; continue; }
       kept.push(list[i]);
     }
     return over > 0 ? kept.slice(over) : kept;
@@ -31653,6 +31661,14 @@ window.G = window.G || {};
     return (keys.length === 1 ? "1 damaged item was left out: " : keys.length + " damaged items were left out: ") + describeKeys(keys) +
       ". Everything else was restored." + (profile ? " The profile already on this device was kept." : "");
   }
+  // The same, for a restore that also left out authored scenarios the checks refused (nothing is said when nothing was left out).
+  function leftOutSummary(sk, keys) {
+    var kvN = sk && sk.kv ? 1 : 0, scN = (sk && sk.userScenarios) || 0;
+    if (!kvN && !scN) return "";
+    if (!scN) return skippedSummary(keys);
+    var sc = (scN === 1 ? "1 damaged scenario of your own was" : scN + " damaged scenarios of your own were") + " left out";
+    return kvN ? skippedSummary(keys) + " " + sc + " too." : sc + ". Everything else was restored.";
+  }
 
   // House-rule audit finding: failedStores (below) already made a failed
   // per-store read visible to whichever caller happened to be watching
@@ -31820,11 +31836,15 @@ window.G = window.G || {};
   // named in failedStores and the shortfall is logged, instead of the restore
   // counting every row it merely ATTEMPTED as restored (or, before the
   // storage layer settled on commit, never finishing at all).
-  async function restoreRows(store, rows, restored, failedStores) {
+  // `progress.wrote` is set the moment any rows are really on the device, so a caller
+  // whose restore later stops with an error can still tell "nothing was changed" from
+  // "part of it was" (importAll's `progress`, below).
+  async function restoreRows(store, rows, restored, failedStores, progress) {
     try {
       var res = await G.db.putMany(store, rows);
       var wrote = res && typeof res.written === "number" ? res.written : rows.length;
       restored[store] += wrote;
+      if (wrote > 0) progress.wrote = true;
       if (wrote < rows.length) {
         failedStores.push(store);
         logImportFail(store, new Error("only " + wrote + " of " + rows.length + " rows could be written"));
@@ -31958,8 +31978,11 @@ window.G = window.G || {};
   // What both restore screens say when a restore did not finish. When NOTHING
   // was saved it stays up with no reload behind it; when only SOME of it was
   // saved the page reloads (see confirmAndImportFile) and says it again after.
-  function restoreFailedText(stores) {
-    return "The restore did not finish: " + failedWords(stores) + " could not be saved to this device. Free up some space and try again.";
+  // `partial` is true when part of the file DID land (the page then reloads): the Soldier is told the
+  // rest was restored, so a message about one thing that failed is not read as "nothing happened".
+  function restoreFailedText(stores, partial) {
+    return "The restore did not finish: " + failedWords(stores) + " could not be saved to this device." +
+      (partial ? " The rest of your backup was restored." : "") + " Free up some space and try again.";
   }
   // The one plain button that goes with that message: the Soldier reloads when ready.
   function reloadButton() {
@@ -31980,22 +32003,45 @@ window.G = window.G || {};
   // reload would also erase the message that says part of it failed, so that
   // message is handed to the next page load through sessionStorage - it dies
   // with the tab, is read once and then removed, and no long-lived key is added.
+  //
+  // Some browsers (a private window, blocked site data, a full quota) refuse that write. The hand-off
+  // then goes on this page's own history entry instead - which a reload keeps, which is not a storage
+  // key, and which puts nothing in the address. It is read once and removed in exactly the same way.
+  // (A page that refuses both still reloads - the stale copy is the worse risk - and the trail in
+  // Diagnostics still has the "backup-import" record naming what failed.)
   var RESTORE_NOTICE_KEY = "guidon-restore-failed";
+  var RESTORE_NOTICE_STATE = "guidonRestoreFailed";
   var RESTORE_NOTICE_MAX_AGE_MS = 10 * 60 * 1000;
+  // True when the hand-off is in place somewhere the next page load will find it.
   function rememberRestoreFailure(stores) {
-    try { sessionStorage.setItem(RESTORE_NOTICE_KEY, JSON.stringify({ stores: stores, at: Date.now() })); } catch (e) { /* the notice is a courtesy; the restore itself already finished */ }
+    var note = { stores: stores, at: Date.now() };
+    try { sessionStorage.setItem(RESTORE_NOTICE_KEY, JSON.stringify(note)); return true; } catch (e) { /* refused: the history entry below */ }
+    try {
+      var state = history.state && typeof history.state === "object" ? history.state : {};
+      var next = Object.assign({}, state); next[RESTORE_NOTICE_STATE] = note;
+      history.replaceState(next, "");
+      return true;
+    } catch (e) { return false; }
   }
   function takeRestoreFailure() {
-    var raw = null;
-    try { raw = sessionStorage.getItem(RESTORE_NOTICE_KEY); sessionStorage.removeItem(RESTORE_NOTICE_KEY); } catch (e) { return null; }
-    if (!raw) return null;
+    var o = null;
     try {
-      var o = JSON.parse(raw);
-      var stores = o && Array.isArray(o.stores) ? o.stores.filter(function (s) { return typeof s === "string"; }) : [];
-      // Old enough that it is not about what the Soldier just did: drop it rather than say it out of the blue.
-      if (!stores.length || !(Date.now() - o.at < RESTORE_NOTICE_MAX_AGE_MS)) return null;
-      return stores;
-    } catch (e) { return null; }
+      var raw = sessionStorage.getItem(RESTORE_NOTICE_KEY);
+      sessionStorage.removeItem(RESTORE_NOTICE_KEY);
+      if (raw) o = JSON.parse(raw);
+    } catch (e) { o = null; }
+    try {
+      var st = history.state;
+      if (st && typeof st === "object" && st[RESTORE_NOTICE_STATE] !== undefined) {
+        if (!o) o = st[RESTORE_NOTICE_STATE];
+        var rest = Object.assign({}, st); delete rest[RESTORE_NOTICE_STATE];
+        history.replaceState(Object.keys(rest).length ? rest : null, "");
+      }
+    } catch (e) { /* nothing more to read */ }
+    var stores = o && Array.isArray(o.stores) ? o.stores.filter(function (s) { return typeof s === "string"; }) : [];
+    // Old enough that it is not about what the Soldier just did: drop it rather than say it out of the blue.
+    if (!stores.length || !(Date.now() - o.at < RESTORE_NOTICE_MAX_AGE_MS)) return null;
+    return stores;
   }
   // What this page load should still say about the restore before it: read from the hand-off once,
   // kept in memory so a screen that draws itself twice shows it twice, and dropped when the Soldier
@@ -32003,11 +32049,24 @@ window.G = window.G || {};
   var carriedRestoreFailure;
   function carriedRestoreText() {
     if (carriedRestoreFailure === undefined) carriedRestoreFailure = takeRestoreFailure();
-    return carriedRestoreFailure ? restoreFailedText(carriedRestoreFailure) : "";
+    return carriedRestoreFailure ? restoreFailedText(carriedRestoreFailure, true) : "";
   }
   function forgetCarriedRestoreText() { carriedRestoreFailure = null; }
+  // Whether a damaged scenario is usable. The same check the Authoring Studio runs on a scenario file;
+  // one whose check itself fails is just as unusable, so a throw counts as "no" rather than ending the restore.
+  function scenarioIsUsable(sc) {
+    try {
+      var v = G.author && G.author.validate ? G.author.validate(sc) : { ok: true };
+      return !!(v && v.ok);
+    } catch (e) { return false; }
+  }
 
-  async function importAll(obj) {
+  // `progress` is optional and is only ever WRITTEN to: progress.wrote becomes true as soon as any
+  // part of the file is on the device. confirmAndImportFile reads it when this function ends in an
+  // error, to tell "nothing was changed" (say so, leave the page) from "part of it was" (the page's
+  // own copy of the profile and settings is now out of date, so it must reload like any partial restore).
+  async function importAll(obj, progress) {
+    progress = progress || {};
     var problem = schemaProblem(obj);
     if (problem) throw new Error(problem);
     var restored = { kv: 0, userScenarios: 0, attempts: 0, local: 0 };
@@ -32058,21 +32117,23 @@ window.G = window.G || {};
         // plan, with only a generic "Restored N items" message - no
         // indication identity data specifically was among what got
         // replaced or that it happened because the row was malformed.
-        if (row.k === "guidon:profile:v1") {
-          var pv = row.v;
-          var pvOk = pv && typeof pv === "object" && typeof pv.onboardingComplete === "boolean" && typeof pv.mode === "string";
-          if (!pvOk) {
-            skipped.kv++; skippedKeys.push(row.k);
-            if (G.selfheal) G.selfheal.log("kv-reject", row.k, "malformed profile row rejected during backup import (missing onboardingComplete/mode) - existing profile kept");
-            continue;
+        // A row whose check itself throws (a value shaped so no validator expected it) is a damaged
+        // row like any other: left out and counted, never a reason to stop the rest of the restore.
+        var rejectWhy = "";
+        try {
+          if (row.k === "guidon:profile:v1") {
+            var pv = row.v;
+            var pvOk = pv && typeof pv === "object" && typeof pv.onboardingComplete === "boolean" && typeof pv.mode === "string";
+            if (!pvOk) rejectWhy = "malformed profile row rejected during backup import (missing onboardingComplete/mode) - existing profile kept";
+          } else if (!validateKvRow(row)) {
+            rejectWhy = "row failed validation during backup import, discarded";
+          } else if (unitOver(row.k)) {
+            rejectWhy = "a unit deck past the limit of " + G.unitPack.LIMITS.decks + " decks on a device, left out of the restore";
           }
-        } else if (!validateKvRow(row)) {
+        } catch (e) { rejectWhy = "row could not be checked during backup import (" + (e && e.message ? e.message : "unknown error") + "), discarded"; }
+        if (rejectWhy) {
           skipped.kv++; skippedKeys.push(row.k);
-          if (G.selfheal) G.selfheal.log("kv-reject", row.k, "row failed validation during backup import, discarded");
-          continue;
-        } else if (unitOver(row.k)) {
-          skipped.kv++; skippedKeys.push(row.k);
-          if (G.selfheal) G.selfheal.log("kv-reject", row.k, "a unit deck past the limit of " + G.unitPack.LIMITS.decks + " decks on a device, left out of the restore");
+          if (G.selfheal) G.selfheal.log("kv-reject", row.k, rejectWhy);
           continue;
         }
         // Preserve the row's OWN original shape (not a reconstructed
@@ -32089,7 +32150,7 @@ window.G = window.G || {};
           return r && r.k === "reminders:v1" && Array.isArray(r.v) ? Object.assign({}, r, { v: r.v.concat(keepRoster) }) : r;
         });
       }
-      if (kvRows.length) await restoreRows("kv", kvRows, restored, failedStores);
+      if (kvRows.length) await restoreRows("kv", kvRows, restored, failedStores, progress);
     }
     if (Array.isArray(obj.stores.userScenarios)) {
       var scRows = [];
@@ -32102,11 +32163,11 @@ window.G = window.G || {};
         // dangling goto, a node with no prompt) could reach the same
         // player runtime the built-in seed content does, with none of the
         // structural guarantees validate() exists to enforce.
-        var v = G.author && G.author.validate ? G.author.validate(sc) : { ok: true };
-        if (!v.ok) { skipped.userScenarios++; continue; }
+        // (validate() can itself throw on a shape nobody expected; scenarioIsUsable() turns that into "no".)
+        if (!scenarioIsUsable(sc)) { skipped.userScenarios++; continue; }
         scRows.push(sc);
       }
-      if (scRows.length) await restoreRows("userScenarios", scRows, restored, failedStores);
+      if (scRows.length) await restoreRows("userScenarios", scRows, restored, failedStores, progress);
     }
     if (Array.isArray(obj.stores.attempts)) {
       var atRows = [];
@@ -32114,7 +32175,7 @@ window.G = window.G || {};
         var at = obj.stores.attempts[k];
         if (at && at.id != null) atRows.push(at);
       }
-      if (atRows.length) await restoreRows("attempts", atRows, restored, failedStores);
+      if (atRows.length) await restoreRows("attempts", atRows, restored, failedStores, progress);
     }
     // Nav personalization (LOCAL_KEYS, above, written by exportAll()) -
     // localStorage, not IndexedDB, so this is a plain per-key
@@ -32139,7 +32200,7 @@ window.G = window.G || {};
           if (G.selfheal) G.selfheal.log("kv-reject", k, "malformed nav-personalization row rejected during backup import (not a JSON array of strings) - existing value kept");
           return;
         }
-        try { G.db.local.set(k, raw); restored.local++; } catch (e) { failedStores.push("local"); logImportFail("local", e); }
+        try { G.db.local.set(k, raw); restored.local++; progress.wrote = true; } catch (e) { failedStores.push("local"); logImportFail("local", e); }
       });
     }
     return { restored: restored, skipped: skipped, skippedKeys: skippedKeys, failedStores: failedStores };
@@ -32221,6 +32282,11 @@ window.G = window.G || {};
             if (isPrivateKey(row.k) && privateKeyHasContent(privateValue(row))) privateKeysPresent.push(row.k);
           });
         }
+        // Authored scenarios are checked the way the restore will check them, so the confirm can name a damaged one too.
+        var scRejected = 0;
+        if (obj && obj.stores && Array.isArray(obj.stores.userScenarios)) {
+          obj.stores.userScenarios.forEach(function (sc) { if (sc && sc.id != null && !scenarioIsUsable(sc)) scRejected++; });
+        }
         var dates = restoreDateLines(obj.exportedAt, activity);
         var msg = "Import this backup?\n\n" + dates.made + (sum ? " It contains: " + (sum.kv || 0) + " saved items, " + (sum.userScenarios || 0) + " authored scenarios, " + (sum.attempts || 0) + " quiz attempts." : "") +
           (dates.warning ? "\n\n" + dates.warning : "") +
@@ -32232,13 +32298,24 @@ window.G = window.G || {};
           (keptRoster ? " The " + (keptRoster === 1 ? "reminder" : keptRoster + " reminders") + " you made from the leader roster on this device " + (keptRoster === 1 ? "stays" : "stay") + " too, because a normal backup doesn't carry " + (keptRoster === 1 ? "it" : "them") + "." : "") +
           (privateKeysPresent.length ? " This file also carries " + describeKeys(privateKeysPresent) + " - items a normal backup leaves out, because they can hold other people's information or a resource assessment rather than your own study data - and they will be written to this device too." : "") +
           // Named in the Soldier's words (describeKeys), never by storage key.
-          (kvRejected.length ? "\n\n" + (kvRejected.length === 1 ? "1 item in this file is damaged and will be left out: " : kvRejected.length + " items in this file are damaged and will be left out: ") + describeKeys(kvRejected) + ". Everything else will be restored." : "");
+          (kvRejected.length ? "\n\n" + (kvRejected.length === 1 ? "1 item in this file is damaged and will be left out: " : kvRejected.length + " items in this file are damaged and will be left out: ") + describeKeys(kvRejected) + ". Everything else will be restored." : "") +
+          (scRejected ? (kvRejected.length ? " " : "\n\n") + (scRejected === 1 ? "1 scenario of your own in this file is damaged" : scRejected + " scenarios of your own in this file are damaged") + " and will be left out" + (kvRejected.length ? " too." : ". Everything else will be restored.") : "");
         // Opens on Cancel: restoring overwrites things, so an Enter pressed out of habit backs out.
         G.modal.confirm(msg, { title: "Import backup", focusCancel: true }).then(function (ok) {
           if (!ok) { resolve({ status: "cancelled" }); return; }
-          importAll(obj).then(function (res) {
+          // Filled in by importAll as rows land, so the failure path below knows whether anything did.
+          var progress = { wrote: false };
+          // (Both screens clear the carried note before a restore starts, so the page that is about to reload
+          // never reads the hand-off meant for the page that comes back.)
+          var reloadScheduled = false;
+          function scheduleReload() {
+            if (reloadScheduled) return;
+            reloadScheduled = true;
+            setTimeout(function () { location.reload(); }, 1200);
+          }
+          importAll(obj, progress).then(function (res) {
             var r = res.restored, sk = res.skipped, fs = res.failedStores || [];
-            if (G.selfheal) G.selfheal.log("backup-import", null, "restored " + r.kv + " kv/" + r.userScenarios + " scenarios/" + r.attempts + " attempts, skipped " + (sk.kv || 0) + " kv row(s)" + (fs.length ? ", FAILED to write: " + fs.join(", ") : ""));
+            if (G.selfheal) G.selfheal.log("backup-import", null, "restored " + r.kv + " kv/" + r.userScenarios + " scenarios/" + r.attempts + " attempts, skipped " + (sk.kv || 0) + " kv row(s)" + (sk.userScenarios ? " and " + sk.userScenarios + " damaged scenario(s)" : "") + (fs.length ? ", FAILED to write: " + fs.join(", ") : ""));
             // Three outcomes:
             //  - everything saved: reload after 1.2 s so every screen reads what was saved;
             //  - SOME of it saved (a store landed, another did not): reload anyway - this page's
@@ -32249,8 +32326,9 @@ window.G = window.G || {};
             //    reload; the message stays on screen with a plain Reload button under it.
             var landed = (r.kv || 0) + (r.userScenarios || 0) + (r.attempts || 0) + (r.local || 0) > 0;
             var reloading = !fs.length || landed;
+            // (If the hand-off cannot be stored anywhere this still reloads: the stale copy is the worse risk.)
             if (fs.length && landed) rememberRestoreFailure(fs);
-            if (reloading) setTimeout(function () { location.reload(); }, 1200);
+            if (reloading) scheduleReload();
             // Deep-gap follow-up ("Profile Data-Loss & Persistence Bugs"
             // bucket): failedStores is surfaced here so both callers can
             // tell a genuine write failure apart from a clean restore -
@@ -32259,7 +32337,19 @@ window.G = window.G || {};
             // looking exactly like a no-op restore rather than a failure.
             resolve({ status: "success", restored: r, skipped: sk, skippedKeys: res.skippedKeys || [], failedStores: fs, reloading: reloading });
           }).catch(function (e) {
-            resolve({ status: "error", message: e && e.message ? e.message : "unknown error" });
+            var why = e && e.message ? e.message : "unknown error";
+            if (progress.wrote) {
+              // The restore stopped with an error AFTER part of the file was saved. The page's own copy of the
+              // profile and settings is now older than the saved rows, and the next edit (a Rename, say) would
+              // write it back over them - so this is a partial restore like any other: reload, and say so after.
+              try { if (G.selfheal) G.selfheal.log("backup-import", null, "stopped with an error after part of the file was saved: " + why); } catch (e2) { /* the reload and the message matter more than the trail entry */ }
+              rememberRestoreFailure(["other"]);
+              scheduleReload();
+              resolve({ status: "success", restored: { kv: 0, userScenarios: 0, attempts: 0, local: 0 }, skipped: { kv: 0, userScenarios: 0, local: 0 }, skippedKeys: [], failedStores: ["other"], reloading: true });
+              return;
+            }
+            // Nothing was saved: nothing changed, the page's copies are still right, no reload.
+            resolve({ status: "error", message: why });
           });
         });
       }
@@ -32355,7 +32445,7 @@ window.G = window.G || {};
         // attempts." styled identically to a real success - looking
         // exactly like a no-op restore instead of a failure worth retrying.
         if (fs.length) {
-          status.textContent = restoreFailedText(fs);
+          status.textContent = restoreFailedText(fs, result.reloading);
           status.className = "backup-status hint err";
           status.setAttribute("role", "alert");
           // Part of it was saved: the page reloads in a moment and says this again when it is back.
@@ -32365,7 +32455,7 @@ window.G = window.G || {};
         }
         status.textContent = "Restored " + r.kv + " items, " + r.userScenarios + " scenarios, " + r.attempts + " attempts." +
           // (This used to blame the profile for every skipped item, whatever it was.)
-          (sk && sk.kv ? " " + skippedSummary(result.skippedKeys) : "") +
+          (leftOutSummary(sk, result.skippedKeys) ? " " + leftOutSummary(sk, result.skippedKeys) : "") +
           " Reloading…";
         status.className = "backup-status hint ok";
         if (G.util.announce) G.util.announce("Backup restored.");
@@ -32401,7 +32491,7 @@ window.G = window.G || {};
     return "Backup downloaded";
   }
 
-  G.backup = { exportAll: exportAll, downloadAll: downloadAll, importAll: importAll, renderControls: renderControls, confirmAndImportFile: confirmAndImportFile, validateKvRow: validateKvRow, describeKey: describeKey, skippedSummary: skippedSummary, exportDoneMessage: exportDoneMessage, getLastExportAt: getLastExportAt, formatLastExport: formatLastExport, describeBackupDate: describeBackupDate, deviceActivitySince: deviceActivitySince, failedWords: failedWords, restoreFailedText: restoreFailedText, reloadButton: reloadButton, appendReloadButton: appendReloadButton, carriedRestoreText: carriedRestoreText, forgetCarriedRestoreText: forgetCarriedRestoreText, isLeaderReminder: isLeaderReminder, rosterLabels: rosterLabels };
+  G.backup = { exportAll: exportAll, downloadAll: downloadAll, importAll: importAll, renderControls: renderControls, confirmAndImportFile: confirmAndImportFile, validateKvRow: validateKvRow, describeKey: describeKey, skippedSummary: skippedSummary, leftOutSummary: leftOutSummary, exportDoneMessage: exportDoneMessage, getLastExportAt: getLastExportAt, formatLastExport: formatLastExport, describeBackupDate: describeBackupDate, deviceActivitySince: deviceActivitySince, failedWords: failedWords, restoreFailedText: restoreFailedText, reloadButton: reloadButton, appendReloadButton: appendReloadButton, carriedRestoreText: carriedRestoreText, forgetCarriedRestoreText: forgetCarriedRestoreText, isLeaderReminder: isLeaderReminder, rosterLabels: rosterLabels };
 })();
 // END backup.js
 
@@ -40098,14 +40188,14 @@ window.G = window.G || {};
           // Left on the page (not just a toast). When none of it was saved nothing reloads, so the
           // Soldier gets a Reload button for when ready; when part of it was saved the page reloads
           // in a moment and the note is shown again once it is back.
-          restoreNote.textContent = G.backup.restoreFailedText(fs);
+          restoreNote.textContent = G.backup.restoreFailedText(fs, result.reloading);
           restoreNote.hidden = false;
           if (result.reloading) restoreNote.appendChild(document.createTextNode(" Reloading…")); else G.backup.appendReloadButton(restoreNote);
-          util.toast(G.backup.restoreFailedText(fs), 7000);
+          util.toast(G.backup.restoreFailedText(fs, result.reloading), 7000);
           return;
         }
         util.toast("Restored " + r.kv + " item(s), " + r.userScenarios + " scenario(s), " + r.attempts + " attempt(s)." +
-          (sk && sk.kv ? " " + G.backup.skippedSummary(result.skippedKeys) : "") + " Reloading…");
+          (G.backup.leftOutSummary(sk, result.skippedKeys) ? " " + G.backup.leftOutSummary(sk, result.skippedKeys) : "") + " Reloading…");
       });
     });
     // Same "Export backup"/"Import backup" wording as the Profile view's own

@@ -364,7 +364,7 @@ await waitForBoot(page);
 await waitForRoute(page, "#/profile", { ready: ".backup-panel .backup-actions" });
 const noteAfter = await until(page, () => /did not finish/.test((document.querySelector(".backup-panel .backup-status") || {}).textContent || ""));
 const noteText = await status();
-check(noteAfter && /The restore did not finish: your scenario and quiz results could not be saved to this device\. Free up some space and try again\./.test(noteText), "...and once the page is back, Profile says what failed, in the same plain words", "status: " + JSON.stringify(noteText));
+check(noteAfter && /The restore did not finish: your scenario and quiz results could not be saved to this device\. The rest of your backup was restored\. Free up some space and try again\./.test(noteText), "...and once the page is back, Profile says what failed, and that the rest of the backup was restored, in plain words", "status: " + JSON.stringify(noteText));
 check(!/Reload/.test(noteText) && (await page.locator(".backup-panel .backup-status button").count()) === 0, "...with no Reload button (the page has already reloaded) and no \"Reloading...\"", "status: " + JSON.stringify(noteText));
 check(await page.evaluate((k) => sessionStorage.getItem(k) === null, NOTICE_KEY), "...and the one-time hand-off was read and removed (it does not come back on the next load)", "sessionStorage[" + NOTICE_KEY + "] is still set");
 const reread = await page.evaluate(async () => { const p = await G.profile.current(); return { rank: p.rank, tier: p.tier, boardDate: p.boardDate }; });
@@ -383,6 +383,8 @@ await confirmText();
 await page.locator(".gm-box button", { hasText: /^Cancel$/ }).click();
 await dialogGone();
 check(!/did not finish/.test(await status()), "...and a Profile restore that is cancelled leaves no old failure message behind either", "status: " + JSON.stringify(await status()));
+await waitForRoute(page, "#/profile", { fresh: true, ready: ".backup-panel .backup-actions" });
+check(!/did not finish/.test(await status()), "...and when Profile is drawn again the old message does not come back (the carried text was dropped, not only hidden)", "status after a redraw: " + JSON.stringify(await status()));
 
 console.log("\n-- the same partial failure from Settings: reload, then the note is on the page --");
 await refuseAttempts();
@@ -395,13 +397,218 @@ await waitForBoot(page);
 await waitForRoute(page, "#/settings", { ready: "#settings-databackup-panel" });
 const noteS = await until(page, (sel) => { const n = document.querySelector(sel); return !!n && !n.hidden && /did not finish/.test(n.textContent || ""); }, settingsNote);
 const noteSText = await page.evaluate((sel) => { const n = document.querySelector(sel); return n && !n.hidden ? n.textContent : ""; }, settingsNote);
-check(noteS && /The restore did not finish: your scenario and quiz results could not be saved to this device\. Free up some space and try again\.$/.test(noteSText), "Settings' Data & Backup says what failed once the page is back, with no Reload button or \"Reloading...\"", "note: " + JSON.stringify(noteSText));
+check(noteS && /The restore did not finish: your scenario and quiz results could not be saved to this device\. The rest of your backup was restored\. Free up some space and try again\.$/.test(noteSText), "Settings' Data & Backup says what failed, and that the rest was restored, once the page is back, with no Reload button or \"Reloading...\"", "note: " + JSON.stringify(noteSText));
 check((await getKv("srs:pf-ok")) && (await getKv("srs:pf-ok")).reps === 1, "...and the part that was saved is on the device", "srs:pf-ok is " + JSON.stringify(await getKv("srs:pf-ok")));
 // A new attempt (here: a file that is not a backup) drops the old note.
 await chooseOnSettings({ hello: "world" });
 const noteGone = await until(page, (sel) => { const n = document.querySelector(sel); return !n || n.hidden || !(n.textContent || "").trim(); }, settingsNote);
 check(noteGone, "choosing another file (even one that turns out not to be a backup) clears the old failure note", "the note is still showing");
+await waitForRoute(page, "#/settings", { fresh: true, ready: "#settings-databackup-panel" });
+const noteStaysGone = await page.evaluate((sel) => { const n = document.querySelector(sel); return !n || n.hidden || !(n.textContent || "").trim(); }, settingsNote);
+check(noteStaysGone, "...and when Settings is drawn again the old note does not come back", "the note is showing again after a redraw");
 await page.evaluate(async () => { await G.db.del("kv", "srs:pf-ok"); });
+
+/* =====================================================================
+   6c) A restore that STOPS WITH AN ERROR after part of it landed reloads too
+   ===================================================================== */
+// 6b closed the stale-copy bug for a restore that reports a failed store. The same bug had a second door: importAll()
+// writes the profile and settings first, then checked each authored scenario with a validate() that THROWS on a null
+// entry, so the restore ended in an error after the profile had landed, the page kept the old copy, and the next
+// Rename wrote it back over the restore (SSG/E6/2031 went back to SGT/E5). Two layers close it: a damaged scenario
+// is skipped (and said so) instead of ending the restore, and any restore that ends in an error AFTER something
+// was saved reloads like a partial one. A restore that ends in an error with nothing saved changes nothing and stays put.
+console.log("\n-- a damaged authored scenario is left out and said so; it cannot stop the restore or take it back --");
+// The Profile screen saves its own copy of the profile 300 ms after it is drawn (the app runs that save at once when the page is hidden).
+// A restore chosen inside that window would be undone by it - something a person's clicking cannot do, but a script can - so each
+// restore below starts from a page whose pending save has been flushed, the way the app itself flushes it.
+async function settleProfileSave() {
+  await page.evaluate(async () => { window.dispatchEvent(new Event("pagehide")); await G.db.get("kv", "guidon:profile:v1"); });
+}
+await page.reload();
+await waitForBoot(page);
+await settleProfileSave();
+// A scenario the Authoring Studio would accept, and the damaged shapes validate() used to THROW on (a null where a node or a choice should be).
+const goodScenario = (id) => ({ id, title: "Own scenario " + id, start: "n1", nodes: { n1: { prompt: "What do you do?", choices: [{ text: "Act", goto: "n2" }] }, n2: { prompt: "Done.", end: true, outcome: "That worked." } } });
+const damaged = [
+  { id: "ds-null-node", title: "t", start: "n1", nodes: { n1: null } },
+  { id: "ds-null-in-list", title: "t", start: "0", nodes: [null] },
+  { id: "ds-null-choice", title: "t", start: "n1", nodes: { n1: { prompt: "p", choices: [null] } } },
+];
+const verdicts = await page.evaluate((list) => list.map((sc) => { try { const v = G.author.validate(sc); return v && v.ok === false && v.errors.length > 0 ? "refused" : "accepted"; } catch (e) { return "threw: " + e.message; } }), damaged);
+check(verdicts.every((v) => v === "refused"), "validate() refuses a null node (as an object or in a list) and a null choice instead of throwing", "verdicts: " + JSON.stringify(verdicts));
+const scenarioIds = () => page.evaluate(async () => (await G.db.all("userScenarios")).map((s) => s.id).sort());
+const profileOf = (p) => (p ? p.rank + "/" + p.tier + "/" + p.boardDate : "none");
+const heldProfile = () => page.evaluate(async () => { const p = await G.profile.current(); return p.rank + "/" + p.tier + "/" + p.boardDate; });
+// A Rename on the Profile screen: the edit that used to write the page's old copy over the restored rows.
+async function renameThenRead(name) {
+  await waitForRoute(page, "#/profile", { ready: ".backup-panel .backup-actions" });
+  await page.locator("button", { hasText: "Rename" }).first().click();
+  await page.locator(".gm-box input").fill(name);
+  await page.locator(".gm-box button", { hasText: /^Save$/ }).click();
+  await untilAsync(page, async (n) => { const r = await G.db.get("kv", "guidon:profile:v1"); return !!r && r.v.lastName === n; }, name);
+  const row = await getKv(PROF);
+  return { text: profileOf(row), lastName: row.lastName };
+}
+const profileWith = async (rank, tier, boardDate) => Object.assign({}, await getKv(PROF), { rank, tier, boardDate });
+
+// 1) the reviewer's file: a profile row and three damaged scenarios (plus one good one)
+const dsFile = { schema: "guidon.backup/v1", exportedAt: new Date().toISOString(), stores: { kv: [{ k: PROF, v: await profileWith("1SG", "E8", "2032-02-02") }], userScenarios: [...damaged, goodScenario("ds-good")], attempts: [] }, summary: { kv: 1, userScenarios: 4, attempts: 0 } };
+await chooseOnProfile(dsFile);
+const dsConfirm = await confirmText();
+check(/3 scenarios of your own in this file are damaged and will be left out\. Everything else will be restored\./.test(dsConfirm), "the confirm names the damaged scenarios before anything is written", "confirm text: " + JSON.stringify(dsConfirm));
+await andWaitForReload(() => page.locator(".gm-box button", { hasText: /^OK$/ }).click());
+check(profileOf(await getKv(PROF)) === "1SG/E8/2032-02-02", "the restore went through: the profile in the file (1SG, E8, 2032-02-02) is on the device", "profile row: " + profileOf(await getKv(PROF)));
+const idsAfter = await scenarioIds();
+check(JSON.stringify(idsAfter) === JSON.stringify(["ds-good"]), "...the good scenario was restored and none of the three damaged ones were", "scenarios on the device: " + JSON.stringify(idsAfter));
+await waitForRoute(page, "#/profile", { ready: ".backup-panel .backup-actions" });
+check(!/did not finish/.test(await status()), "...and a damaged scenario is not reported as a restore that failed to save", "status: " + JSON.stringify(await status()));
+check((await heldProfile()) === "1SG/E8/2032-02-02", "...the page holds the restored profile, not the old one", "held: " + (await heldProfile()));
+const dsRename = await renameThenRead("DSNAME");
+check(dsRename.text === "1SG/E8/2032-02-02" && dsRename.lastName === "DSNAME", "...and a Rename afterwards keeps the restored rank, tier and board date (it used to put SGT/E5 back)", "profile row after Rename: " + JSON.stringify(dsRename));
+// What the restore says, as a sentence (the screen shows it for the moment before the reload).
+// (a file with no profile row, so the device's profile stays what the Rename left it)
+const scenariosOnly = Object.assign({}, dsFile, { stores: { kv: [], userScenarios: dsFile.stores.userScenarios, attempts: [] } });
+const said = await page.evaluate(async (file) => { const res = await G.backup.importAll(file); return { skipped: res.skipped.userScenarios, restored: res.restored.userScenarios, text: G.backup.leftOutSummary(res.skipped, res.skippedKeys) }; }, scenariosOnly);
+check(said.skipped === damaged.length && said.restored === scenariosOnly.stores.userScenarios.length - damaged.length && said.text === damaged.length + " damaged scenarios of your own were left out. Everything else was restored.", "importAll counts the damaged ones it left out, and the screens say so in one plain sentence", "result: " + JSON.stringify(said));
+await page.evaluate(async () => { await G.db.del("userScenarios", "ds-good"); });
+
+// 2) a scenario whose check itself THROWS (a shape no check expected): left out the same way, restore carries on
+console.log("\n-- a scenario whose check throws is left out the same way --");
+// (a fresh page first: the Profile screen saves its copy of the profile 300 ms after it is drawn, and a restore chosen inside
+// that window would be undone by it - something a person's clicking cannot do, but a script can)
+await page.reload();
+await waitForBoot(page);
+await settleProfileSave();
+await page.evaluate(() => {
+  const real = G.author.validate;
+  G.author.validate = function (sc) { if (sc && sc.id === "ds-throws") throw new TypeError("a shape no check expected"); return real.apply(this, arguments); };
+});
+const thFile = { schema: "guidon.backup/v1", exportedAt: new Date().toISOString(), stores: { kv: [{ k: PROF, v: await profileWith("MSG", "E8", "2033-03-03") }], userScenarios: [goodScenario("ds-good2"), goodScenario("ds-throws")], attempts: [] }, summary: { kv: 1, userScenarios: 2, attempts: 0 } };
+await chooseOnProfile(thFile);
+const thConfirm = await confirmText();
+check(/1 scenario of your own in this file is damaged and will be left out\. Everything else will be restored\./.test(thConfirm), "the confirm counts the one whose check threw as damaged", "confirm text: " + JSON.stringify(thConfirm));
+await andWaitForReload(() => page.locator(".gm-box button", { hasText: /^OK$/ }).click());
+check(profileOf(await getKv(PROF)) === "MSG/E8/2033-03-03" && JSON.stringify(await scenarioIds()) === JSON.stringify(["ds-good2"]), "the restore completed: the profile is on the device, the scenario that threw is not, the other one is", "profile " + profileOf(await getKv(PROF)) + ", scenarios " + JSON.stringify(await scenarioIds()));
+await waitForRoute(page, "#/profile", { ready: ".backup-panel .backup-actions" });
+check(!/did not finish/.test(await status()) && (await heldProfile()) === "MSG/E8/2033-03-03", "...with no failure note, and the page holds the restored profile", "status " + JSON.stringify(await status()) + ", held " + (await heldProfile()));
+const thRename = await renameThenRead("THNAME");
+check(thRename.text === "MSG/E8/2033-03-03" && thRename.lastName === "THNAME", "...and a Rename afterwards keeps it", "profile row after Rename: " + JSON.stringify(thRename));
+await page.evaluate(async () => { await G.db.del("userScenarios", "ds-good2"); });
+
+// 3) the net under it: ANY error that ends a restore after something was saved. Forced here by making the trail write throw while
+// the quiz results are being refused - after the profile has landed. (The trail never throws in the app; this proves the net.)
+console.log("\n-- a restore that ends in an error after part of it was saved reloads, says so, and the next edit keeps it --");
+await page.reload();
+await waitForBoot(page);
+await settleProfileSave();
+await refuseAttempts();
+const breakTrail = () => page.evaluate(() => {
+  const real = G.selfheal.log;
+  G.selfheal.log = function (kind) { if (kind === "backup-import-fail") throw new Error("the trail could not be written"); return real.apply(this, arguments); };
+});
+await breakTrail();
+await chooseOnProfile(partialFile("pf-att-5", [{ k: PROF, v: await profileWith("SGM", "E9", "2034-04-04") }]));
+await confirmText();
+const reloadedErr = page.waitForEvent("load", { timeout: 15000 }).then(() => true, () => false); // hygiene-ok: the page reloads ~1.2 s after the error; in the broken shape it never does, so a bound is needed
+await page.locator(".gm-box button", { hasText: /^OK$/ }).click();
+check(await reloadedErr, "a restore that ended in an error after the profile was saved reloads the page (it used to stay put on \"Import failed\")", "the page did not reload");
+await waitForBoot(page);
+await waitForRoute(page, "#/profile", { ready: ".backup-panel .backup-actions" });
+const errNote = await until(page, () => /did not finish/.test((document.querySelector(".backup-panel .backup-status") || {}).textContent || ""));
+const errText = await status();
+check(errNote && /The restore did not finish: some of your data could not be saved to this device\. The rest of your backup was restored\. Free up some space and try again\.$/.test(errText), "...and once the page is back, Profile says so in plain words, including that the rest was restored", "status: " + JSON.stringify(errText));
+check(!/Import failed/.test(errText) && (await page.locator(".backup-panel .backup-status button").count()) === 0, "...not as \"Import failed\", and with no Reload button (the page has already reloaded)", "status: " + JSON.stringify(errText));
+check(profileOf(await getKv(PROF)) === "SGM/E9/2034-04-04" && (await heldProfile()) === "SGM/E9/2034-04-04", "the profile in the file is on the device and is what the page holds now", "device " + profileOf(await getKv(PROF)) + ", held " + (await heldProfile()));
+const errRename = await renameThenRead("ERRNAME");
+check(errRename.text === "SGM/E9/2034-04-04" && errRename.lastName === "ERRNAME", "...and a Rename afterwards keeps the restored rank, tier and board date", "profile row after Rename: " + JSON.stringify(errRename));
+check(/did not finish/.test(await status()), "...and the note is still on screen after the edit redrew the page", "status: " + JSON.stringify(await status()));
+
+console.log("\n-- the same error with NOTHING saved changes nothing and stays put --");
+await page.reload();
+await waitForBoot(page);
+await settleProfileSave();
+await refuseAttempts();
+await breakTrail();
+await chooseOnProfile(Object.assign(backup(Date.now(), []), { stores: { kv: [], userScenarios: [], attempts: [{ id: "pf-att-6", scenarioId: "x", ts: Date.now() }] }, summary: { kv: 0, userScenarios: 0, attempts: 1 } }));
+await confirmText();
+await page.locator(".gm-box button", { hasText: /^OK$/ }).click();
+const stayShown = await until(page, () => /Import failed/.test((document.querySelector(".backup-panel .backup-status") || {}).textContent || ""));
+const reloadedNothing = await page.waitForEvent("load", { timeout: 3500 }).then(() => true, () => false); // hygiene-ok: the message has to still be there well after the 1.2 s a reload would come at
+check(stayShown && !reloadedNothing && /Import failed/.test(await status()), "an error with nothing saved: \"Import failed\" stays on screen and the page does not reload", "shown " + stayShown + ", reloaded " + reloadedNothing + ", status " + JSON.stringify(await status()));
+check(profileOf(await getKv(PROF)) === "SGM/E9/2034-04-04" && await page.evaluate((k) => sessionStorage.getItem(k) === null, NOTICE_KEY), "...and nothing was changed or handed to a later load", "profile " + profileOf(await getKv(PROF)));
+
+/* =====================================================================
+   6d) The hand-off when the browser refuses sessionStorage, how long it lasts, and who may read it
+   ===================================================================== */
+console.log("\n-- a browser that refuses sessionStorage: the reload still happens and the note still arrives --");
+await page.reload();
+await waitForBoot(page);
+await settleProfileSave();
+await refuseAttempts();
+const keysBefore = await page.evaluate(() => Object.keys(localStorage).sort());
+await page.evaluate((k) => {
+  const real = Storage.prototype.setItem;
+  Storage.prototype.setItem = function (key) { if (key === k) throw new DOMException("blocked", "QuotaExceededError"); return real.apply(this, arguments); };
+}, NOTICE_KEY);
+await chooseOnProfile(partialFile("pf-att-7", [{ k: PROF, v: await profileWith("CSM", "E9", "2035-05-05") }]));
+await confirmText();
+const hashBefore = await page.evaluate(() => location.hash);
+const reloadedBlocked = page.waitForEvent("load", { timeout: 15000 }).then(() => true, () => false); // hygiene-ok: same bounded wait as 6b
+await page.locator(".gm-box button", { hasText: /^OK$/ }).click();
+check(await reloadedBlocked, "with sessionStorage refusing the write, a partial restore still reloads (the stale copy is the worse risk)", "the page did not reload");
+await waitForBoot(page);
+await waitForRoute(page, "#/profile", { ready: ".backup-panel .backup-actions" });
+const blockedNote = await until(page, () => /did not finish/.test((document.querySelector(".backup-panel .backup-status") || {}).textContent || ""));
+const blockedText = await status();
+check(blockedNote && /The restore did not finish: your scenario and quiz results could not be saved to this device\. The rest of your backup was restored\. Free up some space and try again\.$/.test(blockedText), "...and the Soldier is still told what did not finish, once the page is back", "status: " + JSON.stringify(blockedText));
+const afterBlocked = await page.evaluate((k) => ({ session: sessionStorage.getItem(k), keys: Object.keys(localStorage).sort(), url: location.href, state: history.state }), NOTICE_KEY);
+check(afterBlocked.session === null && JSON.stringify(afterBlocked.keys) === JSON.stringify(keysBefore), "...with no storage key added (nothing in sessionStorage, nothing new in localStorage)", "session " + JSON.stringify(afterBlocked.session) + ", local keys before " + JSON.stringify(keysBefore) + " after " + JSON.stringify(afterBlocked.keys));
+check(!afterBlocked.url.includes("?") && afterBlocked.url.endsWith(hashBefore) && !/restore|fail/i.test(afterBlocked.url.slice(afterBlocked.url.indexOf("#"))), "...and nothing in the address (it is the page's own history entry that carried it)", "url: " + afterBlocked.url);
+check(afterBlocked.state == null || !("guidonRestoreFailed" in afterBlocked.state), "...and it was read once and removed from that entry too", "history.state: " + JSON.stringify(afterBlocked.state));
+check((await heldProfile()) === "CSM/E9/2035-05-05", "...and the page holds the restored profile", "held: " + (await heldProfile()));
+await page.reload();
+await waitForBoot(page);
+await waitForRoute(page, "#/profile", { ready: ".backup-panel .backup-actions" });
+check(!/did not finish/.test(await status()), "...and a later reload does not say it again", "status: " + JSON.stringify(await status()));
+
+console.log("\n-- the hand-off is dropped after ten minutes --");
+const seedNote = (ageMs) => page.evaluate(([k, age]) => sessionStorage.setItem(k, JSON.stringify({ stores: ["attempts"], at: Date.now() - age })), [NOTICE_KEY, ageMs]);
+await seedNote(11 * 60 * 1000);
+await page.reload();
+await waitForBoot(page);
+await waitForRoute(page, "#/profile", { fresh: true, ready: ".backup-panel .backup-actions" });
+check(!/did not finish/.test(await status()), "an 11-minute-old hand-off is not shown (it is not about what the Soldier just did)", "status: " + JSON.stringify(await status()));
+check(await page.evaluate((k) => sessionStorage.getItem(k) === null, NOTICE_KEY), "...and it was removed all the same", "the old hand-off is still stored");
+await seedNote(9 * 60 * 1000);
+await page.reload();
+await waitForBoot(page);
+await waitForRoute(page, "#/profile", { fresh: true, ready: ".backup-panel .backup-actions" });
+check(/The restore did not finish: your scenario and quiz results could not be saved to this device\. The rest of your backup was restored\./.test(await status()), "a 9-minute-old hand-off is shown", "status: " + JSON.stringify(await status()));
+console.log("\n-- the quiz results land and the settings do not: that is a partial restore too --");
+await page.reload();
+await waitForBoot(page);
+await settleProfileSave();
+const refuseKv = () => page.evaluate(() => {
+  const realPut = IDBObjectStore.prototype.put;
+  IDBObjectStore.prototype.put = function (...a) {
+    const req = realPut.apply(this, a);
+    const k = a[0] && a[0].k;
+    if (typeof k === "string" && k.indexOf("srs:cv-kv") === 0) req.addEventListener("success", () => { try { req.transaction.abort(); } catch (e) { /* already done */ } });
+    return req;
+  };
+});
+await refuseKv();
+await chooseOnProfile(Object.assign(backup(Date.now(), [card("cv-kv1", 1, 1, Date.now())]), { stores: { kv: [card("cv-kv1", 1, 1, Date.now())], userScenarios: [], attempts: [{ id: "cv-att-ok", scenarioId: "x", ts: Date.now() }] }, summary: { kv: 1, userScenarios: 0, attempts: 1 } }));
+await confirmText();
+const reloadedAtt = page.waitForEvent("load", { timeout: 15000 }).then(() => true, () => false); // hygiene-ok: same bounded wait as 6b
+await page.locator(".gm-box button", { hasText: /^OK$/ }).click();
+check(await reloadedAtt, "a restore whose quiz results landed but whose settings did not reloads the page", "the page did not reload");
+await waitForBoot(page);
+await waitForRoute(page, "#/profile", { ready: ".backup-panel .backup-actions" });
+const attNote = await until(page, () => /did not finish/.test((document.querySelector(".backup-panel .backup-status") || {}).textContent || ""));
+check(attNote && /The restore did not finish: your settings and progress could not be saved to this device\. The rest of your backup was restored\./.test(await status()), "...and says the settings and progress did not save, and that the rest was restored", "status: " + JSON.stringify(await status()));
+check((await page.evaluate(() => G.db.get("attempts", "cv-att-ok"))) !== undefined && (await getKv("srs:cv-kv1")) === undefined, "...the quiz result is on the device and the refused row is not", "attempt " + JSON.stringify(await page.evaluate(() => G.db.get("attempts", "cv-att-ok"))) + ", row " + JSON.stringify(await getKv("srs:cv-kv1")));
+await page.evaluate(async () => { await G.db.del("attempts", "cv-att-ok"); });
 
 /* =====================================================================
    7) Restoring a normal backup on the device that made it keeps that device's roster reminders
