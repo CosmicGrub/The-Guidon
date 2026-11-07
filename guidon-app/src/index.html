@@ -31120,12 +31120,25 @@ window.G = window.G || {};
   // initials rode every default backup - and were counted as excluded zero
   // times - while the roster itself stayed out. Each is stamped with a
   // `source` starting "leader" (leader.js), and that stamp is what is
-  // checked. Rows written before the stamp existed carry only the label, so
-  // for those the exact label the button wrote is recognised too: one of its
-  // four fixed leads, then "<rank> <name>" exactly as a roster entry reads.
-  // (Once a roster has been cleared, an old unstamped reminder can no longer
-  // be told from one the Soldier typed, and stays.)
-  var LEADER_REMINDER_LEADS = ["Counsel ", "Schedule AFT for ", "Schedule weapons qual for ", "Update NCOER thru-date for "];
+  // checked. Rows written before the stamp existed carry no stamp, so for
+  // those the whole row the button wrote is recognised instead - not the label
+  // alone, because the label is something a Soldier can type too ("Counsel SGT
+  // J.D.X" is a fine thing to put in a reminder by hand): no source at all, one
+  // of the button's four fixed leads with the kind the button gives that lead
+  // (Counsel = counseling, AFT = acft, weapons = weapons, NCOER = other),
+  // then "<rank> <name>" exactly as a roster entry reads, and an empty note
+  // (the button writes none). A reminder typed by hand with a different kind,
+  // or a note, or another module's source, is not taken for one.
+  // What cannot be told apart: a row typed by hand with exactly the same lead,
+  // kind, name and no note IS the same row as the button's, so it is treated as
+  // made from the roster. (And once a roster has been cleared, an old unstamped
+  // reminder can no longer be told from one the Soldier typed, and stays.)
+  var LEADER_REMINDER_LEADS = [
+    { lead: "Counsel ", kind: "counseling" },
+    { lead: "Schedule AFT for ", kind: "acft" },
+    { lead: "Schedule weapons qual for ", kind: "weapons" },
+    { lead: "Update NCOER thru-date for ", kind: "other" },
+  ];
   function rosterLabels(kvRows) {
     var out = [];
     (kvRows || []).forEach(function (row) {
@@ -31140,10 +31153,13 @@ window.G = window.G || {};
   function isLeaderReminder(r, rosterWho) {
     if (!r || typeof r !== "object") return false;
     if (typeof r.source === "string" && r.source.indexOf("leader") === 0) return true;
+    // An unstamped row: only the exact row the roster's button writes (see above).
+    if (r.source) return false;
+    if (r.note) return false;
     var label = String(r.label || "");
     for (var i = 0; i < LEADER_REMINDER_LEADS.length; i++) {
-      var lead = LEADER_REMINDER_LEADS[i];
-      if (label.indexOf(lead) === 0 && rosterWho.indexOf(label.slice(lead.length)) !== -1) return true;
+      var entry = LEADER_REMINDER_LEADS[i];
+      if (r.kind === entry.kind && label.indexOf(entry.lead) === 0 && rosterWho.indexOf(label.slice(entry.lead.length)) !== -1) return true;
     }
     return false;
   }
@@ -32524,14 +32540,18 @@ window.G = window.G || {};
   // The squad roster's "Remind me" reminders are kept out of a default backup
   // (backup.js) because their label names a Soldier. Reminders made before
   // that exclusion existed carry no `source` stamp, so for them the only thing
-  // that says "this came from the roster" is the label still matching a roster
-  // entry - and a rank change, a rename or removing the Soldier breaks that
-  // match, which would put the initials back into every default backup. This
-  // stamps those label-matching reminders `source: "leader"` once, while the
-  // roster is still as they were made, so the exclusion no longer depends on
-  // the roster staying the same. Idempotent (a reminder that already has a
-  // source is left alone, and a pass with nothing to stamp writes nothing),
-  // and it only ever adds the one field. Called by the leader screen when it
+  // that says "this came from the roster" is the row looking exactly like the
+  // one the roster's button writes (same lead, kind and name, no note - see
+  // backup.js isLeaderReminder, the one test the stamp, the backup and the
+  // calendar file all use) while the name still matches a roster entry - and a
+  // rank change, a rename or removing the Soldier breaks that match, which
+  // would put the initials back into every default backup. This stamps those
+  // reminders `source: "leader"` once, while the roster is still as they were
+  // made, so the exclusion no longer depends on the roster staying the same.
+  // A reminder the Soldier typed by hand with a different kind or a note is
+  // left alone. Idempotent (a reminder that already has a source is left
+  // alone, and a pass with nothing to stamp writes nothing), and it only ever
+  // adds the one field. Called by the leader screen when it
   // opens - the only place the roster can be edited - so the stamp is always
   // in place before the first edit. Never runs in a Guest or Kiosk session
   // (nothing is saved there). Resolves to how many it stamped.

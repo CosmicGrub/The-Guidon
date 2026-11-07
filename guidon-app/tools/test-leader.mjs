@@ -248,12 +248,55 @@ countAfterRevisit === countAfterFirst
   after.typed === "" && after.own === ""
     ? ok("...and leaves the Soldier's own reminders alone, even one worded 'Counsel ...' (no stamp)")
     : bad("a reminder the Soldier typed was stamped: " + JSON.stringify(after));
+  // A pass with nothing to stamp must not even REWRITE the row (a rewrite of identical content would pass a
+  // before/after comparison of the stored JSON, so the writes themselves are counted).
   const again = await page.evaluate(async () => {
-    const rowBefore = JSON.stringify(await window.G.db.get("kv", "reminders:v1"));
-    const n = await window.G.reminders.stampLeaderLegacy();
-    return { n, same: rowBefore === JSON.stringify(await window.G.db.get("kv", "reminders:v1")) };
+    const G = window.G;
+    const rowBefore = JSON.stringify(await G.db.get("kv", "reminders:v1"));
+    let puts = 0;
+    const realPut = G.db.put;
+    G.db.put = function (store, row) { if (store === "kv" && row && row.k === "reminders:v1") puts++; return realPut.apply(this, arguments); };
+    let n;
+    try { n = await G.reminders.stampLeaderLegacy(); } finally { G.db.put = realPut; }
+    return { n, puts, same: rowBefore === JSON.stringify(await G.db.get("kv", "reminders:v1")) };
   });
   again.n === 0 && again.same ? ok("stamping again changes nothing (it is idempotent)") : bad("a second pass wrote or stamped again: " + JSON.stringify(again));
+  again.puts === 0 ? ok("...and a pass with nothing to stamp writes nothing at all (0 writes to the reminders row)") : bad("a pass with nothing to stamp still wrote the reminders row " + again.puts + " time(s)");
+
+  // A reminder the Soldier typed by hand can have a roster entry's exact words in its label ("Counsel SPC J.R.").
+  // The stamp - and the backup and the calendar file, which use the same test - take a row for the roster's only
+  // when it looks exactly like the one the roster's button writes: that lead's kind, no note, no other module's source.
+  const collide = await page.evaluate(async (due) => {
+    const G = window.G;
+    const lookalikes = [
+      { id: "lk-kind", kind: "board", label: "Counsel SPC J.R.", date: due, note: "", source: "" },                // right words, wrong kind
+      { id: "lk-note", kind: "counseling", label: "Counsel SPC J.R.", date: due, note: "bring the packet", source: "" },  // right kind, but a note
+      { id: "lk-aft", kind: "other", label: "Schedule AFT for SPC J.R.", date: due, note: "", source: "" },        // another lead, wrong kind
+      { id: "lk-src", kind: "acft", label: "Schedule AFT for SPC J.R.", date: due, note: "", source: "pt-planner" },    // another module's row
+    ];
+    const genuine = { id: "lk-real", kind: "counseling", label: "Counsel SPC J.R.", date: due, note: "", source: "" };   // exactly what the button writes, from before the stamp
+    const list = (await G.reminders.load()) || [];
+    await G.db.put("kv", { k: "reminders:v1", v: list.concat(lookalikes, [genuine]) });
+    const stamped = await G.reminders.stampLeaderLegacy();
+    const after = (await G.reminders.load()) || [];
+    const sourceOf = (id) => (after.find((r) => r.id === id) || {}).source;
+    const exported = ((await G.backup.exportAll()).stores.kv.find((r) => r.k === "reminders:v1") || {}).v || [];
+    const out = {
+      stamped, lookalikeSources: lookalikes.map((l) => sourceOf(l.id)), genuineSource: sourceOf(genuine.id),
+      inBackup: exported.filter((r) => /^lk-/.test(r.id)).map((r) => r.id).sort(),
+    };
+    await G.db.put("kv", { k: "reminders:v1", v: after.filter((r) => !/^lk-/.test(r.id)) });   // leave the device as it was
+    return out;
+  }, daysAgo(-45));
+  collide.stamped === 1 && collide.genuineSource === "leader"
+    ? ok("a row exactly as the roster's button writes it (before the stamp existed) is still stamped, and only that one")
+    : bad("the stamp pass stamped " + collide.stamped + "; the genuine row's source is " + JSON.stringify(collide.genuineSource));
+  collide.lookalikeSources.join("|") === "|||pt-planner"
+    ? ok("typed look-alikes (a different kind, a note, another lead's kind, another module's row) are NOT stamped")
+    : bad("a look-alike was stamped: " + JSON.stringify(collide.lookalikeSources));
+  collide.inBackup.join(",") === "lk-aft,lk-kind,lk-note,lk-src"
+    ? ok("...so all four stay in the Soldier's own default backup, and the one the button made is left out")
+    : bad("default backup carried: " + JSON.stringify(collide.inBackup));
 
   // Now change the roster every way it can change: the stamped reminders still stay out of a default backup.
   const probe = await page.evaluate(async () => {
