@@ -482,7 +482,7 @@ let graded = null;
   const facts = await bankFacts();
   check(/Unit deck: Pinecone Ridge Demo Squadron study deck \| 13% \(1\/8 cards\)/.test(r.text.replace(/\s+/g, " ").replace(/\s\|\s/g, " | ")) || /13%\s*\(1\/8 cards\)/.test(r.text), "Readiness has a \"Unit Deck Readiness\" row for the deck (one card graded Know It: 1 of 8)", () => r.text);
   check(/not Army doctrine/i.test(r.head) && /not counted in the Board Readiness Score/.test(r.head), "and says the deck is not doctrine and not counted in the score", () => r.head);
-  check(/Mastered means you last rated the card Know It or Down Cold, even if it is due for review again now/.test(r.head), "and says the percentage is as last rated, even if a card is due again now", () => r.head);
+  check(/The percentage counts cards you last rated Know It or Down Cold, even if one is due again now/.test(r.head), "and says the percentage is as last rated, even if a card is due again now", () => r.head);
   check(new RegExp("0 / " + facts.boardLen + "$").test(r.mastered), `the Board Readiness Score's denominator is the shipped bank alone (${facts.boardLen}), and the six pillar rows hold no unit card`, () => r.mastered + " / " + r.unitInPillars);
   check(r.unitInPillars === 0 && r.pillarRows >= 4, "no pillar row mentions a unit deck");
   await clickWhenStable(page, page.locator('.readiness-unit-decks button', { hasText: /^Study Pinecone/ }));

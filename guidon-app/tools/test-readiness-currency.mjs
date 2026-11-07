@@ -442,7 +442,7 @@ const recordOneScenario = () => page.evaluate(async () => {
   await openReadiness();
   await until(page, () => !!document.querySelector(".readiness-mos-decks"));
   const mosPanelText = await page.evaluate(() => { const p = document.querySelector(".readiness-mos-decks"); return p ? p.innerText.replace(/\s+/g, " ") : ""; });
-  is(/Mastered means you last rated the card Know It or Down Cold, even if it is due for review again now/.test(mosPanelText), "the MOS Deck Readiness panel says its percentages are as last rated", () => JSON.stringify(mosPanelText.slice(0, 400)));
+  is(/The percentage counts cards you last rated Know It or Down Cold, even if one is due again now/.test(mosPanelText), "the MOS Deck Readiness panel says its percentages are as last rated", () => JSON.stringify(mosPanelText.slice(0, 400)));
   await page.evaluate(() => { G.mosDecks.setOptedIn("92A", false); });
 
   // Progress: the sentence about the Readiness tab names what is there now
