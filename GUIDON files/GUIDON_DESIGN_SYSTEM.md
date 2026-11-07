@@ -28,8 +28,8 @@ Every theme redefines this set. **Nothing outside a theme block should hardcode 
 ### Text
 `--text` — primary
 `--text-1` · `--text-2` — secondary tiers
-`--text-dim` — supporting copy (**passes 4.5:1 in all 24 themes**)
-`--text-mute` — decorative only (**does NOT pass 4.5:1 in most themes — never use for body text**)
+`--text-dim` — supporting copy (**clears 4.5:1 on every surface its theme defines, in all 30 themes**)
+`--text-mute` — de-emphasised copy: captions, hints, counts, placeholders, the OFF toggle knob (**also clears 4.5:1 on every surface its theme defines, in all 30 themes — fine for body text**; the contrast gate fails the build if any text on any screen or tab, or any placeholder, falls short). The three tiers `--text` → `--text-dim` → `--text-mute` are meant to stay visibly distinct: keep `--text-mute` about 1.3:1 to 1.6:1 away from `--text-dim`. Because `--text-mute` cannot go lighter on a light theme without breaking the 4.5:1 floor, a light theme darkens `--text-dim` as a pair with it. Retune the two together, and re-run `tools/test-contrast-full.mjs`, never one alone.
 
 ### Accent
 `--amber` · `--amber-dim` · `--green` · `--cyan` · `--red` · `--violet` · `--brass` · `--glow-amber`
@@ -65,7 +65,7 @@ Light themes require **both** `data-theme="<name>"` on `<html>` **and** the `lig
 
 Theme choice persists to `localStorage` under `guidon:appearance:v1`.
 
-> **Honest assessment:** 24 themes is a maintenance liability, more so than when this note first said 14. Every new component must clear 4.5:1 in all 24, which is why contrast regressions keep appearing. A designer should feel free to ask whether all 24 earn their place — but note the count grew *after* this doc first flagged it as a liability, not before, so the pressure hasn't worked as a deterrent so far.
+> **Honest assessment:** 30 themes is a maintenance liability, more so than when this note first said 14. Every new component must clear 4.5:1 in all 30, which is why contrast regressions keep appearing. A designer should feel free to ask whether all 30 earn their place — but note the count grew *after* this doc first flagged it as a liability, not before, so the pressure hasn't worked as a deterrent so far.
 
 ---
 
@@ -117,7 +117,7 @@ Verified layout floor: **no horizontal overflow at 360 px** across every section
 Any visual change should clear this before shipping:
 
 - `node --check` on all inline scripts; CSS brace balance on all 3 blocks
-- **axe-core across every registered theme × every screen in `G.routes`, plus interaction states and the first-run welcome screens — 0 colour-contrast misses, or the run fails (exit 1).** This runs as `tools/test-contrast-full.mjs`, wired into the default `npm test` battery (`npm run test:contrast-full`) — not a script that has to be remembered and run separately. It switches themes through `G.theme.applyTheme` (the real path, which also moves the `light` class), runs with a finished profile (plus a guest pass on the screens that draw differently), opens every closed `<details>`, resolves the text axe files as `incomplete` (over a gradient or a background image) itself, injects canaries on every measurement so a blinded harness fails loudly, and writes its report to the OS temp folder. `tools/test-contrast-full-gate.mjs` proves the gate can fail. Its allowlist is empty and needs the owner's sign-off to add to.
+- **axe-core across every registered theme × every screen in `G.routes` — its default tab and every tab, segment and chip of it — plus the interaction states, a guest pass and the first-run welcome screens: 0 colour-contrast misses, or the run fails (exit 1).** It is two suites in `npm test`, `npm run test:contrast-full` (`tools/test-contrast-full.mjs --suite=screens`) and `npm run test:contrast-tabs` (`--suite=tabs`), not a script that has to be remembered and run separately. It switches themes through `G.theme.applyTheme` (the real path, which also moves the `light` class), runs with a finished profile (plus a guest pass on the screens that draw differently), opens every closed `<details>`, presses the tabs and chips it finds in the DOM (a Settings preference or anything that deletes, resets or sends is never pressed), resolves the text axe files as `incomplete` (over a gradient or a background image) itself, reads the value of form controls and measures `::placeholder`, injects canaries on every measurement so a blinded harness fails loudly, and writes its report to the OS temp folder. `tools/test-contrast-full-gate.mjs` proves the gate can fail, including against copies of the gate with one behaviour cut out. Its allowlist is empty and needs the owner's sign-off to add to. **It measures text contrast only**: not the focus ring or input borders and other non-text contrast (WCAG 1.4.11 — Deferred: the global focus ring is raw `--cyan`, 2.94:1 to 2.97:1 on two light themes; input borders are 1.21:1 to 1.92:1 against their field in 29 of 30 themes), not text inside `<svg>` charts, emoji, hover / focus / disabled states, toasts or print, and not effects that change what the eye sees without changing the computed colour (`filter`, `mix-blend-mode`, `-webkit-text-fill-color` over clipped gradient text, an ancestor's `opacity` over an element's own dark background).
 - Console clean at **both `error` and `warning`** levels
 - No horizontal overflow at 360 px and 1280 px
 
@@ -133,7 +133,7 @@ Ignoring either produces violations that do not exist and invites "fixing" worki
 
 | Item | Detail |
 |---|---|
-| 24 themes | Every component must clear contrast in all of them |
+| 30 themes | Every component must clear contrast in all of them |
 | Screen-reader testing | Never done with a real AT/user. Automated tooling catches roughly a third of real issues |
 
 **Closed since this table last needed updating** — kept here so a reader doesn't have to rediscover them: near-zero motion (§5, 3 → 7 keyframes plus a real transition-token system); native `prompt()`/`confirm()` (`modal.js`'s `G.modal.confirm`/`G.modal.prompt` replaced every call site app-wide, and picked up real enter/exit motion of its own); `guidon-theme-proposals.html` (the file no longer exists in the repo — nothing left to reconcile); 21 ad-hoc media conditions (consolidated to an 8-value canonical scale — see the doc comment above the first width-based `@media` rule in `src/index.html`, near line 396 — with `tools/lint-patterns.mjs` check (d) enforcing it going forward).
@@ -142,7 +142,7 @@ Ignoring either produces violations that do not exist and invites "fixing" worki
 
 ## 9. Where to start
 
-1. Read this file, then run `node tools/build.mjs` and open `dist/guidon-standalone.html` in a browser — cycle all 24 themes on `#/home` and `#/board`.
+1. Read this file, then run `node tools/build.mjs` and open `dist/guidon-standalone.html` in a browser — cycle all 30 themes on `#/home` and `#/board`.
 2. **Do not** introduce a hardcoded colour. If an accent must be text, use `--ink-*`. If text sits on an accent fill, use `--btn-ink`.
 3. Consolidate breakpoints before touching components — it makes everything after it cheaper.
 4. Run the verification standard in §7 after every visual change, with both timing rules applied.

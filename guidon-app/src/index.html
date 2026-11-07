@@ -1141,14 +1141,15 @@ html[data-motion="cinematic"] { --qz-flip-dur: .95s; --qz-flip-ease: cubic-bezie
    below the 4.5:1 small-text minimum), only ever surfaced because
    test-contrast-full.mjs never used to actually flip a card (.qz-back
    carries `inert` pre-flip, so axe skipped this element entirely - see
-   that test's own Item F comment). --text-mute is a deliberate, widely-used
-   de-emphasized token elsewhere in this file (dozens of call sites,
-   several at even smaller font-sizes) - re-tuning IT would be a much
-   bigger, app-wide design question outside this fix's scope. This one
-   selector is narrow and self-contained, so switched to --text-dim
-   instead - the same token .rf-hud-stat already uses at a comparable small
-   size against a comparable panel-family background, and confirmed by
-   the same test suite to clear 4.5:1 in all 24 themes after this change. */
+   that test's own Item F comment). At the time --text-mute was a
+   deliberate, widely-used de-emphasized token (dozens of call sites) that
+   fell short of 4.5:1 in most themes, so this one selector was switched to
+   --text-dim - the same token .rf-hud-stat uses at a comparable small size
+   against a comparable panel-family background. (Since then --text-mute
+   itself has been retuned: every theme's value clears 4.5:1 on every
+   surface that theme defines, and tools/test-contrast-full.mjs fails the
+   build if any text, on any screen or tab, falls short. This selector
+   stays on --text-dim, the stronger tier.) */
 .qz-back .src {
   display: block; margin-top: 6px; font-family: var(--font-mono);
   font-size: 0.786rem; color: var(--text-dim);
@@ -1663,8 +1664,8 @@ html.qz-theater[data-motion="minimal"] .qz-back { max-height: none; }
    opens every form in three themes and fails on a contrast miss. The small
    grey labels use --text-dim (>=4.5:1 on --panel in all 30 themes) rather
    than --text-mute, the same per-selector choice .qz-back .src made (see
-   its note above); --text-mute itself is an app-wide token and is not
-   retuned here. */
+   its note above). (--text-mute was retuned afterwards and now clears
+   4.5:1 too; the labels keep the stronger tier.) */
 .blk-label { font-weight: 700; color: var(--text); }
 .example-chip { display:inline-block; margin-top:6px; background:transparent; border:1px solid var(--line-2);
   color: var(--ink-cyan); border-radius: 999px; padding: 3px 12px; font-size: .75rem; cursor:pointer; font-family: var(--font-mono, monospace); }
@@ -2122,14 +2123,14 @@ select.in { appearance:none; }
    two coexist (About GUIDON's own .fin-h sits unchanged inside its panel,
    below this). Panels within a zone are wrapped in .panel-grid-2 (see CSS)
    so related settings sit side by side at >=600px instead of stacking
-   regardless of viewport. color:var(--text), NOT var(--text-mute): the
-   full 24-theme contrast sweep (test:contrast-full) caught var(--text-mute)
-   failing 4.5:1 in exactly the same 4 themes (blackout, desert-cadence,
-   parade-rest, sepia-study) where the pre-existing .res-source class
-   already fails for the identical reason - var(--text) is the token
-   .fin-h's own comment above already documents as clearing 3:1 in all 24
-   themes, so this reuses that same already-verified-safe choice rather
-   than adding a second occurrence of a known-bad one. */
+   regardless of viewport. color:var(--text), NOT var(--text-mute): when
+   this was written the 24-theme contrast sweep (test:contrast-full) caught
+   var(--text-mute) failing 4.5:1 in 4 themes (blackout, desert-cadence,
+   parade-rest, sepia-study), and var(--text) is the token .fin-h's own
+   comment above documents as clearing 3:1 in every theme, so this reused
+   that already-verified-safe choice. (--text-mute has been retuned since
+   and clears 4.5:1 in all 30 themes; a zone divider is a heading, so it
+   stays on the primary text colour.) */
 .settings-zone-h { margin:20px 0 10px; padding-top:16px; border-top:1px solid var(--line-2);
              font-family:var(--font-head); font-weight:700; text-transform:uppercase;
              letter-spacing:.06em; font-size:.78rem; color:var(--text); }
@@ -2237,7 +2238,8 @@ select.in { appearance:none; }
    sweep (test:contrast-full, run incidentally while verifying this wave's
    Settings zone-header fix) caught this pre-existing rule failing 4.5:1 in
    the same 4 themes (blackout, desert-cadence, parade-rest, sepia-study) -
-   same var(--text-mute) root cause, same fix. */
+   same var(--text-mute) root cause, same fix. (--text-mute has been retuned
+   since and clears 4.5:1 in all 30 themes; this source line stays as it is.) */
 .res-source    { font-size:.75rem; color:var(--text); margin-top:8px; }
 .res-potd-name { color:var(--cyan); }
 .res-section-h { font-family:var(--font-head); font-weight:700; color:var(--cyan);
@@ -6659,8 +6661,9 @@ html[data-theme="forest-quiet"] {
      one to avoid duplicating, but Pine Dusk (Focus set, --amber:#84b394,
      "desaturated forest greys with a sage accent") already sits much
      closer to this brief and needed the real differentiation. This pushes
-     further: a flatter, greyer, lower-saturation sage (#8a9484 vs Pine
-     Dusk's more visibly-green #84b394) and a green-grey --green role
+     further: a flatter, greyer, lower-saturation sage (#8d9787 vs Pine
+     Dusk's more visibly-green #84b394; it was #8a9484 until the contrast
+     retune lifted it just clear of 4.5:1 on its tinted panels) and a green-grey --green role
      (#93a597) rather than Pine Dusk's blue-grey one (#a8b8c0), so it reads
      calmer and stonier next to Pine Dusk's still-fairly-green cast. */
   --bg: #181c19; --bg-2: #212521; --bg-3: #282c28;
