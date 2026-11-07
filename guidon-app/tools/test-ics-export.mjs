@@ -92,6 +92,16 @@ const fallBackSunday = (() => { const d = new Date(Date.UTC(Y, 10, 1)); while (d
 // Three days back, not one: in a clock set to the far side of the date line "yesterday" can still be today.
 const past = (() => { const d = new Date(now); d.setDate(d.getDate() - 3); return iso(d); })();
 const SECRETS = ["Doe", "Smith", "John", "555", "1-2 INF", "4856", "TESTKIT", "rSECRET1", "rSECRET2"];
+// What of SECRETS is in a file's bytes. A UID is a hash (hex digits) of a reminder id, and a reminder made on the
+// screen has a RANDOM id - so its UID spells a short digit string like "555" or "4856" by chance (about 1 file in 40
+// with the old whole-file scan). The all-digit entries are therefore looked for with the UID values blanked out; every
+// other entry (no hex digit can spell them) and every other byte is scanned as before, and the UIDs themselves are held
+// to their exact shape (a plain hash), so an id written into one would still be caught.
+const secretsIn = (text) => {
+  const noUids = text.replace(/^UID:.*$/gm, "UID:");
+  return SECRETS.filter((x) => (/^\d+$/.test(x) ? noUids : text).includes(x));
+};
+const uidsAreHashes = (text) => [...text.matchAll(/^UID:(.*)$/gm)].every((m) => /^guidon-[0-9a-f]{16}@guidon\.invalid$/.test(m[1]));
 const FIXTURE = [
   { id: "rSECRET1", kind: "board", label: "Promo board with SSG Doe, A. (1-2 INF)", note: "Call 555-0100; bring DA 4856", date: day(Y, 10, 31) },
   { id: "rSECRET2", kind: "counseling", label: "Counsel SSG Smith, John", note: "", date: day(Y, 12, 31) },
@@ -154,9 +164,9 @@ check(stampOk, "DTSTAMP is the moment of export in UTC", () => detail.join("; ")
 check(alarmOk, "each event carries the calendar's own alert for 9 in the morning on the day", () => detail.join("; "));
 
 // Privacy, on the bytes: nothing typed, no name, no id.
-const leaked = SECRETS.filter((s) => built.a.text.includes(s));
-check(leaked.length === 0, "nothing the Soldier typed, no roster name, no profile name and no reminder id is anywhere in the file",
-  () => "found in the file: " + JSON.stringify(leaked));
+const leaked = secretsIn(built.a.text);
+check(leaked.length === 0 && uidsAreHashes(built.a.text), "nothing the Soldier typed, no roster name, no profile name and no reminder id is anywhere in the file",
+  () => "found in the file: " + JSON.stringify(leaked) + (uidsAreHashes(built.a.text) ? "" : " (and a UID that is not a plain hash)"));
 
 // Stable and unique UIDs.
 const uidsA = [...built.a.text.matchAll(/^UID:(.+)$/gm)].map((m) => m[1]);
@@ -203,11 +213,18 @@ await page.evaluate(async (list) => {
 // Reminders the leader roster made: one stamped, one older and unstamped whose label still matches a roster entry.
 // Neither may reach the file, so the "exactly N events" check on the saved file below proves they were left out.
 const ROSTER_DAYS = [day(Y, 3, 3), day(Y, 3, 4)];
-await page.evaluate(async (days) => {
+// ...and two the Soldier TYPED, using a roster entry's exact words in the label: not the roster's (one has another kind, one
+// has a note - the roster's button writes neither), so they are the Soldier's own dates and DO go in the file.
+const LOOKALIKE_DAYS = [day(Y, 3, 5), day(Y, 3, 6)];
+await page.evaluate(async (args) => {
+  const { days, lookalikes } = args;
   await window.G.db.put("kv", { k: "guidon:leader:roster:v1", v: [{ rank: "SGT", name: "XROSTER" }] });
   await window.G.reminders.add({ kind: "counseling", label: "Counsel SGT XROSTER", date: days[0], source: "leader" });
   await window.G.reminders.add({ kind: "acft", label: "Schedule AFT for SGT XROSTER", date: days[1] });   // no stamp: an older reminder
-}, ROSTER_DAYS);
+  await window.G.reminders.add({ kind: "board", label: "Counsel SGT XROSTER", date: lookalikes[0] });       // typed: the right words, the wrong kind
+  await window.G.reminders.add({ kind: "counseling", label: "Counsel SGT XROSTER", date: lookalikes[1], note: "bring the packet" });   // typed: the right kind, but a note
+}, { days: ROSTER_DAYS, lookalikes: LOOKALIKE_DAYS });
+const NS = N + LOOKALIKE_DAYS.length;   // the file from the screen: the fixture's dates plus the two typed look-alikes
 await waitForRoute(page, "#/profile", { ready: ".rem-calendar button" });
 const calCopy = await page.evaluate(() => (document.querySelector(".rem-calendar p.hint") || {}).textContent || "");
 check(/Reminders you made from the leader roster are not included\./.test(calCopy), "the calendar section says reminders made from the leader roster are not included", () => calCopy);
@@ -225,17 +242,22 @@ const onDisk = readFileSync(await dl.path(), "utf8");
 let shown;
 try { shown = parseIcs(onDisk); } catch (e) { shown = null; check(false, "", "the saved file does not parse: " + e.message); }
 const shownEvents = shown ? shown.root.children[0].children.filter((c) => c.name === "VEVENT") : [];
-check(shownEvents.length === N && shown.longest <= 75, "the saved file parses and holds the " + N + " upcoming dates", () => "events: " + shownEvents.length);
-const leakedUi = SECRETS.concat(["Promo board", "Range day", "third squad", "Unknown kind", "Prototype kind", "Strength session", "XROSTER"]).filter((s) => onDisk.includes(s));
+check(shownEvents.length === NS && shown.longest <= 75, "the saved file parses and holds the " + NS + " upcoming dates (the fixture's " + N + ", and the two typed look-alikes of a roster label)", () => "events: " + shownEvents.length);
+const leakedUi = secretsIn(onDisk).concat(["Promo board", "Range day", "third squad", "Unknown kind", "Prototype kind", "Strength session", "XROSTER"].filter((x) => onDisk.includes(x)));
 const rosterDatesIn = ROSTER_DAYS.filter((d) => onDisk.includes("DTSTART;VALUE=DATE:" + compact(d)));
-check(rosterDatesIn.length === 0, "neither roster reminder (the stamped one, nor the older one recognised by its label) is in the saved file", () => "roster dates found: " + JSON.stringify(rosterDatesIn));
-check(leakedUi.length === 0, "the file saved from the screen carries none of the typed wording, names or ids either", () => "found: " + JSON.stringify(leakedUi));
-const toast = await until(page, (n) => new RegExp(n + " dates ready").test((document.getElementById("toast") || {}).textContent || ""), N);
+check(rosterDatesIn.length === 0, "neither roster reminder (the stamped one, nor the older one that looks exactly like the roster button's) is in the saved file", () => "roster dates found: " + JSON.stringify(rosterDatesIn));
+const lookalikeDatesIn = LOOKALIKE_DAYS.filter((d) => onDisk.includes("DTSTART;VALUE=DATE:" + compact(d)));
+check(lookalikeDatesIn.length === LOOKALIKE_DAYS.length, "...but both dates the Soldier typed with a roster entry's words in the label ARE in it (a different kind, a note: not the roster's)", () => "look-alike dates found: " + JSON.stringify(lookalikeDatesIn) + " of " + JSON.stringify(LOOKALIKE_DAYS));
+check(leakedUi.length === 0 && uidsAreHashes(onDisk), "the file saved from the screen carries none of the typed wording, names or ids either", () => "found: " + JSON.stringify(leakedUi) + (uidsAreHashes(onDisk) ? "" : " (and a UID that is not a plain hash)"));
+const toast = await until(page, (n) => new RegExp(n + " dates ready").test((document.getElementById("toast") || {}).textContent || ""), NS);
 check(toast, "the screen says how many dates are ready and what to do with the file");
-check(await until(page, () => /2 reminders made from the roster were left out\./.test((document.getElementById("toast") || {}).textContent || "")), "...and says that the 2 reminders made from the roster were left out", () => (document.getElementById("toast") || {}).textContent);
+const leftOutSaid = await until(page, () => /2 reminders made from the roster were left out[.]/.test((document.getElementById("toast") || {}).textContent || ""));
+// (read here, in the page: a failure message that touched document would be run by Node, which has none, and crash the suite)
+const leftOutToast = await page.evaluate(() => (document.getElementById("toast") || {}).textContent || "");
+check(leftOutSaid, "...and says that the 2 reminders made from the roster were left out (not the typed look-alikes)", "the toast said: " + JSON.stringify(leftOutToast));
 
 // Only roster reminders left: nothing of the Soldier's own to add, and it says why.
-await page.evaluate(async () => { for (const r of await window.G.reminders.load()) if (r.source !== "leader" && !/XROSTER/.test(r.label)) await window.G.reminders.remove(r.id); });
+await page.evaluate(async (keep) => { for (const r of await window.G.reminders.load()) if (!keep.includes(r.date)) await window.G.reminders.remove(r.id); }, ROSTER_DAYS);
 await waitForRoute(page, "#/profile", { fresh: true, ready: ".rem-calendar button" });
 let gotRosterOnly = false;
 page.once("download", () => { gotRosterOnly = true; });

@@ -174,6 +174,10 @@ try {
   check(!shown.app, "an unsaved document offline does not open the app inside itself", "the unsaved document opened the app");
   check(/not saved on this device/i.test(said) && /connect/i.test(said),
     "an unsaved document offline says so in plain words and how to fix it", () => "the page said: " + JSON.stringify(said.slice(0, 200)));
+  // The promise is true only as far as it goes: every saved document is dropped when GUIDON next updates (the new
+  // worker's activate deletes each older guidon-* cache), so "it will open without a signal after that" - forever - was not.
+  check(/it will open without a signal until GUIDON next updates\./.test(said) && !/without a signal after that/i.test(said),
+    "...and says how long that lasts: \"until GUIDON next updates\", not a forever it cannot keep", () => "the page said: " + JSON.stringify(said.slice(0, 300)));
   await context.setOffline(false);
 
   // The browser logs its own line for a document it could not fetch while offline;
