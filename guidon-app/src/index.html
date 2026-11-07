@@ -380,6 +380,11 @@ input[type="text"], input[type="number"], textarea, select {
 /* DEDUPED: a — merged below */
 
 input:focus, textarea:focus, select:focus { outline: none; border-color: var(--amber); box-shadow: var(--glow-amber); }
+/* A placeholder is text a Soldier has to read ("Search scenarios by title...", "Rank, name"). It had no rule of its own, so the browser drew it
+   in its default grey (#757575), which is 2.9:1 to 4.6:1 on these fields and failed 4.5:1 in 29 of the 30 themes. --text-mute clears 4.5:1
+   on every surface a theme defines, and tools/test-contrast-full.mjs now measures ::placeholder in every theme. opacity is set explicitly
+   because Firefox dims a placeholder to 0.54 by default, which would wash the colour out again. */
+::placeholder { color: var(--text-mute); opacity: 1; }
 input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 6px; background: var(--bg); border: 1px solid var(--line-2); border-radius: 999px; }
 input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--amber); box-shadow: var(--glow-amber); cursor: pointer; }
 input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; border: none; border-radius: 50%; background: var(--amber); cursor: pointer; }
@@ -1838,6 +1843,9 @@ select.in { appearance:none; }
 /* DEDUPED: a — merged below */
 
 .counsel-poa textarea { resize:vertical; }
+/* Counseling > Examples search box: it had no rule of its own, so a dark theme drew it in the browser's grey (#3b3b3b) with the placeholder
+   on that grey at 2.6:1 to 4.2:1 in 18 themes. It now looks like every other text field in the app. */
+.doc-search-input { width:100%; box-sizing:border-box; margin:0 0 10px; background:var(--bg); color:var(--text); border:1px solid var(--line-2); border-radius:var(--radius-sm); padding:9px 11px; font-family:var(--font-mono); font-size:.81rem; }
 /* DEDUPED: a — merged below */
 
 .poa-actions, .idp-actions { display:flex; gap:10px; margin-top:6px; flex-wrap:wrap; }
@@ -2206,7 +2214,7 @@ select.in { appearance:none; }
 .fin-prot-name { font-family:var(--font-head); font-weight:700; color:var(--cyan); font-size:.9rem; margin-bottom:4px; }
 .fin-prot-d    { color:var(--text-dim); font-size:.84rem; line-height:1.4; }
 .fin-redflag-list, .fin-alt-list { margin:0; padding-left:18px; display:flex; flex-direction:column; gap:6px; }
-.fin-redflag-list li { color:var(--red); font-size:.87rem; line-height:1.4; }
+.fin-redflag-list li { color:var(--ink-red); font-size:.87rem; line-height:1.4; }
 .fin-alt-list li     { color:var(--green); font-size:.87rem; line-height:1.4; }
 
 /* ===== Missing class repairs (audit 2025-07-09) ===== */
@@ -2226,6 +2234,7 @@ select.in { appearance:none; }
    the same 4 themes (blackout, desert-cadence, parade-rest, sepia-study) -
    same var(--text-mute) root cause, same fix. */
 .res-source    { font-size:.75rem; color:var(--text); margin-top:8px; }
+.res-potd-name { color:var(--cyan); }
 .res-section-h { font-family:var(--font-head); font-weight:700; color:var(--cyan);
                  text-transform:uppercase; letter-spacing:.05em; font-size:.9rem; margin-bottom:10px; }
 /* H2F domain cards */
@@ -2387,7 +2396,7 @@ select.in { appearance:none; }
 .tx-items li.tx-urgent { color:color-mix(in srgb, var(--red) 40%, var(--text) 60%); font-weight:600; }
 .tx-elig       { background:rgba(56,214,224,.07); border-left:3px solid var(--cyan);
                  border-radius:0 var(--radius-sm) var(--radius-sm) 0; padding:9px 12px; margin:10px 0; }
-.tx-elig-label { font-family:var(--font-mono); font-size:.68rem; color:var(--cyan);
+.tx-elig-label { font-family:var(--font-mono); font-size:.68rem; color:var(--ink-cyan);
                  letter-spacing:.07em; display:block; margin-bottom:3px; }
 .tx-elig-text  { color:var(--text); font-size:.87rem; line-height:1.4; }
 .tx-bdd-point  { display:flex; gap:10px; align-items:flex-start; padding:7px 0;
@@ -2402,7 +2411,7 @@ select.in { appearance:none; }
 .tx-block      { display:flex; gap:12px; align-items:flex-start; padding:9px 0;
                  border-bottom:1px solid var(--line); }
 .tx-block:last-child { border-bottom:none; }
-.tx-block-num  { font-family:var(--font-mono); font-size:.72rem; color:var(--violet);
+.tx-block-num  { font-family:var(--font-mono); font-size:.72rem; color:var(--ink-violet);
                  background:rgba(167,139,250,.1); border:1px solid rgba(167,139,250,.25);
                  border-radius:4px; padding:3px 6px; min-width:72px; text-align:center;
                  flex-shrink:0; line-height:1.2; margin-top:2px; }
@@ -3021,8 +3030,8 @@ mark.dict-hi {
   letter-spacing: 0.07em;
   margin-bottom: 5px;
 }
-.bq-acceptable .bq-answer-label { color: var(--green); }
-.bq-bybook .bq-answer-label { color: var(--amber); }
+.bq-acceptable .bq-answer-label { color: var(--ink-green); }
+.bq-bybook .bq-answer-label { color: var(--ink-amber); }
 .bq-answer-text {
   font-size: 0.9rem;
   line-height: 1.6;
@@ -3805,6 +3814,13 @@ html.light .tag { background: var(--bg); border-color: var(--border); }
 html.light code, html.light .kc-label { color: var(--text-dim); }
 /* The development-pathway disclosure lines are --cyan text; the light themes' cyan is a fill colour (2.7-4.3:1 on their panels). */
 html.light .roadmap-mechanism summary { color: var(--ink-cyan); }
+/* Raw --cyan as TEXT is 2.7:1 to 4.3:1 on the light themes (the tab walk in tools/test-contrast-full.mjs found these behind
+   Money, Health, Transition and Write tabs that the default-tab sweep never opened). --ink-cyan clears 4.7:1 on every surface of
+   all 30 themes; the dark themes keep the vivid accent because it already passes there. */
+html.light .res-section-h, html.light .tx-section-h, html.light .skill-ref, html.light .tx-path-name, html.light .tx-fh-code,
+html.light .fin-budget-amt, html.light .fin-prot-name, html.light .wr-ex-label, html.light .res-potd-name { color: var(--ink-cyan); }
+/* White-ish ink on the violet 'My Bookmarks' chip was 3.9:1 to 4.2:1 on four light themes: a little of the text colour darkens the chip. */
+html.light .due-chip.star-chip { background: color-mix(in srgb, var(--violet) 78%, var(--text)); }
 html.light .feedback.good { background: rgba(25,135,84,0.1); }
 html.light .feedback.warn { background: rgba(212,120,10,0.1); }
 html.light .feedback.error { background: rgba(220,53,69,0.1); }
@@ -3890,7 +3906,7 @@ html.light .feedback.error { background: rgba(220,53,69,0.1); }
 .tx-path-lead { font-size:0.84rem; color:var(--text-dim); margin:4px 0 8px; line-height:1.5; overflow-wrap:anywhere; }
 
 /* ── Counsel module — 12-field POA form ──────────────────────────────────── */
-.poa-label { font-size:0.78rem; font-family:var(--font-mono); color:var(--amber);
+.poa-label { font-size:0.78rem; font-family:var(--font-mono); color:var(--ink-amber);
   text-transform:uppercase; letter-spacing:0.06em; display:block; margin-bottom:4px; }
 
 
@@ -3975,7 +3991,9 @@ html.light .feedback.error { background: rgba(220,53,69,0.1); }
    bugs above. color-mix keeps this coordinated with whatever --amber
    actually resolves to in every theme, the same fix pattern already used
    for the two hardcoded-dark surfaces earlier this session. */
-.search-chip.active { background: color-mix(in srgb, var(--amber) 12%, var(--bg-2)); border-color:var(--amber); }
+/* The wash goes over --bg (the darkest surface in a dark theme, the lightest in a light one), not --bg-2: over --bg-2 it left the chips'
+   ink text at 4.1:1 to 4.4:1 in six themes (found behind the Search filter chips by the tab walk); over --bg it is 4.6:1 or more in all 30. */
+.search-chip.active { background: color-mix(in srgb, var(--amber) 12%, var(--bg)); border-color:var(--amber); }
 /* Board section reorganization: the regulation quick-filter row - the
    finest-grained, least-often-browsed-first of the three pillar/category/
    regulation facets - is collapsed behind a disclosure by default instead
@@ -15317,6 +15335,8 @@ window.G = window.G || {};
     const totalCurrent = all.filter((q) => G.board.isCurrentSrs(srsData[q.id], now)).length;
     const currentPct = totalQ ? Math.round(totalCurrent / totalQ * 100) : 0;
     const readColor = currentPct >= 85 ? "var(--green)" : currentPct >= 60 ? "var(--cyan)" : currentPct >= 30 ? "var(--amber)" : "var(--red)";
+    // The same bands for the WORDS (the score text): the text-safe ink of each colour, not the raw accent that the bars and borders use.
+    const readInk = currentPct >= 85 ? "var(--ink-green)" : currentPct >= 60 ? "var(--ink-cyan)" : currentPct >= 30 ? "var(--ink-amber)" : "var(--ink-red)";
 
     // ── Due now count ──────────────────────────────────────────
     // Same predicate Home/Progress use (G.board.isDueSrs) - a card with no
@@ -15333,7 +15353,7 @@ window.G = window.G || {};
       const allPass = trainingPassed === trainingScs.length;
       trainPanel.appendChild(el("div.stat", {}, [
         el("span.k", { text: "Mandatory Training" }),
-        el("span.v", { style: "color:" + (allPass ? "var(--green)" : "var(--amber)"), text: trainingPassed + " / " + trainingScs.length + " passed at 80%+" }),
+        el("span.v", { style: "color:" + (allPass ? "var(--ink-green)" : "var(--ink-amber)"), text: trainingPassed + " / " + trainingScs.length + " passed at 80%+" }),
       ]));
       trainPanel.appendChild(el("div.bar" + (allPass ? ".green" : ""), {}, [el("span", { style: "transform:scaleX(" + (trainingPassed / trainingScs.length) + ")" })]));
       if (!allPass) {
@@ -15347,7 +15367,7 @@ window.G = window.G || {};
     const header = el("div.panel");
     header.appendChild(el("div.stat", {}, [
       el("span.k", { text: "Board Readiness Score" }),
-      el("span.v", { style: "color:" + readColor + ";font-weight:700", text: totalCurrent + " of " + totalQ + " cards current" }),
+      el("span.v", { style: "color:" + readInk + ";font-weight:700", text: totalCurrent + " of " + totalQ + " cards current" }),
     ]));
     // Enhancement backlog round 3, "Board Readiness Display Accuracy"
     // bucket: this bar used to be a dead ternary that was only ever ".green"
@@ -15854,7 +15874,7 @@ window.G = window.G || {};
         const card = el("div.def-card");
         const header = el("div.def-card-header");
         const badgeText = item.type === "doctrine" ? "▤ Doctrine" : item.type === "dict" ? "🔤 Term" : "★ Board";
-        const badgeColor = item.type === "doctrine" ? "var(--violet)" : item.type === "dict" ? "var(--red)" : "var(--amber)";
+        const badgeColor = item.type === "doctrine" ? "var(--ink-violet)" : item.type === "dict" ? "var(--ink-red)" : "var(--ink-amber)";
         header.appendChild(el("span.def-badge", { text: badgeText, style: "color:" + badgeColor }));
         header.appendChild(el("span.def-cat", { text: item.category }));
         card.appendChild(header);
@@ -33900,7 +33920,7 @@ window.G = window.G || {};
       const head = el("div.fin-ets-head");
       head.appendChild(el("span.fin-ets-days", {
         text: item.days === 0 ? "ETS Day" : item.days + " days out",
-        style: "color:" + (item.days <= 60 ? "var(--red)" : item.days <= 120 ? "var(--amber)" : "var(--cyan)")
+        style: "color:" + (item.days <= 60 ? "var(--ink-red)" : item.days <= 120 ? "var(--ink-amber)" : "var(--ink-cyan)")
       }));
       head.appendChild(el("span.fin-ets-label", { text: item.label }));
       card.appendChild(head);
@@ -34760,6 +34780,12 @@ window.G = window.G || {};
     mental_health: "var(--violet)", learning: "var(--green)", fitness: "var(--green)",
     benefits: "var(--amber)", education: "var(--cyan)"
   };
+  // The same colours for the badge WORDS: the text-safe ink of each (TYPE_CLR stays the card's border colour).
+  const TYPE_INK = {
+    crisis: "var(--ink-red)", wellness: "var(--ink-cyan)", support: "var(--ink-amber)",
+    mental_health: "var(--ink-violet)", learning: "var(--ink-green)", fitness: "var(--ink-green)",
+    benefits: "var(--ink-amber)", education: "var(--ink-cyan)"
+  };
   const TYPE_LBL = {
     crisis: "CRISIS", wellness: "WELLNESS", support: "SUPPORT",
     mental_health: "MENTAL HEALTH", learning: "LEARNING", fitness: "FITNESS",
@@ -34937,7 +34963,7 @@ window.G = window.G || {};
 
         const potd = el("div.panel", { style:"border-left:3px solid var(--cyan);margin-bottom:10px" });
         potd.appendChild(el("div.eyebrow", { text:"Practice of the Day" }));
-        potd.appendChild(el("h3", { text: todaySk.name || "Daily Skill", style:"color:var(--cyan)" }));
+        potd.appendChild(el("h3.res-potd-name", { text: todaySk.name || "Daily Skill" }));
         if (todaySk.body) potd.appendChild(el("p.hint", { text: todaySk.body }));
 
         const logBtn = el("button.btn.sm", { type:"button", text:"Mark as practiced today" });
@@ -35124,7 +35150,7 @@ window.G = window.G || {};
       const head = el("div.res-resource-head");
       const badge = el("span.res-type-badge");
       badge.textContent = TYPE_LBL[r.type] || (r.type || "").toUpperCase();
-      badge.style.color = clr;
+      badge.style.color = TYPE_INK[r.type] || TYPE_INK.support;   // text: the text-safe ink (clr stays the border colour)
       head.appendChild(badge);
       head.appendChild(el("span.res-resource-name", { text: r.name }));
       card.appendChild(head);
