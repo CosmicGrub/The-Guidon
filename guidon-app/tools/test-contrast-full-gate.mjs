@@ -25,7 +25,7 @@
  *      working on the gate, never for CI; under CI=true it must refuse (exit 1).
  *   4. A DEFECT BEHIND A TAB: the tab suite, on the Money screen, with a defect
  *      that only shows in its Budget tab. The default-tab sweep never sees it.
- *   5. WIRING: every suite of the gate is run by `npm test`
+ *   5. WIRING: every suite, and every shard of the tab walk, is run by `npm test`; each shard has a CI chunk to itself; the chunk step has a timeout
  *      (the gate is split into suites that CI runs in separate chunks; a suite
  *      nobody runs guards nothing).
  *   6. MUTANTS OF THE GATE: copies of the gate itself, each with one behaviour
@@ -142,7 +142,7 @@ try {
   check(/PASS\s+\[night-vision\] no colour-contrast miss/.test(tabs.out), "TABS: the untouched theme stays clean through every Money tab", () => "night-vision was blamed or not judged in the tab run:\n" + tabs.out.slice(-1200));
   check(/\[tabs\] #\/money: \d+ tab states reached/.test(tabs.out), "TABS: the walk reports how many Money tab states it reached (a floor applies to it even in a narrowed run)", () => "no per-screen tab floor line in:\n" + tabs.out.slice(-1200));
 
-  /* ---- 5) wiring: every suite of the gate is run by npm test ---- */
+  /* ---- 5) wiring: every suite, and every shard of it, is run by npm test, each in a chunk of its own where it is heavy ---- */
   const list = runGate(GATE, ["--list-suites"], {}, "list suites");
   let suites = [];
   try { suites = JSON.parse(list.out.trim().split("\n").pop()); } catch (e) { bad("WIRING: --list-suites did not print a JSON list: " + list.out.slice(0, 200)); }
@@ -152,10 +152,22 @@ try {
   check(suites.length >= 2, `WIRING: the gate lists its suites (${suites.join(", ")})`, "WIRING: --list-suites listed fewer than two suites");
   for (const s of suites) {
     const scripts = mine.filter(([, v]) => (v.match(/--suite=(\w+)/) || [])[1] === s);
-    check(scripts.length === 1, `WIRING: suite "${s}" is one script in package.json (${scripts.map(([name]) => name).join(", ")})`, `WIRING: suite "${s}" is wired by ${scripts.length} package.json scripts (expected exactly 1): ${scripts.map(([name]) => name).join(", ")}`);
-    for (const [name] of scripts) check(new RegExp("(^|\\s)" + name + "(\\s|$)").test(runner), `WIRING: npm test runs ${name}`, `WIRING: ${name} is a script but is not in npm test's run-parallel list - CI would never run that part of the gate`);
+    const shards = scripts.map(([name, v]) => ({ name, k: +((v.match(/--shard=(\d+)\//) || [])[1] || 1), n: +((v.match(/--shard=\d+\/(\d+)/) || [])[1] || 1) }));
+    const n = shards.length ? shards[0].n : 0;
+    const covered = [...new Set(shards.filter((x) => x.n === n).map((x) => x.k))].sort((a, b) => a - b);
+    check(shards.length > 0 && shards.every((x) => x.n === n) && covered.length === n && covered.every((k, i) => k === i + 1) && shards.length === n,
+      `WIRING: suite "${s}" is wired in package.json as ${n === 1 ? "one script" : "shards 1..." + n} (${shards.map((x) => x.name).join(", ")})`,
+      `WIRING: suite "${s}" is not fully wired in package.json: scripts [${shards.map((x) => x.name + " " + x.k + "/" + x.n).join(", ")}] do not cover every screen exactly once`);
+    for (const x of shards) check(new RegExp("(^|\\s)" + x.name + "(\\s|$)").test(runner), `WIRING: npm test runs ${x.name}`, `WIRING: ${x.name} is a script but is not in npm test's run-parallel list - CI would never run that part of the gate`);
   }
   check(!mine.some(([, v]) => !/--suite=/.test(v)), "WIRING: no package.json script runs the gate without --suite (a script that runs both would double the time in one CI chunk)", "WIRING: a package.json script runs tools/test-contrast-full.mjs without --suite=");
+  /* the shards of the tab walk are heavy: ci.yml must give each one a chunk of its own (a chunk runs its suites at the same time on a 2-vCPU runner) */
+  const ci = fs.readFileSync(path.join(APP, "..", ".github", "workflows", "ci.yml"), "utf8");
+  for (const [name] of mine.filter(([, v]) => /--shard=/.test(v))) {
+    const m = ci.match(new RegExp("tests: \"([^\"]*\\b" + name + "\\b[^\"]*)\""));
+    check(m && m[1].trim() === name, `WIRING: ${name} has a CI chunk to itself`, `WIRING: ${name} shares its CI chunk with other suites (${m ? m[1] : "no chunk found"}) - the shards must not share a runner`);
+  }
+  check(/timeout-minutes: 12\s*\n\s*env:\s*\n\s*ARDUINOJSON_DIR/.test(ci), "WIRING: the 'Run test chunk' step has its own timeout, shorter than the job's, so a hung chunk fails fast", "WIRING: the 'Run test chunk' step has no timeout-minutes of its own");
 
   /* ---- 6) mutants of the gate itself: each cut-out behaviour must make the gate exit 1 ---- */
   const MUTANTS = [
@@ -169,6 +181,10 @@ try {
       from: "d.open = true; if (!d.hasAttribute(\"data-cg-canary\")) opened++;", to: "if (!d.hasAttribute(\"data-cg-canary\")) opened++;", why: "closed <details> are no longer opened" },
     { name: "allowlist-route", args: ["--suite=screens"], env: MUTANT_SLICE, expect: /names no real screen/,
       from: "const ALLOWLIST = [];", to: "const ALLOWLIST = [{ theme: \"night-vision\", route: \"#/no-such-screen\", selector: \"span\", reason: \"a generic selector must never excuse a whole theme\" }];", why: "an allowlist entry that names no real screen (a bare selector such as span) is refused" },
+    { name: "stall", args: ["--suite=screens"], env: { ...MUTANT_SLICE, GUIDON_CONTRAST_STALL_SEC: "6" }, expect: /the sweep stalled[^\n]*last step that finished: profile:#\/home[\s\S]*starting over, once[\s\S]*the sweep stalled/,
+      from: "const r = await page.evaluate(MEASURE, { id: t.id, withCanary: true, RESOLVABLE, host, only });", to: "await new Promise(() => {}); const r = await page.evaluate(MEASURE, { id: t.id, withCanary: true, RESOLVABLE, host, only });", why: "a browser call that never returns fails after the stall limit with the last step named, instead of waiting for the CI job limit" },
+    { name: "dead-app", args: ["--suite=screens"], env: { ...MUTANT_SLICE, GUIDON_CONTRAST_ROUTES: "#/home,#/settings,#/train,#/money,#/health" }, expect: /4 screens or states in a row could not be reached[\s\S]*starting over, once[\s\S]*4 screens or states in a row could not be reached/,
+      from: "signatures.profile.set(hash, prep.sig);", to: "throw new Error(\"simulated: the page did not answer\"); signatures.profile.set(hash, prep.sig);", why: "four screens in a row that cannot be reached stop the run at once and say so, instead of waiting out every remaining timeout" },
     { name: "tab-walk", args: ["--suite=tabs"], env: TAB_SLICE, expect: /tab states reached/,
       from: "const TAB_SEL = \"[role=\\\"tab\\\"], .tabbar .tab, .segmented button, button[aria-pressed], button[aria-selected], .chip, .list-detail-row\";", to: "const TAB_SEL = \"#no-such-control\";", why: "the tab walk finds no controls" },
   ];

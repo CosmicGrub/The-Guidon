@@ -12,11 +12,16 @@
  *
  * This is the exhaustive counterpart of tools/test-contrast.mjs (a handful of
  * hand-picked trouble spots) and tools/test-contrast-forms.mjs (every form and
- * tab in three themes). CI runs it as TWO suites in separate chunks:
+ * tab in three themes). CI runs it as FOUR chunks of their own (a chunk shares a
+ * 2-vCPU runner among its suites, and the whole job is killed at 15 minutes):
  *   --suite=screens   every screen (default tab), the interaction states, the
- *                     guest pass, the first-run welcome screens
- *   --suite=tabs      every tab, segment and chip of every screen
- * (no flag runs both, one after the other: what you want locally).
+ *                     guest pass, the first-run welcome screens (about 5 min on CI)
+ *   --suite=tabs --shard=k/3   every tab, segment and chip of the k-th third of
+ *                     the screens, in all 30 themes (about 4 min each on CI; the
+ *                     whole walk in one chunk took 10.6 min)
+ * (no flags run everything, one after the other: what you want locally).
+ * A hung browser call fails the run after 150 s without progress, naming the last
+ * step that finished, and the whole run after 11 minutes under CI.
  *
  * WHY THE FIRST VERSION OF THIS FILE COULD NOT FAIL (2026-11 audit). It
  * reported "Color-contrast violations: 0" over 1500 combinations while the
@@ -183,6 +188,9 @@
  *   GUIDON_CONTRAST_ROUTES    comma list of hashes     -> PARTIAL run
  *   GUIDON_CONTRAST_STATES    comma list of substrings of a state's label, or "none" -> PARTIAL run
  *   GUIDON_CONTRAST_TABS_ALL  "1": measure every tab state in full  -> PARTIAL run
+ *   GUIDON_CONTRAST_STALL_SEC seconds without progress before the run is stopped (default 150); if nothing had been measured yet the
+ *                             run starts over once (GUIDON_CONTRAST_NO_RETRY=1 turns that off)
+ *   GUIDON_CONTRAST_WATCHDOG_MIN  minutes for the whole run (default 11 under CI, 45 elsewhere)
  *   A PARTIAL run still exits 1 on any miss, but skips the whole-pass coverage
  *   floors and says so; it can never stand in for the full gate. (The per-screen
  *   tab floors still apply to the screens it walks.)
@@ -190,6 +198,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { bootApp, waitForRoute, until, check, ok, bad, finish, PERSONAL_PROFILE } from "./testkit.mjs";
 
 /* ---------------------------------------------------------------------
@@ -222,7 +231,6 @@ const FLOORS = {
   tabsMeasured: 33,        // measured 66 tab states with a kind of element the screen had not shown
   tabsTotal: 18500,        // measured 37458 texts over 66 states x 30 themes
   tabsPerTheme: 620,       // measured 1243..1249 for each single theme
-  tabStateMin: 1,          // a tab state is judged on the elements new to it (a handful), so only "at least one" can be asked of each
   placeholdersTabs: 930,   // measured 1860 placeholders
 };
 
@@ -239,10 +247,25 @@ const ROUTE_FLOORS = {
 /* Tab states reached per screen by the tab walk, about half of what a run reached. */
 const TAB_FLOORS = { "#/train": 1, "#/learn": 3, "#/counsel": 5, "#/develop": 2, "#/write": 1, "#/money": 12, "#/health": 3, "#/transition": 3, "#/resources": 6, "#/doctrine": 14, "#/creeds": 5, "#/prt": 3, "#/recite": 5, "#/dictionary": 29, "#/cyber-opsec": 3, "#/board": 39, "#/search": 5, "#/team": 1, "#/pt-plan": 1 };
 
+/* Whole-shard floors for the tab walk when it runs as 3 chunks (about half of what each shard measured: the shards differ in texts and
+   placeholders far more than in cost, so a share of one total would be a poor floor). Any other split falls back to half the share of FLOORS. */
+const TAB_SHARD_FLOORS = {
+  3: [
+    {tabStatesTotal: 53, tabsMeasured: 11, tabsTotal: 4100, tabsPerTheme: 130, placeholdersTabs: 130},
+    {tabStatesTotal: 48, tabsMeasured: 11, tabsTotal: 6250, tabsPerTheme: 200, placeholdersTabs: 310},
+    {tabStatesTotal: 47, tabsMeasured: 11, tabsTotal: 8300, tabsPerTheme: 270, placeholdersTabs: 480},
+  ],
+};
+
 /* Screens the tab walk does not walk, each with the reason. */
 const NO_TAB_WALK = {
   "#/settings": "its buttons are app-wide preferences (text size, density, motion): pressing one changes every later measurement, and the screen shows all of its sections without any tab",
 };
+/* What each screen costs the tab walk, in rough units (states reached + 4 x states measured, from a run on 2026-11-07). Only used to
+   split the walk across CI chunks (--shard=k/n) so that the chunks take about the same time; a screen not listed counts 1. */
+const TAB_COST = { "#/board": 143, "#/dictionary": 67, "#/money": 53, "#/doctrine": 37, "#/transition": 35, "#/recite": 31, "#/search": 31, "#/counsel": 23,
+  "#/health": 18, "#/resources": 17, "#/develop": 16, "#/write": 15, "#/creeds": 14, "#/cyber-opsec": 14, "#/train": 10, "#/pt-plan": 10, "#/prt": 7,
+  "#/learn": 6, "#/risk": 5, "#/team": 3 };
 const TAB_DEPTH = 2;              // a tab, and the tabs inside what that tab shows
 /* A group of sibling controls (the 26 dictionary letters, the 40 topic chips) is pressed one after another until this many presses
    IN A ROW show no kind of element the screen has not already shown; then the rest of that group is left (they draw the same
@@ -285,7 +308,15 @@ const BASE_W = 1280;
 const BASE_H = 900;
 const MAX_H = 120000;         // tallest window we will ask Chromium for (Doctrine needs about 41,500px today; a screen still scrolling here is a failure)
 const CANARY_ROOM = 1700;     // px of window reserved for the injected canary rows (about 1,100px of them at the top, plus the bottom row and the closed-details one)
-const WATCHDOG_MS = (+process.env.GUIDON_CONTRAST_WATCHDOG_MIN || 45) * 60 * 1000;
+/* Two limits, so that a hang fails FAST and says where (the CI job is killed at 15 minutes, silently, with the browser still alive):
+   - the whole run: 11 minutes under CI (a shard takes about 4), 45 minutes anywhere else;
+   - a STALL: nothing finished (no theme measured, no screen drawn, no tab pressed) for 150 seconds. A single step is seconds, so that
+     is a hung browser call, and the message names the last step that finished. */
+const WATCHDOG_MS = (+process.env.GUIDON_CONTRAST_WATCHDOG_MIN || (process.env.CI ? 11 : 45)) * 60 * 1000;
+const STALL_MS = (+process.env.GUIDON_CONTRAST_STALL_SEC || 150) * 1000;
+const progress = { at: Date.now(), step: "starting" };
+const at = (step) => { progress.at = Date.now(); progress.step = step; };
+let measuredCombos = 0;   // (theme, screen) measurements finished so far; zero means the run never got going
 
 /* SUITES: the gate is two suites that CI runs in separate chunks (the tab walk roughly doubles the time).
    `--suite=screens`  every screen, the interaction states, the guest pass and the first-run screens
@@ -303,6 +334,17 @@ if (SUITE !== "all" && SUITE_NAMES.indexOf(SUITE) === -1) {
 }
 const RUN_SCREENS = SUITE === "all" || SUITE === "screens";
 const RUN_TABS = SUITE === "all" || SUITE === "tabs";
+/* SHARDS: `--suite=tabs --shard=2/3` walks only the 2nd third of the screens (by TAB_COST), every one of them in all 30 themes, so that
+   the tab walk can run as several CI chunks that each finish well inside the job limit. The split is computed from G.routes alone, so
+   every shard agrees and together they walk every screen exactly once. tools/test-contrast-full-gate.mjs checks that package.json runs
+   every shard. */
+const shardArg = (process.argv.find((a) => a.startsWith("--shard=")) || "").slice(8);
+const [SHARD_K, SHARD_N] = shardArg ? shardArg.split("/").map(Number) : [1, 1];
+if (!(Number.isInteger(SHARD_K) && Number.isInteger(SHARD_N) && SHARD_K >= 1 && SHARD_K <= SHARD_N) || (SHARD_N > 1 && SUITE !== "tabs")) {
+  console.log(`  FAIL  bad --shard="${shardArg}" (expected k/n with 1 <= k <= n, such as 2/3, and only with --suite=tabs)`);
+  console.log("\n1 FAILURE(S)");
+  process.exit(1);
+}
 const csv = (v) => (v ? v.split(",").map((s) => s.trim()).filter(Boolean) : null);
 const ONLY_THEMES = csv(process.env.GUIDON_CONTRAST_THEMES);
 const ONLY_ROUTES = csv(process.env.GUIDON_CONTRAST_ROUTES);
@@ -823,6 +865,40 @@ const watchdog = setTimeout(async () => {
   process.exit(1);
 }, WATCHDOG_MS);
 watchdog.unref();
+let stopping = false;
+async function fatal(message) {
+  if (stopping) return;   // the stall timer and the unreachable-screen check can both fire while the first is still shutting down
+  stopping = true;
+  console.log("  FAIL  " + message);
+  /* Nothing measured at all means the browser or the runner never got going (a stalled launch, a dead first page), not that the app is
+     wrong: start over ONCE, loudly. Anything that fails after a measurement has finished, or on the second try, fails for real.
+     spawnSync blocks this process, so the stuck sweep cannot run on (or crash) while the second try does. */
+  if (!measuredCombos && !process.env.GUIDON_CONTRAST_RETRIED && !process.env.GUIDON_CONTRAST_NO_RETRY) {
+    console.log("  NOTE  nothing had been measured yet, which points at the browser or the runner rather than the app: starting over, once");
+    const r = spawnSync(process.execPath, process.argv.slice(1), { stdio: "inherit", env: { ...process.env, GUIDON_CONTRAST_RETRIED: "1" } });
+    process.exit(r.status === null ? 1 : r.status);
+  }
+  console.log("\n1 FAILURE(S)");
+  try { await Promise.race([boot.close(), new Promise((r) => setTimeout(r, 10000))]); } catch (e) { /* already closing */ }
+  process.exit(1);
+}
+const stallTimer = setInterval(() => {
+  const idle = Date.now() - progress.at;
+  if (idle >= STALL_MS) fatal(`the sweep stalled: nothing finished for ${Math.round(idle / 1000)}s. The last step that finished: ${progress.step}. A browser call that never returns is a hang, not slowness (one step takes seconds), so the run was stopped instead of waiting for the CI job limit.`);
+}, 5000);
+stallTimer.unref();
+
+/* A screen that cannot be reached is recorded AND printed at once (it used to be printed only in the verdict, so a page that had died
+   made every one of 48 screens wait out its 15 s timeout in silence: 12 minutes of nothing, then a killed job). Four in a row means
+   the app itself is not answering: stop and say so. */
+let unreachedInARow = 0;
+function unreached(pass, label, e) {
+  const msg = label + ": " + String(e.message).split("\n")[0].slice(0, 240);
+  statOf(pass).unreached.push(msg);
+  console.log(`    [${pass}] NOT REACHED  ${msg}`);
+  at(pass + ": " + label + " (not reached)");
+  if (++unreachedInARow >= 4) fatal(`${unreachedInARow} screens or states in a row could not be reached (the last: ${msg}). The app is not answering, so the run was stopped instead of waiting out every remaining timeout.`);
+}
 
 async function prepPage(page) {
   // Colours must be steady-state, not mid-fade (the app crossfades on theme change).
@@ -838,7 +914,20 @@ const { themes, routes } = await profilePage.evaluate(() => ({
 }));
 const THEME_LIST = ONLY_THEMES ? themes.filter((t) => ONLY_THEMES.includes(t.id)) : themes;
 const ROUTE_LIST = ONLY_ROUTES ? routes.filter((h) => ONLY_ROUTES.includes(h)) : routes;
-console.log(`  SUITE ${SUITE}: ${[RUN_SCREENS && "screens (every screen, interaction states, guest, first-run)", RUN_TABS && "tabs (every tab, segment and chip of every screen)"].filter(Boolean).join(" + ")}`);
+/* longest-processing-time-first split of ALL screens over the shards; this shard's share of the cost scales the whole-pass floors */
+const SHARD = (() => {
+  const w = (h) => (TAB_COST[h] === undefined ? 1 : TAB_COST[h]);
+  const load = new Array(SHARD_N).fill(0), mine = new Set();
+  for (const h of [...routes].sort((a, b) => w(b) - w(a) || (a < b ? -1 : 1))) {
+    const k = load.indexOf(Math.min(...load));
+    load[k] += w(h);
+    if (k === SHARD_K - 1) mine.add(h);
+  }
+  return { mine, share: load[SHARD_K - 1] / load.reduce((a, b) => a + b, 0) };
+})();
+const TAB_ROUTES = ROUTE_LIST.filter((h) => SHARD.mine.has(h));
+const tabFloor = (k) => { const t = TAB_SHARD_FLOORS[SHARD_N]; return t ? t[SHARD_K - 1][k] : Math.floor(FLOORS[k] * SHARD.share * (SHARD_N > 1 ? 0.5 : 1)); };
+console.log(`  SUITE ${SUITE}${SHARD_N > 1 ? " shard " + SHARD_K + "/" + SHARD_N + " (" + TAB_ROUTES.length + " screens, " + Math.round(SHARD.share * 100) + "% of the cost)" : ""}: ${[RUN_SCREENS && "screens (every screen, interaction states, guest, first-run)", RUN_TABS && "tabs (every tab, segment and chip of every screen)"].filter(Boolean).join(" + ")}`);
 if (PARTIAL) console.log(`  NOTE  PARTIAL RUN (${THEME_LIST.length} of ${themes.length} themes, ${ROUTE_LIST.length} of ${routes.length} routes: ${ROUTE_LIST.join(" ")}${ONLY_STATES ? ", states: " + ONLY_STATES.join("|") : ""}${TAB_ALL ? ", every tab state measured" : ""}): the coverage floors are skipped, so this is not the gate`);
 if (!THEME_LIST.length || !ROUTE_LIST.length) { bad("the partial selection matched no theme or no route"); await finish("CONTRAST-FULL"); }
 
@@ -856,6 +945,7 @@ const normSel = (s) => s.replace(/:nth-(?:child|of-type)\(\d+\)/g, "").replace(/
 function record(pass, stateLabel, themeId, r, route) {
   const s = statOf(pass);
   s.combos++;
+  measuredCombos++;
   s.evaluated += r.evaluated;
   s.placeholders += r.placeholders;
   s.byTheme[themeId] = (s.byTheme[themeId] || 0) + r.evaluated;
@@ -891,6 +981,7 @@ async function resizeTo(page, height) {
 async function fitWindow(page, label) {
   let h = BASE_H;
   for (let i = 0; i < 6; i++) {
+    at("fit window: " + label);
     const f = await page.evaluate(FIT);
     const want = Math.min(MAX_H, Math.max(BASE_H, Math.ceil(f.need) + CANARY_ROOM));
     h = f.ih;
@@ -914,6 +1005,7 @@ async function measureState(page, pass, label, themeList, { host = null, height 
   const wantCaught = CANARY_EXPECT.caught.concat(detailsCanary ? CANARY_EXPECT.details : []);
   let evaluatedHere = 0, hits = 0;
   for (const t of themeList) {
+    at(pass + ":" + label + " / " + t.id);
     const r = await page.evaluate(MEASURE, { id: t.id, withCanary: true, RESOLVABLE, host, only });
     evaluatedHere += r.evaluated;
     hits += r.misses.length;
@@ -929,6 +1021,7 @@ async function measureState(page, pass, label, themeList, { host = null, height 
   }
   await page.evaluate(() => document.querySelectorAll("[data-cg-canary=\"details\"]").forEach((n) => n.remove()));
   await resizeTo(page, BASE_H);
+  unreachedInARow = 0;
   console.log(`    ${("[" + pass + "] " + label).padEnd(62)} ${String(Math.round(evaluatedHere / Math.max(1, themeList.length))).padStart(5)} texts/theme  ${hits ? hits + " miss(es)" : "clean"}`);
   return evaluatedHere;
 }
@@ -981,7 +1074,7 @@ if (RUN_SCREENS) {
       for (const w of want) surfaceSeen.set(w.route + " " + w.sel, await profilePage.evaluate((sel) => !!document.querySelector("#route " + sel), w.sel));
       await measureState(profilePage, "profile", label, THEME_LIST, { route: hash, detailsCanary: true });
     } catch (e) {
-      statOf("profile").unreached.push(label + ": " + String(e.message).split("\n")[0].slice(0, 200));
+      unreached("profile", label, e);
       await resizeTo(profilePage, BASE_H).catch(() => {});
     }
   }
@@ -1036,7 +1129,7 @@ if (RUN_SCREENS) {
         await settleAndPrepare(profilePage);
         await measureState(profilePage, "state", st.label, THEME_LIST, { detailsCanary: true });
       } catch (e) {
-        statOf("state").unreached.push(st.label + ": " + String(e.message).split("\n")[0].slice(0, 200));
+        unreached("state", st.label, e);
         await resizeTo(profilePage, BASE_H).catch(() => {});
       }
     }
@@ -1058,7 +1151,7 @@ if (RUN_SCREENS) {
         await measureState(guestPage, "guest", hash, THEME_LIST, { route: hash, detailsCanary: true });
       } else guestSame.push(hash);
     } catch (e) {
-      statOf("guest").unreached.push(hash + ": " + String(e.message).split("\n")[0].slice(0, 200));
+      unreached("guest", hash, e);
       await resizeTo(guestPage, BASE_H).catch(() => {});
     }
   }
@@ -1078,11 +1171,11 @@ if (RUN_SCREENS) {
           await wp.evaluate(SETTLE, { quiet: 150, max: 4000 });
           await measureState(wp, "welcome", w.label, THEME_LIST, { host: "#ob-overlay", height: 2400, route: "welcome" });
         } catch (e) {
-          statOf("welcome").unreached.push(w.label + ": " + String(e.message).split("\n")[0].slice(0, 200));
+          unreached("welcome", w.label, e);
         }
       }
     } catch (e) {
-      statOf("welcome").unreached.push("the welcome screen: " + String(e.message).split("\n")[0].slice(0, 200));
+      unreached("welcome", "the welcome screen", e);
     }
   }
 }
@@ -1090,10 +1183,10 @@ if (RUN_SCREENS) {
 /* ---------------- 5) the tab walk: every tab, segment and chip of every screen ---------------- */
 const tabInfo = {};      // route -> { visited, measured, same, risky, left, capped }
 if (RUN_TABS) {
-  console.log(`\n  [tabs] walking the tabs, segments and chips of ${ROUTE_LIST.length} screens (${fmtS(Date.now() - T0)} in)`);
+  console.log(`\n  [tabs] walking the tabs, segments and chips of ${TAB_ROUTES.length} screens (${fmtS(Date.now() - T0)} in)`);
   const SETTLE_TAB = { quiet: 100, max: 3000 };
   const sameScreen = (h, hash) => h === hash || h.indexOf(hash + "/") === 0 || h.indexOf(hash + "?") === 0;
-  for (const hash of ROUTE_LIST) {
+  for (const hash of TAB_ROUTES) {
     const info = (tabInfo[hash] = { visited: 0, measured: 0, same: 0, stopped: 0, risky: [], left: [], capped: false });
     if (NO_TAB_WALK[hash]) { info.skipped = NO_TAB_WALK[hash]; continue; }
     try {
@@ -1121,6 +1214,7 @@ if (RUN_TABS) {
       enqueue(base.list, []);
       while (queue.length) {
         const { path, grp } = queue.shift();
+        at('tabs: ' + hash + ' > ' + path.map((x) => x.label).join(' > '));
         if (!TAB_ALL && grp.quiet >= TAB_PATIENCE) { info.stopped++; continue; }
         if (info.visited >= TAB_CAP) { info.capped = true; break; }
         await waitForRoute(profilePage, hash, { fresh: true });
@@ -1150,7 +1244,7 @@ if (RUN_TABS) {
         await measureState(profilePage, "tabs", label, THEME_LIST, { route: hash, detailsCanary: true, only: !TAB_ALL });
       }
     } catch (e) {
-      statOf("tabs").unreached.push(hash + ": " + String(e.message).split("\n")[0].slice(0, 240));
+      unreached("tabs", hash, e);
       await resizeTo(profilePage, BASE_H).catch(() => {});
     }
   }
@@ -1220,14 +1314,12 @@ if (!PARTIAL) {
   if (RUN_TABS) {
     const T = statOf("tabs");
     const reached = Object.values(tabInfo).reduce((a, i) => a + i.visited, 0);
-    check(reached >= FLOORS.tabStatesTotal, `[tabs] reached ${reached} tab states (floor ${FLOORS.tabStatesTotal})`, `[tabs] reached only ${reached} tab states (floor ${FLOORS.tabStatesTotal}) - the walk is no longer finding the controls`);
-    check(T.states >= FLOORS.tabsMeasured, `[tabs] measured ${T.states} distinct tab states (floor ${FLOORS.tabsMeasured})`, `[tabs] measured only ${T.states} tab states (floor ${FLOORS.tabsMeasured})`);
-    check(T.evaluated >= FLOORS.tabsTotal, `[tabs] evaluated ${T.evaluated} pieces of text (floor ${FLOORS.tabsTotal})`, `[tabs] only ${T.evaluated} pieces of text evaluated (floor ${FLOORS.tabsTotal})`);
+    check(reached >= tabFloor("tabStatesTotal"), `[tabs] reached ${reached} tab states (floor ${tabFloor("tabStatesTotal")})`, `[tabs] reached only ${reached} tab states (floor ${tabFloor("tabStatesTotal")}) - the walk is no longer finding the controls`);
+    check(T.states >= tabFloor("tabsMeasured"), `[tabs] measured ${T.states} distinct tab states (floor ${tabFloor("tabsMeasured")})`, `[tabs] measured only ${T.states} tab states (floor ${tabFloor("tabsMeasured")})`);
+    check(T.evaluated >= tabFloor("tabsTotal"), `[tabs] evaluated ${T.evaluated} pieces of text (floor ${tabFloor("tabsTotal")})`, `[tabs] only ${T.evaluated} pieces of text evaluated (floor ${tabFloor("tabsTotal")})`);
     const perTheme = themes.map((t) => [t.id, T.byTheme[t.id] || 0]).sort((a, b) => a[1] - b[1])[0];
-    check(perTheme[1] >= FLOORS.tabsPerTheme, `[tabs] every theme had at least ${FLOORS.tabsPerTheme} pieces of text evaluated (fewest: ${perTheme[0]} with ${perTheme[1]})`, `[tabs] ${perTheme[0]}: only ${perTheme[1]} pieces of text evaluated (floor ${FLOORS.tabsPerTheme})`);
-    const thin = Object.entries(T.byLabel).sort((a, b) => a[1] - b[1])[0];
-    if (thin) check(thin[1] >= FLOORS.tabStateMin, `[tabs] every measured tab state gave at least ${FLOORS.tabStateMin} pieces of text in every theme (thinnest ${thin[1]}: ${thin[0]})`, `[tabs] ${thin[0]} gave only ${thin[1]} pieces of text (floor ${FLOORS.tabStateMin}) - measured blank or half drawn`);
-    check(T.placeholders >= FLOORS.placeholdersTabs, `[tabs] measured ${T.placeholders} placeholders (floor ${FLOORS.placeholdersTabs})`, `[tabs] only ${T.placeholders} placeholders measured (floor ${FLOORS.placeholdersTabs})`);
+    check(perTheme[1] >= tabFloor("tabsPerTheme"), `[tabs] every theme had at least ${tabFloor("tabsPerTheme")} pieces of text evaluated (fewest: ${perTheme[0]} with ${perTheme[1]})`, `[tabs] ${perTheme[0]}: only ${perTheme[1]} pieces of text evaluated (floor ${tabFloor("tabsPerTheme")})`);
+    check(T.placeholders >= tabFloor("placeholdersTabs"), `[tabs] measured ${T.placeholders} placeholders (floor ${tabFloor("placeholdersTabs")})`, `[tabs] only ${T.placeholders} placeholders measured (floor ${tabFloor("placeholdersTabs")})`);
   }
 }
 if (RUN_TABS) {
