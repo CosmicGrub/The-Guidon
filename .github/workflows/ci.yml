@@ -713,8 +713,12 @@ jobs:
             tests: "test:esp32-lanes test:scenario-legacy-doctrine test:unit-pack-format test:unit-pack-cli"
           - name: "64-unitdecksisolation-unitdecks-unitdecksstorage-dbwriteack"
             tests: "test:unit-decks-isolation test:unit-decks test:unit-decks-storage test:db-write-ack"
-          - name: "65-backuprestoreguard"
-            tests: "test:backup-restore-guard"
+          - name: "65-backuprestoreguard-contrastforms-csstokenlint-readinesscurrency"
+            tests: "test:backup-restore-guard test:contrast-forms test:css-token-lint test:readiness-currency"
+          - name: "66-srsearlyreview-boarddrillentry-scenariochoiceorder-pubsupersession"
+            tests: "test:srs-early-review test:board-drill-entry test:scenario-choice-order test:pub-supersession"
+          - name: "67-swpdfnavigation-buildage-icsexport"
+            tests: "test:sw-pdf-navigation test:build-age test:ics-export"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
