@@ -24,7 +24,17 @@
  *   D. The scenario score's top band said "Board Ready" after a handful of
  *      scenarios (and in the printed report a counselor reads). Nothing defines
  *      "board ready", so the top band is now "Very Strong" everywhere it prints.
- *      (Mock Board's own band is a separate owner decision, left as it was.)
+ *      Mock Board's own scorecard had the same top band ("Board Ready" at 85%+,
+ *      reachable with five questions and the Soldier's own slider ratings, and
+ *      saved into the board history). It now reads "Very Strong" too.
+ *
+ *   E. Three more places printed a percentage of cards that were last rated
+ *      Know It or better with no time term and no word about it: the counselor
+ *      -facing Board Readiness Summary print, and the MOS deck and unit deck
+ *      rows beside the (honest) pillar rows. Each now says that the figure is
+ *      as last rated and, on the print, how many of those are due again now.
+ *      The Progress card's sentence no longer promises a "composite Board
+ *      Readiness Score" the Readiness tab stopped showing.
  *
  * Both directions are asserted: the fix does what it should AND the ordinary
  * path (a Soldier who is genuinely current; three ordinary categories at 40 /
@@ -368,6 +378,77 @@ const recordOneScenario = () => page.evaluate(async () => {
   await resetScenarios();
   const fresh = await page.evaluate(async () => (await G.store.getProgress()).readinessLabel);
   is(fresh === "Not Started", "after a reset the scenario line is Not Started again", fresh);
+}
+
+/* ---------------------------------------------------------------------
+   E1. Mock Board's scorecard: the top band is Very Strong, in the card and in the saved history
+   --------------------------------------------------------------------- */
+{
+  await clearSrs();
+  // A board saved before this change carries the old word in its stored label: it must still load and show nothing odd.
+  await page.evaluate(() => G.db.put("kv", { k: "board:mockHistory:v1", v: [{ ts: Date.now() - 86400000, pct: 90, total: 9, max: 10, count: 5, label: "Board Ready" }] }));
+  await waitForRoute(page, "#/board", { fresh: true, ready: page.locator("button", { hasText: /^Mock Board$/ }) });
+  await clickWhenStable(page, page.locator("button", { hasText: /^Mock Board$/ }));
+  await until(page, () => !!document.querySelector("button.mb-start"));
+  await page.locator("select").first().selectOption("5");
+  await clickWhenStable(page, page.locator("button.mb-start", { hasText: /begin board/i }));
+  await clickWhenStable(page, page.locator("button", { hasText: /I've reported/i }));
+  for (let i = 0; i < 5; i++) {
+    await clickWhenStable(page, page.locator("button.mb-reveal", { hasText: /reveal answer/i }));
+    await clickWhenStable(page, page.locator("button.mb-score-btn").first());
+  }
+  await until(page, () => /After-Action Review/i.test(document.body.textContent || "") && document.querySelectorAll("input[type=range]").length >= 3);
+  const sliders = page.locator("input[type=range]");
+  for (let i = 0; i < await sliders.count(); i++) await sliders.nth(i).evaluate((el) => { el.value = "5"; el.dispatchEvent(new Event("input", { bubbles: true })); });
+  await until(page, () => (document.querySelector(".mb-bigpct") || {}).textContent === "100%");
+  const card = await page.evaluate(() => ({ pct: (document.querySelector(".mb-bigpct") || {}).textContent, label: (document.querySelector(".mb-biglabel") || {}).textContent, text: document.getElementById("route").innerText }));
+  is(card.pct === "100%" && card.label === "Very Strong", "a five-question board at 100% reads Very Strong (it used to read Board Ready)", () => JSON.stringify({ pct: card.pct, label: card.label }));
+  is(!/Board Ready/i.test(card.text), "and the phrase Board Ready appears nowhere on the Mock Board scorecard or its history", () => "found");
+  const saved = await page.evaluate(async () => (((await G.db.get("kv", "board:mockHistory:v1")) || {}).v || []).map((h) => h.label));
+  is(saved.length === 2 && saved[0] === "Board Ready" && saved[1] === "Very Strong", "the saved history keeps the older board as it was and stores the new one as Very Strong", () => JSON.stringify(saved));
+  is(await until(page, () => !!document.querySelector(".mb-history .mb-spark-bar")), "...and the history view (older label included) still renders", () => "no history view");
+  await page.evaluate(() => G.db.put("kv", { k: "board:mockHistory:v1", v: [] }));
+}
+
+/* ---------------------------------------------------------------------
+   E2. Non-expiring percentages say so: the counselor-facing print, the MOS deck rows, the Progress sentence
+   --------------------------------------------------------------------- */
+{
+  const printSummary = async () => {
+    await waitForRoute(page, "#/profile", { fresh: true, ready: page.locator("button", { hasText: /Print readiness summary/ }) });
+    await page.evaluate(() => { window.__printed = null; G.util.printHTML = (title, html) => { window.__printed = html; }; });
+    await clickWhenStable(page, page.locator("button", { hasText: /Print readiness summary/ }));
+    const got = await until(page, () => !!window.__printed, null);
+    return got ? page.evaluate(() => window.__printed.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ")) : "";
+  };
+  // every card last rated Down Cold and 60 days overdue: "Know It or better" is all of them, and all of them are due again
+  await clearSrs();
+  await seedAll((i, now) => ({ reps: 1, ease: 2.5, interval: 3, due: now - 60 * 86400000, misses: 0, lastGrade: 3 }));
+  let pr = await printSummary();
+  is(new RegExp("Know It or better " + N + " \\(100%\\) \\(last rated; " + N + " due now\\)").test(pr), "the printed summary says the " + N + " Know It or better cards are as last rated, and that all " + N + " are due now", () => pr.slice(0, 500));
+  // the same grades due tomorrow: none are due
+  await clearSrs();
+  await seedAll((i, now) => ({ reps: 1, ease: 2.5, interval: 3, due: now + 86400000, misses: 0, lastGrade: 3 }));
+  pr = await printSummary();
+  is(new RegExp("Know It or better " + N + " \\(100%\\) \\(last rated; 0 due now\\)").test(pr), "with the same grades due tomorrow it says 0 due now (the honest path reads as before, plus the note)", () => pr.slice(0, 500));
+  // no card rated: no figure, no note
+  await clearSrs();
+  pr = await printSummary();
+  is(/Know It or better 0 /.test(pr) && !/last rated;/.test(pr), "with no card rated there is no percentage and no note", () => pr.slice(0, 500));
+  await clearSrs();
+
+  // MOS deck rows: opt a deck in and open the Readiness tab
+  await page.evaluate(() => { G.mosDecks.setOptedIn("92A", true); });
+  await openReadiness();
+  await until(page, () => !!document.querySelector(".readiness-mos-decks"));
+  const mosPanelText = await page.evaluate(() => { const p = document.querySelector(".readiness-mos-decks"); return p ? p.innerText.replace(/\s+/g, " ") : ""; });
+  is(/Mastered means you last rated the card Know It or Down Cold, even if it is due for review again now/.test(mosPanelText), "the MOS Deck Readiness panel says its percentages are as last rated", () => JSON.stringify(mosPanelText.slice(0, 400)));
+  await page.evaluate(() => { G.mosDecks.setOptedIn("92A", false); });
+
+  // Progress: the sentence about the Readiness tab names what is there now
+  await openScreen("#/progress", "#route .panel");
+  const progText = await routeText();
+  is(/how many of your cards are current live in the Board module under the Readiness tab/.test(progText) && !/composite Board Readiness Score/.test(progText), "Progress's Board Readiness card points at the count of current cards, not a composite score", () => progText.slice(0, 300));
 }
 
 expectNoConsoleNoise(noise);

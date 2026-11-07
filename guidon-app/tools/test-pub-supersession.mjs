@@ -90,6 +90,14 @@ check(hits("The older, superseded FM 3-22.9 said trigger squeeze.", "FM 3-22.9")
 check(hits("It was superseded. Per TC 4-02.1, apply it.") === 1, "...but a marker in the NEXT sentence does not excuse a teaching sentence");
 check(hits("Source: TCCC / TC 4-02.1\nsuperseded notes live here") === 1, "...nor does a marker on the next line");
 check(hits("CTC 4-02.1 and xTC 4-02.1") === 0 && hits("see TC 4-02.1") === 1, "honest: the pub type is a whole word (CTC 4-02.1 is not TC 4-02.1), while a plain 'see TC 4-02.1' still counts");
+// Words that ordinary medical prose uses ("prior to", "previous", "replace the dressing", "older", "no longer") say nothing about a
+// publication changing: a teaching sentence that happens to contain one is still a teaching.
+check(hits("Per TC 4-02.1: apply the tourniquet prior to moving the casualty.") === 1 && hits("Per TC 4-02.1, replace the saturated dressing.") === 1 && hits("Per TC 4-02.1, treat the previous severe bleeding first.") === 1 && hits("Per TC 4-02.1, an older casualty may no longer be able to self-aid.") === 1,
+  "a teaching sentence is not excused by everyday words (prior to, replace the dressing, previous bleeding, older, no longer): each is 1 unmarked mention");
+check(hits("Per TC 4-02.1 stop the bleeding, tighten the windlass until it stops, secure the strap, note the time, and move the casualty; this was formerly done another way") === 1,
+  "...and a change word that is far from the designator (more than 60 characters away) does not excuse it either");
+check(hits("ATP 4-02.11, which replaces TC 4-02.1, covers casualty response.") === 0 && hits("TC 4-02.1 is no longer current.") === 0 && hits("TC 4-02.1 was rescinded.") === 0 && hits("TC 4-02.1 (retired)") === 0 && hits("The supersession of TC 4-02.1 is in the cover.") === 0 && hits("TC 4-02.1 has been replaced with ATP 4-02.11.") === 0,
+  "honest: a change word right beside the designator (replaces, no longer current, rescinded, (retired), supersession, replaced with) still marks it");
 check(designatorRegex("TC 4-02.1").test("see TC 4-02.1") && !designatorRegex("TC 4-02.1").test("ATP 4-02.1"), "designatorRegex('TC 4-02.1') matches the designator and not ATP 4-02.1");
 
 /* =====================================================================
@@ -112,6 +120,29 @@ for (const q of firstAid) for (const f of ["q", "a", "boardAnswer", "concept"]) 
 check(stillOld.length === 0 && firstAid.every((q) => /ATP 4-02\.11/.test(q.concept) || /ATP 4-02\.11/.test(q.boardAnswer)), "...and their wording says ATP 4-02.11 too, not just the structured field", () => J(stillOld));
 const legacy = ["bq-tccc-02", "bq-tccc-03", "tccc-004", "tccc-005", "tccc-006", "tccc-10"].map((id) => byId.get(id));
 check(legacy.every((q) => q && quoteKindOf(q.source) === "paraphrase" && q.source.some((e) => e.pub === "ATP 4-02.11" || /ATP 4-02\.11/.test(e.pub))), "the six older First Aid cards cite ATP 4-02.11 and read 'Study-guide answer', not as a word-for-word quotation of it", () => J(legacy.map((q) => q && [q.id, quoteKindOf(q.source)])));
+
+/* The six older cards were relabelled from TC 4-02.1 to ATP 4-02.11 without being re-read against it, and two of them said the
+   OPPOSITE of the bundled text (the tourniquet card put the time on the casualty's forehead and 2-3 inches above the wound in
+   Care Under Fire; the tension pneumothorax card named the 4th/5th space for the side site). They are pinned to what the
+   Library's own ATP 4-02.11 says: each fact below is first proved to be in that text, then required in the card. */
+const atpText = (docs.find((d) => d.citation === "ATP 4-02.11") || { pages: [] }).pages.join(" ").replace(/\s+/g, " ");
+const inAtp = (re) => re.test(atpText);
+const allText = (q) => [q.a, q.acceptableAnswer, q.boardAnswer, ...(q.keyPoints || [])].join(" | ");
+const [m02, m03, p004, p005, p006, p10] = legacy;
+check(atpText.length > 100000 && inAtp(/Do not document the TQ application time until the TFC phase/) && inAtp(/during TFC, all TQs should be deliberate, placed two to three inches above the wound directly on the skin/) && inAtp(/Documenting the time of TQ placement on both the TQ itself and the DD Form 1380 during TFC, rather than CUF/),
+  "fixture: the bundled ATP 4-02.11 says what the tourniquet card is pinned to (hasty high-and-tight and no time-marking in Care Under Fire; 2-3 inches on the skin and time on the tourniquet and DD Form 1380 in Tactical Field Care)", () => "the Library text no longer carries these sentences - re-read the card against the new edition");
+const cuf5 = (p005.boardAnswer.match(/Care Under Fire:(.*?)Tactical Field Care:/s) || [])[1] || "", tfc5 = (p005.boardAnswer.match(/Tactical Field Care:(.*)$/s) || [])[1] || "";
+check(/high and tight/.test(cuf5) && /Do not document the time until Tactical Field Care/.test(cuf5) && !/two to three inches|2-3 inches/.test(cuf5), "tccc-005 keeps Care Under Fire apart from Tactical Field Care: in CUF a hasty tourniquet high and tight, no time marked, and no \"2-3 inches\"", () => J(cuf5));
+check(/two to three inches above the wound, directly on the skin/.test(tfc5) && /time on the tourniquet itself and on DD Form 1380/.test(tfc5), "...and 2-3 inches on the skin, with the time on the tourniquet and DD Form 1380, belongs to Tactical Field Care", () => J(tfc5));
+check([m02, m03, p005, p10].every((q) => !/forehead|SOFTT|within about 60 seconds|up to 2 hours has minimal risk/i.test(allText(q))), "no card still sends the time to the casualty's forehead, names SOFTT-W, or promises a life saved \"within about 60 seconds\" (none is in the bundled text)", () => J([m02, m03, p005, p10].filter((q) => /forehead|SOFTT|within about 60 seconds|up to 2 hours has minimal risk/i.test(allText(q))).map((q) => q.id)));
+check(!/2-3 inches[^.|]*write time on patient|write the time on the patient/i.test(allText(m02)) && !/Never remove in the field|forehead, hand, or tourniquet/i.test(allText(m03)) && /DD Form 1380/.test(m03.boardAnswer) && /hasty tourniquet/.test(m03.boardAnswer), "bq-tccc-02 and bq-tccc-03 no longer teach one placement and time-marking rule for both phases", () => J({ m02: m02.keyPoints, m03: m03.keyPoints }));
+check(inAtp(/Anterior axillary line in the fifth intercostal space/) && inAtp(/Second, intercostal space in the mid-clavicular line/) && inAtp(/second-leading cause of preventable deaths/),
+  "fixture: the bundled text gives the two needle-decompression sites as the 2nd space mid-clavicular and the FIFTH space anterior axillary", () => "the Library no longer carries the site sentences");
+check(/fifth intercostal space on the anterior axillary line/.test(p004.boardAnswer) && /5th ICS anterior axillary/.test(p004.keyPoints.join(" ")) && !/4th\/5th|4th intercostal/i.test(allText(p004)), "tccc-004 names the FIFTH intercostal space on the anterior axillary line (it said 4th/5th)", () => J(allText(p004)));
+check(!/chest tube|SpO2|hypotension|breath sounds|ATP 4-02\.84|14-gauge, 3\.25/i.test(allText(p004)), "...and no longer claims what the bundled text does not say (a chest tube, SpO2, hypotension, breath sounds, a gauge and length, or ATP 4-02.84 TCCC guidance)", () => J(allText(p004).match(/chest tube|SpO2|hypotension|breath sounds|ATP 4-02\.84|14-gauge, 3\.25/i)));
+check(inAtp(/should not be used to describe the tactical evacuation care phase/) && !/TACEVAC|Role 2|standing orders/.test(allText(p006)) && /Tactical Evacuation Care/.test(p006.boardAnswer), "tccc-006 does not call the third phase TACEVAC (ATP 4-02.11 para 3-57 says not to), name Role 2 or cite standing orders", () => J(allText(p006).match(/TACEVAC|Role 2|standing orders/g)));
+check(inAtp(/Airway and other issues are not treated until the TFC phase/) && !/1 May 2026|burning vehicles or buildings/.test(allText(p10)) && /Airway and other problems are not treated until the Tactical Field Care phase/.test(p10.boardAnswer), "tccc-10 no longer attributes an edition date the bundle cannot confirm, and says airway waits for Tactical Field Care in the manual's terms", () => J(allText(p10).match(/1 May 2026|burning vehicles or buildings/)));
+
 check(!/FLAG FOR REVIEWER/.test(JSON.stringify(bank)), "no 'FLAG FOR REVIEWER' note is left anywhere in the bank (tc4021-8 carried one as its first key point, where a Soldier reads it)");
 const ace = byId.get("tc4021-8");
 check(ace && /Acknowledge, Care, and Escort/.test(ace.keyPoints[0]) && /para 20-38/.test(ace.keyPoints[0]), "tc4021-8's first key point now states the mnemonic, with its paragraph", () => J(ace && ace.keyPoints[0]));
@@ -157,6 +188,8 @@ try {
 
   passes("a planted bank with no offending record (the lint is not simply always failing)", plant({ board: [card("plant-ok", src("ATP 4-02.11"), "Per ATP 4-02.11, para 1-1: stop the bleeding.")] }));
   failsOn("a board card that teaches TC 4-02.1 as a verbatim source", plant({ board: [card("plant-tc", src("TC 4-02.1"), "Per TC 4-02.1, para 1-1: stop the bleeding.")] }), "board:plant-tc", "TC 4-02.1", "reads as a verbatim quotation", "ATP 4-02.11");
+  failsOn("a card that teaches TC 4-02.1 in a sentence that also says \"prior to\"", plant({ board: [card("plant-prior", src("ATP 4-02.11"), "Per TC 4-02.1: apply the tourniquet prior to moving the casualty.")] }), "board:plant-prior", "TC 4-02.1");
+  failsOn("a card that teaches TC 4-02.1 in a sentence that also says \"replace the dressing\"", plant({ board: [card("plant-replace", src("ATP 4-02.11"), "Per TC 4-02.1, replace the saturated dressing.")] }), "board:plant-replace", "TC 4-02.1");
   failsOn("a card whose structured source is relabeled but whose prose cite is not", plant({ board: [card("plant-prose", src("ATP 4-02.11"), "Stop the bleeding. (TC 4-02.1, para 1-1.)")] }), "board:plant-prose", "(TC 4-02.1, para 1-1.)");
   passes("a card that SAYS the manual was superseded (the change is marked)", plant({ board: [card("plant-marked", src("ATP 4-02.11"), "Stop the bleeding. ATP 4-02.11 superseded TC 4-02.1 in March 2026.")] }));
   failsOn("a paraphrase card that still cites TC 4-02.1 (the gate does not wait for the word verbatim)", plant({ board: [card("plant-para", src("TC 4-02.1", "paraphrase"))] }), "board:plant-para");

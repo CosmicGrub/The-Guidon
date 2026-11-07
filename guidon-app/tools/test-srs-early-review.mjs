@@ -360,12 +360,39 @@ if (smallCat) {
   const afterOne = await rowsOf(pass1);
   is(pass1.every((id) => afterOne[id] && afterOne[id].interval === 3 && afterOne[id].reps === 1), "after one pass every card is at interval 3, one rep", JSON.stringify(afterOne));
   m0 = await mark();
-  for (let i = 0; i < n; i++) await gradeCard(3);
+  await clearToast();
+  await gradeCard(3);
+  // the sentence is a one-time explanation: shown at the first held-back grade of the sitting...
+  const firstCue = CUE.test(await toastNow());
+  await clearToast();
+  for (let i = 1; i < n; i++) await gradeCard(3);
+  // ...and not repeated for every other card in the same sitting
+  const laterCue = CUE.test(await toastNow());
   const pass2 = await writtenSince(m0);
   is(pass2.length === n && pass2.every((id) => pass1.includes(id)), "pass two came back round to the same " + n + " cards", JSON.stringify(pass2));
   const afterTwo = await rowsOf(pass1);
   is(pass1.every((id) => afterTwo[id] && afterTwo[id].interval === 3 && afterTwo[id].reps === 1 && afterTwo[id].due === afterOne[id].due), "after a SECOND pass in the same sitting every interval is still 3 (it was 11) and no due date moved", JSON.stringify(afterTwo));
-  is(CUE.test(await toastNow()), "the drill tells the Soldier why the date did not change, in a plain sentence", JSON.stringify(await toastNow()));
+  is(firstCue, "the drill tells the Soldier why the date did not change, in a plain sentence (at the first card held back)", () => "no sentence after the first early grade");
+  is(!laterCue, "...once: grading " + (n - 1) + " more held-back cards in the same sitting does not repeat it", () => JSON.stringify(laterCue));
+
+  // Somewhat, then Know It on the same card in the same sitting, is a relearn: the drill asked for it, so no "too soon"
+  await clearSrs();
+  n = await openCategory();
+  await clearToast();
+  const firstPrompt = await page.evaluate(() => (document.querySelector(".qz-prompt") || {}).textContent || "");
+  await gradeCard(1);
+  const promptNow = () => page.evaluate(() => (document.querySelector(".qz-prompt") || {}).textContent || "");
+  for (let guard = 0; guard < 2 * n + 4 && (await promptNow()) !== firstPrompt; guard++) await gradeCard(3);
+  const cameBack = (await promptNow()) === firstPrompt;
+  is(cameBack, "fixture: the card marked Somewhat came back later in the same sitting", () => "it never came back");
+  await clearToast();
+  m0 = await mark();
+  await gradeCard(2);
+  const relearned = await writtenSince(m0);
+  const relearnRows = await rowsOf(relearned);
+  const relearnToast = await toastNow();
+  is(!CUE.test(relearnToast), "marking it Know It a few minutes later shows no 'too soon' sentence (the drill itself asked for the repeat)", () => JSON.stringify(relearnToast));
+  is(relearned.length === 1 && relearnRows[relearned[0]].interval === 1 && relearnRows[relearned[0]].reps === 1, "...and the schedule is unchanged by that: the card still comes back in 1 day, one rep", () => JSON.stringify(relearnRows));
 
   // honest direction: the same cards, now overdue, DO advance when graded Down Cold
   await clearSrs();

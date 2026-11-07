@@ -174,6 +174,42 @@ for (const [w, h, name] of [[390, 844, "390x844 phone"], [360, 800, "360x800 pho
 }
 
 /* ---------------------------------------------------------------------
+   arrival never pulls focus away from a control the Soldier already reached
+   --------------------------------------------------------------------- */
+{
+  // The first card draw waits on a scan of the device's saved rows. A keyboard user can Tab onto a control in
+  // that gap; the arrival step must then leave focus exactly where they put it. The scan is held here so the
+  // gap is as long as the test needs, then released.
+  await setSize(1280, 900);
+  await clearSrs();
+  await goHome();
+  await page.evaluate(() => {
+    const realAll = G.db.all;
+    let release; const held = new Promise((r) => { release = r; });
+    window.__releaseScan = () => { G.db.all = realAll; release(); };
+    G.db.all = function (s) { return s === "kv" ? held.then(() => realAll.call(G.db, s)) : realAll.call(G.db, s); };
+  });
+  await clickWhenStable(page, startCard());
+  const onHeading = await until(page, () => { const a = document.activeElement; return !!a && a.tagName === "H2" && /Board Drill/.test(a.textContent); }, null);
+  const noCardYet = await page.evaluate(() => !document.querySelector(".qz-card"));
+  await page.keyboard.press("Tab");
+  const reached = await page.evaluate(() => {
+    const a = document.activeElement;
+    if (!a || a === document.body) return null;
+    window.__reached = a;
+    return { tag: a.tagName, cls: [...(a.classList || [])][0] || "", type: a.type || "", label: (a.getAttribute("aria-label") || a.textContent || "").trim().slice(0, 40) };
+  });
+  is(onHeading && noCardYet && !!reached && !/qz-wrap/.test(reached.cls), "fixture: with the first draw held, focus was on the heading and a Tab reached a real control (" + JSON.stringify(reached) + ")", () => JSON.stringify({ onHeading, noCardYet, reached }));
+  await page.evaluate(() => { const live = document.getElementById("a11y-live"); if (live) live.textContent = ""; window.__releaseScan(); });
+  const drawn = await until(page, () => !!document.querySelector(".qz-card"), null);
+  await frames(6);
+  const held = await page.evaluate(() => ({ same: document.activeElement === window.__reached, onCard: !!document.activeElement && document.activeElement.classList.contains("qz-wrap"), said: (document.getElementById("a11y-live") || {}).textContent || "" }));
+  is(drawn && held.same && !held.onCard, "once the card is drawn, focus is still on the control the Soldier tabbed to - the card did not take it", () => JSON.stringify(held));
+  is(!/Press Space to flip/.test(held.said), "...and nothing was announced about focus moving to the card (it did not)", () => JSON.stringify(held.said));
+  await clearSrs();
+}
+
+/* ---------------------------------------------------------------------
    everything else lands exactly where it did
    --------------------------------------------------------------------- */
 {

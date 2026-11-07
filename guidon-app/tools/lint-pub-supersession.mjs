@@ -69,8 +69,15 @@ export const LIBRARY_PATH = path.join(APP, "src", "app-modules", "library.js");
 export const COVER_PAGES = 6;
 
 /** Words that mark a mention as a statement ABOUT the change, not a teaching of
- *  the old publication as current. Matched inside the one sentence. */
-export const MARKED_CHANGE = /\b(formerly|supersed(?:e|es|ed|ing)|replac(?:e|es|ed|ing|ement)|renam(?:e|ed|ing)|rescind(?:ed|s)?|retired|no longer|obsolete|older|previous(?:ly)?|prior|used to)\b/i;
+ *  the old publication as current. Only words that talk about a publication
+ *  changing: everyday medical and card prose uses "prior to", "previous",
+ *  "older", "replace the dressing" and "no longer" constantly, and any one of
+ *  those beside a cite used to excuse it ("Per TC 4-02.1: apply the tourniquet
+ *  prior to moving the casualty" passed). A marker only counts when it sits
+ *  within MARKER_REACH characters of the designator, in the same sentence. */
+export const MARKED_CHANGE = /(?:\b(?:formerly|supersed(?:e|es|ed|ing)|supersession|replaced (?:by|with)|replaces|renamed|rescind(?:ed|s)?|obsolete|used to be|(?:was|been|is|now) retired|no longer (?:current|in effect|valid|authoritative))\b|\(retired\))/gi;
+/** How far (in characters) a marker may sit from the designator and still be about it. */
+export const MARKER_REACH = 60;
 
 /* ---------------------------------------------------------------------
    The table (read from moi-import.js) and the proof (read from library.js)
@@ -144,13 +151,31 @@ export function loadSupersessions({ moiPath = MOI_PATH, libraryPath = LIBRARY_PA
 /** The sentence (or clause run) around a match, bounded by . ! ? ; followed by
  *  whitespace, a newline, or the string's own ends. The "." inside a designator
  *  ("4-02.1") is followed by a digit, not whitespace, so it never splits one. */
-export function sentenceAround(text, index, length) {
+export function sentenceBounds(text, index, length) {
   const before = text.slice(0, index), after = text.slice(index + length);
   const starts = [...before.matchAll(/[.!?;]\s|\n/g)];
   const from = starts.length ? starts[starts.length - 1].index + starts[starts.length - 1][0].length : 0;
   const m = /[.!?;]\s|\n/.exec(after);
   const to = m ? index + length + m.index + 1 : text.length;
+  return { from, to };
+}
+export function sentenceAround(text, index, length) {
+  const { from, to } = sentenceBounds(text, index, length);
   return text.slice(from, to);
+}
+/** Is this mention (at [index, index+length)) marked as being about the change:
+ *  a change-marking word in the SAME sentence and within MARKER_REACH characters
+ *  of the designator, on either side? */
+export function isMarked(text, index, length) {
+  const { from, to } = sentenceBounds(text, index, length);
+  const sentence = text.slice(from, to);
+  const ds = index - from, de = ds + length;
+  for (const mm of sentence.matchAll(new RegExp(MARKED_CHANGE.source, "gi"))) {
+    const ms = mm.index, me = ms + mm[0].length;
+    const gap = ms >= de ? ms - de : ds >= me ? ds - me : 0;
+    if (gap <= MARKER_REACH) return true;
+  }
+  return false;
 }
 
 /** Every unmarked mention of `designator` in `text`: [{ at, snippet }]. */
@@ -159,8 +184,7 @@ export function unmarkedMentions(text, designator) {
   const re = designatorRegex(designator);
   let m;
   while ((m = re.exec(text))) {
-    const sentence = sentenceAround(text, m.index, m[0].length);
-    if (!MARKED_CHANGE.test(sentence)) out.push({ at: m.index, snippet: text.slice(Math.max(0, m.index - 40), m.index + m[0].length + 50).replace(/\s+/g, " ") });
+    if (!isMarked(text, m.index, m[0].length)) out.push({ at: m.index, snippet: text.slice(Math.max(0, m.index - 40), m.index + m[0].length + 50).replace(/\s+/g, " ") });
   }
   return out;
 }
