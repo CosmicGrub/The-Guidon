@@ -112,6 +112,26 @@ check(hits("ATP 4-02.11, which replaces TC 4-02.1, covers casualty response.") =
   "honest: a change word right beside the designator (replaces, no longer current, rescinded, (retired), supersession, replaced with) still marks it");
 check(designatorRegex("TC 4-02.1").test("see TC 4-02.1") && !designatorRegex("TC 4-02.1").test("ATP 4-02.1"), "designatorRegex('TC 4-02.1') matches the designator and not ATP 4-02.1");
 
+// Round 3: the edges a third review found. Each stale case is a sentence that still TEACHES from the old manual; each honest case is history.
+check(hits("Per TC 4-02.1, stop the bleeding; the manual was superseded in March 2026.") === 1 && hits("It was superseded; per TC 4-02.1, apply it.") === 1 && hits("Per TC 4-02.1, stop the bleeding, the manual was superseded in March 2026.") === 0,
+  "a semicolon ends a sentence: a marker after one, or before one, does not excuse the teaching beside it (the same words after a comma do)");
+check(hits("Per TC\u200b 4-02.1, apply it.") === 1 && hits("Per TC 4\u00ad-02.1, apply it.") === 1 && hits("Per T\u200dC 4-02.\u20601, apply it.") === 1 && hits("TC\u200b 4-02.1 was superseded by ATP 4-02.11.") === 0,
+  "a zero-width character or soft hyphen inside the designator cannot hide it (and cannot make an honest sentence fail)");
+check(hits("Per TC 4-02.1, the prior version of the card is filled out first.") === 1 && hits("Per TC 4-02.1, the old edition of the sling is used for fractures.") === 1 && hits("Per TC 4-02.1, the original manual placement of the rod is kept.") === 1,
+  "a naming phrase that is about something else is not about the publication: 'the prior version of the card', 'the old edition of the sling', 'the original manual placement' do not excuse a teaching");
+check(hits("Repeat the previous TC 4-02.1 step until bleeding stops.") === 1 && hits("As in the earlier TC 4-02.1 paragraph, tighten the windlass.") === 1 && hits("Use the prior TC 4-02.1 card.") === 1,
+  "'previous', 'earlier' and 'prior' right before a designator used as an adjective ('the previous TC 4-02.1 step') do not excuse a teaching");
+check(hits("The previous TC 4-02.1.") === 0 && hits("The earlier TC 4-02.1, published in 2016, is gone.") === 0 && hits("The previous edition of the manual, TC 4-02.1, is gone.") === 0 && hits("The older edition of the TC 4-02.1 manual is gone.") === 0,
+  "...while honest uses still pass: 'the previous TC 4-02.1.', 'the earlier TC 4-02.1, published in 2016,', 'the previous edition of the manual', 'the older edition of the TC 4-02.1 manual'");
+check(hits("TC 4-02.1, para. 3-9, was superseded by ATP 4-02.11.") === 0 && hits("TC 4-02.1 (U.S. Army, 2016) was superseded in 2026.") === 0 && hits("TC 4-02.1 No. 2 was superseded by ATP 4-02.11.") === 0 && hits("TC 4-02.1 (p. 31) was superseded.") === 0,
+  "an abbreviation's period does not end a sentence: 'para. 3-9', 'U.S. Army', 'No. 2' and 'p. 31' inside honest history no longer make it fail");
+check(hits("It is not superseded. No. Per TC 4-02.1, apply it.") === 1 && hits("Per TC 4-02.1 stop the bleeding, see p. 31. Formerly it was done differently.") === 1,
+  "...but a period that is not an abbreviation's (\"No.\" with no number, \"p. 31.\" at a sentence end) still ends the sentence");
+check(hits("TC 4-02.1\nwas superseded by ATP 4-02.11") === 0 && hits("TC 4-02.1\nhas been replaced.") === 0,
+  "a status predicate right after the designator is read across a line break ('TC 4-02.1' newline 'was superseded by ...')");
+check(hits("Source: TCCC / TC 4-02.1\nsuperseded notes live here") === 1 && hits("Sources:\n- TC 4-02.1\n- replaced items") === 1 && hits("Per TC 4-02.1, apply the tourniquet\nformerly done differently") === 1,
+  "...but a line break still ends a sentence otherwise: a marker on the next line, or on the next list line, does not excuse a teaching");
+
 /* =====================================================================
    3. The real bank passes, and the relabel holds
    ===================================================================== */

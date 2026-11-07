@@ -47,11 +47,29 @@
  *      retired / outdated / obsolete / used to be / no longer current) together
  *      with ANOTHER publication designator (ATP / TC / FM / AR / DA PAM ...) in
  *      that sentence.
- * A bare everyday word never excuses a mention, however close: "prior to",
+ * A single everyday word never excuses a mention, however close: "prior to",
  * "previous severe bleeding", "replace the dressing", "an older casualty", "a
  * second tourniquet replaces the first", "a wet dressing is replaced with a dry
  * one" and "the strap used to be tightened" are medical prose, and a sentence
- * that teaches from TC 4-02.1 while saying one of them is still a teaching. That one rule
+ * that teaches from TC 4-02.1 while saying one of them is still a teaching. What
+ * DOES excuse a mention is a status word said ABOUT the publication (shapes 1 and
+ * 2), a naming phrase that pairs such a word with a noun for a publication
+ * ("previous edition", "the older name" - but not "the prior version of the card"
+ * or "the old edition of the sling": a phrase followed by "of the <something that
+ * is not a publication>" is about that thing), or a change word beside ANOTHER
+ * designator. The weaker adjectives (previous, prior, earlier) right before a
+ * designator only count when the designator ends the thought ("the previous TC
+ * 4-02.1."), not when it is used as an adjective itself ("the previous TC 4-02.1
+ * step"). DOCUMENTED TRADE-OFF: the last shape and the naming phrases work by words
+ * within MARKER_REACH, so a sentence that still teaches from the old manual while
+ * carrying a change word beside another designator ("Per TC 4-02.1 a dressing is
+ * replaced, see ATP 4-02.13") is excused - the gate prefers that to refusing honest
+ * history. A period after an abbreviation that a number follows ("para. 3-9", "No.
+ * 2", "p. 31") or inside "U.S." does not end a sentence; a newline does (a
+ * list line is its own sentence), except that a status predicate right after the
+ * designator is read across it ("TC 4-02.1<newline>was superseded by ..."). Zero-
+ * width and soft-hyphen characters are removed before matching, so a hidden
+ * character inside a designator cannot hide it. That one rule
  * covers the structured citation (source[].pub, scenario doctrine[].pub) and the
  * prose cite at the end of an answer alike, and it is what "a card teaches a
  * superseded publication as verbatim" means: a board card with no quoteKind
@@ -97,16 +115,20 @@ export const MARKED_CHANGE = /(?:\b(?:formerly|supersed(?:e|es|ed|ing)|supersess
 export const MARKER_REACH = 60;
 
 /** Status words that describe a publication when they follow its designator directly. */
-const STATUS_WORDS = "replaced|retired|outdated|obsolete|withdrawn|renamed|out of date|no longer (?:used|current|in effect|valid|authoritative|the source)";
+const STATUS_WORDS = "replaced|superseded|rescinded|retired|outdated|obsolete|withdrawn|renamed|out of date|no longer (?:used|current|in effect|valid|authoritative|the source)";
 /** "TC 4-02.1 has been replaced." / "TC 4-02.1 is no longer used;" / "TC 4-02.1, retired in 2026,": the status word
  *  must end the thought ("replaced by", "retired in 2026,") - "replaced items" and "obsolete dressings" do not count. */
 const STATUS_AFTER = new RegExp(
   "^[\\s,()\\u2013\\u2014-]*(?:(?:is|was|were|has|have|had|been|being|now|later|since|also|officially|already)\\s+)*(?:" + STATUS_WORDS + ")"
   + "(?=\\s*(?:$|[.,;:)\\u2013\\u2014-]|(?:by|with|in|on|as|since|from|after|before|and|to|ATP|TC|FM|AR|ADP|DA)\\b))", "i");
 /** A status verb or adjective directly before the designator: "replacing TC 4-02.1", "the old TC 4-02.1". */
-const STATUS_BEFORE = /(?:\b(?:replac(?:es|ed|ing)|retir(?:ed|es|ing)|supersed\w*|rescind\w*|withdr[ae]w\w*)\s+(?:the\s+|its\s+)?|\b(?:old|older|former|previous|prior|earlier|outdated|obsolete|retired|rescinded|superseded|withdrawn)\s+(?:[A-Za-z]+\s+)?)$/i;
+const STATUS_BEFORE = /(?:\b(?:replac(?:es|ed|ing)|retir(?:ed|es|ing)|supersed\w*|rescind\w*|withdr[ae]w\w*)\s+(?:the\s+|its\s+)?|\b(?:old|older|former|outdated|obsolete|retired|rescinded|superseded|withdrawn)\s+(?:[A-Za-z]+\s+)?)$/i;
+/** "previous", "prior" and "earlier" also describe a step or a card ("the previous TC 4-02.1 step"): right before a designator they
+ *  only count when the designator then ends the thought ("the previous TC 4-02.1.", "the earlier TC 4-02.1 was replaced"). */
+const STATUS_BEFORE_WEAK = /\b(?:previous|prior|earlier)\s+(?:[A-Za-z]+\s+)?$/i;
+const DESIGNATOR_ENDS = /^\s*(?:$|[.,;:)\u2013\u2014-]|(?:is|was|were|has|had|in|of|from|and|or|by|as|which|that)\b)/i;
 /** Naming phrases about a publication: "the older name", "the former designation", "previous edition". */
-const NAMING_PHRASE = /\b(?:old|older|former|previous|prior|earlier|original|superseded|retired|outdated)\s+(?:name|designation|designator|title|number|edition|version|manual|publication)\b/gi;
+const NAMING_PHRASE = /\b(?:old|older|former|previous|prior|earlier|superseded|retired|outdated)\s+(?:name|designation|designator|title|number|edition|version|manual|publication)\b(?!\s+of\s+(?:the|a|an|this|that|your|each)\s+(?!(?:manual|publication|doctrine|regulation|pamphlet|circular|document|handbook|TC|ATP|FM|AR|ADP|STP|TM|DA)\b))/gi;
 /** Change words that only count when ANOTHER publication designator sits in the same sentence. */
 const CHANGE_WORDS = /\b(?:replac(?:es|ed|ing|ement)|renamed|retired|outdated|obsolete|used to be|no longer (?:used|current|in effect|valid|authoritative))\b/gi;
 const PUB_DESIGNATOR = /(?<![A-Za-z0-9])(?:ATP|ATTP|TC|FM|AR|DA\s+PAM|ADP|ADRP|TM|STP|JP|DODI|AFI|GTA)\s*\d[\d.‐-―−-]*\d/gi;
@@ -140,6 +162,11 @@ export function readLibraryDocs(source) {
   if (!Array.isArray(docs) || !docs.length) throw new Error("the Library document list is empty");
   return docs;
 }
+
+/** Characters with no width (soft hyphen, zero-width space / non-joiner / joiner, word joiner, byte-order mark): removed before matching, so one hidden
+ *  inside "TC 4-02.1" cannot hide it. */
+export const INVISIBLE = /[\u00AD\u200B-\u200D\u2060\uFEFF]/g;
+export const stripInvisible = (text) => String(text).replace(INVISIBLE, "");
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const DASH = "[-\\u2010-\\u2015\\u2212]";
@@ -185,11 +212,24 @@ export function loadSupersessions({ moiPath = MOI_PATH, libraryPath = LIBRARY_PA
  *  ("4-02.1") is followed by a digit, not whitespace, so it never splits one. */
 export function sentenceBounds(text, index, length) {
   const before = text.slice(0, index), after = text.slice(index + length);
-  const starts = [...before.matchAll(/[.!?;]\s|\n/g)];
+  const starts = [...before.matchAll(/[.!?;]\s|\n/g)].filter((m) => !abbreviationAt(text, m.index, m[0]));
   const from = starts.length ? starts[starts.length - 1].index + starts[starts.length - 1][0].length : 0;
-  const m = /[.!?;]\s|\n/.exec(after);
-  const to = m ? index + length + m.index + 1 : text.length;
+  let to = text.length;
+  for (const m of after.matchAll(/[.!?;]\s|\n/g)) {
+    const at = index + length + m.index;
+    if (abbreviationAt(text, at, m[0])) continue;
+    to = at + 1;
+    break;
+  }
   return { from, to };
+}
+/** Is the "." at text[at] the period of an abbreviation rather than a sentence end? "para. 3-9", "No. 2", "p. 31", "Fig. 4" (a number
+ *  follows) and "U.S. Army". A period after anything else, and every other kind of boundary, still ends the sentence. */
+function abbreviationAt(text, at, matched) {
+  if (text[at] !== ".") return false;
+  const head = text.slice(Math.max(0, at - 8), at + 1), next = text.charAt(at + matched.length);
+  if (/(?:^|[^A-Za-z.])U\.S\.$/.test(head)) return true;
+  return /(?:^|[^A-Za-z])(?:paras?|nos?|figs?|pp?|vols?|ch|chap|secs?|arts?)\.$/i.test(head) && /\d/.test(next);
 }
 export function sentenceAround(text, index, length) {
   const { from, to } = sentenceBounds(text, index, length);
@@ -207,8 +247,10 @@ export function isMarked(text, index, length) {
   // 1. strict publication-status words
   for (const mm of sentence.matchAll(new RegExp(MARKED_CHANGE.source, "gi"))) if (near(mm.index, mm.index + mm[0].length)) return true;
   // 2. the designator is the subject of a status predicate, or a status verb / adjective sits right before it
-  if (STATUS_AFTER.test(sentence.slice(de, de + 90))) return true;
-  if (STATUS_BEFORE.test(sentence.slice(Math.max(0, ds - 40), ds))) return true;
+  if (STATUS_AFTER.test(text.slice(index + length, index + length + 90))) return true;
+  const lead = sentence.slice(Math.max(0, ds - 40), ds);
+  if (STATUS_BEFORE.test(lead)) return true;
+  if (STATUS_BEFORE_WEAK.test(lead) && DESIGNATOR_ENDS.test(text.slice(index + length, index + length + 40))) return true;
   // 3. naming phrases
   for (const mm of sentence.matchAll(new RegExp(NAMING_PHRASE.source, "gi"))) if (near(mm.index, mm.index + mm[0].length)) return true;
   // 4. a change word together with ANOTHER publication designator nearby
@@ -221,6 +263,7 @@ export function isMarked(text, index, length) {
 
 /** Every unmarked mention of `designator` in `text`: [{ at, snippet }]. */
 export function unmarkedMentions(text, designator) {
+  text = stripInvisible(text);
   const out = [];
   const re = designatorRegex(designator);
   let m;
