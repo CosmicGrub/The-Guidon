@@ -114,6 +114,11 @@ window.G = window.G || {};
 
     let roster = [];
     try { const r = await G.db.get("kv", KEY); roster = (r && r.v) || []; } catch (e) { /* offline-safe */ }
+    // Reminders made from this roster before they were stamped carry only their
+    // label, which stops matching the moment a rank, a name or an entry here
+    // changes - and then they would ride every default backup. Stamp them now,
+    // while the roster is as they were made and before it can be edited.
+    try { if (G.reminders && G.reminders.stampLeaderLegacy) await G.reminders.stampLeaderLegacy(); } catch (e) { /* the stamp is a safeguard; the screen opens without it */ }
 
     async function persist() {
       try { await G.db.put("kv", { k: KEY, v: roster }); } catch (e) { /* offline-safe */ }
@@ -149,7 +154,7 @@ window.G = window.G || {};
     priv.appendChild(el("p.hint", { text:
       "If this device is shared, issued, or you are about to hand it to someone, clear the roster." }));
     priv.appendChild(el("p.hint", { text:
-      "The roster is LEFT OUT of GUIDON backup files by default, so exporting your study data will not quietly carry other people's information with it. Moving to a new device? Backup & restore has an \"include the leader roster and any saved Risk Worksheets\" checkbox next to Export backup - check it only for that export, then leave it unchecked again." }));
+      "The roster, and the reminders you make from it, are LEFT OUT of GUIDON backup files by default, so exporting your study data will not quietly carry other people's information with it. Moving to a new device? Backup & restore has an \"Also include the leader roster (and the reminders made from it), any saved Risk Worksheets and your saved form drafts\" checkbox next to Export backup - check it only for that export, then leave it unchecked again." }));
     mount.appendChild(priv);
 
     // Roadmap audit round 4, "Accessibility: missing accessible names, live

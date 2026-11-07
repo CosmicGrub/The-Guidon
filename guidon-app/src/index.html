@@ -8204,11 +8204,13 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
   // Every write below now resolves when the transaction has committed and
   // rejects when it is cancelled.
   //
-  // The failure is also announced ONCE, here, underneath every caller: a
-  // plain-language notice and a self-heal entry, throttled so a device that is
-  // still full does not repeat itself on every keystroke. That is what covers
-  // the saves nobody waits on (the debounced settings save is one) without
-  // touching a single call site.
+  // The failure is also announced here, underneath every caller: a
+  // plain-language notice and a self-heal entry. EVERY failed write goes into
+  // the Diagnostics trail (so a burst of lost saves is on record row by row);
+  // only the on-screen notice is throttled, so a device that is still full
+  // does not repeat itself on every keystroke. That is what covers the saves
+  // nobody waits on (the debounced settings save is one) without touching a
+  // single call site.
   //
   // What is announced: a change the device took in and then did not keep (the
   // request or the commit failed). What is NOT: a database that would not open
@@ -8245,19 +8247,38 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
   function writeFailed(store, key, err) {
     if (key === "guidon:selfheal:v1") return;
     const now = Date.now();
-    if (lastWriteFailNoticeAt !== null && now - lastWriteFailNoticeAt < WRITE_FAIL_QUIET_MS) return;
-    lastWriteFailNoticeAt = now;
+    // Only the on-screen notice is throttled; the trail hears about every failure.
+    const quiet = lastWriteFailNoticeAt !== null && now - lastWriteFailNoticeAt < WRITE_FAIL_QUIET_MS;
+    if (!quiet) lastWriteFailNoticeAt = now;
     try {
       if (G.util && typeof G.util.emit === "function") {
-        G.util.emit("storage:write-failed", { store: store, key: key == null ? null : key, full: isQuotaError(err), cause: causeWords(err) });
+        G.util.emit("storage:write-failed", { store: store, key: key == null ? null : key, full: isQuotaError(err), cause: causeWords(err), quiet: quiet });
       }
     } catch (e) {}
   }
+  // True when the "wasn't saved" notice above went up a moment ago. A caller
+  // that has its own words for a failed save (a card grade, a result) asks
+  // this before it toasts: the toast is one shared element, so the caller's
+  // text would otherwise replace the notice that says WHY (the device is out
+  // of space) - and the throttle then keeps that cause off the screen for the
+  // next 30 seconds.
+  function writeNoticeJustShown(withinMs) {
+    return lastWriteFailNoticeAt !== null && Date.now() - lastWriteFailNoticeAt < (withinMs || 2500);
+  }
+  // A caller's own "couldn't save" line, shown unless the storage notice that
+  // already explains the failure is on screen.
+  try {
+    if (G.util) G.util.toastSaveFailure = function (msg, ms) {
+      if (writeNoticeJustShown()) return false;
+      if (typeof G.util.toast === "function") G.util.toast(msg, ms);
+      return true;
+    };
+  } catch (e) {}
   // The one listener: what the Soldier is told, and what Diagnostics keeps.
   try {
     if (G.util && typeof G.util.on === "function") {
       G.util.on("storage:write-failed", function (info) {
-        if (typeof G.util.toast === "function") G.util.toast(info.full ? WRITE_FAIL_FULL : WRITE_FAIL_OTHER, 7000);
+        if (!info.quiet && typeof G.util.toast === "function") G.util.toast(info.full ? WRITE_FAIL_FULL : WRITE_FAIL_OTHER, 7000);
         if (G.selfheal) {
           G.selfheal.log("storage-write-fail", info.key != null ? info.key : info.store,
             "A change to your " + (STORE_WORDS[info.store] || "saved data") + " was not saved: " + info.cause + ".");
@@ -12672,7 +12693,7 @@ window.G = window.G || {};
         await saveSrs(q.id, s);
       } catch (e) {
         if (G.selfheal) G.selfheal.log("srs-write-fail", q.id, "grade(gradeLevel=" + gradeLevel + ") failed: " + (e && e.message ? e.message : String(e)));
-        util.toast("Couldn't save that grade to your review schedule.");
+        util.toastSaveFailure("Couldn't save that grade to your review schedule.");
       }
       seen++; if (gradeLevel >= 2) recalled++;
       // Needs Help / Somewhat joins today's carry-over list (pinned first in
@@ -13846,7 +13867,7 @@ window.G = window.G || {};
         const missedQ = sess.questions[sess.idx];
         if (missedQ && missedQ.id && G.board.noteExternalResult) {
           G.board.noteExternalResult(missedQ.id, 0).then((r) => {
-            if (r == null) util.toast("Couldn't save that grade to your review schedule.");
+            if (r == null) util.toastSaveFailure("Couldn't save that grade to your review schedule.");
           });
         }
       }
@@ -14889,7 +14910,7 @@ window.G = window.G || {};
           // G.selfheal, this just reacts to a null result with a toast.
           if (q.id && G.board.noteExternalResult) {
             G.board.noteExternalResult(q.id, sc.points >= 2 ? 2 : sc.points >= 1 ? 1 : 0).then((r) => {
-              if (r == null) util.toast("Couldn't save that grade to your review schedule.");
+              if (r == null) util.toastSaveFailure("Couldn't save that grade to your review schedule.");
             });
           }
           try { util.announce && util.announce(sc.label + ". Next question."); } catch (e) {}
@@ -29121,9 +29142,19 @@ window.G = window.G || {};
       // backup is one), the dialog opens on Cancel, so an Enter pressed out of
       // habit backs out instead of going through. Enter on the focused Cancel
       // button then does what the button says (the browser clicks it) instead
-      // of being taken as "accept" by this box-level listener.
+      // of being taken as "accept" by this box-level listener. The guard has
+      // to hold wherever focus has wandered, not just while it sits on
+      // Cancel: on a short window or a phone the message becomes a Tab stop
+      // (Shift+Tab from Cancel lands on it, and so does a tap on it), and an
+      // Enter there must not run the overwrite. So with focusCancel the box
+      // accepts an Enter only when focus is on the OK button itself.
       box.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && (!input || document.activeElement === input) && !(opts.focusCancel && document.activeElement === cancel)) { e.preventDefault(); accept(); }
+        if (e.key !== "Enter") return;
+        if (opts.focusCancel) {
+          if (document.activeElement === ok) { e.preventDefault(); accept(); }
+          return;
+        }
+        if (!input || document.activeElement === input) { e.preventDefault(); accept(); }
       });
       cancel.addEventListener("click", () => closeWith(opts.prompt ? null : false));
       ok.addEventListener("click", accept);
@@ -30906,6 +30937,9 @@ window.G = window.G || {};
       "Install GUIDON on that device, then use Import backup and pick the file"
     ]).forEach((t) => steps.appendChild(el("li", { text:t, style:"margin:3px 0" })));
     data.appendChild(steps);
+    // A normal backup does not carry other people's information; say so here, where the move is explained.
+    data.appendChild(el("p.hint", { style:"margin-top:8px", text:
+      "A normal backup leaves out the leader roster and the reminders made from it, any saved Risk Worksheets, and your saved form drafts, because they can hold other people's names. If you need them on the other device too, tick the “Also include the leader roster…” box next to Export backup before you export." }));
     // Roadmap audit round 5, "Cross-Link & Related-Content Gaps" bucket: the
     // step list above named "Profile → Backup & restore" and "Export backup"
     // only in plain <li> text - none of it was clickable, even though this
@@ -31088,6 +31122,41 @@ window.G = window.G || {};
       if (label.indexOf(lead) === 0 && rosterWho.indexOf(label.slice(lead.length)) !== -1) return true;
     }
     return false;
+  }
+  // A default backup leaves this device's roster reminders out, and a restore
+  // puts the file's whole reminders list over the device's. So restoring a
+  // default backup on the device that made it would quietly drop every
+  // reminder made from the roster while the roster itself stayed. This is the
+  // set a restore must keep: the device's own roster reminders (by the stamp,
+  // or by the label for old unstamped ones) that the file does not already
+  // hold under the same id. When the file carries the roster itself (the
+  // "include" backup) the roster and its reminders come from the file together
+  // and nothing is merged. Never throws: if the device cannot be read, nothing
+  // is added (the restore then behaves exactly as it always did).
+  async function rosterRemindersToKeep(fileKv) {
+    try {
+      var fileRem = null, fileHasRoster = false;
+      (Array.isArray(fileKv) ? fileKv : []).forEach(function (r) {
+        if (!r) return;
+        if (r.k === "reminders:v1" && Array.isArray(r.v)) fileRem = r;
+        if (r.k === "guidon:leader:roster:v1" && privateKeyHasContent(r.v)) fileHasRoster = true;
+      });
+      if (!fileRem || fileHasRoster) return [];
+      var dev = await G.db.get("kv", "reminders:v1");
+      var devList = dev && Array.isArray(dev.v) ? dev.v : [];
+      if (!devList.length) return [];
+      var roster = await G.db.get("kv", "guidon:leader:roster:v1");
+      var who = rosterLabels(roster ? [roster] : []);
+      var inFile = {};
+      fileRem.v.forEach(function (r) { if (r && r.id != null) inFile[r.id] = true; });
+      var keep = devList.filter(function (r) { return r && typeof r === "object" && r.id != null && !inFile[r.id] && isLeaderReminder(r, who); });
+      var max = G.reminders && typeof G.reminders.MAX === "number" ? G.reminders.MAX : 0;
+      if (max) keep = keep.slice(0, Math.max(0, max - fileRem.v.length));
+      return keep;
+    } catch (e) { return []; }
+  }
+  async function rosterRemindersKept(obj) {
+    return (await rosterRemindersToKeep(obj && obj.stores && obj.stores.kv)).length;
   }
 
   // Content-checks for other known kv keys beyond the profile row (added
@@ -31704,9 +31773,23 @@ window.G = window.G || {};
   var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   // "12 Mar 2026 (3 days ago)" - the day a backup file was made, the way the
   // Army writes a date. "" when the file does not say (or says nonsense).
+  // A date later than this device's own clock cannot be when the file was made
+  // (a phone whose clock runs ahead is the ordinary cause). Reading it as
+  // "today" told the Soldier something false and, worse, made every change on
+  // this device look OLDER than the file, which switched the "you have used
+  // GUIDON here since then" warning off exactly when it was needed. A few
+  // minutes of difference between two devices' clocks is normal and is allowed.
+  var CLOCK_SKEW_MS = 10 * 60 * 1000;
+  // { state: "ok" | "missing" | "future", ms } - ms only when the date can be trusted.
+  function backupDateState(iso) {
+    var d = iso ? new Date(iso) : null;
+    if (!d || isNaN(d.getTime())) return { state: "missing", ms: null };
+    if (d.getTime() > Date.now() + CLOCK_SKEW_MS) return { state: "future", ms: null };
+    return { state: "ok", ms: d.getTime() };
+  }
   function describeBackupDate(iso) {
     var d = iso ? new Date(iso) : null;
-    if (!d || isNaN(d.getTime())) return "";
+    if (!d || isNaN(d.getTime()) || backupDateState(iso).state !== "ok") return "";
     var days = Math.floor((Date.now() - d.getTime()) / 86400000);
     var ago = days <= 0 ? "today" : days === 1 ? "1 day ago" : days + " days ago";
     return d.getDate() + " " + MONTHS[d.getMonth()] + " " + d.getFullYear() + " (" + ago + ")";
@@ -31757,12 +31840,17 @@ window.G = window.G || {};
   // device has been used since. Pure: the activity is passed in.
   function restoreDateLines(exportedAt, activity) {
     var when = describeBackupDate(exportedAt);
-    var made = when ? "This backup was made on " + when + "." : "This backup file doesn't say when it was made.";
+    var wrong = !when && backupDateState(exportedAt).state === "future";
+    var made = when ? "This backup was made on " + when + "."
+      : wrong ? "The date in this backup file looks wrong (it is later than today's date on this device), so there is no telling when it was made."
+      : "This backup file doesn't say when it was made.";
     var warning = "";
     if (activity && activity.newer) {
       warning = (when
         ? "You have used GUIDON on this device since then, so some of what is here may be newer than this backup."
-        : "This device already has study progress on it, and without a date there is no telling which is newer.") +
+        : wrong
+          ? "This device already has study progress on it, and with a date that can't be trusted there is no telling which is newer."
+          : "This device already has study progress on it, and without a date there is no telling which is newer.") +
         " To keep a copy of it first, choose Cancel, use Export backup, then import again.";
     }
     return { made: made, warning: warning };
@@ -31776,6 +31864,17 @@ window.G = window.G || {};
       if (seen.indexOf(w) === -1) { seen.push(w); out.push(w); }
     });
     return out.join(" and ");
+  }
+  // What both restore screens say when a restore did not finish. It stays up:
+  // nothing reloads the page behind it (see confirmAndImportFile).
+  function restoreFailedText(stores) {
+    return "The restore did not finish: " + failedWords(stores) + " could not be saved to this device. Free up some space and try again.";
+  }
+  // The one plain button that goes with that message: the Soldier reloads when ready.
+  function reloadButton() {
+    var b = el("button.btn.sm.ghost", { type: "button", text: "Reload GUIDON", style: "margin-left:8px" });
+    b.addEventListener("click", function () { location.reload(); });
+    return b;
   }
 
   async function importAll(obj) {
@@ -31852,6 +31951,13 @@ window.G = window.G || {};
         // (wrote v: undefined) on every single restore, regardless of any
         // validation, since that key never had a .v field to begin with.
         kvRows.push(row);
+      }
+      // Roster reminders made on this device stay (see rosterRemindersToKeep).
+      var keepRoster = await rosterRemindersToKeep(kvRows);
+      if (keepRoster.length) {
+        kvRows = kvRows.map(function (r) {
+          return r && r.k === "reminders:v1" && Array.isArray(r.v) ? Object.assign({}, r, { v: r.v.concat(keepRoster) }) : r;
+        });
       }
       if (kvRows.length) await restoreRows("kv", kvRows, restored, failedStores);
     }
@@ -31942,15 +32048,18 @@ window.G = window.G || {};
         // "Import this backup?" and failing after the Soldier said yes.
         var problem = schemaProblem(obj);
         if (problem) { resolve({ status: "error", message: problem }); return; }
-        var madeAt = obj.exportedAt ? new Date(obj.exportedAt).getTime() : NaN;
-        deviceActivitySince(isNaN(madeAt) ? null : madeAt).then(function (activity) {
-          try { review(obj, activity); }
+        // A date the device's own clock says has not happened yet is treated as
+        // no date at all (backupDateState), so the used-since check is as
+        // cautious as it is for a file with no date.
+        var madeAt = backupDateState(obj.exportedAt).ms;
+        Promise.all([deviceActivitySince(madeAt), rosterRemindersKept(obj)]).then(function (both) {
+          try { review(obj, both[0], both[1]); }
           catch (e) { resolve({ status: "error", message: "That backup couldn't be checked: " + (e && e.message ? e.message : "unknown error") }); }
         });
       };
       // The confirm: what is in the file, when it was made, whether this
       // device has been used since, and what the restore will do about it.
-      function review(obj, activity) {
+      function review(obj, activity, keptRoster) {
         var sum = obj && obj.summary ? obj.summary : null;
         var hasProfileRow = !!(obj && obj.stores && Array.isArray(obj.stores.kv) &&
           obj.stores.kv.some(function (row) { return row && row.k === "guidon:profile:v1"; }));
@@ -31989,6 +32098,8 @@ window.G = window.G || {};
           // backup's version; nothing is deleted. (This used to say "Your
           // existing data will be kept", which read as a promise it did not make.)
           "\n\nItems that are in both places will be replaced by the backup's version; everything else on this device stays." + (hasProfileRow ? " This includes your name, rank, and board date." : "") +
+          // The reminders made from the leader roster are not in a normal backup, so this device's own are kept rather than replaced.
+          (keptRoster ? " The " + (keptRoster === 1 ? "reminder" : keptRoster + " reminders") + " you made from the leader roster on this device " + (keptRoster === 1 ? "stays" : "stay") + " too, because a normal backup doesn't carry " + (keptRoster === 1 ? "it" : "them") + "." : "") +
           (privateKeysPresent.length ? " This file also carries " + describeKeys(privateKeysPresent) + " - items a normal backup leaves out, because they can hold other people's information or a resource assessment rather than your own study data - and they will be written to this device too." : "") +
           // Named in the Soldier's words (describeKeys), never by storage key.
           (kvRejected.length ? "\n\n" + (kvRejected.length === 1 ? "1 item in this file is damaged and will be left out: " : kvRejected.length + " items in this file are damaged and will be left out: ") + describeKeys(kvRejected) + ". Everything else will be restored." : "");
@@ -31998,7 +32109,11 @@ window.G = window.G || {};
           importAll(obj).then(function (res) {
             var r = res.restored, sk = res.skipped, fs = res.failedStores || [];
             if (G.selfheal) G.selfheal.log("backup-import", null, "restored " + r.kv + " kv/" + r.userScenarios + " scenarios/" + r.attempts + " attempts, skipped " + (sk.kv || 0) + " kv row(s)" + (fs.length ? ", FAILED to write: " + fs.join(", ") : ""));
-            setTimeout(function () { location.reload(); }, 1200);
+            // A restore that did not finish is left on screen: reloading after
+            // 1.2 s wiped the very message that says so, and left a partly
+            // restored app with no explanation. The Soldier reloads when ready
+            // (both screens show a plain Reload button under the message).
+            if (!fs.length) setTimeout(function () { location.reload(); }, 1200);
             // Deep-gap follow-up ("Profile Data-Loss & Persistence Bugs"
             // bucket): failedStores is surfaced here so both callers can
             // tell a genuine write failure apart from a clean restore -
@@ -32098,8 +32213,10 @@ window.G = window.G || {};
         // attempts." styled identically to a real success - looking
         // exactly like a no-op restore instead of a failure worth retrying.
         if (fs.length) {
-          status.textContent = "The restore did not finish: " + failedWords(fs) + " could not be saved to this device. Free up some space and try again. Reloading…";
+          status.textContent = restoreFailedText(fs);
           status.className = "backup-status hint err";
+          status.setAttribute("role", "alert");
+          status.appendChild(reloadButton());
           return;
         }
         status.textContent = "Restored " + r.kv + " items, " + r.userScenarios + " scenarios, " + r.attempts + " attempts." +
@@ -32137,7 +32254,7 @@ window.G = window.G || {};
     return "Backup downloaded";
   }
 
-  G.backup = { exportAll: exportAll, downloadAll: downloadAll, importAll: importAll, renderControls: renderControls, confirmAndImportFile: confirmAndImportFile, validateKvRow: validateKvRow, describeKey: describeKey, skippedSummary: skippedSummary, exportDoneMessage: exportDoneMessage, getLastExportAt: getLastExportAt, formatLastExport: formatLastExport, describeBackupDate: describeBackupDate, deviceActivitySince: deviceActivitySince, failedWords: failedWords };
+  G.backup = { exportAll: exportAll, downloadAll: downloadAll, importAll: importAll, renderControls: renderControls, confirmAndImportFile: confirmAndImportFile, validateKvRow: validateKvRow, describeKey: describeKey, skippedSummary: skippedSummary, exportDoneMessage: exportDoneMessage, getLastExportAt: getLastExportAt, formatLastExport: formatLastExport, describeBackupDate: describeBackupDate, deviceActivitySince: deviceActivitySince, failedWords: failedWords, restoreFailedText: restoreFailedText, reloadButton: reloadButton, isLeaderReminder: isLeaderReminder, rosterLabels: rosterLabels };
 })();
 // END backup.js
 
@@ -32320,6 +32437,40 @@ window.G = window.G || {};
       list = list.filter(function (r) { return r.id !== id; });
       await save(list);
       return list;
+    });
+  }
+
+  // The squad roster's "Remind me" reminders are kept out of a default backup
+  // (backup.js) because their label names a Soldier. Reminders made before
+  // that exclusion existed carry no `source` stamp, so for them the only thing
+  // that says "this came from the roster" is the label still matching a roster
+  // entry - and a rank change, a rename or removing the Soldier breaks that
+  // match, which would put the initials back into every default backup. This
+  // stamps those label-matching reminders `source: "leader"` once, while the
+  // roster is still as they were made, so the exclusion no longer depends on
+  // the roster staying the same. Idempotent (a reminder that already has a
+  // source is left alone, and a pass with nothing to stamp writes nothing),
+  // and it only ever adds the one field. Called by the leader screen when it
+  // opens - the only place the roster can be edited - so the stamp is always
+  // in place before the first edit. Never runs in a Guest or Kiosk session
+  // (nothing is saved there). Resolves to how many it stamped.
+  async function stampLeaderLegacy() {
+    try { if (db.session && db.session.active && db.session.active()) return 0; } catch (e) { return 0; }
+    if (!G.backup || !G.backup.isLeaderReminder || !G.backup.rosterLabels) return 0;
+    return _serialize(async function () {
+      var list = await load();
+      if (!list.length) return 0;
+      var rosterRow = null;
+      try { rosterRow = await db.get("kv", "guidon:leader:roster:v1"); } catch (e) { return 0; }
+      var who = G.backup.rosterLabels(rosterRow ? [rosterRow] : []);
+      if (!who.length) return 0;
+      var n = 0;
+      list.forEach(function (r) {
+        if (!r || typeof r !== "object" || r.source) return;
+        if (G.backup.isLeaderReminder(r, who)) { r.source = "leader"; n++; }
+      });
+      if (n) await save(list);
+      return n;
     });
   }
 
@@ -32742,7 +32893,7 @@ window.G = window.G || {};
     KINDS: KINDS,
     MAX: MAX_REMINDERS,
     load: load, add: add, remove: remove, bucket: bucket,
-    addManaged: addManaged, clearManagedFor: clearManagedFor,
+    addManaged: addManaged, clearManagedFor: clearManagedFor, stampLeaderLegacy: stampLeaderLegacy,
     renderStrip: renderStrip, renderEditor: renderEditor,
     buildIcs: buildIcs,
     _icsFold: icsFold, _icsEscape: icsEscape, // exported for tests
@@ -39729,6 +39880,9 @@ window.G = window.G || {};
     const dataPanel = el("div.panel", { id: "settings-databackup-panel", tabindex: "-1", style: "margin-top:12px" });
     dataPanel.appendChild(el("label", { text: "Data & Backup" }));
     const importInput = el("input", { type: "file", accept: "application/json,.json", style: "display:none" });
+    // Where a restore that did not finish says so, and stays saying so (see the change handler below).
+    const restoreNote = el("p.backup-status.hint.err", { role: "alert" });
+    restoreNote.hidden = true;
     // Enhancement backlog round 1, "Settings Import Backup" bucket: this
     // used to parse and apply the selected file immediately on change,
     // with no confirmation, no item-count preview, and no reload after
@@ -39756,7 +39910,14 @@ window.G = window.G || {};
         // Deep-gap follow-up ("Profile Data-Loss & Persistence Bugs"
         // bucket): see confirmAndImportFile()'s own comment - a genuine
         // write failure previously looked identical to a clean restore.
-        if (fs.length) { util.toast("The restore did not finish: " + G.backup.failedWords(fs) + " could not be saved to this device. Free up some space and try again. Reloading…"); return; }
+        if (fs.length) {
+          // Left on the page (not just a toast): nothing reloads after a restore that did not finish.
+          restoreNote.textContent = G.backup.restoreFailedText(fs);
+          restoreNote.hidden = false;
+          restoreNote.appendChild(G.backup.reloadButton());
+          util.toast(G.backup.restoreFailedText(fs), 7000);
+          return;
+        }
         util.toast("Restored " + r.kv + " item(s), " + r.userScenarios + " scenario(s), " + r.attempts + " attempt(s)." +
           (sk && sk.kv ? " " + G.backup.skippedSummary(result.skippedKeys) : "") + " Reloading…");
       });
@@ -39813,6 +39974,7 @@ window.G = window.G || {};
       el("button.btn.sm.ghost", { gi: "upload", giSize: 14, text: "Import backup", onclick: () => { if (G.biometricGate) G.biometricGate.expectReturn(); importInput.click(); } }),
     ]));
     dataPanel.appendChild(importInput);
+    dataPanel.appendChild(restoreNote);
     dataPanel.appendChild(lastBackupHint);
     dataPanel.appendChild(el("p.hint", { text: "Export a full JSON backup — profile, IDP goals, counseling plans, promotion-point estimates, SRS scheduling, authored scenarios, and recorded attempts — or restore one on another device. Saved form drafts and the leader roster stay out unless you tick the “include” box." }));
     // Signposts to the full Data & Storage dashboard (usage estimate,

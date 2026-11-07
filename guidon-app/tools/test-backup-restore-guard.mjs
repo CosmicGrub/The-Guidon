@@ -116,6 +116,40 @@ check(afterB && afterB.reps === 3, "...and the item only this device had stayed 
 check(Array.isArray(afterRem) && afterRem.length === 1, "...so the confirm's warning was true: the newer second reminder is what was replaced", "reminders: " + JSON.stringify(afterRem));
 
 /* =====================================================================
+   1b) The stray-Enter promise holds wherever focus has wandered, not only while it sits on Cancel
+   ===================================================================== */
+console.log("\n-- on a short window the message becomes a Tab stop: an Enter there must not restore either --");
+check(!/leader roster/i.test(text1), "a confirm for a device with no roster reminders says nothing about the roster", "confirm text: " + JSON.stringify(text1));
+const roomy = page.viewportSize();
+// A file whose restore would visibly change this device (rg-A 2 -> 9, and a card the device lacks).
+const guardFile = backup(T - 3 * DAY, [card("rg-A", 9, 50, T - 3 * DAY), card("rg-GUARD", 1, 1, T - 3 * DAY)]);
+const untouched = async () => { const a = await getKv("srs:rg-A"); return a && a.reps === 2 && (await getKv("srs:rg-GUARD")) === undefined; };
+await page.setViewportSize({ width: 360, height: 330 });
+await chooseOnProfile(guardFile);
+await confirmText();
+const bodyIsStop = await until(page, () => { const b = document.querySelector(".gm-box .gm-dialog-body"); return !!b && b.tabIndex === 0 && b.getAttribute("role") === "region"; });
+check(bodyIsStop, "fixture: at 360x330 the message overflows and is a keyboard stop (otherwise this proves nothing)", "the message region never became a tab stop");
+await focusIsOn("Cancel");
+await page.keyboard.press("Shift+Tab");
+const onMessage = await page.evaluate(() => document.activeElement === document.querySelector(".gm-box .gm-dialog-body"));
+check(onMessage, "Shift+Tab from Cancel lands on the message", "focus is on: " + JSON.stringify(await page.evaluate(() => document.activeElement && (document.activeElement.className || document.activeElement.tagName))));
+const reloadedA = page.waitForEvent("load", { timeout: 2000 }).then(() => true, () => false); // hygiene-ok: proving nothing happens takes a fixed window - a restore that wrongly went ahead reloads the page within 1.2 s
+await page.keyboard.press("Enter");
+check(!(await reloadedA), "Enter on the message does not restore (the page did not reload)", "the page reloaded, so an Enter on the message confirmed the restore");
+check(await page.evaluate(() => !!document.querySelector(".gm-box")), "...and the dialog is still waiting for an answer", "the dialog closed");
+check(await untouched(), "...and nothing from the file reached the device", "srs:rg-A is now " + JSON.stringify(await getKv("srs:rg-A")) + ", srs:rg-GUARD " + JSON.stringify(await getKv("srs:rg-GUARD")));
+await page.locator(".gm-box .gm-dialog-body").click({ position: { x: 20, y: 20 } });
+const clickedOnMessage = await page.evaluate(() => document.activeElement === document.querySelector(".gm-box .gm-dialog-body"));
+check(clickedOnMessage, "clicking the message also puts focus on it", "focus is on: " + JSON.stringify(await page.evaluate(() => document.activeElement && (document.activeElement.className || document.activeElement.tagName))));
+const reloadedB = page.waitForEvent("load", { timeout: 2000 }).then(() => true, () => false); // hygiene-ok: proving nothing happens takes a fixed window - a restore that wrongly went ahead reloads the page within 1.2 s
+await page.keyboard.press("Enter");
+check(!(await reloadedB), "Enter after clicking the message does not restore either", "the page reloaded, so an Enter after clicking the message confirmed the restore");
+check(await untouched() && await page.evaluate(() => !!document.querySelector(".gm-box")), "...the dialog is still open and nothing was restored", "srs:rg-A is now " + JSON.stringify(await getKv("srs:rg-A")));
+await page.keyboard.press("Escape");
+check(await dialogGone(), "Escape still backs out of it", "the dialog is still open");
+await page.setViewportSize(roomy);
+
+/* =====================================================================
    2) A device that has NOT moved past the file: no nag, and it still works
    ===================================================================== */
 console.log("\n-- a file this device has not moved past: dated, not warned, restores, and \"last backed up\" stays this device's --");
@@ -167,6 +201,31 @@ check(text4.includes("This backup file doesn't say when it was made."), "the con
 check(/This device already has study progress on it, and without a date there is no telling which is newer\./.test(text4), "...and, since this device has study progress, warns that the two cannot be told apart", "confirm text: " + JSON.stringify(text4));
 await page.locator(".gm-box button", { hasText: /^Cancel$/ }).click();
 await dialogGone();
+
+/* =====================================================================
+   4b) A file dated in the FUTURE (a phone whose clock runs ahead)
+   ===================================================================== */
+console.log("\n-- a file whose date is later than today is not believed --");
+for (const [label, ms] of [["400 days ahead", Date.now() + 400 * DAY], ["the year 2999", Date.UTC(2999, 11, 31, 12, 0, 0)]]) {
+  await chooseOnProfile(backup(ms, [card("rg-A", 4, 10, T - 5 * DAY)]));
+  const t = await confirmText();
+  check(/looks wrong/.test(t) && !/\(today\)|\(\d+ days? ago\)|This backup was made on/.test(t), "a file dated " + label + " says its date looks wrong, and does not call it \"today\"", "confirm text: " + JSON.stringify(t));
+  check(/This device already has study progress on it, and with a date that can't be trusted there is no telling which is newer\./.test(t) && /choose Cancel, use Export backup, then import again/.test(t), "...and warns as it would for a file with no date, because this device has study progress", "confirm text: " + JSON.stringify(t));
+  check(!/You have used GUIDON on this device since then/.test(t), "...never claiming it knows the device was used \"since then\"", "confirm text: " + JSON.stringify(t));
+  await page.locator(".gm-box button", { hasText: /^Cancel$/ }).click();
+  await dialogGone();
+}
+await chooseOnProfile(backup(Date.now() + 20000, [card("rg-A", 4, 10, T - 5 * DAY)]));
+const textSkew = await confirmText();
+check(/\(today\)/.test(textSkew) && !/looks wrong/.test(textSkew), "a file dated a few seconds ahead (two clocks that differ a little) is still just \"today\"", "confirm text: " + JSON.stringify(textSkew));
+await page.locator(".gm-box button", { hasText: /^Cancel$/ }).click();
+await dialogGone();
+const dateUnit = await page.evaluate(() => ({
+  future: G.backup.describeBackupDate(new Date(Date.now() + 400 * 86400000).toISOString()),
+  far: G.backup.describeBackupDate("2999-12-31T12:00:00.000Z"),
+  past: G.backup.describeBackupDate(new Date(Date.now() - 2 * 86400000).toISOString()),
+}));
+check(dateUnit.future === "" && dateUnit.far === "" && /\(2 days ago\)$/.test(dateUnit.past), "describeBackupDate gives nothing for a date that has not happened yet, and still dates a past one", "describeBackupDate: " + JSON.stringify(dateUnit));
 
 /* =====================================================================
    5) What "used since" means, measured against the data the app really keeps
@@ -222,15 +281,69 @@ await page.evaluate(() => {
 await chooseOnProfile(backup(Date.now(), [card("rg-FULL", 1, 1, Date.now())]));
 await confirmText();
 await focusIsOn("Cancel");
-const reloadAfterFail = page.waitForEvent("load", { timeout: 20000 });
 await page.locator(".gm-box button", { hasText: /^OK$/ }).click();
 const failShown = await until(page, () => /did not finish/.test((document.querySelector(".backup-panel .backup-status") || {}).textContent || ""));
 const failMsg = await status();
 check(failShown && /The restore did not finish: your settings and progress could not be saved to this device\. Free up some space and try again\./.test(failMsg), "the restore says it did not finish, names what was lost in plain words, and what to do", "status: " + JSON.stringify(failMsg));
 check(!/\bkv\b|\bstores?\b|quota|abort|indexeddb/i.test(failMsg), "...with no storage vocabulary (it used to say \"(kv)\")", "status: " + JSON.stringify(failMsg));
-await reloadAfterFail;
+// The page used to reload 1.2 s later, which erased this very message. A failed restore stays on screen.
+const reloadedOnFail = await page.waitForEvent("load", { timeout: 3500 }).then(() => true, () => false); // hygiene-ok: the message has to still be there well after the 1.2 s the page used to reload at
+const stillThere = await status();
+check(!reloadedOnFail, "...and the page does NOT reload behind it (it used to, 1.2 s later)", "the page reloaded after a failed restore");
+check(/The restore did not finish/.test(stillThere) && !/Reloading/.test(stillThere), "...and the message is still on screen 3.5 s later, with no \"Reloading...\" in it", "status after 3.5 s: " + JSON.stringify(stillThere));
+check((await page.locator(".backup-panel .backup-status button", { hasText: /^Reload GUIDON$/ }).count()) === 1, "...with a plain Reload button under it, for the Soldier to press when ready", "no Reload button in the status");
+
+console.log("\n-- the same failure from Settings stays up as well --");
+await chooseOnSettings(backup(Date.now(), [card("rg-FULL", 1, 1, Date.now())]));
+await confirmText();
+await focusIsOn("Cancel");
+await page.locator(".gm-box button", { hasText: /^OK$/ }).click();
+const settingsNote = "#settings-databackup-panel .backup-status";
+const failShownS = await until(page, (sel) => { const n = document.querySelector(sel); return !!n && !n.hidden && /did not finish/.test(n.textContent || ""); }, settingsNote);
+check(failShownS, "Settings says the restore did not finish, on the page itself (not only in a toast that fades)", "no failure note in the Data & Backup panel");
+const reloadedOnFailS = await page.waitForEvent("load", { timeout: 3500 }).then(() => true, () => false); // hygiene-ok: the note has to still be there well after the 1.2 s the page used to reload at
+check(!reloadedOnFailS, "...and the page does not reload behind it", "the page reloaded after a failed restore from Settings");
+const settingsText = await page.evaluate((sel) => { const n = document.querySelector(sel); return n && !n.hidden ? n.textContent : ""; }, settingsNote);
+check(/The restore did not finish: your settings and progress could not be saved to this device\. Free up some space and try again\./.test(settingsText) && !/Reloading/.test(settingsText), "...in the same plain words, still on screen 3.5 s later", "note: " + JSON.stringify(settingsText));
+const reloadedByButton = page.waitForEvent("load", { timeout: 20000 });
+await page.locator(settingsNote + " button", { hasText: /^Reload GUIDON$/ }).click();
+await reloadedByButton;
 await waitForBoot(page);
-check((await getKv("srs:rg-FULL")) === undefined, "...and none of that file's rows reached the device", "srs:rg-FULL is on the device");
+check((await getKv("srs:rg-FULL")) === undefined, "...and none of that file's rows reached the device (the Reload button reloads when the Soldier chooses)", "srs:rg-FULL is on the device");
+
+/* =====================================================================
+   7) Restoring a normal backup on the device that made it keeps that device's roster reminders
+   ===================================================================== */
+console.log("\n-- a normal backup does not carry roster reminders, so a restore must not erase this device's --");
+const ids = async () => ((await getKv("reminders:v1")) || []).map((r) => r.id).sort();
+await page.evaluate(async () => {
+  await G.db.put("kv", { k: "guidon:leader:roster:v1", v: [{ rank: "SGT", name: "J.D.X", mos: "" }] });
+  await G.db.put("kv", { k: "reminders:v1", v: [
+    { id: "own1", kind: "board", label: "My board", date: "2030-01-01", note: "", source: "" },
+    { id: "ldr1", kind: "counseling", label: "Counsel SGT J.D.X", date: "2030-01-02", note: "", source: "leader" },
+    { id: "ldr2", kind: "acft", label: "Schedule AFT for SGT J.D.X", date: "2030-01-03", note: "" },
+  ] });
+});
+const normal = await page.evaluate(() => G.backup.exportAll());
+const inNormal = (normal.stores.kv.find((r) => r.k === "reminders:v1") || {}).v || [];
+check(inNormal.length === 1 && inNormal[0].id === "own1", "fixture: a normal backup carries only the Soldier's own reminder", "reminders in the file: " + JSON.stringify(inNormal));
+await chooseOnProfile(normal);
+const text7 = await confirmText();
+check(/The 2 reminders you made from the leader roster on this device stay too, because a normal backup doesn't carry them\./.test(text7), "the confirm says this device's 2 roster reminders stay (one stamped, one an older unstamped one)", "confirm text: " + JSON.stringify(text7));
+check(!/\bkv\b|reminders:v1|\bsource\b|\bstamp/i.test(text7), "...in a Soldier's words", "confirm text: " + JSON.stringify(text7));
+await andWaitForReload(() => page.locator(".gm-box button", { hasText: /^OK$/ }).click());
+check(JSON.stringify(await ids()) === JSON.stringify(["ldr1", "ldr2", "own1"]), "after restoring, the roster reminders are still there next to the Soldier's own (3 reminders, none lost, none doubled)", "reminder ids: " + JSON.stringify(await ids()));
+check(((await getKv("guidon:leader:roster:v1")) || []).length === 1, "...and the roster itself is untouched", "roster: " + JSON.stringify(await getKv("guidon:leader:roster:v1")));
+// A reminder the FILE holds wins over this device's copy of the same one and is not added twice.
+const edited = JSON.parse(JSON.stringify(normal));
+edited.stores.kv.find((r) => r.k === "reminders:v1").v.push({ id: "ldr1", kind: "counseling", label: "Counsel SGT J.D.X", date: "2031-05-05", note: "", source: "leader" });
+const merged = await page.evaluate(async (file) => { const r = await G.backup.importAll(file); return { failed: r.failedStores, list: (await G.db.get("kv", "reminders:v1")).v }; }, edited);
+check(merged.failed.length === 0 && merged.list.filter((r) => r.id === "ldr1").length === 1 && merged.list.find((r) => r.id === "ldr1").date === "2031-05-05" && merged.list.some((r) => r.id === "ldr2") && merged.list.length === 3, "a roster reminder the file itself holds takes the file's version, appears once, and the device's other one is still kept", "reminders after: " + JSON.stringify(merged.list));
+// When the file carries the roster too (the "include" backup), the roster and its reminders come from the file together.
+const included = await page.evaluate(() => G.backup.exportAll({ includePrivate: true }));
+await page.evaluate(async () => { const l = (await G.db.get("kv", "reminders:v1")).v; l.push({ id: "ldr3", kind: "counseling", label: "Counsel SGT J.D.X", date: "2032-01-01", note: "", source: "leader" }); await G.db.put("kv", { k: "reminders:v1", v: l }); });
+const viaInclude = await page.evaluate(async (file) => { await G.backup.importAll(file); return (await G.db.get("kv", "reminders:v1")).v.map((r) => r.id).sort(); }, included);
+check(!viaInclude.includes("ldr3") && viaInclude.includes("ldr1") && viaInclude.includes("ldr2"), "a backup that includes the roster restores the roster's reminders exactly as the file has them (nothing from this device is mixed in)", "reminder ids: " + JSON.stringify(viaInclude));
 
 expectNoConsoleNoise(noise);
 await finish("BACKUP RESTORE GUARD");

@@ -21,7 +21,7 @@
  * Every "the failure is caught" check below has a sibling that proves the
  * ordinary save still works, still resolves after the commit, and stays quiet.
  */
-import { bootApp, ok, bad, check, finish, until, untilAsync, waitForBoot, PERSONAL_PROFILE, expectNoConsoleNoise } from "./testkit.mjs";
+import { bootApp, ok, bad, check, finish, until, untilAsync, waitForBoot, waitForRoute, PERSONAL_PROFILE, expectNoConsoleNoise } from "./testkit.mjs";
 
 const boot = await bootApp({ profile: { ...PERSONAL_PROFILE } });
 const { page, noise } = boot;
@@ -149,7 +149,7 @@ check(entries.length === 1 && /was not saved/.test(entries[0].detail || "") && !
 check(entries.length === 1 && /cancelled/.test(entries[0].detail || ""), "...and says why in words (the save was cancelled)", "trail detail: " + JSON.stringify(entries[0]));
 check(shown.length === 1 && !/out of space/.test(shown[0]), "a cancelled save with no stated reason does not claim to know the device is full (\"" + (shown[0] || "") + "\")", "notice text: " + JSON.stringify(shown));
 
-// A burst of failures must not machine-gun the Soldier: one notice, one entry.
+// A burst of failures must not machine-gun the Soldier: one notice on screen - but the trail keeps EVERY lost save.
 const burst = await page.evaluate(async () => {
   const out = [];
   for (let i = 0; i < 5; i++) out.push(await window.__settle(G.db.put("kv", { k: "__ack:burst" + i, v: i })));
@@ -157,9 +157,12 @@ const burst = await page.evaluate(async () => {
 });
 check(burst.every((o) => o.startsWith("rejected")), "five more cancelled saves in a row all report failure", "burst: " + JSON.stringify(burst));
 await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+const entriesAfterBurst = await untilAsync(page, async () => (await G.selfheal.recent(200)).filter((e) => e.kind === "storage-write-fail").length >= 6)
+  .then(() => storageLogEntries());
 const afterBurst = await storageNotices();
-const entriesAfterBurst = await storageLogEntries();
-check(afterBurst.length === 1 && entriesAfterBurst.length === 1, "...but the notice and the trail entry stay at one (throttled)", "notices=" + afterBurst.length + " entries=" + entriesAfterBurst.length);
+check(afterBurst.length === 1, "...but the on-screen notice stays at one (throttled)", "notices=" + afterBurst.length);
+const burstKeys = entriesAfterBurst.map((e) => e.key);
+check(entriesAfterBurst.length === 6 && [0, 1, 2, 3, 4].every((i) => burstKeys.includes("__ack:burst" + i)), "...while the Diagnostics trail names every one of the six lost saves, not only the first", "trail keys: " + JSON.stringify(burstKeys));
 
 // Past the throttle window a fresh failure speaks up again.
 await resetScenario({ advanceClockMs: 10 * 60 * 1000 });
@@ -283,6 +286,34 @@ const unhandled = await page.evaluate(() => window.__unhandled);
 check(forgottenSeen, "a save nobody waited on (fire-and-forget, like the settings save) still triggers the one notice", "no notice for an un-awaited failed save");
 check(unhandled === 0, "...without raising an unhandled error", "unhandledrejection events: " + unhandled);
 await page.evaluate(() => { window.__fault.abortPrefix = null; });
+
+/* ---------- the commonest save: grading a Board Drill card ---------- */
+console.log("\n-- a card grade that cannot be saved: the cause stays on screen, then the caller's own words --");
+await waitForRoute(page, "#/board", { fresh: true, ready: ".qz-card" });
+await installInstruments();
+await resetScenario({ advanceClockMs: 10 * 60 * 1000 });
+await page.evaluate(() => { window.__fault.abortPrefix = "srs:"; window.__fault.txError = "QuotaExceededError"; });
+const gradeOnce = async () => {
+  await page.evaluate(() => { const w = document.querySelector(".qz-wrap"); if (w) w.focus(); });
+  await page.keyboard.press("Space");
+  await until(page, () => !!document.querySelector(".qz-card.flipped"));
+  await page.evaluate(() => document.querySelector(".qz-grade-btn.qz-grade-2").click());
+};
+await gradeOnce();
+const causeUp = await until(page, () => window.__toasts.some((t) => /out of space/i.test(t)));
+await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+const gradeToast = await page.evaluate(() => ({ visible: (document.getElementById("toast") || {}).textContent || "", callerSaid: window.__toasts.filter((t) => /couldn.t save that grade/i.test(t)).length }));
+check(causeUp && /because this device is out of space/.test(gradeToast.visible), "a grade the device refuses leaves the \"out of space\" notice on screen: \"" + gradeToast.visible + "\"", "toast on screen: " + JSON.stringify(gradeToast));
+check(gradeToast.callerSaid === 0, "...and the drill's own \"Couldn't save that grade\" does not replace it (the cause is the useful part)", "the caller's toast replaced the notice: " + JSON.stringify(gradeToast));
+// Seconds later the storage notice is throttled, so now the drill speaks for itself instead of staying silent.
+await resetScenario({ advanceClockMs: 4000 });
+await page.evaluate(() => { window.__fault.abortPrefix = "srs:"; window.__fault.txError = "QuotaExceededError"; });
+await gradeOnce();
+const callerSpoke = await until(page, () => window.__toasts.some((t) => /couldn.t save that grade/i.test(t)));
+check(callerSpoke && !(await storageNotices()).length, "a few seconds later, with the storage notice throttled, the drill's own \"Couldn't save that grade\" is shown (a failed grade is never silent)", "toasts: " + JSON.stringify(await page.evaluate(() => window.__toasts)));
+const gradeTrail = (await storageLogEntries()).filter((e) => typeof e.key === "string" && e.key.indexOf("srs:") === 0);
+check(gradeTrail.length >= 2, "...and the Diagnostics trail names both lost grades (" + gradeTrail.length + " entries for srs: rows)", "trail: " + JSON.stringify(gradeTrail.map((e) => e.key)));
+await page.evaluate(() => { window.__fault.abortPrefix = null; window.__fault.txError = null; });
 
 /* =====================================================================
    3) The kv read cache cannot go stale behind an overlapping write
