@@ -168,6 +168,49 @@ countAfterRevisit === countAfterFirst
   ? ok("revisiting the page and clicking 'Remind me' again does not create a duplicate reminder (" + countAfterFirst + " -> " + countAfterRevisit + ")")
   : bad("reminder count grew from a revisit+re-click: " + countAfterFirst + " -> " + countAfterRevisit);
 
+// --- a "Remind me" label names the Soldier, so those reminders leave a default
+// backup WITH the roster (audit 2026-09: the initials rode every backup and were
+// counted as excluded zero times, while the roster itself stayed out). ---
+{
+  const FUTURE = daysAgo(-40);
+  const probe = await page.evaluate(async (due) => {
+    const own = [
+      { kind: "board", label: "Promotion board day", date: due },
+      { kind: "counseling", label: "Counsel my mentor about the packet", date: due },
+    ];
+    for (const r of own) await window.G.reminders.add(r);
+    // The MOI briefing reminder stamps its own source ("leader-moi:<n>").
+    await window.G.reminders.addManaged({ kind: "other", label: "Brief SPC J.R. on the MOI", date: due, source: "leader-moi:0" });
+    const labelsOf = (p) => (((p.stores.kv.find((r) => r.k === "reminders:v1") || {}).v) || []).map((r) => r.label);
+    const dflt = await window.G.backup.exportAll();
+    const optIn = await window.G.backup.exportAll({ includePrivate: true });
+    // Reminders written before the "source" stamp existed: same labels, no stamp.
+    // (The MOI briefing reminder always had its own stamp, so it keeps it.)
+    const rows = (await window.G.reminders.load()).map((r) => { const c = Object.assign({}, r); if (c.source === "leader") delete c.source; return c; });
+    await window.G.db.put("kv", { k: "reminders:v1", v: rows });
+    const legacy = await window.G.backup.exportAll();
+    const stamped = (await window.G.reminders.load()).length;
+    return { dflt: labelsOf(dflt), excluded: dflt.excludedPrivateEntries, optIn: labelsOf(optIn), legacy: labelsOf(legacy), legacyExcluded: legacy.excludedPrivateEntries, total: stamped };
+  }, FUTURE);
+  const named = (labels) => labels.filter((l) => /J\.R\./.test(l));
+  probe.total >= 7 && probe.dflt.length > 0 ? ok("fixture: the device holds the Soldier's roster reminders plus their own (" + probe.total + " in all)") : bad("fixture: " + JSON.stringify(probe));
+  named(probe.dflt).length === 0
+    ? ok("a default backup carries no reminder that names a roster Soldier (none of the 4 'Remind me' buttons, nor the MOI briefing one)")
+    : bad("roster name in a default backup's reminders: " + JSON.stringify(named(probe.dflt)));
+  probe.dflt.includes("Promotion board day") && probe.dflt.includes("Counsel my mentor about the packet")
+    ? ok("the Soldier's own reminders stay in the default backup, even one that starts with 'Counsel '")
+    : bad("own reminders went missing from the default backup: " + JSON.stringify(probe.dflt));
+  probe.excluded === 2
+    ? ok("the backup counts what it left out: the roster and the roster's reminders (2)")
+    : bad("excludedPrivateEntries was " + probe.excluded + ", expected 2 (roster + roster reminders)");
+  named(probe.optIn).length === 5
+    ? ok("with 'include the roster' ticked, all 5 roster reminders go along with it")
+    : bad("opt-in backup carried " + named(probe.optIn).length + " roster reminders, expected 5: " + JSON.stringify(probe.optIn));
+  named(probe.legacy).length === 0 && probe.legacy.includes("Counsel my mentor about the packet")
+    ? ok("reminders made before the source stamp existed are recognised by their exact label too, and a typed 'Counsel ...' one stays")
+    : bad("unstamped roster reminders in a default backup: " + JSON.stringify(probe.legacy));
+}
+
 // --- persistence ---
 await page.reload({ waitUntil: "load" });
 await page.waitForTimeout(1400);

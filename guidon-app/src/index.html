@@ -1631,25 +1631,38 @@ html.qz-theater[data-motion="minimal"] .qz-back { max-height: none; }
 
 /* Guided blocks */
 .blk { border-left: 2px solid var(--line-2); padding: 8px 0 8px 12px; margin: 8px 0; }
-.blk-label { font-weight: 700; color: var(--fg, #e8f0f6); }
+/* Colour tokens in this block are the app's real theme tokens (--text,
+   --text-dim, --ink-cyan). They used to read var(--fg, #e8f0f6) and
+   var(--muted, #8ba0ad) - names no theme has ever defined - so every light
+   theme (the default, Field Manual, is one) fell back to fixed PALE colours:
+   the Article 31(b) rights text on DA 2823/3881 and the DA 4856 counseling
+   opener bullets measured 1.04-1.08:1 on cream, effectively invisible.
+   tools/lint-patterns.mjs (check (t)) now refuses any
+   var(--x) that names no defined token, and tools/test-contrast-forms.mjs
+   opens every form in three themes and fails on a contrast miss. The small
+   grey labels use --text-dim (>=4.5:1 on --panel in all 30 themes) rather
+   than --text-mute, the same per-selector choice .qz-back .src made (see
+   its note above); --text-mute itself is an app-wide token and is not
+   retuned here. */
+.blk-label { font-weight: 700; color: var(--text); }
 .example-chip { display:inline-block; margin-top:6px; background:transparent; border:1px solid var(--line-2);
-  color: var(--cyan); border-radius: 999px; padding: 3px 12px; font-size: .75rem; cursor:pointer; font-family: var(--font-mono, monospace); }
+  color: var(--ink-cyan); border-radius: 999px; padding: 3px 12px; font-size: .75rem; cursor:pointer; font-family: var(--font-mono, monospace); }
 .example-chip:hover { border-color: var(--cyan); }
 .ex { margin-top: 8px; padding: 8px 10px; background: var(--panel-2); border:1px solid var(--line);
-  border-radius: 6px; color: var(--fg, #cfe0ea); font-size: .81rem; }
+  border-radius: 6px; color: var(--text); font-size: .81rem; }
 .ex-list { margin: 0; padding-left: 4px; list-style: none; }
 .ex-list li { margin: 3px 0; }
 
 /* Fill fields */
 .field { margin: 10px 0; }
 .field-label { display:block; font-weight:700; margin-bottom:4px; font-size: .81rem; }
-.in { width:100%; background: var(--panel-2); color: var(--fg, #e8f0f6); border:1px solid var(--line-2);
+.in { width:100%; background: var(--panel-2); color: var(--text); border:1px solid var(--line-2);
   border-radius:6px; padding:8px 10px; font-family: inherit; font-size: .875rem; box-sizing: border-box; }
 textarea.in { resize: vertical; min-height: 64px; font-family: var(--font-mono, monospace); font-size: .81rem; }
 select.in { appearance:none; }
-.cnt { font-size: .69rem; color: var(--muted, #8ba0ad); margin-top:3px; font-family: var(--font-mono, monospace); }
+.cnt { font-size: .69rem; color: var(--text-dim); margin-top:3px; font-family: var(--font-mono, monospace); }
 .cnt.over { color: var(--ink-red); }
-.static-note { background: var(--panel-2); border:1px dashed var(--line-2); border-radius:6px; padding:8px 10px; font-size: 0.929rem; color: var(--fg,#cfe0ea); }
+.static-note { background: var(--panel-2); border:1px dashed var(--line-2); border-radius:6px; padding:8px 10px; font-size: 0.929rem; color: var(--text); }
 .fault-expl { margin-top:4px; color: var(--cyan); }
 .fill-bar { margin-bottom: 10px; flex-wrap: wrap; }
 .dyn-note { margin: 6px 0 4px; }
@@ -1658,8 +1671,8 @@ select.in { appearance:none; }
 .lib-bullet { border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin:8px 0; background: var(--panel); }
 .lib-top { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:4px; }
 .lib-label { font-weight:700; color: var(--amber); font-size: .81rem; }
-.lib-text { font-size: .81rem; color: var(--fg,#dbe7ef); line-height:1.45; }
-.copybtn { background:transparent; border:1px solid var(--line-2); color:var(--cyan); border-radius:6px;
+.lib-text { font-size: .81rem; color: var(--text); line-height:1.45; }
+.copybtn { background:transparent; border:1px solid var(--line-2); color:var(--ink-cyan); border-radius:6px;
   padding:2px 10px; font-size: 0.857rem; cursor:pointer; flex:0 0 auto; }
 .copybtn:hover { border-color: var(--cyan); }
 
@@ -1697,7 +1710,7 @@ select.in { appearance:none; }
 }
 .replica-block.w1{ grid-column:span 1; } .replica-block.w2{ grid-column:span 2; }
 .replica-block.w3{ grid-column:span 3; } .replica-block.w4{ grid-column:span 4; }
-.replica-block .rb-label{ font-family:var(--font-mono); font-size:10.5px; color:var(--text-mute); text-transform:uppercase; letter-spacing:.03em; margin-bottom:5px; line-height:1.3; }
+.replica-block .rb-label{ font-family:var(--font-mono); font-size:10.5px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.03em; margin-bottom:5px; line-height:1.3; }
 .replica-block .rb-label .rb-n{ color:var(--amber); font-weight:700; }
 .replica-block .rb-input{ width:100%; }
 .replica-block .cnt{ margin-top:4px; }
@@ -1712,7 +1725,7 @@ select.in { appearance:none; }
 .usecases{ border:1px solid var(--line-2); border-radius:var(--radius); background:var(--panel); margin:6px 0 14px; overflow:hidden; }
 .uc-head{ display:flex; align-items:center; justify-content:space-between; padding:9px 12px; background:linear-gradient(180deg,var(--panel-2),transparent); border-bottom:1px solid var(--line); }
 .uc-title{ font-family:var(--font-head); text-transform:uppercase; letter-spacing:.05em; color:var(--cyan); font-size: 0.929rem; }
-.uc-count{ font-family:var(--font-mono); font-size:10.5px; color:var(--text-mute); }
+.uc-count{ font-family:var(--font-mono); font-size:10.5px; color:var(--text-dim); }
 .uc-item{ padding:9px 12px; border-bottom:1px solid var(--line); }
 .uc-item:last-child{ border-bottom:none; }
 .uc-item-top{ display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap; }
@@ -1723,8 +1736,8 @@ select.in { appearance:none; }
 .uc-title-sm{ font-family:var(--font-head); font-size: 0.929rem; color:var(--text); letter-spacing:.02em; }
 .uc-sit{ color:var(--text-dim); font-size:12.5px; line-height:1.5; }
 .uc-act{ color:var(--text-dim); font-size: 0.857rem; line-height:1.5; margin-top:3px; }
-.uc-act-k{ color:var(--text-mute); font-family:var(--font-mono); font-size:10.5px; text-transform:uppercase; letter-spacing:.03em; }
-.uc-ref{ color:var(--text-mute); font-family:var(--font-mono); font-size: 0.714rem; margin-top:4px; }
+.uc-act-k{ color:var(--text-dim); font-family:var(--font-mono); font-size:10.5px; text-transform:uppercase; letter-spacing:.03em; }
+.uc-ref{ color:var(--text-dim); font-family:var(--font-mono); font-size: 0.714rem; margin-top:4px; }
 
 /* ===================== Engine — dialogue & storyline ===================== */
 .dialogue{ margin:10px 0 4px; display:flex; flex-direction:column; gap:8px; }
@@ -5763,7 +5776,7 @@ html.focus-mode .status-chip { opacity:.5; }
 .idp-intro .sub{color:var(--text-mute);font-size:.86rem;margin:0 0 8px}
 .idp-var-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:8px 0 4px}
 .idp-var{padding:12px 14px}
-.idp-var.mandatory{border-left:3px solid var(--accent,#b8860b)}
+.idp-var.mandatory{border-left:3px solid var(--amber)}
 .idp-var-name{display:flex;justify-content:space-between;align-items:center;gap:8px;font-family:"Oswald",system-ui;font-size:.95rem;margin-bottom:5px}
 .idp-var-desc{font-size:.85rem;line-height:1.45;margin:0 0 6px}
 .chip.req{background:var(--red);color:var(--btn-ink, #fff)}.chip.opt{background:var(--green);color:var(--btn-ink, #fff)}
@@ -5773,20 +5786,20 @@ html.focus-mode .status-chip { opacity:.5; }
 .idp-planner-help{font-size:.85rem;line-height:1.4;color:var(--text-mute)}
 .idp-smart{display:flex;flex-direction:column;gap:6px;margin:6px 0}
 .idp-smart-item{display:flex;gap:10px;align-items:flex-start}
-.idp-smart-k{flex:0 0 28px;height:28px;line-height:28px;text-align:center;border-radius:6px;background:var(--accent,#b8860b);color:var(--btn-ink, #fff);font-family:"Oswald",system-ui;font-weight:600}
+.idp-smart-k{flex:0 0 28px;height:28px;line-height:28px;text-align:center;border-radius:6px;background:var(--amber);color:var(--btn-ink, #fff);font-family:"Oswald",system-ui;font-weight:600}
 .idp-smart-body{font-size:.87rem;line-height:1.5}
-.idp-smart-ex{margin:8px 0;padding:10px 12px;border-left:3px solid var(--accent,#b8860b);background:rgba(184,134,11,.08);border-radius:0 6px 6px 0;font-size:.85rem}
+.idp-smart-ex{margin:8px 0;padding:10px 12px;border-left:3px solid var(--amber);background:rgba(184,134,11,.08);border-radius:0 6px 6px 0;font-size:.85rem}
 .idp-reflect{margin:6px 0;padding-left:20px}.idp-reflect li{margin:4px 0;font-size:.87rem;line-height:1.45}
 .cite{font-size:.72rem;color:var(--text-mute);font-style:italic;margin-top:3px}
 @media (prefers-reduced-motion: reduce){.idp-var,.idp-planner-row{transition:none}}
 
 /* ── IDP rank-aware suggestions + SMART builder (v0.48) ── */
 .idp-suggest{margin:10px 0}
-.idp-suggest-head{font-family:"Oswald",system-ui;font-size:.82rem;color:var(--accent,#b8860b);letter-spacing:.03em;margin-bottom:6px}
+.idp-suggest-head{font-family:"Oswald",system-ui;font-size:.82rem;color:var(--ink-amber);letter-spacing:.03em;margin-bottom:6px}
 .idp-suggest-strip{display:flex;flex-wrap:wrap;gap:8px}
 .idp-suggest-chip{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:8px 11px;border:1px solid var(--line,#c9bd9e);border-radius:8px;background:var(--panel,#f4eeda);cursor:pointer;text-align:left;min-height:44px;transition:transform .12s ease,border-color .12s ease}
-.idp-suggest-chip:hover{border-color:var(--accent,#b8860b);transform:translateY(-1px)}
-.idp-suggest-chip:focus-visible{outline:2px solid var(--accent,#b8860b);outline-offset:2px}
+.idp-suggest-chip:hover{border-color:var(--amber);transform:translateY(-1px)}
+.idp-suggest-chip:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
 .idp-suggest-title{font-size:.85rem;font-weight:600}
 .idp-suggest-meta{font-size:.7rem;color:var(--text-mute,#5b5344)}
 .idp-smart-build{margin:10px 0;border:1px solid var(--line,#c9bd9e);border-radius:8px;background:var(--panel,#f4eeda);padding:6px 12px}
@@ -5794,23 +5807,23 @@ html.focus-mode .status-chip { opacity:.5; }
 .idp-smart-build summary:hover{color:var(--amber)}
 .idp-smart-build-body{padding:6px 0 10px}
 .idp-smart-prompt{font-weight:400;color:var(--text-mute,#5b5344);font-size:.8rem}
-.idp-smart-preview{margin:8px 0;padding:10px 12px;border-left:3px solid var(--accent,#b8860b);background:rgba(184,134,11,.08);border-radius:0 6px 6px 0;font-size:.86rem;min-height:20px}
+.idp-smart-preview{margin:8px 0;padding:10px 12px;border-left:3px solid var(--amber);background:rgba(184,134,11,.08);border-radius:0 6px 6px 0;font-size:.86rem;min-height:20px}
 .idp-smart-actions{display:flex;gap:8px;flex-wrap:wrap}
 @media (prefers-reduced-motion: reduce){.idp-suggest-chip{transition:none}}
 
 /* ── IDP progress dashboard (v0.48) ── */
 .idp-dash{margin:12px 0;padding:14px;border:1px solid var(--line,#c9bd9e);border-radius:8px;background:var(--panel,#f4eeda)}
 .idp-dash-head{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}
-.idp-dash-pct{font-family:"Oswald",system-ui;font-size:1.8rem;font-weight:700;color:var(--accent,#b8860b)}
+.idp-dash-pct{font-family:"Oswald",system-ui;font-size:1.8rem;font-weight:700;color:var(--ink-amber)}
 .idp-dash-label{font-size:.84rem;color:var(--text-mute,#5b5344)}
 .idp-dash-bar{height:10px;border-radius:99px;background:rgba(0,0,0,.08);overflow:hidden;margin-bottom:12px}
-.idp-dash-fill{height:100%;width:100%;background:var(--accent,#b8860b);border-radius:99px;transform-origin:left;transition:transform .4s ease}
+.idp-dash-fill{height:100%;width:100%;background:var(--amber);border-radius:99px;transform-origin:left;transition:transform .4s ease}
 .idp-dash-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
 .idp-dash-group-title{font-family:"Oswald",system-ui;font-size:.76rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-mute,#5b5344);margin-bottom:5px}
 .idp-dash-row{display:flex;align-items:center;gap:8px;margin:4px 0}
 .idp-dash-row-label{flex:0 0 34%;font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .idp-dash-mini{flex:1;height:7px;border-radius:99px;background:rgba(0,0,0,.08);overflow:hidden}
-.idp-dash-mini-fill{height:100%;width:100%;background:var(--olive,#4b5320);border-radius:99px;transform-origin:left;transition:transform .4s ease}
+.idp-dash-mini-fill{height:100%;width:100%;background:var(--green);border-radius:99px;transform-origin:left;transition:transform .4s ease}
 .idp-dash-row-count{flex:0 0 auto;font-size:.74rem;color:var(--text-mute,#5b5344);font-variant-numeric:tabular-nums}
 @media (prefers-reduced-motion: reduce){.idp-dash-fill,.idp-dash-mini-fill{transition:none}}
 
@@ -5831,10 +5844,10 @@ html.focus-mode .status-chip { opacity:.5; }
 
 /* ── Promotion-points calculator (v0.49 Wave 2) ── */
 .promo-calc .promo-total{font-size:1.6rem;font-weight:700;font-variant-numeric:tabular-nums;margin:6px 0 2px}
-.promo-total-num{color:var(--accent,#4b5320)}
+.promo-total-num{color:var(--ink-green)}
 .promo-total-max{font-size:1rem;font-weight:400;color:var(--text-mute,#5b5344)}
 .promo-bar{height:10px;border-radius:6px;background:var(--line,#c9bd9e);overflow:hidden;margin:2px 0 10px}
-.promo-bar-fill{height:100%;background:var(--accent,#4b5320);width:100%;transform:scaleX(0);transform-origin:left;transition:transform .18s ease}
+.promo-bar-fill{height:100%;background:var(--green);width:100%;transform:scaleX(0);transform-origin:left;transition:transform .18s ease}
 .promo-cat{margin:10px 0}
 .promo-cat-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 .promo-cat-label{font-weight:600;font-size:.9rem}
@@ -5844,9 +5857,9 @@ html.focus-mode .status-chip { opacity:.5; }
 .promo-goal-row{display:flex;align-items:center;gap:10px;margin:8px 0 4px;flex-wrap:wrap}
 .promo-goal-row input{width:120px}
 .promo-gap{font-size:.85rem;font-weight:600;min-height:1.1em;margin:2px 0}
-.promo-gap.under{color:var(--warn,#8c2f2f)}
-.promo-gap.over{color:var(--accent,#3a6b3a)}
-.promo-coach{font-size:.86rem;margin:8px 0;padding:8px 10px;border-left:3px solid var(--accent,#4b5320);background:var(--panel-2,rgba(75,83,32,.06));border-radius:0 6px 6px 0}
+.promo-gap.under{color:var(--ink-red)}
+.promo-gap.over{color:var(--ink-green)}
+.promo-coach{font-size:.86rem;margin:8px 0;padding:8px 10px;border-left:3px solid var(--green);background:var(--panel-2,rgba(75,83,32,.06));border-radius:0 6px 6px 0}
 .promo-coaching{margin:8px 0;font-size:.85rem}
 .promo-coaching summary{cursor:pointer;font-weight:600;transition:color .15s}
 .promo-coaching summary:hover{color:var(--amber)}
@@ -5857,8 +5870,8 @@ html.focus-mode .status-chip { opacity:.5; }
 /* ── Backup & restore (v0.49 Wave 2) ── */
 .backup-actions{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 4px}
 .backup-status{min-height:1.1em;margin-top:6px;font-size:.83rem}
-.backup-status.ok{color:var(--accent,#3a6b3a);font-weight:600}
-.backup-status.err{color:var(--warn,#8c2f2f);font-weight:600}
+.backup-status.ok{color:var(--ink-green);font-weight:600}
+.backup-status.err{color:var(--ink-red);font-weight:600}
 /* Upgrade-roadmap first wave, item 5: deliberately a DIFFERENT class from
    .backup-status above, not a second element sharing it - both Backup
    panels already had test/automation code doing
@@ -5866,21 +5879,21 @@ html.focus-mode .status-chip { opacity:.5; }
    specifically, and a same-named sibling would silently steal that match
    since querySelector returns the first one found. */
 .last-backup-status{min-height:1.1em;margin-top:6px;font-size:.83rem}
-.last-backup-status.stale{color:var(--warn,#8c2f2f);font-weight:600}
+.last-backup-status.stale{color:var(--ink-red);font-weight:600}
 
 /* Settings' Notifications panel: live OS permission + scheduled-count status,
    same visual language as .last-backup-status.stale above (a local flag
    disagreeing with the real, external truth). See views.settings' Notifications
    panel and notify.js's checkPermission()/getPendingCount(). */
 .notify-live-status{min-height:1.1em;margin-top:6px;font-size:.83rem}
-.notify-live-status.warn{color:var(--warn,#8c2f2f);font-weight:600}
+.notify-live-status.warn{color:var(--ink-red);font-weight:600}
 
 /* ── Topbar spotlight search button (v0.49 Wave 2) ── */
 .topbar-search-btn{background:transparent;border:1px solid var(--line,#c9bd9e);border-radius:8px;
   width:38px;height:38px;font-size:1.15rem;cursor:pointer;color:var(--text,#2c2a22);
   display:inline-flex;align-items:center;justify-content:center;margin-right:6px;line-height:1;
   transition:background .12s ease,border-color .12s ease}
-.topbar-search-btn:hover,.topbar-search-btn:focus-visible{background:var(--panel-2,rgba(75,83,32,.08));border-color:var(--accent,#4b5320)}
+.topbar-search-btn:hover,.topbar-search-btn:focus-visible{background:var(--panel-2,rgba(75,83,32,.08));border-color:var(--amber)}
 @media (max-width:640px){ .topbar-search-btn{min-height:44px;min-width:44px;width:44px;height:44px} }
 
 /* ── "My Readiness" home dashboard strip (v0.49 Wave 2, item 7) ── */
@@ -6368,7 +6381,7 @@ a.res-url:hover{text-decoration:underline}
 @keyframes quizWrongShake{10%,90%{transform:translateX(-1px)}20%,80%{transform:translateX(2px)}30%,50%,70%{transform:translateX(-4px)}40%,60%{transform:translateX(4px)}}
 .quiz-options{display:flex;flex-direction:column;gap:8px;margin:12px 0}
 .quiz-opt{display:flex;align-items:flex-start;gap:10px;text-align:left;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text);font-size:.92rem;line-height:1.4;cursor:pointer;transition:border-color var(--quiz-dur,.32s) var(--quiz-ease,ease),background-color var(--quiz-dur,.32s) var(--quiz-ease,ease),opacity var(--quiz-dur,.32s) var(--quiz-ease,ease)}
-.quiz-opt:hover:not(:disabled){border-color:var(--accent,var(--amber))}
+.quiz-opt:hover:not(:disabled){border-color:var(--amber)}
 .quiz-opt:disabled{cursor:default}
 .quiz-opt:disabled:not(.quiz-correct):not(.quiz-wrong){opacity:.55}
 .quiz-opt.quiz-correct{border-color:var(--green);background:color-mix(in srgb, var(--green) 15%, var(--panel));animation:quizCorrectPulse var(--quiz-dur,.32s) ease;}
@@ -21269,6 +21282,16 @@ window.G = window.G || {};
   }
 
   /* ---------- Fill (interactive practice) ---------- */
+  // The one plain line above every free-text surface in a form (the Form and
+  // Fill tabs). Both autosave as you type, and GUIDON cannot tell a made-up
+  // name from a real one - so it says so, in the place the Soldier is typing,
+  // and says where the draft goes. (The catalog's disclaimer and the print
+  // header already say "practice"; neither is on the screen with the cursor.)
+  // test:forms asserts it is on both tabs; the backup sentence is the same
+  // fact the Privacy Policy states and test:privacy keeps true.
+  var PRACTICE_NOTE = "Practice only. Use made-up names and numbers. GUIDON does not check what you type. Drafts stay on this device and are left out of a normal backup.";
+  function practiceNote() { return U.el("p", { class: "hint forms-practice-note" }, [PRACTICE_NOTE]); }
+
   function drawFill(f, host, mount) {
     // Enhancement backlog round 1, "Redundant re-renders" bucket: this
     // used to rely entirely on drawBody()'s own U.clear(host) before
@@ -21296,6 +21319,7 @@ window.G = window.G || {};
     var clearBtn = U.el("button", { class: "btn ghost" }, ["Clear"]);
     bar.appendChild(exBtn); bar.appendChild(saveBtn); bar.appendChild(printBtn); bar.appendChild(clearBtn);
     host.appendChild(bar);
+    host.appendChild(practiceNote());
 
     var noteHost = U.el("div", { class: "dyn-note" });
     host.appendChild(noteHost);
@@ -21707,6 +21731,7 @@ window.G = window.G || {};
       "STUDY / PRACTICE REPLICA — not the official DA form. Field layout re-creates " +
       (f.form || "the form") + " for training. Get the real, signable form from armypubs.army.mil."
     ]));
+    host.appendChild(practiceNote());
 
     // ---- optional PDF hook (mode 2 only; mode 3 "pdf-overlay" retired - see formsMode()) ----
     var pdfLayer = null;
@@ -30675,7 +30700,18 @@ window.G = window.G || {};
   // hold a facility name, a location and a vulnerability rating - the same
   // reasoning as the roster, even though its own disclaimer now asks for a
   // synthetic resource rather than a real one.
-  var PRIVATE_PREFIXES = ["guidon:leader:roster", "risk:all"];
+  //
+  // "forms:saved" (Forms Trainer drafts) joined the list in 2026-10 (audit,
+  // forms-privacy). It is the Soldier's own practice work, but its free-text
+  // fields are the one place another person's real identifiers can be typed in
+  // with nothing to check them: a DA 4856 counselee, DA 5960 dependents, a
+  // leave address. A draft autosaves as you type, so it reached a default
+  // backup the Soldier never chose to put it in; the roster's own precedent
+  // (no opt-in, no export) is the safe default, and the same "include" box is
+  // how a Soldier who wants drafts on a new device brings them. The cost is
+  // honest and stated in the Privacy Policy and on the Forms tabs: a normal
+  // backup does not carry form drafts, so a restore does not bring them back.
+  var PRIVATE_PREFIXES = ["guidon:leader:roster", "risk:all", "forms:saved"];
   function isPrivateKey(k) {
     k = String(k || "");
     for (var i = 0; i < PRIVATE_PREFIXES.length; i++) {
@@ -30683,6 +30719,9 @@ window.G = window.G || {};
     }
     return false;
   }
+  // Where a kv row keeps its payload: every row uses `.v`, except forms:saved,
+  // which has always stored its array under `.value` (see its validator below).
+  function privateValue(row) { return row && row.k === "forms:saved" ? row.value : row && row.v; }
   // Both call sites below (the export-time excluded-count and the
   // import-time warning) used to test Array.isArray(v) && v.length only -
   // true for every private key that existed when that check was written
@@ -30696,6 +30735,40 @@ window.G = window.G || {};
   function privateKeyHasContent(v) {
     if (Array.isArray(v)) return v.length > 0;
     if (v && typeof v === "object") return Object.keys(v).length > 0;
+    return false;
+  }
+
+  // Reminders the squad roster made. Its "Remind me" buttons write a label
+  // that NAMES the Soldier ("Counsel SGT JDX", "Brief SGT JDX on the MOI"),
+  // so that row is the roster's data under another key: left in, the
+  // initials rode every default backup - and were counted as excluded zero
+  // times - while the roster itself stayed out. Each is stamped with a
+  // `source` starting "leader" (leader.js), and that stamp is what is
+  // checked. Rows written before the stamp existed carry only the label, so
+  // for those the exact label the button wrote is recognised too: one of its
+  // four fixed leads, then "<rank> <name>" exactly as a roster entry reads.
+  // (Once a roster has been cleared, an old unstamped reminder can no longer
+  // be told from one the Soldier typed, and stays.)
+  var LEADER_REMINDER_LEADS = ["Counsel ", "Schedule AFT for ", "Schedule weapons qual for ", "Update NCOER thru-date for "];
+  function rosterLabels(kvRows) {
+    var out = [];
+    (kvRows || []).forEach(function (row) {
+      if (!row || row.k !== "guidon:leader:roster:v1" || !Array.isArray(row.v)) return;
+      row.v.forEach(function (s, i) {
+        if (!s || typeof s !== "object") return;
+        out.push((s.rank ? s.rank + " " : "") + (s.name || "Soldier " + (i + 1)));
+      });
+    });
+    return out;
+  }
+  function isLeaderReminder(r, rosterWho) {
+    if (!r || typeof r !== "object") return false;
+    if (typeof r.source === "string" && r.source.indexOf("leader") === 0) return true;
+    var label = String(r.label || "");
+    for (var i = 0; i < LEADER_REMINDER_LEADS.length; i++) {
+      var lead = LEADER_REMINDER_LEADS[i];
+      if (label.indexOf(lead) === 0 && rosterWho.indexOf(label.slice(lead.length)) !== -1) return true;
+    }
     return false;
   }
 
@@ -31134,24 +31207,41 @@ window.G = window.G || {};
     // caller instead of only to whichever dev tools happened to be open,
     // and logExportFail() above additionally makes it durable.
     var failedStores = [];
-    // kv holds profile/goals/drafts/srs — all the user's own. It ALSO holds the
-    // squad roster, which is other people's data, so that is excluded unless
-    // explicitly asked for.
+    // kv holds profile/goals/srs — all the user's own. It ALSO holds the squad
+    // roster (other people's data), the Risk Worksheet, the roster's own
+    // reminders and the Forms Trainer's saved drafts (free text that can name
+    // another person) - all excluded unless explicitly asked for.
     try {
       var kv = await G.db.all("kv");
       var excluded = 0;
       if (!opts.includePrivate) {
-        kv = kv.filter(function (row) {
-          if (!row || !isPrivateKey(row.k)) return true;
+        var rosterWho = rosterLabels(kv);
+        var kept = [];
+        kv.forEach(function (row) {
+          if (!row || !isPrivateKey(row.k)) {
+            // The one row that is not private itself but can carry a roster
+            // name inside it: reminders the squad roster's "Remind me" made
+            // ("Counsel SGT JDX"). Those leave with the roster; every other
+            // reminder, the Soldier's own, stays in the backup.
+            if (row && row.k === "reminders:v1" && Array.isArray(row.v)) {
+              var own = row.v.filter(function (r) { return !isLeaderReminder(r, rosterWho); });
+              if (own.length !== row.v.length) {
+                excluded++;
+                row = Object.assign({}, row, { v: own });
+              }
+            }
+            kept.push(row);
+            return;
+          }
           // Codex review on PR #193: private rows are wiped to an empty
           // value once the last thing in them is deleted/cleared -
           // counting that as "excluded" told a Soldier with an empty
           // roster their (nonexistent) roster was left out of an
           // otherwise-complete backup. Only a row that actually holds
           // something is real omitted data (privateKeyHasContent() above).
-          if (privateKeyHasContent(row.v)) excluded++;
-          return false;
+          if (privateKeyHasContent(privateValue(row))) excluded++;
         });
+        kv = kept;
       }
       payload.stores.kv = kv;
       payload.excludedPrivateEntries = excluded;
@@ -31571,7 +31661,7 @@ window.G = window.G || {};
             } else if (unitOverPreview(row.k)) {
               kvRejected.push(row.k);
             }
-            if (isPrivateKey(row.k) && privateKeyHasContent(row.v)) privateKeysPresent.push(row.k);
+            if (isPrivateKey(row.k) && privateKeyHasContent(privateValue(row))) privateKeysPresent.push(row.k);
           });
         }
         var dates = restoreDateLines(obj.exportedAt, activity);
@@ -31581,7 +31671,7 @@ window.G = window.G || {};
           // backup's version; nothing is deleted. (This used to say "Your
           // existing data will be kept", which read as a promise it did not make.)
           "\n\nItems that are in both places will be replaced by the backup's version; everything else on this device stays." + (hasProfileRow ? " This includes your name, rank, and board date." : "") +
-          (privateKeysPresent.length ? " This file also carries " + describeKeys(privateKeysPresent) + " - other people's information or a resource assessment, not your own study data - which will be written to this device too." : "") +
+          (privateKeysPresent.length ? " This file also carries " + describeKeys(privateKeysPresent) + " - items a normal backup leaves out, because they can hold other people's information or a resource assessment rather than your own study data - and they will be written to this device too." : "") +
           // Named in the Soldier's words (describeKeys), never by storage key.
           (kvRejected.length ? "\n\n" + (kvRejected.length === 1 ? "1 item in this file is damaged and will be left out: " : kvRejected.length + " items in this file are damaged and will be left out: ") + describeKeys(kvRejected) + ". Everything else will be restored." : "");
         // Opens on Cancel: restoring overwrites things, so an Enter pressed out of habit backs out.
@@ -31610,7 +31700,7 @@ window.G = window.G || {};
   function renderControls(host) {
     var panel = el("div.backup-panel");
     panel.appendChild(el("div.eyebrow", { text: "Backup & restore" }));
-    panel.appendChild(el("p.hint", { text: "GUIDON stores everything on this device only. Export a backup file to move your profile, IDP goals, counseling drafts, promotion-point estimates, and study progress to another device — or to keep them safe across reinstalls." }));
+    panel.appendChild(el("p.hint", { text: "GUIDON stores everything on this device only. Export a backup file to move your profile, IDP goals, counseling plans, promotion-point estimates, and study progress to another device — or to keep them safe across reinstalls. Saved form drafts and the leader roster stay out unless you tick the “include” box." }));
 
     // Upgrade-roadmap first wave, item 5: populated asynchronously right
     // below (a fast IndexedDB read, not worth blocking the rest of the
@@ -31634,7 +31724,7 @@ window.G = window.G || {};
     var includePrivateCb = el("input", { type: "checkbox", id: "backup-include-private" });
     var includePrivateRow = el("label.mini-row", { for: "backup-include-private", style: "gap:6px;align-items:flex-start;margin:4px 0 8px" }, [
       includePrivateCb,
-      el("span.hint", { text: "Also include the leader roster and any saved Risk Worksheets. Off by default because these can hold other people's names or a real facility/vulnerability if you didn't follow the synthetic-data guidance - only include them if you specifically need to carry that data to another device." }),
+      el("span.hint", { text: "Also include the leader roster (and the reminders made from it), any saved Risk Worksheets and your saved form drafts. Off by default because these can hold other people's names or a real facility/vulnerability if you didn't follow the synthetic-data guidance - only include them if you specifically need to carry that data to another device." }),
     ]);
     panel.appendChild(includePrivateRow);
 
@@ -31724,7 +31814,7 @@ window.G = window.G || {};
     // indistinguishable from a complete one. Name what was left out (the
     // "include" checkbox above is how a Soldier gets it into the next one).
     if (payload && payload.excludedPrivateEntries && !payload.includesOtherPeoplesData) {
-      return "Backup downloaded (the leader roster and/or risk worksheets were left out — check \"include\" above if you need them on the new device).";
+      return "Backup downloaded (the leader roster, its reminders, risk worksheets and/or saved form drafts were left out — check \"include\" above if you need them on the new device).";
     }
     return "Backup downloaded";
   }
@@ -38181,7 +38271,7 @@ window.G = window.G || {};
   views.privacy = function (mount) {
     util.clear(mount);
     mount.appendChild(el("div.section-title", {}, [ el("h2", { text: "Privacy Policy" }), el("div.rule") ]));
-    mount.appendChild(el("p.hint", { text: "Last updated September 26, 2026. Applies to every version of GUIDON — standalone, PWA, desktop, and Android — since they all run from the same source." }));
+    mount.appendChild(el("p.hint", { text: "Last updated October 17, 2026. Applies to every version of GUIDON — standalone, PWA, desktop, and Android — since they all run from the same source." }));
     const SECTIONS = [
       // P1 of the "No server, ever" promise (desktop roadmap, locked decision
       // Q1): the second "short version" paragraph is THE unified sentence -
@@ -38192,7 +38282,7 @@ window.G = window.G || {};
       // exceptions are named here, there and in the root README.
       { h: "The short version", p: [
         "GUIDON does not collect, transmit, sell, or share any personal data, because GUIDON has no server to send it to. There is no server, ever: no account, no sign-in, no analytics, no advertising, and nothing about you is ever sent to anyone — including the developer — except a PT plan or Team Training session that you, as the host of a study room, choose to send to the devices in your own room (see “Sharing a plan or session to a study room” below). Everything GUIDON knows about you stays in storage on your own device, under your control, until you delete it.",
-        "The only ways any version of GUIDON can touch a network are these four, and none of them sends your study data to a server: study groups (LAN rooms), which are off by default behind a switch in Settings and, once they exist, connect only to other devices on the same Wi-Fi or hotspot — including when that connection is secured with a self-signed, device-generated certificate — and never to any server; GitHub Pages, the file server the web version will be delivered from (today, whichever static host serves it), which is contacted only to fetch or update the app itself (the service worker checks it for a newer copy when you open the app online); a future read-aloud feature, for which your operating system may download a voice pack the first time it is used; and, on a future iOS build, iCloud or device backups run by the operating system, which may include the app's data under the backup settings you control on your device.",
+        "The only ways any version of GUIDON can touch a network are these four, and none of them sends your study data to a server: study groups (LAN rooms), which are off by default behind a switch in Settings and, when you switch them on, connect only to other devices on the same Wi-Fi or hotspot — including when that connection is secured with a self-signed, device-generated certificate — and never to any server; GitHub Pages, the file server the web version is delivered from (or whichever static host serves it), which is contacted only to fetch or update the app itself (the service worker checks it for a newer copy when you open the app online); a future read-aloud feature, for which your operating system may download a voice pack the first time it is used; and, on a future iOS build, iCloud or device backups run by the operating system, which may include the app's data under the backup settings you control on your device.",
       ] },
       { h: "What GUIDON is", p: ["GUIDON is an offline-first, single-user reference and study tool for enlisted Soldiers preparing for promotion boards. It runs entirely client-side — there is no backend server, no cloud sync, and no remote database. Before every release the app is checked automatically by walking every screen and confirming it makes no network request outside a study session."] },
       { h: "Data GUIDON stores, and where", p: [
@@ -38200,18 +38290,21 @@ window.G = window.G || {};
         "Storage locations: an on-device database (IndexedDB, database name guidon) holding your profile, saved answers, quiz/board-drill history, and progress; plus a small amount of on-device browser storage (localStorage) for interface preferences like your selected theme.",
         "Profile information you enter: things like your name, rank, MOS, ETS date, target board date, study weak points, and readiness answers, which you type in to personalize your action plan and drills.",
         "Practice and progress data: quiz attempts, Mock Board results, streaks, and scenario progress, generated as you use the app.",
-        "Squad roster (optional, leader-facing only): if you use the roster feature, it asks for initials, a callsign, or a roster number for each Soldier — not full legal names — plus a rank and counseling dates. This is the one place GUIDON stores information about people other than you, so it gets extra protection — see the next section.",
+        "Squad roster (optional, leader-facing only): if you use the roster feature, it asks for initials, a callsign, or a roster number for each Soldier — not full legal names — plus a rank and counseling dates. It is the only part of GUIDON built to hold information about people other than you, so it gets extra protection — see the next section. GUIDON does not check what you type into the free-text fields on a form, and it cannot tell a real name or address from a made-up one, so keep other people's real names, addresses, and ID numbers out of them.",
         "Risk Worksheet (optional, practice tool only): the DA Form 7278 practice tool asks for a resource, a location, and other worksheet fields. It is meant for a synthetic or hypothetical scenario, never a real facility, location, or vulnerability — but because the fields could be used to enter real information, GUIDON gives any saved worksheet the same extra protection as the roster (see the next section).",
+        "Form drafts (optional, practice tool only): the Forms Trainer saves what you type into a practice form as a draft on your device, as you type, so you can come back to it. It is meant for made-up names and numbers, never a real person's name, address, or ID number, and GUIDON does not check what is typed. Form drafts are kept out of a normal backup, the same way the roster is (see the next section).",
         "Unit decks (optional): if you add a study deck your own unit wrote (Settings → Study Preferences → Unit decks), GUIDON keeps that deck on your device, the same way it keeps your My unit texts. It comes from a file you choose or text you paste; GUIDON never fetches it from anywhere. Before it is added, and again each time GUIDON starts and each time a backup is restored, GUIDON checks it for classification markings, Social Security and DoD ID numbers, contact details and lists of names. It refuses the whole deck if it finds any when you add it; a saved deck that fails the check later is left out of your study tools, but it stays on your device (and in any backup you export) until you remove it, and Settings lists it with a Remove button. It is meant for a unit's own study facts, not for information about individual Soldiers, and the check can miss things, so the person who wrote the deck is responsible for what is in it. A deck is your own study material, so every backup you export includes it (there is no separate opt-in, unlike the squad roster) and it comes back when you restore that backup. A Guest or Kiosk session saves no deck, but a deck already on the device can still be studied in one. Quiz best scores and review progress on a deck's cards are kept under the deck's topic names until you delete them (Remove asks; a topic that another deck also uses keeps its Quiz score until that deck goes too). You can switch a deck off or remove it at any time.",
         "None of the above ever leaves your device on its own. Nothing here is ever sent to a server. The one thing you can choose to send to other devices is described under “Sharing a plan or session to a study room” below.",
       ] },
-      { h: "The squad roster and Risk Worksheet get extra protection", p: [
-        "The roster can hold data about someone other than the app's user, and the Risk Worksheet's fields could hold real facility or vulnerability information if its synthetic-only guidance isn't followed. Both are treated differently from everything else GUIDON stores:",
-        "If you ever export a backup of your GUIDON data (a JSON file you create yourself, entirely on-device, for your own safekeeping), the squad roster and any saved Risk Worksheets are excluded by default. Your own profile, progress, and drill history are included; roster entries and risk worksheets are not.",
-        "Including them in a backup requires a separate, explicit “include” opt-in, checked off (unchecked by default) right next to the Export backup button — never bundled in by accident.",
+      { h: "The squad roster, Risk Worksheet and form drafts get extra protection", p: [
+        "The roster can hold data about someone other than the app's user, the Risk Worksheet's fields could hold real facility or vulnerability information if its synthetic-only guidance isn't followed, and the free-text fields in a form draft could be used to type another person's real name, address, or ID number. These are treated differently from everything else GUIDON stores:",
+        "If you ever export a backup of your GUIDON data (a JSON file you create yourself, entirely on-device, for your own safekeeping), the squad roster, any saved Risk Worksheets, and your saved form drafts are excluded by default. Your own profile, progress, and drill history are included; roster entries, risk worksheets, and form drafts are not.",
+        "Including them in a backup requires a separate, explicit “include” opt-in, checked off (unchecked by default) right next to the Export backup button — never bundled in by accident. A backup made without it does not bring your form drafts back when you restore it.",
+        "The reminders you set from the roster's “Remind me” buttons follow the roster out of a default backup, because each one names the Soldier it is about; the same “include” box brings them along.",
+        "Everything else you type into GUIDON — your profile, IDP goals, counseling plans, your own reminders, and your study and practice progress — is in a default backup. A backup file is yours to keep safe, so keep other people's real names and numbers out of every tool.",
         "This default-exclude / explicit-opt-in behavior is checked automatically before every release.",
       ] },
-      { h: "Backups are yours, not ours", p: ["GUIDON can generate a backup file (JSON) of your data on request. This file is created locally in your browser and saved to your device, the same way any file download works. GUIDON does not upload it anywhere; the developer never sees it. What you do with that file afterward (keep it, delete it, email it to yourself, put it on a shared drive) is entirely your choice and outside GUIDON's control. If you choose to include the optional squad roster or Risk Worksheet data in a backup you share, you are sharing information about other people or a resource assessment, so consider that before doing so."] },
+      { h: "Backups are yours, not ours", p: ["GUIDON can generate a backup file (JSON) of your data on request. This file is created locally in your browser and saved to your device, the same way any file download works. GUIDON does not upload it anywhere; the developer never sees it. What you do with that file afterward (keep it, delete it, email it to yourself, put it on a shared drive) is entirely your choice and outside GUIDON's control. If you choose to include the optional squad roster (and its reminders), Risk Worksheet data, or form drafts in a backup you share, you may be sharing information about other people or a resource assessment, so consider that before doing so."] },
       { h: "Sharing a plan or session to a study room", p: [
         "Study groups are off by default. If you turn them on and host a room, GUIDON can send one thing to the other devices in that room, and only when you ask it to: a weekly PT plan from PT Planner, or a Team Training session you planned.",
         "What goes: the structure of that plan or session — the kind of session on each day, any custom sessions and their drill blocks, up to a few changed dates, or the ordered list of exercises — together with the names you typed for it (a session name, a custom session's name, or a day's label), exactly as the confirmation box lists them, and the small internal codes GUIDON needs to rebuild it on the other device (the plan template and the drill or exercise codes).",
@@ -38226,14 +38319,14 @@ window.G = window.G || {};
         "No third-party code that phones home. GUIDON does not embed any third-party analytics, advertising, or tracking libraries.",
         "No cookies used for tracking (GUIDON isn't a website with a backend to set them against).",
       ] },
-      { h: "Why the Android app lists an “Internet” permission", p: ["The Android build declares the standard INTERNET permission because its embedded WebView component (Capacitor) needs it to serve the app's own interface to itself over your device's internal loopback connection — the same mechanism every WebView-based app uses to render its screens. Once study groups (LAN rooms) exist, the same permission is what lets the app talk to other devices on the same Wi-Fi or hotspot, and only while that switch is on. It is never used to send your data to any server: if you inspect network activity while using GUIDON outside a study session, you will see no outbound traffic."] },
+      { h: "Why the Android app lists an “Internet” permission", p: ["The Android build declares the standard INTERNET permission because its embedded WebView component (Capacitor) needs it to serve the app's own interface to itself over your device's internal loopback connection — the same mechanism every WebView-based app uses to render its screens. When study groups (LAN rooms) are switched on, the same permission is what lets the app talk to other devices on the same Wi-Fi or hotspot, and only while that switch is on. It is never used to send your data to any server: if you inspect network activity while using GUIDON outside a study session, you will see no outbound traffic."] },
       { h: "Deleting your data", p: [
         "Delete your profile from inside the app: Settings → Manage account → Delete erases your name, rank, MOS, action plan, and readiness answers immediately. (Your board-drill practice history is kept separate from your profile and is not affected by this action; see the next option to remove everything.)",
         "Delete everything: uninstalling the app (Android/desktop) or clearing site data for GUIDON in your browser (PWA/standalone) permanently erases the on-device database and all locally stored preferences — a complete and permanent deletion, because nothing is stored anywhere else: there is no server-side copy for the developer to retain, and no way for the developer to recover or access it afterward. (On a future iOS build, a copy may also sit in your own iCloud or device backup, which you delete through your device's backup settings.)",
       ] },
       { h: "Security", p: ["Because GUIDON never sends your data to a server, there is no “in transit” exposure to secure — outside a study session your data simply never leaves the device. On-device storage security (encryption at rest, device lock, etc.) is provided by your operating system and browser, the same as for any other locally stored app data."] },
       { h: "Children's privacy", p: ["GUIDON is a professional reference tool built for enlisted U.S. Army Soldiers and is not directed at children. It does not knowingly collect data from anyone, of any age, because it does not collect data at all."] },
-      { h: "Changes to this policy", p: ["If GUIDON's data handling ever changes (for example, when study groups actually ship, or if a future version adds any other optional network feature), this policy will be updated first, and the “Last updated” date above will change accordingly. As of that date, GUIDON collects nothing and sends nothing to a server."] },
+      { h: "Changes to this policy", p: ["If GUIDON's data handling ever changes (for example, if a future version adds an optional network feature beyond study groups), this policy will be updated first, and the “Last updated” date above will change accordingly. As of that date, GUIDON collects nothing and sends nothing to a server."] },
       { h: "Contact", p: ["Questions, requests, or concerns about this policy or GUIDON's data handling: ctsolomon95@gmail.com"] },
     ];
 
@@ -38308,7 +38401,7 @@ window.G = window.G || {};
       // P1 of the "No server, ever" promise: the short form of #/privacy's
       // unified sentence. tools/test-privacy.mjs reads this panel and fails
       // if it ever credits a Content Security Policy again (no build ships one).
-      pn.appendChild(el("p.hint", { text: "No server, ever \u00b7 No account, no analytics, all data stays on this device \u00b7 Future study groups (LAN rooms) will be opt-in and stay on your own Wi-Fi or hotspot. The one exception is a PT plan or Team Training session that a room host chooses to send to the devices in their own room." }));
+      pn.appendChild(el("p.hint", { text: "No server, ever \u00b7 No account, no analytics, all data stays on this device \u00b7 Study groups (LAN rooms) are off until you switch them on, and stay on your own Wi-Fi or hotspot. The one exception is a PT plan or Team Training session that a room host chooses to send to the devices in their own room." }));
       pn.appendChild(el("p.hint", { text: "Privacy Policy: GUIDON collects nothing and sends nothing to a server." }));
       // Was plain, non-interactive text pointing at a PRIVACY.md that was
       // never bundled into the shipped app - no real user could ever reach
@@ -39232,7 +39325,7 @@ window.G = window.G || {};
     });
     dataPanel.appendChild(el("label.mini-row", { for: "settings-backup-include-private", style: "gap:6px;align-items:flex-start;margin-top:8px" }, [
       includePrivateCb,
-      el("span.hint", { text: "Also include the leader roster and any saved Risk Worksheets (off by default)." }),
+      el("span.hint", { text: "Also include the leader roster, its reminders, any saved Risk Worksheets and your saved form drafts (off by default)." }),
     ]));
     dataPanel.appendChild(el("div.btn-row", { style: "margin-top:8px" }, [
       exportBtn,
@@ -39244,7 +39337,7 @@ window.G = window.G || {};
     ]));
     dataPanel.appendChild(importInput);
     dataPanel.appendChild(lastBackupHint);
-    dataPanel.appendChild(el("p.hint", { text: "Export a full JSON backup — profile, IDP goals, counseling drafts, promotion-point estimates, SRS scheduling, authored scenarios, and recorded attempts — or restore one on another device." }));
+    dataPanel.appendChild(el("p.hint", { text: "Export a full JSON backup — profile, IDP goals, counseling plans, promotion-point estimates, SRS scheduling, authored scenarios, and recorded attempts — or restore one on another device. Saved form drafts and the leader roster stay out unless you tick the “include” box." }));
     // Signposts to the full Data & Storage dashboard (usage estimate,
     // per-store row counts) rather than duplicating any of it here — same
     // "point there, don't copy it" convention the Privacy/Account links
@@ -39396,10 +39489,11 @@ window.G = window.G || {};
     // red/cyan/violet - see :root's own definitions) every existing type
     // already shares two-plus ways; there's no unique color left to mint
     // for a 6th/7th/8th/9th/10th type and this codebase has never tried
-    // to (career's own "var(--ink-blue)" above is dead: no --ink-blue
-    // custom property is defined anywhere in this file, a pre-existing
-    // gap outside this pass's scope - left as-is, not compounded further).
-    const TYPE_COLOR = { scenario:"var(--ink-amber)", board:"var(--ink-cyan)", doctrine:"var(--ink-violet)", creed:"var(--ink-green)", prt:"var(--ink-red)", lesson:"var(--ink-green)", resource:"var(--ink-red)", career:"var(--ink-blue)", dictionary:"var(--ink-violet)", forms:"var(--ink-amber)", counsel:"var(--ink-green)", develop:"var(--ink-cyan)", health:"var(--ink-red)", screen:"var(--ink-cyan)", all:"var(--text-dim)" };
+    // to (career used to point at "var(--ink-blue)", a token no theme ever
+    // defined, so its chip inherited a stray colour and its bar segment had
+    // no fill at all - it now shares --ink-violet, and tools/lint-patterns.mjs
+    // refuses any var(--x) that names no defined token).
+    const TYPE_COLOR = { scenario:"var(--ink-amber)", board:"var(--ink-cyan)", doctrine:"var(--ink-violet)", creed:"var(--ink-green)", prt:"var(--ink-red)", lesson:"var(--ink-green)", resource:"var(--ink-red)", career:"var(--ink-violet)", dictionary:"var(--ink-violet)", forms:"var(--ink-amber)", counsel:"var(--ink-green)", develop:"var(--ink-cyan)", health:"var(--ink-red)", screen:"var(--ink-cyan)", all:"var(--text-dim)" };
     const TYPE_LABEL = { all:"All", scenario:"Scenarios", board:"Board Q", doctrine:"Doctrine", creed:"Creeds & Identities", prt:"Physical Readiness", lesson:"Lessons", resource:"Resources", career:"MOS/Career", dictionary:"Dictionary", forms:"Forms", counsel:"Counseling", develop:"IDP / Development", health:"Health & Resilience", screen:"Screens & Settings" };
 
     let activeFilter = "all";

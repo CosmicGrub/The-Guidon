@@ -71,7 +71,11 @@ console.log("lint-patterns: static regression guard for repeat bug shapes and re
     const css = html.slice(styleStart, styleEnd);
     const RAW_COLOR = /(?<![\w-])color\s*:\s*var\(--(cyan|violet|red|green|amber)\)/g;
     const hits = [...css.matchAll(RAW_COLOR)];
-    const BASELINE = 120; // audited count as of 2026-09-12 (nav overhaul
+    // 2026-10 (forms-invisible-text): lowered 120 -> 117 to lock in the
+    // cleanup - main had drifted to 119 and the Forms fix moved .example-chip
+    // and .copybtn from var(--cyan) to var(--ink-cyan), so the ratchet now
+    // sits exactly on the audited count.
+    const BASELINE = 117; // audited count as of 2026-09-12 (nav overhaul
     // Milestone 2: added .nav-pin-btn.pinned and .nav-pinned-label, both
     // color:var(--amber) - the pin-toggle star's "pinned" tint and the
     // "Pinned" section's own small uppercase label, matching the same
@@ -789,6 +793,26 @@ console.log("lint-patterns: static regression guard for repeat bug shapes and re
       }
     }
   }
+}
+
+/* ======================================================================
+   (t) Every var(--x) names a custom property something defines. A token
+   typo never errors: the browser quietly uses the var()'s fallback (or the
+   inherited value), so var(--fg, #e8f0f6) rendered pale-on-cream and left
+   the Article 31(b) rights text on DA 2823/3881 at 1.04:1 in all 10 light
+   themes, Field Manual (the default) among them. The judging is
+   tools/css-token-rules.mjs (comments removed, embedded data and vendored
+   code skipped, guest.html judged against its own tokens);
+   tools/test-css-token-lint.mjs plants each defect shape and an honest
+   sibling for each. --src-dir <path> points this one check at a stand-in
+   copy of src/ (the same way --tools-dir does for (e)).
+   ====================================================================== */
+{
+  const { lintCssTokens, SRC_DIR } = await import("./css-token-rules.mjs");
+  const srcDir = argVal("src-dir") ? (await import("node:path")).resolve(argVal("src-dir")) : SRC_DIR;
+  const res = lintCssTokens({ srcDir });
+  for (const p of res.problems) bad("(t) " + p);
+  if (!res.problems.length) ok("(t) every var(--x) names a defined custom property (" + res.results.map((r) => r.used + " uses in " + r.label).join("; ") + ")");
 }
 
 /* ======================================================================

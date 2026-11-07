@@ -743,7 +743,11 @@ window.G = window.G || {};
               const p = function (n) { return (n < 10 ? "0" : "") + n; };
               const dueIso = due.getFullYear() + "-" + p(due.getMonth() + 1) + "-" + p(due.getDate());
               const who = (sol.rank ? sol.rank + " " : "") + (sol.name || "Soldier " + (idx + 1));
-              const updated = await G.reminders.add({ kind: f.remindKind, label: f.remindLabel + " " + who, date: dueIso });
+              // source "leader": the label carries a roster name, so this row is the
+              // roster's data under another key - backup.js keeps every row stamped
+              // "leader..." out of a default backup, with the roster (the MOI
+              // briefing reminder below already stamps "leader-moi:<n>").
+              const updated = await G.reminders.add({ kind: f.remindKind, label: f.remindLabel + " " + who, date: dueIso, source: "leader" });
               if (!updated) { try { util.toast && util.toast("You've reached the " + G.reminders.MAX + "-reminder limit — remove an old one first."); } catch (e) {} return; }
               try { if (G.notify) await G.notify.scheduleForReminder(updated[updated.length - 1]); } catch (e) {}
               try { if (util.announce) util.announce("Reminder set: " + f.remindLabel + " " + who + "."); } catch (e) {}

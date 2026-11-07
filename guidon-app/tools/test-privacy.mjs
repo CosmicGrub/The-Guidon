@@ -1,7 +1,11 @@
 /**
- * The squad roster is the only data in GUIDON about people other than the user.
- * Backup files get emailed. This asserts the roster does not ride along by
- * default, and that including it is possible but deliberate.
+ * The squad roster is the only part of GUIDON built to hold information about
+ * people other than the user (GUIDON does not check what is typed into a form's
+ * free-text fields, and says so). Backup files get emailed. This asserts the
+ * roster does not ride along by default, and that including it is possible but
+ * deliberate - and (3c) that the two other things the policy says stay out of a
+ * default backup (form drafts, risk worksheets) really do, while the Soldier's
+ * own data still goes in.
  *
  * P1 of the "No server, ever" promise (desktop roadmap, locked decision Q1)
  * adds five more cases, all against the same one browser:
@@ -192,6 +196,96 @@ const aboutText = await page.evaluate(() => {
     if (!text) { bad(`(3) ${where}: no text found to check`); continue; }
     hit.length === 0 ? ok(`(3) ${where} credits no CSP`) : bad(`(3) ${where} mentions ${hit.join(", ")} - no shipped build carries a CSP`);
   }
+}
+
+// ---- (3b) the words are true: no absolute "only place" claim, and nothing that
+// has shipped is still described as future (audit 2026-09, forms-privacy) ----
+{
+  // Claims the code contradicted: the roster is NOT the only place a Soldier can
+  // type another person's name (a DA 4856 counselee, DA 5960 dependents), and
+  // study groups shipped. Each pattern is one stale shape; SAMPLES proves it hits
+  // the stale wording and leaves honest wording (and genuinely-future things,
+  // like read-aloud) alone, so the check can neither miss nor cry wolf.
+  const STALE = [
+    ["an absolute 'one place' claim about other people", /\bthe one place GUIDON stores information about people\b|\bthe only data in GUIDON about people\b/i],
+    ["study groups called future", /\bfuture study groups?\b/i],
+    ["study groups 'once they exist'", /\bstudy groups?\b[^;.]{0,200}?\bonce (?:they|it|these)\b[^;.]{0,30}\bexist|\bonce study groups?\b[^;.]{0,40}\bexist/i],
+    ["study groups 'when they actually ship'", /\bstudy groups?\b[^;.,]{0,40}\bactually ship/i],
+    ["study groups 'will be'", /\b(?:study groups?|LAN rooms?)\)?\s+(?:\([^)]*\)\s+)?will be\b/i],
+    ["the web version 'will be' delivered", /\bweb version will be\b/i],
+  ];
+  const SAMPLES = [
+    [true, "This is the one place GUIDON stores information about people other than you."],
+    [true, "Future study groups (LAN rooms) will be opt-in and stay on your own Wi-Fi."],
+    [true, "study groups (LAN rooms), which are off by default and, once they exist, connect only to other devices"],
+    [true, "Once study groups (LAN rooms) exist, the same permission is what lets the app talk"],
+    [true, "if you ever change it (for example, when study groups actually ship, or later)"],
+    [true, "The web version will be fetched from GitHub Pages"],
+    [false, "Study groups (LAN rooms) are off until you switch them on, and stay on your own Wi-Fi or hotspot."],
+    [false, "if a future version adds an optional network feature beyond study groups), this policy will be updated first"],
+    [false, "a future read-aloud feature, for which your operating system may download a voice pack"],
+    [false, "on a future iOS build, iCloud or device backups run by the operating system"],
+    [false, "It is the only part of GUIDON built to hold information about people other than you."],
+  ];
+  const sampleBad = SAMPLES.filter(([want, s]) => STALE.some(([, re]) => re.test(s)) !== want);
+  sampleBad.length === 0
+    ? ok(`(3b) the stale-wording patterns hit all ${SAMPLES.filter((s) => s[0]).length} stale samples and none of the ${SAMPLES.filter((s) => !s[0]).length} honest ones`)
+    : bad(`(3b) pattern self-check wrong on: ${sampleBad.map(([w, s]) => (w ? "MISSED " : "FALSE HIT ") + s).join(" | ")}`);
+  for (const [where, text] of [["#/privacy", appText], ["PRIVACY.md", md], ["README.md", readme], ["Settings About", aboutText]]) {
+    if (!text) { bad(`(3b) ${where}: no text found to check`); continue; }
+    const flat = text.replace(/\s+/g, " ");
+    const hits = STALE.filter(([, re]) => re.test(flat)).map(([name]) => name);
+    hits.length === 0 ? ok(`(3b) ${where}: no absolute "only place" claim, nothing shipped is described as future`) : bad(`(3b) ${where}: ${hits.join("; ")}`);
+  }
+}
+
+// ---- (3c) what a default backup holds is what the policy says it holds ----
+// The policy (#/privacy and PRIVACY.md) says: roster, Risk Worksheets and form
+// drafts are left out by default and come with the "include" box; everything
+// else the Soldier typed is in. Drafts use their own row shape ({k, value}, not
+// {k, v}), which is why this goes through the real exportAll/importAll.
+{
+  const DOE = "DOE, JANE Q. SSG";
+  const r = await page.evaluate(async (doe) => {
+    const G = window.G;
+    await G.db.put("kv", { k: "forms:saved", value: [{ sid: "s-priv", formId: "da4856", title: "DA 4856", ts: "2026-10-01T00:00:00.000Z", values: { name: doe } }] });
+    await G.db.put("kv", { k: "risk:all", v: [{ id: "w1", resource: "Practice range" }] });
+    const keys = (p) => (p.stores.kv || []).map((x) => x.k);
+    const dflt = await G.backup.exportAll();
+    const optIn = await G.backup.exportAll({ includePrivate: true });
+    const optRow = (optIn.stores.kv || []).find((x) => x.k === "forms:saved");
+    // a draft list the Soldier emptied is not "a draft left out"
+    await G.db.put("kv", { k: "forms:saved", value: [] });
+    const emptied = await G.backup.exportAll();
+    // restoring an opt-in backup puts the drafts back, array and all
+    await G.backup.importAll(optIn);
+    const back = await G.db.get("kv", "forms:saved");
+    return {
+      dKeys: keys(dflt), dRaw: JSON.stringify(dflt), dExcluded: dflt.excludedPrivateEntries,
+      oKeys: keys(optIn), oValue: optRow && optRow.value, oFlag: optIn.includesOtherPeoplesData,
+      eKeys: keys(emptied), eExcluded: emptied.excludedPrivateEntries,
+      backValue: back && back.value,
+    };
+  }, DOE);
+  const OUT = ["forms:saved", "risk:all", "guidon:leader:roster:v1"];
+  OUT.every((k) => !r.dKeys.includes(k)) && !r.dRaw.includes(DOE)
+    ? ok("(3c) a default backup leaves out form drafts, risk worksheets and the roster, and none of the typed text appears")
+    : bad("(3c) default backup carried a private row: " + JSON.stringify(OUT.filter((k) => r.dKeys.includes(k))) + (r.dRaw.includes(DOE) ? " and the typed text" : ""));
+  r.dKeys.includes("guidon:probe:mine")
+    ? ok("(3c) ...while the Soldier's own data still goes into a default backup")
+    : bad("(3c) the Soldier's own data was dropped from a default backup");
+  r.dExcluded === 3 ? ok("(3c) the backup counts the three it left out (roster, worksheets, drafts)") : bad("(3c) excludedPrivateEntries = " + r.dExcluded + ", expected 3");
+  OUT.every((k) => r.oKeys.includes(k)) && r.oFlag === true && r.oValue && r.oValue[0] && r.oValue[0].values.name === DOE
+    ? ok("(3c) ticking 'include' brings all three along, the draft's array intact under .value")
+    : bad("(3c) opt-in backup: " + JSON.stringify({ keys: r.oKeys.filter((k) => OUT.includes(k)), flag: r.oFlag, value: r.oValue }));
+  !r.eKeys.includes("forms:saved") && r.eExcluded === 2
+    ? ok("(3c) an emptied draft list is not counted as a draft left out (2: roster, worksheets)")
+    : bad("(3c) emptied drafts: in default export " + r.eKeys.includes("forms:saved") + ", excluded " + r.eExcluded);
+  r.backValue && r.backValue[0] && r.backValue[0].values.name === DOE
+    ? ok("(3c) restoring that opt-in backup puts the draft back with its typed text")
+    : bad("(3c) restored drafts: " + JSON.stringify(r.backValue));
+  // leave the page as the later checks expect it: roster only, no drafts or worksheets
+  await page.evaluate(async () => { await G.db.put("kv", { k: "forms:saved", value: [] }); await G.db.put("kv", { k: "risk:all", v: [] }); });
 }
 
 // ---- (4) kill switch default off + a real Settings toggle ----

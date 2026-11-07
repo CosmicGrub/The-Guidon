@@ -180,7 +180,7 @@ proportionalityOk
 // its domain - the same map driving the filter chips and card accents.
 const TYPE_COLOR = { scenario: "var(--ink-amber)", board: "var(--ink-cyan)", doctrine: "var(--ink-violet)",
   creed: "var(--ink-green)", prt: "var(--ink-red)", lesson: "var(--ink-green)", resource: "var(--ink-red)",
-  career: "var(--ink-blue)", dictionary: "var(--ink-violet)", forms: "var(--ink-amber)", counsel: "var(--ink-green)",
+  career: "var(--ink-violet)", dictionary: "var(--ink-violet)", forms: "var(--ink-amber)", counsel: "var(--ink-green)",
   develop: "var(--ink-cyan)", health: "var(--ink-red)", screen: "var(--ink-cyan)" };
 let colorOk = true;
 expectedOrder.forEach((domain, idx) => {

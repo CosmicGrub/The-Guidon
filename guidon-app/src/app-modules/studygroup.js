@@ -2055,7 +2055,7 @@
     sorted.forEach(function (x) {
       var mine = st.role === "host" ? x.fp === st.self.fp : x.seatNo === st.self.seatNo;
       var row = el("div.sg-seat", { "data-seat": String(x.seatNo), "data-online": String(!!x.online), "data-fp": x.fp, style: "display:flex;gap:10px;align-items:center;padding:4px 0" + (x.online ? "" : ";opacity:.55") });
-      row.appendChild(el("span", { text: String(x.seatNo), style: "font-family:var(--mono, monospace);min-width:1.6em" }));
+      row.appendChild(el("span", { text: String(x.seatNo), style: "font-family:var(--font-mono, monospace);min-width:1.6em" }));
       var label = x.name + (x.seatNo === st.hostSeat ? " (host)" : "") + (mine ? " - you" : "");
       row.appendChild(el("span", { text: label, style: "flex:1" }));
       if (st.phase === "play" && st.turnSeat === x.seatNo) row.appendChild(el("span.sg-turn", { text: st.mode === "board" ? "candidate" : "playing", style: "color:var(--ink-amber)" }));
@@ -2181,7 +2181,7 @@
       inner.appendChild(qrWrap);
       inner.appendChild(hint(hintWithQr));
     } else {
-      inner.appendChild(el("div.sg-qr-slot", { text: url, "aria-label": "QR code placeholder", style: "border:2px dashed currentColor;border-radius:8px;padding:14px;font-family:var(--mono, monospace);font-size:.8rem;word-break:break-all;max-width:22rem;margin-bottom:6px" }));
+      inner.appendChild(el("div.sg-qr-slot", { text: url, "aria-label": "QR code placeholder", style: "border:2px dashed currentColor;border-radius:8px;padding:14px;font-family:var(--font-mono, monospace);font-size:.8rem;word-break:break-all;max-width:22rem;margin-bottom:6px" }));
       inner.appendChild(hint(hintNoQr));
     }
     box.appendChild(inner);
@@ -2217,7 +2217,7 @@
       var alt = el("details.sg-alt-addresses", { style: "margin:4px 0 8px" });
       alt.appendChild(el("summary", { text: "This device has " + addrs.length + " network addresses - try another if the link above doesn't work" }));
       addrs.forEach(function (a) {
-        alt.appendChild(el("div.hint", { text: (a.name || "?") + ": " + (a.ip || "?"), style: "font-family:var(--mono, monospace)" }));
+        alt.appendChild(el("div.hint", { text: (a.name || "?") + ": " + (a.ip || "?"), style: "font-family:var(--font-mono, monospace)" }));
       });
       box.appendChild(alt);
     }
