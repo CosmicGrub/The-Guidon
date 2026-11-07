@@ -47,6 +47,16 @@
  *     inert subtree), a live Rapid Fire round, the promotion-points calculator
  *     filled in (goal not met / goal met), and the "backed up recently"
  *     state of the backup line (it is a different colour from the warning).
+ *   - The first-run welcome screens (choose how to start; the Personal Account
+ *     step) in a fresh session: the first thing every new install shows, and a
+ *     modal, so the rest of the app is inert behind it.
+ *   - A guest pass on the screens whose guest drawing differs from the profile
+ *     drawing. That is decided at run time by comparing the screens' markup
+ *     (tag, class and style of every element): in this build 2-3 of the 48
+ *     differ, so the other 45 are not swept twice. A guest sees the promotion
+ *     points, "you are here" tag, readiness legend, pathway summaries and
+ *     backup line too; the audit's belief that they were guest-hidden was wrong,
+ *     they were missed for the gradient reason below, not the guest reason.
  *
  * RESOLVER (for what axe files as incomplete: bgGradient / bgImage / fgAlpha)
  *   Walks up from the text to the nearest opaque colour, composites every
@@ -73,6 +83,10 @@
  *     the main pass, true for the guest pass), and the surfaces the audit named
  *     (promotion points, "you are here", readiness legend, development summaries,
  *     backup line) must really be on screen in the main pass.
+ *
+ * tools/test-contrast-full-gate.mjs runs THIS file as a child process against a
+ * scratch copy of the app with one theme broken and expects exit 1 (and exit 0
+ * on the real app), so turning the exit code back into a constant fails there.
  *
  * ALLOWLIST (below) is for a miss that genuinely cannot be fixed. Adding to it
  * NEEDS THE OWNER'S SIGN-OFF - do not add an entry to make this go green. Each
@@ -115,7 +129,8 @@ const FLOORS = {
   profilePerTheme: 3600,   // measured 6806..6813 for each single theme
   stateTotal: 10000,       // measured  19830 over 6 states x 30 themes
   guestTotal: 3000,        // measured   6990 over 2 screens x 30 themes (only #/progress and #/selftest draw differently)
-  perScreenMin: { profile: 15, state: 4, guest: 40 }, // thinnest single screen in any theme: 31, 8, 89
+  welcomeTotal: 600,       // measured   1350 over 2 first-run screens x 30 themes
+  perScreenMin: { profile: 15, state: 4, guest: 40, welcome: 8 }, // thinnest single screen in any theme: 31, 8, 89, welcome (see PR)
 };
 
 /* Kinds of axe `incomplete` result, and what this sweep does with each. Every
@@ -214,7 +229,7 @@ const FIT = () => {
 /* Applies the theme through the app's own path, injects the canaries, runs
    axe, resolves what axe could not decide, removes the canaries.
    Returns { applied, evaluated, misses, kinds, unmeasured, canary }. */
-const MEASURE = async ({ id, withCanary, RESOLVABLE }) => {
+const MEASURE = async ({ id, withCanary, RESOLVABLE, host }) => {
   window.G.theme.applyTheme(id);
 
   /* ---- canaries: colours are fixed, so they must be caught in EVERY theme ---- */
@@ -237,8 +252,8 @@ const MEASURE = async ({ id, withCanary, RESOLVABLE }) => {
   const made = [];
   if (withCanary) {
     const route = document.getElementById("route");
-    let scroller = null;
-    for (let n = route && route.parentElement; n; n = n.parentElement) {
+    let scroller = host ? document.querySelector(host) : null;   // a modal (the welcome screen) is judged on its own
+    for (let n = !scroller && route && route.parentElement; n; n = n.parentElement) {
       const oy = getComputedStyle(n).overflowY;
       if (oy === "auto" || oy === "scroll") { scroller = n; break; }
     }
@@ -447,13 +462,13 @@ async function fitWindow(page, label) {
   return h;
 }
 
-async function measureState(page, pass, label, themeList, { opened = null } = {}) {
+async function measureState(page, pass, label, themeList, { host = null, height = 0 } = {}) {
   const s = statOf(pass);
   s.states++;
-  await fitWindow(page, pass + ":" + label);
+  if (height) { await resizeTo(page, height); harness.pageHeights.push(height); } else await fitWindow(page, pass + ":" + label);
   let evaluatedHere = 0, hits = 0;
   for (const t of themeList) {
-    const r = await page.evaluate(MEASURE, { id: t.id, withCanary: true, RESOLVABLE });
+    const r = await page.evaluate(MEASURE, { id: t.id, withCanary: true, RESOLVABLE, host });
     evaluatedHere += r.evaluated;
     hits += r.misses.length;
     const lightOk = r.applied.light === (t.kind === "light");
@@ -591,6 +606,35 @@ for (const hash of ROUTE_LIST) {
 }
 console.log(`  [guest] ${guestRoutes.length} of ${ROUTE_LIST.length} screens draw differently for a guest and were swept in every theme; ${guestSame.length} are identical to the profile drawing (already swept)`);
 
+/* ---------------- 4) the welcome screen: the first thing every new install shows ---------------- */
+const WELCOME = [
+  { label: "welcome screen (choose how to start)", setup: async () => {} },
+  { label: "welcome screen (Personal Account step)", setup: async (page) => {
+    await page.evaluate(() => { const c = [...document.querySelectorAll("#ob-overlay .ob-mode-card")].find((b) => /Personal/i.test(b.textContent)); if (c) c.click(); });
+    if (!(await until(page, () => !!document.querySelector("#ob-overlay .ob-rank-btn")))) throw new Error("the Personal Account step never showed its rank buttons");
+  } },
+];
+if (!ONLY_ROUTES) {
+  console.log(`  [welcome] ${WELCOME.length} first-run screens x ${THEME_LIST.length} themes (${fmtS(Date.now() - T0)} in)`);
+  const first = await boot.openSession({ viewport: { width: BASE_W, height: BASE_H }, profile: null, noise: boot.noise });
+  const wp = first.page;
+  try {
+    await prepPage(wp);
+    if (!(await until(wp, () => !!document.querySelector("#ob-overlay")))) throw new Error("the welcome screen never opened");
+    for (const w of WELCOME) {
+      try {
+        await w.setup(wp);
+        await wp.evaluate(SETTLE, { quiet: 150, max: 4000 });
+        await measureState(wp, "welcome", w.label, THEME_LIST, { host: "#ob-overlay", height: 1500 });
+      } catch (e) {
+        statOf("welcome").unreached.push(w.label + ": " + String(e.message).split("\n")[0].slice(0, 200));
+      }
+    }
+  } catch (e) {
+    statOf("welcome").unreached.push("the welcome screen: " + String(e.message).split("\n")[0].slice(0, 200));
+  }
+}
+
 /* =====================================================================
    VERDICTS
    ===================================================================== */
@@ -627,7 +671,10 @@ if (!PARTIAL) {
   check(S.evaluated >= FLOORS.stateTotal, `[state] evaluated ${S.evaluated} pieces of text (floor ${FLOORS.stateTotal})`, `[state] only ${S.evaluated} pieces of text evaluated (floor ${FLOORS.stateTotal})`);
   check(guestRoutes.length >= 1, `[guest] ${guestRoutes.length} screen(s) draw differently for a guest: ${guestRoutes.join(", ")} (the other ${guestSame.length} are identical to the profile drawing)`, "no screen differs between a guest and a profile - the two sessions are not what they claim to be");
   check(G.evaluated >= FLOORS.guestTotal, `[guest] evaluated ${G.evaluated} pieces of text (floor ${FLOORS.guestTotal})`, `[guest] only ${G.evaluated} pieces of text evaluated (floor ${FLOORS.guestTotal})`);
-  for (const [pass, s] of [["profile", P], ["state", S], ["guest", G]]) {
+  const W = statOf("welcome");
+  check(W.states === WELCOME.length, `[welcome] reached all ${WELCOME.length} first-run screens`, `reached only ${W.states} of ${WELCOME.length}`);
+  check(W.evaluated >= FLOORS.welcomeTotal, `[welcome] evaluated ${W.evaluated} pieces of text (floor ${FLOORS.welcomeTotal})`, `[welcome] only ${W.evaluated} pieces of text evaluated (floor ${FLOORS.welcomeTotal})`);
+  for (const [pass, s] of [["profile", P], ["state", S], ["guest", G], ["welcome", W]]) {
     if (!s.states) continue;
     const floor = FLOORS.perScreenMin[pass];
     check(s.thinnest.n >= floor, `[${pass}] every screen gave at least ${floor} pieces of text in every theme (thinnest ${s.thinnest.n}, ${s.thinnest.at})`, `[${pass}] a screen gave only ${s.thinnest.n} pieces of text (${s.thinnest.at}; floor ${floor}) - it was measured blank or half drawn`);
@@ -699,6 +746,6 @@ try {
   console.log(`      (could not write the report to ${REPORT_PATH}: ${e.message})`);
 }
 console.log(`      sweep took ${fmtS(elapsed)} on this machine (shared and busy: a timing, not a performance claim)`);
-console.log(`      ${themes.length} themes x ${ROUTE_LIST.length} screens + ${STATES.length} states + ${guestRoutes.length} guest screens = ${Object.values(stats).reduce((a, s) => a + s.combos, 0)} measurements`);
+console.log(`      ${Object.values(stats).reduce((a, s) => a + s.combos, 0)} measurements: ${THEME_LIST.length} themes x (${statOf("profile").states} screens + ${statOf("state").states} interaction states + ${statOf("guest").states} guest screens + ${statOf("welcome").states} first-run screens)`);
 
 await finish("CONTRAST-FULL");
