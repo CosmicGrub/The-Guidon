@@ -719,6 +719,8 @@ jobs:
             tests: "test:srs-early-review test:board-drill-entry test:scenario-choice-order test:pub-supersession"
           - name: "67-swpdfnavigation-buildage-icsexport-contrastfullgate"
             tests: "test:sw-pdf-navigation test:build-age test:ics-export test:contrast-full-gate"
+          - name: "68-contrasttabs"
+            tests: "test:contrast-tabs"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
