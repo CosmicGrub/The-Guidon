@@ -146,7 +146,7 @@ const board = bank.board.questions, byId = new Map(board.map((q) => [q.id, q]));
 const firstAid = board.filter((q) => /^tc4021-\d+$/.test(q.id));
 check(firstAid.length === 19 && firstAid.every((q) => q.category === "ATP 4-02.11"), "the 19 tc4021-* cards keep their ids (saved study progress is keyed by id) and sit in the category 'ATP 4-02.11'", () => J(firstAid.map((q) => [q.id, q.category])));
 check(!board.some((q) => q.category === "TC 4-02.1"), "no board card is left in a category named after the replaced manual");
-check(firstAid.every((q) => q.source.length === 1 && q.source[0].pub === "ATP 4-02.11" && q.source[0].quoteKind === "verbatim"), "each of the 19 cites ATP 4-02.11 and still reads as a quotation (they ARE quoted from it - paragraphs and wording re-read against the bundled text)", () => J(firstAid.filter((q) => q.source[0].pub !== "ATP 4-02.11").map((q) => q.id)));
+check(firstAid.every((q) => q.source[0].pub === "ATP 4-02.11" && q.source.every((e) => e.pub === "ATP 4-02.11" || e.pub === "ATP 4-02.2")), "each of the 19 cites ATP 4-02.11 first (tc4021-9 also names ATP 4-02.2, whose Table C-1 its Line 1 and Line 5 text comes from); whether a card prints as a quotation is decided by what its By-the-Book text IS, checked mechanically below", () => J(firstAid.map((q) => [q.id, q.source.map((e) => e.pub)])));
 const stillOld = [];
 for (const q of firstAid) for (const f of ["q", "a", "boardAnswer", "concept"]) if (/\bTC 4-02\.1\b/.test(q[f] || "")) stillOld.push(q.id + "." + f);
 check(stillOld.length === 0 && firstAid.every((q) => /ATP 4-02\.11/.test(q.concept) || /ATP 4-02\.11/.test(q.boardAnswer)), "...and their wording says ATP 4-02.11 too, not just the structured field", () => J(stillOld));
@@ -221,12 +221,114 @@ const PROOF = {
   "the completed DD Form 1380 is the '10th line' MIST report (9-2)": /Often referred to as the 10th line in the 9-line MEDEVAC request, the completed DD Form 1380 serves as the MIST report/,
   "the CWMP holds pain medicine and an antibiotic (9-5)": /The CWMP contains drugs for mild to moderate pain \(Meloxicam and Acetaminophen\) and an antibiotic specific for penetrating wounds \(Moxifloxacin\)/,
   "the cold injuries it names (17-38)": /Nonfreezing cold injuries are chilblain and snow blindness\. Trench foot occurs when tissues are exposed to temperatures from 32/,
+  // Round 3: the facts the previously unpinned corrections rest on.
+  "Rule of Nines: pubic area 1 percent, buttocks 1 percent (12-4)": /Pubic area . 1 percent\. . Buttocks . 1 percent/,
+  "MARCH-PAWS: pain, wounds, antibiotics, splinting (3-95)": /pain, wounds, antibiotics, and splinting \(PAWS\)/,
+  "PAWS is addressed after the MARCH portion (3-96)": /The second portion of the MARCH-PAWS casualty assessment is PAWS, which is addressed after the MARCH portion/,
+  "heat exhaustion prevention (17-12)": /Practice proper fluid replacement.{1,160}Wear lightweight and loose-fitting clothing, use sunscreen, and take regular breaks in cool areas/,
+  "fire superiority is the best medicine; casualty care is secondary (3-72)": /Fire superiority is paramount on the battlefield, serving as the best medicine.{1,300}providing casualty care becomes a secondary consideration/,
+  "the Tier 2 CLS uses deliberate tourniquets in Tactical Field Care (4-58)": /during TFC the Tier 2 CLS treats any massive bleeding, from an extremity, with deliberate TQs/,
+  "the CLS reassesses tourniquets from Care Under Fire; a hasty one may need adjustment (4-61)": /The CLS conducts reassessment of TQs applied during CUF to ensure their efficacy\. TQs hastily applied .high and tight. may need adjustment/,
+  "tourniquets are removed only by medical personnel at a higher role of care (4-40)": /TQs should never be removed except by medical personnel at a higher role of care/,
+  "open chest wounds are sealed immediately (6-22)": /All open or sucking chest wounds are treated by immediately applying a vented chest seal to cover the defect/,
+  "the seal goes on right after the casualty exhales (6-27)": /Instruct the casualty to fully exhale and then immediately place the vent of the chest seal directly over the first wound encountered/,
 };
+// ATP 4-02.2 (12 July 2019) is in the Library too: tc4021-9 takes its Line 1 and Line 5 text from Table C-1.
+const a22Text = ((docs.find((d) => d.citation === "ATP 4-02.2") || { pages: [] }).pages.join(" ")).replace(/\s+/g, " ");
+const PROOF22 = {
+  "Line 1: grid coordinates sent by secure communication (Table C-1)": /Grid coordinates of the pickup site should be sent by secure communication/,
+  "Line 1 reason: so the evacuation vehicle knows where to pick up the patient (Table C-1)": /Required so evacuation vehicle knows where to pick up the patient\/casualty/,
+  "Line 5: L+# litter, A+# ambulatory (sitting) (Table C-1)": /L\+# of patients.Litter A\+# of patients.Ambulatory \(sitting\)/,
+  "Line 5 reason: the right number of vehicles, configured for those patients (Table C-1)": /Required so that the appropriate number of evacuation vehicles may be dispatched to the pickup site\. They should be configured to carry the patients requiring evacuation/,
+};
+const proof22Miss = Object.entries(PROOF22).filter(([, re]) => !re.test(a22Text)).map(([k]) => k);
+check(a22Text.length > 50000 && proof22Miss.length === 0, "fixture: the bundled ATP 4-02.2 carries the Table C-1 sentences tc4021-9 rests on (" + Object.keys(PROOF22).length + ")", () => "not in the Library text any more:\n  " + proof22Miss.join("\n  "));
 const proofMiss = Object.entries(PROOF).filter(([, re]) => !re.test(atpText)).map(([k]) => k);
 check(proofMiss.length === 0, `fixture: the bundled ATP 4-02.11 carries every sentence the field-by-field pins rest on (${Object.keys(PROOF).length})`, () => "not in the Library text any more - re-read the records against the new edition:\n  " + proofMiss.join("\n  "));
 const NOT_IN_BUNDLE = ["SOFTT", "Hextend", "Blizzard", "Cushing", "Hyfin", "QuikClot", "HemCon", "NREMT", "standing orders", "golden hour", "frostnip", "flutter valve", "coagulopathy", "Glasgow", "absent breath sounds", "hypotension", "surgical cricothyrotomy"];
 const inBundle = NOT_IN_BUNDLE.filter((w) => new RegExp(w, "i").test(atpText));
 check(inBundle.length === 0, "fixture: none of the terms the second review found taught as ATP 4-02.11 content is in the bundled text (so none belongs in a record that cites it)", () => "now in the Library text: " + inBundle.join(", "));
+
+/* ---- Round 3: the heading a card prints is decided by what its By-the-Book text IS ----
+   "By the Book (verbatim doctrine)" is printed for a card whose source says verbatim, and the app's own comment (index.html, G.board.PARAPHRASE_LABEL)
+   reserves it for text actually quoted from the publication. Round 2 pinned all 19 First Aid cards "verbatim" by rule, and three of them (tc4021-1,
+   -8, -9) and the four 68W scope cards quote nothing: their By-the-Book text is the study guide's own prose. So the rule is mechanical and runs in
+   BOTH directions over every board card that cites ATP 4-02.11 (and the 68W scope cards): a card marked verbatim must show a quotation - at least
+   half of its By-the-Book text between quotation marks - and every quoted fragment must be found in the bundled text; a card whose text is not such
+   a quotation must be marked paraphrase. A fragment may run across a page break (the running footer is cut off and up to 80 letters of running
+   heading after the break are skipped) and may differ from the page in hyphenation, spacing and punctuation only. ---- */
+const alnum = (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, "");
+const stripFooter = (p) => p.replace(/23 March 2026\s+ATP 4-02\.11\s+\d{1,3}\s*$/s, " ").replace(/\d{1,3}\s+ATP 4-02\.11\s+23 March 2026\s*$/s, " ");
+const atpDoc = docs.find((d) => d.citation === "ATP 4-02.11");
+const atpStream = atpDoc.pages.map((p) => alnum(stripFooter(p))).join("|");
+const PAGE_GAP = "(?:\\|[a-z0-9]{0,80})?";
+const fragmentInBundle = (frag) => { const a = alnum(frag); return a.length < 8 || new RegExp(a.split("").join(PAGE_GAP)).test(atpStream); };
+const quotedFragments = (shown) => [...shown.matchAll(/["\u201c]([^"\u201c\u201d]+)["\u201d]/g)].map((m) => m[1]);
+const quotePieces = (frag) => frag.split(/\.\.\.|\u2026|\[[^\]]*\]/);
+const judgeLabel = (q) => {
+  const body = String(q.boardAnswer || q.a || "").replace(/\s*\((?:ATP|TC)[^()]*\)\.?\s*$/, "");
+  const frags = quotedFragments(body);
+  const share = frags.reduce((n, x) => n + x.length, 0) / Math.max(1, body.length);
+  const isQuotation = frags.length >= 1 && share >= 0.5;
+  return { isQuotation, share: Math.round(100 * share), frags: frags.length, missing: isQuotation ? frags.filter((x) => !quotePieces(x).every(fragmentInBundle)) : [] };
+};
+const labelOf = (q) => ((q.source || []).some((e) => e.quoteKind === "verbatim") ? "verbatim" : "paraphrase");
+const labelled = board.filter((q) => (q.source || []).some((e) => /^ATP 4-02\.11/.test(e.pub)) || /^68w-scope-/.test(q.id));
+const wrongLabel = [];
+for (const q of labelled) {
+  const j = judgeLabel(q), kind = labelOf(q);
+  if (kind === "verbatim" && !j.isQuotation) wrongLabel.push(q.id + ": marked verbatim but its By-the-Book text is not a quotation (" + j.frags + " quoted fragment(s), " + j.share + "% of the text)");
+  if (kind === "verbatim" && j.missing.length) wrongLabel.push(q.id + ": marked verbatim but a quoted fragment is not in the bundled text: " + J(j.missing[0].slice(0, 90)));
+}
+const verbatimN = labelled.filter((q) => labelOf(q) === "verbatim").length;
+check(wrongLabel.length === 0 && verbatimN >= 10, "every board card that cites ATP 4-02.11 (and the 68W scope cards) prints as a quotation only when its By-the-Book text is one: " + verbatimN + " verbatim cards each quote the bundled text, and the " + (labelled.length - verbatimN) + " others are labelled paraphrase", () => wrongLabel.join("\n    "));
+check(["tc4021-1", "tc4021-8", "tc4021-9", "68w-scope-01", "68w-scope-02", "68w-scope-03", "68w-scope-04"].every((id) => labelOf(byId.get(id)) === "paraphrase" && !judgeLabel(byId.get(id)).isQuotation),
+  "...and the seven cards that quote nothing (tc4021-1, -8, -9 and 68w-scope-01 to -04) read 'Study-guide answer', not 'By the Book (verbatim doctrine)'", () => J(["tc4021-1", "tc4021-8", "tc4021-9", "68w-scope-01", "68w-scope-02", "68w-scope-03", "68w-scope-04"].map((id) => [id, labelOf(byId.get(id))])));
+// The judge itself, on stand-in cards: an honest quotation passes, an altered one is caught, prose with a small quote in it is not a quotation.
+{
+  const real = "Tactical field care is the second phase of care in tactical combat casualty care. Care provided once the threat has been neutralized, the scene is safe, or the casualty has moved or been moved out of the immediate threat situation.";
+  const stand = (text) => ({ id: "stand-in", a: text, source: [{ pub: "ATP 4-02.11", quoteKind: "verbatim" }] });
+  const honest = judgeLabel(stand('"' + real + '" (ATP 4-02.11, para 3-51.)'));
+  const altered = judgeLabel(stand('"' + real.replace("second phase", "third phase") + '" (ATP 4-02.11, para 3-51.)'));
+  const prose = judgeLabel(stand("Tactical field care starts when the threat is gone, which the manual calls the 'second phase of care' and which is when you can finally slow down and do a full assessment and treatment (ATP 4-02.11, para 3-51.)"));
+  const none = judgeLabel(stand("Massive hemorrhage is the most frequent cause of preventable death on the battlefield. (ATP 4-02.11, para 4-1.)"));
+  check(honest.isQuotation && honest.missing.length === 0, "the label check accepts an honest quotation (control)", () => J(honest));
+  check(altered.isQuotation && altered.missing.length === 1, "...catches a quotation with one word changed ('third phase'): its fragment is not in the bundled text", () => J(altered));
+  check(!prose.isQuotation && !none.isQuotation, "...and does not take prose with a small quoted phrase, or prose with no quotation, for a quotation", () => J([prose, none]));
+}
+
+/* ---- Round 3: every 'para X ... p. N' citation is checked against the manual's own printed page footers ---- */
+const printedOf = (p) => { const a = /23 March 2026\s+ATP 4-02\.11\s+(\d{1,3})\s*$/s.exec(p) || /(\d{1,3})\s+ATP 4-02\.11\s+23 March 2026\s*$/s.exec(p); return a ? Number(a[1]) : null; };
+const paraStart = new Map(), paraOrder = [];
+atpDoc.pages.forEach((p, i) => { for (const m of p.matchAll(/(?:^|\n)\s*(\d{1,2}-\d{1,3})\.\s/g)) if (!paraStart.has(m[1])) { paraStart.set(m[1], { page: printedOf(p), i }); paraOrder.push(m[1]); } });
+const paraSpan = (para) => {
+  const st = paraStart.get(para); if (!st || st.page == null) return null;
+  const nx = paraStart.get(paraOrder[paraOrder.indexOf(para) + 1]);
+  return { lo: st.page, hi: nx && nx.page != null ? Math.max(st.page, nx.page) : st.page };
+};
+const pageCite = /paras?\.?\s*(\d{1,2}-\d{1,3}[^()]{0,80}?),\s*pp?\.\s*(\d{1,3})(?:\s*[–-]\s*(\d{1,3}))?/g;
+const badPages = [];
+let pageCites = 0;
+for (const q of board) {
+  if (!(q.source || []).some((e) => /^ATP 4-02\.11/.test(e.pub))) continue;
+  for (const [field, text] of [["a", q.a], ["acceptableAnswer", q.acceptableAnswer], ["boardAnswer", q.boardAnswer], ...(q.keyPoints || []).map((k, i) => ["keyPoints[" + i + "]", k])]) {
+    if (typeof text !== "string") continue;
+    for (const m of text.matchAll(pageCite)) {
+      pageCites++;
+      const spans = (m[1].replace(/(?:Table|Figure)\s+\d{1,2}-\d{1,3}/g, "").match(/\d{1,2}-\d{1,3}/g) || []).map(paraSpan);
+      const claimedLo = Number(m[2]), claimedHi = m[3] ? Number(m[3]) : claimedLo;
+      if (spans.some((x) => !x)) { badPages.push(q.id + "." + field + ": " + J(m[0].slice(0, 60)) + " - a paragraph that is not in the bundled text"); continue; }
+      const lo = Math.min(...spans.map((x) => x.lo)), hi = Math.max(...spans.map((x) => x.hi));
+      if (claimedHi < lo || claimedLo > hi) badPages.push(q.id + "." + field + ": " + J(m[0].slice(0, 60)) + " claims p. " + claimedLo + (claimedHi !== claimedLo ? "-" + claimedHi : "") + " but the manual prints it on p. " + lo + (hi !== lo ? "-" + hi : ""));
+    }
+  }
+}
+check(pageCites >= 40 && badPages.length === 0, "every 'para X, p. N' citation on a card that cites ATP 4-02.11 names a page the paragraph is really printed on (" + pageCites + " citations read from the manual's own page footers; tc4021-3 and -14 said 111 for para 11-30, tc4021-11 said 77 for 5-16, tc4021-16 said 44 for 3-51)", () => badPages.join("\n    "));
+{
+  const probe = (txt) => { const m = [...txt.matchAll(pageCite)][0]; if (!m) return "unread"; const sp = (m[1].match(/\d{1,2}-\d{1,3}/g) || []).map(paraSpan); const lo = Math.min(...sp.map((x) => x.lo)), hi = Math.max(...sp.map((x) => x.hi)); const cl = Number(m[2]), ch = m[3] ? Number(m[3]) : cl; return ch < lo || cl > hi ? "wrong" : "right"; };
+  check(probe("(ATP 4-02.11, para 11-30, p. 112.)") === "right" && probe("(ATP 4-02.11, para 11-30, p. 111.)") === "wrong" && probe("(ATP 4-02.11, para 3-51, p. 33)") === "right" && probe("(ATP 4-02.11, para 3-51, p. 44)") === "wrong",
+    "...and the page check itself tells a right page from a wrong one (control: para 11-30 is on p. 112, para 3-51 on p. 33)", () => J([probe("(ATP 4-02.11, para 11-30, p. 112.)"), probe("(ATP 4-02.11, para 11-30, p. 111.)"), probe("(ATP 4-02.11, para 3-51, p. 33)"), probe("(ATP 4-02.11, para 3-51, p. 44)")]));
+}
 
 const fieldOf = (rec, f) => { const m = /^keyPoints\[(\d+)\]$/.exec(f); return String(m ? (rec.keyPoints || [])[Number(m[1])] : rec[f] ?? ""); };
 const pin = (label, rec, list) => {
@@ -244,11 +346,12 @@ pin("bq-tccc-02 (MARCH)", m02, [
   ["boardAnswer", /Massive bleeding \(the top priority\)/], ["boardAnswer", /you go back to M/], ["boardAnswer", /followed by PAWS: pain, wounds, antibiotics and splinting/],
 ]);
 pin("bq-tccc-03 (when to apply a tourniquet)", m03, [
-  ["acceptableAnswer", /In Care Under Fire put it on high and tight over the uniform; in Tactical Field Care place it 2-3 inches above the wound on bare skin and write the time on the tourniquet and DD Form 1380/],
+  ["acceptableAnswer", /In Care Under Fire put it on high and tight over the uniform; in Tactical Field Care recheck it, and put any new tourniquet 2-3 inches above the wound on bare skin and write the time on the tourniquet and DD Form 1380/],
   ["acceptableAnswer", /even under fire/i, true],
   ["boardAnswer", /In Care Under Fire, put a hasty tourniquet on "high and tight" over the uniform, tighten until the bleeding stops, and move to cover; do not stop to record the time yet/],
-  ["boardAnswer", /In Tactical Field Care, place a deliberate tourniquet two to three inches above the wound directly on the skin, and write the time on the tourniquet and on DD Form 1380/],
-  ["keyPoints[1]", /Care Under Fire: a hasty tourniquet HIGH and TIGHT over the uniform — no time-marking yet/], ["keyPoints[2]", /Tactical Field Care: a deliberate tourniquet 2-3 inches above the wound, directly on the skin/],
+  ["boardAnswer", /In Tactical Field Care, recheck the hasty tourniquet, which may need adjusting; a tourniquet put on in this phase is a deliberate one, placed two to three inches above the wound directly on the skin, and the time is written on the tourniquet and on DD Form 1380\. If bleeding continues, add a second tourniquet next to the first, higher on the limb; do not take the first one off\./],
+  ["boardAnswer", /place a deliberate tourniquet two to three inches/, true],
+  ["keyPoints[1]", /Care Under Fire: a hasty tourniquet HIGH and TIGHT over the uniform — no time-marking yet/], ["keyPoints[2]", /Tactical Field Care: recheck the hasty tourniquet; any new tourniquet is a deliberate one, 2-3 inches above the wound, directly on the skin/],
   ["keyPoints[4]", /Write the time on the tourniquet and on DD Form 1380 in Tactical Field Care/], ["keyPoints[5]", /Only medical personnel at a higher role of care remove it/],
 ]);
 pin("tccc-004 (tension pneumothorax)", p004, [
@@ -260,8 +363,11 @@ pin("tccc-004 (tension pneumothorax)", p004, [
   ["keyPoints[2]", /Never put the needle through a chest seal; if the first try fails, use the other site/], ["keyPoints[3]", /Tracheal deviation and swollen neck veins are late signs/],
 ]);
 pin("tccc-005 (tourniquet)", p005, [
-  ["a", /In Care Under Fire, put a hasty tourniquet on "high and tight" over the uniform, tighten until the bleeding stops, and move to cover — don't stop to record the time yet\. In Tactical Field Care, reassess it and place a deliberate tourniquet two to three inches above the wound directly on the skin, and write the time on the tourniquet and on DD Form 1380/],
-  ["acceptableAnswer", /Care Under Fire: a hasty tourniquet high and tight over the clothing, tighten until the bleeding stops, move to cover, no time-marking yet\. Tactical Field Care: a deliberate tourniquet 2-3 inches above the wound on bare skin, with the time written on the tourniquet and DD Form 1380/],
+  ["a", /In Care Under Fire, put a hasty tourniquet on "high and tight" over the uniform, tighten until the bleeding stops, and move to cover — don't stop to record the time yet\. In Tactical Field Care, reassess the hasty tourniquet \(it may need adjusting\); a tourniquet put on in this phase is a deliberate one, two to three inches above the wound directly on the skin, and if bleeding continues a second goes next to the first, higher on the limb\. Write the time on the tourniquet and on DD Form 1380\. Only medical personnel at a higher role of care remove a tourniquet\./],
+  ["a", /reassess it and (?:place|use) a deliberate/, true],
+  ["acceptableAnswer", /Care Under Fire: a hasty tourniquet high and tight over the clothing, tighten until the bleeding stops, move to cover, no time-marking yet\. Tactical Field Care: recheck the hasty tourniquet; any tourniquet put on now is a deliberate one 2-3 inches above the wound on bare skin, a second goes next to the first if bleeding continues, and the time is written on the tourniquet and DD Form 1380/],
+  ["boardAnswer", /Tactical Field Care: reassess the hasty tourniquet, which may need adjusting; a tourniquet put on in this phase is a deliberate one, placed two to three inches above the wound, directly on the skin and not over clothing\./], ["boardAnswer", /the first one stays on/],
+  ["keyPoints[2]", /recheck the hasty tourniquet; a tourniquet put on now is deliberate — 2-3 inches above the wound, directly on the skin/],
   ["boardAnswer", /add a second tourniquet next to the first, higher on the limb/], ["boardAnswer", /under two hours.{1,80}limb loss is possible after six hours/],
   ["keyPoints[1]", /Do not record the time in Care Under Fire — wait for Tactical Field Care/], ["keyPoints[4]", /never over a joint or a bulky pocket/],
 ]);
@@ -289,7 +395,22 @@ const fa = (n) => byId.get("tc4021-" + n);
 pin("tc4021-3 (AVPU)", fa(3), [["keyPoints[1]", /should not have weapons or communications equipment \(para 15-5, note\)/], ["keyPoints[2]", /monitor unstable casualties' level of consciousness using the AVPU indicators \(para 11-34\)/], ["keyPoints[3]", /Document any AVPU assessment/], ["keyPoints[2]", /Glasgow/i, true]]);
 pin("tc4021-4 (shock)", fa(4), [["acceptableAnswer", /lists eight signs and symptoms of shock/], ["acceptableAnswer", /nine|2016|superseded/i, true], ["keyPoints[0]", /The list has 8 items/]]);
 pin("tc4021-7 (CPR)", fa(7), [["acceptableAnswer", /30:2\) when you are working alone\. With two rescuers the ratio can be 30:2, or continuous compressions/], ["keyPoints[1]", /with two rescuers it can be 30:2 or continuous compressions/]]);
-pin("tc4021-9 (9-line)", fa(9), [["keyPoints[0]", /sent as grid coordinates by secure communication.{1,120}ATP 4-02\.2, Table C-1/], ["keyPoints[1]", /L for litter, A for ambulatory.{1,200}ATP 4-02\.2, Table C-1/], ["keyPoints[3]", /It is not officially part of the NATO and U\.S\. standard request/]]);
+pin("tc4021-9 (9-line)", fa(9), [["keyPoints[0]", /sent as grid coordinates by secure communication.{1,120}ATP 4-02\.2, Table C-1/], ["keyPoints[0]", /the evacuation vehicle needs it to know where to pick up the casualty \(ATP 4-02\.2, Table C-1\)/], ["keyPoints[0]", /without delay or exposing it/, true], ["keyPoints[1]", /L for litter, A for ambulatory.{1,200}ATP 4-02\.2, Table C-1/], ["keyPoints[1]", /so the right number of evacuation vehicles, set up to carry those patients, can be sent \(ATP 4-02\.2, Table C-1\)/], ["keyPoints[3]", /It is not officially part of the NATO and U\.S\. standard request/]]);
+check(fa(9).source.length === 2 && fa(9).source[1].pub === "ATP 4-02.2" && fa(9).source[1].para === "Table C-1", "tc4021-9's structured source names ATP 4-02.2, Table C-1 beside ATP 4-02.11 (its Line 1 and Line 5 text comes from there)", () => J(fa(9).source));
+pin("tc4021-2 (MARCH-PAWS)", fa(2), [["keyPoints[1]", /PAWS \(Pain, Antibiotics, Wounds, Splinting\) is deliberately deferred until all MARCH life threats are addressed/], ["keyPoints[1]", /mechanism/i, true]]);
+pin("tc4021-5 (chest seal)", fa(5), [["keyPoints[1]", /right after the casualty fully exhales \(paras 6-22, 6-27\)/], ["keyPoints[1]", /6-19|don't wait/, true]]);
+pin("tc4021-10 (burns)", fa(10), [["keyPoints[3]", /pubic area 1%, buttocks 1%/], ["keyPoints[3]", /groin/i, true]]);
+pin("tc4021-13 (heat exhaustion)", fa(13), [["keyPoints[4]", /proper fluid replacement, lightweight and loose-fitting clothing, sunscreen, and regular breaks in cool areas \(para 17-12\)/], ["keyPoints[4]", /acclimati/i, true]]);
+{
+  const ied = bank.scenarios.scenarios.find((x) => x.id === "sc-tccc-ied-strike");
+  const n1 = ied.nodes.n1.choices[0].feedback, n3 = ied.nodes.n3.prompt;
+  check(/address the threat first \(fire superiority is the best medicine\), then stop life-threatening limb bleeding and get to cover in whatever order the mission and the situation allow \(paras 3-38, 3-72, 4-9\)/.test(n1) && !/get to cover, then treat/.test(n1),
+    "sc-tccc-ied-strike's first choice says the threat comes first and the rest depends on the mission (paras 3-38, 3-72, 4-9), not 'cover, then bleeding'", () => J(n1));
+  check(/^The tourniquet goes on high and tight and cinches down; the bleeding visibly slows\./.test(n3) && !/two fingers/i.test(n3),
+    "...and its tourniquet goes on 'high and tight' (the hasty rule, para 4-39); the 'two fingers above the wound' the manual never says is gone", () => J(n3));
+}
+check(/signs of shock such as pale, cool, clammy skin, confusion, a weak or missing radial pulse, and rapid breathing/.test(lesson("c-firstaid", "l-circ-hypo").knowledgeCheck.explanation) && !/weak, rapid pulse/.test(lesson("c-firstaid", "l-circ-hypo").knowledgeCheck.explanation),
+  "l-circ-hypo's quiz explanation lists the signs of shock the manual lists (para 7-6) and no longer says 'a weak, rapid pulse'", () => J(lesson("c-firstaid", "l-circ-hypo").knowledgeCheck.explanation));
 pin("tc4021-11 (airway)", fa(11), [["keyPoints[1]", /safest first approach when a neck injury is suspected.{1,120}paras 5-18, 5-20/], ["keyPoints[3]", /roll them onto their back \(para 5-17\); an unconscious casualty who is breathing is placed in the recovery position \(para 5-23\)/], ["keyPoints[3]", /roll onto the back into the recovery position/, true]]);
 pin("tc4021-15 (rescue breathing)", fa(15), [["keyPoints[1]", /injured, obstructed or inaccessible/], ["keyPoints[1]", /clenched/, true], ["keyPoints[4]", /lists four main methods \(para 6-50\)/]]);
 pin("tc4021-16 (Tactical Field Care)", fa(16), [["keyPoints[0]", /Tactical Evacuation Care \(para 3-36, p\. 31\)\. Para 3-57 asks that the abbreviation 'TACEVAC' not be used as the name of that phase/], ["keyPoints[0]", /Tactical Evacuation Care \(TACEVAC\)/, true]]);
@@ -299,10 +420,11 @@ pin("tc4021-19 (MEDEVAC vs CASEVAC)", fa(19), [["keyPoints[4]", /report M030, IA
 const tq = lt(lesson("c-firstaid", "l-tourniquet"));
 pin("c-firstaid l-tourniquet", tq, [
   ["layman", /Under fire you put it on fast, high up on the limb/],
-  ["beginner", /Under fire \(Care Under Fire\), put a hasty tourniquet on "high and tight" over the uniform, tighten until the bleeding stops, and move to cover — don't stop to record the time yet\. Once you're safer \(Tactical Field Care\), reassess it and use a deliberate tourniquet 2 to 3 inches above the wound, directly on the skin and never over a joint, and write the time on the tourniquet and on DD Form 1380/],
-  ["intermediate", /high and tight, over the uniform if you have to, and tighten until the bleeding stops \(the manual's goal is under one minute\)/], ["intermediate", /a deliberate one goes 2 to 3 inches above the wound on bare skin/], ["intermediate", /add a second one next to the first, higher on the limb/],
-  ["professional", /the application time is not documented until Tactical Field Care/], ["professional", /two to three inches above the wound directly on the skin, not over clothing/], ["professional", /under two hours.{1,120}six hours/],
-  ["check.q", /Where does a tourniquet go in Care Under Fire, and where in Tactical Field Care\?/], ["check.a", /Care Under Fire: a hasty tourniquet high and tight over the uniform, with no time written yet\. Tactical Field Care: a deliberate one 2 to 3 inches above the wound on bare skin, with the time on the tourniquet and on DD Form 1380/],
+  ["beginner", /Under fire \(Care Under Fire\), put a hasty tourniquet on "high and tight" over the uniform, tighten until the bleeding stops, and move to cover — don't stop to record the time yet\. Once you're safer \(Tactical Field Care\), the tourniquet is rechecked — the manual gives that to the Combat Lifesaver \(Tier 2\) — because a hasty one may need adjusting\. A tourniquet put on in this phase is a deliberate one, 2 to 3 inches above the wound directly on the skin and never over a joint; if bleeding continues, a second goes next to the first, higher on the limb\. Write the time on the tourniquet and on DD Form 1380, and leave it on: only medical personnel at a higher role of care remove it/],
+  ["beginner", /reassess it and use a deliberate tourniquet/, true],
+  ["intermediate", /high and tight, over the uniform if you have to, and tighten until the bleeding stops \(the manual's goal is under one minute\)/], ["intermediate", /a tourniquet you put on now is a deliberate one, 2 to 3 inches above the wound on bare skin/], ["intermediate", /add a second one next to the first, higher on the limb; leave the first one on/],
+  ["professional", /the application time is not documented until Tactical Field Care/], ["professional", /two to three inches above the wound directly on the skin, not over clothing/], ["professional", /a hasty one may need adjusting \(paras 4-39, 4-61\), and any tourniquet put on in this phase is deliberate/], ["professional", /the first stays on \(paras 4-39, 4-60 to 4-63\)\. Para 4-58 gives deliberate tourniquets in Tactical Field Care to Tier 2, the Combat Lifesaver/], ["professional", /under two hours.{1,120}six hours/],
+  ["check.q", /Where does a tourniquet go in Care Under Fire, and where in Tactical Field Care\?/], ["check.a", /Care Under Fire: a hasty tourniquet high and tight over the uniform, with no time written yet\. Tactical Field Care: recheck it, and any tourniquet put on now is a deliberate one 2 to 3 inches above the wound on bare skin, with the time on the tourniquet and on DD Form 1380/],
   ["explanation", /next to the first, higher on the limb/],
   ["beginner", /high and tight — 2 to 3 inches above the wound/, true], ["professional", /2 to 3 inches above the wound, never over a joint, tightening the windlass/, true], ["check.a", /^2 to 3 inches above the wound; never directly over a joint\.$/, true],
 ]);
@@ -329,7 +451,7 @@ pin("doc-tccc", { ...dt, all: dtText }, [
   ["all", /SOFTT|Hextend|Blizzard|Cushing|Hyfin|QuikClot|HemCon|within 2 minutes|absent breath sounds|hypotension|cricothyrotomy|Start IVs|Tactical Evacuation Care \(TACEVAC\)|completed during TACEVAC/i, true],
 ]);
 const am3 = dOf("doc-armymed-3"), mf4 = dOf("doc-medfa-4"), mf3 = dOf("doc-medfa-3");
-pin("doc-armymed-3, doc-medfa-3 and doc-medfa-4", { am: am3.body + " | " + am3.keyPoints.join(" | "), mf3: mf3.body, mf4: mf4.body + " | " + mf4.keyPoints.join(" | ") }, [["am", /recertified every 12 months/], ["am", /IV access|golden hour|typically maintain/i, true], ["mf3", /basic combat lifesaver skills/, true], ["mf4", /chilblains, trench foot/], ["mf4", /frostnip/i, true]]);
+pin("doc-armymed-3, doc-medfa-3 and doc-medfa-4", { am: am3.body + " | " + am3.keyPoints.join(" | "), amBody: am3.body, amKey: am3.keyPoints.join(" | "), mf3: mf3.body, mf4: mf4.body + " | " + mf4.keyPoints.join(" | ") }, [["amBody", /CLS skills must be recertified every 12 months/], ["amKey", /skills are recertified every 12 months/], ["amBody", /24 months/, true], ["amKey", /24 months/, true], ["am", /IV access|golden hour|typically maintain/i, true], ["mf3", /basic combat lifesaver skills/, true], ["mf4", /chilblains, trench foot/], ["mf4", /frostnip/i, true]]);
 
 /* across every record that cites ATP 4-02.11: no term the second review found unsupported, and 'TACEVAC' only where the text says the manual asks us not to use it */
 const atpRecords = [];
@@ -346,6 +468,20 @@ const bannedHits = atpRecords.filter(([k, v]) => citing.has(k) && new RegExp(NOT
 check(citing.size >= 30 && bannedHits.length === 0, `none of the ${citing.size} records that cite ATP 4-02.11 teaches a term the bundled text does not contain (${NOT_IN_BUNDLE.slice(0, 6).join(", ")} ...)`, () => bannedHits.slice(0, 8).join("\n"));
 const tacevacHits = atpRecords.filter(([, v]) => /TACEVAC/.test(v)).filter(([, v]) => !/(?:asks? that|not be used)/.test(v)).map(([k, v]) => k + ": " + v.slice(Math.max(0, v.search(/TACEVAC/) - 40), v.search(/TACEVAC/) + 40));
 check(tacevacHits.length === 0, "'TACEVAC' is used nowhere in the bank except in a sentence that says ATP 4-02.11 (para 3-57) asks us not to use it as the phase name", () => tacevacHits.join("\n"));
+// Dictionary and glossary rows have no id, so the walk above never saw them (the 68W glossary row for TACEVAC could be put back to "the official
+// name of the phase" and nothing failed). Walk every string in the bank, and for a row (an object) read the whole row: the key and the definition.
+const tacevacLoose = [];
+(function walkAll(v, parent, trail) {
+  if (Array.isArray(v)) { v.forEach((x, i) => walkAll(x, v, trail + "[" + i + "]")); return; }
+  if (v && typeof v === "object") { for (const k of Object.keys(v)) walkAll(v[k], v, trail + "." + k); return; }
+  if (typeof v === "string" && /TACEVAC/.test(v)) {
+    const context = parent && !Array.isArray(parent) ? Object.values(parent).filter((x) => typeof x === "string").join(" | ") : v;
+    if (!/(?:asks? that|not be used)/.test(context)) tacevacLoose.push(trail + ": " + v.slice(0, 90));
+  }
+})(bank, null, "bank");
+const tacevacTerm = bank.acronyms.terms.find((t) => t.a === "TACEVAC");
+check(tacevacLoose.length === 0 && tacevacTerm && /asks that "TACEVAC" not be used as the name of that phase/.test(tacevacTerm.d) && !/official name/i.test(tacevacTerm.d),
+  "'TACEVAC' is also used nowhere in a dictionary or glossary row except in the 68W glossary row that says ATP 4-02.11 (para 3-57) asks us not to use it as the phase name", () => tacevacLoose.concat([J(tacevacTerm)]).join("\n    "));
 const htmlNoSeed = readFileSync(path.join(APP, "src", "index.html"), "utf8").replace(readSeed(path.join(APP, "src", "index.html")).raw, "");
 check(!/TACEVAC/.test(htmlNoSeed), "...nor in the app's own code (the First Aid route hint no longer names the phase 'TACEVAC')", () => htmlNoSeed.match(/.{0,60}TACEVAC.{0,40}/)[0]);
 
