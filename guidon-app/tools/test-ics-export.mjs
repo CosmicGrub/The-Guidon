@@ -92,15 +92,23 @@ const fallBackSunday = (() => { const d = new Date(Date.UTC(Y, 10, 1)); while (d
 // Three days back, not one: in a clock set to the far side of the date line "yesterday" can still be today.
 const past = (() => { const d = new Date(now); d.setDate(d.getDate() - 3); return iso(d); })();
 const SECRETS = ["Doe", "Smith", "John", "555", "1-2 INF", "4856", "TESTKIT", "rSECRET1", "rSECRET2"];
-// What of SECRETS is in a file's bytes. A UID is a hash (hex digits) of a reminder id, and a reminder made on the
-// screen has a RANDOM id - so its UID spells a short digit string like "555" or "4856" by chance (about 1 file in 40
-// with the old whole-file scan). The all-digit entries are therefore looked for with the UID values blanked out; every
-// other entry (no hex digit can spell them) and every other byte is scanned as before, and the UIDs themselves are held
-// to their exact shape (a plain hash), so an id written into one would still be caught.
-const secretsIn = (text) => {
-  const noUids = text.replace(/^UID:.*$/gm, "UID:");
-  return SECRETS.filter((x) => (/^\d+$/.test(x) ? noUids : text).includes(x));
-};
+// What of SECRETS is in a file's bytes. Some lines are written by the machine, not typed: a UID is a hash (hex digits)
+// of a reminder id - a reminder made on the screen has a RANDOM id, so its UID spells a short digit string like "555"
+// or "4856" by chance (about 1 file in 40 with a whole-file scan) - and the file saved from the screen carries the REAL
+// clock in DTSTAMP, whose time of day spells "555" for 0.53% of the seconds in a day and "4856" for 0.03% (about 1 run
+// in 180), plus dates and the alert offset. The all-digit entries are therefore looked for with the VALUES of those
+// machine-written lines blanked out (folded lines are joined first); every other entry (no hex digit or time of day can
+// spell them) is looked for in the whole file, and every other byte of the file is scanned as before. The machine lines
+// are then held to their exact shape (uidsAreHashes, stampsAreShaped), so a typed value written into one would still
+// be caught. The scan is self-contained on purpose: the exhaustive proof below runs the very same source in the page.
+function secretsInText(text, secrets) {
+  const joined = text.replace(/\r\n[ \t]/g, "");
+  const machineFree = joined.replace(/^(UID|DTSTAMP|DTSTART|DTEND|CREATED|LAST-MODIFIED|TRIGGER|SEQUENCE)((?:;[^:\r\n]*)?):.*$/gm, "$1$2:");
+  return secrets.filter((x) => (/^\d+$/.test(x) ? machineFree : text).includes(x));
+}
+const secretsIn = (text) => secretsInText(text, SECRETS);
+const stampsAreShaped = (text) => [...text.replace(/\r\n[ \t]/g, "").matchAll(/^(DTSTAMP|DTSTART|DTEND)(?:;[^:\r\n]*)?:(.*)$/gm)]
+  .every((m) => (m[1] === "DTSTAMP" ? /^\d{8}T\d{6}Z$/ : /^\d{8}$/).test(m[2]));
 const uidsAreHashes = (text) => [...text.matchAll(/^UID:(.*)$/gm)].every((m) => /^guidon-[0-9a-f]{16}@guidon\.invalid$/.test(m[1]));
 const FIXTURE = [
   { id: "rSECRET1", kind: "board", label: "Promo board with SSG Doe, A. (1-2 INF)", note: "Call 555-0100; bring DA 4856", date: day(Y, 10, 31) },
@@ -165,8 +173,45 @@ check(alarmOk, "each event carries the calendar's own alert for 9 in the morning
 
 // Privacy, on the bytes: nothing typed, no name, no id.
 const leaked = secretsIn(built.a.text);
-check(leaked.length === 0 && uidsAreHashes(built.a.text), "nothing the Soldier typed, no roster name, no profile name and no reminder id is anywhere in the file",
-  () => "found in the file: " + JSON.stringify(leaked) + (uidsAreHashes(built.a.text) ? "" : " (and a UID that is not a plain hash)"));
+check(leaked.length === 0 && uidsAreHashes(built.a.text) && stampsAreShaped(built.a.text), "nothing the Soldier typed, no roster name, no profile name and no reminder id is anywhere in the file",
+  () => "found in the file: " + JSON.stringify(leaked) + (uidsAreHashes(built.a.text) ? "" : " (and a UID that is not a plain hash)") + (stampsAreShaped(built.a.text) ? "" : " (and a date or time that is not a plain date or time)"));
+
+// The scan itself, on planted text: a typed value in the lines a person could have typed into IS found, and a digit string in
+// the lines the machine wrote is NOT (that was the flake). Without these the checks above could pass because the scan is blind.
+{
+  const stampOnly = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:guidon-5554856a5554856a@guidon.invalid\r\nDTSTAMP:20310505T055509Z\r\nDTSTART;VALUE=DATE:20311031\r\nDTEND;VALUE=DATE:20311101\r\nSUMMARY:GUIDON: Date to remember\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+  check(secretsIn(stampOnly).length === 0 && uidsAreHashes(stampOnly) && stampsAreShaped(stampOnly), "the scan ignores digits the machine wrote (a UID spelling 555 and 4856, a DTSTAMP at 05:55:09)", () => JSON.stringify(secretsIn(stampOnly)));
+  const planted = (line) => stampOnly.replace("SUMMARY:GUIDON: Date to remember", line);
+  check(secretsIn(planted("SUMMARY:Call 555-0100")).includes("555") && secretsIn(planted("DESCRIPTION:bring DA 4856")).includes("4856"),
+    "...but a phone number or form number planted in SUMMARY or DESCRIPTION IS found", () => JSON.stringify([secretsIn(planted("SUMMARY:Call 555-0100")), secretsIn(planted("DESCRIPTION:bring DA 4856"))]));
+  check(["Doe", "Smith", "John", "1-2 INF", "TESTKIT", "rSECRET1"].every((n) => secretsIn(planted("SUMMARY:x " + n + " y")).includes(n)) && secretsIn(planted("SUMMARY:fold\r\n 555")).includes("555"),
+    "...as is a name or unit planted there, and a digit string split across a folded line", () => "planted names not all found");
+  check(!stampsAreShaped(stampOnly.replace("DTSTAMP:20310505T055509Z", "DTSTAMP:Doe 555")) && !uidsAreHashes(stampOnly.replace(/UID:.*\r/, "UID:rSECRET1\r")),
+    "...and a typed value written into a UID or DTSTAMP line breaks that line's shape", "a value that is not a hash or a stamp was accepted");
+}
+
+// The flake, closed for good: EVERY second of a day, on three dates, through the shipped buildIcs and the scan above. DTSTAMP is the
+// only part of a file that depends on the clock, so one event is enough to cover every stamp the real clock can write.
+const enumerationScript = "(function (args) {\n" +
+  "  const scan = " + secretsInText.toString() + ";\n" +
+  "  const list = [{ id: 'enum-1', kind: 'other', label: 'enumeration', date: args.reminderDay }];\n" +
+  "  let calls = 0, hits = 0, bad = 0, first = null;\n" +
+  "  for (const d of args.days) {\n" +
+  "    const base = Date.UTC(d[0], d[1], d[2]);\n" +
+  "    for (let s = 0; s < 86400; s++) {\n" +
+  "      const text = window.G.reminders.buildIcs(list, new Date(base + s * 1000)).text;\n" +
+  "      calls++;\n" +
+  "      const found = scan(text, args.secrets);\n" +
+  "      if (found.length) { hits++; if (!first) first = { at: new Date(base + s * 1000).toISOString(), found: found }; }\n" +
+  "      if (!/^DTSTAMP:\\d{8}T\\d{6}Z$/m.test(text)) bad++;\n" +
+  "    }\n" +
+  "  }\n" +
+  "  return { calls: calls, hits: hits, bad: bad, first: first };\n" +
+  "})(" + JSON.stringify({ secrets: SECRETS, days: [[2031, 0, 2], [2031, 4, 5], [2032, 1, 29]], reminderDay: day(Y, 10, 31) }) + ")";
+const enumeration = await page.evaluate(enumerationScript);
+check(enumeration.calls === 3 * 86400 && enumeration.bad === 0 && enumeration.hits === 0,
+  "no second of the day can make the clean file look leaky: " + enumeration.calls + " exports (every second of 3 dates) through the shipped builder and the scan, 0 false alarms",
+  () => "calls " + enumeration.calls + ", false alarms " + enumeration.hits + ", malformed stamps " + enumeration.bad + ", first: " + JSON.stringify(enumeration.first));
 
 // Stable and unique UIDs.
 const uidsA = [...built.a.text.matchAll(/^UID:(.+)$/gm)].map((m) => m[1]);
@@ -248,7 +293,7 @@ const rosterDatesIn = ROSTER_DAYS.filter((d) => onDisk.includes("DTSTART;VALUE=D
 check(rosterDatesIn.length === 0, "neither roster reminder (the stamped one, nor the older one that looks exactly like the roster button's) is in the saved file", () => "roster dates found: " + JSON.stringify(rosterDatesIn));
 const lookalikeDatesIn = LOOKALIKE_DAYS.filter((d) => onDisk.includes("DTSTART;VALUE=DATE:" + compact(d)));
 check(lookalikeDatesIn.length === LOOKALIKE_DAYS.length, "...but both dates the Soldier typed with a roster entry's words in the label ARE in it (a different kind, a note: not the roster's)", () => "look-alike dates found: " + JSON.stringify(lookalikeDatesIn) + " of " + JSON.stringify(LOOKALIKE_DAYS));
-check(leakedUi.length === 0 && uidsAreHashes(onDisk), "the file saved from the screen carries none of the typed wording, names or ids either", () => "found: " + JSON.stringify(leakedUi) + (uidsAreHashes(onDisk) ? "" : " (and a UID that is not a plain hash)"));
+check(leakedUi.length === 0 && uidsAreHashes(onDisk) && stampsAreShaped(onDisk), "the file saved from the screen carries none of the typed wording, names or ids either", () => "found: " + JSON.stringify(leakedUi) + (uidsAreHashes(onDisk) ? "" : " (and a UID that is not a plain hash)") + (stampsAreShaped(onDisk) ? "" : " (and a date or time that is not a plain date or time)"));
 const toast = await until(page, (n) => new RegExp(n + " dates ready").test((document.getElementById("toast") || {}).textContent || ""), NS);
 check(toast, "the screen says how many dates are ready and what to do with the file");
 const leftOutSaid = await until(page, () => /2 reminders made from the roster were left out[.]/.test((document.getElementById("toast") || {}).textContent || ""));
