@@ -12,13 +12,15 @@
  *
  * This is the exhaustive counterpart of tools/test-contrast.mjs (a handful of
  * hand-picked trouble spots) and tools/test-contrast-forms.mjs (every form and
- * tab in three themes). CI runs it as FOUR chunks of their own (a chunk shares a
- * 2-vCPU runner among its suites, and the whole job is killed at 15 minutes):
- *   --suite=screens   every screen (default tab), the interaction states, the
- *                     guest pass, the first-run welcome screens (about 5 min on CI)
- *   --suite=tabs --shard=k/3   every tab, segment and chip of the k-th third of
- *                     the screens, in all 30 themes (about 4 min each on CI; the
- *                     whole walk in one chunk took 10.6 min)
+ * tab in three themes). CI runs it as SIX chunks, one per shard, because a chunk
+ * shares a 2-vCPU runner among its suites, a runner varies by 60% from one run to
+ * the next, and the whole job is killed at 15 minutes (the screens suite took 4.7
+ * and then 7.6 minutes in one chunk, the tab walk 10.6):
+ *   --suite=screens --shard=k/3   every screen (default tab), the interaction
+ *                     states, the guest pass and the first-run welcome screens,
+ *                     for every third theme (about 2.5 minutes each on CI)
+ *   --suite=tabs --shard=k/3      every tab, segment and chip of the k-th third
+ *                     of the screens, in all 30 themes (2 to 4 minutes each)
  * (no flags run everything, one after the other: what you want locally).
  * A hung browser call fails the run after 150 s without progress, naming the last
  * step that finished, and the whole run after 11 minutes under CI.
@@ -334,14 +336,15 @@ if (SUITE !== "all" && SUITE_NAMES.indexOf(SUITE) === -1) {
 }
 const RUN_SCREENS = SUITE === "all" || SUITE === "screens";
 const RUN_TABS = SUITE === "all" || SUITE === "tabs";
-/* SHARDS: `--suite=tabs --shard=2/3` walks only the 2nd third of the screens (by TAB_COST), every one of them in all 30 themes, so that
-   the tab walk can run as several CI chunks that each finish well inside the job limit. The split is computed from G.routes alone, so
-   every shard agrees and together they walk every screen exactly once. tools/test-contrast-full-gate.mjs checks that package.json runs
-   every shard. */
+/* SHARDS, so that each CI chunk finishes well inside the job limit (a standard runner is 2 vCPU and varies by 60% from one run to the next):
+   `--suite=tabs --shard=2/3` walks only the 2nd third of the screens (by TAB_COST), every one of them in all 30 themes;
+   `--suite=screens --shard=2/3` measures only every third theme (the 2nd of three), every screen and state in it.
+   Both splits are computed from the registry alone, so every shard agrees and together they cover everything exactly once.
+   tools/test-contrast-full-gate.mjs checks that package.json runs every shard. */
 const shardArg = (process.argv.find((a) => a.startsWith("--shard=")) || "").slice(8);
 const [SHARD_K, SHARD_N] = shardArg ? shardArg.split("/").map(Number) : [1, 1];
-if (!(Number.isInteger(SHARD_K) && Number.isInteger(SHARD_N) && SHARD_K >= 1 && SHARD_K <= SHARD_N) || (SHARD_N > 1 && SUITE !== "tabs")) {
-  console.log(`  FAIL  bad --shard="${shardArg}" (expected k/n with 1 <= k <= n, such as 2/3, and only with --suite=tabs)`);
+if (!(Number.isInteger(SHARD_K) && Number.isInteger(SHARD_N) && SHARD_K >= 1 && SHARD_K <= SHARD_N) || (SHARD_N > 1 && SUITE === "all")) {
+  console.log(`  FAIL  bad --shard="${shardArg}" (expected k/n with 1 <= k <= n, such as 2/3, and only with --suite=screens or --suite=tabs)`);
   console.log("\n1 FAILURE(S)");
   process.exit(1);
 }
@@ -912,7 +915,7 @@ const { themes, routes } = await profilePage.evaluate(() => ({
   themes: window.G.theme.THEMES.map((t) => ({ id: t.id, kind: t.kind })),
   routes: window.G.routes.map((r) => r.hash),
 }));
-const THEME_LIST = ONLY_THEMES ? themes.filter((t) => ONLY_THEMES.includes(t.id)) : themes;
+const THEME_LIST = (ONLY_THEMES ? themes.filter((t) => ONLY_THEMES.includes(t.id)) : themes).filter((t) => SUITE !== "screens" || themes.indexOf(t) % SHARD_N === SHARD_K - 1);
 const ROUTE_LIST = ONLY_ROUTES ? routes.filter((h) => ONLY_ROUTES.includes(h)) : routes;
 /* longest-processing-time-first split of ALL screens over the shards; this shard's share of the cost scales the whole-pass floors */
 const SHARD = (() => {
@@ -926,8 +929,9 @@ const SHARD = (() => {
   return { mine, share: load[SHARD_K - 1] / load.reduce((a, b) => a + b, 0) };
 })();
 const TAB_ROUTES = ROUTE_LIST.filter((h) => SHARD.mine.has(h));
+const fl = (n) => Math.floor(n * (THEME_LIST.length / themes.length));   // a screens shard measures a share of the themes, so the whole-pass floors shrink with it
 const tabFloor = (k) => { const t = TAB_SHARD_FLOORS[SHARD_N]; return t ? t[SHARD_K - 1][k] : Math.floor(FLOORS[k] * SHARD.share * (SHARD_N > 1 ? 0.5 : 1)); };
-console.log(`  SUITE ${SUITE}${SHARD_N > 1 ? " shard " + SHARD_K + "/" + SHARD_N + " (" + TAB_ROUTES.length + " screens, " + Math.round(SHARD.share * 100) + "% of the cost)" : ""}: ${[RUN_SCREENS && "screens (every screen, interaction states, guest, first-run)", RUN_TABS && "tabs (every tab, segment and chip of every screen)"].filter(Boolean).join(" + ")}`);
+console.log(`  SUITE ${SUITE}${SHARD_N > 1 ? " shard " + SHARD_K + "/" + SHARD_N + (SUITE === "tabs" ? " (" + TAB_ROUTES.length + " screens, " + Math.round(SHARD.share * 100) + "% of the cost)" : " (" + THEME_LIST.length + " themes: " + THEME_LIST.map((t) => t.id).join(", ") + ")") : ""}: ${[RUN_SCREENS && "screens (every screen, interaction states, guest, first-run)", RUN_TABS && "tabs (every tab, segment and chip of every screen)"].filter(Boolean).join(" + ")}`);
 if (PARTIAL) console.log(`  NOTE  PARTIAL RUN (${THEME_LIST.length} of ${themes.length} themes, ${ROUTE_LIST.length} of ${routes.length} routes: ${ROUTE_LIST.join(" ")}${ONLY_STATES ? ", states: " + ONLY_STATES.join("|") : ""}${TAB_ALL ? ", every tab state measured" : ""}): the coverage floors are skipped, so this is not the gate`);
 if (!THEME_LIST.length || !ROUTE_LIST.length) { bad("the partial selection matched no theme or no route"); await finish("CONTRAST-FULL"); }
 
@@ -1287,15 +1291,15 @@ if (!PARTIAL) {
   if (RUN_SCREENS) {
     const P = statOf("profile"), G = statOf("guest"), S = statOf("state"), W = statOf("welcome");
     check(P.states === ROUTE_LIST.length, `[profile] swept all ${ROUTE_LIST.length} screens as a Soldier with a finished profile`, `swept only ${P.states} of ${ROUTE_LIST.length}`);
-    check(P.evaluated >= FLOORS.profileTotal, `[profile] evaluated ${P.evaluated} pieces of text (floor ${FLOORS.profileTotal})`, `[profile] only ${P.evaluated} pieces of text evaluated (floor ${FLOORS.profileTotal}) - the sweep is not looking at enough`);
-    const perTheme = themes.map((t) => [t.id, P.byTheme[t.id] || 0]).sort((a, b) => a[1] - b[1])[0];
+    check(P.evaluated >= fl(FLOORS.profileTotal), `[profile] evaluated ${P.evaluated} pieces of text (floor ${fl(FLOORS.profileTotal)})`, `[profile] only ${P.evaluated} pieces of text evaluated (floor ${fl(FLOORS.profileTotal)}) - the sweep is not looking at enough`);
+    const perTheme = THEME_LIST.map((t) => [t.id, P.byTheme[t.id] || 0]).sort((a, b) => a[1] - b[1])[0];
     check(perTheme[1] >= FLOORS.profilePerTheme, `[profile] every theme had at least ${FLOORS.profilePerTheme} pieces of text evaluated (fewest: ${perTheme[0]} with ${perTheme[1]})`, `[profile] ${perTheme[0]}: only ${perTheme[1]} pieces of text evaluated (floor ${FLOORS.profilePerTheme})`);
     check(S.states === STATES.length, `[state] reached all ${STATES.length} interaction states`, `reached only ${S.states} of ${STATES.length}`);
-    check(S.evaluated >= FLOORS.stateTotal, `[state] evaluated ${S.evaluated} pieces of text (floor ${FLOORS.stateTotal})`, `[state] only ${S.evaluated} pieces of text evaluated (floor ${FLOORS.stateTotal})`);
+    check(S.evaluated >= fl(FLOORS.stateTotal), `[state] evaluated ${S.evaluated} pieces of text (floor ${fl(FLOORS.stateTotal)})`, `[state] only ${S.evaluated} pieces of text evaluated (floor ${fl(FLOORS.stateTotal)})`);
     check(guestRoutes.length >= 1, `[guest] ${guestRoutes.length} screen(s) draw differently for a guest: ${guestRoutes.join(", ")} (the other ${guestSame.length} are identical to the profile drawing)`, "no screen differs between a guest and a profile - the two sessions are not what they claim to be");
-    check(G.evaluated >= FLOORS.guestTotal, `[guest] evaluated ${G.evaluated} pieces of text (floor ${FLOORS.guestTotal})`, `[guest] only ${G.evaluated} pieces of text evaluated (floor ${FLOORS.guestTotal})`);
+    check(G.evaluated >= fl(FLOORS.guestTotal), `[guest] evaluated ${G.evaluated} pieces of text (floor ${fl(FLOORS.guestTotal)})`, `[guest] only ${G.evaluated} pieces of text evaluated (floor ${fl(FLOORS.guestTotal)})`);
     check(W.states === WELCOME.length, `[welcome] reached all ${WELCOME.length} first-run screens`, `reached only ${W.states} of ${WELCOME.length}`);
-    check(W.evaluated >= FLOORS.welcomeTotal, `[welcome] evaluated ${W.evaluated} pieces of text (floor ${FLOORS.welcomeTotal})`, `[welcome] only ${W.evaluated} pieces of text evaluated (floor ${FLOORS.welcomeTotal})`);
+    check(W.evaluated >= fl(FLOORS.welcomeTotal), `[welcome] evaluated ${W.evaluated} pieces of text (floor ${fl(FLOORS.welcomeTotal)})`, `[welcome] only ${W.evaluated} pieces of text evaluated (floor ${fl(FLOORS.welcomeTotal)})`);
     /* every single screen and state has its OWN floor (about half of its thinnest theme's count), so one screen cannot collapse behind the totals */
     for (const [pass, s] of [["profile", P], ["state", S], ["guest", G], ["welcome", W]]) {
       for (const [label, n] of Object.entries(s.byLabel)) {
@@ -1304,7 +1308,7 @@ if (!PARTIAL) {
       }
     }
     /* placeholders are drawn by the browser, not in the DOM text: their own floor says the sweep still finds the fields */
-    check(P.placeholders >= FLOORS.placeholdersProfile, `[profile] measured ${P.placeholders} placeholders (floor ${FLOORS.placeholdersProfile})`, `[profile] only ${P.placeholders} placeholders measured (floor ${FLOORS.placeholdersProfile}) - the placeholder pass is not seeing the fields`);
+    check(P.placeholders >= fl(FLOORS.placeholdersProfile), `[profile] measured ${P.placeholders} placeholders (floor ${fl(FLOORS.placeholdersProfile)})`, `[profile] only ${P.placeholders} placeholders measured (floor ${fl(FLOORS.placeholdersProfile)}) - the placeholder pass is not seeing the fields`);
     /* The surfaces the audit named as missing from the old sweep must be on screen in the profile pass. */
     for (const w of SURFACES) {
       const k = w.route + " " + w.sel;

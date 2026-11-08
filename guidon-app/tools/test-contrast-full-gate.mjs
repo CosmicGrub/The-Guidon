@@ -161,11 +161,14 @@ try {
     for (const x of shards) check(new RegExp("(^|\\s)" + x.name + "(\\s|$)").test(runner), `WIRING: npm test runs ${x.name}`, `WIRING: ${x.name} is a script but is not in npm test's run-parallel list - CI would never run that part of the gate`);
   }
   check(!mine.some(([, v]) => !/--suite=/.test(v)), "WIRING: no package.json script runs the gate without --suite (a script that runs both would double the time in one CI chunk)", "WIRING: a package.json script runs tools/test-contrast-full.mjs without --suite=");
-  /* the shards of the tab walk are heavy: ci.yml must give each one a chunk of its own (a chunk runs its suites at the same time on a 2-vCPU runner) */
+  /* the shards are heavy: no two parts of the gate may share a CI chunk (a chunk runs its suites at the same time on a 2-vCPU runner) */
   const ci = fs.readFileSync(path.join(APP, "..", ".github", "workflows", "ci.yml"), "utf8");
-  for (const [name] of mine.filter(([, v]) => /--shard=/.test(v))) {
-    const m = ci.match(new RegExp("tests: \"([^\"]*\\b" + name + "\\b[^\"]*)\""));
-    check(m && m[1].trim() === name, `WIRING: ${name} has a CI chunk to itself`, `WIRING: ${name} shares its CI chunk with other suites (${m ? m[1] : "no chunk found"}) - the shards must not share a runner`);
+  const chunks = [...ci.matchAll(/tests: "([^"]*)"/g)].map((m) => m[1].trim().split(/\s+/));
+  const gateNames = mine.map(([n]) => n);
+  for (const name of gateNames) {
+    const chunk = chunks.find((c) => c.includes(name));
+    const others = chunk ? chunk.filter((x) => x !== name && gateNames.includes(x)) : [];
+    check(chunk && others.length === 0, `WIRING: ${name} shares its CI chunk with no other part of the gate`, `WIRING: ${name} ${chunk ? "shares its CI chunk with " + others.join(", ") : "is in no CI chunk"} - the shards must not share a runner`);
   }
   check(/timeout-minutes: 12\s*\n\s*env:\s*\n\s*ARDUINOJSON_DIR/.test(ci), "WIRING: the 'Run test chunk' step has its own timeout, shorter than the job's, so a hung chunk fails fast", "WIRING: the 'Run test chunk' step has no timeout-minutes of its own");
 

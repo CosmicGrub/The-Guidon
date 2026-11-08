@@ -719,11 +719,15 @@ jobs:
             tests: "test:srs-early-review test:board-drill-entry test:scenario-choice-order test:pub-supersession"
           - name: "67-swpdfnavigation-buildage-icsexport-contrastfullgate"
             tests: "test:sw-pdf-navigation test:build-age test:ics-export test:contrast-full-gate"
-          - name: "68-contrasttabs1"
+          - name: "68-contrastfull2"
+            tests: "test:contrast-full-2"
+          - name: "69-contrastfull3"
+            tests: "test:contrast-full-3"
+          - name: "70-contrasttabs1"
             tests: "test:contrast-tabs-1"
-          - name: "69-contrasttabs2"
+          - name: "71-contrasttabs2"
             tests: "test:contrast-tabs-2"
-          - name: "70-contrasttabs3"
+          - name: "72-contrasttabs3"
             tests: "test:contrast-tabs-3"
     steps:
       - name: Checkout

@@ -72,10 +72,10 @@ const CI_REL = ".github/workflows/ci.yml";
 // a fifth timeout number.
 const PER_CHUNK = 4;
 // Suites that must have a chunk (a CI job, a runner) to themselves. A chunk runs its suites at the same time on a 2-vCPU runner, so a
-// suite that is itself heavy (the contrast gate's tab walk: about 4 minutes alone, 10 with company) cannot share one without eating its
+// suite that is itself heavy (the contrast gate's shards: 2 to 4 minutes each on CI; the whole gate was 8 and 11 minutes in one chunk each) cannot share one without eating its
 // neighbours' time, and a hung browser in one of them would take the others down with it. Put these LAST in the "test" list so that
 // giving them a chunk of their own renumbers nothing else.
-const SOLO = new Set(["test:contrast-tabs-1", "test:contrast-tabs-2", "test:contrast-tabs-3"]);
+const SOLO = new Set(["test:contrast-full-2", "test:contrast-full-3", "test:contrast-tabs-1", "test:contrast-tabs-2", "test:contrast-tabs-3"]);
 // The run-parallel names in chunks: PER_CHUNK at a time, in list order, except that a SOLO name always stands alone.
 function groupNames(names) {
   const groups = [];
