@@ -717,8 +717,18 @@ jobs:
             tests: "test:backup-restore-guard test:contrast-forms test:css-token-lint test:readiness-currency"
           - name: "66-srsearlyreview-boarddrillentry-scenariochoiceorder-pubsupersession"
             tests: "test:srs-early-review test:board-drill-entry test:scenario-choice-order test:pub-supersession"
-          - name: "67-swpdfnavigation-buildage-icsexport"
-            tests: "test:sw-pdf-navigation test:build-age test:ics-export"
+          - name: "67-swpdfnavigation-buildage-icsexport-contrastfullgate"
+            tests: "test:sw-pdf-navigation test:build-age test:ics-export test:contrast-full-gate"
+          - name: "68-contrastfull2"
+            tests: "test:contrast-full-2"
+          - name: "69-contrastfull3"
+            tests: "test:contrast-full-3"
+          - name: "70-contrasttabs1"
+            tests: "test:contrast-tabs-1"
+          - name: "71-contrasttabs2"
+            tests: "test:contrast-tabs-2"
+          - name: "72-contrasttabs3"
+            tests: "test:contrast-tabs-3"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
@@ -824,6 +834,9 @@ jobs:
           persist-credentials: false
 
       - name: Run test chunk (${{ matrix.chunk.name }})
+        # The job limit is 15 minutes; the slowest chunk takes under 6. A step limit shorter than the job's fails a HUNG chunk here, at 12,
+        # with this step named, instead of the job being cancelled at 15 with whatever was running still alive (chunk 04 was, on defc287).
+        timeout-minutes: 12
         env:
           ARDUINOJSON_DIR: ${{ github.workspace }}/.arduinojson/src
         run: node tools/run-parallel.mjs ${{ matrix.chunk.tests }}

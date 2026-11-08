@@ -40,7 +40,6 @@
     "test-consistency-extended.mjs": { "sleeps": 9, "swallowedWaits": 0, "literalCounts": 0 },
     "test-consistency.mjs": { "sleeps": 1, "swallowedWaits": 0, "literalCounts": 0 },
     "test-content-packs.mjs": { "sleeps": 0, "swallowedWaits": 1, "literalCounts": 0 },
-    "test-contrast-full.mjs": { "sleeps": 9, "swallowedWaits": 0, "literalCounts": 0 },
     "test-contrast.mjs": { "sleeps": 8, "swallowedWaits": 0, "literalCounts": 0 },
     "test-counselpdf-sigmode.mjs": { "sleeps": 7, "swallowedWaits": 1, "literalCounts": 0 },
     "test-creeds.mjs": { "sleeps": 12, "swallowedWaits": 0, "literalCounts": 0 },

@@ -71,6 +71,23 @@ const CI_REL = ".github/workflows/ci.yml";
 // removes the per-shard contention class outright rather than gambling on
 // a fifth timeout number.
 const PER_CHUNK = 4;
+// Suites that must have a chunk (a CI job, a runner) to themselves. A chunk runs its suites at the same time on a 2-vCPU runner, so a
+// suite that is itself heavy (the contrast gate's shards: 2 to 4 minutes each on CI; the whole gate was 8 and 11 minutes in one chunk each) cannot share one without eating its
+// neighbours' time, and a hung browser in one of them would take the others down with it. Put these LAST in the "test" list so that
+// giving them a chunk of their own renumbers nothing else.
+const SOLO = new Set(["test:contrast-full-2", "test:contrast-full-3", "test:contrast-tabs-1", "test:contrast-tabs-2", "test:contrast-tabs-3"]);
+// The run-parallel names in chunks: PER_CHUNK at a time, in list order, except that a SOLO name always stands alone.
+function groupNames(names) {
+  const groups = [];
+  let cur = [];
+  for (const n of names) {
+    if (SOLO.has(n)) { if (cur.length) { groups.push(cur); cur = []; } groups.push([n]); continue; }
+    cur.push(n);
+    if (cur.length === PER_CHUNK) { groups.push(cur); cur = []; }
+  }
+  if (cur.length) groups.push(cur);
+  return groups;
+}
 const WRITE = process.argv.includes("--write");
 
 const CHUNK_HEAD = /^\s{8}chunk:\s*$/;
@@ -158,11 +175,10 @@ function generateBlock(names) {
     `${I}# remove a suite, edit the "test" script in guidon-app/package.json`,
     `${I}# and rerun the --write command above.`,
   ];
-  for (let i = 0; i < names.length; i += PER_CHUNK) {
-    const group = names.slice(i, i + PER_CHUNK);
-    out.push(`${I}- name: "${chunkName(i / PER_CHUNK, group)}"`);
+  groupNames(names).forEach((group, i) => {
+    out.push(`${I}- name: "${chunkName(i, group)}"`);
     out.push(`${I}  tests: "${group.join(" ")}"`);
-  }
+  });
   return out;
 }
 
@@ -190,7 +206,7 @@ if (WRITE) {
     else {
       await writeFile(CI, next, "utf-8");
       ci = next;
-      ok(`--write: rewrote ${CI_REL} chunk block (${Math.ceil(suites.length / PER_CHUNK)} chunks from ${suites.length} suites)`);
+      ok(`--write: rewrote ${CI_REL} chunk block (${groupNames(suites).length} chunks from ${suites.length} suites)`);
     }
   }
 }
