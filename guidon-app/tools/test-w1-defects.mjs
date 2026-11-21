@@ -157,7 +157,7 @@ const stubStorage = () => {
 {
   const page = await open({ viewport: { width: 800, height: 1100 } }, () => { try { localStorage.setItem("guidon-nav-pinned-routes", JSON.stringify(["#/board", "#/train"])); } catch (e) { /* ignore */ } }, "#/board");
   const r = await page.evaluate(() => {
-    const links = [...document.querySelectorAll("nav.nav a[data-hash]")];
+    const links = [...document.querySelectorAll("nav.nav a[data-hash]")].filter((a) => !a.closest(".nav-dup-pinned"));
     return {
       unnamed: links.filter((a) => !(a.getAttribute("aria-label") || "").trim() || !(a.getAttribute("title") || "").trim()).map((a) => a.dataset.hash),
       board: links.filter((a) => a.dataset.hash === "#/board").length,
@@ -169,7 +169,7 @@ const stubStorage = () => {
   check(r.board === 1 && r.train === 1 && r.pinnedHas.includes("#/board") && r.pinnedHas.includes("#/train"), "A13: a pinned route is listed once (in Pinned), at 800 px", JSON.stringify(r));
   await page.evaluate(() => { document.querySelector("nav.nav .nav-pinned-section .nav-pin-btn.pinned").click(); });
   await until(page, () => document.querySelectorAll("nav.nav .nav-pinned-section a[data-hash]").length === 1);
-  const after = await page.evaluate(() => [...document.querySelectorAll("nav.nav a[data-hash]")].filter((a) => a.dataset.hash === "#/train" || a.dataset.hash === "#/board").length);
+  const after = await page.evaluate(() => [...document.querySelectorAll("nav.nav a[data-hash]")].filter((a) => !a.closest(".nav-dup-pinned") && (a.dataset.hash === "#/train" || a.dataset.hash === "#/board")).length);
   check(after === 2, "A13: unpinning one returns it to its group (still listed once each)", String(after));
   await page.context().close();
 }

@@ -4819,6 +4819,7 @@ html.reduce-transparency #demo-mode-badge { background: var(--panel-2); }
 /* Not a collapsible group (see renderPinnedInto's own comment) - no
    header/chevron/open-close state, so this reuses .nav-group-body's own
    column/gap shape directly rather than duplicating it under a new name. */
+.nav-item-row.nav-dup-pinned { display: none; }
 .nav-pinned-section { display: flex; flex-direction: column; gap: 2px; margin-bottom: 4px; }
 .nav-pinned-label {
   font-family: var(--font-head); font-size: .62rem; letter-spacing: .08em; text-transform: uppercase;
@@ -42279,10 +42280,10 @@ window.G = window.G || {};
         const b = navButton(h);
         if (!b) return;
         // A pinned route already has its row in the Pinned section above, so
-        // it is not drawn a second time inside its group (on the narrow icon
-        // rail that read as the same two icons twice). Unpinning it puts it
-        // straight back in its group.
-        if (isPinned(h)) return;
+        // its row inside the group is kept (its star still reflects the pin)
+        // but not drawn (.nav-dup-pinned): on the narrow icon rail the same
+        // two icons used to show twice. Unpinning shows it in its group again.
+        const dupOfPinned = isPinned(h);
         if (g.demoted && g.demoted.indexOf(h) !== -1) b.classList.add("nav-demoted");
         // Nav overhaul Milestone 2: wrap the route link with its own pin
         // toggle. A <button> nested inside navButton()'s own <a> would be
@@ -42291,7 +42292,7 @@ window.G = window.G || {};
         // existing ".nav-group-body a[data-hash]"/".nav-drawer a[data-hash]"
         // selector is a descendant combinator, so it still matches through
         // this new wrapper with no CSS changes needed for the link itself.
-        const row = el("div.nav-item-row");
+        const row = el("div.nav-item-row" + (dupOfPinned ? ".nav-dup-pinned" : ""));
         row.appendChild(b);
         row.appendChild(pinToggleButton(h));
         body.appendChild(row);
