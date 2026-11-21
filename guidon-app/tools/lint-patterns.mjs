@@ -75,7 +75,7 @@ console.log("lint-patterns: static regression guard for repeat bug shapes and re
     // cleanup - main had drifted to 119 and the Forms fix moved .example-chip
     // and .copybtn from var(--cyan) to var(--ink-cyan), so the ratchet now
     // sits exactly on the audited count.
-    const BASELINE = 117; // audited count as of 2026-09-12 (nav overhaul
+    const BASELINE = 112; // 117 as of 2026-09-12; 5 fewer after the contrast tab walk moved text that failed 4.5:1 behind tabs to --ink-* (nav overhaul
     // Milestone 2: added .nav-pin-btn.pinned and .nav-pinned-label, both
     // color:var(--amber) - the pin-toggle star's "pinned" tint and the
     // "Pinned" section's own small uppercase label, matching the same

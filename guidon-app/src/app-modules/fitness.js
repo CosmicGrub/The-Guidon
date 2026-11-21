@@ -206,7 +206,7 @@ window.G = window.G || {};
 
       const min = v.standard === "combat" ? 350 : 300;
       let statusText, statusColor;
-      if (belowSixty.length) { statusText = "Automatic test failure — below 60 on " + belowSixty.join(", ") + " (every event needs at least 60, whatever the total is)."; statusColor = "var(--red)"; }
+      if (belowSixty.length) { statusText = "Automatic test failure — below 60 on " + belowSixty.join(", ") + " (every event needs at least 60, whatever the total is)."; statusColor = "var(--ink-red)"; }
       else if (aggregate >= min) { statusText = (v.standard === "combat" ? "Combat" : "General") + " standard met (" + min + " minimum)."; statusColor = "var(--green)"; }
       else { statusText = (v.standard === "combat" ? "Combat" : "General") + " standard NOT met — " + (min - aggregate) + " points short of the " + min + " minimum."; statusColor = "var(--amber)"; }
       resultBox.appendChild(el("p.hint", { text: statusText, style: "color:" + statusColor }));
