@@ -1693,9 +1693,9 @@ html.qz-theater[data-motion="minimal"] .qz-back { max-height: none; }
 textarea.in { resize: vertical; min-height: 64px; font-family: var(--font-mono, monospace); font-size: .81rem; }
 select.in { appearance:none; }
 /* A date field keeps its 16px text (a phone must not zoom the page on focus), which made it
-   about 7px taller than the text boxes beside it on the DA forms. Less padding top and bottom
-   brings it level with them. */
-input.in[type="date"] { padding-block: 4.5px; }
+   taller than the text boxes beside it on the DA forms. Both now share one height. */
+input.in[type="text"], input.in[type="date"] { box-sizing: border-box; height: 2.4rem; }
+input.in[type="date"] { padding-block: 0; }
 .cnt { font-size: .69rem; color: var(--text-dim); margin-top:3px; font-family: var(--font-mono, monospace); }
 .cnt.over { color: var(--ink-red); }
 .static-note { background: var(--panel-2); border:1px dashed var(--line-2); border-radius:6px; padding:8px 10px; font-size: 0.929rem; color: var(--text); }
@@ -7758,7 +7758,14 @@ window.G = window.G || {};
     var groupSel = opts.groupSelector || null;
     var openClass = opts.openClass || "open";
     var isActive = opts.isActive || function () { return true; };
-    function allItems() { return Array.prototype.slice.call(container.querySelectorAll(itemSel)); }
+    // opts.excludeSel: rows that stay in the DOM but are never drawn (the
+    // hidden copy of a pinned route) - arrow keys must step over them, since
+    // focus() cannot land on a display:none link.
+    var excludeSel = opts.excludeSel || null;
+    function allItems() {
+      var list = Array.prototype.slice.call(container.querySelectorAll(itemSel));
+      return excludeSel ? list.filter(function (x) { return !x.closest(excludeSel); }) : list;
+    }
     function visibleItems() {
       if (!groupSel) return allItems();
       return allItems().filter(function (x) {
@@ -17261,8 +17268,10 @@ window.G = window.G || {};
   async function migrateQuizBestKeys() {
     try {
       const P = "boardQuiz:best:";
-      if (G.profile && G.profile.isGuest && G.profile.isGuest()) return 0;
+      // Load the saved profile FIRST: until it is read, isGuest() answers true for everyone,
+      // and a Soldier with a saved personal profile would never be migrated.
       const prof = G.profile && G.profile.current ? await G.profile.current() : null;
+      if (G.profile && G.profile.isGuest && G.profile.isGuest()) return 0;
       if (prof && prof.mode === "kiosk") return 0;
       const rows = await G.db.all("kv");
       const have = new Set(rows.map((r) => r && r.k));
@@ -42186,7 +42195,7 @@ window.G = window.G || {};
   // the <a data-hash> navButton() now returns (Tier 2(a)) - matches the
   // ".nav-group-header, a[data-hash]" JS/CSS pattern used everywhere else
   // in this file post-Tier-2(a).
-  const NAV_ROVING_SEL = { itemSelector: ".nav-group-header, a[data-hash]", groupSelector: ".nav-group-body" };
+  const NAV_ROVING_SEL = { itemSelector: ".nav-group-header, a[data-hash]", groupSelector: ".nav-group-body", excludeSel: ".nav-dup-pinned" };
 
   // Round 11 roadmap-audit (nav-pin-focus-restore): shared capture/restore
   // pair factored out of refreshNavDrawerIfOpen's own pin-toggle focus fix

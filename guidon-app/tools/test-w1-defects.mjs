@@ -18,7 +18,7 @@
 import { chromium } from "playwright";
 import { serve } from "./server.mjs";
 import { dismissOnboarding } from "./dismiss-onboarding.mjs";
-import { waitForBoot, waitForRoute, until } from "./testkit.mjs";
+import { waitForBoot, waitForRoute, until, untilAsync, PERSONAL_PROFILE, PROFILE_KEY } from "./testkit.mjs";
 import { readFileSync, readdirSync } from "node:fs";
 
 let fails = 0;
@@ -167,6 +167,22 @@ const stubStorage = () => {
   });
   check(r.unnamed.length === 0, "A7: every nav item has an accessible name and a tooltip", r.unnamed.join(","));
   check(r.board === 1 && r.train === 1 && r.pinnedHas.includes("#/board") && r.pinnedHas.includes("#/train"), "A13: a pinned route is listed once (in Pinned), at 800 px", JSON.stringify(r));
+  // arrow keys step over the hidden copy: walk the whole list; every stop must be a drawn link
+  const walk = await page.evaluate(async () => {
+    const first = document.querySelector("nav.nav .nav-pinned-section a[data-hash]");
+    first.focus();
+    const seen = [];
+    for (let i = 0; i < 40; i++) {
+      const before = document.activeElement;
+      document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+      await new Promise((r) => setTimeout(r, 0));
+      const now = document.activeElement;
+      seen.push({ hidden: !!(now && now.closest && now.closest(".nav-dup-pinned")), moved: now !== before });
+      if (now === before) break;
+    }
+    return { steps: seen.length, anyHidden: seen.some((x) => x.hidden), stuckEarly: seen.length < 6 };
+  });
+  check(!walk.anyHidden && !walk.stuckEarly, "A13: arrow keys never land on the hidden duplicate and keep moving through the list", JSON.stringify(walk));
   await page.evaluate(() => { document.querySelector("nav.nav .nav-pinned-section .nav-pin-btn.pinned").click(); });
   await until(page, () => document.querySelectorAll("nav.nav .nav-pinned-section a[data-hash]").length === 1);
   const after = await page.evaluate(() => [...document.querySelectorAll("nav.nav a[data-hash]")].filter((a) => !a.closest(".nav-dup-pinned") && (a.dataset.hash === "#/train" || a.dataset.hash === "#/board")).length);
@@ -238,20 +254,44 @@ for (const w of [412, 360]) {
     return { moved, old: (await G.db.get("kv", P + "TC 4-02.1")) || null, nw: (await G.db.get("kv", P + "ATP 4-02.11")) || null };
   }, P);
   check(guest.moved === 0 && guest.old && guest.old.v === 70 && !guest.nw, "C2: Guest/Kiosk - nothing is moved", JSON.stringify(guest));
-  const res = await page.evaluate(async (P) => {
-    G.profile.isGuest = () => false;
-    G.profile.current = async () => ({ mode: "personal" });
-    await G.db.put("kv", { k: P + "TC 4-02.1:expert", v: 55 });
-    await G.db.put("kv", { k: P + "ATP 4-02.11:expert", v: 90 });
-    const first = await G.board.migrateQuizBestKeys();
-    const second = await G.board.migrateQuizBestKeys();
-    const g = async (k) => { const r = await G.db.get("kv", k); return r ? r.v : null; };
-    return { first, second, base: await g(P + "ATP 4-02.11"), baseOld: await g(P + "TC 4-02.1"), exp: await g(P + "ATP 4-02.11:expert"), expOld: await g(P + "TC 4-02.1:expert") };
-  }, P);
-  check(res.first === 2 && res.second === 0, "C2: migration runs once and is idempotent", JSON.stringify(res));
-  check(res.base === 70 && res.baseOld === null, "C2: old best moves to the new category name", JSON.stringify(res));
-  check(res.exp === 90 && res.expOld === null, "C2: a newer value under the new name is never overwritten", JSON.stringify(res));
   await page.context().close();
+}
+{
+  // A real cold start: a saved personal profile and legacy rows already on the device. Nothing is
+  // called by hand - the app's own start-up must do the move (isGuest() is true until the profile loads).
+  const P = "boardQuiz:best:";
+  const ctx = await browser.newContext({ viewport: { width: 1000, height: 800 } });
+  const pg = await ctx.newPage();
+  pg.on("pageerror", (e) => noise.push("pageerror: " + e.message));
+  await pg.goto(url, { waitUntil: "load" });
+  await pg.waitForFunction(() => !!(window.G && window.G.db && typeof window.G.db.put === "function"));
+  await pg.evaluate(async ([P, prof, key]) => {
+    await G.db.put("kv", { k: key, v: prof });
+    await G.db.put("kv", { k: P + "TC 4-02.1", v: 70 });
+    await G.db.put("kv", { k: P + "TC 4-02.1:expert", v: 55 });
+    await G.db.put("kv", { k: P + "ATP 4-02.11:expert", v: 90 });   // a newer value is already there
+  }, [P, PERSONAL_PROFILE, PROFILE_KEY]);
+  await pg.reload({ waitUntil: "load" });
+  await waitForBoot(pg);
+  const moved = await untilAsync(pg, async () => !(await G.db.get("kv", "boardQuiz:best:TC 4-02.1")));
+  const r2 = await pg.evaluate(async (P) => {
+    const g = async (k) => { const r = await G.db.get("kv", k); return r ? r.v : null; };
+    return { again: await G.board.migrateQuizBestKeys(), base: await g(P + "ATP 4-02.11"), baseOld: await g(P + "TC 4-02.1"), exp: await g(P + "ATP 4-02.11:expert"), expOld: await g(P + "TC 4-02.1:expert") };
+  }, P);
+  check(moved, "C2: a saved personal profile - the legacy quiz-best row is moved by the app's own start-up", JSON.stringify(r2));
+  check(r2.base === 70 && r2.baseOld === null, "C2: the old best now lives under ATP 4-02.11", JSON.stringify(r2));
+  check(r2.exp === 90 && r2.expOld === null, "C2: a newer value under the new name is never overwritten", JSON.stringify(r2));
+  check(r2.again === 0, "C2: running it again does nothing (idempotent)", JSON.stringify(r2));
+  // Kiosk keeps nothing on the device: a legacy row stays exactly as it was.
+  await pg.evaluate(async ([P, key, prof]) => {
+    await G.db.put("kv", { k: key, v: Object.assign({}, prof, { mode: "kiosk" }) });
+    await G.db.put("kv", { k: P + "TC 4-02.1", v: 61 });
+  }, [P, PROFILE_KEY, PERSONAL_PROFILE]);
+  await pg.reload({ waitUntil: "load" });
+  await waitForBoot(pg);
+  const k = await pg.evaluate(async (P) => { const n = await G.board.migrateQuizBestKeys(); const r = await G.db.get("kv", P + "TC 4-02.1"); return { n, old: r ? r.v : null, mode: (await G.profile.current() || {}).mode }; }, P);
+  check(k.mode === "kiosk" && k.n === 0 && k.old === 61, "C2: Kiosk - nothing is moved", JSON.stringify(k));
+  await ctx.close();
 }
 
 // ---------------------------------------------------------------- C7
