@@ -154,6 +154,26 @@ if (RW) {
     const arrived = await until(() => qsrv.stats().framesIn > before ? true : null, 5000);
     arrived.hit ? ok("(2) the queued frame reached the real server once the socket opened (" + arrived.ms + " ms) - the queue-before-open fix holds") : bad("(2) the queued frame never reached the server: framesIn stayed at " + qsrv.stats().framesIn);
     t.onended();
+    /* (2b) CN-09: the transport says HOW the socket closed ({ code, opened }) so the room panel can use plain words. */
+    const hello = { v: S.PROTOCOL_VERSION, t: "hello", room: ROOM, seq: 0, from: "AAAAAAAA", body: { name: "Q", bankSig: "b" } };
+    let nowhere = null;
+    const t2 = RW._makeTransport("127.0.0.1:1", ROOM);
+    t2.onclose((i) => { nowhere = i; });
+    t2.send(hello, null);
+    const g2 = await until(() => nowhere, 6000);
+    g2.hit && nowhere.opened === false ? ok("(2b) a socket that never opened (nothing listening) reports { opened: false }: " + JSON.stringify(nowhere)) : bad("(2b) never-opened close info: " + JSON.stringify(nowhere));
+    t2.onended();
+    let afterOpen = null;
+    const t3 = RW._makeTransport(wsBase, ROOM);
+    t3.onclose((i) => { afterOpen = i; });
+    const before3 = qsrv.stats().framesIn;
+    t3.send(hello, null);
+    await until(() => qsrv.stats().framesIn > before3 ? true : null, 5000);
+    await qsrv.close();
+    qsrv = null;
+    const g3 = await until(() => afterOpen, 6000);
+    g3.hit && afterOpen.opened === true && typeof afterOpen.code === "number" ? ok("(2b) a socket that was open and then closed by the server reports { opened: true, code }: " + JSON.stringify(afterOpen)) : bad("(2b) opened-then-closed info: " + JSON.stringify(afterOpen));
+    t3.onended();
   } catch (e) {
     bad("(2) section error: " + (e && e.stack ? e.stack.split("\n").slice(0, 2).join(" ") : e));
   }

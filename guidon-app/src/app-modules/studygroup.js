@@ -666,7 +666,7 @@
     var now = nowOf(ctx), s;
     if (action.type === "tick") {
       if (now - state.lastSeen > state.cfg.pingMs * state.cfg.missLimit) {
-        s = clone(state); s.terminal = { kind: "network-lost", reason: state.hostFp ? "No answer from the host." : "No host answered." };
+        s = clone(state); s.terminal = { kind: "network-lost", held: state.joinState === "seated", reason: state.hostFp ? "No answer from the host." : "No host answered. Check the room code and that you are on the same network or hotspot as the host." };
         return result(s, { accepted: true, changed: true });
       }
       return result(state, { accepted: true });
@@ -1042,17 +1042,34 @@
     var previous = rt.transport;
     rt.transport = t;
     t.onmessage(deliver);
-    if (typeof t.onclose === "function") t.onclose(function () { onTransportClosed(t); });
+    if (typeof t.onclose === "function") t.onclose(function (info) { onTransportClosed(t, info); });
     if (typeof t.open === "function") { try { t.open(); } catch (e) {} }
     try { if (G.netLedger && G.netLedger.record) G.netLedger.record({ kind: String(t.kind || "seam"), peer: String(t.peer || "unknown"), at: Date.now() }); } catch (e) {}
     return { ok: true, previous: previous };
   }
-  function onTransportClosed(t) {
+  /* A closed connection, in a Soldier's words. `info` is what the transport knew ({code, opened}; the
+     native connector and older transports pass nothing, which keeps the generic wording). The relay's
+     close codes: 4000 host left, 4001 the seat was taken by another connection, 4003 stopped answering,
+     4004 room full, 4005 too many messages. A socket that never opened never reached the host: it is the
+     wrong code, a host that is not there, or the wrong network. The relay cannot yet say "wrong code" or
+     "version mismatch" before closing (that needs a reject frame ahead of 4004), so those are not split out here. */
+  function closeWords(info, seated) {
+    var code = info && typeof info.code === "number" ? info.code : 0;
+    if (code === 4000) return { kind: "host-left", reason: "The host left the room." };
+    if (code === 4004) return { kind: "network-lost", held: false, reason: "This room is full. Ask the host to free a seat, then join again." };
+    if (code === 4001) return { kind: "network-lost", held: false, reason: "Another device took this seat. If that was not you, ask the host to remove it." };
+    if (code === 4005) return { kind: "network-lost", held: seated, reason: "Too many messages were sent at once, so the room closed the connection." };
+    if (info && info.opened === false) return { kind: "network-lost", held: false, reason: "Could not reach the host. Check the room code and that you are on the same network or hotspot as the host." };
+    return { kind: "network-lost", held: seated, reason: "The connection closed." };
+  }
+  function onTransportClosed(t, info) {
     if (rt.transport !== t || !rt.state) return;
     if (rt.state.role === "peer" && !rt.state.terminal) {
       var prev = rt.state;
       rt.state = clone(rt.state);
-      rt.state.terminal = { kind: "network-lost", reason: "The connection closed." };
+      var words = closeWords(info, rt.state.joinState === "seated");
+      rt.state.terminal = { kind: words.kind, reason: words.reason };
+      if (words.held !== undefined) rt.state.terminal.held = words.held;
       announceStateTransition(prev, rt.state);
       stopTimers();
       scheduleRender();
@@ -1087,7 +1104,7 @@
       var nextKind = next.terminal ? next.terminal.kind : null;
       if (nextKind && nextKind !== prevKind) {
         var msg = nextKind === "host-left" ? "The host left the room."
-          : nextKind === "network-lost" ? "Connection to the host was lost."
+          : nextKind === "network-lost" ? (next.terminal.held === false || next.joinState !== "seated" ? "Could not join the room." : "Connection to the host was lost.")
           : nextKind === "kicked" ? "You were removed from the room."
           : nextKind === "rejected" ? "The host turned down your request to join."
           : "The session has ended.";
@@ -2022,13 +2039,15 @@
 
   function drawTerminal(view, st) {
     var k = st.terminal.kind;
+    // The 60 s hold only exists for a Soldier who was seated; a join that never got a seat has nothing held.
+    var seatHeld = st.terminal.held !== undefined ? !!st.terminal.held : st.joinState === "seated";
     var p = el("div.panel.sg-terminal", { "data-kind": k, style: "border-left:3px solid var(--red)" });
-    var title = k === "host-left" ? "The host left the room" : k === "network-lost" ? "Connection to the host was lost" : k === "rejected" ? "The host turned this join down" : k === "kicked" ? "Removed from the room" : "The session has ended";
+    var title = k === "host-left" ? "The host left the room" : k === "network-lost" ? (seatHeld ? "Connection to the host was lost" : "Could not join the room") : k === "rejected" ? "The host turned this join down" : k === "kicked" ? "Removed from the room" : "The session has ended";
     p.appendChild(el("div.eyebrow", { text: title }));
     if (st.terminal.reason) p.appendChild(el("p", { text: st.terminal.reason }));
     if (k === "rejected" && st.terminal.reason === schema().VERSION_MISMATCH_TEXT) p.appendChild(hint("This device: " + schema().buildLabel(localBuild()) + ". Update the older GUIDON, then join again."));
     if (k === "host-left") p.appendChild(hint("Nothing from this room was saved on this device. Ask the host to open a new room, or pass the device and keep drilling."));
-    if (k === "network-lost") p.appendChild(hint("Your seat is held for " + Math.round(holdMsOf(st) / 1000) + " s. Move back into range of the hotspot and try to reconnect."));
+    if (k === "network-lost" && seatHeld) p.appendChild(hint("Your seat is held for " + Math.round(holdMsOf(st) / 1000) + " s. Move back into range of the hotspot and try to reconnect."));
     if (k === "ended" && st.seats && st.seats.length) p.appendChild(rosterTable(st));
     var row = el("div.btn-row", { style: "margin-top:10px" });
     if (k === "network-lost" && st.role === "peer") row.appendChild(btn("btn.primary.sg-reconnect", "Try to reconnect", function () { var r = reconnect(); if (!r.ok) { rt.msg = r.reason; draw(); } }, { style: "margin-right:6px" }));
