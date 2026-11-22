@@ -208,13 +208,12 @@ for (const w of [412, 360]) {
 {
   const page = await open({ viewport: { width: 800, height: 1100 } }, null, "#/board");
   const r = await page.evaluate(() => {
-    const ph = document.querySelector(".date-ph"), box = document.querySelector(".date-ph-wrap");
-    return ph ? { text: ph.textContent, shown: getComputedStyle(ph).display !== "none", empty: box.classList.contains("is-empty") } : null;
+    const inp = document.querySelector('input[aria-label="Set your board date"]');
+    const row = inp && inp.closest(".mini-row");
+    const hint = row && row.nextElementSibling;
+    return { hasInput: !!inp, hint: hint ? hint.textContent : "", dateHasOverlay: !!document.querySelector(".date-ph") };
   });
-  check(r && r.text === "Pick a date" && r.shown && r.empty, "A14: empty Board date shows 'Pick a date'", JSON.stringify(r));
-  await page.fill('input[aria-label="Set your board date"]', "2027-03-01");
-  const after = await page.evaluate(() => getComputedStyle(document.querySelector(".date-ph")).display);
-  check(after === "none", "A14: the hint goes away once a date is chosen", after);
+  check(r.hasInput && /^Pick a date, then tap Set\./.test(r.hint) && !r.dateHasOverlay, "A14: the empty Board date field is explained in words right under it ('Pick a date, then tap Set')", JSON.stringify(r));
   await page.context().close();
 }
 

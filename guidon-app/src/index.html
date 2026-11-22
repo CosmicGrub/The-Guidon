@@ -3454,15 +3454,6 @@ mark.dict-hi {
    every device) and one CI run (reproduced on none) - real and
    reproducible in a plain browser, so fixed rather than re-baselined. */
 input[type="date"] { font-size: max(1rem, 16px); }
-/* "Pick a date" line over an empty date field (Board date on #/board): the
-   native field draws as a blank box on some phones/tablets. Hidden by script
-   the moment a date is chosen. */
-.date-ph-wrap { position: relative; display: inline-block; }
-.date-ph-wrap > input[type="date"] { color: var(--text); min-width: 11em; }
-.date-ph-wrap > .date-ph { position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
-  pointer-events: none; color: var(--text-dim); font-family: var(--font-mono); font-size: .81rem; display: none; }
-.date-ph-wrap.is-empty > .date-ph { display: block; }
-.date-ph-wrap.is-empty > input[type="date"]::-webkit-datetime-edit { opacity: 0; }
 .ob-select {
   width: 100%;
   background: var(--bg);
@@ -17880,14 +17871,6 @@ window.G = window.G || {};
         const row = el("div.mini-row.panel", { style: "margin-bottom:10px" });
         row.appendChild(el("label", { text: "Board date", style: "margin:0" }));
         const dateIn = el("input", { type: "date", "aria-label": "Set your board date" });
-        // An empty date field draws as a blank box in some Android and iOS
-        // views. A visible "Pick a date" line, shown only while it is empty,
-        // says what the box is for.
-        const datePh = el("span.date-ph", { text: "Pick a date", "aria-hidden": "true" });
-        const dateBox = el("span.date-ph-wrap", {}, [dateIn, datePh]);
-        const syncPh = () => { dateBox.classList.toggle("is-empty", !dateIn.value); };
-        syncPh();
-        dateIn.addEventListener("input", syncPh); dateIn.addEventListener("change", syncPh);
         const setBtn = el("button.btn.sm.ghost", { type: "button", text: "Set" });
         setBtn.addEventListener("click", async () => {
           if (!dateIn.value) return;
@@ -17896,9 +17879,9 @@ window.G = window.G || {};
           draw();
           try { if (typeof onDateSet === "function") onDateSet(); } catch (e) {}
         });
-        row.appendChild(dateBox); row.appendChild(setBtn);
+        row.appendChild(dateIn); row.appendChild(setBtn);
         wrap.appendChild(row);
-        wrap.appendChild(el("p.hint", { style: "margin:-4px 0 10px", text: "Optional — powers the countdown banner here and on Board Drill. You can set or change it anytime." }));
+        wrap.appendChild(el("p.hint", { style: "margin:-4px 0 10px", text: "Pick a date, then tap Set. Optional — powers the countdown banner here and on Board Drill. You can set or change it anytime." }));
         return;
       }
       const today = new Date(); today.setHours(0, 0, 0, 0);
