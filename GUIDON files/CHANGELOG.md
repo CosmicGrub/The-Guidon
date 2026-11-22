@@ -2,9 +2,9 @@
 
 All notable changes to GUIDON will be documented in this file. Format loosely follows [Keep a Changelog](http://keepachangelog.com/). This is the technical record for developers - the app itself shows a short, plain-language summary of each release to Soldiers directly (G.whatsNew, src/index.html), not this file.
 
-## 2026-11-22 - v1.18.1 (prepared, not released): restore keeps device security switches, database-upgrade handlers, Study Room identity checks and join-error wording, and a content-correction pass on promotion, counseling and the first recommended scenario
+## 2026-11-22 - v1.18.1: restore keeps device security switches, database-upgrade handlers, Study Room identity checks and join-error wording, and a content-correction pass on promotion, counseling and the first recommended scenario
 
-*Prepared 2026-11-22; not yet cut. No tag, release or `.release-prep` exists for this number, so its What's New entry carries `"released": false` and this heading says so; both marks come off in the cut commit (`lint-release-state --cut` refuses a marked version). Two merged PRs of app and content work, #283 and #284, plus three Dependabot merges (#273, #278, #279). The Command/Legal package's verification stamp is the last step before the cut (`npm run legal:stamp`).*
+Released 2026-11-22. Two merged PRs of app and content work, #283 and #284, plus three Dependabot merges (#273, #278, #279). The Command/Legal package's verification stamp names v1.18.1.
 
 **Security and data fixes** (PR #283, Wave 1.18.1-A; items CN-05, CN-08, CN-09 and the JS side of CN-01 from `refinement-2026-11/connections/REPORT.md`; each test run red against the prior source and green with the fix).
 
