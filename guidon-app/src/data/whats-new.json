@@ -276,6 +276,19 @@
         "Counts now read “1 question,” not “1 questions.” The bookmark star no longer covers the first mastery bar on a flipped card, and “Questions mastered” stays on one line on phones. Three notices no longer show internal text.",
         "On narrow screens the pinned section is no longer listed twice in the side menu, and every item has a name on hover or long-press. A delete confirmation takes Enter only on its own Delete button. Old First Aid quiz scores carry over."
       ]
+    },
+    {
+      "version": "1.18.1",
+      "released": false,
+      "date": "November 2026",
+      "title": "Safer restores, clearer study-room errors, and corrected promotion cards",
+      "highlights": [
+        "Restoring a backup no longer changes this device's privacy-screen lock, study-room switch or reminder switch. They stay exactly as you set them on this device.",
+        "When joining a study room fails, GUIDON now says why: the room is full, your seat is taken by another device, or the host cannot be reached. It no longer always says the connection was lost.",
+        "If GUIDON is open in two windows during an update, the older window now tells you to reload instead of leaving the new one stuck on Loading.",
+        "The first recommended practice scenario now explains the right thing for each answer you pick.",
+        "Promotion and counseling cards now match current regulations: how a commander stops an automatic promotion, which ranks use which promotion system, how points and academy honours count, and when initial counseling is due."
+      ]
     }
   ]
 }
