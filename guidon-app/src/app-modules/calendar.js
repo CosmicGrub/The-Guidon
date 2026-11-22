@@ -503,7 +503,7 @@ window.G = window.G || {};
           "Add a board date and/or ETS date below (or in Settings) to see them plotted here." }));
       }
       timeline.appendChild(el("p.hint", { style: "margin-top:8px", text:
-        "Real dates only — this does not project a next-promotion-eligibility date, because that needs an enlistment date this app doesn't collect and TIS/TIG math it doesn't yet compute. See #/board's Compare SGT/SSG for the real threshold figures to do that math yourself." }));
+        "Real dates only — this does not project a next-promotion-eligibility date, because that needs an enlistment date this app doesn't collect and TIS/TIG math it doesn't yet compute. See Compare SGT/SSG on Board Drill for the real threshold figures to do that math yourself." }));
     }
 
     // Fold5/tablet fidelity wave 2: "What is next" (read-only, sorted by

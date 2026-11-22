@@ -741,7 +741,7 @@ check(await focusIsOn("Cancel"), "a prompt: Tab from the box moves focus to Canc
 await page.keyboard.press("Enter");
 check((await dialogAnswer()) === null, "Enter on a prompt's Cancel gives nothing (cancelled)", "the prompt answered " + JSON.stringify(await dialogAnswer()));
 await dialogGone();
-console.log("\n-- on a short window the message is a Tab stop; an Enter there is taken as before --");
+console.log("\n-- on a short window the message is a Tab stop; an Enter there does not confirm a delete --");
 await page.setViewportSize({ width: 360, height: 330 });
 await page.evaluate(() => {
   window.__dlg = { pending: true };
@@ -754,7 +754,8 @@ await page.keyboard.press("Shift+Tab");
 await page.keyboard.press("Shift+Tab");
 check(await page.evaluate(() => document.activeElement === document.querySelector(".gm-box .gm-dialog-body")), "...Shift+Tab twice from Delete lands on the message", "focus is on: " + JSON.stringify(await page.evaluate(() => document.activeElement && (document.activeElement.className || document.activeElement.tagName))));
 await page.keyboard.press("Enter");
-check((await dialogAnswer()) === true, "...and Enter there is taken exactly as it was before this change (yes)", "the dialog answered " + JSON.stringify(await dialogAnswer()));
+check(await page.evaluate(() => window.__dlg.pending === true && !!document.querySelector(".gm-box")), "...and Enter there does not confirm the delete (W1 C1: a danger confirm only takes Enter on its own button)", "the dialog answered " + JSON.stringify(await page.evaluate(() => window.__dlg)));
+await page.keyboard.press("Escape");
 await dialogGone();
 await page.setViewportSize(roomy);
 
