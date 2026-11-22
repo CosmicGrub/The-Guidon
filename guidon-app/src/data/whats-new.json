@@ -270,10 +270,12 @@
         "Board Drill, Home and Progress now count readiness the same way: cards you have learned that are not due again yet, shown as “N of M cards current.” The words “Board Ready” are gone, and the Mock Board's top band is now “Very Strong.”",
         "A card you rate Know It or Down Cold well before it is due now counts as extra practice: its date stays the same and a short note says so. Needs Help and Somewhat always change the date.",
         "Your reminders can now be saved as a calendar file (Profile, Reminders, “Add to my calendar”) so your own calendar can alert you when GUIDON is closed. Each date shows only its type, never a name or note. Roster reminders are left out.",
-        "On the Android and desktop apps and in a saved copy of the app file, a note now appears once your copy is about two months old, with a link or address to check for a newer version.",
         "Some text on the Forms screens (including the Article 31(b) rights text on DA 2823 and DA 3881) and the “You are here” tag on Career were too faint in several themes. They are now easy to read.",
         "Hint text, small captions and the grey text inside empty form boxes are easier to read in almost every theme. The red warnings on Fitness and Transition are easier to read in many themes.",
-        "In the light themes the middle grey text is a little darker, so main, secondary and caption text stay clearly different from each other. In every theme, the OFF position of a switch now looks different from ON."
+        "In the light themes the middle grey text is a little darker, so main, secondary and caption text stay clearly different from each other. In every theme, the OFF position of a switch now looks different from ON.",
+        "On the Android app, Share & Install now says it is the Android app with your data stored on this device. Installed apps no longer tell you to add GUIDON to your home screen, and the iPhone app no longer shows those steps or a Start menu.",
+        "Counts now read “1 question,” not “1 questions.” The bookmark star no longer covers the first mastery bar on a flipped card, and “Questions mastered” stays on one line on phones. Three notices no longer show internal text.",
+        "On narrow screens the pinned section is no longer listed twice in the side menu, and every item has a name on hover or long-press. A delete confirmation takes Enter only on its own Delete button. Old First Aid quiz scores carry over."
       ]
     }
   ]
