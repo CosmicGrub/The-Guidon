@@ -201,8 +201,7 @@ const b = await pageB.evaluate(() => new Promise((resolve) => {
 b.ok && !b.blocked
   ? ok("a second window opening the database at a newer version is not blocked and does not hang (" + b.ms + " ms)")
   : bad("second window's open at v2: " + JSON.stringify(b));
-await page.waitForTimeout(300);
-const noticeA = await page.evaluate(() => document.body.innerText.includes("Reload GUIDON"));
+const noticeA = await page.waitForFunction(() => document.body.innerText.includes("Reload GUIDON"), null, { timeout: 5000 }).then(() => true, () => false);
 noticeA ? ok("the first window says, in plain words, to reload GUIDON") : bad("the first window showed no reload notice");
 const aAfter = await page.evaluate(() => window.G.db.get("kv", "settings").then(() => "resolved", (e) => "rejected:" + e.message));
 aAfter.startsWith("rejected:") && /reload/i.test(aAfter)
