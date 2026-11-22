@@ -222,17 +222,30 @@ window.G = window.G || {};
     return /Android/.test(navigator.userAgent);
   }
 
+  /* Wording for the installed-app sentence, by which kind of install this is.
+     Exposed (and pure) so tests can pin the text without stubbing a shell. */
+  function nativeInstallText(fork) {
+    const f = fork || (G.caps && G.caps.fork && G.caps.fork());
+    if (f === "android")
+      return "GUIDON is running as an installed Android app. Everything is stored on this device, nothing is fetched, and it works with no network connection at all.";
+    if (f === "tauri")
+      return "GUIDON is running as an installed desktop application. Everything is stored on this computer, nothing is fetched, and it works with no network connection at all.";
+    return "GUIDON is running as an installed app. Everything is stored on this device, nothing is fetched, and it works with no network connection at all.";
+  }
+  function installedPwaText() {
+    const where = isIOS() ? "your home screen" : isAndroid() ? "your home screen or app list" : "your home screen or Start menu";
+    return "GUIDON is running as an installed app on this device. It opens from " + where + ", keeps its own window, and works with no signal.";
+  }
+
   /* Builds the live install/offline panel injected at the top of Share & Install. */
   function buildPanel() {
     const p = el("div.panel", { style: "margin-bottom:10px;border-left:3px solid var(--amber)" });
     p.appendChild(el("div.eyebrow", { text: "Install this app" }));
 
     if (isNative) {
-      p.appendChild(el("p", { text:
-        "GUIDON is running as an installed desktop application. Everything is stored on this computer, nothing is fetched, and it works with no network connection at all." }));
+      p.appendChild(el("p", { text: nativeInstallText() }));
     } else if (state.installed) {
-      p.appendChild(el("p", { text:
-        "GUIDON is running as an installed app on this device. It opens from your home screen or Start menu, keeps its own window, and works with no signal." }));
+      p.appendChild(el("p", { text: installedPwaText() }));
     } else if (isFile) {
       p.appendChild(el("p", { text:
         "This copy is open directly from a file, which already works offline — but it cannot be installed. Host it, or use the Windows installer, to get an app icon and its own window." }));
@@ -265,7 +278,9 @@ window.G = window.G || {};
       ["Storage durability", state.persisted === true
         ? "Granted — the browser has been asked not to evict your study data."
         : state.persisted === false
-          ? "Not granted. Installing the app to your home screen is what usually earns it."
+          ? (isNative || state.installed
+              ? "Not granted. If this device runs very low on space it may clear stored study data, so make a backup from Settings now and then."
+              : "Not granted. Installing the app to your home screen is what usually earns it.")
           : "Unknown — this browser does not report storage durability."],
     ];
     if (state.estimate && state.estimate.usage != null) {
@@ -356,6 +371,8 @@ window.G = window.G || {};
     // every visit is a browser tab that might still need hosting/PWA-install
     // instructions.
     isNative: () => isNative,
+    nativeInstallText: nativeInstallText,
+    installedPwaText: installedPwaText,
     // Exposed so share.js's "Get the app for this device" panel reuses the
     // exact same predicates this module already computed for its own iOS
     // storage-eviction warning, instead of a second, possibly-diverging UA
