@@ -567,6 +567,69 @@ function fpFrom(rnd) { let s = ""; for (let i = 0; i < 8; i++) s += B32[Math.flo
     : bad("(f) isSpkiPin() shape check");
 }
 
+/* ---------------------------------------------------------------------
+   (g) CN-01 (v1.18.1): a fingerprint is a claimed label, so the reducer must not let a wire frame
+   speak as the host, nor let a resume take over another seat's fingerprint. Ported from the
+   refinement probes C1 and C3 (rf-conn-room-probe.mjs): both were ACCEPTED before this fix.
+   --------------------------------------------------------------------- */
+if (schema && sg) {
+  let now = 1_000_000, n = 0;
+  const ctx = { now: () => now, token: () => "TOKEN" + String(++n).padStart(4, "0") + "AAAAAAAAAAAA" };
+  const wireCtx = { ...ctx, viaWire: true };
+  const V = schema.PROTOCOL_VERSION, ROOM_G = "ALPHA-BRAVO-42";
+  const HOST = "HOSTHOST", A = "AAAAAAAA", B = "BBBBBBBB", M = "MMMMMMMM";
+  const cards = { c1: { q: "Q1", a: "A1", category: "c" }, c2: { q: "Q2", a: "A2", category: "c" } };
+  const mkf = (from, t, body) => ({ v: V, t, room: ROOM_G, seq: 0, from, body });
+  const boot = () => {
+    let st = sg.initHost({ room: ROOM_G, mode: "relay", self: { fp: HOST, name: "HOST" }, bankSig: "bank:2:1", deck: { category: "c", ids: ["c1", "c2"], timerSec: null, count: 2 }, cards, now });
+    const tok = {};
+    for (const [fp, name] of [[A, "Alice"], [B, "Bob"], [M, "Mallory"]]) {
+      st = sg.reduce(st, mkf(fp, "hello", { name, bankSig: "bank:2:1" }), ctx).state;
+      const r = sg.act(st, { type: "admit", fp }, ctx); st = r.state;
+      for (const e of r.effects) if (e.frame.t === "welcome" && e.to === fp) tok[fp] = e.frame.body.token;
+    }
+    return { st, tok };
+  };
+  const toHostTurn = (st) => {
+    st = sg.act(st, { type: "start" }, ctx).state;
+    let guard = 0;
+    while (st.turnSeat !== 1 && guard++ < 6) { const cur = st.seats.find((x) => x.seatNo === st.turnSeat); st = sg.reduce(st, mkf(cur.fp, "intent", { kind: "score", value: 1 }), ctx).state; }
+    return st;
+  };
+  const hostScore = (st) => st.seats.find((x) => x.seatNo === 1).score;
+
+  {
+    const st = toHostTurn(boot().st);
+    st.turnSeat === 1 ? ok("(g) fixture: it is the host's turn") : bad("(g) fixture: turnSeat " + st.turnSeat);
+    const before = hostScore(st);
+    const forged = sg.reduce(st, mkf(HOST, "intent", { kind: "score", value: 999 }), wireCtx);
+    !forged.accepted && forged.reason === "self" && hostScore(forged.state) === before
+      ? ok("(g) C1: a wire frame claiming the HOST's fingerprint (intent score 999 on the host's turn) is ignored; the host's score stays " + before)
+      : bad("(g) C1: accepted=" + forged.accepted + " reason=" + forged.reason + " hostScore=" + hostScore(forged.state));
+    const own = sg.reduce(st, mkf(HOST, "intent", { kind: "score", value: 1 }), ctx);
+    own.accepted && hostScore(own.state) === before + 1
+      ? ok("(g) the host's OWN local intent (no ctx.viaWire, the sendIntent() path) still scores for the host seat")
+      : bad("(g) host's local intent: accepted=" + own.accepted + " reason=" + own.reason);
+    const peerOnWire = sg.reduce(toHostTurn(boot().st), mkf(A, "ready", {}), wireCtx);
+    peerOnWire.reason !== "self" ? ok("(g) a peer's ordinary wire frame is not caught by the host-fingerprint rule") : bad("(g) a peer frame was ignored as 'self'");
+  }
+  {
+    const { st, tok } = boot();
+    const bad1 = sg.reduce(st, mkf(B, "hello", { name: "Mallory-as-Bob", bankSig: "bank:2:1", resume: tok[M] }), wireCtx);
+    const fps = bad1.state.seats.map((x) => x.fp);
+    !bad1.accepted && bad1.reason === "fp-conflict" && new Set(fps).size === fps.length && bad1.state.seats.find((x) => x.seatNo === 4).name === "Mallory" && bad1.effects.length === 0
+      ? ok("(g) C3: a resume (with its own valid token) that claims ANOTHER seat's fingerprint is ignored, silently; fingerprints stay unique and the seat keeps its name")
+      : bad("(g) C3: accepted=" + bad1.accepted + " reason=" + bad1.reason + " fps=" + fps.join(","));
+    const same = sg.reduce(st, mkf(M, "hello", { name: "Mallory", bankSig: "bank:2:1", resume: tok[M] }), wireCtx);
+    same.accepted ? ok("(g) a normal resume with the seat's own fingerprint and token still works") : bad("(g) own-fingerprint resume refused: " + same.reason);
+    const NEW = "NNNNNNNN";
+    const moved = sg.reduce(st, mkf(NEW, "hello", { name: "Mallory", bankSig: "bank:2:1", resume: tok[M] }), wireCtx);
+    moved.accepted && moved.state.seats.find((x) => x.seatNo === 4).fp === NEW
+      ? ok("(g) a resume from a NEW, unused fingerprint (a reloaded page) still re-seats under it")
+      : bad("(g) new-fingerprint resume: accepted=" + moved.accepted + " reason=" + moved.reason);
+  }
+}
+
 finish();
 
 function finish() {

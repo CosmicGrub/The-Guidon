@@ -8,7 +8,7 @@
  * 4001 seat taken, 4004 room full, 4005 too many messages) and the room panel turns that into words, and
  * only says "your seat is held" when the Soldier was actually seated.
  *
- * Two browsers pages in one Chromium, the fake transport at the room module's seam (tools/room-harness.mjs).
+ * Two pages in one Chromium, the fake transport at the room module's seam (tools/room-harness.mjs).
  * The transport-level half (room-web.js passes the real close code of a real WebSocket) is in
  * tools/test-room-web.mjs. The relay still cannot send a "wrong code" or "version mismatch" reason before it
  * closes (that needs a reject frame ahead of close 4004 in room.rs / room-server.mjs): version mismatch already
@@ -57,6 +57,17 @@ try {
     await until(() => H.evaluate(() => G.studyGroup.state().pending.length === 1));
   };
   const closeWith = (info) => P.evaluate((i) => window.__roomOnClose(i), info);
+
+  /* -------- CN-01 through the real receive path: a frame arriving over the wire as the host is ignored -------- */
+  {
+    const hostFp = await H.evaluate(() => G.studyGroup.session().fp);
+    const before = await H.evaluate(() => ({ self: (G.studyGroup.counters().ignored || {}).self || 0, ready: !!G.studyGroup.state().seats.find((x) => x.seatNo === 1).ready }));
+    await P.evaluate((o) => window.__roomTransport.send({ v: G.roomSchema.PROTOCOL_VERSION, t: "intent", room: o.room, seq: 0, from: o.fp, body: { kind: "ready" } }, null), { room: ROOM, fp: hostFp });
+    const after = await until(() => H.evaluate((b) => { const c = (G.studyGroup.counters().ignored || {}).self || 0; return c > b ? { self: c, ready: !!G.studyGroup.state().seats.find((x) => x.seatNo === 1).ready } : null; }, before.self));
+    after.hit && after.value.ready === before.ready
+      ? ok("(CN-01) a wire frame with the host's own fingerprint is counted ignored (\"self\") and changes nothing on the host")
+      : bad("(CN-01) forged host frame: " + JSON.stringify({ before, after: after.value }));
+  }
 
   /* -------- never seated: nothing is held, and each cause says what it is -------- */
   const cases = [

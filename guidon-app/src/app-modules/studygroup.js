@@ -323,7 +323,11 @@
       if (frame.t === "hello") effects.push({ to: frame.from, frame: frameOf(state, "reject", { reason: "That code is not this room. Check the two words and the digits." }) });
       return ignored(state, "room", effects);
     }
-    if (frame.from === state.self.fp && frame.t !== "intent") return ignored(state, "self");
+    /* The host's own fingerprint is public (every roster shows it), so a frame that CLAIMS it and arrives
+       over the wire is never the host speaking: the host's own intents are applied locally (sendIntent()
+       -> deliver(frame) with no ctx.viaWire), never sent to itself. Before v1.18.1 a peer could send an
+       intent as the host and score for the host's seat. */
+    if (frame.from === state.self.fp && (frame.t !== "intent" || (ctx && ctx.viaWire))) return ignored(state, "self");
     var now = nowOf(ctx), s, seat, b = frame.body, i;
     switch (frame.t) {
       case "hello": {
@@ -331,6 +335,10 @@
         if (b.resume) {
           seat = null;
           for (i = 0; i < s.seats.length; i++) if (s.seats[i].token === b.resume && s.seats[i].fp !== s.self.fp) seat = s.seats[i];
+          /* A resume may bring a NEW fingerprint (a reload), never another seat's: that would leave two seats
+             sharing one fingerprint and the second one's intents credited to the first. Dropped without a reply
+             (a reply would be addressed to the fingerprint that belongs to someone else). */
+          if (seat) { var owner = seatByFp(s, frame.from); if (owner && owner !== seat) return ignored(state, "fp-conflict"); }
           if (seat) {
             var wasOffline = !seat.online;
             seat.online = true; seat.offlineAt = null; seat.lastSeen = now; seat.fp = frame.from; seat.name = b.name; seat.bankSig = b.bankSig; seat.rank = b.rank || "";
@@ -1041,7 +1049,7 @@
        reads it (every caller before room-web.js) changes nothing. */
     var previous = rt.transport;
     rt.transport = t;
-    t.onmessage(deliver);
+    t.onmessage(deliverFromWire);
     if (typeof t.onclose === "function") t.onclose(function (info) { onTransportClosed(t, info); });
     if (typeof t.open === "function") { try { t.open(); } catch (e) {} }
     try { if (G.netLedger && G.netLedger.record) G.netLedger.record({ kind: String(t.kind || "seam"), peer: String(t.peer || "unknown"), at: Date.now() }); } catch (e) {}
@@ -1167,7 +1175,10 @@
     try { rt.transport.send(frame, to == null ? null : to); rt.counters.sent++; return true; }
     catch (e) { rt.counters.dropped++; return false; }
   }
-  function deliver(frame) {
+  /* What a transport hands over: a frame from another device. deliver() itself is also the host's own
+     local path (sendIntent), which is the one caller allowed to speak with the host's fingerprint. */
+  function deliverFromWire(frame) { deliver(frame, true); }
+  function deliver(frame, viaWire) {
     rt.counters.received++;
     if (!available()) { countIgnored("off"); return; }
     if (!rt.state) { countIgnored("no-room"); return; }
@@ -1175,7 +1186,9 @@
        and that draw must already know what build the joiner reported - then
        settleHello() forgets anyone the host did not actually take in. */
     var hello = rememberHello(frame);
-    apply(reduce(rt.state, frame, ctxNow()));
+    var ctx = ctxNow();
+    if (viaWire) ctx.viaWire = true;
+    apply(reduce(rt.state, frame, ctx));
     if (hello) settleHello(frame);
   }
   function apply(res) {
