@@ -2,9 +2,9 @@
 
 All notable changes to GUIDON will be documented in this file. Format loosely follows [Keep a Changelog](http://keepachangelog.com/). This is the technical record for developers - the app itself shows a short, plain-language summary of each release to Soldiers directly (G.whatsNew, src/index.html), not this file.
 
-## 2026-11-21 - v1.18.0 (prepared, not released): the v1.17.1 audit round (storage acks, restore safety, readiness and scheduler, Forms readability, privacy honesty), a contrast gate that can fail and the fixes it found, an ESP32 platform pin, and a dependency refresh
+## 2026-11-22 - v1.18.0: the v1.17.1 audit round (storage acks, restore safety, readiness and scheduler, Forms readability, privacy honesty), a contrast gate that can fail and the fixes it found, an ESP32 platform pin, and a dependency refresh
 
-*Prepared 2026-11-21; not yet cut. No tag, release or `.release-prep` exists for this number, so its What's New entry carries `"released": false` and this heading says so; both marks come off in the cut commit (`lint-release-state --cut` refuses a marked version). Five merged PRs: #268, #272, #276, #277, #281. The Command/Legal package's verification stamp is the last step before the cut (`npm run legal:stamp`).*
+Released 2026-11-22. Five merged PRs: #268, #272, #276, #277, #281. The Command/Legal package's verification stamp names v1.18.0.
 
 **The audit round, 13 items from a 14-finding audit of v1.17.1** (PR #276, merge b82049f; five implementation branches integrated one at a time, then three independent review rounds whose fixes are in the same PR). Twelve of the fourteen ranked findings had been independently verified by a skeptic first. Per item, what shipped and where:
 
