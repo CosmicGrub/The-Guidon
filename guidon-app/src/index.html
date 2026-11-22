@@ -8220,9 +8220,14 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
     }
   }
 
+  let _staleHandle = false;   // set when another window took the database to a newer version; only a reload helps
+  function announceStorage(name) {
+    try { if (G.util && typeof G.util.emit === "function") G.util.emit(name, {}); } catch (e) { /* the notice is a courtesy */ }
+  }
   function open() {
     return new Promise((resolve, reject) => {
       if (_db) return resolve(_db);
+      if (_staleHandle) return reject(new Error("GUIDON's storage was updated in another window - reload GUIDON"));
       if (!("indexedDB" in window)) return reject(new Error("IndexedDB unavailable"));
       const req = indexedDB.open(DB_NAME, DB_VERSION);
       req.onupgradeneeded = (e) => {
@@ -8240,7 +8245,22 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
         // migration is registered.
         runMigrations(db, e.target.transaction, e.oldVersion, DB_VERSION);
       };
-      req.onsuccess = () => { _db = req.result; resolve(_db); };
+      // Another window of GUIDON asking for a newer database (an update opened there) waits for THIS
+      // one to let go. Without these three handlers this window held on, the other one sat blocked,
+      // and any window opened after it hung on "Loading GUIDON". Let go, say so plainly, and make a
+      // reload the way forward; and forget a handle the browser closed on its own.
+      req.onblocked = () => { announceStorage("storage:blocked"); };
+      req.onsuccess = () => {
+        const idb = req.result;
+        idb.onversionchange = () => {
+          try { idb.close(); } catch (e) { /* already closed */ }
+          if (_db === idb) _db = null;
+          _staleHandle = true;
+          announceStorage("storage:needs-reload");
+        };
+        idb.onclose = () => { if (_db === idb) _db = null; };
+        _db = idb; resolve(_db);
+      };
       req.onerror = () => reject(req.error);
     });
   }
@@ -8349,6 +8369,17 @@ window.GUIDON_ENGINE_FLOOR = {"chromium":0,"webview":0,"webkit":"0","gecko":0};
       });
     }
   } catch (e) { /* the notice is a courtesy; a save must never fail because of it */ }
+  // Another window of GUIDON changed the database underneath this one (see open()).
+  try {
+    if (G.util && typeof G.util.on === "function") {
+      G.util.on("storage:needs-reload", function () {
+        if (typeof G.util.toast === "function") G.util.toast("GUIDON was updated in another window. Reload GUIDON to keep going.", 15000);
+      });
+      G.util.on("storage:blocked", function () {
+        if (typeof G.util.toast === "function") G.util.toast("Close your other GUIDON windows, then reload.", 15000);
+      });
+    }
+  } catch (e) { /* courtesy only */ }
   // The row's key, however the store spells it (kv: k, everything else: id).
   function keyOfRow(v) { return v && v.k != null ? v.k : v && v.id; }
   function noop() {}

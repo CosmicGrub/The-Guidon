@@ -182,6 +182,50 @@ scenario3 === 0
   ? ok("a fresh open at version 1 with an empty MIGRATIONS registry (today's real production state) invokes zero migrations — genuinely inert, not just untested")
   : bad("inert-state migration call count: " + scenario3 + ", expected 0");
 
+// ── 4) CN-08: a second window asking for a newer REAL "guidon" database ──
+// Window A (this page) holds the real database open. Window B asks for version 2. Before v1.18.1 A never
+// let go, so B's open request stayed "blocked" and a window opened after it hung on "Loading GUIDON".
+// Now A releases its handle on versionchange, tells the Soldier to reload, and B's open completes.
+await page.evaluate(() => window.G.db.get("kv", "settings"));   // A really holds the connection
+const pageB = await page.context().newPage();
+await pageB.goto(url, { waitUntil: "domcontentloaded" });
+const b = await pageB.evaluate(() => new Promise((resolve) => {
+  const t0 = performance.now(); let blocked = false;
+  const timer = setTimeout(() => resolve({ ok: false, blocked, ms: Math.round(performance.now() - t0) }), 6000);
+  const rq = indexedDB.open("guidon", 2);
+  rq.onblocked = () => { blocked = true; };
+  rq.onupgradeneeded = () => {};
+  rq.onsuccess = () => { clearTimeout(timer); rq.result.close(); resolve({ ok: true, blocked, ms: Math.round(performance.now() - t0) }); };
+  rq.onerror = () => { clearTimeout(timer); resolve({ ok: false, blocked, err: String(rq.error) }); };
+}));
+b.ok && !b.blocked
+  ? ok("a second window opening the database at a newer version is not blocked and does not hang (" + b.ms + " ms)")
+  : bad("second window's open at v2: " + JSON.stringify(b));
+await page.waitForTimeout(300);
+const noticeA = await page.evaluate(() => document.body.innerText.includes("Reload GUIDON"));
+noticeA ? ok("the first window says, in plain words, to reload GUIDON") : bad("the first window showed no reload notice");
+const aAfter = await page.evaluate(() => window.G.db.get("kv", "settings").then(() => "resolved", (e) => "rejected:" + e.message));
+aAfter.startsWith("rejected:") && /reload/i.test(aAfter)
+  ? ok("the first window no longer touches the database it released: its next read fails fast and names the reload (not a hang)")
+  : bad("the first window's next read: " + aAfter);
+await pageB.close();
+// Blocked case: a window that cannot get the database says so. Raw v3 request while a holder that ignores versionchange is open.
+const pageC = await page.context().newPage();
+await pageC.goto(url, { waitUntil: "domcontentloaded" });
+const blockedMsg = await pageC.evaluate(() => new Promise((resolve) => {
+  let held = null;
+  const open1 = indexedDB.open("guidon", 2);
+  open1.onsuccess = () => {
+    held = open1.result;   // deliberately ignores versionchange
+    const rq = indexedDB.open("guidon", 3);
+    rq.onblocked = () => { held.close(); resolve("blocked-seen"); };
+    rq.onsuccess = () => rq.result.close();
+  };
+  setTimeout(() => resolve("timeout"), 6000);
+}));
+blockedMsg === "blocked-seen" ? ok("fixture: a holder that ignores versionchange really does block (the app's own onblocked notice covers that case)") : bad("blocked fixture: " + blockedMsg);
+await pageC.close();
+
 noise.length === 0
   ? ok("no console errors/warnings across the whole flow")
   : bad("console noise: " + JSON.stringify(noise));
