@@ -9981,7 +9981,10 @@ window.G = window.G || {};
     async importProgress(obj) {
       if (!obj || obj.kind !== "progress" || !Array.isArray(obj.attempts)) throw new Error("Not a GUIDON progress file.");
       if (obj.settings && typeof obj.settings === "object") {
-        state.settings = Object.assign({}, DEFAULT_SETTINGS, obj.settings);
+        // The three per-device switches (rooms, privacy screen, reminders) stay as this device has them.
+        const deviceKept = {};
+        ["studyGroups", "biometricLock", "notifyReminders"].forEach((k) => { deviceKept[k] = state.settings[k]; });
+        state.settings = Object.assign({}, DEFAULT_SETTINGS, obj.settings, deviceKept);
         // Item D: same reasoning as store.init()'s own settings-backfill
         // (see motionUserSet's own comment on DEFAULT_SETTINGS, above) - a
         // restored backup predating this flag already reflects a real
@@ -32168,6 +32171,24 @@ window.G = window.G || {};
   // part of the file is on the device. confirmAndImportFile reads it when this function ends in an
   // error, to tell "nothing was changed" (say so, leave the page) from "part of it was" (the page's
   // own copy of the profile and settings is now out of date, so it must reload like any partial restore).
+  // Settings that belong to the device, not to the person: a restore keeps whatever this
+  // device already has for them (see the settings row in importAll()).
+  var DEVICE_ONLY_SETTINGS = ["studyGroups", "biometricLock", "notifyReminders"];
+  async function mergeSettingsRow(incoming) {
+    var known = (G.store && G.store.DEFAULT_SETTINGS) || {};
+    var current = {};
+    try { var cur = await G.db.get("kv", "settings"); if (cur && cur.v && typeof cur.v === "object" && !Array.isArray(cur.v)) current = cur.v; } catch (e) { /* no row yet: the defaults apply */ }
+    var merged = Object.assign({}, current);
+    Object.keys(incoming || {}).forEach(function (k) {
+      if (DEVICE_ONLY_SETTINGS.indexOf(k) >= 0) return;
+      if (k === "__proto__" || !Object.prototype.hasOwnProperty.call(known, k)) return;
+      merged[k] = incoming[k];
+    });
+    DEVICE_ONLY_SETTINGS.forEach(function (k) {
+      if (Object.prototype.hasOwnProperty.call(current, k)) merged[k] = current[k]; else delete merged[k];
+    });
+    return merged;
+  }
   async function importAll(obj, progress) {
     progress = progress || {};
     var problem = schemaProblem(obj);
@@ -32239,6 +32260,12 @@ window.G = window.G || {};
           if (G.selfheal) G.selfheal.log("kv-reject", row.k, rejectWhy);
           continue;
         }
+        // The settings row is MERGED, never replaced. A restore brings back the
+        // Soldier's preferences, but three switches describe THIS device (the study
+        // group rooms, the privacy screen, native reminders) and a file - from another
+        // phone, an old export, or a hand-edited one - must not flip them. Only keys
+        // this GUIDON knows are taken from the file; anything else is left out.
+        if (row.k === "settings") row = Object.assign({}, row, { v: await mergeSettingsRow(row.v) });
         // Preserve the row's OWN original shape (not a reconstructed
         // {k, v}) - forms:saved's real payload lives under .value, and
         // rebuilding the row as {k: row.k, v: row.v} silently discarded it
