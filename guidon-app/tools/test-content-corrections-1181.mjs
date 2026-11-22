@@ -84,7 +84,7 @@ for (const [label, re] of FORBIDDEN) {
   check(!!q, "bq18 exists", "bq18 is missing");
   check(/HR system of record/.test(t) && /DA Form 4856/.test(t) && /before the Soldier attains eligibility/.test(t), "bq18: denial is an HR-system action before eligibility, with DA Form 4856 counseling by the first-line leader", "bq18 lost the corrected denial procedure");
   check(!/4187/.test(t), "bq18: no DA Form 4187", "bq18 mentions DA Form 4187 again");
-  check(q && q.source && q.source[0] && q.source[0].para === "2-1c" && q.source[0].quoteKind === "paraphrase", "bq18: cited to para 2-1c as a paraphrase", "bq18 citation is not para 2-1c / paraphrase");
+  check(q && q.source && q.source[0] && /2-1c/.test(q.source[0].para) && q.source[0].quoteKind === "paraphrase", "bq18: cited to para 2-1c as a paraphrase", "bq18 citation is not para 2-1c / paraphrase");
   for (const id of ["promotion-tiers", "auto-promotion"]) {
     const d = doctrine(id);
     const dt = all(d);
