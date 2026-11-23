@@ -200,8 +200,10 @@
       var sock;
       try { sock = new WebSocket(schema().wsUrl(hostPort, room, "peer")); } catch (e) { return null; }
       ws = sock;
+      var everOpened = false;
       sock.onopen = function () {
         if (ws !== sock) return;
+        everOpened = true;
         var pending = queue;
         queue = [];
         for (var i = 0; i < pending.length; i++) { try { sock.send(pending[i]); } catch (e) {} }
@@ -212,7 +214,7 @@
         try { d = schema().wireDecode(String(ev.data)); } catch (e) { d = null; }
         if (d && d.frame) { try { handler(d.frame); } catch (e) {} }
       };
-      sock.onclose = function () {
+      sock.onclose = function (ev) {
         if (ws !== sock) return;
         ws = null;
         queue = [];
@@ -223,7 +225,10 @@
            onclose hook) turns this into the peer's "network-lost"
            terminal; reconnect() then calls send() again, which reopens a
            fresh socket right here via ensureSocket() above. */
-        if (closeHandler) { try { closeHandler(); } catch (e) {} }
+        /* Say HOW it closed: the relay's own close code (4001 seat taken, 4004
+           room full, ...) and whether the socket ever opened (it did not: the
+           host was never reached). studygroup.js turns that into plain words. */
+        if (closeHandler) { try { closeHandler({ code: ev && typeof ev.code === "number" ? ev.code : 0, opened: everOpened }); } catch (e) {} }
       };
       sock.onerror = function () { /* onclose always follows an onerror */ };
       return sock;

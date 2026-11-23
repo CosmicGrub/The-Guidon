@@ -257,6 +257,37 @@
         "On a Mac, Share & Install now offers a direct download button for the Mac app instead of sending you to the releases page first.",
         "The first time you open it, your Mac will ask you to confirm — the steps for that are right there on the same screen."
       ]
+    },
+    {
+      "version": "1.18.0",
+      "date": "November 2026",
+      "title": "Safer backups, honest readiness, and easier-to-read text",
+      "highlights": [
+        "A normal backup now leaves out your saved form drafts, the leader roster and the reminders made from it, because they can hold other people's names. Tick the “include” box next to Export backup to carry them to a new device.",
+        "Restoring a backup now tells you when the backup was made and warns you if this device has been used since. The question opens on Cancel, and if a restore cannot save your data, the message stays on screen.",
+        "If GUIDON cannot save a change, for example because the device is out of space, it now says so on screen instead of carrying on as if it had worked.",
+        "Board Drill, Home and Progress now count readiness the same way: cards you have learned that are not due again yet, shown as “N of M cards current.” The words “Board Ready” are gone, and the Mock Board's top band is now “Very Strong.”",
+        "A card you rate Know It or Down Cold well before it is due now counts as extra practice: its date stays the same and a short note says so. Needs Help and Somewhat always change the date.",
+        "Your reminders can now be saved as a calendar file (Profile, Reminders, “Add to my calendar”) so your own calendar can alert you when GUIDON is closed. Each date shows only its type, never a name or note. Roster reminders are left out.",
+        "Some text on the Forms screens (including the Article 31(b) rights text on DA 2823 and DA 3881) and the “You are here” tag on Career were too faint in several themes. They are now easy to read.",
+        "Hint text, small captions and the grey text inside empty form boxes are easier to read in almost every theme. The red warnings on Fitness and Transition are easier to read in many themes.",
+        "In the light themes the middle grey text is a little darker, so main, secondary and caption text stay clearly different from each other. In every theme, the OFF position of a switch now looks different from ON.",
+        "On the Android app, Share & Install now says it is the Android app with your data stored on this device. Installed apps no longer tell you to add GUIDON to your home screen, and the iPhone app no longer shows those steps or a Start menu.",
+        "Counts now read “1 question,” not “1 questions.” The bookmark star no longer covers the first mastery bar on a flipped card, and “Questions mastered” stays on one line on phones. Three notices no longer show internal text.",
+        "On narrow screens the pinned section is no longer listed twice in the side menu, and every item has a name on hover or long-press. A delete confirmation takes Enter only on its own Delete button. Old First Aid quiz scores carry over."
+      ]
+    },
+    {
+      "version": "1.18.1",
+      "date": "November 2026",
+      "title": "Safer restores, clearer study-room errors, and corrected promotion cards",
+      "highlights": [
+        "Restoring a backup no longer changes this device's privacy-screen lock, study-room switch or reminder switch. They stay exactly as you set them on this device.",
+        "When joining a study room fails, GUIDON now says why: the room is full, your seat is taken by another device, or the host cannot be reached. It no longer always says the connection was lost.",
+        "If GUIDON is open in two windows during an update, the older window now tells you to reload instead of leaving the new one stuck on Loading.",
+        "The first recommended practice scenario now explains the right thing for each answer you pick.",
+        "Promotion and counseling cards now match current regulations: how a commander stops an automatic promotion, which ranks use which promotion system, how points and academy honours count, and when initial counseling is due."
+      ]
     }
   ]
 }

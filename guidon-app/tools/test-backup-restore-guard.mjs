@@ -741,7 +741,7 @@ check(await focusIsOn("Cancel"), "a prompt: Tab from the box moves focus to Canc
 await page.keyboard.press("Enter");
 check((await dialogAnswer()) === null, "Enter on a prompt's Cancel gives nothing (cancelled)", "the prompt answered " + JSON.stringify(await dialogAnswer()));
 await dialogGone();
-console.log("\n-- on a short window the message is a Tab stop; an Enter there is taken as before --");
+console.log("\n-- on a short window the message is a Tab stop; an Enter there does not confirm a delete --");
 await page.setViewportSize({ width: 360, height: 330 });
 await page.evaluate(() => {
   window.__dlg = { pending: true };
@@ -754,9 +754,41 @@ await page.keyboard.press("Shift+Tab");
 await page.keyboard.press("Shift+Tab");
 check(await page.evaluate(() => document.activeElement === document.querySelector(".gm-box .gm-dialog-body")), "...Shift+Tab twice from Delete lands on the message", "focus is on: " + JSON.stringify(await page.evaluate(() => document.activeElement && (document.activeElement.className || document.activeElement.tagName))));
 await page.keyboard.press("Enter");
-check((await dialogAnswer()) === true, "...and Enter there is taken exactly as it was before this change (yes)", "the dialog answered " + JSON.stringify(await dialogAnswer()));
+check(await page.evaluate(() => window.__dlg.pending === true && !!document.querySelector(".gm-box")), "...and Enter there does not confirm the delete (W1 C1: a danger confirm only takes Enter on its own button)", "the dialog answered " + JSON.stringify(await page.evaluate(() => window.__dlg)));
+await page.keyboard.press("Escape");
 await dialogGone();
 await page.setViewportSize(roomy);
+
+/* ---------------------------------------------------------------------
+   CN-05 (v1.18.1): a restore never flips this device's own switches
+   --------------------------------------------------------------------- */
+console.log("\n-- a restore keeps this device's security switches and only takes known setting keys --");
+{
+  await page.evaluate(async () => {
+    const cur = (await G.db.get("kv", "settings")).v;
+    await G.db.put("kv", { k: "settings", v: { ...cur, studyGroups: false, biometricLock: true, notifyReminders: false, boardDate: "2031-01-01" } });
+  });
+  const res = await page.evaluate(async () => G.backup.importAll({ schema: "guidon.backup/v1", exportedAt: new Date().toISOString(), stores: { kv: [
+    { k: "settings", v: { studyGroups: true, biometricLock: false, notifyReminders: true, boardDate: "2032-02-02", zzNotARealSetting: 1, __proto__x: 1 } },
+  ], userScenarios: [], attempts: [] } }));
+  const after = await getKv("settings");
+  check(after.studyGroups === false, "restore leaves the study-group rooms switch as this device had it", "studyGroups=" + after.studyGroups);
+  check(after.biometricLock === true, "restore leaves the privacy-screen lock as this device had it", "biometricLock=" + after.biometricLock);
+  check(after.notifyReminders === false, "restore leaves native reminders as this device had it", "notifyReminders=" + after.notifyReminders);
+  check(after.boardDate === "2032-02-02", "...while an ordinary preference (the board date) is still restored", "boardDate=" + after.boardDate);
+  check(!("zzNotARealSetting" in after), "a setting key this GUIDON does not know is not written", JSON.stringify(Object.keys(after)));
+  check(res.restored.kv === 1, "the settings row still counts as restored", JSON.stringify(res.restored));
+  // A fresh device (no switch ever set): the file cannot turn one on either.
+  await page.evaluate(async () => { const cur = (await G.db.get("kv", "settings")).v; delete cur.studyGroups; delete cur.biometricLock; await G.db.put("kv", { k: "settings", v: cur }); });
+  await page.evaluate(async () => G.backup.importAll({ schema: "guidon.backup/v1", stores: { kv: [{ k: "settings", v: { studyGroups: true, biometricLock: true } }], userScenarios: [], attempts: [] } }));
+  const fresh = await getKv("settings");
+  check(!fresh.studyGroups && !fresh.biometricLock, "a device that never switched them on is not switched on by a file", JSON.stringify({ s: fresh.studyGroups, b: fresh.biometricLock }));
+  // The older progress-file path keeps them too.
+  await page.evaluate(async () => { await G.store.setSetting("biometricLock", true); });
+  await page.evaluate(async () => G.store.importProgress({ kind: "progress", attempts: [], settings: { biometricLock: false, studyGroups: true } }));
+  const prog = await page.evaluate(() => ({ b: G.store.settings().biometricLock, s: G.store.settings().studyGroups }));
+  check(prog.b === true && prog.s === false, "the older progress-file restore keeps the device switches too", JSON.stringify(prog));
+}
 
 expectNoConsoleNoise(noise);
 await finish("BACKUP RESTORE GUARD");
