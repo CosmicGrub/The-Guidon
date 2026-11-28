@@ -175,10 +175,11 @@ const appText = app.secs.map((s) => s.h + "\n" + s.p.join("\n")).join("\n");
     ["GitHub Pages delivery", /\bGitHub Pages\b/i],
     ["OS voice-pack download", /\bvoice pack\b/i],
     ["iCloud / device backups", /\biCloud\b|\bdevice backups?\b/i],
+    ["tap-only update check", /\bCheck for updates\b/i],
   ];
   for (const [where, text] of [["#/privacy", appText], ["PRIVACY.md", md], ["README.md", readme]]) {
     const missing = PHRASES.filter(([, re]) => !re.test(text)).map(([n]) => n);
-    missing.length === 0 ? ok(`(2) ${where} names all four exceptions`) : bad(`(2) ${where} is missing: ${missing.join(", ")}`);
+    missing.length === 0 ? ok(`(2) ${where} names all five exceptions`) : bad(`(2) ${where} is missing: ${missing.join(", ")}`);
   }
 }
 

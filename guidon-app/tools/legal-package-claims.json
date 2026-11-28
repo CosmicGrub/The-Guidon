@@ -3,6 +3,10 @@
  "schema": 1,
  "document": "GUIDON_COMMAND_LEGAL_PACKAGE.md",
  "suites": {
+  "test:update-detector": {
+   "needs": ["build"],
+   "about": "The Check for updates panel driven through the real built page with GitHub's answer stubbed: which builds have it, no request until the tap, one GET per tap with no credentials, nothing stored, and hostile answers."
+  },
   "test:opsec-guard": {
    "needs": ["build"],
    "about": "MOI Import and the Squad Roster driven through the real built page against tools/fixtures/opsec-guard-cases.json, plus a sweep of the app's own content for false stops."
@@ -142,9 +146,10 @@
    "verification": "mechanical",
    "proof": [
     { "test": "test:standalone", "anchor": "zero external requests (no sibling files, no network)" },
+    { "test": "test:update-detector", "anchor": "exactly ONE request after a tap" },
     { "test": "test:legal-package-content" }
    ],
-   "note": "Proved by absence: the standalone build makes no request to anything while every screen is walked, and the shipped source contains no network call other than the reviewed inventory (own bundled files, a same-origin service worker, the LAN-only Study Rooms sockets) and no analytics, crash-reporting or advertising library. Nothing here sends study data or progress anywhere: they stay in the on-device store. The one thing Study Rooms can carry off a device is a PT plan or Team Training session that a room host explicitly confirms sending to the devices in their own room - its structure and the names the host typed for it, never a profile, rank, MOS, progress, attempt, note or result (test:room-handoff, test:room-handoff-core and test:room-handoff-safety; GUIDON files/PRIVACY.md discloses it). A receiving device adds nothing unless its owner taps Add."
+   "note": "Proved by absence: the standalone build makes no request to anything while every screen is walked, and the shipped source contains no network call other than the reviewed inventory (own bundled files, a same-origin service worker, the LAN-only Study Rooms sockets, and one GET of the public GitHub release list that the desktop, Android and saved-file builds make only when the person taps Check for updates, with no credentials or headers and nothing about the person in it: test:update-detector) and no analytics, crash-reporting or advertising library. Nothing here sends study data or progress anywhere: they stay in the on-device store. The one thing Study Rooms can carry off a device is a PT plan or Team Training session that a room host explicitly confirms sending to the devices in their own room - its structure and the names the host typed for it, never a profile, rank, MOS, progress, attempt, note or result (test:room-handoff, test:room-handoff-core and test:room-handoff-safety; GUIDON files/PRIVACY.md discloses it). A receiving device adds nothing unless its owner taps Add."
   },
   {
    "id": "LP-014",
@@ -184,6 +189,20 @@
     { "test": "test:guest-page", "anchor": "BEFORE joining, the guest page states the network boundary" }
    ],
    "note": "The guest page stores nothing (no localStorage, sessionStorage, cookie or IndexedDB) and states the network boundary on its join screen."
+  },
+  {
+   "id": "LP-195",
+   "text": "The desktop, Android and saved single-file builds also offer a Check for updates button that, only when the user taps it, makes one request to the application's public release list on GitHub, sends nothing about the user beyond what any web request reveals, and saves nothing from the answer.",
+   "kind": "factual",
+   "verification": "mechanical",
+   "proof": [
+    { "test": "test:update-detector", "anchor": "NO request and no ledger entry on load, idle" },
+    { "test": "test:update-detector", "anchor": "exactly ONE request after a tap" },
+    { "test": "test:update-detector", "anchor": "the request carries no credentials, cookie, token, custom header or referrer" },
+    { "test": "test:update-detector", "anchor": "nothing from the answer is saved" },
+    { "test": "test:update-detector", "anchor": "no update button on" }
+   ],
+   "note": "Proved in a browser with the answer stubbed at the network layer: no request until the tap, exactly one GET after it with no credentials, cookie, custom header or referrer, and no storage change afterwards. What GitHub itself logs about any visitor (such as an IP address) is outside the application."
   },
   {
    "id": "LP-017",

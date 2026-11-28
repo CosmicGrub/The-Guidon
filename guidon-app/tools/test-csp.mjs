@@ -39,6 +39,13 @@ const CSP = [
   // socket) must widen connect-src here to the room's ws:// origin in the
   // SAME change that adds the socket, or this suite fails under a strict
   // self-hoster policy the moment a room connects.
+  // The in-app "Check for updates" (src/app-modules/update-check.js) is the
+  // one deliberate request to api.github.com, and it exists ONLY in the
+  // desktop, Android and saved-file builds (none of which ships a CSP).
+  // This hosted-app policy therefore stays 'self' on purpose: the hosted
+  // build has no update button, and the sweep below fails if one appears
+  // (tools/test-update-detector.mjs covers the builds that do have it,
+  // including under a policy that lists https://api.github.com).
   "connect-src 'self'",
   "object-src 'none'",
   "base-uri 'self'",
@@ -135,6 +142,16 @@ for (const r of routes) {
 const rendered = await page.evaluate(() => document.querySelector("#view, main") ?
   (document.querySelector("#view, main").textContent || "").length : 0);
 rendered > 100 ? ok("all routes render content under CSP") : bad("view empty after route sweep: " + rendered);
+
+// The hosted app must not carry the update button (its connect-src is 'self').
+let updSeen = false;
+for (const h of ["#/share", "#/settings"]) {
+  await page.evaluate((x) => { location.hash = x; }, h);
+  await page.waitForFunction((x) => location.hash === x && [...document.querySelectorAll(".view .section-title h2, .view .fin-h")]
+    .some((e) => e.textContent === (x === "#/share" ? "Share & Install" : "About GUIDON")), h);
+  if (await page.evaluate(() => !!document.querySelector("#update-check-panel"))) updSeen = true;
+}
+!updSeen ? ok("hosted app has no Check for updates button (connect-src stays 'self')") : bad("update panel rendered on the hosted app");
 
 // The PDF stack is injected as a dynamic <script src> - exactly the kind of
 // thing a strict script-src blocks.

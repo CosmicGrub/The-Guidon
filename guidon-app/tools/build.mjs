@@ -738,6 +738,16 @@ async function main() {
     "app version/build date/sha"
   );
 
+  /* ---------------- update repository (every build) ----------------
+     The ONE place the repository the in-app update check reads is named.
+     src/app-modules/update-check.js derives its API address, its path
+     allowlist and its file links from window.GUIDON_UPDATE_REPO and never
+     spells the name out; tools/test-update-detector.mjs holds that. Point a
+     build at another app's releases with GUIDON_UPDATE_REPO=owner/name. */
+  const UPDATE_REPO = process.env.GUIDON_UPDATE_REPO || "CosmicGrub/The-Guidon";
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}\/[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(UPDATE_REPO)) throw new Error(`build: GUIDON_UPDATE_REPO "${UPDATE_REPO}" is not owner/name`);
+  src = sub(src, 'window.GUIDON_UPDATE_REPO = "";', `window.GUIDON_UPDATE_REPO = "${UPDATE_REPO}";`, "update repo");
+
   /* ---------------- What's New entries (both builds) ----------------
      src/data/whats-new.json -> G.whatsNew.RELEASE_NOTES; see injectWhatsNew().
      GUIDON_WHATS_NEW_FILE points this step at a stand-in file so
