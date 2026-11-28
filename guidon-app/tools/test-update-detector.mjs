@@ -79,7 +79,14 @@ async function open(shell, { ua, answer, target = url, ctxOpts } = {}) {
 // Wait for the screen to be drawn (the hash is current and the view has content), not for a fixed time.
 const go = async (page, hash) => {
   await page.evaluate((h) => { location.hash = h; }, hash);
-  await page.waitForFunction((h) => location.hash === h && (((document.querySelector(".view") || {}).textContent) || "").length > 20, hash, { timeout: 10000 });
+  // The old screen stays up until the new one is drawn, so wait for something only the target screen has.
+  await page.waitForFunction((h) => {
+    if (location.hash !== h) return false;
+    const heads = [...document.querySelectorAll(".view .section-title h2, .view .fin-h")].map((e) => e.textContent);
+    if (h === "#/share") return heads.includes("Share & Install");
+    if (h === "#/settings") return heads.includes("About GUIDON");
+    return !heads.includes("Share & Install") && !heads.includes("About GUIDON");
+  }, hash, { timeout: 15000 });
   await frame(page);
 };
 // One animation frame; and an in-page quiet period for the "nothing happens" proofs (a negative can only be shown over time).

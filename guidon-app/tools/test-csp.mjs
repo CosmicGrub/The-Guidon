@@ -147,7 +147,8 @@ rendered > 100 ? ok("all routes render content under CSP") : bad("view empty aft
 let updSeen = false;
 for (const h of ["#/share", "#/settings"]) {
   await page.evaluate((x) => { location.hash = x; }, h);
-  await page.waitForFunction((x) => location.hash === x && ((document.querySelector("#view, main") || {}).textContent || "").length > 20, h);
+  await page.waitForFunction((x) => location.hash === x && [...document.querySelectorAll(".view .section-title h2, .view .fin-h")]
+    .some((e) => e.textContent === (x === "#/share" ? "Share & Install" : "About GUIDON")), h);
   if (await page.evaluate(() => !!document.querySelector("#update-check-panel"))) updSeen = true;
 }
 !updSeen ? ok("hosted app has no Check for updates button (connect-src stays 'self')") : bad("update panel rendered on the hosted app");
