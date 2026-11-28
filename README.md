@@ -10,7 +10,7 @@ own room). The web version is fetched from GitHub Pages, or whichever static hos
 get or update the app itself), study groups (LAN rooms) are off until you switch
 them on and stay on your own Wi-Fi or hotspot, a future read-aloud feature may have the
 OS download a voice pack, and a future iOS build may be included in iCloud or
-device backups. Full policy: [`GUIDON files/PRIVACY.md`](GUIDON%20files/PRIVACY.md).
+device backups. The desktop, Android and saved-file versions can also look at GUIDON’s public release list on GitHub, but only when you tap “Check for updates”: one request, nothing about you sent beyond what any web request reveals, nothing saved. Full policy: [`GUIDON files/PRIVACY.md`](GUIDON%20files/PRIVACY.md).
 
 **35 sections** across board prep, the full NCOPDS ladder (BLC → SMC), promotion
 points, fitness standards, records readiness, assignments, counseling, finance

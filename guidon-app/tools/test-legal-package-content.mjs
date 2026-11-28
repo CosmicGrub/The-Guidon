@@ -193,6 +193,7 @@ function codeOf(rel) {
     "fetch( in src/sw.js": [3, "the service worker: it answers only same-origin requests (checked below) - it is how the app opens with no signal"],
     "fetch( in src/app-modules/library.js": [2, "the Library checking for / reading its own bundled reference PDFs by relative path"],
     "new WebSocket( in src/room-web.js": [1, "Study Rooms, off unless the person turns the switch on in Settings; connects to another device on the same Wi-Fi"],
+    "fetch( in src/app-modules/update-check.js": [1, "the desktop, Android and saved-file builds' Check for updates button: one GET of the public GitHub release list, made only when the person taps it (test:update-detector proves one request per tap, none otherwise)"],
     "new WebSocket( in src/guest.html": [1, "the guest join page, which only exists while a host device serves it on the local network"],
   };
   const unknown = Object.keys(found).filter((k) => !ALLOWED[k]);
@@ -200,10 +201,10 @@ function codeOf(rel) {
   const sw = codeOf("src/sw.js");
   const sameOriginOnly = /if\s*\(\s*url\.origin\s*!==\s*self\.location\.origin\s*\)\s*return;/.test(sw);
   const fetchArgs = [];
-  for (const rel of ["src/index.html", "src/app-modules/library.js"]) { const code = codeOf(rel); let m; const re = /\bfetch\s*\(\s*([^,)]+)/g; while ((m = re.exec(code))) fetchArgs.push(rel + ": fetch(" + m[1].trim() + ")"); }
-  const okArgs = fetchArgs.every((a) => /fetch\((path|d\.pdfAsset|DOCS\[0\]\.pdfAsset)\)$/.test(a));
+  for (const rel of ["src/index.html", "src/app-modules/library.js", "src/app-modules/update-check.js"]) { const code = codeOf(rel); let m; const re = /\bfetch\s*\(\s*([^,)]+)/g; while ((m = re.exec(code))) fetchArgs.push(rel + ": fetch(" + m[1].trim() + ")"); }
+  const okArgs = fetchArgs.every((a) => /fetch\((path|d\.pdfAsset|DOCS\[0\]\.pdfAsset|apiUrl\()\)$/.test(a));
   check(unknown.length === 0 && changed.length === 0 && sameOriginOnly && okArgs,
-    tag("LP-012", "LP-013", "LP-107") + " every network primitive in the shipped source is accounted for: " + Object.keys(ALLOWED).length + " reviewed uses (own bundled files by relative path; a service worker that ignores any other origin; the LAN-only Study Rooms sockets), and no XMLHttpRequest, sendBeacon, EventSource or importScripts anywhere",
+    tag("LP-012", "LP-013", "LP-107") + " every network primitive in the shipped source is accounted for: " + Object.keys(ALLOWED).length + " reviewed uses (own bundled files by relative path; a service worker that ignores any other origin; the LAN-only Study Rooms sockets; the tap-only Check for updates request to the public GitHub release list), and no XMLHttpRequest, sendBeacon, EventSource or importScripts anywhere",
     () => "not in the reviewed inventory: " + list(unknown) + "; count changed: " + list(changed.map((k) => k + " now " + found[k])) + "; service worker same-origin guard: " + sameOriginOnly + "; fetch arguments: " + list(fetchArgs));
   // Vendor DOMAINS and package names, never bare words: "sentry" is a guard post in the doctrine, "implausible" contains "plausible".
   const VENDORS = /google-analytics\.com|googletagmanager\.com|\bgtag\s*\(|sentry\.io|@sentry\/|bugsnag|crashlytics|\bfirebase(?:app|io|analytics|-analytics)?\b|mixpanel|amplitude\.com|segment\.(?:io|com)|datadoghq|newrelic|hotjar|fullstory|posthog|matomo|plausible\.io|admob|applovin|doubleclick|facebook\.net|appsflyer|instabug/i;

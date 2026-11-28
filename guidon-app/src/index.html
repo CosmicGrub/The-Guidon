@@ -8180,6 +8180,10 @@ window.GUIDON_APP_VERSION = "1.5.1";
 window.GUIDON_BUILD_DATE = "2026-09-01";
 window.GUIDON_BUILD_SHA = "";
 window.GUIDON_BUILD_DIRTY = false;
+// The repository the in-app update check reads (src/app-modules/update-check.js).
+// Empty here on purpose: tools/build.mjs stamps the one real value into every build,
+// so a raw src/index.html has no update check at all.
+window.GUIDON_UPDATE_REPO = "";
 // Engine floor placeholder (zeros on purpose): tools/build.mjs stamps the real
 // values from tools/engine-floor.json (collective Q11 - the ONE declaration of
 // the oldest engines every fork runs on; tools/lint-engine-floor.mjs reads the
@@ -29716,12 +29720,18 @@ window.G = window.G || {};
         });
         const led = (G.netLedger && G.netLedger.list()) || [];
         const rooms = !!((G.store && G.store.settings && G.store.settings()) || {}).studyGroups;
-        if (!rooms && led.length) bad.push("session connection with study groups OFF: " + led[0].kind + " " + led[0].peer);
-        const count = led.length + " session connection" + (led.length === 1 ? "" : "s") + " this page";
+        // A tapped "Check for updates" (kind "update-check") is the Soldier's own
+        // one-request look at the public release list, not a session connection:
+        // it never fails this check, and is reported on its own line.
+        const checks = led.filter((e) => e.kind === "update-check").length;
+        const sess = led.filter((e) => e.kind !== "update-check");
+        if (!rooms && sess.length) bad.push("session connection with study groups OFF: " + sess[0].kind + " " + sess[0].peer);
+        const count = sess.length + " session connection" + (sess.length === 1 ? "" : "s") + " this page";
+        const tapped = checks ? " \u00b7 " + checks + " update check" + (checks === 1 ? "" : "s") + " you tapped" : "";
         return { ok: !bad.length,
                  detail: bad.length ? bad.join(" \u00b7 ")
-                       : rooms ? "No external resource references \u00b7 study groups ON \u00b7 " + count
-                       : "No external resource references" };
+                       : rooms ? "No external resource references \u00b7 study groups ON \u00b7 " + count + tapped
+                       : "No external resource references" + tapped };
       } },
     { id:"themeSync", name:"Theme registry / pre-paint sync",
       // Roadmap Tier 3. The pre-paint bootstrap <script> (top of <head>, runs
@@ -30815,6 +30825,11 @@ window.G = window.G || {};
   async function render(mount) {
     util.clear(mount);
     mount.appendChild(el("div.section-title", {}, [ el("h2", { text:"Share & Install" }), el("div.rule") ]));
+    // Desktop app, Android app and the saved .html file cannot update
+    // themselves: one tap-only "Check for updates" panel (update-check.js)
+    // sits first. Not rendered on the hosted app, which has its own update
+    // prompt (pwa.js), nor on iOS.
+    if (G.updateCheck && G.updateCheck.available()) G.updateCheck.renderPanel(mount);
 
     // Standing rule: What's New should be reachable on demand, not just the
     // one-time auto-popup after an update (G.whatsNew.checkOnBoot()) -
@@ -31168,7 +31183,7 @@ window.G = window.G || {};
       ? "Copy the same .apk file you installed here and open it on the other Android device (you may need to allow “install unknown apps” for whichever app you copy it through)."
       : "Copy the same installer (.exe) you ran here and run it on the other Windows machine." }));
     install.appendChild(el("p.hint", { style:"margin-top:6px", text:
-      "There's no in-app updater — a newer version means installing a newer build the same way you installed this one. Your data isn't touched by reinstalling; only Export/Import backup moves it between separate installations." }));
+      "GUIDON never updates itself. Tap “Check for updates” at the top of this page to see whether there is a newer version, then install it the same way you installed this one. Your data isn't touched by reinstalling; only Export/Import backup moves it between separate installations." }));
     // How old this installed copy is, once it is old enough to matter.
     const copyAgeNote = G.currency.buildAgeNote();
     if (copyAgeNote) install.appendChild(copyAgeNote);
@@ -39330,7 +39345,7 @@ window.G = window.G || {};
   views.privacy = function (mount) {
     util.clear(mount);
     mount.appendChild(el("div.section-title", {}, [ el("h2", { text: "Privacy Policy" }), el("div.rule") ]));
-    mount.appendChild(el("p.hint", { text: "Last updated October 17, 2026. Applies to every version of GUIDON — standalone, PWA, desktop, and Android — since they all run from the same source." }));
+    mount.appendChild(el("p.hint", { text: "Last updated November 22, 2026. Applies to every version of GUIDON — standalone, PWA, desktop, and Android — since they all run from the same source." }));
     const SECTIONS = [
       // P1 of the "No server, ever" promise (desktop roadmap, locked decision
       // Q1): the second "short version" paragraph is THE unified sentence -
@@ -39341,7 +39356,7 @@ window.G = window.G || {};
       // exceptions are named here, there and in the root README.
       { h: "The short version", p: [
         "GUIDON does not collect, transmit, sell, or share any personal data, because GUIDON has no server to send it to. There is no server, ever: no account, no sign-in, no analytics, no advertising, and nothing about you is ever sent to anyone — including the developer — except a PT plan or Team Training session that you, as the host of a study room, choose to send to the devices in your own room (see “Sharing a plan or session to a study room” below). Everything GUIDON knows about you stays in storage on your own device, under your control, until you delete it.",
-        "The only ways any version of GUIDON can touch a network are these four, and none of them sends your study data to a server: study groups (LAN rooms), which are off by default behind a switch in Settings and, when you switch them on, connect only to other devices on the same Wi-Fi or hotspot — including when that connection is secured with a self-signed, device-generated certificate — and never to any server; GitHub Pages, the file server the web version is delivered from (or whichever static host serves it), which is contacted only to fetch or update the app itself (the service worker checks it for a newer copy when you open the app online); a future read-aloud feature, for which your operating system may download a voice pack the first time it is used; and, on a future iOS build, iCloud or device backups run by the operating system, which may include the app's data under the backup settings you control on your device.",
+        "The only ways any version of GUIDON can touch a network are these five, and none of them sends your study data to a server: study groups (LAN rooms), which are off by default behind a switch in Settings and, when you switch them on, connect only to other devices on the same Wi-Fi or hotspot — including when that connection is secured with a self-signed, device-generated certificate — and never to any server; GitHub Pages, the file server the web version is delivered from (or whichever static host serves it), which is contacted only to fetch or update the app itself (the service worker checks it for a newer copy when you open the app online); a future read-aloud feature, for which your operating system may download a voice pack the first time it is used; the update check, in the desktop, Android and saved-file versions only, which makes one request to GUIDON’s public release list on GitHub only when you tap “Check for updates”, sends nothing about you beyond what any web request reveals (such as your IP address), and saves nothing; and, on a future iOS build, iCloud or device backups run by the operating system, which may include the app's data under the backup settings you control on your device.",
       ] },
       { h: "What GUIDON is", p: ["GUIDON is an offline-first, single-user reference and study tool for enlisted Soldiers preparing for promotion boards. It runs entirely client-side — there is no backend server, no cloud sync, and no remote database. Before every release the app is checked automatically by walking every screen and confirming it makes no network request outside a study session."] },
       { h: "Data GUIDON stores, and where", p: [
@@ -39440,6 +39455,8 @@ window.G = window.G || {};
       const pn = el("div.panel", { style: "margin-bottom:14px" });
       pn.appendChild(el("div.fin-h", { text: "About GUIDON" }));
       pn.appendChild(el("p.hint", { text: "Version " + (window.GUIDON_APP_VERSION || "unknown") + " \u00b7 Built " + (window.GUIDON_BUILD_DATE || "unknown") }));
+      // Desktop / Android / saved-file copies: the tap-only update check (update-check.js).
+      if (G.updateCheck && G.updateCheck.available()) G.updateCheck.renderPanel(pn);
       // An installed or saved-file copy never updates itself, so say plainly when
       // this one has aged (nothing at all on the hosted app, or on a young copy).
       const copyAgeNote = G.currency.buildAgeNote();

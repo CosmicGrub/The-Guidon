@@ -1,6 +1,6 @@
 # Privacy Policy — GUIDON
 
-**Last updated:** October 17, 2026
+**Last updated:** November 22, 2026
 
 This is the Privacy Policy for **GUIDON** (Army Leader Development Trainer), distributed as a standalone HTML app, an installable web app (PWA), a Windows desktop app, and an Android app (package `app.guidon.trainer`). It applies to every version of GUIDON, since they all run from the same source and behave identically with respect to data.
 
@@ -12,7 +12,7 @@ This is the Privacy Policy for **GUIDON** (Army Leader Development Trainer), dis
 
 GUIDON does not collect, transmit, sell, or share any personal data, because GUIDON has no server to send it to. There is no server, ever: no account, no sign-in, no analytics, no advertising, and nothing about you is ever sent to anyone — including the developer — except a PT plan or Team Training session that you, as the host of a study room, choose to send to the devices in your own room (see “Sharing a plan or session to a study room” below). Everything GUIDON knows about you stays in storage on your own device, under your control, until you delete it.
 
-The only ways any version of GUIDON can touch a network are these four, and none of them sends your study data to a server: study groups (LAN rooms), which are off by default behind a switch in Settings and, when you switch them on, connect only to other devices on the same Wi-Fi or hotspot — including when that connection is secured with a self-signed, device-generated certificate — and never to any server; GitHub Pages, the file server the web version is delivered from (or whichever static host serves it), which is contacted only to fetch or update the app itself (the service worker checks it for a newer copy when you open the app online); a future read-aloud feature, for which your operating system may download a voice pack the first time it is used; and, on a future iOS build, iCloud or device backups run by the operating system, which may include the app's data under the backup settings you control on your device.
+The only ways any version of GUIDON can touch a network are these five, and none of them sends your study data to a server: study groups (LAN rooms), which are off by default behind a switch in Settings and, when you switch them on, connect only to other devices on the same Wi-Fi or hotspot — including when that connection is secured with a self-signed, device-generated certificate — and never to any server; GitHub Pages, the file server the web version is delivered from (or whichever static host serves it), which is contacted only to fetch or update the app itself (the service worker checks it for a newer copy when you open the app online); a future read-aloud feature, for which your operating system may download a voice pack the first time it is used; the update check, in the desktop, Android and saved-file versions only, which makes one request to GUIDON’s public release list on GitHub only when you tap “Check for updates”, sends nothing about you beyond what any web request reveals (such as your IP address), and saves nothing; and, on a future iOS build, iCloud or device backups run by the operating system, which may include the app's data under the backup settings you control on your device.
 
 ## What GUIDON is
 

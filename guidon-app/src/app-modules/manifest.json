@@ -410,6 +410,17 @@
       "optionalApis": []
     },
     {
+      "file": "update-check.js",
+      "id": "update-check",
+      "kind": "feature",
+      "headless": false,
+      "requires": ["caps"],
+      "provides": ["G.updateCheck.available", "G.updateCheck.check", "G.updateCheck.renderPanel", "G.updateCheck.parseSemver", "G.updateCheck.compareVersions", "G.updateCheck.parseReleases", "G.updateCheck.evaluate", "G.updateCheck.safeUrl", "G.updateCheck.statusText", "G.updateCheck.platform", "G.updateCheck.apiUrl"],
+      "routes": [],
+      "storageKeys": [],
+      "optionalApis": []
+    },
+    {
       "file": "aft-scoring.js",
       "id": "aft-scoring",
       "kind": "feature",

@@ -142,9 +142,10 @@
    "verification": "mechanical",
    "proof": [
     { "test": "test:standalone", "anchor": "zero external requests (no sibling files, no network)" },
+    { "test": "test:update-detector", "anchor": "exactly ONE request after a tap" },
     { "test": "test:legal-package-content" }
    ],
-   "note": "Proved by absence: the standalone build makes no request to anything while every screen is walked, and the shipped source contains no network call other than the reviewed inventory (own bundled files, a same-origin service worker, the LAN-only Study Rooms sockets) and no analytics, crash-reporting or advertising library. Nothing here sends study data or progress anywhere: they stay in the on-device store. The one thing Study Rooms can carry off a device is a PT plan or Team Training session that a room host explicitly confirms sending to the devices in their own room - its structure and the names the host typed for it, never a profile, rank, MOS, progress, attempt, note or result (test:room-handoff, test:room-handoff-core and test:room-handoff-safety; GUIDON files/PRIVACY.md discloses it). A receiving device adds nothing unless its owner taps Add."
+   "note": "Proved by absence: the standalone build makes no request to anything while every screen is walked, and the shipped source contains no network call other than the reviewed inventory (own bundled files, a same-origin service worker, the LAN-only Study Rooms sockets, and one GET of the public GitHub release list that the desktop, Android and saved-file builds make only when the person taps Check for updates, with no credentials or headers and nothing about the person in it: test:update-detector) and no analytics, crash-reporting or advertising library. Nothing here sends study data or progress anywhere: they stay in the on-device store. The one thing Study Rooms can carry off a device is a PT plan or Team Training session that a room host explicitly confirms sending to the devices in their own room - its structure and the names the host typed for it, never a profile, rank, MOS, progress, attempt, note or result (test:room-handoff, test:room-handoff-core and test:room-handoff-safety; GUIDON files/PRIVACY.md discloses it). A receiving device adds nothing unless its owner taps Add."
   },
   {
    "id": "LP-014",
