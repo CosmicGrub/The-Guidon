@@ -125,6 +125,7 @@ const view = (page) => page.evaluate(() => {
     details: d ? d.textContent : "",
     items: d ? [...d.querySelectorAll("li")].map((li) => li.textContent) : [],
     links: [...p.querySelectorAll("a")].map((a) => a.getAttribute("href")),
+    address: (p.querySelector("#update-check-address") || {}).textContent || null,
     imgs: p.querySelectorAll("img,script,iframe,svg").length,
     html: p.innerHTML,
     pwned: !!window.__pwned,
@@ -240,6 +241,14 @@ const view = (page) => page.evaluate(() => {
   check(external.length === 0 && quietLedger === 0, `3. NO request and no ledger entry on load, idle, ${Math.min(routes.length, 60)} route changes or resume events`, JSON.stringify(external.map((e) => e.url)) + " ledger " + quietLedger);
   await go(page, "#/share");
   await page.evaluate(() => { window.GUIDON_APP_VERSION = "1.18.1"; });
+  // everything the app keeps on the device, before and after the tap
+  const stored = () => page.evaluate(async () => {
+    const local = Object.keys(localStorage).sort().map((k) => k + "=" + localStorage.getItem(k));
+    const rows = await G.db.all("kv");
+    return JSON.stringify({ local, kv: rows.map((r) => r.k).sort(), session: Object.keys(sessionStorage).sort(), cookie: document.cookie });
+  });
+  await quiet(page, 500);
+  const before = await stored();
   // a double tap must still be one request
   await page.evaluate(() => { const b = document.querySelector("#update-check-btn"); b.click(); b.click(); });
   await page.waitForFunction(() => (document.querySelector("#update-check-status") || {}).textContent, null, { timeout: 8000 });
@@ -252,6 +261,8 @@ const view = (page) => page.evaluate(() => {
   const diag = await page.evaluate(async () => { const t = G.selftest && G.selftest.AUTO ? G.selftest.AUTO.find((c) => c.id === "offline") : null; return t ? await t.run() : null; });
   if (diag) check(diag.ok && /1 update check you tapped/.test(diag.detail), "3. Diagnostics 'No external requests' still passes after a tap and reports the tapped check on its own line", JSON.stringify(diag));
   await quiet(page, 1500);
+  const after = await stored();
+  check(after === before && !/1\.18\.1\/|releases\/tag/.test(after), "3. nothing from the answer is saved: on-device storage is unchanged by a check", before.slice(0, 300) + " -> " + after.slice(0, 300));
   check(external.length === 1, "3. still only one request a while later (no retry, no timer)", String(external.length));
   await ctx.close();
 }
@@ -287,6 +298,7 @@ const GOOD_HOST = new RegExp("^https://github\\.com/" + REPO.replace(/[.*+?^${}(
   check(/^Version 1\.18\.2 is available \(released 2026-11-\d\d\)\.$/.test(r.v.status), "4. one newer release: 'Version X is available (released <date>).'", r.v.status);
   check(r.v.goHref.endsWith("/v1.18.2/GUIDON-windows-setup.exe") && /^Run the downloaded file to update\. Your study data stays\.$/.test(r.v.nextLine), "4. Windows: the button opens the Windows installer, with the Windows 'what happens next' line", r.v.goHref + " | " + r.v.nextLine);
   check(r.v.items.length === 1 && !/\[/.test(r.v.items[0]), "4. a single newer release is not tagged next/newest", JSON.stringify(r.v.items));
+  check(r.v.hint2.some((h) => h.startsWith("If nothing opens, type this address into a browser:")) && r.v.address === r.v.goHref, "4. desktop: the download address is also shown as text to type, because a link tap is not proven on the desktop shell", r.v.address);
   await r.ctx.close();
   const m = await scenario("tauri", ok200([rel("v1.18.2"), rel("v1.18.1")]), { ua: MAC_UA });
   check(m.v.goHref.endsWith("/v1.18.2/GUIDON-macos-universal.dmg"), "4. Mac desktop: the button opens the Mac disk image", m.v.goHref);

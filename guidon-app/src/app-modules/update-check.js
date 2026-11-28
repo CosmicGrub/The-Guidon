@@ -325,7 +325,7 @@ window.G = window.G || {};
     panel.appendChild(btn);
     panel.appendChild(status);
     panel.appendChild(out);
-    panel.appendChild(el("p.hint", { style: "margin-top:8px", text: "Tapping the button makes one request to GUIDON's public release list on GitHub. Nothing else is sent, and nothing is saved." }));
+    panel.appendChild(el("p.hint", { style: "margin-top:8px", text: "Tapping the button makes one request to GUIDON's public release list on GitHub. Nothing about you is added to it, and GUIDON saves nothing from the answer." }));
     btn.addEventListener("click", async function () {
       if (btn.disabled) return;
       btn.disabled = true;
@@ -350,6 +350,13 @@ window.G = window.G || {};
         out.appendChild(el("p.hint", { style: "margin-top:6px", text: "The newest version does not have a " + want.label + " attached yet, so this opens its release page instead." }));
       }
       out.appendChild(el("p.hint", { style: "margin-top:6px", text: NEXT_STEP[plat] || "" }));
+      // A link tap is proven on Android and in a saved file, not on the desktop
+      // shell (see currency.js buildAgeNote): never leave a button that might do
+      // nothing as the only way - the same address is there to type.
+      if (plat === "windows" || plat === "mac") {
+        out.appendChild(el("p.hint", { style: "margin:6px 0 0", text: "If nothing opens, type this address into a browser:" }));
+        out.appendChild(el("p", { id: "update-check-address", text: href, style: "margin:2px 0 0;font-family:var(--font-mono);font-size:.85rem;word-break:break-all;user-select:all;-webkit-user-select:all" }));
+      }
       out.appendChild(buildDetails(res));
     });
     mount.appendChild(panel);
