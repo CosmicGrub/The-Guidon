@@ -731,6 +731,8 @@ jobs:
             tests: "test:contrast-tabs-2"
           - name: "73-contrasttabs3"
             tests: "test:contrast-tabs-3"
+          - name: "74-updatedetector"
+            tests: "test:update-detector"
     steps:
       - name: Checkout
         # Roadmap audit round 4, "CI / supply-chain hardening" bucket: same
